@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/store"
 	"motty/internal/i18n"
@@ -45,7 +45,7 @@ func (state *State) aiAgentModeOptions() [3]components.SegmentOption {
 }
 
 // aiAgentClick handles the controls of the group.
-func (state *State) aiAgentClick(id ui.ID) bool {
+func (state *State) aiAgentClick(id gfx.ID) bool {
 	switch id {
 	case hitAISetAgentObserve:
 		state.aiPut(agentModeSetting, AgentModeReadOnly)
@@ -245,7 +245,7 @@ func agentAuditLine(entry store.AuditEntry, m i18n.AISettingsMessages) string {
 
 // aiCopyText puts text on the clipboard and remembers which button did, so the
 // button can say it worked.
-func (state *State) aiCopyText(target ui.ID, value string) {
+func (state *State) aiCopyText(target gfx.ID, value string) {
 	cfg := &state.ai.cfg
 	cfg.copyTarget = target
 	if err := state.options.SetClipboardText(value); err != nil {

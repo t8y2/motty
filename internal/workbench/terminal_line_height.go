@@ -1,6 +1,6 @@
 package workbench
 
-import "github.com/vivaui/viva/ui"
+import "github.com/vivaui/viva/gfx"
 
 // The spacing between terminal rows: how tall each line is drawn relative to the
 // font. Compact packs more onto the screen, roomy gives the text breathing room.
@@ -78,7 +78,7 @@ func (state *State) setTerminalLineHeight(mode lineHeight) bool {
 // the ones that font gives. Until the first paint the cell is the reference estimate
 // the state was made with. A changed cell refits every terminal, whichever setting
 // (font, size, spacing, display scale, installed fonts) moved it.
-func (state *State) measureTerminalCell(canvas *ui.Canvas) {
+func (state *State) measureTerminalCell(canvas *gfx.Canvas) {
 	width, height := canvas.MonoCellSize(state.terminalFontSize, state.terminalFontFace)
 	height *= state.terminalLineHeight.factor()
 	if width == state.cellWidth && height == state.cellHeight {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 )
 
@@ -71,8 +71,8 @@ func TestStartupSettingsRespondToClicks(t *testing.T) {
 		t.Fatal("the local terminal must be chosen and the menu stay open")
 	}
 	host := state.hosts[0]
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitSettingsStartupHostList.At(0)); !ok {
 		t.Fatal("the chooser lists no hosts")
 	}

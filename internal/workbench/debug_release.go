@@ -4,7 +4,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -17,19 +17,21 @@ import (
 // devState holds nothing: a release build has no gallery state.
 type devState struct{}
 
-func (state *State) devDeclareNavigation(*flex.Frame) {}
+func (state *State) devDeclareNavigation(*ui.Frame) {}
 
-func devPlaysIconMotion(ui.ID) bool { return false }
+func devPlaysIconMotion(gfx.ID) bool { return false }
 
-func (state *State) devClick(ui.ID) bool { return false }
+func (state *State) devClick(gfx.ID) bool { return false }
 
 func (state *State) devBeginPaint() {}
 
-func (state *State) devEndPaint(*ui.Canvas, ui.Size) {}
+func (state *State) devEndPaint(*gfx.Canvas, gfx.Size) {}
 
-func (state *State) devShortcut(ui.KeyEvent) (ui.EventResult, bool) { return ui.EventResult{}, false }
+func (state *State) devShortcut(gfx.KeyEvent) (gfx.EventResult, bool) {
+	return gfx.EventResult{}, false
+}
 
-func (state *State) devPaintPage(*ui.Canvas, ui.Rect) bool { return false }
+func (state *State) devPaintPage(*gfx.Canvas, gfx.Rect) bool { return false }
 
 func (state *State) devAddPaletteCommands(*commandPalette) {}
 
@@ -37,18 +39,18 @@ func (state *State) devWorkspaceName() (string, bool) { return "", false }
 
 func (state *State) devRestoreWorkspace(string) bool { return false }
 
-func (state *State) devEditorFor(ui.ID) *text.Editor { return nil }
+func (state *State) devEditorFor(gfx.ID) *text.Editor { return nil }
 
 func (state *State) devEditorInput() *app.TextInput { return nil }
 
-func (state *State) devEditorKey(ui.KeyEvent) (ui.EventResult, bool) {
-	return ui.EventResult{}, false
+func (state *State) devEditorKey(gfx.KeyEvent) (gfx.EventResult, bool) {
+	return gfx.EventResult{}, false
 }
 
-func (state *State) devEditorPointer(ui.PointerEvent) (ui.EventResult, bool) {
-	return ui.EventResult{}, false
+func (state *State) devEditorPointer(gfx.PointerEvent) (gfx.EventResult, bool) {
+	return gfx.EventResult{}, false
 }
 
-func (state *State) devEditorScroll(ui.ScrollEvent) (ui.EventResult, bool) {
-	return ui.EventResult{}, false
+func (state *State) devEditorScroll(gfx.ScrollEvent) (gfx.EventResult, bool) {
+	return gfx.EventResult{}, false
 }

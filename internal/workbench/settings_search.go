@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -62,7 +62,7 @@ type settingsUI struct {
 	navScroll  float32
 	navContent float32
 	navView    float32
-	navRect    ui.Rect
+	navRect    gfx.Rect
 
 	// pageView is how tall the page's own window was when it was last painted:
 	// the workspace content box, inside the slot's border. The wheel and the
@@ -78,7 +78,7 @@ type settingsUI struct {
 	controls []settingsControl
 	options  []components.SegmentOption
 	actions  []components.ButtonAction
-	colors   []ui.Color
+	colors   []gfx.Color
 }
 
 // settingsSearching reports whether the page shows search results, and brings
@@ -294,7 +294,7 @@ func (state *State) openSettingsResult(index int) {
 
 // clickSettingsCategory handles the presses that belong to the category list and
 // the search box. It reports whether the id was one of them.
-func (state *State) clickSettingsCategory(id ui.ID) bool {
+func (state *State) clickSettingsCategory(id gfx.ID) bool {
 	switch {
 	case id == hitSettingsSearch:
 		return true // pressing the box only focuses it
@@ -314,24 +314,24 @@ func (state *State) clickSettingsCategory(id ui.ID) bool {
 
 // settingsSearchKey handles the keys of the search box: Escape empties it, and Enter
 // opens the first result. It reports whether it took the key.
-func (state *State) settingsSearchKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) settingsSearchKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionSettings || event.Target != hitSettingsSearch || event.Repeat {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	switch event.Key {
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		if state.settings.search.RuneCount() > 0 {
 			state.settings.search = text.Editor{}
 			return handled, true
 		}
-	case ui.KeyEnter:
+	case gfx.KeyEnter:
 		if state.settingsSearching() && state.settings.count > 0 {
 			state.openSettingsResult(0)
 			return handled, true
 		}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // paintSettingsResults lists what the query found, each row with the name of its
@@ -356,7 +356,7 @@ func (state *State) paintSettingsResults(page *settingsPage) {
 }
 
 // paintSettingsSearchBox paints the search box at the top of the category list.
-func (state *State) paintSettingsSearchBox(canvas *ui.Canvas, box ui.Rect) {
+func (state *State) paintSettingsSearchBox(canvas *gfx.Canvas, box gfx.Rect) {
 	value := state.settings.search.String()
 	components.PaintInputGroup(canvas, state.Theme(), box, components.InputGroupSnapshot{
 		ID: hitSettingsSearch, Label: state.messages.Tools.SearchPlaceholder, Value: value, Placeholder: state.messages.Tools.SearchPlaceholder,

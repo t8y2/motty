@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func writePNG(t testing.TB, path string, width, height int) {
@@ -50,20 +50,20 @@ func inTerminal(t *testing.T, state *State) {
 	}
 }
 
-func backdropOf(canvas *ui.Canvas) (ui.Image, bool) {
+func backdropOf(canvas *gfx.Canvas) (gfx.Image, bool) {
 	for _, image := range canvas.Images() {
 		if image.Backdrop {
 			return image, true
 		}
 	}
-	return ui.Image{}, false
+	return gfx.Image{}, false
 }
 
 func TestABackgroundPictureIsCopiedDecodedAndShownOnlyBehindTheTerminals(t *testing.T) {
 	picked := filepath.Join(t.TempDir(), "wall.png")
 	writePNG(t, picked, 400, 200)
 	state, options := backgroundTestState(t, picked)
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 
 	state.Click(hitBgChoose)
 	waitFor(t, state, state.backgroundOn)
@@ -76,7 +76,7 @@ func TestABackgroundPictureIsCopiedDecodedAndShownOnlyBehindTheTerminals(t *test
 
 	// Outside the terminal the window is exactly what it was: no picture, every
 	// surface opaque.
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if _, ok := backdropOf(&canvas); ok {
 		t.Fatal("a backdrop on the settings page")
@@ -88,7 +88,7 @@ func TestABackgroundPictureIsCopiedDecodedAndShownOnlyBehindTheTerminals(t *test
 	}
 
 	inTerminal(t, state)
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	backdrop, ok := backdropOf(&canvas)
 	if !ok {
@@ -96,7 +96,7 @@ func TestABackgroundPictureIsCopiedDecodedAndShownOnlyBehindTheTerminals(t *test
 	}
 	// A 2:1 picture in a 14:8.4 area is cropped at the sides, centered, and sits
 	// below the window bar.
-	area := ui.Rect{Y: windowBarHeight, Width: size.Width, Height: size.Height - windowBarHeight}
+	area := gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: size.Height - windowBarHeight}
 	want := float32(200) * area.Width / area.Height
 	if backdrop.Bounds != area || backdrop.Source.Height != 200 || backdrop.Source.Width < want-1 || backdrop.Source.Width > want+1 ||
 		backdrop.Source.X < (400-want)/2-1 || backdrop.Source.X > (400-want)/2+1 {
@@ -125,7 +125,7 @@ func TestABackgroundPictureIsCopiedDecodedAndShownOnlyBehindTheTerminals(t *test
 
 	state.Click(hitBgStrong) // not on this page: the click is ignored while the terminal is up
 	state.bg.strength = bgStrong
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	found := false
 	for _, rectangle := range canvas.Rectangles() {
@@ -165,8 +165,8 @@ func TestTheBackgroundSurvivesARestartAndRemovingItDeletesTheCopy(t *testing.T) 
 		t.Fatalf("saved %+v", saved.Background)
 	}
 	inTerminal(t, again)
-	var canvas ui.Canvas
-	again.Paint(&canvas, ui.Size{Width: 800, Height: 600})
+	var canvas gfx.Canvas
+	again.Paint(&canvas, gfx.Size{Width: 800, Height: 600})
 	if _, ok := backdropOf(&canvas); ok {
 		t.Fatal("a backdrop after removing")
 	}

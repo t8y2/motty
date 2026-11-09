@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/term"
 )
@@ -94,7 +94,7 @@ func (state *State) setRemoteClipboard(text string) {
 	state.status = state.messages.StatusClipboardCopied
 }
 
-func (state *State) clickRemoteClipboard(id ui.ID) {
+func (state *State) clickRemoteClipboard(id gfx.ID) {
 	request := state.clipboardRequest
 	switch id {
 	case hitClipboardAllow:
@@ -123,18 +123,18 @@ func clipboardPreview(text string) string {
 	return strconv.QuoteToGraphic(text)
 }
 
-func (state *State) paintRemoteClipboardDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintRemoteClipboardDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	messages, palette := state.messages, state.pal
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitClipboardDismiss, CloseID: hitClipboardClose, InitialFocusID: hitClipboardCancel,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: 66, // the preview box
+		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: 66, // the preview box
 	})
 	layout := dialog.Begin(messages.ClipboardRequestTitle, state.clipboardRequest.description)
 	// The text the program wants to copy, in a box of its own.
 	f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() {
-		f.Row().Height(58).Shrink(0).Items(flex.Center).PadX(11).MarginSides(8, 0, 0, 0).
+		f.Row().Height(58).Shrink(0).Items(ui.Center).PadX(11).MarginSides(8, 0, 0, 0).
 			Border(1, palette.line).Background(palette.surface).Radius(radius.control).Children(func() {
 			f.Text(state.clipboardRequest.preview).FontSize(metrics.FontSizeS).Color(palette.text)
 		})

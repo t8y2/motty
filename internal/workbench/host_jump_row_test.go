@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // The jump-route pickers narrow by address and account, not only by a label
@@ -22,7 +22,7 @@ func TestJumpRouteHostPickersFilterAndChoose(t *testing.T) {
 	if len(choices) != 1 || choices[0].Label != "Router" {
 		t.Fatalf("address filter = %+v, want only Router", choices)
 	}
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitProxyDialogTarget}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitProxyDialogTarget}); !result.Handled {
 		t.Fatalf("Enter was not taken: %+v", result)
 	}
 	router := hostByLabel(t, state, "Router")

@@ -2,11 +2,11 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
-func (state *State) paintKeysWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintKeysWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	pal, messages := state.pal, state.messages
 	// The title keeps a readable column beside the buttons; a card too narrow for
 	// both shows the buttons as their icons, whose tooltips name them.
@@ -35,12 +35,12 @@ func (state *State) paintKeysWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	selectedEncrypted := hasSelection && selected.Encrypted
 	canCopy := hasSelection && selected.Error == ""
 
-	var content, emptyIcon, emptyAdd, addButton, removeButton, passphraseButton, copyButton flex.Box
+	var content, emptyIcon, emptyAdd, addButton, removeButton, passphraseButton, copyButton ui.Box
 	f := state.keysLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().Children(func() {
 			f.Column().Grow(1).PadSides(3, 0, 0, 0).Children(func() {
-				f.Text(messages.KeyTitle).FontSize(18).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(28).Width(min(bounds.Width*0.45, titleRoom)).Ellipsis()
+				f.Text(messages.KeyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Width(min(bounds.Width*0.45, titleRoom)).Ellipsis()
 				f.Paragraph(messages.KeyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(22).Width(min(bounds.Width*0.62, titleRoom))
 			})
 			copyButton = f.Slot().Size(copyWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
@@ -54,8 +54,8 @@ func (state *State) paintKeysWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 			content = f.Slot().Grow(1).MarginSides(17, 0, 9, 0)
 		}
 		f.Divider().Background(pal.line)
-		f.Row().Height(50).PadSides(8, 0, 0, 0).Gap(4).Items(flex.Start).Children(func() {
-			f.Text(state.identityCountText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).LineHeight(22).Width(120).Shrink(0)
+		f.Row().Height(50).PadSides(8, 0, 0, 0).Gap(4).Items(ui.Start).Children(func() {
+			f.Text(state.identityCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(22).Width(120).Shrink(0)
 			if statusValue != "" {
 				f.Text(statusValue).FontSize(metrics.FontSizeS).Color(statusColor).LineHeight(22).Grow(1)
 			}
@@ -89,12 +89,12 @@ func (state *State) paintKeysWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 
 // paintKeysMenu lists the three ways to add a key under the Add Key button,
 // right-aligned with it.
-func (state *State) paintKeysMenu(canvas *ui.Canvas) {
+func (state *State) paintKeysMenu(canvas *gfx.Canvas) {
 	if !state.keysMenu {
 		return
 	}
 	m := state.messages
-	menu := components.BeginDropdownMenu(canvas, state.Theme(), state.popupBelow(canvas, state.keysAddButton, 220, 3*32+8, flex.End),
+	menu := components.BeginDropdownMenu(canvas, state.Theme(), state.popupBelow(canvas, state.keysAddButton, 220, 3*32+8, ui.End),
 		components.DropdownMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitKeysMenuDismiss, Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitKeysMenuDismiss)})
 	state.menuPlaced(menu.Bounds())
 	menu.AddItem(components.DropdownMenuItem{ID: hitKeysImport, Label: m.KeyImport})

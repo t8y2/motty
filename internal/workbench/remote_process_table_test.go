@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestRemoteProcessTableFillsTheViewportAfterScrolling(t *testing.T) {
@@ -22,11 +22,11 @@ func TestRemoteProcessTableFillsTheViewportAfterScrolling(t *testing.T) {
 	state.remote.rows = rows
 	state.remote.processScroll = 1_000_000
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	state.remote.processScroll = state.remote.processScrollBar.MaxOffsetY
-	canvas = ui.Canvas{}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 
 	last, found := hitByID(&canvas, hitRemoteRowList.At(len(rows)-1))
 	if !found {

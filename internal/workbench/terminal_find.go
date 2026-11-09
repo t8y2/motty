@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
@@ -161,18 +161,18 @@ func (state *State) activeTerminalFind() (*Session, bool) {
 // openTerminalFind opens the search bar of a pane. The bar takes a strip above
 // the grid, as a macOS terminal does, and leaves the shared rail its width, so
 // only the row count changes and only the columns stay put.
-func (state *State) openTerminalFind(session *Session) ui.EventResult {
+func (state *State) openTerminalFind(session *Session) gfx.EventResult {
 	find := &session.term.find
 	find.open = true
 	find.refresh(session.term.screen, state.messages, true)
 	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
-	return ui.EventResult{Handled: true, Repaint: true, Focus: hitTerminalFindField, FocusVisible: true}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTerminalFindField, FocusVisible: true}
 }
 
-func (state *State) closeTerminalFind(session *Session) ui.EventResult {
+func (state *State) closeTerminalFind(session *Session) gfx.EventResult {
 	session.term.find.close()
 	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
-	return ui.EventResult{Handled: true, Repaint: true, Focus: hitTerminalList.At(int(session.ID))}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTerminalList.At(int(session.ID))}
 }
 
 // closePaneFind ends find mode on the session a pane shows. The find bar paints
@@ -190,7 +190,7 @@ func (state *State) closePaneFind(workspaceID layoutcore.WorkspaceID, paneID lay
 	session.term.find.close()
 }
 
-func (state *State) terminalFindEditor(hit ui.ID) *text.Editor {
+func (state *State) terminalFindEditor(hit gfx.ID) *text.Editor {
 	if hit != hitTerminalFindField {
 		return nil
 	}
@@ -237,32 +237,32 @@ func (state *State) terminalFindText(sessionID uint32, event app.TextEvent) app.
 	return app.TextStateOf(&find.editor)
 }
 
-func (state *State) terminalFindKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) terminalFindKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if event.Target.Scope() != terminalFindHits {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	session, ok := state.activeTerminalFind()
 	if !ok || !session.term.find.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	switch event.Key {
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		return state.closeTerminalFind(session), true
-	case ui.KeyEnter:
+	case gfx.KeyEnter:
 		if event.Repeat {
-			return ui.EventResult{Handled: true}, true
+			return gfx.EventResult{Handled: true}, true
 		}
 		delta := 1
-		if event.Modifiers&ui.ModifierShift != 0 {
+		if event.Modifiers&gfx.ModifierShift != 0 {
 			delta = -1
 		}
 		session.term.find.move(session.term.screen, state.messages, delta)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) clickTerminalFind(id ui.ID) bool {
+func (state *State) clickTerminalFind(id gfx.ID) bool {
 	if id.Scope() != terminalFindHits {
 		return false
 	}
@@ -281,13 +281,13 @@ func (state *State) clickTerminalFind(id ui.ID) bool {
 	return true
 }
 
-func (state *State) terminalFindPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Target != hitTerminalFindClose || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+func (state *State) terminalFindPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Target != hitTerminalFindClose || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	session, ok := state.activeTerminalFind()
 	if !ok || !session.term.find.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.closeTerminalFind(session), true
 }

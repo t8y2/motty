@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // The window bar leaves room for what the platform keeps of the strip's two
@@ -12,9 +12,9 @@ import (
 func TestWindowBarStaysClearOfTheWindowButtons(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	const width = 1400
-	state.Paint(&canvas, ui.Size{Width: width, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: width, Height: 900})
 	leading, trailing := app.TitlebarInsets()
 
 	var leftmost, rightmost float32 = width, 0

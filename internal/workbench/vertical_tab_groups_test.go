@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -49,14 +49,14 @@ func TestVerticalTabGroupingIsAnIndependentLocalSetting(t *testing.T) {
 		t.Fatal("grouping must default to off")
 	}
 	state.Click(hitSettings)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 	if _, ok := hitByID(&canvas, hitSettingsVerticalTabsGrouping); ok {
 		t.Fatal("horizontal tabs have nothing to group")
 	}
 	state.Click(hitSettingsTabsVertical)
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 	if _, ok := hitByID(&canvas, hitSettingsVerticalTabsGrouping); !ok {
 		t.Fatal("vertical tabs must expose the grouping switch")
 	}
@@ -76,8 +76,8 @@ func TestVerticalTabGroupingIsAnIndependentLocalSetting(t *testing.T) {
 func TestVerticalTabGroupingCollapsesWithoutChangingTheDeck(t *testing.T) {
 	state := restoredGroupedTabs(t, groupingEntries()...)
 	before := tabOrder(state)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1200, Height: 760}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1200, Height: 760}
 	state.Paint(&canvas, size)
 	view := &state.verticalTabs.grouped
 	if len(view.groups) != 3 || view.groups[0].count != 2 || len(view.rows) != 5 {
@@ -137,22 +137,22 @@ func TestVerticalTabGroupingCollapsesWithoutChangingTheDeck(t *testing.T) {
 func TestVerticalTabGroupingNavigationReorderAndCloseFollowVisualOrder(t *testing.T) {
 	state := restoredGroupedTabs(t, groupingEntries()...)
 	ids := tabOrder(state)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1200, Height: 760}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1200, Height: 760}
 	state.Paint(&canvas, size)
 	header := state.verticalTabs.grouped.groups[0].id()
-	result := state.Key(ui.KeyEvent{Target: hitTabList.At(int(ids[0])), Key: ui.KeyDown})
+	result := state.Key(gfx.KeyEvent{Target: hitTabList.At(int(ids[0])), Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != hitTabList.At(int(ids[2])) {
 		t.Fatal("Down must follow grouped visual order, not raw deck order")
 	}
-	state.Key(ui.KeyEvent{Target: header, Key: ui.KeyLeft})
+	state.Key(gfx.KeyEvent{Target: header, Key: gfx.KeyLeft})
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	result = state.Key(ui.KeyEvent{Target: header, Key: ui.KeyDown})
+	result = state.Key(gfx.KeyEvent{Target: header, Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != hitTabList.At(int(ids[1])) {
 		t.Fatal("Down must skip the children of a collapsed group")
 	}
-	state.Key(ui.KeyEvent{Target: header, Key: ui.KeyRight})
+	state.Key(gfx.KeyEvent{Target: header, Key: gfx.KeyRight})
 	state.activateWorkspace(ids[0])
 	state.cycleWorkspace(1)
 	if state.deck.ActiveWorkspace() != ids[2] {
@@ -163,8 +163,8 @@ func TestVerticalTabGroupingNavigationReorderAndCloseFollowVisualOrder(t *testin
 	first, _ := hitByID(&canvas, hitTabList.At(int(ids[0])))
 	third, _ := hitByID(&canvas, hitTabList.At(int(ids[2])))
 	target := hitTabList.At(int(ids[2]))
-	from := ui.Point{X: third.Bounds.X + third.Bounds.Width/2, Y: third.Bounds.Y + third.Bounds.Height/2}
-	to := ui.Point{X: from.X, Y: first.Bounds.Y + 2}
+	from := gfx.Point{X: third.Bounds.X + third.Bounds.Width/2, Y: third.Bounds.Y + third.Bounds.Height/2}
+	to := gfx.Point{X: from.X, Y: first.Bounds.Y + 2}
 	press(state, target, from)
 	dragTo(state, target, to)
 	if state.tabDrag.drop.kind != dropReorder || state.tabDrag.drop.boundary != 0 {
@@ -185,8 +185,8 @@ func TestVerticalTabGroupingNavigationReorderAndCloseFollowVisualOrder(t *testin
 	first, _ = hitByID(&canvas, hitTabList.At(int(ids[2])))
 	third, _ = hitByID(&canvas, hitTabList.At(int(ids[0])))
 	target = hitTabList.At(int(ids[2]))
-	from = ui.Point{X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2}
-	to = ui.Point{X: from.X, Y: third.Bounds.Y + third.Bounds.Height - 2}
+	from = gfx.Point{X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2}
+	to = gfx.Point{X: from.X, Y: third.Bounds.Y + third.Bounds.Height - 2}
 	press(state, target, from)
 	dragTo(state, target, to)
 	release(state, target, to)
@@ -202,14 +202,14 @@ func TestVerticalTabGroupingNavigationReorderAndCloseFollowVisualOrder(t *testin
 
 func TestDigitShortcutFollowsTheGroupedTabOrder(t *testing.T) {
 	state := restoredGroupedTabs(t, groupingEntries()...)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1200, Height: 760})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 760})
 	state.setTabNumbers(true)
 	visual := state.visualWorkspaceTabs()
 	if len(visual) < 3 {
 		t.Fatalf("%d visual tabs", len(visual))
 	}
-	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "3"})
+	state.Shortcut(gfx.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "3"})
 	if state.deck.ActiveWorkspace() != visual[2].ID {
 		t.Fatal("the digit shortcut must follow the grouped order")
 	}
@@ -251,8 +251,8 @@ func TestVerticalTabGroupingRevealsActivatedConnectionsAfterOverflow(t *testing.
 		entries = append(entries, savedSession{Label: "Server A shell", Address: "a.example.com", User: "admin", Port: 22})
 	}
 	state := restoredGroupedTabs(t, entries...)
-	size := ui.Size{Width: 1000, Height: 560}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1000, Height: 560}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	last := state.deck.ActiveWorkspace()
 	hit, ok := hitByID(&canvas, hitTabList.At(int(last)))
@@ -338,19 +338,19 @@ func TestVerticalTabGroupHeaderKeepsItsIdentityWhenItsFirstConnectionCloses(t *t
 // groups; a connection cannot be dropped into another server's group, which
 // would only snap back.
 func TestVerticalTabGroupingMovesLoneTabsAndWholeGroupsBetweenGroups(t *testing.T) {
-	size := ui.Size{Width: 1200, Height: 760}
-	setup := func() (*State, []layoutcore.WorkspaceID, *ui.Canvas) {
+	size := gfx.Size{Width: 1200, Height: 760}
+	setup := func() (*State, []layoutcore.WorkspaceID, *gfx.Canvas) {
 		state := restoredGroupedTabs(t, groupingEntries()...)
-		canvas := &ui.Canvas{}
+		canvas := &gfx.Canvas{}
 		state.Paint(canvas, size)
 		return state, tabOrder(state), canvas
 	}
-	drag := func(state *State, canvas *ui.Canvas, from ui.ID, to ui.Point) tabDrop {
+	drag := func(state *State, canvas *gfx.Canvas, from gfx.ID, to gfx.Point) tabDrop {
 		hit, ok := hitByID(canvas, from)
 		if !ok {
 			t.Fatalf("no control %v", from)
 		}
-		start := ui.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
+		start := gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
 		press(state, from, start)
 		dragTo(state, from, to)
 		offered := state.tabDrag.drop
@@ -362,7 +362,7 @@ func TestVerticalTabGroupingMovesLoneTabsAndWholeGroupsBetweenGroups(t *testing.
 		state, ids, canvas := setup()
 		header := state.verticalTabs.grouped.groups[0].id()
 		hit, _ := hitByID(canvas, header)
-		drag(state, canvas, hitTabList.At(int(ids[1])), ui.Point{X: hit.Bounds.X + 20, Y: hit.Bounds.Y + 2})
+		drag(state, canvas, hitTabList.At(int(ids[1])), gfx.Point{X: hit.Bounds.X + 20, Y: hit.Bounds.Y + 2})
 		if got, want := tabOrder(state), []layoutcore.WorkspaceID{ids[1], ids[0], ids[2], ids[3]}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("order %v, want %v", got, want)
 		}
@@ -370,7 +370,7 @@ func TestVerticalTabGroupingMovesLoneTabsAndWholeGroupsBetweenGroups(t *testing.
 	t.Run("a lone tab goes after a server group", func(t *testing.T) {
 		state, ids, canvas := setup()
 		last, _ := hitByID(canvas, hitTabList.At(int(ids[2])))
-		drag(state, canvas, hitTabList.At(int(ids[3])), ui.Point{X: last.Bounds.X + 20, Y: last.Bounds.Y + last.Bounds.Height - 2})
+		drag(state, canvas, hitTabList.At(int(ids[3])), gfx.Point{X: last.Bounds.X + 20, Y: last.Bounds.Y + last.Bounds.Height - 2})
 		state.rebuildVerticalTabGroups(false)
 		order := state.verticalTabs.grouped.order
 		if order[0].ID != ids[0] || order[1].ID != ids[2] || order[2].ID != ids[3] || order[3].ID != ids[1] {
@@ -381,7 +381,7 @@ func TestVerticalTabGroupingMovesLoneTabsAndWholeGroupsBetweenGroups(t *testing.
 		state, ids, canvas := setup()
 		header := state.verticalTabs.grouped.groups[0].id()
 		bottom, _ := hitByID(canvas, hitTabList.At(int(ids[3])))
-		drag(state, canvas, header, ui.Point{X: bottom.Bounds.X + 20, Y: bottom.Bounds.Y + bottom.Bounds.Height - 2})
+		drag(state, canvas, header, gfx.Point{X: bottom.Bounds.X + 20, Y: bottom.Bounds.Y + bottom.Bounds.Height - 2})
 		if got, want := tabOrder(state), []layoutcore.WorkspaceID{ids[1], ids[3], ids[0], ids[2]}; !reflect.DeepEqual(got, want) {
 			t.Fatalf("order %v, want %v", got, want)
 		}
@@ -391,14 +391,14 @@ func TestVerticalTabGroupingMovesLoneTabsAndWholeGroupsBetweenGroups(t *testing.
 	})
 	t.Run("a drop that leaves the order as it is changes nothing", func(t *testing.T) {
 		state, ids, canvas := setup()
-		drop := func(from ui.ID, to ui.Point) {
+		drop := func(from gfx.ID, to gfx.Point) {
 			if offered := drag(state, canvas, from, to); offered.kind != dropNone {
 				t.Fatalf("a no-op drop was offered: %+v", offered)
 			}
 		}
 		next, _ := hitByID(canvas, hitTabList.At(int(ids[1])))
-		drop(hitTabList.At(int(ids[3])), ui.Point{X: next.Bounds.X, Y: next.Bounds.Y + next.Bounds.Height - 2}) // just after B
-		drop(hitTabList.At(int(ids[1])), ui.Point{X: next.Bounds.X, Y: next.Bounds.Y + 2})                      // just before B
+		drop(hitTabList.At(int(ids[3])), gfx.Point{X: next.Bounds.X, Y: next.Bounds.Y + next.Bounds.Height - 2}) // just after B
+		drop(hitTabList.At(int(ids[1])), gfx.Point{X: next.Bounds.X, Y: next.Bounds.Y + 2})                      // just before B
 		if got := tabOrder(state); !reflect.DeepEqual(got, ids) {
 			t.Fatalf("order %v", got)
 		}
@@ -406,11 +406,11 @@ func TestVerticalTabGroupingMovesLoneTabsAndWholeGroupsBetweenGroups(t *testing.
 	t.Run("a connection cannot join another server's group", func(t *testing.T) {
 		state, ids, canvas := setup()
 		inside, _ := hitByID(canvas, hitTabList.At(int(ids[2])))
-		if offered := drag(state, canvas, hitTabList.At(int(ids[1])), ui.Point{X: inside.Bounds.X + 20, Y: inside.Bounds.Y + 2}); offered.kind != dropNone {
+		if offered := drag(state, canvas, hitTabList.At(int(ids[1])), gfx.Point{X: inside.Bounds.X + 20, Y: inside.Bounds.Y + 2}); offered.kind != dropNone {
 			t.Fatalf("inside another server's group: %+v", offered)
 		}
 		other, _ := hitByID(canvas, hitTabList.At(int(ids[1])))
-		if offered := drag(state, canvas, hitTabList.At(int(ids[2])), ui.Point{X: other.Bounds.X + 20, Y: other.Bounds.Y + 2}); offered.kind != dropNone {
+		if offered := drag(state, canvas, hitTabList.At(int(ids[2])), gfx.Point{X: other.Bounds.X + 20, Y: other.Bounds.Y + 2}); offered.kind != dropNone {
 			t.Fatalf("a child of a group left it: %+v", offered)
 		}
 	})
@@ -422,54 +422,54 @@ func TestVerticalTabGroupingMovesLoneTabsAndWholeGroupsBetweenGroups(t *testing.
 func TestVerticalTabGroupingKeysWalkTheRowsAsATree(t *testing.T) {
 	state := restoredGroupedTabs(t, groupingEntries()...)
 	ids := tabOrder(state)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1200, Height: 760})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 760})
 	header := state.verticalTabs.grouped.groups[0].id()
-	row := func(i int) ui.ID { return hitTabList.At(int(ids[i])) }
+	row := func(i int) gfx.ID { return hitTabList.At(int(ids[i])) }
 	// Visible rows: header, ids[0], ids[2] (the group), ids[1], ids[3].
-	order := []ui.ID{header, row(0), row(2), row(1), row(3)}
-	press := func(target ui.ID, key ui.Key) ui.EventResult {
+	order := []gfx.ID{header, row(0), row(2), row(1), row(3)}
+	press := func(target gfx.ID, key gfx.Key) gfx.EventResult {
 		t.Helper()
-		return state.Key(ui.KeyEvent{Target: target, Key: key})
+		return state.Key(gfx.KeyEvent{Target: target, Key: key})
 	}
-	if got := press(header, ui.KeyRight); got.Focus != order[1] || !got.Handled {
+	if got := press(header, gfx.KeyRight); got.Focus != order[1] || !got.Handled {
 		t.Errorf("Right on an open header focused %v, want its first connection", got.Focus)
 	}
-	if got := press(order[2], ui.KeyLeft); got.Focus != header || !got.Handled {
+	if got := press(order[2], gfx.KeyLeft); got.Focus != header || !got.Handled {
 		t.Errorf("Left on a connection focused %v, want its group's header", got.Focus)
 	}
-	if got := press(order[1], ui.KeyRight); got.Focus != (ui.ID{}) {
+	if got := press(order[1], gfx.KeyRight); got.Focus != (gfx.ID{}) {
 		t.Errorf("Right on a connection moved the focus to %v, want it to stay", got.Focus)
 	}
-	if got := press(order[3], ui.KeyLeft); got.Focus != (ui.ID{}) {
+	if got := press(order[3], gfx.KeyLeft); got.Focus != (gfx.ID{}) {
 		t.Errorf("Left on a lone connection moved the focus to %v, want it to stay: it has no group", got.Focus)
 	}
 	for i := 0; i+1 < len(order); i++ {
-		if got := press(order[i], ui.KeyDown); got.Focus != order[i+1] {
+		if got := press(order[i], gfx.KeyDown); got.Focus != order[i+1] {
 			t.Errorf("Down from row %d focused %v, want row %d", i, got.Focus, i+1)
 		}
-		if got := press(order[i+1], ui.KeyUp); got.Focus != order[i] {
+		if got := press(order[i+1], gfx.KeyUp); got.Focus != order[i] {
 			t.Errorf("Up from row %d focused %v, want row %d", i+1, got.Focus, i)
 		}
 	}
 	// A tree does not wrap: the arrows stop at its ends.
-	if got := press(header, ui.KeyUp); got.Focus != (ui.ID{}) {
+	if got := press(header, gfx.KeyUp); got.Focus != (gfx.ID{}) {
 		t.Errorf("Up from the first row moved the focus to %v, want it to stay", got.Focus)
 	}
-	if got := press(order[4], ui.KeyDown); got.Focus != (ui.ID{}) {
+	if got := press(order[4], gfx.KeyDown); got.Focus != (gfx.ID{}) {
 		t.Errorf("Down from the last row moved the focus to %v, want it to stay", got.Focus)
 	}
-	if got := press(order[2], ui.KeyHome); got.Focus != header {
+	if got := press(order[2], gfx.KeyHome); got.Focus != header {
 		t.Errorf("Home focused %v, want the first row", got.Focus)
 	}
-	if got := press(order[2], ui.KeyEnd); got.Focus != order[4] {
+	if got := press(order[2], gfx.KeyEnd); got.Focus != order[4] {
 		t.Errorf("End focused %v, want the last row", got.Focus)
 	}
 	// All five rows fit the strip, so a page is the whole list.
-	if got := press(header, ui.KeyPageDown); got.Focus != order[4] {
+	if got := press(header, gfx.KeyPageDown); got.Focus != order[4] {
 		t.Errorf("PageDown focused %v, want the last row of a short list", got.Focus)
 	}
-	if got := press(order[4], ui.KeyPageUp); got.Focus != header {
+	if got := press(order[4], gfx.KeyPageUp); got.Focus != header {
 		t.Errorf("PageUp focused %v, want the first row of a short list", got.Focus)
 	}
 }
@@ -479,11 +479,11 @@ func TestVerticalTabGroupingKeysWalkTheRowsAsATree(t *testing.T) {
 // on a lone connection change nothing.
 func TestVerticalTabGroupingKeysCollapseAndExpandWithoutMovingTheFocus(t *testing.T) {
 	state := restoredGroupedTabs(t, groupingEntries()...)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1200, Height: 760}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1200, Height: 760}
 	state.Paint(&canvas, size)
 	header := state.verticalTabs.grouped.groups[0].id()
-	collapse := state.Key(ui.KeyEvent{Target: header, Key: ui.KeyLeft})
+	collapse := state.Key(gfx.KeyEvent{Target: header, Key: gfx.KeyLeft})
 	if !collapse.Handled || collapse.Focus != header || !collapse.Repaint {
 		t.Fatalf("Left on an open header = %+v, want it handled, repainted and still on the header", collapse)
 	}
@@ -492,10 +492,10 @@ func TestVerticalTabGroupingKeysCollapseAndExpandWithoutMovingTheFocus(t *testin
 	if rows := len(state.verticalTabs.grouped.rows); rows != 3 {
 		t.Fatalf("a collapsed group left %d rows, want its header and the two lone connections", rows)
 	}
-	if again := state.Key(ui.KeyEvent{Target: header, Key: ui.KeyLeft}); again.Repaint || again.Focus != (ui.ID{}) {
+	if again := state.Key(gfx.KeyEvent{Target: header, Key: gfx.KeyLeft}); again.Repaint || again.Focus != (gfx.ID{}) {
 		t.Errorf("Left on a closed header = %+v, want nothing to happen", again)
 	}
-	expand := state.Key(ui.KeyEvent{Target: header, Key: ui.KeyRight})
+	expand := state.Key(gfx.KeyEvent{Target: header, Key: gfx.KeyRight})
 	if !expand.Handled || expand.Focus != header || !expand.Repaint {
 		t.Fatalf("Right on a closed header = %+v, want it opened with the focus kept", expand)
 	}

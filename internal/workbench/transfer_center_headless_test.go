@@ -10,14 +10,14 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 )
 
 func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 600}} {
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 600}} {
 		t.Run(fmt.Sprintf("%dx%d", int(size.Width), int(size.Height)), func(t *testing.T) {
 			state := transferPreviewState(t)
 			if size.Width == 900 {
@@ -31,7 +31,7 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer view.Close()
-			click := func(id ui.ID) {
+			click := func(id gfx.ID) {
 				t.Helper()
 				for _, hit := range view.Snapshot().Hits {
 					if hit.ID == id && !hit.Block {
@@ -61,7 +61,7 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := view.Driver().Key(ui.KeyEnd, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
 				t.Fatal(err)
 			}
 			if state.transfers.scroll != state.transfers.geometry.MaxOffsetY {
@@ -71,7 +71,7 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			if !ok {
 				t.Fatal("completed download has no reveal control")
 			}
-			if reveal.Role != ui.RoleButton || reveal.Label != state.messages.Transfers.ShowInFolder ||
+			if reveal.Role != gfx.RoleButton || reveal.Label != state.messages.Transfers.ShowInFolder ||
 				reveal.Hint != state.messages.Transfers.ShowInFolder || !reveal.Focusable {
 				t.Fatalf("reveal control lacks button semantics: %+v", reveal)
 			}
@@ -84,7 +84,7 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 					t.Fatalf("non-completed-download record %d has a reveal control", id)
 				}
 			}
-			if err := view.Driver().Key(ui.KeyHome, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyHome, 0); err != nil {
 				t.Fatal(err)
 			}
 			if state.transfers.scroll != 0 {
@@ -98,7 +98,7 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			if len(state.transfers.entries) != 3 {
 				t.Fatal("remove click did not remove a history entry")
 			}
-			if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 				t.Fatal(err)
 			}
 			if state.transfers.open {
@@ -149,7 +149,7 @@ func TestTransferCenterNativeRevealUsesVivaWithoutOpeningTheFile(t *testing.T) {
 	if err := view.Wait(100 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	if err := view.Driver().Key(ui.KeyEnd, 0); err != nil {
+	if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
 		t.Fatal(err)
 	}
 	hit, ok := findSnapshotHit(view.Snapshot(), hitTransfersReveal.At(entry.id))
@@ -193,7 +193,7 @@ func TestTransferCenterNativeBulkRecoveryAndHostKeyboard(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer view.Close()
-			click := func(id ui.ID) {
+			click := func(id gfx.ID) {
 				t.Helper()
 				hit, ok := findSnapshotHit(view.Snapshot(), id)
 				if !ok || hit.Block {
@@ -211,17 +211,17 @@ func TestTransferCenterNativeBulkRecoveryAndHostKeyboard(t *testing.T) {
 			if _, ok := findSnapshotHit(view.Snapshot(), bulkHost(2)); !ok {
 				t.Fatal("host dropdown does not distinguish duplicate connection names")
 			}
-			if err := view.Driver().Key(ui.KeyDown, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyDown, 0); err != nil {
 				t.Fatal(err)
 			}
-			if err := view.Driver().Key(ui.KeyEnter, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
 				t.Fatal(err)
 			}
 			if state.transfers.count != 1 {
 				t.Fatal("keyboard host selection did not filter to one host")
 			}
 			click(bulkAction("host"))
-			if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 				t.Fatal(err)
 			}
 			if !state.transfers.open {
@@ -232,7 +232,7 @@ func TestTransferCenterNativeBulkRecoveryAndHostKeyboard(t *testing.T) {
 			if state.transfers.count != 1 {
 				t.Fatalf("host selection shows %d tasks", state.transfers.count)
 			}
-			for _, id := range []ui.ID{hitTransfersFilter.At(3), bulkAction("host"), bulkAction("retry-failed"), bulkAction("replace-visible"), bulkAction("resume-visible"), hitTransfersCancelAll, hitTransfersClear} {
+			for _, id := range []gfx.ID{hitTransfersFilter.At(3), bulkAction("host"), bulkAction("retry-failed"), bulkAction("replace-visible"), bulkAction("resume-visible"), hitTransfersCancelAll, hitTransfersClear} {
 				hit, ok := findSnapshotHit(view.Snapshot(), id)
 				box := state.transfers.surface
 				if !ok || hit.Bounds.X < box.X || hit.Bounds.X+hit.Bounds.Width > box.X+box.Width || hit.Bounds.Y < box.Y || hit.Bounds.Y+hit.Bounds.Height > box.Y+box.Height {
@@ -252,7 +252,7 @@ func TestTransferCenterNativeBulkRecoveryAndHostKeyboard(t *testing.T) {
 			if hit, ok := findSnapshotHit(view.Snapshot(), bulkAction("bulk-description")); !ok || hit.Label == "" || hit.Hint == "" {
 				t.Fatal("captured count/scope is not exposed semantically")
 			}
-			if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 				t.Fatal(err)
 			}
 			if !state.transfers.open {
@@ -280,17 +280,17 @@ func TestTransferCenterNativeBulkRecoveryAndHostKeyboard(t *testing.T) {
 				t.Fatal("Cancel did not restore transfer list")
 			}
 			click(bulkAction("replace-visible"))
-			if err := view.Driver().Key(ui.KeyEnter, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
 				t.Fatal(err)
 			}
 			if contents, _ := os.ReadFile(target); string(contents) != "mine" {
 				t.Fatal("initial confirmation focus must be Cancel")
 			}
 			click(bulkAction("replace-visible"))
-			if err := view.Driver().Key(ui.KeyTab, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyTab, 0); err != nil {
 				t.Fatal(err)
 			}
-			if err := view.Driver().Key(ui.KeyEnter, 0); err != nil {
+			if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
 				t.Fatal(err)
 			}
 			bulkAwait(t, state, first, 1, sftpclient.TransferCompleted)
@@ -322,11 +322,11 @@ func TestTransferCenterHostMenuRevealsSelectedHost(t *testing.T) {
 	}
 }
 
-func findSnapshotHit(snapshot app.Snapshot, id ui.ID) (ui.Hit, bool) {
+func findSnapshotHit(snapshot app.Snapshot, id gfx.ID) (gfx.Hit, bool) {
 	for _, hit := range snapshot.Hits {
 		if hit.ID == id {
 			return hit, true
 		}
 	}
-	return ui.Hit{}, false
+	return gfx.Hit{}, false
 }

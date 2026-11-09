@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 type terminalToolbarPosition uint8
@@ -141,10 +141,10 @@ func (state *State) resetTerminalToolRails() {
 			continue
 		}
 		terminal.railScroll = 0
-		terminal.railViewport = ui.Rect{}
-		terminal.railBounds = ui.Rect{}
+		terminal.railViewport = gfx.Rect{}
+		terminal.railBounds = gfx.Rect{}
 		terminal.railContentExtent = 0
-		terminal.railIDs = [maxBarTools]ui.ID{}
+		terminal.railIDs = [maxBarTools]gfx.ID{}
 		terminal.railEnabled = [maxBarTools]bool{}
 		terminal.railCount = 0
 	}

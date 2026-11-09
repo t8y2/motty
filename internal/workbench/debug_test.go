@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // The Debug entry is a sidebar page like the host list. Its page is the
@@ -31,7 +31,7 @@ func TestDebugPageShowsTheCodeEditor(t *testing.T) {
 		t.Fatalf("the page heading is not painted: %v", texts)
 	}
 	editor, hasEditor := hitByID(canvas, hitDebugEditor)
-	if !hasEditor || editor.Role != ui.RoleTextField || !editor.Multiline {
+	if !hasEditor || editor.Role != gfx.RoleTextField || !editor.Multiline {
 		t.Fatalf("the code editor = %+v, found=%v", editor, hasEditor)
 	}
 	if !strings.Contains(editor.Value, "func main()") {
@@ -89,8 +89,8 @@ func TestDebugEditorIsClaimedOnlyOnItsOwnPage(t *testing.T) {
 func TestDebugPagePaintDoesNotAllocateOnceWarm(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitDebug)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testing.AllocsPerRun(50, func() {
 		canvas.Reset()
@@ -106,17 +106,17 @@ func TestDebugPagePaintDoesNotAllocateOnceWarm(t *testing.T) {
 func TestDebugCaretBlinksAndThenRests(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitDebug)
-	paintDebug := func(canvas *ui.Canvas, now time.Duration) bool {
+	paintDebug := func(canvas *gfx.Canvas, now time.Duration) bool {
 		canvas.SetClock(func() time.Duration { return now })
-		canvas.SetInteraction(ui.ID{}, ui.ID{}, hitDebugEditor, false)
+		canvas.SetInteraction(gfx.ID{}, gfx.ID{}, hitDebugEditor, false)
 		canvas.Reset()
 		canvas.BeginFrame()
-		state.Paint(canvas, ui.Size{Width: 1400, Height: 900})
+		state.Paint(canvas, gfx.Size{Width: 1400, Height: 900})
 		canvas.EndFrame()
 		return caretPainted(canvas, state)
 	}
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	if !paintDebug(&canvas, 0) {
 		t.Fatal("the caret is dark on the first focused frame")
 	}
@@ -141,7 +141,7 @@ func TestDebugCaretBlinksAndThenRests(t *testing.T) {
 
 // caretPainted reports whether one of this frame's rectangles is the caret: a
 // fill in the theme's cursor color, as thick as the editor draws it.
-func caretPainted(canvas *ui.Canvas, state *State) bool {
+func caretPainted(canvas *gfx.Canvas, state *State) bool {
 	caret, shown := state.dev.code.CaretBounds()
 	if !shown {
 		return false
@@ -169,13 +169,13 @@ func countText(texts []string, value string) int {
 // it off, to the hovered control, to every control, and off again.
 func TestDevInspectorNamesTheHoveredControl(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	cycle := ui.KeyEvent{Modifiers: devInspectorChord.Modifiers, Text: string(rune(devInspectorChord.Char))}
+	cycle := gfx.KeyEvent{Modifiers: devInspectorChord.Modifiers, Text: string(rune(devInspectorChord.Char))}
 	if result := state.Shortcut(cycle); !result.Handled {
 		t.Fatalf("the inspector chord was not taken: %+v", result)
 	}
-	var canvas ui.Canvas
-	canvas.SetInteraction(hitDebug, ui.ID{}, ui.ID{}, false)
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	canvas.SetInteraction(hitDebug, gfx.ID{}, gfx.ID{}, false)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	entry, found := hitByID(&canvas, hitDebug)
 	if !found {
 		t.Fatal("the Debug entry is not on the page")
@@ -191,8 +191,8 @@ func TestDevInspectorNamesTheHoveredControl(t *testing.T) {
 	state.Shortcut(cycle)
 	state.Shortcut(cycle)
 	canvas.Reset()
-	canvas.SetInteraction(hitDebug, ui.ID{}, ui.ID{}, false)
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	canvas.SetInteraction(hitDebug, gfx.ID{}, gfx.ID{}, false)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, text := range canvas.Texts() {
 		if strings.Contains(text.Value, described) {
 			t.Fatalf("the inspector is still on: %q", text.Value)

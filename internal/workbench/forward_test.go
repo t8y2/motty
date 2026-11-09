@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/portforward"
 	"motty/internal/sshconn"
 )
@@ -409,7 +409,7 @@ func TestForwardDialogModesShowDestinationsAndSupportKeyboard(t *testing.T) {
 	if !hasHit(canvas, hitForwardModeLocal) || !hasHit(canvas, hitForwardModeRemote) || !hasHit(canvas, hitForwardModeSOCKS5) || !hasHit(canvas, hitForwardModeHTTPConnect) || !hasHit(canvas, hitForwardDialogDestination) {
 		t.Fatalf("local forward dialog hits = %+v", canvas.Hits())
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: hitForwardModeLocal})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: hitForwardModeLocal})
 	if !result.Handled || result.Focus != hitForwardModeRemote || state.forwardEditor.mode != portforward.ModeRemote {
 		t.Fatalf("remote keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
 	}
@@ -417,7 +417,7 @@ func TestForwardDialogModesShowDestinationsAndSupportKeyboard(t *testing.T) {
 	if !hasHit(canvas, hitForwardDialogDestination) || !hasHit(canvas, hitForwardDialogDestinationPort) || !contains(texts, state.messages.ForwardFieldRemotePort) {
 		t.Fatalf("remote dialog texts=%v hits=%+v", texts, canvas.Hits())
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: hitForwardModeRemote})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: hitForwardModeRemote})
 	if !result.Handled || result.Focus != hitForwardModeSOCKS5 || state.forwardEditor.mode != portforward.ModeSOCKS5 {
 		t.Fatalf("SOCKS5 keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
 	}
@@ -425,7 +425,7 @@ func TestForwardDialogModesShowDestinationsAndSupportKeyboard(t *testing.T) {
 	if hasHit(canvas, hitForwardDialogDestination) || hasHit(canvas, hitForwardDialogDestinationPort) || !contains(texts, state.messages.ForwardSOCKS5Hint) {
 		t.Fatalf("SOCKS5 dialog texts=%v hits=%+v", texts, canvas.Hits())
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: hitForwardModeSOCKS5})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: hitForwardModeSOCKS5})
 	if !result.Handled || result.Focus != hitForwardModeHTTPConnect || state.forwardEditor.mode != portforward.ModeHTTPConnect {
 		t.Fatalf("HTTP CONNECT keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
 	}
@@ -438,15 +438,15 @@ func TestForwardDialogModesShowDestinationsAndSupportKeyboard(t *testing.T) {
 	if got := state.forwardEditor.validate(state); got != "" {
 		t.Fatalf("HTTP CONNECT validation = %q", got)
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyLeft, Target: hitForwardModeHTTPConnect})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyLeft, Target: hitForwardModeHTTPConnect})
 	if !result.Handled || result.Focus != hitForwardModeSOCKS5 || state.forwardEditor.mode != portforward.ModeSOCKS5 {
 		t.Fatalf("SOCKS5 keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyLeft, Target: hitForwardModeSOCKS5})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyLeft, Target: hitForwardModeSOCKS5})
 	if !result.Handled || result.Focus != hitForwardModeRemote || state.forwardEditor.mode != portforward.ModeRemote {
 		t.Fatalf("remote keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyLeft, Target: hitForwardModeRemote})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyLeft, Target: hitForwardModeRemote})
 	if !result.Handled || result.Focus != hitForwardModeLocal || state.forwardEditor.mode != portforward.ModeLocal {
 		t.Fatalf("local keyboard result=%+v mode=%d", result, state.forwardEditor.mode)
 	}
@@ -847,8 +847,8 @@ func TestForwardHostSelectFiltersByAddressAndChoosesStableHostID(t *testing.T) {
 func TestForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addForwardRule(t, state, "Web", freePort(t), "web.internal", 8080)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -862,8 +862,8 @@ func TestForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 func TestSOCKS5ForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addSOCKS5ForwardRule(t, state, "Browser Proxy", freePort(t))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -877,8 +877,8 @@ func TestSOCKS5ForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 func TestHTTPConnectForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addHTTPConnectForwardRule(t, state, "HTTP Proxy", freePort(t))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -892,8 +892,8 @@ func TestHTTPConnectForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 func TestRemoteForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addRemoteForwardRule(t, state, "Remote", freePort(t), "127.0.0.1", 8080)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -907,8 +907,8 @@ func TestRemoteForwardsSteadyStatePaintDoesNotAllocate(t *testing.T) {
 func BenchmarkPaintForwardsPage(b *testing.B) {
 	state := newTestState(b, testOptions(b))
 	addForwardRule(b, state, "Web", freePort(b), "web.internal", 8080)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -934,7 +934,7 @@ func addForwardRule(t testing.TB, state *State, label string, localPort uint16, 
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
 	replaceForwardField(state, hitForwardDialogDestination, destination)
 	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
 		t.Fatal("Enter did not submit the forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -948,7 +948,7 @@ func addSOCKS5ForwardRule(t testing.TB, state *State, label string, localPort ui
 	state.Click(hitForwardModeSOCKS5)
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
 		t.Fatal("Enter did not submit the SOCKS5 forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -964,7 +964,7 @@ func addRemoteForwardRule(t testing.TB, state *State, label string, remotePort u
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(remotePort))
 	replaceForwardField(state, hitForwardDialogDestination, destination)
 	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
 		t.Fatal("Enter did not submit the remote forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -1002,7 +1002,7 @@ func addHTTPConnectForwardRule(t testing.TB, state *State, label string, localPo
 	state.Click(hitForwardModeHTTPConnect)
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
 		t.Fatal("Enter did not submit the HTTP CONNECT forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -1228,7 +1228,7 @@ func readForwardHTTPConnectResponse(t testing.TB, reader *bufio.Reader, wantStat
 	}
 }
 
-func replaceForwardField(state *State, hit ui.ID, value string) {
+func replaceForwardField(state *State, hit gfx.ID, value string) {
 	editor := state.EditorFor(hit)
 	editor.SetSelection(text.Range{Start: 0, End: editor.RuneCount()})
 	editor.Insert(value)
@@ -1247,7 +1247,7 @@ func freePort(t testing.TB) uint16 {
 	return port
 }
 
-func hasHit(canvas *ui.Canvas, id ui.ID) bool {
+func hasHit(canvas *gfx.Canvas, id gfx.ID) bool {
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id {
 			return true
@@ -1274,10 +1274,10 @@ func TestForwardHostSelectTakesTheArrowKeys(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
 	state.Click(hitForwardDialogHost)
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitForwardDialogHost}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitForwardDialogHost}); !result.Handled {
 		t.Fatalf("Down was not taken: %+v", result)
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogHost})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogHost})
 	if !result.Handled || state.forwardEditor.hostID != state.hosts[1].ID || state.forwardEditor.hostSelect.Open {
 		t.Fatalf("Enter = %+v host=%d open=%v, want the second host closed", result, state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open)
 	}
@@ -1300,7 +1300,7 @@ func TestForwardHostSelectFiltersWhileTyping(t *testing.T) {
 	if len(choices) != 1 || choices[0].Label != "Staging" {
 		t.Fatalf("filter = %+v, want only Staging", choices)
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitForwardDialogHost})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogHost})
 	if !result.Handled || state.forwardEditor.hostSelect.Open || state.forwardEditor.hostID != staging {
 		t.Fatalf("Enter = %+v host=%d open=%v, want Staging closed", result, state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open)
 	}
@@ -1315,8 +1315,8 @@ func TestTabClosesAnOpenSelectBeforeTraversal(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
 	state.Click(hitForwardDialogHost)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
-	result := state.Key(ui.KeyEvent{Key: ui.KeyTab, Target: hitForwardDialogHost})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Target: hitForwardDialogHost})
 	if !result.ContinueTraversal || !result.Handled || state.forwardEditor.hostSelect.Open {
 		t.Fatalf("Tab = %+v open=%v, want close then traversal", result, state.forwardEditor.hostSelect.Open)
 	}

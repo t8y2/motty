@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 )
@@ -120,8 +120,8 @@ func TestTransferCenterRevealsOnlyCompletedDownloads(t *testing.T) {
 	}
 	reveal := hitTransfersReveal.At(completed.id)
 	state.Click(reveal)
-	state.Key(ui.KeyEvent{Target: reveal, Key: ui.KeyEnter})
-	state.Key(ui.KeyEvent{Target: reveal, Key: ui.KeySpace})
+	state.Key(gfx.KeyEvent{Target: reveal, Key: gfx.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: reveal, Key: gfx.KeySpace})
 	for range 20 {
 		state.Click(reveal)
 	}
@@ -396,8 +396,8 @@ func TestTransferCenterFollowsAMovedTabWithoutCancelingOrDuplicatingTasks(t *tes
 
 func TestTransferCenterSteadyPaintDoesNotAllocate(t *testing.T) {
 	state := transferPreviewState(t)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	for range 3 {
 		canvas.Reset()
 		state.Paint(&canvas, size)
@@ -409,8 +409,8 @@ func TestTransferCenterSteadyPaintDoesNotAllocate(t *testing.T) {
 
 func BenchmarkPaintTransferCenter(b *testing.B) {
 	state := transferPreviewState(b)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	for range 3 {
 		canvas.Reset()
 		state.Paint(&canvas, size)

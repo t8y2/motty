@@ -2,8 +2,8 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,8 +22,8 @@ func TestNotesSidebarExpandAllIsIndependentAndDisabledDuringSearch(t *testing.T)
 		}
 	}
 	n.query.Insert("needle")
-	var c ui.Canvas
-	s.paintNoteSidebarTree(&c, ui.Rect{Width: 400, Height: 400})
+	var c gfx.Canvas
+	s.paintNoteSidebarTree(&c, gfx.Rect{Width: 400, Height: 400})
 	if hit, ok := hitByID(&c, hitNoteSideExpand); !ok || !hit.Disabled {
 		t.Fatal("expand button must be disabled during search")
 	}
@@ -53,8 +53,8 @@ func TestNotesSidebarReadOnlyFilteringAndSharedDraft(t *testing.T) {
 	s.Click(hitNotesPanel)
 	v := s.noteSidebarState()
 	n := &v.content
-	var c ui.Canvas
-	paint := func() { c.Reset(); s.Paint(&c, ui.Size{Width: 1200, Height: 800}) }
+	var c gfx.Canvas
+	paint := func() { c.Reset(); s.Paint(&c, gfx.Size{Width: 1200, Height: 800}) }
 	paint()
 	if n.selected != "" {
 		t.Fatal("first open selected a note")
@@ -92,7 +92,7 @@ func TestNotesSidebarReadOnlyFilteringAndSharedDraft(t *testing.T) {
 	if !strings.HasSuffix(n.body.String(), " live") {
 		t.Fatal("preview did not follow draft")
 	}
-	for _, id := range []ui.ID{hitNoteAdd, hitNotePin, hitNoteDelete, hitNoteTreeMore} {
+	for _, id := range []gfx.ID{hitNoteAdd, hitNotePin, hitNoteDelete, hitNoteTreeMore} {
 		s.Click(id)
 	}
 	if len(s.notes.list) != 3 || s.notes.selected != "other" || s.notes.view.menu != "" {
@@ -127,8 +127,8 @@ func TestNotesSidebarResizeScrollAndSelectionAreIndependent(t *testing.T) {
 	s.activeSection = sectionTerminal
 	s.Click(hitNotesPanel)
 	s.Click(hitNoteSideLinked)
-	var c ui.Canvas
-	paint := func() { c.Reset(); s.Paint(&c, ui.Size{Width: 1200, Height: 800}) }
+	var c gfx.Canvas
+	paint := func() { c.Reset(); s.Paint(&c, gfx.Size{Width: 1200, Height: 800}) }
 	paint()
 	s.Click(hitNoteRows.At(s.notes.view.noteTokens[key]))
 	paint()
@@ -137,21 +137,21 @@ func TestNotesSidebarResizeScrollAndSelectionAreIndependent(t *testing.T) {
 	if v.bounds.Width != 400 {
 		t.Fatalf("default width %v", v.bounds.Width)
 	}
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitNoteSideWidth, X: v.bounds.X, Y: v.bounds.Y + 60})
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerMove, X: v.bounds.X - 100, Y: v.bounds.Y + 60})
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerUp, X: v.bounds.X - 100, Y: v.bounds.Y + 60})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitNoteSideWidth, X: v.bounds.X, Y: v.bounds.Y + 60})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: v.bounds.X - 100, Y: v.bounds.Y + 60})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerUp, X: v.bounds.X - 100, Y: v.bounds.Y + 60})
 	paint()
 	if v.bounds.Width < 499 || v.bounds.Width > 501 {
 		t.Fatalf("resize %v", v.bounds.Width)
 	}
 	y := v.bounds.Y + 200
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitNoteSideSplit, X: v.bounds.X + 20, Y: y})
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerUp, X: v.bounds.X + 20, Y: y})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitNoteSideSplit, X: v.bounds.X + 20, Y: y})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerUp, X: v.bounds.X + 20, Y: y})
 	paint()
 	if n.listBounds.Y+n.listBounds.Height > y+2 || n.previewBounds.Y < y {
 		t.Fatal("split geometry mismatch")
 	}
-	s.notesScroll(ui.ScrollEvent{X: n.previewBounds.X + 20, Y: n.previewBounds.Y + 20, DeltaY: 100})
+	s.notesScroll(gfx.ScrollEvent{X: n.previewBounds.X + 20, Y: n.previewBounds.Y + 20, DeltaY: 100})
 	if n.previewScroll <= 0 || n.view.treeScroll != 0 || s.notes.previewScroll != 0 {
 		t.Fatal("scroll state leaked")
 	}
@@ -179,8 +179,8 @@ func TestNotesSidebarImageResultCannotOverwriteAnotherPreview(t *testing.T) {
 	s.Click(hitNotesPanel)
 	s.noteTokens()
 	s.Click(hitNoteRows.At(s.notes.view.noteTokens["image"]))
-	var canvas ui.Canvas
-	s.Paint(&canvas, ui.Size{Width: 1200, Height: 800})
+	var canvas gfx.Canvas
+	s.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
 	if _, ok := hitByID(&canvas, hitNoteLoadImages); !ok {
 		t.Fatal("image action missing")
 	}

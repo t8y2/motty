@@ -5,13 +5,13 @@ import (
 	"strconv"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // paintRemoteProcessTable paints the independent tools window. The snapshot
 // stays complete in memory; only the rows intersecting the viewport become
 // text runs and hit regions.
-func (state *State) paintRemoteProcessTable(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintRemoteProcessTable(canvas *gfx.Canvas, bounds gfx.Rect) {
 	view, theme := &state.remote, state.Theme()
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
@@ -21,8 +21,8 @@ func (state *State) paintRemoteProcessTable(canvas *ui.Canvas, bounds ui.Rect) {
 	canvas.RoundedBorder(bounds, radius.control, 1, pal.line, pal.workspace)
 
 	headerHeight, rowHeight := state.remoteProcessTableMetrics()
-	headerBounds := ui.Rect{X: bounds.X + 1, Y: bounds.Y + 1, Width: max(bounds.Width-2, 0), Height: headerHeight}
-	bodyBounds := ui.Rect{
+	headerBounds := gfx.Rect{X: bounds.X + 1, Y: bounds.Y + 1, Width: max(bounds.Width-2, 0), Height: headerHeight}
+	bodyBounds := gfx.Rect{
 		X: bounds.X + 1, Y: headerBounds.Bottom(),
 		Width: max(bounds.Width-2, 0), Height: max(bounds.Height-headerHeight-1, 0),
 	}
@@ -56,7 +56,7 @@ func (state *State) paintRemoteProcessTable(canvas *ui.Canvas, bounds ui.Rect) {
 		view.processScrollFirst, view.processScrollCount = firstVisible, len(view.rows)
 		view.processScrollValue = strconv.Itoa(firstVisible) + "/" + strconv.Itoa(len(view.rows))
 	}
-	area := components.BeginScrollArea(canvas, theme, bodyBounds, ui.Size{Width: bodyBounds.Width, Height: contentHeight}).
+	area := components.BeginScrollArea(canvas, theme, bodyBounds, gfx.Size{Width: bodyBounds.Width, Height: contentHeight}).
 		Offset(0, view.processScroll).
 		Viewport(hitRemoteProcessTable, state.messages.Tools.RemoteTabProcesses).
 		VerticalScrollbar(hitRemoteProcessScroll, state.messages.Tools.RemoteTabProcesses,
@@ -76,7 +76,7 @@ func (state *State) paintRemoteProcessTable(canvas *ui.Canvas, bounds ui.Rect) {
 				message = state.messages.Tools.RemoteTabProcesses
 			}
 		}
-		canvas.LabelCenter(message, geometry.Viewport, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
+		canvas.LabelCenter(message, geometry.Viewport, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
 		area.EndContent()
 		return
 	}
@@ -86,7 +86,7 @@ func (state *State) paintRemoteProcessTable(canvas *ui.Canvas, bounds ui.Rect) {
 	visible := int(math.Ceil(float64(geometry.Viewport.Height/rowHeight))) + 1
 	last := min(first+visible, len(view.rows))
 	rowRemainder := float32(math.Mod(float64(geometry.OffsetY), float64(rowHeight)))
-	tableBounds := ui.Rect{
+	tableBounds := gfx.Rect{
 		X: geometry.Viewport.X, Y: geometry.Viewport.Y - rowRemainder,
 		Width:  geometry.Viewport.Width,
 		Height: min(geometry.Viewport.Height+rowHeight, float32(last-first)*rowHeight),
@@ -108,24 +108,24 @@ func (state *State) remoteProcessTableMetrics() (headerHeight, rowHeight float32
 
 // remoteProcessScrollPointer drags the shared virtual process table's
 // scrollbar with stable pointer capture and thumb geometry.
-func (state *State) remoteProcessScrollPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) remoteProcessScrollPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if result, handled := state.remoteProcessEnvironmentScrollPointer(event); handled {
 		return result, true
 	}
 	view := &state.remote
 	if !state.remoteToolsVisible() || view.processDetails.open || view.containerDetails.open || view.processMenu.open || view.auto.open ||
 		(!view.processScrollDragging &&
-			!(event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary &&
+			!(event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary &&
 				event.Target == hitRemoteProcessScroll)) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Kind == ui.PointerDown && event.Button != ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+	if event.Kind == gfx.PointerDown && event.Button != gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	geometry := view.processScrollBar
 	before := view.processScroll
 	switch event.Kind {
-	case ui.PointerDown:
+	case gfx.PointerDown:
 		view.processScrollDragging = true
 		view.processScrollGrab = geometry.VerticalThumb.Height / 2
 		if event.Y >= geometry.VerticalThumb.Y &&
@@ -134,37 +134,37 @@ func (state *State) remoteProcessScrollPointer(event ui.PointerEvent) (ui.EventR
 		} else {
 			view.processScroll = geometry.VerticalOffsetForThumb(event.Y - view.processScrollGrab)
 		}
-	case ui.PointerMove:
+	case gfx.PointerMove:
 		if !event.Captured {
-			return ui.EventResult{}, true
+			return gfx.EventResult{}, true
 		}
 		view.processScroll = geometry.VerticalOffsetForThumb(event.Y - view.processScrollGrab)
-	case ui.PointerUp:
+	case gfx.PointerUp:
 		view.processScrollDragging = false
-		return ui.EventResult{Handled: true, Repaint: before != view.processScroll}, true
-	case ui.PointerExit:
+		return gfx.EventResult{Handled: true, Repaint: before != view.processScroll}, true
+	case gfx.PointerExit:
 		if !event.Captured {
 			view.processScrollDragging = false
 		}
-		return ui.EventResult{Handled: true, Repaint: before != view.processScroll}, true
+		return gfx.EventResult{Handled: true, Repaint: before != view.processScroll}, true
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	return ui.EventResult{Handled: true, Repaint: before != view.processScroll}, true
+	return gfx.EventResult{Handled: true, Repaint: before != view.processScroll}, true
 }
 
 // remoteProcessWheel scrolls the complete snapshot while the renderer keeps
 // touching only the rows intersecting the viewport.
-func (state *State) remoteProcessWheel(event ui.ScrollEvent) (ui.EventResult, bool) {
+func (state *State) remoteProcessWheel(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	view := &state.remote
 	if !state.remoteToolsVisible() {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if view.containerDetails.open {
 		if result, handled := state.remoteContainerDetailsWheel(event); handled {
 			return result, true
 		}
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	if view.processDetails.open {
 		if result, handled := state.remoteProcessEnvironmentWheel(event); handled {
@@ -172,55 +172,55 @@ func (state *State) remoteProcessWheel(event ui.ScrollEvent) (ui.EventResult, bo
 		}
 		// The details dialog owns the wheel over its backdrop, including when
 		// its selectable document fits and has no range.
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	if view.processMenu.open || view.auto.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if len(view.rows) == 0 ||
 		(view.processTableBounds.Width <= 0 && view.processScrollBar.Bounds.Width <= 0) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	inside := pointInRect(event.X, event.Y, view.processTableBounds) ||
 		pointInRect(event.X, event.Y, view.processScrollBar.Bounds) ||
 		event.Target == hitRemoteProcessTable || event.Target == hitRemoteProcessScroll ||
 		event.Target.Scope() == hitRemoteRowList
 	if !inside {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	_, rowHeight := state.remoteProcessTableMetrics()
 	step := rowHeight
 	before := view.processScroll
 	view.processScroll = min(max(view.processScroll+event.StepY(step), 0), view.processScrollBar.MaxOffsetY)
-	return ui.EventResult{Handled: true, Repaint: before != view.processScroll}, true
+	return gfx.EventResult{Handled: true, Repaint: before != view.processScroll}, true
 }
 
 // remoteProcessTableKey provides roving selection over the filtered and sorted
 // snapshot. The selected row is kept inside the virtual viewport.
-func (state *State) remoteProcessTableKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) remoteProcessTableKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	view := &state.remote
 	if !state.remoteToolsVisible() || view.tab != remoteProcesses || event.Release {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	targeted := event.Target == hitRemoteProcessTable ||
 		event.Target == hitRemoteProcessScroll ||
 		event.Target.Scope() == hitRemoteRowList
 	if !targeted {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEnter && !event.Repeat {
+	if event.Key == gfx.KeyEnter && !event.Repeat {
 		if process, ok := state.selectedProcess(); ok {
 			state.openRemoteProcessDetails(process)
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	if len(view.rows) == 0 {
 		switch event.Key {
-		case ui.KeyUp, ui.KeyDown, ui.KeyPageUp, ui.KeyPageDown, ui.KeyHome, ui.KeyEnd:
-			return ui.EventResult{Handled: true}, true
+		case gfx.KeyUp, gfx.KeyDown, gfx.KeyPageUp, gfx.KeyPageDown, gfx.KeyHome, gfx.KeyEnd:
+			return gfx.EventResult{Handled: true}, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 
 	current := -1
@@ -234,28 +234,28 @@ func (state *State) remoteProcessTableKey(event ui.KeyEvent) (ui.EventResult, bo
 	pageRows := max(int(view.processScrollBar.Viewport.Height/rowHeight), 1)
 	next := current
 	switch event.Key {
-	case ui.KeyUp:
+	case gfx.KeyUp:
 		if current < 0 {
 			next = 0
 		} else {
 			next = max(current-1, 0)
 		}
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		if current < 0 {
 			next = 0
 		} else {
 			next = min(current+1, len(view.rows)-1)
 		}
-	case ui.KeyPageUp:
+	case gfx.KeyPageUp:
 		next = max(current-pageRows, 0)
-	case ui.KeyPageDown:
+	case gfx.KeyPageDown:
 		next = min(max(current, 0)+pageRows, len(view.rows)-1)
-	case ui.KeyHome:
+	case gfx.KeyHome:
 		next = 0
-	case ui.KeyEnd:
+	case gfx.KeyEnd:
 		next = len(view.rows) - 1
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	view.selected = view.rows[next].key
 	top := float32(next) * rowHeight
@@ -266,7 +266,7 @@ func (state *State) remoteProcessTableKey(event ui.KeyEvent) (ui.EventResult, bo
 	} else if bottom > view.processScroll+viewportHeight {
 		view.processScroll = min(bottom-viewportHeight, view.processScrollBar.MaxOffsetY)
 	}
-	return ui.EventResult{
+	return gfx.EventResult{
 		Handled: true, Repaint: true,
 		Focus: hitRemoteRowList.At(next), FocusVisible: true,
 	}, true

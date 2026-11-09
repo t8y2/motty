@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -20,7 +20,7 @@ const (
 	commandPaletteBarWidth = 6
 )
 
-func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintCommandPalette(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if state.commandPalette.connect {
 		state.adoptWSLDistros()
 	}
@@ -28,7 +28,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitCommandPaletteDismiss, CloseID: hitCommandPaletteClose, InitialFocusID: hitCommandPaletteSearch,
-		ContentSize: ui.Size{Width: 620, Height: state.commandPaletteHeight()},
+		ContentSize: gfx.Size{Width: 620, Height: state.commandPaletteHeight()},
 	})
 	title, placeholder, empty := state.messages.CommandPaletteTitle, state.messages.CommandPalettePlaceholder, state.messages.CommandPaletteEmpty
 	switch {
@@ -52,8 +52,8 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 	palette := &state.commandPalette
 	count := len(palette.visible)
 
-	var search, list flex.Box
-	var sendInput, sendButton, sendTargets, sendRun flex.Box
+	var search, list ui.Box
+	var sendInput, sendButton, sendTargets, sendRun ui.Box
 	sending := palette.snippets
 	f := state.paletteLayout.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() {
@@ -72,7 +72,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 			sendInput = f.Slot().Height(36).Grow(1)
 			sendButton = f.Slot().Size(84, 36).Shrink(0)
 		})
-		f.Row().Height(32).FillWidth().Shrink(0).Gap(12).Items(flex.Center).MarginSides(8, 0, 0, 0).Children(func() {
+		f.Row().Height(32).FillWidth().Shrink(0).Gap(12).Items(ui.Center).MarginSides(8, 0, 0, 0).Children(func() {
 			sendTargets = f.Slot().Size(270, 32).Shrink(0)
 			if state.snippetSend.target == sendChosen {
 				f.Text(fmt.Sprintf(state.messages.Tools.SendChosenFmt, len(state.snippetSend.chosen))).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Shrink(0)
@@ -82,10 +82,10 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		})
 	})
 	f.End()
-	palette.listRect = ui.Rect{}
+	palette.listRect = gfx.Rect{}
 	if count > 0 {
 		palette.listRect = list.Rect()
-		area := components.BeginScrollArea(canvas, state.Theme(), palette.listRect, ui.Size{Width: palette.listRect.Width, Height: palette.contentHeight()}).Offset(0, palette.scroll).HoverScrollbars(false)
+		area := components.BeginScrollArea(canvas, state.Theme(), palette.listRect, gfx.Size{Width: palette.listRect.Width, Height: palette.contentHeight()}).Offset(0, palette.scroll).HoverScrollbars(false)
 		geometry := area.BeginContent()
 		palette.scroll = geometry.OffsetY
 		// Lay out only the visible window, including the partially exposed last row.
@@ -103,11 +103,11 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 					continue
 				}
 				if entry.header {
-					f.Row().Height(30).PadX(10).Gap(6).Items(flex.Center).Shrink(0).
+					f.Row().Height(30).PadX(10).Gap(6).Items(ui.Center).Shrink(0).
 						HitOutset(2, 0, 2, 0).
-						HitWith(hitCommandPaletteHeaders.At(visible), entry.label, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true}).
+						HitWith(hitCommandPaletteHeaders.At(visible), entry.label, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true}).
 						Children(func() {
-							f.Text(entry.label).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(state.pal.faint).LineHeight(20).Ellipsis().Shrink(1)
+							f.Text(entry.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(state.pal.faint).LineHeight(20).Ellipsis().Shrink(1)
 							if entry.detail != "" {
 								f.Text(entry.detail).FontSize(metrics.FontSizeS).Color(state.pal.faint).LineHeight(20).Shrink(0)
 							}
@@ -120,7 +120,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 				if selected {
 					color, detailColor = state.pal.onAccent, state.pal.onAccent
 				}
-				row := f.Row().Height(30).PadX(10).Gap(12).Items(flex.Center).Shrink(0)
+				row := f.Row().Height(30).PadX(10).Gap(12).Items(ui.Center).Shrink(0)
 				if selected {
 					row.Background(state.pal.accent).Radius(radius.item)
 				}
@@ -128,7 +128,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 				// never takes the pointer off the list and flashes the first row.
 				// Rows are not tab stops: the pointer and the arrows are the one
 				// way the selection moves, so Tab keeps its normal traversal.
-				row.HitOutset(2, 0, 2, 0).HitWith(id, entry.label, ui.HitOptions{Role: ui.RoleButton, SkipTab: true, Hint: entry.recencyHint, Selected: entry.checked}).Children(func() {
+				row.HitOutset(2, 0, 2, 0).HitWith(id, entry.label, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, Hint: entry.recencyHint, Selected: entry.checked}).Children(func() {
 					if entry.checkable {
 						// The tick keeps its place when unticked, so the names line up.
 						tick := f.Stack().Size(14, 14).Shrink(0)
@@ -137,10 +137,10 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 						}
 					}
 					if entry.recency == "" {
-						f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(color).Ellipsis().Grow(1)
+						f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(color).Ellipsis().Grow(1)
 					} else {
-						f.Row().Grow(1).Shrink(1).Gap(8).Items(flex.Center).Children(func() {
-							f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(color).Ellipsis().Shrink(1)
+						f.Row().Grow(1).Shrink(1).Gap(8).Items(ui.Center).Children(func() {
+							f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(color).Ellipsis().Shrink(1)
 							f.Text(entry.recency).FontSize(metrics.FontSizeS).Color(withAlpha(color, 0.65)).Shrink(0)
 						})
 					}
@@ -155,13 +155,13 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 						if expanded {
 							glyph = iconChevronDown
 						}
-						var arrowWash ui.Color
+						var arrowWash gfx.Color
 						if canvas.Hovered() == hitConnectPickShellPicker {
 							arrowWash = state.pal.line
 						}
-						f.Stack().Size(24, 24).Shrink(0).HitWith(hitConnectPickShellPicker, state.messages.LocalShellChoose, ui.HitOptions{Role: ui.RoleButton, SkipTab: true, SkipFocus: true, Hint: state.messages.LocalShellChoose, Expanded: expanded}).Children(func() {
+						f.Stack().Size(24, 24).Shrink(0).HitWith(hitConnectPickShellPicker, state.messages.LocalShellChoose, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, SkipFocus: true, Hint: state.messages.LocalShellChoose, Expanded: expanded}).Children(func() {
 							f.Row().Fill().Radius(radius.item).Background(arrowWash)
-							f.Row().Fill().Items(flex.Center).Justify(flex.Center).Children(func() {
+							f.Row().Fill().Items(ui.Center).Justify(ui.Center).Children(func() {
 								f.Icon(lucideIcons[glyph]).Size(14, 14).Color(state.pal.muted).Shrink(0)
 							})
 						})
@@ -169,13 +169,13 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 					// A saved host can be opened for editing from its own row: the
 					// pencil opens the host's dialog instead of connecting.
 					if edit := connectPickEdit(entry.target); !edit.IsZero() {
-						var editWash ui.Color
+						var editWash gfx.Color
 						if canvas.Hovered() == edit {
 							editWash = state.pal.line
 						}
-						f.Stack().Size(24, 24).Shrink(0).HitWith(edit, state.messages.EditHost, ui.HitOptions{Role: ui.RoleButton, SkipTab: true, Hint: state.messages.EditHost}).Children(func() {
+						f.Stack().Size(24, 24).Shrink(0).HitWith(edit, state.messages.EditHost, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, Hint: state.messages.EditHost}).Children(func() {
 							f.Row().Fill().Radius(radius.item).Background(editWash)
-							f.Row().Fill().Items(flex.Center).Justify(flex.Center).Children(func() {
+							f.Row().Fill().Items(ui.Center).Justify(ui.Center).Children(func() {
 								f.Icon(lucideIcons[iconPencil]).Size(14, 14).Color(state.pal.muted).Shrink(0)
 							})
 						})
@@ -191,7 +191,7 @@ func (state *State) paintCommandPalette(canvas *ui.Canvas, viewport ui.Rect) {
 		// Keep the upstream draggable bar beside, rather than over, the rows.
 		bounds := palette.listRect
 		bounds.Width += commandPaletteBarGap + commandPaletteBarWidth
-		area := components.BeginScrollArea(canvas, state.Theme(), bounds, ui.Size{Width: bounds.Width, Height: palette.contentHeight()}).Offset(0, palette.scroll).VerticalScrollbar(hitCommandPaletteBar, title, "").HoverScrollbars(true)
+		area := components.BeginScrollArea(canvas, state.Theme(), bounds, gfx.Size{Width: bounds.Width, Height: palette.contentHeight()}).Offset(0, palette.scroll).VerticalScrollbar(hitCommandPaletteBar, title, "").HoverScrollbars(true)
 		palette.bar = area.EndContent()
 	}
 
@@ -217,10 +217,10 @@ func (state *State) commandPaletteHeight() float32 {
 
 // paintFoldRow is the heading of a group the list can open and close: a choice
 // like the rows under it, with a chevron for the way it will go.
-func (state *State) paintFoldRow(f *flex.Frame, entry commandPaletteEntry, visible int) {
+func (state *State) paintFoldRow(f *ui.Frame, entry commandPaletteEntry, visible int) {
 	selected := state.commandPalette.selected == visible
 	color, detailColor := state.pal.muted, state.pal.faint
-	row := f.Row().Height(30).PadX(10).Gap(8).Items(flex.Center).Shrink(0)
+	row := f.Row().Height(30).PadX(10).Gap(8).Items(ui.Center).Shrink(0)
 	if selected {
 		color, detailColor = state.pal.onAccent, state.pal.onAccent
 		row.Background(state.pal.accent).Radius(radius.item)
@@ -229,9 +229,9 @@ func (state *State) paintFoldRow(f *flex.Frame, entry commandPaletteEntry, visib
 	if entry.expanded {
 		glyph = iconChevronDown
 	}
-	row.HitOutset(2, 0, 2, 0).HitWith(hitCommandPaletteItems.At(visible), entry.label, ui.HitOptions{Role: ui.RoleButton, SkipTab: true, Expanded: entry.expanded}).Children(func() {
+	row.HitOutset(2, 0, 2, 0).HitWith(hitCommandPaletteItems.At(visible), entry.label, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, Expanded: entry.expanded}).Children(func() {
 		f.Icon(lucideIcons[glyph]).Size(14, 14).Color(color).Shrink(0)
-		f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(color).Ellipsis().Grow(1)
+		f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(color).Ellipsis().Grow(1)
 		if entry.detail != "" {
 			f.Text(entry.detail).FontSize(metrics.FontSizeS).Color(detailColor).Shrink(0)
 		}

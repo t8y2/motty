@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -227,8 +227,8 @@ func TestLatencyToggleThroughSettings(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsTerminal)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 2400})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
 	var texts []string
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)

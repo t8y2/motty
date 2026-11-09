@@ -11,8 +11,8 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -79,7 +79,7 @@ type sftpBookmark struct {
 }
 
 // clickSFTPExtra handles the presses this file adds to the panel.
-func (state *State) clickSFTPExtra(session *Session, view *sftpView, id ui.ID) bool {
+func (state *State) clickSFTPExtra(session *Session, view *sftpView, id gfx.ID) bool {
 	switch {
 	case id == hitSFTPPaneToggle:
 		state.toggleSFTPPane(view)
@@ -397,7 +397,7 @@ func (state *State) customEditorSettingVisible() bool {
 }
 
 // clickFilesSettings handles the presses of the Files settings.
-func (state *State) clickFilesSettings(id ui.ID) bool {
+func (state *State) clickFilesSettings(id gfx.ID) bool {
 	switch id {
 	case hitSettingsPanelAutoOpen:
 		state.sftpPanelAutoOpen = !state.sftpPanelAutoOpen
@@ -445,7 +445,7 @@ func (state *State) clickFilesSettings(id ui.ID) bool {
 			state.save()
 		}
 	case hitSettingsParallel1, hitSettingsParallel2, hitSettingsParallel4:
-		count := map[ui.ID]int{hitSettingsParallel1: 1, hitSettingsParallel2: 2, hitSettingsParallel4: 4}[id]
+		count := map[gfx.ID]int{hitSettingsParallel1: 1, hitSettingsParallel2: 2, hitSettingsParallel4: 4}[id]
 		if state.sftpParallel != count {
 			state.sftpParallel = count
 			state.applySFTPSettings()

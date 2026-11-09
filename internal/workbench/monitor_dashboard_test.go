@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
@@ -44,8 +44,8 @@ func TestDashboardHostSudoRequiresOwnConfirmationAndStopsOnDisconnect(t *testing
 	connection.stream = fake.StreamCommand
 	connection.run = fake.RunCommand
 	source.session.conn = connection
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 700, Height: 650}} {
-		var canvas ui.Canvas
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 700, Height: 650}} {
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		sudo, found := hitByID(&canvas, hitDashboardSudoList.At(1))
 		terminal, terminalFound := hitByID(&canvas, hitDashboardTerminalList.At(1))
@@ -178,8 +178,8 @@ func TestDashboardCollectsWithoutTerminalSharesSourcesAndStopsIndependently(t *t
 		t.Fatal("stopping one panel stopped another")
 	}
 	s.activeSection = sectionHosts
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1280, Height: 900})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1280, Height: 900})
 	s.Wake()
 	if len(s.dashboard.sources) != 1 {
 		t.Fatal("leaving page stopped sampling")
@@ -455,7 +455,7 @@ func TestDashboardHostViewsSurvivePanelSwitchingAndUseKeyboardTabs(t *testing.T)
 	s, _, _ := dashboardTestState(t)
 	a := createDashboard(t, s, "A")
 	s.Click(hitDashboardSimple)
-	result := s.Key(ui.KeyEvent{Target: hitDashboardSimpleViewList.At(3), Key: ui.KeyDown})
+	result := s.Key(gfx.KeyEvent{Target: hitDashboardSimpleViewList.At(3), Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != hitDashboardSimpleViewList.At(4) {
 		t.Fatal("icon tab did not support arrow keys")
 	}
@@ -494,7 +494,7 @@ func TestDashboardPageKeysScrollThePageFromAnyControl(t *testing.T) {
 	p := s.dashboardPanel()
 	p.Hosts = append(p.Hosts, "host2", "host3", "host4", "host5", "host6")
 	s.dashboard.engine.Set(*p, true)
-	paintAt(s, ui.Size{Width: 900, Height: 520})
+	paintAt(s, gfx.Size{Width: 900, Height: 520})
 	if s.dashboard.content <= s.dashboard.body.Height {
 		t.Fatalf("content %v fits the body %v; the scroll check would prove nothing", s.dashboard.content, s.dashboard.body.Height)
 	}
@@ -503,7 +503,7 @@ func TestDashboardPageKeysScrollThePageFromAnyControl(t *testing.T) {
 	}
 	// The page switch button holds the focus; page keys must still scroll the
 	// panel instead of requiring a Tab stop on the scroll viewport first.
-	result := s.Key(ui.KeyEvent{Key: ui.KeyPageDown, Target: hitDashboardSwitch})
+	result := s.Key(gfx.KeyEvent{Key: gfx.KeyPageDown, Target: hitDashboardSwitch})
 	if !result.Handled || s.dashboard.scroll <= 0 {
 		t.Fatalf("PageDown on a control did not scroll the page: handled=%v scroll=%v", result.Handled, s.dashboard.scroll)
 	}

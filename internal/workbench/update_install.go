@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/selfupdate"
 	"motty/internal/update"
@@ -196,7 +196,7 @@ func (state *State) cancelInstall() {
 	state.showNextPrompt()
 }
 
-func (state *State) clickUpdateProgress(id ui.ID) {
+func (state *State) clickUpdateProgress(id gfx.ID) {
 	install := &state.update.install
 	switch id {
 	case hitUpdateProgressCancel:
@@ -218,7 +218,7 @@ func (state *State) clickUpdateProgress(id ui.ID) {
 	}
 }
 
-func (state *State) paintUpdateProgress(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintUpdateProgress(canvas *gfx.Canvas, viewport gfx.Rect) {
 	install, m, pal := &state.update.install, state.messages.Tools, state.pal
 	title := fmt.Sprintf(m.UpdateDownloadingTitleFmt, state.update.release.Version)
 	bodyHeight := float32(68)
@@ -233,7 +233,7 @@ func (state *State) paintUpdateProgress(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitUpdateProgressDimiss, CloseID: hitUpdateProgressCancel, InitialFocusID: hitUpdateProgressCancel,
-		ContentSize: ui.Size{Width: 540}, FitBody: true, BodyHeight: bodyHeight,
+		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: bodyHeight,
 	})
 	layout := dialog.Begin(title, "")
 	switch install.phase {
@@ -265,7 +265,7 @@ func (state *State) paintUpdateProgress(canvas *ui.Canvas, viewport ui.Rect) {
 		case installVerifying:
 			line = m.UpdateVerifying
 		}
-		var bar flex.Box
+		var bar ui.Box
 		f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
 		f.Column().Fill().Children(func() {
 			bar = f.Slot().Height(8).Shrink(0).MarginSides(12, 0, 0, 0)

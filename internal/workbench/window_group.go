@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/completion"
 	layoutcore "motty/internal/workspace"
 )
@@ -154,7 +154,7 @@ func (group *Group) leave(state *State) {
 
 // windowAt is the window other than state whose content area holds the screen
 // point, if any. Hidden and closed windows hold nothing.
-func (group *Group) windowAt(state *State, at ui.Point) *State {
+func (group *Group) windowAt(state *State, at gfx.Point) *State {
 	group.mu.Lock()
 	members := append([]*State(nil), group.members...)
 	group.mu.Unlock()
@@ -173,7 +173,7 @@ func (group *Group) windowAt(state *State, at ui.Point) *State {
 // screen coordinates (app.Window.Frame) and visible says the window is on
 // screen. Without it the window cannot be a drop target for another window's
 // tab. Call it once the window exists.
-func (state *State) SetWindow(frame func() (ui.Rect, bool), visible func() bool) {
+func (state *State) SetWindow(frame func() (gfx.Rect, bool), visible func() bool) {
 	state.frame, state.windowVisible = frame, visible
 }
 

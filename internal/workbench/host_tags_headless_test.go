@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -33,7 +33,7 @@ func TestHostTagsNativeQueryKeepsFocusAndDoesNotSubmitTheHost(t *testing.T) {
 		if err := view.Rest(); err != nil {
 			t.Fatal(err)
 		}
-		click := func(id ui.ID) {
+		click := func(id gfx.ID) {
 			t.Helper()
 			for _, hit := range view.Snapshot().Hits {
 				if hit.ID == id {
@@ -163,7 +163,7 @@ func TestHostTagPopupCanSelectOutsideScrolledForm(t *testing.T) {
 		}
 	}
 	clip := state.editor.form.geometry.Viewport
-	var option ui.Hit
+	var option gfx.Hit
 	for _, hit := range view.Snapshot().Hits {
 		if hit.ID == hitHostTagOptions.At(3) {
 			option = hit
@@ -200,7 +200,7 @@ func TestHostTagPopupEnterChoosesTheHoveredRow(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	click := func(id ui.ID) {
+	click := func(id gfx.ID) {
 		t.Helper()
 		for _, hit := range view.Snapshot().Hits {
 			if hit.ID == id {
@@ -218,7 +218,7 @@ func TestHostTagPopupEnterChoosesTheHoveredRow(t *testing.T) {
 		t.Fatalf("fixture has %d tag options", len(choices))
 	}
 	wanted := choices[2].Value
-	var option ui.Hit
+	var option gfx.Hit
 	for _, hit := range view.Snapshot().Hits {
 		if hit.ID == hitHostTagOptions.At(2) {
 			option = hit

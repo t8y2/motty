@@ -4,11 +4,11 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
-func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	pal, messages := state.pal, state.messages
 	canAdd := state.sshHostCount() >= 2
 	selected, hasSelection := state.proxyByID(state.selectedProxyID)
@@ -32,12 +32,12 @@ func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 
-	var content, emptyIcon, emptyAdd, remove, edit, action, add flex.Box
+	var content, emptyIcon, emptyAdd, remove, edit, action, add ui.Box
 	f := state.proxyLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(flex.Start).Children(func() {
+		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
 			f.Column().Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-				f.Text(messages.ProxyTitle).FontSize(18).Weight(ui.WeightSemibold).Color(pal.text).Ellipsis()
+				f.Text(messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				f.Paragraph(messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
 			remove = f.Slot().Size(removeWidth, toolbarHeight)
@@ -51,8 +51,8 @@ func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 			content = f.Slot().Grow(1).MarginSides(0, 0, 9, 0)
 		}
 		f.Divider().Background(pal.line)
-		f.Row().Height(50).PadSides(8, 0, 20, 0).Items(flex.Center).Children(func() {
-			f.Text(state.proxyCountText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).Width(162)
+		f.Row().Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
+			f.Text(state.proxyCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
 			if hasSelection {
 				f.Text(state.proxyLabel(selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
 			}
@@ -81,12 +81,12 @@ func (state *State) paintProxiesWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	}
 }
 
-func (state *State) paintProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintProxyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	messages, theme := state.messages, state.Theme()
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, CloseID: hitProxyDialogClose,
-		InitialFocusID: hitProxyDialogTarget, ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(state.proxyDialogBodyHeight(), state.proxyDialogError),
+		InitialFocusID: hitProxyDialogTarget, ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: withError(state.proxyDialogBodyHeight(), state.proxyDialogError),
 	})
 	dialogTitle := messages.ProxyDialogTitle
 	submitLabel := messages.ProxyCreate
@@ -96,7 +96,7 @@ func (state *State) paintProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	layout := dialog.Begin(dialogTitle, "")
 	const rowHeight = 64
-	var target, jump, via, viaHelp, relay flex.Box
+	var target, jump, via, viaHelp, relay ui.Box
 	viaShell := state.proxyEditor.viaShell
 	f := state.proxyDialogLayout.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
@@ -108,7 +108,7 @@ func (state *State) paintProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
 			f.Paragraph(state.proxyRelayNote(), 2).FontSize(metrics.FontSizeS).Color(state.pal.muted).MarginSides(0, 6, 0, 6)
 		}
 		if state.proxyDialogError != "" {
-			f.Text(state.proxyDialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
+			f.Text(state.proxyDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
 		}
 	})
 	f.End()
@@ -154,7 +154,7 @@ func (state *State) proxyRelayNote() string {
 // paintProxyHostField paints one searchable host picker. Typing in the field
 // filters the list by name, address, account and group, so a long catalog is
 // still reachable without scrolling.
-func (state *State) paintProxyHostField(canvas *ui.Canvas, bounds ui.Rect, target bool) {
+func (state *State) paintProxyHostField(canvas *gfx.Canvas, bounds gfx.Rect, target bool) {
 	theme := state.Theme()
 	label := state.messages.ProxyFieldJump
 	inputID, triggerID, dismissID := hitProxyDialogJump, hitProxyJumpTrigger, hitProxyJumpDismiss

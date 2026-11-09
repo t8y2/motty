@@ -5,7 +5,7 @@ import (
 	"math"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -15,31 +15,31 @@ var (
 	sftpWindowSides              = tree.Sub(sftpWindowHits, tree.Name("sides"))
 	sftpWindowLocal              = tree.Sub(sftpWindowSides, tree.Name("local"))
 	sftpWindowRemote             = tree.Sub(sftpWindowSides, tree.Name("remote"))
-	sftpWindowRows               = [2]ui.Scope{tree.Sub(sftpWindowLocal, tree.Name("rows")), tree.Sub(sftpWindowRemote, tree.Name("rows"))}
-	sftpWindowFilter             = [2]ui.ID{tree.ID(sftpWindowLocal, "filter"), tree.ID(sftpWindowRemote, "filter")}
-	sftpWindowFilterClear        = [2]ui.ID{tree.ID(sftpWindowLocal, "filter-clear"), tree.ID(sftpWindowRemote, "filter-clear")}
-	sftpWindowTreeToggle         = [2]ui.ID{tree.ID(sftpWindowLocal, "tree-toggle"), tree.ID(sftpWindowRemote, "tree-toggle")}
-	sftpWindowTreeRows           = [2]ui.Scope{tree.Sub(sftpWindowLocal, tree.Name("tree-rows")), tree.Sub(sftpWindowRemote, tree.Name("tree-rows"))}
-	sftpWindowTreeDisclosures    = [2]ui.Scope{tree.Sub(sftpWindowLocal, tree.Name("tree-disclosures")), tree.Sub(sftpWindowRemote, tree.Name("tree-disclosures"))}
-	sftpWindowTreeViewport       = [2]ui.ID{tree.ID(sftpWindowLocal, "tree"), tree.ID(sftpWindowRemote, "tree")}
-	sftpWindowTreeBar            = [2]ui.ID{tree.ID(sftpWindowLocal, "tree-scroll"), tree.ID(sftpWindowRemote, "tree-scroll")}
+	sftpWindowRows               = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("rows")), tree.Sub(sftpWindowRemote, tree.Name("rows"))}
+	sftpWindowFilter             = [2]gfx.ID{tree.ID(sftpWindowLocal, "filter"), tree.ID(sftpWindowRemote, "filter")}
+	sftpWindowFilterClear        = [2]gfx.ID{tree.ID(sftpWindowLocal, "filter-clear"), tree.ID(sftpWindowRemote, "filter-clear")}
+	sftpWindowTreeToggle         = [2]gfx.ID{tree.ID(sftpWindowLocal, "tree-toggle"), tree.ID(sftpWindowRemote, "tree-toggle")}
+	sftpWindowTreeRows           = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("tree-rows")), tree.Sub(sftpWindowRemote, tree.Name("tree-rows"))}
+	sftpWindowTreeDisclosures    = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("tree-disclosures")), tree.Sub(sftpWindowRemote, tree.Name("tree-disclosures"))}
+	sftpWindowTreeViewport       = [2]gfx.ID{tree.ID(sftpWindowLocal, "tree"), tree.ID(sftpWindowRemote, "tree")}
+	sftpWindowTreeBar            = [2]gfx.ID{tree.ID(sftpWindowLocal, "tree-scroll"), tree.ID(sftpWindowRemote, "tree-scroll")}
 	hitSFTPWindowCoverage        = tree.ID(sftpWindowLocal, "coverage")
-	sftpWindowHeaderHidden       = [2]ui.ID{tree.ID(sftpWindowLocal, "header-hidden"), tree.ID(sftpWindowRemote, "header-hidden")}
-	sftpWindowHeaderEditor       = [2]ui.ID{tree.ID(sftpWindowLocal, "header-editor"), tree.ID(sftpWindowRemote, "header-editor")}
-	sftpWindowHidden             = [2]ui.ID{tree.ID(sftpWindowLocal, "hidden"), tree.ID(sftpWindowRemote, "hidden")}
-	sftpWindowMore               = [2]ui.ID{tree.ID(sftpWindowLocal, "more"), tree.ID(sftpWindowRemote, "more")}
-	sftpWindowFilterToggle       = [2]ui.ID{tree.ID(sftpWindowLocal, "filter-toggle"), tree.ID(sftpWindowRemote, "filter-toggle")}
+	sftpWindowHeaderHidden       = [2]gfx.ID{tree.ID(sftpWindowLocal, "header-hidden"), tree.ID(sftpWindowRemote, "header-hidden")}
+	sftpWindowHeaderEditor       = [2]gfx.ID{tree.ID(sftpWindowLocal, "header-editor"), tree.ID(sftpWindowRemote, "header-editor")}
+	sftpWindowHidden             = [2]gfx.ID{tree.ID(sftpWindowLocal, "hidden"), tree.ID(sftpWindowRemote, "hidden")}
+	sftpWindowMore               = [2]gfx.ID{tree.ID(sftpWindowLocal, "more"), tree.ID(sftpWindowRemote, "more")}
+	sftpWindowFilterToggle       = [2]gfx.ID{tree.ID(sftpWindowLocal, "filter-toggle"), tree.ID(sftpWindowRemote, "filter-toggle")}
 	hitSFTPWindowSudoMode        = tree.ID(sftpWindowRemote, "sudo-mode")
 	hitSFTPWindowHeaderDismiss   = tree.ID(sftpWindowHits, "header-dismiss")
-	sftpWindowPath               = [2]ui.ID{tree.ID(sftpWindowLocal, "path"), tree.ID(sftpWindowRemote, "path")}
-	sftpWindowList               = [2]ui.ID{tree.ID(sftpWindowLocal, "list"), tree.ID(sftpWindowRemote, "list")}
-	sftpWindowSortHits           = [2]ui.Scope{tree.Sub(sftpWindowLocal, tree.Name("sort")), tree.Sub(sftpWindowRemote, tree.Name("sort"))}
-	sftpWindowActions            = [2]ui.Scope{tree.Sub(sftpWindowLocal, tree.Name("actions")), tree.Sub(sftpWindowRemote, tree.Name("actions"))}
+	sftpWindowPath               = [2]gfx.ID{tree.ID(sftpWindowLocal, "path"), tree.ID(sftpWindowRemote, "path")}
+	sftpWindowList               = [2]gfx.ID{tree.ID(sftpWindowLocal, "list"), tree.ID(sftpWindowRemote, "list")}
+	sftpWindowSortHits           = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("sort")), tree.Sub(sftpWindowRemote, tree.Name("sort"))}
+	sftpWindowActions            = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("actions")), tree.Sub(sftpWindowRemote, tree.Name("actions"))}
 	sftpWindowMenuActions        = tree.Sub(sftpWindowHits, tree.Name("menu-actions"))
-	sftpWindowUp                 = [2]ui.ID{tree.ID(sftpWindowLocal, "up"), tree.ID(sftpWindowRemote, "up")}
-	sftpWindowRefresh            = [2]ui.ID{tree.ID(sftpWindowLocal, "refresh"), tree.ID(sftpWindowRemote, "refresh")}
-	sftpWindowNewFolder          = [2]ui.ID{tree.ID(sftpWindowLocal, "new-folder"), tree.ID(sftpWindowRemote, "new-folder")}
-	sftpWindowBar                = [2]ui.ID{tree.ID(sftpWindowLocal, "scroll"), tree.ID(sftpWindowRemote, "scroll")}
+	sftpWindowUp                 = [2]gfx.ID{tree.ID(sftpWindowLocal, "up"), tree.ID(sftpWindowRemote, "up")}
+	sftpWindowRefresh            = [2]gfx.ID{tree.ID(sftpWindowLocal, "refresh"), tree.ID(sftpWindowRemote, "refresh")}
+	sftpWindowNewFolder          = [2]gfx.ID{tree.ID(sftpWindowLocal, "new-folder"), tree.ID(sftpWindowRemote, "new-folder")}
+	sftpWindowBar                = [2]gfx.ID{tree.ID(sftpWindowLocal, "scroll"), tree.ID(sftpWindowRemote, "scroll")}
 	hitSFTPWindowSplit           = tree.ID(sftpWindowHits, "split")
 	hitSFTPWindowUpload          = tree.ID(sftpWindowHits, "upload")
 	hitSFTPWindowDownload        = tree.ID(sftpWindowHits, "download")
@@ -57,11 +57,11 @@ var (
 )
 
 type sftpWindowUI struct {
-	frame               flex.View
-	panes               [2]flex.View
-	rows                [2]flex.View
-	size                ui.Size
-	list                [2]ui.Rect
+	frame               ui.View
+	panes               [2]ui.View
+	rows                [2]ui.View
+	size                gfx.Size
+	list                [2]gfx.Rect
 	offset              [2]float32
 	bars                [2]components.ScrollAreaGeometry
 	barDrag             int // 1: local, 2: remote, 3: queue; zero when idle
@@ -73,22 +73,22 @@ type sftpWindowUI struct {
 	splitting           bool
 	tooltip             components.HoverTooltip
 	menuOpen            bool
-	menuAt              ui.Point
-	queueBounds         ui.Rect
+	menuAt              gfx.Point
+	queueBounds         gfx.Rect
 	queueOffset         float32
 	queueBar            components.ScrollAreaGeometry
 	sort                [2]sftpWindowSort
 	menuScroll          components.MenuScroll
-	headerAnchor        [2]ui.Rect
+	headerAnchor        [2]gfx.Rect
 	headerScroll        components.MenuScroll
 	selection           [2]sftpWindowSelection
 	profileQuickOpen    bool
 	profileQuickFocus   bool
 	profileQuickScroll  components.MenuScroll
-	profileQuickAnchor  ui.Rect
+	profileQuickAnchor  gfx.Rect
 	profileHoverOpen    bool
-	profileHoverAnchor  ui.Rect
-	profileHoverTrigger ui.ID
+	profileHoverAnchor  gfx.Rect
+	profileHoverTrigger gfx.ID
 }
 
 func sideIndex(local bool) int {
@@ -98,20 +98,20 @@ func sideIndex(local bool) int {
 	return 1
 }
 
-func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
+func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	canvas.SetTree(&tree)
 	if id, ok := canvas.ClickTarget(); ok {
 		canvas.AfterPaint(func() { w.click(id) })
 	}
 	w.ui.size = size
 	theme, m := w.owner.Theme(), w.owner.messages
-	canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, theme.Background)
+	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, theme.Background)
 	if w.view.worker == nil {
 		w.paintConnecting(canvas, size)
 		return
 	}
-	var body, queue flex.Box
-	f := w.ui.frame.Begin(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
+	var body, queue ui.Box
+	f := w.ui.frame.Begin(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().Pad(12).Gap(8).Children(func() {
 		body = f.Slot().Grow(1)
 		if w.queueCount() > 0 {
@@ -132,7 +132,7 @@ func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
 			}
 		}
 		if w.browse.enabled {
-			f.Row().Height(20).Gap(6).Items(flex.Center).Children(func() {
+			f.Row().Height(20).Gap(6).Items(ui.Center).Children(func() {
 				f.Icon(lucideIcons[iconSFTPBrowseSync]).Size(14, 14).Color(w.owner.pal.success)
 				f.Text(m.SFTPWindow.BrowseRootLabel).FontSize(theme.Metrics.FontSizeS).Color(theme.Foreground)
 				f.Text(w.browse.roots[0]).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
@@ -155,23 +155,23 @@ func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	if w.queueCount() > 0 {
 		w.paintQueue(canvas, queue.Rect())
 	} else {
-		w.ui.queueBounds = ui.Rect{}
+		w.ui.queueBounds = gfx.Rect{}
 		w.ui.queueOffset = 0
 	}
 	if w.view.bookmarksOpen {
 		w.paintDirectoryPlaces(canvas)
 	}
 	if w.view.dialog != sftpDialogNone {
-		w.owner.paintSFTPDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height}, w.view)
+		w.owner.paintSFTPDialog(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.view)
 	}
-	w.owner.paintSFTPFileProperties(canvas, ui.Rect{Width: size.Width, Height: size.Height}, &w.fileProperties)
+	w.owner.paintSFTPFileProperties(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, &w.fileProperties)
 	if w.closeConfirm {
-		components.BeginAlertDialog(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, w.closeDescription(), m.SFTPWindow.CloseTransfers, m.Cancel)
+		components.BeginAlertDialog(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, w.closeDescription(), m.SFTPWindow.CloseTransfers, m.Cancel)
 	}
 	if w.externalConflict != 0 && !w.closeConfirm && w.view.dialog == sftpDialogNone {
 		if edit := w.owner.editByID(w.externalConflict); edit != nil {
 			m := w.owner.messages.Tools
-			components.BeginAlertDialog(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowExternalReplace, CancelID: hitSFTPWindowExternalKeep, InitialFocusID: hitSFTPWindowExternalKeep, ActionVariant: components.ButtonDestructive}).Paint(m.ExtEditConflictTitle, fmt.Sprintf(m.ExtEditConflictDescriptionFmt, edit.name), m.ExtEditReplace, w.owner.messages.Cancel)
+			components.BeginAlertDialog(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowExternalReplace, CancelID: hitSFTPWindowExternalKeep, InitialFocusID: hitSFTPWindowExternalKeep, ActionVariant: components.ButtonDestructive}).Paint(m.ExtEditConflictTitle, fmt.Sprintf(m.ExtEditConflictDescriptionFmt, edit.name), m.ExtEditReplace, w.owner.messages.Cancel)
 		}
 	}
 	if w.ui.menuOpen {
@@ -185,24 +185,24 @@ func (w *sftpWindow) paint(canvas *ui.Canvas, size ui.Size) {
 		} else {
 			// A standalone window is its own canvas, so its own viewport is the
 			// whole window.
-			w.paintHeaderMenu(canvas, side, ui.Point{}, 0, ui.Rect{Width: size.Width, Height: size.Height}, &w.ui.headerScroll)
+			w.paintHeaderMenu(canvas, side, gfx.Point{}, 0, gfx.Rect{Width: size.Width, Height: size.Height}, &w.ui.headerScroll)
 		}
 	}
 	if w.bookmark.open {
-		w.paintBookmarkDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+		w.paintBookmarkDialog(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
 	}
 	if w.ui.profileQuickOpen && !w.bookmark.open {
 		w.paintProfileQuickMenu(canvas)
 	}
 	if !w.bookmark.open && !w.ui.profileQuickOpen {
-		w.paintProfileQuickPreview(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+		w.paintProfileQuickPreview(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
 	}
 	if w.drag.active {
 		w.paintDrag(canvas)
 	}
-	w.notices.paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height})
+	w.notices.paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
 	if !w.ui.profileHoverOpen {
-		w.ui.tooltip.Paint(canvas, theme, ui.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+		w.ui.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	}
 }
 
@@ -213,22 +213,22 @@ func (w *sftpWindow) canTransfer(local bool) bool {
 	return w.selection(local).count > 0
 }
 
-func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
+func (w *sftpWindow) paintPane(canvas *gfx.Canvas, bounds gfx.Rect, local bool) {
 	side := sideIndex(local)
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
-	var address, list, filter flex.Box
-	var sudoMode flex.Box
+	var address, list, filter ui.Box
+	var sudoMode ui.Box
 	compact := bounds.Height < 230
 	var buttons [20]sftpIconButton
 	buttonCount := 0
 	f := w.ui.panes[side].Begin(canvas, theme, bounds)
-	icon := func(id ui.ID, glyph uint8, hint string, disabled bool) {
+	icon := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
 		buttons[buttonCount] = sftpIconButton{box: f.Slot().Size(28, 28), id: id, icon: glyph, hint: hint, disabled: disabled, style: iconButtonQuiet}
 		buttonCount++
 	}
 	f.Column().Fill().Pad(8).Gap(6).Children(func() {
-		f.Row().Height(28).Gap(4).Items(flex.Center).Children(func() {
+		f.Row().Height(28).Gap(4).Items(ui.Center).Children(func() {
 			title := m.SFTPWindow.Remote
 			if local {
 				title = m.SFTPWindow.Local
@@ -275,7 +275,7 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 			}
 			icon(sftpWindowMore[side], iconEllipsis, m.Tools.FilesMore, false)
 		})
-		f.Row().Height(32).Gap(2).Items(flex.Center).Children(func() {
+		f.Row().Height(32).Gap(2).Items(ui.Center).Children(func() {
 			address = f.Slot().Height(32).Grow(1)
 			listID, starID, listHint := hitSFTPBookmarkList, hitSFTPBookmarkToggle, m.SFTPWindow.DirectoryFavorites
 			if local {
@@ -295,7 +295,7 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 			w.owner.declareLocalCoverage(f, folder, hitSFTPWindowCoverage)
 		}
 		{
-			f.Row().Height(20).Gap(8).PadX(8).Items(flex.Center).Children(func() {
+			f.Row().Height(20).Gap(8).PadX(8).Items(ui.Center).Children(func() {
 				for _, entry := range w.owner.sftpColumns.entries {
 					if !entry.Enabled {
 						continue
@@ -314,7 +314,7 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 							label += " ↑"
 						}
 					}
-					box := f.Text(label).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().HitWith(sftpWindowSortHits[side].At(column), label, ui.HitOptions{Role: ui.RoleButton})
+					box := f.Text(label).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().HitWith(sftpWindowSortHits[side].At(column), label, gfx.HitOptions{Role: gfx.RoleButton})
 					if column == 0 {
 						box.Grow(1)
 					} else if column == 1 {
@@ -347,7 +347,7 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 			f.Text(status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(20)
 		}
 		if !compact {
-			f.Row().Height(28).Gap(2).Items(flex.Center).Children(func() {
+			f.Row().Height(28).Gap(2).Items(ui.Center).Children(func() {
 				if count == 0 {
 					return
 				}
@@ -396,30 +396,30 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 	paneContent := list.Rect()
 	frameBounds := paneContent
 	if treeWidth, show := directoryTreePaneWidths(paneContent.Width); w.directoryTree[side].enabled && show {
-		treeBounds := ui.Rect{X: paneContent.X, Y: paneContent.Y, Width: treeWidth, Height: paneContent.Height}
+		treeBounds := gfx.Rect{X: paneContent.X, Y: paneContent.Y, Width: treeWidth, Height: paneContent.Height}
 		w.paintDirectoryTree(canvas, treeBounds, local)
-		frameBounds = ui.Rect{
+		frameBounds = gfx.Rect{
 			X:      treeBounds.X + treeBounds.Width + directoryTreeGap,
 			Y:      paneContent.Y,
 			Width:  max(paneContent.Width-treeBounds.Width-directoryTreeGap, 0),
 			Height: paneContent.Height,
 		}
 	} else {
-		w.directoryTree[side].bounds = ui.Rect{}
+		w.directoryTree[side].bounds = gfx.Rect{}
 	}
 	canvas.RoundedBorder(frameBounds, 6, 1, theme.Border.Mix(theme.MutedForeground, .4), theme.Background)
 	// Keep scrolling rows and scrollbars inside the frame, so neither can
 	// paint over its top or bottom edge.
-	rowsBounds := frameBounds.Inset(ui.All(2))
+	rowsBounds := frameBounds.Inset(gfx.All(2))
 	w.ui.list[side] = rowsBounds
 	folder.visibleRows = max(1, int(rowsBounds.Height/sftpRowHeight))
-	area := components.BeginScrollArea(canvas, theme, rowsBounds, ui.Size{Width: rowsBounds.Width, Height: float32(len(folder.rows)) * sftpRowHeight}).Offset(0, w.ui.offset[side]).Viewport(sftpWindowList[side], m.SFTPFiles).VerticalScrollbar(sftpWindowBar[side], m.SFTPFiles, "")
+	area := components.BeginScrollArea(canvas, theme, rowsBounds, gfx.Size{Width: rowsBounds.Width, Height: float32(len(folder.rows)) * sftpRowHeight}).Offset(0, w.ui.offset[side]).Viewport(sftpWindowList[side], m.SFTPFiles).VerticalScrollbar(sftpWindowBar[side], m.SFTPFiles, "")
 	geometry := area.BeginContent()
 	w.ui.bars[side] = geometry
 	w.ui.offset[side] = geometry.OffsetY
 	folder.first = int(geometry.OffsetY / sftpRowHeight)
 	last := min(len(folder.rows), folder.first+int(math.Ceil(float64(rowsBounds.Height/sftpRowHeight)))+1)
-	r := w.ui.rows[side].Begin(canvas, theme, ui.Rect{X: rowsBounds.X, Y: rowsBounds.Y - float32(math.Mod(float64(geometry.OffsetY), float64(sftpRowHeight))), Width: max(rowsBounds.Width-10, 0), Height: float32(last-folder.first) * sftpRowHeight})
+	r := w.ui.rows[side].Begin(canvas, theme, gfx.Rect{X: rowsBounds.X, Y: rowsBounds.Y - float32(math.Mod(float64(geometry.OffsetY), float64(sftpRowHeight))), Width: max(rowsBounds.Width-10, 0), Height: float32(last-folder.first) * sftpRowHeight})
 	r.Column().FillWidth().Children(func() {
 		for index := folder.first; index < last; index++ {
 			w.paintRow(r, &folder.rows[index], sftpWindowRows[side].At(index), bounds.Width)
@@ -437,12 +437,12 @@ func (w *sftpWindow) paintPane(canvas *ui.Canvas, bounds ui.Rect, local bool) {
 		if !local && w.view.busy {
 			label = m.SFTPLoading
 		}
-		canvas.LabelCenter(label, rowsBounds, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.MutedForeground})
+		canvas.LabelCenter(label, rowsBounds, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.MutedForeground})
 	}
 	area.EndContent()
 }
 
-func (w *sftpWindow) paintRow(f *flex.Frame, row *sftpRow, id ui.ID, paneWidth float32) {
+func (w *sftpWindow) paintRow(f *ui.Frame, row *sftpRow, id gfx.ID, paneWidth float32) {
 	pal, canvas := w.owner.pal, f.Canvas()
 	background := pal.workspace
 	if row.selected {
@@ -454,11 +454,11 @@ func (w *sftpWindow) paintRow(f *flex.Frame, row *sftpRow, id ui.ID, paneWidth f
 	if row.entry.LinkBroken {
 		color = pal.danger
 	}
-	tint := ui.Color{Alpha: 1}
+	tint := gfx.Color{Alpha: 1}
 	if row.mono {
 		tint = pal.muted
 	}
-	box := f.Row().Height(sftpRowHeight).Shrink(0).Gap(8).PadX(8).Items(flex.Center).Background(background).Radius(4).HitWith(id, row.entry.Name, ui.HitOptions{Role: ui.RoleButton, Selected: row.selected, Hint: row.entry.Name})
+	box := f.Row().Height(sftpRowHeight).Shrink(0).Gap(8).PadX(8).Items(ui.Center).Background(background).Radius(4).HitWith(id, row.entry.Name, gfx.HitOptions{Role: gfx.RoleButton, Selected: row.selected, Hint: row.entry.Name})
 	if canvas.FocusVisible() == id {
 		box.Border(1, pal.accent)
 	}
@@ -501,11 +501,11 @@ func (w *sftpWindow) queueCount() int {
 	return count
 }
 
-func (w *sftpWindow) paintQueue(canvas *ui.Canvas, bounds ui.Rect) {
+func (w *sftpWindow) paintQueue(canvas *gfx.Canvas, bounds gfx.Rect) {
 	theme, m := w.owner.Theme(), w.owner.messages
-	canvas.Label(m.SFTPTransferQueue, ui.Rect{X: bounds.X + 4, Y: bounds.Y, Width: bounds.Width - 8, Height: 20}, ui.TextStyle{Size: theme.Metrics.FontSizeS, Weight: ui.WeightSemibold, Color: theme.Foreground})
-	w.ui.queueBounds = ui.Rect{X: bounds.X, Y: bounds.Y + 24, Width: bounds.Width, Height: max(bounds.Height-24, 0)}
-	area := components.BeginScrollArea(canvas, theme, w.ui.queueBounds, ui.Size{Height: float32(w.queueCount()) * transferCardHeight}).Offset(0, w.ui.queueOffset).VerticalScrollbar(hitSFTPWindowQueueBar, m.SFTPTransferQueue, "")
+	canvas.Label(m.SFTPTransferQueue, gfx.Rect{X: bounds.X + 4, Y: bounds.Y, Width: bounds.Width - 8, Height: 20}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightSemibold, Color: theme.Foreground})
+	w.ui.queueBounds = gfx.Rect{X: bounds.X, Y: bounds.Y + 24, Width: bounds.Width, Height: max(bounds.Height-24, 0)}
+	area := components.BeginScrollArea(canvas, theme, w.ui.queueBounds, gfx.Size{Height: float32(w.queueCount()) * transferCardHeight}).Offset(0, w.ui.queueOffset).VerticalScrollbar(hitSFTPWindowQueueBar, m.SFTPTransferQueue, "")
 	w.ui.queueBar = area.BeginContent()
 	w.ui.queueOffset = w.ui.queueBar.OffsetY
 	row := 0
@@ -515,20 +515,20 @@ func (w *sftpWindow) paintQueue(canvas *ui.Canvas, bounds ui.Rect) {
 			if e.owner != w.view || e.removed || (pass == 0) != transferActive(e.snapshot) {
 				continue
 			}
-			box := ui.Rect{X: bounds.X, Y: w.ui.queueBounds.Y + float32(row)*transferCardHeight - w.ui.queueOffset, Width: bounds.Width - 12, Height: transferCardHeight - 8}
+			box := gfx.Rect{X: bounds.X, Y: w.ui.queueBounds.Y + float32(row)*transferCardHeight - w.ui.queueOffset, Width: bounds.Width - 12, Height: transferCardHeight - 8}
 			index := row
 			row++
 			if box.Y+box.Height < w.ui.queueBounds.Y || box.Y > w.ui.queueBounds.Y+w.ui.queueBounds.Height {
 				continue
 			}
-			canvas.HitWithOptions(sftpWindowQueueRows.At(index), box, e.title, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true, Hint: e.paths})
+			canvas.HitWithOptions(sftpWindowQueueRows.At(index), box, e.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: e.paths})
 			w.owner.paintTransferCard(canvas, box, e)
 		}
 	}
 	area.EndContent()
 }
 
-func (w *sftpWindow) paintMenu(canvas *ui.Canvas) {
+func (w *sftpWindow) paintMenu(canvas *gfx.Canvas) {
 	rows := w.owner.sftpMenuRows(&w.session, w.view)
 	if selectedSFTPCount(w.view) == 0 {
 		rows = menuRows{}
@@ -557,12 +557,12 @@ func (w *sftpWindow) paintMenu(canvas *ui.Canvas) {
 	theme := w.owner.contextMenuTheme()
 	width, height := rows.size(canvas, theme)
 	width = min(width, 480)
-	menu := components.BeginContextMenu(canvas, theme, ui.Rect{X: w.ui.menuAt.X, Y: w.ui.menuAt.Y, Width: width, Height: height}, components.ContextMenuOptions{Layer: popupLayer, Scope: hitSFTPWindowMenuDismiss, DismissID: hitSFTPWindowMenuDismiss, Viewport: ui.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height}, Scroll: &w.ui.menuScroll, RowHeight: contextMenuRow})
+	menu := components.BeginContextMenu(canvas, theme, gfx.Rect{X: w.ui.menuAt.X, Y: w.ui.menuAt.Y, Width: width, Height: height}, components.ContextMenuOptions{Layer: popupLayer, Scope: hitSFTPWindowMenuDismiss, DismissID: hitSFTPWindowMenuDismiss, Viewport: gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height}, Scroll: &w.ui.menuScroll, RowHeight: contextMenuRow})
 	rows.paint(&menu, nil)
 	menu.End()
 }
 
-func (w *sftpWindow) paintDrag(canvas *ui.Canvas) {
+func (w *sftpWindow) paintDrag(canvas *gfx.Canvas) {
 	local, target, row, valid := w.dropTarget(w.drag.at.X, w.drag.at.Y, w.drag.fromLocal)
 	if !valid {
 		return

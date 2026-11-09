@@ -5,7 +5,7 @@ import (
 	"slices"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var (
@@ -20,7 +20,7 @@ var (
 type workspaceTemplateMenu struct {
 	open       bool
 	templateID string
-	at         ui.Point
+	at         gfx.Point
 }
 
 type workspaceTemplateDelete struct {
@@ -38,63 +38,63 @@ func (state *State) workspaceTemplateByID(id string) (WorkspaceTemplate, int, bo
 	return WorkspaceTemplate{}, -1, false
 }
 
-func (state *State) openWorkspaceTemplateMenu(templateID string, at ui.Point) {
+func (state *State) openWorkspaceTemplateMenu(templateID string, at gfx.Point) {
 	state.workspaceTemplateMenu = workspaceTemplateMenu{open: true, templateID: templateID, at: at}
 	state.workspaceTemplateFocusPending = hitWorkspaceTemplateMenuEdit
 }
 
-func (state *State) workspaceTemplateMenuKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) workspaceTemplateMenuKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if !state.workspaceTemplateMenu.open || event.Release {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	scroll := state.openMenuScroll()
 	if scroll == nil {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape {
+	if event.Key == gfx.KeyEscape {
 		templateID := state.workspaceTemplateMenu.templateID
 		state.workspaceTemplateMenu.open = false
 		state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(templateID)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if event.Target != hitWorkspaceTemplateMenuEdit && event.Target != hitWorkspaceTemplateMenuDelete {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	switch event.Key {
-	case ui.KeyEnter, ui.KeySpace:
+	case gfx.KeyEnter, gfx.KeySpace:
 		if event.Repeat {
-			return ui.EventResult{Handled: true}, true
+			return gfx.EventResult{Handled: true}, true
 		}
 		state.clickWorkspaceTemplateManagement(event.Target)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	id, ok := scroll.Navigate(event.Key, event.Target, true)
 	if !ok {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	return ui.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}, true
 }
 
-func (state *State) workspaceTemplateLauncherKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) workspaceTemplateLauncherKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.activeSection != sectionWorkspaces || state.modal != modalNone || event.Release ||
 		event.Repeat || event.Modifiers != 0 ||
-		(event.Key != ui.KeyEnter && event.Key != ui.KeySpace) {
-		return ui.EventResult{}, false
+		(event.Key != gfx.KeyEnter && event.Key != gfx.KeySpace) {
+		return gfx.EventResult{}, false
 	}
 	index, ok := event.Target.In(hitWorkspaceTemplateMore)
 	if !ok || index < 0 || index >= len(state.templates) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.clickWorkspaceTemplateManagement(event.Target)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) clickWorkspaceTemplateManagement(id ui.ID) bool {
+func (state *State) clickWorkspaceTemplateManagement(id gfx.ID) bool {
 	menu := &state.workspaceTemplateMenu
 	if menu.open {
 		template, index, exists := state.workspaceTemplateByID(menu.templateID)
 		menu.open = false
-		state.workspaceTemplateFocusPending = ui.ID{}
+		state.workspaceTemplateFocusPending = gfx.ID{}
 		if state.modal != modalNone || state.activeSection != sectionWorkspaces || !exists {
 			return true
 		}
@@ -113,29 +113,29 @@ func (state *State) clickWorkspaceTemplateManagement(id ui.ID) bool {
 	}
 	index, ok := id.In(hitWorkspaceTemplateMore)
 	if !ok || index < 0 || index >= len(state.templates) {
-		state.workspaceTemplateFocusPending = ui.ID{}
+		state.workspaceTemplateFocusPending = gfx.ID{}
 		return true
 	}
 	state.openWorkspaceTemplateMenu(state.templates[index].ID, state.workspaceTemplateMenuAnchor(index))
 	return true
 }
 
-func (state *State) workspaceTemplateMenuAnchor(index int) ui.Point {
+func (state *State) workspaceTemplateMenuAnchor(index int) gfx.Point {
 	if index < 0 || index >= len(state.workspaceTemplateMoreBounds) {
-		return ui.Point{X: state.workspaceLibraryBounds.X + max(0, state.workspaceLibraryBounds.Width-40), Y: state.workspaceLibraryBounds.Y + 30}
+		return gfx.Point{X: state.workspaceLibraryBounds.X + max(0, state.workspaceLibraryBounds.Width-40), Y: state.workspaceLibraryBounds.Y + 30}
 	}
 	bounds := state.workspaceTemplateMoreBounds[index]
-	return ui.Point{X: bounds.X + bounds.Width, Y: bounds.Y + bounds.Height}
+	return gfx.Point{X: bounds.X + bounds.Width, Y: bounds.Y + bounds.Height}
 }
 
-func (state *State) paintWorkspaceTemplateMenu(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintWorkspaceTemplateMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	menu := &state.workspaceTemplateMenu
 	if !menu.open {
 		return
 	}
 	if state.activeSection != sectionWorkspaces || state.modal != modalNone {
 		menu.open = false
-		state.workspaceTemplateFocusPending = ui.ID{}
+		state.workspaceTemplateFocusPending = gfx.ID{}
 		return
 	}
 	if _, _, exists := state.workspaceTemplateByID(menu.templateID); !exists {
@@ -174,10 +174,10 @@ func (state *State) openWorkspaceTemplateDelete(templateID string) {
 	state.workspaceLibraryExpanded = true
 	state.workspaceTemplateDelete = workspaceTemplateDelete{templateID: template.ID, name: template.Name}
 	state.modal = modalWorkspaceTemplateDelete
-	state.workspaceTemplateFocusPending = ui.ID{}
+	state.workspaceTemplateFocusPending = gfx.ID{}
 }
 
-func (state *State) paintWorkspaceTemplateDelete(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintWorkspaceTemplateDelete(canvas *gfx.Canvas, viewport gfx.Rect) {
 	target := &state.workspaceTemplateDelete
 	m := state.messages
 	body := float32(0)
@@ -188,14 +188,14 @@ func (state *State) paintWorkspaceTemplateDelete(canvas *ui.Canvas, viewport ui.
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitWorkspaceTemplateDeleteClose, CloseID: hitWorkspaceTemplateDeleteClose,
 		InitialFocusID: hitWorkspaceTemplateDeleteCancel,
-		ContentSize:    ui.Size{Width: 520}, FitBody: true, BodyHeight: body,
+		ContentSize:    gfx.Size{Width: 520}, FitBody: true, BodyHeight: body,
 	})
 	layout := dialog.Begin(m.WorkspaceTemplateDeleteTitle, fmt.Sprintf(
 		m.WorkspaceTemplateDeleteDescriptionFmt, target.name))
 	if target.error != "" {
 		f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
 		f.Column().Fill().Children(func() {
-			f.Text(target.error).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).
+			f.Text(target.error).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
 				Color(state.pal.danger).LineHeight(20)
 		})
 		f.End()
@@ -207,7 +207,7 @@ func (state *State) paintWorkspaceTemplateDelete(canvas *ui.Canvas, viewport ui.
 	dialog.End()
 }
 
-func (state *State) clickWorkspaceTemplateDelete(id ui.ID) {
+func (state *State) clickWorkspaceTemplateDelete(id gfx.ID) {
 	switch id {
 	case hitWorkspaceTemplateDeleteClose, hitWorkspaceTemplateDeleteCancel:
 		state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(state.workspaceTemplateDelete.templateID)
@@ -218,35 +218,35 @@ func (state *State) clickWorkspaceTemplateDelete(id ui.ID) {
 	}
 }
 
-func (state *State) workspaceTemplateDeleteKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) workspaceTemplateDeleteKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalWorkspaceTemplateDelete || event.Release {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape {
+	if event.Key == gfx.KeyEscape {
 		state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(state.workspaceTemplateDelete.templateID)
 		state.workspaceTemplateDelete = workspaceTemplateDelete{}
 		state.modal = modalNone
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if event.Key == ui.KeyTab {
+	if event.Key == gfx.KeyTab {
 		next := hitWorkspaceTemplateDeleteSubmit
 		if event.Target == hitWorkspaceTemplateDeleteSubmit {
 			next = hitWorkspaceTemplateDeleteCancel
 		}
-		if event.Modifiers&ui.ModifierShift != 0 {
+		if event.Modifiers&gfx.ModifierShift != 0 {
 			next = hitWorkspaceTemplateDeleteSubmit
 			if event.Target == hitWorkspaceTemplateDeleteSubmit {
 				next = hitWorkspaceTemplateDeleteCancel
 			}
 		}
-		return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}, true
 	}
-	if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat && event.Modifiers == 0 &&
+	if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat && event.Modifiers == 0 &&
 		(event.Target == hitWorkspaceTemplateDeleteCancel || event.Target == hitWorkspaceTemplateDeleteSubmit) {
 		state.clickWorkspaceTemplateDelete(event.Target)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 func (state *State) submitWorkspaceTemplateDelete() {
@@ -293,7 +293,7 @@ func (state *State) submitWorkspaceTemplateDelete() {
 	)
 }
 
-func (state *State) workspaceTemplateFocusAfterDelete(templateID string) ui.ID {
+func (state *State) workspaceTemplateFocusAfterDelete(templateID string) gfx.ID {
 	if len(state.templates) == 0 {
 		return hitWorkspaceNew
 	}

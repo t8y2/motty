@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/update"
 )
 
@@ -447,7 +447,7 @@ func TestAWaitingRequestStartsWhenTheDialogIsClosedByAKey(t *testing.T) {
 	state.Launch([]string{"four@four.example.com"})
 	state.Wake()
 	state.modal = modalNone // as an escape or a click elsewhere would
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyTab}); !result.Repaint || len(world.configs) != 2 {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyTab}); !result.Repaint || len(world.configs) != 2 {
 		t.Fatalf("repaint %v, dials %d", result.Repaint, len(world.configs))
 	}
 }

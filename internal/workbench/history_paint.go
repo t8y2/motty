@@ -4,18 +4,18 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
-func (state *State) paintHistory(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintHistory(canvas *gfx.Canvas, viewport gfx.Rect) {
 	state.rankHistory()
 	h := &state.history
 	m := state.messages.History
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitHistoryDismiss, CloseID: hitHistoryClose, InitialFocusID: hitHistorySearch,
-		ContentSize: ui.Size{Width: 680, Height: 480},
+		ContentSize: gfx.Size{Width: 680, Height: 480},
 	})
 	layout := dialog.Begin(m.Title, "")
 	value := h.search.String()
@@ -38,12 +38,12 @@ func (state *State) paintHistory(canvas *ui.Canvas, viewport ui.Rect) {
 		empty = m.EmptyNone
 	}
 
-	var search, scope flex.Box
+	var search, scope ui.Box
 	f := state.historyLayout.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() {
 		f.Row().Height(36).Gap(8).Shrink(0).Children(func() {
 			search = f.Slot().Grow(1).Height(36)
-			scope = f.Slot().Width(210).Height(36).Self(flex.Center)
+			scope = f.Slot().Width(210).Height(36).Self(ui.Center)
 		})
 		defer func() {
 			f.Text(m.Hint).FontSize(metrics.FontSizeS).Color(state.pal.faint).LineHeight(18).Ellipsis().Shrink(0)
@@ -62,13 +62,13 @@ func (state *State) paintHistory(canvas *ui.Canvas, viewport ui.Rect) {
 				if selected {
 					color, detailColor = state.pal.onAccent, state.pal.onAccent
 				}
-				row := f.Row().Height(30).PadX(10).Gap(12).Items(flex.Center).Shrink(0)
+				row := f.Row().Height(30).PadX(10).Gap(12).Items(ui.Center).Shrink(0)
 				if selected {
 					row.Background(state.pal.accent).Radius(radius.item)
 				}
 				// The rows touch through the gap between them, so crossing it never
 				// takes the pointer off the list and flashes the keyboard's row.
-				row.HitOutset(1, 0, 1, 0).HitWith(id, entry.Command, ui.HitOptions{Role: ui.RoleButton}).Children(func() {
+				row.HitOutset(1, 0, 1, 0).HitWith(id, entry.Command, gfx.HitOptions{Role: gfx.RoleButton}).Children(func() {
 					f.Text(entry.Command).FontSize(metrics.FontSizeM).Color(color).Ellipsis().Grow(1)
 					if entry.Count > 1 {
 						f.Text(fmt.Sprintf(m.UsedFmt, entry.Count)).FontSize(metrics.FontSizeS).Color(detailColor).Shrink(0)

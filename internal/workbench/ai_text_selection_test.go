@@ -9,7 +9,7 @@ import (
 	"motty/internal/ai/risk"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // selectAnswerRange selects bytes of the primary block of one row, as a drag
@@ -33,7 +33,7 @@ func selectAnswerText(t *testing.T, state *State, start, end int) *aiPanel {
 	return panel
 }
 
-func hitIndex(hits []ui.Hit, id ui.ID) int {
+func hitIndex(hits []gfx.Hit, id gfx.ID) int {
 	for index, hit := range hits {
 		if hit.ID == id {
 			return index
@@ -52,7 +52,7 @@ func TestAnswerBodyIsAFocusableTextRegionBeforeLinksAndButtons(t *testing.T) {
 	if !ok {
 		t.Fatalf("the answer body has no hit: %+v", canvas.Hits())
 	}
-	if textHit.Role != ui.RoleGroup || !textHit.Focusable || !textHit.SkipTab {
+	if textHit.Role != gfx.RoleGroup || !textHit.Focusable || !textHit.SkipTab {
 		t.Fatalf("answer body hit = %+v, want a focusable group outside Tab order", textHit)
 	}
 	if textHit.Label != state.messages.AIPanel.AnswerText {
@@ -70,45 +70,45 @@ func TestAnswerBodyIsAFocusableTextRegionBeforeLinksAndButtons(t *testing.T) {
 	}
 }
 
-func answerPointer(state *State, kind ui.PointerEventKind, at ui.Point, target ui.ID) ui.EventResult {
-	return answerPointerCaptured(state, kind, at, target, kind != ui.PointerDown)
+func answerPointer(state *State, kind gfx.PointerEventKind, at gfx.Point, target gfx.ID) gfx.EventResult {
+	return answerPointerCaptured(state, kind, at, target, kind != gfx.PointerDown)
 }
 
-func answerPointerCaptured(state *State, kind ui.PointerEventKind, at ui.Point, target ui.ID, captured bool) ui.EventResult {
-	return state.Pointer(ui.PointerEvent{
-		Kind: kind, Button: ui.PointerButtonPrimary, X: at.X, Y: at.Y, Target: target, Captured: captured, Viewport: panelWide,
+func answerPointerCaptured(state *State, kind gfx.PointerEventKind, at gfx.Point, target gfx.ID, captured bool) gfx.EventResult {
+	return state.Pointer(gfx.PointerEvent{
+		Kind: kind, Button: gfx.PointerButtonPrimary, X: at.X, Y: at.Y, Target: target, Captured: captured, Viewport: panelWide,
 	})
 }
 
-func hitCenter(t *testing.T, canvas *ui.Canvas, id ui.ID) ui.Point {
+func hitCenter(t *testing.T, canvas *gfx.Canvas, id gfx.ID) gfx.Point {
 	t.Helper()
 	hit, ok := canvasHit(canvas.Hits(), id)
 	if !ok {
 		t.Fatalf("no hit %v in %+v", id, canvas.Hits())
 	}
-	return ui.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
+	return gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
 }
 
-func dragSelectWholeText(t *testing.T, state *State, canvas *ui.Canvas, id ui.ID) {
+func dragSelectWholeText(t *testing.T, state *State, canvas *gfx.Canvas, id gfx.ID) {
 	t.Helper()
 	hit, ok := canvasHit(canvas.Hits(), id)
 	if !ok {
 		t.Fatalf("no selectable text hit %v in %+v", id, canvas.Hits())
 	}
-	start := ui.Point{X: hit.Bounds.X + 1, Y: hit.Bounds.Y + 1}
-	end := ui.Point{X: hit.Bounds.X + hit.Bounds.Width, Y: hit.Bounds.Y + hit.Bounds.Height - 1}
-	if result := answerPointer(state, ui.PointerDown, start, id); !result.Handled || result.Focus != id {
+	start := gfx.Point{X: hit.Bounds.X + 1, Y: hit.Bounds.Y + 1}
+	end := gfx.Point{X: hit.Bounds.X + hit.Bounds.Width, Y: hit.Bounds.Y + hit.Bounds.Height - 1}
+	if result := answerPointer(state, gfx.PointerDown, start, id); !result.Handled || result.Focus != id {
 		t.Fatalf("pressing selectable text = %+v, want focus %v", result, id)
 	}
-	answerPointer(state, ui.PointerMove, end, id)
-	answerPointer(state, ui.PointerUp, end, id)
+	answerPointer(state, gfx.PointerMove, end, id)
+	answerPointer(state, gfx.PointerUp, end, id)
 	if !state.ai.panel.hasAITextSelection() {
 		t.Fatalf("dragging %v left no selection: %+v", id, state.ai.panel.textSelect)
 	}
 }
 
-func copyChord(target ui.ID) ui.KeyEvent {
-	return ui.KeyEvent{Text: "c", Modifiers: keymap.Primary, Target: target}
+func copyChord(target gfx.ID) gfx.KeyEvent {
+	return gfx.KeyEvent{Text: "c", Modifiers: keymap.Primary, Target: target}
 }
 
 func TestCopyChordCopiesTheAnswerSelection(t *testing.T) {
@@ -125,10 +125,10 @@ func TestCopyChordCopiesTheAnswerSelection(t *testing.T) {
 func TestNamedCopyBindingCopiesTheAnswerSelection(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	selectAnswerText(t, state, 0, 5)
-	state.shortcuts.bind(shortcutCopy, keymap.Chord{Key: ui.KeyF8})
+	state.shortcuts.bind(shortcutCopy, keymap.Chord{Key: gfx.KeyF8})
 	var copied string
 	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
-	result := state.Key(ui.KeyEvent{Key: ui.KeyF8, Target: hitAIAnswerText.At(0)})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyF8, Target: hitAIAnswerText.At(0)})
 	if !result.Handled || copied != "alpha" {
 		t.Fatalf("named copy binding copied %q, result=%+v", copied, result)
 	}
@@ -256,10 +256,10 @@ func TestCopyChordInTheTerminalDoesNotCopyTheAnswerSelection(t *testing.T) {
 func TestEscapeClearsTheAnswerSelection(t *testing.T) {
 	state, _ := panelState(t, nil)
 	panel := selectAnswerText(t, state, 0, 5)
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: terminalHit(state, 0)}); result.Handled && !panel.hasAITextSelection() {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: terminalHit(state, 0)}); result.Handled && !panel.hasAITextSelection() {
 		t.Fatal("Escape in the terminal cleared the answer selection")
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitAIAnswerText.At(0)})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIAnswerText.At(0)})
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("Escape on the answer = %+v", result)
 	}
@@ -273,7 +273,7 @@ func TestEscapeDismissesTheApprovalBeforeClearingTheSelection(t *testing.T) {
 	panel := selectAnswerText(t, state, 0, 5)
 	approval := approvalFixture(state, risk.Medium, false)
 	paintAt(state, panelWide)
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitAIAnswerText.At(0)})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIAnswerText.At(0)})
 	if !result.Handled {
 		t.Fatal("Escape was not taken")
 	}
@@ -289,13 +289,13 @@ func TestEscapeDismissesTheApprovalBeforeClearingTheSelection(t *testing.T) {
 		t.Fatalf("answering the approval cleared the selection: %+v", panel.textSelect)
 	}
 	paintAt(state, panelWide)
-	state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitAIAnswerText.At(0)})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIAnswerText.At(0)})
 	if panel.hasAITextSelection() {
 		t.Fatalf("the second Escape kept the selection: %+v", panel.textSelect)
 	}
 }
 
-func firstLinkHit(t *testing.T, canvas *ui.Canvas) ui.ID {
+func firstLinkHit(t *testing.T, canvas *gfx.Canvas) gfx.ID {
 	t.Helper()
 	for _, hit := range canvas.Hits() {
 		if hit.ID.Scope() == hitAILinks {
@@ -303,7 +303,7 @@ func firstLinkHit(t *testing.T, canvas *ui.Canvas) ui.ID {
 		}
 	}
 	t.Fatalf("no link hit in %+v", canvas.Hits())
-	return ui.ID{}
+	return gfx.ID{}
 }
 
 func TestAnswerLinkOpensAndClearsTheSelection(t *testing.T) {
@@ -319,7 +319,7 @@ func TestAnswerLinkOpensAndClearsTheSelection(t *testing.T) {
 	link := firstLinkHit(t, canvas)
 	// The real pointer path first, like the runtime: pressing a link is a press
 	// outside the answer text, so the selection goes.
-	answerPointer(state, ui.PointerDown, hitCenter(t, canvas, link), link)
+	answerPointer(state, gfx.PointerDown, hitCenter(t, canvas, link), link)
 	if panel.hasAITextSelection() {
 		t.Fatalf("pressing a link kept the selection: %+v", panel.textSelect)
 	}
@@ -340,7 +340,7 @@ func TestCodeCopyButtonCopiesItsBlockAndClearsTheSelection(t *testing.T) {
 	selectAnswerRange(panel, 0, 0, 3)
 	canvas, _ := paintAt(state, panelWide)
 	button := hitAICopies.At(0)
-	answerPointer(state, ui.PointerDown, hitCenter(t, canvas, button), button)
+	answerPointer(state, gfx.PointerDown, hitCenter(t, canvas, button), button)
 	if panel.hasAITextSelection() {
 		t.Fatalf("pressing the copy button kept the selection: %+v", panel.textSelect)
 	}
@@ -360,11 +360,11 @@ func TestAnswerTextDragAcrossALinkStillSelects(t *testing.T) {
 	panel := &state.ai.panel
 	row := &panel.rows[0]
 	id := hitAIAnswerText.At(0)
-	start := ui.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
-	end := ui.Point{X: row.textRect.X + row.textRect.Width - 1, Y: row.textRect.Y + 1}
-	answerPointer(state, ui.PointerDown, start, id)
-	answerPointer(state, ui.PointerMove, end, id)
-	answerPointer(state, ui.PointerUp, end, id)
+	start := gfx.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
+	end := gfx.Point{X: row.textRect.X + row.textRect.Width - 1, Y: row.textRect.Y + 1}
+	answerPointer(state, gfx.PointerDown, start, id)
+	answerPointer(state, gfx.PointerMove, end, id)
+	answerPointer(state, gfx.PointerUp, end, id)
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "alpha link omega" {
 		t.Fatalf("drag across a link selected %q, %v", got, ok)
 	}
@@ -384,14 +384,14 @@ func TestPressesOutsideTextAndCollapsibleHeadersCreateNoSelection(t *testing.T) 
 	}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
-	for index, target := range []ui.ID{{}, hitAIRows.At(1), hitAIRows.At(2)} {
+	for index, target := range []gfx.ID{{}, hitAIRows.At(1), hitAIRows.At(2)} {
 		row := &panel.rows[index]
-		at := ui.Point{X: panel.list.X + 20, Y: panel.list.Y + row.top + row.height/2}
-		answerPointer(state, ui.PointerDown, at, target)
+		at := gfx.Point{X: panel.list.X + 20, Y: panel.list.Y + row.top + row.height/2}
+		answerPointer(state, gfx.PointerDown, at, target)
 		if panel.hasAITextSelection() {
 			t.Fatalf("press on row %d left a selection: %+v", index, panel.textSelect)
 		}
-		answerPointer(state, ui.PointerUp, at, target)
+		answerPointer(state, gfx.PointerUp, at, target)
 	}
 	for index := 1; index <= 2; index++ {
 		if panel.rows[index].expanded {
@@ -413,27 +413,27 @@ func TestAnswerTextDragUpwardKeepsTheAnchorAcrossPaints(t *testing.T) {
 	row := &panel.rows[0]
 	id := hitAIAnswerText.At(0)
 	// Start at the beginning of the second line and drag up.
-	second := ui.Point{X: row.textRect.X + 1, Y: row.textRect.Y + row.md.Height() - 1}
-	answerPointer(state, ui.PointerDown, second, id)
+	second := gfx.Point{X: row.textRect.X + 1, Y: row.textRect.Y + row.md.Height() - 1}
+	answerPointer(state, gfx.PointerDown, second, id)
 	anchor := panel.textSelect.Anchor.Offset
 	if anchor != len("alpha beta\n") {
 		t.Fatalf("the drag started at %d, want the second line", anchor)
 	}
 	// Two moves with a repaint between each, as the application paints while
 	// the pointer is still down.
-	middle := ui.Point{X: row.textRect.X + row.textRect.Width - 20, Y: row.textRect.Y + 1}
-	answerPointer(state, ui.PointerMove, middle, id)
+	middle := gfx.Point{X: row.textRect.X + row.textRect.Width - 20, Y: row.textRect.Y + 1}
+	answerPointer(state, gfx.PointerMove, middle, id)
 	paintAt(state, panelWide)
 	if got := panel.textSelect.Anchor.Offset; got != anchor {
 		t.Fatalf("the first repaint moved the anchor from %d to %d", anchor, got)
 	}
-	first := ui.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
-	answerPointer(state, ui.PointerMove, first, id)
+	first := gfx.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
+	answerPointer(state, gfx.PointerMove, first, id)
 	paintAt(state, panelWide)
 	if got := panel.textSelect.Anchor.Offset; got != anchor {
 		t.Fatalf("the second repaint moved the anchor from %d to %d", anchor, got)
 	}
-	answerPointer(state, ui.PointerUp, first, id)
+	answerPointer(state, gfx.PointerUp, first, id)
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "alpha beta\n" {
 		t.Fatalf("the upward drag selected %q, %v; want the whole first line and its break", got, ok)
 	}
@@ -447,12 +447,12 @@ func TestAnswerTextDragIgnoresAnUncapturedMove(t *testing.T) {
 	panel := &state.ai.panel
 	row := &panel.rows[0]
 	id := hitAIAnswerText.At(0)
-	start := ui.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
-	end := ui.Point{X: row.textRect.X + row.textRect.Width - 1, Y: row.textRect.Y + 1}
-	answerPointer(state, ui.PointerDown, start, id)
-	answerPointerCaptured(state, ui.PointerMove, end, id, true)
+	start := gfx.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
+	end := gfx.Point{X: row.textRect.X + row.textRect.Width - 1, Y: row.textRect.Y + 1}
+	answerPointer(state, gfx.PointerDown, start, id)
+	answerPointerCaptured(state, gfx.PointerMove, end, id, true)
 	atEnd := panel.textSelect.Focus.Offset
-	answerPointerCaptured(state, ui.PointerMove, start, id, false)
+	answerPointerCaptured(state, gfx.PointerMove, start, id, false)
 	if got := panel.textSelect.Focus.Offset; got != atEnd {
 		t.Fatalf("an uncaptured move changed the focus from %d to %d", atEnd, got)
 	}
@@ -466,11 +466,11 @@ func TestAnswerTextDragEndsWhenThePointerLeaves(t *testing.T) {
 	panel := &state.ai.panel
 	row := &panel.rows[0]
 	id := hitAIAnswerText.At(0)
-	start := ui.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
-	end := ui.Point{X: row.textRect.X + row.textRect.Width - 1, Y: row.textRect.Y + 1}
-	answerPointer(state, ui.PointerDown, start, id)
-	answerPointerCaptured(state, ui.PointerMove, end, id, true)
-	answerPointerCaptured(state, ui.PointerExit, end, id, true)
+	start := gfx.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
+	end := gfx.Point{X: row.textRect.X + row.textRect.Width - 1, Y: row.textRect.Y + 1}
+	answerPointer(state, gfx.PointerDown, start, id)
+	answerPointerCaptured(state, gfx.PointerMove, end, id, true)
+	answerPointerCaptured(state, gfx.PointerExit, end, id, true)
 	if panel.textSelect.Dragging() {
 		t.Fatal("the drag is still active after the pointer left")
 	}
@@ -478,7 +478,7 @@ func TestAnswerTextDragEndsWhenThePointerLeaves(t *testing.T) {
 		t.Fatal("leaving the window dropped the selection")
 	}
 	atExit := panel.textSelect.Focus.Offset
-	answerPointerCaptured(state, ui.PointerMove, start, id, true)
+	answerPointerCaptured(state, gfx.PointerMove, start, id, true)
 	if got := panel.textSelect.Focus.Offset; got != atExit {
 		t.Fatalf("a move after leaving extended the selection from %d to %d", atExit, got)
 	}
@@ -494,7 +494,7 @@ func TestAnswerSelectionSurvivesARewrap(t *testing.T) {
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "alpha beta" {
 		t.Fatalf("before the rewrap: %q, %v", got, ok)
 	}
-	paintAt(state, ui.Size{Width: 1000, Height: 900})
+	paintAt(state, gfx.Size{Width: 1000, Height: 900})
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "alpha beta" {
 		t.Fatalf("after the rewrap: %q, %v", got, ok)
 	}
@@ -518,17 +518,17 @@ func TestAnswerTextDragSelectsAcrossVisualLines(t *testing.T) {
 	panel := &state.ai.panel
 	row := &panel.rows[0]
 	id := hitAIAnswerText.At(0)
-	start := ui.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
-	end := ui.Point{X: row.textRect.X + 1, Y: row.textRect.Y + row.md.Height() - 1}
+	start := gfx.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
+	end := gfx.Point{X: row.textRect.X + 1, Y: row.textRect.Y + row.md.Height() - 1}
 
-	result := answerPointer(state, ui.PointerDown, start, id)
+	result := answerPointer(state, gfx.PointerDown, start, id)
 	if !result.Handled || result.Focus != id {
 		t.Fatalf("pressing the answer = %+v, want it focused", result)
 	}
 	if !panel.textSelect.Dragging() || panel.textSelect.Anchor != (components.TextPoint{Surface: aiTextSurface(0, aiTextPrimary)}) {
 		t.Fatalf("press did not start a selection: %+v", panel.textSelect)
 	}
-	answerPointer(state, ui.PointerMove, end, id)
+	answerPointer(state, gfx.PointerMove, end, id)
 	if !panel.textSelect.Dragging() {
 		t.Fatal("the drag ended before the button was released")
 	}
@@ -546,7 +546,7 @@ func TestAnswerTextDragSelectsAcrossVisualLines(t *testing.T) {
 	if rects := markdownSelectionRects(canvas, selected); len(rects) == 0 {
 		t.Fatalf("the selection was not highlighted: %+v", canvas.Rectangles())
 	}
-	answerPointer(state, ui.PointerUp, end, id)
+	answerPointer(state, gfx.PointerUp, end, id)
 	if panel.textSelect.Dragging() {
 		t.Fatal("the selection is still dragging after the release")
 	}
@@ -558,7 +558,7 @@ func TestAnswerTextDragSelectsAcrossVisualLines(t *testing.T) {
 func TestAnswerTextPressOutsideClearsTheSelectionWithoutSwallowingThePress(t *testing.T) {
 	state, _ := panelState(t, nil)
 	panel := selectAnswerText(t, state, 0, 5)
-	result := answerPointer(state, ui.PointerDown, ui.Point{X: 10, Y: 10}, hitAIInput)
+	result := answerPointer(state, gfx.PointerDown, gfx.Point{X: 10, Y: 10}, hitAIInput)
 	if !result.Repaint {
 		t.Fatal("clearing the selection asked for no repaint")
 	}
@@ -575,9 +575,9 @@ func TestAnswerTextClickWithoutADragLeavesNoSelection(t *testing.T) {
 	panel := &state.ai.panel
 	row := &panel.rows[0]
 	id := hitAIAnswerText.At(0)
-	at := ui.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
-	answerPointer(state, ui.PointerDown, at, id)
-	answerPointer(state, ui.PointerUp, at, id)
+	at := gfx.Point{X: row.textRect.X + 1, Y: row.textRect.Y + 1}
+	answerPointer(state, gfx.PointerDown, at, id)
+	answerPointer(state, gfx.PointerUp, at, id)
 	if panel.hasAITextSelection() {
 		t.Fatalf("a click left a selection: %+v", panel.textSelect)
 	}
@@ -594,13 +594,13 @@ func TestAnswerTextDragRunsOnIntoTheNextMessage(t *testing.T) {
 	panel := &state.ai.panel
 	first, second := &panel.rows[0], &panel.rows[1]
 	id := hitAIAnswerText.At(0)
-	answerPointer(state, ui.PointerDown, ui.Point{X: first.textRect.X + 1, Y: first.textRect.Y + 1}, id)
-	answerPointer(state, ui.PointerMove, ui.Point{X: first.textRect.X + first.textRect.Width - 1, Y: second.textRect.Y + 1}, id)
+	answerPointer(state, gfx.PointerDown, gfx.Point{X: first.textRect.X + 1, Y: first.textRect.Y + 1}, id)
+	answerPointer(state, gfx.PointerMove, gfx.Point{X: first.textRect.X + first.textRect.Width - 1, Y: second.textRect.Y + 1}, id)
 	if got := panel.textSelect.Focus.Surface; got != aiTextSurface(1, aiTextPrimary) {
 		t.Fatalf("the drag stayed in surface %d", got)
 	}
-	answerPointer(state, ui.PointerMove, ui.Point{X: second.textRect.X + second.textRect.Width - 1, Y: second.textRect.Y + second.textRect.Height - 1}, id)
-	answerPointer(state, ui.PointerUp, ui.Point{X: second.textRect.X + second.textRect.Width - 1, Y: second.textRect.Y + second.textRect.Height - 1}, id)
+	answerPointer(state, gfx.PointerMove, gfx.Point{X: second.textRect.X + second.textRect.Width - 1, Y: second.textRect.Y + second.textRect.Height - 1}, id)
+	answerPointer(state, gfx.PointerUp, gfx.Point{X: second.textRect.X + second.textRect.Width - 1, Y: second.textRect.Y + second.textRect.Height - 1}, id)
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "first answer\n\nsecond answer" {
 		t.Fatalf("the drag selected %q, %v", got, ok)
 	}
@@ -618,12 +618,12 @@ func TestAnswerTextDragThroughTheGapBetweenMessagesGoesOn(t *testing.T) {
 	first, second := &panel.rows[0], &panel.rows[1]
 	gap := (first.textRect.Y + first.textRect.Height + second.textRect.Y) / 2
 	id := hitAIAnswerText.At(0)
-	answerPointer(state, ui.PointerDown, ui.Point{X: first.textRect.X + 1, Y: first.textRect.Y + 1}, id)
-	answerPointer(state, ui.PointerMove, ui.Point{X: first.textRect.X + 1, Y: gap}, id)
+	answerPointer(state, gfx.PointerDown, gfx.Point{X: first.textRect.X + 1, Y: first.textRect.Y + 1}, id)
+	answerPointer(state, gfx.PointerMove, gfx.Point{X: first.textRect.X + 1, Y: gap}, id)
 	if !panel.hasAITextSelection() {
 		t.Fatal("dragging into the gap below the message selected nothing")
 	}
-	answerPointer(state, ui.PointerUp, ui.Point{X: first.textRect.X + 1, Y: gap}, id)
+	answerPointer(state, gfx.PointerUp, gfx.Point{X: first.textRect.X + 1, Y: gap}, id)
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "first answer" {
 		t.Fatalf("the drag selected %q, %v", got, ok)
 	}
@@ -652,8 +652,8 @@ func TestSelectionAcrossMessagesCoversTheBlocksBetween(t *testing.T) {
 	}
 }
 
-func markdownSelectionRects(canvas *ui.Canvas, color ui.Color) []ui.Rectangle {
-	var found []ui.Rectangle
+func markdownSelectionRects(canvas *gfx.Canvas, color gfx.Color) []gfx.Rectangle {
+	var found []gfx.Rectangle
 	for _, rectangle := range canvas.Rectangles() {
 		if rectangle.Color == color {
 			found = append(found, rectangle)

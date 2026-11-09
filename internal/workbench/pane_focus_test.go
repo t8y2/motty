@@ -4,14 +4,14 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
 
 // paneDriver drives a state through the real painter and input router, so a test
 // sees the focus and the clicks a window would.
-func paneDriver(t *testing.T, state *State, size ui.Size) *app.Driver {
+func paneDriver(t *testing.T, state *State, size gfx.Size) *app.Driver {
 	t.Helper()
 	driver, err := app.NewDriver(app.Config{
 		Title: "panes", Width: int(size.Width), Height: int(size.Height),
@@ -31,7 +31,7 @@ func paneDriver(t *testing.T, state *State, size ui.Size) *app.Driver {
 }
 
 // hitOf returns the hit a driver painted with that identity.
-func hitOf(t *testing.T, driver *app.Driver, id ui.ID) ui.Hit {
+func hitOf(t *testing.T, driver *app.Driver, id gfx.ID) gfx.Hit {
 	t.Helper()
 	for _, hit := range driver.Snapshot().Hits {
 		if hit.ID == id {
@@ -39,12 +39,12 @@ func hitOf(t *testing.T, driver *app.Driver, id ui.ID) ui.Hit {
 		}
 	}
 	t.Fatalf("hit %d was not painted", id)
-	return ui.Hit{}
+	return gfx.Hit{}
 }
 
 // pagedIdentity is a page identity as the window sees it: a workspace of one
 // pane paints its page in place, and panes side by side mount theirs.
-func pagedIdentity(state *State, session *Session, local ui.ID) ui.ID {
+func pagedIdentity(state *State, session *Session, local gfx.ID) gfx.ID {
 	if len(state.Panes(nil)) > 1 {
 		return tree.MountID(paneMount(session), local)
 	}
@@ -52,12 +52,12 @@ func pagedIdentity(state *State, session *Session, local ui.ID) ui.ID {
 }
 
 // terminalOf is the identity of the terminal a session's page paints.
-func terminalOf(state *State, session *Session) ui.ID {
+func terminalOf(state *State, session *Session) gfx.ID {
 	return pagedIdentity(state, session, hitTerminalList.At(int(session.ID)))
 }
 
 // paneBoundsOf is where a session's pane sits in the window.
-func paneBoundsOf(t *testing.T, state *State, size ui.Size, session *Session) ui.Rect {
+func paneBoundsOf(t *testing.T, state *State, size gfx.Size, session *Session) gfx.Rect {
 	t.Helper()
 	pane, ok := state.paneForSession(session.ID)
 	if !ok {
@@ -77,7 +77,7 @@ func clickPaneGrid(t *testing.T, state *State, driver *app.Driver, session *Sess
 }
 
 // clickPaneBar presses a pane's bar, the ground above its terminal.
-func clickPaneBar(t *testing.T, state *State, driver *app.Driver, size ui.Size, session *Session) {
+func clickPaneBar(t *testing.T, state *State, driver *app.Driver, size gfx.Size, session *Session) {
 	t.Helper()
 	bounds := paneBoundsOf(t, state, size, session)
 	if err := driver.Click(bounds.X+bounds.Width/2, bounds.Y+infoBarHeight/2); err != nil {
@@ -86,7 +86,7 @@ func clickPaneBar(t *testing.T, state *State, driver *app.Driver, size ui.Size, 
 }
 
 // clickPanePage presses a pane's page away from the controls it painted.
-func clickPanePage(t *testing.T, state *State, driver *app.Driver, size ui.Size, session *Session) {
+func clickPanePage(t *testing.T, state *State, driver *app.Driver, size gfx.Size, session *Session) {
 	t.Helper()
 	bounds := paneBoundsOf(t, state, size, session)
 	if err := driver.Click(bounds.X+bounds.Width/2, bounds.Y+bounds.Height-40); err != nil {
@@ -119,7 +119,7 @@ func twoLivePanes(t *testing.T) (*State, *fakeShell, *fakeShell) {
 // keyboard before.
 func TestPressingAPaneBarTakesTheKeyboardIntoIt(t *testing.T) {
 	state, firstShell, secondShell := twoLivePanes(t)
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Resize(size)
 	driver := paneDriver(t, state, size)
 	first, second := &state.sessions[0], &state.sessions[1]
@@ -148,7 +148,7 @@ func TestPressingAPaneBarTakesTheKeyboardIntoIt(t *testing.T) {
 // press there leaves the page under it with the keyboard, so typing goes on.
 func TestPressingTheBarOfALonePaneKeepsTyping(t *testing.T) {
 	state, _, _, shell := liveSession(t)
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Resize(size)
 	driver := paneDriver(t, state, size)
 	session := &state.sessions[0]
@@ -202,7 +202,7 @@ func TestEnterOnAPressedRestoredPaneConnectsThatPane(t *testing.T) {
 	shell.say("\x1b[0m")
 	state.Wake()
 
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Resize(size)
 	driver := paneDriver(t, state, size)
 	clickPaneGrid(t, state, driver, live)
@@ -217,7 +217,7 @@ func TestEnterOnAPressedRestoredPaneConnectsThatPane(t *testing.T) {
 	if focused, want := driver.Snapshot().Focused, pagedIdentity(state, restored, hitConnRetry); focused != want {
 		t.Fatalf("the restored page left the keyboard at %d, want its Connect button %d", focused, want)
 	}
-	if err := driver.Key(ui.KeyEnter, 0); err != nil {
+	if err := driver.Key(gfx.KeyEnter, 0); err != nil {
 		t.Fatal(err)
 	}
 	if restored.conn == nil {

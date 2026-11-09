@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestSelectingAndConnectingHostCreatesTab(t *testing.T) {
@@ -26,8 +26,8 @@ func TestSelectingAndConnectingHostCreatesTab(t *testing.T) {
 
 func TestSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 
 	allocations := testing.AllocsPerRun(100, func() {
@@ -41,8 +41,8 @@ func TestSteadyStatePaintDoesNotAllocate(t *testing.T) {
 
 func BenchmarkPaintWorkspace(b *testing.B) {
 	state := newTestState(b, testOptions(b))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	b.ReportAllocs()
 	for b.Loop() {
 		canvas.Reset()
@@ -120,20 +120,20 @@ func TestLanguageSwitchRetargetsCatalog(t *testing.T) {
 
 // typeInto delivers text the way the runtime does: it asks which editor backs
 // the focused hit, then applies a native insert event to it.
-func typeInto(state *State, hit ui.ID, value string) {
+func typeInto(state *State, hit gfx.ID, value string) {
 	app.TextEvent{Kind: app.TextInsert, Text: value}.Apply(state.EditorFor(hit))
 }
 
 func TestHostDialogDeclaresInitialFocusAndFieldEditors(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 
 	state.Paint(&canvas, size)
 	if !canvas.TrappedFocusScope().IsZero() || !canvas.InitialFocus().IsZero() {
 		t.Fatal("closed dialog must not trap focus")
 	}
-	for _, hit := range []ui.ID{hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogGroup, hitDialogPort} {
+	for _, hit := range []gfx.ID{hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogGroup, hitDialogPort} {
 		if state.EditorFor(hit) != nil {
 			t.Fatalf("hit %d has an editor while the dialog is closed", hit)
 		}
@@ -147,7 +147,7 @@ func TestHostDialogDeclaresInitialFocusAndFieldEditors(t *testing.T) {
 			canvas.TrappedFocusScope(), canvas.InitialFocus(), dialogScope, hitDialogLabel)
 	}
 	seen := map[*text.Editor]bool{}
-	for _, hit := range []ui.ID{hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogGroup, hitDialogPort} {
+	for _, hit := range []gfx.ID{hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogGroup, hitDialogPort} {
 		editor := state.EditorFor(hit)
 		if editor == nil || seen[editor] {
 			t.Fatalf("hit %d editor = %p (nil or shared)", hit, editor)

@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
-func rightClickTab(state *State, target ui.ID) ui.EventResult {
-	return pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: target, X: 300, Y: 14, Viewport: state.viewport})
+func rightClickTab(state *State, target gfx.ID) gfx.EventResult {
+	return pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: target, X: 300, Y: 14, Viewport: state.viewport})
 }
 
 func tabsOf(state *State) []layoutcore.WorkspaceID {
@@ -28,23 +28,23 @@ func fourTabs(t *testing.T) (*State, []layoutcore.WorkspaceID) {
 	for range 4 {
 		openEmptyTab(state)
 	}
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	return state, tabsOf(state)
 }
 
 func TestRightClickOnATabOpensItsMenu(t *testing.T) {
 	state, tabs := fourTabs(t)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTabMenuClose); ok {
 		t.Fatal("the menu is up before any click")
 	}
 	if result := rightClickTab(state, hitTabList.At(int(tabs[1]))); !result.Handled || !result.Repaint {
 		t.Fatalf("right click = %+v", result)
 	}
-	canvas = ui.Canvas{}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{hitTabMenuClose, hitTabMenuCloseOthers, hitTabMenuCloseRight} {
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for _, id := range []gfx.ID{hitTabMenuClose, hitTabMenuCloseOthers, hitTabMenuCloseRight} {
 		hit, ok := hitByID(&canvas, id)
 		if !ok || hit.Disabled {
 			t.Errorf("menu item %d: %+v, found %v", id, hit, ok)
@@ -61,8 +61,8 @@ func TestTabMenuOffersDuplicateForSessionTab(t *testing.T) {
 	workspace := state.deck.ActiveWorkspace()
 	rightClickTab(state, hitTabList.At(int(workspace)))
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, hit := range canvas.Hits() {
 		if hit.Label == "Duplicate Tab" && !hit.Disabled {
 			return
@@ -81,8 +81,8 @@ func TestTabMenuEditsTheSavedHostOfTheClickedTab(t *testing.T) {
 		t.Fatal("setup did not activate the second tab")
 	}
 	rightClickTab(state, hitTabList.At(int(workspace)))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(&canvas, hitTabMenuEditHost); !ok || hit.Disabled {
 		t.Fatalf("edit host: found=%v disabled=%v", ok, hit.Disabled)
 	}
@@ -106,8 +106,8 @@ func TestTabMenuCannotEditAnUncataloguedSession(t *testing.T) {
 	workspace := state.deck.ActiveWorkspace()
 	state.sessions[0].host.CatalogID = ""
 	rightClickTab(state, hitTabList.At(int(workspace)))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(&canvas, hitTabMenuEditHost); !ok || !hit.Disabled {
 		t.Fatalf("temporary session edit: found=%v disabled=%v", ok, hit.Disabled)
 	}
@@ -149,8 +149,8 @@ func TestTabMenuPlacesConnectionCopiesBelowDuplicate(t *testing.T) {
 	workspace := state.deck.ActiveWorkspace()
 	rightClickTab(state, hitTabList.At(int(workspace)))
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	duplicate, duplicateOK := hitByID(&canvas, hitTabMenuDuplicate)
 	address, addressOK := hitByID(&canvas, hitTabMenuCopyAddress)
 	name, nameOK := hitByID(&canvas, hitTabMenuCopyName)
@@ -165,9 +165,9 @@ func TestTabMenuPlacesConnectionCopiesBelowDuplicate(t *testing.T) {
 func TestTabMenuDisablesConnectionCopyOnAnEmptyTab(t *testing.T) {
 	state, tabs := fourTabs(t)
 	rightClickTab(state, hitTabList.At(int(tabs[0])))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuEditHost} {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for _, id := range []gfx.ID{hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuEditHost} {
 		if hit, ok := hitByID(&canvas, id); !ok || !hit.Disabled {
 			t.Fatalf("item %d: found=%v disabled=%v, want disabled", id, ok, hit.Disabled)
 		}
@@ -249,8 +249,8 @@ func TestRightClickOnACloseButtonOpensTheMenuToo(t *testing.T) {
 func TestTabMenuDisablesWhatCannotApply(t *testing.T) {
 	state, tabs := fourTabs(t)
 	rightClickTab(state, hitTabList.At(int(tabs[3])))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, _ := hitByID(&canvas, hitTabMenuCloseRight); !hit.Disabled {
 		t.Fatal("the last tab has nothing to its right to close")
 	}
@@ -259,8 +259,8 @@ func TestTabMenuDisablesWhatCannotApply(t *testing.T) {
 		state.closeWorkspace(id)
 	}
 	rightClickTab(state, hitTabList.At(int(tabs[0])))
-	canvas = ui.Canvas{}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, _ := hitByID(&canvas, hitTabMenuCloseOthers); !hit.Disabled {
 		t.Fatal("a lone tab has no others to close")
 	}
@@ -305,7 +305,7 @@ func TestTabMenuCloseAndCloseOthersAndCloseRight(t *testing.T) {
 	}
 	rightClickTab(state, hitTabList.At(int(tabs[1])))
 	state.Click(hitTabMenuCloseOthers)
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitTabsCloseConfirm})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitTabsCloseConfirm})
 	if got := tabsOf(state); len(got) != 1 || got[0] != tabs[1] {
 		t.Fatalf("after Close Others: %v", got)
 	}
@@ -317,12 +317,12 @@ func TestTabMenuCloseAndCloseOthersAndCloseRight(t *testing.T) {
 func TestTabMenuClosesWithoutActingOnAnOutsidePressOrEscape(t *testing.T) {
 	state, tabs := fourTabs(t)
 	rightClickTab(state, hitTabList.At(int(tabs[1])))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(&canvas, hitTabMenuDismiss); !ok || hit.Bounds.Width != 1400 || hit.Bounds.Height != 900 {
 		t.Fatalf("no window-wide backdrop: %+v, %v", hit, ok)
 	}
-	if result := pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitTabMenuDismiss}); !result.Handled || state.tabMenu.open {
+	if result := pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTabMenuDismiss}); !result.Handled || state.tabMenu.open {
 		t.Fatalf("a secondary press outside: %+v open=%v", result, state.tabMenu.open)
 	}
 	rightClickTab(state, hitTabList.At(int(tabs[1])))
@@ -339,15 +339,15 @@ func TestTabMenuOffersReconnectOnlyForATabThatNeedsIt(t *testing.T) {
 	first.save()
 
 	state := newTestState(t, options)
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	tab := state.deck.ActiveWorkspace()
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	if !session.restored {
 		t.Fatal("setup: not restored")
 	}
 	rightClickTab(state, hitTabList.At(int(tab)))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTabMenuReconnect); !ok {
 		t.Fatal("a restored tab offers no Reconnect")
 	}
@@ -356,8 +356,8 @@ func TestTabMenuOffersReconnectOnlyForATabThatNeedsIt(t *testing.T) {
 		t.Fatal("Reconnect did not dial")
 	}
 	rightClickTab(state, hitTabList.At(int(tab)))
-	canvas = ui.Canvas{}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTabMenuReconnect); ok {
 		t.Fatal("a tab that is connecting still offers Reconnect")
 	}
@@ -365,9 +365,9 @@ func TestTabMenuOffersReconnectOnlyForATabThatNeedsIt(t *testing.T) {
 
 func TestTabMenuStaysInsideTheWindow(t *testing.T) {
 	state, tabs := fourTabs(t)
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitTabList.At(int(tabs[0])), X: 1399, Y: 895, Viewport: state.viewport})
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTabList.At(int(tabs[0])), X: 1399, Y: 895, Viewport: state.viewport})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	hit, ok := hitByID(&canvas, hitTabMenuCloseRight)
 	if !ok || hit.Bounds.X+hit.Bounds.Width > 1400 || hit.Bounds.Y+hit.Bounds.Height > 900 {
 		t.Fatalf("the menu runs off the window: %+v %v", hit.Bounds, ok)

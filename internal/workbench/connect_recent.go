@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var (
@@ -47,7 +47,7 @@ func (state *State) connectSortOptions() [3]components.SegmentOption {
 	}
 }
 
-func (state *State) paintConnectSort(canvas *ui.Canvas, layout components.DialogLayout) {
+func (state *State) paintConnectSort(canvas *gfx.Canvas, layout components.DialogLayout) {
 	options := state.connectSortOptions()
 	selected := hitConnectSortDefault
 	if state.commandPalette.workspaces {
@@ -56,7 +56,7 @@ func (state *State) paintConnectSort(canvas *ui.Canvas, layout components.Dialog
 		selected = hitConnectSortRecent
 	}
 	width := float32(270)
-	rect := ui.Rect{X: layout.Close.X - width - 8, Y: layout.Close.Y, Width: width, Height: layout.Close.Height}
+	rect := gfx.Rect{X: layout.Close.X - width - 8, Y: layout.Close.Y, Width: width, Height: layout.Close.Height}
 	components.BeginSegmentedControl(canvas, state.Theme(), rect, options[:], selected).Paint()
 }
 

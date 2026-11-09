@@ -14,9 +14,9 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 )
@@ -246,7 +246,7 @@ func TestSFTPBrowseBookmarkNativeFieldsAndToggleAtDifferentScales(t *testing.T) 
 			state.setLanguage(i18n.Chinese)
 			view := host.windows[0].view
 			w.session.host.CatalogID = "native-bookmark"
-			click := func(id ui.ID) {
+			click := func(id gfx.ID) {
 				t.Helper()
 				w.window.Invalidate()
 				view.Driver().Pump()
@@ -297,9 +297,9 @@ func TestSFTPBrowseBookmarkNativeFieldsAndToggleAtDifferentScales(t *testing.T) 
 				t.Fatal("scope select did not return to this connection")
 			}
 			click(hitSFTPBookmarkFields.At(0))
-			modifier := ui.ModifierControl
+			modifier := gfx.ModifierControl
 			if runtime.GOOS == "darwin" {
-				modifier = ui.ModifierMeta
+				modifier = gfx.ModifierMeta
 			}
 			view.Driver().ShortcutChord(modifier, 'a')
 			if err := view.Type("验收项目"); err != nil {
@@ -593,7 +593,7 @@ func TestSFTPBrowseIntegratesWithIndependentFiltersAndHeaderMenus(t *testing.T) 
 	w.window.Invalidate()
 	view.Driver().Pump()
 	view.Rest()
-	for _, id := range []ui.ID{sftpWindowUp[0], sftpWindowRefresh[0], sftpWindowHidden[0], hitSFTPLocationProfiles, hitSFTPBrowseSync, sftpWindowMore[0]} {
+	for _, id := range []gfx.ID{sftpWindowUp[0], sftpWindowRefresh[0], sftpWindowHidden[0], hitSFTPLocationProfiles, hitSFTPBrowseSync, sftpWindowMore[0]} {
 		bounds := dualHit(t, view, id)
 		if bounds.X < w.ui.list[0].X-2 || bounds.X+bounds.Width > w.ui.list[0].X+w.ui.list[0].Width+2 {
 			t.Fatal("local toolbar overflowed a narrow pane", id, bounds)
@@ -678,7 +678,7 @@ func TestSFTPLocationProfileListScrollSelectionRenameAndDeletion(t *testing.T) {
 	if w.bookmark.area.MaxOffsetY <= 0 {
 		t.Fatal("profiles did not scroll")
 	}
-	view.Scroll(ui.ScrollEvent{X: w.bookmark.list.X + 10, Y: w.bookmark.list.Y + 10, DeltaY: 10000})
+	view.Scroll(gfx.ScrollEvent{X: w.bookmark.list.X + 10, Y: w.bookmark.list.Y + 10, DeltaY: 10000})
 	w.window.Invalidate()
 	view.Driver().Pump()
 	view.Rest()

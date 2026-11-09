@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func inputGuardPrompt(state *State, session *Session, shell *fakeShell, charset, locale string) {
@@ -19,12 +19,12 @@ func TestTerminalIMEConfirmEnterNeverReachesShell(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	session := &state.sessions[0]
 	state.terminalText(session.ID, app.TextEvent{Kind: app.TextSetMarked, Text: "ni"})
-	state.terminalKey(session, ui.KeyEvent{Key: ui.KeyEnter})
+	state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyEnter})
 	if shell.typed() != "" {
 		t.Fatalf("candidate confirmation executed shell input %q", shell.typed())
 	}
 	state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "你"})
-	state.terminalKey(session, ui.KeyEvent{Key: ui.KeyEnter})
+	state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyEnter})
 	if shell.typed() != "你\r" {
 		t.Fatalf("committed UTF-8/next Enter lost: %q", shell.typed())
 	}
@@ -86,7 +86,7 @@ func TestTerminalInputProtectionLeavesLiteralAndUnknownInputUntouched(t *testing
 				shell.say("\x1b[?1049h")
 				state.Wake()
 			case "cursor-edit":
-				state.terminalKey(session, ui.KeyEvent{Key: ui.KeyLeft})
+				state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyLeft})
 			case "substitution":
 				prefix = "echo $(printf "
 			case "multiline":
@@ -242,8 +242,8 @@ func TestTerminalInputChoiceRetainsPendingOnTransportRefusal(t *testing.T) {
 func TestTerminalInputLocaleNoticeSteadyPaintHasNoAllocations(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	inputGuardPrompt(state, &state.sessions[0], shell, "other", "C.UTF-8")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1000, Height: 700}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1000, Height: 700}
 	state.Paint(&canvas, size)
 	if got := testing.AllocsPerRun(100, func() { canvas.Reset(); state.Paint(&canvas, size) }); got != 0 {
 		t.Fatalf("steady charset notice paint allocated %v times", got)
@@ -252,7 +252,7 @@ func TestTerminalInputLocaleNoticeSteadyPaintHasNoAllocations(t *testing.T) {
 
 func TestTerminalInputLocaleNoticeFitsPTYAndDoesNotJumpOnEveryCommand(t *testing.T) {
 	state, _, _, shell := liveSession(t)
-	state.Resize(ui.Size{Width: 1000, Height: 700})
+	state.Resize(gfx.Size{Width: 1000, Height: 700})
 	session := &state.sessions[0]
 	inputGuardPrompt(state, session, shell, "other", "C.UTF-8")
 	checkSize := func() {
@@ -276,7 +276,7 @@ func TestTerminalInputLocaleNoticeFitsPTYAndDoesNotJumpOnEveryCommand(t *testing
 // them back on exit: vim and tmux would see a resize each time.
 func TestTerminalInputLocaleNoticeKeepsItsRowsInAFullScreenProgram(t *testing.T) {
 	state, _, _, shell := liveSession(t)
-	state.Resize(ui.Size{Width: 1000, Height: 700})
+	state.Resize(gfx.Size{Width: 1000, Height: 700})
 	session := &state.sessions[0]
 	inputGuardPrompt(state, session, shell, "other", "C.UTF-8")
 	check := func() {
@@ -310,7 +310,7 @@ func TestTerminalIMECompositionKeepsAFullScreenProgramsEnter(t *testing.T) {
 	session := &state.sessions[0]
 	state.terminalText(session.ID, app.TextEvent{Kind: app.TextSetMarked, Text: "ni"})
 	session.term.screen.Write([]byte("\x1b[?1049h"))
-	state.terminalKey(session, ui.KeyEvent{Key: ui.KeyEnter})
+	state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyEnter})
 	if shell.typed() != "\r" {
 		t.Fatalf("full-screen Enter was swallowed: %q", shell.typed())
 	}

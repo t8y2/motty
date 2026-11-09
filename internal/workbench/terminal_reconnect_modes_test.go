@@ -4,7 +4,7 @@ import (
 	"motty/internal/term"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // A connection that drops takes the running program's teardown with it, so the
@@ -41,12 +41,12 @@ func TestAReconnectedShellTakesBackTheModesALostConnectionLeft(t *testing.T) {
 	hit := hitTerminalList.At(int(session.ID))
 	geometry := state.layout()
 	x, y := cellPoint(geometry, 2, 7, state.cellWidth, state.cellHeight)
-	if result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, X: x, Y: y, Target: hit, Viewport: state.viewport,
+	if result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, X: x, Y: y, Target: hit, Viewport: state.viewport,
 	}); reconnected.typed() != "" {
 		t.Fatalf("moving the pointer after a reconnect typed %q (result=%+v)", reconnected.typed(), result)
 	}
-	result := state.Scroll(ui.ScrollEvent{
+	result := state.Scroll(gfx.ScrollEvent{
 		X: x, Y: y, DeltaY: -state.cellHeight,
 		Viewport: state.viewport, Target: hit, Precise: true,
 	})

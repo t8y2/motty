@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -146,7 +146,7 @@ func (state *State) advanceReconnects() {
 	}
 }
 
-func (state *State) requestReconnectFrames(canvas *ui.Canvas) {
+func (state *State) requestReconnectFrames(canvas *gfx.Canvas) {
 	if state.reconnectWaiters == 0 {
 		return
 	}
@@ -160,7 +160,7 @@ func (state *State) requestReconnectFrames(canvas *ui.Canvas) {
 	}
 }
 
-func (state *State) reconnectStatusText(canvas *ui.Canvas, session *Session) string {
+func (state *State) reconnectStatusText(canvas *gfx.Canvas, session *Session) string {
 	if session.reconnectPending {
 		remaining := max(session.reconnectDue-state.now(), 0)
 		seconds := int64((remaining + time.Second - 1) / time.Second)

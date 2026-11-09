@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 )
 
@@ -91,21 +91,21 @@ func newTestState(t testing.TB, options Options) *State {
 // A real window has one; a test that calls state.Pointer directly has none, so the
 // helper makes it. It lives in the test, not in State: production code never holds
 // a canvas.
-var eventCanvases = map[*State]*ui.Canvas{}
+var eventCanvases = map[*State]*gfx.Canvas{}
 var eventCanvasesMu sync.Mutex
 
 // pointer sends a pointer event the way a window does: to the state's Pointer
 // first and, if nothing there took it, to the controls that declared themselves
 // to it while painting (the event pass). The state is painted once before its first
 // event so that the controls have declared what they listen to.
-func pointer(state *State, event ui.PointerEvent) ui.EventResult {
-	if event.Viewport == (ui.Size{}) {
-		event.Viewport = ui.Size{Width: 1400, Height: 900}
+func pointer(state *State, event gfx.PointerEvent) gfx.EventResult {
+	if event.Viewport == (gfx.Size{}) {
+		event.Viewport = gfx.Size{Width: 1400, Height: 900}
 	}
 	eventCanvasesMu.Lock()
 	canvas, seen := eventCanvases[state]
 	if !seen {
-		canvas = &ui.Canvas{}
+		canvas = &gfx.Canvas{}
 		eventCanvases[state] = canvas
 	}
 	eventCanvasesMu.Unlock()

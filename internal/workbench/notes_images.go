@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var hitNoteLoadImages = tree.ID(notesHits, "load-images")
@@ -25,7 +25,7 @@ var noteImagePattern = regexp.MustCompile(`!\[[^\]]*\]\((https?://[^\s)]+)\)`)
 
 type noteImage struct {
 	url    string
-	bitmap ui.Bitmap
+	bitmap gfx.Bitmap
 }
 
 func noteImageURLs(body string) []string {
@@ -119,51 +119,51 @@ func (s *State) loadNoteImagesTarget(n *notesUI, resolve func(*State) *notesUI, 
 		}
 	}()
 }
-func fetchNoteImage(ctx context.Context, url string) (ui.Bitmap, error) {
+func fetchNoteImage(ctx context.Context, url string) (gfx.Bitmap, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return ui.Bitmap{}, err
+		return gfx.Bitmap{}, err
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return ui.Bitmap{}, err
+		return gfx.Bitmap{}, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return ui.Bitmap{}, fmt.Errorf("image: HTTP %d", resp.StatusCode)
+		return gfx.Bitmap{}, fmt.Errorf("image: HTTP %d", resp.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, (8<<20)+1))
 	if err != nil {
-		return ui.Bitmap{}, err
+		return gfx.Bitmap{}, err
 	}
 	if len(data) > 8<<20 {
-		return ui.Bitmap{}, fmt.Errorf("image exceeds 8 MiB")
+		return gfx.Bitmap{}, fmt.Errorf("image exceeds 8 MiB")
 	}
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
-		return ui.Bitmap{}, err
+		return gfx.Bitmap{}, err
 	}
 	if config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > 16<<20 {
-		return ui.Bitmap{}, fmt.Errorf("image dimensions exceed limit")
+		return gfx.Bitmap{}, fmt.Errorf("image dimensions exceed limit")
 	}
 	im, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return ui.Bitmap{}, err
+		return gfx.Bitmap{}, err
 	}
 	rgba := image.NewRGBA(image.Rect(0, 0, config.Width, config.Height))
 	draw.Draw(rgba, rgba.Bounds(), im, im.Bounds().Min, draw.Src)
 	hash := noteHash(url + string(data))
 	id := binary.LittleEndian.Uint64([]byte(hash)[:8])
-	return ui.Bitmap{Pix: rgba.Pix, Width: config.Width, Height: config.Height, Stride: rgba.Stride, ID: id, Version: 1}, nil
+	return gfx.Bitmap{Pix: rgba.Pix, Width: config.Width, Height: config.Height, Stride: rgba.Stride, ID: id, Version: 1}, nil
 }
-func (s *State) paintNoteImagesContent(c *ui.Canvas, b ui.Rect, y float32, n *notesUI) float32 {
+func (s *State) paintNoteImagesContent(c *gfx.Canvas, b gfx.Rect, y float32, n *notesUI) float32 {
 	if n.imageSource != n.body.String() {
 		return y
 	}
 	for _, im := range n.images {
 		height := min(float32(320), b.Width*float32(im.bitmap.Height)/float32(im.bitmap.Width))
-		components.PaintImageView(c, s.Theme(), ui.Rect{X: b.X, Y: y, Width: b.Width, Height: height}, components.ImageViewOptions{Bitmap: im.bitmap})
+		components.PaintImageView(c, s.Theme(), gfx.Rect{X: b.X, Y: y, Width: b.Width, Height: height}, components.ImageViewOptions{Bitmap: im.bitmap})
 		y += height + 12
 	}
 	return y

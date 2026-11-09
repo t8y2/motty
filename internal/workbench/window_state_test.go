@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func windowStateOptions(dir string) Options {
@@ -20,7 +20,7 @@ func windowStateOptions(dir string) Options {
 func TestWindowFrameSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 	options := windowStateOptions(dir)
-	frame := ui.Rect{X: 120, Y: 80, Width: 1234, Height: 777}
+	frame := gfx.Rect{X: 120, Y: 80, Width: 1234, Height: 777}
 
 	state := newTestState(t, options)
 	state.NoteWindowFrame(frame)

@@ -17,7 +17,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/completion"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
@@ -59,8 +59,8 @@ func TestCompletionControlsAndKeysHaveSeparateSettingsHomes(t *testing.T) {
 			state.setLanguage(language)
 			state.Click(hitSettings)
 			state.selectSettingsCategory(settingsTerminal)
-			var canvas ui.Canvas
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 2400})
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
 			for _, option := range state.settingsCompletionOptions() {
 				hit, ok := hitByID(&canvas, option.ID)
 				if !ok || !canvasHasText(&canvas, option.Label) {
@@ -72,7 +72,7 @@ func TestCompletionControlsAndKeysHaveSeparateSettingsHomes(t *testing.T) {
 			}
 			state.selectSettingsCategory(settingsShortcuts)
 			canvas.Reset()
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 2400})
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
 			if _, ok := hitByID(&canvas, hitShortcutRowList.At(int(shortcutCompletion-1))); !ok {
 				t.Fatal("the shortcut for opening completions is not visible")
 			}
@@ -99,7 +99,7 @@ func TestCompletionModeIsChosenAndPersistsInSettings(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsTerminal)
 	cases := []struct {
-		id                    ui.ID
+		id                    gfx.ID
 		mode                  completionMode
 		suggestOff, inlineOff bool
 	}{
@@ -658,7 +658,7 @@ func TestCompletionStatusTextBoundsAndSanitizes(t *testing.T) {
 	}
 }
 
-func canvasHasText(canvas *ui.Canvas, value string) bool {
+func canvasHasText(canvas *gfx.Canvas, value string) bool {
 	for _, text := range canvas.Texts() {
 		if text.Value == value {
 			return true

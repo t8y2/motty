@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
 func openContainerDetailsForTest(t *testing.T) (*State, *remoteServer) {
@@ -24,8 +24,8 @@ func openContainerDetailsForTest(t *testing.T) (*State, *remoteServer) {
 
 func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 	state, server := openContainerDetailsForTest(t)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, value := range []string{
 		state.messages.Tools.RemoteContainerDetailsTitle,
 		state.messages.Tools.RemoteContainerOverview,
@@ -44,14 +44,14 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 			state.remote.containerDetails.environment, state.remote.containerDetails.status, server.commands)
 	}
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, value := range []string{"PATH", "SERVICE"} {
 		if !remoteCanvasHasText(&canvas, value) {
 			t.Errorf("container environment lacks %q", value)
 		}
 	}
 	detailsText := &state.remote.containerDetails.text
-	result := state.Shortcut(ui.KeyEvent{
+	result := state.Shortcut(gfx.KeyEvent{
 		Text: "a", Modifiers: keymap.Primary, Target: hitRemoteContainerDetailsText,
 	})
 	if !result.Handled || !result.Repaint {
@@ -67,22 +67,22 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 	if !found {
 		t.Fatal("container detail text is not selectable")
 	}
-	start := ui.Point{X: textHit.Bounds.X + 4, Y: textHit.Bounds.Y + 4}
-	end := ui.Point{X: textHit.Bounds.X + textHit.Bounds.Width - 8, Y: textHit.Bounds.Bottom() - 4}
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+	start := gfx.Point{X: textHit.Bounds.X + 4, Y: textHit.Bounds.Y + 4}
+	end := gfx.Point{X: textHit.Bounds.X + textHit.Bounds.Width - 8, Y: textHit.Bounds.Bottom() - 4}
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
 		X: start.X, Y: start.Y, Target: hitRemoteContainerDetailsText,
-		Viewport: ui.Size{Width: 1400, Height: 900},
+		Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Captured: true,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Captured: true,
 		X: end.X, Y: end.Y, Target: hitRemoteContainerDetailsText,
-		Viewport: ui.Size{Width: 1400, Height: 900},
+		Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Captured: true,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Captured: true,
 		X: end.X, Y: end.Y, Target: hitRemoteContainerDetailsText,
-		Viewport: ui.Size{Width: 1400, Height: 900},
+		Viewport: gfx.Size{Width: 1400, Height: 900},
 	})
 	selected, ok = state.remote.containerDetails.text.selectedText()
 	if !ok || !strings.Contains(selected, "PATH") {
@@ -93,7 +93,7 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 		copied = value
 		return nil
 	}
-	result = state.Shortcut(ui.KeyEvent{
+	result = state.Shortcut(gfx.KeyEvent{
 		Text: "c", Modifiers: keymap.Primary, Target: hitRemoteContainerDetailsText,
 	})
 	if !result.Handled || copied != selected {
@@ -110,7 +110,7 @@ func TestContainerDetailsReportsEnvironmentFailureAndClosesWithEscape(t *testing
 		!strings.Contains(state.remote.containerDetails.status, "denied by the test") {
 		t.Fatalf("container environment failure = %+v", state.remote.containerDetails)
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if !result.Handled || state.remote.containerDetails.open || state.modal != modalRemoteTools {
 		t.Fatalf("Escape result=%+v details=%+v modal=%d", result, state.remote.containerDetails, state.modal)
 	}

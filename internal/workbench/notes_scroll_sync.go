@@ -3,7 +3,7 @@ package workbench
 import (
 	"math"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // Programmatic scrolls are recorded after applying them, so only a subsequent
@@ -14,7 +14,7 @@ type noteSplitScroll struct {
 	anchor                      int
 	edge                        int
 	source                      string
-	sourceBounds, previewBounds ui.Rect
+	sourceBounds, previewBounds gfx.Rect
 	height                      float32
 	caret                       int
 	inImages                    bool
@@ -38,7 +38,7 @@ func noteScrollEdge(y, maximum float32) int {
 	return 0
 }
 
-func (s *State) syncNoteSplit(c *ui.Canvas) {
+func (s *State) syncNoteSplit(c *gfx.Canvas) {
 	n := s.noteContent()
 	v := &n.view.splitScroll
 	selection, _ := n.noteSelections()

@@ -1,7 +1,7 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
 )
@@ -139,22 +139,22 @@ func (state *State) setRestoreConnectPolicy(policy restoreConnectPolicy) bool {
 
 // restoredPageKey lets Enter bring a restored tab back from its page. Nothing on
 // that page has the keyboard (it has no terminal yet), so the key is the page's.
-func (state *State) restoredPageKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if event.Key != ui.KeyEnter || event.Repeat || state.modal != modalNone || state.activeSection != sectionTerminal {
-		return ui.EventResult{}, false
+func (state *State) restoredPageKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if event.Key != gfx.KeyEnter || event.Repeat || state.modal != modalNone || state.activeSection != sectionTerminal {
+		return gfx.EventResult{}, false
 	}
 	// Choosing a tab leaves the keyboard on that tab, and a live terminal takes it
 	// from there by itself. This page has nothing to take it with, so Enter on the
 	// tab that is already showing it means the page's one action.
 	if !event.Target.IsZero() && event.Target != hitTabList.At(int(state.deck.ActiveWorkspace())) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || !session.restored || session.term != nil {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.reconnect(session)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 // shareConnectionsPolicy is whether a new tab on a host that another tab of the

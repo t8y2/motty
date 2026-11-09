@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/update"
 )
 
@@ -96,7 +96,7 @@ func (state *State) Launch(args []string) {
 // afterEvent starts requests that were waiting for a dialog the event closed. A
 // closed dialog does not wake the window, so without this they would sit until
 // something else did.
-func (state *State) afterEvent(result *ui.EventResult) {
+func (state *State) afterEvent(result *gfx.EventResult) {
 	if state.runLaunches() {
 		result.Repaint = true
 	}
@@ -166,7 +166,7 @@ func (state *State) launchDescription() string {
 	return fmt.Sprintf(state.messages.Tools.LaunchDescriptionFmt, protocolName(target.protocol), where)
 }
 
-func (state *State) clickLaunchDialog(id ui.ID) {
+func (state *State) clickLaunchDialog(id gfx.ID) {
 	switch id {
 	case hitLaunchDismiss, hitLaunchClose, hitLaunchCancel:
 		state.modal = modalNone
@@ -176,20 +176,20 @@ func (state *State) clickLaunchDialog(id ui.ID) {
 	}
 }
 
-func (state *State) launchKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.modal != modalOpenLink || event.Key != ui.KeyEnter || event.Target != hitLaunchConnect || event.Repeat {
-		return ui.EventResult{}, false
+func (state *State) launchKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalOpenLink || event.Key != gfx.KeyEnter || event.Target != hitLaunchConnect || event.Repeat {
+		return gfx.EventResult{}, false
 	}
 	state.clickLaunchDialog(hitLaunchConnect)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintLaunchDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintLaunchDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := state.messages
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitLaunchDismiss, CloseID: hitLaunchClose, InitialFocusID: hitLaunchCancel,
-		ContentSize: ui.Size{Width: 520}, FitBody: true, BodyHeight: 3 * 18, // the warning's lines
+		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: 3 * 18, // the warning's lines
 	})
 	layout := dialog.Begin(m.Tools.LaunchTitle, state.launchDescription())
 	f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
@@ -204,7 +204,7 @@ func (state *State) paintLaunchDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog.End()
 }
 
-func (state *State) clickUpdateDialog(id ui.ID) {
+func (state *State) clickUpdateDialog(id gfx.ID) {
 	if index, ok := id.In(hitUpdateNotesLinks); ok {
 		if dest := state.update.notes.view.Link(index); dest != "" {
 			state.openExternal(dest)
@@ -292,7 +292,7 @@ func (state *State) paintUpdateSettings(page *settingsPage) {
 }
 
 // clickLaunchSettings handles the presses of those settings.
-func (state *State) clickLaunchSettings(id ui.ID) bool {
+func (state *State) clickLaunchSettings(id gfx.ID) bool {
 	switch id {
 	case hitSettingsLoginToggle:
 		if state.options.StartAtLogin == nil {

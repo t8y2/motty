@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // A sidebar row and a settings entry play a short motion of their icon when they
@@ -15,12 +15,12 @@ import (
 // What a motion does follows what the glyph stands for, down to the contours the
 // glyph is drawn from. A lock's shackle lifts while its body stays, a keyboard's
 // keys press one after another, the halves of a forwarding arrow trade places:
-// those are separate contours in the source, so ui.IconTransform.Parts moves them
+// those are separate contours in the source, so gfx.IconTransform.Parts moves them
 // relative to the glyph instead of the whole glyph at once. The rest turn, sway
 // or breathe as one shape, and the ones that settle use a spring rather than a
 // curve so they arrive with a little weight.
 //
-// One click is one scalar of progress: the canvas runs the clock (ui.Animate)
+// One click is one scalar of progress: the canvas runs the clock (gfx.Animate)
 // and hands back linear progress, which the motion maps onto a transform with
 // its own keyframes. Progress 1 is always the still icon, so a motion ends on
 // the picture the row draws anyway; that is also what a reduced-motion session
@@ -49,7 +49,7 @@ const (
 type iconMotionStop struct {
 	at    float32 // milliseconds
 	value float32
-	ease  ui.Curve
+	ease  gfx.Curve
 }
 
 // iconMotionTrack is one axis of a motion.
@@ -59,13 +59,13 @@ type iconMotionTrack struct {
 }
 
 // iconPartMotion is one contour of a glyph moving on its own while the glyph
-// plays its motion; contour numbering is ui.Icon.Contours' drawing order.
+// plays its motion; contour numbering is gfx.Icon.Contours' drawing order.
 type iconPartMotion struct {
 	contour int
 	// anchor is the point of the glyph the part turns and stretches about, in the
 	// icon's view-box units; nil is the part's own centre. A page turns over the
 	// book's spine, so its anchor is the middle of the glyph.
-	anchor *ui.Point
+	anchor *gfx.Point
 	tracks []iconMotionTrack
 }
 
@@ -80,19 +80,19 @@ type iconMotion struct {
 // at returns the transform the motion paints at progress through it. A motion
 // with parts allocates them: they belong to the frame being built, and two rows
 // can be in motion at once, so they cannot share a buffer.
-func (motion iconMotion) at(progress float32) ui.IconTransform {
+func (motion iconMotion) at(progress float32) gfx.IconTransform {
 	elapsed := progress * float32(motion.duration/time.Millisecond)
 	transform := readPose(motion.tracks, elapsed).transform()
 	if len(motion.parts) > 0 {
-		transform.Parts = make([]ui.IconPart, len(motion.parts))
+		transform.Parts = make([]gfx.IconPart, len(motion.parts))
 		for index, part := range motion.parts {
 			own := readPose(part.tracks, elapsed)
-			transform.Parts[index] = ui.IconPart{
+			transform.Parts[index] = gfx.IconPart{
 				Contour: part.contour,
 				Rotate:  own.turn,
 				Scale:   own.scale,
 				ScaleX:  own.stretch,
-				Offset:  ui.Point{X: own.across, Y: own.down},
+				Offset:  gfx.Point{X: own.across, Y: own.down},
 				Anchor:  part.anchor,
 			}
 		}
@@ -130,11 +130,11 @@ func readPose(tracks []iconMotionTrack, elapsed float32) (values pose) {
 }
 
 // transform turns the values into the transform the painter takes.
-func (values pose) transform() ui.IconTransform {
-	return ui.IconTransform{
+func (values pose) transform() gfx.IconTransform {
+	return gfx.IconTransform{
 		Rotate: values.turn,
 		Scale:  values.scale,
-		Offset: ui.Point{X: values.across, Y: values.down},
+		Offset: gfx.Point{X: values.across, Y: values.down},
 		Reveal: values.reveal,
 	}
 }
@@ -161,7 +161,7 @@ func (track iconMotionTrack) at(elapsed float32) float32 {
 		if from.ease != nil {
 			progress = from.ease(progress)
 		}
-		// Interpolate without ui.Lerp: it clamps progress to [0, 1], and a spring
+		// Interpolate without gfx.Lerp: it clamps progress to [0, 1], and a spring
 		// passes the end value on purpose, which is the whole of its bounce.
 		return from.value + (to.value-from.value)*progress
 	}
@@ -177,22 +177,22 @@ func part(contour int, tracks ...iconMotionTrack) iconPartMotion {
 }
 
 // The curves Otty's settings stylesheet declares for these motions, as the CSS
-// control points ui.CubicBezier takes.
+// control points gfx.CubicBezier takes.
 var (
-	easeTurn    = ui.CubicBezier(0.2, 0, 0.3, 1)   // turning into place
-	easeSqueeze = ui.CubicBezier(0.33, 0, 0.67, 1) // the middle of a squash
-	easeRockIn  = ui.CubicBezier(0.25, 0, 0.95, 1) // swinging out
-	easeRockOut = ui.CubicBezier(1, 0, 0.95, 1)    // and back past it
-	easeSettle  = ui.CubicBezier(1, 0, 0.75, 1)    // a small overshoot returning
-	easeSink    = ui.CubicBezier(0.05, 0, 0, 1)    // opening and dropping
+	easeTurn    = gfx.CubicBezier(0.2, 0, 0.3, 1)   // turning into place
+	easeSqueeze = gfx.CubicBezier(0.33, 0, 0.67, 1) // the middle of a squash
+	easeRockIn  = gfx.CubicBezier(0.25, 0, 0.95, 1) // swinging out
+	easeRockOut = gfx.CubicBezier(1, 0, 0.95, 1)    // and back past it
+	easeSettle  = gfx.CubicBezier(1, 0, 0.75, 1)    // a small overshoot returning
+	easeSink    = gfx.CubicBezier(0.05, 0, 0, 1)    // opening and dropping
 	// A part that comes back lands instead of stopping: the spring is what makes
 	// a key feel pressed and a shackle feel like it closed.
-	easeLand = ui.Spring(0.68)
+	easeLand = gfx.Spring(0.68)
 )
 
 // iconSpine is the middle of a glyph's view box, where an open book is drawn
 // from: the line a page turns over.
-var iconSpine = ui.Point{X: 12, Y: 12}
+var iconSpine = gfx.Point{X: 12, Y: 12}
 
 var (
 	// iconMotionTurn turns a gear half way round, slowly, while it settles. Half a
@@ -549,12 +549,12 @@ const iconMotionSlot uint8 = 0
 // pressIconMotion records that the row id was chosen, so the motion its icon
 // plays starts on the next frame. A click on the row already on show replays the
 // motion: the row answers every click, not only the ones that change the page.
-func (state *State) pressIconMotion(id ui.ID) {
+func (state *State) pressIconMotion(id gfx.ID) {
 	if !playsIconMotion(id) {
 		return
 	}
 	if state.iconMotions == nil {
-		state.iconMotions = make(map[ui.ID]iconMotionRun, 2)
+		state.iconMotions = make(map[gfx.ID]iconMotionRun, 2)
 	}
 	state.iconMotions[id] = iconMotionPending
 }
@@ -562,7 +562,7 @@ func (state *State) pressIconMotion(id ui.ID) {
 // playsIconMotion reports whether choosing id animates an icon: the rows of the
 // sidebar and the entries of the settings list are the two places that draw one.
 // A row added to either place needs its id here, and its icon in iconMotionFor.
-func playsIconMotion(id ui.ID) bool {
+func playsIconMotion(id gfx.ID) bool {
 	if id.Scope() == hitSettingsCategoryList || devPlaysIconMotion(id) {
 		return true
 	}
@@ -577,31 +577,31 @@ func playsIconMotion(id ui.ID) bool {
 // iconMotion returns the transform to draw the row's icon with on this frame,
 // advancing the motion the click recorded. A row that is not in motion gets the
 // zero transform, which paints the still icon on the cached path.
-func (state *State) iconMotion(canvas *ui.Canvas, id ui.ID, icon uint8) ui.IconTransform {
+func (state *State) iconMotion(canvas *gfx.Canvas, id gfx.ID, icon uint8) gfx.IconTransform {
 	run, running := state.iconMotions[id]
 	if !running {
-		return ui.IconTransform{}
+		return gfx.IconTransform{}
 	}
 	motion, ok := iconMotionFor(icon)
 	if !ok {
 		// A row whose glyph has no motion, such as one added after this table,
 		// paints still; it must not wait for a frame that would never come.
 		delete(state.iconMotions, id)
-		return ui.IconTransform{}
+		return gfx.IconTransform{}
 	}
 	if run == iconMotionPending {
 		// A slot starts settled at the value it is first asked for, so the clock
 		// has to be pinned to zero before the motion asks for one; otherwise the
 		// first frame of the motion would already be its end.
-		canvas.Animate(id, iconMotionSlot, 0, ui.Motion{})
+		canvas.Animate(id, iconMotionSlot, 0, gfx.Motion{})
 		state.iconMotions[id] = iconMotionPlaying
 	}
-	progress := canvas.Animate(id, iconMotionSlot, 1, ui.Motion{Duration: motion.duration, Easing: ui.EaseLinear})
+	progress := canvas.Animate(id, iconMotionSlot, 1, gfx.Motion{Duration: motion.duration, Easing: gfx.EaseLinear})
 	if progress >= 1 {
 		// Over, or never started: reduced motion, a still preview and a canvas
 		// without a frame clock all arrive here with 1.
 		delete(state.iconMotions, id)
-		return ui.IconTransform{}
+		return gfx.IconTransform{}
 	}
 	return motion.at(progress)
 }

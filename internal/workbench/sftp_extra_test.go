@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
-func typeLinkField(t *testing.T, state *State, hit ui.ID, value string) {
+func typeLinkField(t *testing.T, state *State, hit gfx.ID, value string) {
 	t.Helper()
 	editor := state.EditorFor(hit)
 	if editor == nil {
@@ -80,8 +80,8 @@ func TestConflictDialogCanSkipWhatExists(t *testing.T) {
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return state.transfers.open && len(state.transfers.entries) == 1 && state.transfers.entries[0].conflict
 	})
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTransfersSkip.At(state.transfers.entries[0].id)); !ok {
 		t.Fatal("the transfer center has no Skip button")
 	}
@@ -105,8 +105,8 @@ func TestBookmarksAreKeptPerHostSurviveARestartAndOpenTheirFolder(t *testing.T) 
 		t.Fatalf("bookmarks = %v", marks)
 	}
 	// The star shows it.
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPBookmarkToggle)); !ok {
 		t.Fatal("no bookmark star")
 	}
@@ -125,7 +125,7 @@ func TestBookmarksAreKeptPerHostSurviveARestartAndOpenTheirFolder(t *testing.T) 
 		t.Fatal("the list did not open")
 	}
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPBookmarkItemList.At(0))); !ok {
 		t.Fatal("the list has no entry")
 	}
@@ -201,9 +201,9 @@ func TestFilesSettingsApplyToTheWorkerAndAreSaved(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1600})
-	for _, id := range []ui.ID{
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1600})
+	for _, id := range []gfx.ID{
 		hitSettingsParallel1, hitSettingsParallel4, hitSettingsKeepTimesToggle, hitSettingsFollowToggle, hitSettingsFollowSetup,
 		hitSettingsConfigureColumns, hitSettingsDownloadDirectory, hitSettingsDownloadAsk,
 	} {
@@ -257,13 +257,13 @@ func TestSFTPColumnSettingsReorderFromTheKeyboardAndSave(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
 	state.Click(hitSettingsConfigureColumns)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	handle := hitSFTPColumnSettingsHandles.At(int(sftpColumnSize))
 	if _, ok := hitByID(&canvas, handle); !ok {
 		t.Fatal("the size column has no reorder handle")
 	}
-	result := state.Key(ui.KeyEvent{Target: handle, Key: ui.KeyDown})
+	result := state.Key(gfx.KeyEvent{Target: handle, Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != handle {
 		t.Fatalf("keyboard move = %+v", result)
 	}
@@ -323,8 +323,8 @@ func TestExtractingAnArchiveRunsTheCommandAndRefreshes(t *testing.T) {
 	fake.mu.Unlock()
 
 	clickSFTPRow(t, state, view, "pack.zip")
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPExtract)); !ok {
 		t.Fatal("no Extract button for an archive")
 	}
@@ -359,8 +359,8 @@ func TestAFailedExtractionShowsWhyAndAPlainFileOffersNone(t *testing.T) {
 		t.Fatalf("inline error = %q, global errors = %+v", view.errorText, state.fileNotices.items)
 	}
 	clickSFTPRow(t, state, view, "notes.txt")
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPExtract)); ok {
 		t.Fatal("Extract is offered for a text file")
 	}

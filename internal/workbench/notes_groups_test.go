@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestNotesGroupTagsCodecSelectionAndFiltering(t *testing.T) {
@@ -117,11 +117,11 @@ func TestNotesGroupChangesCompositionAndDeletion(t *testing.T) {
 		t.Fatal("delete did not preserve individual host")
 	}
 	// Verify the group checkbox has a separate hit from expand/collapse.
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1000, Height: 700})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1000, Height: 700})
 	s.Click(hitNoteHostsOpen)
 	c.Reset()
-	s.Paint(&c, ui.Size{Width: 1000, Height: 700})
+	s.Paint(&c, gfx.Size{Width: 1000, Height: 700})
 	found := false
 	for _, hit := range c.Hits() {
 		if hit.ID == hitNoteGroupSelect.At(s.noteTagToken("A")) {

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
@@ -130,8 +130,8 @@ func TestLocalTerminalOffersTheMonitorButNoRemoteOnlyTools(t *testing.T) {
 	if _, ok := monitorRunnerFor(session).(remotestats.Local); !ok {
 		t.Fatalf("a local terminal is monitored through %T", monitorRunnerFor(session))
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(&canvas, hitSFTPOpen); !ok || hit.Disabled {
 		t.Fatalf("Files should be offered for this computer's files: %+v, %v", hit, ok)
 	}
@@ -154,18 +154,18 @@ func TestLocalTerminalBrowsesThisComputersFilesAndTypesPathsIntoTheShell(t *test
 	}
 	state.Wake() // pumping a panel without a server must not touch a worker
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{hitSFTPPaneToggle, hitSFTPUpload, hitSFTPBookmarkToggle} {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for _, id := range []gfx.ID{hitSFTPPaneToggle, hitSFTPUpload, hitSFTPBookmarkToggle} {
 		if _, ok := hitByID(&canvas, contextID(id)); ok {
 			t.Fatalf("hit %d is a server tool, shown for this computer", id)
 		}
 	}
 
 	// A plain press selects a row; the panel then offers to type its path.
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 1, Target: contextID(hitSFTPEntryList.At(1))})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1, Target: contextID(hitSFTPEntryList.At(1))})
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPInsertPath)); !ok {
 		t.Fatal("no way to type the selected path into the terminal")
 	}
@@ -173,7 +173,7 @@ func TestLocalTerminalBrowsesThisComputersFilesAndTypesPathsIntoTheShell(t *test
 	localShellOutput(t, state, session, "ort.txt'") // the quoted path, wrapped by the screen
 
 	// Going into a folder and back up.
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2, Target: contextID(hitSFTPEntryList.At(0))})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: contextID(hitSFTPEntryList.At(0))})
 	if view.lfolder.path != filepath.Join(dir, "photos") {
 		t.Fatalf("after opening a folder: %q", view.lfolder.path)
 	}
@@ -251,8 +251,8 @@ func TestLocalTerminalReconnectsWithANewShellAfterItEnds(t *testing.T) {
 
 func TestLocalTerminalHasAFixedEntryInTheSidebarAndTheCommandPalette(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	for _, size := range []ui.Size{{Width: 1000, Height: 700}, {Width: 1400, Height: 900}, {Width: 1800, Height: 1000}} {
-		var canvas ui.Canvas
+	for _, size := range []gfx.Size{{Width: 1000, Height: 700}, {Width: 1400, Height: 900}, {Width: 1800, Height: 1000}} {
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		hit, ok := hitByID(&canvas, hitLocalTerminal)
 		if !ok || hit.Bounds.Y+hit.Bounds.Height > size.Height {
@@ -293,7 +293,7 @@ func TestLocalTerminalShortcutOpensAShell(t *testing.T) {
 	if !chord.Valid() {
 		t.Fatalf("the local terminal shortcut is not a valid chord: %+v", chord)
 	}
-	result := state.Shortcut(ui.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Char})})
+	result := state.Shortcut(gfx.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Char})})
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("shortcut result = %+v", result)
 	}
@@ -315,8 +315,8 @@ func TestWindowBarHasALocalTerminalButtonThatOpensAShell(t *testing.T) {
 	skipWithoutUnixShell(t)
 	state := newTestState(t, testOptions(t))
 	state.options.Invalidate = func() {}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	hit, ok := hitByID(&canvas, hitWindowLocalTerminal)
 	if !ok || hit.Bounds.Y >= windowBarHeight || hit.Label != state.messages.LocalTerminal {
 		t.Fatalf("window bar local terminal hit = %+v, ok %v", hit, ok)

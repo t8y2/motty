@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func modalEventDriver(t *testing.T, state *State) *app.Driver {
@@ -35,7 +35,7 @@ func TestAIRenameEscapeKeepsHistoryOpen(t *testing.T) {
 	state.Click(hitAIHistory)
 	state.Click(hitAIHistoryRename.At(0))
 	driver := modalEventDriver(t, state)
-	if err := driver.Key(ui.KeyEscape, 0); err != nil {
+	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if state.modal != modalNone || !state.ai.panel.history {
@@ -58,7 +58,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 			}
 			state.Click(hitAIToggle)
 			state.Click(hitAIHistory)
-			var closeID ui.ID
+			var closeID gfx.ID
 			switch name {
 			case "ai-rename":
 				state.Click(hitAIHistoryRename.At(0))
@@ -98,7 +98,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 				t.Fatal("fixture needs a scrollable AI history panel")
 			}
 			top, settingsTop := panel.historyTop, state.settingsScroll
-			if err := driver.Scroll(ui.ScrollEvent{
+			if err := driver.Scroll(gfx.ScrollEvent{
 				X: panel.list.X + panel.list.Width/2, Y: panel.list.Y + panel.list.Height/2,
 				DeltaY: 120, Precise: true,
 			}); err != nil {
@@ -111,7 +111,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 				if state.settingsContent <= state.viewport.Height {
 					t.Fatal("fixture needs a scrollable settings page")
 				}
-				if err := driver.Scroll(ui.ScrollEvent{X: 300, Y: 400, DeltaY: 120, Precise: true}); err != nil {
+				if err := driver.Scroll(gfx.ScrollEvent{X: 300, Y: 400, DeltaY: 120, Precise: true}); err != nil {
 					t.Fatal(err)
 				}
 				if state.settingsScroll != settingsTop {
@@ -132,7 +132,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 				t.Fatal("the dialog's close/cancel button did not work")
 			}
 			// The same wheel gesture must work again after dismissal.
-			if err := driver.Scroll(ui.ScrollEvent{
+			if err := driver.Scroll(gfx.ScrollEvent{
 				X: panel.list.X + panel.list.Width/2, Y: panel.list.Y + panel.list.Height/2,
 				DeltaY: 120, Precise: true,
 			}); err != nil {
@@ -154,7 +154,7 @@ func TestHostDialogKeepsTypedContentWhenPressedOutside(t *testing.T) {
 	typeInto(state, hitDialogLabel, "staging-web")
 	typeInto(state, hitDialogAddress, "10.0.0.7")
 	driver := modalEventDriver(t, state)
-	var form ui.Rect
+	var form gfx.Rect
 	for _, hit := range driver.Snapshot().Hits {
 		if hit.ID == hitHostFormViewport {
 			form = hit.Bounds
@@ -174,7 +174,7 @@ func TestHostDialogKeepsTypedContentWhenPressedOutside(t *testing.T) {
 	if got := state.editor.value(fieldLabel); got != "staging-web" {
 		t.Fatalf("a press outside the New Host form lost the typed label: %q", got)
 	}
-	if err := driver.Key(ui.KeyEscape, 0); err != nil {
+	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if state.modal != modalNone || state.status != state.messages.StatusEditCanceled {
@@ -193,7 +193,7 @@ func TestFormDialogsKeepTypedContentWhenPressedOutside(t *testing.T) {
 		name    string
 		open    func(*testing.T, *State)
 		openYet func(*State) bool
-		field   ui.ID
+		field   gfx.ID
 	}{
 		{"new-forward", func(_ *testing.T, s *State) { s.openForwardDialog() }, openModal(modalNewForward), hitForwardDialogLabel},
 		{"new-jump-route", func(_ *testing.T, s *State) {
@@ -254,7 +254,7 @@ func TestFormDialogsKeepTypedContentWhenPressedOutside(t *testing.T) {
 			if editor := state.EditorFor(tc.field); editor == nil || editor.String() != typed {
 				t.Fatal("a press beside the form lost what was typed")
 			}
-			if err := driver.Key(ui.KeyEscape, 0); err != nil {
+			if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 				t.Fatal(err)
 			}
 			if tc.openYet(state) {

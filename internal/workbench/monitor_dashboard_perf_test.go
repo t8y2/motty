@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
@@ -40,19 +40,19 @@ func TestDashboardChartCacheKeepsRenderingAndAccessibilityCurrent(t *testing.T) 
 	p := s.dashboardPanel()
 	h := s.hosts[0]
 	r := s.dashboardRow(p, h.CatalogID, 1400)
-	bounds := ui.Rect{X: 30, Y: 50, Width: 420, Height: 140}
+	bounds := gfx.Rect{X: 30, Y: 50, Width: 420, Height: 140}
 	scale := float32(1)
-	focus := ui.ID{}
-	paint := func(c *ui.Canvas) {
+	focus := gfx.ID{}
+	paint := func(c *gfx.Canvas) {
 		c.Reset()
 		c.SetTree(&tree)
 		c.SetPixelScale(scale)
-		c.SetInteraction(ui.ID{}, ui.ID{}, focus, !focus.IsZero())
-		c.Clip(ui.Rect{X: 20, Y: 70, Width: 600, Height: 300})
+		c.SetInteraction(gfx.ID{}, gfx.ID{}, focus, !focus.IsZero())
+		c.Clip(gfx.Rect{X: 20, Y: 70, Width: 600, Height: 300})
 		s.paintDashboardChart(c, p, h, r, bounds, 2, s.messages.Dashboard.Network)
 		c.Unclip()
 	}
-	var cached ui.Canvas
+	var cached gfx.Canvas
 	paint(&cached)
 	for _, change := range []struct {
 		name  string
@@ -66,7 +66,7 @@ func TestDashboardChartCacheKeepsRenderingAndAccessibilityCurrent(t *testing.T) 
 		{"scale", func() { scale = 1.5 }},
 		{"focus", func() { focus = r.chartIDs[2] }},
 		{"focused-language", func() { s.setLanguage(i18n.English) }},
-		{"blur", func() { focus = ui.ID{} }},
+		{"blur", func() { focus = gfx.ID{} }},
 		{"sample", func() {
 			s.dashboard.engine.Publish(h.CatalogID, r.snapshot.Updated.Add(2*time.Second), remotestats.Sample{CPUPercent: 90, MemoryTotalBytes: 8 << 30, MemoryUsedBytes: 5 << 30, ReceiveBytesPerSecond: 1 << 20, SendBytesPerSecond: 1 << 19, NetworkInterface: "eth0"})
 			r = s.dashboardRow(p, h.CatalogID, 1400)
@@ -76,7 +76,7 @@ func TestDashboardChartCacheKeepsRenderingAndAccessibilityCurrent(t *testing.T) 
 			change.apply()
 			paint(&cached)
 			r.charts[2] = dashboardChart{}
-			var fresh ui.Canvas
+			var fresh gfx.Canvas
 			paint(&fresh)
 			if !reflect.DeepEqual(cached.Triangles(), fresh.Triangles()) || !reflect.DeepEqual(cached.Rectangles(), fresh.Rectangles()) || !reflect.DeepEqual(cached.Texts(), fresh.Texts()) || !reflect.DeepEqual(cached.Hits(), fresh.Hits()) {
 				t.Fatal("cached chart differs from a fresh chart")
@@ -104,8 +104,8 @@ func TestDashboardPaintsOnlyVisibleMountsAndReachesTheLast(t *testing.T) {
 		t.Run(view.name, func(t *testing.T) {
 			s := dashboardPerformanceFixture(t, 61)
 			s.dashboardRow(s.dashboardPanel(), "perf-host", int(width)).page = view.page
-			size := ui.Size{Width: width, Height: 1000}
-			var c ui.Canvas
+			size := gfx.Size{Width: width, Height: 1000}
+			var c gfx.Canvas
 			s.Paint(&c, size)
 			content := s.dashboard.content
 			if got := paintedDockerDisks(&c); got == 0 || got >= 64 || hasPaintedText(&c, "/last") {
@@ -132,8 +132,8 @@ func BenchmarkDashboardPaint(b *testing.B) {
 	for _, points := range []int{2, 1801} {
 		b.Run(fmt.Sprint(points), func(b *testing.B) {
 			s := dashboardPerformanceFixture(b, points)
-			var c ui.Canvas
-			size := ui.Size{Width: 1800, Height: 1000}
+			var c gfx.Canvas
+			size := gfx.Size{Width: 1800, Height: 1000}
 			s.Paint(&c, size)
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -154,7 +154,7 @@ func BenchmarkDashboardDriver(b *testing.B) {
 	}{{"2", 2, false}, {"1801", 1801, false}, {"1801-update", 1801, true}} {
 		b.Run(scenario.name, func(b *testing.B) {
 			s := dashboardPerformanceFixture(b, scenario.points)
-			var c ui.Canvas
+			var c gfx.Canvas
 			driver, err := app.NewDriver(app.Config{Title: "Performance", Width: 1800, Height: 1000, Tree: Tree(), Paint: s.Paint}, &c)
 			if err != nil {
 				b.Fatal(err)

@@ -3,8 +3,8 @@ package workbench
 import (
 	"archive/zip"
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/backup"
 	"net/http"
 	"net/http/httptest"
@@ -83,12 +83,12 @@ func TestNotesFoldersMoveWithoutCyclesAndKeepContentsOnDelete(t *testing.T) {
 	s.Click(hitNotes)
 	s.Click(hitNoteFolderAdd)
 	s.EditorFor(hitNoteInline).Insert("Production")
-	s.Key(ui.KeyEvent{Target: hitNoteInline, Key: ui.KeyEnter})
+	s.Key(gfx.KeyEvent{Target: hitNoteInline, Key: gfx.KeyEnter})
 	parent := s.notes.folders[0].ID
 	s.Click(hitNoteFolderRows.At(0))
 	s.Click(hitNoteFolderAdd)
 	s.EditorFor(hitNoteInline).Insert("Runbooks")
-	s.Key(ui.KeyEvent{Target: hitNoteInline, Key: ui.KeyEnter})
+	s.Key(gfx.KeyEvent{Target: hitNoteInline, Key: gfx.KeyEnter})
 	child := s.notes.folders[1].ID
 	if s.moveNote(parent, child, "", true) {
 		t.Fatal("allowed cyclic folder move")
@@ -162,8 +162,8 @@ func TestNotesRemoteImagesWaitForExplicitLoad(t *testing.T) {
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
 	s.EditorFor(hitNoteBody).Insert("![diagram](" + server.URL + "/image.png)")
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1200, Height: 800})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
 	if requests.Load() != 0 {
 		t.Fatal("preview fetched image without consent")
 	}

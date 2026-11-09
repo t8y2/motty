@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
-func gutterTexts(canvas *ui.Canvas) []string {
+func gutterTexts(canvas *gfx.Canvas) []string {
 	var texts []string
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
@@ -37,7 +37,7 @@ func TestGutterShowsNumbersAndTimesAndHidesOnTheAlternateScreen(t *testing.T) {
 	session.term.write([]byte("alpha\r\nbeta\r\n"))
 	want := time.Unix(stamp, 0).Format("15:04:05")
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.paintGrid(&canvas, session, geometry)
 	texts := gutterTexts(&canvas)
 	if !anyContains(texts, want) || !slices.Contains(texts, "2") {
@@ -70,10 +70,10 @@ func TestGutterTakesColumnsAndCopyLeavesItOut(t *testing.T) {
 	hit := hitTerminalList.At(int(session.ID))
 	startX, startY := cellPoint(geometry, 0, 2, state.cellWidth, state.cellHeight)
 	endX, endY := cellPoint(geometry, 0, 7, state.cellWidth, state.cellHeight)
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
-	if copied := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText; copied != "pha be" {
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
+	if copied := state.Shortcut(gfx.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText; copied != "pha be" {
 		t.Fatalf("copied %q", copied)
 	}
 }

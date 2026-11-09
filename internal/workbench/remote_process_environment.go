@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotetools"
 )
 
@@ -95,18 +95,18 @@ func (state *State) applyRemoteProcessEnvironment(
 	details.text.scroll = 0
 }
 
-func (state *State) paintRemoteProcessDetailsBody(canvas *ui.Canvas, bounds ui.Rect, process remotetools.Process, collectedAt time.Time) {
+func (state *State) paintRemoteProcessDetailsBody(canvas *gfx.Canvas, bounds gfx.Rect, process remotetools.Process, collectedAt time.Time) {
 	theme := state.Theme()
 	const (
 		pad       = float32(8)
 		rowHeight = float32(34)
 	)
-	content := ui.Rect{
+	content := gfx.Rect{
 		X: bounds.X + pad, Y: bounds.Y + pad,
 		Width: max(bounds.Width-pad*2, 0), Height: max(bounds.Height-pad*2, 0),
 	}
 	infoHeight := rowHeight * 5
-	infoBounds := ui.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: min(infoHeight, content.Height)}
+	infoBounds := gfx.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: min(infoHeight, content.Height)}
 	labelWidth := min(float32(150), max(content.Width*0.18, 96))
 	valueWidth := max((content.Width-labelWidth*2)/2, 0)
 	columns := []components.TableColumn{
@@ -114,11 +114,11 @@ func (state *State) paintRemoteProcessDetailsBody(canvas *ui.Canvas, bounds ui.R
 	}
 	table := components.BeginTable(canvas, theme, infoBounds, columns).RowHeight(rowHeight)
 	for _, pair := range state.remoteProcessDetailPairRows(process, collectedAt) {
-		table.Row(ui.ID{}, []string{pair[0].label, pair[0].value, pair[1].label, pair[1].value}, false)
+		table.Row(gfx.ID{}, []string{pair[0].label, pair[0].value, pair[1].label, pair[1].value}, false)
 	}
 
 	tabsY := infoBounds.Bottom() + 10
-	tabsBounds := ui.Rect{
+	tabsBounds := gfx.Rect{
 		X: content.X, Y: tabsY, Width: min(float32(300), content.Width),
 		Height: min(float32(34), max(content.Bottom()-tabsY, 0)),
 	}
@@ -129,7 +129,7 @@ func (state *State) paintRemoteProcessDetailsBody(canvas *ui.Canvas, bounds ui.R
 	components.BeginTabs(canvas, theme, tabsBounds, options[:], state.remoteProcessDetailTab()).Paint()
 
 	panelY := tabsBounds.Bottom() + 8
-	panelBounds := ui.Rect{
+	panelBounds := gfx.Rect{
 		X: content.X, Y: panelY, Width: content.Width,
 		Height: max(content.Bottom()-panelY, 0),
 	}
@@ -148,14 +148,14 @@ func (state *State) paintRemoteProcessDetailsBody(canvas *ui.Canvas, bounds ui.R
 			status := canvas.FitLine(
 				details.commandStatus,
 				theme.Metrics.FontSizeM,
-				ui.WeightRegular,
+				gfx.WeightRegular,
 				commandBounds.Width,
 			)
-			canvas.Label(status, ui.Rect{
+			canvas.Label(status, gfx.Rect{
 				X: commandBounds.X, Y: commandBounds.Y,
 				Width: commandBounds.Width, Height: statusHeight,
-			}, ui.TextStyle{
-				Size: theme.Metrics.FontSizeM, Weight: ui.WeightRegular, Color: color,
+			}, gfx.TextStyle{
+				Size: theme.Metrics.FontSizeM, Weight: gfx.WeightRegular, Color: color,
 			})
 			commandBounds.Y += statusHeight
 			commandBounds.Height = max(commandBounds.Height-statusHeight, 0)
@@ -180,18 +180,18 @@ func (state *State) paintRemoteProcessDetailsBody(canvas *ui.Canvas, bounds ui.R
 	)
 }
 
-func (state *State) remoteProcessEnvironmentScrollPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) remoteProcessEnvironmentScrollPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	details := &state.remote.processDetails
 	if !details.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.remoteDetailScrollPointer(event, &details.text, hitRemoteProcessDetailsScroll)
 }
 
-func (state *State) remoteProcessEnvironmentWheel(event ui.ScrollEvent) (ui.EventResult, bool) {
+func (state *State) remoteProcessEnvironmentWheel(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	details := &state.remote.processDetails
 	if !details.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.remoteDetailWheel(event, &details.text, hitRemoteProcessDetailsText, hitRemoteProcessDetailsScroll)
 }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
 )
@@ -41,7 +41,7 @@ func benchAIConversation(b *testing.B, count int) {
 	state.ai.open = true
 	longConversation(state, count)
 	state.ai.scroll.ScrollToStart()
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, panelWide)
 	state.ai.scroll.ScrollTo(state.ai.panel.maxScroll / 2)
 	paint := func() {
@@ -67,7 +67,7 @@ func benchAIConversation(b *testing.B, count int) {
 	b.Run("resizing", func(b *testing.B) {
 		// Every paint is at another width, so every row is measured again.
 		b.ReportAllocs()
-		sizes := [2]ui.Size{{Width: 1400, Height: 900}, {Width: 400, Height: 900}} // docked, then a drawer 12 pixels narrower
+		sizes := [2]gfx.Size{{Width: 1400, Height: 900}, {Width: 400, Height: 900}} // docked, then a drawer 12 pixels narrower
 		for i := 0; b.Loop(); i++ {
 			canvas.Reset()
 			state.Paint(&canvas, sizes[i%2])

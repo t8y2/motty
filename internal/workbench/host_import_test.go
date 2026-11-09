@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -203,8 +203,8 @@ Host imported
 	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{config}, nil }
 	state := newTestState(t, options)
 	state.Click(hitImportSSHConfig)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(50, func() {
 		canvas.Reset()
@@ -240,7 +240,7 @@ func mustHostLabel(t testing.TB, state *State, label string) Host {
 func TestImportMenuOpensListsEverySourceAndCloses(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	canvas, _ := paintedTexts(state)
-	for _, id := range []ui.ID{hitImportSSHConfig, hitImportHostCatalog, hitImportSessions} {
+	for _, id := range []gfx.ID{hitImportSSHConfig, hitImportHostCatalog, hitImportSessions} {
 		if _, ok := hitByID(canvas, id); ok {
 			t.Fatalf("source %d is painted while the menu is closed", id)
 		}
@@ -250,13 +250,13 @@ func TestImportMenuOpensListsEverySourceAndCloses(t *testing.T) {
 		t.Fatal("the Import button did not open its menu")
 	}
 	canvas, _ = paintedTexts(state)
-	for _, id := range []ui.ID{hitImportSSHConfig, hitImportHostCatalog, hitImportSessions} {
+	for _, id := range []gfx.ID{hitImportSSHConfig, hitImportHostCatalog, hitImportSessions} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled {
 			t.Fatalf("menu source %d = %+v, %v", id, hit, ok)
 		}
 	}
 
-	state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if state.importMenu {
 		t.Fatal("Escape left the menu open")
 	}

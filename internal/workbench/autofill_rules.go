@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
@@ -135,7 +135,7 @@ func (state *State) scanAutofill(session *Session) {
 
 // requestAutofillFrames asks for the one frame that looks at a prompt once the
 // output has paused. A terminal that is quiet asks for nothing.
-func (state *State) requestAutofillFrames(canvas *ui.Canvas) {
+func (state *State) requestAutofillFrames(canvas *gfx.Canvas) {
 	if !state.autofillRules.armed {
 		return
 	}
@@ -151,7 +151,7 @@ func (state *State) requestAutofillFrames(canvas *ui.Canvas) {
 	}
 }
 
-func (state *State) clickAutofillConfirm(id ui.ID) {
+func (state *State) clickAutofillConfirm(id gfx.ID) {
 	ask := state.autofillRules.ask
 	switch id {
 	case hitAutofillAllow:
@@ -306,7 +306,7 @@ func (state *State) openAutofillSuPreset() {
 	form.send = autofill.SendText
 }
 
-func (state *State) clickAutofillDialog(id ui.ID) {
+func (state *State) clickAutofillDialog(id gfx.ID) {
 	form := &state.autofillRules
 	switch id {
 	case hitAutofillSubmit:
@@ -486,7 +486,7 @@ func (state *State) sendKindName(send autofill.Send) string {
 // ---------------------------------------------------------------------------
 // Painting
 
-func (state *State) paintAutofillDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAutofillDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, pal, theme := state.messages.Autofill, state.pal, state.Theme()
 	form := &state.autofillRules
 	title := m.DialogAddTitle
@@ -501,27 +501,27 @@ func (state *State) paintAutofillDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAutofillClose, InitialFocusID: hitAutofillName,
-		ContentSize: ui.Size{Width: 600}, FitBody: true, BodyHeight: withError(body, form.dialogError),
+		ContentSize: gfx.Size{Width: 600}, FitBody: true, BodyHeight: withError(body, form.dialogError),
 	})
 	layout := dialog.Begin(title, "")
 	kinds := [...]struct {
-		id   ui.ID
+		id   gfx.ID
 		send autofill.Send
 	}{{hitAutofillPassword, autofill.SendPassword}, {hitAutofillOTP, autofill.SendOTP}, {hitAutofillText, autofill.SendText}}
-	var name, pattern, fixed, scope, enter flex.Box
-	var choices [len(kinds)]flex.Box
+	var name, pattern, fixed, scope, enter ui.Box
+	var choices [len(kinds)]ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		name = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
 		pattern = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		f.Text(m.Send).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 4, 2)
+		f.Text(m.Send).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 4, 2)
 		f.Row().Gap(8).Height(30).MarginSides(0, 0, 8, 0).Children(func() {
 			for index, kind := range kinds {
 				border, width := withAlpha(pal.line, 0.9), float32(1)
 				if form.send == kind.send {
 					border, width = pal.accent, 2
 				}
-				choices[index] = f.Row().Grow(1).Height(30).Items(flex.Center).PadX(12).Background(pal.terminal).
+				choices[index] = f.Row().Grow(1).Height(30).Items(ui.Center).PadX(12).Background(pal.terminal).
 					Radius(radius.control).Border(width, border).Children(func() {
 					f.Text(state.sendKindName(kind.send)).FontSize(metrics.FontSizeM).Color(pal.text)
 				})
@@ -533,11 +533,11 @@ func (state *State) paintAutofillDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		scope = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
 		enter = state.declareDialogCheckbox(f, m.Enter, 4, 0)
 		if form.dialogError != "" {
-			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
 		}
 	})
 	f.End()
-	field := func(box flex.Box, id ui.ID, label, placeholder, value string, secret bool) {
+	field := func(box ui.Box, id gfx.ID, label, placeholder, value string, secret bool) {
 		content := components.BeginField(canvas, theme, box.Rect()).Paint(label, "", "")
 		focused := canvas.Focused() == id
 		state.paintSecretInput(canvas, content, components.InputSnapshot{
@@ -548,7 +548,7 @@ func (state *State) paintAutofillDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	field(name, hitAutofillName, m.Name, m.NamePlaceholder, form.name.String(), false)
 	field(pattern, hitAutofillPattern, m.Pattern, m.PatternPlaceholder, form.pattern.String(), false)
 	for index, kind := range kinds {
-		canvas.HitWithOptions(kind.id, choices[index].Rect(), state.sendKindName(kind.send), ui.HitOptions{Role: ui.RoleButton, Selected: form.send == kind.send})
+		canvas.HitWithOptions(kind.id, choices[index].Rect(), state.sendKindName(kind.send), gfx.HitOptions{Role: gfx.RoleButton, Selected: form.send == kind.send})
 	}
 	if form.send == autofill.SendText {
 		placeholder := ""
@@ -566,13 +566,13 @@ func (state *State) paintAutofillDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog.End()
 }
 
-func (state *State) paintAutofillConfirm(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAutofillConfirm(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, pal, theme := state.messages.Autofill, state.pal, state.Theme()
 	ask := state.autofillRules.ask
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitAutofillConfirmAway, CloseID: hitAutofillConfirmClose, InitialFocusID: hitAutofillDeny,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: 92,
+		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: 92,
 	})
 	address := ""
 	if session, ok := state.sessionByIDPointer(ask.sessionID); ok {
@@ -590,7 +590,7 @@ func (state *State) paintAutofillConfirm(canvas *ui.Canvas, viewport ui.Rect) {
 	f := state.partLayout.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().Children(func() {
 		f.Text(fmt.Sprintf(m.ConfirmSendsFmt, kind)).FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(20)
-		f.Row().Height(58).Shrink(0).Items(flex.Center).PadX(11).MarginSides(8, 0, 0, 0).
+		f.Row().Height(58).Shrink(0).Items(ui.Center).PadX(11).MarginSides(8, 0, 0, 0).
 			Border(1, pal.line).Background(pal.surface).Radius(radius.control).Children(func() {
 			f.Text(m.ConfirmLine + ": " + clipboardPreview(ask.line)).FontSize(metrics.FontSizeS).Color(pal.text)
 		})

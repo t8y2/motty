@@ -1,7 +1,7 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -154,20 +154,20 @@ func (state *State) revealSettingsCategory() {
 // under the pointer, and its icon and name are brighter then. The entry is a
 // pointer target recorded with the page's controls, so the keyboard visits it
 // after the search box above it.
-func (page *settingsPage) navEntry(id ui.ID, icon uint8, label string, active bool) {
+func (page *settingsPage) navEntry(id gfx.ID, icon uint8, label string, active bool) {
 	f, pal := page.f, page.state.pal
 	hovered := f.Canvas().Hovered() == id
-	foreground, background := pal.muted, ui.Color{}
+	foreground, background := pal.muted, gfx.Color{}
 	switch {
 	case active:
 		foreground, background = pal.text, pal.surfaceHot
 	case hovered:
 		foreground, background = pal.text, pal.surfaceSoft
 	}
-	entry := f.Row().Height(settingsNavEntryHeight).Shrink(0).MarginX(12).PadSides(0, 8, 0, 12).Gap(12).Items(flex.Center).Radius(radius.control).Background(background)
-	page.hitOn(entry, id, label, ui.HitOptions{Role: ui.RoleMenuItem, Selected: active})
+	entry := f.Row().Height(settingsNavEntryHeight).Shrink(0).MarginX(12).PadSides(0, 8, 0, 12).Gap(12).Items(ui.Center).Radius(radius.control).Background(background)
+	page.hitOn(entry, id, label, gfx.HitOptions{Role: gfx.RoleMenuItem, Selected: active})
 	entry.Children(func() {
 		f.Icon(lucideIcons[icon]).IconTransform(page.state.iconMotion(f.Canvas(), id, icon)).Color(foreground)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(foreground).LineHeight(22).Grow(1)
+		f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(foreground).LineHeight(22).Grow(1)
 	})
 }

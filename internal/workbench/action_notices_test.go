@@ -9,7 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sessionimport"
 )
 
@@ -39,7 +39,7 @@ func TestCreationButtonsUseOnlySSHHosts(t *testing.T) {
 			}
 			for _, page := range []struct {
 				section uint8
-				id      ui.ID
+				id      gfx.ID
 				minimum int
 			}{{sectionForwards, hitForwardAdd, 1}, {sectionProxies, hitProxyAdd, 2}} {
 				s.activeSection = page.section
@@ -99,7 +99,7 @@ func TestMissingActionPrerequisitesHaveVisibleFeedback(t *testing.T) {
 		{"snippet/no terminal", nil, func(s *State) { s.sendSnippet(0) }, func(s *State) string { return s.messages.Tools.StatusSnippetNoTerminal }},
 		{"snippet/from page", nil, func(s *State) {
 			s.snippets.list = []snippet{{Name: "list", Command: "ls"}}
-			s.sendSnippetFromPage(0, ui.Point{})
+			s.sendSnippetFromPage(0, gfx.Point{})
 		}, func(s *State) string { return s.messages.Tools.StatusSnippetNoTerminal }},
 		{"snippet/disconnected", func(s *State) {
 			s.sessions = []Session{{ID: 1, term: newTerminal(80, 24)}}

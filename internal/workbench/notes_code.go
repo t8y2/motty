@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/workbench/icons"
 )
 
@@ -22,18 +22,18 @@ type noteCodeActions struct {
 	source   string
 	next     int
 	targets  []noteCodeCopy
-	copied   ui.ID
+	copied   gfx.ID
 	copiedAt time.Duration
 }
 
-func (s *State) paintNoteCodeCopies(c *ui.Canvas, n *notesUI, origin ui.Point, clip ui.Rect) {
+func (s *State) paintNoteCodeCopies(c *gfx.Canvas, n *notesUI, origin gfx.Point, clip gfx.Rect) {
 	v := &n.view
 	copies := &v.codeActions
 	source := n.body.String()
 	blocks := n.rendered.Codes()
 	if copies.source != source || len(copies.targets) != len(blocks) {
 		copies.source = source
-		copies.copied = ui.ID{}
+		copies.copied = gfx.ID{}
 		copies.targets = copies.targets[:0]
 		for _, block := range n.doc.Blocks {
 			if block.Kind != markdown.Code {
@@ -51,7 +51,7 @@ func (s *State) paintNoteCodeCopies(c *ui.Canvas, n *notesUI, origin ui.Point, c
 		b := block.Bounds
 		b.X += origin.X
 		b.Y += origin.Y
-		button := ui.Rect{X: b.X + b.Width - 26, Y: b.Y + 3, Width: 22, Height: 22}
+		button := gfx.Rect{X: b.X + b.Width - 26, Y: b.Y + 3, Width: 22, Height: 22}
 		visible := intersectRect(button, clip)
 		if visible.Width < button.Width || visible.Height < button.Height {
 			continue
@@ -69,12 +69,12 @@ func (s *State) paintNoteCodeCopies(c *ui.Canvas, n *notesUI, origin ui.Point, c
 			components.BeginButton(c, s.Theme(), id, button).Height(22).WithIcon(icon).IconSmall().Ghost(label)
 		} else {
 			// Keep keyboard traversal available while the pointer-only affordance is hidden.
-			c.HitWithOptions(id, button, label, ui.HitOptions{Role: ui.RoleButton, Hint: label})
+			c.HitWithOptions(id, button, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label})
 		}
 	}
 }
 
-func (s *State) clickNoteCodeCopy(id ui.ID, n *notesUI) bool {
+func (s *State) clickNoteCodeCopy(id gfx.ID, n *notesUI) bool {
 	token, ok := id.In(hitNoteCodeCopies)
 	if !ok {
 		return false
@@ -87,11 +87,11 @@ func (s *State) clickNoteCodeCopy(id ui.ID, n *notesUI) bool {
 		if target.token != token {
 			continue
 		}
-		v.copied = ui.ID{}
+		v.copied = gfx.ID{}
 		if s.options.SetClipboardText == nil {
 			n.error = s.noteText("Clipboard unavailable", "剪贴板不可用")
 		} else if err := s.options.SetClipboardText(target.text); err != nil {
-			v.copied = ui.ID{}
+			v.copied = gfx.ID{}
 			n.error = err.Error()
 		} else {
 			v.copied, v.copiedAt = id, s.now()

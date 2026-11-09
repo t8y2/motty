@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 // hostSelectTestState is the proxy dialog with more hosts than its popup shows,
@@ -71,7 +71,7 @@ func TestProxyHostSelectRevealsTheChosenHostAndScrolls(t *testing.T) {
 
 	// The wheel over the popup scrolls it back to the top.
 	box := state.proxyEditor.targetPopup
-	if err := view.Scroll(ui.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: -1000}); err != nil {
+	if err := view.Scroll(gfx.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: -1000}); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Wait(50 * time.Millisecond); err != nil {
@@ -82,7 +82,7 @@ func TestProxyHostSelectRevealsTheChosenHostAndScrolls(t *testing.T) {
 		t.Fatal("the wheel did not move the list")
 	}
 	// A wheel beside the popup leaves it where it is.
-	if err := view.Scroll(ui.ScrollEvent{X: 4, Y: 4, DeltaY: 1000}); err != nil {
+	if err := view.Scroll(gfx.ScrollEvent{X: 4, Y: 4, DeltaY: 1000}); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Wait(50 * time.Millisecond); err != nil {

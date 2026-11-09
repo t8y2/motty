@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/desktop"
 	"motty/internal/sshconn"
 )
@@ -21,7 +21,7 @@ func proxyWorld(t testing.TB) (*world, Options) {
 	return newWorld(t)
 }
 
-func configureProxy(t *testing.T, state *State, kind ui.ID, address, user, password, bypass string) {
+func configureProxy(t *testing.T, state *State, kind gfx.ID, address, user, password, bypass string) {
 	t.Helper()
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsConnection)
@@ -31,7 +31,7 @@ func configureProxy(t *testing.T, state *State, kind ui.ID, address, user, passw
 	}
 	state.Click(kind)
 	for _, field := range []struct {
-		hit   ui.ID
+		hit   gfx.ID
 		value string
 	}{{hitOutboundProxyAddress, address}, {hitOutboundProxyUser, user}, {hitOutboundProxyPassword, password}} {
 		if field.value != "" {
@@ -499,9 +499,9 @@ func TestHostProxyConfigurationFitsEveryNetworkDialogInAShortWindow(t *testing.T
 			state := newTestState(t, options)
 			state.openHostDialog()
 			state.editor.setProtocol(protocol)
-			canvas, _ := paintAt(state, ui.Size{Width: 900, Height: 600})
+			canvas, _ := paintAt(state, gfx.Size{Width: 900, Height: 600})
 			state.editor.form.offset = state.editor.form.geometry.MaxOffsetY
-			canvas, _ = paintAt(state, ui.Size{Width: 900, Height: 600})
+			canvas, _ = paintAt(state, gfx.Size{Width: 900, Height: 600})
 			proxy, ok := hitByID(canvas, hitHostProxyConfigure)
 			if !ok {
 				t.Fatal("proxy configuration was not painted")

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -151,7 +151,7 @@ func TestManagedWorkspaceHeaderAndVerticalTabsReserveSeparateEdges(t *testing.T)
 	state := newTestState(t, options)
 	state.setTabOrientation(tabsVertical)
 	workspaceID := launchTemporaryWorkspace(t, state, 0, 1)
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 
 	bounds := state.workspacePixelBoundsFor(workspaceID, size)
 	if want := state.verticalTabsReserve(size); bounds.X != want {
@@ -161,7 +161,7 @@ func TestManagedWorkspaceHeaderAndVerticalTabsReserveSeparateEdges(t *testing.T)
 		t.Fatalf("workspace top = %v, want below the header", bounds.Y)
 	}
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	header, ok := hitByID(&canvas, hitWorkspaceHeaderLayout)
 	if !ok {

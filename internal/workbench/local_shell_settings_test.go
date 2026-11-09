@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 )
 
@@ -15,14 +15,14 @@ func TestLocalShellSettingVisibilityAndPosition(t *testing.T) {
 		state.setLanguage(language)
 		state.Click(hitSettings)
 		state.selectSettingsCategory(settingsTerminal)
-		var canvas ui.Canvas
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 		if _, visible := hitByID(&canvas, hitSettingsLocalShell); !visible {
 			// The terminal page has grown past this canvas, so reach the row
 			// the way a user does; both rows sit together at the page's end.
-			state.scrollSettings(ui.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
+			state.scrollSettings(gfx.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
 			canvas.Reset()
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 		}
 		hit, visible := hitByID(&canvas, hitSettingsLocalShell)
 		if !visible {
@@ -30,7 +30,7 @@ func TestLocalShellSettingVisibilityAndPosition(t *testing.T) {
 		}
 		if visible {
 			notify, _ := hitByID(&canvas, hitSettingsNotifyToggle)
-			if hit.Role != ui.RoleCombobox || hit.Bounds.Y <= notify.Bounds.Y {
+			if hit.Role != gfx.RoleCombobox || hit.Bounds.Y <= notify.Bounds.Y {
 				t.Fatalf("shell select is not below the notification row: %+v", hit)
 			}
 		}

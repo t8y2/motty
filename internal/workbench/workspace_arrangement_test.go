@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -12,7 +12,7 @@ func TestWorkspaceLibraryCardsFollowLayoutAndKeepOpenInHeader(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.activeSection = sectionWorkspaces
 	state.templates = []WorkspaceTemplate{mustWorkspaceTemplate(t, "API", workspaceCatalogIDs(state, 0, 1, 2), 2)}
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	header := panelHit(t, canvas, hitWorkspaceTemplateRowList.At(0)).Bounds
 	open := panelHit(t, canvas, hitWorkspaceTemplateOpen.At(0)).Bounds
 	if open.Y < header.Y || open.Y+open.Height > header.Y+header.Height {

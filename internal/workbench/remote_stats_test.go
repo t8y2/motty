@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotestats"
 	layoutcore "motty/internal/workspace"
 )
@@ -59,7 +59,7 @@ func TestRemoteStatsRunOnlyAfterExplicitOptInAndStopCleanly(t *testing.T) {
 		return stream(ctx, command, limit, line)
 	}
 	state.Wake()
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	fake.mu.Lock()
 	before := len(fake.commandCalls)
 	fake.mu.Unlock()
@@ -144,8 +144,8 @@ func TestRemoteStatsReadoutIsNotDuplicatedInTheActiveToolRail(t *testing.T) {
 		ReceiveBytesPerSecond: 128 << 10, SendBytesPerSecond: 64 << 10,
 	}
 	session.stats = &remoteStatsView{state: remoteStatsReady, text: formatRemoteStats(sample), parts: remoteStatsParts(sample)}
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 500}} {
-		var canvas ui.Canvas
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 500}} {
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		if _, ok := hitByID(&canvas, hitRemoteStats); !ok {
 			t.Fatalf("at %v no monitor control", size)
@@ -178,8 +178,8 @@ func TestRemoteStatsReadoutIsNotShownInAnInactiveSplitBar(t *testing.T) {
 	}
 	statsSession.stats = &remoteStatsView{state: remoteStatsReady, text: formatRemoteStats(sample), parts: remoteStatsParts(sample)}
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, part := range statsSession.stats.parts {
 		for _, text := range canvas.Texts() {
 			if text.Value == part {
@@ -197,8 +197,8 @@ func TestPaintingRemoteStatsAllocatesNothingOnceWarm(t *testing.T) {
 		ReceiveBytesPerSecond: 128 << 10, SendBytesPerSecond: 64 << 10,
 	}
 	session.stats = &remoteStatsView{state: remoteStatsReady, text: formatRemoteStats(warm), parts: remoteStatsParts(warm)}
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	paint := func() {
 		canvas.Reset()
 		state.Paint(&canvas, size)
@@ -226,8 +226,8 @@ func BenchmarkPaintRemoteStats(b *testing.B) {
 	state, _, _, _ := liveSession(&testing.T{})
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	session.stats = &remoteStatsView{state: remoteStatsReady, text: "CPU 38%  RAM 3.0/8.0G  ↓128.0K/s ↑64.0K/s"}
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -246,8 +246,8 @@ func TestRemoteStatsShowGPUPiecesOnlyWhenTheServerHasGPUs(t *testing.T) {
 		state.Click(hitRemoteStats)
 		waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
 		state.Click(hitMonitorHardware)
-		var canvas ui.Canvas
-		state.Paint(&canvas, ui.Size{Width: 1600, Height: 900})
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900})
 		var pieces []string
 		for _, text := range canvas.Texts() {
 			if strings.HasPrefix(text.Value, "GPU") {

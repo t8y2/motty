@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 type hostSortState struct {
@@ -33,7 +33,7 @@ func (state *State) toggleHostSort() {
 	state.hostGroupMenu = false
 }
 
-func (state *State) beginHostSortPaint(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) beginHostSortPaint(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if !state.hostSort.enabled {
 		return
 	}
@@ -53,7 +53,7 @@ func (state *State) endHostSortPaint() {
 	}
 }
 
-func (state *State) declareHostSortItem(host Host, bounds, handle ui.Rect) {
+func (state *State) declareHostSortItem(host Host, bounds, handle gfx.Rect) {
 	if !state.hostSort.enabled {
 		return
 	}
@@ -70,7 +70,7 @@ func (state *State) hostSortDragging(id uint32) bool {
 		state.hostSort.grid.Active() == hitHostSortHandles.At(int(id))
 }
 
-func (state *State) hostSortHovered(canvas *ui.Canvas, id uint32) bool {
+func (state *State) hostSortHovered(canvas *gfx.Canvas, id uint32) bool {
 	return state.hostSort.enabled && canvas.Hovered() == hitHostSortHandles.At(int(id))
 }
 
@@ -80,15 +80,15 @@ func (state *State) hostSortTarget(id uint32) bool {
 		state.hostSort.grid.Active() != hitHostSortHandles.At(int(id))
 }
 
-func (state *State) hostSortPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) hostSortPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if !state.hostSort.enabled || state.activeSection != sectionHosts || state.modal != modalNone {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	move, result := state.hostSort.grid.Pointer(event)
 	if !result.Handled {
 		return result, false
 	}
-	if event.Kind == ui.PointerMove && state.hostSort.grid.Dragging() {
+	if event.Kind == gfx.PointerMove && state.hostSort.grid.Dragging() {
 		if state.autoScrollHostSortIn(state.chrome.hostList, state.hostsContent, event.Y) {
 			result.Repaint = true
 		}
@@ -99,7 +99,7 @@ func (state *State) hostSortPointer(event ui.PointerEvent) (ui.EventResult, bool
 	return result, true
 }
 
-func (state *State) autoScrollHostSortIn(viewport ui.Rect, content, y float32) bool {
+func (state *State) autoScrollHostSortIn(viewport gfx.Rect, content, y float32) bool {
 	if viewport.Height <= 0 || content <= viewport.Height {
 		return false
 	}
@@ -126,7 +126,7 @@ func (state *State) autoScrollHostSortIn(viewport ui.Rect, content, y float32) b
 // hostSortAutoScrollFrame keeps scrolling while a held drag rests at an edge.
 // RequestFrameIn must be repeated by every frame that still needs another one,
 // so releasing the pointer or leaving the edge stops the loop without a timer.
-func (state *State) hostSortAutoScrollFrame(canvas *ui.Canvas, viewport ui.Rect, content float32) bool {
+func (state *State) hostSortAutoScrollFrame(canvas *gfx.Canvas, viewport gfx.Rect, content float32) bool {
 	if !state.hostSort.enabled || !state.hostSort.grid.Dragging() {
 		return false
 	}

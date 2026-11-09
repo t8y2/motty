@@ -14,8 +14,8 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -31,7 +31,7 @@ type sftpRow struct {
 	sortName             string
 	selected             bool
 	cells                [5]string
-	icon                 *ui.Icon      // the file-type glyph, chosen when the listing arrives
+	icon                 *gfx.Icon     // the file-type glyph, chosen when the listing arrives
 	mono                 bool          // the glyph has no colors of its own and is tinted
 	appIcon              *fileIconSlot // the system's icon for a local application bundle, once it has answered
 	hidden               bool
@@ -169,7 +169,7 @@ type sftpView struct {
 	editUTF8BOM           bool
 	editEditor            text.Editor
 	editLayout            components.TextareaLayout // the editor's rows and scroll
-	editRect              ui.Rect                   // where the editor was painted, for the wheel
+	editRect              gfx.Rect                  // where the editor was painted, for the wheel
 
 	// listings remembers the folders already read, oldest first, so going back
 	// up or into a folder seen before shows at once; prefetching holds folders
@@ -312,7 +312,7 @@ func (state *State) hideFilesPanel(session *Session) {
 	state.save()
 }
 
-func (state *State) clickSFTP(id ui.ID) {
+func (state *State) clickSFTP(id gfx.ID) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone {
 		return
@@ -489,7 +489,7 @@ func (state *State) toggleSFTPSidebarSort(folder *sftpFolder, column int) {
 	folder.scrollOffset = float32(folder.first) * sftpRowHeight
 }
 
-func (state *State) sftpEditor(hit ui.ID) *text.Editor {
+func (state *State) sftpEditor(hit gfx.ID) *text.Editor {
 	if state.activeSection != sectionTerminal {
 		return nil
 	}
@@ -561,18 +561,18 @@ func (view *sftpView) setItemCountStatus(format string, count int) {
 // selectRow applies a press on a row the way a file list does: a plain press
 // selects that row alone, Command or Control toggles it among the others, and
 // Shift selects every row from the one last chosen to it.
-func (folder *sftpFolder) selectRow(index int, modifiers ui.Modifiers) {
+func (folder *sftpFolder) selectRow(index int, modifiers gfx.Modifiers) {
 	if index < 0 || index >= len(folder.rows) {
 		return
 	}
 	switch {
-	case modifiers&ui.ModifierShift != 0:
+	case modifiers&gfx.ModifierShift != 0:
 		anchor := min(max(folder.anchor, 0), len(folder.rows)-1)
 		from, to := min(anchor, index), max(anchor, index)
 		for row := range folder.rows {
 			folder.rows[row].selected = row >= from && row <= to
 		}
-	case modifiers&(ui.ModifierMeta|ui.ModifierControl) != 0:
+	case modifiers&(gfx.ModifierMeta|gfx.ModifierControl) != 0:
 		folder.rows[index].selected = !folder.rows[index].selected
 		folder.anchor = index
 	default:
@@ -1317,7 +1317,7 @@ func (state *State) finishSFTPDelete(view *sftpView, result sftpclient.Result) {
 	state.listSFTP(view, view.path)
 }
 
-func (state *State) clickSFTPDialog(view *sftpView, id ui.ID) {
+func (state *State) clickSFTPDialog(view *sftpView, id gfx.ID) {
 	if view.dialog == sftpDialogChmod && id.Scope() == hitSFTPChmodBits {
 		// A permission checkbox flips one bit of the octal field, so the typed
 		// value and the checkboxes always agree (issue #392).
@@ -1802,38 +1802,38 @@ func formatBytes(size int64) string {
 
 // scrollSFTP moves the file list. As everywhere in Viva a positive delta reveals
 // rows below; trackpad travel smaller than a row is kept until it adds up.
-func (state *State) scrollSFTP(view *sftpView, event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollSFTP(view *sftpView, event gfx.ScrollEvent) gfx.EventResult {
 	if view == nil {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if view.bookmarksOpen {
-		return ui.EventResult{Handled: true, Repaint: view.places.scroll.Wheel(event)}
+		return gfx.EventResult{Handled: true, Repaint: view.places.scroll.Wheel(event)}
 	}
 	if view.editPath != "" && pointInRect(event.X, event.Y, view.editRect) {
 		view.editLayout.ScrollBy(event.DeltaY)
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	folder := view.active()
 	if folder.visibleRows <= 0 || len(folder.shownRows()) <= folder.visibleRows {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	// At the edges, continuing to scroll outward is a no-op that must not repaint
 	// or jitter the layout.
 	maxOffset := folder.scroll.MaxOffsetY
 	if maxOffset > 0 && folder.scrollOffset >= maxOffset && event.DeltaY > 0 {
 		folder.wheel = 0
-		return ui.EventResult{Handled: true, Repaint: false}
+		return gfx.EventResult{Handled: true, Repaint: false}
 	}
 	if folder.first <= 0 && folder.scrollOffset > 0 && event.DeltaY < 0 {
 		// A drag released inside the first row leaves a sub-row offset there;
 		// the wheel moves whole rows, so scrolling up would otherwise stall.
 		folder.wheel = 0
 		folder.scrollOffset = 0
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if folder.scrollOffset <= 0 && folder.first <= 0 && event.DeltaY < 0 {
 		folder.wheel = 0
-		return ui.EventResult{Handled: true, Repaint: false}
+		return gfx.EventResult{Handled: true, Repaint: false}
 	}
 	result := scrollFolder(folder, event)
 	if result.Repaint {
@@ -1846,7 +1846,7 @@ func (state *State) scrollSFTP(view *sftpView, event ui.ScrollEvent) ui.EventRes
 }
 
 // fitSFTP keeps every list's first row inside its rows after the layout moved.
-func (state *State) fitSFTP(size ui.Size) {
+func (state *State) fitSFTP(size gfx.Size) {
 	for index := range state.sessions {
 		if view := state.sessions[index].files; view != nil {
 			view.first = min(view.first, max(0, len(view.shownRows())-view.visibleRows))
@@ -1855,7 +1855,7 @@ func (state *State) fitSFTP(size ui.Size) {
 	}
 }
 
-func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if result, handled := state.sftpPlacesKey(event); handled {
 		return result, true
 	}
@@ -1874,47 +1874,47 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			value := view.editEditor.String()
 			to := view.editLayout.Move(value, aiByteOffset(value, view.editEditor.Caret()), movement)
 			view.editEditor.MoveTo(utf8.RuneCountInString(value[:to]), extend)
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 	}
 	if !ok || session.files == nil || state.modal != modalNone || event.Repeat {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	view := session.files
 	if view.dialog != sftpDialogNone {
 		switch event.Key {
-		case ui.KeyEscape:
+		case gfx.KeyEscape:
 			state.closeSFTPDialog(view)
-			return ui.EventResult{Handled: true, Repaint: true}, true
-		case ui.KeyEnter:
+			return gfx.EventResult{Handled: true, Repaint: true}, true
+		case gfx.KeyEnter:
 			if event.Target == hitSFTPDialogField || event.Target == hitSFTPDialogField2 || event.Target == hitSFTPDialogSubmit {
 				if view.dialog == sftpDialogCompress || view.dialog == sftpDialogExtract {
 					if editor := state.sftpEditor(event.Target); editor != nil {
 						if _, composing := editor.Composition(); composing {
-							return ui.EventResult{Handled: true}, true
+							return gfx.EventResult{Handled: true}, true
 						}
 					}
 				}
 				state.submitSFTPDialog(view)
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	// A terminal keeps its own keys: an open editor or panel is no reason to take
 	// Escape away from the shell the user is typing into.
 	if state.terminalSession(event.Target) != nil {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if view.editPath != "" {
-		if event.Key == ui.KeyEscape {
+		if event.Key == gfx.KeyEscape {
 			state.closeSFTPEditor(view)
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	switch event.Key {
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		if folder := view.active(); folder.filterOpen && event.Target == hitSFTPFilter {
 			// Escape leaves the filter, not the file panel: the first press drops
 			// the query, the next closes the row, as a find bar does.
@@ -1922,10 +1922,10 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 				folder.rememberSelection()
 				folder.clearFilter()
 				state.applySFTPFilter(view, folder, false)
-				return ui.EventResult{Handled: true, Repaint: true, Focus: hitSFTPFilter, FocusVisible: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true, Focus: hitSFTPFilter, FocusVisible: true}, true
 			}
 			folder.filterOpen = false
-			result := ui.EventResult{Handled: true, Repaint: true}
+			result := gfx.EventResult{Handled: true, Repaint: true}
 			if len(folder.rows) > 0 {
 				result.Focus, result.FocusVisible = hitSFTPEntryList.At(0), true
 			}
@@ -1933,18 +1933,18 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 		if view.bookmarksOpen {
 			view.bookmarksOpen = false
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 		state.clickSFTP(hitSFTPClose)
-		return ui.EventResult{Handled: true, Repaint: true}, true
-	case ui.KeyEnter:
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	case gfx.KeyEnter:
 		if event.Target.Scope() == hitSFTPEntryList {
 			folder := view.active()
 			index := folder.first + item(event.Target)
 			if folder.searching() {
 				// Enter on a result is a double click on it.
 				state.pressSFTPSearchResult(view, folder, index, 2)
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 			if index < len(folder.rows) {
 				folder.selected = index
@@ -1954,23 +1954,23 @@ func (state *State) sftpKey(event ui.KeyEvent) (ui.EventResult, bool) {
 					state.openSelectedSFTP(view)
 				}
 			}
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) sftpPathPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Kind != ui.PointerDown || event.Button != ui.PointerButtonPrimary || event.Target != hitSFTPPathEdit {
-		return ui.EventResult{}, false
+func (state *State) sftpPathPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonPrimary || event.Target != hitSFTPPathEdit {
+		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || session.files == nil || state.activeSection != sectionTerminal || state.modal != modalNone || session.files.editPath != "" || session.files.dialog != sftpDialogNone || !session.files.local && session.files.busy {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	result := state.startSFTPPathEditing(session.files)
 	if !result.Handled {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return result, true
 }
@@ -1978,24 +1978,24 @@ func (state *State) sftpPathPointer(event ui.PointerEvent) (ui.EventResult, bool
 // sftpRowPointer opens the row that was double-clicked: a folder is entered, a
 // file is opened for editing. The first click of the pair has already selected
 // the row, so what opens is what was pointed at.
-func (state *State) sftpRowPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Kind != ui.PointerDown || event.Button == ui.PointerButtonSecondary || event.ClickCount < 1 ||
+func (state *State) sftpRowPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonSecondary || event.ClickCount < 1 ||
 		event.Target.Scope() != hitSFTPEntryList {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || session.files == nil {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	view := session.files
 	folder := view.active()
 	index := folder.first + item(event.Target)
 	if view.dialog != sftpDialogNone || index >= len(folder.shownRows()) || view.busy && !view.local {
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	if folder.searching() {
 		state.pressSFTPSearchResult(view, folder, index, event.ClickCount)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if event.ClickCount == 1 {
 		// A press, not yet half of a double click. Handling it here keeps the
@@ -2007,7 +2007,7 @@ func (state *State) sftpRowPointer(event ui.PointerEvent) (ui.EventResult, bool)
 			// the second finds the work done or under way.
 			state.prefetchSFTP(view, path.Join(view.path, row.entry.Name))
 		}
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	folder.selectRow(index, 0)
 	if view.local {
@@ -2015,5 +2015,5 @@ func (state *State) sftpRowPointer(event ui.PointerEvent) (ui.EventResult, bool)
 	} else {
 		state.openSelectedSFTP(view)
 	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }

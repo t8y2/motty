@@ -4,7 +4,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -15,15 +15,15 @@ const debugLanguage = "go"
 
 // paintDebugWorkspace is the editor gallery: the page's heading, then the code
 // editor filling the rest of the workspace.
-func (state *State) paintDebugWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintDebugWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	pal, messages, theme := state.pal, state.messages, state.Theme()
 	editor := state.devEditor()
 
-	var area flex.Box
+	var area ui.Box
 	f := state.dev.layout.Begin(canvas, theme, bounds)
 	f.Column().Fill().PadSides(12, 18, 12, 18).Children(func() {
 		f.Column().MarginSides(4, 0, 13, 0).Gap(3).Children(func() {
-			f.Text(messages.DebugTitle).FontSize(18).Weight(ui.WeightSemibold).Color(pal.text)
+			f.Text(messages.DebugTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text)
 			f.Paragraph(messages.DebugDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(22)
 		})
 		f.Divider().Background(pal.line)
@@ -43,7 +43,7 @@ func (state *State) paintDebugWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 // paintDebugEditor paints the editor in bounds. The text, the caret and the
 // selection come from the page's editor; the grid, the line numbers, the
 // highlighting and the scrollbars are Viva's.
-func (state *State) paintDebugEditor(canvas *ui.Canvas, theme ui.Theme, bounds ui.Rect, editor *text.Editor) {
+func (state *State) paintDebugEditor(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect, editor *text.Editor) {
 	selection := editor.Selection()
 	caret := editor.ByteOffset(editor.Caret())
 	focused := canvas.Focused() == hitDebugEditor
@@ -90,10 +90,10 @@ func (state *State) debugHighlight(language, line string, dst []components.CodeE
 
 // debugCodeColors is the palette the gallery's highlighting draws from, taken
 // from the theme's ANSI colors as the file window takes them.
-func (state *State) debugCodeColors() [components.MarkdownCodeClasses]ui.Color {
+func (state *State) debugCodeColors() [components.MarkdownCodeClasses]gfx.Color {
 	pal := state.pal
-	ansi := func(index int) ui.Color { return ui.RGB(pal.ansi[index][0], pal.ansi[index][1], pal.ansi[index][2]) }
-	return [components.MarkdownCodeClasses]ui.Color{
+	ansi := func(index int) gfx.Color { return gfx.RGB(pal.ansi[index][0], pal.ansi[index][1], pal.ansi[index][2]) }
+	return [components.MarkdownCodeClasses]gfx.Color{
 		components.CodeComment: pal.faint, components.CodeString: ansi(2), components.CodeNumber: ansi(3),
 		components.CodeKeyword: ansi(5), components.CodeFunction: ansi(4), components.CodeVariable: ansi(6),
 		components.CodeFlag: ansi(6), components.CodeKey: ansi(4), components.CodeAdded: ansi(2), components.CodeRemoved: ansi(1),

@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 
 	"motty/internal/i18n"
@@ -53,14 +53,14 @@ const (
 // section that made it, and the records live in slices the page reuses.
 type settingsControl struct {
 	kind     settingsControlKind
-	slot     flex.Box
-	id       ui.ID
+	slot     ui.Box
+	id       gfx.ID
 	label    string
-	selected ui.ID
+	selected gfx.ID
 	on       bool
 	disabled bool
 	style    aiButtonStyle
-	hit      ui.HitOptions
+	hit      gfx.HitOptions
 	// first and count name the control's options or actions in the page's arenas.
 	first, count int
 }
@@ -70,7 +70,7 @@ type settingsControl struct {
 // state and painted by paintSettingsControls after the frame has ended.
 type settingsPage struct {
 	state *State
-	f     *flex.Frame
+	f     *ui.Frame
 	// width is the width of a group's card.
 	width float32
 	// rowHeight is the height of the rows of the groups being declared.
@@ -81,12 +81,12 @@ type settingsPage struct {
 	opened       int // groups declared so far
 	// navList is the scrolling column of categories, whose height and content
 	// say how far the list can be scrolled.
-	navList flex.Box
+	navList ui.Box
 
 	// anchor is what the search result being opened asked to scroll to, once the
 	// declaration has met it; anchorShift is the room above it that the scroll
 	// leaves.
-	anchor      flex.Box
+	anchor      ui.Box
 	anchored    bool
 	anchorShift float32
 }
@@ -98,7 +98,7 @@ const (
 	settingsPageBottom = float32(28)
 )
 
-func (state *State) paintSettingsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintSettingsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	pal, view := state.pal, &state.settings
 	navWidth := min(settingsNavWidthMax, max(bounds.Width*0.26, 150))
 	areaWidth := max(bounds.Width-navWidth-1, 0)
@@ -119,11 +119,11 @@ func (state *State) paintSettingsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	view.controls, view.options, view.actions, view.colors = view.controls[:0], view.options[:0], view.actions[:0], view.colors[:0]
 	f := state.settingsPage.Begin(canvas, state.Theme(), bounds)
 	page := settingsPage{state: state, f: f, width: min(settingsColumnMax, max(areaWidth-64, 0)), rowHeight: settingsRowHeight}
-	var scroll flex.Box
+	var scroll ui.Box
 	f.Row().Fill().Children(func() {
 		page.nav(navWidth, searching)
 		f.Column().Width(1).FillHeight().Background(withAlpha(pal.line, 0.8))
-		scroll = f.Scroll(offset).Grow(1).Basis(0).Items(flex.Center).Children(func() {
+		scroll = f.Scroll(offset).Grow(1).Basis(0).Items(ui.Center).Children(func() {
 			f.Column().FillWidth().MaxWidth(settingsColumnMax).MarginSides(settingsPageTop, 32, settingsPageBottom, 32).Children(func() {
 				page.header(title, searching)
 				if searching {
@@ -159,7 +159,7 @@ func (state *State) paintSettingsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 
 // paintSettingsControls paints the controls the page recorded into their slots,
 // in the order they were declared.
-func (state *State) paintSettingsControls(canvas *ui.Canvas) {
+func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 	theme := state.Theme()
 	for index := range state.settings.controls {
 		control := &state.settings.controls[index]
@@ -200,7 +200,7 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 		case controlSwatches:
 			// The dots are the drawing: a strip of circles a pitch apart.
 			for slot, color := range state.settings.colors[control.first : control.first+control.count] {
-				canvas.Rounded(ui.Rect{X: rect.X + float32(slot)*swatchPitch, Y: rect.Y, Width: swatchSize, Height: swatchSize}, swatchSize/2, color)
+				canvas.Rounded(gfx.Rect{X: rect.X + float32(slot)*swatchPitch, Y: rect.Y, Width: swatchSize, Height: swatchSize}, swatchSize/2, color)
 			}
 		case controlLogo:
 			state.paintLockup(canvas, rect)
@@ -212,7 +212,7 @@ func (state *State) paintSettingsControls(canvas *ui.Canvas) {
 // action against the right edge.
 func (page *settingsPage) header(title string, searching bool) {
 	f, pal := page.f, page.state.pal
-	row := f.Row().FillWidth().Items(flex.Center).Justify(flex.Between).MarginSides(0, 0, 20, 0)
+	row := f.Row().FillWidth().Items(ui.Center).Justify(ui.Between).MarginSides(0, 0, 20, 0)
 	row.Children(func() {
 		f.Text(title).FontSize(26).Bold().Color(pal.text).LineHeight(34)
 		if searching {
@@ -227,10 +227,10 @@ func (page *settingsPage) header(title string, searching bool) {
 
 // headerButton is a page-wide action in the title row. It is recorded like a
 // row's buttons, so the keyboard reaches it and the page paints it in place.
-func (page *settingsPage) headerButton(label string, id ui.ID) {
+func (page *settingsPage) headerButton(label string, id gfx.ID) {
 	theme := page.state.Theme()
-	width := components.BeginButton(page.f.Canvas(), theme, ui.ID{}, ui.Rect{}).Small().SizeToFit(label).BoundsWidth()
-	slot := page.f.Row().Size(width, 34).Shrink(0).Items(flex.Center).Justify(flex.End)
+	width := components.BeginButton(page.f.Canvas(), theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(label).BoundsWidth()
+	slot := page.f.Row().Size(width, 34).Shrink(0).Items(ui.Center).Justify(ui.End)
 	page.buttons(slot, false, components.ButtonAction{ID: id, Label: label, Variant: components.ButtonOutline})
 }
 
@@ -365,9 +365,9 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 		selectedLineHeight = hitSettingsLineHeightRoomy
 	}
 	gutter := state.settingsGutterOptions()
-	selectedGutter := [...]ui.ID{hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth}[state.terminalGutter]
+	selectedGutter := [...]gfx.ID{hitSettingsGutterOff, hitSettingsGutterNumbers, hitSettingsGutterTime, hitSettingsGutterBoth}[state.terminalGutter]
 	intense := state.settingsIntenseOptions()
-	selectedIntense := [...]ui.ID{hitSettingsIntenseBoth, hitSettingsIntenseBright, hitSettingsIntenseBold, hitSettingsIntensePlain}[state.terminalIntense]
+	selectedIntense := [...]gfx.ID{hitSettingsIntenseBoth, hitSettingsIntenseBright, hitSettingsIntenseBold, hitSettingsIntensePlain}[state.terminalIntense]
 	scrollback := state.settingsScrollbackOptions()
 	selectedScrollback := hitSettingsScrollback5000
 	switch state.terminalScrollback {
@@ -392,7 +392,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 		selectedCursorStyle = hitSettingsCursorUnderline
 	}
 	thickness := state.settingsCursorThicknessOptions()
-	selectedThickness := [...]ui.ID{hitSettingsCursorNormal, hitSettingsCursorThin, hitSettingsCursorThick}[state.terminalCursorThickness]
+	selectedThickness := [...]gfx.ID{hitSettingsCursorNormal, hitSettingsCursorThin, hitSettingsCursorThick}[state.terminalCursorThickness]
 	page.groups(func() {
 		page.group(messages.Completion.Group, func() {
 			status, _ := state.completionCatalogStatus()
@@ -542,7 +542,7 @@ func (page *settingsPage) group(title string, rows func()) {
 // matchAnchor notes the box when its label is what a search result asked the page
 // to scroll to; shift is the room the group gap puts between the box and the
 // place the scroll was once measured at.
-func (page *settingsPage) matchAnchor(label string, box flex.Box, shift float32) {
+func (page *settingsPage) matchAnchor(label string, box ui.Box, shift float32) {
 	view := &page.state.settings
 	if view.jump == "" || label != view.jump {
 		return
@@ -561,41 +561,41 @@ func (page *settingsPage) separator() {
 }
 
 // rowOf opens a row of a card of the given height.
-func (page *settingsPage) rowOf(height float32) flex.Box {
+func (page *settingsPage) rowOf(height float32) ui.Box {
 	page.separator()
-	return page.f.Row().Height(height).Items(flex.Center)
+	return page.f.Row().Height(height).Items(ui.Center)
 }
 
 // line is one row of a group: the name and explanation on the left, wrapping to
 // the room the control leaves, and a slot of controlWidth on the right, which it
 // returns. In a card too narrow for its name and its control, the control keeps
 // to the card (the name has no room and is not drawn) instead of hanging out of it.
-func (page *settingsPage) line(label, description string, controlWidth float32) flex.Box {
+func (page *settingsPage) line(label, description string, controlWidth float32) ui.Box {
 	return page.lineWith(label, description, controlWidth, nil)
 }
 
 // lineWith is line whose control slot holds what inside declares, against its
 // right edge.
-func (page *settingsPage) lineWith(label, description string, controlWidth float32, inside func()) flex.Box {
-	return page.lineFor(ui.ID{}, label, description, controlWidth, inside)
+func (page *settingsPage) lineWith(label, description string, controlWidth float32, inside func()) ui.Box {
+	return page.lineFor(gfx.ID{}, label, description, controlWidth, inside)
 }
 
 // lineFor is lineWith whose words are the label of the control with that
 // identity, as a Field's label is: pressing them focuses and clicks it, which for
 // a switch flips it. A zero identity makes the words plain text.
-func (page *settingsPage) lineFor(labelFor ui.ID, label, description string, controlWidth float32, inside func()) flex.Box {
+func (page *settingsPage) lineFor(labelFor gfx.ID, label, description string, controlWidth float32, inside func()) ui.Box {
 	f, pal := page.f, page.state.pal
 	controlWidth = min(controlWidth, max(page.width-60, 0))
-	var control flex.Box
+	var control ui.Box
 	row := page.rowOf(page.rowHeight)
 	page.matchAnchor(label, row, 0)
 	row.PadX(18).Gap(24).Children(func() {
 		words := f.Column().Grow(1).Children(func() {
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text).LineHeight(21)
+			f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(21)
 			f.Paragraph(description, settingsDescLines).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15).MarginSides(1, 0, 0, 0)
 		})
 		page.labels(labelFor, words, label, false)
-		control = f.Row().Size(controlWidth, 34).Shrink(0).Justify(flex.End).Items(flex.Center)
+		control = f.Row().Size(controlWidth, 34).Shrink(0).Justify(ui.End).Items(ui.Center)
 		if inside != nil {
 			control.Children(inside)
 		}
@@ -605,17 +605,17 @@ func (page *settingsPage) lineFor(labelFor ui.ID, label, description string, con
 
 // rowFrame is a setting's name and explanation with a slot for its control,
 // right-aligned.
-func (page *settingsPage) rowFrame(label, description string) flex.Box {
+func (page *settingsPage) rowFrame(label, description string) ui.Box {
 	return page.rowFrameFor(label, description, 0)
 }
 
 // rowFrameFor is rowFrame for a control that needs at least minWidth: what the
 // words are left with is what the control does not take.
-func (page *settingsPage) rowFrameFor(label, description string, minWidth float32) flex.Box {
+func (page *settingsPage) rowFrameFor(label, description string, minWidth float32) ui.Box {
 	return page.line(label, description, max(min(float32(300), max(float32(190), page.width*0.40)), minWidth))
 }
 
-func (page *settingsPage) row(label, description string, options []components.SegmentOption, selected ui.ID) {
+func (page *settingsPage) row(label, description string, options []components.SegmentOption, selected gfx.ID) {
 	need := components.SegmentedControlWidth(page.f.Canvas(), page.state.Theme(), options)
 	page.segments(page.rowFrameFor(label, description, need), options, selected)
 }
@@ -623,7 +623,7 @@ func (page *settingsPage) row(label, description string, options []components.Se
 // toggleRow is a setting that is on or off: a switch, which one press flips. The
 // id stays the same in both states, so the keyboard's place in the page does not
 // move when it is pressed.
-func (page *settingsPage) toggleRow(label, description string, on bool, id ui.ID) {
+func (page *settingsPage) toggleRow(label, description string, on bool, id gfx.ID) {
 	// The control is only a switch: the rest of the row is for the words.
 	page.lineFor(id, label, description, aiSwitchWidth, func() {
 		page.switchSlot(id, on, false, label)
@@ -637,7 +637,7 @@ func (page *settingsPage) actionRow(label, description string, disabled bool, ac
 	theme := page.state.Theme()
 	controlWidth := theme.Metrics.GapItem * float32(len(actions)-1)
 	for _, action := range actions {
-		controlWidth += components.BeginButton(page.f.Canvas(), theme, ui.ID{}, ui.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
+		controlWidth += components.BeginButton(page.f.Canvas(), theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
 	}
 	controlWidth = min(controlWidth, page.width*0.6)
 	if page.controlWidth > 0 {
@@ -657,19 +657,19 @@ func (page *settingsPage) valueActionRow(label, description, value string, disab
 	gap := theme.Metrics.GapItem
 	buttonsWidth := gap * float32(len(actions)-1)
 	for _, action := range actions {
-		buttonsWidth += components.BeginButton(canvas, theme, ui.ID{}, ui.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
+		buttonsWidth += components.BeginButton(canvas, theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
 	}
 	// The value is set in the buttons' own size, not a step under it: it stands
 	// beside them on the same line, and a size down read as something else
 	// entirely. Its quieter colour is what makes it secondary.
-	valueWidth := min(canvas.TextWidthWeight(value, metrics.FontSizeM, ui.WeightMedium), settingsValueMax)
+	valueWidth := min(canvas.TextWidthWeight(value, metrics.FontSizeM, gfx.WeightMedium), settingsValueMax)
 	controlWidth := min(buttonsWidth+gap+valueWidth, page.width*0.6)
 	if page.controlWidth > 0 {
 		controlWidth = page.controlWidth
 	}
-	var buttons flex.Box
+	var buttons ui.Box
 	page.lineWith(label, description, controlWidth, func() {
-		page.f.Text(value).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(page.state.pal.muted).
+		page.f.Text(value).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.muted).
 			Ellipsis().MaxWidth(valueWidth).Grow(1).TextEnd().MarginSides(0, gap, 0, 0)
 		buttons = page.f.Slot().Size(buttonsWidth, 34).Shrink(0)
 	})
@@ -678,7 +678,7 @@ func (page *settingsPage) valueActionRow(label, description, value string, disab
 
 // labels records that the words in the box are the label of the control, when
 // there is one.
-func (page *settingsPage) labels(control ui.ID, words flex.Box, label string, disabled bool) {
+func (page *settingsPage) labels(control gfx.ID, words ui.Box, label string, disabled bool) {
 	if !control.IsZero() {
 		page.add(settingsControl{kind: controlLabel, slot: words, id: control, label: label, disabled: disabled})
 	}
@@ -690,37 +690,37 @@ func (page *settingsPage) add(control settingsControl) {
 	view.controls = append(view.controls, control)
 }
 
-func (page *settingsPage) segments(slot flex.Box, options []components.SegmentOption, selected ui.ID) {
+func (page *settingsPage) segments(slot ui.Box, options []components.SegmentOption, selected gfx.ID) {
 	view := &page.state.settings
 	view.options = append(view.options, options...)
 	page.add(settingsControl{kind: controlSegments, slot: slot, selected: selected, first: len(view.options) - len(options), count: len(options)})
 }
 
-func (page *settingsPage) buttons(slot flex.Box, disabled bool, actions ...components.ButtonAction) {
+func (page *settingsPage) buttons(slot ui.Box, disabled bool, actions ...components.ButtonAction) {
 	view := &page.state.settings
 	view.actions = append(view.actions, actions...)
 	page.add(settingsControl{kind: controlButtons, slot: slot, disabled: disabled, first: len(view.actions) - len(actions), count: len(actions)})
 }
 
-func (page *settingsPage) switchIn(slot flex.Box, id ui.ID, on, disabled bool, label string) {
+func (page *settingsPage) switchIn(slot ui.Box, id gfx.ID, on, disabled bool, label string) {
 	page.add(settingsControl{kind: controlSwitch, slot: slot, id: id, on: on, disabled: disabled, label: label})
 }
 
 // button declares a small button and records it.
-func (page *settingsPage) button(id ui.ID, label string, style aiButtonStyle, disabled bool) flex.Box {
+func (page *settingsPage) button(id gfx.ID, label string, style aiButtonStyle, disabled bool) ui.Box {
 	slot := page.state.aiButtonSlot(page.f, label)
 	page.add(settingsControl{kind: controlButton, slot: slot, id: id, label: label, style: style, disabled: disabled})
 	return slot
 }
 
 // switchSlot declares a switch and records it.
-func (page *settingsPage) switchSlot(id ui.ID, on, disabled bool, label string) flex.Box {
+func (page *settingsPage) switchSlot(id gfx.ID, on, disabled bool, label string) ui.Box {
 	slot := aiSwitchSlot(page.f).Shrink(0)
 	page.switchIn(slot, id, on, disabled, label)
 	return slot
 }
 
 // hitOn makes the box a pointer target once the page has been laid out.
-func (page *settingsPage) hitOn(box flex.Box, id ui.ID, label string, options ui.HitOptions) {
+func (page *settingsPage) hitOn(box ui.Box, id gfx.ID, label string, options gfx.HitOptions) {
 	page.add(settingsControl{kind: controlHit, slot: box, id: id, label: label, hit: options})
 }

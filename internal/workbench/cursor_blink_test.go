@@ -4,11 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func blinkFrame(blink *cursorBlink, at time.Duration, x, y int) (lit bool, next time.Duration, scheduled bool) {
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	canvas.SetClock(func() time.Duration { return at })
 	canvas.BeginFrame()
 	lit = blink.on(&canvas, x, y)

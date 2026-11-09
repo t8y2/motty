@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -351,7 +351,7 @@ func prepareLocalCrumbs(crumbs []sftpCrumb, dir string) []sftpCrumb {
 
 // clickSFTPLocal handles the presses of the panel while it shows local files. It
 // reports whether the press was one of its own.
-func (state *State) clickSFTPLocal(session *Session, view *sftpView, id ui.ID) bool {
+func (state *State) clickSFTPLocal(session *Session, view *sftpView, id gfx.ID) bool {
 	folder := &view.lfolder
 	switch {
 	case id == hitSFTPPaneToggle:
@@ -492,15 +492,15 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 }
 
 // scrollFolder is scrollSFTP for whichever folder is on show.
-func scrollFolder(folder *sftpFolder, event ui.ScrollEvent) ui.EventResult {
+func scrollFolder(folder *sftpFolder, event gfx.ScrollEvent) gfx.EventResult {
 	rows := len(folder.shownRows())
 	if folder.visibleRows <= 0 || rows <= folder.visibleRows {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	folder.wheel += event.StepY(sftpRowHeight) / sftpRowHeight
 	lines := int(folder.wheel)
 	if lines == 0 {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	folder.wheel -= float32(lines)
 	before := folder.first
@@ -508,5 +508,5 @@ func scrollFolder(folder *sftpFolder, event ui.ScrollEvent) ui.EventResult {
 	if folder.first == before {
 		folder.wheel = 0
 	}
-	return ui.EventResult{Handled: true, Repaint: folder.first != before}
+	return gfx.EventResult{Handled: true, Repaint: folder.first != before}
 }

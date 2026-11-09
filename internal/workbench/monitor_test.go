@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
@@ -132,8 +132,8 @@ func TestMonitorUnsupportedSystemsDoNotRunLinuxScripts(t *testing.T) {
 
 func BenchmarkPaintMonitor(b *testing.B) {
 	state, _ := monitorFixture(b)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1280, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1280, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -145,7 +145,7 @@ func BenchmarkPaintMonitor(b *testing.B) {
 
 func TestMonitorKeepsFilesAndRestoresWidth(t *testing.T) {
 	state, session := monitorFixture(t)
-	state.Resize(ui.Size{Width: 1600, Height: 900})
+	state.Resize(gfx.Size{Width: 1600, Height: 900})
 	state.resizeMonitor(436)
 	before := session.files
 	state.Click(hitMonitorClose)
@@ -172,7 +172,7 @@ func TestMonitorHistoryStaysBounded(t *testing.T) {
 	if state.monitorShown(state.deck.ActiveWorkspace()) {
 		t.Fatal("file tab did not hide the monitor")
 	}
-	if r, _ := state.scrollMonitor(ui.ScrollEvent{X: 5, Y: 70, DeltaY: 100}); r.Handled {
+	if r, _ := state.scrollMonitor(gfx.ScrollEvent{X: 5, Y: 70, DeltaY: 100}); r.Handled {
 		t.Fatal("hidden monitor stole file scrolling")
 	}
 }
@@ -186,8 +186,8 @@ func TestMonitorIndependentPanelGeometryPreservesTerminal(t *testing.T) {
 				c, _ := state.deck.Context(id)
 				c.Side = side
 				_ = state.deck.SetContext(id, c)
-				size := ui.Size{Width: width, Height: 900}
-				state.Paint(&ui.Canvas{}, size)
+				size := gfx.Size{Width: width, Height: 900}
+				state.Paint(&gfx.Canvas{}, size)
 				b := state.workspacePixelBounds(size)
 				if b.Width < minPaneWidth || b.X < 0 || b.X+b.Width > width {
 					t.Fatalf("terminal geometry=%+v", b)
@@ -246,30 +246,30 @@ func TestMonitorHistoryGapsAndInterfaceChanges(t *testing.T) {
 
 func TestMonitorResizeDoesNotChangeFilePresentation(t *testing.T) {
 	state, _ := monitorFixture(t)
-	size := ui.Size{Width: 1800, Height: 900}
+	size := gfx.Size{Width: 1800, Height: 900}
 	state.Resize(size)
 	id := state.deck.ActiveWorkspace()
 	before, _ := state.deck.Context(id)
-	state.Paint(&ui.Canvas{}, size)
+	state.Paint(&gfx.Canvas{}, size)
 	b := state.monitorRect
-	state.monitorPointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitMonitorDivider, Button: ui.PointerButtonPrimary, X: b.X - 1, Y: 200})
-	state.monitorPointer(ui.PointerEvent{Kind: ui.PointerMove, X: b.X - 1 - 120, Y: 200})
-	state.Paint(&ui.Canvas{}, size)
+	state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitMonitorDivider, Button: gfx.PointerButtonPrimary, X: b.X - 1, Y: 200})
+	state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: b.X - 1 - 120, Y: 200})
+	state.Paint(&gfx.Canvas{}, size)
 	if state.monitorRect.Width != 440 {
 		t.Fatalf("drag width=%v", state.monitorRect.Width)
 	}
-	state.monitorPointer(ui.PointerEvent{Kind: ui.PointerUp, X: state.monitorRect.X - 1, Y: 200})
+	state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerUp, X: state.monitorRect.X - 1, Y: 200})
 	after, _ := state.deck.Context(id)
 	if after.Side != before.Side || after.Width != before.Width || !after.Open || state.monitorResizing {
 		t.Fatalf("resize affected files: %+v", after)
 	}
-	state.monitorKey(ui.KeyEvent{Target: hitMonitorDivider, Key: ui.KeyHome})
-	state.Paint(&ui.Canvas{}, size)
+	state.monitorKey(gfx.KeyEvent{Target: hitMonitorDivider, Key: gfx.KeyHome})
+	state.Paint(&gfx.Canvas{}, size)
 	if state.monitorRect.Width != layoutcore.MinMonitorWidth {
 		t.Fatal("keyboard minimum width failed")
 	}
-	state.monitorKey(ui.KeyEvent{Target: hitMonitorDivider, Key: ui.KeyEnd})
-	state.Paint(&ui.Canvas{}, size)
+	state.monitorKey(gfx.KeyEvent{Target: hitMonitorDivider, Key: gfx.KeyEnd})
+	state.Paint(&gfx.Canvas{}, size)
 	if state.monitorRect.Width != layoutcore.MaxMonitorWidth {
 		t.Fatal("keyboard maximum width failed")
 	}
@@ -278,7 +278,7 @@ func TestMonitorResizeDoesNotChangeFilePresentation(t *testing.T) {
 func TestMonitorDividerKeysFollowTheDockedSide(t *testing.T) {
 	for _, left := range []bool{false, true} {
 		state, _ := monitorFixture(t)
-		size := ui.Size{Width: 1800, Height: 900}
+		size := gfx.Size{Width: 1800, Height: 900}
 		state.Resize(size)
 		id := state.deck.ActiveWorkspace()
 		context, _ := state.deck.Context(id)
@@ -286,10 +286,10 @@ func TestMonitorDividerKeysFollowTheDockedSide(t *testing.T) {
 		if err := state.deck.SetContext(id, context); err != nil {
 			t.Fatal(err)
 		}
-		state.Paint(&ui.Canvas{}, size)
+		state.Paint(&gfx.Canvas{}, size)
 		before := state.monitorRect.Width
-		state.monitorKey(ui.KeyEvent{Target: hitMonitorDivider, Key: ui.KeyLeft})
-		state.Paint(&ui.Canvas{}, size)
+		state.monitorKey(gfx.KeyEvent{Target: hitMonitorDivider, Key: gfx.KeyLeft})
+		state.Paint(&gfx.Canvas{}, size)
 		after := state.monitorRect.Width
 		// Left always moves the divider left: a right-docked monitor widens and
 		// a left-docked one narrows, so the key follows the pointer's direction.
@@ -305,11 +305,11 @@ func TestMonitorRefreshAnimationPausesAndRespectsReducedMotion(t *testing.T) {
 			state, session := monitorFixture(t)
 			p := &session.stats.panel
 			p.paused = paused
-			var canvas ui.Canvas
+			var canvas gfx.Canvas
 			canvas.SetReduceMotion(reduced)
 			canvas.SetClock(func() time.Duration { return time.Second })
 			canvas.BeginFrame()
-			state.paintMonitorRefresh(&canvas, p, ui.Rect{Width: 82, Height: 26}, true)
+			state.paintMonitorRefresh(&canvas, p, gfx.Rect{Width: 82, Height: 26}, true)
 			canvas.EndFrame()
 			delay, scheduled := canvas.NextFrame()
 			if reduced || paused {
@@ -328,9 +328,9 @@ func TestMonitorRefreshAnimationPausesAndRespectsReducedMotion(t *testing.T) {
 
 func TestMonitorTransientControlsDoNotFollowAnotherConnection(t *testing.T) {
 	state, session := monitorFixture(t)
-	state.Resize(ui.Size{Width: 1600, Height: 900})
-	state.Paint(&ui.Canvas{}, state.viewport)
-	state.monitorPointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitMonitorDivider, Button: ui.PointerButtonPrimary, X: state.monitorRect.X, Y: 100})
+	state.Resize(gfx.Size{Width: 1600, Height: 900})
+	state.Paint(&gfx.Canvas{}, state.viewport)
+	state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitMonitorDivider, Button: gfx.PointerButtonPrimary, X: state.monitorRect.X, Y: 100})
 	state.Click(hitMonitorInterval)
 	if !state.monitorMenu || !state.monitorResizing {
 		t.Fatal("controls did not start")
@@ -338,7 +338,7 @@ func TestMonitorTransientControlsDoNotFollowAnotherConnection(t *testing.T) {
 	c, _ := state.deck.Context(state.deck.ActiveWorkspace())
 	beforeInterval := session.stats.panel.interval
 	state.activeSessionID++ // equivalent to retargeting a split pane during a drag
-	state.monitorPointer(ui.PointerEvent{Kind: ui.PointerMove, X: 100, Y: 100})
+	state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: 100, Y: 100})
 	if state.monitorResizing {
 		t.Fatal("divider drag followed another connection")
 	}
@@ -346,7 +346,7 @@ func TestMonitorTransientControlsDoNotFollowAnotherConnection(t *testing.T) {
 	if after.MonitorWidth != c.MonitorWidth {
 		t.Fatal("stale drag changed the next pane")
 	}
-	state.monitorKey(ui.KeyEvent{Key: ui.KeyDown, Target: hitMonitorInterval})
+	state.monitorKey(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitMonitorInterval})
 	if state.monitorMenu {
 		t.Fatal("refresh popup followed another connection")
 	}
@@ -358,9 +358,9 @@ func TestMonitorTransientControlsDoNotFollowAnotherConnection(t *testing.T) {
 
 func TestMonitorFailureStopsTheCountdownFrames(t *testing.T) {
 	state, session := monitorFixture(t)
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	canvas.BeginFrame()
-	state.paintMonitorRefresh(&canvas, &session.stats.panel, ui.Rect{Width: 82, Height: 26}, false)
+	state.paintMonitorRefresh(&canvas, &session.stats.panel, gfx.Rect{Width: 82, Height: 26}, false)
 	canvas.EndFrame()
 	if _, scheduled := canvas.NextFrame(); scheduled {
 		t.Fatal("failed sampling keeps animating")
@@ -370,7 +370,7 @@ func TestMonitorFailureStopsTheCountdownFrames(t *testing.T) {
 func TestMonitorStartsForAQuietWorkspaceOnActivation(t *testing.T) {
 	state, _, fake, _ := liveSession(t)
 	fake.streamCommand = streamReadings(statsReadings...)
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	id := state.deck.ActiveWorkspace()
 	c, _ := state.deck.Context(id)
 	c.MonitorOpen = true
@@ -399,7 +399,7 @@ func TestMonitorLeavesOutTheCoresSectionWhereThereIsNoSource(t *testing.T) {
 
 func TestMonitorClickClosesAIWhenSpaceInsufficient(t *testing.T) {
 	state, _ := monitorFixture(t)
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.viewport = size
 	state.setAIPanelOpen(true)
 	if !state.aiPanelVisible() {
@@ -416,7 +416,7 @@ func TestMonitorClickClosesAIWhenSpaceInsufficient(t *testing.T) {
 		t.Fatal("AI panel should close when monitor opens and space is insufficient for both")
 	}
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	term := state.workspacePixelBounds(size)
 	if term.Width < minPaneWidth {
@@ -426,7 +426,7 @@ func TestMonitorClickClosesAIWhenSpaceInsufficient(t *testing.T) {
 
 func TestAIClickClosesMonitorWhenSpaceInsufficient(t *testing.T) {
 	state, _ := monitorFixture(t)
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.viewport = size
 	state.showMonitor()
 	id := state.deck.ActiveWorkspace()
@@ -443,7 +443,7 @@ func TestAIClickClosesMonitorWhenSpaceInsufficient(t *testing.T) {
 		t.Fatal("monitor should close when AI opens and space is insufficient for both")
 	}
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	term := state.workspacePixelBounds(size)
 	if term.Width < minPaneWidth {
@@ -453,7 +453,7 @@ func TestAIClickClosesMonitorWhenSpaceInsufficient(t *testing.T) {
 
 func TestMonitorAndAICoexistOnWideScreen(t *testing.T) {
 	state, _ := monitorFixture(t)
-	size := ui.Size{Width: 2000, Height: 900}
+	size := gfx.Size{Width: 2000, Height: 900}
 	state.viewport = size
 	state.closeMonitor()
 	state.setAIPanelOpen(true)
@@ -471,7 +471,7 @@ func TestMonitorAndAICoexistOnWideScreen(t *testing.T) {
 		t.Fatal("AI panel should remain open alongside monitor on wide screens")
 	}
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	term := state.workspacePixelBounds(size)
 	if term.Width < minPaneWidth {
@@ -496,7 +496,7 @@ func TestNarrowingTheWindowClosesTheAssistantAndKeepsTheMonitorDrawer(t *testing
 		t.Fatal(err)
 	}
 	defer view.Close()
-	state.Resize(ui.Size{Width: 2000, Height: 900})
+	state.Resize(gfx.Size{Width: 2000, Height: 900})
 	state.setAIPanelOpen(true)
 	id := state.deck.ActiveWorkspace()
 	if !state.aiPanelVisible() || !state.monitorShown(id) {
@@ -532,7 +532,7 @@ func TestNarrowingTheWindowClosesTheAssistantAndKeepsTheMonitorDrawer(t *testing
 
 func TestMonitorRemembersResizedWidthAcrossWorkspacesAndRestores(t *testing.T) {
 	state, _ := monitorFixture(t)
-	state.Paint(&ui.Canvas{}, state.viewport)
+	state.Paint(&gfx.Canvas{}, state.viewport)
 	state.resizeMonitor(450)
 	state.save()
 

@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -119,8 +119,8 @@ func TestWorkspaceBroadcastButtonIsDisabledUntilReady(t *testing.T) {
 	if !state.ActivatePane(sessions[0].ID) {
 		t.Fatal("activate the first pane")
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(&canvas, hitBroadcast); !ok || !hit.Disabled {
 		t.Fatalf("broadcast hit = %+v, present=%v", hit, ok)
 	}

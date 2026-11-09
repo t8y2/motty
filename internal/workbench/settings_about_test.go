@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 )
 
@@ -56,8 +56,8 @@ func TestAboutShowsTheBuildAndOpensTheCommunityLinks(t *testing.T) {
 
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsAbout)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1200})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1200})
 	var texts []string
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
@@ -73,7 +73,7 @@ func TestAboutShowsTheBuildAndOpensTheCommunityLinks(t *testing.T) {
 			t.Errorf("the About page does not paint %q", want)
 		}
 	}
-	for _, id := range []ui.ID{hitAboutCopyInfo, hitAboutQQ, hitAboutWeChat, hitAboutDiscord, hitAboutIssues, hitAboutRepo, hitAboutDocs, hitAboutViva} {
+	for _, id := range []gfx.ID{hitAboutCopyInfo, hitAboutQQ, hitAboutWeChat, hitAboutDiscord, hitAboutIssues, hitAboutRepo, hitAboutDocs, hitAboutViva} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Errorf("the About page does not paint %d", id)
 		}
@@ -88,22 +88,22 @@ func TestAboutShowsTheBuildAndOpensTheCommunityLinks(t *testing.T) {
 	if state.status != about.Copied {
 		t.Errorf("copy status = %q", state.status)
 	}
-	canvas = ui.Canvas{}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1200})
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1200})
 	if hit, ok := hitByID(&canvas, hitAboutCopyInfo); !ok || hit.Label != about.CopiedAction {
 		t.Errorf("the copy button says %q after copying, want %q", hit.Label, about.CopiedAction)
 	}
 	// A new visit to the page asks again with the plain label.
 	state.selectSettingsCategory(settingsGeneral)
 	state.selectSettingsCategory(settingsAbout)
-	canvas = ui.Canvas{}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1200})
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1200})
 	if hit, ok := hitByID(&canvas, hitAboutCopyInfo); !ok || hit.Label != about.CopyAction {
 		t.Errorf("the copy button says %q on a new visit, want %q", hit.Label, about.CopyAction)
 	}
 
 	for _, link := range []struct {
-		id  ui.ID
+		id  gfx.ID
 		url string
 	}{
 		{hitAboutQQ, aboutQQURL},

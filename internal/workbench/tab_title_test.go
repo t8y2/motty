@@ -6,7 +6,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
 )
@@ -27,9 +27,9 @@ func TestPathTabsKeepTheEndWhenTheDirectoryDoesNotFit(t *testing.T) {
 				state.backgroundOutputAlerts = true
 				state.activeSection = sectionSettings
 				session.outputAlert.kind = alert
-				var canvas ui.Canvas
+				var canvas gfx.Canvas
 				canvas.SetReduceMotion(true)
-				state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+				state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 				hit, ok := hitByID(&canvas, hitTabList.At(int(state.deck.ActiveWorkspace())))
 				if !ok || hit.Label != directory || hit.Hint != directory {
 					t.Fatalf("orientation %v lost full path: %+v", orientation, hit)
@@ -84,8 +84,8 @@ func TestPathTabAbbreviatesOnlyReportedHomeAndKeepsAbsoluteHint(t *testing.T) {
 	}
 	for _, orientation := range []tabOrientation{tabsHorizontal, tabsVertical} {
 		state.setTabOrientation(orientation)
-		var canvas ui.Canvas
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		hit, ok := hitByID(&canvas, hitTabList.At(int(state.deck.ActiveWorkspace())))
 		if !ok || hit.Hint != "/home/alice-backup" {
 			t.Fatalf("orientation %v hint = %q, present=%t", orientation, hit.Hint, ok)
@@ -172,8 +172,8 @@ func TestRenamedTabKeepsItsNameWhenTheTerminalReportsATitle(t *testing.T) {
 		t.Fatalf("tab = %q; a name the user chose must win over the terminal's title", got)
 	}
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTabList.At(int(workspace))); !ok {
 		t.Fatal("the renamed tab is not painted")
 	}

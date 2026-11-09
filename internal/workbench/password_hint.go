@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // Password prompt assist: when sudo asks for the account's password, the saved
@@ -81,8 +81,8 @@ func (state *State) passwordHintGhost(session *Session) (string, bool) {
 }
 
 // passwordHintKey takes the Enter that accepts the offer.
-func (state *State) passwordHintKey(session *Session, event ui.KeyEvent) bool {
-	if event.Key != ui.KeyEnter || event.Modifiers != 0 || event.Repeat || !state.passwordHintActive(session) {
+func (state *State) passwordHintKey(session *Session, event gfx.KeyEvent) bool {
+	if event.Key != gfx.KeyEnter || event.Modifiers != 0 || event.Repeat || !state.passwordHintActive(session) {
 		return false
 	}
 	value, result := state.vaultSecret(state.passwordName(session))

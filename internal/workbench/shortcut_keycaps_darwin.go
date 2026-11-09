@@ -2,16 +2,16 @@
 
 package workbench
 
-import "github.com/vivaui/viva/ui"
+import "github.com/vivaui/viva/gfx"
 
 // modifierKeycap is the symbol a Mac keyboard prints on a modifier key.
-func modifierKeycap(modifier ui.Modifiers) string {
+func modifierKeycap(modifier gfx.Modifiers) string {
 	switch modifier {
-	case ui.ModifierControl:
+	case gfx.ModifierControl:
 		return "⌃"
-	case ui.ModifierAlt:
+	case gfx.ModifierAlt:
 		return "⌥"
-	case ui.ModifierShift:
+	case gfx.ModifierShift:
 		return "⇧"
 	default:
 		return "⌘"

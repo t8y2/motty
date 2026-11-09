@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/gate"
 )
 
@@ -205,8 +205,8 @@ func TestMCPFullAccessWarningsStayVisibleWhileHTTPIsOffAndAfterRestart(t *testin
 	if state.ai.settings.mcpEnabled {
 		t.Fatal("the test should leave HTTP disabled")
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1100, Height: 6000})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1100, Height: 6000})
 	var rendered strings.Builder
 	for _, text := range canvas.Texts() {
 		if text.Style.Color == state.pal.danger {

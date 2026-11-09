@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestToolbarDefaultsAndAllOffSurvivePersistence(t *testing.T) {
@@ -123,8 +123,8 @@ func TestToolbarOrderAndResetAreRestoredByANewState(t *testing.T) {
 
 func TestToolbarAllOffHidesOnlyEntriesAndResetRestoresThem(t *testing.T) {
 	state, _, _, _ := openTestSFTP(t)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if _, ok := hitByID(&canvas, hitWindowSettings); !ok {
 		t.Fatal("window toolbar fixture was not shown")
@@ -179,10 +179,10 @@ func TestToolbarCustomOrderAppearsInTheThreeRealToolbars(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.toolbars.restore(saved.Toolbars)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, pair := range []struct {
-		first, second ui.ID
+		first, second gfx.ID
 		horizontal    bool
 	}{
 		{hitWindowSettings, hitTransferCenter, true},
@@ -228,12 +228,12 @@ func TestTerminalToolbarDefaultOrderMatchesTheRail(t *testing.T) {
 
 func TestToolbarSettingsPaintReusesItsLabelsAndRows(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	for group := toolbarWindow; group <= toolbarSFTP; group++ {
 		state.openToolbarSettings(group)
 		paint := func() {
 			canvas.Reset()
-			state.Paint(&canvas, ui.Size{Width: 1200, Height: 900})
+			state.Paint(&canvas, gfx.Size{Width: 1200, Height: 900})
 		}
 		paint()
 		if allocations := testing.AllocsPerRun(100, paint); allocations != 0 {
@@ -246,8 +246,8 @@ func TestToolbarSettingsPaintReusesItsLabelsAndRows(t *testing.T) {
 // geometry cached for the old button count must not outlive the change.
 func TestWindowToolbarChangesRelayoutTheTabStrip(t *testing.T) {
 	state, _ := manyTabs(t, 30)
-	size := ui.Size{Width: 1200, Height: 800}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1200, Height: 800}
+	var canvas gfx.Canvas
 	paint := func() {
 		canvas.Reset()
 		state.Paint(&canvas, size)

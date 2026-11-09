@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func noteEditingWindow(t *testing.T, s *State, id string) *fileDocument {
@@ -23,7 +23,7 @@ func noteEditingWindow(t *testing.T, s *State, id string) *fileDocument {
 	d.syncNoteWindow()
 	return d
 }
-func noteTextEvent(t *testing.T, d *fileDocument, id ui.ID, event app.TextEvent) app.TextState {
+func noteTextEvent(t *testing.T, d *fileDocument, id gfx.ID, event app.TextEvent) app.TextState {
 	t.Helper()
 	d.owner.fileWindows.active = d.cacheKey
 	input := d.textInput(app.TextInputContext{ID: id, NavigationKeys: true})
@@ -117,8 +117,8 @@ func TestNoteWindowBottomLayoutModesAndPopovers(t *testing.T) {
 	s := newTestState(t, testOptions(t))
 	s.notes.list = []savedNote{{ID: "a", Title: "A", Body: "# header\n![image](https://example.com/a.png)", Tags: []string{"tag"}}}
 	d := noteEditingWindow(t, s, "a")
-	var c ui.Canvas
-	paint := func(w float32) { c.Reset(); d.paint(&c, ui.Size{Width: w, Height: 600}) }
+	var c gfx.Canvas
+	paint := func(w float32) { c.Reset(); d.paint(&c, gfx.Size{Width: w, Height: 600}) }
 	paint(900)
 	title, _ := hitByID(&c, hitNoteTitle)
 	if title.Bounds.Y < 500 {
@@ -131,7 +131,7 @@ func TestNoteWindowBottomLayoutModesAndPopovers(t *testing.T) {
 		t.Fatal("selected tag strip leaked into window")
 	}
 	previous := float32(0)
-	for _, id := range []ui.ID{hitNoteTagsOpen, hitNoteHostsOpen, hitNotePin, hitNoteLoadImages, hitNoteModes.At(0), hitNoteModes.At(2), hitNoteModes.At(1)} {
+	for _, id := range []gfx.ID{hitNoteTagsOpen, hitNoteHostsOpen, hitNotePin, hitNoteLoadImages, hitNoteModes.At(0), hitNoteModes.At(2), hitNoteModes.At(1)} {
 		h, ok := hitByID(&c, id)
 		if !ok || h.Bounds.X <= previous {
 			t.Fatalf("missing or misordered action %v", id)
@@ -151,7 +151,7 @@ func TestNoteWindowBottomLayoutModesAndPopovers(t *testing.T) {
 	if !ok || field.Bounds.Y >= title.Bounds.Y {
 		t.Fatal("bottom tag popup did not open upwards")
 	}
-	d.noteWindowKey(ui.KeyEvent{Key: ui.KeyEscape})
+	d.noteWindowKey(gfx.KeyEvent{Key: gfx.KeyEscape})
 	paint(380)
 	if d.note.content.view.mode != noteSplit || d.note.content.previewBounds.Width != 0 {
 		t.Fatal("narrow split did not degrade without changing preference")
@@ -173,19 +173,19 @@ func TestNoteWindowAutosavesWithoutMainEditorAndRetainsFailedDraft(t *testing.T)
 	d := noteEditingWindow(t, s, "a")
 	d.note.content.view.mode = noteSource
 	noteTextEvent(t, d, hitNoteBody, app.TextEvent{Kind: app.TextInsert, Text: " unsaved"})
-	var c ui.Canvas
+	var c gfx.Canvas
 	c.SetClock(func() time.Duration { return time.Second })
 	c.BeginFrame()
-	c.BeginEventPass(ui.ID{})
-	d.paint(&c, ui.Size{Width: 800, Height: 600})
+	c.BeginEventPass(gfx.ID{})
+	d.paint(&c, gfx.Size{Width: 800, Height: 600})
 	c.EndEventPass()
 	c.EndFrame()
 	c.RunAfterPaint()
 	c.Reset()
 	c.SetClock(func() time.Duration { return 2 * time.Second })
 	c.BeginFrame()
-	c.BeginEventPass(ui.ID{})
-	d.paint(&c, ui.Size{Width: 800, Height: 600})
+	c.BeginEventPass(gfx.ID{})
+	d.paint(&c, gfx.Size{Width: 800, Height: 600})
 	c.EndEventPass()
 	c.EndFrame()
 	c.RunAfterPaint()

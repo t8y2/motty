@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 type aiMCPClient uint8
@@ -28,9 +28,9 @@ const (
 	aiMCPClientCount
 )
 
-func aiMCPClientID(client aiMCPClient) ui.ID { return hitAISetMCPClients.At(int(client)) }
+func aiMCPClientID(client aiMCPClient) gfx.ID { return hitAISetMCPClients.At(int(client)) }
 
-func aiAgentClientID(client aiMCPClient) ui.ID { return hitAISetAgentClients.At(int(client)) }
+func aiAgentClientID(client aiMCPClient) gfx.ID { return hitAISetAgentClients.At(int(client)) }
 
 const (
 	aiMCPClientSetting   = "ai.mcp.client"

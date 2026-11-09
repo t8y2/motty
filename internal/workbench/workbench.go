@@ -15,7 +15,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
@@ -489,8 +489,8 @@ type State struct {
 	fileTabOptions   []components.TabOption
 	windowTabOptions []components.TabOption
 	fileTabStrip     tabStrip
-	fileManagerView  ui.Canvas
-	fileManagerRect  ui.Rect
+	fileManagerView  gfx.Canvas
+	fileManagerRect  gfx.Rect
 	remoteWindows    []*remoteToolsWindow
 	remoteWindow     *remoteToolsWindow // set only on a native tool window's isolated presenter
 	closed           bool
@@ -563,7 +563,7 @@ type State struct {
 	hostFilterHidden       int    // the first of hostChips whose chip is in that menu
 	hostChips              []int  // the groups that get a chip, as indexes of hostGroups
 	chipMenu               hostChipMenu
-	filterMoreButton       ui.Rect
+	filterMoreButton       gfx.Rect
 	hostTotalDigits        string
 	groupMenu              groupMenuAnchor // where the Move group picker opens
 	hostSelectionText      string
@@ -579,14 +579,14 @@ type State struct {
 	tabDrag            tabDrag
 	tabPreview         tabPreview
 	foreign            tabDrag // another window's tab being dragged over this one
-	frame              func() (ui.Rect, bool)
+	frame              func() (gfx.Rect, bool)
 	windowVisible      func() bool
 	systemKeys         systemKeyCapture
 	winChrome          windowChrome
 	hostView           hostViewMode
 	hostOrder          hostOrderMode
 	hostOrderMenu      bool
-	hostOrderButton    ui.Rect
+	hostOrderButton    gfx.Rect
 	hostSort           hostSortState
 	bg                 backgroundState
 	hostsContent       float32
@@ -595,8 +595,8 @@ type State struct {
 	// keysMenu is the open menu under the Keychain page's Add Key button, and
 	// keysAddButton where that button was painted.
 	keysMenu          bool
-	keysAddButton     ui.Rect
-	hostsBounds       ui.Rect // the hosts page as last painted; the menus anchor to it
+	keysAddButton     gfx.Rect
+	hostsBounds       gfx.Rect // the hosts page as last painted; the menus anchor to it
 	terminalMenu      terminalMenu
 	hostGroupEditor   text.Editor
 	groupActions      hostGroupActions
@@ -616,24 +616,24 @@ type State struct {
 	sessionImport     sessionImportPreview
 	mobaEncoding      mobaEncodingPrompt
 	knownHosts        knownHostsView
-	knownHostsLayout  flex.View
-	settingsRow       flex.View
-	partLayout        flex.View // a dialog body, a host card or a group header: one at a time
+	knownHostsLayout  ui.View
+	settingsRow       ui.View
+	partLayout        ui.View // a dialog body, a host card or a group header: one at a time
 	// selectedWorkspaceTemplateID is the template the library will apply next.
 	// It is view state only and is not persisted.
 	selectedWorkspaceTemplateID   string
 	workspaceLibraryExpanded      bool
 	workspaceLibraryPointerID     string
-	workspaceLibraryLayout        flex.View
+	workspaceLibraryLayout        ui.View
 	workspaceLibraryScroll        float32
-	workspaceLibraryBounds        ui.Rect
+	workspaceLibraryBounds        gfx.Rect
 	workspaceLibraryContent       float32
-	workspaceTemplateMoreBounds   []ui.Rect
+	workspaceTemplateMoreBounds   []gfx.Rect
 	workspaceTemplateMenu         workspaceTemplateMenu
 	workspaceTemplateDelete       workspaceTemplateDelete
-	workspaceTemplateFocusPending ui.ID
+	workspaceTemplateFocusPending gfx.ID
 	workspaceDraft                workspaceDraft
-	workspaceHeaderLayout         flex.View
+	workspaceHeaderLayout         ui.View
 	workspaceHeaderMenu           workspaceHeaderMenuState
 	workspacePaneTools            workspacePaneTools
 	workspaceLayoutDraft          workspaceArrangement
@@ -648,12 +648,12 @@ type State struct {
 	managedWorkspaceLayouts map[layoutcore.WorkspaceID]layoutcore.LayoutSpec
 	workspaceSave           workspaceSave
 
-	forwardLayout, proxyLayout, forwardDialogLayout, proxyDialogLayout flex.View // the Port Forwarding and Proxies pages and their dialogs
+	forwardLayout, proxyLayout, forwardDialogLayout, proxyDialogLayout ui.View // the Port Forwarding and Proxies pages and their dialogs
 	chrome                                                             chromeLayout
 
 	// iconMotions are the rows whose icon is playing the motion of a click, by
 	// hit id; the painter drops each one when its motion is over (icon_motion.go).
-	iconMotions map[ui.ID]iconMotionRun
+	iconMotions map[gfx.ID]iconMotionRun
 
 	// area: AI panel
 	aiFlex aiFlexViews // the assistant panel's layouts, see ai_panel_paint.go
@@ -692,7 +692,7 @@ type State struct {
 	localShellMenu      localShellSelect
 	editorMenu          editorSelect
 	terminalFontSize    float32
-	terminalFontFace    ui.MonoFace
+	terminalFontFace    gfx.MonoFace
 	terminalLineHeight  lineHeight
 	terminalScrollback  int
 	// textScale is the interface text size the user chose: the scale the whole
@@ -717,7 +717,7 @@ type State struct {
 	startupReuse  bool
 	startupPicker struct {
 		open   bool
-		bounds ui.Rect // the chooser's place on the settings page
+		bounds gfx.Rect // the chooser's place on the settings page
 	}
 	// openStream opens the stream of a Telnet or serial host; tests replace it.
 	openStream func(context.Context, streamRequest) (Shell, error)
@@ -753,9 +753,9 @@ type State struct {
 	sftpDownloadDirectory  string
 	defaultEditor          ExternalEditor // hands remote folders to this computer's editor
 	customEditorPath       string
-	monitorRect            ui.Rect
+	monitorRect            gfx.Rect
 	monitorMenu            bool
-	monitorMenuRect        ui.Rect
+	monitorMenuRect        gfx.Rect
 	monitorResizing        bool
 	monitorResizeGrab      float32
 	monitorResizeWorkspace layoutcore.WorkspaceID
@@ -817,17 +817,17 @@ type State struct {
 	sftpColumnEditor sftpColumnSettingsUI
 
 	// area: settings
-	settingsPage flex.View // the whole settings workspace
+	settingsPage ui.View // the whole settings workspace
 
 	// contextRect is where the last paint put the side panel (empty when there
 	// was none), so wheel events can tell which view they are over.
-	contextRect      ui.Rect
+	contextRect      gfx.Rect
 	shortcuts        shortcutMap
 	shortcutCapture  shortcutAction
 	shortcutError    string
 	reconnectWaiters int
 	pal              *palette
-	theme            ui.Theme
+	theme            gfx.Theme
 	// termPal is the terminal's own look: pal with the chosen color scheme and
 	// the highlight rules applied. termEpoch counts its rebuilds.
 	termPal   palette
@@ -844,8 +844,8 @@ type State struct {
 	// schemeBrowserOpen shows the complete collection in a drawer. The drawer's
 	// view and body outlive a paint so wheel handling can use the last layout.
 	schemeBrowserOpen  bool
-	schemeDrawerView   flex.View
-	schemeDrawerBody   ui.Rect
+	schemeDrawerView   ui.View
+	schemeDrawerBody   gfx.Rect
 	schemeDrawerFilter string
 	schemeDrawerReset  bool
 	terminalPad        terminalPad
@@ -894,53 +894,53 @@ type State struct {
 	snippets        snippetsUI
 	snippetSend     snippetSender
 	history         historyUI
-	historyLayout   flex.View
+	historyLayout   ui.View
 	completion      completionUI
 	// broadcast is the tab whose panes type together, or zero.
 	broadcast layoutcore.WorkspaceID
 
 	// wrapped is scratch for text broken into lines while painting.
 	wrapped          [failureLines]string
-	restoredView     flex.View
-	connectionLayout flex.View
+	restoredView     ui.View
+	connectionLayout ui.View
 	// filesLayout lays out the files panel, its editor and the panel before it has a list.
-	filesLayout flex.View
+	filesLayout ui.View
 	// area: terminal and workspace panes
-	terminalPageLayout   flex.View
-	fontPickerListLayout flex.View
-	fontPickerLayout     flex.View // the font picker's list and sample
-	paneChrome           flex.View // an empty split pane and other one-at-a-time chrome
+	terminalPageLayout   ui.View
+	fontPickerListLayout ui.View
+	fontPickerLayout     ui.View // the font picker's list and sample
+	paneChrome           ui.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
-	filesList   flex.View
-	filesHeader flex.View
-	filesPopup  flex.View
+	filesList   ui.View
+	filesHeader ui.View
+	filesPopup  ui.View
 	// filesRowIcons and filesRowBoxes are scratch for the visible rows of the list.
-	filesRowIcons []flex.Box
-	filesRowBoxes []flex.Box
+	filesRowIcons []ui.Box
+	filesRowBoxes []ui.Box
 
 	// area: keychain, palette, import and the rest
-	railLayout            flex.View
-	keysLayout            flex.View
-	paletteListLayout     flex.View
-	paletteLayout         flex.View
-	importLayout          flex.View
-	knownHostsTableLayout flex.View
-	hostToggleLayout      flex.View
-	hostGridLayout        flex.View
+	railLayout            ui.View
+	keysLayout            ui.View
+	paletteListLayout     ui.View
+	paletteLayout         ui.View
+	importLayout          ui.View
+	knownHostsTableLayout ui.View
+	hostToggleLayout      ui.View
+	hostGridLayout        ui.View
 	hostGridItems         []hostGridItem
 	// dev is the development-only component gallery's state; a release build
 	// keeps none of it (see debug.go and debug_release.go).
 	dev devState
 	// viewport and the terminal cell are the layout inputs of the last paint,
 	// kept so a resize can work out how many rows and columns fit.
-	viewport ui.Size
+	viewport gfx.Size
 	// pixelScale is the device pixels per logical pixel of the display, as the last
 	// paint saw it; zero before the first.
 	pixelScale            float32
 	cellWidth, cellHeight float32
-	paneCanvas            ui.Canvas
-	contextCanvas         ui.Canvas
+	paneCanvas            gfx.Canvas
+	contextCanvas         gfx.Canvas
 	panes                 []Pane
 	paneSplits            []PaneSplit
 	terminalDrop          terminalDrop // the terminal that files being dragged over would be uploaded from
@@ -963,8 +963,8 @@ type State struct {
 	hostKeyDescription       string
 	passwordFields           []text.Editor
 	sudoSFTP                 sudoSFTPDialog
-	passwordRects            []ui.Rect
-	passwordBoxes            []flex.Box
+	passwordRects            []gfx.Rect
+	passwordBoxes            []ui.Box
 	passwordQuestions        []sshconn.Question
 	passwordError            string
 	passwordDescription      string
@@ -981,7 +981,7 @@ type State struct {
 	sessionLogsOff bool
 	// sessionLogsLayout is the session-log page's flex layout, reused so a paint
 	// does not allocate its nodes.
-	sessionLogsLayout flex.View
+	sessionLogsLayout ui.View
 	// ai is the built-in assistant; see ai_state.go.
 	ai                 aiState
 	localProxyPort     uint16
@@ -1091,7 +1091,7 @@ func New(options Options) *State {
 		language:              i18n.English,
 		messages:              messages,
 		status:                messages.StatusReadyIdle,
-		viewport:              ui.Size{Width: 1400, Height: 900},
+		viewport:              gfx.Size{Width: 1400, Height: 900},
 		terminalFontSize:      termFontSize,
 		terminalScrollback:    scrollbackLines,
 		tabTitleMode:          tabTitleConnection,
@@ -1114,7 +1114,7 @@ func New(options Options) *State {
 	}
 	// The reference cell stands in until the first paint measures the font on the
 	// window's canvas (measureTerminalCell).
-	state.cellWidth, state.cellHeight = (&ui.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
+	state.cellWidth, state.cellHeight = (&gfx.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
 	state.temporaryWorkspaceLayouts = make(map[layoutcore.WorkspaceID]layoutcore.LayoutSpec)
 	state.managedWorkspaceLayouts = make(map[layoutcore.WorkspaceID]layoutcore.LayoutSpec)
 	// An icon-only button names itself to the keyboard as well as the pointer.
@@ -1266,7 +1266,7 @@ func systemLogin() string {
 
 // WindowColor is the color behind everything the workbench paints; the window
 // is cleared with it so edges that are exposed before a repaint match.
-func (state *State) WindowColor() ui.Color {
+func (state *State) WindowColor() gfx.Color {
 	return state.pal.shell
 }
 
@@ -1279,7 +1279,7 @@ func (state *State) Messages() i18n.Messages {
 // EditorFor returns the editor behind a text field hit, or nil when the hit is
 // not an open dialog's field. The runtime reports which hit holds keyboard
 // focus; this maps it to the text it edits.
-func (state *State) EditorFor(hit ui.ID) *text.Editor {
+func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	if state.noteExit != nil {
 		return nil
 	}
@@ -1475,7 +1475,7 @@ func (state *State) EditorFor(hit ui.ID) *text.Editor {
 
 // Theme returns the component theme for the current appearance. It is built
 // when the appearance changes, not per paint.
-func (state *State) Theme() ui.Theme {
+func (state *State) Theme() gfx.Theme {
 	return state.theme
 }
 
@@ -1492,7 +1492,7 @@ func (state *State) WindowControlsStyle() app.WindowControlsStyle {
 }
 
 // Click applies one stable hit action and plays the motion of the row's icon.
-func (state *State) Click(id ui.ID) {
+func (state *State) Click(id gfx.ID) {
 	if !state.clickNoteExit(id) {
 		state.click(id, true)
 	}
@@ -1501,7 +1501,7 @@ func (state *State) Click(id ui.ID) {
 // click applies one stable hit action. feedback is false for a hit the user did
 // not make on the control itself, such as a command palette entry standing for a
 // sidebar row: that row's icon stays still, because the row was not chosen.
-func (state *State) click(id ui.ID, feedback bool) {
+func (state *State) click(id gfx.ID, feedback bool) {
 	if feedback {
 		state.pressIconMotion(id)
 	}
@@ -2082,7 +2082,7 @@ func (state *State) reconnect(session *Session) {
 
 // clickHostDialog handles the New Host dialog. Clicks on its fields only move
 // focus, which the runtime already did; clicks anywhere else are swallowed.
-func (state *State) clickHostDialog(id ui.ID) {
+func (state *State) clickHostDialog(id gfx.ID) {
 	if state.clickHostGroupPicker(id) {
 		return
 	}
@@ -2219,7 +2219,7 @@ func (state *State) connectParsed(parsed connection) {
 }
 
 // hostForRow maps a host row's hit identity back to its host.
-func (state *State) hostForRow(id ui.ID) (Host, bool) {
+func (state *State) hostForRow(id gfx.ID) (Host, bool) {
 	if id.Scope() != hitHostList {
 		return Host{}, false
 	}
@@ -2228,9 +2228,9 @@ func (state *State) hostForRow(id ui.ID) (Host, bool) {
 
 // Pointer handles the pointer events the runtime does not turn into clicks. A
 // double click on a host row connects to it.
-func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
+func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if state.noteExit != nil {
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	defer state.afterEvent(&outcome)
 	if result := state.notesPointer(event); result.Handled {
@@ -2241,9 +2241,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	}
 	// A mouse toggle changes input routing; return typing to its source terminal.
 	// Leave the click unhandled so the runtime still activates the switch.
-	if event.Kind == ui.PointerUp && (event.Target == hitWorkspaceHeaderBroadcast || event.Target == hitWorkspaceHeaderLayoutDismiss) &&
-		(event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) {
-		return ui.EventResult{Focus: state.activeTerminalFocusHit(), Repaint: true}
+	if event.Kind == gfx.PointerUp && (event.Target == hitWorkspaceHeaderBroadcast || event.Target == hitWorkspaceHeaderLayoutDismiss) &&
+		(event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) {
+		return gfx.EventResult{Focus: state.activeTerminalFocusHit(), Repaint: true}
 	}
 	if result, handled := state.workspaceCardsPointer(event); handled {
 		return result
@@ -2259,9 +2259,9 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	}
 	if state.modal == modalFileProperties {
 		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if result, handled := state.localProxyPointer(event); handled {
 		return result
@@ -2289,7 +2289,7 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	}
 	// The menu opens where the pointer is in the window, which the pane
 	// translation below would otherwise hide.
-	state.terminalMenu.pointer = ui.Point{X: event.X, Y: event.Y}
+	state.terminalMenu.pointer = gfx.Point{X: event.X, Y: event.Y}
 	if result, handled := state.devEditorPointer(event); handled {
 		return result
 	}
@@ -2338,7 +2338,7 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 			w.cancelDrag()
 			repaint = true
 		}
-		return ui.EventResult{Handled: true, Repaint: repaint}
+		return gfx.EventResult{Handled: true, Repaint: repaint}
 	}
 	// An assistant drawer is painted over the page when the window is too narrow
 	// to dock it. It therefore owns pointer input before a full-page file tab.
@@ -2364,11 +2364,11 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	// reach. Nothing focusable was under the press, so the page says where the
 	// keyboard belongs; a page with no such place leaves the keyboard nowhere,
 	// since a keystroke still aimed at the pane it was in would switch back.
-	if event.Kind == ui.PointerDown {
+	if event.Kind == gfx.PointerDown {
 		if session, ok := state.paneGround(event.Target); ok {
 			changed := state.activeSessionID != session.ID
 			state.ActivatePane(session.ID)
-			result := ui.EventResult{Handled: true, Repaint: true}
+			result := gfx.EventResult{Handled: true, Repaint: true}
 			if target := state.paneGroundFocus(session); target.IsZero() {
 				result.Blur = true
 			} else {
@@ -2385,7 +2385,7 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 		// A pane becomes the active one when it is pressed, not when the pointer
 		// merely passes over it.
 		changed := false
-		if event.Kind == ui.PointerDown {
+		if event.Kind == gfx.PointerDown {
 			changed = state.activeSessionID != session.ID
 			state.ActivatePane(session.ID)
 		}
@@ -2399,7 +2399,7 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 		result := state.pointer(event)
 		result.Focus = tree.MountID(mount, result.Focus)
 		result.Repaint = result.Repaint || changed
-		if changed && event.Kind == ui.PointerDown {
+		if changed && event.Kind == gfx.PointerDown {
 			state.save()
 		}
 		return result
@@ -2415,18 +2415,18 @@ func (state *State) Pointer(event ui.PointerEvent) (outcome ui.EventResult) {
 	return state.pointer(event)
 }
 
-func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
-	if state.modal == modalSnippet && event.Kind == ui.PointerDown {
+func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
+	if state.modal == modalSnippet && event.Kind == gfx.PointerDown {
 		state.snippets.abandonOther(event.Target)
 	}
 	if result, handled := state.snippetGroupPointer(event); handled {
 		return result
 	}
-	if state.modal == modalSnippet && event.Kind == ui.PointerDown && (event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) && event.Target == hitSnippetSubmit {
+	if state.modal == modalSnippet && event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) && event.Target == hitSnippetSubmit {
 		if target := state.snippets.composingTarget(); !target.IsZero() {
 			// Keep the composition and its field focused; swallowing this press
 			// prevents the focus change from committing the preedit before Save.
-			return ui.EventResult{Handled: true, Repaint: true, Focus: target}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: target}
 		}
 	}
 	if result, handled := state.updateDialogPointer(event); handled {
@@ -2453,9 +2453,9 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 		}
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
-		if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !isHostGroupPickerTarget(event.Target) {
+		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isHostGroupPickerTarget(event.Target) {
 			state.editor.groupPicker.control.Open = false
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		if result := state.editor.groupPicker.control.Pointer(event); result.Handled {
 			return result
@@ -2466,9 +2466,9 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 		// popup is painted inside the form's scroll area, so its dismiss
 		// backdrop is clipped to that area and cannot own a press that lands
 		// anywhere else; the press is swallowed here so the dialog stays.
-		if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !isHostTagsTarget(event.Target) {
+		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isHostTagsTarget(event.Target) {
 			state.editor.tagPicker.control.Open = false
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		if result := state.editor.tagPicker.control.Pointer(event); result.Handled {
 			return result
@@ -2510,11 +2510,11 @@ func (state *State) pointer(event ui.PointerEvent) ui.EventResult {
 	if result, handled := state.sftpRowPointer(event); handled {
 		return result
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
 // isHostTagsTarget reports whether a press belongs to the open tag picker.
-func isHostTagsTarget(id ui.ID) bool {
+func isHostTagsTarget(id gfx.ID) bool {
 	switch {
 	case id == hitDialogTags, id == hitHostTagsTrigger, id == hitHostTagsScroll:
 		return true
@@ -2525,7 +2525,7 @@ func isHostTagsTarget(id ui.ID) bool {
 }
 
 // isDialogField reports whether a hit is one of the New Host dialog's text fields.
-func isDialogField(id ui.ID) bool {
+func isDialogField(id gfx.ID) bool {
 	switch id {
 	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogPassphrase, hitDialogGroup, hitDialogPort, hitDialogTags:
 		return true
@@ -2534,7 +2534,7 @@ func isDialogField(id ui.ID) bool {
 }
 
 // fieldForDialogHit maps a dialog hit id back to its form field.
-func fieldForDialogHit(id ui.ID) hostField {
+func fieldForDialogHit(id gfx.ID) hostField {
 	switch id {
 	case hitDialogLabel:
 		return fieldLabel
@@ -2556,7 +2556,7 @@ func fieldForDialogHit(id ui.ID) hostField {
 }
 
 // Key provides roving keyboard focus for terminal tabs.
-func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
+func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 	if state.noteExit != nil {
 		return state.noteExitKey(event)
 	}
@@ -2570,10 +2570,10 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 	if result, handled := state.keyShortcut(event); handled {
 		return result
 	}
-	if state.tabDrag.active && event.Key == ui.KeyEscape {
+	if state.tabDrag.active && event.Key == gfx.KeyEscape {
 		state.closeTabPreview()
 		state.tabDrag = tabDrag{}
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalNone {
 		if result, handled := state.sftpTabKey(event); handled {
@@ -2583,7 +2583,7 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 	if result, handled := state.modalFilePropertiesKey(event); handled {
 		return result
 	}
-	var mount ui.Scope
+	var mount gfx.Scope
 	if session, local, ok := state.decodePaneHit(event.Target); ok {
 		state.ActivatePane(session.ID)
 		mount, _ = tree.MountOf(event.Target.Scope())
@@ -2599,7 +2599,7 @@ func (state *State) Key(event ui.KeyEvent) (outcome ui.EventResult) {
 	return result
 }
 
-func (state *State) key(event ui.KeyEvent) ui.EventResult {
+func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result := state.notesKey(event); result.Handled {
 		return result
 	}
@@ -2686,12 +2686,12 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	}
 	// A tooltip is the topmost transient thing when no popup menu is open:
 	// Escape hides it before it can reach a dialog or the page.
-	if event.Key == ui.KeyEscape && state.openMenuScroll() == nil && state.tooltip.Dismiss() {
-		return ui.EventResult{Handled: true, Repaint: true}
+	if event.Key == gfx.KeyEscape && state.openMenuScroll() == nil && state.tooltip.Dismiss() {
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.terminalMenu.open && event.Key == ui.KeyEscape {
+	if state.terminalMenu.open && event.Key == gfx.KeyEscape {
 		state.terminalMenu.open = false
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.workspaceTemplateMenuKey(event); handled {
 		return result
@@ -2711,9 +2711,9 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.restoredPageKey(event); handled {
 		return result
 	}
-	if state.modal == modalSnippet && state.snippets.capturing && event.Key == ui.KeyEscape && !event.Repeat {
+	if state.modal == modalSnippet && state.snippets.capturing && event.Key == gfx.KeyEscape && !event.Repeat {
 		state.snippets.capturing = false
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.aiKey(event); handled {
 		return result
@@ -2745,12 +2745,12 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 	if result, handled := state.keysKey(event); handled {
 		return result
 	}
-	if state.modal == modalNewHost && event.Key == ui.KeyEnter && event.Modifiers == 0 && state.EditorFor(event.Target) != nil {
+	if state.modal == modalNewHost && event.Key == gfx.KeyEnter && event.Modifiers == 0 && state.EditorFor(event.Target) != nil {
 		_, composing := state.EditorFor(event.Target).Composition()
 		if !event.Repeat && !composing {
 			state.submitHostDialog()
 		}
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.aiRenameKey(event); handled {
 		return result
@@ -2803,52 +2803,52 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 		if handled {
 			state.Click(next)
-			return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
+			return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
 		}
 	}
-	if state.modal == modalNewForward && event.Key == ui.KeyEnter && state.EditorFor(event.Target) != nil && !event.Repeat {
+	if state.modal == modalNewForward && event.Key == gfx.KeyEnter && state.EditorFor(event.Target) != nil && !event.Repeat {
 		state.submitForwardDialog()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalPassword && event.Key == ui.KeyEnter && !event.Repeat && event.Target.Scope() == hitPasswordFields {
+	if state.modal == modalPassword && event.Key == gfx.KeyEnter && !event.Repeat && event.Target.Scope() == hitPasswordFields {
 		state.submitPassword()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalSudoSFTP && event.Key == ui.KeyEnter && !event.Repeat && event.Target == hitSudoSFTPPassword {
+	if state.modal == modalSudoSFTP && event.Key == gfx.KeyEnter && !event.Repeat && event.Target == hitSudoSFTPPassword {
 		state.submitSudoSFTP()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalVaultUnlock && event.Key == ui.KeyEnter && event.Target == hitVaultUnlockField && !event.Repeat {
+	if state.modal == modalVaultUnlock && event.Key == gfx.KeyEnter && event.Target == hitVaultUnlockField && !event.Repeat {
 		state.submitVaultUnlock()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalOutboundProxy && event.Key == ui.KeyEnter && !event.Repeat &&
+	if state.modal == modalOutboundProxy && event.Key == gfx.KeyEnter && !event.Repeat &&
 		(event.Target == hitOutboundProxyAddress || event.Target == hitOutboundProxyUser || event.Target == hitOutboundProxyPassword || event.Target == hitOutboundProxyBypass) {
 		state.submitOutboundProxy()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalForm {
 		if result, handled := state.formKey(event); handled {
 			return result
 		}
 	}
-	if state.modal == modalForm && event.Key == ui.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil && state.multilineField(event.Target) == nil {
+	if state.modal == modalForm && event.Key == gfx.KeyEnter && !event.Repeat && state.formEditor(event.Target) != nil && state.multilineField(event.Target) == nil {
 		state.submitForm()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalAutofillRule && event.Key == ui.KeyEnter && !event.Repeat &&
+	if state.modal == modalAutofillRule && event.Key == gfx.KeyEnter && !event.Repeat &&
 		(event.Target == hitAutofillName || event.Target == hitAutofillPattern || event.Target == hitAutofillFixed || event.Target == hitAutofillScope) {
 		state.submitAutofillRule()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalCredential && event.Key == ui.KeyEnter && !event.Repeat &&
+	if state.modal == modalCredential && event.Key == gfx.KeyEnter && !event.Repeat &&
 		(event.Target == hitCredentialName || event.Target == hitCredentialPassword) {
 		state.submitCredential()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalHighlightRule && event.Key == ui.KeyEnter && event.Target == hitHighlightPattern && !event.Repeat {
+	if state.modal == modalHighlightRule && event.Key == gfx.KeyEnter && event.Target == hitHighlightPattern && !event.Repeat {
 		state.submitHighlightRule()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalSnippet && event.Target == hitSnippetCommand {
 		if _, composing := state.snippets.command.Composition(); !composing {
@@ -2857,26 +2857,26 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 				value := state.snippets.command.String()
 				to := state.snippets.commandLayout.Move(value, aiByteOffset(value, state.snippets.command.Caret()), movement)
 				state.snippets.command.MoveTo(utf8.RuneCountInString(value[:to]), extend)
-				return ui.EventResult{Handled: true, Repaint: true}
+				return gfx.EventResult{Handled: true, Repaint: true}
 			}
 		}
 	}
-	if state.modal == modalSnippet && event.Key == ui.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetGroup) && !event.Repeat {
+	if state.modal == modalSnippet && event.Key == gfx.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetGroup) && !event.Repeat {
 		// submitSnippet refuses while either field is composing: that Enter
 		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalKeyPassphrase && event.Key == ui.KeyEnter && event.Target == hitKeyPassphraseField && !event.Repeat {
+	if state.modal == modalKeyPassphrase && event.Key == gfx.KeyEnter && event.Target == hitKeyPassphraseField && !event.Repeat {
 		state.submitKeyPassphrase()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.verticalTabGroupKey(event); handled {
 		return result
 	}
 	tabScope := event.Target.Scope()
 	if tabScope != hitTabList && tabScope != fileTabList {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	options, orientation := state.tabOptions, components.TabsHorizontal
 	switch {
@@ -2897,11 +2897,11 @@ func (state *State) key(event ui.KeyEvent) ui.EventResult {
 		event.Key,
 	)
 	if !handled {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	// Base UI tabs move focus on arrows and wait for Enter or Space to activate
 	// the focused tab; the runtime's activation delivers that click.
-	return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
+	return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
 }
 
 func (state *State) openHostSession(host Host) *Session {
@@ -3062,19 +3062,19 @@ func (state *State) sessionTitle(id uint32) string {
 
 // hostsKey handles the keys the host list owns: Enter connects, and Escape
 // empties the search box. It reports whether it took the key.
-func (state *State) hostsKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) hostsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionHosts || event.Repeat {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	switch event.Key {
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		if event.Target == hitSearch && state.search.RuneCount() > 0 {
 			state.search = text.Editor{}
 			state.syncVisible()
 			return handled, true
 		}
-	case ui.KeyEnter:
+	case gfx.KeyEnter:
 		switch {
 		case event.Target == hitSearch:
 			state.connectTyped()
@@ -3093,10 +3093,10 @@ func (state *State) hostsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			}
 		}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) isHostRow(id ui.ID) bool {
+func (state *State) isHostRow(id gfx.ID) bool {
 	_, ok := state.hostForRow(id)
 	return ok
 }

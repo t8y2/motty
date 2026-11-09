@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
 )
@@ -44,7 +44,7 @@ func (state *State) askSessionLink(session *Session, disconnect bool) {
 	state.modal = modalSessionLink
 }
 
-func (state *State) clickSessionLinkDialog(id ui.ID) {
+func (state *State) clickSessionLinkDialog(id gfx.ID) {
 	switch id {
 	case hitSessionLinkDismiss, hitSessionLinkClose, hitSessionLinkCancel:
 		state.modal = modalNone
@@ -69,20 +69,20 @@ func (state *State) clickSessionLinkDialog(id ui.ID) {
 }
 
 // sessionLinkKey makes Enter on the confirm button confirm.
-func (state *State) sessionLinkKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.modal != modalSessionLink || event.Key != ui.KeyEnter || event.Target != hitSessionLinkConfirm || event.Repeat {
-		return ui.EventResult{}, false
+func (state *State) sessionLinkKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalSessionLink || event.Key != gfx.KeyEnter || event.Target != hitSessionLinkConfirm || event.Repeat {
+		return gfx.EventResult{}, false
 	}
 	state.clickSessionLinkDialog(hitSessionLinkConfirm)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintSessionLinkDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintSessionLinkDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	messages := state.messages
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitSessionLinkDismiss, CloseID: hitSessionLinkClose, InitialFocusID: hitSessionLinkCancel,
-		ContentSize: ui.Size{Width: 520}, FitBody: true,
+		ContentSize: gfx.Size{Width: 520}, FitBody: true,
 	})
 	title, description, confirm := messages.ReconnectTitleFmt, messages.ReconnectDescription, messages.ReconnectConfirm
 	if state.sessionLink.disconnect {

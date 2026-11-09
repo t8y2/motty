@@ -6,9 +6,9 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 var (
@@ -95,32 +95,32 @@ func (state *State) clearRemoteSearch() {
 	state.rebuildRemoteRows()
 }
 
-func (state *State) remoteSearchShortcut(event ui.KeyEvent) ui.EventResult {
+func (state *State) remoteSearchShortcut(event gfx.KeyEvent) gfx.EventResult {
 	if !state.remoteToolsVisible() || event.Release {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	chord, ok := keymap.FromEvent(event)
 	if !ok || state.shortcuts.actionFor(chord) != shortcutFind {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	if chord.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 && event.Target == hitRemoteSearch {
-		return ui.EventResult{}
+	if chord.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 && event.Target == hitRemoteSearch {
+		return gfx.EventResult{}
 	}
-	return ui.EventResult{Handled: true, Repaint: true, Focus: hitRemoteSearch, FocusVisible: true}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitRemoteSearch, FocusVisible: true}
 }
 
-func (state *State) remoteSearchKey(event ui.KeyEvent) ui.EventResult {
-	if !state.remoteToolsVisible() || state.remote.auto.open || event.Release || event.Repeat || event.Key != ui.KeyEscape {
-		return ui.EventResult{}
+func (state *State) remoteSearchKey(event gfx.KeyEvent) gfx.EventResult {
+	if !state.remoteToolsVisible() || state.remote.auto.open || event.Release || event.Repeat || event.Key != gfx.KeyEscape {
+		return gfx.EventResult{}
 	}
 	search := &state.remote.searches[state.remote.tab]
 	if event.Target != hitRemoteSearch && search.queryEditor().String() == "" {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if _, composing := search.queryEditor().Composition(); composing && event.Target == hitRemoteSearch {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
-	result := ui.EventResult{Handled: true, Repaint: true}
+	result := gfx.EventResult{Handled: true, Repaint: true}
 	if state.remote.searches[state.remote.tab].editor.String() != "" {
 		state.clearRemoteSearch()
 	} else {
@@ -129,19 +129,19 @@ func (state *State) remoteSearchKey(event ui.KeyEvent) ui.EventResult {
 	return result
 }
 
-func (state *State) paintRemoteSearch(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintRemoteSearch(canvas *gfx.Canvas, bounds gfx.Rect) {
 	query := state.remote.searches[state.remote.tab].queryEditor().String()
 	clearSlot := components.InputGroupSlot{}
 	if query != "" {
 		clearSlot = components.InputGroupSlot{Kind: components.InputGroupSlotButton, ID: hitRemoteSearchClear,
 			Icon: lucideIcons[iconClose], Label: state.messages.Tools.RemoteSearchClear, ButtonSize: components.InputGroupButtonIconXS}
 	}
-	components.PaintInputGroup(canvas, state.Theme(), ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 32}, components.InputGroupSnapshot{
+	components.PaintInputGroup(canvas, state.Theme(), gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 32}, components.InputGroupSnapshot{
 		ID: hitRemoteSearch, Label: state.messages.Tools.RemoteSearch, Value: query,
 		Placeholder: state.messages.Tools.RemoteSearchPlaceholder, NativeEditing: canvas.Focused() == hitRemoteSearch && query != "",
 		InlineStart: components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]}, InlineEnd: clearSlot,
 	})
-	summary := ui.Rect{X: bounds.X, Y: bounds.Y + 36, Width: bounds.Width, Height: 20}
-	canvas.Label(elide(canvas, state.remote.searchSummary, metrics.FontSizeS, ui.WeightRegular, summary.Width), summary, ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
-	canvas.HitWithOptions(hitRemoteSearchScope, summary, state.remote.searchSummary, ui.HitOptions{Role: ui.RoleStatus, SkipFocus: true, Hint: state.remote.searchSummary})
+	summary := gfx.Rect{X: bounds.X, Y: bounds.Y + 36, Width: bounds.Width, Height: 20}
+	canvas.Label(elide(canvas, state.remote.searchSummary, metrics.FontSizeS, gfx.WeightRegular, summary.Width), summary, gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
+	canvas.HitWithOptions(hitRemoteSearchScope, summary, state.remote.searchSummary, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: state.remote.searchSummary})
 }

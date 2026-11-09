@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
 )
@@ -134,7 +134,7 @@ func TestSFTPLocalPlacesLayoutAtDifferentScales(t *testing.T) {
 			view.Driver().Pump()
 			view.Rest()
 			dualClickID(t, view, hitSFTPLocalPlaces)
-			seen := map[ui.ID]bool{}
+			seen := map[gfx.ID]bool{}
 			for _, hit := range view.Snapshot().Hits {
 				if hit.ID.IsZero() || hit.Block {
 					continue

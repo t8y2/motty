@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 
 	"motty/internal/desktop"
 )
@@ -326,10 +326,10 @@ func (state *State) desktopFilesError(err error, offer desktop.FileOffer) string
 
 // desktopDropAt is the desktop a file dropped at a window point would be offered
 // to, with the pane it fills: the picture of a session that is showing.
-func (state *State) desktopDropAt(x, y float32) (*Session, ui.Rect, bool) {
+func (state *State) desktopDropAt(x, y float32) (*Session, gfx.Rect, bool) {
 	session, bounds, ok := state.paneAt(x, y)
 	if !ok || session.desk == nil || session.desk.ended {
-		return nil, ui.Rect{}, false
+		return nil, gfx.Rect{}, false
 	}
 	return session, bounds, true
 }

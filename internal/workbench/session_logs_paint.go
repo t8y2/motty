@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
@@ -551,7 +551,7 @@ func sessionLogToneOf(status sessionlog.Status) sessionLogStatusTone {
 }
 
 // sessionLogToneColor maps a status tone onto the palette.
-func (state *State) sessionLogToneColor(tone sessionLogStatusTone) ui.Color {
+func (state *State) sessionLogToneColor(tone sessionLogStatusTone) gfx.Color {
 	switch tone {
 	case sessionLogToneSuccess:
 		return state.pal.success
@@ -808,7 +808,7 @@ func (state *State) sessionLogFilterChoices(filter sessionLogFilterMenu, labels 
 }
 
 // sessionLogFilterFor is the filter menu a trigger identity opens.
-func sessionLogFilterFor(id ui.ID) sessionLogFilterMenu {
+func sessionLogFilterFor(id gfx.ID) sessionLogFilterMenu {
 	switch id {
 	case hitSessionLogsSort:
 		return sessionLogFilterSortMenu
@@ -826,7 +826,7 @@ func sessionLogFilterFor(id ui.ID) sessionLogFilterMenu {
 }
 
 // paintSessionLogsWorkspace paints the page inside the section card.
-func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	view, m, pal := &state.sessionLogs.view, &state.messages.SessionLogs, state.pal
 	theme := state.Theme()
 	inner := max(bounds.Width-36, 0)
@@ -849,22 +849,22 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 	if separateFilters {
 		searchWidth = min(sessionLogSearchMost, max(sessionLogSearchLeast, inner-toolbarHeight-2*sessionLogToolbarGap))
 	}
-	var search, timeSlot, statusSlot, protocolSlot, outcomeSlot, sortSlot, favoriteFilterBox flex.Box
-	var moreButton flex.Box
-	var content, detailSlot, loadMore flex.Box
-	var emptyIcon, emptyAction flex.Box
+	var search, timeSlot, statusSlot, protocolSlot, outcomeSlot, sortSlot, favoriteFilterBox ui.Box
+	var moreButton ui.Box
+	var content, detailSlot, loadMore ui.Box
+	var emptyIcon, emptyAction ui.Box
 
 	f := state.sessionLogsLayout.Begin(canvas, theme, bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Row().Height(36).Gap(8).Items(flex.Center).Children(func() {
-			f.Text(m.Title).FontSize(sessionLogTitleSize).Weight(ui.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
-			f.Text(view.countText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).Width(min(inner*0.62, 360)).TextEnd().Ellipsis()
+		f.Row().Height(36).Gap(8).Items(ui.Center).Children(func() {
+			f.Text(m.Title).FontSize(sessionLogTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
+			f.Text(view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(min(inner*0.62, 360)).TextEnd().Ellipsis()
 			moreButton = f.Slot().Size(30, 30)
 		})
 		if !narrow {
 			f.Text(m.Description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).Ellipsis().MarginSides(0, 0, 8, 0)
 		}
-		f.Row().Height(40).Gap(sessionLogToolbarGap).Items(flex.Center).Children(func() {
+		f.Row().Height(40).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
 			search = f.Slot().Size(searchWidth, toolbarHeight)
 			if !separateFilters {
 				f.Spacer()
@@ -880,7 +880,7 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 			}
 		})
 		if separateFilters {
-			f.Row().Height(38).Gap(sessionLogToolbarGap).Items(flex.Center).Children(func() {
+			f.Row().Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
 				timeSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				statusSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				protocolSlot = f.Slot().Size(filterWidth, toolbarHeight)
@@ -890,7 +890,7 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 				}
 			})
 			if stackedFilters {
-				f.Row().Height(38).Gap(sessionLogToolbarGap).Items(flex.Center).Children(func() {
+				f.Row().Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
 					outcomeSlot = f.Slot().Size(filterWidth, toolbarHeight)
 					sortSlot = f.Slot().Size(filterWidth, toolbarHeight)
 				})
@@ -914,7 +914,7 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 			content = f.Slot().Grow(1).Basis(0).MarginSides(4, 0, 0, 0)
 		}
 		f.Divider().Background(pal.line)
-		f.Row().Height(46).Gap(12).Items(flex.Center).Children(func() {
+		f.Row().Height(46).Gap(12).Items(ui.Center).Children(func() {
 			f.Text(view.statusText).FontSize(metrics.FontSizeS).Color(state.sessionLogStatusColor()).Grow(1).Ellipsis()
 			if view.more {
 				loadMoreWidth, _ := toolbarButtonLayout(canvas, m.LoadMore, iconChevronDown, iconChevronDown, condensed)
@@ -972,7 +972,7 @@ func (state *State) paintSessionLogsWorkspace(canvas *ui.Canvas, bounds ui.Rect)
 	// a focus request belongs.
 	if !view.focusPending.IsZero() {
 		canvas.RequestFocus(view.focusPending)
-		view.focusPending = ui.ID{}
+		view.focusPending = gfx.ID{}
 	}
 }
 
@@ -1018,7 +1018,7 @@ func (state *State) sessionLogsCanClear() bool {
 
 // sessionLogStatusColor is the footer text's color: an operation failure stays in
 // the page's own status line instead of a toast that disappears.
-func (state *State) sessionLogStatusColor() ui.Color {
+func (state *State) sessionLogStatusColor() gfx.Color {
 	if state.sessionLogs.view.statusDanger {
 		return state.pal.danger
 	}
@@ -1027,7 +1027,7 @@ func (state *State) sessionLogStatusColor() ui.Color {
 
 // paintSessionLogFilterTrigger paints one filter: a small control that shows the
 // chosen value, names itself to the keyboard, and says whether its menu is open.
-func (state *State) paintSessionLogFilterTrigger(canvas *ui.Canvas, id ui.ID, bounds ui.Rect, filter sessionLogFilterMenu) {
+func (state *State) paintSessionLogFilterTrigger(canvas *gfx.Canvas, id gfx.ID, bounds gfx.Rect, filter sessionLogFilterMenu) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
@@ -1047,7 +1047,7 @@ func (state *State) paintSessionLogFilterTrigger(canvas *ui.Canvas, id ui.ID, bo
 		active = view.query.Sort != sessionlog.SortStartedDesc
 	}
 	foreground := pal.muted
-	fill := ui.Color{}
+	fill := gfx.Color{}
 	border := pal.line
 	switch {
 	case open, active:
@@ -1068,10 +1068,10 @@ func (state *State) paintSessionLogFilterTrigger(canvas *ui.Canvas, id ui.ID, bo
 	chevron := bounds.Width >= 96
 	f := state.chrome.widget.Begin(canvas, state.Theme(), bounds)
 	f.Row().Fill().Center().Radius(radius.control).Border(1, border).Background(fill).
-		HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, Hint: hint, Selected: active, Expanded: open, Expandable: true}).
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint, Selected: active, Expanded: open, Expandable: true}).
 		Children(func() {
 			f.Icon(lucideIcons[sessionLogFilterIcon(filter)]).Color(foreground).MarginSides(0, 6, 0, 8)
-			f.Text(value).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).Ellipsis()
+			f.Text(value).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).Ellipsis()
 			if chevron {
 				f.Spacer()
 				f.Icon(lucideIcons[iconChevronDown]).Color(pal.faint)
@@ -1079,21 +1079,21 @@ func (state *State) paintSessionLogFilterTrigger(canvas *ui.Canvas, id ui.ID, bo
 		})
 	f.End()
 	if canvas.FocusVisible() == id {
-		canvas.RoundedBorder(bounds, radius.control, 1.5, pal.accent, ui.Color{})
+		canvas.RoundedBorder(bounds, radius.control, 1.5, pal.accent, gfx.Color{})
 	}
 }
 
 // paintSessionLogFavoriteFilter paints the favorites-only toggle: a star that
 // fills while the filter is on. It is a filter, so it reports whether it is
 // applied rather than whether it has the keyboard.
-func (state *State) paintSessionLogFavoriteFilter(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintSessionLogFavoriteFilter(canvas *gfx.Canvas, bounds gfx.Rect) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
 	view, m, pal := &state.sessionLogs.view, &state.messages.SessionLogs, state.pal
 	icon := iconStar
 	foreground := pal.muted
-	fill := ui.Color{}
+	fill := gfx.Color{}
 	border := pal.line
 	if view.favoriteOnly {
 		icon, foreground, border = iconStarSolid, pal.warning, withAlpha(pal.warning, 0.55)
@@ -1106,13 +1106,13 @@ func (state *State) paintSessionLogFavoriteFilter(canvas *ui.Canvas, bounds ui.R
 	}
 	f := state.chrome.widget.Begin(canvas, state.Theme(), bounds)
 	f.Row().Fill().Center().Radius(radius.control).Border(1, border).Background(fill).
-		HitWith(hitSessionLogsFavoriteFilter, m.FilterFavorite, ui.HitOptions{Role: ui.RoleButton, Hint: m.FilterFavorite, Selected: view.favoriteOnly}).
+		HitWith(hitSessionLogsFavoriteFilter, m.FilterFavorite, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.FilterFavorite, Selected: view.favoriteOnly}).
 		Children(func() {
 			f.Icon(lucideIcons[icon]).Color(foreground)
 		})
 	f.End()
 	if canvas.FocusVisible() == hitSessionLogsFavoriteFilter {
-		canvas.RoundedBorder(bounds, radius.control, 1.5, pal.accent, ui.Color{})
+		canvas.RoundedBorder(bounds, radius.control, 1.5, pal.accent, gfx.Color{})
 	}
 }
 
@@ -1120,7 +1120,7 @@ func (state *State) paintSessionLogFavoriteFilter(canvas *ui.Canvas, bounds ui.R
 // pass, outside the workspace clip, so it can leave the card. Its items are radio
 // choices: the keyboard walks them with menuKey, as it does every popup menu of
 // the workbench.
-func (state *State) paintSessionLogFilters(canvas *ui.Canvas) {
+func (state *State) paintSessionLogFilters(canvas *gfx.Canvas) {
 	view := &state.sessionLogs.view
 	if state.activeSection != sectionSessionLogs || state.modal != modalNone {
 		return
@@ -1131,7 +1131,7 @@ func (state *State) paintSessionLogFilters(canvas *ui.Canvas) {
 		rows.add(components.ContextMenuItem{ID: hitSessionLogsClearFavorite, Label: m.ClearUnfavorited, Icon: lucideIcons[iconEraser], Disabled: !state.sessionLogsCanClear(), Variant: components.ContextMenuItemDestructive})
 		rows.add(components.ContextMenuItem{ID: hitSessionLogsClearAll, Label: m.ClearAll, Icon: lucideIcons[iconTrash], Disabled: !state.sessionLogsCanClear(), Variant: components.ContextMenuItemDestructive})
 		width, height := rows.size(canvas, state.contextMenuTheme())
-		bounds := state.popupBelow(canvas, view.moreBounds, width, height, flex.End)
+		bounds := state.popupBelow(canvas, view.moreBounds, width, height, ui.End)
 		menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitSessionLogsMoreDismiss, Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitSessionLogsMoreDismiss), RowHeight: contextMenuRow})
 		state.menuPlaced(menu.Bounds())
 		rows.paint(&menu, nil)
@@ -1153,7 +1153,7 @@ func (state *State) paintSessionLogFilters(canvas *ui.Canvas) {
 	}
 	height := float32(count*32 + 8)
 	width := max(float32(220), anchor.Width)
-	bounds := state.popupBelow(canvas, anchor, width, height, flex.Start)
+	bounds := state.popupBelow(canvas, anchor, width, height, ui.Start)
 	menu := components.BeginDropdownMenu(canvas, state.Theme(), bounds, components.DropdownMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSessionLogsFilterDismiss,
 		Viewport: state.windowRect(), Scroll: state.selectScroll(true, hitSessionLogsFilterDismiss),
@@ -1170,7 +1170,7 @@ func (state *State) paintSessionLogFilters(canvas *ui.Canvas) {
 
 // paintSessionLogTable paints the fixed header and the scrollable body of the
 // record table.
-func (state *State) paintSessionLogTable(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintSessionLogTable(canvas *gfx.Canvas, bounds gfx.Rect) {
 	view, m := &state.sessionLogs.view, &state.messages.SessionLogs
 	if bounds.Width < 80 || bounds.Height < 60 {
 		return
@@ -1181,16 +1181,16 @@ func (state *State) paintSessionLogTable(canvas *ui.Canvas, bounds ui.Rect) {
 	count := state.sessionLogColumns(bounds.Width, &columns, &headings)
 	rowHeight := components.TableRowHeight(theme)
 	headerHeight := components.TableHeaderHeight(theme)
-	body := ui.Rect{X: bounds.X, Y: bounds.Y + headerHeight, Width: bounds.Width, Height: max(bounds.Height-headerHeight, 0)}
+	body := gfx.Rect{X: bounds.X, Y: bounds.Y + headerHeight, Width: bounds.Width, Height: max(bounds.Height-headerHeight, 0)}
 	view.tableBody = body
 	if body.Height <= 0 {
 		return
 	}
 	components.FitTableHeadings(canvas, theme, columns[:count], headings[:count])
-	head := components.BeginTable(canvas, theme, ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: headerHeight}, columns[:count])
+	head := components.BeginTable(canvas, theme, gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: headerHeight}, columns[:count])
 	head.Header(headings[:count])
 
-	content := ui.Size{Width: bounds.Width, Height: state.sessionLogListHeight(rowHeight)}
+	content := gfx.Size{Width: bounds.Width, Height: state.sessionLogListHeight(rowHeight)}
 	area := components.BeginScrollArea(canvas, theme, body, content).
 		Offset(0, view.scrollRows).Viewport(hitSessionLogsScroll, m.ListScroll).
 		VerticalScrollbar(hitSessionLogsThumb, m.ListScroll, "")
@@ -1198,18 +1198,18 @@ func (state *State) paintSessionLogTable(canvas *ui.Canvas, bounds ui.Rect) {
 	view.scrollRows = geo.OffsetY
 	if len(view.page) > 0 {
 		if cap(view.rowCells) < count {
-			view.rowCells = make([]ui.Rect, count)
+			view.rowCells = make([]gfx.Rect, count)
 		}
 		y := geo.Content.Y
 		for _, item := range view.items {
 			if item.row < 0 {
-				paintSessionLogText(canvas, item.heading, ui.Rect{X: geo.Content.X + 8, Y: y, Width: max(geo.Content.Width-16, 0), Height: sessionLogGroupHeight}, metrics.FontSizeS, ui.WeightSemibold, state.pal.muted)
+				paintSessionLogText(canvas, item.heading, gfx.Rect{X: geo.Content.X + 8, Y: y, Width: max(geo.Content.Width-16, 0), Height: sessionLogGroupHeight}, metrics.FontSizeS, gfx.WeightSemibold, state.pal.muted)
 				y += sessionLogGroupHeight
 				continue
 			}
 			index := item.row
 			row := &view.page[index]
-			table := components.BeginTable(canvas, theme, ui.Rect{X: geo.Content.X, Y: y, Width: geo.Content.Width, Height: rowHeight}, columns[:count])
+			table := components.BeginTable(canvas, theme, gfx.Rect{X: geo.Content.X, Y: y, Width: geo.Content.Width, Height: rowHeight}, columns[:count])
 			y += rowHeight
 			var rowCells []string
 			switch count {
@@ -1292,14 +1292,14 @@ func (state *State) sessionLogColumns(width float32, columns *[6]components.Tabl
 // paintSessionLogDetails paints the selected record: its fields, the lifecycle
 // events that were recorded, and the way to the still-open session when there is
 // one. Nothing here writes, and no replay is offered because no recording exists.
-func (state *State) paintSessionLogDetails(canvas *ui.Canvas, bounds ui.Rect, stacked bool) {
+func (state *State) paintSessionLogDetails(canvas *gfx.Canvas, bounds gfx.Rect, stacked bool) {
 	detail, m, pal := &state.sessionLogs.view.detail, &state.messages.SessionLogs, state.pal
 	if bounds.Width < 160 || bounds.Height < 120 {
 		return
 	}
 	view := &state.sessionLogs.view
 	canvas.RoundedBorder(bounds, radius.surface, 1, pal.line, pal.surface)
-	inner := ui.Rect{X: bounds.X + 14, Y: bounds.Y + 12, Width: max(bounds.Width-28, 0), Height: max(bounds.Height-24, 0)}
+	inner := gfx.Rect{X: bounds.X + 14, Y: bounds.Y + 12, Width: max(bounds.Width-28, 0), Height: max(bounds.Height-24, 0)}
 	if inner.Width <= 0 || inner.Height <= 0 {
 		return
 	}
@@ -1311,8 +1311,8 @@ func (state *State) paintSessionLogDetails(canvas *ui.Canvas, bounds ui.Rect, st
 	}
 	closeSize := float32(28)
 	titleWidth := max(inner.Width-closeSize-8, 0)
-	paintSessionLogText(canvas, detail.title, ui.Rect{X: inner.X, Y: y, Width: titleWidth, Height: 22}, metrics.FontSizeM, ui.WeightSemibold, pal.text)
-	state.paintIconButton(canvas, hitSessionLogsDetailClose, iconClose, ui.Rect{X: inner.X + inner.Width - closeSize, Y: y - 2, Width: closeSize, Height: closeSize}, closeHint, false, iconButtonQuiet, pal.surface)
+	paintSessionLogText(canvas, detail.title, gfx.Rect{X: inner.X, Y: y, Width: titleWidth, Height: 22}, metrics.FontSizeM, gfx.WeightSemibold, pal.text)
+	state.paintIconButton(canvas, hitSessionLogsDetailClose, iconClose, gfx.Rect{X: inner.X + inner.Width - closeSize, Y: y - 2, Width: closeSize, Height: closeSize}, closeHint, false, iconButtonQuiet, pal.surface)
 	y += 26
 	if detail.count > 0 {
 		// Fields are two columns: a muted label and its value. A panel too short
@@ -1330,36 +1330,36 @@ func (state *State) paintSessionLogDetails(canvas *ui.Canvas, bounds ui.Rect, st
 			if index == detail.statusIndex {
 				valueColor = state.sessionLogToneColor(detail.statusTone)
 			}
-			paintSessionLogText(canvas, field.label, ui.Rect{X: inner.X, Y: y, Width: max(labelWidth-6, 0), Height: sessionLogFieldHeight}, metrics.FontSizeS, ui.WeightMedium, pal.muted)
-			paintSessionLogText(canvas, field.value, ui.Rect{X: inner.X + labelWidth, Y: y, Width: max(inner.Width-labelWidth, 0), Height: sessionLogFieldHeight}, metrics.FontSizeS, ui.WeightRegular, valueColor)
+			paintSessionLogText(canvas, field.label, gfx.Rect{X: inner.X, Y: y, Width: max(labelWidth-6, 0), Height: sessionLogFieldHeight}, metrics.FontSizeS, gfx.WeightMedium, pal.muted)
+			paintSessionLogText(canvas, field.value, gfx.Rect{X: inner.X + labelWidth, Y: y, Width: max(inner.Width-labelWidth, 0), Height: sessionLogFieldHeight}, metrics.FontSizeS, gfx.WeightRegular, valueColor)
 			y += sessionLogFieldHeight
 		}
 	}
 	if detail.noInfo != "" {
 		if y+18 <= inner.Y+inner.Height {
-			paintSessionLogText(canvas, detail.noInfo, ui.Rect{X: inner.X, Y: y, Width: inner.Width, Height: 18}, metrics.FontSizeS, ui.WeightRegular, pal.muted)
+			paintSessionLogText(canvas, detail.noInfo, gfx.Rect{X: inner.X, Y: y, Width: inner.Width, Height: 18}, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 			y += 20
 		}
 	}
 	// The session-jump action sits at the bottom; above it the recorded events
 	// scroll on their own so a long timeline stays readable.
-	action := ui.Rect{X: inner.X, Y: inner.Y + inner.Height - 2*toolbarHeight - 6, Width: inner.Width, Height: toolbarHeight}
+	action := gfx.Rect{X: inner.X, Y: inner.Y + inner.Height - 2*toolbarHeight - 6, Width: inner.Width, Height: toolbarHeight}
 	eventsTop := y
 	eventsBottom := action.Y - 10
 	headingWidth := min(inner.Width*0.42, 96)
-	view.eventsBody = ui.Rect{}
+	view.eventsBody = gfx.Rect{}
 	if eventsBottom-eventsTop > 34 {
-		paintSessionLogText(canvas, m.Events, ui.Rect{X: inner.X, Y: eventsTop, Width: headingWidth, Height: 18}, metrics.FontSizeS, ui.WeightSemibold, pal.text)
-		paintSessionLogText(canvas, detail.eventsText, ui.Rect{X: inner.X + headingWidth, Y: eventsTop, Width: max(inner.Width-headingWidth, 0), Height: 18}, metrics.FontSizeS, ui.WeightRegular, pal.muted)
+		paintSessionLogText(canvas, m.Events, gfx.Rect{X: inner.X, Y: eventsTop, Width: headingWidth, Height: 18}, metrics.FontSizeS, gfx.WeightSemibold, pal.text)
+		paintSessionLogText(canvas, detail.eventsText, gfx.Rect{X: inner.X + headingWidth, Y: eventsTop, Width: max(inner.Width-headingWidth, 0), Height: 18}, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 		eventsTop += 24
 		if detail.truncatedText != "" && eventsTop+16 <= eventsBottom {
-			paintSessionLogText(canvas, detail.truncatedText, ui.Rect{X: inner.X, Y: eventsTop, Width: inner.Width, Height: 16}, metrics.FontSizeS, ui.WeightRegular, pal.warning)
+			paintSessionLogText(canvas, detail.truncatedText, gfx.Rect{X: inner.X, Y: eventsTop, Width: inner.Width, Height: 16}, metrics.FontSizeS, gfx.WeightRegular, pal.warning)
 			eventsTop += 18
 		}
-		events := ui.Rect{X: inner.X, Y: eventsTop, Width: inner.Width, Height: max(eventsBottom-eventsTop, 0)}
+		events := gfx.Rect{X: inner.X, Y: eventsTop, Width: inner.Width, Height: max(eventsBottom-eventsTop, 0)}
 		if events.Height > 0 {
 			view.eventsBody = events
-			content := ui.Size{Width: events.Width, Height: float32(len(detail.events)) * sessionLogEventHeight}
+			content := gfx.Size{Width: events.Width, Height: float32(len(detail.events)) * sessionLogEventHeight}
 			area := components.BeginScrollArea(canvas, state.Theme(), events, content).
 				Offset(0, view.scrollEvents).Viewport(hitSessionLogsEventsScroll, m.Events).
 				VerticalScrollbar(hitSessionLogsEventsThumb, m.Events, "")
@@ -1368,15 +1368,15 @@ func (state *State) paintSessionLogDetails(canvas *ui.Canvas, bounds ui.Rect, st
 			whenWidth := float32(64)
 			for index := range detail.events {
 				event := &detail.events[index]
-				row := ui.Rect{X: geo.Content.X, Y: geo.Content.Y + float32(index)*sessionLogEventHeight, Width: geo.Content.Width, Height: sessionLogEventHeight}
-				paintSessionLogText(canvas, event.when, ui.Rect{X: row.X, Y: row.Y, Width: whenWidth - 6, Height: row.Height}, metrics.FontSizeS, ui.WeightRegular, pal.muted)
-				paintSessionLogText(canvas, event.label, ui.Rect{X: row.X + whenWidth, Y: row.Y, Width: max(row.Width-whenWidth, 0), Height: row.Height}, metrics.FontSizeS, ui.WeightRegular, pal.text)
+				row := gfx.Rect{X: geo.Content.X, Y: geo.Content.Y + float32(index)*sessionLogEventHeight, Width: geo.Content.Width, Height: sessionLogEventHeight}
+				paintSessionLogText(canvas, event.when, gfx.Rect{X: row.X, Y: row.Y, Width: whenWidth - 6, Height: row.Height}, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
+				paintSessionLogText(canvas, event.label, gfx.Rect{X: row.X + whenWidth, Y: row.Y, Width: max(row.Width-whenWidth, 0), Height: row.Height}, metrics.FontSizeS, gfx.WeightRegular, pal.text)
 			}
 			area.EndContent()
 		}
 	}
 	state.paintToolbarButtonIn(canvas, hitSessionLogsLive, action, detail.actionLabel, iconTerminal, false, true, false)
-	tools := ui.Rect{X: action.X, Y: action.Y + toolbarHeight + 6, Width: (action.Width - 12) / 3, Height: toolbarHeight}
+	tools := gfx.Rect{X: action.X, Y: action.Y + toolbarHeight + 6, Width: (action.Width - 12) / 3, Height: toolbarHeight}
 	state.paintToolbarButtonIn(canvas, hitSessionLogsCopy, tools, m.CopyMetadata, iconCopy, false, detail.copyEnabled, true)
 	tools.X += tools.Width + 6
 	state.paintToolbarButtonIn(canvas, hitSessionLogsLocate, tools, m.LocateHost, iconSearch, false, detail.hasHost, true)
@@ -1386,9 +1386,9 @@ func (state *State) paintSessionLogDetails(canvas *ui.Canvas, bounds ui.Rect, st
 
 // paintSessionLogText is one label with a one-line ellipsis that a warm paint
 // does not allocate: FitLine remembers the cut line per width.
-func paintSessionLogText(canvas *ui.Canvas, text string, bounds ui.Rect, size, weight float32, color ui.Color) {
+func paintSessionLogText(canvas *gfx.Canvas, text string, bounds gfx.Rect, size, weight float32, color gfx.Color) {
 	if bounds.Width <= 0 || bounds.Height <= 0 || text == "" {
 		return
 	}
-	canvas.Label(canvas.FitLine(text, size, weight, bounds.Width), bounds, ui.TextStyle{Size: size, Weight: weight, Color: color})
+	canvas.Label(canvas.FitLine(text, size, weight, bounds.Width), bounds, gfx.TextStyle{Size: size, Weight: weight, Color: color})
 }

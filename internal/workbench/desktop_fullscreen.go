@@ -3,7 +3,7 @@ package workbench
 import (
 	"fmt"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 const desktopFullscreenChord = "Ctrl+Alt+Enter"
@@ -69,19 +69,19 @@ func (state *State) toggleDesktopFullscreen(session *Session) {
 	}
 }
 
-func (state *State) desktopFullscreenKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if event.Key != ui.KeyEnter || event.Modifiers != ui.ModifierControl|ui.ModifierAlt {
-		return ui.EventResult{}, false
+func (state *State) desktopFullscreenKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if event.Key != gfx.KeyEnter || event.Modifiers != gfx.ModifierControl|gfx.ModifierAlt {
+		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if state.winChrome.fullscreenSession == 0 &&
 		(!ok || session.desk == nil || state.activeSection != sectionTerminal || state.modal != modalNone) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if !event.Release && !event.Repeat {
 		state.toggleDesktopFullscreen(session)
 	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 func (state *State) syncDesktopFullscreen() {

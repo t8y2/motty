@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
@@ -26,8 +26,8 @@ func TestMessageIsDeclaredAsTallAsItWasMeasured(t *testing.T) {
 		{kind: aiTool, call: llm.ToolCall{ID: "3", Name: "terminal_exec", Arguments: `{"command":"ls"}`}, status: aiToolDone, risk: risk.Low, result: "one\ntwo\nthree\n" + long},
 		{kind: aiTool, call: llm.ToolCall{ID: "4", Name: "terminal_read"}, status: aiToolDone, result: "output only"},
 	}
-	var canvas ui.Canvas
-	var view flex.View
+	var canvas gfx.Canvas
+	var view ui.View
 	cell, cellHeight := canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
 	for _, width := range []float32{352, 160} {
 		for _, open := range []bool{false, true} {
@@ -36,7 +36,7 @@ func TestMessageIsDeclaredAsTallAsItWasMeasured(t *testing.T) {
 				row := aiRowView{expanded: open}
 				state.aiBuild(&canvas, &row, item, width, cell, cellHeight, "title")
 				canvas.Reset()
-				f := view.Begin(&canvas, state.Theme(), ui.Rect{Width: width, Height: 4000})
+				f := view.Begin(&canvas, state.Theme(), gfx.Rect{Width: width, Height: 4000})
 				declared := state.declareAIRow(f, 0, &row, item)
 				f.End()
 				if got := declared.Rect().Height; got != row.height {

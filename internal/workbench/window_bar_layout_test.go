@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // However many tabs are open, the window bar's own buttons stay inside the window
@@ -15,11 +15,11 @@ func TestWindowBarButtonsStayInsideANarrowWindowWithManyTabs(t *testing.T) {
 		state.newHostSession(state.hosts[index%len(state.hosts)])
 	}
 	const width = 640
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: width, Height: 520})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: width, Height: 520})
 
-	var bounds []ui.Rect
-	for _, id := range []ui.ID{hitHome, hitNewTab, hitWindowLocalTerminal, hitCommandPalette, hitTheme, hitGitHub, hitWindowSettings} {
+	var bounds []gfx.Rect
+	for _, id := range []gfx.ID{hitHome, hitNewTab, hitWindowLocalTerminal, hitCommandPalette, hitTheme, hitGitHub, hitWindowSettings} {
 		hit, ok := hitByID(&canvas, id)
 		if !ok {
 			t.Fatalf("button %d is not in the window bar", id)
@@ -47,11 +47,11 @@ func TestWindowBarButtonsStayInsideANarrowWindowWithManyTabs(t *testing.T) {
 func TestMenusOpenedAtTheEdgeOfTheWindowStayInsideIt(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.newHostSession(state.hosts[0])
-	size := ui.Size{Width: 900, Height: 600}
-	edge := ui.Point{X: size.Width - 2, Y: size.Height - 2}
+	size := gfx.Size{Width: 900, Height: 600}
+	edge := gfx.Point{X: size.Width - 2, Y: size.Height - 2}
 
 	state.tabMenu = tabMenu{open: true, workspace: state.workspaceTabs[0].ID, at: edge}
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	rename, ok := hitByID(&canvas, hitTabMenuRename)
 	if !ok {

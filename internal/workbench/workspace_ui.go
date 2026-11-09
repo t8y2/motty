@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"math"
 	"motty/internal/sshconn"
@@ -16,17 +16,17 @@ const (
 	contextDrawerAt     = float32(900)
 )
 
-func (state *State) baseWorkspacePixelBounds(size ui.Size) ui.Rect {
+func (state *State) baseWorkspacePixelBounds(size gfx.Size) gfx.Rect {
 	return state.toolbarDockContentBounds(size, true)
 }
 
 // Background terminals retain their eventual chrome; section pages only
 // reserve the globally available docked actions.
-func (state *State) visibleWorkspacePixelBounds(size ui.Size) ui.Rect {
+func (state *State) visibleWorkspacePixelBounds(size gfx.Size) gfx.Rect {
 	return state.toolbarDockContentBounds(size, state.terminalPage())
 }
 
-func (state *State) toolbarDockContentBounds(size ui.Size, includeTerminal bool) ui.Rect {
+func (state *State) toolbarDockContentBounds(size gfx.Size, includeTerminal bool) gfx.Rect {
 	bounds := state.fullWorkspacePixelBounds(size)
 	left := state.toolbarDockSideReserveFor(true, includeTerminal)
 	right := state.toolbarDockSideReserveFor(false, includeTerminal)
@@ -36,24 +36,24 @@ func (state *State) toolbarDockContentBounds(size ui.Size, includeTerminal bool)
 	return bounds
 }
 
-func (state *State) fullWorkspacePixelBounds(size ui.Size) ui.Rect {
+func (state *State) fullWorkspacePixelBounds(size gfx.Size) gfx.Rect {
 	left := state.verticalTabsReserve(size)
-	return ui.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
+	return gfx.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
 }
 
-func (state *State) terminalSideRailBounds(size ui.Size) (ui.Rect, bool) {
+func (state *State) terminalSideRailBounds(size gfx.Size) (gfx.Rect, bool) {
 	if _, ok := state.terminalSideRailSession(); !ok {
-		return ui.Rect{}, false
+		return gfx.Rect{}, false
 	}
 	bounds := state.toolbarDockSideBounds(size)
 	return bounds, true
 }
 
-func (state *State) workspacePixelBounds(size ui.Size) ui.Rect {
+func (state *State) workspacePixelBounds(size gfx.Size) gfx.Rect {
 	return state.workspacePixelBoundsFor(state.deck.ActiveWorkspace(), size)
 }
 
-func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, size ui.Size) ui.Rect {
+func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, size gfx.Size) gfx.Rect {
 	bounds := state.baseWorkspacePixelBounds(size)
 	context, ok := state.deck.Context(workspaceID)
 	if ok && context.Open && size.Width >= contextDrawerAt {
@@ -84,18 +84,18 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	return bounds
 }
 
-func (state *State) contextPanelExtent(workspace ui.Rect, preferred float32) float32 {
+func (state *State) contextPanelExtent(workspace gfx.Rect, preferred float32) float32 {
 	maximum := min(layoutcore.MaxContextWidth, workspace.Width*0.45)
 	minimum := min(layoutcore.MinContextWidth, maximum)
 	return min(max(preferred, minimum), maximum)
 }
 
-func (state *State) contextPanelWidth(workspace ui.Rect, context layoutcore.ContextState) float32 {
+func (state *State) contextPanelWidth(workspace gfx.Rect, context layoutcore.ContextState) float32 {
 	return state.contextPanelExtent(workspace, context.Width)
 }
 
-func pixelBounds(frame ui.Rect, bounds FractionBounds) ui.Rect {
-	return ui.Rect{
+func pixelBounds(frame gfx.Rect, bounds FractionBounds) gfx.Rect {
+	return gfx.Rect{
 		X:      frame.X + bounds.X*frame.Width,
 		Y:      frame.Y + bounds.Y*frame.Height,
 		Width:  bounds.Width * frame.Width,
@@ -103,12 +103,12 @@ func pixelBounds(frame ui.Rect, bounds FractionBounds) ui.Rect {
 	}
 }
 
-func paneVirtualSize(bounds ui.Rect) ui.Size {
-	return ui.Size{Width: bounds.Width, Height: bounds.Height + windowBarHeight}
+func paneVirtualSize(bounds gfx.Rect) gfx.Size {
+	return gfx.Size{Width: bounds.Width, Height: bounds.Height + windowBarHeight}
 }
 
-func paneEmbedOrigin(bounds ui.Rect) ui.Point {
-	return ui.Point{X: bounds.X, Y: bounds.Y - windowBarHeight}
+func paneEmbedOrigin(bounds gfx.Rect) gfx.Point {
+	return gfx.Point{X: bounds.X, Y: bounds.Y - windowBarHeight}
 }
 
 func (state *State) refreshWorkspaceViews() bool {
@@ -126,7 +126,7 @@ func (state *State) refreshWorkspaceViews() bool {
 	return true
 }
 
-func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
+func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 	state.refreshWorkspaceViews()
 	state.workspacePaneTools.count = 0
 	frame := state.workspacePixelBounds(size)
@@ -145,7 +145,7 @@ func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 		// The pane's own ground, as in a split: a press here is a press inside the
 		// pane, so it must reach the pane rather than fall through to the window
 		// and take the keyboard away from the page.
-		canvas.HitWithOptions(hitPaneActivateList.At(0), pixelBounds(frame, pane.Bounds), state.messages.LabelNewTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true})
+		canvas.HitWithOptions(hitPaneActivateList.At(0), pixelBounds(frame, pane.Bounds), state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
 		if session, ok := state.sessionByIDPointer(pane.SessionID); ok {
 			state.paneCanvas.BeginEmbedded(canvas, 0)
 			state.paintSessionPage(&state.paneCanvas, paneVirtualSize(frame), session)
@@ -168,7 +168,7 @@ func (state *State) paintWorkspacePanes(canvas *ui.Canvas, size ui.Size) {
 			continue // a tab that is not showing
 		}
 		bounds := pixelBounds(frame, pane.Bounds)
-		canvas.HitWithOptions(hitPaneActivateList.At(index), bounds, state.messages.LabelNewTab, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true})
+		canvas.HitWithOptions(hitPaneActivateList.At(index), bounds, state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
 		session, ok := state.sessionByIDPointer(pane.SessionID)
 		if !ok {
 			state.paintEmptyPane(canvas, bounds, pane)
@@ -200,13 +200,13 @@ const windowCornerRadius = float32(10)
 // The two arcs that carry the rim round a window corner, as one-pixel strokes
 // whose centerline runs half a pixel inside the pane's edge. Built once: the rim
 // is painted every frame and must not allocate.
-var rimCornerRight, rimCornerLeft = func() (right, left ui.Path) {
+var rimCornerRight, rimCornerLeft = func() (right, left gfx.Path) {
 	const r, k = windowCornerRadius, 0.5522847
 	const c = r - 0.5 // radius of the centerline
 	// Right corner, box r x r with the circle's center at its top-left.
-	right = ui.NewPath(r, r, ui.MoveTo(c, 0), ui.CubicTo(c, c*k, c*k, c, 0, c))
+	right = gfx.NewPath(r, r, gfx.MoveTo(c, 0), gfx.CubicTo(c, c*k, c*k, c, 0, c))
 	// Left corner, box r x r with the circle's center at its top-right.
-	left = ui.NewPath(r, r, ui.MoveTo(r, c), ui.CubicTo(r-c*k, c, r-c, c*k, r-c, 0))
+	left = gfx.NewPath(r, r, gfx.MoveTo(r, c), gfx.CubicTo(r-c*k, c, r-c, c*k, r-c, 0))
 	return right, left
 }()
 
@@ -214,11 +214,11 @@ var rimCornerRight, rimCornerLeft = func() (right, left ui.Path) {
 // way into the terminal's background. Translucent, the same line came out
 // different on every side, because each side lies over something else (the
 // window bar, an info bar, a divider).
-func (state *State) activePaneRimColor() ui.Color {
+func (state *State) activePaneRimColor() gfx.Color {
 	const amount = 0.34
 	pal := state.pal
 	mix := func(from, to float32) float32 { return from + (to-from)*amount }
-	return ui.Color{
+	return gfx.Color{
 		Red: mix(pal.terminal.Red, pal.accent.Red), Green: mix(pal.terminal.Green, pal.accent.Green),
 		Blue: mix(pal.terminal.Blue, pal.accent.Blue), Alpha: 1,
 	}
@@ -230,7 +230,7 @@ func (state *State) activePaneRimColor() ui.Color {
 // pixels so all four sides are the same line, and where it meets one of the
 // window's rounded bottom corners the rim turns with the window instead of
 // ending short of it.
-func (state *State) paintActivePaneGlow(canvas *ui.Canvas, frame ui.Rect, window ui.Size) {
+func (state *State) paintActivePaneGlow(canvas *gfx.Canvas, frame gfx.Rect, window gfx.Size) {
 	if len(state.panes) < 2 {
 		return
 	}
@@ -253,39 +253,39 @@ func (state *State) paintActivePaneGlow(canvas *ui.Canvas, frame ui.Rect, window
 		// Straight edges. Where an arc takes over, a straight edge runs half a
 		// pixel into it: the line is opaque, so the overlap shows nothing, and it
 		// hides the feathered end of the arc.
-		canvas.Fill(ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: width}, line)
-		canvas.Fill(ui.Rect{X: bounds.X + leftInset - overlap, Y: bottom - width, Width: max(bounds.Width-leftInset-rightInset+2*overlap, 0), Height: width}, line)
+		canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: width}, line)
+		canvas.Fill(gfx.Rect{X: bounds.X + leftInset - overlap, Y: bottom - width, Width: max(bounds.Width-leftInset-rightInset+2*overlap, 0), Height: width}, line)
 		sideHeight := func(inset float32) float32 {
 			if inset == 0 {
 				return bounds.Height - 2*width // from the top edge to the bottom edge
 			}
 			return bounds.Height - width - inset + overlap // from the top edge to the arc
 		}
-		canvas.Fill(ui.Rect{X: bounds.X, Y: bounds.Y + width, Width: width, Height: max(sideHeight(leftInset), 0)}, line)
-		canvas.Fill(ui.Rect{X: right - width, Y: bounds.Y + width, Width: width, Height: max(sideHeight(rightInset), 0)}, line)
-		style := ui.PathStyle{Stroke: line, StrokeWidth: width}
+		canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y + width, Width: width, Height: max(sideHeight(leftInset), 0)}, line)
+		canvas.Fill(gfx.Rect{X: right - width, Y: bounds.Y + width, Width: width, Height: max(sideHeight(rightInset), 0)}, line)
+		style := gfx.PathStyle{Stroke: line, StrokeWidth: width}
 		if rightInset > 0 {
-			canvas.DrawPath(rimCornerRight, ui.Rect{X: right - rightInset, Y: bottom - rightInset, Width: rightInset, Height: rightInset}, style)
+			canvas.DrawPath(rimCornerRight, gfx.Rect{X: right - rightInset, Y: bottom - rightInset, Width: rightInset, Height: rightInset}, style)
 		}
 		if leftInset > 0 {
-			canvas.DrawPath(rimCornerLeft, ui.Rect{X: bounds.X, Y: bottom - leftInset, Width: leftInset, Height: leftInset}, style)
+			canvas.DrawPath(rimCornerLeft, gfx.Rect{X: bounds.X, Y: bottom - leftInset, Width: leftInset, Height: leftInset}, style)
 		}
 		return
 	}
 }
 
 // snapRect rounds every edge of r to a whole logical pixel.
-func snapRect(r ui.Rect) ui.Rect {
+func snapRect(r gfx.Rect) gfx.Rect {
 	left, top := float32(math.Round(float64(r.X))), float32(math.Round(float64(r.Y)))
 	right, bottom := float32(math.Round(float64(r.X+r.Width))), float32(math.Round(float64(r.Y+r.Height)))
-	return ui.Rect{X: left, Y: top, Width: right - left, Height: bottom - top}
+	return gfx.Rect{X: left, Y: top, Width: right - left, Height: bottom - top}
 }
 
-func (state *State) paintEmptyWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintEmptyWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	state.paintNewTabPage(canvas, bounds)
 }
 
-func (state *State) paintEmptyPane(canvas *ui.Canvas, bounds ui.Rect, pane Pane) {
+func (state *State) paintEmptyPane(canvas *gfx.Canvas, bounds gfx.Rect, pane Pane) {
 	if pane.Active {
 		state.paintNewTabPage(canvas, bounds)
 		return
@@ -293,13 +293,13 @@ func (state *State) paintEmptyPane(canvas *ui.Canvas, bounds ui.Rect, pane Pane)
 	f := state.paneChrome.Begin(canvas, state.Theme(), bounds)
 	label := state.messages.LabelNewTab
 	f.Column().Fill().Background(state.pal.workspace).Children(func() {
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(state.pal.muted).LineHeight(22).
-			Width(canvas.TextWidthWeight(label, metrics.FontSizeM, ui.WeightMedium)+8).MaxWidth(max(bounds.Width-24, 0)).Self(flex.Start).MarginSides(42, 12, 0, 12)
+		f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(22).
+			Width(canvas.TextWidthWeight(label, metrics.FontSizeM, gfx.WeightMedium)+8).MaxWidth(max(bounds.Width-24, 0)).Self(ui.Start).MarginSides(42, 12, 0, 12)
 	})
 	f.End()
 }
 
-func (state *State) paintSessionPage(canvas *ui.Canvas, size ui.Size, session *Session) {
+func (state *State) paintSessionPage(canvas *gfx.Canvas, size gfx.Size, session *Session) {
 	switch {
 	case session.restored:
 		state.paintRestoredSessionPage(canvas, size, session)
@@ -320,7 +320,7 @@ func (state *State) contextSession() *Session {
 	return session
 }
 
-func (state *State) paintContextPanel(canvas *ui.Canvas, size ui.Size, workspace ui.Rect) {
+func (state *State) paintContextPanel(canvas *gfx.Canvas, size gfx.Size, workspace gfx.Rect) {
 	context, ok := state.deck.Context(state.deck.ActiveWorkspace())
 	if !ok || !context.Open || state.monitorDrawer(size) {
 		return
@@ -331,7 +331,7 @@ func (state *State) paintContextPanel(canvas *ui.Canvas, size ui.Size, workspace
 	session := state.contextSession()
 	// A dialog belongs to the window, not to the narrow panel that raised it.
 	if session != nil && session.files != nil && session.files.dialog != sftpDialogNone {
-		defer state.paintSFTPDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height}, session.files)
+		defer state.paintSFTPDialog(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, session.files)
 	}
 	if size.Width < contextDrawerAt {
 		side := components.DrawerLeft
@@ -361,41 +361,41 @@ func (state *State) paintContextPanel(canvas *ui.Canvas, size ui.Size, workspace
 	state.paintContextSFTP(canvas, panel, session)
 }
 
-func (state *State) paintContextSFTP(canvas *ui.Canvas, bounds ui.Rect, session *Session) {
+func (state *State) paintContextSFTP(canvas *gfx.Canvas, bounds gfx.Rect, session *Session) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
 	state.contextRect = bounds
 	state.contextCanvas.BeginEmbedded(canvas, contextMount)
 	if session != nil && session.files != nil {
-		state.paintSFTPPage(&state.contextCanvas, ui.Size{Width: bounds.Width, Height: bounds.Height + windowBarHeight}, session)
+		state.paintSFTPPage(&state.contextCanvas, gfx.Size{Width: bounds.Width, Height: bounds.Height + windowBarHeight}, session)
 	} else {
-		state.paintEmptyContextSFTP(&state.contextCanvas, ui.Size{Width: bounds.Width, Height: bounds.Height + windowBarHeight}, session)
+		state.paintEmptyContextSFTP(&state.contextCanvas, gfx.Size{Width: bounds.Width, Height: bounds.Height + windowBarHeight}, session)
 	}
 	state.contextCanvas.EndFrame()
 	canvas.Clip(bounds)
-	canvas.Embed(&state.contextCanvas, ui.Point{X: bounds.X, Y: bounds.Y - windowBarHeight}, contextMount)
+	canvas.Embed(&state.contextCanvas, gfx.Point{X: bounds.X, Y: bounds.Y - windowBarHeight}, contextMount)
 	canvas.Unclip()
 	adoptEmbeddedFocus(canvas, &state.contextCanvas, contextMount)
 }
 
 // paintEmptyContextSFTP is the panel before a file list exists: the same title
 // and close button as the list, then what the panel needs to start.
-func (state *State) paintEmptyContextSFTP(canvas *ui.Canvas, size ui.Size, session *Session) {
+func (state *State) paintEmptyContextSFTP(canvas *gfx.Canvas, size gfx.Size, session *Session) {
 	pal, messages := state.pal, state.messages
 	headerBackground, headerBorder := pal.workspace, pal.line
-	bounds := ui.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
+	bounds := gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
 	canConnect := session != nil && (session.isLocal() || session.hasServer() && session.conn != nil && session.phase == sshconn.PhaseConnected)
 	// The message sits a little above the middle of the panel.
 	middle := bounds.Height * 0.38
 
-	var header, closeButton, sideButton, sessionTitle, openButton flex.Box
+	var header, closeButton, sideButton, sessionTitle, openButton ui.Box
 	buttonWidth := min(max(size.Width-2*sftpPad, 0), 160)
 	f := state.filesLayout.Begin(canvas, state.Theme(), bounds)
 	f.Stack().Fill().Background(pal.workspace).Children(func() {
 		f.Column().Fill().PadX(sftpPad).Children(func() {
-			header = f.Row().FillWidth().Height(infoBarHeight).Shrink(0).MarginSides(0, -sftpPad, 0, -sftpPad).PadX(sftpPad).Background(headerBackground).Gap(8).Items(flex.Center).Children(func() {
-				f.Text(messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
+			header = f.Row().FillWidth().Height(infoBarHeight).Shrink(0).MarginSides(0, -sftpPad, 0, -sftpPad).PadX(sftpPad).Background(headerBackground).Gap(8).Items(ui.Center).Children(func() {
+				f.Text(messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
 				sideButton = f.Slot().Size(sftpHeaderButton, sftpHeaderButton)
 				closeButton = f.Slot().Size(sftpHeaderButton, sftpHeaderButton)
 			})
@@ -406,8 +406,8 @@ func (state *State) paintEmptyContextSFTP(canvas *ui.Canvas, size ui.Size, sessi
 		})
 		f.Column().Fill().PadSides(0, sftpPad, 0, sftpPad).Children(func() {
 			if canConnect {
-				f.Text(messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(22).TextCenter().MarginSides(middle-32, 0, 10, 0)
-				openButton = f.Slot().Size(buttonWidth, 34).Self(flex.Center)
+				f.Text(messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).TextCenter().MarginSides(middle-32, 0, 10, 0)
+				openButton = f.Slot().Size(buttonWidth, 34).Self(ui.Center)
 			} else {
 				f.Text(messages.SFTPUnavailable).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(middle-12, 0, 0, 0)
 			}
@@ -416,20 +416,20 @@ func (state *State) paintEmptyContextSFTP(canvas *ui.Canvas, size ui.Size, sessi
 	f.End()
 
 	headerBounds := header.Rect()
-	canvas.Fill(ui.Rect{X: headerBounds.X, Y: headerBounds.Y + headerBounds.Height - 1, Width: headerBounds.Width, Height: 1}, headerBorder)
+	canvas.Fill(gfx.Rect{X: headerBounds.X, Y: headerBounds.Y + headerBounds.Height - 1, Width: headerBounds.Width, Height: 1}, headerBorder)
 	state.paintIconButton(canvas, hitSFTPClose, iconClose, closeButton.Rect(), messages.TipSFTPClose, false, iconButtonQuiet, headerBackground)
 	moveIcon, moveHint := state.sftpPanelMoveAction()
 	state.paintIconButton(canvas, hitSFTPPanelSide, moveIcon, sideButton.Rect(), moveHint, false, iconButtonQuiet, headerBackground)
 	if session != nil {
 		titleBounds := sessionTitle.Rect()
-		canvas.Label(elide(canvas, session.Title, metrics.FontSizeS, ui.WeightRegular, titleBounds.Width), titleBounds, ui.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
+		canvas.Label(elide(canvas, session.Title, metrics.FontSizeS, gfx.WeightRegular, titleBounds.Width), titleBounds, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
 	}
 	if canConnect {
 		components.BeginButton(canvas, state.Theme(), hitSFTPOpen, openButton.Rect()).Default(messages.SFTPOpen)
 	}
 }
 
-func adoptEmbeddedFocus(canvas, child *ui.Canvas, mount ui.Scope) {
+func adoptEmbeddedFocus(canvas, child *gfx.Canvas, mount gfx.Scope) {
 	if scope := child.TrappedFocusScope(); !scope.IsZero() {
 		canvas.TrapFocus(tree.MountID(mount, scope))
 	}
@@ -441,7 +441,7 @@ func adoptEmbeddedFocus(canvas, child *ui.Canvas, mount ui.Scope) {
 	}
 }
 
-func (state *State) paintPaneDividers(canvas *ui.Canvas, frame ui.Rect) {
+func (state *State) paintPaneDividers(canvas *gfx.Canvas, frame gfx.Rect) {
 	layout, _ := state.deck.Layout(state.deck.ActiveWorkspace())
 	for index := range state.paneSplits {
 		split := state.paneSplits[index]
@@ -465,75 +465,75 @@ func (state *State) paintPaneDividers(canvas *ui.Canvas, frame ui.Rect) {
 	}
 }
 
-func (state *State) paneDividerPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Kind == ui.PointerDown && event.Target.Scope() == hitPaneDividerList {
-		if event.Button != ui.PointerButtonPrimary && event.Button != ui.PointerButtonNone {
-			return ui.EventResult{}, true
+func (state *State) paneDividerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind == gfx.PointerDown && event.Target.Scope() == hitPaneDividerList {
+		if event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone {
+			return gfx.EventResult{}, true
 		}
 		state.draggedPaneSplit = uint32(state.paneSplits[item(event.Target)].NodeID)
 		return state.dragPaneDivider(event), true
 	}
 	if state.draggedPaneSplit == 0 {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	switch event.Kind {
-	case ui.PointerMove:
+	case gfx.PointerMove:
 		if event.Captured {
 			return state.dragPaneDivider(event), true
 		}
-	case ui.PointerUp:
+	case gfx.PointerUp:
 		result := state.dragPaneDivider(event)
 		state.draggedPaneSplit = 0
 		state.save()
 		result.Handled = true
 		result.Focus = state.activeTerminalFocusHit()
 		return result, true
-	case ui.PointerExit:
+	case gfx.PointerExit:
 		state.draggedPaneSplit = 0
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
-	return ui.EventResult{Handled: true}, true
+	return gfx.EventResult{Handled: true}, true
 }
 
-func (state *State) contextDividerPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Kind == ui.PointerDown && event.Target == hitContextDivider {
-		if event.Button != ui.PointerButtonPrimary && event.Button != ui.PointerButtonNone {
-			return ui.EventResult{}, true
+func (state *State) contextDividerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind == gfx.PointerDown && event.Target == hitContextDivider {
+		if event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone {
+			return gfx.EventResult{}, true
 		}
 		context, ok := state.deck.Context(state.deck.ActiveWorkspace())
 		if !ok || !context.Open || event.Viewport.Width < contextDrawerAt {
-			return ui.EventResult{}, true
+			return gfx.EventResult{}, true
 		}
 		state.draggedContextDivider = true
 		return state.dragContextDivider(event), true
 	}
 	if !state.draggedContextDivider {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	switch event.Kind {
-	case ui.PointerMove:
+	case gfx.PointerMove:
 		if event.Captured {
 			return state.dragContextDivider(event), true
 		}
-	case ui.PointerUp:
+	case gfx.PointerUp:
 		result := state.dragContextDivider(event)
 		state.draggedContextDivider = false
 		state.save()
 		result.Handled = true
 		result.Focus = state.activeTerminalFocusHit()
 		return result, true
-	case ui.PointerExit:
+	case gfx.PointerExit:
 		state.draggedContextDivider = false
-		return ui.EventResult{Handled: true, Focus: state.activeTerminalFocusHit()}, true
+		return gfx.EventResult{Handled: true, Focus: state.activeTerminalFocusHit()}, true
 	}
-	return ui.EventResult{Handled: true}, true
+	return gfx.EventResult{Handled: true}, true
 }
 
-func (state *State) dragContextDivider(event ui.PointerEvent) ui.EventResult {
+func (state *State) dragContextDivider(event gfx.PointerEvent) gfx.EventResult {
 	workspaceID := state.deck.ActiveWorkspace()
 	context, ok := state.deck.Context(workspaceID)
 	if !ok || !context.Open || event.Viewport.Width < contextDrawerAt {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	base := state.baseWorkspacePixelBounds(event.Viewport)
 	base.Width -= state.aiReserve(workspaceID, event.Viewport)
@@ -545,16 +545,16 @@ func (state *State) dragContextDivider(event ui.PointerEvent) ui.EventResult {
 	}
 	width := (base.Width - 1) * ratio
 	if width == context.Width {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	context.Width = min(max(width, layoutcore.MinContextWidth), layoutcore.MaxContextWidth)
 	state.sftpPanelWidth = context.Width
 	if state.deck.SetContext(workspaceID, context) != nil {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	state.fitSFTP(state.viewport)
-	return ui.EventResult{Handled: true, Repaint: true}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
 // paneGroundFocus is where the keyboard goes when a pane's own ground — its bar,
@@ -564,22 +564,22 @@ func (state *State) dragContextDivider(event ui.PointerEvent) ui.EventResult {
 //
 // The identity is the one the page paints, before the pane's mount: a page does
 // not know which pane it is in.
-func (state *State) paneGroundFocus(session *Session) ui.ID {
+func (state *State) paneGroundFocus(session *Session) gfx.ID {
 	switch {
 	case session.restored:
 		return hitConnRetry // the page's one action, the key it shows
 	case state.showsProgress(session):
-		return ui.ID{}
+		return gfx.ID{}
 	case session.desk != nil, session.term != nil:
 		return hitTerminalList.At(int(session.ID))
 	}
-	return ui.ID{}
+	return gfx.ID{}
 }
 
 // paneGround finds the pane whose ground a hit is, the area a page leaves open
 // between its controls. It is where a press switches panes. ok is false for
 // everything a page or the window declared itself.
-func (state *State) paneGround(hit ui.ID) (*Session, bool) {
+func (state *State) paneGround(hit gfx.ID) (*Session, bool) {
 	if hit.Scope() != hitPaneActivateList || state.activeSection != sectionTerminal {
 		return nil, false
 	}
@@ -595,7 +595,7 @@ func (state *State) paneGround(hit ui.ID) (*Session, bool) {
 // side by side the pane's mount is part of it, while a workspace of one pane
 // paints its page in place and the page's own identity is the one the window
 // knows.
-func (state *State) paneIdentity(session *Session, local ui.ID) ui.ID {
+func (state *State) paneIdentity(session *Session, local gfx.ID) gfx.ID {
 	state.refreshWorkspaceViews()
 	if len(state.panes) > 1 {
 		return tree.MountID(paneMount(session), local)
@@ -603,15 +603,15 @@ func (state *State) paneIdentity(session *Session, local ui.ID) ui.ID {
 	return local
 }
 
-func (state *State) activeTerminalFocusHit() ui.ID {
+func (state *State) activeTerminalFocusHit() gfx.ID {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || session.term == nil {
-		return ui.ID{}
+		return gfx.ID{}
 	}
 	return state.paneIdentity(session, hitTerminalList.At(int(session.ID)))
 }
 
-func (state *State) dragPaneDivider(event ui.PointerEvent) ui.EventResult {
+func (state *State) dragPaneDivider(event gfx.PointerEvent) gfx.EventResult {
 	splitID := layoutcore.NodeID(state.draggedPaneSplit)
 	var split PaneSplit
 	found := false
@@ -622,15 +622,15 @@ func (state *State) dragPaneDivider(event ui.PointerEvent) ui.EventResult {
 		}
 	}
 	if !found {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	bounds := pixelBounds(state.workspacePixelBounds(event.Viewport), split.Bounds)
 	layout, ok := state.deck.Layout(state.deck.ActiveWorkspace())
 	minimum, maximum, ok := paneSplitRatioLimits(layout, split.NodeID, bounds)
 	if !ok {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
-	resizable := components.BeginResizable(nil, state.Theme(), ui.ID{}, bounds, split.Ratio).
+	resizable := components.BeginResizable(nil, state.Theme(), gfx.ID{}, bounds, split.Ratio).
 		Limits(minimum, maximum).
 		HandleSize(paneDividerHitWidth)
 	position := event.X
@@ -640,15 +640,15 @@ func (state *State) dragPaneDivider(event ui.PointerEvent) ui.EventResult {
 	}
 	ratio := resizable.FractionAt(position)
 	if ratio == split.Ratio || state.SetPaneRatio(split.NodeID, ratio) != nil {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	state.refreshWorkspaceViews()
 	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	state.fitSFTP(state.viewport)
-	return ui.EventResult{Handled: true, Repaint: true}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
-func paneSplitRatioLimits(layout *layoutcore.Layout, splitID layoutcore.NodeID, bounds ui.Rect) (float32, float32, bool) {
+func paneSplitRatioLimits(layout *layoutcore.Layout, splitID layoutcore.NodeID, bounds gfx.Rect) (float32, float32, bool) {
 	if layout == nil {
 		return 0, 0, false
 	}
@@ -734,12 +734,12 @@ func (state *State) canSplitActivePane(axis layoutcore.Axis) bool {
 	return ok
 }
 
-func (state *State) activePaneSplitBounds(axis layoutcore.Axis) (ui.Rect, bool) {
+func (state *State) activePaneSplitBounds(axis layoutcore.Axis) (gfx.Rect, bool) {
 	state.refreshWorkspaceViews()
 	workspaceID := state.deck.ActiveWorkspace()
 	activePane := state.deck.ActivePane(workspaceID)
 	if workspaceID == 0 || activePane == 0 || len(state.panes) >= layoutcore.MaxPanes {
-		return ui.Rect{}, false
+		return gfx.Rect{}, false
 	}
 	var active Pane
 	found := false
@@ -751,12 +751,12 @@ func (state *State) activePaneSplitBounds(axis layoutcore.Axis) (ui.Rect, bool) 
 		}
 	}
 	if !found {
-		return ui.Rect{}, false
+		return gfx.Rect{}, false
 	}
 	bounds := pixelBounds(state.workspacePixelBounds(state.viewport), active.Bounds)
 	if axis == layoutcore.Horizontal && bounds.Width < minPaneWidth*2+1 ||
 		axis == layoutcore.Vertical && bounds.Height < minPaneHeight*2+1 {
-		return ui.Rect{}, false
+		return gfx.Rect{}, false
 	}
 	return bounds, true
 }
@@ -833,28 +833,28 @@ func (state *State) sessionForPaneSlot(slot uint8) *Session {
 // handlers are given the local one. ok is false for the window's own identities
 // and for a page that was not mounted (a workspace of one pane paints its page in
 // place).
-func (state *State) decodePaneHit(hit ui.ID) (*Session, ui.ID, bool) {
+func (state *State) decodePaneHit(hit gfx.ID) (*Session, gfx.ID, bool) {
 	if state.activeSection != sectionTerminal {
-		return nil, ui.ID{}, false
+		return nil, gfx.ID{}, false
 	}
 	mount, ok := tree.MountOf(hit.Scope())
 	if !ok {
-		return nil, ui.ID{}, false
+		return nil, gfx.ID{}, false
 	}
 	local, ok := tree.Local(mount, hit)
 	if !ok {
-		return nil, ui.ID{}, false
+		return nil, gfx.ID{}, false
 	}
 	if mount == contextMount {
 		session, ok := state.sessionByIDPointer(state.activeSessionID)
 		return session, local, ok
 	}
 	if tree.Parent(mount) != panesHits {
-		return nil, ui.ID{}, false
+		return nil, gfx.ID{}, false
 	}
 	slot, ok := tree.ScopeName(mount).Index()
 	if !ok {
-		return nil, ui.ID{}, false
+		return nil, gfx.ID{}, false
 	}
 	session := state.sessionForPaneSlot(uint8(slot))
 	return session, local, session != nil
@@ -870,14 +870,14 @@ func (state *State) paneForSession(sessionID uint32) (Pane, bool) {
 	return Pane{}, false
 }
 
-func (state *State) paneEventGeometry(sessionID uint32, size ui.Size) (ui.Rect, ui.Point, ui.Size, bool) {
+func (state *State) paneEventGeometry(sessionID uint32, size gfx.Size) (gfx.Rect, gfx.Point, gfx.Size, bool) {
 	workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(sessionID))
 	if !ok || workspaceID != state.deck.ActiveWorkspace() {
-		return ui.Rect{}, ui.Point{}, size, false
+		return gfx.Rect{}, gfx.Point{}, size, false
 	}
 	fraction, _, ok := state.paneFractionBounds(workspaceID, paneID)
 	if !ok {
-		return ui.Rect{}, ui.Point{}, size, false
+		return gfx.Rect{}, gfx.Point{}, size, false
 	}
 	bounds := pixelBounds(state.workspacePixelBoundsFor(workspaceID, size), fraction)
 	return bounds, paneEmbedOrigin(bounds), paneVirtualSize(bounds), true
@@ -913,6 +913,6 @@ func findPaneFractionBounds(layout *layoutcore.Layout, nodeID layoutcore.NodeID,
 }
 
 // pointInRect reports whether (x, y) lies inside bounds.
-func pointInRect(x, y float32, bounds ui.Rect) bool {
+func pointInRect(x, y float32, bounds gfx.Rect) bool {
 	return x >= bounds.X && y >= bounds.Y && x < bounds.X+bounds.Width && y < bounds.Y+bounds.Height
 }

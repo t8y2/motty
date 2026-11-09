@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func chipTestState() *State {
@@ -92,7 +92,7 @@ func TestHostChipMenuReachesEveryNestedGroup(t *testing.T) {
 			t.Fatal("the menu did not open")
 		}
 		state.chipMenu.tree.Seek(strings.TrimPrefix(name, "School/"))
-		state.hostChipMenuKey(ui.KeyEvent{Key: ui.KeyEnter})
+		state.hostChipMenuKey(gfx.KeyEvent{Key: gfx.KeyEnter})
 		if state.chipMenu.open || !state.hostFilterOn || state.hostFilter != name {
 			t.Fatalf("choosing %q left the filter at %q (on %v, menu open %v)", name, state.hostFilter, state.hostFilterOn, state.chipMenu.open)
 		}
@@ -104,15 +104,15 @@ func TestHostChipMenuReachesEveryNestedGroup(t *testing.T) {
 func TestAnOpenChipMenuKeepsTheWheelOffTheHostsList(t *testing.T) {
 	state := manyHostsState(t, 40)
 	state.activeSection = sectionHosts
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if state.hostsContent <= state.chrome.hostList.Height {
 		t.Fatalf("the hosts list does not scroll at all (content %v, view %v)", state.hostsContent, state.chrome.hostList.Height)
 	}
 	state.chipMenu.open = true
 	before := state.hostsScroll
-	result := state.Scroll(ui.ScrollEvent{DeltaY: 120, Precise: true, X: 600, Y: 400, Viewport: size})
+	result := state.Scroll(gfx.ScrollEvent{DeltaY: 120, Precise: true, X: 600, Y: 400, Viewport: size})
 	if !result.Handled {
 		t.Fatal("the open chip menu left the wheel unhandled")
 	}
@@ -138,7 +138,7 @@ func TestPinnedHostChipLeavesRoomForItsMarker(t *testing.T) {
 	if !ok {
 		t.Fatalf("the pinned chip painted no %q", label)
 	}
-	natural := canvas.TextWidthWeight(label, metrics.FontSizeS, ui.WeightSemibold)
+	natural := canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightSemibold)
 	if painted.Bounds.Width < natural-0.5 {
 		t.Fatalf("the pinned chip squeezed %q to %.1f of its %.1f natural width", label, painted.Bounds.Width, natural)
 	}
@@ -149,13 +149,13 @@ func TestPinnedHostChipLeavesRoomForItsMarker(t *testing.T) {
 
 // textByValue is the painted text with that value on the row the bounds name, so
 // a label shared by several controls is matched to the one asked about.
-func textByValue(texts []ui.Text, value string, row ui.Rect) (ui.Text, bool) {
+func textByValue(texts []gfx.Text, value string, row gfx.Rect) (gfx.Text, bool) {
 	for _, text := range texts {
 		if text.Value == value && text.Bounds.Y >= row.Y && text.Bounds.Y+text.Bounds.Height <= row.Y+row.Height {
 			return text, true
 		}
 	}
-	return ui.Text{}, false
+	return gfx.Text{}, false
 }
 
 func TestHostGroupChipLabelIsTheLastSegment(t *testing.T) {

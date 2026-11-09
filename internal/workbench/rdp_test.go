@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/desktop"
 	"motty/internal/sshconn"
 )
@@ -132,12 +132,12 @@ func TestRDPConsoleSessionIsAnRDPOnlySwitch(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.openHostDialog()
 	state.editor.setProtocol(protocolVNC)
-	canvas, _ := paintAt(state, ui.Size{Width: 1200, Height: 1000})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 1000})
 	if _, ok := hitByID(canvas, hitDialogConsole); ok {
 		t.Fatal("a VNC host was offered a console session")
 	}
 	state.editor.setProtocol(protocolRDP)
-	canvas, _ = paintAt(state, ui.Size{Width: 1200, Height: 1000})
+	canvas, _ = paintAt(state, gfx.Size{Width: 1200, Height: 1000})
 	if _, ok := hitByID(canvas, hitDialogConsole); !ok {
 		t.Fatal("an RDP host was not offered a console session")
 	}

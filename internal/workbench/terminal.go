@@ -11,8 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 	"motty/internal/cmdhistory"
 	"motty/internal/i18n"
@@ -90,14 +90,14 @@ type terminal struct {
 	commandReporting      bool
 	submittedLines        int
 	blink                 cursorBlink
-	wheelX                float32            // horizontal wheel travel not yet worth a whole cell
-	wheelY                float32            // vertical wheel travel not yet worth a whole cell
-	railScroll            float32            // horizontal or vertical tool-rail offset
-	railViewport          ui.Rect            // last painted, scrollable tool viewport
-	railBounds            ui.Rect            // full painted rail, including its gutter
-	railContentExtent     float32            // full length of the ordered tool rail
-	railIDs               [maxBarTools]ui.ID // ordered controls for roving keyboard focus
-	railEnabled           [maxBarTools]bool  // disabled actions stay visible but leave the keyboard order
+	wheelX                float32             // horizontal wheel travel not yet worth a whole cell
+	wheelY                float32             // vertical wheel travel not yet worth a whole cell
+	railScroll            float32             // horizontal or vertical tool-rail offset
+	railViewport          gfx.Rect            // last painted, scrollable tool viewport
+	railBounds            gfx.Rect            // full painted rail, including its gutter
+	railContentExtent     float32             // full length of the ordered tool rail
+	railIDs               [maxBarTools]gfx.ID // ordered controls for roving keyboard focus
+	railEnabled           [maxBarTools]bool   // disabled actions stay visible but leave the keyboard order
 	railCount             int
 	barDragging           bool          // the scrollbar thumb is held
 	barGrab               float32       // where on the thumb it was taken
@@ -953,17 +953,17 @@ func (state *State) releaseKeptConnection(session *Session) {
 // terminalGeometry is where the terminal draws: the area below the window and
 // info bars, and the cell grid that fits in it.
 type terminalGeometry struct {
-	area       ui.Rect
+	area       gfx.Rect
 	left, top  float32 // where cell (0,0) sits
 	cols, rows int
 }
 
 // terminalGeometry lays the terminal out for a window size and cell size.
-func terminalLayout(size ui.Size, cellWidth, cellHeight float32, pad terminalPadding) terminalGeometry {
+func terminalLayout(size gfx.Size, cellWidth, cellHeight float32, pad terminalPadding) terminalGeometry {
 	return terminalLayoutWithInfoBar(size, cellWidth, cellHeight, infoBarHeight, pad)
 }
 
-func terminalLayoutWithInfoBar(size ui.Size, cellWidth, cellHeight, barHeight float32, pad terminalPadding) terminalGeometry {
+func terminalLayoutWithInfoBar(size gfx.Size, cellWidth, cellHeight, barHeight float32, pad terminalPadding) terminalGeometry {
 	return terminalLayoutWithChrome(size, cellWidth, cellHeight, terminalChrome{top: barHeight}, pad)
 }
 
@@ -971,8 +971,8 @@ type terminalChrome struct {
 	top float32
 }
 
-func terminalLayoutWithChrome(size ui.Size, cellWidth, cellHeight float32, chrome terminalChrome, pad terminalPadding) terminalGeometry {
-	area := ui.Rect{
+func terminalLayoutWithChrome(size gfx.Size, cellWidth, cellHeight float32, chrome terminalChrome, pad terminalPadding) terminalGeometry {
+	area := gfx.Rect{
 		Y:      windowBarHeight + chrome.top,
 		Width:  size.Width,
 		Height: max(size.Height-windowBarHeight-chrome.top, 0),
@@ -1099,7 +1099,7 @@ func (state *State) layoutForSession(sessionID uint32) terminalGeometry {
 
 // terminalLayoutForEvent lays out a terminal using the pane-local viewport and
 // coordinates viva supplies after decoding an embedded hit.
-func (state *State) terminalLayoutForEvent(sessionID uint32, viewport ui.Size) terminalGeometry {
+func (state *State) terminalLayoutForEvent(sessionID uint32, viewport gfx.Size) terminalGeometry {
 	chrome, sessionOK := state.terminalChromeForSession(sessionID)
 	if !sessionOK {
 		chrome = terminalChrome{top: infoBarHeight}
@@ -1147,7 +1147,7 @@ func (state *State) fitTerminal(session *Session) {
 }
 
 // Resize is the window-size callback: the terminals follow the window.
-func (state *State) Resize(size ui.Size) {
+func (state *State) Resize(size gfx.Size) {
 	state.viewport = size
 	state.fitTerminals()
 	state.fitSFTP(size)
@@ -1157,7 +1157,7 @@ func (state *State) Resize(size ui.Size) {
 }
 
 // terminalSession finds the session whose terminal owns a hit.
-func (state *State) terminalSession(hit ui.ID) *Session {
+func (state *State) terminalSession(hit gfx.ID) *Session {
 	if hit.Scope() != hitTerminalList {
 		return nil
 	}
@@ -1205,7 +1205,7 @@ func (state *State) TerminalInput(context app.TextInputContext) *app.TextInput {
 	if t.preedit.Composing {
 		cells += displayCells(t.preedit.Value)
 	}
-	t.input.Bounds = ui.Rect{
+	t.input.Bounds = gfx.Rect{
 		X:     geometry.left + float32(cursor.X)*state.cellWidth,
 		Y:     geometry.top + float32(cursor.Y)*state.cellHeight,
 		Width: float32(cells) * state.cellWidth, Height: state.cellHeight,
@@ -1326,15 +1326,15 @@ func displayCells(value string) int {
 // terminalKey encodes keys left unclaimed by the application shortcut routes.
 // Unclaimed Command chords are forwarded after kitty keyboard negotiation;
 // macOS Command line edits keep their existing behavior.
-func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventResult {
+func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventResult {
 	t := session.term
-	handled := ui.EventResult{Handled: true}
-	if t.preedit.Composing && event.Key == ui.KeyEnter && event.Modifiers == 0 && !t.screen.Modes().AltScreen {
+	handled := gfx.EventResult{Handled: true}
+	if t.preedit.Composing && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !t.screen.Modes().AltScreen {
 		return handled
 	}
-	if event.Modifiers&ui.ModifierMeta != 0 && !event.Key.IsModifier() {
-		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && keymap.Primary == ui.ModifierMeta {
-			event.Key, event.Modifiers, event.Text, event.Typed = ui.KeyUnknown, ui.ModifierControl, letter, ""
+	if event.Modifiers&gfx.ModifierMeta != 0 && !event.Key.IsModifier() {
+		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && keymap.Primary == gfx.ModifierMeta {
+			event.Key, event.Modifiers, event.Text, event.Typed = gfx.KeyUnknown, gfx.ModifierControl, letter, ""
 		} else if t.screen.KeyboardFlags() == 0 || state.shortcutBound(event) {
 			// A chord the application has bound belongs to it even where the
 			// action does not apply: the router has already declined it for this
@@ -1343,14 +1343,14 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 			return handled
 		}
 	}
-	if event.Modifiers == ui.ModifierControl|ui.ModifierShift && event.Text == "c" {
+	if event.Modifiers == gfx.ModifierControl|gfx.ModifierShift && event.Text == "c" {
 		return state.copySelection(session)
 	}
 	if t.shell == nil {
 		// Nothing is listening: Enter starts the session again.
-		if event.Key == ui.KeyEnter && !event.Repeat && state.canReconnect(session) {
+		if event.Key == gfx.KeyEnter && !event.Repeat && state.canReconnect(session) {
 			state.reconnect(session)
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		// Every other key is swallowed, which looks exactly like a frozen window.
 		// A shell that ended has already said so on the screen, so the status is
@@ -1358,19 +1358,19 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 		// shell that never opened.
 		if t.told < toldEnded && !event.Release {
 			state.status = state.messages.SessionNoShellInput
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		return handled
 	}
-	if event.Modifiers&ui.ModifierShift != 0 && event.Modifiers&ui.ModifierMeta == 0 && !t.screen.Modes().AltScreen {
+	if event.Modifiers&gfx.ModifierShift != 0 && event.Modifiers&gfx.ModifierMeta == 0 && !t.screen.Modes().AltScreen {
 		_, rows := t.screen.Size()
 		switch event.Key {
-		case ui.KeyPageUp:
+		case gfx.KeyPageUp:
 			t.screen.Scroll(rows - 1)
-			return ui.EventResult{Handled: true, Repaint: true}
-		case ui.KeyPageDown:
+			return gfx.EventResult{Handled: true, Repaint: true}
+		case gfx.KeyPageDown:
 			t.screen.Scroll(-(rows - 1))
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
 	modes := t.screen.Modes()
@@ -1381,7 +1381,7 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 	if modes.Win32Input {
 		bytes = term.EncodeWin32Key(event)
 	} else if runtime.GOOS == "darwin" && t.screen.KeyboardFlags() == 0 && !modes.AltScreen &&
-		event.Modifiers == ui.ModifierAlt && !event.Release {
+		event.Modifiers == gfx.ModifierAlt && !event.Release {
 		// Match macOS Terminal's word movement when the shell owns the key.
 		// Alternate-screen programs and negotiated keyboard modes keep their keys.
 		//
@@ -1395,9 +1395,9 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 		// word", a different intent that the default encoding serves, so it is
 		// deliberately left to fall through.
 		switch event.Key {
-		case ui.KeyRight:
+		case gfx.KeyRight:
 			bytes = []byte("\x1bf")
-		case ui.KeyLeft:
+		case gfx.KeyLeft:
 			bytes = []byte("\x1bb")
 		}
 	}
@@ -1417,10 +1417,10 @@ func (state *State) terminalKey(session *Session, event ui.KeyEvent) ui.EventRes
 // Paint scrolls the rail to the new focus on the following frame, which makes
 // controls outside a short pane reachable without sending escape sequences to
 // the shell.
-func (state *State) terminalToolbarKey(session *Session, event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) terminalToolbarKey(session *Session, event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if session == nil || session.term == nil || session.ID != state.activeSessionID ||
 		event.Modifiers != 0 || event.Release || session.term.railCount == 0 {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	t := session.term
 	index := -1
@@ -1431,32 +1431,32 @@ func (state *State) terminalToolbarKey(session *Session, event ui.KeyEvent) (ui.
 		}
 	}
 	if index < 0 {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	next := index
 	switch {
-	case event.Key == ui.KeyUp:
+	case event.Key == gfx.KeyUp:
 		for at := index - 1; at >= 0; at-- {
 			if t.railEnabled[at] {
 				next = at
 				break
 			}
 		}
-	case event.Key == ui.KeyDown:
+	case event.Key == gfx.KeyDown:
 		for at := index + 1; at < t.railCount; at++ {
 			if t.railEnabled[at] {
 				next = at
 				break
 			}
 		}
-	case event.Key == ui.KeyHome:
+	case event.Key == gfx.KeyHome:
 		for at := 0; at < t.railCount; at++ {
 			if t.railEnabled[at] {
 				next = at
 				break
 			}
 		}
-	case event.Key == ui.KeyEnd:
+	case event.Key == gfx.KeyEnd:
 		for at := t.railCount - 1; at >= 0; at-- {
 			if t.railEnabled[at] {
 				next = at
@@ -1464,24 +1464,24 @@ func (state *State) terminalToolbarKey(session *Session, event ui.KeyEvent) (ui.
 			}
 		}
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	return ui.EventResult{Handled: true, Repaint: next != index, Focus: t.railIDs[next], FocusVisible: true}, true
+	return gfx.EventResult{Handled: true, Repaint: next != index, Focus: t.railIDs[next], FocusVisible: true}, true
 }
 
 // shortcutBound reports whether the shortcut table binds the chord of event,
 // whether or not its action applies to the focused target.
-func (state *State) shortcutBound(event ui.KeyEvent) bool {
+func (state *State) shortcutBound(event gfx.KeyEvent) bool {
 	chord, ok := keymap.FromEvent(event)
 	return ok && state.shortcutActionFor(chord) != shortcutNone
 }
 
-func (state *State) copySelection(session *Session) ui.EventResult {
+func (state *State) copySelection(session *Session) gfx.EventResult {
 	selection := session.term.selection
 	if !selection.selected {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
-	return ui.EventResult{
+	return gfx.EventResult{
 		Handled:       true,
 		ClipboardText: selection.text(session.term.screen),
 	}
@@ -1489,15 +1489,15 @@ func (state *State) copySelection(session *Session) ui.EventResult {
 
 // Scroll turns the wheel into scrollback, or arrow keys on the alternate
 // screen, where a pager or editor owns the display and has no scrollback.
-func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
+func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.noteExit != nil {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if result := state.notesScroll(event); result.Handled {
 		return result
 	}
 	if state.modal == modalFileProperties {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if state.modal == modalNone {
 		if result, handled := state.workspaceArrangementScroll(event); handled {
@@ -1521,7 +1521,7 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	if state.chipMenu.open {
 		// The menu is modal: only its own panels scroll.
-		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, state.chipMenu.popup) && state.chipMenu.tree.Wheel(event)}
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, state.chipMenu.popup) && state.chipMenu.tree.Wheel(event)}
 	}
 	if result := state.scrollProxyDialog(event); result.Handled {
 		return result
@@ -1531,14 +1531,14 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		p := &state.editor.groupPicker
-		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
 	if state.modal == modalToolbarSettings {
 		return state.toolbarSettingsScroll(event)
 	}
 	if state.modal == modalNewHost && state.editor.tagPicker.control.Open {
 		p := &state.editor.tagPicker
-		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
 	if result, handled := state.remoteProcessWheel(event); handled {
 		return result
@@ -1576,7 +1576,7 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	if state.modal != modalNone || state.knownHosts.action != knownHostsActionNone ||
 		(state.aiSettingsVisible() && state.ai.cfg.dialog != aiDialogNone) {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	// The assistant may be a drawer over a file tab. Give its painted panel the
 	// wheel first; the file page only sees gestures outside that panel.
@@ -1592,13 +1592,13 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 		return result
 	}
 	if state.fileTabVerticalRailAt(event.X, event.Y) {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if result, handled := state.sftpTabScroll(event); handled {
 		return result
 	}
 	if state.tabOrientation == tabsVertical && pointInRect(event.X, event.Y, state.verticalTabs.bounds) {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if result, handled := state.scrollMonitor(event); handled {
 		return result
@@ -1610,7 +1610,7 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.files != nil && state.activeSection == sectionTerminal && state.modal == modalNone {
 			return state.scrollSFTP(session.files, event)
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	// Empty space of the files panel names no control, so the panel is told
 	// apart by where the pointer is. That is a window position: once a pane
@@ -1643,7 +1643,7 @@ func (state *State) Scroll(event ui.ScrollEvent) ui.EventResult {
 	return state.scroll(event)
 }
 
-func (state *State) scroll(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.activeSection == sectionSettings && state.modal == modalNone {
 		return state.scrollSettings(event)
 	}
@@ -1658,7 +1658,7 @@ func (state *State) scroll(event ui.ScrollEvent) ui.EventResult {
 		session, ok = hovered, true
 	}
 	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || session.term == nil || state.cellWidth <= 0 || state.cellHeight <= 0 || state.showsProgress(session) {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if result, handled := state.scrollTerminalToolbar(session, event); handled {
 		return result
@@ -1668,38 +1668,38 @@ func (state *State) scroll(event ui.ScrollEvent) ui.EventResult {
 	}
 	t := session.term
 	modes := t.screen.Modes()
-	if modes.Mouse != term.MouseOff && event.Target == hitTerminalList.At(int(session.ID)) && event.Modifiers&ui.ModifierShift == 0 {
+	if modes.Mouse != term.MouseOff && event.Target == hitTerminalList.At(int(session.ID)) && event.Modifiers&gfx.ModifierShift == 0 {
 		return state.terminalMouseScroll(session, event)
 	}
 	if modes.AltScreen {
 		if modes.Mouse != term.MouseOff || !modes.AlternateScroll {
-			return ui.EventResult{Handled: true}
+			return gfx.EventResult{Handled: true}
 		}
 	}
 	t.wheelY += event.StepY(state.cellHeight) / state.cellHeight
 	lines := int(t.wheelY)
 	if lines == 0 {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	t.wheelY -= float32(lines)
 	// Positive deltas reveal content below, that is, newer output.
 	if modes.AltScreen {
-		key := ui.KeyDown
+		key := gfx.KeyDown
 		if lines < 0 {
-			key, lines = ui.KeyUp, -lines
+			key, lines = gfx.KeyUp, -lines
 		}
 		for range min(lines, 5) {
 			t.send(term.EncodeKey(key, 0, "", modes.AppCursorKeys))
 		}
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if t.screen.Scroll(-lines) {
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	return ui.EventResult{Handled: true}
+	return gfx.EventResult{Handled: true}
 }
 
-func (state *State) terminalMouseScroll(session *Session, event ui.ScrollEvent) ui.EventResult {
+func (state *State) terminalMouseScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
 	terminal := session.term
 	position := state.terminalPositionAt(session, event.Viewport, event.X, event.Y)
 	repaint := false
@@ -1730,7 +1730,7 @@ func (state *State) terminalMouseScroll(session *Session, event ui.ScrollEvent) 
 			Column: position.Column, Row: position.Row,
 		}) || repaint
 	}
-	return ui.EventResult{Handled: true, Repaint: repaint}
+	return gfx.EventResult{Handled: true, Repaint: repaint}
 }
 
 func (state *State) sessionByIDPointer(id uint32) (*Session, bool) {

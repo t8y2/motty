@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 // The tables of the Keys, Forwards and Proxies pages select a row where the row
@@ -119,7 +119,7 @@ func TestHostRowTakesRightClickAndDoubleClickThroughTheWindowPath(t *testing.T) 
 	session := openWorkbenchSession(t, state)
 	target := state.hosts[1]
 	// The row, not its checkbox: both carry the host's name.
-	var row ui.Hit
+	var row gfx.Hit
 	for _, hit := range session.Snapshot().Hits {
 		if hit.ID == hitHostList.At(int(target.ID)) {
 			row = hit
@@ -131,10 +131,10 @@ func TestHostRowTakesRightClickAndDoubleClickThroughTheWindowPath(t *testing.T) 
 	x, y := row.Bounds.X+row.Bounds.Width/4, row.Bounds.Y+row.Bounds.Height/2
 
 	driver := session.Driver()
-	if err := driver.Press(x, y, ui.PointerButtonSecondary); err != nil {
+	if err := driver.Press(x, y, gfx.PointerButtonSecondary); err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.Release(x, y, ui.PointerButtonSecondary); err != nil {
+	if err := driver.Release(x, y, gfx.PointerButtonSecondary); err != nil {
 		t.Fatal(err)
 	}
 	if !state.hostMenu.open || state.hostMenu.host != target.ID {

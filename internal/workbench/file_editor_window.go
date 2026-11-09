@@ -6,7 +6,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/workbench/icons"
 )
@@ -17,7 +17,7 @@ const (
 )
 
 type fileWindowTabUI struct {
-	viewport, scrollbar flex.Box
+	viewport, scrollbar ui.Box
 	contentWidth        float32
 	geometry            components.ScrollAreaGeometry
 	hovered, dragging   bool
@@ -380,10 +380,10 @@ func (m *fileWindowManager) messagesTitle() string {
 	return ""
 }
 
-func (m *fileWindowManager) paint(canvas *ui.Canvas, size ui.Size) {
+func (m *fileWindowManager) paint(canvas *gfx.Canvas, size gfx.Size) {
 	d := m.activeDocument()
 	if d == nil {
-		canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, m.ownerTheme())
+		canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, m.ownerTheme())
 		return
 	}
 	m.painting = true
@@ -391,13 +391,13 @@ func (m *fileWindowManager) paint(canvas *ui.Canvas, size ui.Size) {
 	d.paint(canvas, size)
 }
 
-func (m *fileWindowManager) ownerTheme() ui.Color {
+func (m *fileWindowManager) ownerTheme() gfx.Color {
 	for _, key := range m.order {
 		if d := m.documents[key]; d != nil {
 			return d.owner.Theme().Background
 		}
 	}
-	return ui.LightTheme().Background
+	return gfx.LightTheme().Background
 }
 
 func (m *fileWindowManager) resetTabNavigation() {
@@ -429,7 +429,7 @@ func documentTabLayout(available float32, count int) (width, content float32, ov
 	return width, content, overflow
 }
 
-func (m *fileWindowManager) paintTabs(f *flex.Frame, size ui.Size) {
+func (m *fileWindowManager) paintTabs(f *ui.Frame, size gfx.Size) {
 	if len(m.order) == 0 {
 		return
 	}
@@ -449,7 +449,7 @@ func (m *fileWindowManager) paintTabs(f *flex.Frame, size ui.Size) {
 			break
 		}
 	}
-	scroll := m.tabStrip.layoutIndex(ui.Rect{Width: available}, float32(len(m.order))*pitch, len(m.order), activeIndex, pitch, tabWidth)
+	scroll := m.tabStrip.layoutIndex(gfx.Rect{Width: available}, float32(len(m.order))*pitch, len(m.order), activeIndex, pitch, tabWidth)
 	m.tabs.contentWidth = contentWidth
 	sectionHeight := barTabHeight
 	if overflow {
@@ -464,12 +464,12 @@ func (m *fileWindowManager) paintTabs(f *flex.Frame, size ui.Size) {
 			m.tabs.scrollbar = f.Slot().FillWidth().Height(fileWindowTabScrollbarHeight).Shrink(0).
 				MarginSides(fileWindowTabScrollbarGap, 0, 0, 0)
 		} else {
-			m.tabs.scrollbar = flex.Box{}
+			m.tabs.scrollbar = ui.Box{}
 		}
 	})
 }
 
-func (m *fileWindowManager) paintDocumentTabRows(f *flex.Frame, activeDocument *fileDocument, metrics ui.Metrics, scroll float32) {
+func (m *fileWindowManager) paintDocumentTabRows(f *ui.Frame, activeDocument *fileDocument, metrics gfx.Metrics, scroll float32) {
 	pal := activeDocument.owner.pal
 	for index, key := range m.order {
 		d := m.documents[key]
@@ -508,20 +508,20 @@ func (m *fileWindowManager) paintDocumentTabRows(f *flex.Frame, activeDocument *
 		}
 		width := m.tabStrip.tabWidth
 		f.Row().Size(width, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
-			PadSides(0, 3, 0, 4).Items(flex.Center).Radius(radius.item).Border(1, edge).Background(fill).
-			HitWith(id, label, ui.HitOptions{
-				Role: ui.RoleTab, Selected: active, Hint: hint,
+			PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
+			HitWith(id, label, gfx.HitOptions{
+				Role: gfx.RoleTab, Selected: active, Hint: hint,
 			}).Children(func() {
 			f.Row().Size(20, 20).Shrink(0).Center().MarginSides(0, 7, 0, 0).Children(func() {
 				f.Icon(icon).Size(14, 14).Color(foreground)
 			})
-			f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
+			f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
 			f.Spacer()
 			if !active && !hovered {
 				f.Slot().Size(20, 20)
 				return
 			}
-			var closeFill ui.Color
+			var closeFill gfx.Color
 			if f.Canvas().Hovered() == closeID {
 				closeFill = pal.line
 				if active {
@@ -529,7 +529,7 @@ func (m *fileWindowManager) paintDocumentTabRows(f *flex.Frame, activeDocument *
 				}
 			}
 			f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
-				HitWith(closeID, fmt.Sprintf(d.owner.messages.FileWindow.CloseTabFmt, d.name), ui.HitOptions{Role: ui.RoleButton, SkipFocus: true}).Children(func() {
+				HitWith(closeID, fmt.Sprintf(d.owner.messages.FileWindow.CloseTabFmt, d.name), gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true}).Children(func() {
 				f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
 			})
 		})
@@ -557,7 +557,7 @@ func (d *fileDocument) hostColor() string {
 	return ""
 }
 
-func (m *fileWindowManager) paintTabsScrollbar(canvas *ui.Canvas) {
+func (m *fileWindowManager) paintTabsScrollbar(canvas *gfx.Canvas) {
 	m.tabStrip.area = m.tabs.viewport.Rect()
 	m.tabs.geometry = components.ScrollAreaGeometry{}
 	if m.tabStrip.max <= 0 {
@@ -568,7 +568,7 @@ func (m *fileWindowManager) paintTabsScrollbar(canvas *ui.Canvas) {
 	if active == nil || bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
-	area := components.BeginScrollArea(canvas, active.owner.Theme(), bounds, ui.Size{
+	area := components.BeginScrollArea(canvas, active.owner.Theme(), bounds, gfx.Size{
 		Width: m.tabs.contentWidth, Height: bounds.Height,
 	}).Offset(m.tabStrip.offset, 0).
 		HorizontalScrollbar(hitDocumentTabBar, active.owner.messages.FileWindow.TabsScrollbar, "").
@@ -576,8 +576,8 @@ func (m *fileWindowManager) paintTabsScrollbar(canvas *ui.Canvas) {
 	m.tabs.geometry = area.EndContent()
 }
 
-func (m *fileWindowManager) trackTabPointer(event ui.PointerEvent) bool {
-	over := event.Kind != ui.PointerExit && (pointInRect(event.X, event.Y, m.tabStrip.area) ||
+func (m *fileWindowManager) trackTabPointer(event gfx.PointerEvent) bool {
+	over := event.Kind != gfx.PointerExit && (pointInRect(event.X, event.Y, m.tabStrip.area) ||
 		pointInRect(event.X, event.Y, m.tabs.geometry.HorizontalTrack))
 	if m.tabs.hovered == over {
 		return false
@@ -586,19 +586,19 @@ func (m *fileWindowManager) trackTabPointer(event ui.PointerEvent) bool {
 	return true
 }
 
-func (m *fileWindowManager) tabScrollbarPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (m *fileWindowManager) tabScrollbarPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if event.Target != hitDocumentTabBar && !m.tabs.dragging {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Kind == ui.PointerDown && event.Button != ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+	if event.Kind == gfx.PointerDown && event.Button != gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	geometry := m.tabs.geometry
 	switch event.Kind {
-	case ui.PointerDown:
+	case gfx.PointerDown:
 		thumb := geometry.HorizontalThumb
 		if thumb.Width <= 0 || geometry.MaxOffsetX <= 0 {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		m.tabs.dragging = true
 		m.tabs.grab = thumb.Width / 2
@@ -606,27 +606,27 @@ func (m *fileWindowManager) tabScrollbarPointer(event ui.PointerEvent) (ui.Event
 			m.tabs.grab = event.X - thumb.X
 		}
 		m.tabStrip.offset = geometry.HorizontalOffsetForThumb(event.X - m.tabs.grab)
-	case ui.PointerMove:
+	case gfx.PointerMove:
 		if !m.tabs.dragging {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		m.tabStrip.offset = geometry.HorizontalOffsetForThumb(event.X - m.tabs.grab)
-	case ui.PointerUp, ui.PointerExit:
+	case gfx.PointerUp, gfx.PointerExit:
 		m.tabs.dragging = false
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (m *fileWindowManager) scrollTabs(event ui.ScrollEvent) (ui.EventResult, bool) {
+func (m *fileWindowManager) scrollTabs(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	overTabs := pointInRect(event.X, event.Y, m.tabStrip.area) ||
 		pointInRect(event.X, event.Y, m.tabs.geometry.HorizontalTrack)
 	if !overTabs {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if m.tabStrip.max <= 0 {
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	delta := event.DeltaX
 	if delta == 0 {
@@ -634,10 +634,10 @@ func (m *fileWindowManager) scrollTabs(event ui.ScrollEvent) (ui.EventResult, bo
 	}
 	previous := m.tabStrip.offset
 	m.tabStrip.offset = min(max(m.tabStrip.offset+delta, 0), m.tabStrip.max)
-	return ui.EventResult{Handled: true, Repaint: m.tabStrip.offset != previous}, true
+	return gfx.EventResult{Handled: true, Repaint: m.tabStrip.offset != previous}, true
 }
 
-func (m *fileWindowManager) clickTab(id ui.ID) bool {
+func (m *fileWindowManager) clickTab(id gfx.ID) bool {
 	switch id.Scope() {
 	case hitDocumentTabList:
 		index, ok := id.In(hitDocumentTabList)
@@ -665,7 +665,7 @@ func (m *fileWindowManager) textInput(context app.TextInputContext) *app.TextInp
 	return nil
 }
 
-func (m *fileWindowManager) pointer(event ui.PointerEvent) ui.EventResult {
+func (m *fileWindowManager) pointer(event gfx.PointerEvent) gfx.EventResult {
 	hoverChanged := m.trackTabPointer(event)
 	if result, handled := m.tabScrollbarPointer(event); handled {
 		if hoverChanged {
@@ -680,12 +680,12 @@ func (m *fileWindowManager) pointer(event ui.PointerEvent) ui.EventResult {
 		}
 		return result
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (m *fileWindowManager) key(event ui.KeyEvent) ui.EventResult {
+func (m *fileWindowManager) key(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if event.Target.Scope() == hitDocumentTabList || event.Target.Scope() == hitDocumentTabCloseList {
 		return m.tabKey(event)
@@ -693,38 +693,38 @@ func (m *fileWindowManager) key(event ui.KeyEvent) ui.EventResult {
 	if d := m.activeDocument(); d != nil {
 		return d.key(event)
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (m *fileWindowManager) tabKey(event ui.KeyEvent) ui.EventResult {
+func (m *fileWindowManager) tabKey(event gfx.KeyEvent) gfx.EventResult {
 	index := -1
 	if index, _ = event.Target.In(hitDocumentTabList); index < 0 {
 		index, _ = event.Target.In(hitDocumentTabCloseList)
 	}
 	if index < 0 || index >= len(m.order) {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	switch event.Key {
-	case ui.KeyEnter, ui.KeySpace:
+	case gfx.KeyEnter, gfx.KeySpace:
 		if event.Target.Scope() == hitDocumentTabCloseList {
 			m.closeTab(index)
 		} else {
 			m.activate(m.order[index])
 		}
-		return ui.EventResult{Handled: true, Repaint: true, Focus: event.Target, FocusVisible: true}
-	case ui.KeyDelete:
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: event.Target, FocusVisible: true}
+	case gfx.KeyDelete:
 		m.closeTab(index)
-		return ui.EventResult{Handled: true, Repaint: true}
-	case ui.KeyLeft:
+		return gfx.EventResult{Handled: true, Repaint: true}
+	case gfx.KeyLeft:
 		index = max(index-1, 0)
-	case ui.KeyRight:
+	case gfx.KeyRight:
 		index = min(index+1, len(m.order)-1)
-	case ui.KeyHome:
+	case gfx.KeyHome:
 		index = 0
-	case ui.KeyEnd:
+	case gfx.KeyEnd:
 		index = len(m.order) - 1
 	default:
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	key := m.order[index]
 	m.activate(key)
@@ -732,32 +732,32 @@ func (m *fileWindowManager) tabKey(event ui.KeyEvent) ui.EventResult {
 	if event.Target.Scope() == hitDocumentTabCloseList {
 		focus = hitDocumentTabCloseList.At(index)
 	}
-	return ui.EventResult{Handled: true, Repaint: true, Focus: focus, FocusVisible: true}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: focus, FocusVisible: true}
 }
 
-func (m *fileWindowManager) shortcut(event ui.KeyEvent) ui.EventResult {
+func (m *fileWindowManager) shortcut(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if d := m.activeDocument(); d != nil && d.confirm != "" {
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) != 0 && strings.EqualFold(event.Text, "w") {
+	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) != 0 && strings.EqualFold(event.Text, "w") {
 		m.closeActiveTab()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if d := m.activeDocument(); d != nil {
 		return d.shortcut(event)
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (m *fileWindowManager) scroll(event ui.ScrollEvent) ui.EventResult {
+func (m *fileWindowManager) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result, handled := m.scrollTabs(event); handled {
 		return result
 	}
 	if d := m.activeDocument(); d != nil {
 		return d.scroll(event)
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }

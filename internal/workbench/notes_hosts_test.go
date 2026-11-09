@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestNotesHostTagCodecAndNormalization(t *testing.T) {
@@ -191,8 +191,8 @@ func TestNotesHostTagsPaintAfterOrdinaryTags(t *testing.T) {
 	missing := encodeNoteHost(noteHost{CatalogID: "missing", Label: "Cached"})
 	s.replaceNoteTagEditor([]string{missing, "ordinary"})
 	s.save()
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1000, Height: 700})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1000, Height: 700})
 	hostHit, ok := hitByID(&c, hitNoteTagHints.At(s.noteTagToken(missing)))
 	if !ok || !strings.Contains(hostHit.Label, "主机不存在") && !strings.Contains(hostHit.Label, "Host missing") {
 		t.Fatal("missing state is inaccessible")

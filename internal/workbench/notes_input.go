@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var (
@@ -12,7 +12,7 @@ var (
 	hitNoteLinks        = tree.Sub(notesHits, tree.Name("link"))
 )
 
-func (s *State) notesPanelWidth(size ui.Size) float32 {
+func (s *State) notesPanelWidth(size gfx.Size) float32 {
 	base := s.baseWorkspacePixelBounds(size)
 	if context, ok := s.deck.Context(s.deck.ActiveWorkspace()); ok && context.Open && size.Width >= contextDrawerAt {
 		base.Width = max(0, base.Width-s.contextPanelWidth(base, context)-1)
@@ -31,39 +31,39 @@ func (s *State) notesVisible() bool {
 	}
 	return s.modal == modalNone && (s.activeSection == sectionNotes || s.activeSection == sectionTerminal && s.notes.panel)
 }
-func (s *State) noteResizable(canvas *ui.Canvas) components.Resizable {
+func (s *State) noteResizable(canvas *gfx.Canvas) components.Resizable {
 	v := &s.notes.view
 	b := v.workspace
 	return components.BeginResizable(canvas, s.Theme(), hitNoteDivider, b, v.width/max(1, b.Width-1)).Limits(160/max(1, b.Width-1), 520/max(1, b.Width-1)).LimitsPx(160, 480)
 }
-func (s *State) notesPointer(e ui.PointerEvent) (result ui.EventResult) {
+func (s *State) notesPointer(e gfx.PointerEvent) (result gfx.EventResult) {
 	if s.noteSidebarVisible() {
 		return s.noteSidebarPointer(e)
 	}
 	before := s.noteScrollRegions()
-	s.noteContent().view.pointer = ui.Point{X: e.X, Y: e.Y}
-	s.noteContent().view.pointerValid = e.Kind != ui.PointerExit
+	s.noteContent().view.pointer = gfx.Point{X: e.X, Y: e.Y}
+	s.noteContent().view.pointerValid = e.Kind != gfx.PointerExit
 	defer func() {
-		if before != s.noteScrollRegions() || pointInRect(e.X, e.Y, s.noteContent().previewBounds) || e.Kind == ui.PointerExit {
+		if before != s.noteScrollRegions() || pointInRect(e.X, e.Y, s.noteContent().previewBounds) || e.Kind == gfx.PointerExit {
 			result.Repaint = true
-			if s.noteLibraryView() && (e.Kind == ui.PointerMove || e.Kind == ui.PointerExit) {
+			if s.noteLibraryView() && (e.Kind == gfx.PointerMove || e.Kind == gfx.PointerExit) {
 				result.Handled = true
 			}
 		}
 	}()
 	n, v := s.noteContent(), &s.noteContent().view
-	if e.Kind == ui.PointerDown && (e.Target == hitNoteTitle || e.Target == hitNoteBody) && !s.activateNoteView(n) {
-		return ui.EventResult{Handled: true}
+	if e.Kind == gfx.PointerDown && (e.Target == hitNoteTitle || e.Target == hitNoteBody) && !s.activateNoteView(n) {
+		return gfx.EventResult{Handled: true}
 	}
 	if !s.notesVisible() {
 		n.dragID = ""
 		v.resizing = false
 		v.previewDragging = false
 		v.previewSelect.EndDrag()
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if v.popup == "tags" || v.popup == "hosts" {
-		if e.Kind == ui.PointerDown && e.Target == hitNoteTagPickerThumb {
+		if e.Kind == gfx.PointerDown && e.Target == hitNoteTagPickerThumb {
 			geo := v.tagPopupArea.Geometry()
 			v.tagPopupDragging = true
 			v.tagPopupGrab = geo.VerticalThumb.Height / 2
@@ -72,18 +72,18 @@ func (s *State) notesPointer(e ui.PointerEvent) (result ui.EventResult) {
 			}
 		}
 		if v.tagPopupDragging {
-			if e.Kind == ui.PointerMove || e.Kind == ui.PointerDown || e.Kind == ui.PointerUp {
+			if e.Kind == gfx.PointerMove || e.Kind == gfx.PointerDown || e.Kind == gfx.PointerUp {
 				v.tagPopupScroll = v.tagPopupArea.Geometry().VerticalOffsetForThumb(e.Y - v.tagPopupGrab)
-				if e.Kind == ui.PointerUp {
+				if e.Kind == gfx.PointerUp {
 					v.tagPopupDragging = false
 				}
-				return ui.EventResult{Handled: true, Repaint: true}
+				return gfx.EventResult{Handled: true, Repaint: true}
 			}
 			v.tagPopupDragging = false
 		}
 	}
 	if n.confirm != "" || v.menu != "" || v.popup != "" {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if s.noteLibraryView() {
 		if r := s.notePreviewScrollbarPointer(e); r.Handled {
@@ -93,24 +93,24 @@ func (s *State) notesPointer(e ui.PointerEvent) (result ui.EventResult) {
 	if r := s.notePreviewSelectionPointer(e); r.Handled {
 		return r
 	}
-	if e.Kind == ui.PointerDown && e.Target == hitNoteDivider {
+	if e.Kind == gfx.PointerDown && e.Target == hitNoteDivider {
 		v.resizing = true
 	}
 	if v.resizing {
-		if e.Kind == ui.PointerMove || e.Kind == ui.PointerDown || e.Kind == ui.PointerUp {
+		if e.Kind == gfx.PointerMove || e.Kind == gfx.PointerDown || e.Kind == gfx.PointerUp {
 			v.width = s.noteResizable(nil).FractionAt(e.X) * max(1, v.workspace.Width-1)
-			if e.Kind == ui.PointerUp {
+			if e.Kind == gfx.PointerUp {
 				v.resizing = false
 				s.save()
 			}
-			return ui.EventResult{Handled: true, Repaint: true, Focus: hitNoteDivider}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitNoteDivider}
 		}
-		if e.Kind == ui.PointerExit {
+		if e.Kind == gfx.PointerExit {
 			v.resizing = false
 		}
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
-	if e.Kind == ui.PointerDown && e.Target == hitNoteListThumb {
+	if e.Kind == gfx.PointerDown && e.Target == hitNoteListThumb {
 		geo := v.listArea.Geometry()
 		v.scrollDrag = true
 		v.scrollGrab = geo.VerticalThumb.Height / 2
@@ -119,31 +119,31 @@ func (s *State) notesPointer(e ui.PointerEvent) (result ui.EventResult) {
 		}
 	}
 	if v.scrollDrag {
-		if e.Kind == ui.PointerMove || e.Kind == ui.PointerDown || e.Kind == ui.PointerUp {
+		if e.Kind == gfx.PointerMove || e.Kind == gfx.PointerDown || e.Kind == gfx.PointerUp {
 			v.treeScroll = v.listArea.Geometry().VerticalOffsetForThumb(e.Y - v.scrollGrab)
-			if e.Kind == ui.PointerUp {
+			if e.Kind == gfx.PointerUp {
 				v.scrollDrag = false
 			}
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		v.scrollDrag = false
 	}
-	if e.Kind == ui.PointerDown && (v.inlineID != "" || v.inlineNew) && e.Target != hitNoteInline {
+	if e.Kind == gfx.PointerDown && (v.inlineID != "" || v.inlineNew) && e.Target != hitNoteInline {
 		if !s.commitNoteInline() {
-			return ui.EventResult{Handled: true, Focus: hitNoteInline, Repaint: true}
+			return gfx.EventResult{Handled: true, Focus: hitNoteInline, Repaint: true}
 		}
 	}
-	if e.Kind == ui.PointerDown && e.Button == ui.PointerButtonPrimary && e.Target == hitNoteListScroll && !n.dragging {
+	if e.Kind == gfx.PointerDown && e.Button == gfx.PointerButtonPrimary && e.Target == hitNoteListScroll && !n.dragging {
 		n.folder = ""
 		v.treeFolderSelection = true
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if r := n.code.Pointer(e); r.Handled {
 		s.noteScrollDriver(false)
 		return r
 	}
 	switch e.Kind {
-	case ui.PointerDown:
+	case gfx.PointerDown:
 		switch e.Target {
 		case hitNoteTitle:
 			n.body.Unmark()
@@ -154,8 +154,8 @@ func (s *State) notesPointer(e ui.PointerEvent) (result ui.EventResult) {
 		}
 		n.dragID = ""
 		n.dragging = false
-		if e.Button != ui.PointerButtonPrimary || n.query.String() != "" {
-			return ui.EventResult{}
+		if e.Button != gfx.PointerButtonPrimary || n.query.String() != "" {
+			return gfx.EventResult{}
 		}
 		if token, ok := e.Target.In(hitNoteRows); ok {
 			n.dragID = v.tokenNotes[token]
@@ -165,8 +165,8 @@ func (s *State) notesPointer(e ui.PointerEvent) (result ui.EventResult) {
 			n.dragID = v.tokenFolders[token]
 			n.dragFolder = true
 		}
-		n.dragStart = ui.Point{X: e.X, Y: e.Y}
-	case ui.PointerMove:
+		n.dragStart = gfx.Point{X: e.X, Y: e.Y}
+	case gfx.PointerMove:
 		if n.dragID != "" {
 			dx, dy := e.X-n.dragStart.X, e.Y-n.dragStart.Y
 			if dx*dx+dy*dy > 25 {
@@ -179,13 +179,13 @@ func (s *State) notesPointer(e ui.PointerEvent) (result ui.EventResult) {
 				} else if e.Y > n.listBounds.Y+n.listBounds.Height-24 {
 					v.treeScroll += 12
 				}
-				return ui.EventResult{Handled: true, Repaint: true}
+				return gfx.EventResult{Handled: true, Repaint: true}
 			}
 		}
-	case ui.PointerUp:
+	case gfx.PointerUp:
 		if n.dragID == "" || !n.dragging {
 			n.dragID = ""
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 		s.noteDropAt(e.X, e.Y)
 		id, folder, d := n.dragID, n.dragFolder, v.drop
@@ -195,12 +195,12 @@ func (s *State) notesPointer(e ui.PointerEvent) (result ui.EventResult) {
 			s.moveNote(id, d.parent, d.before, folder)
 			s.noteOpenAncestors(d.parent)
 		}
-		return ui.EventResult{Handled: true, Repaint: true}
-	case ui.PointerExit:
+		return gfx.EventResult{Handled: true, Repaint: true}
+	case gfx.PointerExit:
 		n.dragID = ""
 		n.dragging = false
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 func (s *State) noteDropAt(x, y float32) {
 	n, v := &s.notes, &s.notes.view
@@ -235,7 +235,7 @@ func (s *State) noteDropAt(x, y float32) {
 	}
 	if pointInRect(x, y, n.listBounds) {
 		d.valid = true
-		d.bounds = ui.Rect{X: n.listBounds.X + 6, Y: y, Width: n.listBounds.Width - 12, Height: 2}
+		d.bounds = gfx.Rect{X: n.listBounds.X + 6, Y: y, Width: n.listBounds.Width - 12, Height: 2}
 	}
 	v.drop = d
 }
@@ -264,48 +264,48 @@ func (s *State) noteNextSibling(id string, folder bool) string {
 	}
 	return best
 }
-func (s *State) notesScroll(e ui.ScrollEvent) ui.EventResult {
+func (s *State) notesScroll(e gfx.ScrollEvent) gfx.EventResult {
 	if s.noteSidebarVisible() {
 		return s.noteSidebarScroll(e)
 	}
 	if !s.notesVisible() {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	n, v := s.noteContent(), &s.noteContent().view
 	if n.confirm != "" {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if v.menu != "" {
 		if r, ok := s.menuWheel(e); ok {
 			return r
 		}
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if v.popup == "tags" || v.popup == "hosts" {
 		v.popupBar.activity = true
 		v.tagPopupScroll = min(max(0, v.tagPopupScroll+e.DeltaY), v.tagPopupArea.Geometry().MaxOffsetY)
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if pointInRect(e.X, e.Y, n.listBounds) {
 		v.treeBar.activity = true
 		maximum := v.listArea.Geometry().MaxOffsetY
 		v.treeScroll = min(max(0, v.treeScroll+e.DeltaY), maximum)
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if pointInRect(e.X, e.Y, n.sourceBounds) {
 		n.code.ScrollBy(e.DeltaX, e.DeltaY)
 		s.noteScrollDriver(false)
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if pointInRect(e.X, e.Y, n.previewBounds) {
 		v.previewBar.activity = true
 		s.noteScrollDriver(true)
 		n.previewScroll = min(max(0, n.previewScroll+e.DeltaY), max(0, n.previewHeight-n.previewBounds.Height))
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
-func (s *State) notesKey(e ui.KeyEvent) ui.EventResult {
+func (s *State) notesKey(e gfx.KeyEvent) gfx.EventResult {
 	if result := s.noteEditingKey(e); result.Handled {
 		return result
 	}
@@ -313,84 +313,84 @@ func (s *State) notesKey(e ui.KeyEvent) ui.EventResult {
 		return s.noteSidebarKey(e)
 	}
 	if !s.notesVisible() {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	v := &s.noteContent().view
-	if e.Key == ui.KeyEscape {
+	if e.Key == gfx.KeyEscape {
 		if v.menu != "" || v.popup != "" {
 			v.menu = ""
 			v.popup = ""
 			v.resetPopupScrollbar()
-			return ui.EventResult{Handled: true, Repaint: true, Focus: v.returnFocus}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: v.returnFocus}
 		}
 		if v.inlineID != "" || v.inlineNew {
 			v.inlineID = ""
 			v.inlineNew = false
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		if v.drawer {
 			v.drawer = false
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
 	if v.menu != "" {
 		if r, ok := s.menuKey(e); ok {
 			return r
 		}
-		if e.Key == ui.KeyEnter || e.Key == ui.KeySpace || e.Key == ui.KeyTab {
-			return ui.EventResult{}
+		if e.Key == gfx.KeyEnter || e.Key == gfx.KeySpace || e.Key == gfx.KeyTab {
+			return gfx.EventResult{}
 		}
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if v.popup != "" {
-		if e.Target == hitNotePicker && e.Key == ui.KeyEnter && v.popup == "tags" {
+		if e.Target == hitNotePicker && e.Key == gfx.KeyEnter && v.popup == "tags" {
 			if r, ok := v.picker.Composition(); !ok || r.Start == r.End {
 				s.noteViewClick(hitNoteTagSubmit)
 			}
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		if e.Key == ui.KeyTab || e.Key == ui.KeyEnter || e.Key == ui.KeySpace {
-			return ui.EventResult{}
+		if e.Key == gfx.KeyTab || e.Key == gfx.KeyEnter || e.Key == gfx.KeySpace {
+			return gfx.EventResult{}
 		}
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if e.Target == hitNotePreviewText && e.Key == ui.KeyEscape {
+	if e.Target == hitNotePreviewText && e.Key == gfx.KeyEscape {
 		v.clearPreviewSelection()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if e.Target == hitNoteInline {
-		if e.Key == ui.KeyTab {
+		if e.Key == gfx.KeyTab {
 			ok := s.commitNoteInline()
-			result := ui.EventResult{Handled: true, Repaint: true, ContinueTraversal: ok}
+			result := gfx.EventResult{Handled: true, Repaint: true, ContinueTraversal: ok}
 			if !ok {
 				result.Focus = hitNoteInline
 			}
 			return result
 		}
-		if e.Key == ui.KeyEnter && !e.Repeat {
+		if e.Key == gfx.KeyEnter && !e.Repeat {
 			s.commitNoteInline()
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if e.Target == hitNoteDivider {
 		if ratio, ok := s.noteResizable(nil).FractionForKey(e.Key); ok {
 			v.width = ratio * max(1, v.workspace.Width-1)
 			s.save()
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
-	if !e.Release && !e.Repeat && (e.Key == ui.KeyEnter || e.Key == ui.KeySpace) {
+	if !e.Release && !e.Repeat && (e.Key == gfx.KeyEnter || e.Key == gfx.KeySpace) {
 		if _, ok := e.Target.In(hitNoteCodeCopies); ok {
 			s.clickNoteCodeCopy(e.Target, s.noteContent())
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
-	if e.Key == ui.KeyEnter {
+	if e.Key == gfx.KeyEnter {
 		if _, ok := e.Target.In(hitNoteRows); ok {
 			s.Click(e.Target)
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }

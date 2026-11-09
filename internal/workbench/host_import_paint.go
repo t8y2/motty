@@ -2,10 +2,10 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
-func (state *State) paintHostImportResult(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintHostImportResult(canvas *gfx.Canvas, viewport gfx.Rect) {
 	messages, palette := state.messages, state.pal
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer:          dialogLayer,
@@ -13,7 +13,7 @@ func (state *State) paintHostImportResult(canvas *ui.Canvas, viewport ui.Rect) {
 		DismissID:      hitHostImportDismiss,
 		CloseID:        hitHostImportClose,
 		InitialFocusID: hitHostImportDone,
-		ContentSize:    ui.Size{Width: 640}, FitBody: true, BodyHeight: state.hostImportBody(),
+		ContentSize:    gfx.Size{Width: 640}, FitBody: true, BodyHeight: state.hostImportBody(),
 	})
 	result := &state.hostImportResult
 	title := messages.SSHConfigResultTitle
@@ -28,12 +28,12 @@ func (state *State) paintHostImportResult(canvas *ui.Canvas, viewport ui.Rect) {
 			return
 		}
 		f.Column().Gap(5).PadSides(4, 0, 0, 0).Children(func() {
-			f.Text(result.warningsTitle).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(palette.warning).LineHeight(22).MarginSides(0, 0, 1, 0)
+			f.Text(result.warningsTitle).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(palette.warning).LineHeight(22).MarginSides(0, 0, 1, 0)
 			for index := 0; index < result.visible; index++ {
 				f.Text(result.warnings[index]).FontSize(metrics.FontSizeS).Color(palette.muted).LineHeight(22)
 			}
 			if result.more != "" {
-				f.Text(result.more).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(palette.warning).LineHeight(22)
+				f.Text(result.more).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(palette.warning).LineHeight(22)
 			}
 		})
 	})

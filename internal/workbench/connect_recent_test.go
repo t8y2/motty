@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -29,18 +29,18 @@ func TestRecentPickerSwitchTakesTheKeyboardAndHandsItBack(t *testing.T) {
 	if state.modal != modalCommandPalette {
 		t.Fatal("the picker did not open")
 	}
-	result := state.Key(ui.KeyEvent{Target: hitConnectSortDefault, Key: ui.KeyRight})
+	result := state.Key(gfx.KeyEvent{Target: hitConnectSortDefault, Key: gfx.KeyRight})
 	if !result.Handled || !state.commandPalette.workspaces {
 		t.Fatalf("right on the switch = %+v, workspaces=%t", result, state.commandPalette.workspaces)
 	}
 	if result.Focus != hitCommandPaletteSearch {
 		t.Fatalf("the keyboard stayed on the switch: %+v", result)
 	}
-	result = state.Key(ui.KeyEvent{Target: hitConnectSortWorkspaces, Key: ui.KeyRight})
+	result = state.Key(gfx.KeyEvent{Target: hitConnectSortWorkspaces, Key: gfx.KeyRight})
 	if !result.Handled || !state.recentConnectSort || state.commandPalette.workspaces {
 		t.Fatalf("right from workspaces = %+v, recent=%t workspaces=%t", result, state.recentConnectSort, state.commandPalette.workspaces)
 	}
-	result = state.Key(ui.KeyEvent{Target: hitConnectSortRecent, Key: ui.KeyEnter})
+	result = state.Key(gfx.KeyEvent{Target: hitConnectSortRecent, Key: gfx.KeyEnter})
 	if !result.Handled || result.Focus != hitCommandPaletteSearch {
 		t.Fatalf("enter on the switch = %+v", result)
 	}

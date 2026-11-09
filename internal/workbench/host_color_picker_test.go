@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -42,7 +42,7 @@ func TestHostColorPickerStagesNativeHexAndRestoresFocus(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			click := func(id ui.ID) {
+			click := func(id gfx.ID) {
 				t.Helper()
 				for _, h := range view.Snapshot().Hits {
 					if h.ID == id && !h.Block {
@@ -60,9 +60,9 @@ func TestHostColorPickerStagesNativeHexAndRestoresFocus(t *testing.T) {
 			}
 			click(hostPickerIDs.Saturation)
 			plane := state.editor.colorPicker.layout.Saturation
-			must(view.Driver().Press(plane.X+plane.Width/2, plane.Y+plane.Height/2, ui.PointerButtonPrimary))
+			must(view.Driver().Press(plane.X+plane.Width/2, plane.Y+plane.Height/2, gfx.PointerButtonPrimary))
 			must(view.Driver().Move(plane.X+plane.Width+15, plane.Y-15))
-			must(view.Driver().Release(plane.X+plane.Width+15, plane.Y-15, ui.PointerButtonPrimary))
+			must(view.Driver().Release(plane.X+plane.Width+15, plane.Y-15, gfx.PointerButtonPrimary))
 			if state.editor.colorPicker.draft.Saturation != 1 || state.editor.colorPicker.draft.Brightness != 1 {
 				t.Fatal("captured selection drag lost target")
 			}
@@ -140,10 +140,10 @@ func TestHostFormSpacingKeepsProtocolControlsAboveFooter(t *testing.T) {
 		state := newTestState(t, testOptions(t))
 		state.openHostDialog()
 		state.editor.protocol = protocol
-		c, _ := paintAt(state, ui.Size{Width: 900, Height: 600})
+		c, _ := paintAt(state, gfx.Size{Width: 900, Height: 600})
 		footer, _ := hitByID(c, hitDialogSubmit)
 		for _, h := range c.Hits() {
-			if h.Role == ui.RoleTextField && h.Bounds.Y+h.Bounds.Height > footer.Bounds.Y {
+			if h.Role == gfx.RoleTextField && h.Bounds.Y+h.Bounds.Height > footer.Bounds.Y {
 				t.Fatalf("protocol %v overlaps footer %+v footer %+v", protocol, h.Bounds, footer.Bounds)
 			}
 		}

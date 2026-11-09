@@ -1,11 +1,11 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/term"
 )
 
-func (state *State) paintTerminalLink(canvas *ui.Canvas, terminal *terminal, geometry terminalGeometry, row int) {
+func (state *State) paintTerminalLink(canvas *gfx.Canvas, terminal *terminal, geometry terminalGeometry, row int) {
 	link, ok := terminal.links.hoveredLink(terminal.screen)
 	if !ok {
 		return
@@ -18,7 +18,7 @@ func (state *State) paintTerminalLink(canvas *ui.Canvas, terminal *terminal, geo
 	left := snap(geometry.left + float32(from)*state.cellWidth)
 	right := snap(geometry.left + float32(to)*state.cellWidth)
 	y := geometry.top + float32(row+1)*state.cellHeight - 1
-	canvas.Fill(ui.Rect{X: left, Y: y, Width: right - left, Height: 1}, state.pal.text)
+	canvas.Fill(gfx.Rect{X: left, Y: y, Width: right - left, Height: 1}, state.pal.text)
 }
 
 func terminalLinkRowSpan(link term.Link, line, cols int) (int, int, bool) {

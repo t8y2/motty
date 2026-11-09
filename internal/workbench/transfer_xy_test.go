@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/xymodem"
 	"motty/internal/zmodem"
 )
@@ -32,14 +32,14 @@ func startXY(t *testing.T, state *State, session *Session, mode xymodem.Mode, se
 	if state.modal != modalXYTransfer {
 		t.Fatalf("modal = %d", state.modal)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{hitXYProtocolX, hitXYProtocol1K, hitXYProtocolY, hitXYSend, hitXYReceive, hitXYStart} {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for _, id := range []gfx.ID{hitXYProtocolX, hitXYProtocol1K, hitXYProtocolY, hitXYSend, hitXYReceive, hitXYStart} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Fatalf("setup control %d is not painted", id)
 		}
 	}
-	state.Click([]ui.ID{hitXYProtocolX, hitXYProtocol1K, hitXYProtocolY}[mode])
+	state.Click([]gfx.ID{hitXYProtocolX, hitXYProtocol1K, hitXYProtocolY}[mode])
 	if sending {
 		state.Click(hitXYSend)
 	} else {
@@ -59,10 +59,10 @@ func TestYmodemReceiveIntoAFolderFromTheTerminalMenu(t *testing.T) {
 	}))
 
 	// The menu offers it.
-	state.terminalMenu.pointer = ui.Point{X: 600, Y: 300}
+	state.terminalMenu.pointer = gfx.Point{X: 600, Y: 300}
 	state.openTerminalMenu(session)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTerminalMenuTransfer); !ok {
 		t.Fatal("the terminal menu has no file transfer entry")
 	}

@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // MiniMax's mark is a magenta-to-orange gradient; flattening it to one color
@@ -18,12 +18,12 @@ func TestMiniMaxPresetIconKeepsItsGradient(t *testing.T) {
 	if len(preset.icon.Layers) == 0 {
 		t.Fatal("the MiniMax preset has no icon")
 	}
-	var canvas ui.Canvas
-	canvas.DrawIcon(preset.icon, ui.Rect{Width: 16, Height: 16}, ui.Color{Alpha: 1})
-	var left, right ui.Color
+	var canvas gfx.Canvas
+	canvas.DrawIcon(preset.icon, gfx.Rect{Width: 16, Height: 16}, gfx.Color{Alpha: 1})
+	var left, right gfx.Color
 	leftX, rightX := float32(1e9), float32(-1e9)
 	for _, triangle := range canvas.Triangles() {
-		colors := [3]ui.Color{triangle.Color, triangle.Shade[0], triangle.Shade[1]}
+		colors := [3]gfx.Color{triangle.Color, triangle.Shade[0], triangle.Shade[1]}
 		for index, point := range triangle.Points {
 			if !triangle.Shaded && index > 0 {
 				break

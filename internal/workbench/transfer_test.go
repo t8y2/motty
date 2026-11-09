@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/serial"
 	"motty/internal/zmodem"
 )
@@ -81,8 +81,8 @@ func TestAnIncomingTransferIsOfferedAndNothingIsSavedUntilTheUserChooses(t *test
 	if !strings.Contains(screenText(state, 0), "before") || strings.Contains(screenText(state, 0), "B00000") {
 		t.Fatalf("screen = %q: the header must not be shown", screenText(state, 0))
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTransferChoose); !ok {
 		t.Fatal("no way to choose a folder")
 	}

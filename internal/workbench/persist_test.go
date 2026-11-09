@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 	"motty/internal/sshconn"
 )
@@ -217,8 +217,8 @@ func TestUnreadableStateIsKeptAndTheAppStartsEmpty(t *testing.T) {
 	if len(state.hosts) != 0 || state.modal != modalStateNotice || state.stateNotice.tooNew || state.saveBlocked {
 		t.Fatalf("hosts=%v modal=%d notice=%+v blocked=%t", state.hosts, state.modal, state.stateNotice, state.saveBlocked)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if !strings.Contains(state.stateNotice.body, "state.json.corrupt") {
 		t.Fatalf("the dialog does not say where the copy is: %q", state.stateNotice.body)
 	}
@@ -247,8 +247,8 @@ func TestDamagedLocalStateIsSetAsideInsteadOfPanicking(t *testing.T) {
 	if len(state.hosts) != 0 || state.modal != modalStateNotice || state.saveBlocked {
 		t.Fatalf("hosts=%v modal=%d blocked=%t", state.hosts, state.modal, state.saveBlocked)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if !strings.Contains(state.stateNotice.body, filepath.Base(options.StatePath)+".corrupt") {
 		t.Fatalf("the dialog does not say where the copy is: %q", state.stateNotice.body)
 	}
@@ -348,10 +348,10 @@ func TestHoveringTheStateNoticeBackdropLeavesItsCloseButtonAlone(t *testing.T) {
 	if state.modal != modalStateNotice {
 		t.Fatalf("modal = %d, want the state notice", state.modal)
 	}
-	size := ui.Size{Width: 1200, Height: 800}
-	var quiet ui.Canvas
+	size := gfx.Size{Width: 1200, Height: 800}
+	var quiet gfx.Canvas
 	state.Paint(&quiet, size)
-	dismiss := ui.ID{}
+	dismiss := gfx.ID{}
 	for _, hit := range quiet.Hits() {
 		if hit.Backdrop {
 			dismiss = hit.ID
@@ -361,24 +361,24 @@ func TestHoveringTheStateNoticeBackdropLeavesItsCloseButtonAlone(t *testing.T) {
 	if dismiss.IsZero() {
 		t.Fatal("the dialog has no backdrop to hover")
 	}
-	paintedWith := func(hovered ui.ID) []ui.Rectangle {
-		var canvas ui.Canvas
-		canvas.SetInteraction(hovered, ui.ID{}, ui.ID{}, false)
+	paintedWith := func(hovered gfx.ID) []gfx.Rectangle {
+		var canvas gfx.Canvas
+		canvas.SetInteraction(hovered, gfx.ID{}, gfx.ID{}, false)
 		state.Paint(&canvas, size)
 		return dialogLayerRectangles(&canvas)
 	}
-	if !slices.Equal(paintedWith(ui.ID{}), paintedWith(dismiss)) {
+	if !slices.Equal(paintedWith(gfx.ID{}), paintedWith(dismiss)) {
 		t.Fatal("hovering the backdrop paints the dialog's controls as hovered")
 	}
-	if slices.Equal(paintedWith(ui.ID{}), paintedWith(hitStateNoticeClose)) {
+	if slices.Equal(paintedWith(gfx.ID{}), paintedWith(hitStateNoticeClose)) {
 		t.Fatal("the close button paints no hover look of its own")
 	}
 }
 
 // dialogLayerRectangles is what the dialog painted: the page behind it is not
 // part of the comparison.
-func dialogLayerRectangles(canvas *ui.Canvas) []ui.Rectangle {
-	rectangles := make([]ui.Rectangle, 0, len(canvas.Rectangles()))
+func dialogLayerRectangles(canvas *gfx.Canvas) []gfx.Rectangle {
+	rectangles := make([]gfx.Rectangle, 0, len(canvas.Rectangles()))
 	for _, rectangle := range canvas.Rectangles() {
 		if rectangle.Layer == dialogLayer {
 			rectangles = append(rectangles, rectangle)

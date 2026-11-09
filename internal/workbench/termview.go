@@ -4,7 +4,7 @@ import (
 	"math"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/highlight"
 	"motty/internal/term"
 )
@@ -20,7 +20,7 @@ const (
 // bgSpan is a stretch of cells painted with a background color.
 type bgSpan struct {
 	from, to int // cell columns, to exclusive
-	color    ui.Color
+	color    gfx.Color
 }
 
 // cellSpan is a stretch of cells of one line, to exclusive. The zero value is
@@ -47,7 +47,7 @@ type rowEntry struct {
 	used     uint32 // paint generation that last used the entry
 	text     string
 	gutter   gutterEntry
-	runs     []ui.TextRun
+	runs     []gfx.TextRun
 	spans    []bgSpan
 }
 
@@ -139,8 +139,8 @@ func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pa
 // cellStyle is what a cell looks like once its colors and attributes are
 // resolved against the palette.
 type cellStyle struct {
-	fg        ui.Color
-	bg        ui.Color
+	fg        gfx.Color
+	bg        gfx.Color
 	hasBG     bool
 	weight    float32
 	italic    bool
@@ -178,7 +178,7 @@ func resolveCell(cell term.Cell, pal *palette, inactive bool) cellStyle {
 		style.fg.Alpha *= 0.55
 	}
 	if bold && pal.intense.embolden() {
-		style.weight = ui.WeightBold
+		style.weight = gfx.WeightBold
 	}
 	style.italic = cell.Attr&term.Italic != 0
 	style.underline = cell.Attr&term.Underline != 0
@@ -187,13 +187,13 @@ func resolveCell(cell term.Cell, pal *palette, inactive bool) cellStyle {
 }
 
 // termColor resolves a terminal color; fallback stands in for the default.
-func (pal *palette) termColor(color term.Color, fallback ui.Color) ui.Color {
+func (pal *palette) termColor(color term.Color, fallback gfx.Color) gfx.Color {
 	switch color.Kind() {
 	case term.PaletteColor:
 		red, green, blue := term.Resolve(color.Index(), &pal.ansi)
-		return ui.RGB(red, green, blue)
+		return gfx.RGB(red, green, blue)
 	case term.TrueColor:
-		return ui.RGB(color.Components())
+		return gfx.RGB(color.Components())
 	}
 	return fallback
 }
@@ -239,7 +239,7 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 	var (
 		spanFrom  = -1
 		spanTo    int
-		spanColor ui.Color
+		spanColor gfx.Color
 	)
 	closeSpan := func() {
 		if spanFrom >= 0 {
@@ -327,7 +327,7 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 			text = utf8.AppendRune(text, marks[0].R)
 			marks = marks[1:]
 		}
-		entry.runs = append(entry.runs, ui.TextRun{
+		entry.runs = append(entry.runs, gfx.TextRun{
 			Column: int32(x), Bytes: int32(len(text) - before), Cells: int32(width),
 			Color: ink.fg, Weight: ink.weight, Italic: ink.italic, Underline: ink.underline, Strike: ink.strike,
 		})
@@ -391,9 +391,9 @@ func asciiOnly(value string) bool {
 }
 
 // highlightColor is the color a slot has in the terminal's scheme.
-func (pal *palette) highlightColor(slot highlight.Slot, inactive bool) ui.Color {
+func (pal *palette) highlightColor(slot highlight.Slot, inactive bool) gfx.Color {
 	ansi := pal.ansi[slot.ANSI()]
-	color := ui.RGB(ansi[0], ansi[1], ansi[2])
+	color := gfx.RGB(ansi[0], ansi[1], ansi[2])
 	if inactive {
 		color.Alpha *= 0.55
 	}
@@ -447,7 +447,7 @@ func slotBuffer(buffer *[]highlight.Slot, n int) []highlight.Slot {
 	return *buffer
 }
 
-func sameRunInk(run ui.TextRun, style cellStyle) bool {
+func sameRunInk(run gfx.TextRun, style cellStyle) bool {
 	return run.Color == style.fg && run.Weight == style.weight &&
 		run.Italic == style.italic && run.Underline == style.underline && run.Strike == style.strike
 }

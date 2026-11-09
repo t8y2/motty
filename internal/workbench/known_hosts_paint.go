@@ -2,11 +2,11 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
-func (state *State) paintKnownHostsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	state.syncKnownHostsVisible()
 	view, messages, pal := &state.knownHosts, state.messages, state.pal
 	value := view.search.String()
@@ -42,14 +42,14 @@ func (state *State) paintKnownHostsWorkspace(canvas *ui.Canvas, bounds ui.Rect) 
 		emptyTitle, emptyDescription, emptyIconKind = messages.KnownHostsNoMatches, messages.KnownHostsNoMatchesSub, iconSearch
 	}
 
-	var search, content, emptyIconBox, pagination, refresh, retrust, remove flex.Box
+	var search, content, emptyIconBox, pagination, refresh, retrust, remove ui.Box
 	f := state.knownHostsLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Column().MarginSides(4, 0, 12, 0).Gap(3).Children(func() {
-			f.Text(messages.KnownHostsTitle).FontSize(18).Weight(ui.WeightSemibold).Color(pal.text).Ellipsis()
+			f.Text(messages.KnownHostsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 			f.Paragraph(messages.KnownHostsDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 		})
-		f.Row().Height(40).Gap(gap).Items(flex.Center).Children(func() {
+		f.Row().Height(40).Gap(gap).Items(ui.Center).Children(func() {
 			search = f.Slot().Grow(1).MaxWidth(470).MinWidth(searchLeast).Height(40)
 			f.Spacer()
 			refresh = f.Slot().Size(refreshWidth, toolbarHeight)
@@ -65,9 +65,9 @@ func (state *State) paintKnownHostsWorkspace(canvas *ui.Canvas, bounds ui.Rect) 
 		// The footer's columns narrow with the card so the status keeps its room.
 		countWidth := min(168, (bounds.Width-36)*0.30)
 		selectionWidth := min(138, (bounds.Width-36)*0.22)
-		f.Row().Height(49).Gap(12).Items(flex.Center).Children(func() {
-			f.Text(view.countText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).Width(countWidth).Ellipsis()
-			f.Text(view.selectionText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).Width(selectionWidth).Ellipsis()
+		f.Row().Height(49).Gap(12).Items(ui.Center).Children(func() {
+			f.Text(view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(countWidth).Ellipsis()
+			f.Text(view.selectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(selectionWidth).Ellipsis()
 			f.Text(view.status).FontSize(metrics.FontSizeS).Color(statusColor).Grow(1).Ellipsis()
 			if paginated {
 				pagination = f.Slot().Size(242, 30)
@@ -86,20 +86,20 @@ func (state *State) paintKnownHostsWorkspace(canvas *ui.Canvas, bounds ui.Rect) 
 	})
 
 	if empty {
-		state.paintEmptyPage(canvas, emptyIconBox, flex.Box{}, emptyIconKind, ui.ID{}, "", false)
+		state.paintEmptyPage(canvas, emptyIconBox, ui.Box{}, emptyIconKind, gfx.ID{}, "", false)
 	} else {
 		state.paintKnownHostsTable(canvas, content.Rect())
 	}
 	if paginated {
 		bar := components.BeginPagination(canvas, state.Theme(), pagination.Rect())
 		bar.AddPrevious(hitKnownHostsPrevious, messages.KnownHostsPrevious, view.page == 0)
-		bar.AddPage(ui.ID{}, view.pageText, true)
+		bar.AddPage(gfx.ID{}, view.pageText, true)
 		pages := (len(view.visible) + knownHostsPageSize - 1) / knownHostsPageSize
 		bar.AddNext(hitKnownHostsNext, messages.KnownHostsNext, view.page+1 >= pages)
 	}
 }
 
-func (state *State) paintKnownHostsTable(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintKnownHostsTable(canvas *gfx.Canvas, bounds gfx.Rect) {
 	view, messages := &state.knownHosts, state.messages
 	columns := [...]components.TableColumn{
 		{Width: 42}, {Width: 46, Alignment: components.TableAlignRight}, {Width: 230},
@@ -111,11 +111,11 @@ func (state *State) paintKnownHostsTable(canvas *ui.Canvas, bounds ui.Rect) {
 	checkSize := 16 * theme.Metrics.ControlHeight / 32
 
 	// The checkbox of each row sits in the table's first column, below its header.
-	var checks [knownHostsPageSize]flex.Box
+	var checks [knownHostsPageSize]ui.Box
 	f := state.knownHostsTableLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(headerHeight, 0, 0, 0).Children(func() {
 		for offset := range view.visible[start:end] {
-			f.Row().Height(rowHeight).Shrink(0).Items(flex.Center).PadSides(0, 0, 0, 13).Children(func() {
+			f.Row().Height(rowHeight).Shrink(0).Items(ui.Center).PadSides(0, 0, 0, 13).Children(func() {
 				checks[offset] = f.Slot().Size(checkSize, checkSize)
 			})
 		}
@@ -133,12 +133,12 @@ func (state *State) paintKnownHostsTable(canvas *ui.Canvas, bounds ui.Rect) {
 		record := &view.rows[index]
 		table.Row(hitKnownHostRowList.At(index), record.cells[:], record.selected)
 		if box := checks[offset].Rect(); box.Y < bounds.Y+bounds.Height {
-			components.BeginCheckbox(canvas, state.Theme(), hitKnownHostCheckList.At(index), ui.Rect{X: box.X, Y: box.Y}, record.selected).Label(record.selectLabel).Paint()
+			components.BeginCheckbox(canvas, state.Theme(), hitKnownHostCheckList.At(index), gfx.Rect{X: box.X, Y: box.Y}, record.selected).Label(record.selectLabel).Paint()
 		}
 	}
 }
 
-func (state *State) paintKnownHostsDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintKnownHostsDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	view, messages := &state.knownHosts, state.messages
 	title, confirm := messages.KnownHostsDeleteTitle, messages.KnownHostsDeleteConfirm
 	if view.action == knownHostsActionRetrust {
@@ -151,14 +151,14 @@ func (state *State) paintKnownHostsDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitKnownHostsDialogDismiss, CloseID: hitKnownHostsDialogClose, InitialFocusID: hitKnownHostsDialogCancel,
-		ContentSize: ui.Size{Width: 570}, FitBody: true, BodyHeight: body,
+		ContentSize: gfx.Size{Width: 570}, FitBody: true, BodyHeight: body,
 	})
 	layout := dialog.Begin(title, view.dialogDescription)
 	f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Gap(8).Children(func() {
-		f.Text(messages.KnownHostsVerifyWarning).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.muted).LineHeight(24)
+		f.Text(messages.KnownHostsVerifyWarning).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(24)
 		if view.dialogError != "" {
-			f.Text(view.dialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).LineHeight(38)
+			f.Text(view.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(38)
 		}
 	})
 	f.End()

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
 	"motty/internal/i18n"
@@ -92,7 +92,7 @@ func (state *State) settingsCompletionOptions() [3]components.SegmentOption {
 	}
 }
 
-func (state *State) selectedCompletionOption() ui.ID {
+func (state *State) selectedCompletionOption() gfx.ID {
 	switch state.completionMode() {
 	case completionOff:
 		return hitSettingsCompletionOff
@@ -718,68 +718,68 @@ func (state *State) completionCandidates(session *Session, line string) []comple
 
 // completionKey handles keys while the list is open. Printable keys stay with
 // the terminal; the list closes on the next typed byte.
-func (state *State) completionKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) completionKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	list := &state.completion.list
 	if !list.active {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if state.modal != modalNone {
 		state.closeCompletionList()
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	session := state.completionSession()
 	if session == nil || session.term.preedit.Composing {
 		state.closeCompletionList()
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	switch event.Key {
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		state.closeCompletionList()
 		return handled, true
-	case ui.KeyEnter:
+	case gfx.KeyEnter:
 		if event.Repeat {
 			return handled, true
 		}
 		if event.Modifiers != 0 {
 			state.closeCompletionList()
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		state.acceptCompletion(session)
 		return handled, true
-	case ui.KeyTab:
+	case gfx.KeyTab:
 		if event.Modifiers != 0 {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		state.closeCompletionList()
-		return ui.EventResult{}, false
-	case ui.KeyUp:
+		return gfx.EventResult{}, false
+	case gfx.KeyUp:
 		if event.Modifiers != 0 {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		state.completionMove(-1)
 		return handled, true
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		if event.Modifiers != 0 {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		state.completionMove(1)
 		return handled, true
-	case ui.KeyPageUp:
+	case gfx.KeyPageUp:
 		state.completionMove(-completionRows)
 		return handled, true
-	case ui.KeyPageDown:
+	case gfx.KeyPageDown:
 		state.completionMove(completionRows)
 		return handled, true
-	case ui.KeyHome:
+	case gfx.KeyHome:
 		list.selected, list.top = 0, 0
 		return handled, true
-	case ui.KeyEnd:
+	case gfx.KeyEnd:
 		list.selected = len(list.candidates) - 1
 		list.clamp()
 		return handled, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 func (list *completionPopup) clamp() {
@@ -830,7 +830,7 @@ func (state *State) acceptCompletion(session *Session) {
 }
 
 // clickCompletion handles the list's controls.
-func (state *State) clickCompletion(id ui.ID) bool {
+func (state *State) clickCompletion(id gfx.ID) bool {
 	if id == hitCompletionOpen {
 		state.openCompletions()
 		return true
@@ -859,7 +859,7 @@ func (state *State) clickCompletion(id ui.ID) bool {
 
 // paintCompletionList draws the open list over the grid, anchored to the cursor
 // cell and flipped above it when the terminal has no room below.
-func (state *State) paintCompletionList(canvas *ui.Canvas, session *Session, geometry terminalGeometry) {
+func (state *State) paintCompletionList(canvas *gfx.Canvas, session *Session, geometry terminalGeometry) {
 	list := &state.completion.list
 	if !list.active || list.sessionID != session.ID || state.modal != modalNone {
 		return
@@ -874,7 +874,7 @@ func (state *State) paintCompletionList(canvas *ui.Canvas, session *Session, geo
 	area := geometry.area
 	x = min(max(x, area.X+2), area.X+max(area.Width-2, 2))
 	y = min(max(y, area.Y+2), area.Y+max(area.Height-2, 2))
-	anchor := ui.Rect{X: x, Y: y, Width: max(cellWidth, 2), Height: max(cellHeight, 2)}
+	anchor := gfx.Rect{X: x, Y: y, Width: max(cellWidth, 2), Height: max(cellHeight, 2)}
 
 	visible := min(len(list.candidates), completionRows)
 	width := state.completionWidth(canvas)
@@ -886,7 +886,7 @@ func (state *State) paintCompletionList(canvas *ui.Canvas, session *Session, geo
 		Side:        components.PopoverBottom,
 		Align:       components.PopoverAlignStart,
 		SideOffset:  2,
-		ContentSize: ui.Size{Width: width},
+		ContentSize: gfx.Size{Width: width},
 		BodyHeight:  bodyHeight,
 	})
 	layout := popover.Begin(state.messages.Completion.Title, "")
@@ -894,25 +894,25 @@ func (state *State) paintCompletionList(canvas *ui.Canvas, session *Session, geo
 	popover.End()
 }
 
-func (state *State) paintCompletionRows(canvas *ui.Canvas, body ui.Rect, visible int) {
+func (state *State) paintCompletionRows(canvas *gfx.Canvas, body gfx.Rect, visible int) {
 	list := &state.completion.list
-	mainStyle := ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.text}
-	descStyle := ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.faint}
-	selectedText := ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.onAccent}
-	selectedDesc := ui.TextStyle{Size: metrics.FontSizeS, Color: state.pal.onAccent}
+	mainStyle := gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.text}
+	descStyle := gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.faint}
+	selectedText := gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.onAccent}
+	selectedDesc := gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.onAccent}
 	for row := 0; row < visible; row++ {
 		index := list.top + row
 		if index >= len(list.candidates) {
 			return
 		}
 		candidate := &list.candidates[index]
-		bounds := ui.Rect{X: body.X, Y: body.Y + float32(row)*completionRowHeight, Width: body.Width, Height: completionRowHeight}
+		bounds := gfx.Rect{X: body.X, Y: body.Y + float32(row)*completionRowHeight, Width: body.Width, Height: completionRowHeight}
 		selected := index == list.selected
 		if selected {
 			canvas.Rounded(bounds, radius.item, state.pal.accent)
 		}
-		canvas.HitWithOptions(hitCompletionList.At(index), bounds, candidate.Text, ui.HitOptions{Role: ui.RoleOption, SkipTab: true, Selected: selected})
-		text := ui.Rect{X: bounds.X + 8, Y: bounds.Y + 3, Width: bounds.Width - 16, Height: bounds.Height - 6}
+		canvas.HitWithOptions(hitCompletionList.At(index), bounds, candidate.Text, gfx.HitOptions{Role: gfx.RoleOption, SkipTab: true, Selected: selected})
+		text := gfx.Rect{X: bounds.X + 8, Y: bounds.Y + 3, Width: bounds.Width - 16, Height: bounds.Height - 6}
 		textStyle, detailStyle := mainStyle, descStyle
 		if selected {
 			textStyle, detailStyle = selectedText, selectedDesc
@@ -921,7 +921,7 @@ func (state *State) paintCompletionRows(canvas *ui.Canvas, body ui.Rect, visible
 			detailWidth := canvas.TextWidth(candidate.Desc, metrics.FontSizeS)
 			if detailWidth < bounds.Width*0.55 {
 				text.Width = max(bounds.Width-16-detailWidth-10, 10)
-				detail := ui.Rect{X: bounds.X + bounds.Width - detailWidth - 8, Y: bounds.Y + 3, Width: detailWidth, Height: bounds.Height - 6}
+				detail := gfx.Rect{X: bounds.X + bounds.Width - detailWidth - 8, Y: bounds.Y + 3, Width: detailWidth, Height: bounds.Height - 6}
 				canvas.Label(candidate.Desc, detail, detailStyle)
 			}
 		}
@@ -932,7 +932,7 @@ func (state *State) paintCompletionRows(canvas *ui.Canvas, body ui.Rect, visible
 }
 
 // completionWidth measures the widest row, within the list's bounds.
-func (state *State) completionWidth(canvas *ui.Canvas) float32 {
+func (state *State) completionWidth(canvas *gfx.Canvas) float32 {
 	width := completionMinWidth
 	for _, candidate := range state.completion.list.candidates {
 		measured := canvas.TextWidth(candidate.Text, metrics.FontSizeS) + 16

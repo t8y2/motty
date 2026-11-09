@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -13,14 +13,14 @@ func TestVerticalTabsSettingsPersistAndSupportKeyboard(t *testing.T) {
 		t.Fatal("old or invalid settings must keep horizontal tabs")
 	}
 	state.Click(hitSettings)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
-	for _, id := range []ui.ID{hitSettingsTabsHorizontal, hitSettingsTabsVertical} {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
+	for _, id := range []gfx.ID{hitSettingsTabsHorizontal, hitSettingsTabsVertical} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Fatalf("missing General setting %v", id)
 		}
 	}
-	result := state.Key(ui.KeyEvent{Target: hitSettingsTabsHorizontal, Key: ui.KeyRight})
+	result := state.Key(gfx.KeyEvent{Target: hitSettingsTabsHorizontal, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != hitSettingsTabsVertical || state.tabOrientation != tabsVertical {
 		t.Fatalf("keyboard choice: %+v, orientation %v", result, state.tabOrientation)
 	}
@@ -43,14 +43,14 @@ func TestVerticalTabsFitWorkspaceAndRemainReachableFromSettings(t *testing.T) {
 		openEmptyTab(state)
 	}
 	state.setTabOrientation(tabsVertical)
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 700, Height: 560}} {
-		var canvas ui.Canvas
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 700, Height: 560}} {
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		frame := state.workspacePixelBounds(size)
 		if frame.X <= 0 || frame.Width+frame.X != size.Width {
 			t.Fatalf("workspace does not make room for tabs: %+v", frame)
 		}
-		var previous ui.Rect
+		var previous gfx.Rect
 		for _, tab := range state.workspaceTabs {
 			hit, ok := hitByID(&canvas, hitTabList.At(int(tab.ID)))
 			if !ok || hit.Bounds.Y < windowBarHeight || hit.Bounds.X+hit.Bounds.Width > frame.X || hit.Bounds.Y < previous.Y+previous.Height {
@@ -68,8 +68,8 @@ func TestVerticalTabsFitWorkspaceAndRemainReachableFromSettings(t *testing.T) {
 		}
 	}
 	state.Click(hitSettings)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	first := state.workspaceTabs[0].ID
 	hit, ok := hitByID(&canvas, hitTabList.At(int(first)))
 	if !ok || state.verticalTabs.bounds.Width <= 0 ||
@@ -94,11 +94,11 @@ func TestVerticalTabsNameTheSessionOverTheWorkspace(t *testing.T) {
 	state := newTestState(t, Options{})
 	openEmptyTab(state)
 	state.setTabOrientation(tabsVertical)
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 640}, {Width: 820, Height: 600}} {
-		var canvas ui.Canvas
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 640}, {Width: 820, Height: 600}} {
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		label := state.windowBarTitle()
-		var name ui.Text
+		var name gfx.Text
 		found := false
 		for _, text := range canvas.Texts() {
 			if text.Value == label && text.Bounds.Y < windowBarHeight {
@@ -138,14 +138,14 @@ func TestVerticalTabsScrollNavigateAndReorder(t *testing.T) {
 		openEmptyTab(state)
 	}
 	state.setTabOrientation(tabsVertical)
-	size := ui.Size{Width: 1000, Height: 600}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1000, Height: 600}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if state.tabStrip.max <= 0 || state.tabStrip.offset != state.tabStrip.max {
 		t.Fatal("active tab must be revealed at the end of an overflowing sidebar")
 	}
 	area := state.tabStrip.area
-	result := state.Scroll(ui.ScrollEvent{X: area.X + 10, Y: area.Y + 10, DeltaY: -10000, Viewport: size})
+	result := state.Scroll(gfx.ScrollEvent{X: area.X + 10, Y: area.Y + 10, DeltaY: -10000, Viewport: size})
 	if !result.Handled || state.tabStrip.offset != 0 {
 		t.Fatal("wheel did not scroll the sidebar to the start")
 	}
@@ -153,13 +153,13 @@ func TestVerticalTabsScrollNavigateAndReorder(t *testing.T) {
 	state.Click(hitTabList.At(int(first)))
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	result = state.Key(ui.KeyEvent{Target: hitTabList.At(int(first)), Key: ui.KeyDown})
+	result = state.Key(gfx.KeyEvent{Target: hitTabList.At(int(first)), Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != hitTabList.At(int(second)) {
 		t.Fatalf("vertical tabs must navigate with Up/Down: %+v", result)
 	}
 	hit, _ := hitByID(&canvas, hitTabList.At(int(first)))
-	from := ui.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
-	to := ui.Point{X: from.X, Y: state.tabStrip.origin + 3*state.tabStrip.pitch}
+	from := gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
+	to := gfx.Point{X: from.X, Y: state.tabStrip.origin + 3*state.tabStrip.pitch}
 	target := hitTabList.At(int(first))
 	press(state, target, from)
 	dragTo(state, target, to)
@@ -177,22 +177,22 @@ func TestVerticalTabsHoverDoesNotResizeWorkspace(t *testing.T) {
 	openEmptyTab(state)
 	state.setTabOrientation(tabsVertical)
 	state.setVerticalTabsAutoHide(true)
-	size := ui.Size{Width: 1000, Height: 600}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1000, Height: 600}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	before := state.workspacePixelBounds(size)
 	rail := state.verticalTabs.bounds.Width
 	if rail <= 0 || before.X != rail {
 		t.Fatalf("auto-hide must start as a rail the workspace leaves room for: rail %v, workspace %+v", rail, before)
 	}
-	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, X: rail / 2, Y: 100, Viewport: size})
+	result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: rail / 2, Y: 100, Viewport: size})
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	if !result.Repaint || state.verticalTabs.bounds.Width <= rail || state.workspacePixelBounds(size) != before {
 		t.Fatal("hover expansion must overlay rather than resize the workspace")
 	}
 	expanded := state.verticalTabs.bounds.Width
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, X: size.Width - 100, Y: 300, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: size.Width - 100, Y: 300, Viewport: size})
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	if state.verticalTabs.bounds.Width != rail || state.workspacePixelBounds(size) != before {
@@ -212,19 +212,19 @@ func TestVerticalTabsOpenForKeyboardFocus(t *testing.T) {
 	openEmptyTab(state)
 	state.setTabOrientation(tabsVertical)
 	state.setVerticalTabsAutoHide(true)
-	size := ui.Size{Width: 1000, Height: 600}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1000, Height: 600}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	rail := state.verticalTabs.bounds.Width
 	tab := hitTabList.At(int(state.deck.ActiveWorkspace()))
 	canvas.Reset()
-	canvas.SetInteraction(ui.ID{}, ui.ID{}, tab, false)
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, tab, false)
 	state.Paint(&canvas, size)
 	if state.verticalTabs.bounds.Width != rail {
 		t.Fatal("a pointer-focused tab must not hold the sidebar open")
 	}
 	canvas.Reset()
-	canvas.SetInteraction(ui.ID{}, ui.ID{}, tab, true)
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, tab, true)
 	state.Paint(&canvas, size)
 	if state.verticalTabs.bounds.Width <= rail {
 		t.Fatal("keyboard focus on a tab must open the sidebar")
@@ -257,8 +257,8 @@ func TestTabPreferencesDefaultToHorizontalWhenTheSavedStateLacksThem(t *testing.
 func TestAutoHideSettingIsOfferedOnlyForVerticalTabs(t *testing.T) {
 	state := newTestState(t, Options{})
 	state.Click(hitSettings)
-	size := ui.Size{Width: 1400, Height: 1800}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 1800}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if _, ok := hitByID(&canvas, hitSettingsVerticalTabsAutoHide); ok {
 		t.Fatal("horizontal tabs have nothing to auto-hide")
@@ -276,13 +276,13 @@ func TestVerticalTabsLeaveRoomForFilesAndAssistant(t *testing.T) {
 	openEmptyTab(state)
 	state.setTabOrientation(tabsVertical)
 	workspace := state.deck.ActiveWorkspace()
-	size := ui.Size{Width: 1600, Height: 900}
+	size := gfx.Size{Width: 1600, Height: 900}
 	state.ai.open = true
 	for _, side := range []layoutcore.ContextSide{layoutcore.ContextLeft, layoutcore.ContextRight} {
 		if err := state.deck.SetContext(workspace, layoutcore.ContextState{Kind: layoutcore.ContextSFTP, Open: true, Side: side, Width: layoutcore.DefaultContextWidth}); err != nil {
 			t.Fatal(err)
 		}
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		files, panes := state.contextRect, state.workspacePixelBounds(size)
 		if files.Width <= 0 || files.X < state.verticalTabsReserve(size) || panes.X < state.verticalTabsReserve(size) ||
@@ -305,8 +305,8 @@ func TestVerticalTabsRevealScrollbarOnHoverAndDragIt(t *testing.T) {
 		openEmptyTab(state)
 	}
 	state.setTabOrientation(tabsVertical)
-	size := ui.Size{Width: 1000, Height: 600}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1000, Height: 600}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if _, ok := hitByID(&canvas, hitVerticalTabsBar); ok {
 		t.Fatal("the scrollbar is painted before the pointer is over the sidebar")
@@ -330,14 +330,14 @@ func TestVerticalTabsRevealScrollbarOnHoverAndDragIt(t *testing.T) {
 		t.Fatal("no tab is on screen")
 	}
 
-	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, X: list.X + 20, Y: list.Y + 20, Viewport: size})
+	result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: list.X + 20, Y: list.Y + 20, Viewport: size})
 	if !result.Repaint {
 		t.Fatal("hovering the sidebar must repaint to reveal its scrollbar")
 	}
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	bar, ok := hitByID(&canvas, hitVerticalTabsBar)
-	if !ok || bar.Role != ui.RoleSeparator {
+	if !ok || bar.Role != gfx.RoleSeparator {
 		t.Fatalf("hover did not reveal the scrollbar: %+v", bar)
 	}
 	if bar.Bounds.Width >= 10 {
@@ -351,11 +351,11 @@ func TestVerticalTabsRevealScrollbarOnHoverAndDragIt(t *testing.T) {
 
 	geometry := state.verticalTabs.barGeometry
 	before := state.tabStrip.offset
-	grab := ui.Point{X: geometry.VerticalThumb.X + 1, Y: geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2}
+	grab := gfx.Point{X: geometry.VerticalThumb.X + 1, Y: geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2}
 	if result := press(state, hitVerticalTabsBar, grab); !result.Handled {
 		t.Fatal("pressing the scrollbar was not handled")
 	}
-	dragTo(state, hitVerticalTabsBar, ui.Point{X: grab.X, Y: grab.Y - 120})
+	dragTo(state, hitVerticalTabsBar, gfx.Point{X: grab.X, Y: grab.Y - 120})
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	if state.tabStrip.offset >= before {
@@ -364,9 +364,9 @@ func TestVerticalTabsRevealScrollbarOnHoverAndDragIt(t *testing.T) {
 	if _, ok := hitByID(&canvas, hitVerticalTabsBar); !ok {
 		t.Fatal("the scrollbar hid while it was being dragged")
 	}
-	release(state, hitVerticalTabsBar, ui.Point{X: grab.X, Y: grab.Y - 120})
+	release(state, hitVerticalTabsBar, gfx.Point{X: grab.X, Y: grab.Y - 120})
 
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerExit, X: size.Width + 10, Y: size.Height + 10, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerExit, X: size.Width + 10, Y: size.Height + 10, Viewport: size})
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	if _, ok := hitByID(&canvas, hitVerticalTabsBar); ok {

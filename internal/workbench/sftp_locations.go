@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
 
@@ -44,7 +44,7 @@ type sftpLocalPlace struct {
 type sftpPlaceMenu struct {
 	local     bool
 	locations []sftpLocalPlace
-	anchors   [2]ui.Rect
+	anchors   [2]gfx.Rect
 	scroll    components.MenuScroll
 }
 
@@ -70,9 +70,9 @@ func (w *sftpWindow) toggleDirectoryFavorite(local bool) {
 	w.placeBrowser().toggleDirectoryFavorite(local)
 }
 func (w *sftpWindow) openDirectoryPlaces(local bool) { w.placeBrowser().openDirectoryPlaces(local) }
-func (w *sftpWindow) clickDirectoryPlace(id ui.ID)   { w.placeBrowser().clickDirectoryPlace(id) }
-func (w *sftpWindow) paintDirectoryPlaces(canvas *ui.Canvas) {
-	w.placeBrowser().paintDirectoryPlaces(canvas, ui.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height})
+func (w *sftpWindow) clickDirectoryPlace(id gfx.ID)  { w.placeBrowser().clickDirectoryPlace(id) }
+func (w *sftpWindow) paintDirectoryPlaces(canvas *gfx.Canvas) {
+	w.placeBrowser().paintDirectoryPlaces(canvas, gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height})
 }
 
 func (w sftpPlaceBrowser) folder(local bool) *sftpFolder {
@@ -222,7 +222,7 @@ func (w sftpPlaceBrowser) openDirectoryPlaces(local bool) {
 	w.view.bookmarksOpen = true
 }
 
-func (w sftpPlaceBrowser) clickDirectoryPlace(id ui.ID) {
+func (w sftpPlaceBrowser) clickDirectoryPlace(id gfx.ID) {
 	local := w.view.places.local
 	if id == hitSFTPBookmarkNew {
 		w.toggleDirectoryFavorite(local)
@@ -263,7 +263,7 @@ func (w sftpPlaceBrowser) clickDirectoryPlace(id ui.ID) {
 	w.view.bookmarksOpen = false
 }
 
-func (w sftpPlaceBrowser) paintDirectoryPlaces(canvas *ui.Canvas, viewport ui.Rect) {
+func (w sftpPlaceBrowser) paintDirectoryPlaces(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := w.owner.messages.SFTPWindow
 	local := w.view.places.local
 	anchor := w.view.places.anchors[1]
@@ -276,7 +276,7 @@ func (w sftpPlaceBrowser) paintDirectoryPlaces(canvas *ui.Canvas, viewport ui.Re
 	if local {
 		height += float32((len(w.view.places.locations) + 4) * 32)
 	}
-	menu := components.BeginContextMenu(canvas, w.owner.Theme(), ui.Rect{X: anchor.X, Y: anchor.Y + anchor.Height + 4, Width: min(480, viewport.Width-32), Height: min(560, height)}, components.ContextMenuOptions{Layer: popupLayer, Scope: hitSFTPBookmarkDismiss, DismissID: hitSFTPBookmarkDismiss, Viewport: viewport, Scroll: &w.view.places.scroll, RowHeight: 32})
+	menu := components.BeginContextMenu(canvas, w.owner.Theme(), gfx.Rect{X: anchor.X, Y: anchor.Y + anchor.Height + 4, Width: min(480, viewport.Width-32), Height: min(560, height)}, components.ContextMenuOptions{Layer: popupLayer, Scope: hitSFTPBookmarkDismiss, DismissID: hitSFTPBookmarkDismiss, Viewport: viewport, Scroll: &w.view.places.scroll, RowHeight: 32})
 	label, glyph := m.FavoriteAdd, uint8(iconStar)
 	if w.directoryFavorite(local) {
 		label, glyph = m.FavoriteRemove, iconStarSolid
@@ -344,14 +344,14 @@ func (w sftpPlaceBrowser) paintDirectoryPlaces(canvas *ui.Canvas, viewport ui.Re
 	menu.End()
 }
 
-func (state *State) sftpPlacesKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) sftpPlacesKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || session.files == nil || !session.files.bookmarksOpen || event.Release {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	view := session.files
-	result := ui.EventResult{Handled: true, Repaint: true}
-	if event.Key == ui.KeyEscape && !event.Repeat {
+	result := gfx.EventResult{Handled: true, Repaint: true}
+	if event.Key == gfx.KeyEscape && !event.Repeat {
 		view.bookmarksOpen = false
 		return result, true
 	}
@@ -359,13 +359,13 @@ func (state *State) sftpPlacesKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		result.Focus, result.FocusVisible = next, true
 		return result, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) sftpPlacesPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) sftpPlacesPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || session.files == nil || !session.files.bookmarksOpen {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	view := session.files
 	if _, local, mounted := state.decodePaneHit(event.Target); mounted {
@@ -376,12 +376,12 @@ func (state *State) sftpPlacesPointer(event ui.PointerEvent) (ui.EventResult, bo
 	wasDragging := view.places.scroll.Dragging()
 	changed := view.places.scroll.Drag(event)
 	if wasDragging || changed || view.places.scroll.Dragging() {
-		return ui.EventResult{Handled: true, Repaint: changed}, true
+		return gfx.EventResult{Handled: true, Repaint: changed}, true
 	}
 	inside := event.Target == hitSFTPBookmarkNew || event.Target.Scope() == sftpLocalFavorites || event.Target.Scope() == sftpLocalFavoriteRemove || event.Target.Scope() == sftpLocalPlaces || event.Target.Scope() == hitSFTPBookmarkItemList || event.Target.Scope() == hitSFTPBookmarkRemoveList
-	if event.Kind == ui.PointerDown && !inside {
+	if event.Kind == gfx.PointerDown && !inside {
 		view.bookmarksOpen = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }

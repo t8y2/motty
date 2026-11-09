@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -42,7 +42,7 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 				}
 			}
 			must(view.Rest())
-			find := func(id ui.ID) ui.Hit {
+			find := func(id gfx.ID) gfx.Hit {
 				t.Helper()
 				for _, h := range view.Snapshot().Hits {
 					if h.ID == id && !h.IsLabel {
@@ -50,13 +50,13 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 					}
 				}
 				t.Fatalf("missing visible control %v", id)
-				return ui.Hit{}
+				return gfx.Hit{}
 			}
 			footer := find(hitDialogSubmit).Bounds
 			if state.editor.form.geometry.MaxOffsetY <= 0 {
 				t.Fatal("short form should scroll")
 			}
-			seen := map[ui.ID]bool{}
+			seen := map[gfx.ID]bool{}
 			for i := 0; i < state.editor.form.count+2; i++ {
 				id := view.Snapshot().Focused
 				seen[id] = true
@@ -70,7 +70,7 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 				must(view.Keys("Tab"))
 				must(view.Rest())
 			}
-			for _, id := range []ui.ID{hostPickerIDs.Trigger, hitHostProxyConfigure, hitDialogAlgorithms, hitDialogOTP, hitDialogForwardX11, hitDialogCancel, hitDialogSubmit} {
+			for _, id := range []gfx.ID{hostPickerIDs.Trigger, hitHostProxyConfigure, hitDialogAlgorithms, hitDialogOTP, hitDialogForwardX11, hitDialogCancel, hitDialogSubmit} {
 				if !seen[id] {
 					t.Fatalf("Tab skipped %v", id)
 				}
@@ -80,15 +80,15 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 			find(view.Snapshot().Focused)
 			// Wheel and a captured scrollbar drag use the same clamped geometry.
 			b := state.editor.form.geometry.Viewport
-			must(view.Driver().Scroll(ui.ScrollEvent{X: b.X + 4, Y: b.Y + 4, DeltaY: 10000}))
+			must(view.Driver().Scroll(gfx.ScrollEvent{X: b.X + 4, Y: b.Y + 4, DeltaY: 10000}))
 			must(view.Rest())
 			if state.editor.form.offset != state.editor.form.geometry.MaxOffsetY {
 				t.Fatal("wheel failed to reach bottom")
 			}
 			bar := state.editor.form.geometry.VerticalThumb
-			must(view.Driver().Press(bar.X+bar.Width/2, bar.Y+bar.Height/2, ui.PointerButtonPrimary))
+			must(view.Driver().Press(bar.X+bar.Width/2, bar.Y+bar.Height/2, gfx.PointerButtonPrimary))
 			must(view.Driver().Move(bar.X+bar.Width/2, b.Y-40))
-			must(view.Driver().Release(bar.X+bar.Width/2, b.Y-40, ui.PointerButtonPrimary))
+			must(view.Driver().Release(bar.X+bar.Width/2, b.Y-40, gfx.PointerButtonPrimary))
 			must(view.Rest())
 			if state.editor.form.offset != 0 {
 				t.Fatal("captured scrollbar did not reach top")
@@ -98,7 +98,7 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 			must(view.Driver().Resize(900, 600))
 			must(view.Rest())
 			before := state.editor.form.offset
-			state.scrollHostForm(ui.ScrollEvent{X: b.X + 2, Y: b.Y + 2, DeltaY: 100})
+			state.scrollHostForm(gfx.ScrollEvent{X: b.X + 2, Y: b.Y + 2, DeltaY: 100})
 			if state.editor.form.offset != before {
 				t.Fatal("scrolled behind a popup")
 			}
@@ -115,8 +115,8 @@ func TestHostFormRoomierLayoutAndReset(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.setLanguage(i18n.Chinese)
 	state.openHostDialog()
-	c, _ := paintAt(state, ui.Size{Width: 1100, Height: 900})
-	var label, input, nextLabel ui.Rect
+	c, _ := paintAt(state, gfx.Size{Width: 1100, Height: 900})
+	var label, input, nextLabel gfx.Rect
 	for _, h := range c.Hits() {
 		if h.ID == hitDialogAddress && h.IsLabel {
 			nextLabel = h.Bounds
@@ -124,7 +124,7 @@ func TestHostFormRoomierLayoutAndReset(t *testing.T) {
 		if h.ID == hitDialogLabel {
 			if h.IsLabel {
 				label = h.Bounds
-			} else if h.Role == ui.RoleTextField {
+			} else if h.Role == gfx.RoleTextField {
 				input = h.Bounds
 			}
 		}

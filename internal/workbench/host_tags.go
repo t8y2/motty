@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 
 	"motty/internal/i18n"
 )
@@ -25,7 +25,7 @@ type hostTagPicker struct {
 	control    components.MultiSelectState
 	serialized string
 	ready      bool
-	popup      ui.Rect
+	popup      gfx.Rect
 }
 
 func validHostTag(value string) bool {
@@ -119,7 +119,7 @@ func (state *State) commitHostTagQuery() bool {
 	return true
 }
 
-func (state *State) clickHostTags(id ui.ID) bool {
+func (state *State) clickHostTags(id gfx.ID) bool {
 	p := state.hostTagPicker()
 	switch {
 	case id == hitDialogTags:
@@ -142,26 +142,26 @@ func (state *State) clickHostTags(id ui.ID) bool {
 	return true
 }
 
-func (state *State) hostTagsKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) hostTagsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNewHost {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	p := state.hostTagPicker()
-	if event.Target != hitDialogTags && (!p.control.Open || event.Key != ui.KeyEscape && event.Key != ui.KeyTab) {
-		return ui.EventResult{}, false
+	if event.Target != hitDialogTags && (!p.control.Open || event.Key != gfx.KeyEscape && event.Key != gfx.KeyTab) {
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEnter && !event.Release && !event.Repeat && event.Modifiers == 0 {
+	if event.Key == gfx.KeyEnter && !event.Release && !event.Repeat && event.Modifiers == 0 {
 		if _, composing := p.control.Query.Composition(); !composing {
 			if query := strings.TrimSpace(p.control.Query.String()); query != "" {
 				if _, ok := pendingHostTags(query); !ok {
 					state.dialogError = state.messages.ErrHostTagsInvalid
-					return ui.EventResult{Handled: true, Repaint: true}, true
+					return gfx.EventResult{Handled: true, Repaint: true}, true
 				}
 				// A comma-separated query is several tags, and the component's
 				// create row is disabled for it, so commit the list here.
 				if strings.Contains(query, ",") {
 					state.commitHostTagQuery()
-					return ui.EventResult{Handled: true, Repaint: true}, true
+					return gfx.EventResult{Handled: true, Repaint: true}, true
 				}
 			}
 		}
@@ -171,7 +171,7 @@ func (state *State) hostTagsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	return result, result.Handled || result.Repaint
 }
 
-func (state *State) paintHostTags(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintHostTags(canvas *gfx.Canvas, bounds gfx.Rect) {
 	p := state.hostTagPicker()
 	input := components.BeginField(canvas, state.Theme(), bounds).For(hitDialogTags).Paint(state.messages.FieldTags, "", "")
 	query := strings.TrimSpace(p.control.Query.String())
@@ -181,7 +181,7 @@ func (state *State) paintHostTags(canvas *ui.Canvas, bounds ui.Rect) {
 		Placeholder: state.messages.FieldTagsPlaceholder, EmptyLabel: state.messages.HostTagsEmpty, CreatePrefix: state.messages.HostTagsCreatePrefix,
 		// The popup may cover the dialog footer, while the input stays clipped to
 		// the scrollable form. Viva bounds the floating list to this window.
-		Viewport: ui.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, Layer: dialogLayer + 2,
+		Viewport: gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, Layer: dialogLayer + 2,
 		Invalid: query != "" && !validHostTag(query),
 	})
 	p.popup = layout.Popup

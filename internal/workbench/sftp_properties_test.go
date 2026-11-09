@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
-func sftpMenuRowIDs(rows menuRows) map[ui.ID]bool {
-	ids := make(map[ui.ID]bool, rows.count)
+func sftpMenuRowIDs(rows menuRows) map[gfx.ID]bool {
+	ids := make(map[gfx.ID]bool, rows.count)
 	for _, entry := range rows.entries[:rows.count] {
 		if !entry.separator {
 			ids[entry.item.ID] = true
@@ -27,7 +27,7 @@ func TestSinglePaneMenuSharesFileActionsPathsAndProperties(t *testing.T) {
 	clickSFTPRow(t, state, view, "notes.txt")
 
 	ids := sftpMenuRowIDs(state.sftpMenuRows(session, view))
-	for _, id := range []ui.ID{
+	for _, id := range []gfx.ID{
 		hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink,
 		hitSFTPCopyPath, hitSFTPProperties,
 	} {
@@ -56,8 +56,8 @@ func TestSinglePaneMenuSharesFileActionsPathsAndProperties(t *testing.T) {
 	if rows := state.sftpFilePropertiesRows(&state.fileProperties); len(rows) < 6 || rows[0].value != "notes.txt" || rows[1].value != "/home/test/notes.txt" {
 		t.Fatalf("remote property rows = %+v", rows)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitFilePropertiesClose); !ok {
 		t.Fatal("the Viva property dialog did not paint its close action")
 	}
@@ -74,7 +74,7 @@ func TestSinglePaneMenuSharesFileActionsPathsAndProperties(t *testing.T) {
 	openLocalPane(t, state, session, localDir)
 	clickSFTPLocalRow(t, state, view, "report.txt")
 	ids = sftpMenuRowIDs(state.sftpMenuRows(session, view))
-	for _, id := range []ui.ID{hitSFTPNewDirectory, hitSFTPCopyPath, hitSFTPProperties} {
+	for _, id := range []gfx.ID{hitSFTPNewDirectory, hitSFTPCopyPath, hitSFTPProperties} {
 		if !ids[id] {
 			t.Errorf("single-pane local menu lacks action %v", id)
 		}
@@ -130,8 +130,8 @@ func TestSinglePanePropertiesDialogConsumesListKeys(t *testing.T) {
 		t.Fatal("the properties dialog did not open")
 	}
 
-	for _, key := range []ui.Key{ui.KeyDelete, ui.KeyF2, ui.KeyBackspace} {
-		result := state.Key(ui.KeyEvent{Key: key})
+	for _, key := range []gfx.Key{gfx.KeyDelete, gfx.KeyF2, gfx.KeyBackspace} {
+		result := state.Key(gfx.KeyEvent{Key: key})
 		if !result.Handled {
 			t.Fatalf("%v escaped the properties dialog", key)
 		}
@@ -139,7 +139,7 @@ func TestSinglePanePropertiesDialogConsumesListKeys(t *testing.T) {
 			t.Fatalf("%v acted behind the properties dialog: modal=%d file dialog=%d", key, state.modal, view.dialog)
 		}
 	}
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape}); !result.Handled {
 		t.Fatal("Escape did not close the properties dialog")
 	}
 	if state.modal != modalNone || state.fileProperties.open {
@@ -158,25 +158,25 @@ func TestSinglePanePropertiesDialogConsumesPointerAndAcceptsItsOwnClose(t *testi
 	}
 	selected := view.sftpFolder.selected
 
-	result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
 		Target: hitSFTPEntryList.At(0), X: 20, Y: 20,
 	})
 	if !result.Handled || view.sftpFolder.selected != selected {
 		t.Fatalf("pointer input escaped the properties dialog: %+v, selection %d -> %d", result, selected, view.sftpFolder.selected)
 	}
-	if result := state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropOver, Paths: []string{"/tmp/file"}}); !result.Handled {
+	if result := state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropOver, Paths: []string{"/tmp/file"}}); !result.Handled {
 		t.Fatal("a file drop escaped the properties dialog")
 	}
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	hit, ok := hitByID(&canvas, hitFilePropertiesClose)
 	if !ok {
 		t.Fatal("the properties dialog painted no close action")
 	}
-	if result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+	if result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
 		Target: hitFilePropertiesClose, X: hit.Bounds.X + 2, Y: hit.Bounds.Y + 2,
 	}); result.Handled {
 		t.Fatalf("the dialog consumed its own click sequence: %+v", result)
@@ -202,8 +202,8 @@ func TestDualPanePropertiesDialogConsumesListKeys(t *testing.T) {
 	if !w.fileProperties.open {
 		t.Fatal("the dual-pane properties dialog did not open")
 	}
-	for _, key := range []ui.Key{ui.KeyDelete, ui.KeyF2, ui.KeyBackspace} {
-		result := w.key(ui.KeyEvent{Key: key, Target: sftpWindowRows[0].At(0)})
+	for _, key := range []gfx.Key{gfx.KeyDelete, gfx.KeyF2, gfx.KeyBackspace} {
+		result := w.key(gfx.KeyEvent{Key: key, Target: sftpWindowRows[0].At(0)})
 		if !result.Handled {
 			t.Fatalf("%v escaped the dual-pane properties dialog", key)
 		}
@@ -228,8 +228,8 @@ func TestDualPanePropertiesDialogConsumesPointerInput(t *testing.T) {
 
 	bar := w.ui.bars[0].VerticalThumb
 	w.drag = sftpWindowDrag{armed: true, fromLocal: true}
-	result := w.pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Target: hitSFTPWindowSplit,
+	result := w.pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Target: hitSFTPWindowSplit,
 		X: bar.X + bar.Width/2, Y: bar.Y + bar.Height/2,
 	})
 	if !result.Handled || !w.fileProperties.open {
@@ -259,15 +259,15 @@ func TestDualPanePropertiesDialogConsumesFileDrops(t *testing.T) {
 	}
 
 	remote := w.ui.list[1]
-	over := w.fileDrop(ui.FileDropEvent{
-		Phase: ui.FileDropOver,
+	over := w.fileDrop(gfx.FileDropEvent{
+		Phase: gfx.FileDropOver,
 		X:     remote.X + 20, Y: remote.Y + 20,
 	})
 	if !over.Handled || w.drag.active || !w.fileProperties.open {
 		t.Fatalf("drop hover escaped the properties dialog: %+v, drag=%+v", over, w.drag)
 	}
-	drop := w.fileDrop(ui.FileDropEvent{
-		Phase: ui.FileDropDrop, Paths: []string{file},
+	drop := w.fileDrop(gfx.FileDropEvent{
+		Phase: gfx.FileDropDrop, Paths: []string{file},
 		X: remote.X + 20, Y: remote.Y + 20,
 	})
 	if !drop.Handled || len(view.transfers) != transfers || !w.fileProperties.open {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"io/fs"
 	"motty/internal/configstore"
 	"os"
@@ -838,7 +838,7 @@ func (state *State) finishSyncRestore(epoch uint32, remote backup.Document, tag 
 
 // --- settings page -------------------------------------------------------
 
-func (state *State) clickBackupSettings(id ui.ID) bool {
+func (state *State) clickBackupSettings(id gfx.ID) bool {
 	switch id {
 	case hitBackupExport:
 		state.openExportBackup()

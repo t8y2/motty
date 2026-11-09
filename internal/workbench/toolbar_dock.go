@@ -5,7 +5,7 @@ import (
 	"slices"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 type toolbarDockZone string
@@ -126,7 +126,7 @@ func (prefs *toolbarPreferences) restoreDock(saved []toolbarDockEntry) {
 	}
 }
 
-func toolbarDockIdentity(id ui.ID) (toolbarDockEntry, bool) {
+func toolbarDockIdentity(id gfx.ID) (toolbarDockEntry, bool) {
 	for group := toolbarWindow; group <= toolbarTerminal; group++ {
 		for _, spec := range toolbarCatalog[group] {
 			if spec.id == id {
@@ -243,7 +243,7 @@ func (state *State) toolbarDockTools(zone toolbarDockZone, dst *[maxBarTools]bar
 	return tools
 }
 
-func (state *State) moveToolbarDockTool(id ui.ID, zone toolbarDockZone, before ui.ID) {
+func (state *State) moveToolbarDockTool(id gfx.ID, zone toolbarDockZone, before gfx.ID) {
 	entry, ok := toolbarDockIdentity(id)
 	if !ok || id == before || !slices.Contains(toolbarDockZones[:], zone) {
 		return

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/cmdhistory"
 	"motty/internal/completion"
 	"motty/internal/i18n"
@@ -76,7 +76,7 @@ func TestCompletionListInsertsOnlyTheSuffix(t *testing.T) {
 		t.Fatalf("first candidate %+v", list.candidates[0])
 	}
 	before := w.shell.typed()
-	w.state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: terminalHit(w.state, 0)})
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: terminalHit(w.state, 0)})
 	if got := w.shell.typed(); got != before+"tage" {
 		t.Fatalf("typed %q, want %q", got, before+"tage")
 	}
@@ -98,17 +98,17 @@ func TestCompletionKeysCloseOrMoveWithoutTyping(t *testing.T) {
 	before := w.shell.typed()
 
 	// Up and Down move the selection and never reach the shell.
-	w.state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: terminalHit(w.state, 0)})
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: terminalHit(w.state, 0)})
 	if w.state.completion.list.selected != 1 {
 		t.Fatalf("selected %d", w.state.completion.list.selected)
 	}
-	w.state.Key(ui.KeyEvent{Key: ui.KeyUp, Target: terminalHit(w.state, 0)})
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyUp, Target: terminalHit(w.state, 0)})
 	if w.state.completion.list.selected != 0 || w.shell.typed() != before {
 		t.Fatal("movement typed or did not move")
 	}
 
 	// Tab closes the list and forwards exactly one Tab to the shell.
-	w.state.Key(ui.KeyEvent{Key: ui.KeyTab, Target: terminalHit(w.state, 0)})
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Target: terminalHit(w.state, 0)})
 	if w.state.completion.list.active {
 		t.Fatal("Tab left the list open")
 	}
@@ -122,7 +122,7 @@ func TestCompletionKeysCloseOrMoveWithoutTyping(t *testing.T) {
 		t.Fatal("the list did not reopen")
 	}
 	before = w.shell.typed()
-	w.state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: terminalHit(w.state, 0)})
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: terminalHit(w.state, 0)})
 	if w.state.completion.list.active || w.shell.typed() != before {
 		t.Fatal("Escape typed or left the list open")
 	}
@@ -289,8 +289,8 @@ func TestCompletionListPaintsItsRowsAndClicksInsert(t *testing.T) {
 	if !list.active || len(list.candidates) < 2 {
 		t.Fatalf("list active=%v candidates=%d", list.active, len(list.candidates))
 	}
-	var canvas ui.Canvas
-	w.state.Paint(&canvas, ui.Size{Width: 900, Height: 600})
+	var canvas gfx.Canvas
+	w.state.Paint(&canvas, gfx.Size{Width: 900, Height: 600})
 	if _, ok := hitByID(&canvas, hitCompletionList.At(0)); !ok {
 		t.Fatal("the first row is not painted")
 	}
@@ -315,8 +315,8 @@ func TestCompletionListPaintsInANarrowWindow(t *testing.T) {
 	if !w.state.completion.list.active {
 		t.Fatal("the list did not open")
 	}
-	var canvas ui.Canvas
-	w.state.Paint(&canvas, ui.Size{Width: 320, Height: 240})
+	var canvas gfx.Canvas
+	w.state.Paint(&canvas, gfx.Size{Width: 320, Height: 240})
 	if _, ok := hitByID(&canvas, hitCompletionList.At(0)); !ok {
 		t.Fatal("the first row is not painted in a narrow window")
 	}

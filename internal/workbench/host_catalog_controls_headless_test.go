@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
 func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 960, Height: 600}} {
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 960, Height: 600}} {
 		for _, mode := range []hostViewMode{hostViewList, hostViewGrid} {
 			for _, language := range []i18n.Language{i18n.English, i18n.Chinese, i18n.TraditionalChinese} {
 				for _, light := range []bool{false, true} {
@@ -52,7 +52,7 @@ func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
 							}
 						}
 						must(view.Rest())
-						hit := func(id ui.ID) ui.Hit {
+						hit := func(id gfx.ID) gfx.Hit {
 							t.Helper()
 							found, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 							if !ok {
@@ -60,7 +60,7 @@ func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
 							}
 							return found
 						}
-						click := func(id ui.ID) {
+						click := func(id gfx.ID) {
 							t.Helper()
 							control := hit(id)
 							if control.Disabled {
@@ -120,7 +120,7 @@ func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
 							t.Fatalf("native filtered export: hosts=%d err=%v", len(document.Hosts), err)
 						}
 						shot("name-filtered")
-						controls := []ui.ID{hitHostSelectAll, hitHostOrder, hitHostSort, hitHostViewList, hitHostViewGrid, hitExportHosts}
+						controls := []gfx.ID{hitHostSelectAll, hitHostOrder, hitHostSort, hitHostViewList, hitHostViewGrid, hitExportHosts}
 						for index, id := range controls {
 							control := hit(id)
 							if control.Bounds.X < state.hostsBounds.X || control.Bounds.X+control.Bounds.Width > state.hostsBounds.X+state.hostsBounds.Width {
@@ -151,7 +151,7 @@ func TestHostCatalogControlsNativeCompactPanel(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	ids := []ui.ID{hitHostSelectAll, hitHostFilterAll, hitHostFilterMore, hitHostOrder, hitHostSort, hitHostViewList, hitHostViewGrid, hitHostGroupsExpandAll, hitHostGroupsCollapseAll}
+	ids := []gfx.ID{hitHostSelectAll, hitHostFilterAll, hitHostFilterMore, hitHostOrder, hitHostSort, hitHostViewList, hitHostViewGrid, hitHostGroupsExpandAll, hitHostGroupsCollapseAll}
 	for index, id := range ids {
 		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 		if !ok {
@@ -167,7 +167,7 @@ func TestHostCatalogControlsNativeCompactPanel(t *testing.T) {
 			}
 		}
 	}
-	for _, id := range []ui.ID{hitHostSelectAll, hitHostOrder, hitHostOrderName} {
+	for _, id := range []gfx.ID{hitHostSelectAll, hitHostOrder, hitHostOrderName} {
 		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 		if !ok {
 			t.Fatalf("compact interaction omitted %s", tree.Text(id))

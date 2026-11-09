@@ -1,13 +1,13 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
-var sftpWindowActionIDs = [...]ui.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPMove, hitSFTPChmod, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties}
+var sftpWindowActionIDs = [...]gfx.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPMove, hitSFTPChmod, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties}
 
-func sftpWindowActionIndex(id ui.ID) int {
+func sftpWindowActionIndex(id gfx.ID) int {
 	for i, action := range sftpWindowActionIDs {
 		if action == id {
 			return i
@@ -51,7 +51,7 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 	folder := w.folder(local)
 	selection := w.selection(local)
 	count, selected := selection.count, selection.index
-	add := func(id ui.ID, glyph uint8, label string) {
+	add := func(id gfx.ID, glyph uint8, label string) {
 		actions = append(actions, sftpWindowAction{sftpWindowActionIndex(id), glyph, label})
 	}
 	if count == 1 {
@@ -87,7 +87,7 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 	return actions
 }
 
-func (w *sftpWindow) fileAction(local bool, id ui.ID) {
+func (w *sftpWindow) fileAction(local bool, id gfx.ID) {
 	defer w.invalidate()
 	w.selectionChanged(local)
 	w.activeLocal, w.view.local = local, local

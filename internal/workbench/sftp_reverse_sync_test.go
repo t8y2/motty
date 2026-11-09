@@ -1,8 +1,8 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"os"
 	"strings"
@@ -26,8 +26,8 @@ func TestReverseFolderSyncIsOffByDefaultAndPersistsIndependently(t *testing.T) {
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1100})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1100})
 	if _, ok := hitByID(&canvas, hitSettingsTerminalFollowToggle); !ok {
 		t.Fatal("reverse sync has no visible settings switch")
 	}

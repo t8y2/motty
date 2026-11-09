@@ -8,7 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/term"
 )
 
@@ -245,7 +245,7 @@ func (state *State) inputLocaleRepairReady(session *Session) bool {
 		session.term.inputGuard.environment.Charset == "other" && session.term.inputGuard.environment.Locale != ""
 }
 
-func (state *State) clickTerminalInput(id ui.ID) bool {
+func (state *State) clickTerminalInput(id gfx.ID) bool {
 	if state.modal != modalTerminalInput {
 		if state.modal != modalNone || id != hitInputLocaleFix && id != hitInputLocaleDismiss {
 			return false
@@ -320,19 +320,19 @@ func (state *State) retryInputChoice(ask terminalInputConfirmation) {
 	state.modal = modalTerminalInput
 }
 
-func (state *State) terminalInputKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) terminalInputKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalTerminalInput {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if !event.Repeat && !event.Release && event.Modifiers == 0 {
-		if event.Key == ui.KeyEscape {
+		if event.Key == gfx.KeyEscape {
 			state.clickTerminalInput(hitInputCancel)
 		}
-		if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && (event.Target == hitInputReplace || event.Target == hitInputKeep || event.Target == hitInputCancel) {
+		if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && (event.Target == hitInputReplace || event.Target == hitInputKeep || event.Target == hitInputCancel) {
 			state.clickTerminalInput(event.Target)
 		}
 	}
-	return ui.EventResult{Handled: event.Key != ui.KeyTab, Repaint: true}, true
+	return gfx.EventResult{Handled: event.Key != gfx.KeyTab, Repaint: true}, true
 }
 
 func (state *State) receiveInputEnvironment(sessionID uint32, environment term.InputEnvironment) {

@@ -2,10 +2,10 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
-func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
+func (s *State) paintNoteOverlays(c *gfx.Canvas, b gfx.Rect) {
 	n, v := s.noteContent(), &s.noteContent().view
 	theme := s.Theme()
 	viewport := s.windowRect()
@@ -14,7 +14,7 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 	}
 	if v.menu != "" {
 		actions := []components.ContextMenuItem{}
-		add := func(id ui.ID, label string) {
+		add := func(id gfx.ID, label string) {
 			actions = append(actions, components.ContextMenuItem{ID: id, Label: label})
 		}
 		switch v.menu {
@@ -51,7 +51,7 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 			add(hitNoteDelete, s.noteText("Delete note", "删除笔记"))
 		}
 		anchor := v.overlayAnchorRect(c)
-		menu := components.BeginContextMenu(c, theme, ui.Rect{X: anchor.X, Y: anchor.Y + anchor.Height, Width: 210, Height: float32(len(actions))*32 + 8}, components.ContextMenuOptions{Layer: popupLayer + 2, Scope: hitNoteDismiss, DismissID: hitNoteDismiss, Viewport: viewport, Scroll: s.menuScrollFor(hitNoteDismiss)})
+		menu := components.BeginContextMenu(c, theme, gfx.Rect{X: anchor.X, Y: anchor.Y + anchor.Height, Width: 210, Height: float32(len(actions))*32 + 8}, components.ContextMenuOptions{Layer: popupLayer + 2, Scope: hitNoteDismiss, DismissID: hitNoteDismiss, Viewport: viewport, Scroll: s.menuScrollFor(hitNoteDismiss)})
 		s.menuPlaced(menu.Bounds())
 		for _, a := range actions {
 			menu.AddItem(a)
@@ -68,7 +68,7 @@ func (s *State) paintNoteOverlays(c *ui.Canvas, b ui.Rect) {
 		components.BeginTooltip(c, theme, viewport, tooltipAnchor, components.TooltipOptions{Layer: tooltipLayer, Side: components.TooltipTop}).Paint(s.noteFormatName(i))
 	}
 	if n.confirm != "" {
-		dialog := components.BeginDialog(c, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: hitNoteConfirm, CloseID: hitNoteCancel, InitialFocusID: hitNoteCancel, ContentSize: ui.Size{Width: 440}, FitBody: true, BodyHeight: 54})
+		dialog := components.BeginDialog(c, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: hitNoteConfirm, CloseID: hitNoteCancel, InitialFocusID: hitNoteCancel, ContentSize: gfx.Size{Width: 440}, FitBody: true, BodyHeight: 54})
 		description := s.noteText("Delete this note?", "确认删除这篇笔记？")
 		if n.confirm == "folder" {
 			description = s.noteText("Contents move to the parent folder unless you choose Delete all contents.", "默认将内容移至上一级；也可选择删除全部内容。")

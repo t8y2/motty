@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // Exercise the real composer/provider/placement path. Windows' preservation
@@ -87,19 +87,19 @@ func TestAIComposerOptionAndCommandKeysEditByWordAndLine(t *testing.T) {
 	if err := driver.Type("alpha beta/gamma"); err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.Key(ui.KeyLeft, ui.ModifierAlt); err != nil {
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
 	if caret := state.ai.input.Caret(); caret != 11 {
 		t.Fatalf("Option+Left moved the caret to %d, want 11", caret)
 	}
-	if err := driver.Key(ui.KeyRight, ui.ModifierAlt|ui.ModifierShift); err != nil {
+	if err := driver.Key(gfx.KeyRight, gfx.ModifierAlt|gfx.ModifierShift); err != nil {
 		t.Fatal(err)
 	}
 	if selection := state.ai.input.Selection(); selection.Start != 11 || selection.End != 16 {
 		t.Fatalf("Option+Shift+Right selected %+v, want 11:16", selection)
 	}
-	if err := driver.Key(ui.KeyBackspace, ui.ModifierAlt); err != nil {
+	if err := driver.Key(gfx.KeyBackspace, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
 	if got := state.ai.input.String(); got != "alpha beta/" {
@@ -108,7 +108,7 @@ func TestAIComposerOptionAndCommandKeysEditByWordAndLine(t *testing.T) {
 	if err := driver.Type("\n第二行"); err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.Key(ui.KeyBackspace, ui.ModifierMeta); err != nil {
+	if err := driver.Key(gfx.KeyBackspace, gfx.ModifierMeta); err != nil {
 		t.Fatal(err)
 	}
 	if got := state.ai.input.String(); got != "alpha beta/\n" {

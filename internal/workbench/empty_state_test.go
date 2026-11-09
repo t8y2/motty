@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
-func emptyStateActionHit(canvas *ui.Canvas, id ui.ID) (ui.Hit, bool) {
+func emptyStateActionHit(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id &&
 			hit.Bounds.Width == emptyStateActionWidth &&
@@ -15,7 +15,7 @@ func emptyStateActionHit(canvas *ui.Canvas, id ui.ID) (ui.Hit, bool) {
 			return hit, true
 		}
 	}
-	return ui.Hit{}, false
+	return gfx.Hit{}, false
 }
 
 func TestCatalogEmptyStatesUseSharedVisualMetrics(t *testing.T) {
@@ -23,7 +23,7 @@ func TestCatalogEmptyStatesUseSharedVisualMetrics(t *testing.T) {
 		name        string
 		section     uint8
 		title       func(*State) string
-		action      ui.ID
+		action      gfx.ID
 		actionLabel func(*State) string
 		prepare     func(*State)
 		hasAction   bool
@@ -83,7 +83,7 @@ func TestCatalogEmptyStatesUseSharedVisualMetrics(t *testing.T) {
 		},
 	}
 
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 620}} {
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 620}} {
 		for _, test := range tests {
 			// A case runs once per size, so the size is part of its name: two
 			// cases of one name make Go append "#01", and a "#" in a test
@@ -93,7 +93,7 @@ func TestCatalogEmptyStatesUseSharedVisualMetrics(t *testing.T) {
 				test.prepare(state)
 				state.activeSection = test.section
 				title := test.title(state)
-				var canvas ui.Canvas
+				var canvas gfx.Canvas
 				state.Paint(&canvas, size)
 
 				texts := make([]string, 0, len(canvas.Texts()))
@@ -148,8 +148,8 @@ func TestHostSearchNoMatchesUsesTheSharedEmptyState(t *testing.T) {
 	state.hosts = []Host{{ID: 1, Label: "web", Address: "web.example", Port: 22}}
 	state.search.Insert("no-such-host")
 	state.activeSection = sectionHosts
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 
 	var texts []string
 	for _, text := range canvas.Texts() {

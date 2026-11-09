@@ -3,7 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func (page *settingsPage) wordSeparatorsRow() {
@@ -12,7 +12,7 @@ func (page *settingsPage) wordSeparatorsRow() {
 	page.add(settingsControl{kind: controlWordSeparators, slot: slot})
 }
 
-func (state *State) paintWordSeparatorsInput(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintWordSeparatorsInput(canvas *gfx.Canvas, bounds gfx.Rect) {
 	label := state.messages.Tools.WordSeparatorsRow
 	value := state.terminalWordEditor.String()
 	focused := canvas.Focused() == hitSettingsWordSeparators

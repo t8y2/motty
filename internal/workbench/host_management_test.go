@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -85,7 +85,7 @@ func TestNewHostPasswordIsSecureAndSavedInTheVault(t *testing.T) {
 	canvas, texts := paintedTexts(state)
 	secureField := false
 	for _, hit := range canvas.Hits() {
-		if hit.ID == hitDialogPassword && hit.Role == ui.RoleTextField {
+		if hit.ID == hitDialogPassword && hit.Role == gfx.RoleTextField {
 			secureField = hit.Secure && hit.Value == ""
 		}
 	}
@@ -173,7 +173,7 @@ func TestHostPasswordFitsEveryHostDialogInAShortWindow(t *testing.T) {
 	tests := []struct {
 		name     string
 		protocol hostProtocol
-		last     ui.ID
+		last     gfx.ID
 	}{
 		{name: "SSH", protocol: protocolSSH, last: hitDialogAdvanced},
 		{name: "VNC", protocol: protocolVNC, last: hitDialogClipboard},
@@ -184,10 +184,10 @@ func TestHostPasswordFitsEveryHostDialogInAShortWindow(t *testing.T) {
 			state := newTestState(t, testOptions(t))
 			state.openHostDialog()
 			state.editor.setProtocol(test.protocol)
-			canvas, _ := paintAt(state, ui.Size{Width: 900, Height: 600})
+			canvas, _ := paintAt(state, gfx.Size{Width: 900, Height: 600})
 			initial := canvas
 			state.editor.form.offset = state.editor.form.geometry.MaxOffsetY
-			canvas, _ = paintAt(state, ui.Size{Width: 900, Height: 600})
+			canvas, _ = paintAt(state, gfx.Size{Width: 900, Height: 600})
 			last, ok := hitByID(canvas, test.last)
 			if !ok {
 				t.Fatalf("last control %d was not painted", test.last)
@@ -201,7 +201,7 @@ func TestHostPasswordFitsEveryHostDialogInAShortWindow(t *testing.T) {
 			}
 			password := false
 			for _, hit := range initial.Hits() {
-				if hit.ID == hitDialogPassword && hit.Role == ui.RoleTextField {
+				if hit.ID == hitDialogPassword && hit.Role == gfx.RoleTextField {
 					password = hit.Secure && hit.Bounds.Y+hit.Bounds.Height <= submit.Bounds.Y
 				}
 			}
@@ -399,7 +399,7 @@ func TestHostCheckboxMultiSelectAndBatchMoveGroup(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
 	state.Click(hitHostCheckList.At(int(state.hosts[0].ID)))
-	result := state.Key(ui.KeyEvent{Target: hitHostList.At(int(state.hosts[1].ID)), Key: ui.KeySpace})
+	result := state.Key(gfx.KeyEvent{Target: hitHostList.At(int(state.hosts[1].ID)), Key: gfx.KeySpace})
 	if !result.Handled || len(state.hostSelections) != 2 || state.hostSelectionText != "2 selected" {
 		t.Fatalf("selection = %v text=%q result=%+v", state.hostSelections, state.hostSelectionText, result)
 	}
@@ -416,7 +416,7 @@ func TestHostCheckboxMultiSelectAndBatchMoveGroup(t *testing.T) {
 		t.Fatal("new group field did not open")
 	}
 	typeInto(state, hitMoveGroupField, "Critical")
-	result = state.Key(ui.KeyEvent{Target: hitMoveGroupField, Key: ui.KeyEnter})
+	result = state.Key(gfx.KeyEvent{Target: hitMoveGroupField, Key: gfx.KeyEnter})
 	if !result.Handled || state.modal != modalNone || state.hosts[0].Group != "Critical" || state.hosts[1].Group != "Critical" || state.hosts[2].Group != "Network" {
 		t.Fatalf("batch group result=%+v hosts=%+v", result, state.hosts)
 	}
@@ -455,19 +455,19 @@ func TestDeleteHostsConfirmsAndPersists(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitHostCheckList.At(int(state.hosts[1].ID)))
 	state.Click(hitHostCheckList.At(int(state.hosts[2].ID)))
-	result := state.Key(ui.KeyEvent{Target: hitHostList.At(int(state.hosts[2].ID)), Key: ui.KeyDelete})
+	result := state.Key(gfx.KeyEvent{Target: hitHostList.At(int(state.hosts[2].ID)), Key: gfx.KeyDelete})
 	if !result.Handled {
 		t.Fatal("Delete did not open confirmation from the keyboard")
 	}
 	if state.modal != modalDeleteHost || len(state.hosts) != 3 {
 		t.Fatalf("delete did not wait for confirmation: modal=%d hosts=%d", state.modal, len(state.hosts))
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if canvas.InitialFocus() != hitHostDeleteCancel {
 		t.Fatalf("delete initial focus = %d", canvas.InitialFocus())
 	}
-	result = state.Key(ui.KeyEvent{Target: hitHostDeleteConfirm, Key: ui.KeyEnter})
+	result = state.Key(gfx.KeyEvent{Target: hitHostDeleteConfirm, Key: gfx.KeyEnter})
 	if !result.Handled || len(state.hosts) != 1 || state.hosts[0].Label != "Production" || state.modal != modalNone {
 		t.Fatalf("delete result=%+v hosts=%+v modal=%d", result, state.hosts, state.modal)
 	}
@@ -525,10 +525,10 @@ func TestHostManagementHitsAndSteadyPaintAreAllocationFree(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitHostCheckList.At(int(state.hosts[0].ID)))
 	clickHostAction(state, hitMoveHostGroup)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
-	for _, id := range []ui.ID{
+	for _, id := range []gfx.ID{
 		hitEditHost, hitCopyHost, hitDeleteHost, hitMoveHostGroup,
 		hitHostCheckList.At(int(state.hosts[0].ID)), hitHostGroupNone, hitHostGroupNew,
 	} {
@@ -575,7 +575,7 @@ func TestHostGroupDropdownHasNoBlankRowForTheUngroupedBucket(t *testing.T) {
 	}
 	items := 0
 	for _, hit := range canvas.Hits() {
-		if hit.Role == ui.RoleMenuItem && hit.Label == "" {
+		if hit.Role == gfx.RoleMenuItem && hit.Label == "" {
 			t.Fatalf("a blank menu item: %+v", hit)
 		}
 		if hit.ID.Scope() == hitHostGroupItemList {
@@ -589,7 +589,7 @@ func TestHostGroupDropdownHasNoBlankRowForTheUngroupedBucket(t *testing.T) {
 
 // clickHostAction presses one of the actions on the hosts page the way a user
 // does: on a host they picked first, as no host is picked until they do.
-func clickHostAction(state *State, id ui.ID) {
+func clickHostAction(state *State, id gfx.ID) {
 	if state.selectedHostID == 0 && len(state.hostSelections) == 0 {
 		state.Click(hitHostList.At(int(state.hosts[0].ID)))
 	}

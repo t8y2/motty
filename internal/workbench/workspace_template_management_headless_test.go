@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestWorkspaceTemplateEditThroughWindowDriver(t *testing.T) {
@@ -37,7 +37,7 @@ func TestWorkspaceTemplateEditThroughWindowDriver(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer view.Close()
-	click := func(id ui.ID) {
+	click := func(id gfx.ID) {
 		t.Helper()
 		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 		if !ok || hit.Block || hit.Disabled {
@@ -57,14 +57,14 @@ func TestWorkspaceTemplateEditThroughWindowDriver(t *testing.T) {
 	click(workspaceDraftHostID(2))
 	click(hitWorkspaceDraftPresets.At(2))
 	for i := 0; i < 80 && view.Snapshot().Focused != hitWorkspaceDraftCards.At(1); i++ {
-		if err := view.Driver().Key(ui.KeyTab, 0); err != nil {
+		if err := view.Driver().Key(gfx.KeyTab, 0); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if got := view.Snapshot().Focused; got != hitWorkspaceDraftCards.At(1) {
 		t.Fatalf("cannot focus card for reordering: %v", got)
 	}
-	if err := view.Driver().Key(ui.KeyLeft, ui.ModifierAlt); err != nil {
+	if err := view.Driver().Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
 	click(hitWorkspaceDraftSubmit)
@@ -83,8 +83,8 @@ func TestWorkspaceTemplateEditThroughWindowDriver(t *testing.T) {
 func TestWorkspaceTemplateManagementThroughKeyboard(t *testing.T) {
 	for _, test := range []struct {
 		name string
-		key  ui.Key
-	}{{"Enter", ui.KeyEnter}, {"Space", ui.KeySpace}} {
+		key  gfx.Key
+	}{{"Enter", gfx.KeyEnter}, {"Space", gfx.KeySpace}} {
 		t.Run(test.name, func(t *testing.T) {
 			state := templateManagementState(t, 1)
 			original := slices.Clone(state.templates[0].HostIDs)
@@ -105,18 +105,18 @@ func TestWorkspaceTemplateManagementThroughKeyboard(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer view.Close()
-			press := func(key ui.Key) {
+			press := func(key gfx.Key) {
 				t.Helper()
 				if err := view.Driver().Key(key, 0); err != nil {
 					t.Fatal(err)
 				}
 			}
-			focus := func(id ui.ID) {
+			focus := func(id gfx.ID) {
 				t.Helper()
-				var visited []ui.ID
+				var visited []gfx.ID
 				for i := 0; i < 80 && view.Snapshot().Focused != id; i++ {
 					visited = append(visited, view.Snapshot().Focused)
-					press(ui.KeyTab)
+					press(gfx.KeyTab)
 				}
 				if got := view.Snapshot().Focused; got != id {
 					t.Fatalf("cannot focus %v, got %v; visited %v; preview=%+v scroll=%g", id, got, visited, state.workspaceDraft.previewBounds, state.workspaceDraft.previewScroll)
@@ -124,16 +124,16 @@ func TestWorkspaceTemplateManagementThroughKeyboard(t *testing.T) {
 			}
 
 			focus(hitWorkspaceTemplateMore.At(0))
-			press(ui.KeyEnter)
+			press(gfx.KeyEnter)
 			if got := view.Snapshot().Focused; got != hitWorkspaceTemplateMenuEdit {
 				t.Fatalf("menu focus = %v", got)
 			}
-			press(ui.KeyEnter)
+			press(gfx.KeyEnter)
 			if state.modal != modalWorkspaceDraft || view.Snapshot().Focused != hitWorkspaceDraftName {
 				t.Fatalf("edit modal=%d focus=%v", state.modal, view.Snapshot().Focused)
 			}
 			focus(hitWorkspaceDraftPreviewScroll)
-			press(ui.KeyPageDown)
+			press(gfx.KeyPageDown)
 			if state.workspaceDraft.previewScroll == 0 {
 				t.Fatal("keyboard could not scroll the template preview")
 			}
@@ -142,18 +142,18 @@ func TestWorkspaceTemplateManagementThroughKeyboard(t *testing.T) {
 			if got := state.workspaceDraft.order; !slices.Equal(got, []string{original[0], original[2]}) {
 				t.Fatalf("remove using %s left %v", test.name, got)
 			}
-			press(ui.KeyEscape)
+			press(gfx.KeyEscape)
 			if state.modal != modalNone || view.Snapshot().Focused != hitWorkspaceTemplateMore.At(0) {
 				t.Fatalf("edit escape modal=%d focus=%v", state.modal, view.Snapshot().Focused)
 			}
-			press(ui.KeySpace)
-			press(ui.KeyDown)
-			press(ui.KeyEnter)
+			press(gfx.KeySpace)
+			press(gfx.KeyDown)
+			press(gfx.KeyEnter)
 			if state.modal != modalWorkspaceTemplateDelete || view.Snapshot().Focused != hitWorkspaceTemplateDeleteCancel {
 				t.Fatalf("delete modal=%d focus=%v", state.modal, view.Snapshot().Focused)
 			}
-			press(ui.KeyTab)
-			press(ui.KeyEnter)
+			press(gfx.KeyTab)
+			press(gfx.KeyEnter)
 			if state.modal != modalNone || len(state.templates) != 0 || view.Snapshot().Focused != hitWorkspaceNew {
 				t.Fatalf("delete modal=%d templates=%v focus=%v", state.modal, state.templates, view.Snapshot().Focused)
 			}

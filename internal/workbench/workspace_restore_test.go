@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -26,7 +26,7 @@ func TestWorkspaceRestoredActiveTabKeepsHeaderAndLayout(t *testing.T) {
 	if !slices.Equal(paneHostAddresses(second, workspace), before) || len(world.configs) != dials {
 		t.Fatal("restoring changed pane order or dialed connections")
 	}
-	canvas, _ := paintAt(second, ui.Size{Width: 960, Height: 600})
+	canvas, _ := paintAt(second, gfx.Size{Width: 960, Height: 600})
 	panelHit(t, canvas, hitWorkspaceHeaderBack)
 	panelHit(t, canvas, hitWorkspaceHeaderSave)
 	panelHit(t, canvas, hitWorkspaceHeaderLayout)
@@ -70,7 +70,7 @@ func TestWorkspaceTemporaryHeaderSavesCurrentLayoutAsTemplate(t *testing.T) {
 	state.Click(hitWorkspaceHeaderPresets.At(1))
 	state.moveWorkspaceCard(workspaceCardRegion{view: workspaceCardsRuntime, index: 0}, 2)
 	state.Click(hitWorkspaceHeaderLayoutDismiss)
-	canvas, _ := paintAt(state, ui.Size{Width: 960, Height: 600})
+	canvas, _ := paintAt(state, gfx.Size{Width: 960, Height: 600})
 	panelHit(t, canvas, hitWorkspaceHeaderSave)
 	state.Click(hitWorkspaceHeaderSave)
 	if state.modal != modalWorkspaceSave || !isGrid(state.workspaceSave.layout, 2) {
@@ -84,7 +84,7 @@ func TestWorkspaceTemporaryHeaderSavesCurrentLayoutAsTemplate(t *testing.T) {
 	}
 	state.deck.ActivateWorkspace(workspace)
 	state.activeSection = sectionTerminal
-	canvas, _ = paintAt(state, ui.Size{Width: 960, Height: 600})
+	canvas, _ = paintAt(state, gfx.Size{Width: 960, Height: 600})
 	if _, exists := hitByID(canvas, hitWorkspaceHeaderSave); exists {
 		t.Fatal("saved workspace still has the temporary-workspace action")
 	}
@@ -104,7 +104,7 @@ func TestWorkspaceLegacySplitTabRestoresNavigation(t *testing.T) {
 	if !second.workspaceManaged(workspace) {
 		t.Fatal("legacy multi-terminal tab still has no workspace navigation")
 	}
-	canvas, _ := paintAt(second, ui.Size{Width: 960, Height: 600})
+	canvas, _ := paintAt(second, gfx.Size{Width: 960, Height: 600})
 	panelHit(t, canvas, hitWorkspaceHeaderBack)
 }
 

@@ -3,27 +3,27 @@
 
 package icons
 
-import "github.com/vivaui/viva/ui"
+import "github.com/vivaui/viva/gfx"
 
 // external-link is a compiled vector icon.
-var ExternalLink = ui.Icon{
+var ExternalLink = gfx.Icon{
 	ViewBox: 24.0,
 	Stroke:  2.0,
-	Cap:     ui.CapRound,
-	Join:    ui.JoinRound,
-	Commands: []ui.PathCommand{
-		ui.MoveTo(15.0, 3.0),
-		ui.LineTo(21.0, 3.0),
-		ui.LineTo(21.0, 9.0),
-		ui.MoveTo(10.0, 14.0),
-		ui.LineTo(21.0, 3.0),
-		ui.MoveTo(18.0, 13.0),
-		ui.LineTo(18.0, 19.0),
-		ui.CubicTo(18.0, 20.1046, 17.1046, 21.0, 16.0, 21.0),
-		ui.LineTo(5.0, 21.0),
-		ui.CubicTo(3.89543, 21.0, 3.0, 20.1046, 3.0, 19.0),
-		ui.LineTo(3.0, 8.0),
-		ui.CubicTo(3.0, 6.89543, 3.89543, 6.0, 5.0, 6.0),
-		ui.LineTo(11.0, 6.0),
+	Cap:     gfx.CapRound,
+	Join:    gfx.JoinRound,
+	Commands: []gfx.PathCommand{
+		gfx.MoveTo(15.0, 3.0),
+		gfx.LineTo(21.0, 3.0),
+		gfx.LineTo(21.0, 9.0),
+		gfx.MoveTo(10.0, 14.0),
+		gfx.LineTo(21.0, 3.0),
+		gfx.MoveTo(18.0, 13.0),
+		gfx.LineTo(18.0, 19.0),
+		gfx.CubicTo(18.0, 20.1046, 17.1046, 21.0, 16.0, 21.0),
+		gfx.LineTo(5.0, 21.0),
+		gfx.CubicTo(3.89543, 21.0, 3.0, 20.1046, 3.0, 19.0),
+		gfx.LineTo(3.0, 8.0),
+		gfx.CubicTo(3.0, 6.89543, 3.89543, 6.0, 5.0, 6.0),
+		gfx.LineTo(11.0, 6.0),
 	},
 }

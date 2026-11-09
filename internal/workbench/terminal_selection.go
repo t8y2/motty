@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/term"
 )
 
@@ -222,7 +222,7 @@ func (selection terminalSelection) span(lineNumber uint64, line term.Row, cols i
 	return max(from, 0), min(to, cols), from < to
 }
 
-func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.EventResult {
+func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gfx.EventResult {
 	terminal := session.term
 	terminal.screen.SetWordSeparators(state.terminalWordSeparators)
 	selection := &terminal.selection
@@ -238,29 +238,29 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 	linkPosition := terminalLinkPosition(terminal.screen, position)
 	linksEnabled := terminal.screen.Modes().Mouse == term.MouseOff && state.terminalLinkOpens(event.Modifiers)
 	switch event.Kind {
-	case ui.PointerDown:
-		if event.Button == ui.PointerButtonSecondary {
-			if state.terminalRightClickPaste && event.Modifiers&ui.ModifierShift == 0 && terminal.selection.selected {
+	case gfx.PointerDown:
+		if event.Button == gfx.PointerButtonSecondary {
+			if state.terminalRightClickPaste && event.Modifiers&gfx.ModifierShift == 0 && terminal.selection.selected {
 				state.terminalMenu.open = false
 				if err := state.options.SetClipboardText(terminal.selection.text(terminal.screen)); err != nil {
 					state.status = err.Error()
 				}
-				return ui.EventResult{Handled: true, Repaint: true}
+				return gfx.EventResult{Handled: true, Repaint: true}
 			}
 			// A program that asked for the mouse already had this press; what
 			// reaches here is the terminal's own. It pastes when the user chose
 			// that, and Shift keeps the menu one press away.
-			if state.terminalRightClickPaste && event.Modifiers&ui.ModifierShift == 0 {
+			if state.terminalRightClickPaste && event.Modifiers&gfx.ModifierShift == 0 {
 				state.terminalMenu.open = false
 				state.pasteIntoTerminal(session)
-				return ui.EventResult{Handled: true, Repaint: true}
+				return gfx.EventResult{Handled: true, Repaint: true}
 			}
 			state.openTerminalMenu(session)
 			state.offerActionsAt(session, position)
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		if event.Button != ui.PointerButtonPrimary && event.Button != ui.PointerButtonNone {
-			return ui.EventResult{}
+		if event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone {
+			return gfx.EventResult{}
 		}
 		state.terminalMenu.open = false
 		if event.ClickCount >= 2 {
@@ -273,53 +273,53 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 				unit = unitLine
 			}
 			selection.beginUnit(terminal.screen, terminal.screen.PointAt(position), unit)
-			result := ui.EventResult{Handled: true, Repaint: true}
+			result := gfx.EventResult{Handled: true, Repaint: true}
 			if state.terminalCopyOnSelect {
 				result.ClipboardText = selection.text(terminal.screen)
 			}
 			return result
 		}
 		linkChanged := terminal.links.clear()
-		if event.Modifiers&ui.ModifierShift != 0 {
+		if event.Modifiers&gfx.ModifierShift != 0 {
 			// Shift-click stretches the selection to here. It is the terminal's own
 			// selection even when a program has the mouse, which Shift hands back.
 			if changed, ok := selection.extendTo(terminal.screen.PointAt(position)); ok {
-				return ui.EventResult{Handled: true, Repaint: changed || linkChanged}
+				return gfx.EventResult{Handled: true, Repaint: changed || linkChanged}
 			}
 		}
-		if linksEnabled && event.Button == ui.PointerButtonPrimary {
+		if linksEnabled && event.Button == gfx.PointerButtonPrimary {
 			linkChanged = terminal.links.press(terminal.screen, linkPosition) || linkChanged
 		}
-		return ui.EventResult{Handled: true, Repaint: selection.begin(terminal.screen.PointAt(position)) || linkChanged}
-	case ui.PointerMove:
+		return gfx.EventResult{Handled: true, Repaint: selection.begin(terminal.screen.PointAt(position)) || linkChanged}
+	case gfx.PointerMove:
 		if !selection.dragging || !event.Captured {
 			if !linksEnabled {
-				return ui.EventResult{Repaint: terminal.links.clear()}
+				return gfx.EventResult{Repaint: terminal.links.clear()}
 			}
 			changed := terminal.links.hover(terminal.screen, linkPosition)
 			_, hovered := terminal.links.hoveredLink(terminal.screen)
-			return ui.EventResult{Handled: hovered, Repaint: changed}
+			return gfx.EventResult{Handled: hovered, Repaint: changed}
 		}
 		changed := selection.extendUnit(terminal.screen, terminal.screen.PointAt(position))
 		state.armSelectionScroll(session, event, position.Column)
 		if changed {
 			changed = terminal.links.clear() || changed
 		}
-		return ui.EventResult{Handled: true, Repaint: changed}
-	case ui.PointerUp, ui.PointerExit:
+		return gfx.EventResult{Handled: true, Repaint: changed}
+	case gfx.PointerUp, gfx.PointerExit:
 		if !selection.dragging {
-			if event.Kind == ui.PointerUp && linksEnabled && event.Button == ui.PointerButtonPrimary {
+			if event.Kind == gfx.PointerUp && linksEnabled && event.Button == gfx.PointerButtonPrimary {
 				target, open, linkChanged := terminal.links.release(terminal.screen, linkPosition)
 				if open && terminal.openLink != nil {
 					terminal.openLink(target)
 				}
-				return ui.EventResult{Handled: event.Captured || open, Repaint: linkChanged}
+				return gfx.EventResult{Handled: event.Captured || open, Repaint: linkChanged}
 			}
 			changed := terminal.links.clear()
-			return ui.EventResult{Handled: event.Captured, Repaint: changed}
+			return gfx.EventResult{Handled: event.Captured, Repaint: changed}
 		}
 		changed := false
-		if event.Kind == ui.PointerUp {
+		if event.Kind == gfx.PointerUp {
 			changed = selection.extendUnit(terminal.screen, terminal.screen.PointAt(position))
 		}
 		selection.dragging = false
@@ -328,39 +328,39 @@ func (state *State) terminalPointer(session *Session, event ui.PointerEvent) ui.
 		target := ""
 		if !selection.selected {
 			changed = selection.dismiss() || changed
-			if event.Kind == ui.PointerUp && linksEnabled && event.Button == ui.PointerButtonPrimary {
+			if event.Kind == gfx.PointerUp && linksEnabled && event.Button == gfx.PointerButtonPrimary {
 				var linkChanged bool
 				target, open, linkChanged = terminal.links.release(terminal.screen, linkPosition)
 				changed = changed || linkChanged
 			}
 			// A link the click opens is not also a cursor move.
 			if !open && !state.terminalInputClickOff && terminalInputClick(event) && state.moveInputCursor(session, position) {
-				return ui.EventResult{Handled: true, Repaint: changed}
+				return gfx.EventResult{Handled: true, Repaint: changed}
 			}
 		} else {
 			changed = terminal.links.clear() || changed
 		}
-		if event.Kind == ui.PointerExit {
+		if event.Kind == gfx.PointerExit {
 			changed = terminal.links.clear() || changed
 			open = false
 		}
 		if open && terminal.openLink != nil {
 			terminal.openLink(target)
 		}
-		result := ui.EventResult{Handled: true, Repaint: changed}
+		result := gfx.EventResult{Handled: true, Repaint: changed}
 		if state.terminalCopyOnSelect && selection.selected {
 			result.ClipboardText = selection.text(terminal.screen)
 		}
 		return result
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
 // armSelectionScroll decides from where a drag's pointer is whether the view
 // has to follow it. A pointer held above or below the grid keeps scrolling
 // even when it stops moving, so the steps come from the frames paint asks for
 // (see stepSelectionScroll), not from further pointer events.
-func (state *State) armSelectionScroll(session *Session, event ui.PointerEvent, column int) {
+func (state *State) armSelectionScroll(session *Session, event gfx.PointerEvent, column int) {
 	selection := &session.term.selection
 	geometry := state.terminalLayoutForEvent(session.ID, event.Viewport)
 	_, rows := session.term.screen.Size()
@@ -418,20 +418,20 @@ func (state *State) stepSelectionScroll(terminal *terminal, now time.Duration) {
 	selection.extendUnit(terminal.screen, terminal.screen.PointAt(term.Position{Row: row, Column: edge.column}))
 }
 
-func (state *State) terminalMousePointer(session *Session, event ui.PointerEvent, position term.Position) (ui.EventResult, bool) {
+func (state *State) terminalMousePointer(session *Session, event gfx.PointerEvent, position term.Position) (gfx.EventResult, bool) {
 	terminal := session.term
 	if terminal.selection.dragging {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	modes := terminal.screen.Modes()
 	switch event.Kind {
-	case ui.PointerDown:
-		if modes.Mouse == term.MouseOff || event.Modifiers&ui.ModifierShift != 0 {
-			return ui.EventResult{}, false
+	case gfx.PointerDown:
+		if modes.Mouse == term.MouseOff || event.Modifiers&gfx.ModifierShift != 0 {
+			return gfx.EventResult{}, false
 		}
 		button, ok := terminalMouseButton(event.Button)
 		if !ok {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		terminal.mouseButton = button
 		terminal.mousePosition = position
@@ -440,16 +440,16 @@ func (state *State) terminalMousePointer(session *Session, event ui.PointerEvent
 			Kind: term.MousePress, Button: button, Modifiers: terminalMouseModifiers(event.Modifiers),
 			Column: position.Column, Row: position.Row,
 		})
-		return ui.EventResult{Handled: true, Repaint: repaint}, true
-	case ui.PointerMove:
+		return gfx.EventResult{Handled: true, Repaint: repaint}, true
+	case gfx.PointerMove:
 		button := terminal.mouseButton
 		if button == term.MouseButtonNone {
-			if modes.Mouse != term.MouseAny || event.Modifiers&ui.ModifierShift != 0 {
-				return ui.EventResult{}, false
+			if modes.Mouse != term.MouseAny || event.Modifiers&gfx.ModifierShift != 0 {
+				return gfx.EventResult{}, false
 			}
 		}
 		if terminal.mousePositionValid && terminal.mousePosition == position {
-			return ui.EventResult{Handled: true}, true
+			return gfx.EventResult{Handled: true}, true
 		}
 		terminal.mousePosition = position
 		terminal.mousePositionValid = true
@@ -457,11 +457,11 @@ func (state *State) terminalMousePointer(session *Session, event ui.PointerEvent
 			Kind: term.MouseMotion, Button: button, Modifiers: terminalMouseModifiers(event.Modifiers),
 			Column: position.Column, Row: position.Row,
 		})
-		return ui.EventResult{Handled: true, Repaint: repaint}, true
-	case ui.PointerUp:
+		return gfx.EventResult{Handled: true, Repaint: repaint}, true
+	case gfx.PointerUp:
 		button := terminal.mouseButton
 		if button == term.MouseButtonNone {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		terminal.mouseButton = term.MouseButtonNone
 		terminal.mousePosition = position
@@ -470,11 +470,11 @@ func (state *State) terminalMousePointer(session *Session, event ui.PointerEvent
 			Kind: term.MouseRelease, Button: button, Modifiers: terminalMouseModifiers(event.Modifiers),
 			Column: position.Column, Row: position.Row,
 		})
-		return ui.EventResult{Handled: true, Repaint: repaint}, true
-	case ui.PointerExit:
+		return gfx.EventResult{Handled: true, Repaint: repaint}, true
+	case gfx.PointerExit:
 		button := terminal.mouseButton
 		if button == term.MouseButtonNone {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		terminal.mouseButton = term.MouseButtonNone
 		if terminal.mousePositionValid {
@@ -484,9 +484,9 @@ func (state *State) terminalMousePointer(session *Session, event ui.PointerEvent
 			Kind: term.MouseRelease, Button: button, Modifiers: terminalMouseModifiers(event.Modifiers),
 			Column: position.Column, Row: position.Row,
 		})
-		return ui.EventResult{Handled: true, Repaint: repaint}, true
+		return gfx.EventResult{Handled: true, Repaint: repaint}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 func (terminal *terminal) sendMouse(event term.MouseEvent) bool {
@@ -499,34 +499,34 @@ func (terminal *terminal) sendMouse(event term.MouseEvent) bool {
 	return repaint
 }
 
-func terminalMouseButton(button ui.PointerButton) (term.MouseEventButton, bool) {
+func terminalMouseButton(button gfx.PointerButton) (term.MouseEventButton, bool) {
 	switch button {
-	case ui.PointerButtonPrimary:
+	case gfx.PointerButtonPrimary:
 		return term.MouseButtonLeft, true
-	case ui.PointerButtonMiddle:
+	case gfx.PointerButtonMiddle:
 		return term.MouseButtonMiddle, true
-	case ui.PointerButtonSecondary:
+	case gfx.PointerButtonSecondary:
 		return term.MouseButtonRight, true
 	default:
 		return term.MouseButtonNone, false
 	}
 }
 
-func terminalMouseModifiers(modifiers ui.Modifiers) term.MouseModifiers {
+func terminalMouseModifiers(modifiers gfx.Modifiers) term.MouseModifiers {
 	var result term.MouseModifiers
-	if modifiers&ui.ModifierShift != 0 {
+	if modifiers&gfx.ModifierShift != 0 {
 		result |= term.MouseModifierShift
 	}
-	if modifiers&ui.ModifierMeta != 0 {
+	if modifiers&gfx.ModifierMeta != 0 {
 		result |= term.MouseModifierMeta
 	}
-	if modifiers&ui.ModifierControl != 0 {
+	if modifiers&gfx.ModifierControl != 0 {
 		result |= term.MouseModifierControl
 	}
 	return result
 }
 
-func (state *State) terminalPositionAt(session *Session, viewport ui.Size, x, y float32) term.Position {
+func (state *State) terminalPositionAt(session *Session, viewport gfx.Size, x, y float32) term.Position {
 	geometry := state.terminalLayoutForEvent(session.ID, viewport)
 	terminal := session.term
 	if terminal == nil {

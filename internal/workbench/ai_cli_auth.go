@@ -11,7 +11,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/cli"
 	"motty/internal/ai/store"
 	"motty/internal/localshell"
@@ -272,16 +272,16 @@ func (s *State) aiStopCLILogin() {
 		s.ai.cfg.dialog = aiDialogNone
 	}
 }
-func (s *State) aiCLILoginKey(event ui.KeyEvent) ui.EventResult {
+func (s *State) aiCLILoginKey(event gfx.KeyEvent) gfx.EventResult {
 	login := s.ai.login
 	if login != nil && event.Target == hitAICLILoginTerminal && login.term.shell != nil && !login.finished {
-		if event.Modifiers&ui.ModifierMeta != 0 {
-			return ui.EventResult{}
+		if event.Modifiers&gfx.ModifierMeta != 0 {
+			return gfx.EventResult{}
 		}
 		input := term.EncodeKeyEvent(event, login.term.screen.KeyboardFlags(), login.term.screen.Modes().AppCursorKeys)
 		login.term.shell.Write(input)
 	}
-	return ui.EventResult{Handled: true, Repaint: true}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 func (s *State) aiCLILoginInput(context app.TextInputContext) *app.TextInput {
 	login := s.ai.login
@@ -290,7 +290,7 @@ func (s *State) aiCLILoginInput(context app.TextInputContext) *app.TextInput {
 	}
 	t := login.term
 	c := t.screen.Cursor()
-	t.input.Bounds = ui.Rect{X: login.geometry.left + float32(c.X)*s.cellWidth, Y: login.geometry.top + float32(c.Y)*s.cellHeight, Width: s.cellWidth, Height: s.cellHeight}
+	t.input.Bounds = gfx.Rect{X: login.geometry.left + float32(c.X)*s.cellWidth, Y: login.geometry.top + float32(c.Y)*s.cellHeight, Width: s.cellWidth, Height: s.cellHeight}
 	t.input.FontSize = s.terminalFontSize
 	t.input.MonoFace = s.terminalFontFace
 	t.input.Color = s.termPal.termFG
@@ -318,14 +318,14 @@ func (s *State) aiCLILoginInput(context app.TextInputContext) *app.TextInput {
 	}
 	return &t.input
 }
-func (s *State) paintAICLILogin(canvas *ui.Canvas, viewport ui.Rect) {
+func (s *State) paintAICLILogin(canvas *gfx.Canvas, viewport gfx.Rect) {
 	login := s.ai.login
 	if login == nil {
 		return
 	}
 	m := s.messages.AISettings
 	height := min(float32(420), max(float32(180), viewport.Height-230))
-	dialog := components.BeginDialog(canvas, s.Theme(), viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: hitAICLILoginTerminal, ContentSize: ui.Size{Width: min(float32(920), max(float32(320), viewport.Width-40))}, FitBody: true, BodyHeight: height})
+	dialog := components.BeginDialog(canvas, s.Theme(), viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: hitAICLILoginTerminal, ContentSize: gfx.Size{Width: min(float32(920), max(float32(320), viewport.Width-40))}, FitBody: true, BodyHeight: height})
 	layout := dialog.Begin(m.CLIAuthTitle+" · "+login.provider.Name, m.CLIAuthSensitive)
 	area := layout.Body
 	cols := max(20, int(area.Width/max(s.cellWidth, 1)))

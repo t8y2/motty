@@ -3,7 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"path/filepath"
 	"strings"
 
@@ -338,7 +338,7 @@ func (result *hostImportResult) set(messages i18n.Messages, summary string, warn
 	}
 }
 
-func (state *State) clickHostImportResult(id ui.ID) {
+func (state *State) clickHostImportResult(id gfx.ID) {
 	switch id {
 	case hitHostImportDismiss, hitHostImportClose, hitHostImportDone:
 		state.modal = modalNone

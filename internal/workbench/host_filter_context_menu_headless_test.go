@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
-func hostFilterContextView(t *testing.T, state *State, size ui.Size) *headless.Session {
+func hostFilterContextView(t *testing.T, state *State, size gfx.Size) *headless.Session {
 	t.Helper()
 	view, err := headless.Open(app.Config{
 		Width: int(size.Width), Height: int(size.Height), Tree: Tree(), Paint: state.Paint,
@@ -36,7 +36,7 @@ func hostFilterContextView(t *testing.T, state *State, size ui.Size) *headless.S
 	return view
 }
 
-func hostFilterContextHit(t *testing.T, view *headless.Session, id ui.ID) ui.Hit {
+func hostFilterContextHit(t *testing.T, view *headless.Session, id gfx.ID) gfx.Hit {
 	t.Helper()
 	hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 	if !ok {
@@ -45,7 +45,7 @@ func hostFilterContextHit(t *testing.T, view *headless.Session, id ui.ID) ui.Hit
 	return hit
 }
 
-func hostFilterContextClick(t *testing.T, view *headless.Session, id ui.ID, secondary bool) {
+func hostFilterContextClick(t *testing.T, view *headless.Session, id gfx.ID, secondary bool) {
 	t.Helper()
 	hit := hostFilterContextHit(t, view, id)
 	x, y := hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2
@@ -91,9 +91,9 @@ func TestHostFilterContextNativeSelectedAndUnselectedGroups(t *testing.T) {
 				state.hosts[1].Group, state.hosts[1].Label = "朗新内网", "内网测试主机 A"
 				state.hosts[2].Group, state.hosts[2].Label = "朗新内网", "内网测试主机 B"
 				state.hostDataChanged()
-				view := hostFilterContextView(t, state, ui.Size{Width: 1400, Height: 900})
-				click := func(id ui.ID) { hostFilterContextClick(t, view, id, false) }
-				right := func(id ui.ID) { hostFilterContextClick(t, view, id, true) }
+				view := hostFilterContextView(t, state, gfx.Size{Width: 1400, Height: 900})
+				click := func(id gfx.ID) { hostFilterContextClick(t, view, id, false) }
+				right := func(id gfx.ID) { hostFilterContextClick(t, view, id, true) }
 				shot := func(name string) {
 					if mode == hostViewList && light {
 						hostFilterContextShot(t, view, name)
@@ -108,7 +108,7 @@ func TestHostFilterContextNativeSelectedAndUnselectedGroups(t *testing.T) {
 				if !state.groupActions.open || state.groupActions.path != "停车生产本地" || state.hostFilter != "停车生产本地" {
 					t.Fatal("native selected chip right-click failed or changed the filter")
 				}
-				for _, id := range []ui.ID{hitGroupNewHost, hitGroupNewChild, hitGroupRename, hitGroupMove, hitGroupDelete} {
+				for _, id := range []gfx.ID{hitGroupNewHost, hitGroupNewChild, hitGroupRename, hitGroupMove, hitGroupDelete} {
 					hostFilterContextHit(t, view, id)
 				}
 				shot("01-selected-group-menu")
@@ -165,7 +165,7 @@ func TestHostFilterContextNativeOverflowGroup(t *testing.T) {
 		state.hosts[index].Group = fmt.Sprintf("机房分组 %02d", index)
 	}
 	state.hostDataChanged()
-	view := hostFilterContextView(t, state, ui.Size{Width: 960, Height: 600})
+	view := hostFilterContextView(t, state, gfx.Size{Width: 960, Height: 600})
 	hostFilterContextClick(t, view, hitHostFilterMore, true)
 	if state.groupActions.open {
 		t.Fatal("More itself opened a group menu")

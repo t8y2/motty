@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -238,9 +238,9 @@ func TestRestoreConnectSettingChoosesAndPersists(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsConnection)
 	canvas, _ := paintedTexts(state)
-	for _, id := range []ui.ID{hitSettingsRestoreOff, hitSettingsRestoreActive, hitSettingsRestoreAll} {
-		var tall ui.Canvas
-		state.Paint(&tall, ui.Size{Width: 1400, Height: 1300})
+	for _, id := range []gfx.ID{hitSettingsRestoreOff, hitSettingsRestoreActive, hitSettingsRestoreAll} {
+		var tall gfx.Canvas
+		state.Paint(&tall, gfx.Size{Width: 1400, Height: 1300})
 		if _, ok := hitByID(&tall, id); !ok {
 			t.Fatalf("settings paint no restore choice %d", id)
 		}
@@ -250,7 +250,7 @@ func TestRestoreConnectSettingChoosesAndPersists(t *testing.T) {
 	first := newTestState(t, options)
 	first.Click(hitSettings)
 	for _, test := range []struct {
-		hit  ui.ID
+		hit  gfx.ID
 		want restoreConnectPolicy
 	}{{hitSettingsRestoreAll, restoreConnectAll}, {hitSettingsRestoreOff, restoreConnectOff}, {hitSettingsRestoreActive, restoreConnectActive}} {
 		first.Click(test.hit)
@@ -352,7 +352,7 @@ func TestRestoredPageTakesEnterAndCommandWAndShowsTheKeys(t *testing.T) {
 		t.Fatal("no Connect button")
 	}
 
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter}); !result.Handled || session.conn == nil {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter}); !result.Handled || session.conn == nil {
 		t.Fatalf("Enter on the restored page: %+v conn=%v", result, session.conn != nil)
 	}
 
@@ -377,11 +377,11 @@ func TestEnterOnTheActiveTabConnectsARestoredPage(t *testing.T) {
 		t.Fatal("setup: the session was not restored")
 	}
 	other := hitTabList.At(int(state.deck.ActiveWorkspace()) + 1)
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: other}); result.Handled && session.conn != nil {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: other}); result.Handled && session.conn != nil {
 		t.Fatal("Enter on some other tab must not connect this page")
 	}
 	active := hitTabList.At(int(state.deck.ActiveWorkspace()))
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: active}); !result.Handled || session.conn == nil {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: active}); !result.Handled || session.conn == nil {
 		t.Fatalf("Enter on the active tab: %+v conn=%v", result, session.conn != nil)
 	}
 }

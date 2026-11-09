@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // sftpMenuHits is the place of the controls this file paints.
@@ -29,7 +29,7 @@ var (
 )
 
 // sftpMenuAction is the button of the bar that a menu row stands for.
-func sftpMenuAction(id ui.ID) (ui.ID, bool) {
+func sftpMenuAction(id gfx.ID) (gfx.ID, bool) {
 	switch id {
 	case hitSFTPMenuOpen:
 		return hitSFTPOpenEntry, true
@@ -61,7 +61,7 @@ func sftpMenuAction(id ui.ID) (ui.ID, bool) {
 		hitSFTPCopyPath, hitSFTPProperties:
 		return id, true
 	}
-	return ui.ID{}, false
+	return gfx.ID{}, false
 }
 
 // sftpMenu is the right-click menu of the file list: which session's panel it was
@@ -69,49 +69,49 @@ func sftpMenuAction(id ui.ID) (ui.ID, bool) {
 type sftpMenu struct {
 	open    bool
 	session uint32
-	at      ui.Point
+	at      gfx.Point
 }
 
 // sftpMenuDismissPointer closes an open menu on a secondary press outside it; the
 // backdrop swallows the press, and only a primary one is also a click.
-func (state *State) sftpMenuDismissPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Kind != ui.PointerDown || event.Button == ui.PointerButtonNone || event.Button == ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+func (state *State) sftpMenuDismissPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone || event.Button == gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	if state.sftpMenu.open && event.Target == hitSFTPMenuDismiss {
 		state.sftpMenu.open = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // sftpMenuPointer opens the menu on a secondary press on a row of the file list,
 // selecting that row first unless it is already part of the selection.
-func (state *State) sftpMenuPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary || event.Target.Scope() != hitSFTPEntryList {
-		return ui.EventResult{}, false
+func (state *State) sftpMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary || event.Target.Scope() != hitSFTPEntryList {
+		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || session.files == nil || session.files.editPath != "" {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	view := session.files
 	folder := view.active()
 	index := folder.first + item(event.Target)
 	if view.dialog != sftpDialogNone || index >= len(folder.shownRows()) || view.busy && !view.local {
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	if folder.searching() {
 		// The actions in the menu are the folder's; a result is not in it.
 		folder.search.selectRow(index)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if !folder.rows[index].selected {
 		folder.selectRow(index, 0)
 		view.setItemCountStatus(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
 	}
 	state.sftpMenu = sftpMenu{open: true, session: session.ID, at: state.terminalMenu.pointer}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 // sftpMenuView is the panel an open menu acts on, if it is still there to act on.
@@ -126,7 +126,7 @@ func (state *State) sftpMenuView() (*Session, *sftpView, bool) {
 	return session, session.files, true
 }
 
-func (state *State) paintSFTPMenu(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintSFTPMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	session, view, ok := state.sftpMenuView()
 	if !ok {
 		state.sftpMenu.open = false
@@ -149,7 +149,7 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 	count, selected := selectedSFTP(view)
 	one, local := count == 1, view.local
 	busy := view.busy && !local
-	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	if one {
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuOpen, Label: messages.SFTPOpen, Icon: icon(iconFolderOpen), Disabled: busy})
@@ -215,7 +215,7 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 }
 
 // clickSFTPMenu runs a menu choice. A press anywhere else only closes the menu.
-func (state *State) clickSFTPMenu(id ui.ID) bool {
+func (state *State) clickSFTPMenu(id gfx.ID) bool {
 	if !state.sftpMenu.open {
 		return false
 	}

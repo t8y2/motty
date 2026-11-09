@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -30,7 +30,7 @@ type verticalTabKey struct {
 
 type verticalTabGroup struct {
 	key         verticalTabKey
-	hit         ui.ID // derived from key, so it outlives the group's first member
+	hit         gfx.ID // derived from key, so it outlives the group's first member
 	title       string
 	label       string
 	countText   string
@@ -39,10 +39,10 @@ type verticalTabGroup struct {
 	members     [layoutcore.MaxWorkspaces]int
 	count       int
 	active      bool
-	badge       flex.Box
+	badge       ui.Box
 }
 
-func (group *verticalTabGroup) id() ui.ID { return group.hit }
+func (group *verticalTabGroup) id() gfx.ID { return group.hit }
 
 // hash is a stable number for a group's key. The keyboard focus of a group
 // header is its hit identity: derived from the first member's workspace it would
@@ -181,7 +181,7 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 			if group.key != key || group.title != title {
 				group.label = ""
 			}
-			group.key, group.title, group.count, group.active, group.badge = key, title, 0, false, flex.Box{}
+			group.key, group.title, group.count, group.active, group.badge = key, title, 0, false, ui.Box{}
 		}
 		group := &view.groups[groupIndex]
 		group.members[group.count] = index
@@ -277,7 +277,7 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 	}
 }
 
-func (state *State) declareGroupedVerticalTabs(f *flex.Frame, width float32, compact bool) {
+func (state *State) declareGroupedVerticalTabs(f *ui.Frame, width float32, compact bool) {
 	view := &state.verticalTabs
 	for _, row := range view.grouped.rows {
 		if row.tab < 0 {
@@ -297,7 +297,7 @@ func (state *State) declareGroupedVerticalTabs(f *flex.Frame, width float32, com
 	}
 }
 
-func (state *State) declareVerticalTabGroup(f *flex.Frame, index int, width float32) {
+func (state *State) declareVerticalTabGroup(f *ui.Frame, index int, width float32) {
 	view, pal := &state.verticalTabs.grouped, state.pal
 	group := &view.groups[index]
 	id := group.id()
@@ -312,19 +312,19 @@ func (state *State) declareVerticalTabGroup(f *flex.Frame, index int, width floa
 	if expanded {
 		icon = iconChevronDown
 	}
-	f.Row().Size(width, verticalTabHeight).Shrink(0).MarginSides(0, 0, barGap, 0).PadX(4).Gap(4).Items(flex.Center).
+	f.Row().Size(width, verticalTabHeight).Shrink(0).MarginSides(0, 0, barGap, 0).PadX(4).Gap(4).Items(ui.Center).
 		Radius(radius.item).Background(fill).
-		HitWith(id, group.label, ui.HitOptions{Role: ui.RoleButton, Expanded: expanded, Expandable: true, Selected: group.active, Hint: group.label}).Children(func() {
+		HitWith(id, group.label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: expanded, Expandable: true, Selected: group.active, Hint: group.label}).Children(func() {
 		f.Icon(lucideIcons[icon]).Size(12, 12).Shrink(0).Color(pal.muted)
 		group.badge = f.Slot().Size(18, 18).Shrink(0)
-		f.Text(group.title).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.text).Ellipsis().Grow(1).Basis(0)
+		f.Text(group.title).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).Ellipsis().Grow(1).Basis(0)
 		f.Text(group.countText).FontSize(metrics.FontSizeS).Color(pal.muted).Shrink(0)
 	})
 }
 
-func (state *State) paintVerticalTabGroupIcons(canvas *ui.Canvas) {
+func (state *State) paintVerticalTabGroupIcons(canvas *gfx.Canvas) {
 	for _, group := range state.verticalTabs.grouped.groups {
-		if group.count < 2 || group.badge == (flex.Box{}) {
+		if group.count < 2 || group.badge == (ui.Box{}) {
 			continue
 		}
 		tab := state.workspaceTabs[group.members[0]]
@@ -334,7 +334,7 @@ func (state *State) paintVerticalTabGroupIcons(canvas *ui.Canvas) {
 	}
 }
 
-func (state *State) clickVerticalTabGroup(id ui.ID) bool {
+func (state *State) clickVerticalTabGroup(id gfx.ID) bool {
 	if !state.verticalTabsGrouped() || id.Scope() != hitVerticalTabGroups {
 		return false
 	}
@@ -363,9 +363,9 @@ func (state *State) setVerticalTabGroupCollapsed(key verticalTabKey, collapsed b
 // through the visible rows without wrapping, Right opens a group or goes into it, Left closes it
 // or goes back to its header, and Home, End and the page keys jump. The rows are the ones on
 // screen, so the children of a collapsed group are skipped. It owns every key in the list.
-func (state *State) verticalTabGroupKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) verticalTabGroupKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if !state.verticalTabsGrouped() || event.Target.Scope() != hitTabList && event.Target.Scope() != hitVerticalTabGroups {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	view := &state.verticalTabs.grouped
 	current := slices.IndexFunc(view.options, func(option components.TabOption) bool { return option.ID == event.Target })
@@ -375,19 +375,19 @@ func (state *State) verticalTabGroupKey(event ui.KeyEvent) (ui.EventResult, bool
 	}
 	next, action, handled := components.NavigateTree(view.tree, current, event.Key, pageRows)
 	if !handled {
-		return ui.EventResult{}, true
+		return gfx.EventResult{}, true
 	}
 	switch action {
 	case components.TreeNavigationExpand, components.TreeNavigationCollapse:
 		state.setVerticalTabGroupCollapsed(view.groups[view.rows[current].group].key, action == components.TreeNavigationCollapse)
-		return ui.EventResult{Focus: event.Target, FocusVisible: true, Handled: true, Repaint: true}, true
+		return gfx.EventResult{Focus: event.Target, FocusVisible: true, Handled: true, Repaint: true}, true
 	case components.TreeNavigationMove:
 		return state.focusVerticalTabRow(view.options[next].ID), true
 	}
-	return ui.EventResult{}, true
+	return gfx.EventResult{}, true
 }
 
-func (state *State) focusVerticalTabRow(id ui.ID) ui.EventResult {
+func (state *State) focusVerticalTabRow(id gfx.ID) gfx.EventResult {
 	for index, option := range state.verticalTabs.grouped.options {
 		if option.ID == id {
 			start := float32(index) * state.tabStrip.pitch
@@ -397,7 +397,7 @@ func (state *State) focusVerticalTabRow(id ui.ID) ui.EventResult {
 			break
 		}
 	}
-	return ui.EventResult{Focus: id, FocusVisible: true, Handled: true, Repaint: true}
+	return gfx.EventResult{Focus: id, FocusVisible: true, Handled: true, Repaint: true}
 }
 
 // Grouped rows and deck positions differ, so a drop is resolved to what it does
@@ -409,7 +409,7 @@ func (state *State) focusVerticalTabRow(id ui.ID) ui.EventResult {
 // group, because the host decides the group, so any other drop inside a group
 // is refused: it would only snap back. Whether a drop changes anything is judged
 // by where things are shown, not by their positions in the deck.
-func (state *State) groupedVerticalTabDrop(at ui.Point, source layoutcore.WorkspaceID, unit []layoutcore.WorkspaceID) tabDrop {
+func (state *State) groupedVerticalTabDrop(at gfx.Point, source layoutcore.WorkspaceID, unit []layoutcore.WorkspaceID) tabDrop {
 	view := &state.verticalTabs.grouped
 	if len(view.rows) == 0 {
 		return tabDrop{}
@@ -492,7 +492,7 @@ func (state *State) groupedVerticalTabDrop(at ui.Point, source layoutcore.Worksp
 
 // verticalTabGroupMembers is the workspaces of the server group whose header has
 // that identity, in deck order, and the header's text.
-func (state *State) verticalTabGroupMembers(id ui.ID) ([]layoutcore.WorkspaceID, string, bool) {
+func (state *State) verticalTabGroupMembers(id gfx.ID) ([]layoutcore.WorkspaceID, string, bool) {
 	if !state.verticalTabsGrouped() || id.Scope() != hitVerticalTabGroups {
 		return nil, "", false
 	}

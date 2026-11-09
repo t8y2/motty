@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 var (
@@ -30,9 +30,9 @@ const (
 type hostGroupActions struct {
 	open       bool
 	path       string
-	at         ui.Point
+	at         gfx.Point
 	op         hostGroupOperation
-	rows       []ui.Rect
+	rows       []gfx.Rect
 	ungroup    bool
 	parentOpen bool
 	drag       hostGroupDrag
@@ -56,13 +56,13 @@ func validHostGroupSegment(name string) bool {
 	return validHostGroup(name) && !strings.Contains(name, "/") && name != "." && name != ".."
 }
 
-func (state *State) openHostGroupActions(path string, at ui.Point) {
+func (state *State) openHostGroupActions(path string, at gfx.Point) {
 	state.hostMenu.open = false
 	state.hostGroupMenu, state.hostFilterMenu, state.importMenu = false, false, false
 	state.groupActions.open, state.groupActions.path, state.groupActions.at = true, path, at
 }
 
-func (state *State) clickHostGroupActions(id ui.ID) bool {
+func (state *State) clickHostGroupActions(id gfx.ID) bool {
 	a := &state.groupActions
 	if !a.open {
 		if id.Scope() != hitHostGroupMore || state.activeSection != sectionHosts || state.modal != modalNone {
@@ -72,10 +72,10 @@ func (state *State) clickHostGroupActions(id ui.ID) bool {
 		if index < 0 || index >= len(state.hostGroups) {
 			return true
 		}
-		at := ui.Point{X: state.hostsBounds.X + 30, Y: state.hostsBounds.Y + hostListTop}
+		at := gfx.Point{X: state.hostsBounds.X + 30, Y: state.hostsBounds.Y + hostListTop}
 		if index < len(a.rows) {
 			row := a.rows[index]
-			at = ui.Point{X: row.X + row.Width - 32, Y: row.Y + row.Height}
+			at = gfx.Point{X: row.X + row.Width - 32, Y: row.Y + row.Height}
 		}
 		state.openHostGroupActions(state.hostGroups[index].Name, at)
 		return true
@@ -122,7 +122,7 @@ func (state *State) clickHostGroupActions(id ui.ID) bool {
 	return true
 }
 
-func (state *State) paintHostGroupActions(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintHostGroupActions(canvas *gfx.Canvas, viewport gfx.Rect) {
 	a := &state.groupActions
 	if !a.open {
 		return
@@ -158,7 +158,7 @@ func (state *State) paintHostGroupActions(canvas *ui.Canvas, viewport ui.Rect) {
 	menu.End()
 }
 
-func (state *State) hostGroupRowEvents(canvas *ui.Canvas, id ui.ID, index int, bounds ui.Rect) {
+func (state *State) hostGroupRowEvents(canvas *gfx.Canvas, id gfx.ID, index int, bounds gfx.Rect) {
 	state.groupActions.rows[index] = bounds
 	for at := len(canvas.Hits()) - 1; at >= 0; at-- {
 		hit := &canvas.Hits()[at]
@@ -168,14 +168,14 @@ func (state *State) hostGroupRowEvents(canvas *ui.Canvas, id ui.ID, index int, b
 		}
 	}
 	state.openHostGroupActionsOn(canvas, id, index)
-	button := ui.Rect{X: bounds.X + bounds.Width - 34, Y: bounds.Y + (bounds.Height-28)/2, Width: 28, Height: 28}
+	button := gfx.Rect{X: bounds.X + bounds.Width - 34, Y: bounds.Y + (bounds.Height-28)/2, Width: 28, Height: 28}
 	state.paintIconButton(canvas, hitHostGroupMore.At(index), iconEllipsis, button, state.messages.HostGroupActions.Actions, false, iconButtonQuiet, state.pal.workspace)
 }
 
-func (state *State) openHostGroupActionsOn(canvas *ui.Canvas, id ui.ID, index int) {
+func (state *State) openHostGroupActionsOn(canvas *gfx.Canvas, id gfx.ID, index int) {
 	event, ok := canvas.PointerOn(id)
-	if ok && event.Kind == ui.PointerDown && event.Button == ui.PointerButtonSecondary && state.modal == modalNone && state.activeSection == sectionHosts {
-		state.openHostGroupActions(state.hostGroups[index].Name, ui.Point{X: event.X, Y: event.Y})
+	if ok && event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonSecondary && state.modal == modalNone && state.activeSection == sectionHosts {
+		state.openHostGroupActions(state.hostGroups[index].Name, gfx.Point{X: event.X, Y: event.Y})
 		canvas.Consume()
 	}
 }

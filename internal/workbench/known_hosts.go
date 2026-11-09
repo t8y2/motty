@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/knownhosts"
 )
@@ -167,7 +167,7 @@ func (state *State) knownHostsPageRange() (int, int) {
 	return start, min(start+knownHostsPageSize, len(view.visible))
 }
 
-func (state *State) clickKnownHosts(id ui.ID) bool {
+func (state *State) clickKnownHosts(id gfx.ID) bool {
 	view := &state.knownHosts
 	if state.activeSection != sectionKnownHosts {
 		return false
@@ -212,7 +212,7 @@ func (state *State) clickKnownHosts(id ui.ID) bool {
 	return false
 }
 
-func (state *State) knownHostIndexForHit(id ui.ID) (int, bool) {
+func (state *State) knownHostIndexForHit(id gfx.ID) (int, bool) {
 	var index int
 	switch {
 	case id.Scope() == hitKnownHostRowList:
@@ -239,7 +239,7 @@ func (state *State) openKnownHostsAction(action knownHostsAction) {
 	}
 }
 
-func (state *State) clickKnownHostsDialog(id ui.ID) {
+func (state *State) clickKnownHostsDialog(id gfx.ID) {
 	view := &state.knownHosts
 	switch id {
 	case hitKnownHostsDialogDismiss, hitKnownHostsDialogClose, hitKnownHostsDialogCancel:
@@ -276,31 +276,31 @@ func (state *State) confirmKnownHostsAction() {
 	}
 }
 
-func (state *State) knownHostsKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) knownHostsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	view := &state.knownHosts
 	if view.action != knownHostsActionNone {
-		if event.Key == ui.KeyEnter && event.Target == hitKnownHostsDialogConfirm && !event.Repeat {
+		if event.Key == gfx.KeyEnter && event.Target == hitKnownHostsDialogConfirm && !event.Repeat {
 			state.confirmKnownHostsAction()
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if state.activeSection != sectionKnownHosts || event.Repeat {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape && event.Target == hitKnownHostsSearch && view.search.RuneCount() > 0 {
+	if event.Key == gfx.KeyEscape && event.Target == hitKnownHostsSearch && view.search.RuneCount() > 0 {
 		view.search = text.Editor{}
 		view.synced = false
 		state.syncKnownHostsVisible()
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if index, ok := state.knownHostIndexForHit(event.Target); ok && (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) {
+	if index, ok := state.knownHostIndexForHit(event.Target); ok && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
 		state.clickKnownHosts(hitKnownHostRowList.At(index))
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if event.Key == ui.KeyDelete && view.selected > 0 {
+	if event.Key == gfx.KeyDelete && view.selected > 0 {
 		state.openKnownHostsAction(knownHostsActionDelete)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }

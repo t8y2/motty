@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/term"
 )
 
@@ -357,10 +357,10 @@ func TestWorkbenchShowsTheFirstCharacterAtAProvenPromptOnly(t *testing.T) {
 	}
 
 	// Tab leaves the line the shell drew: nothing more is guessed on it.
-	key(state, 0, ui.KeyEvent{Key: ui.KeyTab})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyTab})
 	shell.say("\r\n" + folderSyncMarker(session, "A") + "$ ls" + folderSyncMarker(session, "B"))
 	state.Wake()
-	key(state, 0, ui.KeyEvent{Key: ui.KeyTab})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyTab})
 	if texts := typed("s"); containsExact(texts, "s") {
 		t.Fatal("a character was shown after Tab ended the proof")
 	}
@@ -370,7 +370,7 @@ func TestWorkbenchShowsTheFirstCharacterAtAProvenPromptOnly(t *testing.T) {
 	shell.say("\r\n" + folderSyncMarker(session, "A") + "$ " + folderSyncMarker(session, "B"))
 	state.Wake()
 	state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "sudo ls"})
-	key(state, 0, ui.KeyEvent{Key: ui.KeyEnter})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyEnter})
 	shell.say(folderSyncMarker(session, "C") + "\r\n[sudo] password for me: ")
 	state.Wake()
 	if texts := typed("hunter2"); containsExact(texts, "hunter2") {
@@ -399,10 +399,10 @@ func TestWorkbenchKeepsTheBlockCursorPastTheTypedTextAheadOfTheEcho(t *testing.T
 	cursor := session.term.presentedCursor()
 	caretX := cursor.X + cells
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	hit := terminalHit(state, 0)
-	canvas.SetInteraction(hit, ui.ID{}, hit, true)
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	canvas.SetInteraction(hit, gfx.ID{}, hit, true)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	geometry := state.layout()
 
 	// The cell under a point, as the terminal's own column arithmetic finds it.

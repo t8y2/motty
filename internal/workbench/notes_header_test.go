@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestNotesLibraryHeaderIconsKeepModeIdentitiesAndPinState(t *testing.T) {
@@ -12,14 +12,14 @@ func TestNotesLibraryHeaderIconsKeepModeIdentitiesAndPinState(t *testing.T) {
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
 	s.notes.body.Insert("shared draft")
-	paint := func(width float32) *ui.Canvas {
+	paint := func(width float32) *gfx.Canvas {
 		t.Helper()
-		c := &ui.Canvas{}
-		s.paintNoteEditor(c, ui.Rect{Width: width, Height: 700})
+		c := &gfx.Canvas{}
+		s.paintNoteEditor(c, gfx.Rect{Width: width, Height: 700})
 		return c
 	}
 	c := paint(800)
-	ids := []ui.ID{hitNoteTreeToggle, hitNoteTitle, hitNoteTagsOpen, hitNoteHostsOpen, hitNotePin, hitNoteModes.At(0), hitNoteModes.At(2), hitNoteModes.At(1)}
+	ids := []gfx.ID{hitNoteTreeToggle, hitNoteTitle, hitNoteTagsOpen, hitNoteHostsOpen, hitNotePin, hitNoteModes.At(0), hitNoteModes.At(2), hitNoteModes.At(1)}
 	previous := float32(-1)
 	for _, id := range ids {
 		hit, ok := hitByID(c, id)
@@ -67,8 +67,8 @@ func TestNotesLibraryHeaderStacksAndHidesEmptyTagArea(t *testing.T) {
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
 	s.notes.title.Insert(strings.Repeat("长标题", 30))
-	var c ui.Canvas
-	s.paintNoteEditor(&c, ui.Rect{Width: 380, Height: 700})
+	var c gfx.Canvas
+	s.paintNoteEditor(&c, gfx.Rect{Width: 380, Height: 700})
 	title, _ := hitByID(&c, hitNoteTitle)
 	tagButton, _ := hitByID(&c, hitNoteTagsOpen)
 	lastMode, _ := hitByID(&c, hitNoteModes.At(1))
@@ -78,7 +78,7 @@ func TestNotesLibraryHeaderStacksAndHidesEmptyTagArea(t *testing.T) {
 	emptyY := s.notes.sourceBounds.Y
 	s.setNoteTags([]string{"ordinary"})
 	c.Reset()
-	s.paintNoteEditor(&c, ui.Rect{Width: 380, Height: 700})
+	s.paintNoteEditor(&c, gfx.Rect{Width: 380, Height: 700})
 	chip, _ := hitByID(&c, hitNoteTagHints.At(s.noteTagToken("ordinary")))
 	if chip.Bounds.X != 20 || s.notes.sourceBounds.Y != emptyY+37 {
 		t.Fatal("tag row is not full width or empty row consumes space")
@@ -90,10 +90,10 @@ func TestNotesUpdatedTimeFitsToolbarAndImagesMoveIntoHeader(t *testing.T) {
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
 	s.notes.draft.Updated = "2026-11-05T04:21:00Z"
-	paint := func(width float32) (*ui.Canvas, *ui.Text) {
-		c := &ui.Canvas{}
+	paint := func(width float32) (*gfx.Canvas, *gfx.Text) {
+		c := &gfx.Canvas{}
 		c.SetMeasurer(func(value string, _, _ float32) float32 { return float32(len([]rune(value))) * 6 })
-		s.paintNoteEditor(c, ui.Rect{Width: width, Height: 700})
+		s.paintNoteEditor(c, gfx.Rect{Width: width, Height: 700})
 		for _, text := range c.Texts() {
 			if text.Value == s.noteUpdatedLabel() {
 				return c, &text

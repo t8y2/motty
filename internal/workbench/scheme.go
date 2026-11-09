@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -204,9 +204,9 @@ func (state *State) rebuildTerminalLook() {
 	look.termFG = look.text
 	if scheme, ok := state.schemeByID(state.activeScheme()); ok {
 		look.dark = luminance(scheme.background) < 0.5
-		look.terminal = ui.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
-		look.termFG = ui.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
-		look.cursor = ui.RGB(scheme.cursor[0], scheme.cursor[1], scheme.cursor[2])
+		look.terminal = gfx.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
+		look.termFG = gfx.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
+		look.cursor = gfx.RGB(scheme.cursor[0], scheme.cursor[1], scheme.cursor[2])
 		look.ansi = scheme.ansi
 	}
 	look.highlight = state.highlights
@@ -232,8 +232,8 @@ func (state *State) reportTerminalColors(t *terminal) {
 	t.screen.SetDefaultColors(rgb8(state.termPal.termFG), rgb8(state.termPal.terminal))
 }
 
-// rgb8 is the 8-bit channels of an opaque color, the inverse of ui.RGB.
-func rgb8(c ui.Color) [3]uint8 {
+// rgb8 is the 8-bit channels of an opaque color, the inverse of gfx.RGB.
+func rgb8(c gfx.Color) [3]uint8 {
 	channel := func(v float32) uint8 { return uint8(min(max(v, 0), 1)*255 + 0.5) }
 	return [3]uint8{channel(c.Red), channel(c.Green), channel(c.Blue)}
 }
@@ -283,7 +283,7 @@ var (
 	hitSchemeDrawerScroll = tree.ID(schemeHits, "scheme-drawer-scroll")
 )
 
-func schemeHit(index int) ui.ID { return hitSettingsSchemeList.At(index) }
+func schemeHit(index int) gfx.ID { return hitSettingsSchemeList.At(index) }
 
 // schemeTotal is how many cards the browser has: the hand-written built-ins,
 // the embedded community collection and the user's directory.
@@ -332,9 +332,9 @@ func (state *State) paintSchemePicks(page *settingsPage) {
 			if state.appearance == appearanceLight {
 				look = m.SchemeLookLight
 			}
-			f.Text(look).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 14, 0)
-			f.Row().Items(flex.Center).MarginSides(0, 0, 10, 0).Children(func() {
-				f.Text(m.SchemeQuickPicks).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
+			f.Text(look).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 14, 0)
+			f.Row().Items(ui.Center).MarginSides(0, 0, 10, 0).Children(func() {
+				f.Text(m.SchemeQuickPicks).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
 				page.button(hitSchemeBrowseAll, fmt.Sprintf(m.SchemeMoreFmt, state.schemeTotal()), aiButtonOutline, false)
 			})
 			state.paintSchemeCards(page, state.schemeQuickPicks())
@@ -466,7 +466,7 @@ func schemeMatches(name, filter string) bool {
 }
 
 // paintSchemeSearchBox paints the drawer's search box.
-func (state *State) paintSchemeSearchBox(canvas *ui.Canvas, box ui.Rect) {
+func (state *State) paintSchemeSearchBox(canvas *gfx.Canvas, box gfx.Rect) {
 	value := state.schemeFilter.String()
 	placeholder := state.messages.Tools.SchemeSearchPlaceholder
 	components.PaintInputGroup(canvas, state.Theme(), box, components.InputGroupSnapshot{
@@ -483,14 +483,14 @@ type schemeDrawerCard struct {
 	index    int
 	id       string
 	name     string
-	card     flex.Box
-	swatch   flex.Box
-	swatches [4]ui.Color
+	card     ui.Box
+	swatch   ui.Box
+	swatches [4]gfx.Color
 }
 
 // paintSchemeDrawer is the complete collection in a left-hand drawer. The
 // settings page behind it stays at the height of the quick picks.
-func (state *State) paintSchemeDrawer(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintSchemeDrawer(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if viewport.Width <= 0 || viewport.Height <= 0 {
 		return
 	}
@@ -509,7 +509,7 @@ func (state *State) paintSchemeDrawer(canvas *ui.Canvas, viewport ui.Rect) {
 	if layout.Body.Width < schemeDrawerNarrow {
 		columns = 2
 	}
-	var search, scroll flex.Box
+	var search, scroll ui.Box
 	var cards []schemeDrawerCard
 	f := state.schemeDrawerView.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() {
@@ -519,7 +519,7 @@ func (state *State) paintSchemeDrawer(canvas *ui.Canvas, viewport ui.Rect) {
 			filter := strings.ToLower(strings.TrimSpace(state.schemeFilter.String()))
 			if filter != "" {
 				matches := state.schemesMatching(filter)
-				f.Text(fmt.Sprintf(m.SchemeResultsFmt, len(matches))).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 8, 0)
+				f.Text(fmt.Sprintf(m.SchemeResultsFmt, len(matches))).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 8, 0)
 				if len(matches) == 0 {
 					f.Text(m.SchemeNoMatches).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20)
 					return
@@ -554,26 +554,26 @@ func (state *State) paintSchemeDrawer(canvas *ui.Canvas, viewport ui.Rect) {
 	for _, entry := range cards {
 		dot := entry.swatch.Rect()
 		for slot, color := range entry.swatches {
-			canvas.Rounded(ui.Rect{X: dot.X + float32(slot)*swatchPitch, Y: dot.Y, Width: swatchSize, Height: swatchSize}, swatchSize/2, color)
+			canvas.Rounded(gfx.Rect{X: dot.X + float32(slot)*swatchPitch, Y: dot.Y, Width: swatchSize, Height: swatchSize}, swatchSize/2, color)
 		}
-		canvas.HitWithOptions(schemeHit(entry.index), entry.card.Rect(), entry.name, ui.HitOptions{Role: ui.RoleButton, Selected: state.activeScheme() == entry.id})
+		canvas.HitWithOptions(schemeHit(entry.index), entry.card.Rect(), entry.name, gfx.HitOptions{Role: gfx.RoleButton, Selected: state.activeScheme() == entry.id})
 	}
 	canvas.Unclip()
 	drawer.End()
 }
 
 // paintSchemeDrawerGroup titles one group of drawer cards and lays it out.
-func (state *State) paintSchemeDrawerGroup(f *flex.Frame, title string, indices []int, columns int, cards *[]schemeDrawerCard) {
+func (state *State) paintSchemeDrawerGroup(f *ui.Frame, title string, indices []int, columns int, cards *[]schemeDrawerCard) {
 	if len(indices) == 0 {
 		return
 	}
-	f.Text(title).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(state.pal.text).LineHeight(20).MarginSides(0, 0, 8, 0)
+	f.Text(title).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(state.pal.text).LineHeight(20).MarginSides(0, 0, 8, 0)
 	state.paintSchemeDrawerCards(f, indices, columns, cards)
 }
 
 // paintSchemeDrawerCards lays the drawer's cards out in the given number of
 // columns; a partial last row keeps the cards as wide as the others.
-func (state *State) paintSchemeDrawerCards(f *flex.Frame, indices []int, columns int, cards *[]schemeDrawerCard) {
+func (state *State) paintSchemeDrawerCards(f *ui.Frame, indices []int, columns int, cards *[]schemeDrawerCard) {
 	for start := 0; start < len(indices); start += columns {
 		end := min(start+columns, len(indices))
 		f.Row().Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
@@ -589,16 +589,16 @@ func (state *State) paintSchemeDrawerCards(f *flex.Frame, indices []int, columns
 
 // declareSchemeDrawer declares one card in the drawer and keeps what it needs
 // painted after the flex frame has laid it out.
-func (state *State) declareSchemeDrawer(f *flex.Frame, index int, cards *[]schemeDrawerCard) {
+func (state *State) declareSchemeDrawer(f *ui.Frame, index int, cards *[]schemeDrawerCard) {
 	pal := state.pal
 	id, name, scheme := state.schemeAt(index)
 	selected := state.activeScheme() == id
-	background, foreground, swatches := pal.terminal, pal.text, [4]ui.Color{pal.danger, pal.success, pal.warning, pal.accent}
+	background, foreground, swatches := pal.terminal, pal.text, [4]gfx.Color{pal.danger, pal.success, pal.warning, pal.accent}
 	if scheme != nil {
-		background = ui.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
-		foreground = ui.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
+		background = gfx.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
+		foreground = gfx.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
 		for slot, ansi := range [4]int{9, 10, 11, 12} {
-			swatches[slot] = ui.RGB(scheme.ansi[ansi][0], scheme.ansi[ansi][1], scheme.ansi[ansi][2])
+			swatches[slot] = gfx.RGB(scheme.ansi[ansi][0], scheme.ansi[ansi][1], scheme.ansi[ansi][2])
 		}
 	}
 	border := withAlpha(pal.line, 0.9)
@@ -606,11 +606,11 @@ func (state *State) declareSchemeDrawer(f *flex.Frame, index int, cards *[]schem
 	if selected {
 		border, width = pal.accent, 2
 	}
-	var swatch flex.Box
+	var swatch ui.Box
 	card := f.Column().Grow(1).Basis(0).PadSides(7-width, 10-width, 0, 10-width).Background(background).Radius(radius.popup).Border(width, border)
 	card.Children(func() {
-		f.Row().Items(flex.Center).MarginSides(0, 0, 6, 0).Children(func() {
-			f.Paragraph(name, 1).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(foreground).LineHeight(18).Grow(1)
+		f.Row().Items(ui.Center).MarginSides(0, 0, 6, 0).Children(func() {
+			f.Paragraph(name, 1).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(foreground).LineHeight(18).Grow(1)
 			if selected {
 				f.Icon(lucideIcons[iconCheck]).Size(14, 14).Color(foreground).Shrink(0)
 			}
@@ -626,12 +626,12 @@ func (state *State) declareScheme(page *settingsPage, index int) {
 	f, pal := page.f, state.pal
 	id, name, scheme := state.schemeAt(index)
 	selected := state.activeScheme() == id
-	background, foreground, swatches := pal.terminal, pal.text, [4]ui.Color{pal.danger, pal.success, pal.warning, pal.accent}
+	background, foreground, swatches := pal.terminal, pal.text, [4]gfx.Color{pal.danger, pal.success, pal.warning, pal.accent}
 	if scheme != nil {
-		background = ui.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
-		foreground = ui.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
+		background = gfx.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
+		foreground = gfx.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
 		for slot, ansi := range [4]int{9, 10, 11, 12} {
-			swatches[slot] = ui.RGB(scheme.ansi[ansi][0], scheme.ansi[ansi][1], scheme.ansi[ansi][2])
+			swatches[slot] = gfx.RGB(scheme.ansi[ansi][0], scheme.ansi[ansi][1], scheme.ansi[ansi][2])
 		}
 	}
 	border := withAlpha(pal.line, 0.9)
@@ -644,8 +644,8 @@ func (state *State) declareScheme(page *settingsPage, index int) {
 		// The border is the window's accent, which can be the card's own color, so
 		// the choice is also marked with a check in the card's text color: that one
 		// always reads on the card.
-		f.Row().Items(flex.Center).MarginSides(0, 0, 6, 0).Children(func() {
-			f.Text(name).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(foreground).LineHeight(18).Grow(1)
+		f.Row().Items(ui.Center).MarginSides(0, 0, 6, 0).Children(func() {
+			f.Text(name).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(foreground).LineHeight(18).Grow(1)
 			if selected {
 				f.Icon(lucideIcons[iconCheck]).Size(14, 14).Color(foreground).Shrink(0)
 			}
@@ -654,5 +654,5 @@ func (state *State) declareScheme(page *settingsPage, index int) {
 		view.colors = append(view.colors, swatches[:]...)
 		page.add(settingsControl{kind: controlSwatches, slot: f.Slot().Size(swatchPitch*3+swatchSize, swatchSize).Shrink(0), first: len(view.colors) - len(swatches), count: len(swatches)})
 	})
-	page.hitOn(card, schemeHit(index), name, ui.HitOptions{Role: ui.RoleButton, Selected: selected})
+	page.hitOn(card, schemeHit(index), name, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
 }

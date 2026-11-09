@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestWorkspaceAutoSaveTemplateLayoutAndOrder(t *testing.T) {
@@ -23,7 +23,7 @@ func TestWorkspaceAutoSaveTemplateLayoutAndOrder(t *testing.T) {
 	if !slices.Equal(state.templates[0].HostIDs, want) {
 		t.Fatalf("reordered template = %v", state.templates[0].HostIDs)
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	loaded, _, err := loadState(state.options.StatePath)
 	if err != nil || len(loaded.WorkspaceTemplates) != 1 || !isGrid(loaded.WorkspaceTemplates[0].Layout, 1) || !slices.Equal(loaded.WorkspaceTemplates[0].HostIDs, want) {
 		t.Fatalf("auto-saved template = %+v, error = %v", loaded.WorkspaceTemplates, err)
@@ -74,20 +74,20 @@ func TestWorkspaceHasOneCreationEntryAndNoLayoutConfirmation(t *testing.T) {
 		if populated {
 			state.templates = []WorkspaceTemplate{mustWorkspaceTemplate(t, "API", workspaceCatalogIDs(state, 0, 1), 2)}
 		}
-		canvas, texts := paintAt(state, ui.Size{Width: 1400, Height: 900})
+		canvas, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 		panelHit(t, canvas, hitWorkspaceNew)
 		if slices.Contains(texts, "New template") {
 			t.Fatal("the separate New template button is still visible")
 		}
 	}
 	state.Click(hitWorkspaceTemplatePresets.At(0))
-	_, texts := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	_, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if slices.Contains(texts, "Save changes") || slices.Contains(texts, "Cancel") {
 		t.Fatal("template layout still requires Save or Cancel")
 	}
 	launchTemporaryWorkspace(t, state, 0, 1)
 	state.Click(hitWorkspaceHeaderLayout)
-	_, texts = paintAt(state, ui.Size{Width: 1400, Height: 900})
+	_, texts = paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if slices.Contains(texts, "Apply layout") || slices.Contains(texts, "Cancel") {
 		t.Fatal("runtime layout still requires Apply or Cancel")
 	}

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -31,7 +31,7 @@ func TestSFTPModeControlInFileTab(t *testing.T) {
 	}
 	defer preview.Close()
 	modeID := tree.MountID(sftpWindowMount(window), hitSFTPWindowSudoMode)
-	checkMode := func(active bool) ui.Rect {
+	checkMode := func(active bool) gfx.Rect {
 		t.Helper()
 		invalidator.Invalidate()
 		if err := preview.Driver().Pump(); err != nil {
@@ -46,9 +46,9 @@ func TestSFTPModeControlInFileTab(t *testing.T) {
 			}
 		}
 		t.Fatal("remote file pane has no mode control")
-		return ui.Rect{}
+		return gfx.Rect{}
 	}
-	click := func(bounds ui.Rect) {
+	click := func(bounds gfx.Rect) {
 		t.Helper()
 		if err := preview.Click(bounds.X+bounds.Width/2, bounds.Y+bounds.Height/2); err != nil {
 			t.Fatal(err)

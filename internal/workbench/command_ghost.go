@@ -6,7 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/cmdhistory"
 	"motty/internal/term"
 )
@@ -172,14 +172,14 @@ func firstWord(text string) string {
 }
 
 // ghostKey takes the keys that accept a suggestion.
-func (state *State) ghostKey(session *Session, event ui.KeyEvent) bool {
-	if event.Modifiers&^(ui.ModifierAlt|ui.ModifierControl) != 0 {
+func (state *State) ghostKey(session *Session, event gfx.KeyEvent) bool {
+	if event.Modifiers&^(gfx.ModifierAlt|gfx.ModifierControl) != 0 {
 		return false
 	}
 	switch {
-	case event.Key == ui.KeyRight && event.Modifiers == 0, event.Key == ui.KeyEnd && event.Modifiers == 0:
+	case event.Key == gfx.KeyRight && event.Modifiers == 0, event.Key == gfx.KeyEnd && event.Modifiers == 0:
 		return state.acceptGhost(session, false)
-	case event.Key == ui.KeyRight:
+	case event.Key == gfx.KeyRight:
 		return state.acceptGhost(session, true)
 	}
 	return false
@@ -187,7 +187,7 @@ func (state *State) ghostKey(session *Session, event ui.KeyEvent) bool {
 
 // paintGhost draws the suggestion after the cursor, clipped before whatever
 // the shell has drawn further along the row (a right-hand prompt) and the edge.
-func (state *State) paintGhost(canvas *ui.Canvas, t *terminal, geometry terminalGeometry, cursor term.Cursor, rest string, cursorShown bool) {
+func (state *State) paintGhost(canvas *gfx.Canvas, t *terminal, geometry terminalGeometry, cursor term.Cursor, rest string, cursorShown bool) {
 	cols, _ := t.screen.Size()
 	limit := cols
 	cells := t.screen.Row(cursor.Y).Cells
@@ -201,7 +201,7 @@ func (state *State) paintGhost(canvas *ui.Canvas, t *terminal, geometry terminal
 	if available <= 0 {
 		return
 	}
-	var runs []ui.TextRun
+	var runs []gfx.TextRun
 	var shown strings.Builder
 	used := 0
 	for _, r := range rest {
@@ -212,7 +212,7 @@ func (state *State) paintGhost(canvas *ui.Canvas, t *terminal, geometry terminal
 		if used+width > available {
 			break
 		}
-		runs = append(runs, ui.TextRun{Column: int32(used), Bytes: int32(utf8.RuneLen(r)), Cells: int32(width), Color: withAlpha(state.termPal.termFG, 0.42)})
+		runs = append(runs, gfx.TextRun{Column: int32(used), Bytes: int32(utf8.RuneLen(r)), Cells: int32(width), Color: withAlpha(state.termPal.termFG, 0.42)})
 		shown.WriteRune(r)
 		used += width
 	}
@@ -224,8 +224,8 @@ func (state *State) paintGhost(canvas *ui.Canvas, t *terminal, geometry terminal
 		// own contrast.
 		runs[0].Color = state.termPal.terminal
 	}
-	style := ui.TextStyle{Size: state.terminalFontSize, Color: state.termPal.termFG, MonoFace: state.terminalFontFace}
+	style := gfx.TextStyle{Size: state.terminalFontSize, Color: state.termPal.termFG, MonoFace: state.terminalFontFace}
 	x := geometry.left + float32(cursor.X)*state.cellWidth
 	y := geometry.top + float32(cursor.Y)*state.cellHeight
-	canvas.LabelRuns(shown.String(), ui.Rect{X: x, Y: y, Width: float32(used) * state.cellWidth, Height: state.cellHeight}, style, state.cellWidth, runs)
+	canvas.LabelRuns(shown.String(), gfx.Rect{X: x, Y: y, Width: float32(used) * state.cellWidth, Height: state.cellHeight}, style, state.cellWidth, runs)
 }

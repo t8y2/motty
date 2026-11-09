@@ -1,8 +1,8 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"strings"
 	"testing"
 )
@@ -11,8 +11,8 @@ func TestNotesWorkspaceGivesTheDocumentItsWidth(t *testing.T) {
 	s := newTestState(t, freshOptions(t))
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1400, Height: 900})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
 	body, ok := hitByID(&c, hitNoteBody)
 	if !ok || body.Bounds.Width < 650 {
 		t.Fatalf("source is squeezed: %+v", body.Bounds)
@@ -40,13 +40,13 @@ func TestNotesModesAndDirectoryPreferencesSurviveReopening(t *testing.T) {
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
 	s.Click(hitNoteModes.At(2))
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1400, Height: 900})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&c, hitNotePreviewScroll); !ok {
 		t.Fatal("split preview missing")
 	}
 	c.Reset()
-	s.Paint(&c, ui.Size{Width: 800, Height: 700})
+	s.Paint(&c, gfx.Size{Width: 800, Height: 700})
 	if _, ok := hitByID(&c, hitNotePreviewScroll); ok {
 		t.Fatal("narrow document still splits")
 	}
@@ -112,15 +112,15 @@ func TestNotesSidePanelScrollBelongsToTheVisibleDocument(t *testing.T) {
 	s.activeSection = sectionTerminal
 	s.Click(hitNotesPanel)
 	s.Click(hitNoteSideLinked)
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1200, Height: 800})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
 	s.Click(hitNoteRows.At(0))
 	c.Reset()
-	s.Paint(&c, ui.Size{Width: 1200, Height: 800})
+	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
 	n := &s.noteSidebarState().content
 	b := n.previewBounds
 	before := n.view.treeScroll
-	s.Scroll(ui.ScrollEvent{X: b.X + 20, Y: b.Y + 40, DeltaY: 100, Viewport: ui.Size{Width: 1200, Height: 800}})
+	s.Scroll(gfx.ScrollEvent{X: b.X + 20, Y: b.Y + 40, DeltaY: 100, Viewport: gfx.Size{Width: 1200, Height: 800}})
 	if n.previewScroll <= 0 || n.view.treeScroll != before {
 		t.Fatal("document wheel scrolled the hidden directory")
 	}
@@ -131,7 +131,7 @@ func TestNotesFolderCreationCommitsOnTabAndDropAfterAppends(t *testing.T) {
 	s.Click(hitNotes)
 	s.Click(hitNoteFolderAdd)
 	s.EditorFor(hitNoteInline).Insert("Alpha")
-	s.Key(ui.KeyEvent{Target: hitNoteInline, Key: ui.KeyTab})
+	s.Key(gfx.KeyEvent{Target: hitNoteInline, Key: gfx.KeyTab})
 	if len(s.notes.folders) != 1 {
 		t.Fatal("Tab left folder creation pending")
 	}
@@ -139,7 +139,7 @@ func TestNotesFolderCreationCommitsOnTabAndDropAfterAppends(t *testing.T) {
 	s.notes.folder = ""
 	s.Click(hitNoteFolderAdd)
 	s.EditorFor(hitNoteInline).Insert("Beta")
-	s.Key(ui.KeyEvent{Target: hitNoteInline, Key: ui.KeyEnter})
+	s.Key(gfx.KeyEvent{Target: hitNoteInline, Key: gfx.KeyEnter})
 	b := s.notes.folders[1].ID
 	if !s.moveNote(a, "", "", true) {
 		t.Fatal("append move rejected")
@@ -170,12 +170,12 @@ func TestNotesEmptyTreeSpaceSelectsRootWithoutClosingDocument(t *testing.T) {
 	s.notes.folder = "folder"
 	s.Click(hitNoteAdd)
 	selected := s.notes.selected
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1400, Height: 900})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&c, tree.ID(notesHits, "all")); ok {
 		t.Fatal("all notes row still exists")
 	}
-	r := s.notesPointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitNoteListScroll})
+	r := s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitNoteListScroll})
 	if !r.Handled || s.notes.folder != "" || s.notes.selected != selected {
 		t.Fatal("empty space did not select root while retaining document")
 	}
@@ -214,12 +214,12 @@ func TestNotesTerminalScopeSwitchPreservesDocument(t *testing.T) {
 	selected := s.notes.selected
 	s.activeSection = sectionTerminal
 	s.Click(hitNotesPanel)
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1200, Height: 800})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1200, Height: 800})
 	if _, ok := hitByID(&c, hitNoteSideLinked); !ok {
 		t.Fatal("scope switch missing")
 	}
-	for _, id := range []ui.ID{hitNoteTreeMore, tree.ID(notesHits, "all"), hitNoteAdd, hitNotes} {
+	for _, id := range []gfx.ID{hitNoteTreeMore, tree.ID(notesHits, "all"), hitNoteAdd, hitNotes} {
 		if _, ok := hitByID(&c, id); ok {
 			t.Fatal("editing action remains in sidebar")
 		}

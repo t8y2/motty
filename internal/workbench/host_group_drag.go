@@ -3,53 +3,53 @@ package workbench
 import (
 	"strings"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 type hostGroupDrag struct {
 	pressed, active, valid bool
 	path, parent           string
-	start                  ui.Point
-	zone                   ui.Rect
+	start                  gfx.Point
+	zone                   gfx.Rect
 }
 
-func (state *State) hostGroupDragPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) hostGroupDragPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	a, drag := &state.groupActions, &state.groupActions.drag
-	if a.open && event.Kind == ui.PointerDown && event.Button == ui.PointerButtonSecondary && event.Target == hitGroupActionDismiss {
+	if a.open && event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonSecondary && event.Target == hitGroupActionDismiss {
 		a.open = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	switch event.Kind {
-	case ui.PointerDown:
+	case gfx.PointerDown:
 		*drag = hostGroupDrag{}
-		if state.activeSection != sectionHosts || state.modal != modalNone || state.hostSort.enabled || a.open || event.Button != ui.PointerButtonPrimary {
-			return ui.EventResult{}, false
+		if state.activeSection != sectionHosts || state.modal != modalNone || state.hostSort.enabled || a.open || event.Button != gfx.PointerButtonPrimary {
+			return gfx.EventResult{}, false
 		}
 		if event.Target.Scope() != hitHostGroupRowList && event.Target.Scope() != hitHostGroupOpenList {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		index := item(event.Target)
 		if index >= 0 && index < len(state.hostGroups) && state.hostGroups[index].Name != "" {
-			*drag = hostGroupDrag{pressed: true, path: state.hostGroups[index].Name, start: ui.Point{X: event.X, Y: event.Y}}
+			*drag = hostGroupDrag{pressed: true, path: state.hostGroups[index].Name, start: gfx.Point{X: event.X, Y: event.Y}}
 		}
-	case ui.PointerMove:
+	case gfx.PointerMove:
 		if !drag.pressed {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		dx, dy := event.X-drag.start.X, event.Y-drag.start.Y
 		if !drag.active && dx*dx+dy*dy < tabDragThreshold*tabDragThreshold {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		drag.active = true
 		state.trackHostGroupDrop(event.X, event.Y)
-		return ui.EventResult{Handled: true, Repaint: true}, true
-	case ui.PointerUp:
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	case gfx.PointerUp:
 		if !drag.pressed {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		if !drag.active {
 			*drag = hostGroupDrag{}
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		state.trackHostGroupDrop(event.X, event.Y)
 		finished := *drag
@@ -59,9 +59,9 @@ func (state *State) hostGroupDragPointer(event ui.PointerEvent) (ui.EventResult,
 				state.status, state.dialogError = state.dialogError, ""
 			}
 		}
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 func (state *State) trackHostGroupDrop(x, y float32) {
@@ -89,9 +89,9 @@ func (state *State) trackHostGroupDrop(x, y float32) {
 	}
 }
 
-func (state *State) paintHostGroupDrop(canvas *ui.Canvas) {
+func (state *State) paintHostGroupDrop(canvas *gfx.Canvas) {
 	drag := &state.groupActions.drag
 	if drag.active && drag.valid {
-		canvas.Fill(ui.Rect{X: drag.zone.X, Y: drag.zone.Y, Width: drag.zone.Width, Height: 2}, state.pal.accent)
+		canvas.Fill(gfx.Rect{X: drag.zone.X, Y: drag.zone.Y, Width: drag.zone.Width, Height: 2}, state.pal.accent)
 	}
 }

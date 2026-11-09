@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -14,7 +14,7 @@ var (
 
 type workspacePaneTools struct {
 	session uint32
-	anchor  ui.Rect
+	anchor  gfx.Rect
 	items   [maxBarTools]barTool
 	count   int
 }
@@ -58,7 +58,7 @@ func (state *State) compactWorkspacePaneTools(tools []barTool, session uint32, w
 	return tools
 }
 
-func (state *State) paintWorkspacePaneTools(canvas *ui.Canvas) {
+func (state *State) paintWorkspacePaneTools(canvas *gfx.Canvas) {
 	menu := &state.workspacePaneTools
 	if state.workspaceHeaderMenu != workspaceHeaderMenuTools {
 		return
@@ -72,7 +72,7 @@ func (state *State) paintWorkspacePaneTools(canvas *ui.Canvas) {
 		width = max(width, canvas.TextWidth(menu.items[index].hint, metrics.FontSizeM)+64)
 	}
 	width = min(width, max(0, state.viewport.Width-16))
-	at := state.popupBelow(canvas, menu.anchor, width, float32(menu.count*32+8), flex.End)
+	at := state.popupBelow(canvas, menu.anchor, width, float32(menu.count*32+8), ui.End)
 	popup := components.BeginDropdownMenu(canvas, state.Theme(), at, components.DropdownMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitWorkspacePaneToolsDismiss,
 		Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitWorkspacePaneToolsDismiss),
@@ -85,7 +85,7 @@ func (state *State) paintWorkspacePaneTools(canvas *ui.Canvas) {
 	popup.End()
 }
 
-func (state *State) clickWorkspacePaneTools(id ui.ID) bool {
+func (state *State) clickWorkspacePaneTools(id gfx.ID) bool {
 	switch {
 	case id == hitWorkspacePaneTools:
 		if state.workspacePaneTools.count == 0 || state.workspacePaneTools.session != state.activeSessionID {

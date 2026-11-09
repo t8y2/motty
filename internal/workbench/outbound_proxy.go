@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
@@ -361,7 +361,7 @@ func (state *State) loadProxyForm(saved outboundProxy, password string) {
 	form.dialogError = ""
 }
 
-func (state *State) clickOutboundProxy(id ui.ID) {
+func (state *State) clickOutboundProxy(id gfx.ID) {
 	form := &state.proxyForm
 	switch id {
 	case hitProxyKindInherit:
@@ -471,7 +471,7 @@ func (state *State) submitOutboundProxy() {
 	state.save()
 }
 
-func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintOutboundProxyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages.Tools, state.Theme()
 	form := &state.proxyForm
 	title, description := m.ProxyDialogTitle, m.ProxyDialogDescription
@@ -485,7 +485,7 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitOutboundProxyClose, InitialFocusID: hitOutboundProxyAddress,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(312, form.dialogError), // the kind and four fields
+		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: withError(312, form.dialogError), // the kind and four fields
 	})
 	layout := dialog.Begin(title, description)
 	options := [...]components.SegmentOption{
@@ -520,7 +520,7 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 		addressLabel, addressPlaceholder = m.ProxyCommandField, "cloudflared access ssh --hostname %h"
 	}
 	entries := [...]struct {
-		id          ui.ID
+		id          gfx.ID
 		label       string
 		placeholder string
 		editor      *text.Editor
@@ -531,8 +531,8 @@ func (state *State) paintOutboundProxyDialog(canvas *ui.Canvas, viewport ui.Rect
 		{hitOutboundProxyPassword, m.ProxyPassword, m.ProxyPasswordPlaceholder, &form.password, true},
 		{hitOutboundProxyBypass, m.ProxyBypass, defaultProxyBypass, &form.bypass, false},
 	}
-	var kind flex.Box
-	var slots [len(entries)]flex.Box
+	var kind ui.Box
+	var slots [len(entries)]ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		kind = f.Slot().Height(34).MarginSides(0, 0, 14, 0)
@@ -578,15 +578,15 @@ func (state *State) hostProxyDescription() string {
 	return fmt.Sprintf(m.HostProxyDescriptionFmt, state.proxyKindName(proxy.kind), proxy.address)
 }
 
-func (state *State) paintHostProxyRow(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintHostProxyRow(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m, theme := state.messages.Tools, state.Theme()
 	content := components.BeginField(canvas, theme, bounds).Paint(m.HostProxyRow, "", "")
-	button := components.BeginButton(canvas, theme, hitHostProxyConfigure, ui.Rect{}).XSmall().SizeToFit(m.ProxyConfigure)
-	var action flex.Box
+	button := components.BeginButton(canvas, theme, hitHostProxyConfigure, gfx.Rect{}).XSmall().SizeToFit(m.ProxyConfigure)
+	var action ui.Box
 	f := state.partLayout.Begin(canvas, theme, content)
 	// The summary sits in a box like the other fields' inputs, with its button
 	// inside, so the row has the same edge and height as they do.
-	f.Row().Fill().Items(flex.Center).Gap(8).PadSides(0, 4, 0, 12).
+	f.Row().Fill().Items(ui.Center).Gap(8).PadSides(0, 4, 0, 12).
 		Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
 		f.Text(state.hostProxyDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
 		action = f.Slot().Size(button.BoundsWidth(), 24)

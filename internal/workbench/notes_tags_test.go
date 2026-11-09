@@ -2,8 +2,8 @@ package workbench
 
 import (
 	"fmt"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"slices"
 	"strings"
 	"testing"
@@ -23,13 +23,13 @@ func TestNotesTagsUseLibraryAndCurrentDraft(t *testing.T) {
 	if got := s.noteTagCandidates(); !slices.Equal(got, []string{"draft", "other", "shared"}) {
 		t.Fatalf("candidates: %v", got)
 	}
-	var initial ui.Canvas
-	s.Paint(&initial, ui.Size{Width: 1000, Height: 700})
+	var initial gfx.Canvas
+	s.Paint(&initial, gfx.Size{Width: 1000, Height: 700})
 	s.Click(hitNoteTagsOpen)
 	token := s.noteTagToken("other")
 	s.notes.view.picker.Insert("OTHER")
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1000, Height: 700})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1000, Height: 700})
 	if _, ok := hitByID(&c, hitNoteTagRows.At(token)); !ok {
 		t.Fatalf("case insensitive search missed existing tag: area=%+v", s.notes.view.tagPopupArea.Geometry())
 	}
@@ -58,16 +58,16 @@ func TestNotesTagCreationCompositionAndDismissal(t *testing.T) {
 	s.Click(hitNoteAdd)
 	s.Click(hitNoteTagsOpen)
 	s.notes.view.picker.Insert(" one, one, two ")
-	s.notesKey(ui.KeyEvent{Target: hitNotePicker, Key: ui.KeyEnter})
+	s.notesKey(gfx.KeyEvent{Target: hitNotePicker, Key: gfx.KeyEnter})
 	if !slices.Equal(s.notes.draft.Tags, []string{"one", "two"}) || s.notes.view.picker.String() != "" {
 		t.Fatal("creation did not normalize or clear input")
 	}
 	s.notes.view.picker.SetMarkedText("输入", text.Range{End: 2})
-	s.notesKey(ui.KeyEvent{Target: hitNotePicker, Key: ui.KeyEnter})
+	s.notesKey(gfx.KeyEvent{Target: hitNotePicker, Key: gfx.KeyEnter})
 	if len(s.notes.draft.Tags) != 2 {
 		t.Fatal("Enter created tag during composition")
 	}
-	r := s.notesKey(ui.KeyEvent{Key: ui.KeyEscape})
+	r := s.notesKey(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if s.notes.view.popup != "" || r.Focus != hitNoteTagsOpen {
 		t.Fatal("Escape did not restore focus")
 	}
@@ -85,8 +85,8 @@ func TestNotesTagsWrapWithoutOverlappingActions(t *testing.T) {
 	s.setNoteTags([]string{"first", strings.Repeat("long tag ", 12), "last"})
 	s.notes.view.tagsExpanded = true
 	for _, width := range []float32{320, 480} {
-		var c ui.Canvas
-		s.paintNoteEditor(&c, ui.Rect{Width: width, Height: 600})
+		var c gfx.Canvas
+		s.paintNoteEditor(&c, gfx.Rect{Width: width, Height: 600})
 		first, _ := hitByID(&c, hitNoteTagRemove.At(s.noteTagToken("first")))
 		last, ok := hitByID(&c, hitNoteTagRemove.At(s.noteTagToken("last")))
 		if !ok || last.Bounds.Y <= first.Bounds.Y {
@@ -105,7 +105,7 @@ func TestNotesTagsWrapWithoutOverlappingActions(t *testing.T) {
 }
 
 func TestNotesTagLayoutPacksAndTruncates(t *testing.T) {
-	var c ui.Canvas
+	var c gfx.Canvas
 	items, height := layoutNoteTags(&c, []string{"one", "two", "an extremely long tag that cannot fit inside this row"}, 160, 12, 32)
 	if items[0].bounds.Y != items[1].bounds.Y || items[1].bounds.X <= items[0].bounds.X {
 		t.Fatal("short labels are not packed left to right")
@@ -127,11 +127,11 @@ func TestNotesTagPopoverAdaptsAndScrollsResults(t *testing.T) {
 		tags = append(tags, fmt.Sprintf("tag-%02d", i))
 	}
 	s.notes.list = append(s.notes.list, savedNote{ID: "other", Tags: tags})
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1000, Height: 700})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1000, Height: 700})
 	s.Click(hitNoteTagsOpen)
 	c.Reset()
-	s.Paint(&c, ui.Size{Width: 1000, Height: 700})
+	s.Paint(&c, gfx.Size{Width: 1000, Height: 700})
 	large := s.notes.view.tagPopupArea.Geometry()
 	if large.MaxOffsetY <= 0 || large.Bounds.Height >= 420 {
 		t.Fatal("tag results are not height limited")
@@ -141,10 +141,10 @@ func TestNotesTagPopoverAdaptsAndScrollsResults(t *testing.T) {
 	if first.Bounds.Y != second.Bounds.Y || second.Bounds.X <= first.Bounds.X {
 		t.Fatal("popup tags are not left aligned across a row")
 	}
-	s.notesScroll(ui.ScrollEvent{DeltaY: 10000})
+	s.notesScroll(gfx.ScrollEvent{DeltaY: 10000})
 	s.notes.view.picker.Insert("tag-00")
 	c.Reset()
-	s.Paint(&c, ui.Size{Width: 1000, Height: 700})
+	s.Paint(&c, gfx.Size{Width: 1000, Height: 700})
 	small := s.notes.view.tagPopupArea.Geometry()
 	if small.OffsetY != 0 || small.Bounds.Height >= large.Bounds.Height {
 		t.Fatal("filtered popup did not shrink and reset scrolling")
@@ -160,12 +160,12 @@ func TestNotesTagPopupPositionsCreationAndDefaultOrder(t *testing.T) {
 	s.Click(hitNoteAdd)
 	s.setNoteTags([]string{"z-selected"})
 	s.notes.list = append(s.notes.list, savedNote{ID: "other", Tags: []string{"a-unselected"}})
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1400, Height: 900})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
 	anchor, _ := c.HitBounds(hitNoteTagsOpen)
 	s.Click(hitNoteTagsOpen)
 	c.Reset()
-	s.Paint(&c, ui.Size{Width: 1400, Height: 900})
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
 	field, _ := hitByID(&c, hitNotePicker)
 	add, ok := hitByID(&c, hitNoteTagSubmit)
 	if !ok || add.Bounds.Y != field.Bounds.Y || add.Bounds.X <= field.Bounds.X+field.Bounds.Width {
@@ -182,7 +182,7 @@ func TestNotesTagPopupPositionsCreationAndDefaultOrder(t *testing.T) {
 }
 
 func TestNotesTagLayoutPreservesFractionalWidthLabels(t *testing.T) {
-	var c ui.Canvas
+	var c gfx.Canvas
 	c.SetMeasurer(func(value string, _, _ float32) float32 {
 		return float32(len([]rune(value))) * 5.1
 	})
@@ -206,9 +206,9 @@ func TestNotesDetailTagsCollapseAndKeepRuntimePreference(t *testing.T) {
 	s.Click(hitNoteAdd)
 	tags := []string{"first", strings.Repeat("long ", 30), "last"}
 	s.setNoteTags(tags)
-	paint := func(width float32) *ui.Canvas {
-		c := &ui.Canvas{}
-		s.paintNoteEditor(c, ui.Rect{Width: width, Height: 900})
+	paint := func(width float32) *gfx.Canvas {
+		c := &gfx.Canvas{}
+		s.paintNoteEditor(c, gfx.Rect{Width: width, Height: 900})
 		return c
 	}
 	c := paint(480)
@@ -245,8 +245,8 @@ func TestNotesDetailTagsCollapseAndKeepRuntimePreference(t *testing.T) {
 	}
 	// The side uses the original layout, even when the library is collapsed.
 	s.notes.view.tagsExpanded = false
-	var side ui.Canvas
-	s.paintNoteTags(&side, ui.Rect{Width: 280, Height: 28})
+	var side gfx.Canvas
+	s.paintNoteTags(&side, gfx.Rect{Width: 280, Height: 28})
 	if _, ok := hitByID(&side, hitNoteTagRemove.At(s.noteTagToken("last"))); !ok {
 		t.Fatal("side labels were collapsed")
 	}
@@ -258,7 +258,7 @@ func TestNotesDetailTagsCollapseAndKeepRuntimePreference(t *testing.T) {
 }
 
 func TestNotesDetailTagSpacingAndButtonReservation(t *testing.T) {
-	var c ui.Canvas
+	var c gfx.Canvas
 	labels := []string{"first", strings.Repeat("long ", 20), "last"}
 	items, height, overflow := layoutNoteDetailTags(&c, labels, 200, 12, 32, 20, true)
 	if !overflow || len(items) != 3 || height <= 28 {

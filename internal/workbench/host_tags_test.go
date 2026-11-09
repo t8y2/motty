@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestHostTagSelectPresetsExistingTagsAndPersistence(t *testing.T) {
@@ -22,7 +22,7 @@ func TestHostTagSelectPresetsExistingTagsAndPersistence(t *testing.T) {
 	state.Click(hitHostTagOptions.At(0))
 	state.Click(hitHostTagOptions.At(2))
 	typeInto(state, hitDialogTags, "上海机房")
-	state.Key(ui.KeyEvent{Target: hitDialogTags, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitDialogTags, Key: gfx.KeyEnter})
 	if state.modal != modalNewHost || !slices.Equal(p.control.Values(), []string{"数据库", "production", "开发", "生产", "上海机房"}) {
 		t.Fatal("tag Enter submitted form or lost multi-selection", p.control.Values())
 	}
@@ -48,7 +48,7 @@ func TestHostTagSelectCommitsPendingQueryAndKeepsValidation(t *testing.T) {
 	state.editor.label.Insert("tagged")
 	state.editor.address.Insert("192.0.2.42")
 	typeInto(state, hitDialogTags, strings.Repeat("长", 33))
-	state.Key(ui.KeyEvent{Target: hitDialogTags, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitDialogTags, Key: gfx.KeyEnter})
 	if state.modal != modalNewHost || state.dialogError != state.messages.ErrHostTagsInvalid || len(state.hostTagPicker().control.Values()) != 0 {
 		t.Fatal("invalid create bypassed validation")
 	}
@@ -83,7 +83,7 @@ func TestHostTagPasteWithCommasSplitsIntoTags(t *testing.T) {
 		p := state.hostTagPicker()
 		p.control.Query.Insert("生产, 归档 ,")
 		if enter {
-			state.Key(ui.KeyEvent{Target: hitDialogTags, Key: ui.KeyEnter})
+			state.Key(gfx.KeyEvent{Target: hitDialogTags, Key: gfx.KeyEnter})
 			if state.modal != modalNewHost || !slices.Equal(p.control.Values(), []string{"生产", "归档"}) {
 				t.Fatalf("Enter did not split a pasted list: %v %v", p.control.Values(), state.dialogError)
 			}

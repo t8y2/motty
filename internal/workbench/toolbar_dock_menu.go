@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var toolbarDockHits = tree.Feature("toolbar-dock")
@@ -21,7 +21,7 @@ var (
 	hitToolbarDockMore        = tree.ID(toolbarDockHits, "more")
 )
 
-func (state *State) paintToolbarDockMenu(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintToolbarDockMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	dock, m := &state.toolbarDock, state.messages.Toolbars
 	if !dock.menu || state.modal != modalNone {
 		return
@@ -66,11 +66,11 @@ func (state *State) paintToolbarDockMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	menu.End()
 }
 
-func (state *State) clickToolbarDockMenu(id ui.ID) bool {
+func (state *State) clickToolbarDockMenu(id gfx.ID) bool {
 	dock := &state.toolbarDock
 	if id == hitToolbarDockMore && !dock.menu {
 		dock.menu, dock.overflow = true, true
-		dock.menuAt = ui.Point{X: max(state.viewport.Width-200, 0), Y: windowBarHeight}
+		dock.menuAt = gfx.Point{X: max(state.viewport.Width-200, 0), Y: windowBarHeight}
 		return true
 	}
 	if !dock.menu {
@@ -80,19 +80,19 @@ func (state *State) clickToolbarDockMenu(id ui.ID) bool {
 	source := dock.menuTool
 	switch id {
 	case hitToolbarDockTop:
-		state.moveToolbarDockTool(source, toolbarDockTop, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockTop, gfx.ID{})
 	case hitToolbarDockSideTop:
-		state.moveToolbarDockTool(source, toolbarDockSideTop, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockSideTop, gfx.ID{})
 	case hitToolbarDockSideBottom:
-		state.moveToolbarDockTool(source, toolbarDockSideBottom, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockSideBottom, gfx.ID{})
 	case hitToolbarDockLeftTop:
-		state.moveToolbarDockTool(source, toolbarDockLeftTop, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockLeftTop, gfx.ID{})
 	case hitToolbarDockLeftBottom:
-		state.moveToolbarDockTool(source, toolbarDockLeftBottom, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockLeftBottom, gfx.ID{})
 	case hitToolbarDockBottom:
-		state.moveToolbarDockTool(source, toolbarDockBottom, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockBottom, gfx.ID{})
 	case hitToolbarDockBottomRight:
-		state.moveToolbarDockTool(source, toolbarDockBottomRight, ui.ID{})
+		state.moveToolbarDockTool(source, toolbarDockBottomRight, gfx.ID{})
 	case hitToolbarDockHide:
 		if entry, ok := toolbarDockIdentity(source); ok {
 			for i := range state.toolbars.customize(entry.Group) {

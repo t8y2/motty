@@ -2,7 +2,7 @@
 
 package workbench
 
-import "github.com/vivaui/viva/ui"
+import "github.com/vivaui/viva/gfx"
 
 // devOnlyShellHits is empty: a release build declares no development controls.
-func devOnlyShellHits() []ui.ID { return nil }
+func devOnlyShellHits() []gfx.ID { return nil }

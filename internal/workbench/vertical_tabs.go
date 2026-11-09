@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -56,9 +56,9 @@ type verticalTabs struct {
 	barDrag     bool
 	barGrab     float32
 	barGeometry components.ScrollAreaGeometry
-	bounds      ui.Rect
-	slot        flex.Box
-	view        flex.View
+	bounds      gfx.Rect
+	slot        ui.Box
+	view        ui.View
 	tabs        []barTab
 }
 
@@ -94,7 +94,7 @@ func (state *State) setVerticalTabsAutoHide(autoHide bool) bool {
 }
 
 // Hover expansion overlays the workspace; it must never resize a running PTY.
-func (state *State) verticalTabsReserve(size ui.Size) float32 {
+func (state *State) verticalTabsReserve(size gfx.Size) float32 {
 	if state.deck.ActiveWorkspace() == 0 {
 		return 0
 	}
@@ -105,7 +105,7 @@ func (state *State) verticalTabsReserve(size ui.Size) float32 {
 // content, whether or not a session is open: a page without a deck still keeps
 // it beside the workspace. The window bar centres the session's name over what
 // is left of the bar, so it needs the column even before a session exists.
-func (state *State) verticalTabsColumn(size ui.Size) float32 {
+func (state *State) verticalTabsColumn(size gfx.Size) float32 {
 	if state.tabOrientation != tabsVertical {
 		return 0
 	}
@@ -119,7 +119,7 @@ func (state *State) verticalTabsColumn(size ui.Size) float32 {
 // trackVerticalTabs records whether the pointer is over the sidebar. The
 // sidebar expands under it when auto-hide is on, and the tab list reveals its
 // hover scrollbar; both only need the pointer inside the bounds, not a hit.
-func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
+func (state *State) trackVerticalTabs(event gfx.PointerEvent) bool {
 	view := &state.verticalTabs
 	if state.tabOrientation != tabsVertical ||
 		state.modal != modalNone || state.tabMenu.open || state.tabDrag.pressed || event.Captured {
@@ -127,9 +127,9 @@ func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
 	}
 	over := view.over
 	switch event.Kind {
-	case ui.PointerDown, ui.PointerMove:
+	case gfx.PointerDown, gfx.PointerMove:
 		over = pointInRect(event.X, event.Y, view.bounds)
-	case ui.PointerExit:
+	case gfx.PointerExit:
 		over = false
 	}
 	changed := view.over != over
@@ -140,36 +140,36 @@ func (state *State) trackVerticalTabs(event ui.PointerEvent) bool {
 // verticalTabsScrollPointer drags the sidebar's hover scrollbar. The bar paints
 // only while the pointer is over the sidebar, so a press on it pins the reveal
 // until the drag ends: the list must not lose its bar under the pointer.
-func (state *State) verticalTabsScrollPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) verticalTabsScrollPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	view := &state.verticalTabs
 	if state.tabOrientation != tabsVertical || (event.Target != hitVerticalTabsBar && !view.barDrag) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Kind == ui.PointerDown && event.Button != ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+	if event.Kind == gfx.PointerDown && event.Button != gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	switch event.Kind {
-	case ui.PointerDown:
+	case gfx.PointerDown:
 		thumb := view.barGeometry.VerticalThumb
 		if thumb.Height <= 0 {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		view.barDrag = true
 		view.barGrab = thumb.Height / 2
 		if pointInRect(event.X, event.Y, thumb) {
 			view.barGrab = event.Y - thumb.Y
 		}
-	case ui.PointerMove:
+	case gfx.PointerMove:
 		if !view.barDrag {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		state.tabStrip.offset = view.barGeometry.VerticalOffsetForThumb(event.Y - view.barGrab)
-	case ui.PointerUp:
+	case gfx.PointerUp:
 		view.barDrag = false
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 // fileTabVerticalRailAt reports whether a window point belongs to the vertical
@@ -186,21 +186,21 @@ func (state *State) fileTabVerticalRailAt(x, y float32) bool {
 // focus ring is on one of its controls, as it does under the pointer. Only a
 // visible (keyboard) focus counts: a click leaves focus on the tab and must not
 // pin the sidebar open.
-func verticalTabsKeyboardFocused(canvas *ui.Canvas) bool {
+func verticalTabsKeyboardFocused(canvas *gfx.Canvas) bool {
 	focus := canvas.FocusVisible()
 	return focus.Scope() == hitTabList || focus.Scope() == hitVerticalTabGroups || focus == hitVerticalTabsPin || focus == hitVerticalTabsNew
 }
 
-func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
+func (state *State) paintVerticalTabs(canvas *gfx.Canvas, size gfx.Size) {
 	if state.tabOrientation != tabsVertical {
-		state.verticalTabs.bounds = ui.Rect{}
+		state.verticalTabs.bounds = gfx.Rect{}
 		return
 	}
 	view, pal, m := &state.verticalTabs, state.pal, state.messages
 	terminal := state.terminalPage()
 	fileManager := state.activeSFTPWindow() != nil
 	sideRail := terminal || fileManager
-	var bounds ui.Rect
+	var bounds gfx.Rect
 	compact := false
 	if sideRail {
 		width := state.verticalTabsReserve(size)
@@ -208,39 +208,39 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 		if view.autoHide && !compact {
 			width = min(verticalTabsWidth, size.Width*0.6)
 		}
-		bounds = ui.Rect{Y: windowBarHeight, Width: width, Height: max(size.Height-windowBarHeight, 0)}
+		bounds = gfx.Rect{Y: windowBarHeight, Width: width, Height: max(size.Height-windowBarHeight, 0)}
 		canvas.PushLayer(verticalTabsLayer)
 		defer canvas.PopLayer()
 	} else if len(state.workspaceTabs) > 0 {
 		bounds = view.slot.Rect()
 	}
 	if bounds.Width <= 0 || bounds.Height <= 0 {
-		view.bounds = ui.Rect{}
+		view.bounds = gfx.Rect{}
 		return
 	}
 	view.bounds = bounds
 	canvas.Clip(bounds)
 	defer canvas.Unclip()
 	canvas.Fill(bounds, pal.shell)
-	canvas.HitWithOptions(hitVerticalTabs, bounds, m.TrayTitle, ui.HitOptions{Role: ui.RoleGroup, SkipFocus: true})
+	canvas.HitWithOptions(hitVerticalTabs, bounds, m.TrayTitle, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
 	if sideRail {
-		canvas.Fill(ui.Rect{X: bounds.X + bounds.Width - 1, Y: bounds.Y, Width: 1, Height: bounds.Height}, pal.line)
+		canvas.Fill(gfx.Rect{X: bounds.X + bounds.Width - 1, Y: bounds.Y, Width: 1, Height: bounds.Height}, pal.line)
 	} else {
-		canvas.Fill(ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, pal.line)
+		canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, pal.line)
 	}
 	if !compact {
-		canvas.Label(m.TrayTitle, ui.Rect{X: bounds.X + 8, Y: bounds.Y, Width: max(bounds.Width-48, 0), Height: verticalTabsHeader}, ui.TextStyle{Size: metrics.FontSizeS, Color: pal.muted, Weight: ui.WeightSemibold})
+		canvas.Label(m.TrayTitle, gfx.Rect{X: bounds.X + 8, Y: bounds.Y, Width: max(bounds.Width-48, 0), Height: verticalTabsHeader}, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted, Weight: gfx.WeightSemibold})
 	}
 	if terminal {
 		hint, icon := m.VerticalTabsAutoHide, uint8(iconChevronLeft)
 		if view.autoHide {
 			hint, icon = m.VerticalTabsPin, iconColumns2
 		}
-		state.paintIconButton(canvas, hitVerticalTabsPin, icon, ui.Rect{X: bounds.X + bounds.Width - 36, Y: bounds.Y + 6, Width: 28, Height: 28}, hint, false, iconButtonQuiet, pal.shell)
+		state.paintIconButton(canvas, hitVerticalTabsPin, icon, gfx.Rect{X: bounds.X + bounds.Width - 36, Y: bounds.Y + 6, Width: 28, Height: 28}, hint, false, iconButtonQuiet, pal.shell)
 	}
 	// The right inset is 2px wider than the left one: the hover scrollbar lives
 	// in that gutter, so the rows end just before it instead of under it.
-	list := ui.Rect{X: bounds.X + 6, Y: bounds.Y + verticalTabsHeader, Width: max(bounds.Width-14, 0), Height: max(bounds.Height-verticalTabsHeader-verticalTabsFooter, 0)}
+	list := gfx.Rect{X: bounds.X + 6, Y: bounds.Y + verticalTabsHeader, Width: max(bounds.Width-14, 0), Height: max(bounds.Height-verticalTabsHeader-verticalTabsFooter, 0)}
 	active := state.deck.ActiveWorkspace()
 	pitch := verticalTabHeight + barGap
 	rows := state.workspaceTabs
@@ -254,8 +254,8 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 	// it appears while the pointer is over the sidebar (or a drag is in
 	// progress), hands the tabs the width the always-on bar used to take, and
 	// never covers a row's border or its close button.
-	barBounds := ui.Rect{X: list.X, Y: list.Y, Width: max(bounds.Width-7, 0), Height: list.Height}
-	area := components.BeginScrollArea(canvas, state.Theme(), barBounds, ui.Size{Width: barBounds.Width, Height: content}).
+	barBounds := gfx.Rect{X: list.X, Y: list.Y, Width: max(bounds.Width-7, 0), Height: list.Height}
+	area := components.BeginScrollArea(canvas, state.Theme(), barBounds, gfx.Size{Width: barBounds.Width, Height: content}).
 		Offset(0, scroll).
 		VerticalScrollbar(hitVerticalTabsBar, m.VerticalTabsScrollbar, "").
 		HoverScrollbars(view.over || view.barDrag)
@@ -279,7 +279,7 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 		state.paintVerticalTabGroupIcons(canvas)
 	}
 	area.EndContent()
-	button := ui.Rect{X: bounds.X + 6, Y: bounds.Y + bounds.Height - verticalTabsFooter + 6, Width: max(bounds.Width-12, 0), Height: 30}
+	button := gfx.Rect{X: bounds.X + 6, Y: bounds.Y + bounds.Height - verticalTabsFooter + 6, Width: max(bounds.Width-12, 0), Height: 30}
 	if compact {
 		state.paintIconButton(canvas, hitVerticalTabsNew, iconPlus, button, m.LabelNewTab, false, iconButtonQuiet, pal.shell)
 	} else {
@@ -287,7 +287,7 @@ func (state *State) paintVerticalTabs(canvas *ui.Canvas, size ui.Size) {
 	}
 }
 
-func (state *State) paintWorkspaceTabParts(canvas *ui.Canvas, strip ui.Rect, tabs []barTab) {
+func (state *State) paintWorkspaceTabParts(canvas *gfx.Canvas, strip gfx.Rect, tabs []barTab) {
 	canvas.Clip(strip)
 	defer canvas.Unclip()
 	for index := range tabs {
@@ -295,9 +295,9 @@ func (state *State) paintWorkspaceTabParts(canvas *ui.Canvas, strip ui.Rect, tab
 		if tab.pathLabel != "" && tab.output == outputAlertNone {
 			bounds := tab.title.Rect()
 			label := elideTabDirectory(tab.pathLabel, func(value string) bool {
-				return canvas.TextWidthWeight(value, metrics.FontSizeS, ui.WeightMedium) <= bounds.Width
+				return canvas.TextWidthWeight(value, metrics.FontSizeS, gfx.WeightMedium) <= bounds.Width
 			})
-			canvas.Label(label, bounds, ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: tab.foreground})
+			canvas.Label(label, bounds, gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: tab.foreground})
 		}
 		var session *Session
 		if tab.fileSession != 0 {
@@ -314,9 +314,9 @@ func (state *State) paintWorkspaceTabParts(canvas *ui.Canvas, strip ui.Rect, tab
 		if session != nil {
 			state.paintHostCatalogIcon(canvas, session.host, badge, tab.background)
 			kind, dot := state.sessionLight(session)
-			var light ui.Rect
+			var light gfx.Rect
 			if tab.compact {
-				light = ui.Rect{X: badge.X + badge.Width - 5, Y: badge.Y + badge.Height - 5, Width: 5, Height: 5}
+				light = gfx.Rect{X: badge.X + badge.Width - 5, Y: badge.Y + badge.Height - 5, Width: 5, Height: 5}
 			} else {
 				light = tab.light.Rect()
 			}

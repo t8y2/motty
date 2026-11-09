@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
 // Command+Left, Command+Right and Command+Backspace used to be swallowed as
@@ -66,7 +66,7 @@ func TestTerminalCommandLineEditKeysReachTheProgram(t *testing.T) {
 			if test.flags&2 != 0 {
 				eventType = ":1"
 			}
-			if keymap.Primary != ui.ModifierMeta {
+			if keymap.Primary != gfx.ModifierMeta {
 				want = [3]string{}
 				if test.flags != 0 {
 					want = [3]string{

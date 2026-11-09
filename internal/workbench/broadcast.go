@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"fmt"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 
 	layoutcore "motty/internal/workspace"
 )
@@ -97,7 +97,7 @@ func (state *State) toggleBroadcast() {
 // clickTerminalTools handles the controls of the terminal's tools: color
 // scheme cards, highlight rules, snippets and broadcast. It reports whether the
 // id was one of them.
-func (state *State) clickTerminalTools(id ui.ID) bool {
+func (state *State) clickTerminalTools(id gfx.ID) bool {
 	switch {
 	case id == hitBroadcast:
 		state.toggleBroadcast()

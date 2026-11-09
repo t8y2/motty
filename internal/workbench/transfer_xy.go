@@ -8,7 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/xymodem"
 	"motty/internal/zmodem"
@@ -50,7 +50,7 @@ func (state *State) openXYSetup(session *Session) {
 	state.modal, state.modalSession = modalXYTransfer, session.ID
 }
 
-func (state *State) clickXYSetup(id ui.ID) {
+func (state *State) clickXYSetup(id gfx.ID) {
 	switch id {
 	case hitXYProtocolX:
 		state.xy.mode = xymodem.XMODEM
@@ -160,12 +160,12 @@ func (state *State) openSendFiles(paths []string) (files []zmodem.SendFile, open
 	return files, opened, ""
 }
 
-func (state *State) paintXYDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintXYDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages.Tools, state.Theme()
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitXYDismiss, CloseID: hitXYClose, InitialFocusID: hitXYStart,
-		ContentSize: ui.Size{Width: 540}, FitBody: true, BodyHeight: 138, // two labelled choices
+		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: 138, // two labelled choices
 	})
 	layout := dialog.Begin(m.XYTitle, m.XYDescription)
 	protocols := [...]components.SegmentOption{
@@ -184,7 +184,7 @@ func (state *State) paintXYDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		selectedDirection = hitXYSend
 	}
 	// Two labelled choices, one under the other.
-	var protocol, direction flex.Box
+	var protocol, direction ui.Box
 	f := state.partLayout.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(4, 4, 0, 4).Gap(8).Children(func() {
 		protocol = f.Slot().Height(62).Shrink(0)

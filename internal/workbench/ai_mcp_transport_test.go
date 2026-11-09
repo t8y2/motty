@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/gate"
 )
 
@@ -89,17 +89,17 @@ func TestAgentClientSelectKeyboardAndInvalidPreferences(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	state.selectSettingsCategory(settingsMCP)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1000, Height: 2400})
-	if hit, ok := hitByID(&canvas, hitAISetAgentSelect); !ok || hit.Role != ui.RoleCombobox || hit.Value != "Claude Code" {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1000, Height: 2400})
+	if hit, ok := hitByID(&canvas, hitAISetAgentSelect); !ok || hit.Role != gfx.RoleCombobox || hit.Value != "Claude Code" {
 		t.Fatal("stdio has no visible client selector")
 	}
-	result := state.Key(ui.KeyEvent{Target: hitAISetAgentSelect, Key: ui.KeyDown})
+	result := state.Key(gfx.KeyEvent{Target: hitAISetAgentSelect, Key: gfx.KeyDown})
 	if !result.Handled || !state.ai.cfg.agentSelectOpen || state.ai.cfg.mcpSelectOpen {
 		t.Fatal("the stdio selector did not open independently")
 	}
-	state.Paint(&canvas, ui.Size{Width: 1000, Height: 2400})
-	result = state.Key(ui.KeyEvent{Target: aiAgentClientID(aiMCPClaude), Key: ui.KeyDown})
+	state.Paint(&canvas, gfx.Size{Width: 1000, Height: 2400})
+	result = state.Key(gfx.KeyEvent{Target: aiAgentClientID(aiMCPClaude), Key: gfx.KeyDown})
 	if result.Focus != aiAgentClientID(aiMCPCursor) {
 		t.Fatal("stdio arrow navigation selected an HTTP item")
 	}

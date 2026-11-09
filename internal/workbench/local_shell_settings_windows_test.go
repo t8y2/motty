@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 )
 
@@ -37,16 +37,16 @@ func shellSelectState(t *testing.T, choices []localshell.Choice) *State {
 	return state
 }
 
-func paintShellSettings(state *State) *ui.Canvas {
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+func paintShellSettings(state *State) *gfx.Canvas {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 	// The terminal page grows as settings are added, so the row this file is
 	// about is not always in the first screenful. Reach it the way a user does
 	// rather than assuming the canvas is tall enough.
 	if _, visible := hitByID(&canvas, hitSettingsLocalShell); !visible {
-		state.scrollSettings(ui.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
+		state.scrollSettings(gfx.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
 		canvas.Reset()
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 	}
 	return &canvas
 }
@@ -83,12 +83,12 @@ func TestLocalShellDropdownKeyboardDismissAndRefresh(t *testing.T) {
 	choices := windowsShellChoices(t)
 	state := shellSelectState(t, choices)
 	paintShellSettings(state)
-	result := state.Key(ui.KeyEvent{Target: hitSettingsLocalShell, Key: ui.KeyDown})
+	result := state.Key(gfx.KeyEvent{Target: hitSettingsLocalShell, Key: gfx.KeyDown})
 	if !result.Handled || !state.localShellMenu.open {
 		t.Fatal("Down did not open the dropdown")
 	}
 	paintShellSettings(state)
-	result = state.Key(ui.KeyEvent{Target: hitSettingsLocalShellItems.At(0), Key: ui.KeyDown})
+	result = state.Key(gfx.KeyEvent{Target: hitSettingsLocalShellItems.At(0), Key: gfx.KeyDown})
 	if result.Focus != hitSettingsLocalShellItems.At(1) {
 		t.Fatalf("Down did not focus PowerShell: %+v", result)
 	}
@@ -98,12 +98,12 @@ func TestLocalShellDropdownKeyboardDismissAndRefresh(t *testing.T) {
 	}
 	state.Click(hitSettingsLocalShell)
 	paintShellSettings(state)
-	result = state.Key(ui.KeyEvent{Target: hitSettingsLocalShellItems.At(0), Key: ui.KeyTab})
+	result = state.Key(gfx.KeyEvent{Target: hitSettingsLocalShellItems.At(0), Key: gfx.KeyTab})
 	if !result.ContinueTraversal || state.localShellMenu.open {
 		t.Fatal("Tab did not dismiss the dropdown")
 	}
 	paintShellSettings(state)
-	result = state.Key(ui.KeyEvent{Target: hitSettingsLocalShell, Text: "w"})
+	result = state.Key(gfx.KeyEvent{Target: hitSettingsLocalShell, Text: "w"})
 	if !result.Handled || state.localShell != choices[1].Path {
 		t.Fatal("closed-select typeahead did not choose PowerShell")
 	}

@@ -6,7 +6,7 @@ import (
 	"unicode"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // A snippet may belong to one group, a name the user types once and picks after
@@ -144,7 +144,7 @@ func (form *snippetsUI) filterLabel(all, none string) string {
 }
 
 // clickSnippetFilter handles the group filter of the page.
-func (state *State) clickSnippetFilter(id ui.ID) bool {
+func (state *State) clickSnippetFilter(id gfx.ID) bool {
 	form := &state.snippets
 	switch {
 	case id == hitSnippetFilter:
@@ -169,7 +169,7 @@ func (state *State) clickSnippetFilter(id ui.ID) bool {
 }
 
 // paintSnippetFilter is the select that narrows the table to one group.
-func (state *State) paintSnippetFilter(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintSnippetFilter(canvas *gfx.Canvas, bounds gfx.Rect) {
 	form, m := &state.snippets, state.messages.Tools
 	viewport := state.windowRect()
 	rows := 1 + len(form.groups)
@@ -177,7 +177,7 @@ func (state *State) paintSnippetFilter(canvas *ui.Canvas, bounds ui.Rect) {
 		rows++
 	}
 	height := min(float32(8+rows*32), min(264, viewport.Height-32))
-	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: max(bounds.Width, 200), Height: height}
+	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: max(bounds.Width, 200), Height: height}
 	if content.Y+height > viewport.Height-12 {
 		content.Y = max(12, bounds.Y-height-4)
 	}
@@ -260,11 +260,11 @@ func (state *State) commitSnippetGroupQuery() bool {
 	return true
 }
 
-func isSnippetGroupTarget(id ui.ID) bool {
+func isSnippetGroupTarget(id gfx.ID) bool {
 	return id == hitSnippetGroup || id == hitSnippetGroupTrigger || id == hitSnippetGroupClear || id == hitSnippetGroupScroll || id.Scope() == hitSnippetGroupChoices
 }
 
-func (state *State) clickSnippetGroup(id ui.ID) bool {
+func (state *State) clickSnippetGroup(id gfx.ID) bool {
 	control := &state.snippets.groupPicker
 	switch {
 	case id == hitSnippetGroup:
@@ -286,52 +286,52 @@ func (state *State) clickSnippetGroup(id ui.ID) bool {
 
 // snippetGroupPointer keeps a press outside the open list from reaching the
 // dialog: it only closes the list.
-func (state *State) snippetGroupPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) snippetGroupPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	control := &state.snippets.groupPicker
 	if state.modal != modalSnippet || !control.Open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !isSnippetGroupTarget(event.Target) {
+	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isSnippetGroupTarget(event.Target) {
 		control.Open = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if result := control.Pointer(event); result.Handled {
 		return result, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) snippetGroupKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) snippetGroupKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	form := &state.snippets
 	control := &form.groupPicker
 	if state.modal != modalSnippet || form.capturing {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Target != hitSnippetGroup && (!control.Open || event.Key != ui.KeyEscape && event.Key != ui.KeyTab) {
-		return ui.EventResult{}, false
+	if event.Target != hitSnippetGroup && (!control.Open || event.Key != gfx.KeyEscape && event.Key != gfx.KeyTab) {
+		return gfx.EventResult{}, false
 	}
-	if event.Target == hitSnippetGroup && event.Key == ui.KeyEnter && event.Modifiers == 0 && !event.Release {
+	if event.Target == hitSnippetGroup && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Release {
 		// Enter takes what is typed; with nothing typed it is the dialog's Enter
 		// and saves, which the list must not consume for a group it did not choose.
 		if _, composing := control.Query.Composition(); composing || event.Repeat {
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 		if strings.TrimSpace(control.Query.String()) == "" {
 			if control.Open {
 				control.Dismiss()
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		state.commitSnippetGroupQuery()
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	result := control.Key(event)
 	state.syncSnippetGroupError()
 	return result, result.Handled || result.Repaint
 }
 
-func (state *State) paintSnippetGroupField(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintSnippetGroupField(canvas *gfx.Canvas, bounds gfx.Rect) {
 	form, theme := &state.snippets, state.Theme()
 	control := &form.groupPicker
 	input := components.BeginField(canvas, theme, bounds).For(hitSnippetGroup).Paint(state.messages.FieldGroup, "", "")
@@ -339,6 +339,6 @@ func (state *State) paintSnippetGroupField(canvas *ui.Canvas, bounds ui.Rect) {
 	components.PaintSingleSelect(canvas, theme, input, control, components.SingleSelectOptions{
 		InputID: hitSnippetGroup, TriggerID: hitSnippetGroupTrigger, ClearID: hitSnippetGroupClear, DismissID: hitSnippetGroupDismiss, Scope: snippetGroupScope, ScrollID: hitSnippetGroupScroll, OptionIDs: hitSnippetGroupChoices,
 		Label: state.messages.FieldGroup, Placeholder: state.messages.FieldGroupPlaceholder, EmptyLabel: state.messages.HostGroupsEmpty, CreatePrefix: state.messages.HostGroupCreatePrefix, ClearLabel: state.messages.MoveGroupNone,
-		Viewport: ui.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, Layer: dialogLayer + 2, Invalid: query != "" && !validSnippetGroup(query),
+		Viewport: gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, Layer: dialogLayer + 2, Invalid: query != "" && !validSnippetGroup(query),
 	})
 }

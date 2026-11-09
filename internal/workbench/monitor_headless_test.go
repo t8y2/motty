@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/remotestats"
 )
 
@@ -149,7 +149,7 @@ func TestMonitorNativePanelAtDifferentScales(t *testing.T) {
 			if p.interval != 1 {
 				t.Fatal("drawer refresh menu did not apply")
 			}
-			if err = view.Scroll(ui.ScrollEvent{X: b.X + 100, Y: b.Y + 250, DeltaY: 10000}); err != nil {
+			if err = view.Scroll(gfx.ScrollEvent{X: b.X + 100, Y: b.Y + 250, DeltaY: 10000}); err != nil {
 				t.Fatal(err)
 			}
 			if !view.HasText(state.messages.Monitor.NoHardware) || p.scroll <= 0 {
@@ -213,7 +213,7 @@ func TestMonitorSpecialServerNativeStates(t *testing.T) {
 				if !p.coresMore {
 					t.Fatal("high-core-count view did not expand")
 				}
-				if err = view.Scroll(ui.ScrollEvent{X: state.monitorRect.X + 30, Y: state.monitorRect.Y + 400, DeltaY: 10000}); err != nil {
+				if err = view.Scroll(gfx.ScrollEvent{X: state.monitorRect.X + 30, Y: state.monitorRect.Y + 400, DeltaY: 10000}); err != nil {
 					t.Fatal(err)
 				}
 				if p.scroll <= 0 {

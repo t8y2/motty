@@ -7,7 +7,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sessionimport"
 	"motty/internal/sshconfig"
 	"motty/internal/vault"
@@ -79,7 +79,7 @@ func importClientName(client sessionimport.Client) string {
 	return "MobaXterm"
 }
 
-func (state *State) clickImportSessions(id ui.ID) {
+func (state *State) clickImportSessions(id gfx.ID) {
 	switch id {
 	case hitImportPuTTY:
 		state.importSessions(sessionimport.PuTTY)
@@ -239,7 +239,7 @@ func (state *State) completeSessionImport(plan hostImportPlan, summary string, p
 	}
 }
 
-func (state *State) clickMobaEncoding(id ui.ID) {
+func (state *State) clickMobaEncoding(id gfx.ID) {
 	switch id {
 	case hitMobaEncodingCancel, hitMobaEncodingClose:
 		state.mobaEncoding = mobaEncodingPrompt{}
@@ -256,12 +256,12 @@ func (state *State) clickMobaEncoding(id ui.ID) {
 	}
 }
 
-func (state *State) paintMobaEncoding(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintMobaEncoding(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := state.messages.Tools
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitMobaEncodingCancel, CloseID: hitMobaEncodingClose, InitialFocusID: hitMobaChooseUTF8,
-		ContentSize: ui.Size{Width: 520}, FitBody: true, BodyHeight: 52,
+		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: 52,
 	})
 	layout := dialog.Begin(m.ImportEncodingTitle, m.ImportEncodingBody)
 	content := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
@@ -339,7 +339,7 @@ func (state *State) sessionImportPasswordChanges() ([]vault.Change, error) {
 	return changes, nil
 }
 
-func (state *State) clickSessionImportPreview(id ui.ID) {
+func (state *State) clickSessionImportPreview(id gfx.ID) {
 	switch id {
 	case hitImportPreviewCancel, hitImportPreviewClose:
 		state.sessionImport = sessionImportPreview{}
@@ -389,7 +389,7 @@ func (state *State) clickSessionImportPreview(id ui.ID) {
 	}
 }
 
-func (state *State) paintSessionImportPreview(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintSessionImportPreview(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := state.messages.Tools
 	bodyHeight := float32(0)
 	if state.dialogError != "" {
@@ -398,7 +398,7 @@ func (state *State) paintSessionImportPreview(canvas *ui.Canvas, viewport ui.Rec
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitImportPreviewCancel, CloseID: hitImportPreviewClose, InitialFocusID: hitImportConnectionsOnly,
-		ContentSize: ui.Size{Width: 550}, FitBody: true, BodyHeight: bodyHeight,
+		ContentSize: gfx.Size{Width: 550}, FitBody: true, BodyHeight: bodyHeight,
 	})
 	layout := dialog.Begin(m.ImportPasswordPreviewTitle,
 		fmt.Sprintf(m.ImportPasswordPreviewBodyFmt, len(state.sessionImport.plan.hosts), len(state.sessionImport.passwords), state.sessionImport.eligible))
@@ -448,11 +448,11 @@ func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPla
 	return builder.plan
 }
 
-func (state *State) paintImportSessionsDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintImportSessionsDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := state.messages.Tools
 	theme := state.Theme()
 	choices := [...]struct {
-		id    ui.ID
+		id    gfx.ID
 		label string
 	}{
 		{hitImportPuTTY, "PuTTY"},
@@ -463,20 +463,20 @@ func (state *State) paintImportSessionsDialog(canvas *ui.Canvas, viewport ui.Rec
 		{hitImportNetcatty, "Netcatty"},
 	}
 	const columns = 2
-	rowHeight := components.BeginButton(nil, theme, ui.ID{}, ui.Rect{}).Large().BoundsHeight()
+	rowHeight := components.BeginButton(nil, theme, gfx.ID{}, gfx.Rect{}).Large().BoundsHeight()
 	gap := theme.Metrics.GapItem
 	rows := float32((len(choices) + columns - 1) / columns)
 
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitImportSessionsDismiss, CloseID: hitImportSessionsClose, InitialFocusID: hitImportPuTTY,
-		ContentSize: ui.Size{Width: 480}, FitBody: true,
+		ContentSize: gfx.Size{Width: 480}, FitBody: true,
 		BodyHeight: rows*rowHeight + (rows-1)*gap,
 	})
 	layout := dialog.Begin(m.ImportChooserTitle, m.ImportChooserBody)
 	cellWidth := (layout.Body.Width - gap*(columns-1)) / columns
 	for index, choice := range choices {
-		cell := ui.Rect{
+		cell := gfx.Rect{
 			X:     layout.Body.X + float32(index%columns)*(cellWidth+gap),
 			Y:     layout.Body.Y + float32(index/columns)*(rowHeight+gap),
 			Width: cellWidth,
@@ -485,7 +485,7 @@ func (state *State) paintImportSessionsDialog(canvas *ui.Canvas, viewport ui.Rec
 	}
 	// Where each client keeps what this dialog reads is told in the docs, which
 	// the link opens; it sits at the footer's left, across from Cancel.
-	components.BeginButton(canvas, theme, hitImportGuide, ui.Rect{X: layout.Footer.X, Y: layout.Footer.Y}).
+	components.BeginButton(canvas, theme, hitImportGuide, gfx.Rect{X: layout.Footer.X, Y: layout.Footer.Y}).
 		WithIcon(icons.BookOpen).SizeToFit(m.ImportGuide).Link(m.ImportGuide)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitImportSessionsCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},

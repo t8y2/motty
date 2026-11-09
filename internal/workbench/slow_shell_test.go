@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -107,8 +107,8 @@ func TestAShellOpeningDuringLayoutChangesReceivesTheLatestSize(t *testing.T) {
 
 	// Layout can change while SSH is waiting for the server. The local screen
 	// already has the new size when the shell eventually attaches.
-	state.Resize(ui.Size{Width: 1000, Height: 700})
-	state.Resize(ui.Size{Width: 1100, Height: 750})
+	state.Resize(gfx.Size{Width: 1000, Height: 700})
+	state.Resize(gfx.Size{Width: 1100, Height: 750})
 	wantCols, wantRows := session.term.screen.Size()
 	close(slow.release)
 	deadline := time.Now().Add(2 * time.Second)

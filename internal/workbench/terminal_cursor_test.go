@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // TestTerminalCursorThicknessDefaultsToNormal pins the default: without a saved
@@ -55,14 +55,14 @@ func TestCursorThicknessControlMarksTheStoredStep(t *testing.T) {
 			state.setTerminalCursorThickness(step)
 			state.Click(hitSettings)
 			state.selectSettingsCategory(settingsTerminal)
-			var canvas ui.Canvas
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 2400})
-			want := map[cursorThickness]ui.ID{
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2400})
+			want := map[cursorThickness]gfx.ID{
 				cursorNormal: hitSettingsCursorNormal,
 				cursorThin:   hitSettingsCursorThin,
 				cursorThick:  hitSettingsCursorThick,
 			}[step]
-			for id, label := range map[ui.ID]string{
+			for id, label := range map[gfx.ID]string{
 				hitSettingsCursorThin:   "thin",
 				hitSettingsCursorNormal: "normal",
 				hitSettingsCursorThick:  "thick",

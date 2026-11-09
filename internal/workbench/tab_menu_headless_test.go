@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 // The window bar is a move region. A click on the home button with a tab's menu
@@ -36,7 +36,7 @@ func TestClickingTheHomeButtonWithATabMenuOpenOnlyClosesTheMenu(t *testing.T) {
 	section := state.activeSection
 
 	// The window moves from the bar's empty space, and its buttons are controls.
-	center := func(hit ui.Hit) (float32, float32) {
+	center := func(hit gfx.Hit) (float32, float32) {
 		return hit.Bounds.X + hit.Bounds.Width/2, hit.Bounds.Y + hit.Bounds.Height/2
 	}
 	homeX, homeY := center(home)
@@ -81,11 +81,11 @@ func TestClickingTheHomeButtonWithATabMenuOpenOnlyClosesTheMenu(t *testing.T) {
 	}
 }
 
-func hitByIDSnapshot(hits []ui.Hit, id ui.ID) (ui.Hit, bool) {
+func hitByIDSnapshot(hits []gfx.Hit, id gfx.ID) (gfx.Hit, bool) {
 	for index := len(hits) - 1; index >= 0; index-- {
 		if hits[index].ID == id {
 			return hits[index], true
 		}
 	}
-	return ui.Hit{}, false
+	return gfx.Hit{}, false
 }

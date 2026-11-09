@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
 	"motty/internal/i18n"
 )
@@ -33,7 +33,7 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer view.Close()
-				click := func(id ui.ID) {
+				click := func(id gfx.ID) {
 					t.Helper()
 					view.Rest()
 					for _, hit := range view.Snapshot().Hits {
@@ -107,7 +107,7 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 }
 
 func TestMCPConsentSaveErrorsAreForgottenAfterNativeEscape(t *testing.T) {
-	for _, allow := range []ui.ID{hitAISetMCPAllowAll, hitAISetAgentAllowAll} {
+	for _, allow := range []gfx.ID{hitAISetMCPAllowAll, hitAISetAgentAllowAll} {
 		t.Run(tree.Text(allow), func(t *testing.T) {
 			world := newSettingsWorld(t, newLister())
 			state := world.state

@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 )
 
 func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
-	for _, entry := range []ui.ID{hitSettings, hitWindowSettings} {
+	for _, entry := range []gfx.ID{hitSettings, hitWindowSettings} {
 		state := newTestState(t, testOptions(t))
 		state.Click(entry)
 		if state.activeSection != sectionSettings {
@@ -20,24 +20,24 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 		for _, category := range []struct {
 			category settingsCategory
 			texts    []string
-			hits     []ui.ID
+			hits     []gfx.ID
 		}{
-			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance, state.messages.SettingsInterfaceFont}, []ui.ID{hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsAppearanceDark, hitSettingsAppearanceLight, hitInterfaceFontChoose}},
+			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance, state.messages.SettingsInterfaceFont}, []gfx.ID{hitSettingsLanguageEnglish, hitSettingsLanguageChinese, hitSettingsAppearanceDark, hitSettingsAppearanceLight, hitInterfaceFontChoose}},
 			{settingsTerminal, []string{
 				state.messages.SettingsTerminalOption, state.messages.SettingsTerminalFontSize, state.messages.SettingsTerminalFontFamily,
 				state.messages.SettingsTerminalScrollback, state.messages.SettingsTerminalClipboard,
-			}, []ui.ID{hitSettingsOptionText, hitSettingsOptionMeta, hitSettingsFontSizeDown, hitSettingsFontSizeReset, hitSettingsFontSizeUp, hitSettingsPadCompact, hitSettingsPadRoomy, hitSettingsFontPick,
+			}, []gfx.ID{hitSettingsOptionText, hitSettingsOptionMeta, hitSettingsFontSizeDown, hitSettingsFontSizeReset, hitSettingsFontSizeUp, hitSettingsPadCompact, hitSettingsPadRoomy, hitSettingsFontPick,
 				hitSettingsLineHeightCompact, hitSettingsLineHeightRoomy, hitSettingsCursorThin, hitSettingsCursorThick, hitSettingsScrollback1000, hitSettingsScrollback10000, hitSettingsClipboardBlock, hitSettingsClipboardAllow}},
 			{settingsConnection, []string{
 				state.messages.SettingsConnectionTimeout, state.messages.SettingsConnectionKeepAlive, state.messages.SettingsConnectionReconnect, state.messages.SettingsNetworkProxy,
-			}, []ui.ID{hitSettingsTimeout5, hitSettingsTimeout30, hitSettingsKeepAliveOff, hitSettingsKeepAlive60, hitSettingsReconnectOff, hitSettingsReconnectForever,
+			}, []gfx.ID{hitSettingsTimeout5, hitSettingsTimeout30, hitSettingsKeepAliveOff, hitSettingsKeepAlive60, hitSettingsReconnectOff, hitSettingsReconnectForever,
 				hitSettingsShareToggle, hitSettingsRestoreOff, hitSettingsRestoreAll, hitSettingsNetworkSystem, hitSettingsNetworkDirect,
 				hitSettingsStartupHosts}},
 		} {
 			state.selectSettingsCategory(category.category)
 			// Tall enough for the whole category; a short window scrolls instead.
-			var canvas ui.Canvas
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 			var texts []string
 			for _, text := range canvas.Texts() {
 				texts = append(texts, text.Value)
@@ -63,8 +63,8 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 func TestSettingsCategoriesAreChosenFromTheListAndStartAtTheTop(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
-	size := ui.Size{Width: 1000, Height: 640}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1000, Height: 640}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	for category := settingsCategory(0); category < settingsCategoryCount; category++ {
 		hit, ok := hitByID(&canvas, hitSettingsCategoryList.At(int(category)))
@@ -83,9 +83,9 @@ func TestSettingsCategoriesAreChosenFromTheListAndStartAtTheTop(t *testing.T) {
 		t.Fatal("the keyboard shortcuts category is not in the list")
 	}
 	state.Click(hitSettingsCategoryList.At(int(settingsTerminal)))
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
-	state.scrollSettings(ui.ScrollEvent{DeltaY: 200, Precise: true})
+	state.scrollSettings(gfx.ScrollEvent{DeltaY: 200, Precise: true})
 	if state.settingsCategory != settingsTerminal || state.settingsScroll == 0 {
 		t.Fatalf("category %d, scroll %v", state.settingsCategory, state.settingsScroll)
 	}
@@ -93,7 +93,7 @@ func TestSettingsCategoriesAreChosenFromTheListAndStartAtTheTop(t *testing.T) {
 	if state.settingsCategory != settingsConnection || state.settingsScroll != 0 {
 		t.Fatalf("category %d, scroll %v: a category opens at its top", state.settingsCategory, state.settingsScroll)
 	}
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	if _, ok := hitByID(&canvas, hitSettingsTimeout5); !ok {
 		t.Fatal("the Connection page does not paint its choices")
@@ -119,7 +119,7 @@ func TestSettingsChoicesApplyDirectlyToTheWorkbenchAndTerminal(t *testing.T) {
 	for range 4 {
 		state.Click(hitSettingsFontSizeUp)
 	}
-	state.useTerminalFont(fontEntry{face: ui.MonoClassic})
+	state.useTerminalFont(fontEntry{face: gfx.MonoClassic})
 	state.Click(hitSettingsScrollback1000)
 	state.Click(hitSettingsTimeout30)
 	state.Click(hitSettingsKeepAlive60)
@@ -138,11 +138,11 @@ func TestSettingsChoicesApplyDirectlyToTheWorkbenchAndTerminal(t *testing.T) {
 	if state.terminalOption != terminalOptionMeta {
 		t.Fatalf("terminal option=%v", state.terminalOption)
 	}
-	if state.terminalFontSize != 17 || state.terminalFontFace != ui.MonoClassic || state.terminalScrollback != 1000 || state.connectionTimeout != 30*time.Second || state.connectionKeepAlive != 60*time.Second || state.connectionReconnect != reconnectForever || state.terminalClipboard != terminalClipboardAllow {
+	if state.terminalFontSize != 17 || state.terminalFontFace != gfx.MonoClassic || state.terminalScrollback != 1000 || state.connectionTimeout != 30*time.Second || state.connectionKeepAlive != 60*time.Second || state.connectionReconnect != reconnectForever || state.terminalClipboard != terminalClipboardAllow {
 		t.Fatalf("terminal settings = size %v face %v scrollback %d timeout %v keepalive %v reconnect %v clipboard %v", state.terminalFontSize, state.terminalFontFace, state.terminalScrollback, state.connectionTimeout, state.connectionKeepAlive, state.connectionReconnect, state.terminalClipboard)
 	}
 	input := state.TerminalInput(app.TextInputContext{ID: hitTerminalList.At(1), Terminal: true})
-	if input == nil || !input.AltSendsEscape || input.FontSize != 17 || input.MonoFace != ui.MonoClassic {
+	if input == nil || !input.AltSendsEscape || input.FontSize != 17 || input.MonoFace != gfx.MonoClassic {
 		t.Fatalf("terminal input=%+v, want AltSendsEscape", input)
 	}
 
@@ -164,7 +164,7 @@ func TestSettingsChoicesAndWorkspaceSurviveRestart(t *testing.T) {
 	first.Click(hitSettingsOptionMeta)
 	first.Click(hitSettingsFontSizeUp)
 	first.Click(hitSettingsFontSizeUp)
-	first.useTerminalFont(fontEntry{face: ui.MonoClassic})
+	first.useTerminalFont(fontEntry{face: gfx.MonoClassic})
 	first.save()
 	first.Click(hitSettingsScrollback10000)
 	first.Click(hitSettingsTimeout5)
@@ -182,7 +182,7 @@ func TestSettingsChoicesAndWorkspaceSurviveRestart(t *testing.T) {
 
 	second := newTestState(t, options)
 	if second.activeSection != sectionSettings || second.language != i18n.Chinese ||
-		second.appearance != appearanceLight || second.networkProxy != networkProxySystem || second.terminalOption != terminalOptionMeta || second.terminalFontSize != 15 || second.terminalFontFace != ui.MonoClassic || second.terminalScrollback != 10000 || second.connectionTimeout != 5*time.Second || second.connectionKeepAlive != 30*time.Second || second.connectionReconnect != reconnectThree || second.terminalClipboard != terminalClipboardBlock {
+		second.appearance != appearanceLight || second.networkProxy != networkProxySystem || second.terminalOption != terminalOptionMeta || second.terminalFontSize != 15 || second.terminalFontFace != gfx.MonoClassic || second.terminalScrollback != 10000 || second.connectionTimeout != 5*time.Second || second.connectionKeepAlive != 30*time.Second || second.connectionReconnect != reconnectThree || second.terminalClipboard != terminalClipboardBlock {
 		t.Fatalf("restored section=%d language=%v appearance=%v option=%v size=%v face=%v scrollback=%d timeout=%v keepalive=%v", second.activeSection, second.language, second.appearance, second.terminalOption, second.terminalFontSize, second.terminalFontFace, second.terminalScrollback, second.connectionTimeout, second.connectionKeepAlive)
 	}
 }
@@ -235,16 +235,16 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
 
-	result := state.Key(ui.KeyEvent{Target: hitSettingsLanguageEnglish, Key: ui.KeyRight})
+	result := state.Key(gfx.KeyEvent{Target: hitSettingsLanguageEnglish, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != hitSettingsLanguageChinese || state.language != i18n.Chinese {
 		t.Fatalf("language result=%+v language=%v", result, state.language)
 	}
-	result = state.Key(ui.KeyEvent{Target: hitSettingsOptionText, Key: ui.KeyRight})
+	result = state.Key(gfx.KeyEvent{Target: hitSettingsOptionText, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != hitSettingsOptionMeta || state.terminalOption != terminalOptionMeta {
 		t.Fatalf("option result=%+v option=%v", result, state.terminalOption)
 	}
 	for _, test := range []struct {
-		from, to ui.ID
+		from, to gfx.ID
 		check    func() bool
 	}{
 		{hitSettingsNetworkDirect, hitSettingsNetworkSystem, func() bool { return state.networkProxy == networkProxySystem }},
@@ -258,7 +258,7 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 			return state.terminalIntense == intenseBright && state.termPal.intense == intenseBright
 		}},
 	} {
-		result = state.Key(ui.KeyEvent{Target: test.from, Key: ui.KeyRight})
+		result = state.Key(gfx.KeyEvent{Target: test.from, Key: gfx.KeyRight})
 		if !result.Handled || result.Focus != test.to || !test.check() {
 			t.Fatalf("setting %d result=%+v", test.from, result)
 		}
@@ -272,8 +272,8 @@ func TestSettingsWorkspacePaintSchedulesNoIdleFrame(t *testing.T) {
 	// painting and can land during another category's measurement.
 	state.localShellMenu.loaded = true
 	state.Click(hitSettings)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	for category := settingsCategory(0); category < settingsCategoryCount; category++ {
 		state.selectSettingsCategory(category)
 		state.Paint(&canvas, size)
@@ -288,8 +288,8 @@ func TestSettingsWorkspacePaintSchedulesNoIdleFrame(t *testing.T) {
 func BenchmarkPaintSettingsWorkspace(b *testing.B) {
 	state := newTestState(b, testOptions(b))
 	state.Click(hitSettings)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	for b.Loop() {
@@ -302,9 +302,9 @@ func TestSettingsPageScrollsWhenTheWindowIsShort(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsAssistant)
-	size := ui.Size{Width: 1000, Height: 520}
-	paint := func() *ui.Canvas {
-		var canvas ui.Canvas
+	size := gfx.Size{Width: 1000, Height: 520}
+	paint := func() *gfx.Canvas {
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		return &canvas
 	}
@@ -319,7 +319,7 @@ func TestSettingsPageScrollsWhenTheWindowIsShort(t *testing.T) {
 
 	// A positive delta reveals content below; far enough reveals the last row and then stops.
 	for range 120 {
-		state.Scroll(ui.ScrollEvent{DeltaY: 60, Precise: true, Viewport: size})
+		state.Scroll(gfx.ScrollEvent{DeltaY: 60, Precise: true, Viewport: size})
 	}
 	canvas = paint()
 	last, ok = hitByID(canvas, hitAISetClearHistory) // the assistant's category ends the page
@@ -327,14 +327,14 @@ func TestSettingsPageScrollsWhenTheWindowIsShort(t *testing.T) {
 		t.Fatalf("after scrolling the last row is %+v, %v", last.Bounds, ok)
 	}
 	bottom := state.settingsScroll
-	state.Scroll(ui.ScrollEvent{DeltaY: 60, Precise: true, Viewport: size})
+	state.Scroll(gfx.ScrollEvent{DeltaY: 60, Precise: true, Viewport: size})
 	if state.settingsScroll != bottom {
 		t.Fatalf("scrolled past the end: %v then %v", bottom, state.settingsScroll)
 	}
 
 	// And back to the top, without going above it.
 	for range 80 {
-		state.Scroll(ui.ScrollEvent{DeltaY: -60, Precise: true, Viewport: size})
+		state.Scroll(gfx.ScrollEvent{DeltaY: -60, Precise: true, Viewport: size})
 	}
 	if state.settingsScroll != 0 {
 		t.Fatalf("scroll = %v, want the top", state.settingsScroll)
@@ -344,13 +344,13 @@ func TestSettingsPageScrollsWhenTheWindowIsShort(t *testing.T) {
 func TestSettingsScrollDoesNotOverlapWorkspaceBorder(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
-	size := ui.Size{Width: 1000, Height: 640}
+	size := gfx.Size{Width: 1000, Height: 640}
 	state.selectSettingsCategory(settingsTerminal)
 	// Paint once so the page knows how tall it is and how much room it has, then
 	// take the wheel to the end: a later paint must not pull the page back.
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	state.scrollSettings(ui.ScrollEvent{DeltaY: 10000, Precise: true})
+	state.scrollSettings(gfx.ScrollEvent{DeltaY: 10000, Precise: true})
 	scrolled := state.settingsScroll
 	if scrolled <= 0 {
 		t.Fatal("the wheel did not scroll the settings page")
@@ -360,7 +360,7 @@ func TestSettingsScrollDoesNotOverlapWorkspaceBorder(t *testing.T) {
 	if want := max(state.settingsContent-state.settings.pageView, 0); scrolled != want {
 		t.Fatalf("the wheel stopped at %v, but the page ends at %v", scrolled, want)
 	}
-	var again ui.Canvas
+	var again gfx.Canvas
 	state.Paint(&again, size)
 	if state.settingsScroll != scrolled {
 		t.Fatalf("paint moved the page from %v to %v: the wheel and the paint clamp disagree", scrolled, state.settingsScroll)

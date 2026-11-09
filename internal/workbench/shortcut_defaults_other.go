@@ -3,8 +3,8 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
 // defaultPaneSplitChords are the split bindings this platform ships: Control
@@ -13,6 +13,6 @@ import (
 // desktop before Motty ever sees it. Control+Shift+D and Control+Shift+E are
 // clear of Motty's other defaults.
 func defaultPaneSplitChords() (horizontal, vertical keymap.Chord) {
-	return keymap.Chord{Modifiers: ui.ModifierControl | ui.ModifierShift, Char: 'd'},
-		keymap.Chord{Modifiers: ui.ModifierControl | ui.ModifierShift, Char: 'e'}
+	return keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Char: 'd'},
+		keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Char: 'e'}
 }

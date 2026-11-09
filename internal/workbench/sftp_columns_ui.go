@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var sftpColumnSettingsHits = tree.Feature("sftp-column-settings")
@@ -43,7 +43,7 @@ func (state *State) openSFTPColumnSettings() {
 	state.modal = modalSFTPColumns
 }
 
-func (state *State) clickSFTPColumnSettings(id ui.ID) {
+func (state *State) clickSFTPColumnSettings(id gfx.ID) {
 	editor := &state.sftpColumnEditor
 	switch {
 	case id == hitSFTPColumnSettingsClose || id == hitSFTPColumnSettingsDismiss:
@@ -71,9 +71,9 @@ func (state *State) moveSFTPColumn(move components.ReorderMove) {
 	state.save()
 }
 
-func (state *State) sftpColumnSettingsPointer(event ui.PointerEvent) ui.EventResult {
+func (state *State) sftpColumnSettingsPointer(event gfx.PointerEvent) gfx.EventResult {
 	if state.modal != modalSFTPColumns {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	move, result := state.sftpColumnEditor.list.Pointer(event)
 	if move.Valid() {
@@ -82,9 +82,9 @@ func (state *State) sftpColumnSettingsPointer(event ui.PointerEvent) ui.EventRes
 	return result
 }
 
-func (state *State) sftpColumnSettingsKey(event ui.KeyEvent) ui.EventResult {
+func (state *State) sftpColumnSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalSFTPColumns {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	move, result := state.sftpColumnEditor.list.Key(event)
 	if result.Handled {
@@ -93,20 +93,20 @@ func (state *State) sftpColumnSettingsKey(event ui.KeyEvent) ui.EventResult {
 		}
 		return result
 	}
-	if event.Key == ui.KeyEscape && !event.Release && !event.Repeat {
+	if event.Key == gfx.KeyEscape && !event.Release && !event.Repeat {
 		state.closeModal()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (state *State) paintSFTPColumnSettings(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintSFTPColumnSettings(canvas *gfx.Canvas, viewport gfx.Rect) {
 	editor, m, theme := &state.sftpColumnEditor, state.messages.Tools, state.Theme()
 	const rowHeight = float32(48)
 	height := float32(len(state.sftpColumns.entries))*rowHeight - 4
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitSFTPColumnSettingsDismiss, CloseID: hitSFTPColumnSettingsClose,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: height,
+		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: height,
 	})
 	layout := dialog.Begin(m.FilesColumnsTitle, m.FilesColumnsHint)
 	list := components.BeginReorderList(canvas, theme, layout.Body, &editor.list).RowHeight(rowHeight)
@@ -120,13 +120,13 @@ func (state *State) paintSFTPColumnSettings(canvas *ui.Canvas, viewport ui.Rect)
 		if !enabled {
 			color = theme.MutedForeground
 		}
-		caption := ui.Rect{
+		caption := gfx.Rect{
 			X: row.Content.X, Y: row.Content.Y,
 			Width: max(row.Content.Width-58, 0), Height: row.Content.Height,
 		}
-		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, ui.WeightRegular, caption.Width), caption, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
+		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, gfx.WeightRegular, caption.Width), caption, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
 		toggle := components.BeginSwitch(canvas, state.switchTheme(), hitSFTPColumnSettingsToggles.At(index),
-			ui.Rect{X: row.Content.X + row.Content.Width - 38, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, enabled).Label(label)
+			gfx.Rect{X: row.Content.X + row.Content.Width - 38, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, enabled).Label(label)
 		if fixed {
 			toggle = toggle.Disabled()
 		}

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func profileQuickLabel(profile sftpBookmark) string {
@@ -44,7 +44,7 @@ func (w *sftpWindow) toggleProfileQuickMenu() {
 	w.ui.profileQuickScroll = components.MenuScroll{BarID: hitSFTPProfileQuickBar}
 }
 
-func (w *sftpWindow) clickProfileQuick(id ui.ID) bool {
+func (w *sftpWindow) clickProfileQuick(id gfx.ID) bool {
 	if id == hitSFTPProfileQuick {
 		w.activeLocal, w.view.local = true, true
 		w.toggleProfileQuickMenu()
@@ -82,19 +82,19 @@ func (w *sftpWindow) clickProfileQuick(id ui.ID) bool {
 	return false
 }
 
-func (w *sftpWindow) paintProfileQuickMenu(canvas *ui.Canvas) {
+func (w *sftpWindow) paintProfileQuickMenu(canvas *gfx.Canvas) {
 	theme, m := w.owner.Theme(), w.owner.messages.SFTPWindow
 	profiles := w.visibleProfiles()
 	height := float32(min(360, 40+len(profiles)*32+42))
 	anchor := w.ui.profileQuickAnchor
-	bounds := ui.Rect{X: anchor.X + anchor.Width - 300, Y: anchor.Y + anchor.Height + 4, Width: 300, Height: height}
+	bounds := gfx.Rect{X: anchor.X + anchor.Width - 300, Y: anchor.Y + anchor.Height + 4, Width: 300, Height: height}
 	if bounds.Y+bounds.Height > w.ui.size.Height-8 {
 		bounds.Y = max(8, anchor.Y-bounds.Height-4)
 	}
 	bounds.X = max(8, min(bounds.X, w.ui.size.Width-bounds.Width-8))
 	menu := components.BeginDropdownMenu(canvas, theme, bounds, components.DropdownMenuOptions{
 		Layer: popupLayer, Scope: hitSFTPProfileQuickMenu, DismissID: hitSFTPProfileQuickDismiss,
-		Viewport: ui.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height}, Scroll: &w.ui.profileQuickScroll,
+		Viewport: gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height}, Scroll: &w.ui.profileQuickScroll,
 	})
 	menu.AddLabel(m.ProfileChoose, true)
 	if len(profiles) == 0 {
@@ -134,7 +134,7 @@ func (w *sftpWindow) paintProfileQuickMenu(canvas *ui.Canvas) {
 	menu.End()
 }
 
-func (w *sftpWindow) paintProfileQuickPreview(canvas *ui.Canvas, viewport ui.Rect) {
+func (w *sftpWindow) paintProfileQuickPreview(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if w.bookmark.open || w.view.bookmarksOpen || w.ui.menuOpen || w.headerMenuOpen() || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 {
 		w.ui.profileHoverOpen = false
 		return
@@ -166,16 +166,16 @@ func (w *sftpWindow) paintProfileQuickPreview(canvas *ui.Canvas, viewport ui.Rec
 	bodyHeight := max(float32(36), float32(shown)*36)
 	card := components.BeginHoverCard(canvas, theme, viewport, w.ui.profileHoverAnchor, components.HoverCardOptions{
 		Layer: tooltipLayer, ID: hitSFTPProfileHover, Side: components.HoverCardRight,
-		Align: components.HoverCardAlignStart, SideOffset: 1, ContentSize: ui.Size{Width: 320}, BodyHeight: bodyHeight,
+		Align: components.HoverCardAlignStart, SideOffset: 1, ContentSize: gfx.Size{Width: 320}, BodyHeight: bodyHeight,
 	})
 	layout := card.Begin(m.ProfileQuickTitle, m.ProfileQuickDescription)
 	if shown == 0 {
-		canvas.LabelCenter(m.ProfileEmpty, layout.Body, ui.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
+		canvas.LabelCenter(m.ProfileEmpty, layout.Body, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
 	} else {
 		for index := 0; index < shown; index++ {
 			profile := profiles[index]
 			id := hitSFTPProfileHoverItems.At(index)
-			row := ui.Rect{
+			row := gfx.Rect{
 				X: layout.Body.X, Y: layout.Body.Y + float32(index)*36,
 				Width: layout.Body.Width, Height: 34,
 			}
@@ -186,32 +186,32 @@ func (w *sftpWindow) paintProfileQuickPreview(canvas *ui.Canvas, viewport ui.Rec
 			if profile.sync {
 				icon = iconSFTPBrowseSync
 			}
-			canvas.DrawIcon(lucideIcons[icon], ui.Rect{X: row.X + 4, Y: row.Y + 9, Width: 16, Height: 16}, theme.MutedForeground)
+			canvas.DrawIcon(lucideIcons[icon], gfx.Rect{X: row.X + 4, Y: row.Y + 9, Width: 16, Height: 16}, theme.MutedForeground)
 			nameWidth := max(0, row.Width-28)
-			name := canvas.FitLine(profileQuickLabel(profile), theme.Metrics.FontSizeM, ui.WeightMedium, nameWidth)
-			canvas.Label(name, ui.Rect{X: row.X + 26, Y: row.Y, Width: nameWidth, Height: row.Height}, ui.TextStyle{
-				Size: theme.Metrics.FontSizeM, Weight: ui.WeightMedium, Color: theme.Foreground,
+			name := canvas.FitLine(profileQuickLabel(profile), theme.Metrics.FontSizeM, gfx.WeightMedium, nameWidth)
+			canvas.Label(name, gfx.Rect{X: row.X + 26, Y: row.Y, Width: nameWidth, Height: row.Height}, gfx.TextStyle{
+				Size: theme.Metrics.FontSizeM, Weight: gfx.WeightMedium, Color: theme.Foreground,
 			})
-			canvas.HitWithOptions(id, row, profileQuickLabel(profile), ui.HitOptions{
-				Role: ui.RoleButton, Hint: profileQuickHint(profile, m.ProfileQuickSync),
+			canvas.HitWithOptions(id, row, profileQuickLabel(profile), gfx.HitOptions{
+				Role: gfx.RoleButton, Hint: profileQuickHint(profile, m.ProfileQuickSync),
 			})
 		}
 	}
 	card.End()
 }
 
-func (w *sftpWindow) profileQuickKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	result := ui.EventResult{Handled: true, Repaint: true}
+func (w *sftpWindow) profileQuickKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	result := gfx.EventResult{Handled: true, Repaint: true}
 	if w.ui.profileQuickOpen {
 		switch event.Key {
-		case ui.KeyEscape:
+		case gfx.KeyEscape:
 			if !event.Repeat {
 				w.closeProfileQuickMenu()
 				result.Focus = hitSFTPProfileQuick
 				result.FocusVisible = true
 			}
 			return result, true
-		case ui.KeyTab:
+		case gfx.KeyTab:
 			w.closeProfileQuickMenu()
 			result.ContinueTraversal = true
 			return result, true
@@ -220,24 +220,24 @@ func (w *sftpWindow) profileQuickKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			result.Focus, result.FocusVisible = next, true
 			return result, true
 		}
-		if !event.Repeat && event.Modifiers == 0 && (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) {
+		if !event.Repeat && event.Modifiers == 0 && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
 			if !w.clickProfileQuick(event.Target) {
 				w.closeProfileQuickMenu()
 			}
 			return result, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Target == hitSFTPProfileQuick && !event.Repeat && event.Modifiers == 0 && (event.Key == ui.KeyEnter || event.Key == ui.KeySpace || event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+	if event.Target == hitSFTPProfileQuick && !event.Repeat && event.Modifiers == 0 && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace || event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		w.toggleProfileQuickMenu()
 		return result, true
 	}
-	if event.Target == hitSFTPProfileHover && event.Key == ui.KeyEscape {
+	if event.Target == hitSFTPProfileHover && event.Key == gfx.KeyEscape {
 		w.ui.profileHoverOpen = false
 		return result, true
 	}
 	if _, ok := event.Target.In(hitSFTPProfileHoverItems); ok {
-		if event.Key == ui.KeyEscape {
+		if event.Key == gfx.KeyEscape {
 			w.ui.profileHoverOpen = false
 			result.Focus = w.ui.profileHoverTrigger
 			if result.Focus.IsZero() {
@@ -246,10 +246,10 @@ func (w *sftpWindow) profileQuickKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			result.FocusVisible = true
 			return result, true
 		}
-		if !event.Repeat && event.Modifiers == 0 && (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) {
+		if !event.Repeat && event.Modifiers == 0 && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
 			w.clickProfileQuick(event.Target)
 			return result, true
 		}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }

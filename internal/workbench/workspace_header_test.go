@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -15,8 +15,8 @@ func TestWorkspaceHeaderAppearsOnlyForManagedWorkspaces(t *testing.T) {
 	state := newTestState(t, options)
 
 	connect(t, state, world)
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	for _, id := range []gfx.ID{
 		hitWorkspaceHeaderBack,
 		hitWorkspaceHeaderBroadcast,
 		hitWorkspaceHeaderLayout,
@@ -27,8 +27,8 @@ func TestWorkspaceHeaderAppearsOnlyForManagedWorkspaces(t *testing.T) {
 	}
 
 	workspaceID := launchTemporaryWorkspace(t, state, 0, 1)
-	canvas, texts := paintAt(state, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{
+	canvas, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	for _, id := range []gfx.ID{
 		hitWorkspaceHeaderBack,
 		hitWorkspaceHeaderBroadcast,
 		hitWorkspaceHeaderLayout,
@@ -52,7 +52,7 @@ func TestWorkspaceHeaderBackKeepsSessionsAndLeavesBroadcastOff(t *testing.T) {
 		finishWorkspaceConnection(t, state, connection)
 	}
 	state.broadcast = workspaceID
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	sessions := len(state.sessions)
 	panes := len(state.deck.Panes(workspaceID, nil))
 
@@ -74,7 +74,7 @@ func TestWorkspaceHeaderLayoutAndOrderPreserveSessionsAndTemplate(t *testing.T) 
 	template := mustWorkspaceTemplate(t, "Operations", workspaceCatalogIDs(state, 0, 1, 2), 3)
 	state.templates = []WorkspaceTemplate{template}
 	state.activeSection = sectionWorkspaces
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceTemplateOpen.At(0))
 	workspaceID := state.deck.ActiveWorkspace()
 	if len(world.configs) != 3 {
@@ -83,9 +83,9 @@ func TestWorkspaceHeaderLayoutAndOrderPreserveSessionsAndTemplate(t *testing.T) 
 	active := state.activeSessionID
 	sessions := append([]Session(nil), state.sessions...)
 
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceHeaderLayout)
-	canvas, _ = paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	panelHit(t, canvas, hitWorkspaceHeaderPresets.At(1))
 	state.Click(hitWorkspaceHeaderPresets.At(1))
 
@@ -102,7 +102,7 @@ func TestWorkspaceHeaderLayoutAndOrderPreserveSessionsAndTemplate(t *testing.T) 
 
 	state.Click(hitWorkspaceHeaderLayoutDismiss)
 	state.Click(hitWorkspaceHeaderLayout)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	before := paneSessionIDs(state.deck.Panes(workspaceID, nil))
 	activeIndex := slices.Index(before, active)
 	target := 0
@@ -126,7 +126,7 @@ func TestWorkspaceHeaderReapplyRestoresSavedOrderAndColumns(t *testing.T) {
 	template := mustWorkspaceTemplate(t, "Production", workspaceCatalogIDs(state, 2, 0, 1), 2)
 	state.templates = []WorkspaceTemplate{template}
 	state.activeSection = sectionWorkspaces
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceTemplateOpen.At(0))
 	workspaceID := state.deck.ActiveWorkspace()
 
@@ -136,13 +136,13 @@ func TestWorkspaceHeaderReapplyRestoresSavedOrderAndColumns(t *testing.T) {
 		t.Fatalf("initial template order = %v, want %v", got, want)
 	}
 	state.Click(hitWorkspaceHeaderLayout)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceHeaderPresets.At(0))
 	state.moveWorkspaceCard(workspaceCardRegion{view: workspaceCardsRuntime, index: 0}, 1)
 
 	world.configs = nil
 	state.activeSection = sectionWorkspaces
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceTemplateOpen.At(0))
 	reapplied := state.deck.ActiveWorkspace()
 	if reapplied == workspaceID || !isGrid(state.managedWorkspaceLayouts[reapplied], 2) {
@@ -162,9 +162,9 @@ func TestWorkspaceHeaderNarrowWindowKeepsControlsInsideBounds(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
 	launchTemporaryWorkspace(t, state, 0, 1, 2)
-	size := ui.Size{Width: 420, Height: 620}
+	size := gfx.Size{Width: 420, Height: 620}
 	canvas, _ := paintAt(state, size)
-	for _, id := range []ui.ID{
+	for _, id := range []gfx.ID{
 		hitWorkspaceHeaderBack,
 		hitWorkspaceHeaderBroadcast,
 		hitWorkspaceHeaderLayout,

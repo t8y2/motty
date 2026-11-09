@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -17,7 +17,7 @@ func TestTheLightFollowsTheSession(t *testing.T) {
 	for _, test := range []struct {
 		phase sshconn.Phase
 		kind  lightKind
-		color ui.Color
+		color gfx.Color
 	}{
 		{sshconn.PhaseConnecting, lightBusy, pal.warning},
 		{sshconn.PhaseHostKeyPrompt, lightBusy, pal.warning},
@@ -64,21 +64,21 @@ func TestHostLightUsesTheBestStateAcrossItsTabs(t *testing.T) {
 }
 
 // haloOf finds the halo rectangle of the light painted at x, y.
-func haloOf(canvas *ui.Canvas, x, y float32) (ui.Rectangle, bool) {
+func haloOf(canvas *gfx.Canvas, x, y float32) (gfx.Rectangle, bool) {
 	for _, rectangle := range canvas.Rectangles() {
 		if rectangle.Bounds.Width == lightHalo && rectangle.Bounds.X == x-lightHalo/2 && rectangle.Bounds.Y == y-lightHalo/2 {
 			return rectangle, true
 		}
 	}
-	return ui.Rectangle{}, false
+	return gfx.Rectangle{}, false
 }
 
-func paintOneLight(kind lightKind, now time.Duration, reduceMotion bool) *ui.Canvas {
-	var canvas ui.Canvas
+func paintOneLight(kind lightKind, now time.Duration, reduceMotion bool) *gfx.Canvas {
+	var canvas gfx.Canvas
 	canvas.SetClock(func() time.Duration { return now })
 	canvas.SetReduceMotion(reduceMotion)
 	canvas.BeginFrame()
-	paintLight(&canvas, 50, 50, kind, ui.Color{Green: 1, Alpha: 1}, ui.Color{Alpha: 1})
+	paintLight(&canvas, 50, 50, kind, gfx.Color{Green: 1, Alpha: 1}, gfx.Color{Alpha: 1})
 	canvas.EndFrame()
 	return &canvas
 }
@@ -96,7 +96,7 @@ func TestABusyLightBreathesAtItsOwnPace(t *testing.T) {
 }
 
 func TestLightsThatDoNotMoveAskForNoFrames(t *testing.T) {
-	for name, canvas := range map[string]*ui.Canvas{
+	for name, canvas := range map[string]*gfx.Canvas{
 		"on":      paintOneLight(lightOn, 0, false),
 		"waiting": paintOneLight(lightWaiting, 0, false),
 		"fault":   paintOneLight(lightFault, 0, false),

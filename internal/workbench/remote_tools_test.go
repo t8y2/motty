@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotetools"
 	"motty/internal/sshconn"
 )
@@ -239,9 +239,9 @@ func openRemoteToolsDialog(t *testing.T) (*State, *remoteServer, *fakeShell) {
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	// This helper covers the legacy in-window tools dialog when the platform
 	// does not expose independent content windows.
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	rightClick(state, session, 400, 300)
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitTerminalMenuTools)
 	if state.modal != modalRemoteTools {
 		t.Fatalf("the dialog did not open: modal %d", state.modal)
@@ -255,9 +255,9 @@ func TestRemoteToolsListProcessesOnceAndNeverPoll(t *testing.T) {
 	if len(state.remote.rows) != 3 || state.remote.rows[0].cells[0] != "2211" || state.remote.rows[0].cells[2] != "42.5" {
 		t.Fatalf("rows %+v", state.remote.rows)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for _, id := range []gfx.ID{
 		hitRemoteTabProcesses, hitRemoteSortMemory, hitRemoteRowList.At(0), hitRemoteRowList.At(2), hitRemoteRefresh,
 		hitRemoteTerminate, hitRemoteKill, hitRemoteNiceLower, hitRemoteNiceNormal, hitRemoteNiceHigher,
 	} {
@@ -270,7 +270,7 @@ func TestRemoteToolsListProcessesOnceAndNeverPoll(t *testing.T) {
 	}
 	for index := 0; index < 5; index++ {
 		state.Wake()
-		state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+		state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	}
 	if server.ran("LC_ALL=C ps") != 1 {
 		t.Fatalf("%d listings for one open", server.ran("LC_ALL=C ps"))
@@ -288,8 +288,8 @@ func TestRemoteToolsListProcessesOnceAndNeverPoll(t *testing.T) {
 
 func TestRemoteProcessFooterSeparatesCollectionTimeFromSearchSummary(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 
 	summary, ok := hitByID(&canvas, hitRemoteSearchScope)
 	if !ok {
@@ -394,8 +394,8 @@ func TestRemoteToolsContainerShellOpensSharedTabWithoutTypingIntoOriginal(t *tes
 	state.Click(hitRemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	selectRemoteToolsRow(state, 0) // running web
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	button, painted := hitByID(&canvas, hitRemoteShell)
 	if !painted || button.Disabled {
 		t.Fatalf("container Shell action missing or disabled: %+v, painted=%v", button, painted)
@@ -415,8 +415,8 @@ func TestRemoteToolsContainerShellRejectsStoppedSelection(t *testing.T) {
 	state.Click(hitRemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	selectRemoteToolsRow(state, 1) // exited job
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	button, painted := hitByID(&canvas, hitRemoteShell)
 	if !painted || !button.Disabled {
 		t.Fatalf("stopped container offered Shell: button=%+v painted=%v", button, painted)
@@ -434,8 +434,8 @@ func TestRemoteToolsWindowsHostNeverProbesPOSIXContainerShell(t *testing.T) {
 	state.Click(hitRemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	selectRemoteToolsRow(state, 0)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	button, painted := hitByID(&canvas, hitRemoteShell)
 	if !painted || !button.Disabled {
 		t.Fatalf("Windows SSH host offered Shell: button=%+v painted=%v", button, painted)
@@ -622,8 +622,8 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 	if state.remote.rows[0].cells[0] != "debian:bookworm-slim" || state.remote.rows[0].cells[1] != "d4c45f66efc5" {
 		t.Fatalf("image row %+v", state.remote.rows[0])
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitRemoteRemove); !ok {
 		t.Error("an image tab has no Remove")
 	}
@@ -728,8 +728,8 @@ func TestPullingAnImageTypesTheCommandIntoTheTerminal(t *testing.T) {
 	state, server, shell := openRemoteToolsDialog(t)
 	state.Click(hitRemoteTabImages)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitRemotePull); !ok {
 		t.Fatal("the images tab has no Pull")
 	}
@@ -759,7 +759,7 @@ func TestPullingAnImageTypesTheCommandIntoTheTerminal(t *testing.T) {
 func TestCreatingAVolumeAndANetworkFromTheirTabs(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	for _, entry := range []struct {
-		tab     ui.ID
+		tab     gfx.ID
 		title   string
 		command string
 	}{
@@ -768,8 +768,8 @@ func TestCreatingAVolumeAndANetworkFromTheirTabs(t *testing.T) {
 	} {
 		state.Click(entry.tab)
 		waitFor(t, state, func() bool { return !state.remote.loading })
-		var canvas ui.Canvas
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		if _, ok := hitByID(&canvas, hitRemotePull); ok {
 			t.Fatal("a tab that creates offers a pull")
 		}

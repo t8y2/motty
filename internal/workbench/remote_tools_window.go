@@ -8,7 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // A tool window reuses the remote-tools and form presenters in an isolated
@@ -72,7 +72,7 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 		MinWidth: remoteToolsMinWidth, MinHeight: remoteToolsMinHeight,
 		ClearColor: app.Color{Red: float64(state.pal.workspace.Red), Green: float64(state.pal.workspace.Green), Blue: float64(state.pal.workspace.Blue), Alpha: 1},
 		Paint:      w.paint, OnKey: w.key, OnPointer: w.pointer, OnClosed: w.dispose,
-		OnShortcut: func(event ui.KeyEvent) ui.EventResult {
+		OnShortcut: func(event gfx.KeyEvent) gfx.EventResult {
 			w.ui.shortcuts = w.owner.shortcuts
 			if result, handled := w.ui.remoteDetailShortcut(event); handled {
 				return result
@@ -87,14 +87,14 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 			// rows describe the host when they were read, not now.
 			w.ui.refreshRemoteTools()
 		},
-		OnScroll: func(event ui.ScrollEvent) ui.EventResult {
+		OnScroll: func(event gfx.ScrollEvent) gfx.EventResult {
 			if w.ui.remote.auto.open {
-				return ui.EventResult{Handled: true, Repaint: w.ui.remote.auto.scroll.Wheel(event)}
+				return gfx.EventResult{Handled: true, Repaint: w.ui.remote.auto.scroll.Wheel(event)}
 			}
 			if result, handled := w.ui.remoteProcessWheel(event); handled {
 				return result
 			}
-			return ui.EventResult{Handled: true}
+			return gfx.EventResult{Handled: true}
 		},
 		TextInput: func(c app.TextInputContext) *app.TextInput {
 			if w.ui.modal == modalSudoSFTP && c.ID == hitSudoSFTPPassword {
@@ -293,7 +293,7 @@ func (state *State) finishRemoteTerminalAction() {
 	}
 }
 
-func (w *remoteToolsWindow) click(id ui.ID) {
+func (w *remoteToolsWindow) click(id gfx.ID) {
 	if w.closed {
 		return
 	}
@@ -308,17 +308,17 @@ func (w *remoteToolsWindow) click(id ui.ID) {
 	}
 }
 
-func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
+func (w *remoteToolsWindow) key(event gfx.KeyEvent) gfx.EventResult {
 	if w.ui.modal == modalSudoSFTP {
-		if event.Key == ui.KeyEscape && !event.Repeat {
+		if event.Key == gfx.KeyEscape && !event.Repeat {
 			w.ui.clickSudoSFTP(hitSudoSFTPCancel)
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		if event.Key == ui.KeyEnter && !event.Repeat && event.Target == hitSudoSFTPPassword {
+		if event.Key == gfx.KeyEnter && !event.Repeat && event.Target == hitSudoSFTPPassword {
 			w.ui.submitSudoSFTP()
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	w.ui.shortcuts = w.owner.shortcuts
 	if result, handled := w.ui.remoteProcessDetailsKey(event); handled {
@@ -342,24 +342,24 @@ func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
 	if result := w.ui.remoteRefreshKey(event); result.Handled {
 		return result
 	}
-	if event.Key == ui.KeyEscape && !event.Repeat {
+	if event.Key == gfx.KeyEscape && !event.Repeat {
 		if w.ui.modal == modalForm {
 			w.ui.clickForm(hitFormCancel)
 		} else {
 			w.close()
 		}
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if w.ui.modal == modalForm {
-		if event.Key == ui.KeyEnter && event.Modifiers == 0 && !event.Repeat {
+		if event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Repeat {
 			if editor := w.ui.formEditor(event.Target); editor != nil {
 				if _, composing := editor.Composition(); !composing {
 					w.ui.submitForm()
 				}
-				return ui.EventResult{Handled: true, Repaint: true}
+				return gfx.EventResult{Handled: true, Repaint: true}
 			}
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	var options [6]components.SegmentOption
 	for i, id := range remoteTabHits {
@@ -367,12 +367,12 @@ func (w *remoteToolsWindow) key(event ui.KeyEvent) ui.EventResult {
 	}
 	if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled {
 		w.click(next)
-		return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
+		return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
+func (w *remoteToolsWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	if w.closed {
 		return
 	}
@@ -386,24 +386,24 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 	w.ui.appearance, w.ui.pal, w.ui.theme = w.owner.appearance, w.owner.pal, w.owner.theme
 	w.ui.viewport = size
 	theme := w.ui.Theme()
-	canvas.Fill(ui.Rect{Width: size.Width, Height: size.Height}, theme.Background)
+	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, theme.Background)
 	const pad, buttonHeight, buttonGap = float32(16), float32(32), float32(8)
 	w.paintTitlebar(canvas, size.Width)
 	width := max(size.Width-pad*2, 0)
 	actions, count := w.ui.remoteToolActions()
-	var boxes [8]ui.Rect
+	var boxes [8]gfx.Rect
 	x, y := float32(0), float32(0)
 	for i := 0; i < count; i++ {
-		buttonWidth := min(components.BeginButton(canvas, theme, ui.ID{}, ui.Rect{}).Small().SizeToFit(actions[i].Label).BoundsWidth(), width)
+		buttonWidth := min(components.BeginButton(canvas, theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(actions[i].Label).BoundsWidth(), width)
 		if x > 0 && x+buttonWidth > width {
 			x, y = 0, y+buttonHeight+buttonGap
 		}
-		boxes[i] = ui.Rect{X: pad + x, Y: y, Width: buttonWidth, Height: buttonHeight}
+		boxes[i] = gfx.Rect{X: pad + x, Y: y, Width: buttonWidth, Height: buttonHeight}
 		x += buttonWidth + buttonGap
 	}
 	footerTop := max(pad, size.Height-pad-y-buttonHeight)
 	bodyTop := TitlebarHeight + pad
-	body := ui.Rect{X: pad, Y: bodyTop, Width: width, Height: max(footerTop-bodyTop-12, 0)}
+	body := gfx.Rect{X: pad, Y: bodyTop, Width: width, Height: max(footerTop-bodyTop-12, 0)}
 	toolbar := remoteToolbarHeight + remoteSearchHeight + 8
 	if width < 800 {
 		toolbar += remoteToolbarHeight + 8
@@ -437,19 +437,19 @@ func (w *remoteToolsWindow) paint(canvas *ui.Canvas, size ui.Size) {
 		}
 	}
 	w.ui.paintRemoteRefreshMenu(canvas)
-	w.ui.paintRemoteProcessMenu(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	w.ui.paintRemoteProcessMenu(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
 	if w.ui.modal == modalForm {
-		w.ui.paintFormDialog(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+		w.ui.paintFormDialog(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
 	}
-	w.ui.paintRemoteProcessDetails(canvas, ui.Rect{Width: size.Width, Height: size.Height})
-	w.ui.paintRemoteContainerDetails(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+	w.ui.paintRemoteProcessDetails(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
+	w.ui.paintRemoteContainerDetails(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
 	if w.ui.modal == modalSudoSFTP {
-		w.ui.paintSudoSFTP(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+		w.ui.paintSudoSFTP(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
 	}
 }
 
-func (w *remoteToolsWindow) paintTitlebar(canvas *ui.Canvas, width float32) {
-	canvas.MoveRegion(ui.Rect{Width: width, Height: TitlebarHeight})
+func (w *remoteToolsWindow) paintTitlebar(canvas *gfx.Canvas, width float32) {
+	canvas.MoveRegion(gfx.Rect{Width: width, Height: TitlebarHeight})
 	metrics := w.ui.Theme().Metrics
 	leading, trailing := app.TitlebarInsets()
 	const gap = float32(14)
@@ -459,17 +459,17 @@ func (w *remoteToolsWindow) paintTitlebar(canvas *ui.Canvas, width float32) {
 		return
 	}
 	label := w.ui.messages.Tools.RemoteTitle
-	labelWidth := canvas.TextWidthWeight(label, metrics.FontSizeS, ui.WeightMedium)
+	labelWidth := canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium)
 	if labelWidth > available {
-		label = elide(canvas, label, metrics.FontSizeS, ui.WeightMedium, available)
-		labelWidth = canvas.TextWidthWeight(label, metrics.FontSizeS, ui.WeightMedium)
+		label = elide(canvas, label, metrics.FontSizeS, gfx.WeightMedium, available)
+		labelWidth = canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium)
 	}
-	bar := ui.Rect{X: start, Width: labelWidth, Height: TitlebarHeight}
-	canvas.Label(label, bar, ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: w.ui.pal.text})
+	bar := gfx.Rect{X: start, Width: labelWidth, Height: TitlebarHeight}
+	canvas.Label(label, bar, gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: w.ui.pal.text})
 	if room := available - labelWidth - gap; room > 24 {
 		bar.X, bar.Width = start+labelWidth+gap, room
 		connection := w.session.Title + " · " + w.session.Address
-		canvas.Label(elide(canvas, connection, metrics.FontSizeS, ui.WeightRegular, room), bar,
-			ui.TextStyle{Size: metrics.FontSizeS, Color: w.ui.pal.muted})
+		canvas.Label(elide(canvas, connection, metrics.FontSizeS, gfx.WeightRegular, room), bar,
+			gfx.TextStyle{Size: metrics.FontSizeS, Color: w.ui.pal.muted})
 	}
 }

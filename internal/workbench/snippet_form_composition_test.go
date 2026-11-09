@@ -3,8 +3,8 @@ package workbench
 import (
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 // A snippet dialog never saves an input method's marked text: not on Enter in
@@ -22,10 +22,10 @@ func TestSnippetFormDoesNotSaveAComposition(t *testing.T) {
 		save func()
 	}{
 		{"Enter in the composing field", func() {
-			state.Key(ui.KeyEvent{Target: hitSnippetName, Key: ui.KeyEnter})
+			state.Key(gfx.KeyEvent{Target: hitSnippetName, Key: gfx.KeyEnter})
 		}},
 		{"Enter in the other field", func() {
-			state.Key(ui.KeyEvent{Target: hitSnippetCommand, Key: ui.KeyEnter})
+			state.Key(gfx.KeyEvent{Target: hitSnippetCommand, Key: gfx.KeyEnter})
 		}},
 		{"the Save button", func() {
 			state.Click(hitSnippetSubmit)
@@ -46,7 +46,7 @@ func TestSnippetFormDoesNotSaveAComposition(t *testing.T) {
 
 	// What the input method does with the Enter: commit the marked text.
 	state.snippets.name.Unmark()
-	state.Key(ui.KeyEvent{Target: hitSnippetName, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSnippetName, Key: gfx.KeyEnter})
 	if state.modal != modalNone || len(state.snippets.list) != 1 {
 		t.Fatal("Enter after the commit did not save the snippet")
 	}
@@ -63,7 +63,7 @@ func TestSnippetFormSaveButtonDoesNotStealAComposition(t *testing.T) {
 	state.snippets.name.Insert("deploy")
 	state.snippets.command.Insert("make deploy")
 	state.snippets.name.SetMarkedText("部署", text.Range{End: 2})
-	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitSnippetSubmit})
+	result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitSnippetSubmit})
 	if !result.Handled || result.Focus != hitSnippetName {
 		t.Fatalf("Save press result = %+v", result)
 	}
@@ -100,7 +100,7 @@ func TestSnippetFormSavesWhenTheMarkedRangeIsEmpty(t *testing.T) {
 	state.snippets.name.Insert("deploy")
 	state.snippets.command.Insert("make deploy")
 	state.snippets.name.SetMarkedText("", text.Range{})
-	state.Key(ui.KeyEvent{Target: hitSnippetName, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSnippetName, Key: gfx.KeyEnter})
 	if state.modal != modalNone || len(state.snippets.list) != 1 {
 		t.Fatal("an empty marked range blocked the save")
 	}
@@ -116,11 +116,11 @@ func TestSnippetFormSavesAfterAnInterruptedComposition(t *testing.T) {
 	state.snippets.command.Insert("make deploy")
 	state.snippets.name.SetMarkedText("部署", text.Range{End: 2})
 
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitSnippetCommand})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitSnippetCommand})
 	if _, composing := state.snippets.name.Composition(); composing {
 		t.Fatal("the abandoned field still composes")
 	}
-	state.Key(ui.KeyEvent{Target: hitSnippetName, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSnippetName, Key: gfx.KeyEnter})
 	if state.modal != modalNone || len(state.snippets.list) != 1 {
 		t.Fatal("an interrupted composition blocked the save")
 	}

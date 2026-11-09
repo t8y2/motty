@@ -5,8 +5,8 @@ package workbench
 import (
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
 // A release build has no component gallery: a state file that saved it falls
@@ -35,7 +35,7 @@ func TestReleaseBuildHasNoDebugGallery(t *testing.T) {
 // The inspector is a development tool: its chord means nothing in a release build.
 func TestReleaseBuildHasNoInspector(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	chord := ui.KeyEvent{Modifiers: keymap.Primary | ui.ModifierAlt | ui.ModifierShift, Text: "i"}
+	chord := gfx.KeyEvent{Modifiers: keymap.Primary | gfx.ModifierAlt | gfx.ModifierShift, Text: "i"}
 	if result := state.Shortcut(chord); result.Handled {
 		t.Fatalf("the inspector chord was taken in a release build: %+v", result)
 	}

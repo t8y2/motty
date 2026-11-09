@@ -4,7 +4,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -42,7 +42,7 @@ type formField struct {
 	editor             text.Editor
 	// layout and rect are the rows and place of a multiline field as last painted.
 	layout components.TextareaLayout
-	rect   ui.Rect
+	rect   gfx.Rect
 }
 
 // formDialog is the open form. run is called when the user submits: it returns
@@ -108,7 +108,7 @@ func (form *formDialog) slotHeight(index int) float32 {
 }
 
 // multilineField is the field that has the focus when it is a multiline one.
-func (state *State) multilineField(hit ui.ID) *formField {
+func (state *State) multilineField(hit gfx.ID) *formField {
 	if state.modal != modalForm || hit.Scope() != hitFormFieldList {
 		return nil
 	}
@@ -121,45 +121,45 @@ func (state *State) multilineField(hit ui.ID) *formField {
 // formKey moves the caret of a multiline field by the rows it wrapped to, which
 // the native editor does not know. Enter in such a field is a new line, which the
 // native editor makes; every other form field submits.
-func (state *State) formKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) formKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	field := state.multilineField(event.Target)
 	if field == nil {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if _, composing := field.editor.Composition(); composing {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	movement, extend := components.TextareaMovementForKey(event.Key, event.Modifiers)
 	if movement == components.TextareaMoveNone {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	value := field.editor.String()
 	to := field.layout.Move(value, aiByteOffset(value, field.editor.Caret()), movement)
 	field.editor.MoveTo(utf8.RuneCountInString(value[:to]), extend)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 // scrollForm scrolls the multiline field under the pointer. The wheel never
 // reaches what is behind a dialog.
-func (state *State) scrollForm(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollForm(event gfx.ScrollEvent) gfx.EventResult {
 	for index := 0; index < state.form.count; index++ {
 		field := &state.form.fields[index]
 		if field.multiline && pointInRect(event.X, event.Y, field.rect) {
 			field.layout.ScrollBy(event.DeltaY)
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
-	return ui.EventResult{Handled: true}
+	return gfx.EventResult{Handled: true}
 }
 
-func (state *State) formEditor(hit ui.ID) *text.Editor {
+func (state *State) formEditor(hit gfx.ID) *text.Editor {
 	if hit.Scope() != hitFormFieldList {
 		return nil
 	}
 	return &state.form.fields[uint32(item(hit))].editor
 }
 
-func (state *State) clickForm(id ui.ID) {
+func (state *State) clickForm(id gfx.ID) {
 	switch id {
 	case hitFormCheckbox:
 		if state.form.checkLabel != "" {
@@ -253,7 +253,7 @@ func (form *formDialog) bodyHeight() float32 {
 	return withError(height, form.dialogError+form.testNote)
 }
 
-func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintFormDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	theme := state.Theme()
 	form := &state.form
 	initial := hitFormSubmit
@@ -264,11 +264,11 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitFormClose, InitialFocusID: initial,
-		ContentSize: ui.Size{Width: 540}, FitBody: true, BodyHeight: form.bodyHeight(),
+		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: form.bodyHeight(),
 	})
 	layout := dialog.Begin(form.title, form.description)
-	var slots [maxFormFields]flex.Box
-	var checkbox flex.Box
+	var slots [maxFormFields]ui.Box
+	var checkbox ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(4, 4, 0, 4).Children(func() {
 		for index := 0; index < form.count; index++ {
@@ -276,7 +276,7 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 		if form.checkLabel != "" {
 			f.Column().Height(72).Gap(2).PadSides(8, 0, 4, 0).Children(func() {
-				checkbox = f.Row().Height(24).Items(flex.Center)
+				checkbox = f.Row().Height(24).Items(ui.Center)
 				checkbox.Children(func() {
 					f.Slot().Width(28)
 					f.Text(form.checkLabel).FontSize(metrics.FontSizeM).Color(state.pal.text)
@@ -286,7 +286,7 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 		state.problemLine(f, form.dialogError)
 		if form.dialogError == "" && form.testNote != "" {
-			f.Text(form.testNote).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.success).LineHeight(18)
+			f.Text(form.testNote).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.success).LineHeight(18)
 		}
 	})
 	f.End()
@@ -298,7 +298,7 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		value := field.editor.String()
 		focused := canvas.Focused() == id
 		if field.multiline {
-			state.paintFormTextarea(canvas, field, ui.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: slot.Y + slot.Height - content.Y}, id, focused)
+			state.paintFormTextarea(canvas, field, gfx.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: slot.Y + slot.Height - content.Y}, id, focused)
 			continue
 		}
 		state.paintSecretInput(canvas, content, components.InputSnapshot{
@@ -309,8 +309,8 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	if form.checkLabel != "" {
 		rect := checkbox.Rect()
 		side := components.CheckboxExtent(theme)
-		components.BeginCheckbox(canvas, theme, hitFormCheckbox, ui.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, form.checked).Label(form.checkLabel).Paint()
-		canvas.HitLabel(hitFormCheckbox, ui.Rect{X: rect.X + 28, Y: rect.Y, Width: max(rect.Width-28, 0), Height: rect.Height}, form.checkLabel, false)
+		components.BeginCheckbox(canvas, theme, hitFormCheckbox, gfx.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, form.checked).Label(form.checkLabel).Paint()
+		canvas.HitLabel(hitFormCheckbox, gfx.Rect{X: rect.X + 28, Y: rect.Y, Width: max(rect.Width-28, 0), Height: rect.Height}, form.checkLabel, false)
 	}
 	variant := components.ButtonDefault
 	if form.danger {
@@ -327,7 +327,7 @@ func (state *State) paintFormDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog.End()
 }
 
-func (state *State) paintFormTextarea(canvas *ui.Canvas, field *formField, bounds ui.Rect, id ui.ID, focused bool) {
+func (state *State) paintFormTextarea(canvas *gfx.Canvas, field *formField, bounds gfx.Rect, id gfx.ID, focused bool) {
 	value := field.editor.String()
 	selection := field.editor.Selection()
 	snapshot := components.TextareaSnapshot{

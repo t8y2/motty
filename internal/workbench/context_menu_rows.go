@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // contextMenuRow is the height of an item row in every right-click menu: a dense
@@ -36,7 +36,7 @@ func (state *State) copyConnectionText(value string) {
 
 // contextMenuTheme is the theme the right-click menus are measured and painted
 // with: a point smaller text than the window's, which Viva takes from the theme.
-func (state *State) contextMenuTheme() ui.Theme {
+func (state *State) contextMenuTheme() gfx.Theme {
 	theme := state.Theme()
 	theme.Metrics.FontSizeM--
 	return theme
@@ -80,7 +80,7 @@ func (rows *menuRows) separate() {
 }
 
 // size is the width and height the menu needs.
-func (rows *menuRows) size(canvas *ui.Canvas, theme ui.Theme) (width, height float32) {
+func (rows *menuRows) size(canvas *gfx.Canvas, theme gfx.Theme) (width, height float32) {
 	height = contextMenuPadding
 	for _, entry := range rows.entries[:rows.count] {
 		if entry.separator {
@@ -95,7 +95,7 @@ func (rows *menuRows) size(canvas *ui.Canvas, theme ui.Theme) (width, height flo
 
 // paint adds every row to menu. A row that reserved a trailing slot is handed to
 // slot with the rectangle, to paint what it holds.
-func (rows *menuRows) paint(menu *components.ContextMenu, slot func(item components.ContextMenuItem, bounds ui.Rect)) {
+func (rows *menuRows) paint(menu *components.ContextMenu, slot func(item components.ContextMenuItem, bounds gfx.Rect)) {
 	for _, entry := range rows.entries[:rows.count] {
 		switch {
 		case entry.separator:

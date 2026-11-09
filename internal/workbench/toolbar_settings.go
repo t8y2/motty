@@ -3,7 +3,7 @@ package workbench
 import (
 	"slices"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 type toolbarGroup uint8
@@ -20,7 +20,7 @@ type toolbarEntry struct {
 }
 type toolbarSpec struct {
 	key  string
-	id   ui.ID
+	id   gfx.ID
 	icon uint8
 }
 
@@ -92,7 +92,7 @@ func (prefs *toolbarPreferences) entries(group toolbarGroup) []toolbarEntry {
 	return prefs.layouts[group]
 }
 
-func (state *State) toolbarVisible(group toolbarGroup, id ui.ID) bool {
+func (state *State) toolbarVisible(group toolbarGroup, id gfx.ID) bool {
 	// The latency badge belongs to the Show latency preference, not to the
 	// layout: a saved entry can be stale, and RDP desktops share the switch.
 	if group == toolbarTerminal && id == hitToolbarLatency {
@@ -188,7 +188,7 @@ func (prefs *toolbarPreferences) customize(group toolbarGroup) []toolbarEntry {
 	return prefs.layouts[group]
 }
 
-func (state *State) toolbarLabel(id ui.ID) string {
+func (state *State) toolbarLabel(id gfx.ID) string {
 	m := state.messages
 	switch id {
 	case hitTransferCenter:

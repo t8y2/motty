@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -72,8 +72,8 @@ func TestWorkspaceLaunchKeepsAFailedPaneAndRetriesOnlyThatSession(t *testing.T) 
 	if !state.ActivatePane(failed.ID) {
 		t.Fatal("failed pane could not be activated")
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, state.paneIdentity(failed, hitConnRetry)); !ok {
 		t.Fatal("the failed pane does not paint its retry control")
 	}

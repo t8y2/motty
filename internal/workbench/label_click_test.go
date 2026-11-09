@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func labelDriver(t *testing.T, state *State) *app.Driver {
 	t.Helper()
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	driver, err := app.NewDriver(app.Config{Title: "labels", Width: 1100, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize}, &canvas)
 	if err != nil {
@@ -22,7 +22,7 @@ func labelDriver(t *testing.T, state *State) *app.Driver {
 }
 
 // labelPoint is the middle of the label hit of a control: where its words are.
-func labelPoint(t *testing.T, driver *app.Driver, id ui.ID) (x, y float32) {
+func labelPoint(t *testing.T, driver *app.Driver, id gfx.ID) (x, y float32) {
 	t.Helper()
 	for _, hit := range driver.Snapshot().Hits {
 		if hit.ID == id && hit.IsLabel {

@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
-func scopeHint(canvas *ui.Canvas) string {
+func scopeHint(canvas *gfx.Canvas) string {
 	for _, hit := range canvas.Hits() {
 		if strings.Contains(hit.Hint, "Filtering covers loaded items only") {
 			return hit.Hint
@@ -23,9 +23,9 @@ func scopeHint(canvas *ui.Canvas) string {
 	return ""
 }
 
-func paintLocalScope(state *State) *ui.Canvas {
-	canvas := new(ui.Canvas)
-	state.Paint(canvas, ui.Size{Width: 1400, Height: 900})
+func paintLocalScope(state *State) *gfx.Canvas {
+	canvas := new(gfx.Canvas)
+	state.Paint(canvas, gfx.Size{Width: 1400, Height: 900})
 	return canvas
 }
 

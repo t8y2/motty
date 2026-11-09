@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 )
 
@@ -134,9 +134,9 @@ func (state *State) setTerminalFontSize(value float32) bool {
 	return true
 }
 
-func (state *State) setTerminalFontFace(face ui.MonoFace) bool {
-	if face > ui.MonoClassic && ui.MonoFamilyName(face) == "" && len(ui.MonoFallbacks(face)) == 0 && !ui.MonoIsClassic(face) {
-		face = ui.MonoSystem
+func (state *State) setTerminalFontFace(face gfx.MonoFace) bool {
+	if face > gfx.MonoClassic && gfx.MonoFamilyName(face) == "" && len(gfx.MonoFallbacks(face)) == 0 && !gfx.MonoIsClassic(face) {
+		face = gfx.MonoSystem
 	}
 	if state.terminalFontFace == face {
 		return false
@@ -152,11 +152,11 @@ func terminalFontFaceString(classic bool) string {
 	return "system" // a named family is kept beside it, in its own field
 }
 
-func terminalFontFaceFromString(value string) ui.MonoFace {
+func terminalFontFaceFromString(value string) gfx.MonoFace {
 	if value == "classic" {
-		return ui.MonoClassic
+		return gfx.MonoClassic
 	}
-	return ui.MonoSystem
+	return gfx.MonoSystem
 }
 
 type terminalOptionMode uint8
@@ -273,7 +273,7 @@ func (state *State) openSettings() {
 // scrollSettings moves the settings page. As everywhere in Viva a positive
 // delta reveals content below. A wheel notch is worth at least a row's height
 // of travel; a trackpad moves it by exactly what it reports.
-func (state *State) scrollSettings(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollSettings(event gfx.ScrollEvent) gfx.EventResult {
 	step := event.StepY(24)
 	if state.schemeBrowserOpen {
 		if pointInRect(event.X, event.Y, state.schemeDrawerBody) {
@@ -281,18 +281,18 @@ func (state *State) scrollSettings(event ui.ScrollEvent) ui.EventResult {
 			result.Handled = true
 			return result
 		}
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	view := &state.settings
 	nav := view.navRect
 	if nav.Width > 0 && event.X >= nav.X && event.X < nav.X+nav.Width && event.Y >= nav.Y && event.Y < nav.Y+nav.Height {
 		before := view.navScroll
 		view.navScroll = min(max(before+step, 0), max(view.navContent-nav.Height, 0))
-		return ui.EventResult{Handled: true, Repaint: view.navScroll != before}
+		return gfx.EventResult{Handled: true, Repaint: view.navScroll != before}
 	}
 	before := state.settingsScroll
 	state.settingsScroll = min(max(before+step, 0), max(state.settingsContent-view.pageView, 0))
-	return ui.EventResult{Handled: true, Repaint: state.settingsScroll != before}
+	return gfx.EventResult{Handled: true, Repaint: state.settingsScroll != before}
 }
 
 // chooseLanguage is the user picking a language: it sticks, so the system's
@@ -353,7 +353,7 @@ func (state *State) setLanguage(language i18n.Language) bool {
 	return true
 }
 
-func (state *State) clickSettings(id ui.ID) bool {
+func (state *State) clickSettings(id gfx.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
@@ -746,24 +746,24 @@ func (state *State) settingsCursorStyleOptions() []components.SegmentOption {
 	}
 }
 
-func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Target == hitSettingsLocalShell && localShellSettingVisible() && !state.localShellMenu.open && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+	if event.Target == hitSettingsLocalShell && localShellSettingVisible() && !state.localShellMenu.open && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		state.refreshLocalShells()
 		if len(state.localShellMenu.choices) == 0 {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		state.localShellMenu.open = true
-		return ui.EventResult{Focus: hitSettingsLocalShellItems.At(max(0, state.localShellSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
+		return gfx.EventResult{Focus: hitSettingsLocalShellItems.At(max(0, state.localShellSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
-	if event.Target == hitSettingsEditor && !state.editorMenu.open && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+	if event.Target == hitSettingsEditor && !state.editorMenu.open && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		state.refreshEditors()
 		state.editorMenu.open = true
-		return ui.EventResult{Focus: hitSettingsEditorItems.At(max(0, state.editorSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
+		return gfx.EventResult{Focus: hitSettingsEditorItems.At(max(0, state.editorSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
-	var next ui.ID
+	var next gfx.ID
 	var handled bool
 	switch event.Target {
 	case hitSettingsPanelLeft, hitSettingsPanelRight:
@@ -845,11 +845,11 @@ func (state *State) settingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		options := state.settingsAgentOptions()
 		next, handled = components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if !handled {
-		return ui.EventResult{}, true
+		return gfx.EventResult{}, true
 	}
 	state.Click(next)
-	return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
+	return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
 }

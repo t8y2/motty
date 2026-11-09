@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -28,15 +28,15 @@ type workspaceCardRegion struct {
 	view     workspaceCardView
 	template string
 	index    int
-	id       ui.ID
-	bounds   ui.Rect
-	viewport ui.Rect
+	id       gfx.ID
+	bounds   gfx.Rect
+	viewport gfx.Rect
 }
 
 type workspaceCardDrag struct {
 	pressed, active bool
 	region          workspaceCardRegion
-	start, at       ui.Point
+	start, at       gfx.Point
 	target          int
 	zone            workspaceCardZone
 	order           []workspaceArrangementItem
@@ -58,7 +58,7 @@ const (
 // workspaceCardEdge is the share of a card's width or height that counts as its edge.
 const workspaceCardEdge = float32(0.25)
 
-func workspaceCardZoneAt(box ui.Rect, at ui.Point) workspaceCardZone {
+func workspaceCardZoneAt(box gfx.Rect, at gfx.Point) workspaceCardZone {
 	x, y := (at.X-box.X)/max(box.Width, 1), (at.Y-box.Y)/max(box.Height, 1)
 	zone, depth := zoneSwap, workspaceCardEdge
 	for _, edge := range [...]struct {
@@ -124,10 +124,10 @@ func appendWorkspaceGridCells(cells []FractionBounds, layout *layoutcore.Layout,
 	return appendWorkspaceGridCells(cells, layout, node.Second, second)
 }
 
-func (state *State) paintWorkspaceCards(canvas *ui.Canvas, content, viewport ui.Rect, items []workspaceArrangementItem, spec layoutcore.LayoutSpec, view workspaceCardView, template string, templateIndex int) {
+func (state *State) paintWorkspaceCards(canvas *gfx.Canvas, content, viewport gfx.Rect, items []workspaceArrangementItem, spec layoutcore.LayoutSpec, view workspaceCardView, template string, templateIndex int) {
 	cells := workspaceLayoutCells(len(items), spec)
 	for index, cell := range cells {
-		box := pixelBounds(content, cell).Inset(ui.All(4))
+		box := pixelBounds(content, cell).Inset(gfx.All(4))
 		if box.Y+box.Height <= viewport.Y || box.Y >= viewport.Y+viewport.Height {
 			continue
 		}
@@ -162,7 +162,7 @@ func (state *State) workspaceCardText(item workspaceArrangementItem) (Host, stri
 	return Host{}, item.host, state.messages.WorkspaceTemplateMissingFmt, "", false
 }
 
-func (state *State) paintWorkspaceHostCard(canvas *ui.Canvas, region workspaceCardRegion, item workspaceArrangementItem, count int) {
+func (state *State) paintWorkspaceHostCard(canvas *gfx.Canvas, region workspaceCardRegion, item workspaceArrangementItem, count int) {
 	pal, box := state.pal, region.bounds
 	host, name, address, detail, available := state.workspaceCardText(item)
 	background := pal.surfaceSoft
@@ -178,24 +178,24 @@ func (state *State) paintWorkspaceHostCard(canvas *ui.Canvas, region workspaceCa
 	if !available {
 		color = state.workspaceStatusInk(pal.warning)
 	}
-	icon := ui.Rect{X: box.X + 10, Y: box.Y + 12, Width: 22, Height: 22}
+	icon := gfx.Rect{X: box.X + 10, Y: box.Y + 12, Width: 22, Height: 22}
 	if available {
 		state.paintHostCatalogIcon(canvas, host, icon, background)
 	} else {
 		canvas.DrawIcon(lucideIcons[iconAlert], icon, color)
 	}
 	nameWidth := max(0, box.Width-58)
-	monitorLabel(canvas, elide(canvas, name, 13, ui.WeightSemibold, nameWidth), ui.Rect{X: box.X + 40, Y: box.Y + 10, Width: nameWidth, Height: 24}, 13, color, ui.WeightSemibold)
+	monitorLabel(canvas, elide(canvas, name, 13, gfx.WeightSemibold, nameWidth), gfx.Rect{X: box.X + 40, Y: box.Y + 10, Width: nameWidth, Height: 24}, 13, color, gfx.WeightSemibold)
 	paintWorkspaceCardHandle(canvas, box, pal.muted)
 	ink := state.workspaceStatusInk(pal.muted)
 	width := max(0, box.Width-20)
-	monitorLabel(canvas, elide(canvas, address, 12, ui.WeightRegular, width), ui.Rect{X: box.X + 10, Y: box.Y + 40, Width: width, Height: 20}, 12, ink, ui.WeightRegular)
+	monitorLabel(canvas, elide(canvas, address, 12, gfx.WeightRegular, width), gfx.Rect{X: box.X + 10, Y: box.Y + 40, Width: width, Height: 20}, 12, ink, gfx.WeightRegular)
 	detailWidth := width
 	if region.view == workspaceCardsDraft && state.workspaceDraft.mode == workspaceDraftEdit {
 		detailWidth = max(0, box.Width-44)
 	}
-	monitorLabel(canvas, elide(canvas, detail, 11, ui.WeightRegular, detailWidth), ui.Rect{X: box.X + 10, Y: box.Y + 66, Width: detailWidth, Height: 18}, 11, ink, ui.WeightRegular)
-	canvas.HitWithOptions(region.id, box, name, ui.HitOptions{Role: ui.RoleButton, Cursor: ui.PointerCursorHand, Hint: state.messages.WorkspaceCardReorderHint,
+	monitorLabel(canvas, elide(canvas, detail, 11, gfx.WeightRegular, detailWidth), gfx.Rect{X: box.X + 10, Y: box.Y + 66, Width: detailWidth, Height: 18}, 11, ink, gfx.WeightRegular)
+	canvas.HitWithOptions(region.id, box, name, gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand, Hint: state.messages.WorkspaceCardReorderHint,
 		Description: address + " · " + detail, PosInSet: int32(region.index + 1), SetSize: int32(count), Selected: active})
 	drag := &state.workspaceCardDrag
 	if workspaceCardDropTarget(drag, region) {
@@ -207,19 +207,19 @@ func (state *State) paintWorkspaceHostCard(canvas *ui.Canvas, region workspaceCa
 	}
 }
 
-func (state *State) paintWorkspaceCardDrag(canvas *ui.Canvas, view workspaceCardView, template string) {
+func (state *State) paintWorkspaceCardDrag(canvas *gfx.Canvas, view workspaceCardView, template string) {
 	drag := &state.workspaceCardDrag
 	if !drag.active || drag.region.view != view || drag.region.template != template {
 		return
 	}
-	box := ui.Rect{X: drag.at.X + 12, Y: drag.at.Y + 12, Width: min(176, drag.region.bounds.Width), Height: 32}
+	box := gfx.Rect{X: drag.at.X + 12, Y: drag.at.Y + 12, Width: min(176, drag.region.bounds.Width), Height: 32}
 	canvas.PushLayer(tabDragLayer)
 	canvas.RoundedBorder(box, radius.control, 1, state.pal.accent, state.pal.surface)
 	label := fmt.Sprintf("%d", drag.region.index+1)
 	if items := state.workspaceItemsForRegion(drag.region); drag.region.index < len(items) {
 		_, label, _, _, _ = state.workspaceCardText(items[drag.region.index])
 	}
-	monitorLabel(canvas, elide(canvas, label, 12, ui.WeightMedium, max(0, box.Width-16)), box.Inset(ui.All(8)), 12, state.pal.text, ui.WeightMedium)
+	monitorLabel(canvas, elide(canvas, label, 12, gfx.WeightMedium, max(0, box.Width-16)), box.Inset(gfx.All(8)), 12, state.pal.text, gfx.WeightMedium)
 	canvas.PopLayer()
 }
 
@@ -248,16 +248,16 @@ func workspaceCardDropTarget(drag *workspaceCardDrag, region workspaceCardRegion
 	return drag.active && drag.region.view == region.view && drag.region.template == region.template && drag.target == region.index
 }
 
-func paintWorkspaceCardHandle(canvas *ui.Canvas, box ui.Rect, color ui.Color) {
+func paintWorkspaceCardHandle(canvas *gfx.Canvas, box gfx.Rect, color gfx.Color) {
 	for row := 0; row < 3; row++ {
 		for column := 0; column < 2; column++ {
-			canvas.Rounded(ui.Rect{X: box.X + box.Width - 18 + float32(column)*4, Y: box.Y + 15 + float32(row)*4, Width: 1.5, Height: 1.5}, .75, color)
+			canvas.Rounded(gfx.Rect{X: box.X + box.Width - 18 + float32(column)*4, Y: box.Y + 15 + float32(row)*4, Width: 1.5, Height: 1.5}, .75, color)
 		}
 	}
 }
 
 // workspaceCardZoneBar is the half of the card the docked card would take.
-func workspaceCardZoneBar(box ui.Rect, zone workspaceCardZone) ui.Rect {
+func workspaceCardZoneBar(box gfx.Rect, zone workspaceCardZone) gfx.Rect {
 	switch zone {
 	case zoneLeft:
 		box.Width /= 2
@@ -270,5 +270,5 @@ func workspaceCardZoneBar(box ui.Rect, zone workspaceCardZone) ui.Rect {
 		box.Y += box.Height / 2
 		box.Height /= 2
 	}
-	return box.Inset(ui.All(2))
+	return box.Inset(gfx.All(2))
 }

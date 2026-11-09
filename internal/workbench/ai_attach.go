@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
@@ -384,7 +384,7 @@ func (state *State) aiDropHover(over bool) bool {
 }
 
 // paintAIDrop marks the panel while files are dragged over it.
-func (state *State) paintAIDrop(canvas *ui.Canvas) {
+func (state *State) paintAIDrop(canvas *gfx.Canvas) {
 	if panel := &state.ai.panel; panel.dropping && panel.rect.Width > 0 {
 		state.paintSFTPDropOverlay(canvas, panel.rect, state.messages.AIPanel.AttachDropHint)
 	}
@@ -392,14 +392,14 @@ func (state *State) paintAIDrop(canvas *ui.Canvas) {
 
 // aiLayoutChips places the chips of the waiting attachments in rows of the panel's
 // width, and returns how many rows there are.
-func (state *State) aiLayoutChips(canvas *ui.Canvas, width float32) {
+func (state *State) aiLayoutChips(canvas *gfx.Canvas, width float32) {
 	panel := &state.ai.panel
 	panel.chips = panel.chips[:0]
 	panel.chipRows = 0
 	row, used := 0, float32(0)
 	for index := range state.ai.attachments {
 		name := aiAttachmentName(state.ai.attachments[index].file.Name)
-		text := min(canvas.TextWidthWeight(name, aiSmallSize, ui.WeightMedium), aiChipTextMax)
+		text := min(canvas.TextWidthWeight(name, aiSmallSize, gfx.WeightMedium), aiChipTextMax)
 		// icon, text, remove button and the space between and around them
 		chip := min(8+13+5+text+5+18+4, width)
 		if used > 0 && used+aiChipGap+chip > width {
@@ -419,7 +419,7 @@ func (state *State) aiLayoutChips(canvas *ui.Canvas, width float32) {
 
 // declareAIChips declares the waiting attachments above the message box, each a
 // pill with its name and a button that takes it out again.
-func (state *State) declareAIChips(f *flex.Frame) {
+func (state *State) declareAIChips(f *ui.Frame) {
 	chips := state.ai.panel.chips
 	f.Column().Gap(aiChipGap).Children(func() {
 		for start := 0; start < len(chips); {
@@ -438,7 +438,7 @@ func (state *State) declareAIChips(f *flex.Frame) {
 	})
 }
 
-func (state *State) declareAIChip(f *flex.Frame, chip aiChip) {
+func (state *State) declareAIChip(f *ui.Frame, chip aiChip) {
 	pal, m := state.pal, state.messages.AIPanel
 	attachment := &state.ai.attachments[chip.index]
 	name := aiAttachmentName(attachment.file.Name)
@@ -450,16 +450,16 @@ func (state *State) declareAIChip(f *flex.Frame, chip aiChip) {
 	}
 	remove := hitAIAttachRemove.At(chip.index)
 	label := fmt.Sprintf(m.AttachRemoveFmt, name)
-	fill := ui.Color{}
+	fill := gfx.Color{}
 	if f.Canvas().Pressed() == remove || f.Canvas().Hovered() == remove {
 		fill = pal.surfaceHot
 	}
-	f.Row().Width(chip.width).Height(aiChipHeight).PadSides(0, 3, 0, 8).Gap(5).Shrink(0).Items(flex.Center).
+	f.Row().Width(chip.width).Height(aiChipHeight).PadSides(0, 3, 0, 8).Gap(5).Shrink(0).Items(ui.Center).
 		Background(pal.surfaceSoft).Radius(aiChipHeight / 2).Children(func() {
 		f.Icon(lucideIcons[icon]).Size(13, 13).Color(pal.muted).Shrink(0)
-		f.Text(name).FontSize(aiSmallSize).Weight(ui.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Shrink(1).Grow(1)
+		f.Text(name).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Shrink(1).Grow(1)
 		f.Column().Size(18, 18).Shrink(0).Center().Background(fill).Radius(9).
-			HitWith(remove, label, ui.HitOptions{Role: ui.RoleButton, Hint: label}).Children(func() {
+			HitWith(remove, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label}).Children(func() {
 			f.Icon(lucideIcons[iconClose]).Size(11, 11).Color(pal.muted)
 		})
 	})
@@ -467,10 +467,10 @@ func (state *State) declareAIChip(f *flex.Frame, chip aiChip) {
 
 // declareAIAttachButton declares the paperclip in the message box that opens the
 // dialog for files to attach.
-func (state *State) declareAIAttachButton(f *flex.Frame) {
+func (state *State) declareAIAttachButton(f *ui.Frame) {
 	pal, label := state.pal, state.messages.AIPanel.Attach
 	foreground := pal.muted
-	var fill ui.Color
+	var fill gfx.Color
 	switch {
 	case f.Canvas().Pressed() == hitAIAttach:
 		fill, foreground = pal.surfaceHot, pal.text
@@ -478,20 +478,20 @@ func (state *State) declareAIAttachButton(f *flex.Frame) {
 		fill = pal.surfaceSoft
 	}
 	f.Column().Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
-		HitWith(hitAIAttach, label, ui.HitOptions{Role: ui.RoleButton, Hint: label}).Children(func() {
+		HitWith(hitAIAttach, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label}).Children(func() {
 		f.Icon(lucideIcons[iconPaperclip]).Size(16, 16).Color(foreground)
 	})
 }
 
-func (state *State) declareAIUploadButton(f *flex.Frame) {
+func (state *State) declareAIUploadButton(f *ui.Frame) {
 	pal, label := state.pal, state.messages.AIPanel.Upload
 	foreground := pal.muted
-	var fill ui.Color
+	var fill gfx.Color
 	if f.Canvas().Pressed() == hitAIUpload || f.Canvas().Hovered() == hitAIUpload {
 		fill, foreground = pal.surfaceSoft, pal.text
 	}
 	f.Column().Size(aiSendSize, aiSendSize).Shrink(0).Center().Background(fill).Radius(aiSendSize/2).
-		HitWith(hitAIUpload, label, ui.HitOptions{Role: ui.RoleButton, Hint: label}).Children(func() {
+		HitWith(hitAIUpload, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label}).Children(func() {
 		f.Icon(lucideIcons[iconUpload]).Size(16, 16).Color(foreground)
 	})
 }

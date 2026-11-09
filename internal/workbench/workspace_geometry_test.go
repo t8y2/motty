@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestWorkspacePaneCountsKeepRowMajorGeometryInsideTheFrame(t *testing.T) {
@@ -15,7 +15,7 @@ func TestWorkspacePaneCountsKeepRowMajorGeometryInsideTheFrame(t *testing.T) {
 				indexes[index] = index
 			}
 			launchTemporaryWorkspace(t, state, indexes...)
-			size := ui.Size{Width: 1400, Height: 900}
+			size := gfx.Size{Width: 1400, Height: 900}
 			frame := state.workspacePixelBounds(size)
 			canvas, _ := paintAt(state, size)
 			panes := state.Panes(state.panes[:0])
@@ -58,9 +58,9 @@ func TestWorkspacePaneCountsKeepRowMajorGeometryInsideTheFrame(t *testing.T) {
 func TestWorkspaceNarrowWindowKeepsPanelsAndControlsInsideTheWindow(t *testing.T) {
 	state := manyHostsState(t, 8)
 	launchTemporaryWorkspace(t, state, 0, 1, 2, 3, 4, 5, 6, 7)
-	size := ui.Size{Width: 420, Height: 620}
+	size := gfx.Size{Width: 420, Height: 620}
 	canvas, _ := paintAt(state, size)
-	for _, id := range []ui.ID{
+	for _, id := range []gfx.ID{
 		hitWorkspaceHeaderBack,
 		hitWorkspaceHeaderBroadcast,
 		hitWorkspaceHeaderLayout,

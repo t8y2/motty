@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/workbench/icons"
 	layoutcore "motty/internal/workspace"
 )
@@ -30,11 +30,11 @@ type workspaceDraft struct {
 	layout         layoutcore.LayoutSpec
 	layoutTouched  bool
 	error          string
-	bounds         ui.Rect
+	bounds         gfx.Rect
 	content        float32
 	scroll         float32
 	previewScroll  float32
-	previewBounds  ui.Rect
+	previewBounds  gfx.Rect
 	previewContent float32
 }
 
@@ -78,7 +78,7 @@ func (state *State) openWorkspaceDraftEdit(templateID string) {
 	state.modal = modalWorkspaceDraft
 }
 
-func (state *State) clickWorkspaceDraft(id ui.ID) {
+func (state *State) clickWorkspaceDraft(id gfx.ID) {
 	draft := &state.workspaceDraft
 	switch {
 	case id == hitWorkspaceDraftDismiss || id == hitWorkspaceDraftCancel:
@@ -334,7 +334,7 @@ func cloneWorkspaceTemplates(templates []WorkspaceTemplate) []WorkspaceTemplate 
 	return cloned
 }
 
-func (state *State) workspaceTemplateLauncherFocus(templateID string) ui.ID {
+func (state *State) workspaceTemplateLauncherFocus(templateID string) gfx.ID {
 	if index := slices.IndexFunc(state.templates, func(template WorkspaceTemplate) bool {
 		return template.ID == templateID
 	}); index >= 0 {
@@ -395,11 +395,11 @@ func (state *State) workspaceDraftModeLabel() string {
 	return state.messages.WorkspaceDraftTemporary
 }
 
-func (state *State) paintWorkspaceDraft(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintWorkspaceDraft(canvas *gfx.Canvas, viewport gfx.Rect) {
 	state.paintWorkspaceDraftDialog(canvas, viewport)
 }
 
-func (state *State) paintWorkspaceDraftDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintWorkspaceDraftDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	draft, m, theme := &state.workspaceDraft, state.messages, state.Theme()
 	title, submit := m.WorkspaceDraftTitleTemporary, m.WorkspaceDraftLaunch
 	initial := hitWorkspaceDraftTemporary
@@ -412,7 +412,7 @@ func (state *State) paintWorkspaceDraftDialog(canvas *ui.Canvas, viewport ui.Rec
 	}
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitWorkspaceDraftDismiss, CloseID: hitWorkspaceDraftCancel,
-		InitialFocusID: initial, ContentSize: ui.Size{Width: 860}, FitBody: true,
+		InitialFocusID: initial, ContentSize: gfx.Size{Width: 860}, FitBody: true,
 		BodyHeight: min(440, max(0, viewport.Height-236)),
 	})
 	layout := dialog.Begin(title, description)
@@ -427,11 +427,11 @@ func (state *State) paintWorkspaceDraftDialog(canvas *ui.Canvas, viewport ui.Rec
 		if draft.mode == workspaceDraftFixed {
 			selectedMode = hitWorkspaceDraftFixed
 		}
-		components.BeginSegmentedControl(canvas, theme, ui.Rect{X: body.X, Y: body.Y, Width: min(300, body.Width), Height: 32}, modes[:], selectedMode).Paint()
+		components.BeginSegmentedControl(canvas, theme, gfx.Rect{X: body.X, Y: body.Y, Width: min(300, body.Width), Height: 32}, modes[:], selectedMode).Paint()
 		y += 44
 	}
 	if draft.mode == workspaceDraftFixed || draft.mode == workspaceDraftEdit {
-		field := components.BeginField(canvas, theme, ui.Rect{X: body.X, Y: y, Width: body.Width, Height: 60}).For(hitWorkspaceDraftName)
+		field := components.BeginField(canvas, theme, gfx.Rect{X: body.X, Y: y, Width: body.Width, Height: 60}).For(hitWorkspaceDraftName)
 		control := field.Paint(m.WorkspaceDraftName, "", "")
 		components.PaintInput(canvas, theme, control, components.InputSnapshot{
 			ID: hitWorkspaceDraftName, Label: m.WorkspaceDraftName,
@@ -448,19 +448,19 @@ func (state *State) paintWorkspaceDraftDialog(canvas *ui.Canvas, viewport ui.Rec
 	wide := body.Width >= 620
 	if wide {
 		hostWidth = body.Width * .48
-		state.paintWorkspaceDraftLayout(canvas, ui.Rect{X: body.X + hostWidth + 24, Y: y, Width: max(0, body.Width-hostWidth-24), Height: max(0, body.Y+body.Height-y-32)}, false)
+		state.paintWorkspaceDraftLayout(canvas, gfx.Rect{X: body.X + hostWidth + 24, Y: y, Width: max(0, body.Width-hostWidth-24), Height: max(0, body.Y+body.Height-y-32)}, false)
 	} else {
-		state.paintWorkspaceDraftLayout(canvas, ui.Rect{X: body.X, Y: y, Width: body.Width, Height: 184}, true)
+		state.paintWorkspaceDraftLayout(canvas, gfx.Rect{X: body.X, Y: y, Width: body.Width, Height: 184}, true)
 		y += 196
 	}
-	components.PaintInputGroup(canvas, theme, ui.Rect{X: body.X, Y: y, Width: hostWidth, Height: 34}, components.InputGroupSnapshot{
+	components.PaintInputGroup(canvas, theme, gfx.Rect{X: body.X, Y: y, Width: hostWidth, Height: 34}, components.InputGroupSnapshot{
 		ID: hitWorkspaceDraftSearch, Label: m.WorkspaceDraftHostSearch,
 		Value: draft.query.String(), Placeholder: m.WorkspaceDraftHostSearch,
 		NativeEditing: canvas.Focused() == hitWorkspaceDraftSearch && draft.query.String() != "",
 		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: icons.Search},
 	})
 	y += 46
-	draft.bounds = ui.Rect{X: body.X, Y: y, Width: hostWidth, Height: max(0, body.Y+body.Height-y-32)}
+	draft.bounds = gfx.Rect{X: body.X, Y: y, Width: hostWidth, Height: max(0, body.Y+body.Height-y-32)}
 	state.paintWorkspaceDraftHosts(canvas)
 	hint, color := m.WorkspaceDraftLimit, state.pal.muted
 	if draft.mode == workspaceDraftTemporary {
@@ -476,7 +476,7 @@ func (state *State) paintWorkspaceDraftDialog(canvas *ui.Canvas, viewport ui.Rec
 	if draft.error != "" {
 		hint, color = draft.error, state.pal.danger
 	}
-	monitorLabel(canvas, elide(canvas, hint, 12, ui.WeightRegular, body.Width), ui.Rect{X: body.X, Y: body.Y + body.Height - 22, Width: body.Width, Height: 22}, 12, color, ui.WeightRegular)
+	monitorLabel(canvas, elide(canvas, hint, 12, gfx.WeightRegular, body.Width), gfx.Rect{X: body.X, Y: body.Y + body.Height - 22, Width: body.Width, Height: 22}, 12, color, gfx.WeightRegular)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitWorkspaceDraftCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitWorkspaceDraftSubmit, Label: submit},
@@ -484,26 +484,26 @@ func (state *State) paintWorkspaceDraftDialog(canvas *ui.Canvas, viewport ui.Rec
 	dialog.End()
 }
 
-func (state *State) paintWorkspaceDraftLayout(canvas *ui.Canvas, bounds ui.Rect, compact bool) {
+func (state *State) paintWorkspaceDraftLayout(canvas *gfx.Canvas, bounds gfx.Rect, compact bool) {
 	draft, m, pal := &state.workspaceDraft, state.messages, state.pal
 	countLabel := fmt.Sprintf(m.WorkspaceDraftSelectedFmt, state.workspaceDraftSelectionCount())
 	countWidth := canvas.TextWidth(countLabel, 12) + 4
-	monitorLabel(canvas, m.WorkspaceDraftPreview, ui.Rect{X: bounds.X, Y: bounds.Y, Width: max(0, bounds.Width-countWidth-12), Height: 22}, 13, pal.text, ui.WeightSemibold)
-	monitorRight(canvas, countLabel, ui.Rect{X: bounds.X + bounds.Width - countWidth, Y: bounds.Y, Width: countWidth, Height: 22}, 12, pal.muted, ui.WeightRegular)
+	monitorLabel(canvas, m.WorkspaceDraftPreview, gfx.Rect{X: bounds.X, Y: bounds.Y, Width: max(0, bounds.Width-countWidth-12), Height: 22}, 13, pal.text, gfx.WeightSemibold)
+	monitorRight(canvas, countLabel, gfx.Rect{X: bounds.X + bounds.Width - countWidth, Y: bounds.Y, Width: countWidth, Height: 22}, 12, pal.muted, gfx.WeightRegular)
 	strip := workspacePresetStripHeight(bounds.Width)
-	state.paintWorkspaceLayoutPresets(canvas, ui.Rect{X: bounds.X, Y: bounds.Y + 30, Width: bounds.Width, Height: strip}, hitWorkspaceDraftPresets, 0, draft.layout)
+	state.paintWorkspaceLayoutPresets(canvas, gfx.Rect{X: bounds.X, Y: bounds.Y + 30, Width: bounds.Width, Height: strip}, hitWorkspaceDraftPresets, 0, draft.layout)
 	previewY := 30 + strip + 12
-	draft.previewBounds = ui.Rect{X: bounds.X, Y: bounds.Y + previewY, Width: bounds.Width, Height: max(0, bounds.Height-previewY)}
+	draft.previewBounds = gfx.Rect{X: bounds.X, Y: bounds.Y + previewY, Width: bounds.Width, Height: max(0, bounds.Height-previewY)}
 	items := state.workspaceItemsForRegion(workspaceCardRegion{view: workspaceCardsDraft})
 	draft.previewContent = workspaceCardContentHeight(len(items), draft.layout)
-	area := components.BeginScrollArea(canvas, state.Theme(), draft.previewBounds, ui.Size{Width: max(0, bounds.Width-10), Height: draft.previewContent}).Offset(0, draft.previewScroll).ReserveScrollbars().
+	area := components.BeginScrollArea(canvas, state.Theme(), draft.previewBounds, gfx.Size{Width: max(0, bounds.Width-10), Height: draft.previewContent}).Offset(0, draft.previewScroll).ReserveScrollbars().
 		Viewport(hitWorkspaceDraftPreviewScroll, m.WorkspaceDraftPreview).VerticalScrollbar(hitWorkspaceDraftPreviewScrollbar, m.WorkspaceDraftPreview, "")
 	geometry := area.BeginContent()
 	draft.previewScroll = geometry.OffsetY
 	if len(items) == 0 {
 		state.paintWorkspaceGridPreview(canvas, geometry.Viewport, nil, draft.layout)
 	} else {
-		content := ui.Rect{X: geometry.Content.X, Y: geometry.Content.Y, Width: max(0, bounds.Width-10), Height: draft.previewContent}
+		content := gfx.Rect{X: geometry.Content.X, Y: geometry.Content.Y, Width: max(0, bounds.Width-10), Height: draft.previewContent}
 		state.paintWorkspaceCards(canvas, content, geometry.Viewport, items, draft.layout, workspaceCardsDraft, "", 0)
 		if draft.mode == workspaceDraftEdit {
 			state.paintWorkspaceDraftRemoveButtons(canvas, content, geometry.Viewport, items, draft.layout)
@@ -512,17 +512,17 @@ func (state *State) paintWorkspaceDraftLayout(canvas *ui.Canvas, bounds ui.Rect,
 	area.EndContent()
 }
 
-func (state *State) paintWorkspaceDraftRemoveButtons(canvas *ui.Canvas, content, viewport ui.Rect, items []workspaceArrangementItem, spec layoutcore.LayoutSpec) {
+func (state *State) paintWorkspaceDraftRemoveButtons(canvas *gfx.Canvas, content, viewport gfx.Rect, items []workspaceArrangementItem, spec layoutcore.LayoutSpec) {
 	cells := workspaceLayoutCells(len(items), spec)
 	for index, item := range items {
 		if index >= len(cells) {
 			continue
 		}
-		box := pixelBounds(content, cells[index]).Inset(ui.All(4))
+		box := pixelBounds(content, cells[index]).Inset(gfx.All(4))
 		if box.Y+box.Height <= viewport.Y || box.Y >= viewport.Y+viewport.Height {
 			continue
 		}
-		remove := ui.Rect{
+		remove := gfx.Rect{
 			X: box.X + box.Width - 34, Y: box.Y + box.Height - 34,
 			Width: 26, Height: 26,
 		}
@@ -535,19 +535,19 @@ func (state *State) paintWorkspaceDraftRemoveButtons(canvas *ui.Canvas, content,
 	}
 }
 
-func (state *State) paintWorkspaceDraftHosts(canvas *ui.Canvas) {
+func (state *State) paintWorkspaceDraftHosts(canvas *gfx.Canvas) {
 	draft, m := &state.workspaceDraft, state.messages
 	hosts := state.workspaceDraftHosts()
 	const rowHeight = float32(60)
 	draft.content = float32(len(hosts)) * rowHeight
-	area := components.BeginScrollArea(canvas, state.Theme(), draft.bounds, ui.Size{Width: max(0, draft.bounds.Width-10), Height: draft.content}).
+	area := components.BeginScrollArea(canvas, state.Theme(), draft.bounds, gfx.Size{Width: max(0, draft.bounds.Width-10), Height: draft.content}).
 		Offset(0, draft.scroll).ReserveScrollbars().Viewport(hitWorkspaceDraftScroll, m.WorkspaceDraftHosts).
 		VerticalScrollbar(hitWorkspaceDraftScrollbar, m.WorkspaceDraftHosts, "")
 	geometry := area.BeginContent()
 	draft.scroll = geometry.OffsetY
 	count := state.workspaceDraftSelectionCount()
 	for index, host := range hosts {
-		box := ui.Rect{X: geometry.Content.X, Y: geometry.Content.Y + float32(index)*rowHeight, Width: max(0, draft.bounds.Width-10), Height: 56}
+		box := gfx.Rect{X: geometry.Content.X, Y: geometry.Content.Y + float32(index)*rowHeight, Width: max(0, draft.bounds.Width-10), Height: 56}
 		if box.Y+box.Height < geometry.Viewport.Y || box.Y > geometry.Viewport.Y+geometry.Viewport.Height {
 			continue
 		}
@@ -560,13 +560,13 @@ func (state *State) paintWorkspaceDraftHosts(canvas *ui.Canvas) {
 	area.EndContent()
 }
 
-func (state *State) paintWorkspaceDraftHost(canvas *ui.Canvas, host Host, bounds ui.Rect, id ui.ID, selected, disabled bool) {
+func (state *State) paintWorkspaceDraftHost(canvas *gfx.Canvas, host Host, bounds gfx.Rect, id gfx.ID, selected, disabled bool) {
 	pal, theme := state.pal, state.Theme()
 	target := float32(0)
 	if selected {
 		target = 1
 	}
-	amount := canvas.Animate(id, 0, target, ui.Motion{Duration: 120 * time.Millisecond, Easing: ui.EaseOut})
+	amount := canvas.Animate(id, 0, target, gfx.Motion{Duration: 120 * time.Millisecond, Easing: gfx.EaseOut})
 	background := pal.surface.Mix(pal.accentSoft, amount)
 	if !disabled && canvas.Hovered() == id {
 		background = background.Mix(pal.surfaceSoft, .6)
@@ -575,20 +575,20 @@ func (state *State) paintWorkspaceDraftHost(canvas *ui.Canvas, host Host, bounds
 	if canvas.FocusVisible() == id {
 		canvas.RoundedBorder(bounds, radius.control, 1.5, pal.accent, background)
 	}
-	state.paintHostCatalogIcon(canvas, host, ui.Rect{X: bounds.X + 10, Y: bounds.Y + 16, Width: 24, Height: 24}, background)
+	state.paintHostCatalogIcon(canvas, host, gfx.Rect{X: bounds.X + 10, Y: bounds.Y + 16, Width: 24, Height: 24}, background)
 	color := pal.text
 	if disabled {
 		color = pal.faint
 	}
 	width := max(0, bounds.Width-86)
-	monitorLabel(canvas, elide(canvas, host.Label, 13, ui.WeightSemibold, width), ui.Rect{X: bounds.X + 46, Y: bounds.Y + 7, Width: width, Height: 22}, 13, color, ui.WeightSemibold)
+	monitorLabel(canvas, elide(canvas, host.Label, 13, gfx.WeightSemibold, width), gfx.Rect{X: bounds.X + 46, Y: bounds.Y + 7, Width: width, Height: 22}, 13, color, gfx.WeightSemibold)
 	detail := state.sessionAddress(host)
 	if host.ID == localHostID {
 		detail = state.messages.WorkspaceLocalTerminalHint
 	}
-	monitorLabel(canvas, elide(canvas, detail, 12, ui.WeightRegular, width), ui.Rect{X: bounds.X + 46, Y: bounds.Y + 29, Width: width, Height: 20}, 12, pal.muted.Mix(pal.text, .08*amount), ui.WeightRegular)
+	monitorLabel(canvas, elide(canvas, detail, 12, gfx.WeightRegular, width), gfx.Rect{X: bounds.X + 46, Y: bounds.Y + 29, Width: width, Height: 20}, 12, pal.muted.Mix(pal.text, .08*amount), gfx.WeightRegular)
 	side := components.CheckboxExtent(theme)
-	checkbox := components.BeginCheckbox(canvas, theme, id, ui.Rect{X: bounds.X + bounds.Width - 28, Y: bounds.Y + (bounds.Height-side)/2}, selected).
+	checkbox := components.BeginCheckbox(canvas, theme, id, gfx.Rect{X: bounds.X + bounds.Width - 28, Y: bounds.Y + (bounds.Height-side)/2}, selected).
 		Label(host.Label).HitBounds(bounds)
 	if disabled {
 		checkbox = checkbox.Disabled()
@@ -596,76 +596,76 @@ func (state *State) paintWorkspaceDraftHost(canvas *ui.Canvas, host Host, bounds
 	checkbox.Paint()
 }
 
-func (state *State) workspaceDraftKey(event ui.KeyEvent) ui.EventResult {
+func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalWorkspaceDraft || event.Release {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	if event.Key == ui.KeyEscape {
+	if event.Key == gfx.KeyEscape {
 		if state.workspaceDraft.mode == workspaceDraftEdit {
 			state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(state.workspaceDraft.editID)
 		}
 		state.closeModal()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if (event.Key == ui.KeyEnter && event.Modifiers&^ui.ModifierShift == 0 && !event.Repeat) &&
+	if (event.Key == gfx.KeyEnter && event.Modifiers&^gfx.ModifierShift == 0 && !event.Repeat) &&
 		(state.EditorFor(event.Target) != nil || event.Target == hitWorkspaceDraftSubmit) {
 		if editor := state.EditorFor(event.Target); editor != nil {
 			if _, composing := editor.Composition(); composing {
-				return ui.EventResult{}
+				return gfx.EventResult{}
 			}
 		}
 		state.submitWorkspaceDraft()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if event.Target == hitWorkspaceDraftTemporary || event.Target == hitWorkspaceDraftFixed {
 		if state.workspaceDraft.mode == workspaceDraftEdit {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 		options := [2]components.TabOption{
 			{ID: hitWorkspaceDraftTemporary, Label: state.messages.WorkspaceDraftTemporary},
 			{ID: hitWorkspaceDraftFixed, Label: state.messages.WorkspaceDraftFixed},
 		}
 		if next, ok := components.TabsKeyDown(event.Target, options[:], components.TabsHorizontal, components.DirectionLTR, event.Key); ok {
-			return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
 		}
 	}
 	if event.Target == hitWorkspaceDraftScroll {
-		area := components.BeginScrollArea(nil, state.Theme(), state.workspaceDraft.bounds, ui.Size{Width: state.workspaceDraft.bounds.Width, Height: state.workspaceDraft.content}).Offset(0, state.workspaceDraft.scroll)
+		area := components.BeginScrollArea(nil, state.Theme(), state.workspaceDraft.bounds, gfx.Size{Width: state.workspaceDraft.bounds.Width, Height: state.workspaceDraft.content}).Offset(0, state.workspaceDraft.scroll)
 		if _, y, ok := area.ScrollForKey(0, state.workspaceDraft.scroll, event.Key, 32); ok {
 			state.workspaceDraft.scroll = y
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
 	if event.Target == hitWorkspaceDraftPreviewScroll {
 		draft := &state.workspaceDraft
-		area := components.BeginScrollArea(nil, state.Theme(), draft.previewBounds, ui.Size{Width: draft.previewBounds.Width, Height: draft.previewContent}).Offset(0, draft.previewScroll)
+		area := components.BeginScrollArea(nil, state.Theme(), draft.previewBounds, gfx.Size{Width: draft.previewBounds.Width, Height: draft.previewContent}).Offset(0, draft.previewScroll)
 		if _, y, ok := area.ScrollForKey(0, draft.previewScroll, event.Key, 32); ok {
 			draft.previewScroll = y
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (state *State) workspaceDraftScroll(event ui.ScrollEvent) ui.EventResult {
+func (state *State) workspaceDraftScroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal != modalWorkspaceDraft {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if pointInRect(event.X, event.Y, state.workspaceDraft.previewBounds) {
 		draft := &state.workspaceDraft
-		area := components.BeginScrollArea(nil, state.Theme(), draft.previewBounds, ui.Size{Width: draft.previewBounds.Width, Height: draft.previewContent}).Offset(0, draft.previewScroll)
+		area := components.BeginScrollArea(nil, state.Theme(), draft.previewBounds, gfx.Size{Width: draft.previewBounds.Width, Height: draft.previewContent}).Offset(0, draft.previewScroll)
 		before := draft.previewScroll
 		draft.previewScroll = min(max(0, before+event.StepY(32)), area.Geometry().MaxOffsetY)
-		return ui.EventResult{Handled: true, Repaint: before != draft.previewScroll}
+		return gfx.EventResult{Handled: true, Repaint: before != draft.previewScroll}
 	}
 	if !pointInRect(event.X, event.Y, state.workspaceDraft.bounds) {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	area := components.BeginScrollArea(nil, state.Theme(), state.workspaceDraft.bounds,
-		ui.Size{Width: state.workspaceDraft.bounds.Width, Height: state.workspaceDraft.content}).
+		gfx.Size{Width: state.workspaceDraft.bounds.Width, Height: state.workspaceDraft.content}).
 		Offset(0, state.workspaceDraft.scroll)
 	geometry := area.Geometry()
 	before := state.workspaceDraft.scroll
 	state.workspaceDraft.scroll = min(max(0, before+event.StepY(32)), geometry.MaxOffsetY)
-	return ui.EventResult{Handled: true, Repaint: before != state.workspaceDraft.scroll}
+	return gfx.EventResult{Handled: true, Repaint: before != state.workspaceDraft.scroll}
 }

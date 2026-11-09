@@ -2,13 +2,13 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
 	"time"
 )
 
-func (state *State) paintIndependentMonitor(canvas *ui.Canvas, size ui.Size) {
+func (state *State) paintIndependentMonitor(canvas *gfx.Canvas, size gfx.Size) {
 	if !state.monitorShown(state.deck.ActiveWorkspace()) {
 		return
 	}
@@ -34,16 +34,16 @@ func (state *State) paintIndependentMonitor(canvas *ui.Canvas, size ui.Size) {
 	if !context.MonitorLeft {
 		dividerX = base.X - 1
 	}
-	canvas.Fill(ui.Rect{X: dividerX, Y: base.Y, Width: 1, Height: base.Height}, state.pal.line)
+	canvas.Fill(gfx.Rect{X: dividerX, Y: base.Y, Width: 1, Height: base.Height}, state.pal.line)
 	state.paintMonitor(canvas, base, state.contextSession())
-	divider := ui.Rect{X: dividerX - paneDividerHitWidth/2, Y: base.Y, Width: paneDividerHitWidth, Height: base.Height}
+	divider := gfx.Rect{X: dividerX - paneDividerHitWidth/2, Y: base.Y, Width: paneDividerHitWidth, Height: base.Height}
 	if canvas.Hovered() == hitMonitorDivider || state.monitorResizing {
-		canvas.Fill(ui.Rect{X: dividerX - 1, Y: base.Y, Width: 2, Height: base.Height}, state.pal.line)
+		canvas.Fill(gfx.Rect{X: dividerX - 1, Y: base.Y, Width: 2, Height: base.Height}, state.pal.line)
 	}
-	canvas.HitWithOptions(hitMonitorDivider, divider, state.messages.Monitor.Title, ui.HitOptions{Role: ui.RoleSeparator, Cursor: ui.PointerCursorResizeHorizontal})
+	canvas.HitWithOptions(hitMonitorDivider, divider, state.messages.Monitor.Title, gfx.HitOptions{Role: gfx.RoleSeparator, Cursor: gfx.PointerCursorResizeHorizontal})
 }
 
-func (state *State) paintMonitor(canvas *ui.Canvas, b ui.Rect, s *Session) {
+func (state *State) paintMonitor(canvas *gfx.Canvas, b gfx.Rect, s *Session) {
 	if b.Width <= 0 || b.Height <= 0 {
 		return
 	}
@@ -51,24 +51,24 @@ func (state *State) paintMonitor(canvas *ui.Canvas, b ui.Rect, s *Session) {
 	pal, m := state.pal, state.messages.Monitor
 	colors := state.monitorColors()
 	canvas.Fill(b, colors.background)
-	header := ui.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: infoBarHeight}
+	header := gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: infoBarHeight}
 	bg, edge := pal.workspace, pal.line
 	canvas.Fill(header, bg)
-	canvas.DrawIcon(lucideIcons[iconActivity], ui.Rect{X: b.X + 12, Y: b.Y + (header.Height-16)/2, Width: 16, Height: 16}, pal.muted)
-	monitorLabel(canvas, m.Title, ui.Rect{X: b.X + 35, Y: b.Y, Width: 60, Height: header.Height}, 14, pal.text, ui.WeightSemibold)
-	titleWidth := canvas.TextWidthWeight(m.Title, 14, ui.WeightSemibold)
-	state.monitorMenuRect = ui.Rect{X: b.X + 35 + titleWidth + 12, Y: b.Y + (header.Height-26)/2, Width: 82, Height: 26}
-	state.paintIconButton(canvas, hitMonitorClose, iconClose, ui.Rect{X: b.X + b.Width - 34, Y: b.Y + (header.Height-24)/2, Width: 24, Height: 24}, state.messages.LabelCloseTab, false, iconButtonQuiet, bg)
+	canvas.DrawIcon(lucideIcons[iconActivity], gfx.Rect{X: b.X + 12, Y: b.Y + (header.Height-16)/2, Width: 16, Height: 16}, pal.muted)
+	monitorLabel(canvas, m.Title, gfx.Rect{X: b.X + 35, Y: b.Y, Width: 60, Height: header.Height}, 14, pal.text, gfx.WeightSemibold)
+	titleWidth := canvas.TextWidthWeight(m.Title, 14, gfx.WeightSemibold)
+	state.monitorMenuRect = gfx.Rect{X: b.X + 35 + titleWidth + 12, Y: b.Y + (header.Height-26)/2, Width: 82, Height: 26}
+	state.paintIconButton(canvas, hitMonitorClose, iconClose, gfx.Rect{X: b.X + b.Width - 34, Y: b.Y + (header.Height-24)/2, Width: 24, Height: 24}, state.messages.LabelCloseTab, false, iconButtonQuiet, bg)
 	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
 	moveIcon, moveHint := uint8(iconChevronRight), m.MoveRight
 	if !context.MonitorLeft {
 		moveIcon, moveHint = iconChevronLeft, m.MoveLeft
 	}
-	state.paintIconButton(canvas, hitMonitorSide, moveIcon, ui.Rect{X: b.X + b.Width - 64, Y: b.Y + (header.Height-24)/2, Width: 24, Height: 24}, moveHint, false, iconButtonQuiet, bg)
-	canvas.Fill(ui.Rect{X: b.X, Y: b.Y + header.Height - 1, Width: b.Width, Height: 1}, edge)
+	state.paintIconButton(canvas, hitMonitorSide, moveIcon, gfx.Rect{X: b.X + b.Width - 64, Y: b.Y + (header.Height-24)/2, Width: 24, Height: 24}, moveHint, false, iconButtonQuiet, bg)
+	canvas.Fill(gfx.Rect{X: b.X, Y: b.Y + header.Height - 1, Width: b.Width, Height: 1}, edge)
 	y := b.Y + header.Height
 	if s == nil || s.stats == nil {
-		canvas.LabelCenter(m.NotConnected, ui.Rect{X: b.X + 16, Y: y + (b.Y+b.Height-y)/2 - 12, Width: b.Width - 32, Height: 24}, ui.TextStyle{Size: 13, Color: pal.muted})
+		canvas.LabelCenter(m.NotConnected, gfx.Rect{X: b.X + 16, Y: y + (b.Y+b.Height-y)/2 - 12, Width: b.Width - 32, Height: 24}, gfx.TextStyle{Size: 13, Color: pal.muted})
 		return
 	}
 	v := s.stats
@@ -81,8 +81,8 @@ func (state *State) paintMonitor(canvas *ui.Canvas, b ui.Rect, s *Session) {
 		pause, hint = iconPlay, m.Resume
 	}
 	state.paintMonitorRefresh(canvas, p, state.monitorMenuRect, v.state == remoteStatsReady)
-	state.paintIconButton(canvas, hitMonitorPause, pause, ui.Rect{X: state.monitorMenuRect.X + state.monitorMenuRect.Width + 4, Y: header.Y + (header.Height-24)/2, Width: 24, Height: 24}, hint, false, iconButtonQuiet, bg)
-	state.paintMonitorNavigation(canvas, p, ui.Rect{X: b.X + 12, Y: y + 6, Width: b.Width - 24, Height: 32})
+	state.paintIconButton(canvas, hitMonitorPause, pause, gfx.Rect{X: state.monitorMenuRect.X + state.monitorMenuRect.Width + 4, Y: header.Y + (header.Height-24)/2, Width: 24, Height: 24}, hint, false, iconButtonQuiet, bg)
+	state.paintMonitorNavigation(canvas, p, gfx.Rect{X: b.X + 12, Y: y + 6, Width: b.Width - 24, Height: 32})
 	y += monitorControlsHeight
 	if v.state >= remoteStatsUnsupported || p.count == 0 {
 		message := state.remoteStatsText(v)
@@ -95,7 +95,7 @@ func (state *State) paintMonitor(canvas *ui.Canvas, b ui.Rect, s *Session) {
 		}
 		if p.emptyText != message || p.emptyWidth != b.Width-32 {
 			p.emptyText, p.emptyWidth = message, b.Width-32
-			p.emptyLines = canvas.WrapLines(p.emptyLines[:0], message, 13, ui.WeightRegular, p.emptyWidth, 4)
+			p.emptyLines = canvas.WrapLines(p.emptyLines[:0], message, 13, gfx.WeightRegular, p.emptyWidth, 4)
 		}
 		loading := v.state == remoteStatsMeasuring && !p.paused && !unsupportedSystem
 		retry := v.state >= remoteStatsUnsupported && !unsupportedSystem
@@ -113,22 +113,22 @@ func (state *State) paintMonitor(canvas *ui.Canvas, b ui.Rect, s *Session) {
 				phase = components.SpinnerPhase(canvas.Now() / (80 * time.Millisecond) % 8)
 				canvas.RequestFrameIn(80 * time.Millisecond)
 			}
-			components.PaintSpinner(canvas, state.Theme(), ui.Rect{X: b.X + b.Width/2 - 8, Y: top, Width: 16, Height: 16}, phase)
+			components.PaintSpinner(canvas, state.Theme(), gfx.Rect{X: b.X + b.Width/2 - 8, Y: top, Width: 16, Height: 16}, phase)
 			top += 32
 		}
 		for _, line := range p.emptyLines {
-			canvas.LabelCenter(line, ui.Rect{X: b.X + 16, Y: top, Width: b.Width - 32, Height: 18}, ui.TextStyle{Size: 13, Color: colors.muted})
+			canvas.LabelCenter(line, gfx.Rect{X: b.X + 16, Y: top, Width: b.Width - 32, Height: 18}, gfx.TextStyle{Size: 13, Color: colors.muted})
 			top += 18
 		}
 		if retry {
 			width := min(b.Width-32, 200)
-			components.BeginButton(canvas, state.Theme(), hitMonitorRetry, ui.Rect{X: b.X + (b.Width-width)/2, Y: top + 12, Width: width, Height: 32}).Secondary(m.Retry)
+			components.BeginButton(canvas, state.Theme(), hitMonitorRetry, gfx.Rect{X: b.X + (b.Width-width)/2, Y: top + 12, Width: width, Height: 32}).Secondary(m.Retry)
 		}
 		return
 	}
-	body := ui.Rect{X: b.X, Y: y, Width: b.Width, Height: max(0, b.Y+b.Height-y-24)}
+	body := gfx.Rect{X: b.X, Y: y, Width: b.Width, Height: max(0, b.Y+b.Height-y-24)}
 	p.contentHeight = monitorContentHeight(p)
-	area := components.BeginScrollArea(canvas, state.Theme(), body, ui.Size{Width: body.Width, Height: p.contentHeight}).Offset(0, p.scroll).Viewport(hitMonitorScroll, m.Title).VerticalScrollbar(hitMonitorThumb, m.Title, "")
+	area := components.BeginScrollArea(canvas, state.Theme(), body, gfx.Size{Width: body.Width, Height: p.contentHeight}).Offset(0, p.scroll).Viewport(hitMonitorScroll, m.Title).VerticalScrollbar(hitMonitorThumb, m.Title, "")
 	geo := area.BeginContent()
 	p.scroll = geo.OffsetY
 	state.paintMonitorSections(canvas, v, geo.Content, geo.Viewport)
@@ -142,38 +142,38 @@ func (state *State) paintMonitor(canvas *ui.Canvas, b ui.Rect, s *Session) {
 	if (p.detailsFailed || p.sample.CPUUnavailable || p.sample.NetworkUnavailable) && !p.paused {
 		footer = m.DetailsUnavailable
 	}
-	canvas.Fill(ui.Rect{X: b.X, Y: b.Y + b.Height - 24, Width: b.Width, Height: 24}, colors.background)
-	canvas.DrawIcon(icons.Clock3, ui.Rect{X: b.X + 12, Y: b.Y + b.Height - 18, Width: 12, Height: 12}, fc)
-	monitorLabel(canvas, footer, ui.Rect{X: b.X + 30, Y: b.Y + b.Height - 24, Width: b.Width - 42, Height: 24}, 10, fc, ui.WeightRegular)
+	canvas.Fill(gfx.Rect{X: b.X, Y: b.Y + b.Height - 24, Width: b.Width, Height: 24}, colors.background)
+	canvas.DrawIcon(icons.Clock3, gfx.Rect{X: b.X + 12, Y: b.Y + b.Height - 18, Width: 12, Height: 12}, fc)
+	monitorLabel(canvas, footer, gfx.Rect{X: b.X + 30, Y: b.Y + b.Height - 24, Width: b.Width - 42, Height: 24}, 10, fc, gfx.WeightRegular)
 }
 
-func monitorLabel(c *ui.Canvas, text string, b ui.Rect, size float32, color ui.Color, weight float32) {
+func monitorLabel(c *gfx.Canvas, text string, b gfx.Rect, size float32, color gfx.Color, weight float32) {
 	if b.Width <= 0 || b.Height <= 0 {
 		return
 	}
-	c.Label(elide(c, text, size, weight, b.Width), b, ui.TextStyle{Size: size, Color: color, Weight: weight})
+	c.Label(elide(c, text, size, weight, b.Width), b, gfx.TextStyle{Size: size, Color: color, Weight: weight})
 }
 
 // The existing remote-tools clock frames are shared; only local paint timing
 // changes here. Sampling remains owned by the cancellable remote worker.
-func (state *State) paintMonitorRefresh(c *ui.Canvas, p *monitorView, b ui.Rect, live bool) {
+func (state *State) paintMonitorRefresh(c *gfx.Canvas, p *monitorView, b gfx.Rect, live bool) {
 	state.paintIntervalClock(c, p, b, live, hitMonitorInterval, state.messages.Monitor.Interval, state.monitorMenu)
 }
 
 // Both monitoring surfaces use the same SVG clock frames and scheduling rules.
-func (state *State) paintIntervalClock(c *ui.Canvas, p *monitorView, b ui.Rect, live bool, id ui.ID, label string, expanded bool) {
+func (state *State) paintIntervalClock(c *gfx.Canvas, p *monitorView, b gfx.Rect, live bool, id gfx.ID, label string, expanded bool) {
 	theme := state.Theme().WithControlHeight(b.Height)
-	components.BeginButton(c, theme, ui.ID{}, b).WithState(components.ButtonState{Hovered: c.Hovered() == id, Pressed: c.Pressed() == id, Focused: c.FocusVisible() == id}).Ghost("")
-	c.HitWithOptions(id, b, label, ui.HitOptions{Role: ui.RoleButton, Expandable: true, Expanded: expanded, Value: p.intervalText})
+	components.BeginButton(c, theme, gfx.ID{}, b).WithState(components.ButtonState{Hovered: c.Hovered() == id, Pressed: c.Pressed() == id, Focused: c.FocusVisible() == id}).Ghost("")
+	c.HitWithOptions(id, b, label, gfx.HitOptions{Role: gfx.RoleButton, Expandable: true, Expanded: expanded, Value: p.intervalText})
 	frame := monitorRefreshFrame(c, p, live)
-	clock := ui.Rect{X: b.X + 6, Y: b.Y + (b.Height-16)/2, Width: 16, Height: 16}
+	clock := gfx.Rect{X: b.X + 6, Y: b.Y + (b.Height-16)/2, Width: 16, Height: 16}
 	c.DrawIcon(remoteRefreshClock, clock, theme.MutedForeground)
 	c.DrawIcon(remoteRefreshHands[frame], clock, theme.MutedForeground)
-	monitorLabel(c, p.intervalText, ui.Rect{X: b.X + 27, Y: b.Y, Width: b.Width - 43, Height: b.Height}, 12, theme.Foreground, ui.WeightMedium)
-	c.DrawIcon(icons.ChevronDown, ui.Rect{X: b.X + b.Width - 15, Y: b.Y + (b.Height-11)/2, Width: 11, Height: 11}, theme.MutedForeground)
+	monitorLabel(c, p.intervalText, gfx.Rect{X: b.X + 27, Y: b.Y, Width: b.Width - 43, Height: b.Height}, 12, theme.Foreground, gfx.WeightMedium)
+	c.DrawIcon(icons.ChevronDown, gfx.Rect{X: b.X + b.Width - 15, Y: b.Y + (b.Height-11)/2, Width: 11, Height: 11}, theme.MutedForeground)
 }
 
-func monitorRefreshFrame(c *ui.Canvas, p *monitorView, live bool) int {
+func monitorRefreshFrame(c *gfx.Canvas, p *monitorView, live bool) int {
 	running := live && !p.paused && p.count > 0
 	now := c.Now()
 	if p.refreshReset || running != p.refreshRunning || p.refreshVersion != p.version {
@@ -195,7 +195,7 @@ func monitorRefreshFrame(c *ui.Canvas, p *monitorView, live bool) int {
 // second while nothing else changed.
 const monitorClockSteps = 12
 
-func (state *State) paintMonitorIntervalMenu(c *ui.Canvas) {
+func (state *State) paintMonitorIntervalMenu(c *gfx.Canvas) {
 	if !state.monitorMenu {
 		return
 	}
@@ -212,8 +212,8 @@ func (state *State) paintMonitorIntervalMenu(c *ui.Canvas) {
 	if state.monitorDrawer(state.viewport) {
 		layer = drawerLayer + 1
 	}
-	menu := components.BeginDropdownMenu(c, state.Theme(), ui.Rect{X: b.X, Y: b.Y + b.Height + 4, Width: 295, Height: 144}, components.DropdownMenuOptions{Layer: layer, Scope: hitMonitorMenuDismiss, DismissID: hitMonitorMenuDismiss, Viewport: state.windowRect(), Scroll: state.selectScroll(true, hitMonitorMenuDismiss)})
-	ids := [...]ui.ID{hitMonitorEvery1, hitMonitorEvery2, hitMonitorEvery5}
+	menu := components.BeginDropdownMenu(c, state.Theme(), gfx.Rect{X: b.X, Y: b.Y + b.Height + 4, Width: 295, Height: 144}, components.DropdownMenuOptions{Layer: layer, Scope: hitMonitorMenuDismiss, DismissID: hitMonitorMenuDismiss, Viewport: state.windowRect(), Scroll: state.selectScroll(true, hitMonitorMenuDismiss)})
+	ids := [...]gfx.ID{hitMonitorEvery1, hitMonitorEvery2, hitMonitorEvery5}
 	for i, seconds := range [...]int{1, 2, 5} {
 		menu.AddItem(components.DropdownMenuItem{ID: ids[i], Label: state.messages.Monitor.IntervalLabels[i], Kind: components.DropdownMenuRadio, Selected: p.interval == seconds})
 	}
@@ -227,17 +227,17 @@ func (state *State) paintMonitorIntervalMenu(c *ui.Canvas) {
 	menu.End()
 }
 
-func (state *State) scrollMonitor(e ui.ScrollEvent) (ui.EventResult, bool) {
+func (state *State) scrollMonitor(e gfx.ScrollEvent) (gfx.EventResult, bool) {
 	if state.activeSection != sectionTerminal || !state.monitorShown(state.deck.ActiveWorkspace()) || !pointInRect(e.X, e.Y, state.monitorRect) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	s := state.contextSession()
 	if s == nil || s.stats == nil {
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	p := &s.stats.panel
 	next := min(max(p.scroll+e.DeltaY, 0), max(p.contentHeight-(state.monitorRect.Height-infoBarHeight-monitorControlsHeight-24), 0))
 	changed := next != p.scroll
 	p.scroll = next
-	return ui.EventResult{Handled: true, Repaint: changed}, true
+	return gfx.EventResult{Handled: true, Repaint: changed}, true
 }

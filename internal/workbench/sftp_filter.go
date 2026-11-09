@@ -7,7 +7,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -98,7 +98,7 @@ func (state *State) applySFTPFilterText(view *sftpView, folder *sftpFolder, even
 	return next
 }
 
-func (state *State) clickSFTPFilter(view *sftpView, id ui.ID) bool {
+func (state *State) clickSFTPFilter(view *sftpView, id gfx.ID) bool {
 	folder := view.active()
 	switch id {
 	case hitSFTPFilterToggle:
@@ -133,25 +133,25 @@ type sftpHeaderMenuRequest struct {
 	window *sftpWindow
 	side   int
 	// anchor is the More button, in the canvas that painted the panel.
-	anchor ui.Rect
+	anchor gfx.Rect
 	folder *sftpFolder
 	view   *sftpView
 	// owner is the dismiss identity of the menu as painted, mounted where the
 	// page shows the panel, and mount is where its identities sit. Keeping them
 	// here is what lets the keyboard and Escape find the menu again.
-	owner ui.ID
-	mount ui.Scope
+	owner gfx.ID
+	mount gfx.Scope
 }
 
 // sftpHeaderMenuMine reports whether id is the identity the file panel's More
 // menu took, in whichever place the page mounted the panel it belongs to.
-func (state *State) sftpHeaderMenuMine(id ui.ID) bool {
+func (state *State) sftpHeaderMenuMine(id gfx.ID) bool {
 	return !id.IsZero() && id == state.sftpHeaderMenu.owner
 }
 
 // sftpHeaderMenuOwns reports whether the popup owner is the page-painted More
 // menu of a file panel that can still take a choice.
-func (state *State) sftpHeaderMenuOwns(id ui.ID) bool {
+func (state *State) sftpHeaderMenuOwns(id gfx.ID) bool {
 	if !state.sftpHeaderMenuMine(id) {
 		return false
 	}
@@ -164,18 +164,18 @@ func (state *State) sftpHeaderMenuOwns(id ui.ID) bool {
 }
 
 // requestSFTPHeaderMenu records the docked panel's More menu for the page.
-func (state *State) requestSFTPHeaderMenu(anchor ui.Rect, folder *sftpFolder, view *sftpView) {
+func (state *State) requestSFTPHeaderMenu(anchor gfx.Rect, folder *sftpFolder, view *sftpView) {
 	state.sftpHeaderMenu = sftpHeaderMenuRequest{queued: true, anchor: anchor, folder: folder, view: view}
 }
 
 // requestSFTPWindowHeaderMenu records a file tab's More menu for the page.
-func (state *State) requestSFTPWindowHeaderMenu(window *sftpWindow, side int, anchor ui.Rect) {
+func (state *State) requestSFTPWindowHeaderMenu(window *sftpWindow, side int, anchor gfx.Rect) {
 	state.sftpHeaderMenu = sftpHeaderMenuRequest{queued: true, window: window, side: side, anchor: anchor}
 }
 
 // paintQueuedSFTPHeaderMenu paints the menu an embedded file panel asked for,
 // over the page, where its backdrop covers the whole window.
-func (state *State) paintQueuedSFTPHeaderMenu(canvas *ui.Canvas) {
+func (state *State) paintQueuedSFTPHeaderMenu(canvas *gfx.Canvas) {
 	request := state.sftpHeaderMenu
 	state.sftpHeaderMenu = sftpHeaderMenuRequest{}
 	if !request.queued {
@@ -186,7 +186,7 @@ func (state *State) paintQueuedSFTPHeaderMenu(canvas *ui.Canvas) {
 			return
 		}
 		// The panel is embedded at the context mount, with its own origin.
-		origin := ui.Point{X: state.contextRect.X, Y: state.contextRect.Y - windowBarHeight}
+		origin := gfx.Point{X: state.contextRect.X, Y: state.contextRect.Y - windowBarHeight}
 		state.sftpHeaderMenu.owner = tree.MountID(contextMount, hitSFTPHeaderMenuDismiss)
 		state.sftpHeaderMenu.mount = contextMount
 		state.paintSFTPHeaderMenu(canvas, origin, contextMount, state.windowRect(), request.anchor, request.folder, request.view)
@@ -196,7 +196,7 @@ func (state *State) paintQueuedSFTPHeaderMenu(canvas *ui.Canvas) {
 		return
 	}
 	mount := sftpWindowMount(request.window)
-	origin := ui.Point{X: state.fileManagerRect.X, Y: state.fileManagerRect.Y}
+	origin := gfx.Point{X: state.fileManagerRect.X, Y: state.fileManagerRect.Y}
 	state.sftpHeaderMenu.owner = tree.MountID(mount, hitSFTPWindowHeaderDismiss)
 	state.sftpHeaderMenu.mount = mount
 	request.window.paintHeaderMenu(canvas, request.side, origin, mount, state.windowRect(), &request.window.ui.headerScroll)
@@ -206,12 +206,12 @@ func (state *State) paintQueuedSFTPHeaderMenu(canvas *ui.Canvas) {
 // and mount place it: the identities stay the panel's own, mounted where the page
 // shows it, so a press on a row reaches the panel's handler exactly as it did
 // when the menu was painted inside the panel.
-func (state *State) paintSFTPHeaderMenu(canvas *ui.Canvas, origin ui.Point, mount ui.Scope, viewport ui.Rect, anchor ui.Rect, folder *sftpFolder, view *sftpView) {
+func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, origin gfx.Point, mount gfx.Scope, viewport gfx.Rect, anchor gfx.Rect, folder *sftpFolder, view *sftpView) {
 	if anchor.Width == 0 || anchor.Height == 0 {
 		return
 	}
-	id := func(local ui.ID) ui.ID { return tree.MountID(mount, local) }
-	route := func(local ui.Scope) ui.Scope { return tree.Mount(mount, local) }
+	id := func(local gfx.ID) gfx.ID { return tree.MountID(mount, local) }
+	route := func(local gfx.Scope) gfx.Scope { return tree.Mount(mount, local) }
 	anchor.X, anchor.Y = anchor.X+origin.X, anchor.Y+origin.Y
 	dismiss := id(hitSFTPHeaderMenuDismiss)
 	const menuWidth = float32(280)
@@ -220,7 +220,7 @@ func (state *State) paintSFTPHeaderMenu(canvas *ui.Canvas, origin ui.Point, moun
 		rows++
 	}
 	menuHeight := float32(rows*32 + 26)
-	bounds := state.popupBelow(canvas, anchor, menuWidth, menuHeight, flex.End)
+	bounds := state.popupBelow(canvas, anchor, menuWidth, menuHeight, ui.End)
 	menu := components.BeginDropdownMenu(canvas, state.Theme(), bounds, components.DropdownMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: dismiss,
 		Viewport: viewport, Scroll: state.menuScrollFor(dismiss),
@@ -267,24 +267,24 @@ func (state *State) paintSFTPHeaderMenu(canvas *ui.Canvas, origin ui.Point, moun
 	menu.End()
 }
 
-func (state *State) sftpFilterShortcut(target ui.ID) (ui.EventResult, bool) {
+func (state *State) sftpFilterShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	session, local, ok := state.decodePaneHit(target)
 	if !ok || local != hitSFTPFilter && local.Scope() != hitSFTPEntryList {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if session.files == nil || state.activeSection != sectionTerminal || state.modal != modalNone || session.files.editPath != "" || session.files.dialog != sftpDialogNone {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	session.files.active().filterOpen = true
 	mount, _ := tree.MountOf(target.Scope())
-	return ui.EventResult{Handled: true, Repaint: true, Focus: tree.MountID(mount, hitSFTPFilter), FocusVisible: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: tree.MountID(mount, hitSFTPFilter), FocusVisible: true}, true
 }
 
-func (state *State) paintSFTPFilter(canvas *ui.Canvas, bounds ui.Rect, folder *sftpFolder) {
+func (state *State) paintSFTPFilter(canvas *gfx.Canvas, bounds gfx.Rect, folder *sftpFolder) {
 	state.paintSFTPFilterInput(canvas, bounds, folder, hitSFTPFilter, hitSFTPFilterClear)
 }
 
-func (state *State) paintSFTPFilterInput(canvas *ui.Canvas, bounds ui.Rect, folder *sftpFolder, id, clearID ui.ID) {
+func (state *State) paintSFTPFilterInput(canvas *gfx.Canvas, bounds gfx.Rect, folder *sftpFolder, id, clearID gfx.ID) {
 	value := folder.filterInputEditor().String()
 	placeholder := state.messages.Tools.FilesFilterPlaceholder
 	if folder.deep {
@@ -430,11 +430,11 @@ func (state *State) refreshLocalCoverage(folder *sftpFolder) {
 	}
 }
 
-func (state *State) declareLocalCoverage(f *flex.Frame, folder *sftpFolder, id ui.ID) {
+func (state *State) declareLocalCoverage(f *ui.Frame, folder *sftpFolder, id gfx.ID) {
 	if folder.coverageText == "" {
 		return
 	}
-	f.Column().Height(38).Shrink(0).HitWith(id, folder.coverageText, ui.HitOptions{Role: ui.RoleStatus, SkipFocus: true, Hint: folder.coverageText}).Children(func() {
+	f.Column().Height(38).Shrink(0).HitWith(id, folder.coverageText, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: folder.coverageText}).Children(func() {
 		f.Text(folder.coverageLabel).FontSize(metrics.FontSizeS).Color(state.pal.warning).Ellipsis().Height(18).Shrink(0)
 		f.Text(state.messages.Tools.FilesLoadedFilterOnly).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Height(18).Shrink(0)
 	})

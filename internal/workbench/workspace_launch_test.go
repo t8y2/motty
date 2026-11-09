@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -31,7 +31,7 @@ func TestLaunchTwelveHostsCreatesOneWorkspaceAndDialsEveryHost(t *testing.T) {
 	if err != nil || len(restored.Panes(workspaceID, nil)) != layoutcore.MaxPanes {
 		t.Fatalf("restored panes=%d err=%v", len(restored.Panes(workspaceID, nil)), err)
 	}
-	size := ui.Size{Width: 1600, Height: 1100}
+	size := gfx.Size{Width: 1600, Height: 1100}
 	state.Resize(size)
 	canvas, _ := paintAt(state, size)
 	frame := state.workspacePixelBounds(size)

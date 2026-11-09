@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -96,10 +96,10 @@ type snippetsUI struct {
 	selected  int
 	sort      components.TableSortState
 	grid      components.ReorderGridState
-	layout    flex.View
+	layout    ui.View
 	countText string
 	// sendAt is where the menu of terminals opens from the Send button.
-	sendAt ui.Point
+	sendAt gfx.Point
 }
 
 // cleanSnippetText makes one line of what was typed: a snippet is sent as
@@ -208,7 +208,7 @@ func (state *State) openSnippetDialog(index int) {
 	state.modal = modalSnippet
 }
 
-func (state *State) clickSnippetDialog(id ui.ID) {
+func (state *State) clickSnippetDialog(id gfx.ID) {
 	form := &state.snippets
 	if state.clickSnippetGroup(id) {
 		return
@@ -233,11 +233,11 @@ func (state *State) clickSnippetDialog(id ui.ID) {
 // captureSnippetShortcut takes the chord pressed while the dialog waits for one.
 // ok is false for a key that is no chord at all, which is refused the same way
 // as a chord a snippet may not use.
-func (state *State) captureSnippetShortcut(event ui.KeyEvent, chord keymap.Chord, ok bool) ui.EventResult {
+func (state *State) captureSnippetShortcut(event gfx.KeyEvent, chord keymap.Chord, ok bool) gfx.EventResult {
 	form, m := &state.snippets, state.messages
-	result := ui.EventResult{Handled: true, Repaint: true}
+	result := gfx.EventResult{Handled: true, Repaint: true}
 	if event.Repeat {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if !ok || !validForSnippet(chord) {
 		form.dialogError = m.Tools.SnippetShortcutInvalid
@@ -255,9 +255,9 @@ func (state *State) captureSnippetShortcut(event ui.KeyEvent, chord keymap.Chord
 // composingTarget returns the field whose input method still holds marked
 // text. Saving then would persist the preedit verbatim, so the dialog waits for
 // the input method to commit it; an empty range marks nothing to protect.
-func (form *snippetsUI) composingTarget() ui.ID {
+func (form *snippetsUI) composingTarget() gfx.ID {
 	fields := [...]struct {
-		id     ui.ID
+		id     gfx.ID
 		editor *text.Editor
 	}{{hitSnippetName, &form.name}, {hitSnippetCommand, &form.command}, {hitSnippetGroup, &form.groupPicker.Query}}
 	for _, field := range fields {
@@ -265,18 +265,18 @@ func (form *snippetsUI) composingTarget() ui.ID {
 			return field.id
 		}
 	}
-	return ui.ID{}
+	return gfx.ID{}
 }
 
 func (form *snippetsUI) composing() bool {
-	return form.composingTarget() != ui.ID{}
+	return form.composingTarget() != gfx.ID{}
 }
 
 // abandonOther ends the composition of the field the pointer is leaving. The
 // input method drops its marked text when the text input moves; the editor has
 // to drop it too, or the field the user left keeps composing and blocks every
 // later save. Unmark keeps the text, which is what the user already sees.
-func (form *snippetsUI) abandonOther(target ui.ID) {
+func (form *snippetsUI) abandonOther(target gfx.ID) {
 	switch target {
 	case hitSnippetName, hitSnippetCommand, hitSnippetGroup:
 	default:
@@ -386,11 +386,11 @@ func (state *State) moveSnippetTo(source, target int) bool {
 	return true
 }
 
-func (state *State) snippetReorderPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) snippetReorderPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	form := &state.snippets
 	if state.activeSection != sectionSnippets || state.modal != modalNone || form.sort.Direction != components.TableSortNone || !form.filter.all() {
 		form.grid.Cancel()
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	move, result := form.grid.Pointer(event)
 	if move.Valid() && move.ID.Scope() == hitSnippetHandles && move.Target.Scope() == hitSnippetHandles {
@@ -401,10 +401,10 @@ func (state *State) snippetReorderPointer(event ui.PointerEvent) (ui.EventResult
 	return result, result.Handled
 }
 
-func (state *State) snippetReorderKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) snippetReorderKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	form := &state.snippets
 	if state.activeSection != sectionSnippets || state.modal != modalNone || form.sort.Direction != components.TableSortNone || !form.filter.all() {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	move, result := form.grid.Key(event)
 	if move.Valid() && move.ID.Scope() == hitSnippetHandles && move.Target.Scope() == hitSnippetHandles {
@@ -451,7 +451,7 @@ func (state *State) sendSnippetTo(index int, session *Session) bool {
 // several, the menu of terminals opens at `at` and the user says which. The
 // terminal it went to is shown; when nothing can be sent the page stays, with the
 // reason in a global notice.
-func (state *State) sendSnippetFromPage(index int, at ui.Point) {
+func (state *State) sendSnippetFromPage(index int, at gfx.Point) {
 	if index < 0 || index >= len(state.snippets.list) {
 		return
 	}
@@ -484,17 +484,17 @@ func (state *State) sendSnippetPicked(index int, session *Session) {
 // sendSnippetOn is called while painting a snippet row: when this paint is the
 // event pass of a double click on it, the snippet is sent. Consuming the press
 // keeps its release from clicking whatever the terminal put under the pointer.
-func (state *State) sendSnippetOn(canvas *ui.Canvas, id ui.ID, index int) {
+func (state *State) sendSnippetOn(canvas *gfx.Canvas, id gfx.ID, index int) {
 	event, ok := canvas.PointerOn(id)
-	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonPrimary || event.ClickCount != 2 || state.modal != modalNone || state.activeSection != sectionSnippets {
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonPrimary || event.ClickCount != 2 || state.modal != modalNone || state.activeSection != sectionSnippets {
 		return
 	}
 	state.snippets.selected = index
-	state.sendSnippetFromPage(index, ui.Point{X: event.X, Y: event.Y})
+	state.sendSnippetFromPage(index, gfx.Point{X: event.X, Y: event.Y})
 	canvas.Consume()
 }
 
-func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintSnippetDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages.Tools, state.Theme()
 	form := &state.snippets
 	title := m.SnippetDialogAddTitle
@@ -505,11 +505,11 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitSnippetClose, InitialFocusID: hitSnippetName,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(350, form.dialogError),
+		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: withError(350, form.dialogError),
 	})
 	layout := dialog.Begin(title, "")
 	entries := [...]struct {
-		id          ui.ID
+		id          gfx.ID
 		label       string
 		placeholder string
 		value       string
@@ -517,20 +517,20 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		{hitSnippetName, m.SnippetName, m.SnippetNamePlaceholder, form.name.String()},
 		{hitSnippetCommand, m.SnippetCommand, m.SnippetCommandPlaceholder, form.command.String()},
 	}
-	var fields [len(entries)]flex.Box
-	var group, run, shortcutButtons flex.Box
+	var fields [len(entries)]ui.Box
+	var group, run, shortcutButtons ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		fields[0] = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
 		fields[1] = f.Slot().Height(140).MarginSides(0, 0, 6, 0)
 		group = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
 		run = state.declareDialogCheckbox(f, m.SnippetRun, 7, 0)
-		f.Row().Height(32).Items(flex.Center).MarginSides(12, 0, 0, 2).Children(func() {
-			f.Text(m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
+		f.Row().Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
+			f.Text(m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
 			shortcutButtons = f.Slot().Size(240, 32).Shrink(0)
 		})
 		if form.dialogError != "" {
-			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
 		}
 	})
 	f.End()

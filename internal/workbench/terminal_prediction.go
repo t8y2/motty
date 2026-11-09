@@ -5,7 +5,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/term"
 )
 
@@ -83,7 +83,7 @@ type terminalPrediction struct {
 	shown bool
 
 	text     string
-	runs     [maxTerminalPredictionBytes]ui.TextRun
+	runs     [maxTerminalPredictionBytes]gfx.TextRun
 	runCount int
 }
 
@@ -151,7 +151,7 @@ func (prediction *terminalPrediction) expiry(now time.Duration) (time.Duration, 
 	return prediction.staleAfter() - (now - prediction.chunkAt[0]), true
 }
 
-func (prediction *terminalPrediction) overlay(now time.Duration) (string, []ui.TextRun, int, bool) {
+func (prediction *terminalPrediction) overlay(now time.Duration) (string, []gfx.TextRun, int, bool) {
 	if !prediction.visibleAt(now) {
 		return "", nil, 0, false
 	}
@@ -302,7 +302,7 @@ func (prediction *terminalPrediction) rebuild() {
 	for offset := 0; offset < prediction.length; {
 		r, size := utf8.DecodeRune(prediction.data[offset:prediction.length])
 		width := term.Width(r)
-		prediction.runs[prediction.runCount] = ui.TextRun{
+		prediction.runs[prediction.runCount] = gfx.TextRun{
 			Column: int32(column), Bytes: int32(size), Cells: int32(width),
 		}
 		prediction.runCount++

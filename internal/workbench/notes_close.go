@@ -4,7 +4,7 @@ import (
 	"slices"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var noteExitHits = tree.Feature("notes-exit")
@@ -34,11 +34,11 @@ func (s *State) confirmNoteClose(allow func()) bool {
 	s.invalidateNoteViews()
 	return true
 }
-func (s *State) paintNoteExit(c *ui.Canvas, b ui.Rect) {
+func (s *State) paintNoteExit(c *gfx.Canvas, b gfx.Rect) {
 	if s.noteExit == nil {
 		return
 	}
-	dialog := components.BeginDialog(c, s.Theme(), b, components.DialogOptions{Layer: dialogLayer + 10, Scope: hitNoteExitCancel, CloseID: hitNoteExitCancel, InitialFocusID: hitNoteExitCancel, ContentSize: ui.Size{Width: 480}, FitBody: true, BodyHeight: 40})
+	dialog := components.BeginDialog(c, s.Theme(), b, components.DialogOptions{Layer: dialogLayer + 10, Scope: hitNoteExitCancel, CloseID: hitNoteExitCancel, InitialFocusID: hitNoteExitCancel, ContentSize: gfx.Size{Width: 480}, FitBody: true, BodyHeight: 40})
 	layout := dialog.Begin(s.noteText("Notes not saved", "笔记尚未保存"), s.noteText("Changes are retained. Retry saving, cancel closing, or discard unsaved note changes.", "更改已保留。可重试保存、取消退出，或放弃尚未保存的笔记更改。"))
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitNoteExitDiscard, Label: s.noteText("Discard changes", "放弃修改"), Variant: components.ButtonDestructive},
@@ -46,7 +46,7 @@ func (s *State) paintNoteExit(c *ui.Canvas, b ui.Rect) {
 		components.ButtonAction{ID: hitNoteExitRetry, Label: s.noteText("Retry", "重试")})
 	dialog.End()
 }
-func (s *State) clickNoteExit(id ui.ID) bool {
+func (s *State) clickNoteExit(id gfx.ID) bool {
 	if s.noteExit == nil {
 		return false
 	}
@@ -85,20 +85,20 @@ func (s *State) clickNoteExit(id ui.ID) bool {
 	return true
 }
 
-func (s *State) noteExitKey(e ui.KeyEvent) ui.EventResult {
+func (s *State) noteExitKey(e gfx.KeyEvent) gfx.EventResult {
 	if e.Release {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
-	if e.Key == ui.KeyEscape {
+	if e.Key == gfx.KeyEscape {
 		s.clickNoteExit(hitNoteExitCancel)
 	}
-	if e.Key == ui.KeyTab {
-		return ui.EventResult{}
+	if e.Key == gfx.KeyTab {
+		return gfx.EventResult{}
 	}
-	if e.Key == ui.KeyEnter || e.Key == ui.KeySpace {
+	if e.Key == gfx.KeyEnter || e.Key == gfx.KeySpace {
 		if e.Target == hitNoteExitCancel || e.Target == hitNoteExitRetry || e.Target == hitNoteExitDiscard {
 			s.clickNoteExit(e.Target)
 		}
 	}
-	return ui.EventResult{Handled: true, Repaint: true}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }

@@ -2,19 +2,19 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
 // Paint after the workspace clip and inside the menu pass, as other selects do.
-func (state *State) paintMCPClientSelect(canvas *ui.Canvas) {
+func (state *State) paintMCPClientSelect(canvas *gfx.Canvas) {
 	cfg := &state.ai.cfg
 	state.paintMCPExportSelect(canvas, cfg.mcpSelectBounds, &cfg.mcpSelectOpen, cfg.mcpClient, hitAISetMCPSelect, hitAISetMCPSelectDismiss, aiMCPClientOptions())
 	state.paintMCPExportSelect(canvas, cfg.agentSelectBounds, &cfg.agentSelectOpen, cfg.agentClient, hitAISetAgentSelect, hitAISetAgentSelectDismiss, aiAgentClientOptions())
 }
 
-func (state *State) paintMCPExportSelect(canvas *ui.Canvas, bounds ui.Rect, open *bool, client aiMCPClient, trigger, dismiss ui.ID, options [aiMCPClientCount]components.SelectItem) {
+func (state *State) paintMCPExportSelect(canvas *gfx.Canvas, bounds gfx.Rect, open *bool, client aiMCPClient, trigger, dismiss gfx.ID, options [aiMCPClientCount]components.SelectItem) {
 	if bounds.Width <= 0 || bounds.Y < windowBarHeight || bounds.Y+bounds.Height > state.viewport.Height {
 		*open = false
 		return
@@ -22,7 +22,7 @@ func (state *State) paintMCPExportSelect(canvas *ui.Canvas, bounds ui.Rect, open
 	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
 	above := max(bounds.Y-windowBarHeight-8, 0)
 	height := min(float32(8+len(options)*32), max(above, below))
-	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
+	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
 	if below < height {
 		content.Y = bounds.Y - height - 4
 	}
@@ -49,15 +49,15 @@ func (state *State) paintMCPExportSelect(canvas *ui.Canvas, bounds ui.Rect, open
 
 // Keep explanations and actions readable when the settings navigation leaves
 // too little room for a two-column row.
-func (page *settingsPage) mcpFrame(label, description string, color ui.Color, control func()) {
+func (page *settingsPage) mcpFrame(label, description string, color gfx.Color, control func()) {
 	page.separator()
 	f := page.f
 	if page.width >= 500 {
-		row := f.Row().FillWidth().MinHeight(settingsRowHeight).Pad(18).Gap(24).Items(flex.Center)
+		row := f.Row().FillWidth().MinHeight(settingsRowHeight).Pad(18).Gap(24).Items(ui.Center)
 		page.matchAnchor(label, row, 0)
 		row.Children(func() {
 			f.Column().Grow(1).Gap(2).Children(func() {
-				f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(page.state.pal.text)
+				f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.text)
 				f.Wrap(description).FontSize(metrics.FontSizeS).LineHeight(18).Color(color)
 			})
 			f.Row().Shrink(0).Children(control)
@@ -68,14 +68,14 @@ func (page *settingsPage) mcpFrame(label, description string, color ui.Color, co
 	page.matchAnchor(label, column, 0)
 	column.Children(func() {
 		f.Column().Gap(2).Children(func() {
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(page.state.pal.text)
+			f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.text)
 			f.Wrap(description).FontSize(metrics.FontSizeS).LineHeight(18).Color(color)
 		})
 		f.Row().Children(control)
 	})
 }
 
-func (page *settingsPage) mcpCopyButton(id ui.ID, label string, disabled bool) {
+func (page *settingsPage) mcpCopyButton(id gfx.ID, label string, disabled bool) {
 	state, m := page.state, page.state.messages.AISettings
 	width, _ := state.aiButtonSize(page.f.Canvas(), label)
 	for _, value := range []string{m.MCPCopied, m.MCPCopyFailed} {
@@ -154,7 +154,7 @@ type aiMCPConfigView struct {
 	title, description, hint, footer, preview string
 	client                                    aiMCPClient
 	selectKind                                settingsControlKind
-	copyID                                    ui.ID
+	copyID                                    gfx.ID
 	ready                                     bool
 	lines                                     *[]string
 }
@@ -164,7 +164,7 @@ func (state *State) paintMCPConfigBlock(page *settingsPage, view aiMCPConfigView
 	column := f.Column().Pad(18).Gap(14)
 	page.matchAnchor(view.title, column, 0)
 	column.Children(func() {
-		f.Text(view.title).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text)
+		f.Text(view.title).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
 		f.Wrap(view.description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 		page.add(settingsControl{kind: view.selectKind, slot: f.Slot().FillWidth().Height(36)})
 		if view.hint != "" {
@@ -173,8 +173,8 @@ func (state *State) paintMCPConfigBlock(page *settingsPage, view aiMCPConfigView
 		f.Column().Background(pal.surfaceSoft).Border(1, pal.line).Radius(radius.control).Children(func() {
 			// The header names what the block holds, so the room the copy
 			// button takes says something instead of staying blank.
-			f.Row().PadSides(10, 14, 10, 14).Items(flex.Center).Children(func() {
-				f.Text(aiMCPPreviewFormat(view.client, m)).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted)
+			f.Row().PadSides(10, 14, 10, 14).Items(ui.Center).Children(func() {
+				f.Text(aiMCPPreviewFormat(view.client, m)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted)
 				f.Spacer()
 				page.mcpCopyButton(view.copyID, m.MCPCopy, !view.ready)
 			})

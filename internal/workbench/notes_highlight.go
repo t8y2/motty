@@ -4,7 +4,7 @@ import (
 	"regexp"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // Match whole inline constructs first so their contents are not reinterpreted
@@ -17,9 +17,9 @@ var noteMarkdownTokens = regexp.MustCompile(
 		`\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*]+\*|_[^_]+_|\[[ xX]\]|\|`)
 
 func (s *State) highlightNoteMarkdown(_ string, line string, dst []components.CodeEditorRun) []components.CodeEditorRun {
-	color := func(index int) ui.Color {
+	color := func(index int) gfx.Color {
 		v := s.pal.ansi[index]
-		return ui.RGB(v[0], v[1], v[2])
+		return gfx.RGB(v[0], v[1], v[2])
 	}
 	for _, span := range noteMarkdownTokens.FindAllStringIndex(line, -1) {
 		token := line[span[0]:span[1]]

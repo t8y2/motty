@@ -3,8 +3,8 @@ package workbench
 import (
 	"fmt"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/term"
 )
 
@@ -19,8 +19,8 @@ func (state *State) openTerminalLink(target string) {
 // (Command on macOS, Control elsewhere), unless the user chose plain clicks.
 // Shift is the terminal's own selection and never works on links. Other
 // modifiers stay free for what they may mean to a pointer later.
-func (state *State) terminalLinkOpens(modifiers ui.Modifiers) bool {
-	if modifiers&ui.ModifierShift != 0 {
+func (state *State) terminalLinkOpens(modifiers gfx.Modifiers) bool {
+	if modifiers&gfx.ModifierShift != 0 {
 		return false
 	}
 	return state.terminalLinkPlainClick || modifiers == keymap.Primary

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -16,14 +16,14 @@ func TestWorkspaceTemplateMenuOpensFromPointerAndKeyboard(t *testing.T) {
 
 	for _, test := range []struct {
 		name string
-		key  ui.Key
+		key  gfx.Key
 	}{
-		{name: "Enter", key: ui.KeyEnter},
-		{name: "Space", key: ui.KeySpace},
+		{name: "Enter", key: gfx.KeyEnter},
+		{name: "Space", key: gfx.KeySpace},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			state.workspaceTemplateMenu = workspaceTemplateMenu{}
-			result := state.Key(ui.KeyEvent{Key: test.key, Target: hitWorkspaceTemplateMore.At(1)})
+			result := state.Key(gfx.KeyEvent{Key: test.key, Target: hitWorkspaceTemplateMore.At(1)})
 			if !result.Handled || !state.workspaceTemplateMenu.open ||
 				state.workspaceTemplateMenu.templateID != state.templates[1].ID {
 				t.Fatalf("%s = %+v, menu = %+v", test.name, result, state.workspaceTemplateMenu)
@@ -48,12 +48,12 @@ func TestWorkspaceTemplateActionDoesNotCompleteARowDoubleClick(t *testing.T) {
 	state.templates = []WorkspaceTemplate{
 		mustWorkspaceTemplate(t, "Production", workspaceCatalogIDs(state, 0), 1),
 	}
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
 		ClickCount: 1, Target: hitWorkspaceTemplateRowList.At(0)})
 	state.Click(hitWorkspaceTemplateRowList.At(0))
 
-	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+	result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
 		ClickCount: 2, Target: hitWorkspaceTemplateMore.At(0)})
 	if result.Handled || len(world.configs) != 0 || state.activeSection != sectionWorkspaces {
 		t.Fatalf("actions press launched a workspace: result=%+v dials=%d section=%d", result, len(world.configs), state.activeSection)
@@ -83,9 +83,9 @@ func TestWorkspaceTemplateMenuSelectsEditAndDelete(t *testing.T) {
 func TestWorkspaceTemplateMenuStaysAnchoredToAnUnselectedRow(t *testing.T) {
 	state := templateManagementState(t, 2)
 	state.Click(hitWorkspaceTemplateMore.At(1))
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	trigger := panelHit(t, canvas, hitWorkspaceTemplateMore.At(1)).Bounds
-	want := ui.Point{X: trigger.X + trigger.Width, Y: trigger.Y + trigger.Height}
+	want := gfx.Point{X: trigger.X + trigger.Width, Y: trigger.Y + trigger.Height}
 	if state.workspaceTemplateMenu.at != want {
 		t.Fatalf("menu anchor = %+v, trigger = %+v", state.workspaceTemplateMenu.at, trigger)
 	}
@@ -94,25 +94,25 @@ func TestWorkspaceTemplateMenuStaysAnchoredToAnUnselectedRow(t *testing.T) {
 func TestWorkspaceTemplateMenuKeyboardAndFocusRestore(t *testing.T) {
 	state := templateManagementState(t, 2)
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
-	result := state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitWorkspaceTemplateMenuEdit})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitWorkspaceTemplateMenuEdit})
 	if !result.Handled || result.Focus != hitWorkspaceTemplateMenuDelete {
 		t.Fatalf("menu Down = %+v", result)
 	}
-	result = state.Key(ui.KeyEvent{
-		Key: ui.KeySpace, Target: hitWorkspaceTemplateMenuDelete, Text: " ",
+	result = state.Key(gfx.KeyEvent{
+		Key: gfx.KeySpace, Target: hitWorkspaceTemplateMenuDelete, Text: " ",
 	})
 	if !result.Handled || state.modal != modalWorkspaceTemplateDelete {
 		t.Fatalf("menu Space = %+v modal=%d", result, state.modal)
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if !result.Handled || state.workspaceTemplateFocusPending != hitWorkspaceTemplateMore.At(0) {
 		t.Fatalf("delete Escape = %+v pending=%v", result, state.workspaceTemplateFocusPending)
 	}
 
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	result = state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if !result.Handled || state.workspaceTemplateFocusPending != hitWorkspaceTemplateMore.At(0) {
 		t.Fatalf("menu Escape = %+v pending=%v", result, state.workspaceTemplateFocusPending)
 	}
@@ -123,7 +123,7 @@ func TestWorkspaceTemplateMenuClosesAndRestoresFocusWhenItsTargetDisappears(t *t
 	state.Click(hitWorkspaceTemplateMore.At(1))
 
 	state.templates = []WorkspaceTemplate{state.templates[0]}
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
 	if state.workspaceTemplateMenu.open {
 		t.Fatal("menu stayed open after its target disappeared")
@@ -136,10 +136,10 @@ func TestWorkspaceTemplateMenuClosesAndRestoresFocusWhenItsTargetDisappears(t *t
 func TestWorkspaceTemplateMenuDoesNotFocusTheHiddenLibraryAfterNavigation(t *testing.T) {
 	state := templateManagementState(t, 1)
 	state.Click(hitWorkspaceTemplateMore.At(0))
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
 	state.activeSection = sectionHosts
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if state.workspaceTemplateMenu.open || !canvas.FocusRequest().IsZero() {
 		t.Fatalf("hidden library menu open=%t focus=%v", state.workspaceTemplateMenu.open, canvas.FocusRequest())
 	}
@@ -149,7 +149,7 @@ func TestWorkspaceTemplateEditDoesNotRequestFocusForAClosedMenu(t *testing.T) {
 	state := templateManagementState(t, 1)
 	state.Click(hitWorkspaceTemplateMore.At(0))
 	state.Click(hitWorkspaceTemplateMenuEdit)
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if canvas.InitialFocus() != hitWorkspaceDraftName || !canvas.FocusRequest().IsZero() {
 		t.Fatalf("edit initial focus=%v requested focus=%v", canvas.InitialFocus(), canvas.FocusRequest())
 	}
@@ -160,7 +160,7 @@ func TestWorkspaceTemplatePendingFocusIsDroppedAfterLeavingTheLibrary(t *testing
 	state.openWorkspaceDraftEdit(state.templates[0].ID)
 	state.Click(hitWorkspaceDraftCancel)
 	state.activeSection = sectionHosts
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if !canvas.FocusRequest().IsZero() {
 		t.Fatalf("requested hidden template focus %v", canvas.FocusRequest())
 	}
@@ -172,7 +172,7 @@ func TestWorkspaceTemplateDeleteCancelAndConfirmUseKeyboard(t *testing.T) {
 	state.Click(hitWorkspaceTemplateMore.At(0))
 	state.Click(hitWorkspaceTemplateMenuDelete)
 
-	result := state.Key(ui.KeyEvent{Key: ui.KeySpace, Target: hitWorkspaceTemplateDeleteCancel})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeySpace, Target: hitWorkspaceTemplateDeleteCancel})
 	if !result.Handled || state.modal != modalNone || !reflect.DeepEqual(state.templates, []WorkspaceTemplate{first, second}) {
 		t.Fatalf("cancel = %+v modal=%d templates=%+v", result, state.modal, state.templates)
 	}
@@ -182,7 +182,7 @@ func TestWorkspaceTemplateDeleteCancelAndConfirmUseKeyboard(t *testing.T) {
 
 	state.Click(hitWorkspaceTemplateMore.At(0))
 	state.Click(hitWorkspaceTemplateMenuDelete)
-	result = state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitWorkspaceTemplateDeleteSubmit})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitWorkspaceTemplateDeleteSubmit})
 	if !result.Handled || state.modal != modalNone || !reflect.DeepEqual(state.templates, []WorkspaceTemplate{second}) {
 		t.Fatalf("confirm = %+v modal=%d templates=%+v", result, state.modal, state.templates)
 	}
@@ -262,11 +262,11 @@ func TestWorkspaceTemplateEditPreviewRemovesMissingAndResolvedHosts(t *testing.T
 	state := templateManagementState(t, 1)
 	template := state.templates[0]
 	state.openWorkspaceDraftEdit(template.ID)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
 	for _, index := range []int{1, 0} {
-		state.startWorkspaceCardDrag(ui.PointerEvent{
-			Kind: ui.PointerDown, Target: hitWorkspaceDraftRemoveItem.At(index), X: 10, Y: 10,
+		state.startWorkspaceCardDrag(gfx.PointerEvent{
+			Kind: gfx.PointerDown, Target: hitWorkspaceDraftRemoveItem.At(index), X: 10, Y: 10,
 		})
 		state.Click(hitWorkspaceDraftRemoveItem.At(index))
 		if state.workspaceCardDrag.pressed || state.workspaceCardDrag.active {
@@ -284,7 +284,7 @@ func TestWorkspaceTemplateManagementFitsMinimumWindow(t *testing.T) {
 			state := templateManagementState(t, 1)
 			state.setLanguage(language)
 			state.openWorkspaceDraftEdit(state.templates[0].ID)
-			canvas, texts := paintAt(state, ui.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight})
+			canvas, texts := paintAt(state, gfx.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight})
 			if !hasText(texts, state.messages.WorkspaceDraftTitleEdit) {
 				t.Fatalf("missing edit title: %q", texts)
 			}
@@ -292,7 +292,7 @@ func TestWorkspaceTemplateManagementFitsMinimumWindow(t *testing.T) {
 			if submit.Label != state.messages.WorkspaceDraftSaveChanges || state.workspaceDraft.bounds.Height < 56 {
 				t.Fatalf("edit footer=%+v host list=%+v", submit, state.workspaceDraft.bounds)
 			}
-			for _, id := range []ui.ID{hitWorkspaceDraftName, hitWorkspaceDraftSearch, hitWorkspaceDraftPresets.At(0),
+			for _, id := range []gfx.ID{hitWorkspaceDraftName, hitWorkspaceDraftSearch, hitWorkspaceDraftPresets.At(0),
 				hitWorkspaceDraftPresets.At(1), hitWorkspaceDraftPresets.At(2), hitWorkspaceDraftRemoveItem.At(0), hitWorkspaceDraftCancel} {
 				box := panelHit(t, canvas, id).Bounds
 				if box.X < 0 || box.Y < 0 || box.X+box.Width > MinimumWindowWidth || box.Y+box.Height > MinimumWindowHeight {
@@ -308,25 +308,25 @@ func TestWorkspaceTemplateManagementFitsMinimumWindow(t *testing.T) {
 			t.Cleanup(func() { state.config = config })
 			state.config = nil
 			state.Click(hitWorkspaceDraftSubmit)
-			_, texts = paintAt(state, ui.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight})
+			_, texts = paintAt(state, gfx.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight})
 			if !hasText(texts, state.messages.WorkspaceSaveFailed) {
 				t.Fatalf("edit failure is not visible: %q", texts)
 			}
 			state.closeModal()
 			state.openWorkspaceTemplateDelete(state.templates[0].ID)
-			canvas, texts = paintAt(state, ui.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight})
+			canvas, texts = paintAt(state, gfx.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight})
 			if !hasText(texts, state.messages.WorkspaceTemplateDeleteTitle) ||
 				!hasText(texts, state.templates[0].Name) || canvas.InitialFocus() != hitWorkspaceTemplateDeleteCancel {
 				t.Fatalf("delete dialog text=%q initial focus=%v", texts, canvas.InitialFocus())
 			}
-			for _, id := range []ui.ID{hitWorkspaceTemplateDeleteCancel, hitWorkspaceTemplateDeleteSubmit} {
+			for _, id := range []gfx.ID{hitWorkspaceTemplateDeleteCancel, hitWorkspaceTemplateDeleteSubmit} {
 				box := panelHit(t, canvas, id).Bounds
 				if box.X < 0 || box.Y < 0 || box.X+box.Width > MinimumWindowWidth || box.Y+box.Height > MinimumWindowHeight {
 					t.Fatalf("delete control %v outside window: %+v", id, box)
 				}
 			}
 			state.Click(hitWorkspaceTemplateDeleteSubmit)
-			_, texts = paintAt(state, ui.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight})
+			_, texts = paintAt(state, gfx.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight})
 			if !hasText(texts, state.messages.WorkspaceTemplateDeleteFailed) {
 				t.Fatalf("delete failure is not visible: %q", texts)
 			}
@@ -337,7 +337,7 @@ func TestWorkspaceTemplateManagementFitsMinimumWindow(t *testing.T) {
 func TestWorkspaceTemplateEditDetailsDoNotOverlapRemoveAction(t *testing.T) {
 	state := templateManagementState(t, 1)
 	state.openWorkspaceDraftEdit(state.templates[0].ID)
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	card := panelHit(t, canvas, hitWorkspaceDraftCards.At(0)).Bounds
 	remove := panelHit(t, canvas, hitWorkspaceDraftRemoveItem.At(0)).Bounds
 	for _, label := range canvas.Texts() {
@@ -353,9 +353,9 @@ func TestWorkspaceTemplateEditKeepsAnAllMissingTemplateUntilExplicitRemoval(t *t
 	template := mustWorkspaceTemplate(t, "Unavailable", []string{"host_missing_a", "host_missing_b"}, 2)
 	state.templates = []WorkspaceTemplate{template}
 	state.openWorkspaceDraftEdit(template.ID)
-	canvas, texts := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	for index, id := range template.HostIDs {
-		if !hasText(texts, id) || panelHit(t, canvas, hitWorkspaceDraftRemoveItem.At(index)).Role != ui.RoleButton {
+		if !hasText(texts, id) || panelHit(t, canvas, hitWorkspaceDraftRemoveItem.At(index)).Role != gfx.RoleButton {
 			t.Fatalf("missing host %q is not editable", id)
 		}
 	}
@@ -495,7 +495,7 @@ func templateManagementState(t testing.TB, templateCount int) *State {
 	}
 	state.selectedWorkspaceTemplateID = state.templates[0].ID
 	state.workspaceLibraryExpanded = true
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	return state
 }
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
@@ -197,15 +197,15 @@ func TestAITargetApprovalUsesOriginalConnection(t *testing.T) {
 func TestAITargetSelectLayoutAndKeyboard(t *testing.T) {
 	state := targetTestWorld(t, quietModel{"ok"})
 	state.toggleAIPanel()
-	for _, size := range []ui.Size{panelWide, panelNarrow} {
+	for _, size := range []gfx.Size{panelWide, panelNarrow} {
 		canvas, _ := paintAt(state, size)
 		trigger := panelHit(t, canvas, hitAITarget)
 		input := panelHit(t, canvas, hitAIInput)
-		if trigger.Role != ui.RoleCombobox || !pointInRect(trigger.Bounds.X, trigger.Bounds.Y, input.Bounds) ||
+		if trigger.Role != gfx.RoleCombobox || !pointInRect(trigger.Bounds.X, trigger.Bounds.Y, input.Bounds) ||
 			trigger.Bounds.Y+trigger.Bounds.Height > input.TextBounds.Y || trigger.Bounds.Width > 200 {
 			t.Fatal("target selector is not compact or overlaps the editor text")
 		}
-		state.Key(ui.KeyEvent{Target: hitAITarget, Key: ui.KeyDown})
+		state.Key(gfx.KeyEvent{Target: hitAITarget, Key: gfx.KeyDown})
 		canvas, _ = paintAt(state, size)
 		panelHit(t, canvas, hitAITargets.At(int(state.sessions[0].ID)))
 		state.Click(hitAITargets.At(int(state.sessions[0].ID)))

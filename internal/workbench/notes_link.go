@@ -16,7 +16,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/configstore"
 )
 
@@ -443,7 +443,7 @@ type noteLinkNotice struct {
 }
 
 type noteLinkAction struct {
-	id    ui.ID
+	id    gfx.ID
 	label string
 }
 
@@ -485,21 +485,21 @@ func (s *State) noteLinkNotice(id string) (noteLinkNotice, bool) {
 
 // paintNoteLinkNotice shows what a linked note needs, with the choices, and
 // returns the height it used.
-func (s *State) paintNoteLinkNotice(c *ui.Canvas, x, y, width float32) float32 {
+func (s *State) paintNoteLinkNotice(c *gfx.Canvas, x, y, width float32) float32 {
 	n := s.noteContent()
 	notice, ok := s.noteLinkNotice(n.selected)
 	if !ok {
 		return 0
 	}
 	used := float32(0)
-	c.Label(notice.text, ui.Rect{X: x, Y: y, Width: width, Height: 20}, ui.TextStyle{Size: 12, Color: s.pal.danger})
+	c.Label(notice.text, gfx.Rect{X: x, Y: y, Width: width, Height: 20}, gfx.TextStyle{Size: 12, Color: s.pal.danger})
 	used += 24
 	bx, by := x, y+used
 	for _, action := range notice.actions {
-		button := components.BeginButton(c, s.Theme(), action.id, ui.Rect{X: bx, Y: by, Height: 28}).Small().SizeToFit(action.label)
+		button := components.BeginButton(c, s.Theme(), action.id, gfx.Rect{X: bx, Y: by, Height: 28}).Small().SizeToFit(action.label)
 		if bx > x && bx+button.BoundsWidth() > x+width {
 			bx, by = x, by+32
-			button = components.BeginButton(c, s.Theme(), action.id, ui.Rect{X: bx, Y: by, Height: 28}).Small().SizeToFit(action.label)
+			button = components.BeginButton(c, s.Theme(), action.id, gfx.Rect{X: bx, Y: by, Height: 28}).Small().SizeToFit(action.label)
 		}
 		button.Outline(action.label)
 		bx += button.BoundsWidth() + 8
@@ -508,7 +508,7 @@ func (s *State) paintNoteLinkNotice(c *ui.Canvas, x, y, width float32) float32 {
 }
 
 // clickNoteLink handles the choices a linked note's notice offers.
-func (s *State) clickNoteLink(id ui.ID) bool {
+func (s *State) clickNoteLink(id gfx.ID) bool {
 	switch id {
 	case hitNoteLinkLoad, hitNoteLinkOverwrite, hitNoteLinkFork, hitNoteLinkLocate, hitNoteLinkUnlink:
 	default:

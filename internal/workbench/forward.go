@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/portforward"
 	"motty/internal/sshconn"
@@ -161,7 +161,7 @@ type forwardEditor struct {
 	// hostSelect is the searchable host picker. Its query stays here so typing
 	// filters the list without opening a second surface.
 	hostSelect components.SingleSelectState
-	hostPopup  ui.Rect
+	hostPopup  gfx.Rect
 	mode       portforward.Mode
 	resume     bool
 	editing    bool
@@ -358,7 +358,7 @@ func (state *State) openEditForwardID(id uint32) {
 	state.modal = modalNewForward
 }
 
-func (state *State) clickForwardDialog(id ui.ID) {
+func (state *State) clickForwardDialog(id gfx.ID) {
 	editor := &state.forwardEditor
 	if editor.hostSelect.Open {
 		switch {
@@ -412,21 +412,21 @@ func (state *State) clickForwardDialog(id ui.ID) {
 
 // forwardDialogKey routes arrows, Enter, Escape and Tab to the open host
 // picker, so Enter chooses a host instead of submitting the form.
-func (state *State) forwardDialogKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) forwardDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNewForward {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	editor := &state.forwardEditor
-	var result ui.EventResult
+	var result gfx.EventResult
 	switch {
 	case event.Target == hitForwardDialogHost || event.Target == hitForwardHostTrigger:
 		result = editor.hostSelect.Key(event)
-	case event.Key == ui.KeyEscape && editor.hostSelect.Open:
+	case event.Key == gfx.KeyEscape && editor.hostSelect.Open:
 		result = editor.hostSelect.Key(event)
-	case event.Key == ui.KeyTab && editor.hostSelect.Open:
+	case event.Key == gfx.KeyTab && editor.hostSelect.Open:
 		result = editor.hostSelect.Key(event)
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if result.Handled || result.Repaint {
 		// A host chosen with Enter changes the picker's value; a picker that is
@@ -440,29 +440,29 @@ func (state *State) forwardDialogKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	return result, result.Handled || result.Repaint
 }
 
-func (state *State) forwardPickerPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) forwardPickerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	editor := &state.forwardEditor
 	if !editor.hostSelect.Open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	inside := event.Target == hitForwardDialogHost || event.Target == hitForwardHostTrigger ||
 		event.Target == hitForwardHostScroll || event.Target.Scope() == hitForwardHostItemList
-	if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !inside {
+	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !inside {
 		editor.hostSelect.Open = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if result := editor.hostSelect.Pointer(event); result.Handled {
 		return result, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) scrollForwardDialog(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollForwardDialog(event gfx.ScrollEvent) gfx.EventResult {
 	editor := &state.forwardEditor
 	if !editor.hostSelect.Open {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.hostPopup) && editor.hostSelect.Wheel(event)}
+	return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.hostPopup) && editor.hostSelect.Wheel(event)}
 }
 
 func (state *State) submitForwardDialog() {
@@ -523,7 +523,7 @@ func (state *State) closeForwardDialog() {
 	state.forwardEditor = forwardEditor{}
 }
 
-func (state *State) clickForwards(id ui.ID) {
+func (state *State) clickForwards(id gfx.ID) {
 	if state.activeSection != sectionForwards || state.modal != modalNone {
 		return
 	}
@@ -933,7 +933,7 @@ func (state *State) forwardLabel(id uint32) string {
 	return forward.Label
 }
 
-func forwardDialogField(id ui.ID) forwardField {
+func forwardDialogField(id gfx.ID) forwardField {
 	switch id {
 	case hitForwardDialogLocalPort:
 		return forwardFieldLocalPort

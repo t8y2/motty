@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
 	"motty/internal/ai/gate"
@@ -53,15 +53,15 @@ func panelAt(state *State) (x, y float32) {
 func openedPanel(t *testing.T, model *scriptedModel) *State {
 	t.Helper()
 	state, _ := assistantSession(t, model)
-	state.Paint(&ui.Canvas{}, panelWide)
+	state.Paint(&gfx.Canvas{}, panelWide)
 	state.Click(hitAIToggle)
 	paintAt(state, panelWide)
 	return state
 }
 
-func drop(state *State, x, y float32, paths ...string) ui.EventResult {
-	state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y})
-	return state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: x, Y: y, Paths: paths})
+func drop(state *State, x, y float32, paths ...string) gfx.EventResult {
+	state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: x, Y: y})
+	return state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: x, Y: y, Paths: paths})
 }
 
 func attached(t *testing.T, state *State, want int) {
@@ -88,7 +88,7 @@ func TestFilesDroppedOnThePanelGoWithTheNextQuestion(t *testing.T) {
 	shot := writeTestFile(t, "shot.png", redSquarePNG(t))
 	x, y := panelAt(state)
 
-	over := state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y})
+	over := state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: x, Y: y})
 	if !over.Handled || !state.ai.panel.dropping {
 		t.Fatalf("the panel did not accept files dragged over it: %+v", over)
 	}

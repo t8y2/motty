@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -31,7 +31,7 @@ func (state *State) openAIRename(index int) {
 	state.modal = modalAIRename
 }
 
-func (state *State) clickAIRenameDialog(id ui.ID) {
+func (state *State) clickAIRenameDialog(id gfx.ID) {
 	switch id {
 	case hitAIRenameClose, hitAIRenameCancel:
 		state.modal = modalNone
@@ -58,27 +58,27 @@ func (state *State) clickAIRenameDialog(id ui.ID) {
 }
 
 // aiRenameKey makes Enter in the field, or on the button, submit.
-func (state *State) aiRenameKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.modal != modalAIRename || event.Key != ui.KeyEnter || event.Repeat {
-		return ui.EventResult{}, false
+func (state *State) aiRenameKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalAIRename || event.Key != gfx.KeyEnter || event.Repeat {
+		return gfx.EventResult{}, false
 	}
 	if event.Target != hitAIRenameField && event.Target != hitAIRenameSubmit {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.clickAIRenameDialog(hitAIRenameSubmit)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintAIRenameDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAIRenameDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := state.messages.AIPanel
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAIRenameClose, InitialFocusID: hitAIRenameField,
-		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 62,
+		ContentSize: gfx.Size{Width: 460}, FitBody: true, BodyHeight: 62,
 	})
 	layout := dialog.Begin(m.RenameTitle, "")
-	var slot flex.Box
+	var slot ui.Box
 	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() { slot = f.Slot().Height(62) })
 	f.End()

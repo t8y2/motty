@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -23,15 +23,15 @@ func TestSFTPPanelSettingsPersistAndDoNotMoveExistingWorkspace(t *testing.T) {
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1100})
-	for _, id := range []ui.ID{hitSettingsPanelAutoOpen, hitSettingsPanelLeft, hitSettingsPanelRight} {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1100})
+	for _, id := range []gfx.ID{hitSettingsPanelAutoOpen, hitSettingsPanelLeft, hitSettingsPanelRight} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Fatal("missing file panel setting", id)
 		}
 	}
 	state.Click(hitSettingsPanelAutoOpen)
-	result := state.Key(ui.KeyEvent{Target: hitSettingsPanelLeft, Key: ui.KeyRight})
+	result := state.Key(gfx.KeyEvent{Target: hitSettingsPanelLeft, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != hitSettingsPanelRight || state.sftpPanelSide != layoutcore.ContextRight {
 		t.Fatal("panel position does not support arrow-key selection")
 	}
@@ -191,8 +191,8 @@ func TestShowInFilesKeepsAnOpenPanelOpen(t *testing.T) {
 
 func TestSFTPPanelRemembersResizedWidthAcrossWorkspacesAndRestores(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	divider, ok := hitByID(&canvas, hitContextDivider)
 	if !ok {
@@ -201,9 +201,9 @@ func TestSFTPPanelRemembersResizedWidthAcrossWorkspacesAndRestores(t *testing.T)
 	base := state.baseWorkspacePixelBounds(size)
 	dragX := base.X + 420 + 0.5
 	y := divider.Bounds.Y + divider.Bounds.Height/2
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitContextDivider, X: divider.Bounds.X, Y: y, Viewport: size})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: dragX, Y: y, Viewport: size})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: dragX, Y: y, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitContextDivider, X: divider.Bounds.X, Y: y, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: dragX, Y: y, Viewport: size})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitContextDivider, Captured: true, X: dragX, Y: y, Viewport: size})
 
 	if state.sftpPanelWidth < 419 || state.sftpPanelWidth > 421 {
 		t.Fatalf("state.sftpPanelWidth = %v, want ~420", state.sftpPanelWidth)

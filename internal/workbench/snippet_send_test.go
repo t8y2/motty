@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // A command typed into the picker reaches the terminal the button belongs to,
@@ -36,7 +36,7 @@ func TestSnippetPickerSendsATypedCommandToTheCurrentTerminal(t *testing.T) {
 	}
 	state.Click(hitSendRun)
 	app.TextEvent{Kind: app.TextInsert, Text: "df"}.Apply(state.EditorFor(hitSnippetSendInput))
-	if _, handled := state.commandPaletteKey(ui.KeyEvent{Key: ui.KeyEnter, Target: hitSnippetSendInput}); !handled {
+	if _, handled := state.commandPaletteKey(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitSnippetSendInput}); !handled {
 		t.Fatal("Enter in the command field did not send")
 	}
 	if got := shell.typed(); got != "uptimedf\r" {

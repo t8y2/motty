@@ -4,15 +4,15 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 // selectTypeahead is the typed prefix of one closed select trigger. The owner
 // is the trigger whose options the session belongs to; moving to another
 // trigger or closing the dialog starts over.
 type selectTypeahead struct {
-	owner ui.ID
+	owner gfx.ID
 	state components.MenuTypeahead
 }
 
@@ -20,33 +20,33 @@ type selectTypeahead struct {
 // as Base UI does: the list does not open, the matching value is chosen, and
 // repeating the first letter cycles through the options that share it. The
 // caller builds the options from the same data the open popup paints.
-func (state *State) selectTypeaheadKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) selectTypeaheadKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if event.Release || event.Text == "" || event.Target.IsZero() ||
-		event.Modifiers&(ui.ModifierControl|ui.ModifierAlt|ui.ModifierMeta) != 0 {
-		return ui.EventResult{}, false
+		event.Modifiers&(gfx.ModifierControl|gfx.ModifierAlt|gfx.ModifierMeta) != 0 {
+		return gfx.EventResult{}, false
 	}
 	items, commit, ok := state.selectTypeaheadOptions(event.Target)
 	if !ok {
 		state.selectTypeahead = selectTypeahead{}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if state.selectTypeahead.owner != event.Target {
 		state.selectTypeahead = selectTypeahead{owner: event.Target}
 	}
-	id, matched := state.selectTypeahead.state.TypeItems(event.Text, time.Now(), items, ui.ID{})
+	id, matched := state.selectTypeahead.state.TypeItems(event.Text, time.Now(), items, gfx.ID{})
 	if !matched || !commit(id) {
 		if !matched {
 			state.selectTypeahead.state.Reset()
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 // selectTypeaheadOptions returns the closed select's choices and the action
 // that commits one. It reports false when the target is not a select trigger
 // currently showing its value rather than its list.
-func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypeaheadItem, func(ui.ID) bool, bool) {
+func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuTypeaheadItem, func(gfx.ID) bool, bool) {
 	switch {
 	case localShellSettingVisible() && state.modal == modalNone && state.activeSection == sectionSettings && state.settingsCategory == settingsTerminal && target == hitSettingsLocalShell && !state.localShellMenu.open:
 		items := make([]components.MenuTypeaheadItem, 0, len(state.localShellMenu.choices))
@@ -89,7 +89,7 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 				ID: hitAISetFormPresetItems.At(index), Label: state.aiPresetLabel(index),
 			})
 		}
-		return items, func(id ui.ID) bool {
+		return items, func(id gfx.ID) bool {
 			index, ok := id.In(hitAISetFormPresetItems)
 			if !ok || index < 0 || index >= len(aiPresets) {
 				return false
@@ -105,7 +105,7 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 				ID: hitDialogPortsItemList.At(index), Label: port.Device,
 			})
 		}
-		return items, func(id ui.ID) bool {
+		return items, func(id gfx.ID) bool {
 			index, ok := id.In(hitDialogPortsItemList)
 			if !ok || index < 0 || index >= len(state.editor.ports) {
 				return false
@@ -123,7 +123,7 @@ func (state *State) selectTypeaheadOptions(target ui.ID) ([]components.MenuTypea
 				ID: hitDialogIconItemList.At(int(choice)), Label: state.hostIconLabel(choice),
 			})
 		}
-		return items, func(id ui.ID) bool {
+		return items, func(id gfx.ID) bool {
 			index, ok := id.In(hitDialogIconItemList)
 			choice := hostIcon(index)
 			if !ok || !choice.valid() {

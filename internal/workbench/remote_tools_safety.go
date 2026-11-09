@@ -3,13 +3,13 @@ package workbench
 import (
 	"fmt"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotetools"
 )
 
 var hitRemoteSnapshotStatus = tree.ID(remoteToolsHits, "snapshot-status")
 
-func remoteMutation(id ui.ID) bool {
+func remoteMutation(id gfx.ID) bool {
 	return id == hitRemoteTerminate || id == hitRemoteKill || id == hitRemoteNiceLower || id == hitRemoteNiceNormal || id == hitRemoteNiceHigher ||
 		id == hitRemoteStart || id == hitRemoteStop || id == hitRemoteRestart || id == hitRemoteDown || id == hitRemoteRemove || id == hitRemotePull || id == hitRemoteCreate || id == hitRemoteShell || id == hitRemoteLogs
 }

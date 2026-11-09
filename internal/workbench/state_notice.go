@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // stateNoticeLines is how many lines of text the dialog has room for.
@@ -75,7 +75,7 @@ func (state *State) buildStateNotice() {
 	notice.body = fmt.Sprintf(messages.StateUnreadableBodyFmt, notice.file)
 }
 
-func (state *State) paintStateNotice(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintStateNotice(canvas *gfx.Canvas, viewport gfx.Rect) {
 	state.buildStateNotice() // in the current language: it can change while the dialog is up
 	// The body is as tall as its text, so a short message leaves no gap above the button.
 	const contentWidth float32 = 560
@@ -84,7 +84,7 @@ func (state *State) paintStateNotice(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitStateNoticeDismiss, CloseID: hitStateNoticeClose, InitialFocusID: hitStateNoticeOK,
-		ContentSize: ui.Size{Width: contentWidth}, FitBody: true, BodyHeight: float32(lines) * stateNoticeLine,
+		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: float32(lines) * stateNoticeLine,
 	})
 	// The dialog's own description is a single line; this text is longer.
 	layout := dialog.Begin(state.stateNotice.title, "")
@@ -97,7 +97,7 @@ func (state *State) paintStateNotice(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog.End()
 }
 
-func (state *State) clickStateNotice(id ui.ID) {
+func (state *State) clickStateNotice(id gfx.ID) {
 	if id != hitStateNoticeDismiss && id != hitStateNoticeClose && id != hitStateNoticeOK {
 		return
 	}

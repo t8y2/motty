@@ -11,22 +11,22 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/serial"
 )
 
 // paintHostCardTexts paints one card on a canvas of its own and returns what it
 // wrote, so a test can check the words a user reads rather than the fields behind
 // them.
-func paintHostCardTexts(t *testing.T, state *State, host Host, width float32) []ui.Text {
+func paintHostCardTexts(t *testing.T, state *State, host Host, width float32) []gfx.Text {
 	t.Helper()
-	card := ui.Rect{X: 20, Y: 20, Width: width, Height: hostCardHeight}
-	var canvas ui.Canvas
+	card := gfx.Rect{X: 20, Y: 20, Width: width, Height: hostCardHeight}
+	var canvas gfx.Canvas
 	view, err := headless.Open(app.Config{
 		Width: int(width + 40), Height: 104, Tree: Tree(),
-		Paint: func(canvas *ui.Canvas, _ ui.Size) {
-			canvas.Fill(ui.Rect{Width: width + 40, Height: 104}, state.pal.workspace)
+		Paint: func(canvas *gfx.Canvas, _ gfx.Size) {
+			canvas.Fill(gfx.Rect{Width: width + 40, Height: 104}, state.pal.workspace)
 			state.paintHostCard(canvas, card, host)
 		},
 	}, &canvas, headless.Options{Scale: 1})
@@ -86,7 +86,7 @@ func TestHostCardTruncatesALongConnectionLine(t *testing.T) {
 	host.Address = "a-very-long-host-name-that-does-not-fit-any-narrow-card.example.internal"
 	host.Port = 2222
 	host.finish()
-	var line ui.Text
+	var line gfx.Text
 	found := false
 	for _, text := range paintHostCardTexts(t, state, host, hostCardMinWidth) {
 		if strings.Contains(text.Value, host.User) && strings.Contains(text.Value, " · ") {
@@ -119,12 +119,12 @@ func TestHostCardShowsConnectionAndCentersCheckbox(t *testing.T) {
 				state := manyHostsState(t, 1)
 				host := state.hosts[0]
 				host.Label = test.label
-				card := ui.Rect{X: 20, Y: 20, Width: test.width, Height: hostCardHeight}
-				var canvas ui.Canvas
+				card := gfx.Rect{X: 20, Y: 20, Width: test.width, Height: hostCardHeight}
+				var canvas gfx.Canvas
 				view, err := headless.Open(app.Config{
 					Width: int(test.width + 40), Height: 104, Tree: Tree(),
-					Paint: func(canvas *ui.Canvas, _ ui.Size) {
-						canvas.Fill(ui.Rect{Width: test.width + 40, Height: 104}, state.pal.workspace)
+					Paint: func(canvas *gfx.Canvas, _ gfx.Size) {
+						canvas.Fill(gfx.Rect{Width: test.width + 40, Height: 104}, state.pal.workspace)
 						state.paintHostCard(canvas, card, host)
 					},
 				}, &canvas, headless.Options{Scale: scale})

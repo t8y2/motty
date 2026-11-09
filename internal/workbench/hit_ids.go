@@ -1,6 +1,6 @@
 package workbench
 
-import "github.com/vivaui/viva/ui"
+import "github.com/vivaui/viva/gfx"
 
 // tree names every place the workbench can be pointed at. A page or overlay is a
 // feature of it, a list on a page is a scope of that feature, and a control is a
@@ -14,11 +14,11 @@ import "github.com/vivaui/viva/ui"
 //
 // An embedded session page is mounted in the pane that paints it with
 // tree.Mount, so the same controls are different identities in different panes.
-var tree ui.Tree
+var tree gfx.Tree
 
 // Tree is the identity tree of the workbench's controls, for the window that paints
 // them: identities print as paths in logs and in the headless driver.
-func Tree() *ui.Tree { return &tree }
+func Tree() *gfx.Tree { return &tree }
 
 // The pages and overlays whose controls workbench.go declares.
 var (
@@ -49,29 +49,29 @@ var (
 	fileTabCloseList = tree.Sub(fileTabsHits, tree.Name("tab-close"))
 )
 
-func sftpFileTabID(sessionID uint32) ui.ID {
+func sftpFileTabID(sessionID uint32) gfx.ID {
 	return fileTabList.At(int(sessionID))
 }
 
-func sftpFileTabCloseID(sessionID uint32) ui.ID {
+func sftpFileTabCloseID(sessionID uint32) gfx.ID {
 	return fileTabCloseList.At(int(sessionID))
 }
 
-func sftpWindowMount(window *sftpWindow) ui.Scope {
-	return tree.Sub(filePagesHits, ui.Index(int(window.session.ID)))
+func sftpWindowMount(window *sftpWindow) gfx.Scope {
+	return tree.Sub(filePagesHits, gfx.Index(int(window.session.ID)))
 }
 
 // paneMount is the place the page of a session is mounted at when it is painted
 // in one of several panes.
-func paneMount(session *Session) ui.Scope {
-	return tree.Sub(panesHits, ui.Index(int(session.paneSlot)))
+func paneMount(session *Session) gfx.Scope {
+	return tree.Sub(panesHits, gfx.Index(int(session.paneSlot)))
 }
 
 // contextID is the identity a control of the files panel has in the window.
-func contextID(id ui.ID) ui.ID { return tree.MountID(contextMount, id) }
+func contextID(id gfx.ID) gfx.ID { return tree.MountID(contextMount, id) }
 
 // item is the number of the list item an identity names, or zero for a control.
-func item(id ui.ID) int {
+func item(id gfx.ID) int {
 	n, _ := id.Name().Index()
 	return n
 }

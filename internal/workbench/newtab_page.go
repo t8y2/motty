@@ -1,7 +1,7 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -35,7 +35,7 @@ const (
 // paintNewTabPage fills an empty pane with the places a connection can go. It
 // shows as many hosts as the pane's height holds; the rest are one click away
 // under All hosts.
-func (state *State) paintNewTabPage(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintNewTabPage(canvas *gfx.Canvas, bounds gfx.Rect) {
 	pal, m := state.pal, state.messages
 	width := min(newTabCardWidth, bounds.Width-48)
 	if width < 200 {
@@ -51,12 +51,12 @@ func (state *State) paintNewTabPage(canvas *ui.Canvas, bounds ui.Rect) {
 	local := localHost(m.LocalTerminalTitle)
 	chrome := &state.chrome
 	chrome.newTabBadges = chrome.newTabBadges[:0]
-	var all, add flex.Box
+	var all, add ui.Box
 	f := chrome.newTab.Begin(canvas, state.Theme(), bounds)
 	// The block sits a little above the middle, and never closer than 16 to the top.
-	f.Column().Fill().PadSides(16, 0, 0, 0).Items(flex.Center).Justify(flex.Center).Background(pal.workspace).Children(func() {
+	f.Column().Fill().PadSides(16, 0, 0, 0).Items(ui.Center).Justify(ui.Center).Background(pal.workspace).Children(func() {
 		f.Column().Width(width).Shrink(0).MarginSides(0, 0, 48, 0).Children(func() {
-			f.Text(m.NewTabConnectTo).FontSize(16).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(26).MarginSides(0, 0, newTabTitle-26, 0)
+			f.Text(m.NewTabConnectTo).FontSize(16).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(26).MarginSides(0, 0, newTabTitle-26, 0)
 			f.Stack().Children(func() {
 				f.Row().Fill().Radius(radius.popup).Border(1, pal.line).Background(pal.surface)
 				f.Column().Children(func() {
@@ -68,8 +68,8 @@ func (state *State) paintNewTabPage(canvas *ui.Canvas, bounds ui.Rect) {
 				})
 			})
 			f.Row().Shrink(0).Gap(8).MarginSides(0, 0, newTabFooter-48, 0).Children(func() {
-				add = f.Slot().Size(addHosts, 32).Self(flex.Center)
-				all = f.Slot().Size(allHosts, 32).Self(flex.Center)
+				add = f.Slot().Size(addHosts, 32).Self(ui.Center)
+				all = f.Slot().Size(allHosts, 32).Self(ui.Center)
 			})
 		})
 	})
@@ -91,7 +91,7 @@ func (state *State) paintNewTabPage(canvas *ui.Canvas, bounds ui.Rect) {
 // secondary press as its menu; a row with shells has an arrow after the address,
 // which opens the menu of the shells this computer can start. A secondary press
 // on the row does too.
-func (state *State) newTabRow(f *flex.Frame, id ui.ID, host Host, title, address string, separator bool, width float32, shells bool) {
+func (state *State) newTabRow(f *ui.Frame, id gfx.ID, host Host, title, address string, separator bool, width float32, shells bool) {
 	pal, m := state.pal, state.messages
 	if shells {
 		state.openLocalShellPickerOn(f.Canvas(), id, true)
@@ -99,38 +99,38 @@ func (state *State) newTabRow(f *flex.Frame, id ui.ID, host Host, title, address
 	if id.Scope() == hitNewTabHostList {
 		state.openHostMenuOn(f.Canvas(), id, host)
 	}
-	var wash ui.Color
+	var wash gfx.Color
 	if f.Canvas().Hovered() == id || f.Canvas().FocusVisible() == id {
 		wash = pal.surfaceSoft
 	}
-	f.Stack().Height(newTabRowHeight).HitWith(id, title, ui.HitOptions{Role: ui.RoleButton, Hint: address}).Children(func() {
+	f.Stack().Height(newTabRowHeight).HitWith(id, title, gfx.HitOptions{Role: gfx.RoleButton, Hint: address}).Children(func() {
 		f.Row().Fill().Margin(4).Radius(radius.control).Background(wash)
-		f.Row().Fill().PadX(16).Items(flex.Center).Children(func() {
+		f.Row().Fill().PadX(16).Items(ui.Center).Children(func() {
 			state.chrome.newTabBadges = append(state.chrome.newTabBadges, f.Slot().Size(28, 28).MarginSides(0, 12, 0, 0))
-			f.Text(title).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text).LineHeight(22).Ellipsis()
+			f.Text(title).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(22).Ellipsis()
 			f.Spacer()
 			f.Text(address).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).Ellipsis().Shrink(0).MaxWidth(width*0.4).MarginSides(0, 0, 0, 12)
 			if id.Scope() == hitNewTabHostList {
 				edit := hitNewTabHostEdit.At(item(id))
-				var editWash ui.Color
+				var editWash gfx.Color
 				if f.Canvas().Hovered() == edit || f.Canvas().FocusVisible() == edit {
 					editWash = pal.line
 				}
-				f.Stack().Size(28, 28).Shrink(0).MarginSides(0, -8, 0, 0).HitWith(edit, m.EditHost, ui.HitOptions{Role: ui.RoleButton, Hint: m.EditHost}).Children(func() {
+				f.Stack().Size(28, 28).Shrink(0).MarginSides(0, -8, 0, 0).HitWith(edit, m.EditHost, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.EditHost}).Children(func() {
 					f.Row().Fill().Radius(radius.control).Background(editWash)
-					f.Row().Fill().Items(flex.Center).Justify(flex.Center).Children(func() {
+					f.Row().Fill().Items(ui.Center).Justify(ui.Center).Children(func() {
 						f.Icon(lucideIcons[iconPencil]).Size(14, 14).Color(pal.muted).Shrink(0)
 					})
 				})
 			}
 			if shells {
-				var arrowWash ui.Color
+				var arrowWash gfx.Color
 				if f.Canvas().Hovered() == hitNewTabShells || f.Canvas().FocusVisible() == hitNewTabShells {
 					arrowWash = pal.line
 				}
-				f.Stack().Size(28, 28).Shrink(0).MarginSides(0, -8, 0, 0).HitWith(hitNewTabShells, m.LocalShellChoose, ui.HitOptions{Role: ui.RoleButton, Hint: m.LocalShellChoose}).Children(func() {
+				f.Stack().Size(28, 28).Shrink(0).MarginSides(0, -8, 0, 0).HitWith(hitNewTabShells, m.LocalShellChoose, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.LocalShellChoose}).Children(func() {
 					f.Row().Fill().Radius(radius.control).Background(arrowWash)
-					f.Row().Fill().Items(flex.Center).Justify(flex.Center).Children(func() {
+					f.Row().Fill().Items(ui.Center).Justify(ui.Center).Children(func() {
 						f.Icon(lucideIcons[iconChevronDown]).Size(14, 14).Color(pal.muted).Shrink(0)
 					})
 					state.chrome.newTabShells = f.Slot().Fill()
@@ -138,7 +138,7 @@ func (state *State) newTabRow(f *flex.Frame, id ui.ID, host Host, title, address
 			}
 		})
 		if separator {
-			f.Column().Fill().Justify(flex.End).Children(func() {
+			f.Column().Fill().Justify(ui.End).Children(func() {
 				f.Divider().Background(withAlpha(pal.line, 0.6)).MarginX(16)
 			})
 		}
@@ -146,12 +146,12 @@ func (state *State) newTabRow(f *flex.Frame, id ui.ID, host Host, title, address
 }
 
 // clickNewTabPage connects the choice in the empty pane the page is shown in.
-func (state *State) clickNewTabPage(id ui.ID) bool {
+func (state *State) clickNewTabPage(id gfx.ID) bool {
 	var host Host
 	switch {
 	case id == hitNewTabShells:
 		arrow := state.chrome.newTabShells.Rect()
-		state.openLocalShellPicker(ui.Point{X: arrow.X + arrow.Width - 8, Y: arrow.Y + arrow.Height + 4}, true)
+		state.openLocalShellPicker(gfx.Point{X: arrow.X + arrow.Width - 8, Y: arrow.Y + arrow.Height + 4}, true)
 		return true
 	case id == hitNewTabLocal:
 		state.pendingWorkspace = state.deck.ActiveWorkspace()

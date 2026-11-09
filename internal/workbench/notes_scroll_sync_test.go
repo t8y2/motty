@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestNoteSplitScrollFollowsContentAndKeepsDriver(t *testing.T) {
@@ -19,8 +19,8 @@ func TestNoteSplitScrollFollowsContentAndKeepsDriver(t *testing.T) {
 	}
 	s.notes.body.Insert(body.String())
 	s.notes.view.mode = noteSplit
-	var c ui.Canvas
-	size := ui.Size{Width: 1600, Height: 850}
+	var c gfx.Canvas
+	size := gfx.Size{Width: 1600, Height: 850}
 	paint := func() { c.Reset(); s.Paint(&c, size) }
 	paint()
 	n := &s.notes
@@ -43,7 +43,7 @@ func TestNoteSplitScrollFollowsContentAndKeepsDriver(t *testing.T) {
 		t.Fatal("programmatic scroll fed back")
 	}
 	b := n.previewBounds
-	s.notesScroll(ui.ScrollEvent{X: b.X + 20, Y: b.Y + 20, DeltaY: 210})
+	s.notesScroll(gfx.ScrollEvent{X: b.X + 20, Y: b.Y + 20, DeltaY: 210})
 	paint()
 	paint()
 	offset, _ = n.rendered.SourceAtY(n.body.String(), max(0, n.previewScroll-6))
@@ -63,7 +63,7 @@ func TestNoteSplitScrollFollowsContentAndKeepsDriver(t *testing.T) {
 	// the preview's position inside that appended region across reflow.
 	n.imageSource = n.body.String()
 	for range 4 {
-		n.images = append(n.images, noteImage{bitmap: ui.Bitmap{Width: 1, Height: 1, Stride: 4, Pix: []byte{0, 0, 0, 255}}})
+		n.images = append(n.images, noteImage{bitmap: gfx.Bitmap{Width: 1, Height: 1, Stride: 4, Pix: []byte{0, 0, 0, 255}}})
 	}
 	paint()
 	n.previewScroll = n.rendered.Height() + 106

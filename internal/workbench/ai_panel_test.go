@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
@@ -22,8 +22,8 @@ import (
 )
 
 var (
-	panelWide   = ui.Size{Width: 1400, Height: 900}
-	panelNarrow = ui.Size{Width: 800, Height: 600}
+	panelWide   = gfx.Size{Width: 1400, Height: 900}
+	panelNarrow = gfx.Size{Width: 800, Height: 600}
 )
 
 // quietModel answers every request with one line of text.
@@ -57,7 +57,7 @@ func panelState(t testing.TB, model llm.Provider) (*State, *fakeShell) {
 	shell := fake.shell(t)
 	shell.say("\x1b[0m")
 	state.Wake()
-	state.Paint(&ui.Canvas{}, panelWide)
+	state.Paint(&gfx.Canvas{}, panelWide)
 	return state, shell
 }
 
@@ -77,8 +77,8 @@ func withModel(t testing.TB, state *State) {
 	state.reloadAI()
 }
 
-func paintAt(state *State, size ui.Size) (*ui.Canvas, []string) {
-	var canvas ui.Canvas
+func paintAt(state *State, size gfx.Size) (*gfx.Canvas, []string) {
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	var texts []string
 	for _, text := range canvas.Texts() {
@@ -87,7 +87,7 @@ func paintAt(state *State, size ui.Size) (*ui.Canvas, []string) {
 	return &canvas, texts
 }
 
-func panelHit(t testing.TB, canvas *ui.Canvas, id ui.ID) ui.Hit {
+func panelHit(t testing.TB, canvas *gfx.Canvas, id gfx.ID) gfx.Hit {
 	t.Helper()
 	hit, ok := hitByID(canvas, id)
 	if !ok {
@@ -118,12 +118,12 @@ func TestPanelOpensWithTheBarButtonAndTheTerminalsFollowItsWidth(t *testing.T) {
 		t.Fatal("the panel is up before it was asked for")
 	}
 	button := panelHit(t, canvas, hitAIToggle)
-	if button.Label != state.messages.AIPanel.ToggleTip || button.Role != ui.RoleButton {
+	if button.Label != state.messages.AIPanel.ToggleTip || button.Role != gfx.RoleButton {
 		t.Fatalf("bar button = %+v", button)
 	}
 	state.Click(hitAIToggle)
 	canvas, texts := paintAt(state, panelWide)
-	for _, id := range []ui.ID{hitAIInput, hitAIClose, hitAINew, hitAIHistory, hitAIMode, hitAISend} {
+	for _, id := range []gfx.ID{hitAIInput, hitAIClose, hitAINew, hitAIHistory, hitAIMode, hitAISend} {
 		panelHit(t, canvas, id)
 	}
 	if !hasText(texts, state.messages.AIPanel.Title) {
@@ -153,7 +153,7 @@ func TestShortcutAndPaletteToggleThePanel(t *testing.T) {
 	if !chord.Valid() || state.shortcuts.actionFor(chord) != shortcutAssistant {
 		t.Fatalf("assistant chord %+v", chord)
 	}
-	event := ui.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Char))}
+	event := gfx.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Char))}
 	result := state.Shortcut(event)
 	if !result.Handled || !state.ai.open || result.Focus != hitAIInput {
 		t.Fatalf("shortcut opened = %+v, open=%v", result, state.ai.open)
@@ -185,7 +185,7 @@ func TestShortcutSettingsPageListsTheAssistantAction(t *testing.T) {
 	state, _ := panelState(t, nil)
 	showShortcutSettings(state)
 	paintAt(state, panelWide)
-	state.scrollSettings(ui.ScrollEvent{DeltaY: 4000, Precise: true}) // the last rows sit below the fold
+	state.scrollSettings(gfx.ScrollEvent{DeltaY: 4000, Precise: true}) // the last rows sit below the fold
 	canvas, texts := paintAt(state, panelWide)
 	if !hasText(texts, state.messages.AIPanel.Toggle) {
 		t.Fatalf("the shortcut page lacks %q: %q", state.messages.AIPanel.Toggle, texts)
@@ -210,7 +210,7 @@ func TestEmptyPanelOffersExamplesThatFillTheInput(t *testing.T) {
 	if _, ok := hitByID(canvas, hitAISetup); ok {
 		t.Error("the setup button is shown although a model is chosen")
 	}
-	release := state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hitAIExamples.At(1)})
+	release := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitAIExamples.At(1)})
 	if release.Focus != hitAIInput || release.Handled {
 		t.Fatalf("releasing an example = %+v, want focus on the box and the click still delivered", release)
 	}
@@ -301,7 +301,7 @@ func TestConversationShowsEveryKindOfRowAndToolStatus(t *testing.T) {
 	state.ai.open = true
 	state.ai.scroll.ScrollToStart()
 	// A tall window so that everything is on screen.
-	size := ui.Size{Width: 1400, Height: 2600}
+	size := gfx.Size{Width: 1400, Height: 2600}
 	state.Resize(size)
 	_, texts := paintAt(state, size)
 	m := state.messages.AIPanel
@@ -365,7 +365,7 @@ func TestLinksInAnswersOpenTheirOwnDestination(t *testing.T) {
 	if !hasText(texts, "the second") || hasText(texts, "**") || hasText(texts, "](") {
 		t.Fatalf("answers are not rendered as Markdown: %q", texts)
 	}
-	var ids []ui.ID
+	var ids []gfx.ID
 	for _, hit := range canvas.Hits() {
 		if _, ok := hit.ID.In(hitAILinks); ok {
 			ids = append(ids, hit.ID)
@@ -389,13 +389,13 @@ func TestMessageBoxWrapsLongMessagesAndMovesTheCaretByRow(t *testing.T) {
 	state.ai.open = true
 	value := "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau\n\n中文也要换行,这一行也很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长\n"
 	state.ai.input.Insert(value)
-	canvas, texts := paintAt(state, ui.Size{Width: 900, Height: 700})
+	canvas, texts := paintAt(state, gfx.Size{Width: 900, Height: 700})
 	rows := 0
 	box := panelHit(t, canvas, hitAIInput)
 	for _, text := range canvas.Texts() {
 		if text.Bounds.Y >= box.Bounds.Y && text.Bounds.Y < box.Bounds.Y+box.Bounds.Height && text.Bounds.X < box.Bounds.X+box.Bounds.Width {
 			rows++
-			if got := canvas.TextWidthWeight(text.Value, 13, ui.WeightRegular); got > box.Bounds.Width {
+			if got := canvas.TextWidthWeight(text.Value, 13, gfx.WeightRegular); got > box.Bounds.Width {
 				t.Errorf("row %q is %v wide in a box %v wide", text.Value, got, box.Bounds.Width)
 			}
 		}
@@ -406,11 +406,11 @@ func TestMessageBoxWrapsLongMessagesAndMovesTheCaretByRow(t *testing.T) {
 
 	// Up from the end goes to the row above, not to the start of the message.
 	end := state.ai.input.Caret()
-	state.Key(ui.KeyEvent{Key: ui.KeyUp, Target: hitAIInput})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyUp, Target: hitAIInput})
 	if up := state.ai.input.Caret(); up >= end || up == 0 {
 		t.Fatalf("Up moved the caret from %d to %d", end, up)
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyEnd, Modifiers: ui.ModifierShift, Target: hitAIInput})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnd, Modifiers: gfx.ModifierShift, Target: hitAIInput})
 	if selection := state.ai.input.Selection(); selection.Start >= selection.End {
 		t.Errorf("Shift+End selected nothing: %+v", selection)
 	}
@@ -486,12 +486,12 @@ func TestModelMenuScrollsAProviderWithManyModels(t *testing.T) {
 	rect := state.ai.panel.modelsRect
 	list := &state.ai.panel.modelList
 	before := list.Offset
-	state.Scroll(ui.ScrollEvent{X: rect.X + 10, Y: rect.Y + 10, DeltaY: 96, Precise: true})
+	state.Scroll(gfx.ScrollEvent{X: rect.X + 10, Y: rect.Y + 10, DeltaY: 96, Precise: true})
 	if list.Offset != before+96 {
 		t.Fatalf("scrolled from %v to %v, want 96 pixels further", before, list.Offset)
 	}
 	// The keyboard reaches the last model of a long list, and it is clickable there.
-	state.Key(ui.KeyEvent{Key: ui.KeyEnd, Target: hitAIModels.At(0)})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnd, Target: hitAIModels.At(0)})
 	canvas, _ = paintAt(state, panelWide)
 	last := hitAIModels.At(40)
 	if hit, ok := hitByID(canvas, last); !ok || hit.Bounds.Y+hit.Bounds.Height > rect.Y+rect.Height {
@@ -578,7 +578,7 @@ func TestApprovalCardShowsRiskReasonsAndGatesTheCriticalWord(t *testing.T) {
 	if panelHit(t, canvas, hitAIApprove).Disabled {
 		t.Fatal("Approve is still locked after the word")
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitAIConfirm})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitAIConfirm})
 	if !result.Handled || len(state.ai.approvals) != 0 {
 		t.Fatalf("Enter did not approve: %+v", result)
 	}
@@ -606,7 +606,7 @@ func TestApprovalButtonsAndEscapeAnswer(t *testing.T) {
 		t.Fatalf("first answer = %+v", answer)
 	}
 	paintAt(state, panelWide)
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitAIInput})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIInput})
 	if !result.Handled {
 		t.Fatal("Escape was not taken")
 	}
@@ -614,7 +614,7 @@ func TestApprovalButtonsAndEscapeAnswer(t *testing.T) {
 		t.Fatalf("Escape approved: %+v", answer)
 	}
 	// Escape from the terminal is not the panel's.
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: terminalHit(state, 0)}); result.Handled && len(state.ai.approvals) != 0 {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: terminalHit(state, 0)}); result.Handled && len(state.ai.approvals) != 0 {
 		t.Fatal("unexpected")
 	}
 }
@@ -702,9 +702,9 @@ func TestWheelScrollsTheConversationAndFollowingTracksTheEnd(t *testing.T) {
 	if _, ok := hitByID(canvas, hitAIToEnd); ok {
 		t.Fatal("the jump-to-end button shows at the end")
 	}
-	at := ui.Point{X: state.ai.panel.list.X + 100, Y: state.ai.panel.list.Y + 100}
-	wheel := func(dy float32) ui.EventResult {
-		return state.Scroll(ui.ScrollEvent{X: at.X, Y: at.Y, DeltaY: dy, Viewport: panelWide, Precise: true})
+	at := gfx.Point{X: state.ai.panel.list.X + 100, Y: state.ai.panel.list.Y + 100}
+	wheel := func(dy float32) gfx.EventResult {
+		return state.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: dy, Viewport: panelWide, Precise: true})
 	}
 	end := state.ai.scroll.Offset()
 	if result := wheel(-120); !result.Handled || state.ai.scroll.Offset() != end-120 || state.ai.scroll.Following() {
@@ -736,7 +736,7 @@ func TestWheelScrollsTheConversationAndFollowingTracksTheEnd(t *testing.T) {
 		t.Fatal("jump to end did not follow")
 	}
 	// A wheel outside the panel is the terminal's, one over its header is swallowed.
-	if result := state.Scroll(ui.ScrollEvent{X: state.ai.panel.rect.X + 20, Y: state.ai.panel.rect.Y + 10, DeltaY: 50, Viewport: panelWide}); !result.Handled {
+	if result := state.Scroll(gfx.ScrollEvent{X: state.ai.panel.rect.X + 20, Y: state.ai.panel.rect.Y + 10, DeltaY: 50, Viewport: panelWide}); !result.Handled {
 		t.Fatal("the wheel over the panel header leaked to the terminal")
 	}
 }
@@ -804,8 +804,8 @@ func TestMessageBoxTakesEnterAndNewLines(t *testing.T) {
 	}
 	apply(app.TextEvent{Kind: app.TextInsert, Text: "first"})
 	// Shift+Enter, Ctrl+J and Cmd+J make a line break; plain Enter is not one.
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Modifiers: ui.ModifierShift, Target: hitAIInput})
-	state.Shortcut(ui.KeyEvent{Modifiers: ui.ModifierControl, Text: "j", Target: hitAIInput})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift, Target: hitAIInput})
+	state.Shortcut(gfx.KeyEvent{Modifiers: gfx.ModifierControl, Text: "j", Target: hitAIInput})
 	apply(app.TextEvent{Kind: app.TextInsert, Text: "second"})
 	if got := state.ai.input.String(); got != "first\n\nsecond" {
 		t.Fatalf("input = %q", got)
@@ -920,7 +920,7 @@ func TestPaintingTheOpenPanelAllocatesLittle(t *testing.T) {
 			state.ai.items = append(state.ai.items, aiItem{kind: aiTool, call: llm.ToolCall{ID: "x", Name: "terminal_exec", Arguments: `{"command":"ls -la"}`}, status: aiToolDone, result: "out\nput"})
 		}
 	}
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	paint := func() {
 		canvas.Reset()
 		state.Paint(&canvas, panelWide)
@@ -962,19 +962,19 @@ func TestDraggingTheEdgesResizesThePanelAndTheMessageBox(t *testing.T) {
 	divider := panelHit(t, canvas, hitAIDivider)
 	before := state.aiPanelExtent(panelWide)
 	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
-	pointer := func(kind ui.PointerEventKind, at float32) {
-		state.Pointer(ui.PointerEvent{Kind: kind, Target: hitAIDivider, X: at, Y: y, Viewport: panelWide, Captured: true, Button: ui.PointerButtonPrimary})
+	pointer := func(kind gfx.PointerEventKind, at float32) {
+		state.Pointer(gfx.PointerEvent{Kind: kind, Target: hitAIDivider, X: at, Y: y, Viewport: panelWide, Captured: true, Button: gfx.PointerButtonPrimary})
 	}
-	pointer(ui.PointerDown, x)
-	pointer(ui.PointerMove, x-120)
-	pointer(ui.PointerUp, x-120)
+	pointer(gfx.PointerDown, x)
+	pointer(gfx.PointerMove, x-120)
+	pointer(gfx.PointerUp, x-120)
 	if got := state.aiPanelExtent(panelWide); got < before+110 || got > before+130 {
 		t.Fatalf("panel is %v wide after dragging its edge 120 left, was %v", got, before)
 	}
 	// It cannot be dragged past what leaves the panes their room.
-	pointer(ui.PointerDown, x)
-	pointer(ui.PointerMove, -500)
-	pointer(ui.PointerUp, -500)
+	pointer(gfx.PointerDown, x)
+	pointer(gfx.PointerMove, -500)
+	pointer(gfx.PointerUp, -500)
 	if reserve := state.aiReserve(state.deck.ActiveWorkspace(), panelWide); reserve == 0 {
 		t.Fatal("dragging the panel wide turned it into a drawer")
 	}
@@ -983,12 +983,12 @@ func TestDraggingTheEdgesResizesThePanelAndTheMessageBox(t *testing.T) {
 	grip := panelHit(t, canvas, hitAIComposerGrip)
 	tall := state.ai.panel.boxHeight
 	gx, gy := grip.Bounds.X+50, grip.Bounds.Y+grip.Bounds.Height/2
-	event := func(kind ui.PointerEventKind, at float32) {
-		state.Pointer(ui.PointerEvent{Kind: kind, Target: hitAIComposerGrip, X: gx, Y: at, Viewport: panelWide, Captured: true, Button: ui.PointerButtonPrimary})
+	event := func(kind gfx.PointerEventKind, at float32) {
+		state.Pointer(gfx.PointerEvent{Kind: kind, Target: hitAIComposerGrip, X: gx, Y: at, Viewport: panelWide, Captured: true, Button: gfx.PointerButtonPrimary})
 	}
-	event(ui.PointerDown, gy)
-	event(ui.PointerMove, gy-90)
-	event(ui.PointerUp, gy-90)
+	event(gfx.PointerDown, gy)
+	event(gfx.PointerMove, gy-90)
+	event(gfx.PointerUp, gy-90)
 	paintAt(state, panelWide)
 	if got := state.ai.panel.boxHeight; got < tall+80 {
 		t.Fatalf("message box is %v tall after dragging its edge 90 up, was %v", got, tall)
@@ -1001,16 +1001,16 @@ func TestThePanelWidensToWhatThePanesDoNotNeed(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
 	state.ai.open = true
-	wide := ui.Size{Width: 1920, Height: 1080}
+	wide := gfx.Size{Width: 1920, Height: 1080}
 	canvas, _ := paintAt(state, wide)
 	divider := panelHit(t, canvas, hitAIDivider)
 	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
-	pointer := func(kind ui.PointerEventKind, at float32) {
-		state.Pointer(ui.PointerEvent{Kind: kind, Target: hitAIDivider, X: at, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	pointer := func(kind gfx.PointerEventKind, at float32) {
+		state.Pointer(gfx.PointerEvent{Kind: kind, Target: hitAIDivider, X: at, Y: y, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
 	}
-	pointer(ui.PointerDown, x)
-	pointer(ui.PointerMove, x-2000)
-	pointer(ui.PointerUp, x-2000)
+	pointer(gfx.PointerDown, x)
+	pointer(gfx.PointerMove, x-2000)
+	pointer(gfx.PointerUp, x-2000)
 	want := state.baseWorkspacePixelBounds(wide).Width - aiMinTerminal - 1
 	if got := state.aiPanelExtent(wide); got != want {
 		t.Fatalf("panel is %v wide in a %v window, want %v", got, wide.Width, want)
@@ -1024,7 +1024,7 @@ func TestThePanelWidensToWhatThePanesDoNotNeed(t *testing.T) {
 		t.Fatalf("the terminal is down to %d columns", columns)
 	}
 	// A narrow window still docks the panel, and the drag stops at the same room.
-	narrow := ui.Size{Width: 1000, Height: 700}
+	narrow := gfx.Size{Width: 1000, Height: 700}
 	paintAt(state, narrow)
 	if state.aiReserve(state.deck.ActiveWorkspace(), narrow) == 0 {
 		t.Fatal("the panel became a drawer in a window that has room for it")
@@ -1044,16 +1044,16 @@ func TestAWidePanelLeavesTheSectionItsRoom(t *testing.T) {
 	t.Cleanup(state.Close)
 	withModel(t, state)
 	state.ai.open = true
-	wide := ui.Size{Width: 1920, Height: 1080}
+	wide := gfx.Size{Width: 1920, Height: 1080}
 	canvas, _ := paintAt(state, wide)
 	divider := panelHit(t, canvas, hitAIDivider)
 	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
-	pointer := func(kind ui.PointerEventKind, at float32) {
-		state.Pointer(ui.PointerEvent{Kind: kind, Target: hitAIDivider, X: at, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	pointer := func(kind gfx.PointerEventKind, at float32) {
+		state.Pointer(gfx.PointerEvent{Kind: kind, Target: hitAIDivider, X: at, Y: y, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
 	}
-	pointer(ui.PointerDown, x)
-	pointer(ui.PointerMove, 0)
-	pointer(ui.PointerUp, 0)
+	pointer(gfx.PointerDown, x)
+	pointer(gfx.PointerMove, 0)
+	pointer(gfx.PointerUp, 0)
 	if got, want := state.aiPanelExtent(wide), wide.Width-navigationWidth-aiMinTerminal-1; got != want {
 		t.Fatalf("panel is %v wide beside a section in a %v window, want %v", got, wide.Width, want)
 	}
@@ -1071,13 +1071,13 @@ func TestAIPanelRemembersWidthAcrossRestarts(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
 	state.ai.open = true
-	wide := ui.Size{Width: 1920, Height: 1080}
+	wide := gfx.Size{Width: 1920, Height: 1080}
 	canvas, _ := paintAt(state, wide)
 	divider := panelHit(t, canvas, hitAIDivider)
 	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
 
 	if state.ai.panelWidth != 530 {
 		t.Fatalf("state.ai.panelWidth after drag = %v, want 530", state.ai.panelWidth)
@@ -1103,9 +1103,9 @@ func TestAIPanelRemembersWidthAcrossRestarts(t *testing.T) {
 	canvasSection, _ := paintAt(sectionState, wide)
 	dividerSection := panelHit(t, canvasSection, hitAIDivider)
 	sx, sy := dividerSection.Bounds.X+dividerSection.Bounds.Width/2, dividerSection.Bounds.Y+100
-	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: sx, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
-	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
-	sectionState.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	sectionState.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitAIDivider, X: sx, Y: sy, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	sectionState.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	sectionState.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
 	if sectionState.ai.panelWidth != 610 {
 		t.Fatalf("sectionState.ai.panelWidth after drag = %v, want 610", sectionState.ai.panelWidth)
 	}
@@ -1120,16 +1120,16 @@ func TestAIPanelDrawerModeRemembersResizedWidth(t *testing.T) {
 	withModel(t, state)
 	state.ai.open = true
 	// Narrow window triggers drawer mode (< aiDockAt = 900)
-	narrow := ui.Size{Width: 800, Height: 600}
+	narrow := gfx.Size{Width: 800, Height: 600}
 	canvas, _ := paintAt(state, narrow)
 	// In drawer mode, divider is placed at the left edge of the drawer
 	initialWidth := state.ai.panel.rect.Width
 	divider := panelHit(t, canvas, hitAIDivider)
 	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
 	// Drag divider to resize drawer by 70px wider
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: narrow, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: gfx.PointerButtonPrimary})
 
 	wantWidth := initialWidth + 70
 	if math.Abs(float64(state.ai.panelWidth-wantWidth)) > 0.01 {
@@ -1153,16 +1153,16 @@ func TestAIComposerHeightRemembersAcrossRestarts(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
 	state.ai.open = true
-	wide := ui.Size{Width: 1920, Height: 1080}
+	wide := gfx.Size{Width: 1920, Height: 1080}
 	canvas, _ := paintAt(state, wide)
 
 	grip := panelHit(t, canvas, hitAIComposerGrip)
 	gx, gy := grip.Bounds.X+grip.Bounds.Width/2, grip.Bounds.Y+grip.Bounds.Height/2
 	initialHeight := state.ai.panel.boxHeight
 	// Drag grip upward to increase composer height
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitAIComposerGrip, X: gx, Y: gy, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: hitAIComposerGrip, X: gx, Y: gy - 60, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Target: hitAIComposerGrip, X: gx, Y: gy - 60, Viewport: wide, Captured: true, Button: ui.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitAIComposerGrip, X: gx, Y: gy, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitAIComposerGrip, X: gx, Y: gy - 60, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Target: hitAIComposerGrip, X: gx, Y: gy - 60, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
 
 	wantHeight := initialHeight + 60
 	if state.ai.composerHeight != wantHeight {
@@ -1279,7 +1279,7 @@ func TestModelSubmenuOwnsEscapeAndTheLeftRightKeys(t *testing.T) {
 	}
 
 	provider := hitAIModelProviders.At(0)
-	result := state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: provider})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: provider})
 	if !result.Handled || result.Focus != hitAIModels.At(0) {
 		t.Fatalf("Right = %+v, want the first model focused", result)
 	}
@@ -1287,7 +1287,7 @@ func TestModelSubmenuOwnsEscapeAndTheLeftRightKeys(t *testing.T) {
 	if _, ok := hitByID(canvas, hitAIModels.At(0)); !ok {
 		t.Fatal("Right did not open the model list")
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyLeft, Target: hitAIModels.At(0)})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyLeft, Target: hitAIModels.At(0)})
 	if !result.Handled || result.Focus != provider {
 		t.Fatalf("Left = %+v, want the provider row focused", result)
 	}
@@ -1299,7 +1299,7 @@ func TestModelSubmenuOwnsEscapeAndTheLeftRightKeys(t *testing.T) {
 
 func TestNarrowAIDrawerDoesNotTrapFocusOrBlockSidebar(t *testing.T) {
 	state, _ := panelState(t, nil)
-	narrow := ui.Size{Width: 720, Height: 600}
+	narrow := gfx.Size{Width: 720, Height: 600}
 	state.Resize(narrow)
 	state.setAIPanelOpen(true)
 	canvas, _ := paintAt(state, narrow)
@@ -1320,7 +1320,7 @@ func TestNarrowAIDrawerDoesNotTrapFocusOrBlockSidebar(t *testing.T) {
 
 func TestNarrowAIDrawerTakesTheComposerAndHandsFocusBack(t *testing.T) {
 	state, _ := panelState(t, nil)
-	size := ui.Size{Width: 720, Height: 600}
+	size := gfx.Size{Width: 720, Height: 600}
 	view, err := headless.Open(app.Config{
 		Width: 1000, Height: 700, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
@@ -1330,7 +1330,7 @@ func TestNarrowAIDrawerTakesTheComposerAndHandsFocusBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer view.Close()
-	state.Resize(ui.Size{Width: 1000, Height: 700})
+	state.Resize(gfx.Size{Width: 1000, Height: 700})
 	state.setAIPanelOpen(true)
 	// The drawer appears once the window is too narrow to dock the panel, which
 	// is also the frame that shows where opening it put the keyboard.

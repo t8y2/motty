@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/serial"
 	"motty/internal/sessionimport"
 	"motty/internal/sshconn"
@@ -135,8 +135,8 @@ func TestStreamHostsOfferNoServerOnlyTools(t *testing.T) {
 	if session.files != nil {
 		t.Fatal("an SFTP panel opened for a serial port")
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(&canvas, hitSFTPOpen); !ok || !hit.Disabled {
 		t.Fatalf("Files should be shown disabled: %+v, %v", hit, ok)
 	}
@@ -291,18 +291,18 @@ func TestSwitchingProtocolKeepsWhatTheUserTypedAndChangesWhatTheyDidNot(t *testi
 func TestHostDialogPaintsEachProtocolWithItsOwnFields(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	for _, test := range []struct {
-		protocol ui.ID
-		want     []ui.ID
-		absent   []ui.ID
+		protocol gfx.ID
+		want     []gfx.ID
+		absent   []gfx.ID
 	}{
-		{hitDialogProtocolSSH, []ui.ID{hitDialogUser, hitDialogPort}, []ui.ID{hitDialogFlowNone, hitDialogPortsTrigger}},
-		{hitDialogProtocolTelnet, []ui.ID{hitDialogPort}, []ui.ID{hitDialogUser, hitDialogFlowNone}},
-		{hitDialogProtocolSerial, []ui.ID{hitDialogPort, hitDialogFlowNone, hitDialogPortsTrigger}, []ui.ID{hitDialogUser}},
+		{hitDialogProtocolSSH, []gfx.ID{hitDialogUser, hitDialogPort}, []gfx.ID{hitDialogFlowNone, hitDialogPortsTrigger}},
+		{hitDialogProtocolTelnet, []gfx.ID{hitDialogPort}, []gfx.ID{hitDialogUser, hitDialogFlowNone}},
+		{hitDialogProtocolSerial, []gfx.ID{hitDialogPort, hitDialogFlowNone, hitDialogPortsTrigger}, []gfx.ID{hitDialogUser}},
 	} {
 		state.Click(test.protocol)
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		for _, id := range test.want {
 			if _, ok := hitByID(&canvas, id); !ok {
@@ -436,8 +436,8 @@ func TestPortsPickerClosesOnAnOutsidePressWithoutClosingTheDialog(t *testing.T) 
 	if !state.editor.portsOpen {
 		t.Fatal("the ports picker did not open")
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	backdrop, ok := hitByID(&canvas, hitDialogPortsDismiss)
 	if !ok || backdrop.Bounds.Width != 1400 || backdrop.Bounds.Height != 900 {
 		t.Fatalf("the open picker has no window-wide backdrop: %+v, %v", backdrop, ok)

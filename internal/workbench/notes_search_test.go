@@ -1,7 +1,7 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"testing"
 )
 
@@ -69,8 +69,8 @@ func TestNotesTagSearchKeepsAncestorsAndOrder(t *testing.T) {
 	s.restoreNotes([]savedNote{{ID: "first", Title: "First", Folder: "child", Tags: []string{"needle"}, Order: 2}, {ID: "pinned", Title: "Pinned", Folder: "child", Tags: []string{"NEEDLE"}, Pinned: true}, {ID: "other", Title: "Other"}}, []savedNoteFolder{{ID: "parent", Name: "Parent"}, {ID: "child", Name: "Child", Parent: "parent"}})
 	s.notes.query.Insert("needle")
 	s.notes.view.searchOpen = true
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1400, Height: 800})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 800})
 	var labels []string
 	for _, h := range c.Hits() {
 		if _, ok := h.ID.In(hitNoteRows); ok {

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 	"motty/internal/i18n"
@@ -45,7 +45,7 @@ func TestAIRunStatusHeadlessLayoutAndScreenshots(t *testing.T) {
 						t.Fatal(err)
 					}
 					snapshot := view.Snapshot()
-					var status ui.Hit
+					var status gfx.Hit
 					for _, hit := range snapshot.Hits {
 						if hit.ID == hitAIRunStatus {
 							status = hit
@@ -109,13 +109,13 @@ func TestAIRunUsageWrapReservesSpaceForFontFallback(t *testing.T) {
 			state.ai.lastRun = &aiRunStats{phase: aiRunCompleted, duration: 8 * time.Second,
 				usage: llm.Usage{InputTokens: 12000, OutputTokens: 284, CacheReadTokens: 9800}}
 			state.ai.totalUsage = state.ai.lastRun.usage
-			canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+			canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 			width := state.ai.panel.list.Width - 2*aiPad
 			if len(state.ai.panel.usageLines) == 0 {
 				t.Fatal("finished request has no usage")
 			}
 			for _, line := range state.ai.panel.usageLines {
-				if measured := canvas.TextWidthWeight(line, aiSmallSize, ui.WeightRegular); measured > width-16 {
+				if measured := canvas.TextWidthWeight(line, aiSmallSize, gfx.WeightRegular); measured > width-16 {
 					t.Fatalf("usage line leaves insufficient cross-platform room: %q measured %.1f, available %.1f", line, measured, width)
 				}
 			}

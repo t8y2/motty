@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -98,16 +98,16 @@ func sortedCopy(values []uint32) []uint32 {
 // The part of a card a drag is over decides between swapping and docking, and
 // the edges are the docking sides.
 func TestCardZoneFollowsTheNearestEdge(t *testing.T) {
-	box := ui.Rect{X: 100, Y: 50, Width: 200, Height: 100}
+	box := gfx.Rect{X: 100, Y: 50, Width: 200, Height: 100}
 	for _, test := range []struct {
-		at   ui.Point
+		at   gfx.Point
 		want workspaceCardZone
 	}{
-		{ui.Point{X: 200, Y: 100}, zoneSwap},
-		{ui.Point{X: 104, Y: 100}, zoneLeft},
-		{ui.Point{X: 296, Y: 100}, zoneRight},
-		{ui.Point{X: 200, Y: 52}, zoneTop},
-		{ui.Point{X: 200, Y: 148}, zoneBottom},
+		{gfx.Point{X: 200, Y: 100}, zoneSwap},
+		{gfx.Point{X: 104, Y: 100}, zoneLeft},
+		{gfx.Point{X: 296, Y: 100}, zoneRight},
+		{gfx.Point{X: 200, Y: 52}, zoneTop},
+		{gfx.Point{X: 200, Y: 148}, zoneBottom},
 	} {
 		if got := workspaceCardZoneAt(box, test.at); got != test.want {
 			t.Errorf("zone at %+v = %d, want %d", test.at, got, test.want)
@@ -172,18 +172,18 @@ func TestDraggingAPaneBarDocksItBesideAnotherPane(t *testing.T) {
 	source, target := before[0], before[2]
 	state.refreshWorkspaceViews()
 	frame := state.workspacePixelBounds(state.viewport)
-	var box ui.Rect
+	var box gfx.Rect
 	for _, pane := range state.panes {
 		if pane.ID == target.ID {
 			box = pixelBounds(frame, pane.Bounds)
 		}
 	}
-	at := ui.Point{X: box.X + box.Width/2, Y: box.Y + box.Height - 4}
+	at := gfx.Point{X: box.X + box.Width/2, Y: box.Y + box.Height - 4}
 	drop := state.paneDropAt(workspace, source.ID, at)
 	if drop.kind != dropDock || drop.pane != target.ID || drop.edge != dockBottom {
 		t.Fatalf("drop = %+v, want a bottom dock on pane %d", drop, target.ID)
 	}
-	if own := state.paneDropAt(workspace, source.ID, ui.Point{X: frame.X + 4, Y: frame.Y + frame.Height/2}); own.kind == dropDock && own.pane == source.ID {
+	if own := state.paneDropAt(workspace, source.ID, gfx.Point{X: frame.X + 4, Y: frame.Y + frame.Height/2}); own.kind == dropDock && own.pane == source.ID {
 		t.Fatal("a pane can be docked against itself")
 	}
 	state.movePaneBeside(workspace, source.ID, drop)
@@ -206,23 +206,23 @@ func TestDraggingAPaneBarDocksItBesideAnotherPane(t *testing.T) {
 func TestPaneBarDragThroughThePointerDocks(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
-	state.viewport = ui.Size{Width: 1400, Height: 900}
+	state.viewport = gfx.Size{Width: 1400, Height: 900}
 	workspace := launchTemporaryWorkspace(t, state, 0, 1)
 	state.refreshWorkspaceViews()
 	frame := state.workspacePixelBounds(state.viewport)
 	first, second := state.panes[0], state.panes[1]
 	a, b := pixelBounds(frame, first.Bounds), pixelBounds(frame, second.Bounds)
 	target := hitPaneActivateList.At(0)
-	down := ui.Point{X: a.X + 40, Y: a.Y + 10}
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: target, X: down.X, Y: down.Y, Viewport: state.viewport, ClickCount: 1})
-	end := ui.Point{X: b.X + b.Width - 6, Y: b.Y + b.Height/2}
-	for _, p := range []ui.Point{{X: down.X + 30, Y: down.Y + 30}, end} {
-		state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Target: target, Captured: true, X: p.X, Y: p.Y, Viewport: state.viewport})
+	down := gfx.Point{X: a.X + 40, Y: a.Y + 10}
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target, X: down.X, Y: down.Y, Viewport: state.viewport, ClickCount: 1})
+	end := gfx.Point{X: b.X + b.Width - 6, Y: b.Y + b.Height/2}
+	for _, p := range []gfx.Point{{X: down.X + 30, Y: down.Y + 30}, end} {
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: target, Captured: true, X: p.X, Y: p.Y, Viewport: state.viewport})
 	}
 	if state.tabDrag.drop.kind != dropDock {
 		t.Fatalf("drop = %+v, drag %+v", state.tabDrag.drop, state.tabDrag)
 	}
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: target, Captured: true, X: end.X, Y: end.Y, Viewport: state.viewport, ClickCount: 1})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: target, Captured: true, X: end.X, Y: end.Y, Viewport: state.viewport, ClickCount: 1})
 	panes := state.deck.Panes(workspace, nil)
 	if panes[0].ID != second.ID {
 		t.Fatalf("panes after drop = %+v, want pane %d first", panes, second.ID)
@@ -233,12 +233,12 @@ func TestPaneBarDragThroughThePointerDocks(t *testing.T) {
 func TestPaneBarDroppedOnAPaneCenterSwapsThem(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
-	state.viewport = ui.Size{Width: 1400, Height: 900}
+	state.viewport = gfx.Size{Width: 1400, Height: 900}
 	workspace := launchTemporaryWorkspace(t, state, 0, 1)
 	before := state.deck.Panes(workspace, nil)
 	state.refreshWorkspaceViews()
 	b := pixelBounds(state.workspacePixelBounds(state.viewport), state.panes[1].Bounds)
-	drop := state.paneDropAt(workspace, before[0].ID, ui.Point{X: b.X + b.Width/2, Y: b.Y + b.Height/2})
+	drop := state.paneDropAt(workspace, before[0].ID, gfx.Point{X: b.X + b.Width/2, Y: b.Y + b.Height/2})
 	if drop.kind != dropDock || drop.edge != dockCenter {
 		t.Fatalf("drop = %+v, want a swap", drop)
 	}

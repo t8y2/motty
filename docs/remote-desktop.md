@@ -12,8 +12,8 @@ entry, the certificate question and the pin store.
 
 | Part | Owner |
 | --- | --- |
-| Bitmap that changes in place, partial upload of only the changed tiles | Viva: `ui.Surface` (`github.com/vivaui/viva/ui/surface.go`), with the painter staging only bitmaps whose identity or version changed |
-| Showing such a bitmap one pixel to one device pixel at any display scale | Viva: `ui.Surface.DrawPixels` and `ui.Image.DevicePixels`; the painter keeps those images on device pixels instead of rounding them to logical pixels |
+| Bitmap that changes in place, partial upload of only the changed tiles | Viva: `gfx.Surface` (`github.com/vivaui/viva/gfx/surface.go`), with the painter staging only bitmaps whose identity or version changed |
+| Showing such a bitmap one pixel to one device pixel at any display scale | Viva: `gfx.Surface.DrawPixels` and `gfx.Image.DevicePixels`; the painter keeps those images on device pixels instead of rounding them to logical pixels |
 | Pointer with buttons and positions, wheel, raw keys, committed IME text, focus | Viva (already: `RoleTerminal` focus gives raw keys and text events) |
 | RFB wire protocol, decoders, security types | `internal/rfb` (pure Go, no UI, no cgo) |
 | What every desktop backend offers (`Session`, `Frame`, key/button vocabulary) | `internal/desktop` |
@@ -40,7 +40,7 @@ type Session interface {
 
 * A backend draws into a `desktop.Frame` (BGRA back buffer + a short list of
   dirty rectangles; `Update`, `Fill`, `Copy` for the decoders) and returns
-  `frame.Present` from `Present`. The workbench passes a `ui.Surface`, which
+  `frame.Present` from `Present`. The workbench passes a `gfx.Surface`, which
   satisfies `Presenter`, so a changed 64x64 patch of a 1080p desktop uploads
   64 KB, not 8 MB. Pixels are BGRA with an undefined fourth byte; `Surface`
   makes it opaque.

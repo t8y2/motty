@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -154,9 +154,9 @@ func TestBackgroundOutputTitlesRespectMotionAndOrientation(t *testing.T) {
 	for _, orientation := range []tabOrientation{tabsHorizontal, tabsVertical} {
 		s.setTabOrientation(orientation)
 		for _, reduced := range []bool{false, true} {
-			var canvas ui.Canvas
+			var canvas gfx.Canvas
 			canvas.SetReduceMotion(reduced)
-			s.Paint(&canvas, ui.Size{Width: 1400, Height: 1100})
+			s.Paint(&canvas, gfx.Size{Width: 1400, Height: 1100})
 			found := false
 			for _, text := range canvas.Texts() {
 				if text.Style.Color.Red == s.pal.warning.Red && text.Style.Color.Green == s.pal.warning.Green {
@@ -175,14 +175,14 @@ func TestOutputAlertAnimationOnlyRequestsFramesForVisibleDynamicTitles(t *testin
 	s.backgroundOutputAlerts = true
 	s.activeSection = sectionSettings
 	s.sessions[0].outputAlert.kind = outputAlertError
-	var layout ui.Canvas
-	s.Paint(&layout, ui.Size{Width: 1400, Height: 900})
+	var layout gfx.Canvas
+	s.Paint(&layout, gfx.Size{Width: 1400, Height: 900})
 	tab := s.chrome.bar.tabs[0]
-	strip := ui.Rect{Width: 1400, Height: 900}
+	strip := gfx.Rect{Width: 1400, Height: 900}
 	for _, kind := range []outputAlertKind{outputAlertRunning, outputAlertError, outputAlertQuiet} {
 		tab.output = kind
 		for _, reduced := range []bool{false, true} {
-			var canvas ui.Canvas
+			var canvas gfx.Canvas
 			canvas.SetReduceMotion(reduced)
 			canvas.SetClock(func() time.Duration { return 900 * time.Millisecond })
 			canvas.BeginFrame()
@@ -216,9 +216,9 @@ func TestOutputAlertAnimationOnlyRequestsFramesForVisibleDynamicTitles(t *testin
 			}
 		}
 	}
-	var hidden ui.Canvas
+	var hidden gfx.Canvas
 	tab.output = outputAlertError
-	s.paintOutputAlertTitle(&hidden, &tab, ui.Rect{X: 2000, Y: 2000, Width: 10, Height: 10})
+	s.paintOutputAlertTitle(&hidden, &tab, gfx.Rect{X: 2000, Y: 2000, Width: 10, Height: 10})
 	if _, scheduled := hidden.NextFrame(); scheduled {
 		t.Fatal("offscreen title kept requesting frames")
 	}

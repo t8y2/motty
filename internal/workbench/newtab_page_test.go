@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func newTabState(t *testing.T) *State {
@@ -15,8 +15,8 @@ func newTabState(t *testing.T) *State {
 
 func TestNewTabPageOffersThisComputerAndTheSavedHosts(t *testing.T) {
 	state := newTabState(t)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitNewTabLocal); !ok {
 		t.Fatal("no row for this computer")
 	}
@@ -35,8 +35,8 @@ func TestNewTabPageOffersThisComputerAndTheSavedHosts(t *testing.T) {
 func TestNewTabPageEditsAndAddsHosts(t *testing.T) {
 	state := newTabState(t)
 	before := len(state.deck.Workspaces(nil))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitNewTabHostEdit.At(0)); !ok {
 		t.Fatal("the host's row has no pencil")
 	}
@@ -88,9 +88,9 @@ func TestNewTabPageOpensALocalShellInThisTab(t *testing.T) {
 
 func TestNewTabPageFitsASmallPane(t *testing.T) {
 	state := newTabState(t)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 700, Height: 420})
-	for _, id := range []ui.ID{hitNewTabLocal, hitPaneChooseHost} {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 700, Height: 420})
+	for _, id := range []gfx.ID{hitNewTabLocal, hitPaneChooseHost} {
 		hit, ok := hitByID(&canvas, id)
 		if !ok || hit.Bounds.Y+hit.Bounds.Height > 420 || hit.Bounds.X < 0 || hit.Bounds.X+hit.Bounds.Width > 700 {
 			t.Fatalf("control %d outside a 700x420 window: %+v, %v", id, hit.Bounds, ok)

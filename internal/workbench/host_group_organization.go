@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var (
@@ -174,18 +174,18 @@ func (state *State) groupDeleteChoices() [2]components.RadioOption {
 	}
 }
 
-func (state *State) paintHostGroupDeleteDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintHostGroupDeleteDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := state.messages.HostGroupActions
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitMoveGroupDismiss, CloseID: hitMoveGroupClose,
-		InitialFocusID: hitGroupDeleteParent, ContentSize: ui.Size{Width: 480}, FitBody: true, BodyHeight: 130,
+		InitialFocusID: hitGroupDeleteParent, ContentSize: gfx.Size{Width: 480}, FitBody: true, BodyHeight: 130,
 	})
-	description := elide(canvas, state.groupActions.path, state.Theme().Metrics.FontSizeM, ui.WeightRegular, dialog.Layout("").Header.Width)
+	description := elide(canvas, state.groupActions.path, state.Theme().Metrics.FontSizeM, gfx.WeightRegular, dialog.Layout("").Header.Width)
 	layout := dialog.Begin(m.Delete, description)
 	choices := state.groupDeleteChoices()
 	fullLabels := [2]string{choices[0].Label, choices[1].Label}
 	for index := range choices {
-		choices[index].Label = elide(canvas, choices[index].Label, state.Theme().Metrics.FontSizeM, ui.WeightMedium, layout.Body.Width-32)
+		choices[index].Label = elide(canvas, choices[index].Label, state.Theme().Metrics.FontSizeM, gfx.WeightMedium, layout.Body.Width-32)
 	}
 	selected := hitGroupDeleteParent
 	if state.groupActions.ungroup {
@@ -207,7 +207,7 @@ func (state *State) paintHostGroupDeleteDialog(canvas *ui.Canvas, viewport ui.Re
 	dialog.End()
 }
 
-func (state *State) paintHostGroupParentSelect(canvas *ui.Canvas, bounds, viewport ui.Rect) {
+func (state *State) paintHostGroupParentSelect(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
 	a, m := &state.groupActions, state.messages.HostGroupActions
 	value := state.hostGroupEditor.String()
 	if value == "" {
@@ -221,7 +221,7 @@ func (state *State) paintHostGroupParentSelect(canvas *ui.Canvas, bounds, viewpo
 	}
 	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
 		TriggerID: hitMoveGroupField, Label: m.Parent, Value: value, Open: a.parentOpen,
-		Content: ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: float32(8 + min(count, 8)*32)},
+		Content: gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: float32(8 + min(count, 8)*32)},
 		Layer:   dialogLayer + 1, Scope: dialogScope, DismissID: hitGroupParentDismiss, Viewport: viewport,
 		Scroll: state.selectScroll(a.parentOpen, hitGroupParentDismiss),
 	})

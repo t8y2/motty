@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/cmdhistory"
 )
 
@@ -33,7 +33,7 @@ func ghostWorld(t *testing.T, commands ...string) *historyWorld {
 
 func (h *historyWorld) ghost() (string, bool) { return h.state.commandGhost(&h.state.sessions[0]) }
 
-func (h *historyWorld) key(event ui.KeyEvent) {
+func (h *historyWorld) key(event gfx.KeyEvent) {
 	event.Target = hitTerminalList.At(int(h.state.sessions[0].ID))
 	h.state.Key(event)
 	h.state.Wake()
@@ -50,7 +50,7 @@ func TestTypingTheStartOfAKnownCommandSuggestsTheRestAndRightArrowTakesIt(t *tes
 		t.Fatalf("suggestion = %q, %v", rest, ok)
 	}
 	before := len(h.shell.input)
-	h.key(ui.KeyEvent{Key: ui.KeyRight})
+	h.key(gfx.KeyEvent{Key: gfx.KeyRight})
 	if got := string(h.shell.input[before:]); got != "eckout main" {
 		t.Fatalf("the shell got %q, want the rest of the command and no arrow key", got)
 	}
@@ -69,11 +69,11 @@ func TestAltRightTakesOneWordOfTheSuggestion(t *testing.T) {
 	h.prompt("$ ")
 	h.type_("kubectl ")
 	before := len(h.shell.input)
-	h.key(ui.KeyEvent{Key: ui.KeyRight, Modifiers: ui.ModifierAlt})
+	h.key(gfx.KeyEvent{Key: gfx.KeyRight, Modifiers: gfx.ModifierAlt})
 	if got := string(h.shell.input[before:]); got != "get" {
 		t.Fatalf("the shell got %q, want one word", got)
 	}
-	h.key(ui.KeyEvent{Key: ui.KeyRight, Modifiers: ui.ModifierAlt})
+	h.key(gfx.KeyEvent{Key: gfx.KeyRight, Modifiers: gfx.ModifierAlt})
 	if got := string(h.shell.input[before:]); got != "get pods" {
 		t.Fatalf("the shell got %q, want the second word too", got)
 	}
@@ -84,7 +84,7 @@ func TestRightArrowIsTheShellsWhenNothingIsSuggested(t *testing.T) {
 	h.prompt("$ ")
 	h.type_("ls")
 	before := len(h.shell.input)
-	h.key(ui.KeyEvent{Key: ui.KeyRight})
+	h.key(gfx.KeyEvent{Key: gfx.KeyRight})
 	if got := string(h.shell.input[before:]); got != "\x1b[C" {
 		t.Fatalf("the shell got %q, want the arrow key", got)
 	}

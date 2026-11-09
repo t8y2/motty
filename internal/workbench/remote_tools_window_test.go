@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -33,10 +33,10 @@ func (w *remoteNativeWindow) Close() {
 }
 func (w *remoteNativeWindow) Hide() {}
 func (w *remoteNativeWindow) Show() { w.shows++ }
-func (w *remoteNativeWindow) Frame() (ui.Rect, bool) {
-	return ui.Rect{Width: float32(w.config.Width), Height: float32(w.config.Height)}, true
+func (w *remoteNativeWindow) Frame() (gfx.Rect, bool) {
+	return gfx.Rect{Width: float32(w.config.Width), Height: float32(w.config.Height)}, true
 }
-func (h *remoteWindowHost) OpenWindow(config app.Config, _ *ui.Canvas, closed func()) (app.WindowControl, error) {
+func (h *remoteWindowHost) OpenWindow(config app.Config, _ *gfx.Canvas, closed func()) (app.WindowControl, error) {
 	w := &remoteNativeWindow{config: config, closed: closed}
 	h.windows = append(h.windows, w)
 	return w, nil
@@ -101,8 +101,8 @@ func TestRemoteNativeWindowSudoPromptUsesCapturedSession(t *testing.T) {
 		if window.ui.modal != modalSudoSFTP || state.modal != modalNone || session.sudoCommands {
 			t.Fatal("native window did not request its own authorization")
 		}
-		var canvas ui.Canvas
-		window.paint(&canvas, ui.Size{Width: 1100, Height: 780})
+		var canvas gfx.Canvas
+		window.paint(&canvas, gfx.Size{Width: 1100, Height: 780})
 		if _, ok := hitByID(&canvas, hitSudoSFTPPassword); !ok {
 			t.Fatal("native window did not paint the sudo password field")
 		}
@@ -160,8 +160,8 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 			t.Fatalf("remote tools window lost its custom titlebar: %+v", config)
 		}
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		var canvas ui.Canvas
-		w.paint(&canvas, ui.Size{Width: 1100, Height: 780})
+		var canvas gfx.Canvas
+		w.paint(&canvas, gfx.Size{Width: 1100, Height: 780})
 		movable := false
 		for _, hit := range canvas.Hits() {
 			movable = movable || hit.MovesWindow && hit.Bounds.Y == 0 && hit.Bounds.Height == TitlebarHeight
@@ -196,7 +196,7 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		if w.ui.modal != modalForm || state.modal != modalNone {
 			t.Fatal("confirmation escaped into the workbench")
 		}
-		if result := key(state, len(state.sessions)-1, ui.KeyEvent{Text: "echo free\r"}); !result.Handled {
+		if result := key(state, len(state.sessions)-1, gfx.KeyEvent{Text: "echo free\r"}); !result.Handled {
 			t.Fatal("main terminal was blocked by native confirmation")
 		}
 		w.click(hitFormSubmit)
@@ -212,14 +212,14 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 			t.Fatal("native image form has no platform text input")
 		}
 		input.Editor.Insert("alpine:latest")
-		w.key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFormFieldList.At(0)})
+		w.key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitFormFieldList.At(0)})
 		shell.mu.Lock()
 		actual := string(shell.input)
 		shell.mu.Unlock()
 		if !strings.Contains(actual, "docker pull alpine:latest\r") || state.activeSessionID != source || w.ui.modal != modalRemoteTools || w.closed {
 			t.Fatalf("pull did not target original terminal and keep tools open: %q", actual)
 		}
-		state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+		state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 		openHostInSplit(t, state, state.hosts[1].ID, layoutcore.Horizontal)
 		peer := world.conns[len(world.conns)-1]
 		peer.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
@@ -441,11 +441,11 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 		w.ui.rebuildRemoteRows()
 		for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
 			state.setLanguage(language)
-			for _, size := range []ui.Size{{Width: 600, Height: 500}, {Width: 1100, Height: 780}, {Width: 1400, Height: 900}} {
+			for _, size := range []gfx.Size{{Width: 600, Height: 500}, {Width: 1100, Height: 780}, {Width: 1400, Height: 900}} {
 				w.ui.remote.processScroll = 0
-				var canvas ui.Canvas
+				var canvas gfx.Canvas
 				w.paint(&canvas, size)
-				for _, id := range []ui.ID{hitRemoteClose, hitRemoteRefresh, hitRemoteKill, hitRemoteNiceHigher, hitRemoteProcessScroll} {
+				for _, id := range []gfx.ID{hitRemoteClose, hitRemoteRefresh, hitRemoteKill, hitRemoteNiceHigher, hitRemoteProcessScroll} {
 					hit, ok := hitByID(&canvas, id)
 					if !ok || hit.Bounds.X < 0 || hit.Bounds.Y < 0 || hit.Bounds.X+hit.Bounds.Width > size.Width+.01 || hit.Bounds.Y+hit.Bounds.Height > size.Height+.01 {
 						t.Fatalf("language %v viewport %+v: control %v is unreachable: %+v", language, size, id, hit)
@@ -456,7 +456,7 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 				}
 				bounds := w.ui.remote.processTableBounds
 				before := w.ui.remote.processScroll
-				result, handled := w.ui.remoteProcessWheel(ui.ScrollEvent{
+				result, handled := w.ui.remoteProcessWheel(gfx.ScrollEvent{
 					X: bounds.X + bounds.Width/2, Y: bounds.Y + min(bounds.Height/2, 40),
 					DeltaY: 20, Precise: true, Viewport: size,
 				})

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/desktop"
 )
 
@@ -34,10 +34,10 @@ func TestTheSystemShortcutsFollowWhoHoldsTheKeyboard(t *testing.T) {
 	var log shortcutLog
 	state.SetShortcutCapture(log.capture)
 	shown := true
-	state.SetWindow(func() (ui.Rect, bool) { return ui.Rect{}, true }, func() bool { return shown })
+	state.SetWindow(func() (gfx.Rect, bool) { return gfx.Rect{}, true }, func() bool { return shown })
 
 	screen := newFrames(state, 1)
-	screen.paint(ui.Size{Width: 1400, Height: 900}, 0)
+	screen.paint(gfx.Size{Width: 1400, Height: 900}, 0)
 	eventCanvases[state] = &screen.canvas
 	addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP})
 	openHost(state)
@@ -115,7 +115,7 @@ func TestAWindowThatCannotTakeTheShortcutsIsLeftAlone(t *testing.T) {
 	asked := 0
 	state.SetShortcutCapture(func(bool) error { asked++; return errors.New("unsupported") })
 	screen := newFrames(state, 1)
-	screen.paint(ui.Size{Width: 1400, Height: 900}, 0)
+	screen.paint(gfx.Size{Width: 1400, Height: 900}, 0)
 	eventCanvases[state] = &screen.canvas
 	addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP})
 	openHost(state)

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotetools"
 )
 
@@ -32,7 +32,7 @@ var (
 type remoteProcessDetails struct {
 	open               bool
 	process            remotetools.Process
-	tab                ui.ID
+	tab                gfx.ID
 	collectedAt        time.Time
 	serial             uint64
 	loading            bool
@@ -55,7 +55,7 @@ type remoteProcessDetails struct {
 type remoteProcessMenu struct {
 	open bool
 	key  string
-	at   ui.Point
+	at   gfx.Point
 }
 
 func (state *State) remoteProcessByKey(key string) (remotetools.Process, bool) {
@@ -87,7 +87,7 @@ func (state *State) closeRemoteProcessDetails() {
 	state.remote.processDetails = remoteProcessDetails{}
 }
 
-func (state *State) selectRemoteProcessDetailTab(tab ui.ID) {
+func (state *State) selectRemoteProcessDetailTab(tab gfx.ID) {
 	details := &state.remote.processDetails
 	if !details.open || tab != hitRemoteProcessDetailsCommand && tab != hitRemoteProcessDetailsEnv {
 		return
@@ -117,9 +117,9 @@ func (state *State) selectRemoteProcessDetailTab(tab ui.ID) {
 // openRemoteProcessMenuOn runs while a process row is painted. A secondary
 // press selects the row and opens the same fixed action menu in the main window
 // and in a native remote-tools window.
-func (state *State) openRemoteProcessMenuOn(canvas *ui.Canvas, id ui.ID, index int) {
+func (state *State) openRemoteProcessMenuOn(canvas *gfx.Canvas, id gfx.ID, index int) {
 	event, ok := canvas.PointerOn(id)
-	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary ||
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary ||
 		!state.remoteToolsVisible() || state.remote.processDetails.open {
 		return
 	}
@@ -129,12 +129,12 @@ func (state *State) openRemoteProcessMenuOn(canvas *ui.Canvas, id ui.ID, index i
 	row := &state.remote.rows[index]
 	state.remote.selected = row.key
 	state.remote.processMenu = remoteProcessMenu{
-		open: true, key: row.key, at: ui.Point{X: event.X, Y: event.Y},
+		open: true, key: row.key, at: gfx.Point{X: event.X, Y: event.Y},
 	}
 	canvas.Consume()
 }
 
-func (state *State) clickRemoteProcessDetails(id ui.ID) bool {
+func (state *State) clickRemoteProcessDetails(id gfx.ID) bool {
 	details := &state.remote.processDetails
 	if !details.open {
 		return false
@@ -168,7 +168,7 @@ func (state *State) remoteProcessDetailTabs() [2]components.TabOption {
 	}
 }
 
-func (state *State) remoteProcessDetailTab() ui.ID {
+func (state *State) remoteProcessDetailTab() gfx.ID {
 	if state.remote.processDetails.tab == hitRemoteProcessDetailsEnv {
 		return hitRemoteProcessDetailsEnv
 	}
@@ -182,7 +182,7 @@ func (state *State) processMenuProcess() (remotetools.Process, bool) {
 	return state.remoteProcessByKey(state.remote.processMenu.key)
 }
 
-func (state *State) clickRemoteProcessMenu(id ui.ID) bool {
+func (state *State) clickRemoteProcessMenu(id gfx.ID) bool {
 	menu := &state.remote.processMenu
 	if !menu.open {
 		return false
@@ -238,7 +238,7 @@ func (state *State) copyRemoteProcessValue(value string) {
 	view.status = state.messages.StatusClipboardCopied
 }
 
-func (state *State) paintRemoteProcessMenu(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintRemoteProcessMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	menu := &state.remote.processMenu
 	if !menu.open {
 		return
@@ -263,7 +263,7 @@ func (state *State) paintRemoteProcessMenu(canvas *ui.Canvas, viewport ui.Rect) 
 
 func (state *State) remoteProcessMenuRows(process remotetools.Process) menuRows {
 	m := state.messages.Tools
-	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	actionsBlocked := state.remoteProcessActionsBlocked(process)
 	var rows menuRows
 	rows.add(components.ContextMenuItem{ID: hitRemoteProcessMenuView, Label: m.RemoteProcessDetails, Icon: icon(iconInfo)})
@@ -286,7 +286,7 @@ func (state *State) remoteProcessActionsBlocked(process remotetools.Process) boo
 		process.PID <= 1 || process.StartIdentity == ""
 }
 
-func (state *State) paintRemoteProcessDetails(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintRemoteProcessDetails(canvas *gfx.Canvas, viewport gfx.Rect) {
 	details := &state.remote.processDetails
 	if !details.open {
 		return
@@ -298,7 +298,7 @@ func (state *State) paintRemoteProcessDetails(canvas *ui.Canvas, viewport ui.Rec
 		Layer: dialogLayer + 2, Scope: dialogScope,
 		DismissID: hitRemoteProcessDetailsDismiss, CloseID: hitRemoteProcessDetailsClose,
 		InitialFocusID: hitRemoteProcessDetailsClose,
-		ContentSize:    ui.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
+		ContentSize:    gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
 		ButtonSize: components.ButtonSizeSmall,
 	})
 	process := details.process
@@ -443,9 +443,9 @@ func processStateText(state *State, value string) string {
 	return trimmed
 }
 
-func (state *State) remoteProcessDetailsKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) remoteProcessDetailsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if !state.remoteToolsVisible() {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if state.remote.processDetails.open {
 		if result, handled := state.remoteDetailTextShortcut(event, &state.remote.processDetails.text); handled {
@@ -460,80 +460,80 @@ func (state *State) remoteProcessDetailsKey(event ui.KeyEvent) (ui.EventResult, 
 		}
 		options := state.remoteProcessDetailTabs()
 		if event.Target == hitRemoteProcessDetailsCommand || event.Target == hitRemoteProcessDetailsEnv {
-			if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat {
+			if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
 				state.selectRemoteProcessDetailTab(event.Target)
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 			if next, handled := components.TabsKeyDown(
 				event.Target, options[:], components.TabsHorizontal, components.DirectionLTR, event.Key,
 			); handled {
 				state.selectRemoteProcessDetailTab(next)
-				return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
+				return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
 			}
 		}
-		if event.Key == ui.KeyTab && event.Modifiers&^ui.ModifierShift == 0 {
-			return ui.EventResult{Handled: true, ContinueTraversal: true}, true
+		if event.Key == gfx.KeyTab && event.Modifiers&^gfx.ModifierShift == 0 {
+			return gfx.EventResult{Handled: true, ContinueTraversal: true}, true
 		}
-		if event.Key == ui.KeyEscape && !event.Repeat {
+		if event.Key == gfx.KeyEscape && !event.Repeat {
 			state.closeRemoteProcessDetails()
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat {
+		if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
 			switch event.Target {
 			case hitRemoteProcessDetailsClose:
 				state.closeRemoteProcessDetails()
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			case hitRemoteTerminate, hitRemoteKill,
 				hitRemoteNiceLower, hitRemoteNiceNormal, hitRemoteNiceHigher:
 				if state.remoteProcessActionsBlocked(details.process) {
-					return ui.EventResult{Handled: true}, true
+					return gfx.EventResult{Handled: true}, true
 				}
 				state.closeRemoteProcessDetails()
 				state.clickRemoteTools(event.Target)
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 		}
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
-	if state.remote.processMenu.open && event.Key == ui.KeyEscape && !event.Repeat {
+	if state.remote.processMenu.open && event.Key == gfx.KeyEscape && !event.Repeat {
 		state.remote.processMenu = remoteProcessMenu{}
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) remoteProcessDetailsTextPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) remoteProcessDetailsTextPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	details := &state.remote.processDetails
 	if !details.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.remoteDetailTextPointer(event, &details.text, hitRemoteProcessDetailsText)
 }
 
-func (state *State) remoteProcessDetailsScrollPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) remoteProcessDetailsScrollPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	details := &state.remote.processDetails
 	if !details.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.remoteDetailScrollPointer(event, &details.text, hitRemoteProcessDetailsScroll)
 }
 
-func (state *State) remoteProcessMenuPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) remoteProcessMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if !state.remoteToolsVisible() || !state.remote.processMenu.open ||
-		event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary ||
+		event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary ||
 		event.Target != hitRemoteProcessMenuDismiss {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.remote.processMenu = remoteProcessMenu{}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (w *remoteToolsWindow) pointer(event ui.PointerEvent) ui.EventResult {
+func (w *remoteToolsWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if w.closed {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if w.ui.modal == modalSudoSFTP {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if result, handled := w.ui.remoteProcessMenuPointer(event); handled {
 		return result
@@ -553,5 +553,5 @@ func (w *remoteToolsWindow) pointer(event ui.PointerEvent) ui.EventResult {
 	if result, handled := w.ui.menuPointer(event); handled {
 		return result
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }

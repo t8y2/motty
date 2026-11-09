@@ -11,8 +11,8 @@ import (
 	"unsafe"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
 )
@@ -64,7 +64,7 @@ func TestHostTagsAndCompactIconEditPersistAndFilter(t *testing.T) {
 	state.editor.tags = text.Editor{}
 	for _, tag := range []string{"prod", "critical", "PROD"} {
 		typeInto(state, hitDialogTags, tag)
-		state.Key(ui.KeyEvent{Target: hitDialogTags, Key: ui.KeyEnter})
+		state.Key(gfx.KeyEvent{Target: hitDialogTags, Key: gfx.KeyEnter})
 	}
 	state.Click(hitHostTagsDismiss)
 	state.Click(hitDialogIcon)
@@ -189,8 +189,8 @@ func TestHostCatalogTreeSteadyPaintIsAllocationFree(t *testing.T) {
 	setHostTags(&state.hosts[0], []string{"prod", "critical"})
 	state.hosts[0].Icon = hostIconTerminal
 	state.hostDataChanged()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -205,8 +205,8 @@ func BenchmarkPaintHostCatalogTree(b *testing.B) {
 	setHostTags(&state.hosts[0], []string{"prod", "critical"})
 	state.hosts[0].Icon = hostIconTerminal
 	state.hostDataChanged()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ResetTimer()
 	b.ReportMetric(float64(unsafe.Sizeof(Host{})), "bytes/host")
@@ -250,7 +250,7 @@ func TestHostIconListScrollsToTheEntriesBelow(t *testing.T) {
 	if _, ok := hitByID(canvas, last); ok {
 		t.Fatal("the last entry of the icon list is reachable before scrolling")
 	}
-	state.Scroll(ui.ScrollEvent{X: state.popups.surface.X + 20, Y: state.popups.surface.Y + 20, DeltaY: 100000})
+	state.Scroll(gfx.ScrollEvent{X: state.popups.surface.X + 20, Y: state.popups.surface.Y + 20, DeltaY: 100000})
 	canvas, _ = paintedTexts(state)
 	if _, ok := hitByID(canvas, last); !ok {
 		t.Fatal("the last entry of the icon list is out of reach after scrolling to the end")
@@ -274,7 +274,7 @@ func TestOTPFieldKeepsItsWidthWhateverButtonsItHas(t *testing.T) {
 		state.editor.form.offset = state.editor.form.geometry.MaxOffsetY
 		canvas, _ = paintedTexts(state)
 		// The field's label shares its identity, so take the input: the taller one.
-		var field ui.Hit
+		var field gfx.Hit
 		for _, hit := range canvas.Hits() {
 			if hit.ID == hitDialogOTP && hit.Bounds.Height > field.Bounds.Height {
 				field = hit
@@ -287,7 +287,7 @@ func TestOTPFieldKeepsItsWidthWhateverButtonsItHas(t *testing.T) {
 		if scan.Bounds.Y <= field.Bounds.Y+field.Bounds.Height-1 {
 			t.Fatalf("saved=%v: scan %+v should sit under the field %+v", saved, scan.Bounds, field.Bounds)
 		}
-		for _, id := range []ui.ID{hitDialogOTPScan, hitDialogOTPPaste, hitDialogForwardX11, hitDialogNoHistory, hitDialogAgentAccess} {
+		for _, id := range []gfx.ID{hitDialogOTPScan, hitDialogOTPPaste, hitDialogForwardX11, hitDialogNoHistory, hitDialogAgentAccess} {
 			hit, found := hitByID(canvas, id)
 			if !found || hit.Bounds.Y+hit.Bounds.Height > float32(state.windowRect().Height) {
 				t.Fatalf("saved=%v: control %v is missing or off screen: %+v", saved, id, hit)

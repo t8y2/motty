@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 )
 
@@ -143,7 +143,7 @@ func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
 	list := w.ui.list[0]
 	for _, delta := range []float32{24, 48, 72, -24} {
 		before := w.ui.offset[0]
-		if err := preview.Scroll(ui.ScrollEvent{
+		if err := preview.Scroll(gfx.ScrollEvent{
 			X:      state.fileManagerRect.X + list.X + 24,
 			Y:      state.fileManagerRect.Y + list.Y + 24,
 			DeltaY: delta, Precise: true,
@@ -169,15 +169,15 @@ func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
 		t.Fatalf("scrollbar press did not start a local drag: %d", w.ui.barDrag)
 	}
 	last := w.ui.offset[0]
-	jitter := w.pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, Captured: true,
+	jitter := w.pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Captured: true,
 		X: x - state.fileManagerRect.X, Y: y - state.fileManagerRect.Y,
 	})
 	if jitter.Repaint || w.ui.offset[0] != last {
 		t.Fatalf("a move that did not change the offset repainted the tab: offset %.1f -> %.1f, repaint %v", last, w.ui.offset[0], jitter.Repaint)
 	}
-	capturedExit := w.pointer(ui.PointerEvent{
-		Kind: ui.PointerExit, Captured: true,
+	capturedExit := w.pointer(gfx.PointerEvent{
+		Kind: gfx.PointerExit, Captured: true,
 		X: x - state.fileManagerRect.X, Y: y - state.fileManagerRect.Y,
 	})
 	if w.ui.barDrag != 1 || !capturedExit.Handled {
@@ -200,20 +200,20 @@ func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
 	}
 }
 
-func textBoundsFromSnapshot(snapshot app.Snapshot, value string) (ui.Rect, bool) {
+func textBoundsFromSnapshot(snapshot app.Snapshot, value string) (gfx.Rect, bool) {
 	for _, text := range snapshot.Texts {
 		if text.Value == value {
 			return text.Bounds, true
 		}
 	}
-	return ui.Rect{}, false
+	return gfx.Rect{}, false
 }
 
-func hitByIDFromSnapshot(snapshot app.Snapshot, id ui.ID) (ui.Rect, bool) {
+func hitByIDFromSnapshot(snapshot app.Snapshot, id gfx.ID) (gfx.Rect, bool) {
 	for _, hit := range snapshot.Hits {
 		if hit.ID == id && !hit.Block {
 			return hit.Bounds, true
 		}
 	}
-	return ui.Rect{}, false
+	return gfx.Rect{}, false
 }

@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/cli"
@@ -25,7 +25,7 @@ func (state *State) aiDiscoverCLIPath() {
 	cfg.cliPath.SetSelection(text.Range{Start: 0, End: cfg.cliPath.RuneCount()})
 }
 
-func (state *State) paintAICLIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAICLIProviderForm(canvas *gfx.Canvas, viewport gfx.Rect) {
 	cfg, m, theme := &state.ai.cfg, state.messages.AISettings, state.Theme()
 	title, submit := m.FormAddTitle, m.FormAdd
 	height := float32(182)
@@ -46,10 +46,10 @@ func (state *State) paintAICLIProviderForm(canvas *ui.Canvas, viewport ui.Rect) 
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, CloseID: hitAISetFormClose,
-		InitialFocusID: hitAISetFormName, ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(height, cfg.formErr),
+		InitialFocusID: hitAISetFormName, ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: withError(height, cfg.formErr),
 	})
 	layout := dialog.Begin(title, m.CLIFormDescription)
-	var preset, name, path flex.Box
+	var preset, name, path ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		if cfg.editID == "" {

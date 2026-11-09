@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // historyState is a five-row terminal with sixty numbered lines behind it.
@@ -21,10 +21,10 @@ func historyState() (*State, *Session, terminalGeometry) {
 	return state, session, geometry
 }
 
-func barPointer(state *State, session *Session, kind ui.PointerEventKind, x, y float32) ui.EventResult {
-	return state.Pointer(ui.PointerEvent{
-		Kind: kind, Button: ui.PointerButtonPrimary, Target: hitTerminalBar.At(int(session.ID)),
-		Captured: kind != ui.PointerDown, X: x, Y: y, Viewport: state.viewport,
+func barPointer(state *State, session *Session, kind gfx.PointerEventKind, x, y float32) gfx.EventResult {
+	return state.Pointer(gfx.PointerEvent{
+		Kind: kind, Button: gfx.PointerButtonPrimary, Target: hitTerminalBar.At(int(session.ID)),
+		Captured: kind != gfx.PointerDown, X: x, Y: y, Viewport: state.viewport,
 	})
 }
 
@@ -41,7 +41,7 @@ func TestTerminalWithHistoryShowsAScrollbarThatMovesTheView(t *testing.T) {
 		t.Fatal("terminal chrome was not found")
 	}
 	actualGeometry := terminalLayoutWithChrome(state.viewport, state.cellWidth, state.cellHeight, chrome, state.padding())
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.paintGrid(&canvas, session, actualGeometry)
 	bar, ok := hitByID(&canvas, hitTerminalBar.At(int(session.ID)))
 	if !ok {
@@ -52,18 +52,18 @@ func TestTerminalWithHistoryShowsAScrollbarThatMovesTheView(t *testing.T) {
 	// At the live screen the thumb is at the bottom: dragging it up goes back.
 	area := state.terminalScrollArea(nil, session, actualGeometry.area, 1).Geometry()
 	grab := area.VerticalThumb.Y + area.VerticalThumb.Height/2
-	barPointer(state, session, ui.PointerDown, x, grab)
-	if result := barPointer(state, session, ui.PointerMove, x, bar.Bounds.Y); !result.Handled || !result.Repaint {
+	barPointer(state, session, gfx.PointerDown, x, grab)
+	if result := barPointer(state, session, gfx.PointerMove, x, bar.Bounds.Y); !result.Handled || !result.Repaint {
 		t.Fatalf("dragging the thumb up = %+v", result)
 	}
 	if screen.ViewOffset() != history {
 		t.Fatalf("thumb at the top shows %d lines back, want the oldest (%d)", screen.ViewOffset(), history)
 	}
-	barPointer(state, session, ui.PointerUp, x, bar.Bounds.Y)
+	barPointer(state, session, gfx.PointerUp, x, bar.Bounds.Y)
 
 	// A press on the track below the thumb pages toward the live screen.
 	before := screen.ViewOffset()
-	barPointer(state, session, ui.PointerDown, x, bar.Bounds.Y+bar.Bounds.Height-2)
+	barPointer(state, session, gfx.PointerDown, x, bar.Bounds.Y+bar.Bounds.Height-2)
 	if want := before - (actualGeometry.rows - 1); screen.ViewOffset() != want {
 		t.Fatalf("a press below the thumb moved to %d, want %d", screen.ViewOffset(), want)
 	}
@@ -81,7 +81,7 @@ func TestTerminalScrollbarFollowsTheWheelAndNeedsHistory(t *testing.T) {
 		t.Fatalf("scrolling back left the thumb at %v, was %v", after, before)
 	}
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.paintGrid(&canvas, session, geometry)
 	if _, ok := hitByID(&canvas, hitTerminalBar.At(int(session.ID))); !ok {
 		t.Fatal("no scrollbar over a terminal with history")
@@ -90,13 +90,13 @@ func TestTerminalScrollbarFollowsTheWheelAndNeedsHistory(t *testing.T) {
 	// The alternate screen has no history, and a terminal that has not scrolled
 	// anything off has nothing to show.
 	session.term.write([]byte("\x1b[?1049h"))
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.paintGrid(&canvas, session, geometry)
 	if _, ok := hitByID(&canvas, hitTerminalBar.At(int(session.ID))); ok {
 		t.Fatal("a scrollbar on the alternate screen")
 	}
 	fresh, freshSession, freshGeometry := selectionState()
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	fresh.paintGrid(&canvas, freshSession, freshGeometry)
 	if _, ok := hitByID(&canvas, hitTerminalBar.At(int(freshSession.ID))); ok {
 		t.Fatal("a scrollbar with nothing to scroll")
@@ -108,11 +108,11 @@ func TestTerminalRowsKeepTheirTextIdentityAcrossScrolling(t *testing.T) {
 	// Move off the live screen so every terminal row holds a written line; the
 	// blank row under the cursor paints no label.
 	session.term.screen.Scroll(2)
-	var canvas ui.Canvas
-	paint := func() []ui.TextIdentity {
+	var canvas gfx.Canvas
+	paint := func() []gfx.TextIdentity {
 		canvas.Reset()
 		state.paintGrid(&canvas, session, geometry)
-		identities := make([]ui.TextIdentity, 0, geometry.rows)
+		identities := make([]gfx.TextIdentity, 0, geometry.rows)
 		for _, text := range canvas.Texts() {
 			if text.Identity.Owner == session.ID && text.Identity.Item != 0 {
 				identities = append(identities, text.Identity)
@@ -132,7 +132,7 @@ func TestTerminalRowsKeepTheirTextIdentityAcrossScrolling(t *testing.T) {
 		t.Fatalf("grid labels = %d, want one per visible row (%d)", len(before), visible)
 	}
 	for row, identity := range before {
-		if want := session.term.screen.Row(row).ID; identity != (ui.TextIdentity{Owner: session.ID, Item: want}) {
+		if want := session.term.screen.Row(row).ID; identity != (gfx.TextIdentity{Owner: session.ID, Item: want}) {
 			t.Fatalf("row %d identity = %+v, want owner %d item %d", row, identity, session.ID, want)
 		}
 	}
@@ -151,9 +151,9 @@ func TestTerminalRowsKeepTheirTextIdentityAcrossScrolling(t *testing.T) {
 
 // barAlpha paints the terminal with the pointer over hover and returns how
 // opaque its scrollbar is.
-func barAlpha(canvas *ui.Canvas, state *State, session *Session, geometry terminalGeometry, at time.Duration, hover ui.ID) float32 {
+func barAlpha(canvas *gfx.Canvas, state *State, session *Session, geometry terminalGeometry, at time.Duration, hover gfx.ID) float32 {
 	canvas.SetClock(func() time.Duration { return at })
-	canvas.SetInteraction(hover, ui.ID{}, ui.ID{}, false)
+	canvas.SetInteraction(hover, gfx.ID{}, gfx.ID{}, false)
 	canvas.BeginFrame()
 	state.paintGrid(canvas, session, geometry)
 	canvas.EndFrame()
@@ -162,9 +162,9 @@ func barAlpha(canvas *ui.Canvas, state *State, session *Session, geometry termin
 
 func TestTerminalScrollbarShowsWhileThePointerIsOverTheTerminal(t *testing.T) {
 	state, session, geometry := historyState()
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	over := hitTerminalList.At(int(session.ID))
-	var none ui.ID
+	var none gfx.ID
 
 	if got := barAlpha(&canvas, state, session, geometry, 0, none); got != 0 {
 		t.Fatalf("an idle terminal shows its scrollbar (%v)", got)
@@ -184,8 +184,8 @@ func TestTerminalScrollbarShowsWhileThePointerIsOverTheTerminal(t *testing.T) {
 
 func TestTerminalScrollbarLingersWhenTheKeyboardScrolls(t *testing.T) {
 	state, session, geometry := historyState()
-	var canvas ui.Canvas
-	var none ui.ID
+	var canvas gfx.Canvas
+	var none gfx.ID
 	barAlpha(&canvas, state, session, geometry, 0, none)
 	session.term.screen.Scroll(10)
 	if got := barAlpha(&canvas, state, session, geometry, time.Second, none); got <= 0 {

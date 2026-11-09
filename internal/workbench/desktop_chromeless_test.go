@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // A host can ask for its desktop page to be the picture alone: no bar above it,
@@ -14,7 +14,7 @@ import (
 // the choice travels with the host.
 
 func TestChromelessLayoutGivesTheBarsRoomToThePicture(t *testing.T) {
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	bars := desktopLayout(size, false)
 	if bars.area.Y != windowBarHeight+infoBarHeight || bars.area.Height != size.Height-windowBarHeight-infoBarHeight-desktopStripHeight {
 		t.Fatalf("a page with bars places its picture at %+v", bars.area)
@@ -65,7 +65,7 @@ func TestChromelessDesktopShowsThePictureAlone(t *testing.T) {
 	state, session := vncState(t, fixture)
 	connectDesktop(t, state, session, "secret")
 	session.desk.chromeless = true
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	canvas := paintDesk(state)
 
 	area, ok := hitByID(canvas, hitTerminalList.At(int(session.ID)))
@@ -127,8 +127,8 @@ func TestTheTabMenuHoldsTheDesktopControlsOnlyForADesktop(t *testing.T) {
 	openHost(state)
 	workspace := state.deck.ActiveWorkspace()
 	rightClickTab(state, hitTabList.At(int(workspace)))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTabMenuFit); ok {
 		t.Fatal("a terminal tab offers the desktop's scaling choice")
 	}
@@ -138,14 +138,14 @@ func TestTheHostEditorOffersThePictureAloneSwitch(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.openHostDialog()
 	state.clickHostProtocol(hitDialogProtocolRDP)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogChromeless); !ok {
 		t.Fatal("a desktop host's editor offers no picture-alone switch")
 	}
 	state.clickHostProtocol(hitDialogProtocolSSH)
-	canvas = ui.Canvas{}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogChromeless); ok {
 		t.Fatal("an SSH host's editor offers the desktop's switch")
 	}

@@ -5,7 +5,7 @@ import (
 	"slices"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/workbench/icons"
@@ -21,7 +21,7 @@ var (
 	hitDashboardAddPanelList = tree.Sub(dashboardHits, tree.Name("add-panel"))
 )
 
-func dashboardOrderID(host string) ui.ID { return tree.ID(dashboardHits, "order-"+host) }
+func dashboardOrderID(host string) gfx.ID { return tree.ID(dashboardHits, "order-"+host) }
 
 func (s *State) dashboardModeTabs() [2]components.TabOption {
 	m := s.messages.Dashboard
@@ -59,7 +59,7 @@ func (s *State) newDashboardFromHosts(hosts []string) {
 	s.dashboard.addHosts = nil
 }
 
-func (s *State) clickDashboardManagement(id ui.ID) bool {
+func (s *State) clickDashboardManagement(id gfx.ID) bool {
 	d := &s.dashboard
 	if s.modal == modalDashboardAdd {
 		switch {
@@ -102,9 +102,9 @@ func (s *State) clickDashboardManagement(id ui.ID) bool {
 	return false
 }
 
-func (s *State) paintDashboardAddMenu(c *ui.Canvas) {
+func (s *State) paintDashboardAddMenu(c *gfx.Canvas) {
 	d, m := &s.dashboard, s.messages.Dashboard
-	menu := components.BeginDropdownMenu(c, s.Theme(), s.popupBelow(c, d.addAnchor, 260, min(420, float32(len(d.panels)*32+85)), flex.Start),
+	menu := components.BeginDropdownMenu(c, s.Theme(), s.popupBelow(c, d.addAnchor, 260, min(420, float32(len(d.panels)*32+85)), ui.Start),
 		components.DropdownMenuOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitDashboardAddDismiss, Viewport: s.windowRect(), Scroll: s.menuScrollFor(hitDashboardAddDismiss)})
 	menu.AddLabel(fmt.Sprintf(m.AddHint, len(d.addHosts)), false)
 	menu.AddItem(components.DropdownMenuItem{ID: hitDashboardAddNew, Label: m.New, Icon: icons.Plus})
@@ -136,7 +136,7 @@ func (s *State) moveDashboardHost(move components.ReorderMove) {
 	e.scroll = max(0, e.scroll+e.order.RevealScroll(move.To))
 }
 
-func (s *State) paintDashboardHostOrder(c *ui.Canvas, geo components.ScrollAreaGeometry) {
+func (s *State) paintDashboardHostOrder(c *gfx.Canvas, geo components.ScrollAreaGeometry) {
 	e, m, theme := &s.dashboard.editor, s.messages.Dashboard, s.Theme()
 	bounds := geo.Content
 	bounds.X += 3
@@ -152,13 +152,13 @@ func (s *State) paintDashboardHostOrder(c *ui.Canvas, geo components.ScrollAreaG
 			h.Label, h.Address = m.Missing, id
 		}
 		row := list.Row(dashboardOrderID(id), fmt.Sprintf(m.SortPanel, h.Label), false)
-		s.paintHostCatalogIcon(c, h, ui.Rect{X: row.Content.X, Y: row.Content.Y + (row.Content.Height-28)/2, Width: 28, Height: 28}, theme.Card)
+		s.paintHostCatalogIcon(c, h, gfx.Rect{X: row.Content.X, Y: row.Content.Y + (row.Content.Height-28)/2, Width: 28, Height: 28}, theme.Card)
 		color := theme.Foreground
 		if !exists {
 			color = s.pal.warning
 		}
-		monitorLabel(c, h.Label, ui.Rect{X: row.Content.X + 40, Y: row.Content.Y, Width: max(0, row.Content.Width*.55-40), Height: row.Content.Height}, 13, color, ui.WeightMedium)
-		monitorRight(c, h.Address, ui.Rect{X: row.Content.X + row.Content.Width*.55, Y: row.Content.Y, Width: row.Content.Width*.45 - 12, Height: row.Content.Height}, 12, theme.MutedForeground, ui.WeightRegular)
+		monitorLabel(c, h.Label, gfx.Rect{X: row.Content.X + 40, Y: row.Content.Y, Width: max(0, row.Content.Width*.55-40), Height: row.Content.Height}, 13, color, gfx.WeightMedium)
+		monitorRight(c, h.Address, gfx.Rect{X: row.Content.X + row.Content.Width*.55, Y: row.Content.Y, Width: row.Content.Width*.45 - 12, Height: row.Content.Height}, 12, theme.MutedForeground, gfx.WeightRegular)
 	}
 	list.End()
 	if len(e.selected) == 0 {

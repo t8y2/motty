@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
 func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 600}} {
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 600}} {
 		for _, mode := range []hostViewMode{hostViewList, hostViewGrid} {
 			for _, light := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%dx%d/view=%d/light=%v", int(size.Width), int(size.Height), mode, light), func(t *testing.T) {
@@ -49,7 +49,7 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 						}
 					}
 					must(view.Rest())
-					hit := func(id ui.ID) ui.Hit {
+					hit := func(id gfx.ID) gfx.Hit {
 						t.Helper()
 						h, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 						if !ok {
@@ -57,7 +57,7 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 						}
 						return h
 					}
-					click := func(id ui.ID) {
+					click := func(id gfx.ID) {
 						t.Helper()
 						h := hit(id)
 						must(view.Click(h.Bounds.X+h.Bounds.Width/2, h.Bounds.Y+h.Bounds.Height/2))
@@ -70,7 +70,7 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 							must(view.Screenshot(filepath.Join(dir, fmt.Sprintf("%s-%dx%d-view%d-light%v.png", name, int(size.Width), int(size.Height), mode, light))))
 						}
 					}
-					group := func(path string) ui.Hit {
+					group := func(path string) gfx.Hit {
 						id := hitHostGroupRowList.At(state.hostGroupIndex(path))
 						if mode == hostViewGrid {
 							id = hitHostGroupOpenList.At(state.hostGroupIndex(path))
@@ -84,7 +84,7 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 					}
 					shot("tree")
 					right("Team/Prod")
-					for _, id := range []ui.ID{hitGroupNewHost, hitGroupNewChild, hitGroupRename, hitGroupMove, hitGroupPin, hitGroupDelete} {
+					for _, id := range []gfx.ID{hitGroupNewHost, hitGroupNewChild, hitGroupRename, hitGroupMove, hitGroupPin, hitGroupDelete} {
 						hit(id)
 					}
 					shot("menu")
@@ -134,8 +134,8 @@ func TestHostGroupLongPathsNativeFitDeleteDialog(t *testing.T) {
 	state.hosts[0].Group = long + "/Child"
 	state.hostDataChanged()
 	chooseHostGroupAction(t, state, long+"/Child", "delete")
-	var painted *ui.Canvas
-	view, err := headless.Open(app.Config{Width: 900, Height: 600, Tree: Tree(), Paint: func(c *ui.Canvas, size ui.Size) { state.Paint(c, size); painted = c }}, nil, headless.Options{Scale: 1.5})
+	var painted *gfx.Canvas
+	view, err := headless.Open(app.Config{Width: 900, Height: 600, Tree: Tree(), Paint: func(c *gfx.Canvas, size gfx.Size) { state.Paint(c, size); painted = c }}, nil, headless.Options{Scale: 1.5})
 	if err != nil {
 		t.Fatal(err)
 	}

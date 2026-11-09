@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/filecontent"
 	"motty/internal/i18n"
 )
@@ -55,11 +55,11 @@ func (w *documentTestWindow) Close() {
 func (w *documentTestWindow) Hide() {}
 func (w *documentTestWindow) Show() { w.shows++ }
 
-func (w *documentTestWindow) Frame() (ui.Rect, bool) {
-	return ui.Rect{Width: float32(w.config.Width), Height: float32(w.config.Height)}, true
+func (w *documentTestWindow) Frame() (gfx.Rect, bool) {
+	return gfx.Rect{Width: float32(w.config.Width), Height: float32(w.config.Height)}, true
 }
 
-func (h *documentTestHost) OpenWindow(config app.Config, _ *ui.Canvas, closed func()) (app.WindowControl, error) {
+func (h *documentTestHost) OpenWindow(config app.Config, _ *gfx.Canvas, closed func()) (app.WindowControl, error) {
 	w := &documentTestWindow{config: config, closed: closed}
 	h.windows = append(h.windows, w)
 	return w, nil

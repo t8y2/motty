@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -70,8 +70,8 @@ func BenchmarkPaintConnectionHeader(b *testing.B) {
 		b.Run("color="+color, func(b *testing.B) {
 			state, _, _, _ := liveSession(b)
 			state.sessions[0].host.Color = color
-			var canvas ui.Canvas
-			size := ui.Size{Width: 1400, Height: 900}
+			var canvas gfx.Canvas
+			size := gfx.Size{Width: 1400, Height: 900}
 			state.Paint(&canvas, size)
 			b.ReportAllocs()
 			for b.Loop() {

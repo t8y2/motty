@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
 )
@@ -230,7 +230,7 @@ func TestAISettingsImportPreviewListsEveryCandidateAndWritesNothingWhenEmpty(t *
 	} else if scroll := state.settingsRow.ScrollState(hitAISetImportList); scroll == nil || scroll.Max() <= 0 {
 		t.Fatal("the preview list does not scroll when it is taller than its viewport")
 	} else {
-		state.Scroll(ui.ScrollEvent{X: hit.Bounds.X + 20, Y: hit.Bounds.Y + 20, DeltaY: 120, Precise: true})
+		state.Scroll(gfx.ScrollEvent{X: hit.Bounds.X + 20, Y: hit.Bounds.Y + 20, DeltaY: 120, Precise: true})
 		if scroll.Offset == 0 {
 			t.Fatal("the wheel over the preview list did not scroll it")
 		}

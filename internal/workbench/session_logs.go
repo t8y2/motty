@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
@@ -116,24 +116,24 @@ type sessionLogsView struct {
 	customRangeHint string
 	filterMenu      sessionLogFilterMenu
 	moreMenu        bool
-	moreBounds      ui.Rect
+	moreBounds      gfx.Rect
 	// filterBounds are the three filter triggers' places, recorded while the page
 	// paints; the popup opens under the one whose menu is open.
-	filterBounds [5]ui.Rect
+	filterBounds [5]gfx.Rect
 
 	// Scrolling and the geometry the wheel is aimed at, recorded while painting.
 	scrollRows   float32
 	scrollEvents float32
 	dragging     sessionLogDragging
 	dragGrab     float32
-	tableBody    ui.Rect
-	eventsBody   ui.Rect
+	tableBody    gfx.Rect
+	eventsBody   gfx.Rect
 	// rowCells holds one row's cell rectangles so painting a row does not
 	// allocate: the table appends its geometry to this reused slice.
-	rowCells []ui.Rect
+	rowCells []gfx.Rect
 	// focusPending is a focus move requested by an event handler and delivered
 	// by the next paint, which is the only place a focus request may be made.
-	focusPending ui.ID
+	focusPending gfx.ID
 }
 
 // sessionLogsResult is one background query completion. Exactly one of page and

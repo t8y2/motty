@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
@@ -104,9 +104,9 @@ func (state *State) askCloseLockedTab(id layoutcore.WorkspaceID) {
 	state.modal = modalCloseTabs
 }
 
-func (state *State) tabMiddlePointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Kind != ui.PointerDown || event.Button != ui.PointerButtonMiddle || state.modal != modalNone || state.tabMenu.open {
-		return ui.EventResult{}, false
+func (state *State) tabMiddlePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonMiddle || state.modal != modalNone || state.tabMenu.open {
+		return gfx.EventResult{}, false
 	}
 	switch event.Target.Scope() {
 	case hitTabList, hitTabCloseList:
@@ -114,12 +114,12 @@ func (state *State) tabMiddlePointer(event ui.PointerEvent) (ui.EventResult, boo
 	case fileTabList, fileTabCloseList:
 		state.requestCloseSFTPTab(state.sftpWindows[uint32(item(event.Target))])
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) clickCloseTabsDialog(id ui.ID) {
+func (state *State) clickCloseTabsDialog(id gfx.ID) {
 	switch id {
 	case hitTabsCloseDismiss, hitTabsCloseClose, hitTabsCloseCancel:
 		state.modal = modalNone
@@ -143,15 +143,15 @@ func (state *State) clickCloseTabsDialog(id ui.ID) {
 }
 
 // closeTabsKey makes Enter on the confirm button confirm.
-func (state *State) closeTabsKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.modal != modalCloseTabs || event.Key != ui.KeyEnter || event.Target != hitTabsCloseConfirm || event.Repeat {
-		return ui.EventResult{}, false
+func (state *State) closeTabsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalCloseTabs || event.Key != gfx.KeyEnter || event.Target != hitTabsCloseConfirm || event.Repeat {
+		return gfx.EventResult{}, false
 	}
 	state.clickCloseTabsDialog(hitTabsCloseConfirm)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintCloseTabsDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintCloseTabsDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	messages := state.messages
 	// A tab that asks because of its lock keeps that question; the running one
 	// lists what would stop and offers to stop asking.
@@ -159,7 +159,7 @@ func (state *State) paintCloseTabsDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	options := components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitTabsCloseDismiss, CloseID: hitTabsCloseClose, InitialFocusID: hitTabsCloseCancel,
-		ContentSize: ui.Size{Width: 520}, FitBody: true,
+		ContentSize: gfx.Size{Width: 520}, FitBody: true,
 	}
 	if asking {
 		options.BodyHeight = float32(20*min(len(state.tabsClose.running), 6)) + 44
@@ -179,7 +179,7 @@ func (state *State) paintCloseTabsDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	layout := dialog.Begin(title, description)
 	if asking {
-		var quiet flex.Box
+		var quiet ui.Box
 		f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
 		f.Column().Fill().Children(func() {
 			for index, name := range state.tabsClose.running {

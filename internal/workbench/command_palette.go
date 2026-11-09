@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 // commandPaletteHits is the place of the controls this file paints.
@@ -30,7 +30,7 @@ type commandPaletteEntry struct {
 	recencyHint string
 	detail      string // shown after the label, muted (a host's address)
 	search      string
-	target      ui.ID
+	target      gfx.ID
 	// searchOnly rows answer the search without appearing in the unfiltered
 	// list. The shells behind the Local Terminal row use this: one line until
 	// the user expands it, but typing "bash" still finds the shell.
@@ -69,7 +69,7 @@ type commandPalette struct {
 	// selected is a logical row in visible; scroll is the pixel offset.
 	selected int
 	scroll   float32
-	listRect ui.Rect
+	listRect gfx.Rect
 	// bar is the scrollbar as last painted, and barGrab where on its thumb a
 	// drag took hold; dragging is set from the press on the bar to its release.
 	bar      components.ScrollAreaGeometry
@@ -191,11 +191,11 @@ func (state *State) rebuildCommandPalette() {
 	state.refreshCommandPalette()
 }
 
-func (palette *commandPalette) add(label string, target ui.ID) {
+func (palette *commandPalette) add(label string, target gfx.ID) {
 	palette.addDetailed(label, "", target)
 }
 
-func (palette *commandPalette) addDetailed(label, detail string, target ui.ID) {
+func (palette *commandPalette) addDetailed(label, detail string, target gfx.ID) {
 	palette.entries = append(palette.entries, commandPaletteEntry{
 		label: label, detail: detail, search: strings.ToLower(label + " " + detail), target: target,
 	})
@@ -293,7 +293,7 @@ func (palette *commandPalette) follow() {
 	palette.scroll = min(max(palette.scroll, 0), palette.maxScroll())
 }
 
-func (state *State) scrollCommandPalette(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollCommandPalette(event gfx.ScrollEvent) gfx.EventResult {
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
 	before, selected := palette.scroll, palette.selected
@@ -306,10 +306,10 @@ func (state *State) scrollCommandPalette(event ui.ScrollEvent) ui.EventResult {
 			palette.selected = row
 		}
 	}
-	return ui.EventResult{Handled: true, Repaint: before != palette.scroll || selected != palette.selected}
+	return gfx.EventResult{Handled: true, Repaint: before != palette.scroll || selected != palette.selected}
 }
 
-func (state *State) clickCommandPalette(id ui.ID) {
+func (state *State) clickCommandPalette(id gfx.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
 		state.closeCommandPalette()
@@ -379,16 +379,16 @@ func (palette *commandPalette) dragBar(y float32) {
 	palette.scroll = min(max(palette.bar.VerticalOffsetForThumb(y-palette.barGrab), 0), palette.maxScroll())
 }
 
-func (state *State) commandPalettePointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if state.modal != modalCommandPalette {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	palette := &state.commandPalette
 	// A press on the scrollbar takes the pointer for the drag: until it is
 	// released the rows under it must not take the hover, or the highlight
 	// stays on whichever row the drag started over.
 	switch {
-	case event.Kind == ui.PointerDown && event.Target == hitCommandPaletteBar && event.Button == ui.PointerButtonPrimary:
+	case event.Kind == gfx.PointerDown && event.Target == hitCommandPaletteBar && event.Button == gfx.PointerButtonPrimary:
 		thumb := palette.bar.VerticalThumb
 		palette.barGrab = thumb.Height / 2
 		if event.Y >= thumb.Y && event.Y < thumb.Y+thumb.Height {
@@ -396,43 +396,43 @@ func (state *State) commandPalettePointer(event ui.PointerEvent) (ui.EventResult
 		}
 		palette.dragging = true
 		palette.dragBar(event.Y)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	case palette.dragging:
 		switch event.Kind {
-		case ui.PointerMove:
+		case gfx.PointerMove:
 			palette.dragBar(event.Y)
-		case ui.PointerUp, ui.PointerExit:
+		case gfx.PointerUp, gfx.PointerExit:
 			palette.dragging = false
 		}
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	visible, ok := event.Target.In(hitCommandPaletteItems)
 	if !ok {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	row := visible
 	if row >= len(palette.visible) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if palette.entries[palette.visible[row]].isLabel() {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Kind == ui.PointerMove && palette.selected != row {
+	if event.Kind == gfx.PointerMove && palette.selected != row {
 		palette.selected = row
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalCommandPalette {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
-	if event.Key == ui.KeyEscape {
+	if event.Key == gfx.KeyEscape {
 		state.closeCommandPalette()
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if palette.connect {
 		switch event.Target {
@@ -443,10 +443,10 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			options := state.connectSortOptions()
 			if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled && next != event.Target && !event.Repeat {
 				state.clickCommandPalette(next)
-				return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
+				return gfx.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
 			}
-			if event.Key == ui.KeyEnter || event.Key == ui.KeySpace {
-				return ui.EventResult{Handled: true, Focus: hitCommandPaletteSearch}, true
+			if event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace {
+				return gfx.EventResult{Handled: true, Focus: hitCommandPaletteSearch}, true
 			}
 		}
 	}
@@ -458,67 +458,67 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			options := state.sendTargetOptions()
 			if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled && next != event.Target && !event.Repeat {
 				state.clickCommandPalette(next)
-				return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
+				return gfx.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
 			}
 		case hitSnippetSendInput:
-			if event.Key == ui.KeyEnter && !event.Repeat {
+			if event.Key == gfx.KeyEnter && !event.Repeat {
 				state.submitSend()
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 		}
 	}
 	inSearch := event.Target == hitCommandPaletteSearch
 	_, inItems := event.Target.In(hitCommandPaletteItems)
 	if !inSearch && !inItems {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if inSearch && event.Key == ui.KeyEnter && !event.Repeat {
+	if inSearch && event.Key == gfx.KeyEnter && !event.Repeat {
 		state.executeCommandPalette(palette.selected)
-		return ui.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
 	}
-	if inItems && (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat {
+	if inItems && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
 		state.executeCommandPalette(palette.selected)
-		return ui.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
 	}
 	row := palette.selected
 	if palette.snippets && !event.Repeat && row >= 0 && row < len(palette.visible) {
 		// A group row opens with Right and closes with Left, like a tree.
 		if entry := &palette.entries[palette.visible[row]]; entry.folds() && (inItems || inSearch && palette.search.String() == "") {
 			switch {
-			case event.Key == ui.KeyRight && !entry.expanded, event.Key == ui.KeyLeft && entry.expanded:
-				state.foldSnippetGroup(entry.foldKey, event.Key == ui.KeyRight)
-				return ui.EventResult{Handled: true, Repaint: true}, true
+			case event.Key == gfx.KeyRight && !entry.expanded, event.Key == gfx.KeyLeft && entry.expanded:
+				state.foldSnippetGroup(entry.foldKey, event.Key == gfx.KeyRight)
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 		}
 	}
 	if inItems && palette.connect && !event.Repeat {
-		toggleShells := func(expand bool) (ui.EventResult, bool) {
+		toggleShells := func(expand bool) (gfx.EventResult, bool) {
 			if palette.localShells == expand {
-				return ui.EventResult{}, false
+				return gfx.EventResult{}, false
 			}
 			palette.localShells = expand
 			state.rebuildCommandPalette()
 			first := palette.choiceAt(0, 1)
 			if first < 0 {
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
-			return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteItems.At(first), FocusVisible: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteItems.At(first), FocusVisible: true}, true
 		}
 		switch event.Key {
-		case ui.KeyRight:
+		case gfx.KeyRight:
 			if row >= 0 && row < len(palette.visible) {
 				entry := palette.entries[palette.visible[row]]
 				if entry.target == hitConnectPickLocal && localShellSettingVisible() && len(state.localShellMenu.choices) > 1 {
 					return toggleShells(true)
 				}
 			}
-		case ui.KeyLeft:
+		case gfx.KeyLeft:
 			return toggleShells(false)
 		}
 	}
-	move := func(selected, direction int) (ui.EventResult, bool) {
+	move := func(selected, direction int) (gfx.EventResult, bool) {
 		if len(palette.visible) == 0 {
-			return ui.EventResult{Handled: true}, true
+			return gfx.EventResult{Handled: true}, true
 		}
 		selected = min(max(selected, 0), len(palette.visible)-1)
 		selected = palette.choiceAt(selected, direction)
@@ -532,44 +532,44 @@ func (state *State) commandPaletteKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			}
 		}
 		if selected < 0 {
-			return ui.EventResult{Handled: true}, true
+			return gfx.EventResult{Handled: true}, true
 		}
 		palette.selected = selected
 		palette.follow()
 		if inSearch {
-			return ui.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteSearch}, true
 		}
-		return ui.EventResult{
+		return gfx.EventResult{
 			Handled: true, Repaint: true,
 			Focus: hitCommandPaletteItems.At(palette.selected), FocusVisible: true,
 		}, true
 	}
 	switch event.Key {
-	case ui.KeyUp:
+	case gfx.KeyUp:
 		return move(row-1, -1)
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		return move(row+1, 1)
-	case ui.KeyPageUp:
+	case gfx.KeyPageUp:
 		return move(row-commandPaletteVisibleRows, -1)
-	case ui.KeyPageDown:
+	case gfx.KeyPageDown:
 		return move(row+commandPaletteVisibleRows, 1)
 	}
 	if inItems {
 		switch event.Key {
-		case ui.KeyHome:
+		case gfx.KeyHome:
 			return move(0, 1)
-		case ui.KeyEnd:
+		case gfx.KeyEnd:
 			return move(len(palette.visible)-1, -1)
 		}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // modalSearchFocus is where the keyboard goes when a palette command has opened
 // a picker with a search field of its own; otherwise it asks for nothing.
-func (state *State) modalSearchFocus() ui.ID {
+func (state *State) modalSearchFocus() gfx.ID {
 	if state.modal == modalHistory {
 		return hitHistorySearch
 	}
-	return ui.ID{}
+	return gfx.ID{}
 }

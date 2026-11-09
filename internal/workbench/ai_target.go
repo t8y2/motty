@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/gate"
 	layoutcore "motty/internal/workspace"
 )
@@ -325,7 +325,7 @@ func (state *State) aiTargetOptions() []components.SelectItem {
 // aiChooseTarget handles a click in the open target list: a connection or a
 // whole tab is ticked or unticked and the list stays open for the next one. The
 // first ticked connection is the default; unticking it promotes the next.
-func (state *State) aiChooseTarget(id ui.ID) bool {
+func (state *State) aiChooseTarget(id gfx.ID) bool {
 	if state.ai.run != nil {
 		return false
 	}
@@ -367,7 +367,7 @@ func (state *State) aiChooseTarget(id ui.ID) bool {
 
 // aiChooseOnlyTarget is what typing a name on the closed selector does: that
 // connection or tab becomes the whole selection.
-func (state *State) aiChooseOnlyTarget(id ui.ID) bool {
+func (state *State) aiChooseOnlyTarget(id gfx.ID) bool {
 	if state.ai.run != nil {
 		return false
 	}
@@ -384,7 +384,7 @@ func (state *State) aiChooseOnlyTarget(id ui.ID) bool {
 }
 
 // aiTargetRowSessions are the ready sessions a list row stands for.
-func (state *State) aiTargetRowSessions(id ui.ID) ([]uint32, bool) {
+func (state *State) aiTargetRowSessions(id gfx.ID) ([]uint32, bool) {
 	if index, ok := id.In(hitAITargets); ok {
 		session, exists := state.sessionByIDPointer(uint32(index))
 		if !exists || !aiSessionInfo(session).Ready {
@@ -400,19 +400,19 @@ func (state *State) aiTargetRowSessions(id ui.ID) ([]uint32, bool) {
 }
 
 // Keep the numeric disambiguator visible even when a long tab title is elided.
-func (panel *aiPanel) targetCaption(canvas *ui.Canvas, title string, size, width float32) string {
+func (panel *aiPanel) targetCaption(canvas *gfx.Canvas, title string, size, width float32) string {
 	if panel.targetTitle == title && panel.targetWidth == width && panel.targetFontSize == size {
 		return panel.targetValue
 	}
 	original, value := title, title
-	if canvas.TextWidthWeight(title, size, ui.WeightRegular) > width {
+	if canvas.TextWidthWeight(title, size, gfx.WeightRegular) > width {
 		suffix := ""
 		if at := strings.LastIndexByte(title, '-'); at >= 0 {
 			if number, err := strconv.Atoi(title[at+1:]); err == nil && number >= 2 {
 				suffix, title = title[at:], title[:at]
 			}
 		}
-		value = elide(canvas, title, size, ui.WeightRegular, max(width-canvas.TextWidthWeight(suffix, size, ui.WeightRegular), 0)) + suffix
+		value = elide(canvas, title, size, gfx.WeightRegular, max(width-canvas.TextWidthWeight(suffix, size, gfx.WeightRegular), 0)) + suffix
 	}
 	panel.targetTitle, panel.targetWidth, panel.targetFontSize, panel.targetValue = original, width, size, value
 	return value
@@ -421,16 +421,16 @@ func (panel *aiPanel) targetCaption(canvas *ui.Canvas, title string, size, width
 // aiTargetListWidth is the open list's width: as wide as its longest row needs
 // (item inset, icon, label and the tick), never beyond 320 or below the select's
 // own minimum.
-func aiTargetListWidth(canvas *ui.Canvas, options []components.SelectItem, size float32) float32 {
+func aiTargetListWidth(canvas *gfx.Canvas, options []components.SelectItem, size float32) float32 {
 	const chrome, minimum, maximum = 8 + 24 + 40 + 8, 176, 320 // inset, icon and gap, tick column, popup padding
 	widest := float32(0)
 	for _, option := range options {
-		widest = max(widest, canvas.TextWidthWeight(option.Label, size, ui.WeightRegular))
+		widest = max(widest, canvas.TextWidthWeight(option.Label, size, gfx.WeightRegular))
 	}
 	return min(max(widest+chrome, minimum), maximum)
 }
 
-func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
+func (state *State) paintAITargetSelect(canvas *gfx.Canvas) {
 	panel, m := &state.ai.panel, state.messages.AIPanel
 	bounds := panel.targetBounds
 	if !state.aiPanelVisible() || bounds.Width <= 0 || state.modal != modalNone {
@@ -460,7 +460,7 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 		hint = state.aiTargetLabel(target) + " · " + status
 		if more := state.aiExtraCount(); more > 0 {
 			more := " +" + strconv.Itoa(more)
-			moreWidth = canvas.TextWidthWeight(more, metrics.FontSizeS, ui.WeightRegular)
+			moreWidth = canvas.TextWidthWeight(more, metrics.FontSizeS, gfx.WeightRegular)
 			suffix = more
 			hint = state.aiConversationTargetLabel(target, state.aiExtraTargets()...) + " · " + status
 		}
@@ -470,7 +470,7 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 	// The selector sits in the composer among pills that are one type step below
 	// the message text, so it is the select's chip step rather than a field.
 	size := metrics.FontSizeS
-	bounds.Width = min(bounds.Width, max(108, canvas.TextWidthWeight(value, size, ui.WeightRegular)+moreWidth+targetChromeWidth))
+	bounds.Width = min(bounds.Width, max(108, canvas.TextWidthWeight(value, size, gfx.WeightRegular)+moreWidth+targetChromeWidth))
 	value = panel.targetCaption(canvas, value, size, bounds.Width-targetChromeWidth-moreWidth) + suffix
 	panel.targetBounds = bounds
 	var options []components.SelectItem
@@ -480,7 +480,7 @@ func (state *State) paintAITargetSelect(canvas *ui.Canvas) {
 	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
 	above := max(bounds.Y-windowBarHeight-8, 0)
 	height := min(float32(8+len(options)*32), max(above, below))
-	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: min(aiTargetListWidth(canvas, options, state.Theme().Metrics.FontSizeM), state.viewport.Width-16), Height: height}
+	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: min(aiTargetListWidth(canvas, options, state.Theme().Metrics.FontSizeM), state.viewport.Width-16), Height: height}
 	content.X = min(max(content.X, 8), state.viewport.Width-8-content.Width)
 	if below < height {
 		content.Y = bounds.Y - height - 4

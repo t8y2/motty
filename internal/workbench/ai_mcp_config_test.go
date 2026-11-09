@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 )
 
@@ -115,7 +115,7 @@ func TestMCPClientSelectAndCompleteCatalog(t *testing.T) {
 	for i, tab := range tabs {
 		state.Click(tab.ID)
 		canvas, _ := world.paint()
-		if hit, ok := hitByID(canvas, hitAISetMCPSelect); !ok || hit.Role != ui.RoleCombobox || hit.Value != tab.Label || hit.Expanded {
+		if hit, ok := hitByID(canvas, hitAISetMCPSelect); !ok || hit.Role != gfx.RoleCombobox || hit.Value != tab.Label || hit.Expanded {
 			t.Fatalf("selected client %s is not visible", tab.Label)
 		}
 		state.Click(hitAISetMCPCopy)
@@ -126,11 +126,11 @@ func TestMCPClientSelectAndCompleteCatalog(t *testing.T) {
 	state.Click(hitAISetMCPSelect)
 	canvas, _ := world.paint()
 	for _, option := range tabs {
-		if hit, ok := hitByID(canvas, option.ID); !ok || hit.Role != ui.RoleOption {
+		if hit, ok := hitByID(canvas, option.ID); !ok || hit.Role != gfx.RoleOption {
 			t.Fatalf("missing client %s", option.Label)
 		}
 	}
-	result := state.Key(ui.KeyEvent{Target: hitAISetMCPSelect, Key: ui.KeyTab})
+	result := state.Key(gfx.KeyEvent{Target: hitAISetMCPSelect, Key: gfx.KeyTab})
 	if !result.Handled || !result.ContinueTraversal || state.ai.cfg.mcpSelectOpen {
 		t.Fatal("Tab must close the dropdown and continue traversal")
 	}
@@ -151,12 +151,12 @@ func TestMCPClientSelectCopyAndKeyboard(t *testing.T) {
 	if got := world.clip[len(world.clip)-1]; got != state.ai.mcpToken {
 		t.Fatalf("token copy = %q", got)
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitAISetMCPSelect})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAISetMCPSelect})
 	if !result.Handled || !state.ai.cfg.mcpSelectOpen {
 		t.Fatalf("arrow did not open the selector: %+v", result)
 	}
 	world.paint()
-	result = state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitAISetMCPClaude})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAISetMCPClaude})
 	if result.Focus != hitAISetMCPCursor {
 		t.Fatalf("Down did not focus Cursor: %+v", result)
 	}
@@ -176,7 +176,7 @@ func TestMCPClientSelectCopyAndKeyboard(t *testing.T) {
 	}
 	state.Click(hitAISetMCPSelect)
 	world.paint()
-	result = state.Key(ui.KeyEvent{Key: ui.KeyEnd, Target: hitAISetMCPCursor})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEnd, Target: hitAISetMCPCursor})
 	state.Click(result.Focus)
 	if state.ai.cfg.mcpClient != aiMCPPi || state.ai.cfg.copied != aiCopyIdle {
 		t.Fatal("End did not select Pi Coding Agent and reset copy feedback")
@@ -195,7 +195,7 @@ func TestMCPClientSelectCopyAndKeyboard(t *testing.T) {
 		}
 	}
 	for _, check := range []struct {
-		id    ui.ID
+		id    gfx.ID
 		label string
 	}{
 		{hitAISetMCPCopy, state.messages.AISettings.MCPCopied},
@@ -221,7 +221,7 @@ func TestMCPCopyWaitsForLiveCredentials(t *testing.T) {
 	checkDisabled := func() {
 		t.Helper()
 		canvas, _ := world.paint()
-		for _, id := range []ui.ID{hitAISetMCPCopy, hitAISetMCPCopyURL, hitAISetMCPCopyToken} {
+		for _, id := range []gfx.ID{hitAISetMCPCopy, hitAISetMCPCopyURL, hitAISetMCPCopyToken} {
 			if hit, ok := hitByID(canvas, id); !ok || !hit.Disabled {
 				t.Fatalf("copy must be disabled: %+v", hit)
 			}
@@ -279,9 +279,9 @@ func TestMCPClientSelectShortWindow(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	state.selectSettingsCategory(settingsMCP)
-	paint := func() *ui.Canvas {
-		var canvas ui.Canvas
-		state.Paint(&canvas, ui.Size{Width: 900, Height: 520})
+	paint := func() *gfx.Canvas {
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 900, Height: 520})
 		return &canvas
 	}
 	paint()
@@ -296,7 +296,7 @@ func TestMCPClientSelectShortWindow(t *testing.T) {
 	if _, ok := hitByID(canvas, hitMenuScrollBar); !ok {
 		t.Fatal("short list needs a scrollbar")
 	}
-	result := state.Key(ui.KeyEvent{Target: hitAISetMCPSelect, Key: ui.KeyEnd})
+	result := state.Key(gfx.KeyEvent{Target: hitAISetMCPSelect, Key: gfx.KeyEnd})
 	last := aiMCPClientID(aiMCPPi)
 	if !result.Handled || result.Focus != last {
 		t.Fatalf("End: %+v", result)
@@ -305,7 +305,7 @@ func TestMCPClientSelectShortWindow(t *testing.T) {
 		t.Fatal("last client did not scroll into view")
 	}
 	before := state.settingsScroll
-	state.Scroll(ui.ScrollEvent{X: 20, Y: 20, DeltaY: 100})
+	state.Scroll(gfx.ScrollEvent{X: 20, Y: 20, DeltaY: 100})
 	if state.settingsScroll != before {
 		t.Fatal("dropdown must not scroll the background")
 	}
@@ -314,7 +314,7 @@ func TestMCPClientSelectShortWindow(t *testing.T) {
 	if state.ai.cfg.mcpSelectOpen || state.ai.cfg.mcpClient != aiMCPPi {
 		t.Fatal("choice did not close and update the select")
 	}
-	if result := state.Key(ui.KeyEvent{Target: hitAISetMCPSelect, Text: "z"}); !result.Handled || state.ai.cfg.mcpClient != aiMCPZCode {
+	if result := state.Key(gfx.KeyEvent{Target: hitAISetMCPSelect, Text: "z"}); !result.Handled || state.ai.cfg.mcpClient != aiMCPZCode {
 		t.Fatal("closed select typeahead failed")
 	}
 	state.Click(hitAISetMCPSelect)
@@ -336,11 +336,11 @@ func TestMCPConfigurationLayout(t *testing.T) {
 		for _, width := range []float32{570, 600, 720, 1000, 1400} {
 			for _, tab := range aiMCPClientOptions() {
 				state.Click(tab.ID)
-				var canvas ui.Canvas
+				var canvas gfx.Canvas
 				// Both transport sections may be tall when narrow code blocks wrap.
-				state.Paint(&canvas, ui.Size{Width: width, Height: 6000})
-				var copyToken, reset ui.Hit
-				for _, id := range []ui.ID{hitAISetMCPSelect, hitAISetMCPCopy, hitAISetMCPCopyURL, hitAISetMCPCopyToken, hitAISetMCPReset, hitAISetAgentSelect, hitAISetAgentCopy, hitAISetAgentAllowAll} {
+				state.Paint(&canvas, gfx.Size{Width: width, Height: 6000})
+				var copyToken, reset gfx.Hit
+				for _, id := range []gfx.ID{hitAISetMCPSelect, hitAISetMCPCopy, hitAISetMCPCopyURL, hitAISetMCPCopyToken, hitAISetMCPReset, hitAISetAgentSelect, hitAISetAgentCopy, hitAISetAgentAllowAll} {
 					hit, ok := hitByID(&canvas, id)
 					if !ok || hit.Bounds.X < 0 || hit.Bounds.X+hit.Bounds.Width > width || hit.Bounds.Width <= 0 {
 						t.Fatalf("width %v: %s outside window: %+v", width, tree.Text(id), hit)

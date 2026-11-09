@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -34,8 +34,8 @@ func (connection *sudoRunnerTestConn) RunSudoCommand(ctx context.Context, comman
 
 func TestRemoteContainersRetryWithSudoOnlyAfterUserConfirmation(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 700, Height: 650}} {
-		var canvas ui.Canvas
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 700, Height: 650}} {
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		if hit, ok := hitByID(&canvas, hitRemoteSudo); !ok || hit.Bounds.Width <= 0 || hit.Bounds.Height <= 0 {
 			t.Fatalf("sudo control is missing in remote tools at %+v", size)

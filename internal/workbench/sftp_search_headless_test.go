@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -47,15 +47,15 @@ func TestSFTPSearchHeadlessFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer preview.Close()
-	hit := func(id ui.ID) (ui.Hit, bool) {
+	hit := func(id gfx.ID) (gfx.Hit, bool) {
 		for _, hit := range preview.Snapshot().Hits {
 			if hit.ID == id {
 				return hit, true
 			}
 		}
-		return ui.Hit{}, false
+		return gfx.Hit{}, false
 	}
-	click := func(id ui.ID, double bool) {
+	click := func(id gfx.ID, double bool) {
 		t.Helper()
 		target, ok := hit(id)
 		if !ok {

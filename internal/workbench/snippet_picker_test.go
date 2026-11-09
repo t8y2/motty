@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
-func offeredTerminalTool(state *State, id ui.ID) (barTool, bool) {
+func offeredTerminalTool(state *State, id gfx.ID) (barTool, bool) {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok {
 		return barTool{}, false

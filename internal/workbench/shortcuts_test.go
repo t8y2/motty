@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/term"
 )
 
@@ -22,7 +22,7 @@ func TestShortcutCaptureRejectsConflictsAndPersistsTypedBinding(t *testing.T) {
 
 	state.openShortcutCapture(shortcutFind)
 	palette := state.shortcuts.chords.Chord(shortcutCommandPalette)
-	result := state.Shortcut(ui.KeyEvent{Modifiers: palette.Modifiers, Text: string([]byte{palette.Char})})
+	result := state.Shortcut(gfx.KeyEvent{Modifiers: palette.Modifiers, Text: string([]byte{palette.Char})})
 	if !result.Handled || !result.Repaint || state.modal != modalShortcutCapture || state.shortcutError == "" {
 		t.Fatalf("conflict result=%+v modal=%d error=%q", result, state.modal, state.shortcutError)
 	}
@@ -30,8 +30,8 @@ func TestShortcutCaptureRejectsConflictsAndPersistsTypedBinding(t *testing.T) {
 		t.Fatal("conflicting shortcut replaced the find binding")
 	}
 
-	custom := keymap.Chord{Modifiers: keymap.Primary | ui.ModifierAlt, Char: 'x'}
-	result = state.Shortcut(ui.KeyEvent{Modifiers: custom.Modifiers, Text: "x"})
+	custom := keymap.Chord{Modifiers: keymap.Primary | gfx.ModifierAlt, Char: 'x'}
+	result = state.Shortcut(gfx.KeyEvent{Modifiers: custom.Modifiers, Text: "x"})
 	if !result.Handled || state.modal != modalNone || state.shortcuts.chords.Chord(shortcutFind) != custom {
 		t.Fatalf("custom result=%+v modal=%d chord=%+v", result, state.modal, state.shortcuts.chords.Chord(shortcutFind))
 	}
@@ -40,10 +40,10 @@ func TestShortcutCaptureRejectsConflictsAndPersistsTypedBinding(t *testing.T) {
 	if restored.shortcuts.chords.Chord(shortcutFind) != custom || restored.activeSection != sectionSettings || restored.settingsCategory != settingsShortcuts {
 		t.Fatalf("restored chord=%+v section=%d", restored.shortcuts.chords.Chord(shortcutFind), restored.activeSection)
 	}
-	if got := restored.Shortcut(ui.KeyEvent{Modifiers: keymap.Primary, Text: "f"}); got.Handled {
+	if got := restored.Shortcut(gfx.KeyEvent{Modifiers: keymap.Primary, Text: "f"}); got.Handled {
 		t.Fatal("old find binding remained active")
 	}
-	if got := restored.Shortcut(ui.KeyEvent{Modifiers: custom.Modifiers, Text: "x"}); !got.Handled {
+	if got := restored.Shortcut(gfx.KeyEvent{Modifiers: custom.Modifiers, Text: "x"}); !got.Handled {
 		t.Fatal("custom find binding was not active")
 	}
 }
@@ -71,7 +71,7 @@ func TestShortcutCanBeDeletedAndStaysDeletedAcrossRestarts(t *testing.T) {
 	if restored.shortcuts.chords.Chord(shortcutFind).Valid() {
 		t.Fatalf("the deleted shortcut came back: %+v", restored.shortcuts.chords.Chord(shortcutFind))
 	}
-	if got := restored.Shortcut(ui.KeyEvent{Modifiers: keymap.Primary, Text: "f"}); got.Handled {
+	if got := restored.Shortcut(gfx.KeyEvent{Modifiers: keymap.Primary, Text: "f"}); got.Handled {
 		t.Fatal("the deleted find chord still runs")
 	}
 	if got, want := restored.shortcuts.chords.Chord(shortcutNewTab), defaultShortcuts().chords.Chord(shortcutNewTab); got != want {
@@ -80,10 +80,10 @@ func TestShortcutCanBeDeletedAndStaysDeletedAcrossRestarts(t *testing.T) {
 }
 
 func TestDeleteOrBackspaceCanBeBoundAsShortcuts(t *testing.T) {
-	for _, key := range []ui.Key{ui.KeyDelete, ui.KeyBackspace} {
+	for _, key := range []gfx.Key{gfx.KeyDelete, gfx.KeyBackspace} {
 		state := newTestState(t, freshOptions(t))
 		state.openShortcutCapture(shortcutFind)
-		result := state.Key(ui.KeyEvent{Key: key})
+		result := state.Key(gfx.KeyEvent{Key: key})
 		if !result.Handled || state.modal != modalNone || state.shortcuts.chords.Chord(shortcutFind) != (keymap.Chord{Key: key}) {
 			t.Fatalf("key %v result=%+v modal=%d chord=%+v", key, result, state.modal, state.shortcuts.chords.Chord(shortcutFind))
 		}
@@ -91,12 +91,12 @@ func TestDeleteOrBackspaceCanBeBoundAsShortcuts(t *testing.T) {
 }
 
 func TestFlexibleShortcutsCapturePersistAndKeepConflicts(t *testing.T) {
-	for _, event := range []ui.KeyEvent{
-		{Text: "x"}, {Text: "J", Modifiers: ui.ModifierShift},
-		{Text: "j", Modifiers: ui.ModifierAlt}, {Text: "/"}, {Text: "+"},
-		{Text: ",", Modifiers: ui.ModifierControl}, {Key: ui.KeySpace},
-		{Key: ui.KeyEnter, Modifiers: ui.ModifierShift}, {Key: ui.KeyUp, Modifiers: ui.ModifierAlt},
-		{Key: ui.KeyF1}, {Key: ui.KeyF12}, {Key: ui.KeyEscape, Modifiers: ui.ModifierAlt},
+	for _, event := range []gfx.KeyEvent{
+		{Text: "x"}, {Text: "J", Modifiers: gfx.ModifierShift},
+		{Text: "j", Modifiers: gfx.ModifierAlt}, {Text: "/"}, {Text: "+"},
+		{Text: ",", Modifiers: gfx.ModifierControl}, {Key: gfx.KeySpace},
+		{Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift}, {Key: gfx.KeyUp, Modifiers: gfx.ModifierAlt},
+		{Key: gfx.KeyF1}, {Key: gfx.KeyF12}, {Key: gfx.KeyEscape, Modifiers: gfx.ModifierAlt},
 	} {
 		chord, ok := keymap.FromEvent(event)
 		if !ok {
@@ -131,15 +131,15 @@ func TestFlexibleShortcutsLeaveTextEditingAndEscCancellationAvailable(t *testing
 	state := newTestState(t, freshOptions(t))
 	state.openShortcutCapture(shortcutFind)
 	before := state.shortcuts.chords.Chord(shortcutFind)
-	state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if state.modal != modalNone || state.shortcuts.chords.Chord(shortcutFind) != before {
 		t.Fatal("Escape did not cancel recording")
 	}
 	state.shortcuts.bind(shortcutCommandPalette, keymap.Chord{Char: 'x'})
-	if result := state.Shortcut(ui.KeyEvent{Target: hitSearch, Text: "x"}); result.Handled || state.modal != modalNone {
+	if result := state.Shortcut(gfx.KeyEvent{Target: hitSearch, Text: "x"}); result.Handled || state.modal != modalNone {
 		t.Fatal("a plain shortcut stole input from the host search field")
 	}
-	if chord := (keymap.Chord{Char: 'x', Modifiers: ui.ModifierAlt}); validForSnippet(chord) {
+	if chord := (keymap.Chord{Char: 'x', Modifiers: gfx.ModifierAlt}); validForSnippet(chord) {
 		t.Fatal("application shortcuts unexpectedly changed snippet validation")
 	}
 }
@@ -151,12 +151,12 @@ func TestFlexibleShortcutLeavesEmbeddedFileFieldsEditable(t *testing.T) {
 	state.activeSFTPTab, state.activeSection = local.ID, sectionSFTP
 	state.shortcuts.bind(shortcutCommandPalette, keymap.Chord{Char: 'x'})
 	manager.view.lfolder.filterOpen = true
-	for _, id := range []ui.ID{sftpWindowPath[0], sftpWindowFilter[0]} {
+	for _, id := range []gfx.ID{sftpWindowPath[0], sftpWindowFilter[0]} {
 		mounted := tree.MountID(sftpWindowMount(manager), id)
 		if !state.shortcutTextInput(mounted) {
 			t.Fatalf("file field %v was not recognized as native input", id)
 		}
-		if result := state.Shortcut(ui.KeyEvent{Text: "x", Target: mounted}); result.Handled || state.modal != modalNone {
+		if result := state.Shortcut(gfx.KeyEvent{Text: "x", Target: mounted}); result.Handled || state.modal != modalNone {
 			t.Fatalf("typing in file field %v ran a shortcut: %+v modal=%d", id, result, state.modal)
 		}
 	}
@@ -165,9 +165,9 @@ func TestFlexibleShortcutLeavesEmbeddedFileFieldsEditable(t *testing.T) {
 func TestNamedFindBindingFocusesRemoteSearch(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	state.modal = modalRemoteTools
-	for _, chord := range []keymap.Chord{{Key: ui.KeyF8}, {Modifiers: ui.ModifierAlt, Char: 'j'}} {
+	for _, chord := range []keymap.Chord{{Key: gfx.KeyF8}, {Modifiers: gfx.ModifierAlt, Char: 'j'}} {
 		state.shortcuts.bind(shortcutFind, chord)
-		event := ui.KeyEvent{Key: chord.Key, Modifiers: chord.Modifiers}
+		event := gfx.KeyEvent{Key: chord.Key, Modifiers: chord.Modifiers}
 		if chord.Char != 0 {
 			event.Text = string(chord.Char)
 		}
@@ -180,7 +180,7 @@ func TestNamedFindBindingFocusesRemoteSearch(t *testing.T) {
 func TestSingleShortcutResetKeepsBindingsWhenItsDefaultIsTaken(t *testing.T) {
 	for _, snippetOwner := range []bool{false, true} {
 		state := newTestState(t, freshOptions(t))
-		custom := keymap.Chord{Key: ui.KeyF8}
+		custom := keymap.Chord{Key: gfx.KeyF8}
 		defaultFind := state.shortcuts.chords.Chord(shortcutFind)
 		state.shortcuts.bind(shortcutFind, custom)
 		owner := state.shortcutActionLabel(shortcutCompletion)
@@ -226,7 +226,7 @@ func TestShortcutFilesPathHasPrimaryLDefaultAndPersistsCustomBinding(t *testing.
 	if state.shortcuts.chords.Chord(shortcutFilesPath) != wantDefault {
 		t.Fatalf("default files path shortcut=%+v, want %+v", state.shortcuts.chords.Chord(shortcutFilesPath), wantDefault)
 	}
-	custom := keymap.Chord{Modifiers: keymap.Primary | ui.ModifierAlt, Char: 'l'}
+	custom := keymap.Chord{Modifiers: keymap.Primary | gfx.ModifierAlt, Char: 'l'}
 	if conflict, ok := state.shortcuts.bind(shortcutFilesPath, custom); !ok || conflict != shortcutNone {
 		t.Fatalf("bind custom files path shortcut conflict=%v ok=%v", conflict, ok)
 	}
@@ -241,7 +241,7 @@ func TestShortcutFilesPathLeavesTerminalCtrlLAloneWithoutAVisibleFilePanel(t *te
 	state, _, _, _ := liveSession(t)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	shortcut := state.shortcuts.chords.Chord(shortcutFilesPath)
-	event := ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: shortcut.Modifiers, Text: string(shortcut.Char)}
+	event := gfx.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: shortcut.Modifiers, Text: string(shortcut.Char)}
 	if result := state.Shortcut(event); result.Handled {
 		t.Fatalf("Ctrl/Cmd+L without Files was consumed: %+v", result)
 	}
@@ -281,7 +281,7 @@ func TestClearScreenShortcutEmptiesTheWindowAndKeepsThePromptLine(t *testing.T) 
 	if shortcut != want {
 		t.Fatalf("default clear screen shortcut = %+v, want %+v", shortcut, want)
 	}
-	result := state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: shortcut.Modifiers, Text: string(shortcut.Char)})
+	result := state.Shortcut(gfx.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: shortcut.Modifiers, Text: string(shortcut.Char)})
 	if !result.Handled {
 		t.Fatalf("the clear screen chord was not handled: %+v", result)
 	}
@@ -307,7 +307,7 @@ func TestClearScreenShortcutEmptiesTheWindowAndKeepsThePromptLine(t *testing.T) 
 func TestTheClearScreenShortcutIsCustomisableAndPersists(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
-	custom := keymap.Chord{Modifiers: keymap.Primary | ui.ModifierShift, Char: 'k'}
+	custom := keymap.Chord{Modifiers: keymap.Primary | gfx.ModifierShift, Char: 'k'}
 	if conflict, ok := state.shortcuts.bind(shortcutClearScreen, custom); !ok || conflict != shortcutNone {
 		t.Fatalf("bind custom clear screen shortcut conflict=%v ok=%v", conflict, ok)
 	}
@@ -343,8 +343,8 @@ func TestASavedShortcutOutranksADefaultAddedByALaterBuild(t *testing.T) {
 func TestShortcutSettingsSteadyPaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	showShortcutSettings(state)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -358,8 +358,8 @@ func TestShortcutSettingsSteadyPaintDoesNotAllocate(t *testing.T) {
 func BenchmarkPaintShortcutSettings(b *testing.B) {
 	state := newTestState(b, testOptions(b))
 	showShortcutSettings(state)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	for b.Loop() {
@@ -378,8 +378,8 @@ func showShortcutSettings(state *State) {
 // stand for Paste and Copy whatever those are bound to, and yield to an action
 // the user binds to the same chord.
 func TestClipboardInsertChordsAliasPasteAndCopy(t *testing.T) {
-	shiftInsert := keymap.Chord{Modifiers: ui.ModifierShift, Key: ui.KeyInsert}
-	ctrlInsert := keymap.Chord{Modifiers: ui.ModifierControl, Key: ui.KeyInsert}
+	shiftInsert := keymap.Chord{Modifiers: gfx.ModifierShift, Key: gfx.KeyInsert}
+	ctrlInsert := keymap.Chord{Modifiers: gfx.ModifierControl, Key: gfx.KeyInsert}
 	shortcuts := defaultShortcuts()
 	if got := shortcuts.actionFor(shiftInsert); got != shortcutPaste {
 		t.Fatalf("Shift+Insert = %v, want paste", got)
@@ -446,7 +446,7 @@ func TestOnlyUntouchedSplitDefaultsMigrate(t *testing.T) {
 	}
 
 	// A chord the user picked is not a default gone stale.
-	custom := keymap.Chord{Modifiers: keymap.Primary | ui.ModifierShift, Char: 'x'}
+	custom := keymap.Chord{Modifiers: keymap.Primary | gfx.ModifierShift, Char: 'x'}
 	shortcuts = defaultShortcuts()
 	if conflict, ok := shortcuts.bind(shortcutPaneSplitHorizontal, custom); !ok {
 		t.Fatalf("binding a custom split chord was refused by %v", conflict)
@@ -478,7 +478,7 @@ func TestSplitDefaultsMigrateOncePerDevice(t *testing.T) {
 		HostCatalogVersion: hostCatalogSchemaVersion,
 		ShortcutVersion:    shortcutSchemaVersion,
 		Shortcuts: []savedShortcut{{
-			Action: shortcutPaneSplitHorizontal.String(), Key: string([]byte{legacyHorizontal.Char}), Modifiers: uint8(primary | ui.ModifierAlt),
+			Action: shortcutPaneSplitHorizontal.String(), Key: string([]byte{legacyHorizontal.Char}), Modifiers: uint8(primary | gfx.ModifierAlt),
 		}},
 	})
 
@@ -502,7 +502,7 @@ func TestSplitDefaultsMigrateOncePerDevice(t *testing.T) {
 func TestShiftInsertPastesIntoLiveTerminal(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	state.options.ClipboardText = func() (string, error) { return "echo hi", nil }
-	event := ui.KeyEvent{Target: terminalHit(state, 0), Key: ui.KeyInsert, Modifiers: ui.ModifierShift}
+	event := gfx.KeyEvent{Target: terminalHit(state, 0), Key: gfx.KeyInsert, Modifiers: gfx.ModifierShift}
 	if result := state.Key(event); !result.Handled {
 		t.Fatal("Shift+Insert reached the terminal as a key instead of pasting")
 	}

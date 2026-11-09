@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestHostSortButtonEntersAndLeavesSortingMode(t *testing.T) {
 	state := manyHostsState(t, 4)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	if hit, ok := hitByID(&canvas, hitHostSort); !ok || hit.Disabled {
@@ -22,7 +22,7 @@ func TestHostSortButtonEntersAndLeavesSortingMode(t *testing.T) {
 		t.Fatal("sort mode did not start")
 	}
 
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	if _, ok := hitByID(&canvas, hitHostCheckList.At(int(state.hosts[0].ID))); ok {
 		t.Fatal("sorting mode still shows host selection checkboxes")
@@ -40,8 +40,8 @@ func TestHostSortCardHandleUsesCheckboxFootprint(t *testing.T) {
 	state := manyHostsState(t, 4)
 	state.Click(hitHostViewGrid)
 
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	checkID := hitHostCheckList.At(int(state.hosts[0].ID))
@@ -51,7 +51,7 @@ func TestHostSortCardHandleUsesCheckboxFootprint(t *testing.T) {
 	}
 
 	state.Click(hitHostSort)
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 
 	handleID := hitHostSortHandles.At(int(state.hosts[0].ID))
@@ -77,8 +77,8 @@ func TestHostSortDragReordersCardsAndPersists(t *testing.T) {
 	state.Click(hitHostViewGrid)
 	state.Click(hitHostSort)
 
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	firstID := state.hosts[0].ID
 	thirdID := state.hosts[2].ID
@@ -93,15 +93,15 @@ func TestHostSortDragReordersCardsAndPersists(t *testing.T) {
 		t.Fatal("third card handle is not painted")
 	}
 
-	down := ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: firstHandle,
+	down := gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: firstHandle,
 		X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2, Viewport: size,
 	}
 	if result := pointer(state, down); !result.Handled {
 		t.Fatal("sort drag did not capture the handle press")
 	}
-	move := ui.PointerEvent{
-		Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: firstHandle,
+	move := gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: firstHandle,
 		X: third.Bounds.X + third.Bounds.Width/2, Y: third.Bounds.Y + third.Bounds.Height/2, Viewport: size, Captured: true,
 	}
 	if result := pointer(state, move); !result.Handled {
@@ -115,7 +115,7 @@ func TestHostSortDragReordersCardsAndPersists(t *testing.T) {
 		t.Fatalf("drag reordered before drop: %v", beforeDrop)
 	}
 	up := move
-	up.Kind = ui.PointerUp
+	up.Kind = gfx.PointerUp
 	if result := pointer(state, up); !result.Handled {
 		t.Fatal("sort drag did not handle release")
 	}
@@ -144,8 +144,8 @@ func TestHostSortDragReordersCardsAndPersists(t *testing.T) {
 
 func TestHostSortListHandleUsesCheckboxFootprint(t *testing.T) {
 	state := manyHostsState(t, 4)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	checkID := hitHostCheckList.At(int(state.hosts[0].ID))
@@ -155,7 +155,7 @@ func TestHostSortListHandleUsesCheckboxFootprint(t *testing.T) {
 	}
 
 	state.Click(hitHostSort)
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	handleID := hitHostSortHandles.At(int(state.hosts[0].ID))
 	handle, ok := hitByID(&canvas, handleID)
@@ -176,8 +176,8 @@ func TestHostSortListHandleUsesCheckboxFootprint(t *testing.T) {
 func TestHostSortDisablesSearchWhileActive(t *testing.T) {
 	state := manyHostsState(t, 4)
 	state.Click(hitHostSort)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	search, ok := hitByID(&canvas, hitSearch)
@@ -192,13 +192,13 @@ func TestHostSortDisablesSearchWhileActive(t *testing.T) {
 func TestHostSortKeyboardMovesAndPersists(t *testing.T) {
 	state := manyHostsState(t, 4)
 	state.Click(hitHostSort)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	firstID := state.hosts[0].ID
 	handle := hitHostSortHandles.At(int(firstID))
-	result := state.Key(ui.KeyEvent{Target: handle, Key: ui.KeyDown})
+	result := state.Key(gfx.KeyEvent{Target: handle, Key: gfx.KeyDown})
 	if !result.Handled || !result.FocusVisible || result.Focus != handle {
 		t.Fatalf("keyboard result=%+v", result)
 	}
@@ -228,8 +228,8 @@ func TestHostSortDragReordersListRows(t *testing.T) {
 	state := manyHostsState(t, 5)
 	state.Click(hitHostSort)
 
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	firstID := state.hosts[0].ID
 	thirdID := state.hosts[2].ID
@@ -244,16 +244,16 @@ func TestHostSortDragReordersListRows(t *testing.T) {
 		t.Fatal("third row handle is not painted")
 	}
 
-	pointer(state, ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: firstHandle,
+	pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: firstHandle,
 		X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2, Viewport: size,
 	})
-	pointer(state, ui.PointerEvent{
-		Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: firstHandle,
+	pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: firstHandle,
 		X: third.Bounds.X + third.Bounds.Width/2, Y: third.Bounds.Y + third.Bounds.Height/2, Viewport: size, Captured: true,
 	})
-	pointer(state, ui.PointerEvent{
-		Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: firstHandle,
+	pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: firstHandle,
 		X: third.Bounds.X + third.Bounds.Width/2, Y: third.Bounds.Y + third.Bounds.Height/2, Viewport: size, Captured: true,
 	})
 
@@ -270,8 +270,8 @@ func TestHostSortDragReordersListRows(t *testing.T) {
 func TestHostSortDragAutoScrollsNearTheBottomEdge(t *testing.T) {
 	state := manyHostsState(t, 40)
 	state.Click(hitHostSort)
-	size := ui.Size{Width: 1400, Height: 700}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 700}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	firstID := state.hosts[0].ID
@@ -280,12 +280,12 @@ func TestHostSortDragAutoScrollsNearTheBottomEdge(t *testing.T) {
 	if !ok {
 		t.Fatal("first row handle is not painted")
 	}
-	pointer(state, ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: handleID,
+	pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: handleID,
 		X: handle.Bounds.X + handle.Bounds.Width/2, Y: handle.Bounds.Y + handle.Bounds.Height/2, Viewport: size,
 	})
-	result := pointer(state, ui.PointerEvent{
-		Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: handleID, Captured: true,
+	result := pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: handleID, Captured: true,
 		X:        handle.Bounds.X + handle.Bounds.Width/2,
 		Y:        state.chrome.hostList.Y + state.chrome.hostList.Height - 1,
 		Viewport: size,
@@ -295,7 +295,7 @@ func TestHostSortDragAutoScrollsNearTheBottomEdge(t *testing.T) {
 	}
 	afterPointer := state.hostsScroll
 
-	var frame ui.Canvas
+	var frame gfx.Canvas
 	frame.BeginFrame()
 	state.Paint(&frame, size)
 	frame.EndFrame()
@@ -336,7 +336,7 @@ func TestHostSortEscapeDoesNotInterceptOutsideHosts(t *testing.T) {
 	state.Click(hitHostSort)
 	state.activeSection = sectionTerminal
 
-	result, handled := state.hostManagementKey(ui.KeyEvent{Key: ui.KeyEscape})
+	result, handled := state.hostManagementKey(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if handled || result.Handled {
 		t.Fatal("sort mode intercepted Escape outside Hosts")
 	}
@@ -348,8 +348,8 @@ func TestHostSortEscapeDoesNotInterceptOutsideHosts(t *testing.T) {
 func TestHostSortEscapeReleaseAndRepeatDoNotExitAfterCancel(t *testing.T) {
 	state := manyHostsState(t, 3)
 	state.Click(hitHostSort)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
 	handleID := hitHostSortHandles.At(int(state.hosts[0].ID))
@@ -357,28 +357,28 @@ func TestHostSortEscapeReleaseAndRepeatDoNotExitAfterCancel(t *testing.T) {
 	if !ok {
 		t.Fatal("sort handle is not painted")
 	}
-	state.hostSort.grid.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: handleID,
+	state.hostSort.grid.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: handleID,
 		X: handle.Bounds.X + handle.Bounds.Width/2, Y: handle.Bounds.Y + handle.Bounds.Height/2,
 	})
-	if _, handled := state.hostManagementKey(ui.KeyEvent{Target: handleID, Key: ui.KeyEscape}); !handled {
+	if _, handled := state.hostManagementKey(gfx.KeyEvent{Target: handleID, Key: gfx.KeyEscape}); !handled {
 		t.Fatal("Escape did not cancel held drag")
 	}
 	if !state.hostSort.enabled {
 		t.Fatal("canceling a held drag also exited sort mode")
 	}
 
-	if _, handled := state.hostManagementKey(ui.KeyEvent{Target: handleID, Key: ui.KeyEscape, Release: true}); handled {
+	if _, handled := state.hostManagementKey(gfx.KeyEvent{Target: handleID, Key: gfx.KeyEscape, Release: true}); handled {
 		t.Fatal("Escape release was handled as a second sort-mode action")
 	}
-	if _, handled := state.hostManagementKey(ui.KeyEvent{Target: handleID, Key: ui.KeyEscape, Repeat: true}); handled {
+	if _, handled := state.hostManagementKey(gfx.KeyEvent{Target: handleID, Key: gfx.KeyEscape, Repeat: true}); handled {
 		t.Fatal("Escape repeat was handled as a second sort-mode action")
 	}
 	if !state.hostSort.enabled {
 		t.Fatal("Escape release/repeat exited sort mode")
 	}
 
-	if _, handled := state.hostManagementKey(ui.KeyEvent{Target: handleID, Key: ui.KeyEscape}); !handled || state.hostSort.enabled {
+	if _, handled := state.hostManagementKey(gfx.KeyEvent{Target: handleID, Key: gfx.KeyEscape}); !handled || state.hostSort.enabled {
 		t.Fatal("a fresh Escape press did not leave sort mode")
 	}
 }

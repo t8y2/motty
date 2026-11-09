@@ -3,8 +3,8 @@ package workbench
 import (
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
 // tabIndex is where the active tab stands on the tab bar.
@@ -20,8 +20,8 @@ func tabIndex(state *State) int {
 
 func TestControlTabWalksTheTabsAndWrapsAround(t *testing.T) {
 	state, _ := threeTabs(t)
-	next := ui.KeyEvent{Key: ui.KeyTab, Modifiers: ui.ModifierControl}
-	previous := ui.KeyEvent{Key: ui.KeyTab, Modifiers: ui.ModifierControl | ui.ModifierShift}
+	next := gfx.KeyEvent{Key: gfx.KeyTab, Modifiers: gfx.ModifierControl}
+	previous := gfx.KeyEvent{Key: gfx.KeyTab, Modifiers: gfx.ModifierControl | gfx.ModifierShift}
 
 	for _, want := range []int{0, 1, 2} { // from the last tab around to the first
 		if result := state.Key(next); !result.Handled {
@@ -48,16 +48,16 @@ func TestControlTabLeavesTheHostListAndRepeatsWhenHeld(t *testing.T) {
 	if state.activeSection != sectionHosts {
 		t.Fatal("the test needs the host list in front")
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyTab, Modifiers: ui.ModifierControl})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Modifiers: gfx.ModifierControl})
 	if state.activeSection != sectionTerminal || tabIndex(state) != 0 {
 		t.Fatalf("section=%d tab=%d, want the terminal on the first tab", state.activeSection, tabIndex(state))
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyTab, Modifiers: ui.ModifierControl, Repeat: true})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Modifiers: gfx.ModifierControl, Repeat: true})
 	if tabIndex(state) != 1 {
 		t.Fatalf("a held Control+Tab stopped at tab %d", tabIndex(state))
 	}
 	// The release of a press the terminal never saw is not for the terminal.
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyTab, Modifiers: ui.ModifierControl, Release: true}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Modifiers: gfx.ModifierControl, Release: true}); !result.Handled {
 		t.Fatal("the release of Control+Tab reached the terminal")
 	}
 	if tabIndex(state) != 1 {
@@ -69,7 +69,7 @@ func TestControlTabDoesNothingBehindADialogOrWithOneTab(t *testing.T) {
 	state, _ := threeTabs(t)
 	state.modal = modalNewHost
 	before := tabIndex(state)
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyTab, Modifiers: ui.ModifierControl}); result.Handled && tabIndex(state) != before {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Modifiers: gfx.ModifierControl}); result.Handled && tabIndex(state) != before {
 		t.Fatal("Control+Tab switched tabs behind a dialog")
 	}
 	if tabIndex(state) != before {
@@ -87,8 +87,8 @@ func TestTabSwitchShortcutsCanBeRebound(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
 	want := map[shortcutAction]keymap.Chord{
-		shortcutNextTab:     {Modifiers: ui.ModifierControl, Key: ui.KeyTab},
-		shortcutPreviousTab: {Modifiers: ui.ModifierControl | ui.ModifierShift, Key: ui.KeyTab},
+		shortcutNextTab:     {Modifiers: gfx.ModifierControl, Key: gfx.KeyTab},
+		shortcutPreviousTab: {Modifiers: gfx.ModifierControl | gfx.ModifierShift, Key: gfx.KeyTab},
 	}
 	for action, chord := range want {
 		if state.shortcuts.chords.Chord(action) != chord {
@@ -97,8 +97,8 @@ func TestTabSwitchShortcutsCanBeRebound(t *testing.T) {
 	}
 
 	state.openShortcutCapture(shortcutNextTab)
-	result := state.Key(ui.KeyEvent{Key: ui.KeyPageDown, Modifiers: ui.ModifierControl})
-	custom := keymap.Chord{Modifiers: ui.ModifierControl, Key: ui.KeyPageDown}
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyPageDown, Modifiers: gfx.ModifierControl})
+	custom := keymap.Chord{Modifiers: gfx.ModifierControl, Key: gfx.KeyPageDown}
 	if !result.Handled || state.modal != modalNone || state.shortcuts.chords.Chord(shortcutNextTab) != custom {
 		t.Fatalf("capture result=%+v modal=%d chord=%+v", result, state.modal, state.shortcuts.chords.Chord(shortcutNextTab))
 	}
@@ -108,7 +108,7 @@ func TestTabSwitchShortcutsCanBeRebound(t *testing.T) {
 
 	// A chord another action holds is refused, named key or not.
 	state.openShortcutCapture(shortcutPreviousTab)
-	state.Key(ui.KeyEvent{Key: ui.KeyPageDown, Modifiers: ui.ModifierControl})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyPageDown, Modifiers: gfx.ModifierControl})
 	if state.modal != modalShortcutCapture || state.shortcutError == "" {
 		t.Fatalf("a taken chord was accepted: modal=%d error=%q", state.modal, state.shortcutError)
 	}
@@ -125,8 +125,8 @@ func TestDigitShortcutSelectsTheTabAtThatPosition(t *testing.T) {
 	state, _ := threeTabs(t)
 	state.Click(hitHosts)
 	state.setTabNumbers(true)
-	digit := func(text string, repeat bool) ui.EventResult {
-		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: text, Repeat: repeat})
+	digit := func(text string, repeat bool) gfx.EventResult {
+		return state.Shortcut(gfx.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: text, Repeat: repeat})
 	}
 
 	if result := digit("2", false); !result.Handled {
@@ -144,7 +144,7 @@ func TestDigitShortcutSelectsTheTabAtThatPosition(t *testing.T) {
 	// Control plus a digit is a terminal control code, so a digit with no tab
 	// behind it stays with the program; Command has no meaning there.
 	result := digit("9", false)
-	if keymap.Primary == ui.ModifierControl && result.Handled {
+	if keymap.Primary == gfx.ModifierControl && result.Handled {
 		t.Fatal("a missing tab swallowed a terminal control code")
 	}
 	if got := tabIndex(state); got != 0 {
@@ -167,8 +167,8 @@ func TestTabNumberShortcutIsOneConfigurableFamily(t *testing.T) {
 	// The row is rebound like any other action: one chord names the modifiers,
 	// and the whole digit row follows it.
 	state.openShortcutCapture(shortcutTabNumber)
-	custom := keymap.Chord{Modifiers: ui.ModifierAlt, Char: '3'}
-	state.Key(ui.KeyEvent{Modifiers: custom.Modifiers, Text: string(custom.Char)})
+	custom := keymap.Chord{Modifiers: gfx.ModifierAlt, Char: '3'}
+	state.Key(gfx.KeyEvent{Modifiers: custom.Modifiers, Text: string(custom.Char)})
 	if state.modal != modalNone || state.shortcuts.chords.Chord(shortcutTabNumber) != custom {
 		t.Fatalf("capture left modal=%d chord=%+v", state.modal, state.shortcuts.chords.Chord(shortcutTabNumber))
 	}
@@ -190,7 +190,7 @@ func TestTabNumberShortcutIsOneConfigurableFamily(t *testing.T) {
 
 	// Only a digit can name the row.
 	state.openShortcutCapture(shortcutTabNumber)
-	state.Key(ui.KeyEvent{Modifiers: custom.Modifiers, Text: "a"})
+	state.Key(gfx.KeyEvent{Modifiers: custom.Modifiers, Text: "a"})
 	if state.modal != modalShortcutCapture || state.shortcutError != state.messages.ShortcutsTabNumberInvalid {
 		t.Fatalf("a letter was accepted: modal=%d error=%q", state.modal, state.shortcutError)
 	}
@@ -198,7 +198,7 @@ func TestTabNumberShortcutIsOneConfigurableFamily(t *testing.T) {
 }
 
 func TestANamedKeyNeverBecomesASnippetShortcut(t *testing.T) {
-	chord := keymap.Chord{Modifiers: ui.ModifierControl | ui.ModifierShift, Key: ui.KeyTab}
+	chord := keymap.Chord{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Key: gfx.KeyTab}
 	if !chord.Valid() || validForSnippet(chord) {
 		t.Fatalf("valid=%v validForSnippet=%v", chord.Valid(), validForSnippet(chord))
 	}

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // hostAuth is the authentication policy of one SSH host. The zero value keeps
@@ -74,7 +74,7 @@ func (state *State) authLabel(authentication hostAuth) string {
 	}
 }
 
-func (state *State) paintHostAuthenticationChoice(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintHostAuthenticationChoice(canvas *gfx.Canvas, bounds gfx.Rect) {
 	editor, theme := &state.editor, state.Theme()
 	content := components.BeginField(canvas, theme, bounds).Paint(state.messages.FieldAuthentication, "", "")
 	state.rememberHostControl(hitDialogAuth, content)
@@ -97,7 +97,7 @@ func (state *State) paintHostAuthenticationChoice(canvas *ui.Canvas, bounds ui.R
 	}
 }
 
-func (state *State) paintHostIdentityChoice(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintHostIdentityChoice(canvas *gfx.Canvas, bounds gfx.Rect) {
 	editor, theme := &state.editor, state.Theme()
 	value := state.messages.AuthAllKeys
 	if editor.identity != "" {
@@ -109,10 +109,10 @@ func (state *State) paintHostIdentityChoice(canvas *ui.Canvas, bounds ui.Rect) {
 	content := components.BeginField(canvas, theme, bounds).Paint(state.messages.FieldIdentity, "", "")
 	if state.hostKeyNeedsPassphrase(editor.identity) && !state.hostAsksKeyPassphrase() {
 		// A question mark after the label: a line under the field would crowd the row below.
-		labelWidth := canvas.TextWidthWeight(state.messages.FieldIdentity, theme.Metrics.FontSizeM, ui.WeightMedium)
+		labelWidth := canvas.TextWidthWeight(state.messages.FieldIdentity, theme.Metrics.FontSizeM, gfx.WeightMedium)
 		titleHeight := content.Y - bounds.Y - theme.Metrics.GapItem/2
 		state.paintHelpIcon(canvas, hitDialogIdentityHelp, state.messages.KeyPassphraseHostHint,
-			ui.Rect{X: bounds.X + labelWidth + 6, Y: bounds.Y + (titleHeight-16)/2, Width: 16, Height: 16})
+			gfx.Rect{X: bounds.X + labelWidth + 6, Y: bounds.Y + (titleHeight-16)/2, Width: 16, Height: 16})
 	}
 	state.rememberHostControl(hitDialogIdentity, content)
 	portal := state.beginHostFormPopup(canvas, editor.identityOpen)
@@ -145,17 +145,17 @@ func (state *State) paintHostIdentityChoice(canvas *ui.Canvas, bounds ui.Rect) {
 	selectControl.AddItem(components.SelectItem{ID: hitDialogIdentityImport, Label: state.messages.AuthImportKey})
 }
 
-func (state *State) hostAuthListBounds(content ui.Rect, rows int) ui.Rect {
+func (state *State) hostAuthListBounds(content gfx.Rect, rows int) gfx.Rect {
 	height := float32(8 + max(rows, 1)*32)
 	top := content.Y + content.Height + 4
 	window := state.windowRect()
 	if top+height > window.Y+window.Height-8 {
 		top = content.Y - height - 4
 	}
-	return ui.Rect{X: content.X, Y: top, Width: content.Width, Height: height}
+	return gfx.Rect{X: content.X, Y: top, Width: content.Width, Height: height}
 }
 
-func (state *State) clickHostAuthentication(id ui.ID) bool {
+func (state *State) clickHostAuthentication(id gfx.ID) bool {
 	editor := &state.editor
 	switch {
 	case id == hitDialogAuth:

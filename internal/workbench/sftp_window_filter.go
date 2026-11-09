@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func (w *sftpWindow) headerMenu() (int, bool) {
@@ -18,7 +18,7 @@ func (w *sftpWindow) closeHeaderMenu() {
 	w.view.lfolder.headerMenuOpen, w.view.sftpFolder.headerMenuOpen = false, false
 }
 
-func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
+func (w *sftpWindow) targetSide(id gfx.ID) (bool, bool) {
 	if _, ok := id.In(hitSFTPProfileHoverItems); ok {
 		return true, true
 	}
@@ -55,7 +55,7 @@ func (w *sftpWindow) targetSide(id ui.ID) (bool, bool) {
 		if _, ok := id.In(sftpWindowActions[side]); ok {
 			return side == 0, true
 		}
-		for _, ids := range [][2]ui.ID{sftpWindowPath, sftpWindowFilter, sftpWindowList, sftpWindowMore, sftpWindowFilterClear, sftpWindowFilterToggle, sftpWindowHidden, sftpWindowHeaderHidden, sftpWindowRefresh, sftpWindowUp, sftpWindowNewFolder, sftpWindowBar, sftpWindowTreeBar} {
+		for _, ids := range [][2]gfx.ID{sftpWindowPath, sftpWindowFilter, sftpWindowList, sftpWindowMore, sftpWindowFilterClear, sftpWindowFilterToggle, sftpWindowHidden, sftpWindowHeaderHidden, sftpWindowRefresh, sftpWindowUp, sftpWindowNewFolder, sftpWindowBar, sftpWindowTreeBar} {
 			if id == ids[side] {
 				return side == 0, true
 			}
@@ -72,7 +72,7 @@ func (w *sftpWindow) applyFolderFilter(local bool) {
 	w.ui.offset[sideIndex(local)] = float32(folder.first) * sftpRowHeight
 }
 
-func (w *sftpWindow) clickFilterControl(id ui.ID) bool {
+func (w *sftpWindow) clickFilterControl(id gfx.ID) bool {
 	if local, ok := w.targetSide(id); ok {
 		w.activeLocal, w.view.local = local, local
 	}
@@ -118,13 +118,13 @@ func (w *sftpWindow) clickFilterControl(id ui.ID) bool {
 	return false
 }
 
-func (w *sftpWindow) filterEscape(event ui.KeyEvent) (ui.EventResult, bool) {
+func (w *sftpWindow) filterEscape(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	for side, id := range sftpWindowFilter {
 		folder := w.folder(side == 0)
 		if event.Target != id || !folder.filterOpen {
 			continue
 		}
-		result := ui.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}
+		result := gfx.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}
 		if _, composing := folder.filterInputEditor().Composition(); composing || event.Repeat {
 			return result, true
 		}
@@ -140,7 +140,7 @@ func (w *sftpWindow) filterEscape(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 		return result, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // paintHeaderMenu paints one pane's More menu. origin and mount place it: a file
@@ -148,10 +148,10 @@ func (w *sftpWindow) filterEscape(event ui.KeyEvent) (ui.EventResult, bool) {
 // an embedded canvas contributes, which would cut the dismiss backdrop down to
 // the tab and leave the window bar unreachable. A standalone transfer window
 // passes the zero point and scope, since its canvas is the whole window.
-func (w *sftpWindow) paintHeaderMenu(canvas *ui.Canvas, side int, origin ui.Point, mount ui.Scope, viewport ui.Rect, scroll *components.MenuScroll) {
+func (w *sftpWindow) paintHeaderMenu(canvas *gfx.Canvas, side int, origin gfx.Point, mount gfx.Scope, viewport gfx.Rect, scroll *components.MenuScroll) {
 	m, folder, local := w.owner.messages, w.folder(side == 0), side == 0
-	id := func(local ui.ID) ui.ID { return tree.MountID(mount, local) }
-	route := func(local ui.Scope) ui.Scope { return tree.Mount(mount, local) }
+	id := func(local gfx.ID) gfx.ID { return tree.MountID(mount, local) }
+	route := func(local gfx.Scope) gfx.Scope { return tree.Mount(mount, local) }
 	anchor := w.ui.headerAnchor[side]
 	anchor.X, anchor.Y = anchor.X+origin.X, anchor.Y+origin.Y
 	count := 6 + len(folder.history.recent)
@@ -165,7 +165,7 @@ func (w *sftpWindow) paintHeaderMenu(canvas *ui.Canvas, side int, origin ui.Poin
 	if !local && narrow {
 		count += 2
 	}
-	bounds := ui.Rect{X: anchor.X + anchor.Width - 224, Y: anchor.Y + anchor.Height + 4, Width: 224, Height: float32(count*32 + 8)}
+	bounds := gfx.Rect{X: anchor.X + anchor.Width - 224, Y: anchor.Y + anchor.Height + 4, Width: 224, Height: float32(count*32 + 8)}
 	dismiss := id(hitSFTPWindowHeaderDismiss)
 	if !mount.IsZero() {
 		// Painted over the page: the menu takes the page's popup state, so the

@@ -3,7 +3,7 @@ package workbench
 import (
 	"bytes"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/term"
 )
 
@@ -14,9 +14,9 @@ import (
 // the mouse already had the click, and a press that drags is a selection, not a click.
 
 // terminalInputClick reports whether event asks for the cursor move.
-func terminalInputClick(event ui.PointerEvent) bool {
-	return event.Kind == ui.PointerUp && event.Button == ui.PointerButtonPrimary &&
-		(event.Modifiers == 0 || event.Modifiers == ui.ModifierAlt)
+func terminalInputClick(event gfx.PointerEvent) bool {
+	return event.Kind == gfx.PointerUp && event.Button == gfx.PointerButtonPrimary &&
+		(event.Modifiers == 0 || event.Modifiers == gfx.ModifierAlt)
 }
 
 // moveInputCursor sends the cursor keys that take the shell's cursor to
@@ -41,9 +41,9 @@ func (state *State) moveInputCursor(session *Session, position term.Position) bo
 	if moves == 0 {
 		return true
 	}
-	key := ui.KeyRight
+	key := gfx.KeyRight
 	if moves < 0 {
-		key, moves = ui.KeyLeft, -moves
+		key, moves = gfx.KeyLeft, -moves
 	}
 	press := term.EncodeKey(key, 0, "", terminal.screen.Modes().AppCursorKeys)
 	terminal.send(bytes.Repeat(press, moves))

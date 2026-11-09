@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 )
@@ -66,7 +66,7 @@ func TestAssistantRecoversAToolCallWrittenAsText(t *testing.T) {
 	defer srv.Close()
 
 	state, shell := assistantSession(t, llm.NewOpenAI(llm.Config{BaseURL: srv.URL, APIKey: "test"}))
-	state.Paint(&ui.Canvas{}, panelWide)
+	state.Paint(&gfx.Canvas{}, panelWide)
 	state.Click(hitAIToggle)
 	ask(state, "check the load", agent.ModeAgent)
 	pumpUntil(t, state, "the run to end", func() bool { return state.ai.run == nil })

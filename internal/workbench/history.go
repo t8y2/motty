@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/cmdhistory"
 	"motty/internal/fuzzy"
 )
@@ -433,7 +433,7 @@ func (state *State) deleteHistorySelection() {
 	state.status = fmt.Sprintf(m.StatusRemovedFmt, entry.Command)
 }
 
-func (state *State) clickHistory(id ui.ID) {
+func (state *State) clickHistory(id gfx.ID) {
 	h := &state.history
 	switch id {
 	case hitHistoryDismiss, hitHistoryClose:
@@ -458,36 +458,36 @@ func (state *State) clickHistory(id ui.ID) {
 	}
 }
 
-func (state *State) historyKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) historyKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalHistory {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.rankHistory()
 	h := &state.history
-	handled := ui.EventResult{Handled: true, Repaint: true, Focus: hitHistorySearch}
+	handled := gfx.EventResult{Handled: true, Repaint: true, Focus: hitHistorySearch}
 	switch event.Key {
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		state.closeHistoryPicker()
-		return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
-	case ui.KeyUp:
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
+	case gfx.KeyUp:
 		state.moveHistorySelection(-1)
 		return handled, true
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		state.moveHistorySelection(1)
 		return handled, true
-	case ui.KeyPageUp:
+	case gfx.KeyPageUp:
 		state.moveHistorySelection(-historyVisibleRows)
 		return handled, true
-	case ui.KeyPageDown:
+	case gfx.KeyPageDown:
 		state.moveHistorySelection(historyVisibleRows)
 		return handled, true
-	case ui.KeyEnter:
+	case gfx.KeyEnter:
 		if event.Repeat {
 			return handled, true
 		}
-		state.chooseHistory(event.Modifiers&ui.ModifierShift != 0)
-		return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
-	case ui.KeyDelete:
+		state.chooseHistory(event.Modifiers&gfx.ModifierShift != 0)
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
+	case gfx.KeyDelete:
 		// In the search field Delete is the text's own key; only an empty field
 		// has nothing for it to erase.
 		if _, inItems := event.Target.In(hitHistoryItems); inItems || h.search.String() == "" {
@@ -495,5 +495,5 @@ func (state *State) historyKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			return handled, true
 		}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }

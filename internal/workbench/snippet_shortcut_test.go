@@ -4,12 +4,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
-func pressChord(state *State, chord keymap.Chord) ui.EventResult {
-	return state.Shortcut(ui.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Char})})
+func pressChord(state *State, chord keymap.Chord) gfx.EventResult {
+	return state.Shortcut(gfx.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Char})})
 }
 
 func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.T) {
@@ -17,7 +17,7 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 	state := newTestState(t, options)
 	world.connectFirst(t, state)
 	shell := world.conns[0].shell(t)
-	chord := keymap.Chord{Modifiers: ui.ModifierMeta | ui.ModifierShift, Char: '1'}
+	chord := keymap.Chord{Modifiers: gfx.ModifierMeta | gfx.ModifierShift, Char: '1'}
 
 	state.Click(hitSnippets)
 	state.Click(hitSnippetAdd)
@@ -27,7 +27,7 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 	if !state.snippets.capturing {
 		t.Fatal("the shortcut button did not start waiting for a chord")
 	}
-	pressChord(state, keymap.Chord{Modifiers: ui.ModifierControl, Char: 'r'})
+	pressChord(state, keymap.Chord{Modifiers: gfx.ModifierControl, Char: 'r'})
 	if !state.snippets.capturing || state.snippets.dialogError != state.messages.Tools.SnippetShortcutInvalid {
 		t.Fatalf("Ctrl+R alone belongs to the terminal: capturing=%v error=%q", state.snippets.capturing, state.snippets.dialogError)
 	}
@@ -53,7 +53,7 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 	if got := pressChord(state, chord); !got.Handled || shell.typed() != "systemctl restart nginx\r" {
 		t.Fatalf("handled=%v, shell heard %q", got.Handled, shell.typed())
 	}
-	held := ui.KeyEvent{Modifiers: chord.Modifiers, Text: "1", Repeat: true}
+	held := gfx.KeyEvent{Modifiers: chord.Modifiers, Text: "1", Repeat: true}
 	if got := state.Shortcut(held); !got.Handled || shell.typed() != "systemctl restart nginx\r" {
 		t.Fatalf("a held key sent the snippet again: heard %q", shell.typed())
 	}
@@ -84,7 +84,7 @@ func TestASnippetShortcutSendsItFromTheTerminalAndIsKeptOnThisDevice(t *testing.
 func TestAChordTwoSnippetsWantGoesToTheFirst(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
-	chord := keymap.Chord{Modifiers: ui.ModifierMeta | ui.ModifierShift, Char: '2'}
+	chord := keymap.Chord{Modifiers: gfx.ModifierMeta | gfx.ModifierShift, Char: '2'}
 	state.snippets.list = []snippet{{Name: "a", Command: "ls", Shortcut: chord}, {Name: "b", Command: "pwd"}}
 
 	state.openSnippetDialog(1)
@@ -99,7 +99,7 @@ func TestResettingShortcutsUnbindsSnippetsTheyNowCollideWith(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
 	defaultPalette := state.shortcuts.chords.Chord(shortcutCommandPalette)
-	moved := keymap.Chord{Modifiers: defaultPalette.Modifiers | ui.ModifierAlt, Char: 'p'}
+	moved := keymap.Chord{Modifiers: defaultPalette.Modifiers | gfx.ModifierAlt, Char: 'p'}
 	if _, ok := state.shortcuts.bind(shortcutCommandPalette, moved); !ok {
 		t.Fatal("could not move the command palette")
 	}
@@ -117,13 +117,13 @@ func TestResettingShortcutsUnbindsSnippetsTheyNowCollideWith(t *testing.T) {
 func TestSnippetsPageSteadyPaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.snippets.list = []snippet{
-		{Name: "Restart nginx", Command: "systemctl restart nginx", Run: true, Shortcut: keymap.Chord{Modifiers: ui.ModifierMeta | ui.ModifierShift, Char: '1'}},
+		{Name: "Restart nginx", Command: "systemctl restart nginx", Run: true, Shortcut: keymap.Chord{Modifiers: gfx.ModifierMeta | gfx.ModifierShift, Char: '1'}},
 		{Name: "Disk", Command: "df -h"},
 	}
 	state.refreshSnippets()
 	state.activeSection = sectionSnippets
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -175,7 +175,7 @@ func TestRightClickingASnippetRowOpensItsMenu(t *testing.T) {
 	shell := world.conns[0].shell(t)
 
 	state.Click(hitSnippets)
-	secondary := ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitSnippetRowList.At(1)}
+	secondary := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSnippetRowList.At(1)}
 	if got := pointer(state, secondary); !got.Handled || !state.snippetMenu.open || state.snippetMenu.index != 1 || state.snippets.selected != 1 {
 		t.Fatalf("handled=%v menu=%+v selected=%d", got.Handled, state.snippetMenu, state.snippets.selected)
 	}
@@ -185,7 +185,7 @@ func TestRightClickingASnippetRowOpensItsMenu(t *testing.T) {
 	}
 
 	state.Click(hitSnippets)
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitSnippetRowList.At(0)})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSnippetRowList.At(0)})
 	state.Click(hitSnippetMenuDelete)
 	if len(state.snippets.list) != 1 || state.snippets.list[0].Name != "b" {
 		t.Fatalf("snippets after delete: %+v", state.snippets.list)

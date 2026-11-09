@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
@@ -40,7 +40,7 @@ const (
 	aiImportResultGap          = float32(4)
 )
 
-func (state *State) paintAIImport(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAIImport(canvas *gfx.Canvas, viewport gfx.Rect) {
 	switch state.ai.cfg.importStep {
 	case aiImportSources:
 		state.paintAIImportSources(canvas, viewport)
@@ -51,7 +51,7 @@ func (state *State) paintAIImport(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 }
 
-func (state *State) paintAIImportSources(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAIImportSources(canvas *gfx.Canvas, viewport gfx.Rect) {
 	cfg, m, theme := &state.ai.cfg, state.messages.AISettings, state.Theme()
 
 	// Open on the first source that can be read, so Enter reaches the common
@@ -75,21 +75,21 @@ func (state *State) paintAIImportSources(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: initial,
-		ContentSize: ui.Size{Width: 620}, FitBody: true, BodyHeight: body,
+		ContentSize: gfx.Size{Width: 620}, FitBody: true, BodyHeight: body,
 	})
 	layout := dialog.Begin(m.ImportSourcesTitle, m.ImportSourcesDesc)
 
-	var sourceSlots []flex.Box
-	var choose flex.Box
+	var sourceSlots []ui.Box
+	var choose ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		for _, source := range cfg.importSources {
-			f.Row().Height(aiImportSourceRowHeight).Gap(12).Items(flex.Center).Children(func() {
+			f.Row().Height(aiImportSourceRowHeight).Gap(12).Items(ui.Center).Children(func() {
 				f.Row().Size(32, 32).Shrink(0).Background(state.pal.accentSoft).Radius(radius.control).Center().Children(func() {
 					f.Icon(aiImportToolIcon(source.Tool)).Size(17, 17).Color(state.pal.accent)
 				})
 				f.Column().Grow(1).Shrink(1).Children(func() {
-					f.Text(aiImportToolName(source.Tool)).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).
+					f.Text(aiImportToolName(source.Tool)).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
 						Color(state.pal.text).LineHeight(20)
 					f.Text(state.aiImportSourceStatus(source)).FontSize(metrics.FontSizeS).
 						Color(state.aiImportSourceStatusColor(source)).LineHeight(17).Ellipsis()
@@ -104,7 +104,7 @@ func (state *State) paintAIImportSources(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 
 		f.Divider().Background(state.pal.line).MarginSides(6, 0, 6, 0)
-		f.Row().Height(aiImportFallbackRowHeight).Gap(12).Items(flex.Center).Children(func() {
+		f.Row().Height(aiImportFallbackRowHeight).Gap(12).Items(ui.Center).Children(func() {
 			// The empty tile keeps the fallback's text on the same column as
 			// the source names above it.
 			f.Row().Size(32, 32).Shrink(0).Center().Children(func() {
@@ -119,9 +119,9 @@ func (state *State) paintAIImportSources(canvas *ui.Canvas, viewport ui.Rect) {
 		})
 
 		if cfg.importErr != "" {
-			f.Row().Height(22).Gap(8).Items(flex.Center).Children(func() {
+			f.Row().Height(22).Gap(8).Items(ui.Center).Children(func() {
 				f.Icon(icons.CircleAlert).Size(14, 14).Color(state.pal.danger).Shrink(0)
-				f.Text(cfg.importErr).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).
+				f.Text(cfg.importErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
 					Color(state.pal.danger).LineHeight(17).Ellipsis()
 			})
 		}
@@ -140,7 +140,7 @@ func (state *State) paintAIImportSources(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog.End()
 }
 
-func (state *State) paintAIImportPreview(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAIImportPreview(canvas *gfx.Canvas, viewport gfx.Rect) {
 	cfg, m, theme := &state.ai.cfg, state.messages.AISettings, state.Theme()
 	total := len(cfg.importCandidates)
 	importable := aiImportImportableCount(cfg.importCandidates)
@@ -174,11 +174,11 @@ func (state *State) paintAIImportPreview(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: initial,
-		ContentSize: ui.Size{Width: 760}, FitBody: true, BodyHeight: body,
+		ContentSize: gfx.Size{Width: 760}, FitBody: true, BodyHeight: body,
 	})
 	layout := dialog.Begin(m.ImportPreviewTitle, m.ImportPreviewDesc)
 
-	var list flex.Box
+	var list ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		// Only a full selection earns the check. A partial one keeps the dot,
@@ -188,7 +188,7 @@ func (state *State) paintAIImportPreview(canvas *ui.Canvas, viewport ui.Rect) {
 			summaryIcon, summaryColor = icons.CircleCheck, state.pal.success
 		}
 		f.Row().Height(aiImportSummaryHeight).MarginSides(0, aiImportRowReserve, 0, 10).
-			PadSides(0, 10, 0, 10).Gap(8).Items(flex.Center).Children(func() {
+			PadSides(0, 10, 0, 10).Gap(8).Items(ui.Center).Children(func() {
 			f.Icon(summaryIcon).Size(14, 14).Color(summaryColor).Shrink(0)
 			textColor := state.pal.muted
 			if selected > 0 {
@@ -199,13 +199,13 @@ func (state *State) paintAIImportPreview(canvas *ui.Canvas, viewport ui.Rect) {
 		})
 
 		if total == 0 {
-			f.Row().Height(40).Gap(8).Items(flex.Center).Children(func() {
+			f.Row().Height(40).Gap(8).Items(ui.Center).Children(func() {
 				f.Icon(icons.File).Size(15, 15).Color(state.pal.muted).Shrink(0)
 				f.Text(m.ImportNoCandidates).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18)
 			})
 		} else {
 			list = f.ScrollArea(hitAISetImportList).Height(listHeight).FillWidth().Gap(aiImportRowGap)
-			list.HitWith(hitAISetImportList, m.ImportPreviewTitle, ui.HitOptions{Role: ui.RoleGroup})
+			list.HitWith(hitAISetImportList, m.ImportPreviewTitle, gfx.HitOptions{Role: gfx.RoleGroup})
 			list.Children(func() {
 				for index, candidate := range cfg.importCandidates {
 					if candidate.Importable() {
@@ -214,10 +214,10 @@ func (state *State) paintAIImportPreview(canvas *ui.Canvas, viewport ui.Rect) {
 					}
 					if index == importable {
 						f.Row().Height(aiImportGroupHeight).MarginSides(4, aiImportRowReserve, 0, 2).
-							Gap(8).Items(flex.Center).Children(func() {
+							Gap(8).Items(ui.Center).Children(func() {
 							f.Icon(icons.CircleAlert).Size(13, 13).Color(state.pal.warning).Shrink(0)
 							f.Text(fmt.Sprintf(m.ImportUnavailableFmt, unavailable)).FontSize(metrics.FontSizeS).
-								Weight(ui.WeightMedium).Color(state.pal.muted).LineHeight(16)
+								Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(16)
 						})
 					}
 					state.aiImportUnavailableRow(f, candidate)
@@ -226,9 +226,9 @@ func (state *State) paintAIImportPreview(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 
 		if cfg.importErr != "" {
-			f.Row().Height(22).Gap(8).Items(flex.Center).Children(func() {
+			f.Row().Height(22).Gap(8).Items(ui.Center).Children(func() {
 				f.Icon(icons.CircleAlert).Size(14, 14).Color(state.pal.danger).Shrink(0)
-				f.Text(cfg.importErr).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).
+				f.Text(cfg.importErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
 					Color(state.pal.danger).LineHeight(17).Ellipsis()
 			})
 		}
@@ -248,18 +248,18 @@ func (state *State) paintAIImportPreview(canvas *ui.Canvas, viewport ui.Rect) {
 // aiImportCandidateRow paints one selectable provider. A ticked row carries a
 // quiet surface tint, so the selection is legible at a glance without turning
 // the checkbox into the only mark of state.
-func (state *State) aiImportCandidateRow(f *flex.Frame, index int, candidate aiproviderimport.Candidate, checked bool) {
-	background := ui.Color{}
+func (state *State) aiImportCandidateRow(f *ui.Frame, index int, candidate aiproviderimport.Candidate, checked bool) {
+	background := gfx.Color{}
 	if checked {
 		background = state.pal.surfaceSoft
 	}
 	f.Row().Height(aiImportRowHeight).MarginSides(0, aiImportRowReserve, 0, 0).
-		PadSides(0, 10, 0, 10).Gap(10).Items(flex.Center).Background(background).
+		PadSides(0, 10, 0, 10).Gap(10).Items(ui.Center).Background(background).
 		Radius(radius.control).Children(func() {
 		f.Checkbox(hitAISetImportRow.At(index), checked).Label(candidate.Name)
 		f.Icon(aiImportKindIcon(candidate.Kind)).Size(18, 18).Color(state.pal.muted).Shrink(0)
 		f.Column().Grow(1).Shrink(1).Children(func() {
-			f.Text(candidate.Name).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).
+			f.Text(candidate.Name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
 				Color(state.pal.text).LineHeight(20).Ellipsis()
 			f.Text(state.aiImportCandidateDetail(candidate)).FontSize(metrics.FontSizeS).
 				Color(state.pal.muted).LineHeight(16).Ellipsis()
@@ -270,9 +270,9 @@ func (state *State) aiImportCandidateRow(f *flex.Frame, index int, candidate aip
 // aiImportUnavailableRow paints an entry that cannot be written. It has no
 // checkbox: the row is information, not a disabled control, and the reason sits
 // on its second line.
-func (state *State) aiImportUnavailableRow(f *flex.Frame, candidate aiproviderimport.Candidate) {
+func (state *State) aiImportUnavailableRow(f *ui.Frame, candidate aiproviderimport.Candidate) {
 	f.Row().Height(aiImportUnavailableRowHeight).MarginSides(0, aiImportRowReserve, 0, 0).
-		PadSides(0, 10, 0, 10).Gap(10).Items(flex.Center).Children(func() {
+		PadSides(0, 10, 0, 10).Gap(10).Items(ui.Center).Children(func() {
 		f.Slot().Size(16, 16)
 		f.Icon(icons.CircleAlert).Size(16, 16).Color(state.pal.warning).Shrink(0)
 		// The reason rows skip the checkbox and the kind tile. The left margin
@@ -290,12 +290,12 @@ func (state *State) aiImportUnavailableRow(f *flex.Frame, candidate aiproviderim
 // paintAIImportScrollbar is the list's only sign that there is more below. It
 // is painted from the scroll state the layout just reported, after the clip is
 // closed, so it does not move with the rows.
-func (state *State) paintAIImportScrollbar(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintAIImportScrollbar(canvas *gfx.Canvas, bounds gfx.Rect) {
 	scroll := state.settingsRow.ScrollState(hitAISetImportList)
 	if scroll == nil || scroll.Max() <= 0 || bounds.Height <= 12 {
 		return
 	}
-	track := ui.Rect{
+	track := gfx.Rect{
 		X: bounds.X + bounds.Width - 5, Y: bounds.Y + 6,
 		Width: 3, Height: bounds.Height - 12,
 	}
@@ -303,14 +303,14 @@ func (state *State) paintAIImportScrollbar(canvas *ui.Canvas, bounds ui.Rect) {
 	thumbHeight := max(track.Height*min(scroll.Viewport/scroll.Content, 1), 20)
 	thumbHeight = min(thumbHeight, track.Height)
 	offset := scroll.Offset / scroll.Max()
-	thumb := ui.Rect{
+	thumb := gfx.Rect{
 		X: track.X, Y: track.Y + (track.Height-thumbHeight)*offset,
 		Width: track.Width, Height: thumbHeight,
 	}
 	canvas.Rounded(thumb, 1.5, state.pal.muted)
 }
 
-func (state *State) paintAIImportResult(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAIImportResult(canvas *gfx.Canvas, viewport gfx.Rect) {
 	cfg, m, theme := &state.ai.cfg, state.messages.AISettings, state.Theme()
 	result := cfg.importResult
 
@@ -335,7 +335,7 @@ func (state *State) paintAIImportResult(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: hitAISetImportClose,
-		ContentSize: ui.Size{Width: 520}, FitBody: true, BodyHeight: body,
+		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: body,
 	})
 	layout := dialog.Begin(m.ImportDoneTitle, "")
 
@@ -350,10 +350,10 @@ func (state *State) paintAIImportResult(canvas *ui.Canvas, viewport ui.Rect) {
 	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(aiImportResultGap).Children(func() {
 		f.Row().Height(aiImportResultBannerHeight).PadSides(10, 12, 10, 12).
 			Background(state.pal.surfaceSoft).Radius(radius.control).Gap(10).
-			Items(flex.Center).Children(func() {
+			Items(ui.Center).Children(func() {
 			f.Icon(icon).Size(18, 18).Color(color).Shrink(0)
 			f.Text(fmt.Sprintf(m.ImportSummaryFmt, result.Created, result.Updated, result.Skipped)).
-				FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(state.pal.text).LineHeight(20)
+				FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20)
 		})
 		if result.GatewayCreated {
 			state.aiImportResultLineRow(f, icons.Info, state.pal.muted, m.ImportGatewayImported)
@@ -379,8 +379,8 @@ func (state *State) paintAIImportResult(canvas *ui.Canvas, viewport ui.Rect) {
 
 // aiImportResultLineRow is one compact note under the outcome. The icon carries
 // the kind of note so the line does not need a colored label.
-func (state *State) aiImportResultLineRow(f *flex.Frame, icon ui.Icon, color ui.Color, text string) {
-	f.Row().Height(aiImportResultLine).Gap(8).Items(flex.Center).Children(func() {
+func (state *State) aiImportResultLineRow(f *ui.Frame, icon gfx.Icon, color gfx.Color, text string) {
+	f.Row().Height(aiImportResultLine).Gap(8).Items(ui.Center).Children(func() {
 		f.Icon(icon).Size(14, 14).Color(color).Shrink(0)
 		f.Text(text).FontSize(metrics.FontSizeS).Color(color).LineHeight(18).Ellipsis()
 	})
@@ -388,8 +388,8 @@ func (state *State) aiImportResultLineRow(f *flex.Frame, icon ui.Icon, color ui.
 
 // aiImportResultProblemRow wraps a save failure instead of clipping it: the
 // reason is what the user needs to act on.
-func (state *State) aiImportResultProblemRow(f *flex.Frame, text string) {
-	f.Row().Height(2 * aiImportResultLine).Gap(8).Items(flex.Start).Children(func() {
+func (state *State) aiImportResultProblemRow(f *ui.Frame, text string) {
+	f.Row().Height(2 * aiImportResultLine).Gap(8).Items(ui.Start).Children(func() {
 		f.Icon(icons.CircleAlert).Size(14, 14).Color(state.pal.danger).Shrink(0).MarginSides(3, 0, 0, 0)
 		f.Column().Grow(1).Shrink(1).Children(func() {
 			f.Paragraph(text, 2).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(18)
@@ -409,14 +409,14 @@ func aiImportToolName(tool aiproviderimport.Tool) string {
 // app people recognize rather than an abstract stand-in. magpie's is a single
 // path and takes the tile's accent; cc-switch's is its full-color starburst and
 // ignores the tint.
-func aiImportToolIcon(tool aiproviderimport.Tool) ui.Icon {
+func aiImportToolIcon(tool aiproviderimport.Tool) gfx.Icon {
 	if tool == aiproviderimport.ToolCCSwitch {
 		return icons.CcSwitch
 	}
 	return icons.Magpie
 }
 
-func aiImportKindIcon(kind string) ui.Icon {
+func aiImportKindIcon(kind string) gfx.Icon {
 	if kind == store.KindAnthropic {
 		return icons.AiClaude
 	}
@@ -437,7 +437,7 @@ func (state *State) aiImportSourceStatus(source aiproviderimport.SourceInfo) str
 
 // aiImportSourceStatusColor keeps a source that cannot be read in the danger
 // color; a missing source is simply quiet.
-func (state *State) aiImportSourceStatusColor(source aiproviderimport.SourceInfo) ui.Color {
+func (state *State) aiImportSourceStatusColor(source aiproviderimport.SourceInfo) gfx.Color {
 	if source.Found && source.Err != nil {
 		return state.pal.danger
 	}

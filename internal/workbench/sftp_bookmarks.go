@@ -10,7 +10,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 )
@@ -49,15 +49,15 @@ type sftpBookmarkEditor struct {
 	focusName                          bool
 	original                           sftpBookmark
 	fields                             [3]text.Editor // name, local directory, remote directory
-	layout                             flex.View
+	layout                             ui.View
 	errorText                          string
-	list                               ui.Rect
+	list                               gfx.Rect
 	area                               components.ScrollAreaGeometry
 	offset, grab                       float32
 	dragging                           bool
 	scopeOpen, focusScope, focusOption bool
 	scopeMenu                          components.MenuScroll
-	scopeBounds                        ui.Rect
+	scopeBounds                        gfx.Rect
 }
 
 func cleanBookmarkName(name string) string {
@@ -257,7 +257,7 @@ func (w *sftpWindow) removeWindowBookmark(bookmark sftpBookmark) {
 	}
 }
 
-func (w *sftpWindow) clickBookmarkEditor(id ui.ID) {
+func (w *sftpWindow) clickBookmarkEditor(id gfx.ID) {
 	switch id {
 	case hitSFTPBookmarkCancel:
 		w.bookmark.open = false
@@ -328,7 +328,7 @@ func (w *sftpWindow) openProfileDraft() {
 	w.openPairedBookmark(sftpBookmark{local: local, path: path.Clean(remote), sync: b.sync})
 }
 
-func (w *sftpWindow) paintBookmarkDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (w *sftpWindow) paintBookmarkDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	b, theme, m := &w.bookmark, w.owner.Theme(), w.owner.messages.SFTPWindow
 	bodyHeight := min(float32(400), max(float32(292), viewport.Height-208))
 	if b.errorText != "" {
@@ -339,18 +339,18 @@ func (w *sftpWindow) paintBookmarkDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		focus = hitSFTPBookmarkFields.At(1)
 	}
 	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: hitSFTPBookmarkScope, CloseID: hitSFTPBookmarkCancel, InitialFocusID: focus, ContentSize: ui.Size{Width: 760}, FitBody: true, BodyHeight: bodyHeight})
+	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: hitSFTPBookmarkScope, CloseID: hitSFTPBookmarkCancel, InitialFocusID: focus, ContentSize: gfx.Size{Width: 760}, FitBody: true, BodyHeight: bodyHeight})
 	layout := dialog.Begin(m.BookmarkTitle, m.BookmarkDescription)
-	var fields [3]flex.Box
-	var browse, list, scope, add, save, remove, sync flex.Box
+	var fields [3]ui.Box
+	var browse, list, scope, add, save, remove, sync ui.Box
 	f := b.layout.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().Gap(8).Children(func() {
-		f.Row().Height(56).Gap(8).Items(flex.End).Children(func() {
+		f.Row().Height(56).Gap(8).Items(ui.End).Children(func() {
 			fields[1] = f.Slot().Grow(1).Height(56)
 			browse = f.Slot().Size(32, 32)
 		})
 		fields[2] = f.Slot().Height(56)
-		f.Row().Height(56).Gap(8).Items(flex.End).Children(func() {
+		f.Row().Height(56).Gap(8).Items(ui.End).Children(func() {
 			fields[0] = f.Slot().Grow(1).Height(56)
 			scopeWidth := max(canvas.TextWidth(m.ProfileSite, theme.Metrics.FontSizeM), canvas.TextWidth(m.ProfileShared, theme.Metrics.FontSizeM)) + 36
 			scope = f.Slot().Width(max(132, scopeWidth)).Height(56)
@@ -367,7 +367,7 @@ func (w *sftpWindow) paintBookmarkDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	f.End()
 	components.BeginButton(canvas, theme, hitSFTPProfileNew, add.Rect()).Small().Outline(m.ProfileNew)
 	saveTheme := theme
-	saveTheme.Primary, saveTheme.PrimaryForeground = ui.RGB(24, 24, 27), ui.RGB(250, 250, 250)
+	saveTheme.Primary, saveTheme.PrimaryForeground = gfx.RGB(24, 24, 27), gfx.RGB(250, 250, 250)
 	components.BeginButton(canvas, saveTheme, hitSFTPBookmarkSave, save.Rect()).Small().Default(m.BookmarkSave)
 	deleteButton := components.BeginButton(canvas, theme, hitSFTPProfileDelete, remove.Rect()).Small()
 	if !b.editing {
@@ -382,13 +382,13 @@ func (w *sftpWindow) paintBookmarkDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	syncBounds := sync.Rect()
 	checkboxSide := components.CheckboxExtent(theme)
-	components.BeginCheckbox(canvas, theme, hitSFTPBookmarkSync, ui.Rect{
+	components.BeginCheckbox(canvas, theme, hitSFTPBookmarkSync, gfx.Rect{
 		X: syncBounds.X + 4,
 		Y: syncBounds.Y + (syncBounds.Height-checkboxSide)/2,
 	}, b.sync).Label(m.ProfileSync).HitBounds(syncBounds).Paint()
-	canvas.Label(m.ProfileSync, ui.Rect{
+	canvas.Label(m.ProfileSync, gfx.Rect{
 		X: syncBounds.X + 32, Y: syncBounds.Y, Width: max(0, syncBounds.Width-32), Height: syncBounds.Height,
-	}, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.Foreground})
+	}, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.Foreground})
 	w.paintProfileList(canvas, list.Rect())
 	w.paintProfileScope(canvas, scope.Rect(), viewport)
 	if b.focusName {
@@ -404,10 +404,10 @@ func (w *sftpWindow) paintBookmarkDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog.End()
 }
 
-func (w *sftpWindow) paintProfileScope(canvas *ui.Canvas, bounds, viewport ui.Rect) {
+func (w *sftpWindow) paintProfileScope(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
 	b, theme, m := &w.bookmark, w.owner.Theme(), w.owner.messages.SFTPWindow
 	b.scopeBounds = components.BeginField(canvas, theme, bounds).For(hitSFTPProfileScope).Paint(m.ProfileScope, "", "")
-	content := ui.Rect{X: b.scopeBounds.X, Y: b.scopeBounds.Y + b.scopeBounds.Height + 4, Width: b.scopeBounds.Width, Height: 72}
+	content := gfx.Rect{X: b.scopeBounds.X, Y: b.scopeBounds.Y + b.scopeBounds.Height + 4, Width: b.scopeBounds.Width, Height: 72}
 	if content.Y+content.Height > viewport.Y+viewport.Height-8 {
 		content.Y = b.scopeBounds.Y - content.Height - 4
 	}
@@ -429,20 +429,20 @@ func (w *sftpWindow) paintProfileScope(canvas *ui.Canvas, bounds, viewport ui.Re
 	}
 }
 
-func (w *sftpWindow) paintProfileList(canvas *ui.Canvas, bounds ui.Rect) {
+func (w *sftpWindow) paintProfileList(canvas *gfx.Canvas, bounds gfx.Rect) {
 	b, theme, m := &w.bookmark, w.owner.Theme(), w.owner.messages.SFTPWindow
 	profiles := w.visibleProfiles()
 	canvas.RoundedBorder(bounds, theme.Metrics.RadiusItem(), 1, theme.Border.Mix(theme.MutedForeground, .25), theme.Background)
-	b.list = bounds.Inset(ui.All(2))
-	canvas.Container(b.list, ui.RoleListBox, m.BookmarkTitle)
-	area := components.BeginScrollArea(canvas, theme, b.list, ui.Size{Width: b.list.Width, Height: float32(len(profiles)) * 52}).Offset(0, b.offset).Viewport(hitSFTPProfileList, m.BookmarkTitle).VerticalScrollbar(hitSFTPProfileBar, m.BookmarkTitle, "")
+	b.list = bounds.Inset(gfx.All(2))
+	canvas.Container(b.list, gfx.RoleListBox, m.BookmarkTitle)
+	area := components.BeginScrollArea(canvas, theme, b.list, gfx.Size{Width: b.list.Width, Height: float32(len(profiles)) * 52}).Offset(0, b.offset).Viewport(hitSFTPProfileList, m.BookmarkTitle).VerticalScrollbar(hitSFTPProfileBar, m.BookmarkTitle, "")
 	b.area = area.BeginContent()
 	b.offset = b.area.OffsetY
 	if len(profiles) == 0 {
-		canvas.LabelCenter(m.ProfileEmpty, b.list, ui.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
+		canvas.LabelCenter(m.ProfileEmpty, b.list, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
 	}
 	for i, profile := range profiles {
-		row := ui.Rect{X: b.list.X + 4, Y: b.list.Y + float32(i)*52 - b.offset, Width: max(0, b.list.Width-18), Height: 52}
+		row := gfx.Rect{X: b.list.X + 4, Y: b.list.Y + float32(i)*52 - b.offset, Width: max(0, b.list.Width-18), Height: 52}
 		if row.Y+row.Height < b.list.Y || row.Y > b.list.Y+b.list.Height {
 			continue
 		}
@@ -460,7 +460,7 @@ func (w *sftpWindow) paintProfileList(canvas *ui.Canvas, bounds ui.Rect) {
 			scopeLabel, variant = m.ProfileShared, components.BadgeSecondary
 		}
 		badgeWidth, _ := components.BadgeExtent(canvas, theme, scopeLabel)
-		components.PaintBadge(canvas, theme, ui.Rect{X: row.X + row.Width - badgeWidth - 8, Y: row.Y + 5}, scopeLabel, variant)
+		components.PaintBadge(canvas, theme, gfx.Rect{X: row.X + row.Width - badgeWidth - 8, Y: row.Y + 5}, scopeLabel, variant)
 		description := profile.path
 		if profile.local != "" {
 			description = elideMiddleRunes(profile.local, 34) + "  ⇄  " + elideMiddleRunes(profile.path, 34)
@@ -469,63 +469,63 @@ func (w *sftpWindow) paintProfileList(canvas *ui.Canvas, bounds ui.Rect) {
 			description += " · " + m.ProfileQuickSync
 		}
 		nameWidth := max(0, row.Width-badgeWidth-32)
-		canvas.Label(canvas.FitLine(name, theme.Metrics.FontSizeM, ui.WeightMedium, nameWidth), ui.Rect{X: row.X + 8, Y: row.Y + 4, Width: nameWidth, Height: 22}, ui.TextStyle{Size: theme.Metrics.FontSizeM, Weight: ui.WeightMedium, Color: theme.Foreground})
-		canvas.Label(canvas.FitLine(description, theme.Metrics.FontSizeS, ui.WeightRegular, row.Width-16), ui.Rect{X: row.X + 8, Y: row.Y + 26, Width: row.Width - 16, Height: 20}, ui.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
-		canvas.HitWithOptions(id, row, name, ui.HitOptions{Role: ui.RoleOption, Selected: selected})
+		canvas.Label(canvas.FitLine(name, theme.Metrics.FontSizeM, gfx.WeightMedium, nameWidth), gfx.Rect{X: row.X + 8, Y: row.Y + 4, Width: nameWidth, Height: 22}, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Weight: gfx.WeightMedium, Color: theme.Foreground})
+		canvas.Label(canvas.FitLine(description, theme.Metrics.FontSizeS, gfx.WeightRegular, row.Width-16), gfx.Rect{X: row.X + 8, Y: row.Y + 26, Width: row.Width - 16, Height: 20}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
+		canvas.HitWithOptions(id, row, name, gfx.HitOptions{Role: gfx.RoleOption, Selected: selected})
 	}
 	area.EndContent()
 }
 
-func (w *sftpWindow) profilePointer(event ui.PointerEvent) ui.EventResult {
+func (w *sftpWindow) profilePointer(event gfx.PointerEvent) gfx.EventResult {
 	b := &w.bookmark
 	if b.scopeOpen {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if b.dragging {
-		if event.Kind == ui.PointerMove {
+		if event.Kind == gfx.PointerMove {
 			b.offset = b.area.VerticalOffsetForThumb(event.Y - b.grab)
-		} else if event.Kind == ui.PointerUp || event.Kind == ui.PointerExit {
+		} else if event.Kind == gfx.PointerUp || event.Kind == gfx.PointerExit {
 			b.dragging = false
 		}
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if event.Kind == ui.PointerDown && event.Target == hitSFTPProfileBar {
+	if event.Kind == gfx.PointerDown && event.Target == hitSFTPProfileBar {
 		b.grab = b.area.VerticalThumb.Height / 2
 		if event.Y >= b.area.VerticalThumb.Y && event.Y < b.area.VerticalThumb.Y+b.area.VerticalThumb.Height {
 			b.grab = event.Y - b.area.VerticalThumb.Y
 		}
 		b.dragging = true
 		b.offset = b.area.VerticalOffsetForThumb(event.Y - b.grab)
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && event.ClickCount == 2 {
+	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && event.ClickCount == 2 {
 		if index, ok := event.Target.In(hitSFTPProfileItems); ok {
 			profiles := w.visibleProfiles()
 			if index < len(profiles) {
 				w.selectProfile(profiles[index])
 				w.openProfileDraft()
-				return ui.EventResult{Handled: true, Repaint: true}
+				return gfx.EventResult{Handled: true, Repaint: true}
 			}
 		}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (w *sftpWindow) profileScopeKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (w *sftpWindow) profileScopeKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	b := &w.bookmark
 	if !b.scopeOpen && event.Target != hitSFTPProfileScope {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	result := ui.EventResult{Handled: true, Repaint: true}
+	result := gfx.EventResult{Handled: true, Repaint: true}
 	if b.scopeOpen {
 		switch event.Key {
-		case ui.KeyEscape:
+		case gfx.KeyEscape:
 			if !event.Repeat {
 				b.scopeOpen = false
 				b.focusScope = true
 			}
 			return result, true
-		case ui.KeyTab:
+		case gfx.KeyTab:
 			b.scopeOpen = false
 			result.ContinueTraversal = true
 			return result, true
@@ -535,7 +535,7 @@ func (w *sftpWindow) profileScopeKey(event ui.KeyEvent) (ui.EventResult, bool) {
 				result.Focus, result.FocusVisible = next, true
 				return result, true
 			}
-			if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat {
+			if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
 				id := event.Target
 				if id != hitSFTPProfileSite && id != hitSFTPProfileShared {
 					id = hitSFTPProfileSite
@@ -547,11 +547,11 @@ func (w *sftpWindow) profileScopeKey(event ui.KeyEvent) (ui.EventResult, bool) {
 				return result, true
 			}
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Modifiers == 0 && !event.Repeat && (event.Key == ui.KeyEnter || event.Key == ui.KeySpace || event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+	if event.Modifiers == 0 && !event.Repeat && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace || event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		w.clickBookmarkEditor(hitSFTPProfileScope)
 		return result, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestNotesPopupSizing(t *testing.T) {
@@ -14,7 +14,7 @@ func TestNotesPopupSizing(t *testing.T) {
 	s.activeSection = sectionNotes
 	for _, test := range []struct{ doc, window, want float32 }{{1200, 1400, 600}, {400, 800, 340}, {400, 300, 276}} {
 		s.notes.view.documentBounds.Width = test.doc
-		w, h := s.notePopupSize(ui.Rect{Width: test.window, Height: 800})
+		w, h := s.notePopupSize(gfx.Rect{Width: test.window, Height: 800})
 		if w != test.want || h < 479 || h > 481 {
 			t.Fatalf("size %v %v", w, h)
 		}
@@ -22,7 +22,7 @@ func TestNotesPopupSizing(t *testing.T) {
 	s.notes.view.popup = "hosts"
 	s.notes.view.documentBounds.Width = 1200
 	for _, test := range []struct{ window, want float32 }{{1400, 1200}, {1000, 976}} {
-		w, _ := s.notePopupSize(ui.Rect{Width: test.window, Height: 800})
+		w, _ := s.notePopupSize(gfx.Rect{Width: test.window, Height: 800})
 		if w != test.want {
 			t.Fatalf("host popup width: %v, want %v", w, test.want)
 		}
@@ -43,7 +43,7 @@ func TestNotesHostPickerUsesIndependentOrderedGroups(t *testing.T) {
 	if !slices.Equal(keys, []string{"", "root", "Prod", "Prod/DB", "b", "a", "Dev", "dev", "Empty"}) {
 		t.Fatalf("order: %v", keys)
 	}
-	var beta, alpha ui.Rect
+	var beta, alpha gfx.Rect
 	for _, item := range items {
 		if item.key == "b" {
 			beta = item.bounds
@@ -88,15 +88,15 @@ func TestNotesHostPickerCheckboxScrollAndFocus(t *testing.T) {
 	for i := 0; i < 60; i++ {
 		s.hosts = append(s.hosts, Host{CatalogID: fmt.Sprintf("host-%02d", i), Label: fmt.Sprintf("Host %02d", i), Group: "Group"})
 	}
-	var c ui.Canvas
-	s.Paint(&c, ui.Size{Width: 1400, Height: 800})
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 800})
 	s.Click(hitNoteHostsOpen)
 	c.Reset()
-	s.Paint(&c, ui.Size{Width: 1400, Height: 800})
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 800})
 	token := s.noteTagToken("host-00")
 	id := hitNoteHostRows.At(token)
 	hit, ok := hitByID(&c, id)
-	if !ok || hit.Role != ui.RoleCheckbox || hit.Bounds.Height != 40 || hit.Label != "Host 00" {
+	if !ok || hit.Role != gfx.RoleCheckbox || hit.Bounds.Height != 40 || hit.Label != "Host 00" {
 		t.Fatalf("card semantics: %+v", hit)
 	}
 	count := 0
@@ -116,10 +116,10 @@ func TestNotesHostPickerCheckboxScrollAndFocus(t *testing.T) {
 	if !noteHasHost(s.notes.draft.Tags, "host-00") || s.notes.view.popup != "hosts" || len(s.sessions) != 0 {
 		t.Fatal("card did not select or opened connection")
 	}
-	s.notesScroll(ui.ScrollEvent{DeltaY: 10000})
+	s.notesScroll(gfx.ScrollEvent{DeltaY: 10000})
 	s.notes.view.picker.Insert("Host 00")
 	c.Reset()
-	s.Paint(&c, ui.Size{Width: 1400, Height: 800})
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 800})
 	if s.notes.view.tagPopupScroll != 0 || s.notes.view.tagPopupArea.Geometry().Bounds.Height >= geo.Bounds.Height {
 		t.Fatal("query did not shrink popup/reset scroll")
 	}
@@ -131,11 +131,11 @@ func TestNotesHostPickerCheckboxScrollAndFocus(t *testing.T) {
 	s.notes.view.picker.Insert("")
 	s.Click(hitNoteHostGroups.At(s.noteTagToken("Group")))
 	c.Reset()
-	s.Paint(&c, ui.Size{Width: 1400, Height: 800})
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 800})
 	if _, ok := hitByID(&c, id); ok {
 		t.Fatal("derived group did not retain collapse")
 	}
-	r := s.notesKey(ui.KeyEvent{Key: ui.KeyEscape})
+	r := s.notesKey(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if s.notes.view.popup != "" || r.Focus != hitNoteHostsOpen {
 		t.Fatal("dismiss did not restore focus")
 	}

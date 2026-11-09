@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/cmdhistory"
 	"motty/internal/sshconn"
 )
@@ -157,7 +157,7 @@ func pickerWorld(t *testing.T) *historyWorld {
 
 func (h *historyWorld) search(query string) {
 	app.TextEvent{Kind: app.TextInsert, Text: query}.Apply(h.state.EditorFor(hitHistorySearch))
-	h.state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	h.state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 }
 
 func (h *historyWorld) listed() []string {
@@ -175,7 +175,7 @@ func TestHistoryPickerRanksFuzzyMatchesAndInsertsWithoutEnter(t *testing.T) {
 	state.Click(hitCommandPalette)
 	app.TextEvent{Kind: app.TextInsert, Text: state.messages.History.Title}.Apply(state.EditorFor(hitCommandPaletteSearch))
 	state.refreshCommandPalette()
-	state.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitCommandPaletteSearch, Key: gfx.KeyEnter})
 	if state.modal != modalHistory {
 		t.Fatalf("modal = %d", state.modal)
 	}
@@ -189,7 +189,7 @@ func TestHistoryPickerRanksFuzzyMatchesAndInsertsWithoutEnter(t *testing.T) {
 	}
 
 	before := len(h.shell.input)
-	result := state.Key(ui.KeyEvent{Target: hitHistorySearch, Key: ui.KeyEnter})
+	result := state.Key(gfx.KeyEvent{Target: hitHistorySearch, Key: gfx.KeyEnter})
 	if !result.Handled || state.modal != modalNone {
 		t.Fatalf("enter: %+v modal=%d", result, state.modal)
 	}
@@ -211,7 +211,7 @@ func TestHistoryPickerShiftEnterRunsAndScopeWidensToAllHosts(t *testing.T) {
 		t.Fatalf("all hosts lists %q", got)
 	}
 	before := len(h.shell.input)
-	state.Key(ui.KeyEvent{Target: hitHistorySearch, Key: ui.KeyEnter, Modifiers: ui.ModifierShift})
+	state.Key(gfx.KeyEvent{Target: hitHistorySearch, Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift})
 	if got := string(h.shell.input[before:]); got != "kubectl get pods\r" {
 		t.Fatalf("typed %q", got)
 	}
@@ -227,10 +227,10 @@ func TestHistoryPickerDeleteForgetsTheSelectedCommand(t *testing.T) {
 	}
 	selected, _ := state.historySelection()
 	// In the search field Delete edits the text; on a row it removes the entry.
-	if result := state.Key(ui.KeyEvent{Target: hitHistorySearch, Key: ui.KeyDelete}); result.Handled {
+	if result := state.Key(gfx.KeyEvent{Target: hitHistorySearch, Key: gfx.KeyDelete}); result.Handled {
 		t.Fatal("Delete in a filled search field was taken from the text")
 	}
-	if result := state.Key(ui.KeyEvent{Target: hitHistoryItems.At(0), Key: ui.KeyDelete}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Target: hitHistoryItems.At(0), Key: gfx.KeyDelete}); !result.Handled {
 		t.Fatal("Delete on a row did nothing")
 	}
 	for _, command := range h.remembered("") {
@@ -252,7 +252,7 @@ func TestHistoryPickerRowsTouchSoCrossingThemKeepsTheHover(t *testing.T) {
 	h := pickerWorld(t)
 	state := h.state
 	state.openHistory(&state.sessions[0])
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	driver, err := app.NewDriver(app.Config{Title: "history", Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key}, &canvas)
 	if err != nil {
 		t.Fatal(err)

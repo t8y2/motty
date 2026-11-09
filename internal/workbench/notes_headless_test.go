@@ -4,9 +4,9 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"os"
 	"testing"
 )
@@ -87,7 +87,7 @@ func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
 	if s.notes.list[0].Folder != s.notes.folders[0].ID {
 		t.Fatal("physical drag did not move note")
 	}
-	for _, id := range []ui.ID{hitNoteBody, hitNoteTitle, hitNotePin} {
+	for _, id := range []gfx.ID{hitNoteBody, hitNoteTitle, hitNotePin} {
 		h, ok := hitByIDSnapshot(v.Snapshot().Hits, id)
 		if !ok || h.Bounds.X < 0 || h.Bounds.Y < 0 || h.Bounds.X+h.Bounds.Width > 1200 || h.Bounds.Y+h.Bounds.Height > 800 {
 			t.Fatalf("control clipped: %v %+v", id, h.Bounds)
@@ -103,7 +103,7 @@ func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
 		t.Fatal("native source editor missing")
 	}
 }
-func slicesNoteHit(hits []ui.Hit, id ui.ID) bool {
+func slicesNoteHit(hits []gfx.Hit, id gfx.ID) bool {
 	for _, h := range hits {
 		if h.ID == id {
 			return true

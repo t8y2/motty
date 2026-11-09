@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 
 	"motty/internal/remotestats"
 )
@@ -40,7 +40,7 @@ const (
 	statsMetricCount
 )
 
-func (state *State) clickRemoteStats(id ui.ID) bool {
+func (state *State) clickRemoteStats(id gfx.ID) bool {
 	if id != hitRemoteStats {
 		return false
 	}

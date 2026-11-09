@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestSFTPFilterRemoteHeadlessFlow(t *testing.T) {
@@ -48,7 +48,7 @@ func TestSFTPFilterRemoteHeadlessFlow(t *testing.T) {
 	if err := preview.Wait(300 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []ui.ID{contextID(hitSFTPFilter), contextID(hitSFTPHiddenToggle), contextID(hitSFTPPathEdit)} {
+	for _, id := range []gfx.ID{contextID(hitSFTPFilter), contextID(hitSFTPHiddenToggle), contextID(hitSFTPPathEdit)} {
 		found := false
 		for _, hit := range preview.Snapshot().Hits {
 			found = found || hit.ID == id
@@ -75,13 +75,13 @@ func TestSFTPFilterRemoteHeadlessFlow(t *testing.T) {
 	if !terminalFocused {
 		t.Fatal("missing terminal focus target")
 	}
-	terminalResult := state.Shortcut(ui.KeyEvent{
+	terminalResult := state.Shortcut(gfx.KeyEvent{
 		Target: terminalID, Modifiers: state.shortcuts.chords.Chord(shortcutFilesPath).Modifiers, Text: string(state.shortcuts.chords.Chord(shortcutFilesPath).Char),
 	})
 	if terminalResult.Handled {
 		t.Fatal("path shortcut stole Ctrl/Cmd+L from the terminal")
 	}
-	var fileRow ui.Hit
+	var fileRow gfx.Hit
 	for _, hit := range preview.Snapshot().Hits {
 		if hit.ID == contextID(hitSFTPEntryList.At(0)) {
 			fileRow = hit

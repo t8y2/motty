@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -80,7 +80,7 @@ func TestSFTPWindowWheelMatchesPanelAndPreservesPreciseDeltas(t *testing.T) {
 	list := w.ui.list[0]
 	expected := sftpFolder{rows: w.view.lfolder.rows, visibleRows: w.view.lfolder.visibleRows}
 	for _, delta := range []float32{1, 2, 17, 10, 144, -60} {
-		event := ui.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: delta}
+		event := gfx.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: delta}
 		scrollFolder(&expected, event)
 		host.windows[0].view.Scroll(event)
 		host.windows[0].view.Rest()
@@ -89,12 +89,12 @@ func TestSFTPWindowWheelMatchesPanelAndPreservesPreciseDeltas(t *testing.T) {
 		}
 	}
 	before := w.ui.offset[0]
-	w.scroll(ui.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: .25, Precise: true})
+	w.scroll(gfx.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: .25, Precise: true})
 	if math.Abs(float64(w.ui.offset[0]-before-.25)) > .001 {
 		t.Fatal("precise scroll was rounded")
 	}
 	w.ui.offset[0] = w.ui.bars[0].MaxOffsetY
-	if w.scroll(ui.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: 1, Precise: true}).Repaint {
+	if w.scroll(gfx.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: 1, Precise: true}).Repaint {
 		t.Fatal("edge scroll requested unnecessary repaint")
 	}
 }
@@ -103,13 +103,13 @@ func TestSFTPWindowToolbarAndNativeFileActions(t *testing.T) {
 	state, w, remote, host, _ := dualSFTPFixture(t, 1.5)
 	view := host.windows[0].view
 	up := dualHit(t, view, sftpWindowUp[1])
-	for _, id := range []ui.ID{hitSFTPWindowUpload, hitSFTPWindowDownload} {
+	for _, id := range []gfx.ID{hitSFTPWindowUpload, hitSFTPWindowDownload} {
 		button := dualHit(t, view, id)
 		if button.X >= up.X || button.Y != up.Y {
 			t.Fatal("transfer buttons must precede remote up button")
 		}
 	}
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	w.paint(&canvas, w.ui.size)
 	for _, text := range canvas.Texts() {
 		if text.Value == w.session.Title+" · "+w.session.Address {
@@ -131,9 +131,9 @@ func TestSFTPWindowToolbarAndNativeFileActions(t *testing.T) {
 	view.Rest()
 	field := dualHit(t, view, hitSFTPDialogField)
 	view.Click(field.X+20, field.Y+10)
-	modifier := ui.ModifierControl
+	modifier := gfx.ModifierControl
 	if runtime.GOOS == "darwin" {
-		modifier = ui.ModifierMeta
+		modifier = gfx.ModifierMeta
 	}
 	view.Driver().ShortcutChord(modifier, 'a')
 	view.Type("renamed.yml")
@@ -314,14 +314,14 @@ func BenchmarkSFTPWindowScroll(b *testing.B) {
 			w.view.rows = prepareSFTPRows(nil, entries)
 			w.view.lfolder.rows = prepareSFTPRows(nil, entries)
 			w.view.lfolder.path = filepath.Clean(os.TempDir())
-			var canvas ui.Canvas
-			w.paint(&canvas, ui.Size{Width: 1200, Height: 800})
+			var canvas gfx.Canvas
+			w.paint(&canvas, gfx.Size{Width: 1200, Height: 800})
 			b.ReportAllocs()
 			for i := 0; b.Loop(); i++ {
 				w.ui.offset[0] = float32(i%64) * sftpRowHeight
 				w.wake()
 				canvas.Reset()
-				w.paint(&canvas, ui.Size{Width: 1200, Height: 800})
+				w.paint(&canvas, gfx.Size{Width: 1200, Height: 800})
 			}
 		})
 	}
@@ -340,7 +340,7 @@ func TestSFTPWindowDropOverlayKeepsTargetsAndShowsDirection(t *testing.T) {
 				}
 				before := len(view.Snapshot().Hits)
 				list := w.ui.list[1]
-				accepted, err := view.Drop(ui.FileDropEvent{Phase: ui.FileDropOver, X: list.X + 30, Y: list.Y + list.Height - 20})
+				accepted, err := view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: list.X + 30, Y: list.Y + list.Height - 20})
 				if err != nil || !accepted {
 					t.Fatal("system upload hover refused", err)
 				}
@@ -362,12 +362,12 @@ func TestSFTPWindowDropOverlayKeepsTargetsAndShowsDirection(t *testing.T) {
 					os.MkdirAll(dir, 0700)
 					view.Screenshot(filepath.Join(dir, fmt.Sprintf("overlay-%.2f-light-%t.png", scale, light)))
 				}
-				view.Drop(ui.FileDropEvent{Phase: ui.FileDropLeave})
+				view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropLeave})
 				if w.drag.active {
 					t.Fatal("leaving did not clear overlay")
 				}
 				list = w.ui.list[0]
-				w.drag = sftpWindowDrag{active: true, at: ui.Point{X: list.X + 30, Y: list.Y + list.Height - 20}}
+				w.drag = sftpWindowDrag{active: true, at: gfx.Point{X: list.X + 30, Y: list.Y + list.Height - 20}}
 				w.window.Invalidate()
 				view.Driver().Pump()
 				if !contains(state.messages.SFTPWindow.DropDownloadHint) {

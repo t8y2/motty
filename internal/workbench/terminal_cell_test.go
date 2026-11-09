@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // A terminal cell is a whole number of device pixels wide at every display scale. With a
@@ -14,9 +14,9 @@ import (
 func TestTerminalCellsAreWholeDevicePixelsAtEveryScale(t *testing.T) {
 	state := newTestState(t, Options{})
 	for _, scale := range []float32{1, 1.25, 1.5, 1.75, 2, 2.25, 3} {
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		canvas.SetPixelScale(scale)
-		state.Paint(&canvas, ui.Size{Width: 1000, Height: 700})
+		state.Paint(&canvas, gfx.Size{Width: 1000, Height: 700})
 		device := float64(state.cellWidth) * float64(scale)
 		if state.cellWidth <= 0 || math.Abs(device-math.Round(device)) > 1e-3 {
 			t.Errorf("at %vx a terminal cell is %v device pixels wide", scale, device)

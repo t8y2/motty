@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/desktop"
 )
 
@@ -22,17 +22,17 @@ func TestAHeldKeyReachesTheDesktopAsARepeat(t *testing.T) {
 	remote := newFileDesktop()
 	state, session := fileDesktopState(t, remote, false, Options{})
 	hit := hitTerminalList.At(int(session.ID))
-	send := func(event ui.KeyEvent) {
+	send := func(event gfx.KeyEvent) {
 		t.Helper()
 		event.Target = hit
 		if result := state.Key(event); !result.Handled {
 			t.Fatalf("key %+v was not handled", event)
 		}
 	}
-	send(ui.KeyEvent{Text: "a"})
-	send(ui.KeyEvent{Text: "a", Repeat: true})
-	send(ui.KeyEvent{Text: "a", Repeat: true})
-	send(ui.KeyEvent{Text: "a", Release: true})
+	send(gfx.KeyEvent{Text: "a"})
+	send(gfx.KeyEvent{Text: "a", Repeat: true})
+	send(gfx.KeyEvent{Text: "a", Repeat: true})
+	send(gfx.KeyEvent{Text: "a", Release: true})
 
 	want := []desktop.KeyEvent{
 		{Rune: 'a', Down: true},

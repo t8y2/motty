@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -47,8 +47,8 @@ func TestLocalPaneListsThisComputerFoldersFirstAndKeepsTheServersListing(t *test
 	if len(view.rows) != 2 || view.path != "/home/test" {
 		t.Fatalf("the server's listing changed: %d rows at %q", len(view.rows), view.path)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPPaneToggle)); !ok {
 		t.Fatal("no way back to the server's files")
 	}
@@ -158,8 +158,8 @@ func TestServerSelectionDownloadsIntoTheLocalFolderOnShow(t *testing.T) {
 	view := openLocalPane(t, state, session, dir)
 	state.Click(hitSFTPPaneToggle) // back to the server, whose download can now go "here"
 	clickSFTPRow(t, state, view, "notes.txt")
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPDownloadHere)); !ok {
 		t.Fatal("no Download here button though the local side has been opened")
 	}
@@ -205,8 +205,8 @@ func TestLocalPaneSteadyPaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := openLocalPane(t, state, session, localFixture(t))
 	clickSFTPLocalRow(t, state, view, "report.txt")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testingAllocs(func() { canvas.Reset(); state.Paint(&canvas, size) }); allocations != 0 {
 		t.Fatalf("local pane paint allocations = %v", allocations)

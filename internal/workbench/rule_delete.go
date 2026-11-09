@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/autofill"
 )
 
@@ -73,7 +73,7 @@ func (state *State) askDeleteHighlightRule(index int) {
 	state.modal = modalDeleteRule
 }
 
-func (state *State) clickDeleteRuleDialog(id ui.ID) {
+func (state *State) clickDeleteRuleDialog(id gfx.ID) {
 	ask := state.ruleDelete
 	switch id {
 	case hitRuleDeleteConfirm:
@@ -98,7 +98,7 @@ func (state *State) clickDeleteRuleDialog(id ui.ID) {
 	}
 }
 
-func (state *State) paintDeleteRuleDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintDeleteRuleDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := state.messages.Autofill
 	ask := state.ruleDelete
 	description := fmt.Sprintf(m.DeleteFmt, ask.name)
@@ -116,7 +116,7 @@ func (state *State) paintDeleteRuleDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitRuleDeleteDismiss, CloseID: hitRuleDeleteClose, InitialFocusID: hitRuleDeleteCancel,
-		ContentSize: ui.Size{Width: 520}, FitBody: true,
+		ContentSize: gfx.Size{Width: 520}, FitBody: true,
 	})
 	layout := dialog.Begin(title, description)
 	dialog.Actions(layout,

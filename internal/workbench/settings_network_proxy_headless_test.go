@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -20,14 +20,14 @@ func TestNetworkProxySettingThroughNativeDriver(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer view.Close()
-	find := func(id ui.ID) ui.Hit {
+	find := func(id gfx.ID) gfx.Hit {
 		for _, hit := range view.Snapshot().Hits {
 			if hit.ID == id {
 				return hit
 			}
 		}
 		t.Fatalf("setting hit %v is missing", id)
-		return ui.Hit{}
+		return gfx.Hit{}
 	}
 	connection := find(hitSettingsCategoryList.At(int(settingsConnection)))
 	if err := view.Click(connection.Bounds.X+connection.Bounds.Width/2, connection.Bounds.Y+connection.Bounds.Height/2); err != nil {

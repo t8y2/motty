@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -38,8 +38,8 @@ func TestAutomaticReconnectOnlyStartsForEstablishedUnexpectedDisconnects(t *test
 		if state.sessions[0].reconnectPending {
 			t.Fatal("default policy scheduled a reconnect")
 		}
-		var canvas ui.Canvas
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		if _, scheduled := canvas.NextFrame(); scheduled {
 			t.Fatal("disabled reconnect scheduled a frame")
 		}
@@ -154,8 +154,8 @@ func TestCancelCloseAndManualReconnectCancelScheduledAttempt(t *testing.T) {
 		state, _, connection, _ := reconnectingSession(t, reconnectForever)
 		disconnectEstablished(connection, state)
 		state.closeSession(state.sessions[0].ID)
-		var canvas ui.Canvas
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		if _, scheduled := canvas.NextFrame(); scheduled {
 			t.Fatal("closed reconnecting tab left a delayed frame")
 		}
@@ -166,7 +166,7 @@ func TestCancelCloseAndManualReconnectCancelScheduledAttempt(t *testing.T) {
 		disconnectEstablished(connection, state)
 		session := &state.sessions[0]
 		state.Click(hitConnCancelReconnect)
-		result := state.Key(ui.KeyEvent{Target: terminalHit(state, 0), Key: ui.KeyEnter})
+		result := state.Key(gfx.KeyEvent{Target: terminalHit(state, 0), Key: gfx.KeyEnter})
 		if len(world.conns) != 2 || session.reconnectPending || session.reconnectAttempt != 0 {
 			t.Fatalf("manual reconnect result=%+v conns=%d pending=%v attempt=%d", result, len(world.conns), session.reconnectPending, session.reconnectAttempt)
 		}
@@ -189,8 +189,8 @@ func TestReconnectWaitingPaintAllocatesNothingAndOnlyWaitersScheduleFrames(t *te
 	// The disconnect queued journal writes; the allocation count covers the whole
 	// process, so let them land before the paint measurement starts.
 	settleSessionLogs(t, state)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if delay, scheduled := canvas.NextFrame(); !scheduled || delay <= 0 || delay > time.Second {
 		t.Fatalf("waiting reconnect frame = %v, %v", delay, scheduled)
@@ -202,7 +202,7 @@ func TestReconnectWaitingPaintAllocatesNothingAndOnlyWaitersScheduleFrames(t *te
 		t.Fatalf("waiting reconnect paint allocations = %v", allocations)
 	}
 	state.Click(hitConnCancelReconnect)
-	var idle ui.Canvas
+	var idle gfx.Canvas
 	state.Paint(&idle, size)
 	if _, scheduled := idle.NextFrame(); scheduled {
 		t.Fatal("canceled reconnect kept scheduling frames")
@@ -211,7 +211,7 @@ func TestReconnectWaitingPaintAllocatesNothingAndOnlyWaitersScheduleFrames(t *te
 
 func BenchmarkReconnectDisabledFrameCheck(b *testing.B) {
 	state := State{sessions: make([]Session, 32)}
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	b.ReportAllocs()
 	for b.Loop() {
 		state.requestReconnectFrames(&canvas)
@@ -221,10 +221,10 @@ func BenchmarkReconnectDisabledFrameCheck(b *testing.B) {
 func TestTheReconnectCountdownNeverRunsUnderTheButtons(t *testing.T) {
 	state, _, connection, _ := reconnectingSession(t, reconnectThree)
 	disconnectEstablished(connection, state)
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 360, Height: 420}} {
-		var canvas ui.Canvas
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 360, Height: 420}} {
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
-		var countdown ui.Rect
+		var countdown gfx.Rect
 		for _, text := range canvas.Texts() {
 			if strings.HasPrefix(text.Value, "Reconnect attempt") {
 				countdown = text.Bounds
@@ -233,7 +233,7 @@ func TestTheReconnectCountdownNeverRunsUnderTheButtons(t *testing.T) {
 		if countdown.Width == 0 {
 			t.Fatalf("%v: the countdown is not on the page", size)
 		}
-		for _, id := range []ui.ID{hitConnLog, hitConnExport, hitConnClose, hitConnCancelReconnect} {
+		for _, id := range []gfx.ID{hitConnLog, hitConnExport, hitConnClose, hitConnCancelReconnect} {
 			hit, ok := hitByID(&canvas, id)
 			if !ok {
 				t.Fatalf("%v: button %d is missing", size, id)

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/store"
@@ -47,7 +47,7 @@ func twoHostAssistant(t *testing.T, model *scriptedModel) (*State, *fakeShell, *
 		t.Fatal(err)
 	}
 	state.reloadAI()
-	state.Paint(&ui.Canvas{}, panelWide)
+	state.Paint(&gfx.Canvas{}, panelWide)
 	return state, shells[0], shells[1]
 }
 
@@ -114,7 +114,7 @@ func TestTypingAtOffersTheSessionsAndAClickOrTabCompletesTheName(t *testing.T) {
 		panelHit(t, canvas, hitAIMentions.At(index))
 	}
 	// Tab takes the first, and an @ inside a word offers nothing.
-	result, handled := state.aiPanelKey(ui.KeyEvent{Key: ui.KeyTab, Target: hitAIInput})
+	result, handled := state.aiPanelKey(gfx.KeyEvent{Key: gfx.KeyTab, Target: hitAIInput})
 	if !handled || !result.Handled || !strings.HasSuffix(state.ai.input.String(), "and @Production ") {
 		t.Fatalf("Tab: handled=%v input=%q", handled, state.ai.input.String())
 	}

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/otp"
 	"motty/internal/serial"
@@ -67,7 +67,7 @@ type hostEditor struct {
 	credentialOpen bool
 	// credentialAnchor is where the password field was painted, which the list
 	// of shared passwords opens under.
-	credentialAnchor ui.Rect
+	credentialAnchor gfx.Rect
 	transfer         transferMode
 	algorithms       text.Editor
 	// loginCommand is the line typed into the host's shells after login.

@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -62,7 +62,7 @@ type sftpDirectoryTree struct {
 	selectedPath   string
 	visible        []sftpTreeVisibleRow
 	navigation     []components.TreeNavigationItem
-	bounds         ui.Rect
+	bounds         gfx.Rect
 	offset         float32
 	bar            components.ScrollAreaGeometry
 	requestID      uint64
@@ -126,7 +126,7 @@ func resetDirectoryTree(tree *sftpDirectoryTree) {
 	tree.selectedPath = ""
 	tree.visible = nil
 	tree.navigation = nil
-	tree.bounds = ui.Rect{}
+	tree.bounds = gfx.Rect{}
 	tree.offset = 0
 	tree.bar = components.ScrollAreaGeometry{}
 	tree.revealSelected = false
@@ -190,7 +190,7 @@ func directoryTreeDisplayDepth(depth uint8, width float32) uint8 {
 // The Viva tree component only reserves the disclosure column for branches.
 // A loaded folder with no children is still a folder in this view, so keep its
 // icon aligned with sibling folders instead of letting it jump left.
-func directoryTreeContentBounds(content ui.Rect, branch bool) ui.Rect {
+func directoryTreeContentBounds(content gfx.Rect, branch bool) gfx.Rect {
 	if branch {
 		return content
 	}
@@ -617,7 +617,7 @@ func (w *sftpWindow) flattenDirectoryTree(side int) []sftpTreeVisibleRow {
 	return tree.visible
 }
 
-func (w *sftpWindow) paintDirectoryTree(canvas *ui.Canvas, bounds ui.Rect, local bool) {
+func (w *sftpWindow) paintDirectoryTree(canvas *gfx.Canvas, bounds gfx.Rect, local bool) {
 	side := sideIndex(local)
 	tree := &w.directoryTree[side]
 	tree.bounds = bounds
@@ -627,7 +627,7 @@ func (w *sftpWindow) paintDirectoryTree(canvas *ui.Canvas, bounds ui.Rect, local
 	}
 	theme, m := w.owner.Theme(), w.owner.messages.SFTPWindow
 	canvas.RoundedBorder(bounds, 6, 1, theme.Border.Mix(theme.MutedForeground, .35), theme.Background)
-	inner := bounds.Inset(ui.All(2))
+	inner := bounds.Inset(gfx.All(2))
 	rows := w.flattenDirectoryTree(side)
 	contentHeight := max(float32(len(rows))*sftpDirectoryTreeRowHeight, inner.Height)
 	if tree.revealSelected {
@@ -646,7 +646,7 @@ func (w *sftpWindow) paintDirectoryTree(canvas *ui.Canvas, bounds ui.Rect, local
 		tree.offset = max(0, min(tree.offset, max(0, contentHeight-inner.Height)))
 		tree.revealSelected = false
 	}
-	area := components.BeginScrollArea(canvas, theme, inner, ui.Size{Width: inner.Width, Height: contentHeight}).
+	area := components.BeginScrollArea(canvas, theme, inner, gfx.Size{Width: inner.Width, Height: contentHeight}).
 		Offset(0, tree.offset).
 		Viewport(sftpWindowTreeViewport[side], m.DirectoryTree).
 		VerticalScrollbar(sftpWindowTreeBar[side], m.DirectoryTree, "")
@@ -654,13 +654,13 @@ func (w *sftpWindow) paintDirectoryTree(canvas *ui.Canvas, bounds ui.Rect, local
 	tree.bar = geometry
 	tree.offset = geometry.OffsetY
 	if len(rows) == 0 {
-		canvas.LabelCenter(m.DirectoryTree, inner, ui.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
+		canvas.LabelCenter(m.DirectoryTree, inner, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Color: theme.MutedForeground})
 		area.EndContent()
 		return
 	}
 	first := max(0, int(tree.offset/sftpDirectoryTreeRowHeight))
 	last := min(len(rows), first+int(inner.Height/sftpDirectoryTreeRowHeight)+2)
-	treeBounds := ui.Rect{
+	treeBounds := gfx.Rect{
 		X:      inner.X,
 		Y:      inner.Y + float32(first)*sftpDirectoryTreeRowHeight - tree.offset,
 		Width:  max(inner.Width-10, 0),
@@ -689,7 +689,7 @@ func (w *sftpWindow) paintDirectoryTree(canvas *ui.Canvas, bounds ui.Rect, local
 		})
 		content := directoryTreeContentBounds(painted.Content, branch)
 		icon := uint8(iconFolderOpen)
-		iconBounds := ui.Rect{X: content.X + 2, Y: content.Y + 6, Width: 16, Height: 16}
+		iconBounds := gfx.Rect{X: content.X + 2, Y: content.Y + 6, Width: 16, Height: 16}
 		canvas.DrawIcon(lucideIcons[icon], iconBounds, theme.MutedForeground)
 		indicator, indicatorColor := "", theme.MutedForeground
 		switch {
@@ -705,17 +705,17 @@ func (w *sftpWindow) paintDirectoryTree(canvas *ui.Canvas, bounds ui.Rect, local
 			reserved = 40
 		}
 		labelWidth := max(0, content.Width-reserved)
-		label := canvas.FitLine(node.name, theme.Metrics.FontSizeS, ui.WeightRegular, labelWidth)
+		label := canvas.FitLine(node.name, theme.Metrics.FontSizeS, gfx.WeightRegular, labelWidth)
 		color := theme.Foreground
 		if node.err != "" {
 			color = w.owner.pal.danger
 		}
-		canvas.Label(label, ui.Rect{X: iconBounds.X + 20, Y: content.Y, Width: labelWidth, Height: content.Height}, ui.TextStyle{
-			Size: theme.Metrics.FontSizeS, Weight: ui.WeightRegular, Color: color,
+		canvas.Label(label, gfx.Rect{X: iconBounds.X + 20, Y: content.Y, Width: labelWidth, Height: content.Height}, gfx.TextStyle{
+			Size: theme.Metrics.FontSizeS, Weight: gfx.WeightRegular, Color: color,
 		})
 		if indicator != "" {
-			canvas.Label(indicator, ui.Rect{X: content.X + content.Width - 16, Y: content.Y, Width: 12, Height: content.Height}, ui.TextStyle{
-				Size: theme.Metrics.FontSizeS, Weight: ui.WeightMedium, Color: indicatorColor,
+			canvas.Label(indicator, gfx.Rect{X: content.X + content.Width - 16, Y: content.Y, Width: 12, Height: content.Height}, gfx.TextStyle{
+				Size: theme.Metrics.FontSizeS, Weight: gfx.WeightMedium, Color: indicatorColor,
 			})
 		}
 	}
@@ -723,7 +723,7 @@ func (w *sftpWindow) paintDirectoryTree(canvas *ui.Canvas, bounds ui.Rect, local
 	area.EndContent()
 }
 
-func (w *sftpWindow) directoryTreeTarget(id ui.ID) (local bool, index int, disclosure bool, ok bool) {
+func (w *sftpWindow) directoryTreeTarget(id gfx.ID) (local bool, index int, disclosure bool, ok bool) {
 	for side := range 2 {
 		if index, ok := id.In(sftpWindowTreeDisclosures[side]); ok {
 			return side == 0, index, true, true
@@ -735,7 +735,7 @@ func (w *sftpWindow) directoryTreeTarget(id ui.ID) (local bool, index int, discl
 	return false, 0, false, false
 }
 
-func (w *sftpWindow) clickDirectoryTree(id ui.ID) bool {
+func (w *sftpWindow) clickDirectoryTree(id gfx.ID) bool {
 	local, index, disclosure, ok := w.directoryTreeTarget(id)
 	if !ok {
 		return false
@@ -769,25 +769,25 @@ func (w *sftpWindow) clickDirectoryTree(id ui.ID) bool {
 	return true
 }
 
-func (w *sftpWindow) directoryTreeKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (w *sftpWindow) directoryTreeKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	local, index, _, ok := w.directoryTreeTarget(event.Target)
 	if !ok {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	side := sideIndex(local)
 	tree := &w.directoryTree[side]
 	if len(tree.visible) == 0 {
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	index = max(0, min(index, len(tree.visible)-1))
 	node := tree.visible[index].node
-	result := ui.EventResult{Handled: true, Repaint: true}
+	result := gfx.EventResult{Handled: true, Repaint: true}
 	switch event.Key {
-	case ui.KeyEnter, ui.KeySpace:
+	case gfx.KeyEnter, gfx.KeySpace:
 		if !event.Repeat {
 			w.clickDirectoryTree(event.Target)
 		}
-	case ui.KeyRight, ui.KeyLeft, ui.KeyUp, ui.KeyDown, ui.KeyHome, ui.KeyEnd, ui.KeyPageUp, ui.KeyPageDown:
+	case gfx.KeyRight, gfx.KeyLeft, gfx.KeyUp, gfx.KeyDown, gfx.KeyHome, gfx.KeyEnd, gfx.KeyPageUp, gfx.KeyPageDown:
 		tree.navigation = tree.navigation[:0]
 		for _, row := range tree.visible {
 			branch := !row.node.loaded || row.node.loading || row.node.err != "" || len(row.node.children) > 0
@@ -814,44 +814,44 @@ func (w *sftpWindow) directoryTreeKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			result.FocusVisible = true
 		}
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	w.activeLocal, w.view.local = local, local
 	w.invalidate()
 	return result, true
 }
 
-func (w *sftpWindow) directoryTreeScroll(event ui.ScrollEvent) (ui.EventResult, bool) {
+func (w *sftpWindow) directoryTreeScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	for side, tree := range w.directoryTree {
 		if !tree.enabled || !pointInRect(event.X, event.Y, tree.bounds) {
 			continue
 		}
 		before := tree.offset
 		w.directoryTree[side].offset = max(0, min(tree.bar.MaxOffsetY, tree.offset+event.DeltaY))
-		return ui.EventResult{Handled: true, Repaint: before != w.directoryTree[side].offset}, true
+		return gfx.EventResult{Handled: true, Repaint: before != w.directoryTree[side].offset}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (w *sftpWindow) directoryTreePointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (w *sftpWindow) directoryTreePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if w.ui.treeBarDrag > 0 {
 		side := w.ui.treeBarDrag - 1
 		tree := &w.directoryTree[side]
-		if event.Kind == ui.PointerMove {
+		if event.Kind == gfx.PointerMove {
 			if !event.Captured {
-				return ui.EventResult{Handled: true}, true
+				return gfx.EventResult{Handled: true}, true
 			}
 			before := tree.offset
 			tree.offset = tree.bar.VerticalOffsetForThumb(event.Y - w.ui.treeBarGrab)
-			return ui.EventResult{Handled: true, Repaint: before != tree.offset}, true
+			return gfx.EventResult{Handled: true, Repaint: before != tree.offset}, true
 		}
-		if event.Kind == ui.PointerUp || event.Kind == ui.PointerExit && !event.Captured {
+		if event.Kind == gfx.PointerUp || event.Kind == gfx.PointerExit && !event.Captured {
 			w.ui.treeBarDrag = 0
 		}
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	for side, id := range sftpWindowTreeBar {
-		if event.Kind != ui.PointerDown || event.Target != id {
+		if event.Kind != gfx.PointerDown || event.Target != id {
 			continue
 		}
 		tree := &w.directoryTree[side]
@@ -862,7 +862,7 @@ func (w *sftpWindow) directoryTreePointer(event ui.PointerEvent) (ui.EventResult
 		w.ui.treeBarDrag = side + 1
 		before := tree.offset
 		tree.offset = tree.bar.VerticalOffsetForThumb(event.Y - w.ui.treeBarGrab)
-		return ui.EventResult{Handled: true, Repaint: before != tree.offset}, true
+		return gfx.EventResult{Handled: true, Repaint: before != tree.offset}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }

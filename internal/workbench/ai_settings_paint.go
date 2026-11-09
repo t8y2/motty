@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/probe"
@@ -25,7 +25,7 @@ const (
 )
 
 // aiText is a row of one line of text.
-func (page *settingsPage) aiText(height float32, value string, size float32, weight float32, color ui.Color) {
+func (page *settingsPage) aiText(height float32, value string, size float32, weight float32, color gfx.Color) {
 	f := page.f
 	page.rowOf(height).PadX(18).Children(func() {
 		f.Text(value).FontSize(size).Weight(weight).Color(color)
@@ -36,17 +36,17 @@ func (page *settingsPage) aiText(height float32, value string, size float32, wei
 // leaves, and the control at the right edge. control declares the control; the row
 // is declared as the page's own rows are (settingsPage.line), only the height and
 // the explanation's color differ.
-func (page *settingsPage) aiFrame(height float32, label, description string, descriptionColor ui.Color, control func()) {
-	page.aiFrameFor(ui.ID{}, height, label, description, descriptionColor, control)
+func (page *settingsPage) aiFrame(height float32, label, description string, descriptionColor gfx.Color, control func()) {
+	page.aiFrameFor(gfx.ID{}, height, label, description, descriptionColor, control)
 }
 
 // aiFrameFor is aiFrame whose words label the control with that identity (see
 // lineFor): pressing them flips the switch that control declares.
-func (page *settingsPage) aiFrameFor(labelFor ui.ID, height float32, label, description string, descriptionColor ui.Color, control func()) {
+func (page *settingsPage) aiFrameFor(labelFor gfx.ID, height float32, label, description string, descriptionColor gfx.Color, control func()) {
 	f, pal := page.f, page.state.pal
 	page.rowOf(height).PadX(18).Gap(24).Children(func() {
 		words := f.Column().Grow(1).Children(func() {
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text).LineHeight(21)
+			f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(21)
 			f.Paragraph(description, settingsDescLines).FontSize(metrics.FontSizeS).Color(descriptionColor).LineHeight(15).MarginSides(1, 0, 0, 0)
 		})
 		page.labels(labelFor, words, label, false)
@@ -55,7 +55,7 @@ func (page *settingsPage) aiFrameFor(labelFor ui.ID, height float32, label, desc
 }
 
 // segmentSlot declares a segmented choice of the given width.
-func (page *settingsPage) segmentSlot(width float32, options []components.SegmentOption, selected ui.ID) {
+func (page *settingsPage) segmentSlot(width float32, options []components.SegmentOption, selected gfx.ID) {
 	slot := page.f.Slot().Size(width, 34)
 	page.segments(slot, options, selected)
 }
@@ -69,22 +69,22 @@ const (
 )
 
 // aiButtonSize is how large aiButton makes a button with this label.
-func (state *State) aiButtonSize(canvas *ui.Canvas, label string) (width, height float32) {
-	button := components.BeginButton(canvas, state.Theme(), ui.ID{}, ui.Rect{}).Small().SizeToFit(label)
+func (state *State) aiButtonSize(canvas *gfx.Canvas, label string) (width, height float32) {
+	button := components.BeginButton(canvas, state.Theme(), gfx.ID{}, gfx.Rect{}).Small().SizeToFit(label)
 	return button.BoundsWidth(), button.BoundsHeight()
 }
 
 // aiButtonSlot reserves the room of a button for aiButton to paint into. The
 // keyboard visits controls in the order they are painted, so the settings page
 // records its buttons (settingsPage.button) and paints them after the frame.
-func (state *State) aiButtonSlot(f *flex.Frame, label string) flex.Box {
+func (state *State) aiButtonSlot(f *ui.Frame, label string) ui.Box {
 	width, height := state.aiButtonSize(f.Canvas(), label)
 	return f.Slot().Size(width, height)
 }
 
 // aiButton paints a small button in a slot.
-func (state *State) aiButton(canvas *ui.Canvas, id ui.ID, slot ui.Rect, label string, style aiButtonStyle, disabled bool) {
-	button := components.BeginButton(canvas, state.Theme(), id, ui.Rect{X: slot.X, Y: slot.Y, Width: slot.Width}).Small()
+func (state *State) aiButton(canvas *gfx.Canvas, id gfx.ID, slot gfx.Rect, label string, style aiButtonStyle, disabled bool) {
+	button := components.BeginButton(canvas, state.Theme(), id, gfx.Rect{X: slot.X, Y: slot.Y, Width: slot.Width}).Small()
 	if disabled {
 		button = button.Disabled()
 	}
@@ -104,10 +104,10 @@ const (
 )
 
 // aiSwitchSlot reserves the room of a switch for aiSwitch to paint into.
-func aiSwitchSlot(f *flex.Frame) flex.Box { return f.Slot().Size(aiSwitchWidth, aiSwitchHeight) }
+func aiSwitchSlot(f *ui.Frame) ui.Box { return f.Slot().Size(aiSwitchWidth, aiSwitchHeight) }
 
 // aiSwitch paints a switch in a slot.
-func (state *State) aiSwitch(canvas *ui.Canvas, id ui.ID, slot ui.Rect, on, disabled bool, label string) {
+func (state *State) aiSwitch(canvas *gfx.Canvas, id gfx.ID, slot gfx.Rect, on, disabled bool, label string) {
 	control := components.BeginSwitch(canvas, state.switchTheme(), id, slot, on).Label(label)
 	if disabled {
 		control = control.Disabled()
@@ -146,7 +146,7 @@ func (state *State) paintAISettingsHead(page *settingsPage) {
 	}
 
 	if cfg.notice != "" {
-		page.f.Text(cfg.notice).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).LineHeight(20).MarginSides(-4, 4, 8, 4)
+		page.f.Text(cfg.notice).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(20).MarginSides(-4, 4, 8, 4)
 	}
 }
 
@@ -155,7 +155,7 @@ func (state *State) paintAIProviders(page *settingsPage) {
 	providers := state.ai.providers
 	if state.ai.storeErr != nil {
 		page.group(m.ProvidersTitle, func() {
-			page.aiText(settingsRowHeight, fmt.Sprintf(m.StoreErrorFmt, state.ai.storeErr.Error()), metrics.FontSizeS, ui.WeightRegular, pal.danger)
+			page.aiText(settingsRowHeight, fmt.Sprintf(m.StoreErrorFmt, state.ai.storeErr.Error()), metrics.FontSizeS, gfx.WeightRegular, pal.danger)
 		})
 		return
 	}
@@ -165,7 +165,7 @@ func (state *State) paintAIProviders(page *settingsPage) {
 		for index := 0; index < count; index++ {
 			provider := providers[index]
 			isSelected := hasSelected && provider.ID == selected.ID
-			background := ui.Color{}
+			background := gfx.Color{}
 			if isSelected {
 				background = pal.surfaceSoft
 			}
@@ -175,17 +175,17 @@ func (state *State) paintAIProviders(page *settingsPage) {
 			}
 			page.separator()
 			row := f.Column().Height(aiProviderRowHeight)
-			page.hitOn(row, hitAISetProviderRow.At(index), provider.Name, ui.HitOptions{Role: ui.RoleButton, Selected: isSelected})
+			page.hitOn(row, hitAISetProviderRow.At(index), provider.Name, gfx.HitOptions{Role: gfx.RoleButton, Selected: isSelected})
 			row.Children(func() {
-				f.Row().Grow(1).MarginSides(4, 6, 4, 6).PadX(12).Gap(18).Items(flex.Center).Background(background).Radius(radius.control).Children(func() {
-					f.Row().Grow(1).Shrink(1).Gap(12).Items(flex.Center).Children(func() {
+				f.Row().Grow(1).MarginSides(4, 6, 4, 6).PadX(12).Gap(18).Items(ui.Center).Background(background).Radius(radius.control).Children(func() {
+					f.Row().Grow(1).Shrink(1).Gap(12).Items(ui.Center).Children(func() {
 						f.Icon(aiProviderIcon(provider)).Size(20, 20).Color(nameColor).Shrink(0)
 						f.Column().Grow(1).Shrink(1).Children(func() {
-							f.Text(provider.Name).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(nameColor).LineHeight(21)
+							f.Text(provider.Name).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(nameColor).LineHeight(21)
 							f.Text(state.aiProviderMeta(provider)).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 						})
 					})
-					f.Row().Gap(12).Items(flex.Center).Shrink(0).Children(func() {
+					f.Row().Gap(12).Items(ui.Center).Shrink(0).Children(func() {
 						page.switchSlot(hitAISetProviderSwitch.At(index), provider.Enabled, false, m.ProviderEnabled+" "+provider.Name)
 						f.Row().Gap(8).Children(func() {
 							page.button(hitAISetProviderEdit.At(index), m.ProviderEdit, aiButtonOutline, false)
@@ -266,7 +266,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 	provider, ok := state.aiSelectedProvider()
 	if state.ai.storeErr != nil || !ok {
 		page.group(m.ModelsTitle, func() {
-			page.aiText(settingsRowHeight, m.ModelsNoProvider, metrics.FontSizeS, ui.WeightRegular, pal.muted)
+			page.aiText(settingsRowHeight, m.ModelsNoProvider, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 		})
 		return
 	}
@@ -292,7 +292,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 		// to probe: the buttons are not offered at all.
 		probeable := !store.IsCLIKind(provider.Kind)
 		page.aiFrame(settingsRowHeight, fmt.Sprintf(m.ModelsOfFmt, provider.Name), description, pal.muted, func() {
-			f.Row().Gap(8).Items(flex.Center).Shrink(0).Children(func() {
+			f.Row().Gap(8).Items(ui.Center).Shrink(0).Children(func() {
 				if probeable {
 					page.button(hitAISetModelProbeAll, probeLabel, aiButtonOutline, total == 0)
 				}
@@ -305,16 +305,16 @@ func (state *State) paintAIModels(page *settingsPage) {
 			if failed {
 				color = pal.danger
 			}
-			page.aiText(aiStatusRowHeight, status, metrics.FontSizeS, ui.WeightRegular, color)
+			page.aiText(aiStatusRowHeight, status, metrics.FontSizeS, gfx.WeightRegular, color)
 		}
 		if total == 0 {
-			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, ui.WeightRegular, pal.muted)
+			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 		}
 		filteredModels := state.aiFilteredModels(provider.ID)
 		filteredTotal := len(filteredModels)
 		shown := min(max(filteredTotal-cfg.page*aiModelPageSize, 0), aiModelPageSize)
 		if filteredTotal == 0 && total > 0 {
-			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, ui.WeightRegular, pal.muted)
+			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
 		}
 		defaultColWidth, _ := state.aiButtonSize(f.Canvas(), m.ModelUse)
 		if defaultColWidth < 76 {
@@ -337,14 +337,14 @@ func (state *State) paintAIModels(page *settingsPage) {
 					label = m.CLIDefaultModel
 				}
 				// Name and reasoning chip (left-aligned, clickable to configure reasoning effort)
-				f.Row().Grow(1).Gap(8).Items(flex.Center).Children(func() {
+				f.Row().Grow(1).Gap(8).Items(ui.Center).Children(func() {
 					f.Text(label).FontSize(metrics.FontSizeM).Color(nameColor).MarginSides(0, 4, 0, 0)
 					_, _, isReasoning, isOverride, isDisabled := state.aiModelReasoningInfo(&model)
 					var (
 						chipText      string
-						chipBg        ui.Color
-						chipTextColor ui.Color
-						chipWeight    float32 = ui.WeightRegular
+						chipBg        gfx.Color
+						chipTextColor gfx.Color
+						chipWeight    float32 = gfx.WeightRegular
 					)
 					if isDisabled {
 						chipText = m.ModelReasoningTagOff
@@ -354,19 +354,19 @@ func (state *State) paintAIModels(page *settingsPage) {
 						chipText = m.ModelReasoningTagManual
 						chipBg = pal.accentSoft
 						chipTextColor = pal.accent
-						chipWeight = ui.WeightMedium
+						chipWeight = gfx.WeightMedium
 					} else if isReasoning {
 						chipText = m.ModelReasoningTagAuto
 						chipBg = pal.surfaceSoft
 						chipTextColor = pal.accent
-						chipWeight = ui.WeightMedium
+						chipWeight = gfx.WeightMedium
 					} else {
 						chipText = m.ModelReasoningTagAuto
 						chipBg = pal.surfaceSoft
 						chipTextColor = pal.muted
 					}
 					reasoningBox := f.Row().Height(20).PadX(8).Center().Radius(10).Background(chipBg)
-					page.hitOn(reasoningBox, hitAISetModelReasoning.At(row), chipText, ui.HitOptions{Role: ui.RoleButton})
+					page.hitOn(reasoningBox, hitAISetModelReasoning.At(row), chipText, gfx.HitOptions{Role: gfx.RoleButton})
 					reasoningBox.Children(func() {
 						f.Text(chipText).FontSize(metrics.FontSizeS).Color(chipTextColor).Weight(chipWeight)
 					})
@@ -391,15 +391,15 @@ func (state *State) paintAIModels(page *settingsPage) {
 							textColor = pal.danger
 						}
 						box := f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0)
-						page.hitOn(box, hitAISetModelProbe.At(row), badgeText, ui.HitOptions{Role: ui.RoleButton})
+						page.hitOn(box, hitAISetModelProbe.At(row), badgeText, gfx.HitOptions{Role: gfx.RoleButton})
 						box.Children(func() {
-							f.Text("✓ " + badgeText).FontSize(metrics.FontSizeS).Color(textColor).Weight(ui.WeightMedium)
+							f.Text("✓ " + badgeText).FontSize(metrics.FontSizeS).Color(textColor).Weight(gfx.WeightMedium)
 						})
 					case probe.StatusFailed:
 						box := f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0)
-						page.hitOn(box, hitAISetModelProbe.At(row), m.ModelProbeFailed, ui.HitOptions{Role: ui.RoleButton})
+						page.hitOn(box, hitAISetModelProbe.At(row), m.ModelProbeFailed, gfx.HitOptions{Role: gfx.RoleButton})
 						box.Children(func() {
-							f.Text("✗ " + m.ModelProbeFailed).FontSize(metrics.FontSizeS).Color(pal.danger).Weight(ui.WeightMedium)
+							f.Text("✗ " + m.ModelProbeFailed).FontSize(metrics.FontSizeS).Color(pal.danger).Weight(gfx.WeightMedium)
 						})
 					case probe.StatusSkipped:
 						f.Row().Width(probeColWidth).Height(24).Center().Background(pal.surfaceSoft).Radius(12).Shrink(0).Children(func() {
@@ -420,7 +420,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 				f.Row().Width(defaultColWidth).Center().Shrink(0).Children(func() {
 					if isDefault {
 						f.Row().Height(20).PadX(8).Center().Background(pal.accentSoft).Radius(10).Children(func() {
-							f.Text(m.ModelDefault).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.accent)
+							f.Text(m.ModelDefault).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.accent)
 						})
 					} else {
 						page.button(hitAISetModelUse.At(row), m.ModelUse, aiButtonOutline, false)
@@ -448,7 +448,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 }
 
 // paintAIModelInput paints the field a model is added by name in.
-func (state *State) paintAIModelInput(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintAIModelInput(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m := state.messages.AISettings
 	value := state.ai.cfg.modelInput.String()
 	focused := canvas.Focused() == hitAISetModelInput
@@ -585,7 +585,7 @@ func (page *settingsPage) mcpAccessWarning(message string) {
 }
 
 // paintAIDialogs paints the section's open dialog above everything else.
-func (state *State) paintAIDialogs(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAIDialogs(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if !state.aiSettingsVisible() {
 		return
 	}
@@ -624,27 +624,27 @@ func (state *State) paintAIDialogs(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 }
 
-func (state *State) paintAIConfirm(canvas *ui.Canvas, viewport ui.Rect, title, body, action string) {
+func (state *State) paintAIConfirm(canvas *gfx.Canvas, viewport gfx.Rect, title, body, action string) {
 	dialog := components.BeginAlertDialog(canvas, state.Theme(), viewport, components.AlertDialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		ActionID: hitAISetConfirmAction, CancelID: hitAISetConfirmCancel,
-		ContentSize: ui.Size{Width: 480}, ActionVariant: components.ButtonDestructive,
+		ContentSize: gfx.Size{Width: 480}, ActionVariant: components.ButtonDestructive,
 		InitialFocusID: hitAISetConfirmCancel,
 	})
 	dialog.Begin(title, body, action, state.messages.Cancel)
 	dialog.End()
 }
 
-func (state *State) paintAIProbeDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAIProbeDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages.AISettings, state.Theme()
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAISetFormClose, InitialFocusID: hitAISetProbeStart,
-		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 140,
+		ContentSize: gfx.Size{Width: 460}, FitBody: true, BodyHeight: 140,
 	})
 	layout := dialog.Begin(m.ProbeDialogTitle, m.ProbeDialogDesc)
 
-	var concSlot, timeoutSlot flex.Box
+	var concSlot, timeoutSlot ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
 		concSlot = f.Slot().Height(60)
@@ -685,7 +685,7 @@ func (state *State) paintAIProbeDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog.End()
 }
 
-func (state *State) paintAIModelReasoningDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAIModelReasoningDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages.AISettings, state.Theme()
 	cfg := &state.ai.cfg
 
@@ -702,12 +702,12 @@ func (state *State) paintAIModelReasoningDialog(canvas *ui.Canvas, viewport ui.R
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAISetFormClose, InitialFocusID: hitAISetReasoningSave,
-		ContentSize: ui.Size{Width: 520}, FitBody: true, BodyHeight: bodyHeight,
+		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: bodyHeight,
 	})
 	desc := fmt.Sprintf("%s (%s)", m.ModelReasoningDesc, cfg.reasoningModelName)
 	layout := dialog.Begin(m.ModelReasoningTitle, desc)
 
-	var modeSlot, presetSlot flex.Box
+	var modeSlot, presetSlot ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
 		modeSlot = f.Slot().Height(modeHeight)
@@ -756,7 +756,7 @@ func (state *State) paintAIModelReasoningDialog(canvas *ui.Canvas, viewport ui.R
 	dialog.End()
 }
 
-func (state *State) paintAIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintAIProviderForm(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if store.IsCLIKind(state.ai.cfg.kind) {
 		state.paintAICLIProviderForm(canvas, viewport)
 		return
@@ -784,7 +784,7 @@ func (state *State) paintAIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAISetFormClose, InitialFocusID: hitAISetFormName,
-		ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: withError(2+presetHeight+4*60+authHeight+formatHeight+keyHeight+4, cfg.formErr), // the fields, key last
+		ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: withError(2+presetHeight+4*60+authHeight+formatHeight+keyHeight+4, cfg.formErr), // the fields, key last
 	})
 	layout := dialog.Begin(title, m.FormDescription)
 
@@ -797,7 +797,7 @@ func (state *State) paintAIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
 	if cfg.kind == store.KindAnthropic {
 		selected, placeholder = hitAISetFormKindClaude, m.FormBaseURLClaude
 	}
-	var preset, name, kind, auth, format, url, modelsURL, key flex.Box
+	var preset, name, kind, auth, format, url, modelsURL, key ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		if presetHeight > 0 {
@@ -815,7 +815,7 @@ func (state *State) paintAIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
 		}
 		key = f.Slot().Height(keyHeight).MarginSides(0, 0, 4, 0)
 		if cfg.formErr != "" {
-			f.Text(cfg.formErr).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).LineHeight(18)
+			f.Text(cfg.formErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18)
 		}
 	})
 	f.End()
@@ -845,7 +845,7 @@ func (state *State) paintAIProviderForm(canvas *ui.Canvas, viewport ui.Rect) {
 
 // paintAIAuthField paints the Anthropic credential-header choice. The style is
 // not a secret; the key itself stays in the secure field below.
-func (state *State) paintAIAuthField(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintAIAuthField(canvas *gfx.Canvas, bounds gfx.Rect) {
 	cfg, m, theme := &state.ai.cfg, state.messages.AISettings, state.Theme()
 	content := components.BeginField(canvas, theme, bounds).Paint(m.FormAuth, "", "")
 	selected := hitAISetFormAuthAPIKey
@@ -859,7 +859,7 @@ func (state *State) paintAIAuthField(canvas *ui.Canvas, bounds ui.Rect) {
 // paintAIFormatField paints the OpenAI-compatible protocol choice, with the
 // route each protocol is sent to underneath: the address typed above is only
 // the base, and which route follows is not guessable from it.
-func (state *State) paintAIFormatField(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintAIFormatField(canvas *gfx.Canvas, bounds gfx.Rect) {
 	cfg, m, theme := &state.ai.cfg, state.messages.AISettings, state.Theme()
 	route := m.FormFormatChatRoute
 	selected := hitAISetFormFormatChat
@@ -873,7 +873,7 @@ func (state *State) paintAIFormatField(canvas *ui.Canvas, bounds ui.Rect) {
 
 // aiFormField paints one labelled input of the provider dialog. A secure field
 // shows bullets in place of its text.
-func (state *State) aiFormField(canvas *ui.Canvas, id ui.ID, title, placeholder, hint string, secure bool, editor interface{ String() string }, bounds ui.Rect) {
+func (state *State) aiFormField(canvas *gfx.Canvas, id gfx.ID, title, placeholder, hint string, secure bool, editor interface{ String() string }, bounds gfx.Rect) {
 	theme := state.Theme()
 	content := components.BeginField(canvas, theme, bounds).Paint(title, hint, "")
 	value := editor.String()
@@ -885,12 +885,12 @@ func (state *State) aiFormField(canvas *ui.Canvas, id ui.ID, title, placeholder,
 }
 
 // paintAIPresetField paints the list of providers a new provider can start from.
-func (state *State) paintAIPresetField(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintAIPresetField(canvas *gfx.Canvas, bounds gfx.Rect) {
 	cfg, m, theme := &state.ai.cfg, state.messages.AISettings, state.Theme()
 	content := components.BeginField(canvas, theme, bounds).Paint(m.FormPreset, "", "")
 	selectControl := components.BeginSelect(canvas, theme, content, components.SelectOptions{
 		TriggerID: hitAISetFormPreset, Label: m.FormPreset, Value: state.aiPresetLabel(cfg.preset), Icon: aiPresets[cfg.preset].icon, Open: cfg.presetOpen,
-		Content: ui.Rect{X: content.X, Y: content.Y + content.Height + 4, Width: content.Width, Height: float32(8 + len(aiPresets)*32)},
+		Content: gfx.Rect{X: content.X, Y: content.Y + content.Height + 4, Width: content.Width, Height: float32(8 + len(aiPresets)*32)},
 		Layer:   dialogLayer + 1, Scope: dialogScope, DismissID: hitAISetFormPresetDismiss, Viewport: state.windowRect(),
 		Scroll: state.selectScroll(cfg.presetOpen, hitAISetFormPresetDismiss),
 	})

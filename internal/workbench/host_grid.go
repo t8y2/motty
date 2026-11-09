@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -47,7 +47,7 @@ func (mode hostViewMode) saved() string {
 	return ""
 }
 
-func (state *State) clickHostView(id ui.ID) bool {
+func (state *State) clickHostView(id gfx.ID) bool {
 	if id == hitHostSort {
 		state.toggleHostSort()
 		return true
@@ -71,10 +71,10 @@ func (state *State) clickHostView(id ui.ID) bool {
 // paintHostViewToggle draws the view buttons and the host-sort mode toggle from
 // x, centred on the line. The caller is paintHostsHeader, which hands over the
 // line, not a box.
-func (state *State) paintHostViewToggle(canvas *ui.Canvas, x, center float32, withOrder bool) {
+func (state *State) paintHostViewToggle(canvas *gfx.Canvas, x, center float32, withOrder bool) {
 	m := state.messages.Tools
 	buttons := [...]struct {
-		id    ui.ID
+		id    gfx.ID
 		icon  uint8
 		label string
 		mode  hostViewMode
@@ -82,14 +82,14 @@ func (state *State) paintHostViewToggle(canvas *ui.Canvas, x, center float32, wi
 		{hitHostViewList, iconRows2, m.HostViewList, hostViewList},
 		{hitHostViewGrid, iconHome, m.HostViewGrid, hostViewGrid},
 	}
-	var slots [len(buttons)]flex.Box
-	var sort, order flex.Box
+	var slots [len(buttons)]ui.Box
+	var sort, order ui.Box
 	width := float32(86)
 	if withOrder {
 		width += 32
 	}
-	f := state.hostToggleLayout.Begin(canvas, state.Theme(), ui.Rect{X: x, Y: center, Width: width})
-	f.Row().Fill().Items(flex.Center).Children(func() {
+	f := state.hostToggleLayout.Begin(canvas, state.Theme(), gfx.Rect{X: x, Y: center, Width: width})
+	f.Row().Fill().Items(ui.Center).Children(func() {
 		f.Row().Width(54).Gap(2).Children(func() {
 			for index := range buttons {
 				slots[index] = f.Slot().Size(26, 26)
@@ -152,14 +152,14 @@ func (state *State) hostGridHeight(width float32) float32 {
 // hostGridItem is a card or a group header that is on screen, with the box
 // the layout gave it.
 type hostGridItem struct {
-	box   flex.Box
+	box   ui.Box
 	entry int // the index into hostTreeRows
 }
 
 // paintHostGrid draws the cards inside bounds, scrolled by hostsScroll. Only
 // what is on screen is declared: the rows above the window are skipped by their
 // known height and the layout is shifted up by what is left of the first one.
-func (state *State) paintHostGrid(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintHostGrid(canvas *gfx.Canvas, bounds gfx.Rect) {
 	state.beginHostSortPaint(canvas, bounds)
 	columns := hostGridColumns(bounds.Width)
 	rows := state.hostTreeRows
@@ -220,7 +220,7 @@ func (state *State) paintHostGrid(canvas *ui.Canvas, bounds ui.Rect) {
 }
 
 // paintHostGridHeader draws the row that opens or closes a group of cards.
-func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, groupIndex int, depth uint8) {
+func (state *State) paintHostGridHeader(canvas *gfx.Canvas, header gfx.Rect, groupIndex int, depth uint8) {
 	pal, group := state.pal, state.hostGroups[groupIndex]
 	row := header
 	header.X += float32(depth) * 22
@@ -233,20 +233,20 @@ func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, group
 	if group.Expanded || state.visibleQuery != "" {
 		chevron = iconChevronDown
 	}
-	var icon, groupCheck flex.Box
+	var icon, groupCheck ui.Box
 	f := state.partLayout.Begin(canvas, state.Theme(), header)
-	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(8).Items(flex.Center).
-		Radius(radius.control).Hover(flex.Look{}.Background(pal.surfaceSoft)).
-		HitWith(hitHostGroupOpenList.At(groupIndex), label, ui.HitOptions{Role: ui.RoleButton, Expanded: group.Expanded}).
+	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(8).Items(ui.Center).
+		Radius(radius.control).Hover(ui.Look{}.Background(pal.surfaceSoft)).
+		HitWith(hitHostGroupOpenList.At(groupIndex), label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: group.Expanded}).
 		Children(func() {
 			icon = f.Slot().Size(16, 16)
 			groupCheck = f.Slot().Size(40, 28).Shrink(0)
-			f.Row().Grow(1).Basis(0).Gap(6).Items(flex.Center).Children(func() {
+			f.Row().Grow(1).Basis(0).Gap(6).Items(ui.Center).Children(func() {
 				if group.Pinned {
 					f.Icon(lucideIcons[iconStar]).Size(14, 14).Color(pal.accent)
 				}
-				f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(23).Ellipsis().Shrink(1)
-				f.Text(group.Count).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).LineHeight(21)
+				f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(23).Ellipsis().Shrink(1)
+				f.Text(group.Count).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(21)
 			})
 		})
 	f.End()
@@ -255,7 +255,7 @@ func (state *State) paintHostGridHeader(canvas *ui.Canvas, header ui.Rect, group
 	state.paintHostScopeCheckbox(canvas, hitHostGroupCheck.At(groupIndex), groupCheck.Rect(), state.hostScopeSelection.groups[groupIndex])
 }
 
-func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
+func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) {
 	pal := state.pal
 	id := hitHostList.At(int(host.ID))
 	selected := host.ID == state.selectedHostID
@@ -278,16 +278,16 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 	badgeBackground := background
 	background = tintHostSurface(background, host.Color, .10)
 	if state.hostSortDragging(host.ID) {
-		canvas.Elevate(card, radius.surface, ui.ShadowMD)
+		canvas.Elevate(card, radius.surface, gfx.ShadowMD)
 	}
 	canvas.RoundedBorder(card, radius.surface, edgeWidth, edge, background)
 	paintHostColorMark(canvas, card, host.Color)
 	if !state.hostSort.enabled {
-		canvas.HitWithOptions(id, card, host.Label, ui.HitOptions{Role: ui.RoleButton, Selected: selected})
+		canvas.HitWithOptions(id, card, host.Label, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
 		state.hostRowEvents(canvas, id, host)
 	}
 	if canvas.FocusVisible() == id {
-		canvas.RoundedBorder(card, radius.surface, 1.5, pal.accent, ui.Color{})
+		canvas.RoundedBorder(card, radius.surface, 1.5, pal.accent, gfx.Color{})
 	}
 
 	// The avatar and the two lines of text share the card's vertical center with
@@ -306,24 +306,24 @@ func (state *State) paintHostCard(canvas *ui.Canvas, card ui.Rect, host Host) {
 	if room := textWidth - subtitleWidth - 8; room >= 40 {
 		tagCount = state.fitHostTags(canvas, host, room, &tagList)
 	}
-	var grip, avatar, light flex.Box
+	var grip, avatar, light ui.Box
 	f := state.partLayout.Begin(canvas, state.Theme(), card)
-	f.Row().Fill().PadSides(0, 12, 0, 14).Gap(12).Items(flex.Center).Children(func() {
+	f.Row().Fill().PadSides(0, 12, 0, 14).Gap(12).Items(ui.Center).Children(func() {
 		f.Stack().Size(36, 36).Shrink(0).Children(func() {
 			avatar = f.Slot()
 			if kind != lightIdle {
-				light = f.Slot().Size(14, 14).Self(flex.End).MarginSides(0, -5, -5, 0)
+				light = f.Slot().Size(14, 14).Self(ui.End).MarginSides(0, -5, -5, 0)
 			}
 		})
 		f.Column().Grow(1).Basis(0).Children(func() {
-			f.Text(host.Label).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis()
-			f.Row().Gap(8).Items(flex.Center).MarginSides(1, 0, 0, 0).Children(func() {
+			f.Text(host.Label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis()
+			f.Row().Gap(8).Items(ui.Center).MarginSides(1, 0, 0, 0).Children(func() {
 				f.Text(subtitle).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(19).Width(subtitleWidth).Shrink(0).Ellipsis()
 				if tagCount > 0 {
-					f.Row().Gap(5).Shrink(0).Items(flex.Center).Children(func() {
+					f.Row().Gap(5).Shrink(0).Items(ui.Center).Children(func() {
 						for _, tag := range tagList[:tagCount] {
-							f.Row().Height(18).PadX(7).Shrink(0).Items(flex.Center).Radius(9).Background(pal.surfaceSoft).Children(func() {
-								f.Text(tag).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).Width(canvas.TextWidthWeight(tag, metrics.FontSizeS, ui.WeightMedium) + 1).Shrink(0)
+							f.Row().Height(18).PadX(7).Shrink(0).Items(ui.Center).Radius(9).Background(pal.surfaceSoft).Children(func() {
+								f.Text(tag).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(canvas.TextWidthWeight(tag, metrics.FontSizeS, gfx.WeightMedium) + 1).Shrink(0)
 							})
 						}
 					})

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
@@ -129,7 +129,7 @@ func TestAIAtPickerAfterProseAndAcceptedReferencesAgree(t *testing.T) {
 		state.ai.input = *text.NewEditor(prefix + "@")
 		canvas, _ := paintAt(state, panelWide)
 		panelHit(t, canvas, hitAIMentions.At(0))
-		result := state.Key(ui.KeyEvent{Target: hitAIInput, Key: ui.KeyEnter})
+		result := state.Key(gfx.KeyEvent{Target: hitAIInput, Key: gfx.KeyEnter})
 		if !result.Handled || state.ai.run != nil {
 			t.Fatal("picker did not accept reference")
 		}

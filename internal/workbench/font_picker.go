@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
@@ -105,7 +105,7 @@ const maxFallbackFonts = 3
 type fontEntry struct {
 	label  string
 	family string
-	face   ui.MonoFace // for built-in entries
+	face   gfx.MonoFace // for built-in entries
 }
 
 type fontsUI struct {
@@ -196,7 +196,7 @@ func (state *State) installedFamily(family string) bool {
 // terminalFace is the face the terminal draws in: the font with the fallbacks that
 // are installed behind it. The fallbacks the user chose are kept as they are; this
 // is the part of them this computer can use.
-func (state *State) terminalFace() ui.MonoFace {
+func (state *State) terminalFace() gfx.MonoFace {
 	fonts := &state.fonts
 	fonts.usable = fonts.usable[:0]
 	for _, family := range fonts.fallbacks {
@@ -204,14 +204,14 @@ func (state *State) terminalFace() ui.MonoFace {
 			fonts.usable = append(fonts.usable, family)
 		}
 	}
-	base := ui.MonoSystem
+	base := gfx.MonoSystem
 	switch {
 	case fonts.family != "":
-		base = ui.MonoFamily(fonts.family)
+		base = gfx.MonoFamily(fonts.family)
 	case fonts.classic:
-		base = ui.MonoClassic
+		base = gfx.MonoClassic
 	}
-	return ui.MonoStack(base, fonts.usable...)
+	return gfx.MonoStack(base, fonts.usable...)
 }
 
 // applyTerminalFace makes the terminal draw in the font and fallbacks as they stand.
@@ -226,7 +226,7 @@ func cleanFallbackFonts(names []string, primary string) []string {
 	var kept []string
 	for _, name := range names {
 		name = strings.TrimSpace(name)
-		if ui.MonoFamily(name) == ui.MonoSystem || name == primary || slices.Contains(kept, name) {
+		if gfx.MonoFamily(name) == gfx.MonoSystem || name == primary || slices.Contains(kept, name) {
 			continue
 		}
 		if len(kept) == maxFallbackFonts {
@@ -325,8 +325,8 @@ func (state *State) refreshFontPicker() {
 	switch fonts.kind {
 	case pickTerminalFont:
 		fonts.entries = append(fonts.entries,
-			fontEntry{label: state.messages.SettingsTerminalFontSystem, face: ui.MonoSystem},
-			fontEntry{label: state.messages.SettingsTerminalFontClassic, face: ui.MonoClassic})
+			fontEntry{label: state.messages.SettingsTerminalFontSystem, face: gfx.MonoSystem},
+			fontEntry{label: state.messages.SettingsTerminalFontClassic, face: gfx.MonoClassic})
 	case pickInterfaceFont:
 		fonts.entries = append(fonts.entries, fontEntry{label: state.messages.SettingsInterfaceFontDefault})
 	}
@@ -379,12 +379,12 @@ func (fonts *fontsUI) maxScroll() float32 {
 	return max(0, fonts.contentHeight()-fontPickerListHeight)
 }
 
-func (state *State) scrollFontPicker(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollFontPicker(event gfx.ScrollEvent) gfx.EventResult {
 	state.refreshFontPicker()
 	fonts := &state.fonts
 	before := fonts.scroll
 	fonts.scroll = min(max(before+event.StepY(fontPickerRowStep), 0), fonts.maxScroll())
-	return ui.EventResult{Handled: true, Repaint: fonts.scroll != before}
+	return gfx.EventResult{Handled: true, Repaint: fonts.scroll != before}
 }
 
 // selectFont updates the highlighted row so the sample previews it.
@@ -438,24 +438,24 @@ func (state *State) cancelFontPicker() {
 // fontSampleFace is the face the picker's sample is set in: the highlighted font with
 // the fallbacks behind it, or, when a fallback is being chosen, the terminal's own
 // face with the highlighted family added, so the sample shows the mixed text.
-func (state *State) fontSampleFace(entry fontEntry) ui.MonoFace {
+func (state *State) fontSampleFace(entry fontEntry) gfx.MonoFace {
 	fonts := &state.fonts
 	if fonts.kind == pickFallbackFont {
-		base := ui.MonoSystem
+		base := gfx.MonoSystem
 		switch {
 		case fonts.family != "":
-			base = ui.MonoFamily(fonts.family)
+			base = gfx.MonoFamily(fonts.family)
 		case fonts.classic:
-			base = ui.MonoClassic
+			base = gfx.MonoClassic
 		}
 		families := append(slices.Clone(fonts.usable), entry.family)
-		return ui.MonoStack(base, families...)
+		return gfx.MonoStack(base, families...)
 	}
 	base := entry.face
 	if entry.family != "" {
-		base = ui.MonoFamily(entry.family)
+		base = gfx.MonoFamily(entry.family)
 	}
-	return ui.MonoStack(base, fonts.usable...)
+	return gfx.MonoStack(base, fonts.usable...)
 }
 
 // fontInUse reports whether entry is the font the picker is choosing.
@@ -466,7 +466,7 @@ func (state *State) fontInUse(entry fontEntry) bool {
 	if entry.family != "" {
 		return entry.family == state.fonts.family
 	}
-	return state.fonts.family == "" && (entry.face == ui.MonoClassic) == state.fonts.classic
+	return state.fonts.family == "" && (entry.face == gfx.MonoClassic) == state.fonts.classic
 }
 
 // useTerminalFont switches the terminal to a font. It reports whether anything changed.
@@ -474,8 +474,8 @@ func (state *State) useTerminalFont(entry fontEntry) bool {
 	fonts := &state.fonts
 	family, classic := entry.family, false
 	if family == "" {
-		classic = entry.face == ui.MonoClassic
-	} else if ui.MonoFamily(family) == ui.MonoSystem {
+		classic = entry.face == gfx.MonoClassic
+	} else if gfx.MonoFamily(family) == gfx.MonoSystem {
 		return false
 	}
 	changed := fonts.family != family || fonts.classic != classic
@@ -491,7 +491,7 @@ func (state *State) useTerminalFont(entry fontEntry) bool {
 // addFallbackFont puts a family behind the others. It reports whether anything changed.
 func (state *State) addFallbackFont(family string) bool {
 	fonts := &state.fonts
-	if family == "" || len(fonts.fallbacks) >= maxFallbackFonts || family == fonts.family || slices.Contains(fonts.fallbacks, family) || ui.MonoFamily(family) == ui.MonoSystem {
+	if family == "" || len(fonts.fallbacks) >= maxFallbackFonts || family == fonts.family || slices.Contains(fonts.fallbacks, family) || gfx.MonoFamily(family) == gfx.MonoSystem {
 		return false
 	}
 	fonts.fallbacks = append(fonts.fallbacks, family)
@@ -509,7 +509,7 @@ func (state *State) clearFallbackFonts() bool {
 	return true
 }
 
-func (state *State) clickFontPicker(id ui.ID) {
+func (state *State) clickFontPicker(id gfx.ID) {
 	switch {
 	case id == hitFontPickerDismiss || id == hitFontPickerClose || id == hitFontPickerCancel:
 		state.cancelFontPicker()
@@ -522,12 +522,12 @@ func (state *State) clickFontPicker(id ui.ID) {
 }
 
 // fontPickerKey handles the keys of the picker. It reports whether it took the key.
-func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) fontPickerKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalFontPicker {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
-	move := func(delta int) (ui.EventResult, bool) {
+	handled := gfx.EventResult{Handled: true, Repaint: true}
+	move := func(delta int) (gfx.EventResult, bool) {
 		state.moveFontSelection(delta)
 		// Enter confirms the focused row, so list navigation must move focus too.
 		// Navigation from the search field keeps its text editor focused.
@@ -538,23 +538,23 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		return handled, true
 	}
 	switch event.Key {
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		state.cancelFontPicker()
 		return handled, true
-	case ui.KeyUp:
+	case gfx.KeyUp:
 		return move(-1)
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		return move(1)
-	case ui.KeyPageUp:
+	case gfx.KeyPageUp:
 		return move(-fontPickerVisibleRows)
-	case ui.KeyPageDown:
+	case gfx.KeyPageDown:
 		return move(fontPickerVisibleRows)
-	case ui.KeyEnter:
+	case gfx.KeyEnter:
 		// Enter confirms from the search field and the list. On any other control, the
 		// Cancel and close buttons, it is that control's own activation.
 		row, onRow := event.Target.In(hitFontPickerItemList)
 		if event.Target != hitFontPickerSearch && !onRow && !event.Target.IsZero() {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		if !event.Repeat {
 			if onRow {
@@ -565,16 +565,16 @@ func (state *State) fontPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 		return handled, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // confirmFontOnDoubleClick is called while painting the picker: when this paint is the
 // event pass of a double click on a row, that row is applied. Consuming the press
 // keeps its release from clicking whatever is under the pointer once the picker is
 // gone. It reports whether the picker was closed.
-func (state *State) confirmFontOnDoubleClick(canvas *ui.Canvas) bool {
+func (state *State) confirmFontOnDoubleClick(canvas *gfx.Canvas) bool {
 	index, event, ok := canvas.PointerIn(hitFontPickerItemList)
-	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonPrimary || event.ClickCount != 2 {
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonPrimary || event.ClickCount != 2 {
 		return false
 	}
 	state.selectFont(index)
@@ -586,7 +586,7 @@ func (state *State) confirmFontOnDoubleClick(canvas *ui.Canvas) bool {
 	return true
 }
 
-func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintFontPicker(canvas *gfx.Canvas, viewport gfx.Rect) {
 	state.refreshFontPicker()
 	if state.confirmFontOnDoubleClick(canvas) {
 		return
@@ -595,7 +595,7 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitFontPickerDismiss, CloseID: hitFontPickerClose, InitialFocusID: hitFontPickerSearch,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: 366,
+		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: 366,
 	})
 	title := m.FontPickerTitle
 	switch fonts.kind {
@@ -606,7 +606,7 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	layout := dialog.Begin(title, "")
 	rows := len(fonts.filtered)
-	var search, list flex.Box
+	var search, list ui.Box
 	// The list keeps room for all its rows, so the sample under it stays where it is;
 	// what the list lacks is said under the rows it has.
 	f := state.fontPickerLayout.Begin(canvas, state.Theme(), layout.Body)
@@ -636,7 +636,7 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 	})
 	f.End()
 
-	area := components.BeginScrollArea(canvas, state.Theme(), list.Rect(), ui.Size{Width: list.Rect().Width, Height: fonts.contentHeight()}).Offset(0, fonts.scroll).HoverScrollbars(false)
+	area := components.BeginScrollArea(canvas, state.Theme(), list.Rect(), gfx.Size{Width: list.Rect().Width, Height: fonts.contentHeight()}).Offset(0, fonts.scroll).HoverScrollbars(false)
 	geometry := area.BeginContent()
 	fonts.scroll = geometry.OffsetY
 	// Keep layout work bounded by the viewport while retaining logical row IDs.
@@ -652,16 +652,16 @@ func (state *State) paintFontPicker(canvas *ui.Canvas, viewport ui.Rect) {
 			selected := row == fonts.selected
 			inUse := fonts.kind != pickFallbackFont && state.fontInUse(entry)
 			color := pal.text
-			line := f.Row().Height(30).Shrink(0).MarginSides(0, 0, 2, 0).PadSides(0, 12, 0, 10).Items(flex.Center).Radius(radius.item).
-				HitWith(hitFontPickerItemList.At(row), entry.label, ui.HitOptions{Role: ui.RoleButton, Selected: selected})
+			line := f.Row().Height(30).Shrink(0).MarginSides(0, 0, 2, 0).PadSides(0, 12, 0, 10).Items(ui.Center).Radius(radius.item).
+				HitWith(hitFontPickerItemList.At(row), entry.label, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
 			if selected {
 				line.Background(pal.accent)
 				color = pal.onAccent
 			} else {
-				line.Hover(flex.Look{}.Background(pal.surfaceHot))
+				line.Hover(ui.Look{}.Background(pal.surfaceHot))
 			}
 			line.Children(func() {
-				f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(color).LineHeight(20).Grow(1).MarginSides(0, 12, 0, 0)
+				f.Text(entry.label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(color).LineHeight(20).Grow(1).MarginSides(0, 12, 0, 0)
 				if inUse {
 					f.Icon(lucideIcons[iconCheck]).Size(16, 16).Color(color)
 				} else {

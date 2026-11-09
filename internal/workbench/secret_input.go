@@ -4,7 +4,7 @@ import (
 	"slices"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // revealName is the name every show/hide button's place has: a password field's
@@ -20,19 +20,19 @@ type secretReveal struct {
 	shown []revealedButton
 	// refocus is the field to hand the focus back to after its button was
 	// pressed: the user is partway through typing, not moving on.
-	refocus ui.ID
+	refocus gfx.ID
 }
 
 // revealedButton is the show/hide button of a field that shows its text, and
 // whether the current frame has painted it yet.
 type revealedButton struct {
-	button ui.ID
+	button gfx.ID
 	seen   bool
 }
 
 func (reveal *secretReveal) reset() {
 	reveal.shown = reveal.shown[:0]
-	reveal.refocus = ui.ID{}
+	reveal.refocus = gfx.ID{}
 }
 
 // beginPaint drops the fields the previous frame did not paint.
@@ -47,27 +47,27 @@ func (reveal *secretReveal) beginPaint() {
 }
 
 // index is where a button is in shown, or -1.
-func (reveal *secretReveal) index(button ui.ID) int {
+func (reveal *secretReveal) index(button gfx.ID) int {
 	return slices.IndexFunc(reveal.shown, func(entry revealedButton) bool { return entry.button == button })
 }
 
 // revealButton is the identity of the show/hide button of a field.
-func revealButton(field ui.ID) ui.ID {
+func revealButton(field gfx.ID) gfx.ID {
 	return tree.Sub(field.Scope(), revealName).ID(field.Name())
 }
 
 // revealedField is the field a show/hide button belongs to, and false for any
 // other identity.
-func revealedField(button ui.ID) (ui.ID, bool) {
+func revealedField(button gfx.ID) (gfx.ID, bool) {
 	scope := button.Scope()
 	if scope.IsZero() || tree.ScopeName(scope) != revealName {
-		return ui.ID{}, false
+		return gfx.ID{}, false
 	}
 	return tree.Parent(scope).ID(button.Name()), true
 }
 
 // clickSecretReveal toggles a field between bullets and its text.
-func (state *State) clickSecretReveal(id ui.ID) bool {
+func (state *State) clickSecretReveal(id gfx.ID) bool {
 	field, ok := revealedField(id)
 	if !ok {
 		return false
@@ -85,13 +85,13 @@ func (state *State) clickSecretReveal(id ui.ID) bool {
 // paintSecretInput paints a text field. A secret one gets a button at its end
 // that swaps the bullets for the text, as a password field of a web form does;
 // any other field is painted as it is.
-func (state *State) paintSecretInput(canvas *ui.Canvas, bounds ui.Rect, snapshot components.InputSnapshot) {
+func (state *State) paintSecretInput(canvas *gfx.Canvas, bounds gfx.Rect, snapshot components.InputSnapshot) {
 	state.paintSecretInputStart(canvas, bounds, snapshot, components.InputGroupSlot{})
 }
 
 // paintSecretInputStart is paintSecretInput with an addon at the start of a
 // secret field, such as the button that chooses a shared password.
-func (state *State) paintSecretInputStart(canvas *ui.Canvas, bounds ui.Rect, snapshot components.InputSnapshot, start components.InputGroupSlot) {
+func (state *State) paintSecretInputStart(canvas *gfx.Canvas, bounds gfx.Rect, snapshot components.InputSnapshot, start components.InputGroupSlot) {
 	theme := state.Theme()
 	if !snapshot.Secure || snapshot.ID.IsZero() {
 		components.PaintInput(canvas, theme, bounds, snapshot)
@@ -104,7 +104,7 @@ func (state *State) paintSecretInputStart(canvas *ui.Canvas, bounds ui.Rect, sna
 		state.reveal.shown[index].seen = true
 	}
 	if state.reveal.refocus == snapshot.ID {
-		state.reveal.refocus = ui.ID{}
+		state.reveal.refocus = gfx.ID{}
 		canvas.RequestFocus(snapshot.ID)
 		// The runtime moves the focus after this frame; paint the field as the
 		// one that has it, or its ring is missing until something repaints.

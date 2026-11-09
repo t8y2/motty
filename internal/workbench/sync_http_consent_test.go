@@ -4,22 +4,22 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/cloudsync"
 	"motty/internal/i18n"
 )
 
 func TestRemoteHTTPCheckboxIsAtTheBottomOfTheCloudForms(t *testing.T) {
 	for _, language := range []i18n.Language{i18n.English, i18n.Chinese} {
-		for _, action := range []ui.ID{hitSyncConfigure, hitSyncConfigureS3} {
+		for _, action := range []gfx.ID{hitSyncConfigure, hitSyncConfigureS3} {
 			state, _, _ := backupTestState(t)
 			state.setLanguage(language)
 			state.Click(action)
-			var canvas ui.Canvas
-			state.Paint(&canvas, ui.Size{Width: 1280, Height: 800})
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1280, Height: 800})
 			check, ok := hitByID(&canvas, hitFormCheckbox)
 			last, _ := hitByID(&canvas, hitFormFieldList.At(4))
-			if !ok || check.Role != ui.RoleCheckbox || check.Checked || check.Bounds.Y <= last.Bounds.Y+last.Bounds.Height {
+			if !ok || check.Role != gfx.RoleCheckbox || check.Checked || check.Bounds.Y <= last.Bounds.Y+last.Bounds.Height {
 				t.Fatalf("checkbox not unchecked below the fields: %+v", check)
 			}
 			state.Click(hitFormCheckbox)

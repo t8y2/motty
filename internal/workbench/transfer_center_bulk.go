@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -190,7 +190,7 @@ func (center *transferCenter) capturedEntry(target transferTarget) *transferEntr
 	return entry
 }
 
-func (state *State) clickTransferBulk(id ui.ID) bool {
+func (state *State) clickTransferBulk(id gfx.ID) bool {
 	center := &state.transfers
 	if len(center.batch.targets) > 0 {
 		switch id {

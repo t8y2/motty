@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 )
@@ -32,7 +32,7 @@ type sftpNativeWindow struct {
 	shows  int
 }
 
-func (h *sftpNativeHost) OpenWindow(config app.Config, canvas *ui.Canvas, closed func()) (app.WindowControl, error) {
+func (h *sftpNativeHost) OpenWindow(config app.Config, canvas *gfx.Canvas, closed func()) (app.WindowControl, error) {
 	view, err := headless.Open(config, canvas, headless.Options{Scale: h.scale})
 	if err != nil {
 		return nil, err
@@ -59,9 +59,9 @@ func (w *sftpNativeWindow) Close() {
 		w.closed()
 	}
 }
-func (w *sftpNativeWindow) Hide()                  {}
-func (w *sftpNativeWindow) Show()                  { w.shows++ }
-func (w *sftpNativeWindow) Frame() (ui.Rect, bool) { return ui.Rect{Width: 1200, Height: 800}, true }
+func (w *sftpNativeWindow) Hide()                   {}
+func (w *sftpNativeWindow) Show()                   { w.shows++ }
+func (w *sftpNativeWindow) Frame() (gfx.Rect, bool) { return gfx.Rect{Width: 1200, Height: 800}, true }
 
 func dualSFTPFixture(t *testing.T, scale float64) (*State, *sftpWindow, *workbenchSFTPRemote, *sftpNativeHost, string) {
 	t.Helper()
@@ -113,7 +113,7 @@ func dualWait(t *testing.T, state *State, w *sftpWindow, view *headless.Session,
 	t.Fatalf("dual pane did not settle: busy=%t status=%s error=%s", w.view.busy, w.view.status, w.view.errorText)
 }
 
-func dualRow(t *testing.T, w *sftpWindow, local bool, name string) ui.ID {
+func dualRow(t *testing.T, w *sftpWindow, local bool, name string) gfx.ID {
 	t.Helper()
 	for i, row := range w.folder(local).rows {
 		if row.entry.Name == name {
@@ -121,9 +121,9 @@ func dualRow(t *testing.T, w *sftpWindow, local bool, name string) ui.ID {
 		}
 	}
 	t.Fatal("missing row", name)
-	return ui.ID{}
+	return gfx.ID{}
 }
-func dualHit(t *testing.T, view *headless.Session, id ui.ID) ui.Rect {
+func dualHit(t *testing.T, view *headless.Session, id gfx.ID) gfx.Rect {
 	t.Helper()
 	for _, h := range view.Snapshot().Hits {
 		if h.ID == id && !h.Block {
@@ -131,9 +131,9 @@ func dualHit(t *testing.T, view *headless.Session, id ui.ID) ui.Rect {
 		}
 	}
 	t.Fatal("missing hit", id)
-	return ui.Rect{}
+	return gfx.Rect{}
 }
-func dualDrag(t *testing.T, view *headless.Session, source, target ui.Rect) {
+func dualDrag(t *testing.T, view *headless.Session, source, target gfx.Rect) {
 	t.Helper()
 	x, y := source.X+30, source.Y+source.Height/2
 	for _, step := range []func() error{func() error { return view.Press(x, y) }, func() error { return view.Move(x+10, y+2) }, func() error { return view.Move(target.X+30, target.Y+target.Height/2) }, func() error { return view.Release(target.X+30, target.Y+target.Height/2) }} {
@@ -318,7 +318,7 @@ func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 				if light {
 					state.setAppearance(appearanceLight)
 				}
-				for _, size := range []ui.Size{{Width: 640, Height: 360}, {Width: 820, Height: 500}, {Width: 1200, Height: 800}} {
+				for _, size := range []gfx.Size{{Width: 640, Height: 360}, {Width: 820, Height: 500}, {Width: 1200, Height: 800}} {
 					if err := view.Resize(int(size.Width), int(size.Height)); err != nil {
 						t.Fatal(err)
 					}
@@ -333,9 +333,9 @@ func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 					}
 				}
 			}
-			var canvas ui.Canvas
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-			var entry, files ui.Rect
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+			var entry, files gfx.Rect
 			source, _ := state.sessionByIDPointer(w.session.ID)
 			for _, hit := range canvas.Hits() {
 				if local, ok := tree.Local(contextMount, hit.ID); ok && local == hitSFTPDetach {
@@ -375,9 +375,9 @@ func TestSFTPWindowMultiSelectQueueScrollAndSystemDrop(t *testing.T) {
 	view.Rest()
 	file := dualHit(t, view, dualRow(t, w, true, "batch-00.txt"))
 	view.Click(file.X+25, file.Y+10)
-	modifier := ui.ModifierControl
+	modifier := gfx.ModifierControl
 	if runtime.GOOS == "darwin" {
-		modifier = ui.ModifierMeta
+		modifier = gfx.ModifierMeta
 	}
 	if handled, err := view.Driver().ShortcutChord(modifier, 'a'); err != nil || !handled {
 		t.Fatal("select all failed", err)
@@ -397,7 +397,7 @@ func TestSFTPWindowMultiSelectQueueScrollAndSystemDrop(t *testing.T) {
 		t.Fatal("batch queue has no scrollbar")
 	}
 	bounds := w.ui.queueBounds
-	if err := view.Scroll(ui.ScrollEvent{X: bounds.X + 20, Y: bounds.Y + 20, DeltaY: 10000}); err != nil {
+	if err := view.Scroll(gfx.ScrollEvent{X: bounds.X + 20, Y: bounds.Y + 20, DeltaY: 10000}); err != nil {
 		t.Fatal(err)
 	}
 	if w.ui.queueOffset != w.ui.queueBar.MaxOffsetY {
@@ -412,7 +412,7 @@ func TestSFTPWindowMultiSelectQueueScrollAndSystemDrop(t *testing.T) {
 	external := filepath.Join(t.TempDir(), "external.txt")
 	os.WriteFile(external, []byte("external drop"), 0600)
 	target := dualHit(t, view, dualRow(t, w, false, "docs"))
-	if accepted, err := view.Drop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: target.X + 25, Y: target.Y + 10, Paths: []string{external}}); err != nil || !accepted {
+	if accepted, err := view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: target.X + 25, Y: target.Y + 10, Paths: []string{external}}); err != nil || !accepted {
 		t.Fatal("native system drop refused", err)
 	}
 	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 22 && !sftpTransfersActive(w.view.transfers) })
@@ -432,7 +432,7 @@ func TestSFTPWindowRefreshCannotRetargetAnActiveDrag(t *testing.T) {
 			target := dualHit(t, view, dualRow(t, w, false, "docs"))
 			x, y := target.X+25, target.Y+10
 			if external {
-				if accepted, err := view.Drop(ui.FileDropEvent{Phase: ui.FileDropOver, X: x, Y: y}); err != nil || !accepted {
+				if accepted, err := view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: x, Y: y}); err != nil || !accepted {
 					t.Fatal("system drag refused", err)
 				}
 			} else {
@@ -450,7 +450,7 @@ func TestSFTPWindowRefreshCannotRetargetAnActiveDrag(t *testing.T) {
 				t.Fatal("refresh moved the highlighted destination during a drag")
 			}
 			if external {
-				view.Drop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: x, Y: y, Paths: []string{filepath.Join(dir, "中文上传.yml")}})
+				view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: x, Y: y, Paths: []string{filepath.Join(dir, "中文上传.yml")}})
 			} else {
 				view.Release(x, y)
 			}
@@ -504,9 +504,9 @@ func TestSFTPWindowPreviewAndAsyncLocalPathUseWindowContext(t *testing.T) {
 	}
 	pathField := dualHit(t, view, sftpWindowPath[0])
 	view.Click(pathField.X+30, pathField.Y+12)
-	modifier := ui.ModifierControl
+	modifier := gfx.ModifierControl
 	if runtime.GOOS == "darwin" {
-		modifier = ui.ModifierMeta
+		modifier = gfx.ModifierMeta
 	}
 	view.Driver().ShortcutChord(modifier, 'a')
 	view.Type(large)

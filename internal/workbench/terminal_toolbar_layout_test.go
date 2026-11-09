@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
@@ -29,9 +29,9 @@ func TestSharedTerminalToolbarStaysAtWorkspaceOuterEdge(t *testing.T) {
 			if err := state.deck.SetContext(id, context); err != nil {
 				t.Fatal(err)
 			}
-			size := ui.Size{Width: 1200, Height: 800}
+			size := gfx.Size{Width: 1200, Height: 800}
 			state.Resize(size)
-			var canvas ui.Canvas
+			var canvas gfx.Canvas
 			state.Paint(&canvas, size)
 
 			rail, ok := hitByID(&canvas, hitSFTPOpen)
@@ -89,14 +89,14 @@ func TestSharedTerminalToolbarFollowsActiveSplit(t *testing.T) {
 	first.term.live, second.term.live = true, true
 	first.term.recording.active, second.term.recording.active = true, false
 	state.terminalToolbarPosition = terminalToolbarRight
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 
 	assertRecordHint := func(session *Session) {
 		t.Helper()
 		if !state.ActivatePane(session.ID) {
 			t.Fatalf("activate session %d", session.ID)
 		}
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		record, ok := hitByID(&canvas, hitTerminalRecord)
 		if !ok {
@@ -125,7 +125,7 @@ func TestActiveSplitPaneBarKeepsConnectionIdentity(t *testing.T) {
 	if len(state.sessions) < 2 {
 		t.Fatalf("split created only %d sessions", len(state.sessions))
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 
 	assertPaneBar := func(session *Session) {
@@ -133,7 +133,7 @@ func TestActiveSplitPaneBarKeepsConnectionIdentity(t *testing.T) {
 		if !state.ActivatePane(session.ID) {
 			t.Fatalf("activate session %d", session.ID)
 		}
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 
 		workspace, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
@@ -180,14 +180,14 @@ func TestIdleSplitPanesPaintIdentityWithoutAStatusLightSlot(t *testing.T) {
 		state.sessions[index].term.live = true
 		state.sessions[index].busy = false
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 
 	for _, index := range []int{0, 1, 0} {
 		if !state.ActivatePane(state.sessions[index].ID) {
 			t.Fatalf("activate session %d", state.sessions[index].ID)
 		}
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 	}
 }
@@ -209,7 +209,7 @@ func TestSwitchingActiveSplitPaneKeepsSizesAndSelection(t *testing.T) {
 	if !state.ActivatePane(first.ID) {
 		t.Fatal("activate the first split")
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 	first.term.write([]byte("select these words\r\n"))
 	first.term.selection.selectRange(
@@ -260,7 +260,7 @@ func TestSwitchingAwayFromAPaneInFindModeKeepsSizesAndSelection(t *testing.T) {
 	if !state.ActivatePane(first.ID) {
 		t.Fatal("activate the first split")
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 
 	state.openTerminalFind(first)
@@ -309,7 +309,7 @@ func TestSwitchingActiveSplitPaneKeepsSizesWithInputNotice(t *testing.T) {
 	if len(state.sessions) < 2 {
 		t.Fatal("split did not create a second session")
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 	first, second := &state.sessions[0], &state.sessions[1]
 	first.term.commandReporting = true
@@ -342,7 +342,7 @@ func TestTerminalPointerCellsFollowEachPaintedSplit(t *testing.T) {
 	if len(state.sessions) < 2 {
 		t.Fatalf("split created only %d sessions", len(state.sessions))
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 
 	for index := range state.sessions {
@@ -350,7 +350,7 @@ func TestTerminalPointerCellsFollowEachPaintedSplit(t *testing.T) {
 		if !state.ActivatePane(session.ID) {
 			t.Fatalf("activate session %d", session.ID)
 		}
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		hit, ok := hitByID(&canvas, tree.MountID(paneMount(session), hitTerminalList.At(int(session.ID))))
 		if !ok {
@@ -359,8 +359,8 @@ func TestTerminalPointerCellsFollowEachPaintedSplit(t *testing.T) {
 		geometry := state.layoutForSession(session.ID)
 		x := geometry.left + state.cellWidth*1.5
 		y := geometry.top + state.cellHeight*0.5
-		state.Pointer(ui.PointerEvent{
-			Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit.ID,
+		state.Pointer(gfx.PointerEvent{
+			Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit.ID,
 			X: x, Y: y, Viewport: size,
 		})
 		if want := session.term.screen.PointAt(term.Position{Row: 0, Column: 1}); session.term.selection.anchor != want {
@@ -376,7 +376,7 @@ func TestSplitMouseReportingUsesPaintedPaneCoordinates(t *testing.T) {
 	if len(state.sessions) < 2 {
 		t.Fatalf("split created only %d sessions", len(state.sessions))
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 	session := &state.sessions[1]
 	if !state.ActivatePane(session.ID) {
@@ -386,7 +386,7 @@ func TestSplitMouseReportingUsesPaintedPaneCoordinates(t *testing.T) {
 	session.term.shell = shell
 	session.term.screen.Write([]byte("\x1b[?1002h\x1b[?1006h"))
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	hit, ok := hitByID(&canvas, tree.MountID(paneMount(session), hitTerminalList.At(int(session.ID))))
 	if !ok {
@@ -399,8 +399,8 @@ func TestSplitMouseReportingUsesPaintedPaneCoordinates(t *testing.T) {
 	geometry := state.layoutForSession(session.ID)
 	windowX := geometry.left + state.cellWidth*4.5
 	windowY := geometry.top + state.cellHeight*2.5
-	result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit.ID,
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit.ID,
 		X: windowX, Y: windowY, Viewport: size,
 	})
 	if !result.Handled || shell.typed() != "\x1b[<0;5;3M" {
@@ -415,7 +415,7 @@ func TestSplitScrollbarUsesPaintedPaneCoordinates(t *testing.T) {
 	if len(state.sessions) < 2 {
 		t.Fatalf("split created only %d sessions", len(state.sessions))
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 	session := &state.sessions[1]
 	if !state.ActivatePane(session.ID) {
@@ -425,7 +425,7 @@ func TestSplitScrollbarUsesPaintedPaneCoordinates(t *testing.T) {
 		session.term.screen.Write([]byte("history line\r\n"))
 	}
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	bar, ok := hitByID(&canvas, tree.MountID(paneMount(session), hitTerminalBar.At(int(session.ID))))
 	if !ok {
@@ -438,8 +438,8 @@ func TestSplitScrollbarUsesPaintedPaneCoordinates(t *testing.T) {
 	geometry := state.terminalScrollArea(nil, session, state.layoutForSession(session.ID).area, 1).Geometry()
 	x := bar.Bounds.X + bar.Bounds.Width/2 + origin.X
 	grab := origin.Y + geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2
-	result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary,
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
 		Target: tree.MountID(paneMount(session), hitTerminalBar.At(int(session.ID))),
 		X:      x, Y: grab, Viewport: size,
 	})
@@ -455,10 +455,10 @@ func TestSharedTerminalToolbarPlacesLatencyBeforeActions(t *testing.T) {
 	state.terminalToolbarPosition = terminalToolbarRight
 	atomic.StoreInt64(&session.rttMs, 42)
 	atomic.StoreInt32(&session.rttAvailable, 1)
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if session.term.railCount == 0 {
 		t.Fatal("the rail painted no actions")
@@ -489,10 +489,10 @@ func TestSharedTerminalToolbarSavesOutput(t *testing.T) {
 	state.Wake()
 	saved := filepath.Join(t.TempDir(), "terminal-output.txt")
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return saved, nil }
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if _, ok := hitByID(&canvas, hitTerminalSaveOutput); !ok {
 		t.Fatal("shared toolbar has no save-output action")
@@ -506,7 +506,7 @@ func TestSharedTerminalToolbarSavesOutput(t *testing.T) {
 
 func TestSharedSidePanelsFollowActiveSplit(t *testing.T) {
 	state, first, _, _ := openTestSFTP(t)
-	state.Resize(ui.Size{Width: 1200, Height: 800})
+	state.Resize(gfx.Size{Width: 1200, Height: 800})
 	firstID := first.ID
 	openHostInSplit(t, state, 2, layoutcore.Horizontal)
 	if len(state.sessions) < 2 {
@@ -564,11 +564,11 @@ func TestSharedToolbarAndPanelsStayInTheirOuterBands(t *testing.T) {
 			if err := state.deck.SetContext(workspace, context); err != nil {
 				t.Fatal(err)
 			}
-			size := ui.Size{Width: 1500, Height: 900}
+			size := gfx.Size{Width: 1500, Height: 900}
 			state.Resize(size)
 			state.aiPanelSync()
 
-			var canvas ui.Canvas
+			var canvas gfx.Canvas
 			state.Paint(&canvas, size)
 			rail, ok := state.terminalSideRailBounds(size)
 			if !ok {
@@ -583,7 +583,7 @@ func TestSharedToolbarAndPanelsStayInTheirOuterBands(t *testing.T) {
 				t.Fatalf("right rail right=%v, want outer-%v", rail.X+rail.Width, full.X+full.Width)
 			}
 			terminal := state.layoutForSession(session.ID).area
-			for name, panel := range map[string]ui.Rect{
+			for name, panel := range map[string]gfx.Rect{
 				"monitor":   state.monitorRect,
 				"files":     state.contextRect,
 				"assistant": state.ai.panel.rect,
@@ -606,10 +606,10 @@ func TestSharedTerminalToolbarKeyboardNavigationReachesOverflow(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	session := &state.sessions[0]
 	state.terminalToolbarPosition = terminalToolbarLeft
-	size := ui.Size{Width: 900, Height: 300}
+	size := gfx.Size{Width: 900, Height: 300}
 	state.Resize(size)
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	term := session.term
 	if term.railCount < 3 || term.railContentExtent <= term.railViewport.Height {
@@ -622,7 +622,7 @@ func TestSharedTerminalToolbarKeyboardNavigationReachesOverflow(t *testing.T) {
 
 	target := term.railIDs[0]
 	for target != lastID {
-		result := state.Key(ui.KeyEvent{Target: target, Key: ui.KeyDown})
+		result := state.Key(gfx.KeyEvent{Target: target, Key: gfx.KeyDown})
 		if !result.Handled || result.Focus.IsZero() || result.Focus == target {
 			t.Fatalf("Down from %v returned %+v", target, result)
 		}
@@ -630,7 +630,7 @@ func TestSharedTerminalToolbarKeyboardNavigationReachesOverflow(t *testing.T) {
 	}
 
 	canvas.Reset()
-	canvas.SetInteraction(ui.ID{}, ui.ID{}, lastID, true)
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, lastID, true)
 	state.Paint(&canvas, size)
 	if term.railScroll <= 0 {
 		t.Fatal("keyboard focus did not scroll the overflowed shared rail")
@@ -643,10 +643,10 @@ func TestSharedTerminalToolbarKeyboardNavigationReachesOverflow(t *testing.T) {
 func TestSharedTerminalToolbarKeyboardNavigationSkipsDisabledActions(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	session := &state.sessions[0]
-	size := ui.Size{Width: 900, Height: 700}
+	size := gfx.Size{Width: 900, Height: 700}
 	state.Resize(size)
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	term := session.term
 	disabled := -1
@@ -670,11 +670,11 @@ func TestSharedTerminalToolbarKeyboardNavigationSkipsDisabledActions(t *testing.
 		t.Fatalf("disabled action is not between enabled actions: before=%d disabled=%d after=%d", before, disabled, after)
 	}
 
-	result, handled := state.terminalToolbarKey(session, ui.KeyEvent{Target: term.railIDs[before], Key: ui.KeyDown})
+	result, handled := state.terminalToolbarKey(session, gfx.KeyEvent{Target: term.railIDs[before], Key: gfx.KeyDown})
 	if !handled || !result.Handled || result.Focus != term.railIDs[after] {
 		t.Fatalf("Down across disabled action = %+v handled=%v, want focus %v", result, handled, term.railIDs[after])
 	}
-	result, handled = state.terminalToolbarKey(session, ui.KeyEvent{Target: term.railIDs[after], Key: ui.KeyUp})
+	result, handled = state.terminalToolbarKey(session, gfx.KeyEvent{Target: term.railIDs[after], Key: gfx.KeyUp})
 	if !handled || !result.Handled || result.Focus != term.railIDs[before] {
 		t.Fatalf("Up across disabled action = %+v handled=%v, want focus %v", result, handled, term.railIDs[before])
 	}
@@ -684,16 +684,16 @@ func TestWheelOverSharedTerminalToolbarDoesNotScrollTerminalHistory(t *testing.T
 	state, _, _, _ := liveSession(t)
 	session := &state.sessions[0]
 	state.terminalToolbarPosition = terminalToolbarRight
-	size := ui.Size{Width: 900, Height: 300}
+	size := gfx.Size{Width: 900, Height: 300}
 	state.Resize(size)
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if session.term.railContentExtent <= session.term.railViewport.Height {
 		t.Fatal("fixture does not overflow")
 	}
 	before := session.term.screen.ViewOffset()
 	rail := session.term.railViewport
-	result := state.scroll(ui.ScrollEvent{X: rail.X + 2, Y: rail.Y + 2, DeltaY: 1})
+	result := state.scroll(gfx.ScrollEvent{X: rail.X + 2, Y: rail.Y + 2, DeltaY: 1})
 	if !result.Handled || session.term.railScroll <= 0 {
 		t.Fatalf("wheel result=%+v offset=%v", result, session.term.railScroll)
 	}
@@ -708,12 +708,12 @@ func TestWheelOverSharedTerminalToolbarGutterStaysInTheRail(t *testing.T) {
 			state, _, _, _ := liveSession(t)
 			session := &state.sessions[0]
 			state.terminalToolbarPosition = position
-			size := ui.Size{Width: 900, Height: 300}
+			size := gfx.Size{Width: 900, Height: 300}
 			state.Resize(size)
 			for line := 0; line < 80; line++ {
 				session.term.screen.Write([]byte("history line\r\n"))
 			}
-			var canvas ui.Canvas
+			var canvas gfx.Canvas
 			state.Paint(&canvas, size)
 			if session.term.railContentExtent <= session.term.railViewport.Height {
 				t.Fatal("fixture does not overflow")
@@ -724,7 +724,7 @@ func TestWheelOverSharedTerminalToolbarGutterStaysInTheRail(t *testing.T) {
 			if position == terminalToolbarRight {
 				x = rail.X + rail.Width - 1
 			}
-			result := state.scroll(ui.ScrollEvent{X: x, Y: rail.Y + 2, DeltaY: 1})
+			result := state.scroll(gfx.ScrollEvent{X: x, Y: rail.Y + 2, DeltaY: 1})
 			if !result.Handled || session.term.railScroll <= 0 {
 				t.Fatalf("gutter wheel result=%+v offset=%v", result, session.term.railScroll)
 			}
@@ -737,7 +737,7 @@ func TestWheelOverSharedTerminalToolbarGutterStaysInTheRail(t *testing.T) {
 
 func TestActivatingTerminalWorkspaceFitsShellToSharedRail(t *testing.T) {
 	state, _, _, shell := liveSession(t)
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.viewport = size
 	workspace := state.deck.ActiveWorkspace()
 	state.activeSection = sectionHosts
@@ -799,7 +799,7 @@ func TestTerminalToolbarSettingsApplyImmediatelyAndNavigate(t *testing.T) {
 		t.Fatalf("background terminal screen=%dx%d geometry=%dx%d after toolbar setting", cols, rows, geometry.cols, geometry.rows)
 	}
 
-	result, handled := state.settingsKey(ui.KeyEvent{Target: hitSettingsToolbarLeft, Key: ui.KeyRight})
+	result, handled := state.settingsKey(gfx.KeyEvent{Target: hitSettingsToolbarLeft, Key: gfx.KeyRight})
 	if !handled || !result.Handled || result.Focus != hitSettingsToolbarRight || state.terminalToolbarPosition != terminalToolbarRight {
 		t.Fatalf("position keyboard result=%+v handled=%v position=%v", result, handled, state.terminalToolbarPosition)
 	}
@@ -811,7 +811,7 @@ func TestTerminalFindKeepsTheSharedRailWhileSearching(t *testing.T) {
 			state, _, _, _ := liveSession(t)
 			session := &state.sessions[0]
 			state.terminalToolbarPosition = position
-			size := ui.Size{Width: 900, Height: 700}
+			size := gfx.Size{Width: 900, Height: 700}
 			state.Resize(size)
 
 			before := state.layoutForSession(session.ID)
@@ -856,7 +856,7 @@ func TestTerminalFindKeepsTheSharedRailWhileSearching(t *testing.T) {
 func TestTerminalFindKeepsTheColumnCount(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	session := &state.sessions[0]
-	state.Resize(ui.Size{Width: 900, Height: 700})
+	state.Resize(gfx.Size{Width: 900, Height: 700})
 	shell.say("keep me\r\n")
 	state.Wake()
 
@@ -887,7 +887,7 @@ func TestTerminalFindResizesEveryPaneForTheSharedRail(t *testing.T) {
 	if len(state.sessions) < 2 {
 		t.Fatalf("split created only %d sessions", len(state.sessions))
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 	active, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok {
@@ -918,7 +918,7 @@ func TestClickingFindCloseResizesEveryPaneForTheSharedRail(t *testing.T) {
 	if len(state.sessions) < 2 {
 		t.Fatalf("split created only %d sessions", len(state.sessions))
 	}
-	size := ui.Size{Width: 1200, Height: 800}
+	size := gfx.Size{Width: 1200, Height: 800}
 	state.Resize(size)
 	active, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok {

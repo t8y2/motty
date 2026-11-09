@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/workbench/icons"
 )
 
@@ -114,13 +114,13 @@ func (s *State) dashboardGroupLabel(name string) string {
 	return name
 }
 
-func (s *State) paintDashboardPickerFilters(c *ui.Canvas, b ui.Rect) {
+func (s *State) paintDashboardPickerFilters(c *gfx.Canvas, b gfx.Rect) {
 	e, m, theme := &s.dashboard.editor, s.messages.Dashboard, s.Theme()
 	groupW, toggleW := min(float32(170), b.Width*.29), float32(82)
 	searchW := max(80, b.Width-groupW-toggleW-16)
-	search := ui.Rect{X: b.X, Y: b.Y, Width: searchW, Height: 34}
+	search := gfx.Rect{X: b.X, Y: b.Y, Width: searchW, Height: 34}
 	components.PaintInputGroup(c, theme, search, components.InputGroupSnapshot{ID: hitDashboardHostQuery, Label: m.HostSearch, Placeholder: m.HostSearch, Value: e.query.String(), NativeEditing: c.Focused() == hitDashboardHostQuery && e.query.String() != "", InlineStart: components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: icons.Search}})
-	trigger := ui.Rect{X: b.X + searchW + 8, Y: b.Y, Width: groupW, Height: 34}
+	trigger := gfx.Rect{X: b.X + searchW + 8, Y: b.Y, Width: groupW, Height: 34}
 	value := m.AllGroups
 	if e.groupFilter {
 		value = s.dashboardGroupLabel(e.group)
@@ -136,10 +136,10 @@ func (s *State) paintDashboardPickerFilters(c *ui.Canvas, b ui.Rect) {
 		s.menuPlaced(selectControl.ContentBounds())
 	}
 	selectControl.End()
-	components.BeginToggle(c, theme, hitDashboardSelectedOnly, ui.Rect{X: trigger.X + trigger.Width + 8, Y: b.Y, Width: toggleW, Height: 34}, e.selectedOnly).Outline(m.SelectedOnly)
+	components.BeginToggle(c, theme, hitDashboardSelectedOnly, gfx.Rect{X: trigger.X + trigger.Width + 8, Y: b.Y, Width: toggleW, Height: 34}, e.selectedOnly).Outline(m.SelectedOnly)
 }
 
-func (s *State) paintDashboardPickerGroups(c *ui.Canvas, geo components.ScrollAreaGeometry, groups []dashboardPickerGroup, columns int) {
+func (s *State) paintDashboardPickerGroups(c *gfx.Canvas, geo components.ScrollAreaGeometry, groups []dashboardPickerGroup, columns int) {
 	e, theme := &s.dashboard.editor, s.Theme()
 	width := geo.Viewport.Width - 12
 	cardW := (width - float32(columns-1)*8) / float32(columns)
@@ -148,12 +148,12 @@ func (s *State) paintDashboardPickerGroups(c *ui.Canvas, geo components.ScrollAr
 		name := s.dashboardGroupLabel(group.name)
 		n := len(group.hosts) + len(group.missing)
 		if y+28 > geo.Viewport.Y && y < geo.Viewport.Y+geo.Viewport.Height {
-			c.DrawIcon(lucideIcons[iconFolderOpen], ui.Rect{X: geo.Content.X + 2, Y: y + 6, Width: 14, Height: 14}, theme.MutedForeground)
-			monitorLabel(c, fmt.Sprintf("%s  %d / %d", name, n, group.total), ui.Rect{X: geo.Content.X + 24, Y: y, Width: width - 24, Height: 26}, 12, theme.MutedForeground, ui.WeightMedium)
+			c.DrawIcon(lucideIcons[iconFolderOpen], gfx.Rect{X: geo.Content.X + 2, Y: y + 6, Width: 14, Height: 14}, theme.MutedForeground)
+			monitorLabel(c, fmt.Sprintf("%s  %d / %d", name, n, group.total), gfx.Rect{X: geo.Content.X + 24, Y: y, Width: width - 24, Height: 26}, 12, theme.MutedForeground, gfx.WeightMedium)
 		}
 		y += 28
 		for i := 0; i < n; i++ {
-			box := ui.Rect{X: geo.Content.X + float32(i%columns)*(cardW+8), Y: y + float32(i/columns)*44, Width: cardW, Height: 36}
+			box := gfx.Rect{X: geo.Content.X + float32(i%columns)*(cardW+8), Y: y + float32(i/columns)*44, Width: cardW, Height: 36}
 			if box.Y+box.Height < geo.Viewport.Y || box.Y > geo.Viewport.Y+geo.Viewport.Height {
 				continue
 			}

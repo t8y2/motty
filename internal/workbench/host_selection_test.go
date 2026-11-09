@@ -6,15 +6,15 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
-func bulkAllHit() ui.ID {
+func bulkAllHit() gfx.ID {
 	return tree.ID(tree.Feature("host-selection"), "all")
 }
 
-func bulkGroupHit(state *State, name string) ui.ID {
+func bulkGroupHit(state *State, name string) gfx.ID {
 	return tree.Sub(tree.Feature("host-selection"), tree.Name("group")).At(state.hostGroupIndex(name))
 }
 
@@ -116,7 +116,7 @@ func TestHostBulkUnnamedAndEmptyGroups(t *testing.T) {
 
 func TestHostBulkKeyboardAndSubsetExport(t *testing.T) {
 	state := nestedHostGroupState(t)
-	result := state.Key(ui.KeyEvent{Key: ui.KeySpace, Target: bulkGroupHit(state, "Team")})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeySpace, Target: bulkGroupHit(state, "Team")})
 	if !result.Handled {
 		t.Fatal("group checkbox Space was not handled")
 	}
@@ -134,7 +134,7 @@ func TestHostBulkKeyboardAndSubsetExport(t *testing.T) {
 	if !slices.Equal(labels, []string{"Production", "Staging"}) {
 		t.Fatalf("exported hosts = %v", labels)
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeySpace, Target: bulkAllHit()})
+	state.Key(gfx.KeyEvent{Key: gfx.KeySpace, Target: bulkAllHit()})
 	requireBulkSelection(t, state, state.hosts[0].ID, state.hosts[1].ID, state.hosts[2].ID)
 }
 

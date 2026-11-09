@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/desktop"
 )
 
@@ -21,7 +21,7 @@ func desktopDriver(t *testing.T, state *State) *app.Driver {
 	t.Helper()
 	var invalidator app.Invalidator
 	state.options.Invalidate = invalidator.Invalidate
-	canvas := &ui.Canvas{}
+	canvas := &gfx.Canvas{}
 	driver, err := app.NewDriver(app.Config{
 		Title: "Remote desktop", Width: 1400, Height: 900,
 		Invalidator: &invalidator,
@@ -85,7 +85,7 @@ func TestDesktopFullscreenOverLoopbackPreservesInputAndRestoresChrome(t *testing
 	if !driver.Fullscreen() || !session.desk.fullscreen {
 		t.Fatal("the fullscreen action did not reach the window")
 	}
-	var area ui.Rect
+	var area gfx.Rect
 	exit := false
 	for _, hit := range snapshot.Hits {
 		if hit.ID == hitTerminalList.At(int(session.ID)) {
@@ -105,10 +105,10 @@ func TestDesktopFullscreenOverLoopbackPreservesInputAndRestoresChrome(t *testing
 		t.Fatalf("fullscreen keyboard focus = %v, want desktop %v", snapshot.Focused, hitTerminalList.At(int(session.ID)))
 	}
 	before := len(keySyms(fixture.got()))
-	if err := driver.KeyDown(ui.KeyEnter, ""); err != nil {
+	if err := driver.KeyDown(gfx.KeyEnter, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.KeyUp(ui.KeyEnter, ""); err != nil {
+	if err := driver.KeyUp(gfx.KeyEnter, ""); err != nil {
 		t.Fatal(err)
 	}
 	waitUntil(t, state, "fullscreen key over loopback", func() bool { return len(keySyms(fixture.got())) >= before+2 })
@@ -116,7 +116,7 @@ func TestDesktopFullscreenOverLoopbackPreservesInputAndRestoresChrome(t *testing
 	if strings.Join(remoteKeys, ",") != "down ff0d,up ff0d" {
 		t.Fatalf("fullscreen keys = %v", remoteKeys)
 	}
-	if err := driver.Key(ui.KeyEnter, ui.ModifierControl|ui.ModifierAlt); err != nil {
+	if err := driver.Key(gfx.KeyEnter, gfx.ModifierControl|gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
 	if driver.Fullscreen() || session.desk.fullscreen {
@@ -130,17 +130,17 @@ func TestDesktopFullscreenOverLoopbackPreservesInputAndRestoresChrome(t *testing
 	}
 }
 
-func hitByIDInSnapshot(snapshot app.Snapshot, id ui.ID) (ui.Hit, bool) {
+func hitByIDInSnapshot(snapshot app.Snapshot, id gfx.ID) (gfx.Hit, bool) {
 	for _, hit := range snapshot.Hits {
 		if hit.ID == id {
 			return hit, true
 		}
 	}
-	return ui.Hit{}, false
+	return gfx.Hit{}, false
 }
 
 func TestRDPFullscreenFollowsMonitorPixelsAndLeavesForDialogs(t *testing.T) {
-	state, session, server, _, _ := followState(t, 1, true, ui.Size{Width: 1400, Height: 900})
+	state, session, server, _, _ := followState(t, 1, true, gfx.Size{Width: 1400, Height: 900})
 	driver := desktopDriver(t, state)
 	state.toggleDesktopFullscreen(session)
 	if err := repaintDesktopDriver(driver, state); err != nil {
@@ -149,7 +149,7 @@ func TestRDPFullscreenFollowsMonitorPixelsAndLeavesForDialogs(t *testing.T) {
 	if err := driver.Advance(desktopResizeDelay + time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	wanted := desktopTargetFor(ui.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, state.pixelScale)
+	wanted := desktopTargetFor(gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, state.pixelScale)
 	resizes := server.asked()
 	if len(resizes) == 0 || resizes[len(resizes)-1] != wanted {
 		t.Fatalf("fullscreen resized to %v, want %+v", resizes, wanted)
@@ -162,7 +162,7 @@ func TestRDPFullscreenFollowsMonitorPixelsAndLeavesForDialogs(t *testing.T) {
 }
 
 func TestDesktopFullscreenFailureHasVisibleFeedbackAndDoesNotChangeLayout(t *testing.T) {
-	state, session, _, _, _ := followState(t, 1, false, ui.Size{Width: 1400, Height: 900})
+	state, session, _, _, _ := followState(t, 1, false, gfx.Size{Width: 1400, Height: 900})
 	state.SetFullscreenControl(func(bool) error { return errors.New("window manager refused") })
 	state.toggleDesktopFullscreen(session)
 	if state.winChrome.fullscreenSession != 0 || session.desk.fullscreen || len(state.fileNotices.items) != 1 {
@@ -181,7 +181,7 @@ func (s *measuredDesktop) NetworkRTT() (time.Duration, time.Time) { return s.rtt
 var _ desktop.LatencySource = (*measuredDesktop)(nil)
 
 func TestRDPLatencyShowsActualSampleOrExplicitlyUnavailableInEveryPresentation(t *testing.T) {
-	state, session, server, _, screen := followState(t, 1, false, ui.Size{Width: 1400, Height: 900})
+	state, session, server, _, screen := followState(t, 1, false, gfx.Size{Width: 1400, Height: 900})
 	measured := &measuredDesktop{followingDesktop: server}
 	session.desk.session = measured
 	state.terminalShowLatency = true
@@ -211,7 +211,7 @@ func TestRDPLatencyShowsActualSampleOrExplicitlyUnavailableInEveryPresentation(t
 	state.toggleDesktopFullscreen(session)
 	session.desk.chromeless = false
 	rightClickTab(state, hitTabList.At(int(state.deck.ActiveWorkspace())))
-	screen.paint(ui.Size{Width: 1400, Height: 900}, time.Second)
+	screen.paint(gfx.Size{Width: 1400, Height: 900}, time.Second)
 	state.Click(hitTabMenuLatency)
 	if state.terminalShowLatency {
 		t.Fatal("the desktop menu did not disable RTT display")
@@ -330,10 +330,10 @@ func TestLiveRDPFullscreenUsesTheRealSession(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if err := driver.KeyDown(ui.KeyEnter, ""); err != nil {
+	if err := driver.KeyDown(gfx.KeyEnter, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.KeyUp(ui.KeyEnter, ""); err != nil {
+	if err := driver.KeyUp(gfx.KeyEnter, ""); err != nil {
 		t.Fatal(err)
 	}
 	state.toggleDesktopFullscreen(session)

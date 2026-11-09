@@ -4,8 +4,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/store"
 	"motty/internal/i18n"
 	"motty/internal/workbench/icons"
@@ -16,7 +16,7 @@ import (
 // nothing.
 type aiPreset struct {
 	label string
-	icon  ui.Icon
+	icon  gfx.Icon
 	kind  string
 	url   string
 	// urlZH is the address for the Chinese interface when the vendor runs a
@@ -147,6 +147,6 @@ func aiHost(address string) string {
 
 // aiProviderIcon is the mark shown for a saved provider: its preset's, or the
 // gear of the custom entry.
-func aiProviderIcon(provider store.Provider) ui.Icon {
+func aiProviderIcon(provider store.Provider) gfx.Icon {
 	return aiPresets[aiPresetOf(provider)].icon
 }

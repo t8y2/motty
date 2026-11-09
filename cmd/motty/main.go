@@ -12,7 +12,7 @@ import (
 	"runtime"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/buildinfo"
 	"motty/internal/datadir"
 	"motty/internal/diag"
@@ -182,7 +182,7 @@ func (status *tray) show(application *app.Application) {
 		// window back.
 		Menu: status.list.Menu,
 		OnClick: func(click app.StatusClick) {
-			if click.Button == ui.PointerButtonPrimary {
+			if click.Button == gfx.PointerButtonPrimary {
 				status.list.ShowWindow()
 			}
 		},
@@ -272,7 +272,7 @@ var windowGroup = workbench.NewGroup()
 // placement says how a window is opened when it is not the usual new window: a
 // torn-off tab opens one where the pointer let go, empty but for the tab.
 type placement struct {
-	origin *ui.Point
+	origin *gfx.Point
 	adopt  func(*workbench.State)
 	blank  bool
 	// windowID is which window of this run it is. Zero takes the next number,
@@ -337,10 +337,10 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		LogDir: logDirectory(), PreviousCrash: crashNoticeFor(place),
 		WindowID:            place.windowID,
 		RememberWindowFrame: place.rememberFrame,
-		TearOff: func(origin ui.Point, adopt func(*workbench.State)) error {
+		TearOff: func(origin gfx.Point, adopt func(*workbench.State)) error {
 			return openWorkbenchWindow(application, status, hub, newWindow, false, placement{origin: &origin, adopt: adopt, blank: true})
 		},
-		OpenDragPreview: func(size ui.Size, origin ui.Point, paint func(*ui.Canvas, ui.Size)) (workbench.DragPreview, error) {
+		OpenDragPreview: func(size gfx.Size, origin gfx.Point, paint func(*gfx.Canvas, gfx.Size)) (workbench.DragPreview, error) {
 			preview, err := application.OpenDragPreview(app.DragPreviewConfig{
 				Width: int(math.Ceil(float64(size.Width))), Height: int(math.Ceil(float64(size.Height))), Origin: origin, Paint: paint,
 			})
@@ -372,14 +372,14 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	if place.rememberFrame {
 		if frame, ok := state.RestoredWindowFrame(); ok {
 			width, height = int(frame.Width), int(frame.Height)
-			origin = &ui.Point{X: frame.X, Y: frame.Y}
+			origin = &gfx.Point{X: frame.X, Y: frame.Y}
 		}
 	}
 	window := state.WindowColor()
 	width = max(width, workbench.MinimumWindowWidth)
 	height = max(height, workbench.MinimumWindowHeight)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: float32(width), Height: float32(height)})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: float32(width), Height: float32(height)})
 
 	var nativeInput app.TextInput
 	resolveInput := func(context app.TextInputContext) *app.TextInput {

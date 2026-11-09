@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 // schemaFixture is a minimal valid X resources scheme; the user directory
@@ -110,7 +110,7 @@ func TestUserSchemesJoinTheListWithoutShadowing(t *testing.T) {
 	if !state.setTerminalScheme(user.id) {
 		t.Fatal("a user scheme cannot be selected")
 	}
-	if state.termPal.terminal != ui.RGB(0x1a, 0x1b, 0x26) {
+	if state.termPal.terminal != gfx.RGB(0x1a, 0x1b, 0x26) {
 		t.Errorf("the user scheme did not reach the terminal: %v", state.termPal.terminal)
 	}
 }
@@ -144,13 +144,13 @@ func TestSchemeDrawerOverlaysThePage(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsTerminal)
 
-	var folded ui.Canvas
-	state.Paint(&folded, ui.Size{Width: 1400, Height: 900})
+	var folded gfx.Canvas
+	state.Paint(&folded, gfx.Size{Width: 1400, Height: 900})
 	// The scheme section is at the bottom of the terminal category; scroll to
 	// it the way someone looking for it would.
 	state.settingsScroll = max(state.settingsContent-900, 0)
-	folded = ui.Canvas{}
-	state.Paint(&folded, ui.Size{Width: 1400, Height: 900})
+	folded = gfx.Canvas{}
+	state.Paint(&folded, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&folded, hitSchemeBrowseAll); !ok {
 		t.Fatalf("the folded section has no control for the complete collection (section %d category %d, %d hits)",
 			state.activeSection, state.settingsCategory, len(folded.Hits()))
@@ -161,8 +161,8 @@ func TestSchemeDrawerOverlaysThePage(t *testing.T) {
 	if !state.schemeBrowserOpen {
 		t.Fatal("the browse control did not open the drawer")
 	}
-	var open ui.Canvas
-	state.Paint(&open, ui.Size{Width: 1400, Height: 900})
+	var open gfx.Canvas
+	state.Paint(&open, gfx.Size{Width: 1400, Height: 900})
 	if state.settingsContent != height {
 		t.Errorf("the drawer grew the page from %v to %v", height, state.settingsContent)
 	}
@@ -177,8 +177,8 @@ func TestSchemeDrawerOverlaysThePage(t *testing.T) {
 	}
 
 	state.schemeFilter = *text.NewEditor("rose")
-	var filtered ui.Canvas
-	state.Paint(&filtered, ui.Size{Width: 1400, Height: 900})
+	var filtered gfx.Canvas
+	state.Paint(&filtered, gfx.Size{Width: 1400, Height: 900})
 	if state.schemeDrawerFilter != "rose" {
 		t.Errorf("drawer filter = %q", state.schemeDrawerFilter)
 	}

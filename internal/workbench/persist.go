@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
 	"motty/internal/monitoring"
@@ -982,8 +982,8 @@ func (state *State) restoreLocal(saved savedState) {
 	// Only the choice: what is in effect is decided once the window starts, when
 	// the platform has been asked what it can follow (validateInterfaceFont).
 	state.uiFont.family = strings.TrimSpace(saved.InterfaceFont)
-	state.fonts.family, state.fonts.classic = "", terminalFontFaceFromString(saved.TerminalFontFace) == ui.MonoClassic
-	if family := strings.TrimSpace(saved.TerminalFontFamily); family != "" && ui.MonoFamily(family) != ui.MonoSystem {
+	state.fonts.family, state.fonts.classic = "", terminalFontFaceFromString(saved.TerminalFontFace) == gfx.MonoClassic
+	if family := strings.TrimSpace(saved.TerminalFontFamily); family != "" && gfx.MonoFamily(family) != gfx.MonoSystem {
 		state.fonts.family, state.fonts.classic = family, false
 	}
 	// Kept as saved, whatever this computer has installed: a copy carried to another
@@ -1017,7 +1017,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreSync(saved.Sync)
 	state.hostView = hostViewFromString(saved.HostView)
 	if saved.WindowWidth > 0 && saved.WindowHeight > 0 {
-		state.restoreWindowFrame(ui.Rect{
+		state.restoreWindowFrame(gfx.Rect{
 			X: float32(saved.WindowX), Y: float32(saved.WindowY),
 			Width: float32(saved.WindowWidth), Height: float32(saved.WindowHeight),
 		})
@@ -1200,7 +1200,7 @@ func restoreShortcuts(saved []savedShortcut) shortcutMap {
 			specified[action] = true
 			continue
 		}
-		chord, ok := keymap.Parse(ui.Modifiers(entry.Modifiers), entry.Key)
+		chord, ok := keymap.Parse(gfx.Modifiers(entry.Modifiers), entry.Key)
 		if !ok {
 			continue
 		}

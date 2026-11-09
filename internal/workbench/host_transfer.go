@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // transferMode says which file protocol a host's file panel uses.
@@ -51,7 +51,7 @@ var (
 )
 
 // paintTransferChoice draws the file protocol choice of the host dialog.
-func (state *State) paintTransferChoice(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintTransferChoice(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m := state.messages.Tools
 	content := components.BeginField(canvas, state.Theme(), bounds).Paint(m.TransferField, "", "")
 	options := [...]components.SegmentOption{
@@ -64,7 +64,7 @@ func (state *State) paintTransferChoice(canvas *ui.Canvas, bounds ui.Rect) {
 }
 
 // clickTransferChoice handles a click on the choice and reports whether it was one.
-func (state *State) clickTransferChoice(id ui.ID) bool {
+func (state *State) clickTransferChoice(id gfx.ID) bool {
 	switch id {
 	case hitDialogTransferAuto:
 		state.editor.transfer = transferAuto

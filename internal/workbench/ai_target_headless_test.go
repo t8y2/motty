@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/i18n"
 	"motty/internal/sshconn"
@@ -18,7 +18,7 @@ import (
 
 func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
-		for _, size := range []ui.Size{panelWide, panelNarrow} {
+		for _, size := range []gfx.Size{panelWide, panelNarrow} {
 			t.Run(fmt.Sprintf("%g/%g", scale, size.Width), func(t *testing.T) {
 				state := targetTestWorld(t, quietModel{"ok"})
 				state.setLanguage(i18n.Chinese)
@@ -46,7 +46,7 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				find := func(id ui.ID) ui.Hit {
+				find := func(id gfx.ID) gfx.Hit {
 					t.Helper()
 					for _, hit := range view.Snapshot().Hits {
 						if hit.ID == id {
@@ -54,9 +54,9 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 						}
 					}
 					t.Fatalf("missing %v", id)
-					return ui.Hit{}
+					return gfx.Hit{}
 				}
-				click := func(id ui.ID) {
+				click := func(id gfx.ID) {
 					t.Helper()
 					hit := find(id)
 					must(view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2))

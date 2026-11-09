@@ -5,7 +5,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 )
@@ -26,7 +26,7 @@ func TestApprovalOpeningTheAssistantClosesANarrowMonitorsDrawer(t *testing.T) {
 	c, _ := state.deck.Context(id)
 	c.MonitorOpen = true
 	_ = state.deck.SetContext(id, c)
-	state.Resize(ui.Size{Width: 760, Height: 700})
+	state.Resize(gfx.Size{Width: 760, Height: 700})
 	if !state.monitorShown(id) || !state.monitorDrawer(state.viewport) {
 		t.Fatal("the monitor should be the narrow drawer")
 	}

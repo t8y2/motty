@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/backup"
 	"motty/internal/buildinfo"
@@ -40,7 +40,7 @@ type developmentImport struct {
 	hosts           int
 	err             string
 	// body declares the dialog's body: its checkbox writes passwords itself.
-	body *flex.Page
+	body *ui.Page
 }
 
 func developmentImportPhase(local map[string][]byte) (string, error) {
@@ -247,7 +247,7 @@ func (state *State) importDevelopmentData() error {
 	return err
 }
 
-func (state *State) clickDevelopmentImport(id ui.ID) {
+func (state *State) clickDevelopmentImport(id gfx.ID) {
 	switch id {
 	case hitDevelopmentClose:
 		state.closeModal()
@@ -269,7 +269,7 @@ func (state *State) clickDevelopmentImport(id ui.ID) {
 	}
 }
 
-func (state *State) paintDevelopmentImport(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintDevelopmentImport(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, view := state.messages, &state.developmentImport
 	body := fmt.Sprintf(m.DevelopmentImportBodyFmt, view.hosts)
 	skip := m.DevelopmentImportEmpty
@@ -288,18 +288,18 @@ func (state *State) paintDevelopmentImport(canvas *ui.Canvas, viewport ui.Rect) 
 	height := float32(lines+errorLines)*stateNoticeLine + 40
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitDevelopmentClose, CloseID: hitDevelopmentClose,
-		InitialFocusID: hitDevelopmentImport, ContentSize: ui.Size{Width: width}, FitBody: true, BodyHeight: height,
+		InitialFocusID: hitDevelopmentImport, ContentSize: gfx.Size{Width: width}, FitBody: true, BodyHeight: height,
 	})
 	layout := dialog.Begin(m.DevelopmentImportTitle, "")
 	if view.body == nil {
-		view.body = flex.NewPage(flex.PageConfig{Tree: &tree, Root: "development-import", Theme: &state.theme})
+		view.body = ui.NewPage(ui.PageConfig{Tree: &tree, Root: "development-import", Theme: &state.theme})
 	}
-	view.body.Draw(canvas, layout.Body, func(c flex.C) {
-		flex.Column(c).Fill().Children(func() {
-			flex.Paragraph(c, body, lines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
-			flex.Checkbox(c, &view.passwords, m.DevelopmentImportPasswords).Color(state.pal.text)
+	view.body.Draw(canvas, layout.Body, func(c ui.C) {
+		ui.Column(c).Fill().Children(func() {
+			ui.Paragraph(c, body, lines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
+			ui.Checkbox(c, &view.passwords, m.DevelopmentImportPasswords).Color(state.pal.text)
 			if errorLines != 0 {
-				flex.Paragraph(c, errorText, errorLines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
+				ui.Paragraph(c, errorText, errorLines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
 			}
 		})
 	})

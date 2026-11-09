@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 )
 
@@ -235,7 +235,7 @@ func (state *State) aiAcceptSelectedMention() bool {
 	return true
 }
 
-func (state *State) aiMentionKey(event ui.KeyEvent) bool {
+func (state *State) aiMentionKey(event gfx.KeyEvent) bool {
 	if event.Target != hitAIInput && event.Target.Scope() != hitAIMentions || event.Modifiers != 0 {
 		return false
 	}
@@ -248,15 +248,15 @@ func (state *State) aiMentionKey(event ui.KeyEvent) bool {
 		panel.mentionIndex = index
 	}
 	switch event.Key {
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		panel.mentionIndex = (panel.mentionIndex + 1) % len(panel.mentions)
-	case ui.KeyUp:
+	case gfx.KeyUp:
 		panel.mentionIndex = (panel.mentionIndex + len(panel.mentions) - 1) % len(panel.mentions)
-	case ui.KeyEnter, ui.KeyTab:
+	case gfx.KeyEnter, gfx.KeyTab:
 		if !event.Repeat {
 			state.acceptMention(panel.mentions[panel.mentionIndex].name)
 		}
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		panel.mentionDismissed = true
 		panel.mentions = panel.mentions[:0]
 	default:

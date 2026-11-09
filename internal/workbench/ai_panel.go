@@ -7,7 +7,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -101,7 +101,7 @@ const (
 	aiMinTerminal = float32(360)            // the panes keep at least this much beside the panel
 )
 
-func inAIPanel(id ui.ID) bool { return tree.Within(id.Scope(), aiPanelHits) }
+func inAIPanel(id gfx.ID) bool { return tree.Within(id.Scope(), aiPanelHits) }
 
 type aiDragKind uint8
 
@@ -128,7 +128,7 @@ const (
 type aiTextLayout interface {
 	TextLen() int
 	SelectedText(components.MarkdownSelection) string
-	OffsetAt(ui.Point) (int, bool)
+	OffsetAt(gfx.Point) (int, bool)
 }
 
 // aiTextSurface numbers a block of conversation text in reading order, which is
@@ -236,7 +236,7 @@ func (panel *aiPanel) keepSelectionEnds(row int, ends aiSelectionEnds) {
 // painted block, so a drag that leaves a message or crosses the gap between two
 // goes on into the next. Above a block it is the block's start and below it its
 // end.
-func (panel *aiPanel) textPointAt(point ui.Point) (components.TextPoint, bool) {
+func (panel *aiPanel) textPointAt(point gfx.Point) (components.TextPoint, bool) {
 	var (
 		best     components.TextPoint
 		found    bool
@@ -292,7 +292,7 @@ type aiScrollbarState struct {
 // cosmetic; nothing here is saved.
 type aiPanel struct {
 	targetOpen                  bool
-	targetBounds                ui.Rect
+	targetBounds                gfx.Rect
 	targetTitle, targetValue    string
 	targetWidth, targetFontSize float32
 	rows                        []aiRowView
@@ -308,11 +308,11 @@ type aiPanel struct {
 	focusBack bool
 
 	// Geometry of the last paint, for the wheel and the text input.
-	rect      ui.Rect // the whole panel; empty when it was not painted
-	list      ui.Rect // the message list (or the history list)
-	listing   bool    // list is the history list
-	maxScroll float32 // largest scroll offset of the message list
-	maxTop    float32 // and of the history list
+	rect      gfx.Rect // the whole panel; empty when it was not painted
+	list      gfx.Rect // the message list (or the history list)
+	listing   bool     // list is the history list
+	maxScroll float32  // largest scroll offset of the message list
+	maxTop    float32  // and of the history list
 
 	// fitted is the width the terminals were last sized for.
 	fitted float32
@@ -329,7 +329,7 @@ type aiPanel struct {
 	// rowSlots and copies are where flex put the rows on screen and, in the row
 	// being painted, the copy buttons of its code blocks. They are only valid
 	// during the paint that filled them and are emptied at the start of the next.
-	rowSlots  []flex.Box
+	rowSlots  []ui.Box
 	copies    []aiCopySlot
 	copyCount int
 	copied    string // the code last copied, so its button shows it
@@ -349,13 +349,13 @@ type aiPanel struct {
 	// inputLayout is the message box's rows and scroll, and composer where the box
 	// was painted, for the wheel.
 	inputLayout components.TextareaLayout
-	composer    ui.Rect
+	composer    gfx.Rect
 
 	// pointer is the last pointer position in the window, for hover-only message
 	// actions. answer is where the last answer, with its action row, was painted;
 	// answerOver is whether the pointer was in it at the last paint or move.
-	pointer    ui.Point
-	answer     ui.Rect
+	pointer    gfx.Point
+	answer     gfx.Rect
 	answerOver bool
 
 	// textSelect is the conversation text selected with the pointer, and the drag
@@ -382,21 +382,21 @@ type aiPanel struct {
 	modelHover    components.HoverIntent  // the provider row the pointer is resting on
 	// modelTypeahead is the typed prefix that highlights a model by name.
 	modelTypeahead components.MenuTypeahead
-	modelsRect     ui.Rect // where the list of models was painted, for the wheel
-	window         ui.Rect // the whole window, for the menu to be dismissed from
-	chip           ui.Rect
+	modelsRect     gfx.Rect // where the list of models was painted, for the wheel
+	window         gfx.Rect // the whole window, for the menu to be dismissed from
+	chip           gfx.Rect
 	approvalLay    aiApprovalLayout
 
 	// The approval scope chip and the menu it opens. The scope itself belongs to
 	// the conversation (ai.autoUpTo); this is only its view state.
 	autoMenu   bool
 	autoScroll components.MenuScroll
-	scopeChip  ui.Rect // where the chip was painted, for the menu to hang above
+	scopeChip  gfx.Rect // where the chip was painted, for the menu to hang above
 
 	// Reasoning effort chip and menu
 	reasoningMenu   bool
 	reasoningEffort string
-	reasoningChip   ui.Rect
+	reasoningChip   gfx.Rect
 
 	// mentions is what the @ before the caret can name, from the last layout.
 	mentionBuf       [maxMentionSuggestions]mentionName
@@ -424,7 +424,7 @@ func (state *State) aiPanelVisible() bool {
 // aiSectionReserve is the width the panel takes from the section beside it when
 // no host is open, and zero while a workspace exists: the panel then belongs to
 // the workspace's terminals (aiReserve).
-func (state *State) aiSectionReserve(size ui.Size) float32 {
+func (state *State) aiSectionReserve(size gfx.Size) float32 {
 	if state.terminalPage() {
 		return 0
 	}
@@ -438,7 +438,7 @@ func (state *State) aiSectionReserve(size ui.Size) float32 {
 // aiReserve is the width a docked panel takes from the panes of a workspace, its
 // divider included, or zero when the panel is closed or the window is too narrow
 // to share (it is then a drawer over the panes).
-func (state *State) aiReserve(workspaceID layoutcore.WorkspaceID, size ui.Size) float32 {
+func (state *State) aiReserve(workspaceID layoutcore.WorkspaceID, size gfx.Size) float32 {
 	if !state.ai.open || size.Width < aiDockAt {
 		return 0
 	}
@@ -453,7 +453,7 @@ func (state *State) aiReserve(workspaceID layoutcore.WorkspaceID, size ui.Size) 
 // the panes of a workspace, which may have a context panel of their own, or a
 // section card, which sits under the fixed navigation rail. A workspace ID of
 // zero names a section, as aiSectionReserve does.
-func (state *State) aiSharedWidth(workspaceID layoutcore.WorkspaceID, size ui.Size) float32 {
+func (state *State) aiSharedWidth(workspaceID layoutcore.WorkspaceID, size gfx.Size) float32 {
 	base := state.baseWorkspacePixelBounds(size)
 	if workspaceID == 0 {
 		return size.Width - navigationWidth - state.toolbarDockSideReserve()
@@ -468,7 +468,7 @@ func (state *State) aiSharedWidth(workspaceID layoutcore.WorkspaceID, size ui.Si
 
 // aiPanelExtent is the width of the docked panel: what the user dragged it to,
 // within the room the window has, or the default.
-func (state *State) aiPanelExtent(size ui.Size) float32 {
+func (state *State) aiPanelExtent(size gfx.Size) float32 {
 	if state.ai.panelWidth <= 0 {
 		return min(aiPanelWidth, size.Width*0.42)
 	}
@@ -479,7 +479,7 @@ func (state *State) aiPanelExtent(size ui.Size) float32 {
 // aiPanelLimits is how narrow and how wide the panel may be: the content beside
 // it keeps its minimum, and nothing else caps it. A wide window therefore gives a
 // panel as wide as the user drags it, which long answers and code blocks need.
-func (state *State) aiPanelLimits(size ui.Size) (least, most float32) {
+func (state *State) aiPanelLimits(size gfx.Size) (least, most float32) {
 	workspaceID := state.deck.ActiveWorkspace()
 	if !state.terminalPage() {
 		workspaceID = 0
@@ -540,7 +540,7 @@ func (state *State) setAIPanelOpen(open bool) {
 // The window must never hold two drawers, and never a scope-less assistant
 // drawer under the monitor's trapped one. Resize and a question the assistant
 // raises on its own call this.
-func (state *State) reconcileAIPanelWithMonitor(size ui.Size) {
+func (state *State) reconcileAIPanelWithMonitor(size gfx.Size) {
 	if !state.ai.open {
 		return
 	}
@@ -588,7 +588,7 @@ func (state *State) aiPanelReset() {
 	panel.clearAITextSelection()
 }
 
-func (state *State) aiPanelClick(id ui.ID) bool {
+func (state *State) aiPanelClick(id gfx.ID) bool {
 	// Modal controls (including AI rename) are dispatched by State.Click.
 	if state.modal != modalNone || !inAIPanel(id) {
 		return false
@@ -829,20 +829,20 @@ func (state *State) aiPanelDeleteConversation(index int) {
 // answer. Nothing under the pointer is a hit while it rests on the answer's text,
 // so the runtime would not repaint when it enters or leaves; this reports whether
 // it did, and the caller asks for the repaint.
-func (state *State) aiTrackPointer(event ui.PointerEvent) (repaint bool) {
+func (state *State) aiTrackPointer(event gfx.PointerEvent) (repaint bool) {
 	panel := &state.ai.panel
 	switch event.Kind {
-	case ui.PointerDown, ui.PointerMove:
-		panel.pointer = ui.Point{X: event.X, Y: event.Y}
-	case ui.PointerExit:
-		panel.pointer = ui.Point{}
+	case gfx.PointerDown, gfx.PointerMove:
+		panel.pointer = gfx.Point{X: event.X, Y: event.Y}
+	case gfx.PointerExit:
+		panel.pointer = gfx.Point{}
 	default:
 		return false
 	}
 	over := pointInRect(panel.pointer.X, panel.pointer.Y, panel.answer)
 	changed := over != panel.answerOver
 	panel.answerOver = over
-	if event.Kind == ui.PointerDown && (event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone) &&
+	if event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) &&
 		panel.hasAITextSelection() {
 		if _, _, onText := aiTextTarget(event.Target); !onText {
 			panel.clearAITextSelection()
@@ -853,7 +853,7 @@ func (state *State) aiTrackPointer(event ui.PointerEvent) (repaint bool) {
 }
 
 // aiTextTarget resolves a selectable-text hit to its conversation row and block.
-func aiTextTarget(id ui.ID) (row int, part aiTextPart, ok bool) {
+func aiTextTarget(id gfx.ID) (row int, part aiTextPart, ok bool) {
 	switch id.Scope() {
 	case hitAIAnswerText:
 		row, ok = id.In(hitAIAnswerText)
@@ -879,23 +879,23 @@ func aiReleaseMessageScroll(scroll *components.MessageScrollState) {
 
 // aiPanelScrollbarPointer drags the active message or history thumb and pages
 // when its track is pressed. Painting owns the geometry; the panel owns the offset.
-func (state *State) aiPanelScrollbarPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
 	bar := &panel.scrollbar
 	// A window that deactivates mid-drag (Cmd-Tab) never delivers the PointerUp.
 	// Cancel on a press elsewhere and let that press through, so the panel does
 	// not answer every later click with the stale gesture.
-	if event.Kind == ui.PointerDown && bar.dragging &&
+	if event.Kind == gfx.PointerDown && bar.dragging &&
 		event.Target != hitAIMessageBar && event.Target != hitAIHistoryBar {
 		bar.dragging = false
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	history := event.Target == hitAIHistoryBar
-	if event.Kind == ui.PointerDown && (history || event.Target == hitAIMessageBar) {
-		primary := event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone
+	if event.Kind == gfx.PointerDown && (history || event.Target == hitAIMessageBar) {
+		primary := event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone
 		geometry := bar.geometry
 		if !primary || history != panel.listing || geometry.MaxOffset <= 0 {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		page := panel.list.Height * 0.9
 		switch {
@@ -904,7 +904,7 @@ func (state *State) aiPanelScrollbarPointer(event ui.PointerEvent) (ui.EventResu
 		case event.Y >= geometry.Thumb.Y+geometry.Thumb.Height:
 			return state.aiPanelScrollBy(page), true
 		}
-		result := ui.EventResult{Handled: true, Repaint: true, Focus: event.Target}
+		result := gfx.EventResult{Handled: true, Repaint: true, Focus: event.Target}
 		if geometry.Track.Height <= geometry.Thumb.Height {
 			return result, true
 		}
@@ -918,27 +918,27 @@ func (state *State) aiPanelScrollbarPointer(event ui.PointerEvent) (ui.EventResu
 		return result, true
 	}
 	if !bar.dragging {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Kind == ui.PointerExit {
+	if event.Kind == gfx.PointerExit {
 		bar.dragging = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if bar.history != panel.listing || !state.aiPanelVisible() {
 		bar.dragging = false
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
-	if event.Kind == ui.PointerUp {
+	if event.Kind == gfx.PointerUp {
 		// Moves already applied the gesture. Recomputing on Up would jump if the
 		// content extent changed while the pointer stayed still.
 		bar.dragging = false
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
-	if event.Kind == ui.PointerMove && !event.Captured {
-		return ui.EventResult{}, false
+	if event.Kind == gfx.PointerMove && !event.Captured {
+		return gfx.EventResult{}, false
 	}
-	if event.Kind != ui.PointerMove {
-		return ui.EventResult{Handled: true}, true
+	if event.Kind != gfx.PointerMove {
+		return gfx.EventResult{Handled: true}, true
 	}
 	offset := bar.dragGeometry.OffsetForThumb(event.Y - bar.grab)
 	return state.aiPanelScrollTo(offset), true
@@ -950,16 +950,16 @@ func (state *State) aiPanelScrollbarPointer(event ui.PointerEvent) (ui.EventResu
 // It begins, extends and ends a selection of one conversation text block. The
 // text hit is a focusable group outside the Tab order; links and copy buttons
 // are declared after it and still win the press.
-func (state *State) aiPanelPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) aiPanelPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
 	if result, handled := state.aiPanelScrollbarPointer(event); handled {
 		return result, true
 	}
-	primary := event.Button == ui.PointerButtonPrimary || event.Button == ui.PointerButtonNone
-	if event.Kind == ui.PointerDown && primary {
+	primary := event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone
+	if event.Kind == gfx.PointerDown && primary {
 		if _, _, ok := aiTextTarget(event.Target); ok {
 			if result := panel.textSelect.Pointer(event, panel.textPointAt); result.Handled {
-				return ui.EventResult{Handled: true, Repaint: result.Changed, Focus: event.Target}, true
+				return gfx.EventResult{Handled: true, Repaint: result.Changed, Focus: event.Target}, true
 			}
 		}
 	} else if panel.textSelect.Dragging() {
@@ -967,23 +967,23 @@ func (state *State) aiPanelPointer(event ui.PointerEvent) (ui.EventResult, bool)
 		// selection, matching the terminal's drag; leaving the window ends the
 		// drag and keeps what was selected.
 		if result := panel.textSelect.Pointer(event, panel.textPointAt); result.Handled {
-			return ui.EventResult{Handled: true, Repaint: result.Changed}, true
+			return gfx.EventResult{Handled: true, Repaint: result.Changed}, true
 		}
 	}
-	if event.Kind == ui.PointerMove {
+	if event.Kind == gfx.PointerMove {
 		if index, ok := event.Target.In(hitAIMentions); ok && index < len(panel.mentions) && panel.mentionIndex != index {
 			panel.mentionIndex = index
-			return ui.EventResult{Repaint: true}, true
+			return gfx.EventResult{Repaint: true}, true
 		}
 	}
-	if event.Kind == ui.PointerUp && (event.Target.Scope() == hitAIExamples || event.Target.Scope() == hitAIMentions) && event.Button == ui.PointerButtonPrimary {
+	if event.Kind == gfx.PointerUp && (event.Target.Scope() == hitAIExamples || event.Target.Scope() == hitAIMentions) && event.Button == gfx.PointerButtonPrimary {
 		// The click that follows fills the prompt in; the box takes the focus so the
 		// user can edit it or press Enter.
-		return ui.EventResult{Focus: hitAIInput, Repaint: true}, true
+		return gfx.EventResult{Focus: hitAIInput, Repaint: true}, true
 	}
-	if event.Kind == ui.PointerDown && (event.Target == hitAIDivider || event.Target == hitAIComposerGrip) {
-		if event.Button != ui.PointerButtonPrimary && event.Button != ui.PointerButtonNone {
-			return ui.EventResult{}, true
+	if event.Kind == gfx.PointerDown && (event.Target == hitAIDivider || event.Target == hitAIComposerGrip) {
+		if event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone {
+			return gfx.EventResult{}, true
 		}
 		panel.drag = aiDragWidth
 		panel.dragFrom, panel.dragStart = event.X, panel.rect.Width
@@ -993,29 +993,29 @@ func (state *State) aiPanelPointer(event ui.PointerEvent) (ui.EventResult, bool)
 		return state.aiDrag(event), true
 	}
 	if panel.drag == aiDragNone {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	switch event.Kind {
-	case ui.PointerMove:
+	case gfx.PointerMove:
 		if event.Captured {
 			return state.aiDrag(event), true
 		}
-	case ui.PointerUp:
+	case gfx.PointerUp:
 		result := state.aiDrag(event)
 		panel.drag = aiDragNone
 		state.save()
 		result.Handled = true
 		return result, true
-	case ui.PointerExit:
+	case gfx.PointerExit:
 		panel.drag = aiDragNone
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
-	return ui.EventResult{Handled: true}, true
+	return gfx.EventResult{Handled: true}, true
 }
 
 // aiDrag follows the pointer while the panel's left edge or the message box's top
 // edge is being dragged.
-func (state *State) aiDrag(event ui.PointerEvent) ui.EventResult {
+func (state *State) aiDrag(event gfx.PointerEvent) gfx.EventResult {
 	ai, panel := &state.ai, &state.ai.panel
 	switch panel.drag {
 	case aiDragWidth:
@@ -1025,144 +1025,144 @@ func (state *State) aiDrag(event ui.PointerEvent) ui.EventResult {
 	case aiDragHeight:
 		ai.composerHeight = max(panel.dragStart+panel.dragFrom-event.Y, 0)
 	}
-	return ui.EventResult{Handled: true, Repaint: true}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
 // aiPanelScroll scrolls the message list, or the history list. A wheel over the
 // rest of the panel is swallowed: it must not scroll the terminal behind it.
-func (state *State) aiPanelScroll(event ui.ScrollEvent) (ui.EventResult, bool) {
+func (state *State) aiPanelScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
 	if panel.autoMenu {
-		return ui.EventResult{Handled: true, Repaint: panel.autoScroll.Wheel(event)}, true
+		return gfx.EventResult{Handled: true, Repaint: panel.autoScroll.Wheel(event)}, true
 	}
 	if panel.modelMenu && pointInRect(event.X, event.Y, panel.modelsRect) {
-		return ui.EventResult{Handled: true, Repaint: panel.modelList.Wheel(event)}, true
+		return gfx.EventResult{Handled: true, Repaint: panel.modelList.Wheel(event)}, true
 	}
 	if panel.rect.Width <= 0 || !pointInRect(event.X, event.Y, panel.rect) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if pointInRect(event.X, event.Y, panel.composer) {
 		panel.inputLayout.ScrollBy(event.DeltaY)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if !pointInRect(event.X, event.Y, panel.list) {
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	return state.aiPanelScrollBy(event.StepY(24)), true
 }
 
 // aiPanelScrollTo moves the active list to an absolute offset.
-func (state *State) aiPanelScrollTo(offset float32) ui.EventResult {
+func (state *State) aiPanelScrollTo(offset float32) gfx.EventResult {
 	ai := &state.ai
 	panel := &ai.panel
 	if panel.listing {
 		before := panel.historyTop
 		panel.historyTop = min(max(offset, 0), panel.maxTop)
-		return ui.EventResult{Handled: true, Repaint: panel.historyTop != before}
+		return gfx.EventResult{Handled: true, Repaint: panel.historyTop != before}
 	}
 	before := ai.scroll.Offset()
 	ai.scroll.ScrollTo(offset)
-	return ui.EventResult{Handled: true, Repaint: ai.scroll.Offset() != before}
+	return gfx.EventResult{Handled: true, Repaint: ai.scroll.Offset() != before}
 }
 
 // aiPanelScrollbarKey gives the focused slider the same keyboard and
 // accessibility-increment behavior as a scroll area.
-func (state *State) aiPanelScrollbarKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) aiPanelScrollbarKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
 	history := event.Target == hitAIHistoryBar
 	if (!history && event.Target != hitAIMessageBar) || history != panel.listing {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	offset, maximum := state.ai.scroll.Offset(), panel.maxScroll
 	if history {
 		offset, maximum = panel.historyTop, panel.maxTop
 	}
-	area := components.BeginScrollArea(nil, state.Theme(), panel.list, ui.Size{Width: panel.list.Width, Height: panel.list.Height + maximum}).Offset(0, offset)
+	area := components.BeginScrollArea(nil, state.Theme(), panel.list, gfx.Size{Width: panel.list.Width, Height: panel.list.Height + maximum}).Offset(0, offset)
 	_, next, ok := area.ScrollForKey(0, offset, event.Key, 24)
 	if !ok {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.aiPanelScrollTo(next), true
 }
 
 // aiPanelScrollBy moves the list by step pixels. Reaching the end of the
 // conversation makes it follow new messages again; leaving it stops that.
-func (state *State) aiPanelScrollBy(step float32) ui.EventResult {
+func (state *State) aiPanelScrollBy(step float32) gfx.EventResult {
 	ai := &state.ai
 	panel := &ai.panel
 	if panel.listing {
 		before := panel.historyTop
 		panel.historyTop = min(max(before+step, 0), panel.maxTop)
-		return ui.EventResult{Handled: true, Repaint: panel.historyTop != before}
+		return gfx.EventResult{Handled: true, Repaint: panel.historyTop != before}
 	}
 	before := ai.scroll.Offset()
 	ai.scroll.ScrollBy(step)
-	return ui.EventResult{Handled: true, Repaint: ai.scroll.Offset() != before}
+	return gfx.EventResult{Handled: true, Repaint: ai.scroll.Offset() != before}
 }
 
 // aiAutoScopeKey moves through and closes the approval chip's menu. A scope that
 // is fixed for the running request is not opened again: its rows would report a
 // choice the request does not take.
-func (state *State) aiAutoScopeKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) aiAutoScopeKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
 	onChip := event.Target == hitAIAutoScope
 	onRow := event.Target.Scope() == hitAIAutoScopeLevels
 	if !panel.autoMenu {
-		if !onChip || event.Repeat || (event.Key != ui.KeyDown && event.Key != ui.KeyUp) || state.aiScopeLocked() {
-			return ui.EventResult{}, false
+		if !onChip || event.Repeat || (event.Key != gfx.KeyDown && event.Key != gfx.KeyUp) || state.aiScopeLocked() {
+			return gfx.EventResult{}, false
 		}
 		panel.targetOpen = false
 		panel.modelMenu = false
 		panel.autoMenu = true
 		panel.autoScroll = components.MenuScroll{}
-		return ui.EventResult{Handled: true, Repaint: true, Focus: hitAIAutoScopeLevels.At(0), FocusVisible: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: hitAIAutoScopeLevels.At(0), FocusVisible: true}, true
 	}
 	if !onChip && !onRow {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	backToChip := ui.EventResult{Handled: true, Repaint: true, Focus: hitAIAutoScope, FocusVisible: true}
+	backToChip := gfx.EventResult{Handled: true, Repaint: true, Focus: hitAIAutoScope, FocusVisible: true}
 	switch event.Key {
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		panel.autoMenu = false
 		return backToChip, true
-	case ui.KeyEnter, ui.KeySpace:
+	case gfx.KeyEnter, gfx.KeySpace:
 		if event.Repeat || !onRow {
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 		if index, ok := event.Target.In(hitAIAutoScopeLevels); ok && index < len(state.aiScopes()) {
 			state.aiSetAutoUpTo(state.aiScopes()[index].level)
 			panel.autoMenu = false
 		}
 		return backToChip, true
-	case ui.KeyUp, ui.KeyDown, ui.KeyHome, ui.KeyEnd, ui.KeyPageUp, ui.KeyPageDown:
+	case gfx.KeyUp, gfx.KeyDown, gfx.KeyHome, gfx.KeyEnd, gfx.KeyPageUp, gfx.KeyPageDown:
 		if event.Repeat {
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 		if id, ok := panel.autoScroll.Navigate(event.Key, event.Target, true); ok {
-			return ui.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) aiPanelKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || !inAIPanel(event.Target) || event.Target == hitAIToggle {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	ai := &state.ai
 	panel := &ai.panel
-	if event.Target.Scope() == hitAIExamples && (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat {
-		return ui.EventResult{Focus: hitAIInput, Repaint: true}, true
+	if event.Target.Scope() == hitAIExamples && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
+		return gfx.EventResult{Focus: hitAIInput, Repaint: true}, true
 	}
 	if result, handled := state.aiAutoScopeKey(event); handled {
 		return result, true
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if result, handled := state.aiPanelScrollbarKey(event); handled {
 		return result, true
 	}
-	if event.Target == hitAITarget && ai.run == nil && !panel.targetOpen && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+	if event.Target == hitAITarget && ai.run == nil && !panel.targetOpen && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		panel.targetOpen = true
 		panel.modelMenu = false
 		return handled, true
@@ -1178,7 +1178,7 @@ func (state *State) aiPanelKey(event ui.KeyEvent) (ui.EventResult, bool) {
 				panel.modelTypeahead.Reset()
 				providers := state.aiMenuProviders()
 				if len(providers[index].models) > 0 {
-					return ui.EventResult{Handled: true, Repaint: true, Focus: hitAIModels.At(0), FocusVisible: true}, true
+					return gfx.EventResult{Handled: true, Repaint: true, Focus: hitAIModels.At(0), FocusVisible: true}, true
 				}
 				return handled, true
 			}
@@ -1186,16 +1186,16 @@ func (state *State) aiPanelKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		if command == components.SubmenuCommandClose && panel.modelSubmenu.IsAnyOpen() {
 			trigger := panel.modelSubmenu.Trigger()
 			panel.modelSubmenu = panel.modelSubmenu.Close()
-			return ui.EventResult{Handled: true, Repaint: true, Focus: trigger, FocusVisible: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: trigger, FocusVisible: true}, true
 		}
 	}
 	if event.Target == hitAIInput {
 		if _, composing := ai.input.Composition(); composing {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 	}
 	if state.aiMentionKey(event) {
-		return ui.EventResult{Handled: true, Repaint: true, Focus: hitAIInput}, true
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: hitAIInput}, true
 	}
 	if event.Target == hitAIInput {
 		// Up, Down, Home, End and the page keys move by the rows the box wrapped to.
@@ -1207,7 +1207,7 @@ func (state *State) aiPanelKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 	}
 	switch event.Key {
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		if event.Repeat {
 			return handled, true
 		}
@@ -1226,19 +1226,19 @@ func (state *State) aiPanelKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			return handled, true
 		}
 		if _, composing := ai.input.Composition(); composing && event.Target == hitAIInput {
-			return ui.EventResult{}, false // the input method owns Escape
+			return gfx.EventResult{}, false // the input method owns Escape
 		}
 		if event.Target == hitAIInput {
 			// Back to the terminal the panel is about.
-			return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
 		}
-	case ui.KeyEnter:
+	case gfx.KeyEnter:
 		switch event.Target {
 		case hitAIInput:
 			if event.Repeat {
 				return handled, true
 			}
-			if event.Modifiers&ui.ModifierShift != 0 {
+			if event.Modifiers&gfx.ModifierShift != 0 {
 				ai.input.Insert("\n")
 				return handled, true
 			}
@@ -1250,17 +1250,17 @@ func (state *State) aiPanelKey(event ui.KeyEvent) (ui.EventResult, bool) {
 			}
 			return handled, true
 		}
-	case ui.KeyPageUp, ui.KeyPageDown:
+	case gfx.KeyPageUp, gfx.KeyPageDown:
 		if event.Target == hitAIInput || panel.list.Height <= 0 {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		step := panel.list.Height * 0.9
-		if event.Key == ui.KeyPageUp {
+		if event.Key == gfx.KeyPageUp {
 			step = -step
 		}
 		return state.aiPanelScrollBy(step), true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // aiPanelEnter is Enter in the message box. With a question waiting for an
@@ -1281,23 +1281,23 @@ func (state *State) aiPanelEnter() {
 // reaches the native editor as app.TextInsertLineBreak (see aiPanelText). On
 // selectable conversation text it owns the copy chord, so a selection never
 // falls through to the terminal's copy.
-func (state *State) aiPanelShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) aiPanelShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if _, _, onText := aiTextTarget(event.Target); onText {
 		if chord, ok := keymap.FromEvent(event); ok && state.shortcuts.actionFor(chord) == shortcutCopy {
 			if !event.Repeat {
 				state.aiCopyTextSelection()
 			}
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 	}
-	if event.Target != hitAIInput || event.Text != "j" || event.Modifiers&(ui.ModifierControl|ui.ModifierMeta) == 0 ||
-		event.Modifiers&^(ui.ModifierControl|ui.ModifierMeta) != 0 {
-		return ui.EventResult{}, false
+	if event.Target != hitAIInput || event.Text != "j" || event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 ||
+		event.Modifiers&^(gfx.ModifierControl|gfx.ModifierMeta) != 0 {
+		return gfx.EventResult{}, false
 	}
 	if !event.Repeat {
 		state.ai.input.Insert("\n")
 	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 // aiCopyTextSelection writes the selected conversation text to the clipboard.
@@ -1316,7 +1316,7 @@ func (state *State) aiCopyTextSelection() {
 // aiPanelEditor serves the single-line fields of the panel: the word that a
 // critical action asks to be typed. The message box is a multi-line editor and
 // is served by AIPanelInput.
-func (state *State) aiPanelEditor(hit ui.ID) *text.Editor {
+func (state *State) aiPanelEditor(hit gfx.ID) *text.Editor {
 	if hit == hitAIConfirm && len(state.ai.approvals) > 0 && state.ai.approvals[0].request.NeedsText {
 		return &state.ai.confirm
 	}

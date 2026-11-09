@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -24,7 +24,7 @@ func TestTabMenuRenamesTheTabAndKeepsTheNameAcrossRestarts(t *testing.T) {
 
 	// Typing replaces the selected name; Enter submits.
 	state.tabRename.editor.Insert("Build box")
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitTabRenameField})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitTabRenameField})
 	if state.modal != modalNone {
 		t.Fatal("Enter did not close the dialog")
 	}
@@ -65,5 +65,5 @@ func TestTabRenameRefusesAnEmptyNameAndCancelKeepsTheOldOne(t *testing.T) {
 }
 
 func openTabMenu(state *State, workspace layoutcore.WorkspaceID) {
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitTabList.At(int(workspace)), X: 100, Y: 18})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTabList.At(int(workspace)), X: 100, Y: 18})
 }

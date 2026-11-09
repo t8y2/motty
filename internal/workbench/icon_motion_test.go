@@ -5,15 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // iconStill reports whether a transform paints the icon it would paint without
 // one: no turn, no offset, the identity scale and reveal — which a motion's first
 // keyframe spells either as zero or as one — and no contour moving or stretching
 // on its own.
-func iconStill(transform ui.IconTransform) bool {
-	if transform.Rotate != 0 || transform.Offset != (ui.Point{}) {
+func iconStill(transform gfx.IconTransform) bool {
+	if transform.Rotate != 0 || transform.Offset != (gfx.Point{}) {
 		return false
 	}
 	if transform.Scale != 0 && transform.Scale != 1 {
@@ -23,7 +23,7 @@ func iconStill(transform ui.IconTransform) bool {
 		return false
 	}
 	for _, part := range transform.Parts {
-		if part.Rotate != 0 || part.Offset != (ui.Point{}) {
+		if part.Rotate != 0 || part.Offset != (gfx.Point{}) {
 			return false
 		}
 		if part.Scale != 0 && part.Scale != 1 {
@@ -52,7 +52,7 @@ func sameMotion(motion, want iconMotion) bool {
 
 // iconFrame paints one frame at at and returns the transform the row's icon is
 // drawn with, the way a paint pass asks for it.
-func iconFrame(canvas *ui.Canvas, state *State, id ui.ID, icon uint8, at time.Duration) ui.IconTransform {
+func iconFrame(canvas *gfx.Canvas, state *State, id gfx.ID, icon uint8, at time.Duration) gfx.IconTransform {
 	canvas.SetClock(func() time.Duration { return at })
 	canvas.BeginFrame()
 	transform := state.iconMotion(canvas, id, icon)
@@ -62,7 +62,7 @@ func iconFrame(canvas *ui.Canvas, state *State, id ui.ID, icon uint8, at time.Du
 
 func TestIconMotionPlaysOnceAndLeavesTheCanvasAtRest(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 
 	state.Click(hitSettings)
 	if run, tracking := state.iconMotions[hitSettings]; !tracking || run != iconMotionPending {
@@ -103,7 +103,7 @@ func TestIconMotionPlaysOnceAndLeavesTheCanvasAtRest(t *testing.T) {
 
 func TestIconMotionStartsOverWhenTheRowIsChosenAgain(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 
 	state.Click(hitPortForwarding)
 	iconFrame(&canvas, state, hitPortForwarding, iconForward, 0)
@@ -125,7 +125,7 @@ func TestIconMotionStartsOverWhenTheRowIsChosenAgain(t *testing.T) {
 
 func TestIconMotionNeedsAChoiceAndAFrameClock(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 
 	if got := state.iconMotion(&canvas, hitSettings, iconSettings); !iconStill(got) {
 		t.Fatalf("a row that was never chosen paints %+v", got)
@@ -180,7 +180,7 @@ func TestIconMotionTrackHoldsBetweenKeyframes(t *testing.T) {
 	// A curve bends the way between two keyframes towards its own shape: an
 	// ease-in curve is still below the straight line half way along.
 	eased := iconMotionTrack{stops: []iconMotionStop{
-		{at: 0, value: 0, ease: ui.CubicBezier(0.4, 0, 1, 1)},
+		{at: 0, value: 0, ease: gfx.CubicBezier(0.4, 0, 1, 1)},
 		{at: 100, value: 1},
 	}}
 	if got := eased.at(50); got >= 0.5 {
@@ -193,11 +193,11 @@ func TestIconMotionTrackHoldsBetweenKeyframes(t *testing.T) {
 // until it is taught to move.
 func TestEveryPaintedNavigationRowPlaysAMotion(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	rows := 0
 	for _, hit := range canvas.Hits() {
-		if hit.Role != ui.RoleMenuItem || hit.Bounds.X >= navigationWidth {
+		if hit.Role != gfx.RoleMenuItem || hit.Bounds.X >= navigationWidth {
 			continue
 		}
 		rows++
@@ -280,7 +280,7 @@ func TestIconMotionPartsMoveOnlyTheirContour(t *testing.T) {
 	// glyph itself has not moved.
 	motion := iconMotionType
 	transform := motion.at(0.2)
-	if transform.Rotate != 0 || transform.Offset != (ui.Point{}) || transform.Scale != 0 {
+	if transform.Rotate != 0 || transform.Offset != (gfx.Point{}) || transform.Scale != 0 {
 		t.Fatalf("the keyboard's motion moves the whole glyph: %+v", transform)
 	}
 	if len(transform.Parts) != len(motion.parts) {
@@ -302,8 +302,8 @@ func TestIconMotionPartsMoveOnlyTheirContour(t *testing.T) {
 
 func TestPaintingANavRowAdvancesItsMotion(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	at := time.Duration(0)
 	canvas.SetClock(func() time.Duration { return at })
 	paint := func() {

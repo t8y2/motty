@@ -9,13 +9,13 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
 func TestHostGroupToolbarNativeSelectionAndExpansion(t *testing.T) {
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 960, Height: 600}} {
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 960, Height: 600}} {
 		for _, mode := range []hostViewMode{hostViewList, hostViewGrid} {
 			for _, light := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%dx%d/view=%d/light=%v", int(size.Width), int(size.Height), mode, light), func(t *testing.T) {
@@ -39,7 +39,7 @@ func TestHostGroupToolbarNativeSelectionAndExpansion(t *testing.T) {
 						}
 					}
 					must(view.Rest())
-					hit := func(id ui.ID) ui.Hit {
+					hit := func(id gfx.ID) gfx.Hit {
 						t.Helper()
 						h, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 						if !ok {
@@ -47,7 +47,7 @@ func TestHostGroupToolbarNativeSelectionAndExpansion(t *testing.T) {
 						}
 						return h
 					}
-					click := func(id ui.ID) {
+					click := func(id gfx.ID) {
 						t.Helper()
 						h := hit(id)
 						if h.Disabled {
@@ -79,7 +79,7 @@ func TestHostGroupToolbarNativeSelectionAndExpansion(t *testing.T) {
 					first, second := state.hosts[1].ID, state.hosts[0].ID
 					click(hitHostCheckList.At(int(first)))
 					filter := hit(hitHostFilterAll)
-					for _, id := range []ui.ID{hitEditHost, hitCopyHost, hitMoveHostGroup, hitDashboardAddHosts, hitDeleteHost} {
+					for _, id := range []gfx.ID{hitEditHost, hitCopyHost, hitMoveHostGroup, hitDashboardAddHosts, hitDeleteHost} {
 						h := hit(id)
 						if h.Bounds.Y < filter.Bounds.Y+filter.Bounds.Height {
 							t.Fatal("selection toolbar overlaps filters")
@@ -92,7 +92,7 @@ func TestHostGroupToolbarNativeSelectionAndExpansion(t *testing.T) {
 					}
 					shot("multiple-selected")
 					// Header controls must remain distinct and within the viewport.
-					ids := []ui.ID{hitHostFilterAll, hitHostViewList, hitHostViewGrid, hitHostSort, hitHostGroupsExpandAll, hitHostGroupsCollapseAll, hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDashboardAddHosts, hitDeleteHost}
+					ids := []gfx.ID{hitHostFilterAll, hitHostViewList, hitHostViewGrid, hitHostSort, hitHostGroupsExpandAll, hitHostGroupsCollapseAll, hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDashboardAddHosts, hitDeleteHost}
 					for i, id := range ids {
 						h := hit(id)
 						if h.Bounds.X < 0 || h.Bounds.Y < 0 || h.Bounds.X+h.Bounds.Width > size.Width || h.Bounds.Y+h.Bounds.Height > state.chrome.hostList.Y {

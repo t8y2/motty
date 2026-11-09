@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 )
@@ -78,9 +78,9 @@ type transferCenter struct {
 	// windows, and the icon the desktop shows belongs to all of them.
 	done, total   int64
 	fraction      float32
-	view          flex.View
-	row           flex.View
-	surface, list ui.Rect
+	view          ui.View
+	row           ui.View
+	surface, list gfx.Rect
 	geometry      components.ScrollAreaGeometry
 	scroll        float32
 	count         int
@@ -90,7 +90,7 @@ type transferCenter struct {
 	host                        *transferHost
 	hosts                       []*transferHost
 	hostOpen                    bool
-	hostBounds                  ui.Rect
+	hostBounds                  gfx.Rect
 	hostLabel, scopeLabel       string
 	cancelLabel, clearLabel     string
 	retryLabel, conflictLabel   string
@@ -426,7 +426,7 @@ func (center *transferCenter) drop(index int) {
 	}
 }
 
-func (state *State) clickTransferCenter(id ui.ID) bool {
+func (state *State) clickTransferCenter(id gfx.ID) bool {
 	center := &state.transfers
 	if !state.transferCenterAvailable() {
 		return false
@@ -471,7 +471,7 @@ func (state *State) clickTransferCenter(id ui.ID) bool {
 	return state.clickTransferTask(id)
 }
 
-func (state *State) clickTransferTask(id ui.ID) bool {
+func (state *State) clickTransferTask(id gfx.ID) bool {
 	center := &state.transfers
 	for index := range center.entries {
 		entry := &center.entries[index]

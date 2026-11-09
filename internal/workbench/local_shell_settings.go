@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 )
 
@@ -24,7 +24,7 @@ type localShellSelect struct {
 	distros  []localshell.Choice
 	loaded   bool
 	open     bool
-	bounds   ui.Rect
+	bounds   gfx.Rect
 	discover func() []localshell.Choice // nil uses the Windows discovery
 	// discoverWSL lists the WSL distributions; nil asks wsl.exe. It starts a
 	// process, so it runs on its own goroutine and answers through listing.
@@ -149,7 +149,7 @@ func (state *State) paintLocalShellSetting(page *settingsPage) {
 }
 
 // Paint the select in the menu pass, outside the settings page's clip.
-func (state *State) paintLocalShellSelect(canvas *ui.Canvas) {
+func (state *State) paintLocalShellSelect(canvas *gfx.Canvas) {
 	state.adoptWSLDistros()
 	menu, m := &state.localShellMenu, state.messages
 	bounds := menu.bounds
@@ -170,7 +170,7 @@ func (state *State) paintLocalShellSelect(canvas *ui.Canvas) {
 	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
 	above := max(bounds.Y-windowBarHeight-8, 0)
 	height := min(float32(8+len(menu.choices)*32), max(above, below))
-	content := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
+	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
 	if below < height {
 		content.Y = bounds.Y - height - 4
 	}
@@ -194,7 +194,7 @@ func (state *State) paintLocalShellSelect(canvas *ui.Canvas) {
 	}
 }
 
-func (state *State) clickLocalShell(id ui.ID) bool {
+func (state *State) clickLocalShell(id gfx.ID) bool {
 	if !localShellSettingVisible() || state.settingsCategory != settingsTerminal || state.settingsSearching() {
 		return false
 	}

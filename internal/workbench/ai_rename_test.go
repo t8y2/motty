@@ -4,13 +4,13 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestAIRenameDialogButtons(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		hit   ui.ID
+		hit   gfx.ID
 		title string
 		want  string
 	}{

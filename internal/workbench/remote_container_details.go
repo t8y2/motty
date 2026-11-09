@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotetools"
 )
 
@@ -21,7 +21,7 @@ var (
 type remoteContainerDetails struct {
 	open               bool
 	container          remotetools.Container
-	tab                ui.ID
+	tab                gfx.ID
 	serial             uint64
 	loading            bool
 	failed             bool
@@ -58,7 +58,7 @@ func (state *State) closeRemoteContainerDetails() {
 	state.remote.containerDetails = remoteContainerDetails{}
 }
 
-func (state *State) selectRemoteContainerDetailTab(tab ui.ID) {
+func (state *State) selectRemoteContainerDetailTab(tab gfx.ID) {
 	details := &state.remote.containerDetails
 	if !details.open || tab != hitRemoteContainerDetailsOverview && tab != hitRemoteContainerDetailsEnvironment {
 		return
@@ -144,7 +144,7 @@ func (state *State) applyRemoteContainerEnvironment(
 	details.text.scroll = 0
 }
 
-func (state *State) clickRemoteContainerDetails(id ui.ID) bool {
+func (state *State) clickRemoteContainerDetails(id gfx.ID) bool {
 	details := &state.remote.containerDetails
 	if !details.open {
 		return false
@@ -168,7 +168,7 @@ func (state *State) remoteContainerDetailTabs() [2]components.TabOption {
 	}
 }
 
-func (state *State) remoteContainerDetailTab() ui.ID {
+func (state *State) remoteContainerDetailTab() gfx.ID {
 	if state.remote.containerDetails.tab == hitRemoteContainerDetailsEnvironment {
 		return hitRemoteContainerDetailsEnvironment
 	}
@@ -187,7 +187,7 @@ func (state *State) remoteContainerOverviewBody(container remotetools.Container)
 	return remoteDetailRows(rows)
 }
 
-func (state *State) paintRemoteContainerDetails(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintRemoteContainerDetails(canvas *gfx.Canvas, viewport gfx.Rect) {
 	details := &state.remote.containerDetails
 	if !details.open {
 		return
@@ -199,7 +199,7 @@ func (state *State) paintRemoteContainerDetails(canvas *ui.Canvas, viewport ui.R
 		Layer: dialogLayer + 2, Scope: dialogScope,
 		DismissID: hitRemoteContainerDetailsDismiss, CloseID: hitRemoteContainerDetailsClose,
 		InitialFocusID: hitRemoteContainerDetailsClose,
-		ContentSize:    ui.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
+		ContentSize:    gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
 		ButtonSize: components.ButtonSizeSmall,
 	})
 	layout := dialog.Begin(m.RemoteContainerDetailsTitle, details.container.Name)
@@ -210,13 +210,13 @@ func (state *State) paintRemoteContainerDetails(canvas *ui.Canvas, viewport ui.R
 	dialog.End()
 }
 
-func (state *State) paintRemoteContainerDetailsBody(canvas *ui.Canvas, bounds ui.Rect, container remotetools.Container) {
+func (state *State) paintRemoteContainerDetailsBody(canvas *gfx.Canvas, bounds gfx.Rect, container remotetools.Container) {
 	const pad = float32(8)
-	content := ui.Rect{
+	content := gfx.Rect{
 		X: bounds.X + pad, Y: bounds.Y + pad,
 		Width: max(bounds.Width-pad*2, 0), Height: max(bounds.Height-pad*2, 0),
 	}
-	tabsBounds := ui.Rect{
+	tabsBounds := gfx.Rect{
 		X: content.X, Y: content.Y, Width: min(float32(320), content.Width),
 		Height: min(float32(34), content.Height),
 	}
@@ -226,7 +226,7 @@ func (state *State) paintRemoteContainerDetailsBody(canvas *ui.Canvas, bounds ui
 	options := state.remoteContainerDetailTabs()
 	components.BeginTabs(canvas, state.Theme(), tabsBounds, options[:], state.remoteContainerDetailTab()).Paint()
 	panelY := tabsBounds.Bottom() + 8
-	panelBounds := ui.Rect{
+	panelBounds := gfx.Rect{
 		X: content.X, Y: panelY, Width: content.Width,
 		Height: max(content.Bottom()-panelY, 0),
 	}
@@ -252,33 +252,33 @@ func (state *State) paintRemoteContainerDetailsBody(canvas *ui.Canvas, bounds ui
 	)
 }
 
-func (state *State) remoteContainerDetailsTextPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) remoteContainerDetailsTextPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	details := &state.remote.containerDetails
 	if !details.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.remoteDetailTextPointer(event, &details.text, hitRemoteContainerDetailsText)
 }
 
-func (state *State) remoteContainerDetailsScrollPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) remoteContainerDetailsScrollPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	details := &state.remote.containerDetails
 	if !details.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.remoteDetailScrollPointer(event, &details.text, hitRemoteContainerDetailsScroll)
 }
 
-func (state *State) remoteContainerDetailsWheel(event ui.ScrollEvent) (ui.EventResult, bool) {
+func (state *State) remoteContainerDetailsWheel(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	details := &state.remote.containerDetails
 	if !details.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.remoteDetailWheel(event, &details.text, hitRemoteContainerDetailsText, hitRemoteContainerDetailsScroll)
 }
 
-func (state *State) remoteContainerDetailsKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) remoteContainerDetailsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if !state.remoteToolsVisible() || !state.remote.containerDetails.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	details := &state.remote.containerDetails
 	if result, handled := state.remoteDetailTextShortcut(event, &details.text); handled {
@@ -292,27 +292,27 @@ func (state *State) remoteContainerDetailsKey(event ui.KeyEvent) (ui.EventResult
 	}
 	options := state.remoteContainerDetailTabs()
 	if event.Target == hitRemoteContainerDetailsOverview || event.Target == hitRemoteContainerDetailsEnvironment {
-		if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat {
+		if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
 			state.selectRemoteContainerDetailTab(event.Target)
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 		if next, handled := components.TabsKeyDown(
 			event.Target, options[:], components.TabsHorizontal, components.DirectionLTR, event.Key,
 		); handled {
 			state.selectRemoteContainerDetailTab(next)
-			return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
+			return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
 		}
 	}
-	if event.Key == ui.KeyTab && event.Modifiers&^ui.ModifierShift == 0 {
-		return ui.EventResult{Handled: true, ContinueTraversal: true}, true
+	if event.Key == gfx.KeyTab && event.Modifiers&^gfx.ModifierShift == 0 {
+		return gfx.EventResult{Handled: true, ContinueTraversal: true}, true
 	}
-	if event.Key == ui.KeyEscape && !event.Repeat {
+	if event.Key == gfx.KeyEscape && !event.Repeat {
 		state.closeRemoteContainerDetails()
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && !event.Repeat && event.Target == hitRemoteContainerDetailsClose {
+	if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat && event.Target == hitRemoteContainerDetailsClose {
 		state.closeRemoteContainerDetails()
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{Handled: true}, true
+	return gfx.EventResult{Handled: true}, true
 }

@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -35,12 +35,12 @@ func TestMonitorOuterPanelLayoutsAndResizeAtDisplayScales(t *testing.T) {
 					check := func() {
 						t.Helper()
 						m, f, term := state.monitorRect, state.contextRect, state.workspacePixelBounds(state.viewport)
-						ordered := []ui.Rect{f, term}
+						ordered := []gfx.Rect{f, term}
 						if side == layoutcore.ContextRight {
-							ordered = []ui.Rect{term, f}
+							ordered = []gfx.Rect{term, f}
 						}
 						if left {
-							ordered = append([]ui.Rect{m}, ordered...)
+							ordered = append([]gfx.Rect{m}, ordered...)
 						} else {
 							ordered = append(ordered, m)
 						}
@@ -65,8 +65,8 @@ func TestMonitorOuterPanelLayoutsAndResizeAtDisplayScales(t *testing.T) {
 					if !left {
 						delta = -delta
 					}
-					state.monitorPointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitMonitorDivider, Button: ui.PointerButtonPrimary, X: x, Y: 200})
-					state.monitorPointer(ui.PointerEvent{Kind: ui.PointerUp, X: x + delta, Y: 200})
+					state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitMonitorDivider, Button: gfx.PointerButtonPrimary, X: x, Y: 200})
+					state.monitorPointer(gfx.PointerEvent{Kind: gfx.PointerUp, X: x + delta, Y: 200})
 					if err = view.Rest(); err != nil {
 						t.Fatal(err)
 					}
@@ -125,7 +125,7 @@ func TestMonitorOuterPanelLayoutsAndResizeAtDisplayScales(t *testing.T) {
 func TestMonitorSideWithFilesClosedAndAIDocked(t *testing.T) {
 	state, _ := monitorFixture(t)
 	id := state.deck.ActiveWorkspace()
-	size := ui.Size{Width: 2000, Height: 900}
+	size := gfx.Size{Width: 2000, Height: 900}
 	state.ai.open = true
 	for _, side := range []layoutcore.ContextSide{layoutcore.ContextLeft, layoutcore.ContextRight} {
 		c, _ := state.deck.Context(id)
@@ -133,7 +133,7 @@ func TestMonitorSideWithFilesClosedAndAIDocked(t *testing.T) {
 		c.MonitorLeft = side == layoutcore.ContextLeft
 		c.Open = false
 		_ = state.deck.SetContext(id, c)
-		state.Paint(&ui.Canvas{}, size)
+		state.Paint(&gfx.Canvas{}, size)
 		term := state.workspacePixelBounds(size)
 		monitor := state.monitorRect
 		if term.Width < minPaneWidth || monitor.X+monitor.Width > size.Width-state.aiReserve(id, size) {
@@ -144,13 +144,13 @@ func TestMonitorSideWithFilesClosedAndAIDocked(t *testing.T) {
 		}
 		c.Open = true
 		_ = state.deck.SetContext(id, c)
-		state.Paint(&ui.Canvas{}, size)
+		state.Paint(&gfx.Canvas{}, size)
 		fileWidth := c.Width
 		x := state.contextRect.X - 40
 		if side == layoutcore.ContextLeft {
 			x = state.contextRect.X + state.contextRect.Width + 40
 		}
-		state.dragContextDivider(ui.PointerEvent{Viewport: size, X: x})
+		state.dragContextDivider(gfx.PointerEvent{Viewport: size, X: x})
 		after, _ := state.deck.Context(id)
 		if after.Width <= fileWidth || after.MonitorWidth != c.MonitorWidth {
 			t.Fatalf("file divider changed wrong panel: %+v", after)
@@ -162,14 +162,14 @@ func TestMonitorMeasuringCentersSpinnerAndText(t *testing.T) {
 	state, s := monitorFixture(t)
 	s.stats.state = remoteStatsMeasuring
 	s.stats.panel.count = 0
-	b := ui.Rect{X: 600, Y: 40, Width: 320, Height: 800}
-	var canvas ui.Canvas
+	b := gfx.Rect{X: 600, Y: 40, Width: 320, Height: 800}
+	var canvas gfx.Canvas
 	state.paintMonitor(&canvas, b, s)
 	found := false
 	for _, text := range canvas.Texts() {
 		if text.Value == state.remoteStatsText(s.stats) {
 			found = true
-			center := text.Bounds.X + canvas.TextWidthWeight(text.Value, 13, ui.WeightRegular)/2
+			center := text.Bounds.X + canvas.TextWidthWeight(text.Value, 13, gfx.WeightRegular)/2
 			if math.Abs(float64(center-(b.X+b.Width/2))) > 1 {
 				t.Fatalf("text not horizontally centered: %v", text.Bounds)
 			}

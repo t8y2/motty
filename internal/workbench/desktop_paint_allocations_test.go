@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -37,8 +37,8 @@ func TestChangedDesktopIdentityPaintDoesNotAllocate(t *testing.T) {
 						}
 					})
 					state.Wake()
-					var canvas ui.Canvas
-					size := ui.Size{Width: 1400, Height: 900}
+					var canvas gfx.Canvas
+					size := gfx.Size{Width: 1400, Height: 900}
 					state.Paint(&canvas, size)
 					forgetID := hitConnForget
 					if protocol == protocolRDP {

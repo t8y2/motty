@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/store"
@@ -151,10 +151,10 @@ func TestRenamingOneTerminalOfASplitTabRenamesOnlyThatTerminal(t *testing.T) {
 	}
 	before := tabTitle()
 
-	state.terminalMenu.pointer = ui.Point{X: 600, Y: 300}
+	state.terminalMenu.pointer = gfx.Point{X: 600, Y: 300}
 	state.openTerminalMenu(third)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTerminalMenuRename); !ok {
 		t.Fatal("the menu of a split tab's terminal has no rename entry")
 	}
@@ -163,7 +163,7 @@ func TestRenamingOneTerminalOfASplitTabRenamesOnlyThatTerminal(t *testing.T) {
 		t.Fatalf("modal %v with %q, want the dialog on the terminal's own name", state.modal, state.tabRename.editor.String())
 	}
 	state.tabRename.editor.Insert("web-logs")
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitTabRenameField})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitTabRenameField})
 	if third.Title != "web-logs" {
 		t.Fatalf("terminal name = %q", third.Title)
 	}

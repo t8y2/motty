@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
@@ -29,7 +29,7 @@ var (
 const maxMenuActions = 4
 
 // hitTerminalMenuAction is the row of one detected action.
-var hitTerminalMenuAction = [maxMenuActions]ui.ID{
+var hitTerminalMenuAction = [maxMenuActions]gfx.ID{
 	tree.ID(terminalMenuHits, "terminal-menu-action-0"), tree.ID(terminalMenuHits, "terminal-menu-action-1"),
 	tree.ID(terminalMenuHits, "terminal-menu-action-2"), tree.ID(terminalMenuHits, "terminal-menu-action-3"),
 }
@@ -42,8 +42,8 @@ const maxSearchQuery = 300
 type terminalMenu struct {
 	open    bool
 	session uint32
-	at      ui.Point // window coordinates of the press that opened it
-	pointer ui.Point // window coordinates of the latest pointer event
+	at      gfx.Point // window coordinates of the press that opened it
+	pointer gfx.Point // window coordinates of the latest pointer event
 	// found is what can be done with the text the menu was opened on.
 	found [maxMenuActions]detected
 	count int
@@ -51,12 +51,12 @@ type terminalMenu struct {
 
 // terminalMenuPointer closes an open menu on a press of any button outside it:
 // the backdrop swallows the press, and only a primary one is also a click.
-func (state *State) terminalMenuPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if !state.terminalMenu.open || event.Target != hitTerminalMenuDismiss || event.Kind != ui.PointerDown || event.Button == ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+func (state *State) terminalMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if !state.terminalMenu.open || event.Target != hitTerminalMenuDismiss || event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	state.terminalMenu.open = false
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 func (state *State) openTerminalMenu(session *Session) {
@@ -180,7 +180,7 @@ func (state *State) terminalMenuSplits(session *Session) bool {
 	return ok && len(state.deck.Panes(workspaceID, nil)) > 1
 }
 
-func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintTerminalMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	session, ok := state.terminalMenuSession()
 	if !ok {
 		state.terminalMenu.open = false
@@ -195,7 +195,7 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	caps := func(action shortcutAction) []string {
 		return state.shortcuts.chords.Chord(action).Keycaps(keys[action][:0])
 	}
-	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	for index := 0; index < state.terminalMenu.count; index++ {
 		found := state.terminalMenu.found[index]
@@ -249,7 +249,7 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 
 	width, height := rows.size(canvas, state.contextMenuTheme())
 	at := state.terminalMenu.at
-	bounds := ui.Rect{
+	bounds := gfx.Rect{
 		X:     min(at.X, max(viewport.Width-width-6, 0)),
 		Y:     min(at.Y, max(viewport.Height-height-6, 0)),
 		Width: width, Height: height,
@@ -281,7 +281,7 @@ func actionIcon(kind actionKind) uint8 {
 }
 
 // clickTerminalMenu runs a menu choice. A press anywhere else only closes the menu.
-func (state *State) clickTerminalMenu(id ui.ID) bool {
+func (state *State) clickTerminalMenu(id gfx.ID) bool {
 	if !state.terminalMenu.open {
 		return false
 	}

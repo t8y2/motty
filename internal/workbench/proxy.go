@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
 
@@ -50,8 +50,8 @@ type proxyEditor struct {
 	// queries stay here so typing filters without opening a second surface.
 	targetSelect components.SingleSelectState
 	jumpSelect   components.SingleSelectState
-	targetPopup  ui.Rect
-	jumpPopup    ui.Rect
+	targetPopup  gfx.Rect
+	jumpPopup    gfx.Rect
 	viaShell     bool
 	relay        text.Editor
 	editing      bool
@@ -238,12 +238,12 @@ func (state *State) closeProxyPickers() {
 // proxyDialogKey routes arrows, Enter, Escape and Tab to the host picker that
 // has the keyboard. It runs before the dialog's own keys, so Enter chooses the
 // highlighted host instead of submitting the form.
-func (state *State) proxyDialogKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) proxyDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNewProxy {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	editor := &state.proxyEditor
-	var result ui.EventResult
+	var result gfx.EventResult
 	switch {
 	case event.Target == hitProxyDialogTarget || event.Target == hitProxyTargetTrigger:
 		editor.jumpSelect.Open = false
@@ -251,16 +251,16 @@ func (state *State) proxyDialogKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	case event.Target == hitProxyDialogJump || event.Target == hitProxyJumpTrigger:
 		editor.targetSelect.Open = false
 		result = editor.jumpSelect.Key(event)
-	case event.Key == ui.KeyEscape && editor.targetSelect.Open:
+	case event.Key == gfx.KeyEscape && editor.targetSelect.Open:
 		result = editor.targetSelect.Key(event)
-	case event.Key == ui.KeyEscape && editor.jumpSelect.Open:
+	case event.Key == gfx.KeyEscape && editor.jumpSelect.Open:
 		result = editor.jumpSelect.Key(event)
-	case event.Key == ui.KeyTab && editor.targetSelect.Open:
+	case event.Key == gfx.KeyTab && editor.targetSelect.Open:
 		result = editor.targetSelect.Key(event)
-	case event.Key == ui.KeyTab && editor.jumpSelect.Open:
+	case event.Key == gfx.KeyTab && editor.jumpSelect.Open:
 		result = editor.jumpSelect.Key(event)
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if result.Handled || result.Repaint {
 		state.syncProxyPickerChoices()
@@ -286,7 +286,7 @@ func (state *State) syncProxyPickerChoices() {
 
 // isProxyPickerTarget reports whether a pointer event belongs to either host
 // picker, so a press beside an open list closes only the list.
-func isProxyPickerTarget(id ui.ID) bool {
+func isProxyPickerTarget(id gfx.ID) bool {
 	return id == hitProxyDialogTarget || id == hitProxyTargetTrigger || id == hitProxyTargetScroll ||
 		id.Scope() == hitProxyTargetItemList ||
 		id == hitProxyDialogJump || id == hitProxyJumpTrigger || id == hitProxyJumpScroll ||
@@ -295,14 +295,14 @@ func isProxyPickerTarget(id ui.ID) bool {
 
 // proxyPickerPointer lets an open list own its scrollbar and closes it on a
 // press anywhere else without discarding the dialog.
-func (state *State) proxyPickerPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) proxyPickerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	editor := &state.proxyEditor
 	if !editor.targetSelect.Open && !editor.jumpSelect.Open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Kind == ui.PointerDown && event.Button == ui.PointerButtonPrimary && !isProxyPickerTarget(event.Target) {
+	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isProxyPickerTarget(event.Target) {
 		state.closeProxyPickers()
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if result := editor.targetSelect.Pointer(event); result.Handled {
 		return result, true
@@ -310,23 +310,23 @@ func (state *State) proxyPickerPointer(event ui.PointerEvent) (ui.EventResult, b
 	if result := editor.jumpSelect.Pointer(event); result.Handled {
 		return result, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // scrollProxyDialog gives the wheel to whichever host list is open, and keeps
 // it from moving the page behind the dialog.
-func (state *State) scrollProxyDialog(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollProxyDialog(event gfx.ScrollEvent) gfx.EventResult {
 	editor := &state.proxyEditor
 	switch {
 	case editor.targetSelect.Open:
-		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.targetPopup) && editor.targetSelect.Wheel(event)}
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.targetPopup) && editor.targetSelect.Wheel(event)}
 	case editor.jumpSelect.Open:
-		return ui.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.jumpPopup) && editor.jumpSelect.Wheel(event)}
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.jumpPopup) && editor.jumpSelect.Wheel(event)}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (state *State) clickProxyDialog(id ui.ID) {
+func (state *State) clickProxyDialog(id gfx.ID) {
 	editor := &state.proxyEditor
 	if editor.targetSelect.Open || editor.jumpSelect.Open {
 		switch {
@@ -433,7 +433,7 @@ func (state *State) closeProxyDialog() {
 	state.modal = modalNone
 }
 
-func (state *State) clickProxies(id ui.ID) {
+func (state *State) clickProxies(id gfx.ID) {
 	if state.activeSection != sectionProxies || state.modal != modalNone {
 		return
 	}

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/monitoring"
 )
 
@@ -52,52 +52,52 @@ func (s *State) dashboardArea() components.ScrollArea {
 	if p := s.dashboardPanel(); p != nil && p.Simple {
 		w = max(w, 960)
 	}
-	return components.BeginScrollArea(nil, s.Theme(), d.body, ui.Size{Width: w, Height: d.content}).Offset(d.scrollX, d.scroll)
+	return components.BeginScrollArea(nil, s.Theme(), d.body, gfx.Size{Width: w, Height: d.content}).Offset(d.scrollX, d.scroll)
 }
-func (s *State) dashboardScroll(e ui.ScrollEvent) ui.EventResult {
+func (s *State) dashboardScroll(e gfx.ScrollEvent) gfx.EventResult {
 	d := &s.dashboard
 	if s.modal == modalDashboardAdd {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if s.modal == modalDashboard {
 		if d.editor.groupOpen {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 		if pointInRect(e.X, e.Y, d.editor.bounds) {
 			before := d.editor.scroll
 			d.editor.scroll = min(max(0, before+e.DeltaY), max(0, d.editor.content-d.editor.bounds.Height))
-			return ui.EventResult{Handled: true, Repaint: before != d.editor.scroll}
+			return gfx.EventResult{Handled: true, Repaint: before != d.editor.scroll}
 		}
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	if s.modal != modalNone || s.activeSection != sectionDashboard || d.menu != 0 || !pointInRect(e.X, e.Y, d.body) {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	before, x := d.scroll, d.scrollX
 	g := s.dashboardArea().Geometry()
 	d.scroll = min(max(0, before+e.DeltaY), g.MaxOffsetY)
 	d.scrollX = min(max(0, x+e.DeltaX), g.MaxOffsetX)
-	return ui.EventResult{Handled: true, Repaint: before != d.scroll || x != d.scrollX}
+	return gfx.EventResult{Handled: true, Repaint: before != d.scroll || x != d.scrollX}
 }
-func (s *State) dashboardKey(e ui.KeyEvent) ui.EventResult {
+func (s *State) dashboardKey(e gfx.KeyEvent) gfx.EventResult {
 	if s.modal == modalDashboardAdd {
-		if e.Key == ui.KeyEscape && !e.Release {
+		if e.Key == gfx.KeyEscape && !e.Release {
 			s.closeModal()
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if e.Release {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if s.modal == modalDashboard {
-		if s.dashboard.editor.groupOpen && e.Key == ui.KeyEscape {
+		if s.dashboard.editor.groupOpen && e.Key == gfx.KeyEscape {
 			s.dashboard.editor.groupOpen = false
-			return ui.EventResult{Handled: true, Repaint: true, Focus: hitDashboardGroupFilter, FocusVisible: true}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitDashboardGroupFilter, FocusVisible: true}
 		}
-		if e.Target == hitDashboardGroupFilter && e.Key == ui.KeyDown {
+		if e.Target == hitDashboardGroupFilter && e.Key == gfx.KeyDown {
 			s.dashboard.editor.groupOpen = true
-			return ui.EventResult{Handled: true, Repaint: true, Focus: hitDashboardGroupList.At(0), FocusVisible: true}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitDashboardGroupList.At(0), FocusVisible: true}
 		}
 		if s.dashboard.editor.page == 1 {
 			move, result := s.dashboard.editor.order.Key(e)
@@ -109,35 +109,35 @@ func (s *State) dashboardKey(e ui.KeyEvent) ui.EventResult {
 		if e.Target == hitDashboardPickTab || e.Target == hitDashboardOrderTab {
 			options := s.dashboardEditorTabs()
 			if next, ok := components.TabsKeyDown(e.Target, options[:], components.TabsHorizontal, components.DirectionLTR, e.Key); ok {
-				return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
+				return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
 			}
 		}
 		if e.Target == hitDashboardHostScroll {
 			editor := &s.dashboard.editor
-			area := components.BeginScrollArea(nil, s.Theme(), editor.bounds, ui.Size{Width: editor.bounds.Width, Height: editor.content})
+			area := components.BeginScrollArea(nil, s.Theme(), editor.bounds, gfx.Size{Width: editor.bounds.Width, Height: editor.content})
 			if _, y, ok := area.ScrollForKey(0, editor.scroll, e.Key, 32); ok {
 				editor.scroll = y
-				return ui.EventResult{Handled: true, Repaint: true}
+				return gfx.EventResult{Handled: true, Repaint: true}
 			}
 		}
-		if e.Key == ui.KeyEscape {
+		if e.Key == gfx.KeyEscape {
 			s.closeModal()
 			s.showNextPrompt()
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		if e.Key == ui.KeyEnter && !e.Repeat && (e.Target == hitDashboardName || e.Target == hitDashboardNote) {
+		if e.Key == gfx.KeyEnter && !e.Repeat && (e.Target == hitDashboardName || e.Target == hitDashboardNote) {
 			s.submitDashboard()
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if s.modal != modalNone || s.activeSection != sectionDashboard {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if e.Target == hitDashboardSimple || e.Target == hitDashboardDetailed {
 		options := s.dashboardModeTabs()
 		if next, ok := components.TabsKeyDown(e.Target, options[:], components.TabsHorizontal, components.DirectionLTR, e.Key); ok {
-			return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
 		}
 	}
 	if e.Target.Scope() == hitDashboardViewList || e.Target.Scope() == hitDashboardSimpleViewList {
@@ -149,17 +149,17 @@ func (s *State) dashboardKey(e ui.KeyEvent) ui.EventResult {
 			orientation = components.TabsVertical
 		}
 		if next, ok := components.TabsKeyDown(e.Target, options[:], orientation, components.DirectionLTR, e.Key); ok {
-			return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
 		}
 	}
 	if s.dashboard.menu != 0 {
 		if next, ok := s.selectScroll(true, hitDashboardDismiss).Navigate(e.Key, e.Target, true); ok {
-			return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
 		}
 	}
-	if e.Key == ui.KeyDown {
+	if e.Key == gfx.KeyDown {
 		menu := 0
-		first := ui.ID{}
+		first := gfx.ID{}
 		switch e.Target {
 		case hitDashboardSwitch:
 			menu = 1
@@ -173,35 +173,35 @@ func (s *State) dashboardKey(e ui.KeyEvent) ui.EventResult {
 		}
 		if menu != 0 {
 			s.dashboard.menu = menu
-			return ui.EventResult{Handled: true, Repaint: true, Focus: first, FocusVisible: true}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: first, FocusVisible: true}
 		}
 	}
-	if e.Key == ui.KeyEscape && s.dashboard.menu != 0 {
+	if e.Key == gfx.KeyEscape && s.dashboard.menu != 0 {
 		s.dashboard.menu = 0
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if e.Target == hitDashboardScroll {
 		g := s.dashboardArea()
 		if x, y, handled := g.ScrollForKey(s.dashboard.scrollX, s.dashboard.scroll, e.Key, 32); handled {
 			s.dashboard.scrollX = x
 			s.dashboard.scroll = y
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
 	// Page keys scroll the page from any of its controls, so following a long
 	// panel does not first require Tab-ing to the scroll viewport. A text field
 	// keeps its own page keys.
-	if (e.Key == ui.KeyPageUp || e.Key == ui.KeyPageDown) && s.EditorFor(e.Target) == nil {
+	if (e.Key == gfx.KeyPageUp || e.Key == gfx.KeyPageDown) && s.EditorFor(e.Target) == nil {
 		g := s.dashboardArea()
 		if x, y, handled := g.ScrollForKey(s.dashboard.scrollX, s.dashboard.scroll, e.Key, 32); handled {
 			s.dashboard.scrollX = x
 			s.dashboard.scroll = y
-			return ui.EventResult{Handled: true, Repaint: true}
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
-func (s *State) dashboardPointer(e ui.PointerEvent) (ui.EventResult, bool) {
+func (s *State) dashboardPointer(e gfx.PointerEvent) (gfx.EventResult, bool) {
 	d := &s.dashboard
 	if s.modal == modalDashboard {
 		editor := &d.editor
@@ -212,31 +212,31 @@ func (s *State) dashboardPointer(e ui.PointerEvent) (ui.EventResult, bool) {
 				return result, true
 			}
 		}
-		area := components.BeginScrollArea(nil, s.Theme(), editor.bounds, ui.Size{Width: editor.bounds.Width, Height: editor.content}).Offset(0, editor.scroll)
-		if e.Kind == ui.PointerDown && e.Target == hitDashboardHostThumb {
+		area := components.BeginScrollArea(nil, s.Theme(), editor.bounds, gfx.Size{Width: editor.bounds.Width, Height: editor.content}).Offset(0, editor.scroll)
+		if e.Kind == gfx.PointerDown && e.Target == hitDashboardHostThumb {
 			d.dragging = true
 			d.grab = e.Y - area.Geometry().VerticalThumb.Y
-			return ui.EventResult{Handled: true, Focus: hitDashboardHostScroll}, true
+			return gfx.EventResult{Handled: true, Focus: hitDashboardHostScroll}, true
 		}
 		if d.dragging {
-			if e.Kind == ui.PointerMove || e.Kind == ui.PointerUp {
+			if e.Kind == gfx.PointerMove || e.Kind == gfx.PointerUp {
 				editor.scroll = area.Geometry().VerticalOffsetForThumb(e.Y - d.grab)
-				if e.Kind == ui.PointerUp {
+				if e.Kind == gfx.PointerUp {
 					d.dragging = false
 				}
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
-			if e.Kind == ui.PointerExit {
+			if e.Kind == gfx.PointerExit {
 				d.dragging = false
 			}
-			return ui.EventResult{Handled: true}, true
+			return gfx.EventResult{Handled: true}, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if s.modal != modalNone || s.activeSection != sectionDashboard {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if e.Kind == ui.PointerDown && (e.Target == hitDashboardThumb || e.Target == hitDashboardXThumb) && e.Button == ui.PointerButtonPrimary {
+	if e.Kind == gfx.PointerDown && (e.Target == hitDashboardThumb || e.Target == hitDashboardXThumb) && e.Button == gfx.PointerButtonPrimary {
 		d.dragging = true
 		d.dragX = e.Target == hitDashboardXThumb
 		g := s.dashboardArea().Geometry()
@@ -244,25 +244,25 @@ func (s *State) dashboardPointer(e ui.PointerEvent) (ui.EventResult, bool) {
 		if d.dragX {
 			d.grab = e.X - g.HorizontalThumb.X
 		}
-		return ui.EventResult{Handled: true, Focus: hitDashboardScroll}, true
+		return gfx.EventResult{Handled: true, Focus: hitDashboardScroll}, true
 	}
 	if !d.dragging {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if e.Kind == ui.PointerMove || e.Kind == ui.PointerUp {
+	if e.Kind == gfx.PointerMove || e.Kind == gfx.PointerUp {
 		g := s.dashboardArea().Geometry()
 		if d.dragX {
 			d.scrollX = min(max(0, (e.X-d.grab-g.HorizontalTrack.X)/max(1, g.HorizontalTrack.Width-g.HorizontalThumb.Width)*g.MaxOffsetX), g.MaxOffsetX)
 		} else {
 			d.scroll = g.VerticalOffsetForThumb(e.Y - d.grab)
 		}
-		if e.Kind == ui.PointerUp {
+		if e.Kind == gfx.PointerUp {
 			d.dragging = false
 		}
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if e.Kind == ui.PointerExit {
+	if e.Kind == gfx.PointerExit {
 		d.dragging = false
 	}
-	return ui.EventResult{Handled: true}, true
+	return gfx.EventResult{Handled: true}, true
 }

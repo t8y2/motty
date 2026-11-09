@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -29,7 +29,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				t.Fatal(err)
 			}
 			defer view.Close()
-			click := func(id ui.ID) {
+			click := func(id gfx.ID) {
 				t.Helper()
 				box := dualHit(t, view, id)
 				if err := view.Click(box.X+box.Width/2, box.Y+box.Height/2); err != nil {
@@ -57,7 +57,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				// The editor scrolls, so a long group does not show every entry at
 				// once: the drag ends on the last one in view.
 				lastEntries := state.toolbars.entries(group)
-				painted := map[ui.ID]bool{}
+				painted := map[gfx.ID]bool{}
 				for _, h := range view.Snapshot().Hits {
 					painted[h.ID] = true
 				}
@@ -153,7 +153,7 @@ func TestToolbarSettingsSmallWindowCanScrollDuringDrag(t *testing.T) {
 		t.Fatal(err)
 	}
 	box := state.toolbarEditor.geometry.Viewport
-	if err := view.Scroll(ui.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: 1000}); err != nil {
+	if err := view.Scroll(gfx.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: 1000}); err != nil {
 		t.Fatal(err)
 	}
 	b := dualHit(t, view, hitToolbarHandles.At(toolbarEntryIndex(toolbarTerminal, last)))
@@ -167,7 +167,7 @@ func TestToolbarSettingsSmallWindowCanScrollDuringDrag(t *testing.T) {
 	if entries[len(entries)-1].Key != first {
 		t.Fatal("scrolling during a drag changed the wrong target")
 	}
-	for _, id := range []ui.ID{hitToolbarEnableAll, hitToolbarDisableAll, hitToolbarReset, hitToolbarSettingsClose} {
+	for _, id := range []gfx.ID{hitToolbarEnableAll, hitToolbarDisableAll, hitToolbarReset, hitToolbarSettingsClose} {
 		bounds := dualHit(t, view, id)
 		if bounds.Y < 0 || bounds.Y+bounds.Height > 480 {
 			t.Fatal("small window made a footer action unreachable")

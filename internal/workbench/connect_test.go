@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
 
@@ -14,7 +14,7 @@ func typeSearch(state *State, value string) {
 	state.syncVisible()
 }
 
-func connectHit(t *testing.T, state *State) ui.Hit {
+func connectHit(t *testing.T, state *State) gfx.Hit {
 	t.Helper()
 	canvas, _ := paintedTexts(state)
 	hit, ok := hitByID(canvas, hitConnect)
@@ -24,8 +24,8 @@ func connectHit(t *testing.T, state *State) ui.Hit {
 	return hit
 }
 
-func doubleClick(state *State, target ui.ID) ui.EventResult {
-	return pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2, Target: target})
+func doubleClick(state *State, target gfx.ID) gfx.EventResult {
+	return pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: target})
 }
 
 func TestConnectIsDisabledUntilTheSearchBoxHoldsSomething(t *testing.T) {
@@ -183,7 +183,7 @@ func TestTypingNarrowsTheHostListAndTheCount(t *testing.T) {
 	if !contains(texts, "Production") || !contains(texts, "Staging") || contains(texts, "Router") {
 		t.Fatalf("painted rows: %v", texts)
 	}
-	for _, id := range []ui.ID{hitHostList.At(1), hitHostList.At(2)} {
+	for _, id := range []gfx.ID{hitHostList.At(1), hitHostList.At(2)} {
 		if _, ok := hitByID(canvas, id); !ok {
 			t.Errorf("row %d is not clickable", id)
 		}
@@ -248,15 +248,15 @@ func TestDoubleClickingARowConnectsToIt(t *testing.T) {
 		t.Fatalf("single click: dials=%d selected=%d", len(world.configs), state.selectedHostID)
 	}
 	// Presses with another count, or on something else, are not double clicks.
-	for _, event := range []ui.PointerEvent{
-		{Kind: ui.PointerDown, ClickCount: 1, Target: hitHostList.At(2)},
-		{Kind: ui.PointerDown, ClickCount: 3, Target: hitHostList.At(2)},
-		{Kind: ui.PointerUp, ClickCount: 2, Target: hitHostList.At(2)},
-		{Kind: ui.PointerMove, ClickCount: 0, Target: hitHostList.At(2)},
-		{Kind: ui.PointerDown, ClickCount: 2, Target: hitAddHost},
-		{Kind: ui.PointerDown, ClickCount: 2, Target: hitKeychain},
-		{Kind: ui.PointerDown, ClickCount: 2, Target: hitTabList.At(1)},
-		{Kind: ui.PointerDown, ClickCount: 2, Target: ui.ID{}},
+	for _, event := range []gfx.PointerEvent{
+		{Kind: gfx.PointerDown, ClickCount: 1, Target: hitHostList.At(2)},
+		{Kind: gfx.PointerDown, ClickCount: 3, Target: hitHostList.At(2)},
+		{Kind: gfx.PointerUp, ClickCount: 2, Target: hitHostList.At(2)},
+		{Kind: gfx.PointerMove, ClickCount: 0, Target: hitHostList.At(2)},
+		{Kind: gfx.PointerDown, ClickCount: 2, Target: hitAddHost},
+		{Kind: gfx.PointerDown, ClickCount: 2, Target: hitKeychain},
+		{Kind: gfx.PointerDown, ClickCount: 2, Target: hitTabList.At(1)},
+		{Kind: gfx.PointerDown, ClickCount: 2, Target: gfx.ID{}},
 	} {
 		if result := pointer(state, event); result.Handled || len(world.configs) != 0 {
 			t.Fatalf("%+v connected or was handled", event)
@@ -265,7 +265,7 @@ func TestDoubleClickingARowConnectsToIt(t *testing.T) {
 
 	// Two quick right clicks count as a double press, but only the primary
 	// button connects.
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, ClickCount: 2, Target: hitHostList.At(2)})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, ClickCount: 2, Target: hitHostList.At(2)})
 	if len(world.configs) != 0 {
 		t.Fatalf("a right double press connected: %+v", world.configs)
 	}
@@ -298,7 +298,7 @@ func TestHostCatalogPointerDoesNotActivateAnOpenWorkspace(t *testing.T) {
 	state.newHostSession(state.hosts[1])
 	state.Click(hitHosts)
 
-	pointer(state, ui.PointerEvent{Kind: ui.PointerMove, Target: hitHostGroupRowList.At(0)})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitHostGroupRowList.At(0)})
 
 	if state.activeSection != sectionHosts {
 		t.Fatalf("section = %d; moving over the host catalog activated an open workspace", state.activeSection)
@@ -308,8 +308,8 @@ func TestHostCatalogPointerDoesNotActivateAnOpenWorkspace(t *testing.T) {
 func TestEnterConnectsTheFocusedRowTheSelectedHostAndTheSearchBox(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
-	enter := func(target ui.ID) ui.EventResult {
-		return state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: target})
+	enter := func(target gfx.ID) gfx.EventResult {
+		return state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: target})
 	}
 
 	// A focused row connects that row.
@@ -320,7 +320,7 @@ func TestEnterConnectsTheFocusedRowTheSelectedHostAndTheSearchBox(t *testing.T) 
 
 	// Nothing focused: the selected host.
 	state.selectedHostID = 3
-	if result := enter(ui.ID{}); !result.Handled || len(world.configs) != 2 || world.configs[1].Host != "192.168.1.1" {
+	if result := enter(gfx.ID{}); !result.Handled || len(world.configs) != 2 || world.configs[1].Host != "192.168.1.1" {
 		t.Fatalf("Enter with the selected host: %+v dials=%+v", result, world.configs)
 	}
 	state.Click(hitHosts)
@@ -335,7 +335,7 @@ func TestEnterConnectsTheFocusedRowTheSelectedHostAndTheSearchBox(t *testing.T) 
 	// Enter in an empty search box, or on a button, does not connect and is
 	// left to the runtime (which activates a focused button).
 	state.search = text.Editor{}
-	for _, target := range []ui.ID{hitSearch, hitAddHost, hitKeychain} {
+	for _, target := range []gfx.ID{hitSearch, hitAddHost, hitKeychain} {
 		if result := enter(target); result.Handled && target != hitSearch {
 			t.Errorf("Enter on %d was taken", target)
 		}
@@ -348,15 +348,15 @@ func TestEnterConnectsTheFocusedRowTheSelectedHostAndTheSearchBox(t *testing.T) 
 	// selected host hidden by the search box is not connected blindly.
 	typeSearch(state, "router")
 	state.selectedHostID = 1
-	if result := enter(ui.ID{}); result.Handled || len(world.configs) != 3 {
+	if result := enter(gfx.ID{}); result.Handled || len(world.configs) != 3 {
 		t.Fatalf("Enter connected a host the search box hides: %+v", result)
 	}
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitHostList.At(1), Repeat: true}); result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitHostList.At(1), Repeat: true}); result.Handled {
 		t.Fatal("a repeated Enter was taken")
 	}
 	// Dialogs keep Enter for themselves.
 	state.Click(hitAddHost)
-	if result := enter(ui.ID{}); result.Handled || len(world.configs) != 3 {
+	if result := enter(gfx.ID{}); result.Handled || len(world.configs) != 3 {
 		t.Fatal("Enter behind a dialog connected")
 	}
 }
@@ -364,14 +364,14 @@ func TestEnterConnectsTheFocusedRowTheSelectedHostAndTheSearchBox(t *testing.T) 
 func TestEscapeEmptiesTheSearchBox(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	typeSearch(state, "stag")
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitSearch}); !result.Handled || state.search.String() != "" {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitSearch}); !result.Handled || state.search.String() != "" {
 		t.Fatalf("Escape: %+v text=%q", result, state.search.String())
 	}
 	if len(state.visible) != 3 {
 		t.Fatal("clearing the box did not restore the list")
 	}
 	// With nothing to clear, Escape is left alone.
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitSearch}); result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitSearch}); result.Handled {
 		t.Fatal("Escape on an empty box was swallowed")
 	}
 }
@@ -398,7 +398,7 @@ func TestSearchFieldDeclaresTheGeometryOfItsOwnText(t *testing.T) {
 	typeSearch(state, "prod")
 	canvas, _ := paintedTexts(state)
 	hit, _ := hitByID(canvas, hitSearch)
-	var painted ui.Text
+	var painted gfx.Text
 	for _, text := range canvas.Texts() {
 		if text.Value == "prod" {
 			painted = text
@@ -430,8 +430,8 @@ func TestSearchFieldDeclaresTheGeometryOfItsOwnText(t *testing.T) {
 func TestSearchBoxKeepsSteadyStatePaintAllocationFree(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	typeSearch(state, "servers")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()

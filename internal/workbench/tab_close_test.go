@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // confirmRunningClose answers the question that closing a session which still
@@ -78,19 +78,19 @@ func TestMiddleClickClosesTheTargetTabWithoutSwitchingTabs(t *testing.T) {
 			if orientation.vertical {
 				state.setTabOrientation(tabsVertical)
 			}
-			var canvas ui.Canvas
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-			for _, target := range []ui.ID{hitTabList.At(int(tabs[1])), hitTabCloseList.At(int(tabs[3]))} {
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+			for _, target := range []gfx.ID{hitTabList.At(int(tabs[1])), hitTabCloseList.At(int(tabs[3]))} {
 				if _, ok := hitByID(&canvas, target); !ok {
 					t.Fatalf("tab target %v is not painted", target)
 				}
 			}
 			active := state.deck.ActiveWorkspace()
-			result := pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonMiddle, Target: hitTabList.At(int(tabs[1]))})
+			result := pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonMiddle, Target: hitTabList.At(int(tabs[1]))})
 			if !result.Handled || !result.Repaint || state.modal != modalNone || state.deck.ActiveWorkspace() != active {
 				t.Fatalf("middle press on inactive tab: result=%+v modal=%d active=%d", result, state.modal, state.deck.ActiveWorkspace())
 			}
-			result = pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonMiddle, Target: hitTabCloseList.At(int(tabs[3]))})
+			result = pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonMiddle, Target: hitTabCloseList.At(int(tabs[3]))})
 			if !result.Handled || !result.Repaint || state.modal != modalNone {
 				t.Fatalf("middle press on close button: result=%+v modal=%d", result, state.modal)
 			}
@@ -104,7 +104,7 @@ func TestMiddleClickClosesTheTargetTabWithoutSwitchingTabs(t *testing.T) {
 func TestMiddleClickRespectsRunningAndLockedTabConfirmations(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	id := state.deck.ActiveWorkspace()
-	press := ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonMiddle, Target: hitTabList.At(int(id))}
+	press := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonMiddle, Target: hitTabList.At(int(id))}
 	pointer(state, press)
 	if state.modal != modalCloseTabs || len(state.tabsClose.running) != 1 || len(tabsOf(state)) != 1 {
 		t.Fatal("middle press bypassed running-session confirmation")

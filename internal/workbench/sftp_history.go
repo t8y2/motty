@@ -4,7 +4,7 @@ import (
 	"slices"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 )
@@ -15,9 +15,9 @@ var (
 	hitSFTPHistoryBack       = tree.ID(sftpHits, "history-back")
 	hitSFTPHistoryForward    = tree.ID(sftpHits, "history-forward")
 	sftpRecentHits           = tree.Sub(sftpHits, tree.Name("recent"))
-	sftpWindowHistoryBack    = [2]ui.ID{tree.ID(sftpWindowLocal, "history-back"), tree.ID(sftpWindowRemote, "history-back")}
-	sftpWindowHistoryForward = [2]ui.ID{tree.ID(sftpWindowLocal, "history-forward"), tree.ID(sftpWindowRemote, "history-forward")}
-	sftpWindowRecentHits     = [2]ui.Scope{tree.Sub(sftpWindowLocal, tree.Name("recent")), tree.Sub(sftpWindowRemote, tree.Name("recent"))}
+	sftpWindowHistoryBack    = [2]gfx.ID{tree.ID(sftpWindowLocal, "history-back"), tree.ID(sftpWindowRemote, "history-back")}
+	sftpWindowHistoryForward = [2]gfx.ID{tree.ID(sftpWindowLocal, "history-forward"), tree.ID(sftpWindowRemote, "history-forward")}
+	sftpWindowRecentHits     = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("recent")), tree.Sub(sftpWindowRemote, tree.Name("recent"))}
 )
 
 type sftpPlace struct {
@@ -307,41 +307,41 @@ func (state *State) cancelSFTPLocalNavigation(view *sftpView) {
 	state.retireLocalListingStatus(view)
 }
 
-func sftpHistoryChord(event ui.KeyEvent) (int, bool) {
-	if event.Release || event.Repeat || event.Modifiers != ui.ModifierAlt {
+func sftpHistoryChord(event gfx.KeyEvent) (int, bool) {
+	if event.Release || event.Repeat || event.Modifiers != gfx.ModifierAlt {
 		return 0, false
 	}
 	switch event.Key {
-	case ui.KeyLeft:
+	case gfx.KeyLeft:
 		return -1, true
-	case ui.KeyRight:
+	case gfx.KeyRight:
 		return 1, true
 	}
 	return 0, false
 }
 
-func (state *State) sftpHistoryKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) sftpHistoryKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	delta, chord := sftpHistoryChord(event)
 	if !chord || state.activeSection != sectionTerminal || state.modal != modalNone || state.transfers.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	target := event.Target
 	if target.Scope() != hitSFTPEntryList && target.Scope() != hitSFTPBreadcrumbList && target != hitSFTPPathEdit && target != hitSFTPHeaderMore && target != hitSFTPUp && target != hitSFTPRefresh {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || session.files == nil || session.files.editPath != "" || session.files.dialog != sftpDialogNone {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.navigateSFTPHistory(session.files, session.files.local, delta)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 func (state *State) sftpHeaderMenuAvailable(view *sftpView) bool {
 	return state.modal == modalNone && !state.transfers.open && view != nil && view.dialog == sftpDialogNone && view.editPath == ""
 }
 
-func (state *State) paintSFTPHistoryMenu(menu *components.DropdownMenu, view *sftpView, local bool, back, forward ui.ID, recent ui.Scope) {
+func (state *State) paintSFTPHistoryMenu(menu *components.DropdownMenu, view *sftpView, local bool, back, forward gfx.ID, recent gfx.Scope) {
 	folder := &view.sftpFolder
 	if local {
 		folder = &view.lfolder
@@ -361,7 +361,7 @@ func (state *State) paintSFTPHistoryMenu(menu *components.DropdownMenu, view *sf
 	menu.AddSeparator()
 }
 
-func (state *State) clickSFTPHistory(view *sftpView, local bool, id, back, forward ui.ID, recent ui.Scope) bool {
+func (state *State) clickSFTPHistory(view *sftpView, local bool, id, back, forward gfx.ID, recent gfx.Scope) bool {
 	switch id {
 	case back:
 		state.navigateSFTPHistory(view, local, -1)

@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
 const testBackupPassword = "correct horse battery"
@@ -127,7 +127,7 @@ func TestABackupFileCarriesHostsSettingsKeysAndPasswordsToAnotherComputer(t *tes
 
 func TestBackupRestoresCustomPasteShortcutOnANewDevice(t *testing.T) {
 	source, _, file := backupTestState(t)
-	want := keymap.Chord{Modifiers: ui.ModifierAlt | ui.ModifierShift, Char: 'v'}
+	want := keymap.Chord{Modifiers: gfx.ModifierAlt | gfx.ModifierShift, Char: 'v'}
 	source.shortcuts.unbind(shortcutPaste)
 	if _, ok := source.shortcuts.bind(shortcutPaste, want); !ok {
 		t.Fatal("cannot configure a custom paste shortcut")
@@ -162,7 +162,7 @@ func TestOldBackupLeavesDeviceShortcutsUntouched(t *testing.T) {
 	}
 	document.ShortcutPreferences = nil
 	target, _, _ := backupTestState(t)
-	want := keymap.Chord{Modifiers: ui.ModifierAlt | ui.ModifierShift, Char: 'v'}
+	want := keymap.Chord{Modifiers: gfx.ModifierAlt | gfx.ModifierShift, Char: 'v'}
 	target.shortcuts.unbind(shortcutPaste)
 	if _, ok := target.shortcuts.bind(shortcutPaste, want); !ok {
 		t.Fatal("cannot configure a custom paste shortcut")
@@ -248,9 +248,9 @@ func TestARestoreKeepsTheLocalWebDAVServer(t *testing.T) {
 
 // paintedSyncHit paints the settings page and returns the control the user
 // would see, so a button that is never drawn cannot be clicked by a test either.
-func paintedSyncHit(t *testing.T, state *State, id ui.ID) ui.Hit {
+func paintedSyncHit(t *testing.T, state *State, id gfx.ID) gfx.Hit {
 	t.Helper()
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	hit, found := hitByID(canvas, id)
 	if !found {
 		t.Fatalf("hit %d is not painted on the backup page", id)
@@ -259,7 +259,7 @@ func paintedSyncHit(t *testing.T, state *State, id ui.ID) ui.Hit {
 }
 
 // clickPainted clicks a control only if the settings page draws it enabled.
-func clickPainted(t *testing.T, state *State, id ui.ID) {
+func clickPainted(t *testing.T, state *State, id gfx.ID) {
 	t.Helper()
 	if hit := paintedSyncHit(t, state, id); hit.Disabled {
 		t.Fatalf("%q is disabled", hit.Label)
@@ -306,7 +306,7 @@ func TestWebDAVFormTestsTheTypedConnectionWithoutSaving(t *testing.T) {
 	if state.status != state.messages.Tools.SyncTestOK || state.form.dialogError != "" || state.form.testNote != state.messages.Tools.SyncTestOK {
 		t.Fatalf("status %q, form error %q, note %q", state.status, state.form.dialogError, state.form.testNote)
 	}
-	if _, texts := paintAt(state, ui.Size{Width: 1400, Height: 900}); !contains(texts, state.messages.Tools.SyncTestOK) {
+	if _, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900}); !contains(texts, state.messages.Tools.SyncTestOK) {
 		t.Fatal("the dialog does not say the test went through")
 	}
 	if state.modal != modalForm || state.sync.configured() {
@@ -754,7 +754,7 @@ func configureSync(t *testing.T, state *State, server *httptest.Server) {
 	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
 }
 
-func syncAndWait(t *testing.T, state *State, id ui.ID, want string) {
+func syncAndWait(t *testing.T, state *State, id gfx.ID, want string) {
 	t.Helper()
 	state.status = ""
 	state.Click(id)
@@ -966,23 +966,23 @@ func TestSyncButtonsAreIdleWithoutAServer(t *testing.T) {
 
 func TestTheBackupPageAndTheFormPaintTheirControls(t *testing.T) {
 	state, _, _ := backupTestState(t)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1280, Height: 800}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1280, Height: 800}
 	state.Paint(&canvas, size)
-	for _, id := range []ui.ID{hitBackupExport, hitBackupRestore, hitSyncConfigure} {
+	for _, id := range []gfx.ID{hitBackupExport, hitBackupRestore, hitSyncConfigure} {
 		if hit, ok := hitByID(&canvas, id); !ok || hit.Disabled {
 			t.Fatalf("control %d: found %v", id, ok)
 		}
 	}
-	for _, id := range []ui.ID{hitSyncNow} {
+	for _, id := range []gfx.ID{hitSyncNow} {
 		if hit, ok := hitByID(&canvas, id); ok && !hit.Disabled {
 			t.Fatalf("control %d is usable without a server", id)
 		}
 	}
 	state.Click(hitSyncConfigure)
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
-	for _, id := range []ui.ID{hitFormFieldList.At(0), hitFormFieldList.At(4), hitFormSubmit, hitFormCancel} {
+	for _, id := range []gfx.ID{hitFormFieldList.At(0), hitFormFieldList.At(4), hitFormSubmit, hitFormCancel} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Fatalf("form control %d is not painted", id)
 		}
@@ -991,6 +991,6 @@ func TestTheBackupPageAndTheFormPaintTheirControls(t *testing.T) {
 		t.Fatalf("initial focus %d", canvas.InitialFocus())
 	}
 	state.form.dialogError = "a problem"
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 }

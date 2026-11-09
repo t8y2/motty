@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/term"
 )
 
 func selectionState() (*State, *Session, terminalGeometry) {
 	const cellWidth, cellHeight = float32(8), float32(16)
-	size := ui.Size{
+	size := gfx.Size{
 		Width:  2*termPadX + 20*cellWidth,
 		Height: windowBarHeight + infoBarHeight + termPadTop + 5*cellHeight + termPadBottom,
 	}
@@ -41,28 +41,28 @@ func TestDraggingTerminalCellsSelectsAndCopiesText(t *testing.T) {
 	startX, startY := cellPoint(geometry, 0, 2, state.cellWidth, state.cellHeight)
 	endX, endY := cellPoint(geometry, 1, 2, state.cellWidth, state.cellHeight)
 
-	if result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit,
+	if result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit,
 		X: startX, Y: startY, Viewport: state.viewport,
 	}); !result.Handled {
 		t.Fatalf("down = %+v", result)
 	}
-	if result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true,
+	if result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true,
 		X: endX, Y: endY, Viewport: state.viewport,
 	}); !result.Handled || !result.Repaint {
 		t.Fatalf("move = %+v", result)
 	}
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true,
 		X: endX, Y: endY, Viewport: state.viewport,
 	})
 
-	result := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"})
+	result := state.Shortcut(gfx.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"})
 	if !result.Handled || result.Repaint || result.ClipboardText != "pha beta\ngam" {
 		t.Fatalf("copy shortcut = %+v", result)
 	}
-	result = state.Key(ui.KeyEvent{Target: hit, Modifiers: ui.ModifierControl | ui.ModifierShift, Text: "c"})
+	result = state.Key(gfx.KeyEvent{Target: hit, Modifiers: gfx.ModifierControl | gfx.ModifierShift, Text: "c"})
 	if result.ClipboardText != "pha beta\ngam" {
 		t.Fatalf("Control+Shift+C = %+v", result)
 	}
@@ -73,14 +73,14 @@ func TestDoubleClickSelectsAUnicodeWord(t *testing.T) {
 	session.term.write([]byte("name 世界 next"))
 	hit := hitTerminalList.At(int(session.ID))
 	x, y := cellPoint(geometry, 0, 6, state.cellWidth, state.cellHeight)
-	result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2, Target: hit,
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: hit,
 		X: x, Y: y, Viewport: state.viewport,
 	})
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("double click = %+v", result)
 	}
-	if copied := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText; copied != "世界" {
+	if copied := state.Shortcut(gfx.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText; copied != "世界" {
 		t.Fatalf("copied %q", copied)
 	}
 	from, to, selected := session.term.selection.span(session.term.screen.LineNumber(0), session.term.screen.Row(0), 20)
@@ -141,7 +141,7 @@ func TestTerminalPointerClampsToTheScreensCurrentRows(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			state, session, _ := selectionState()
-			state.viewport = ui.Size{
+			state.viewport = gfx.Size{
 				Width:  state.viewport.Width + 24*state.cellWidth,
 				Height: state.viewport.Height + 24*state.cellHeight,
 			}
@@ -149,8 +149,8 @@ func TestTerminalPointerClampsToTheScreensCurrentRows(t *testing.T) {
 			hit := hitTerminalList.At(int(session.ID))
 			cols, rows := session.term.screen.Size()
 
-			result := state.Pointer(ui.PointerEvent{
-				Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit,
+			result := state.Pointer(gfx.PointerEvent{
+				Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit,
 				X: test.x(geometry, state.cellWidth, state.cellHeight),
 				Y: test.y(geometry, state.cellWidth, state.cellHeight), Viewport: state.viewport,
 			})
@@ -185,7 +185,7 @@ func TestTerminalChangesClearASelection(t *testing.T) {
 	}{
 		{"output", func(_ *State, terminal *terminal) { terminal.write([]byte("new")) }},
 		{"input", func(_ *State, terminal *terminal) { terminal.shell = &fakeShell{}; terminal.send([]byte("x")) }},
-		{"resize", func(state *State, _ *terminal) { state.Resize(ui.Size{Width: 400, Height: 300}) }},
+		{"resize", func(state *State, _ *terminal) { state.Resize(gfx.Size{Width: 400, Height: 300}) }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -212,26 +212,26 @@ func TestTerminalMouseReportingSendsCellEvents(t *testing.T) {
 	startX, startY := cellPoint(geometry, 1, 2, state.cellWidth, state.cellHeight)
 	endX, endY := cellPoint(geometry, 3, 5, state.cellWidth, state.cellHeight)
 
-	down := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit,
-		Modifiers: ui.ModifierControl, X: startX, Y: startY, Viewport: state.viewport,
+	down := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit,
+		Modifiers: gfx.ModifierControl, X: startX, Y: startY, Viewport: state.viewport,
 	})
 	if !down.Handled || shell.typed() != "\x1b[<16;3;2M" {
 		t.Fatalf("down=%+v input=%q", down, shell.typed())
 	}
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, Target: hit, Captured: true,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Target: hit, Captured: true,
 		X: startX, Y: startY, Viewport: state.viewport,
 	})
 	if shell.typed() != "\x1b[<16;3;2M" {
 		t.Fatalf("same-cell motion sent %q", shell.typed())
 	}
-	move := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, Target: hit, Captured: true,
-		Modifiers: ui.ModifierMeta, X: endX, Y: endY, Viewport: state.viewport,
+	move := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Target: hit, Captured: true,
+		Modifiers: gfx.ModifierMeta, X: endX, Y: endY, Viewport: state.viewport,
 	})
-	up := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true,
+	up := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true,
 		X: endX, Y: endY, Viewport: state.viewport,
 	})
 	if !move.Handled || !up.Handled || shell.typed() != "\x1b[<16;3;2M\x1b[<40;6;4M\x1b[<0;6;4m" {
@@ -246,11 +246,11 @@ func TestTerminalPointerExitReleasesRemoteDragAtLastCell(t *testing.T) {
 	session.term.screen.Write([]byte("\x1b[?1002h\x1b[?1006h"))
 	hit := hitTerminalList.At(int(session.ID))
 	x, y := cellPoint(geometry, 2, 4, state.cellWidth, state.cellHeight)
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit,
 		X: x, Y: y, Viewport: state.viewport,
 	})
-	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerExit, Target: hit, Captured: true})
+	result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerExit, Target: hit, Captured: true})
 	if !result.Handled || session.term.mouseButton != term.MouseButtonNone || shell.typed() != "\x1b[<0;5;3M\x1b[<0;5;3m" {
 		t.Fatalf("result=%+v button=%d input=%q", result, session.term.mouseButton, shell.typed())
 	}
@@ -266,16 +266,16 @@ func TestShiftBypassesTerminalMouseReportingForSelection(t *testing.T) {
 	startX, startY := cellPoint(geometry, 0, 1, state.cellWidth, state.cellHeight)
 	endX, endY := cellPoint(geometry, 0, 4, state.cellWidth, state.cellHeight)
 
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit,
-		Modifiers: ui.ModifierShift, X: startX, Y: startY, Viewport: state.viewport,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit,
+		Modifiers: gfx.ModifierShift, X: startX, Y: startY, Viewport: state.viewport,
 	})
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, Target: hit, Captured: true,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Target: hit, Captured: true,
 		X: endX, Y: endY, Viewport: state.viewport,
 	})
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true,
 		X: endX, Y: endY, Viewport: state.viewport,
 	})
 	if shell.typed() != "" || !session.term.selection.selected {
@@ -290,7 +290,7 @@ func TestTerminalAnyMotionReportsOnlyNewCells(t *testing.T) {
 	session.term.screen.Write([]byte("\x1b[?1003h\x1b[?1015h"))
 	hit := hitTerminalList.At(int(session.ID))
 	x, y := cellPoint(geometry, 2, 7, state.cellWidth, state.cellHeight)
-	event := ui.PointerEvent{Kind: ui.PointerMove, Target: hit, X: x, Y: y, Viewport: state.viewport}
+	event := gfx.PointerEvent{Kind: gfx.PointerMove, Target: hit, X: x, Y: y, Viewport: state.viewport}
 	if result := state.Pointer(event); !result.Handled {
 		t.Fatalf("motion = %+v", result)
 	}
@@ -306,8 +306,8 @@ func TestTerminalMouseWheelPrecedesAlternateScroll(t *testing.T) {
 	session.term.shell = shell
 	session.term.screen.Write([]byte("\x1b[?1049h\x1b[?1007h\x1b[?1002h\x1b[?1006h"))
 	x, y := cellPoint(geometry, 2, 7, state.cellWidth, state.cellHeight)
-	result := state.Scroll(ui.ScrollEvent{
-		Modifiers: ui.ModifierControl,
+	result := state.Scroll(gfx.ScrollEvent{
+		Modifiers: gfx.ModifierControl,
 		X:         x, Y: y, DeltaX: state.cellWidth, DeltaY: -state.cellHeight,
 		Viewport: state.viewport, Target: hitTerminalList.At(int(session.ID)), Precise: true,
 	})
@@ -325,8 +325,8 @@ func TestShiftWheelBypassesMouseReportingForScrollback(t *testing.T) {
 	}
 	session.term.screen.Write([]byte("\x1b[?1003h\x1b[?1006h"))
 	x, y := cellPoint(geometry, 2, 7, state.cellWidth, state.cellHeight)
-	result := state.Scroll(ui.ScrollEvent{
-		Modifiers: ui.ModifierShift,
+	result := state.Scroll(gfx.ScrollEvent{
+		Modifiers: gfx.ModifierShift,
 		X:         x, Y: y, DeltaY: -state.cellHeight,
 		Viewport: state.viewport, Target: hitTerminalList.At(int(session.ID)), Precise: true,
 	})
@@ -341,10 +341,10 @@ func TestCopyOnSelectCopiesWhenTheMouseLetsGo(t *testing.T) {
 	hit := hitTerminalList.At(int(session.ID))
 	startX, startY := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
 	endX, endY := cellPoint(geometry, 0, 4, state.cellWidth, state.cellHeight)
-	drag := func() ui.EventResult {
-		state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
-		state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
-		return state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
+	drag := func() gfx.EventResult {
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
+		return state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: endX, Y: endY, Viewport: state.viewport})
 	}
 
 	if result := drag(); result.ClipboardText != "" {
@@ -355,13 +355,13 @@ func TestCopyOnSelectCopiesWhenTheMouseLetsGo(t *testing.T) {
 		t.Fatalf("selected text copied as %q", result.ClipboardText)
 	}
 	x, y := cellPoint(geometry, 0, 7, state.cellWidth, state.cellHeight)
-	result := state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2, Target: hit, X: x, Y: y, Viewport: state.viewport})
+	result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: hit, X: x, Y: y, Viewport: state.viewport})
 	if result.ClipboardText != "beta" {
 		t.Fatalf("a double-clicked word copied as %q", result.ClipboardText)
 	}
 	// A click that selects nothing leaves the clipboard alone.
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
-	result = state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: startX, Y: startY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
+	result = state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: startX, Y: startY, Viewport: state.viewport})
 	if result.ClipboardText != "" {
 		t.Fatalf("a plain click copied %q", result.ClipboardText)
 	}
@@ -374,8 +374,8 @@ func TestRightClickPastesOnlyWhenChosenAndShiftKeepsTheMenu(t *testing.T) {
 	state.options.ClipboardText = func() (string, error) { return "ls -la", nil }
 	hit := hitTerminalList.At(int(session.ID))
 	x, y := cellPoint(geometry, 0, 3, state.cellWidth, state.cellHeight)
-	rightClick := func(modifiers ui.Modifiers) {
-		state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Modifiers: modifiers, Target: hit, X: x, Y: y, Viewport: state.viewport})
+	rightClick := func(modifiers gfx.Modifiers) {
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Modifiers: modifiers, Target: hit, X: x, Y: y, Viewport: state.viewport})
 	}
 
 	rightClick(0)
@@ -389,7 +389,7 @@ func TestRightClickPastesOnlyWhenChosenAndShiftKeepsTheMenu(t *testing.T) {
 	if state.terminalMenu.open || string(shell.input) != "ls -la" {
 		t.Fatalf("right click did not paste: open=%v input=%q", state.terminalMenu.open, shell.input)
 	}
-	rightClick(ui.ModifierShift)
+	rightClick(gfx.ModifierShift)
 	if !state.terminalMenu.open {
 		t.Fatal("Shift+right click no longer reaches the menu")
 	}
@@ -409,15 +409,15 @@ func TestRightClickCopiesSelectionInsteadOfPasting(t *testing.T) {
 	state.options.ClipboardText = func() (string, error) { return "paste", nil }
 	state.terminalRightClickPaste = true
 	x, y := cellPoint(geometry, 0, 8, state.cellWidth, state.cellHeight)
-	click := func(modifiers ui.Modifiers) {
-		state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Modifiers: modifiers,
+	click := func(modifiers gfx.Modifiers) {
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Modifiers: modifiers,
 			Target: hitTerminalList.At(int(session.ID)), X: x, Y: y, Viewport: state.viewport})
 	}
 	click(0)
 	if copied != "hello" || len(shell.input) != 0 || state.terminalMenu.open {
 		t.Fatalf("selected right click: copied=%q input=%q menu=%v", copied, shell.input, state.terminalMenu.open)
 	}
-	click(ui.ModifierShift)
+	click(gfx.ModifierShift)
 	if !state.terminalMenu.open || len(shell.input) != 0 {
 		t.Fatal("Shift+right click with a selection did not open the menu")
 	}
@@ -440,11 +440,11 @@ func TestFramesArrivingEarlyDoNotHalveTheDragScrollRate(t *testing.T) {
 	terminal.screen.Scroll(200)
 	hit := hitTerminalList.At(int(session.ID))
 	x, y := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: x, Y: y, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: x, Y: y, Viewport: state.viewport})
 	// Just below the grid: one line per interval, so the count of lines is the
 	// rate the pointer asked for.
 	belowY := geometry.top + 5*state.cellHeight + state.cellHeight/2
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: belowY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: belowY, Viewport: state.viewport})
 	if lines := terminal.selection.edge.lines; lines != 1 {
 		t.Fatalf("a pointer just below the grid asks for %d lines per step", lines)
 	}
@@ -467,11 +467,11 @@ func TestDraggingBelowTheGridScrollsAndSelectsHistory(t *testing.T) {
 	terminal.screen.Scroll(20)
 	hit := hitTerminalList.At(int(session.ID))
 	startX, startY := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
 	first := terminal.screen.RowText(0)
 
 	belowY := geometry.top + 5*state.cellHeight + 3*state.cellHeight
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: startX, Y: belowY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: startX, Y: belowY, Viewport: state.viewport})
 	if terminal.selection.edge.direction != -1 {
 		t.Fatalf("a pointer below the grid does not ask to scroll: %+v", terminal.selection.edge)
 	}
@@ -482,12 +482,12 @@ func TestDraggingBelowTheGridScrollsAndSelectsHistory(t *testing.T) {
 	if terminal.screen.ViewOffset() >= before {
 		t.Fatalf("view stayed at %d", terminal.screen.ViewOffset())
 	}
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: startX, Y: belowY, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: startX, Y: belowY, Viewport: state.viewport})
 
 	if terminal.selection.edge.direction != 0 {
 		t.Fatal("releasing the button left the auto-scroll armed")
 	}
-	copied := state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText
+	copied := state.Shortcut(gfx.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText
 	if !strings.HasPrefix(copied, strings.TrimSpace(first)) || strings.Count(copied, "\n") < 8 {
 		t.Fatalf("selection covers only %q", copied)
 	}
@@ -506,9 +506,9 @@ func TestInterruptedDragDoesNotSelectTextAboveItsFocus(t *testing.T) {
 				startRow = 3
 			}
 			startX, startY := cellPoint(geometry, startRow, 0, state.cellWidth, state.cellHeight)
-			state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
+			state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: startX, Y: startY, Viewport: state.viewport})
 			belowY := geometry.top + 8*state.cellHeight
-			state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: startX, Y: belowY, Viewport: state.viewport})
+			state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: startX, Y: belowY, Viewport: state.viewport})
 			for step := 1; step <= steps; step++ {
 				state.stepSelectionScroll(terminal, time.Duration(step)*selectionScrollInterval)
 			}
@@ -516,7 +516,7 @@ func TestInterruptedDragDoesNotSelectTextAboveItsFocus(t *testing.T) {
 			if want == "" {
 				t.Fatal("drag did not select text")
 			}
-			state.Pointer(ui.PointerEvent{Kind: ui.PointerExit, Target: hit, Captured: true, X: -1, Y: -1, Viewport: state.viewport})
+			state.Pointer(gfx.PointerEvent{Kind: gfx.PointerExit, Target: hit, Captured: true, X: -1, Y: -1, Viewport: state.viewport})
 			if got := terminal.selection.text(terminal.screen); got != want {
 				t.Fatalf("losing the pointer changed the selection from %q to %q", want, got)
 			}
@@ -533,15 +533,15 @@ func TestDraggingAboveTheGridScrollsBackIntoHistory(t *testing.T) {
 	fillHistory(t, terminal, 30)
 	hit := hitTerminalList.At(int(session.ID))
 	x, y := cellPoint(geometry, 4, 0, state.cellWidth, state.cellHeight)
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, X: x, Y: y, Viewport: state.viewport})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: geometry.top - 2*state.cellHeight, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, X: x, Y: y, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: geometry.top - 2*state.cellHeight, Viewport: state.viewport})
 	for step := 1; step <= 2; step++ {
 		state.stepSelectionScroll(terminal, time.Duration(step)*selectionScrollInterval)
 	}
 	if terminal.screen.ViewOffset() == 0 {
 		t.Fatal("view did not scroll back")
 	}
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: geometry.top - 2*state.cellHeight, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: geometry.top - 2*state.cellHeight, Viewport: state.viewport})
 	copied := terminal.selection.text(terminal.screen)
 	if strings.Count(copied, "\n") < 4 {
 		t.Fatalf("selection lost the rows scrolled past: %q", copied)
@@ -554,12 +554,12 @@ func TestDraggingInsideTheActiveGridDoesNotArmAutoScroll(t *testing.T) {
 	fillHistory(t, terminal, 30)
 	hit := hitTerminalList.At(int(session.ID))
 	x, y := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit,
 		X: x, Y: y, Viewport: state.viewport,
 	})
-	state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true,
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true,
 		X: x + state.cellWidth, Y: y, Viewport: state.viewport,
 	})
 	if terminal.selection.edge.direction != 0 {
@@ -576,7 +576,7 @@ func TestScrollingKeepsTheSelectionOnItsText(t *testing.T) {
 		terminal.screen.PointAt(term.Position{Row: 2, Column: 5}),
 	)
 	want := terminal.selection.text(terminal.screen)
-	state.Scroll(ui.ScrollEvent{DeltaY: -3 * state.cellHeight})
+	state.Scroll(gfx.ScrollEvent{DeltaY: -3 * state.cellHeight})
 	if !terminal.selection.selected || terminal.selection.text(terminal.screen) != want {
 		t.Fatalf("scrolling changed the selection: %q, want %q", terminal.selection.text(terminal.screen), want)
 	}
@@ -591,7 +591,7 @@ func TestSlowMouseWheelNotchScrollsOneTerminalRow(t *testing.T) {
 	}
 	x, y := cellPoint(geometry, 2, 7, state.cellWidth, state.cellHeight)
 	for notch := 1; notch <= 3; notch++ {
-		state.Scroll(ui.ScrollEvent{X: x, Y: y, DeltaY: -1, Viewport: state.viewport, Target: hitTerminalList.At(int(session.ID))})
+		state.Scroll(gfx.ScrollEvent{X: x, Y: y, DeltaY: -1, Viewport: state.viewport, Target: hitTerminalList.At(int(session.ID))})
 		if got := session.term.screen.ViewOffset(); got != notch {
 			t.Fatalf("after %d slow notches the view is %d rows back", notch, got)
 		}
@@ -602,13 +602,13 @@ func TestShiftClickStretchesTheSelectionFromTheLastClick(t *testing.T) {
 	state, session, geometry := selectionState()
 	session.term.write([]byte("alpha beta\r\ngamma delta\r\n"))
 	hit := hitTerminalList.At(int(session.ID))
-	press := func(row, column int, modifiers ui.Modifiers) {
+	press := func(row, column int, modifiers gfx.Modifiers) {
 		x, y := cellPoint(geometry, row, column, state.cellWidth, state.cellHeight)
-		state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, Modifiers: modifiers, X: x, Y: y, Viewport: state.viewport})
-		state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, Modifiers: modifiers, X: x, Y: y, Viewport: state.viewport})
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, Modifiers: modifiers, X: x, Y: y, Viewport: state.viewport})
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, Modifiers: modifiers, X: x, Y: y, Viewport: state.viewport})
 	}
 	copied := func() string {
-		return state.Shortcut(ui.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText
+		return state.Shortcut(gfx.KeyEvent{Target: hit, Modifiers: keymap.Primary, Text: "c"}).ClipboardText
 	}
 
 	// With nothing selected, Shift-click goes from the place last clicked.
@@ -616,20 +616,20 @@ func TestShiftClickStretchesTheSelectionFromTheLastClick(t *testing.T) {
 	if session.term.selection.selected {
 		t.Fatal("a plain click selected something")
 	}
-	press(1, 4, ui.ModifierShift)
+	press(1, 4, gfx.ModifierShift)
 	if got := copied(); got != "pha beta\ngamma" {
 		t.Fatalf("from the last click = %q", got)
 	}
 	// With a selection, the end nearer the click moves and the far one stays.
-	press(1, 1, ui.ModifierShift)
+	press(1, 1, gfx.ModifierShift)
 	if got := copied(); got != "pha beta\nga" {
 		t.Fatalf("shrunk at the end = %q", got)
 	}
-	press(0, 7, ui.ModifierShift)
+	press(0, 7, gfx.ModifierShift)
 	if got := copied(); got != "eta\nga" {
 		t.Fatalf("moved the start = %q", got)
 	}
-	press(0, 0, ui.ModifierShift)
+	press(0, 0, gfx.ModifierShift)
 	if got := copied(); got != "alpha beta\nga" {
 		t.Fatalf("grown at the start = %q", got)
 	}
@@ -640,8 +640,8 @@ func TestShiftClickWithoutAnythingToExtendDoesNothing(t *testing.T) {
 	session.term.write([]byte("alpha beta\r\n"))
 	hit := hitTerminalList.At(int(session.ID))
 	x, y := cellPoint(geometry, 0, 3, state.cellWidth, state.cellHeight)
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hit, Modifiers: ui.ModifierShift, X: x, Y: y, Viewport: state.viewport})
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, Modifiers: ui.ModifierShift, X: x, Y: y, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit, Modifiers: gfx.ModifierShift, X: x, Y: y, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, Modifiers: gfx.ModifierShift, X: x, Y: y, Viewport: state.viewport})
 	if session.term.selection.selected {
 		t.Fatalf("selection = %+v", session.term.selection)
 	}
@@ -655,15 +655,15 @@ func gesture(state *State, session *Session, geometry terminalGeometry, clicks i
 		return cellPoint(geometry, cell[0], cell[1], state.cellWidth, state.cellHeight)
 	}
 	x, y := at(down)
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: clicks, Target: hit, X: x, Y: y, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: clicks, Target: hit, X: x, Y: y, Viewport: state.viewport})
 	last := down
 	for _, cell := range moves {
 		x, y = at(cell)
-		state.Pointer(ui.PointerEvent{Kind: ui.PointerMove, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: y, Viewport: state.viewport})
+		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: y, Viewport: state.viewport})
 		last = cell
 	}
 	x, y = at(last)
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: y, Viewport: state.viewport})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true, X: x, Y: y, Viewport: state.viewport})
 }
 
 func selectedText(session *Session) string {
@@ -749,12 +749,12 @@ func TestTheOwnersPromptTakesBackTheModesAKilledProgramLeft(t *testing.T) {
 
 	hit := hitTerminalList.At(int(session.ID))
 	x, y := cellPoint(geometry, 2, 7, state.cellWidth, state.cellHeight)
-	if result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerMove, X: x, Y: y, Target: hit, Viewport: state.viewport,
+	if result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, X: x, Y: y, Target: hit, Viewport: state.viewport,
 	}); shell.typed() != "" {
 		t.Fatalf("moving the pointer at the prompt typed %q (result=%+v)", shell.typed(), result)
 	}
-	result := state.Scroll(ui.ScrollEvent{
+	result := state.Scroll(gfx.ScrollEvent{
 		X: x, Y: y, DeltaY: -state.cellHeight,
 		Viewport: state.viewport, Target: hit, Precise: true,
 	})

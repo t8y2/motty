@@ -9,20 +9,20 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestTerminalCommandKeysNegotiation(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	// Bind explicitly so the same shortcut contract is checked on every OS.
-	if _, ok := state.shortcuts.bind(shortcutCopy, keymap.Chord{Modifiers: ui.ModifierMeta, Char: 'c'}); !ok {
+	if _, ok := state.shortcuts.bind(shortcutCopy, keymap.Chord{Modifiers: gfx.ModifierMeta, Char: 'c'}); !ok {
 		t.Fatal("could not bind Command+C")
 	}
 	// The files path default is the platform's primary modifier; bind it to
 	// Command here too, so the bound-chord rule is checked on every OS.
-	if _, ok := state.shortcuts.bind(shortcutFilesPath, keymap.Chord{Modifiers: ui.ModifierMeta, Char: 'l'}); !ok {
+	if _, ok := state.shortcuts.bind(shortcutFilesPath, keymap.Chord{Modifiers: gfx.ModifierMeta, Char: 'l'}); !ok {
 		t.Fatal("could not bind Command+L")
 	}
 	session, err := headless.Open(app.Config{
@@ -88,18 +88,18 @@ func TestTerminalCommandKeysNegotiation(t *testing.T) {
 		}
 		driver := session.Driver()
 		shell.input = nil
-		if err := driver.KeyDown(ui.KeyMetaLeft, ""); err != nil {
+		if err := driver.KeyDown(gfx.KeyMetaLeft, ""); err != nil {
 			t.Fatal(err)
 		}
-		if err := driver.KeyDown(ui.KeyUnknown, "j"); err != nil {
-			t.Fatal(err)
-		}
-
-		if err := driver.KeyUp(ui.KeyUnknown, "j"); err != nil {
+		if err := driver.KeyDown(gfx.KeyUnknown, "j"); err != nil {
 			t.Fatal(err)
 		}
 
-		if err := driver.KeyUp(ui.KeyMetaLeft, ""); err != nil {
+		if err := driver.KeyUp(gfx.KeyUnknown, "j"); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := driver.KeyUp(gfx.KeyMetaLeft, ""); err != nil {
 			t.Fatal(err)
 		}
 		if got, want := string(shell.input), "\x1b[106;9:1u\x1b[106;9:3u"; got != want {

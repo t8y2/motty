@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // A keystroke into a tab whose shell is gone used to vanish without a trace,
@@ -25,7 +25,7 @@ func TestTypingIntoATabWithoutAShellSaysTheKeysAreNotSent(t *testing.T) {
 	session.term.told = toldNothing
 
 	for _, letter := range []string{"l", "s"} {
-		result := key(state, 0, ui.KeyEvent{Key: ui.KeyUnknown, Text: letter, Typed: letter})
+		result := key(state, 0, gfx.KeyEvent{Key: gfx.KeyUnknown, Text: letter, Typed: letter})
 		if !result.Handled {
 			t.Fatalf("%q was not consumed by a tab with no shell", letter)
 		}
@@ -46,7 +46,7 @@ func TestTypingIntoAnEndedSessionLeavesItsOwnMessageAlone(t *testing.T) {
 	session.term.told = toldEnded
 	before := state.status
 
-	key(state, 0, ui.KeyEvent{Key: ui.KeyUnknown, Text: "x", Typed: "x"})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyUnknown, Text: "x", Typed: "x"})
 	if state.status != before {
 		t.Fatalf("a key after the end-of-session line rewrote the status to %q", state.status)
 	}

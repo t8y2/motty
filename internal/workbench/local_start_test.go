@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/term"
 )
 
@@ -178,22 +178,22 @@ func TestLocalStartSettingChoosesAndPersists(t *testing.T) {
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsTerminal)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 	if _, visible := hitByID(&canvas, hitSettingsLocalStartRemember); !visible {
 		// The row sits with the local terminal settings at the terminal page's
 		// end, past the first screenful: reach it the way a user does.
-		state.scrollSettings(ui.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
+		state.scrollSettings(gfx.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
 		canvas.Reset()
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 1800})
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 	}
-	for _, id := range []ui.ID{hitSettingsLocalStartRemember, hitSettingsLocalStartHome} {
+	for _, id := range []gfx.ID{hitSettingsLocalStartRemember, hitSettingsLocalStartHome} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Fatalf("settings paint no local folder choice %d", id)
 		}
 	}
 	for _, test := range []struct {
-		hit  ui.ID
+		hit  gfx.ID
 		want localStartPolicy
 	}{{hitSettingsLocalStartHome, localStartHome}, {hitSettingsLocalStartRemember, localStartRemember}} {
 		state.Click(test.hit)
@@ -204,7 +204,7 @@ func TestLocalStartSettingChoosesAndPersists(t *testing.T) {
 			t.Fatalf("restored %v, want %v", again.localStart, test.want)
 		}
 	}
-	next, ok := state.settingsKey(ui.KeyEvent{Target: hitSettingsLocalStartRemember, Key: ui.KeyRight})
+	next, ok := state.settingsKey(gfx.KeyEvent{Target: hitSettingsLocalStartRemember, Key: gfx.KeyRight})
 	if !ok || !next.Handled || state.localStart != localStartHome {
 		t.Fatalf("arrow key on the choice = %+v %v, policy %v", next, ok, state.localStart)
 	}

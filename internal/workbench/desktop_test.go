@@ -15,7 +15,7 @@ import (
 	"unicode"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -186,10 +186,10 @@ func connectDesktop(t *testing.T, state *State, session *Session, password strin
 	waitUntil(t, state, "the picture", func() bool { return session.desk != nil && session.desk.width == 200 })
 }
 
-func paintDesk(state *State) *ui.Canvas {
-	var canvas ui.Canvas
+func paintDesk(state *State) *gfx.Canvas {
+	var canvas gfx.Canvas
 	canvas.BeginFrame()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	canvas.EndFrame()
 	return &canvas
 }
@@ -203,7 +203,7 @@ func TestVNCHostAsksForThePasswordThenShowsTheDesktopAndSendsInput(t *testing.T)
 		t.Fatal("the picture was not painted")
 	}
 	hit := hitTerminalList.At(int(session.ID))
-	area := desktopLayout(ui.Size{Width: 1400, Height: 900}, false).area
+	area := desktopLayout(gfx.Size{Width: 1400, Height: 900}, false).area
 	origin, scale := session.desk.place(area)
 	if scale <= 1 {
 		t.Fatalf("a 200x100 desktop in a 1400x900 pane is shown at %v", scale)
@@ -211,8 +211,8 @@ func TestVNCHostAsksForThePasswordThenShowsTheDesktopAndSendsInput(t *testing.T)
 
 	// A press at the picture's center is the remote's center, with the left button.
 	cx, cy := origin.X+100*scale, origin.Y+50*scale
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, X: cx, Y: cy, Target: hit, ClickCount: 1})
-	pointer(state, ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, X: cx, Y: cy, Target: hit})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, X: cx, Y: cy, Target: hit, ClickCount: 1})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, X: cx, Y: cy, Target: hit})
 	waitUntil(t, state, "the pointer events", func() bool { return len(fixture.got()) >= 2 })
 	down, up := fixture.got()[0], fixture.got()[1]
 	x, y := int(binary.BigEndian.Uint16(down[2:])), int(binary.BigEndian.Uint16(down[4:]))
@@ -222,8 +222,8 @@ func TestVNCHostAsksForThePasswordThenShowsTheDesktopAndSendsInput(t *testing.T)
 
 	// Enter goes down and up as the keyboard does it; typed text, as an input
 	// method commits it, is typed by its characters.
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hit})
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hit, Release: true})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hit})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hit, Release: true})
 	state.desktopText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "é"})
 	waitUntil(t, state, "the key events", func() bool { return len(fixture.got()) >= 6 })
 	keys := fixture.got()[2:6]
@@ -236,7 +236,7 @@ func TestVNCHostAsksForThePasswordThenShowsTheDesktopAndSendsInput(t *testing.T)
 			t.Fatalf("key message %d = %v", index, keys[index])
 		}
 	}
-	state.Scroll(ui.ScrollEvent{X: cx, Y: cy, DeltaY: 90, Viewport: ui.Size{Width: 1400, Height: 900}, Target: hit})
+	state.Scroll(gfx.ScrollEvent{X: cx, Y: cy, DeltaY: 90, Viewport: gfx.Size{Width: 1400, Height: 900}, Target: hit})
 	waitUntil(t, state, "the wheel", func() bool { return len(fixture.got()) >= 10 })
 	if wheel := fixture.got()[6]; wheel[1] != 1<<4 {
 		t.Fatalf("a scroll down sent %v, want the wheel-down button", wheel)
@@ -264,23 +264,23 @@ func TestHeldKeysStayDownOnTheRemoteUntilTheyComeUp(t *testing.T) {
 	state, session := vncState(t, fixture)
 	connectDesktop(t, state, session, "secret")
 	hit := hitTerminalList.At(int(session.ID))
-	send := func(event ui.KeyEvent) {
+	send := func(event gfx.KeyEvent) {
 		event.Target = hit
 		state.Key(event)
 	}
 
 	// Shift is down on the remote while it is down here, the key types the
 	// capital the layout gives it, and a key's repeat is not sent again.
-	send(ui.KeyEvent{Key: ui.KeyShiftLeft, Modifiers: ui.ModifierShift})
-	send(ui.KeyEvent{Text: "a", Typed: "A", Modifiers: ui.ModifierShift})
-	send(ui.KeyEvent{Text: "a", Typed: "A", Modifiers: ui.ModifierShift, Repeat: true})
-	send(ui.KeyEvent{Text: "a", Modifiers: ui.ModifierShift, Release: true})
-	send(ui.KeyEvent{Key: ui.KeyShiftLeft, Release: true})
+	send(gfx.KeyEvent{Key: gfx.KeyShiftLeft, Modifiers: gfx.ModifierShift})
+	send(gfx.KeyEvent{Text: "a", Typed: "A", Modifiers: gfx.ModifierShift})
+	send(gfx.KeyEvent{Text: "a", Typed: "A", Modifiers: gfx.ModifierShift, Repeat: true})
+	send(gfx.KeyEvent{Text: "a", Modifiers: gfx.ModifierShift, Release: true})
+	send(gfx.KeyEvent{Key: gfx.KeyShiftLeft, Release: true})
 	// A key held when the keyboard goes to Motty is let go, and its own release
 	// afterwards is not sent a second time.
-	send(ui.KeyEvent{Key: ui.KeyControlLeft, Modifiers: ui.ModifierControl})
+	send(gfx.KeyEvent{Key: gfx.KeyControlLeft, Modifiers: gfx.ModifierControl})
 	state.toggleCapture(session.desk)
-	send(ui.KeyEvent{Key: ui.KeyControlLeft, Release: true})
+	send(gfx.KeyEvent{Key: gfx.KeyControlLeft, Release: true})
 	want := []string{"down ffe1", "down 41", "up 41", "up ffe1", "down ffe3", "up ffe3"}
 	waitUntil(t, state, "the key messages", func() bool { return len(keySyms(fixture.got())) >= len(want) })
 	if got := keySyms(fixture.got()); strings.Join(got, ",") != strings.Join(want, ",") {
@@ -318,7 +318,7 @@ func TestKeyboardCaptureStopsMottyShortcutsUntilTheEscapeChordReleasesIt(t *test
 	hit := hitTerminalList.At(int(session.ID))
 	// Motty's own new-tab chord, whichever it is on this platform.
 	chord := state.shortcuts.chords.Chord(shortcutNewTab)
-	newTab := ui.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Char)), Target: hit}
+	newTab := gfx.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Char)), Target: hit}
 
 	if result := state.Shortcut(newTab); result.Handled || state.modal != modalNone || state.activeSection != sectionTerminal {
 		t.Fatalf("Motty took Cmd+T while the remote desktop had the keyboard: %+v, modal %v", result, state.modal)
@@ -326,17 +326,17 @@ func TestKeyboardCaptureStopsMottyShortcutsUntilTheEscapeChordReleasesIt(t *test
 	// The chord then goes to the remote as the keys it is: its modifiers, then
 	// the letter, all down.
 	modifierKeys := []struct {
-		modifier ui.Modifiers
-		key      ui.Key
+		modifier gfx.Modifiers
+		key      gfx.Key
 		keysym   uint32
 	}{
-		{ui.ModifierControl, ui.KeyControlLeft, 0xffe3}, {ui.ModifierAlt, ui.KeyAltLeft, 0xffe9},
-		{ui.ModifierShift, ui.KeyShiftLeft, 0xffe1}, {ui.ModifierMeta, ui.KeyMetaLeft, 0xffeb},
+		{gfx.ModifierControl, gfx.KeyControlLeft, 0xffe3}, {gfx.ModifierAlt, gfx.KeyAltLeft, 0xffe9},
+		{gfx.ModifierShift, gfx.KeyShiftLeft, 0xffe1}, {gfx.ModifierMeta, gfx.KeyMetaLeft, 0xffeb},
 	}
 	var want []string
 	for _, entry := range modifierKeys {
 		if chord.Modifiers&entry.modifier != 0 {
-			state.Key(ui.KeyEvent{Key: entry.key, Modifiers: chord.Modifiers, Target: hit})
+			state.Key(gfx.KeyEvent{Key: entry.key, Modifiers: chord.Modifiers, Target: hit})
 			want = append(want, fmt.Sprintf("down %x", entry.keysym))
 		}
 	}
@@ -347,14 +347,14 @@ func TestKeyboardCaptureStopsMottyShortcutsUntilTheEscapeChordReleasesIt(t *test
 		t.Fatalf("remote keys = %v, want %v", got, want)
 	}
 
-	escape := ui.KeyEvent{Modifiers: ui.ModifierControl | ui.ModifierAlt, Text: "g", Target: hit}
+	escape := gfx.KeyEvent{Modifiers: gfx.ModifierControl | gfx.ModifierAlt, Text: "g", Target: hit}
 	if result := state.Shortcut(escape); !result.Handled || !session.desk.released {
 		t.Fatal("the escape chord did not release the keyboard")
 	}
 	// Giving the keyboard to Motty lets go of the chord still held there.
 	waitUntil(t, state, "the chord to be released", func() bool { return len(keySyms(fixture.got())) >= 2*len(want) })
 	before := len(fixture.got())
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hit})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hit})
 	state.desktopText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "x"})
 	time.Sleep(50 * time.Millisecond)
 	if len(fixture.got()) > before {
@@ -384,7 +384,7 @@ func TestLostConnectionKeepsThePictureAndEnterReconnects(t *testing.T) {
 		t.Fatal("an ended desktop offers no reconnect")
 	}
 	paintDesk(state) // the page with the dimmed picture and the reconnect button
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitTerminalList.At(int(session.ID))})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitTerminalList.At(int(session.ID))})
 	connectDesktop(t, state, session, "secret")
 	if fixture.accepted != 2 {
 		t.Fatalf("server accepted %d connections, want 2", fixture.accepted)

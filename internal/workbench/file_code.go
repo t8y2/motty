@@ -10,9 +10,9 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/text/find"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -63,7 +63,7 @@ type documentEditing struct {
 
 	// focus is the bar field to hand the keyboard to at the next paint, which is
 	// when its hit first exists.
-	focus ui.ID
+	focus gfx.ID
 
 	findInput, replaceInput, goInput app.TextInput
 }
@@ -191,7 +191,7 @@ func (d *fileDocument) codeBarsAvailable() bool {
 
 // paintCodeEditor paints the editor in bounds and, over its top right corner, the
 // bar that is open.
-func (d *fileDocument) paintCodeEditor(canvas *ui.Canvas, theme ui.Theme, bounds ui.Rect) {
+func (d *fileDocument) paintCodeEditor(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect) {
 	m, code := d.owner.messages.FileWindow, d.owner.messages.CodeEditor
 	value := d.editor.String()
 	selection := d.editor.Selection()
@@ -221,7 +221,7 @@ func (d *fileDocument) paintCodeEditor(canvas *ui.Canvas, theme ui.Theme, bounds
 	}
 	d.ui.code.Paint(canvas, theme, bounds, snapshot)
 
-	area := ui.Rect{X: bounds.X + 8, Y: bounds.Y + 6, Width: bounds.Width - 16 - 14}
+	area := gfx.Rect{X: bounds.X + 8, Y: bounds.Y + 6, Width: bounds.Width - 16 - 14}
 	switch {
 	case bar:
 		d.paintFindBar(canvas, theme, area, code)
@@ -231,7 +231,7 @@ func (d *fileDocument) paintCodeEditor(canvas *ui.Canvas, theme ui.Theme, bounds
 }
 
 // editorField is the snapshot of a one-line field of a bar, backed by editor.
-func editorField(canvas *ui.Canvas, id ui.ID, label, placeholder string, editor *text.Editor, readOnly bool) components.InputSnapshot {
+func editorField(canvas *gfx.Canvas, id gfx.ID, label, placeholder string, editor *text.Editor, readOnly bool) components.InputSnapshot {
 	value := editor.String()
 	focused := canvas.Focused() == id
 	selection := editor.Selection()
@@ -247,7 +247,7 @@ func editorField(canvas *ui.Canvas, id ui.ID, label, placeholder string, editor 
 	return snapshot
 }
 
-func (d *fileDocument) paintFindBar(canvas *ui.Canvas, theme ui.Theme, area ui.Rect, code i18n.CodeEditorMessages) {
+func (d *fileDocument) paintFindBar(canvas *gfx.Canvas, theme gfx.Theme, area gfx.Rect, code i18n.CodeEditorMessages) {
 	session, edit := &d.edit.find, &d.edit
 	readOnly := !d.canEditCode()
 	current, total := session.Position(&d.editor)
@@ -286,7 +286,7 @@ func (d *fileDocument) paintFindBar(canvas *ui.Canvas, theme ui.Theme, area ui.R
 	if readOnly {
 		// A replacement changes the text, which a document that is loading or
 		// saving cannot take.
-		snapshot.ReplaceOneID, snapshot.ReplaceAllID = ui.ID{}, ui.ID{}
+		snapshot.ReplaceOneID, snapshot.ReplaceAllID = gfx.ID{}, gfx.ID{}
 	}
 	area.Width = min(max(area.Width, 0), 480)
 	area.X = area.X + max(0, d.ui.editorBounds.Width-16-14-area.Width)
@@ -296,7 +296,7 @@ func (d *fileDocument) paintFindBar(canvas *ui.Canvas, theme ui.Theme, area ui.R
 	d.takeBarFocus(canvas)
 }
 
-func (d *fileDocument) paintGoToLine(canvas *ui.Canvas, theme ui.Theme, area ui.Rect, code i18n.CodeEditorMessages) {
+func (d *fileDocument) paintGoToLine(canvas *gfx.Canvas, theme gfx.Theme, area gfx.Rect, code i18n.CodeEditorMessages) {
 	lines := text.LineCount(d.editor.String())
 	area.Width = min(max(area.Width, 0), 220)
 	area.X = area.X + max(0, d.ui.editorBounds.Width-16-14-area.Width)
@@ -311,10 +311,10 @@ func (d *fileDocument) paintGoToLine(canvas *ui.Canvas, theme ui.Theme, area ui.
 
 // takeBarFocus hands the keyboard to the field a bar was opened for, once its hit
 // exists.
-func (d *fileDocument) takeBarFocus(canvas *ui.Canvas) {
+func (d *fileDocument) takeBarFocus(canvas *gfx.Canvas) {
 	if !d.edit.focus.IsZero() {
 		canvas.RequestFocus(d.edit.focus)
-		d.edit.focus = ui.ID{}
+		d.edit.focus = gfx.ID{}
 	}
 }
 
@@ -340,10 +340,10 @@ func (d *fileDocument) openFind(replacing bool) {
 	edit.find.Update(d.editor.String())
 }
 
-func (d *fileDocument) closeFind() ui.EventResult {
+func (d *fileDocument) closeFind() gfx.EventResult {
 	d.edit.findOpen, d.edit.goOpen = false, false
 	d.edit.notice = ""
-	return ui.EventResult{Handled: true, Repaint: true, Focus: hitDocumentInput}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitDocumentInput}
 }
 
 func (d *fileDocument) openGoToLine() {
@@ -360,18 +360,18 @@ func (d *fileDocument) openGoToLine() {
 // goToLine moves the caret to the line, or line and column, the field holds, as
 // "12" or "12:5", and closes the bar. A number that is no line leaves it open and
 // marks the field.
-func (d *fileDocument) goToLine() ui.EventResult {
+func (d *fileDocument) goToLine() gfx.EventResult {
 	line, column, ok := parseLineColumn(d.edit.goEditor.String())
 	value := d.editor.String()
 	if !ok || line < 1 || line > text.LineCount(value) {
 		d.edit.goInvalid = true
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	offset := text.OffsetAt(value, text.Position{Line: line - 1, Column: max(column-1, 0)})
 	d.editor.MoveTo(d.editor.RuneIndex(offset), false)
 	d.ui.code.Reveal(offset)
 	d.edit.goOpen = false
-	return ui.EventResult{Handled: true, Repaint: true, Focus: hitDocumentInput}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitDocumentInput}
 }
 
 // parseLineColumn reads "12" or "12:5" (or "12,5"), with spaces around either.
@@ -396,16 +396,16 @@ func parseLineColumn(value string) (line, column int, ok bool) {
 }
 
 // stepFind selects the next match, or the previous, and brings it into view.
-func (d *fileDocument) stepFind(forward bool) ui.EventResult {
+func (d *fileDocument) stepFind(forward bool) gfx.EventResult {
 	if !d.edit.findOpen {
 		d.openFind(false)
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	d.edit.find.Update(d.editor.String())
 	if d.edit.find.Step(&d.editor, forward) {
 		d.ui.code.Reveal(d.editor.ByteOffset(d.editor.Caret()))
 	}
-	return ui.EventResult{Handled: true, Repaint: true}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }
 
 // queryChanged searches again after the query was edited and selects the first
@@ -450,7 +450,7 @@ func (d *fileDocument) afterReplace() {
 }
 
 // findOption flips one option of the search and searches again.
-func (d *fileDocument) findOption(id ui.ID) {
+func (d *fileDocument) findOption(id gfx.ID) {
 	options := &d.edit.find.Options
 	switch id {
 	case hitDocumentFindCase:
@@ -465,7 +465,7 @@ func (d *fileDocument) findOption(id ui.ID) {
 }
 
 // clickCode handles the clicks on the controls this file paints.
-func (d *fileDocument) clickCode(id ui.ID) bool {
+func (d *fileDocument) clickCode(id gfx.ID) bool {
 	switch id {
 	case hitDocumentFindPrevious:
 		d.stepFind(false)
@@ -509,7 +509,7 @@ func barInput(input *app.TextInput, editor *text.Editor, changed func()) *app.Te
 }
 
 // barTextInput is the text input of the bar field the hit names, or nil.
-func (d *fileDocument) barTextInput(id ui.ID) *app.TextInput {
+func (d *fileDocument) barTextInput(id gfx.ID) *app.TextInput {
 	if !d.codeBarsAvailable() {
 		return nil
 	}
@@ -527,20 +527,20 @@ func (d *fileDocument) barTextInput(id ui.ID) *app.TextInput {
 
 // codeKey is what the keys of the code editor and of its bars do. It reports
 // false for a key that is none of its business.
-func (d *fileDocument) codeKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	handled := ui.EventResult{Handled: true, Repaint: true}
+func (d *fileDocument) codeKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	target := event.Target
 	inFind := target == hitDocumentFind || target == hitDocumentReplace
 	switch {
 	case target == hitDocumentGoTo:
 		switch event.Key {
-		case ui.KeyEnter:
+		case gfx.KeyEnter:
 			return d.goToLine(), true
-		case ui.KeyEscape:
+		case gfx.KeyEscape:
 			d.edit.goOpen = false
-			return ui.EventResult{Handled: true, Repaint: true, Focus: hitDocumentInput}, true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitDocumentInput}, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	case inFind || target == hitDocumentInput:
 		if command, ok := components.FindBarCommandForKey(event, inFind); ok {
 			switch command {
@@ -561,7 +561,7 @@ func (d *fileDocument) codeKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		}
 	}
 	if target != hitDocumentInput || !d.ready {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if command, ok := components.CodeEditorCommandForKey(event); ok && d.canEditCode() {
 		if command.Apply(&d.editor) {
@@ -576,7 +576,7 @@ func (d *fileDocument) codeKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		d.editor.MoveTo(utf8.RuneCountInString(value[:offset]), extend)
 		return handled, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 func (d *fileDocument) scheduleDiffIfComparing() {
@@ -587,11 +587,11 @@ func (d *fileDocument) scheduleDiffIfComparing() {
 
 // codeShortcut handles the chords that open the bars. They reach the window
 // before the text system does.
-func (d *fileDocument) codeShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
+func (d *fileDocument) codeShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if !d.codeBarsAvailable() {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	inFind := d.edit.findOpen && (event.Target == hitDocumentFind || event.Target == hitDocumentReplace)
 	if command, ok := components.FindBarCommandForKey(event, inFind); ok {
 		switch command {
@@ -605,11 +605,11 @@ func (d *fileDocument) codeShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
 	}
 	// Control+H opens the replace form on Windows and Linux; on macOS it is a
 	// backspace and stays one.
-	if runtime.GOOS != "darwin" && strings.EqualFold(event.Text, "h") && event.Modifiers == ui.ModifierControl {
+	if runtime.GOOS != "darwin" && strings.EqualFold(event.Text, "h") && event.Modifiers == gfx.ModifierControl {
 		d.openFind(true)
 		return handled, true
 	}
-	if strings.EqualFold(event.Text, "g") && event.Modifiers&ui.ModifierControl != 0 {
+	if strings.EqualFold(event.Text, "g") && event.Modifiers&gfx.ModifierControl != 0 {
 		d.openGoToLine()
 		return handled, true
 	}
@@ -622,7 +622,7 @@ func (d *fileDocument) codeShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
 			return handled, true
 		}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // positionStatus is the caret's line and column, and the size of the selection,

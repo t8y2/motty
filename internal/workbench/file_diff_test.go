@@ -12,9 +12,9 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestDocumentRemoteSaveRequiresConfirmation(t *testing.T) {
@@ -331,7 +331,7 @@ func TestDocumentSaveConfirmationAndDiffLayoutAtDisplayScales(t *testing.T) {
 					geometry := d.comparison.ui.diff.Geometry
 					x := geometry.VerticalThumb.X + geometry.VerticalThumb.Width/2
 					y := geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2
-					if err := diffView.Driver().Press(x, y, ui.PointerButtonPrimary); err != nil {
+					if err := diffView.Driver().Press(x, y, gfx.PointerButtonPrimary); err != nil {
 						t.Fatal(err)
 					}
 					if err := diffView.Driver().Move(x, y+24); err != nil {
@@ -344,7 +344,7 @@ func TestDocumentSaveConfirmationAndDiffLayoutAtDisplayScales(t *testing.T) {
 					if d.comparison.ui.diff.Geometry.OffsetY <= firstOffset {
 						t.Fatalf("scrollbar did not follow the captured pointer: first=%v second=%v", firstOffset, d.comparison.ui.diff.Geometry.OffsetY)
 					}
-					if err := diffView.Driver().Release(x, y+48, ui.PointerButtonPrimary); err != nil {
+					if err := diffView.Driver().Release(x, y+48, gfx.PointerButtonPrimary); err != nil {
 						t.Fatal(err)
 					}
 					d.comparison.ui.diff.ScrollTo(0, 0)
@@ -353,7 +353,7 @@ func TestDocumentSaveConfirmationAndDiffLayoutAtDisplayScales(t *testing.T) {
 					}
 				}
 				if dir := os.Getenv("MOTTY_DOCUMENT_SCREENSHOT_DIR"); dir != "" {
-					var input ui.Rect
+					var input gfx.Rect
 					for _, hit := range diffView.Snapshot().Hits {
 						if hit.ID == hitDocumentInput {
 							input = hit.Bounds
@@ -382,7 +382,7 @@ func TestDocumentSaveConfirmationAndDiffLayoutAtDisplayScales(t *testing.T) {
 						t.Fatalf("headless native editor = %+v, want self-painted overlays", snapshot.Editor)
 					}
 					selectionColor := d.owner.Theme().Selection
-					selectionRects := make([]ui.Rect, 0, 2)
+					selectionRects := make([]gfx.Rect, 0, 2)
 					for _, primitive := range snapshot.Primitives {
 						if primitive.Kind == app.RectanglePrimitive && primitive.Color == selectionColor &&
 							primitive.Bounds.Height >= 10 && primitive.Bounds.Height < 30 &&
@@ -407,7 +407,7 @@ func TestDocumentSaveConfirmationAndDiffLayoutAtDisplayScales(t *testing.T) {
 	}
 }
 
-func assertDocumentHitsInside(t *testing.T, view *headless.Session, width, height float32, ids ...ui.ID) {
+func assertDocumentHitsInside(t *testing.T, view *headless.Session, width, height float32, ids ...gfx.ID) {
 	t.Helper()
 	for _, wanted := range ids {
 		found := false
@@ -432,7 +432,7 @@ func assertDocumentHitsInside(t *testing.T, view *headless.Session, width, heigh
 
 func assertDocumentSplitSaveButton(t *testing.T, view *headless.Session, open bool) {
 	t.Helper()
-	var primary, menu *ui.Hit
+	var primary, menu *gfx.Hit
 	for _, hit := range view.Snapshot().Hits {
 		switch hit.ID {
 		case hitDocumentSave:
@@ -450,7 +450,7 @@ func assertDocumentSplitSaveButton(t *testing.T, view *headless.Session, open bo
 		primary.Bounds.X+primary.Bounds.Width != menu.Bounds.X || menu.Bounds.Width != 32 {
 		t.Fatalf("save actions are not one connected split button: primary=%+v menu=%+v", primary.Bounds, menu.Bounds)
 	}
-	if primary.Role != ui.RoleButton || menu.Role != ui.RoleButton || !menu.Expandable || menu.Expanded != open {
+	if primary.Role != gfx.RoleButton || menu.Role != gfx.RoleButton || !menu.Expandable || menu.Expanded != open {
 		t.Fatalf("split save semantics: primary=%+v menu=%+v", primary, menu)
 	}
 }
@@ -469,7 +469,7 @@ func TestDocumentComparisonGivesTheEditorRoomInANarrowWindow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var input ui.Rect
+		var input gfx.Rect
 		for _, hit := range view.Snapshot().Hits {
 			if hit.ID == hitDocumentInput {
 				input = hit.Bounds

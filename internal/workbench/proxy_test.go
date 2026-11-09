@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
 
@@ -572,8 +572,8 @@ func TestSkippedIdentitiesAreReportedPerEndpointAndIncrementally(t *testing.T) {
 func TestProxyWorkspacePaintDoesNotAllocateOnceWarm(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addTestProxyRoute(t, state)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -586,8 +586,8 @@ func TestProxyWorkspacePaintDoesNotAllocateOnceWarm(t *testing.T) {
 func BenchmarkPaintProxyWorkspace(b *testing.B) {
 	state := newTestState(b, testOptions(b))
 	addTestProxyRoute(b, state)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	b.ReportAllocs()
 	for b.Loop() {
 		canvas.Reset()

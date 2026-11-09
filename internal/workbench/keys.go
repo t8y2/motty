@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 	"motty/internal/keyidentity"
 	"motty/internal/vault"
@@ -105,7 +105,7 @@ func (state *State) hasIdentityPath(path string) bool {
 	return slices.ContainsFunc(state.identities, func(identity identityRecord) bool { return identity.Path == absolute })
 }
 
-func (state *State) clickKeys(id ui.ID) {
+func (state *State) clickKeys(id gfx.ID) {
 	if state.activeSection != sectionKeys || state.modal != modalNone {
 		return
 	}
@@ -138,12 +138,12 @@ func (state *State) clickKeys(id ui.ID) {
 }
 
 // keysKey closes the Add Key menu on Escape.
-func (state *State) keysKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.keysMenu && event.Key == ui.KeyEscape {
+func (state *State) keysKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.keysMenu && event.Key == gfx.KeyEscape {
 		state.keysMenu = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // selectIdentity makes a key the selected one. The table calls it from the paint

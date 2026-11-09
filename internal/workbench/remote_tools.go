@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
 	"motty/internal/sshconn"
@@ -78,7 +78,7 @@ const (
 )
 
 // clickRemoteToolsOpen opens the dialog for the active session.
-func (state *State) clickRemoteToolsOpen(id ui.ID) bool {
+func (state *State) clickRemoteToolsOpen(id gfx.ID) bool {
 	if id != hitRemoteToolsOpen && id != hitProcessToolsOpen {
 		return false
 	}
@@ -104,7 +104,7 @@ const (
 )
 
 // remoteTabHits is the control of each tab, indexed by remoteTab.
-var remoteTabHits = [...]ui.ID{
+var remoteTabHits = [...]gfx.ID{
 	remoteProcesses: hitRemoteTabProcesses, remoteContainers: hitRemoteTabContainers,
 	remoteImages: hitRemoteTabImages, remoteVolumes: hitRemoteTabVolumes, remoteNetworks: hitRemoteTabNetworks, remoteCompose: hitRemoteTabCompose,
 }
@@ -155,7 +155,7 @@ type remoteToolsView struct {
 	processScrollValue                    string
 	processScrollFirst                    int
 	processScrollCount                    int
-	processTableBounds                    ui.Rect
+	processTableBounds                    gfx.Rect
 	processColumns                        [6]components.TableColumn
 	searches                              [6]remoteSearch
 	processMenu                           remoteProcessMenu
@@ -234,7 +234,7 @@ func (state *State) remoteSession() (*Session, bool) {
 	return session, ok && session.conn != nil
 }
 
-func (state *State) clickRemoteTools(id ui.ID) {
+func (state *State) clickRemoteTools(id gfx.ID) {
 	view := &state.remote
 	m := state.messages.Tools
 	if id == hitRemoteSudo {
@@ -856,7 +856,7 @@ func (state *State) rebuildRemoteRows() {
 	view.pageText = ""
 }
 
-func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintRemoteTools(canvas *gfx.Canvas, viewport gfx.Rect) {
 	theme := state.Theme()
 	_, ok := state.remoteSession()
 	if !ok {
@@ -867,7 +867,7 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitRemoteDismiss, CloseID: hitRemoteClose, InitialFocusID: hitRemoteRefresh,
-		ContentSize: ui.Size{Width: 940}, FitBody: true, BodyHeight: 52 + tableHeight + 34 + remoteSearchHeight,
+		ContentSize: gfx.Size{Width: 940}, FitBody: true, BodyHeight: 52 + tableHeight + 34 + remoteSearchHeight,
 	})
 	layout := dialog.Begin("", "")
 	state.paintRemoteToolsBody(canvas, layout.Body)
@@ -880,7 +880,7 @@ func (state *State) paintRemoteTools(canvas *ui.Canvas, viewport ui.Rect) {
 	state.paintRemoteContainerDetails(canvas, viewport)
 }
 
-func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintRemoteToolsBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m, pal, theme := state.messages.Tools, state.pal, state.Theme()
 	view := &state.remote
 	pageSize := state.remotePageSize()
@@ -908,7 +908,7 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 	if view.failed {
 		color = pal.danger
 	}
-	var tabsSlot, refreshSlot, sudoSlot, tableSlot, pagesSlot, searchSlot, statusSlot, snapshotSlot flex.Box
+	var tabsSlot, refreshSlot, sudoSlot, tableSlot, pagesSlot, searchSlot, statusSlot, snapshotSlot ui.Box
 	f := state.partLayout.Begin(canvas, theme, bounds)
 	stacked := bounds.Width < 800
 	f.Column().Fill().Children(func() {
@@ -934,7 +934,7 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 		} else {
 			tableSlot = f.Slot().Height(tableHeight).Shrink(0).MarginSides(4, 0, 0, 0)
 		}
-		f.Row().Height(30).Shrink(0).Items(flex.Center).MarginSides(6, 0, 0, 0).Children(func() {
+		f.Row().Height(30).Shrink(0).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
 			statusSlot = f.Slot().Grow(1).Height(24)
 			snapshotSlot = f.Slot().Width(360).Height(24).Shrink(1)
 			if len(view.rows) > pageSize {
@@ -946,15 +946,15 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 
 	if status != "" && statusSlot.Rect().Width > 0 {
 		bounds := statusSlot.Rect()
-		canvas.Label(elide(canvas, status, metrics.FontSizeS, ui.WeightMedium, bounds.Width), bounds,
-			ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: color})
+		canvas.Label(elide(canvas, status, metrics.FontSizeS, gfx.WeightMedium, bounds.Width), bounds,
+			gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: color})
 	}
 	if view.snapshotStatus != "" && snapshotSlot.Rect().Width > 0 {
 		bounds := snapshotSlot.Rect()
-		canvas.Label(elide(canvas, view.snapshotStatus, metrics.FontSizeS, ui.WeightMedium, bounds.Width), bounds,
-			ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: pal.muted})
+		canvas.Label(elide(canvas, view.snapshotStatus, metrics.FontSizeS, gfx.WeightMedium, bounds.Width), bounds,
+			gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: pal.muted})
 		canvas.HitWithOptions(hitRemoteSnapshotStatus, bounds, view.snapshotStatus,
-			ui.HitOptions{Role: ui.RoleStatus, SkipFocus: true, Hint: view.searchSummary})
+			gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: view.searchSummary})
 	}
 	components.BeginSegmentedControl(canvas, theme, tabsSlot.Rect(), tabs[:], selectedTab).Paint()
 	state.paintRemoteRefresh(canvas, refreshSlot.Rect())
@@ -1049,7 +1049,7 @@ func (state *State) paintRemoteToolsBody(canvas *ui.Canvas, bounds ui.Rect) {
 		}
 		pagination := components.BeginPagination(canvas, theme, pagesSlot.Rect())
 		pagination.AddPrevious(hitRemotePrevious, state.messages.KnownHostsPrevious, view.page == 0)
-		pagination.AddPage(ui.ID{}, view.pageText, true)
+		pagination.AddPage(gfx.ID{}, view.pageText, true)
 		pagination.AddNext(hitRemoteNext, state.messages.KnownHostsNext, view.page+1 >= pages)
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -22,7 +22,7 @@ type workspaceArrangement struct {
 	items     []workspaceArrangementItem
 	revision  uint64
 	scroll    float32
-	bounds    ui.Rect
+	bounds    gfx.Rect
 	err       string
 }
 

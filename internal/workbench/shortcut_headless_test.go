@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestHeadlessTabNumberShortcutHasASettingsRow(t *testing.T) {
@@ -60,7 +60,7 @@ func TestHeadlessShortcutCaptureClickAndChord(t *testing.T) {
 	if err := session.Keys("cmd+alt+x"); err != nil {
 		t.Fatal(err)
 	}
-	want := keymap.Chord{Modifiers: ui.ModifierMeta | ui.ModifierAlt, Char: 'x'}
+	want := keymap.Chord{Modifiers: gfx.ModifierMeta | gfx.ModifierAlt, Char: 'x'}
 	if state.shortcuts.chords.Chord(shortcutCommandPalette) != want || state.modal != modalNone {
 		t.Fatalf("binding=%+v modal=%d, want %+v and closed", state.shortcuts.chords.Chord(shortcutCommandPalette), state.modal, want)
 	}
@@ -188,11 +188,11 @@ func TestHeadlessShortcutCaptureRestoresOnlyItsOwnDefault(t *testing.T) {
 			options := freshOptions(t)
 			state := newTestState(t, options)
 			showShortcutSettings(state)
-			state.shortcuts.bind(shortcutFind, keymap.Chord{Key: ui.KeyF8})
+			state.shortcuts.bind(shortcutFind, keymap.Chord{Key: gfx.KeyF8})
 			if deleted {
 				state.shortcuts.unbind(shortcutFind)
 			}
-			other := keymap.Chord{Modifiers: ui.ModifierAlt, Char: 'j'}
+			other := keymap.Chord{Modifiers: gfx.ModifierAlt, Char: 'j'}
 			state.shortcuts.bind(shortcutCompletion, other)
 			state.save()
 			view, err := headless.Open(app.Config{
@@ -207,7 +207,7 @@ func TestHeadlessShortcutCaptureRestoresOnlyItsOwnDefault(t *testing.T) {
 			if err := view.ClickLabel(state.shortcuts.labels[shortcutFind]); err != nil {
 				t.Fatal(err)
 			}
-			var reset ui.Rect
+			var reset gfx.Rect
 			for _, hit := range view.Snapshot().Hits {
 				if hit.ID == hitShortcutCaptureReset {
 					reset = hit.Bounds
@@ -249,7 +249,7 @@ func TestHeadlessShortcutCaptureCloseHoversOnlyOnItself(t *testing.T) {
 	if err := session.ClickLabel(state.shortcuts.labels[shortcutFind]); err != nil {
 		t.Fatal(err)
 	}
-	var close ui.Rect
+	var close gfx.Rect
 	for _, hit := range session.Snapshot().Hits {
 		if hit.ID == hitShortcutCaptureClose {
 			close = hit.Bounds
@@ -264,7 +264,7 @@ func TestHeadlessShortcutCaptureCloseHoversOnlyOnItself(t *testing.T) {
 	if got := session.Snapshot().Hovered; got != hitShortcutCaptureDismiss {
 		t.Fatalf("the pointer outside the dialog hovers %v, want the dismiss backdrop", got)
 	}
-	center := ui.Point{X: close.X + close.Width/2, Y: close.Y + close.Height/2}
+	center := gfx.Point{X: close.X + close.Width/2, Y: close.Y + close.Height/2}
 	if err := session.Move(center.X, center.Y); err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestHeadlessShortcutResetLivesInThePageHeader(t *testing.T) {
 	}
 	defer session.Close()
 
-	var reset, firstRow ui.Rect
+	var reset, firstRow gfx.Rect
 	for _, hit := range session.Snapshot().Hits {
 		switch hit.ID {
 		case hitShortcutReset:
@@ -423,7 +423,7 @@ func TestHeadlessDigitShortcutSwitchesTabs(t *testing.T) {
 	defer session.Close()
 
 	modifier := "ctrl"
-	if keymap.Primary&ui.ModifierMeta != 0 {
+	if keymap.Primary&gfx.ModifierMeta != 0 {
 		modifier = "cmd"
 	}
 	if err := session.Keys(modifier + "+1"); err != nil {
@@ -458,7 +458,7 @@ func TestHeadlessLocalTerminalShortcutOpensItsTab(t *testing.T) {
 	defer session.Close()
 
 	modifier := "ctrl"
-	if keymap.Primary&ui.ModifierMeta != 0 {
+	if keymap.Primary&gfx.ModifierMeta != 0 {
 		modifier = "cmd"
 	}
 	if err := session.Keys(modifier + "+shift+t"); err != nil {

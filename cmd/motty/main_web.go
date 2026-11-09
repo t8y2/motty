@@ -5,10 +5,10 @@ package main
 import (
 	"fmt"
 
+	"github.com/vivaui/viva/gfx"
 	platform "github.com/vivaui/viva/internal/platform"
 	"github.com/vivaui/viva/internal/platform/web"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/buildinfo"
 	"motty/internal/workbench"
 )
@@ -16,8 +16,8 @@ import (
 func main() {
 	state := workbench.New()
 	theme := state.Theme()
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 
 	var nativeInput web.TextInput
 	handleText := func(event web.TextEvent) (web.TextState, error) {
@@ -38,7 +38,7 @@ func main() {
 			return nil
 		}
 		nativeInput = web.TextInput{
-			Bounds:   ui.Rect{X: context.Bounds.X + 10, Y: context.Bounds.Y, Width: max(context.Bounds.Width-20, 1), Height: context.Bounds.Height},
+			Bounds:   gfx.Rect{X: context.Bounds.X + 10, Y: context.Bounds.Y, Width: max(context.Bounds.Width-20, 1), Height: context.Bounds.Height},
 			FontSize: 13, Color: theme.Foreground,
 			State: editorState(editor), OnEvent: handleText,
 		}

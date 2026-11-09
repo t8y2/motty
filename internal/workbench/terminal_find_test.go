@@ -6,14 +6,14 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/term"
 )
 
 func openFindForTest(t testing.TB, state *State) (*Session, *terminalFind) {
 	t.Helper()
-	result := state.Shortcut(ui.KeyEvent{Modifiers: keymap.Primary, Text: "f"})
+	result := state.Shortcut(gfx.KeyEvent{Modifiers: keymap.Primary, Text: "f"})
 	if !result.Handled || !result.Repaint || result.Focus != hitTerminalFindField || !result.FocusVisible {
 		t.Fatalf("find shortcut result = %+v", result)
 	}
@@ -37,7 +37,7 @@ func typeTerminalFind(t testing.TB, state *State, value string) {
 
 func TestTerminalFindSearchesHistoryAndNavigatesMatches(t *testing.T) {
 	state, _, _, shell := liveSession(t)
-	state.Resize(ui.Size{Width: 420, Height: 260})
+	state.Resize(gfx.Size{Width: 420, Height: 260})
 	for line := 0; line < 30; line++ {
 		if line == 12 || line == 24 {
 			shell.say("target 你e\u0301 line\r\n")
@@ -60,11 +60,11 @@ func TestTerminalFindSearchesHistoryAndNavigatesMatches(t *testing.T) {
 		t.Fatalf("count = %q", find.count)
 	}
 
-	result := state.Key(ui.KeyEvent{Target: hitTerminalFindField, Key: ui.KeyEnter})
+	result := state.Key(gfx.KeyEvent{Target: hitTerminalFindField, Key: gfx.KeyEnter})
 	if !result.Handled || find.active != 1 || find.count != "2 of 2" {
 		t.Fatalf("next result = %+v active %d count %q", result, find.active, find.count)
 	}
-	state.Key(ui.KeyEvent{Target: hitTerminalFindField, Key: ui.KeyEnter, Modifiers: ui.ModifierShift})
+	state.Key(gfx.KeyEvent{Target: hitTerminalFindField, Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift})
 	if find.active != 0 || find.count != "1 of 2" {
 		t.Fatalf("previous result = active %d count %q", find.active, find.count)
 	}
@@ -89,7 +89,7 @@ func TestClearingTheScreenRescansAnOpenFind(t *testing.T) {
 		t.Fatalf("matches = %d, want the line just printed", len(find.matches))
 	}
 	shortcut := state.shortcuts.chords.Chord(shortcutClearScreen)
-	state.Shortcut(ui.KeyEvent{Target: hitTerminalFindField, Modifiers: shortcut.Modifiers, Text: string(shortcut.Char)})
+	state.Shortcut(gfx.KeyEvent{Target: hitTerminalFindField, Modifiers: shortcut.Modifiers, Text: string(shortcut.Char)})
 	if len(find.matches) != 0 || find.active != -1 || find.count != state.messages.TerminalFindNoMatches {
 		t.Fatalf("after the clear = %d matches, active %d, count %q", len(find.matches), find.active, find.count)
 	}
@@ -109,7 +109,7 @@ func TestTerminalFindInputIsBoundedSingleLineAndCloseRestoresTerminalFocus(t *te
 	}
 
 	find.matches = make([]term.SearchMatch, 1, terminalFindKeep+1)
-	result := state.Key(ui.KeyEvent{Target: hitTerminalFindField, Key: ui.KeyEscape})
+	result := state.Key(gfx.KeyEvent{Target: hitTerminalFindField, Key: gfx.KeyEscape})
 	if !result.Handled || result.Focus != hitTerminalList.At(int(session.ID)) || find.open || len(find.matches) != 0 || cap(find.matches) != 0 {
 		t.Fatalf("close result=%+v open=%t matches=%d/%d", result, find.open, len(find.matches), cap(find.matches))
 	}
@@ -121,12 +121,12 @@ func TestTerminalFindInputIsBoundedSingleLineAndCloseRestoresTerminalFocus(t *te
 	}
 
 	openFindForTest(t, state)
-	pointer := state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitTerminalFindClose})
+	pointer := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitTerminalFindClose})
 	if !pointer.Handled || pointer.Focus != hitTerminalList.At(int(session.ID)) || find.open {
 		t.Fatalf("pointer close = %+v open=%t", pointer, find.open)
 	}
 	openFindForTest(t, state)
-	if result := state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitTerminalFindClose}); result.Handled || !find.open {
+	if result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTerminalFindClose}); result.Handled || !find.open {
 		t.Fatalf("secondary close = %+v open=%t", result, find.open)
 	}
 }
@@ -138,16 +138,16 @@ func TestTerminalFindPaintsAccessibleControlsAndDistinctHighlights(t *testing.T)
 	_, find := openFindForTest(t, state)
 	typeTerminalFind(t, state, "needle")
 
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	field, ok := hitByID(&canvas, hitTerminalFindField)
-	if !ok || field.Role != ui.RoleTextField || field.Value != "needle" || field.Label != state.messages.TerminalFindLabel {
+	if !ok || field.Role != gfx.RoleTextField || field.Value != "needle" || field.Label != state.messages.TerminalFindLabel {
 		t.Fatalf("find field = %+v, present=%t", field, ok)
 	}
-	for _, id := range []ui.ID{hitTerminalFindPrevious, hitTerminalFindNext, hitTerminalFindClose} {
+	for _, id := range []gfx.ID{hitTerminalFindPrevious, hitTerminalFindNext, hitTerminalFindClose} {
 		hit, ok := hitByID(&canvas, id)
-		if !ok || hit.Role != ui.RoleButton || hit.Disabled {
+		if !ok || hit.Role != gfx.RoleButton || hit.Disabled {
 			t.Fatalf("find action %d = %+v, present=%t", id, hit, ok)
 		}
 	}
@@ -177,12 +177,12 @@ func TestPaintingAnUnchangedTerminalFindAllocatesNothing(t *testing.T) {
 	openFindForTest(t, state)
 	typeTerminalFind(t, state, "needle")
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	// Scrolling to a match lights the scrollbar for a while; time has to pass
 	// for the application to be at rest.
 	var at time.Duration
 	canvas.SetClock(func() time.Duration { return at })
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	paint := func() {
 		at += 10 * time.Second
 		canvas.Reset()
@@ -208,8 +208,8 @@ func BenchmarkPaintTerminalFindUnchanged(b *testing.B) {
 	state.Wake()
 	openFindForTest(b, state)
 	typeTerminalFind(b, state, "needle")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
@@ -264,8 +264,8 @@ func TestADeferredFindAsksForTheFrameThatCatchesUp(t *testing.T) {
 	find := &state.sessions[0].term.find
 	find.lastScan = state.now()
 	find.pending = true
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	delay, ok := canvas.NextFrame()
 	if !ok || delay <= 0 || delay > terminalFindRefreshInterval {
 		t.Fatalf("deferred find scheduled frame delay=%v ok=%t, want within %v", delay, ok, terminalFindRefreshInterval)

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 // connectPickerHits is the place of the controls this file paints.
@@ -75,7 +75,7 @@ func (state *State) rebuildConnectPicker() {
 // for local terminals and for hosts when the catalog has no named groups.
 type connectPickerCandidate struct {
 	label, detail string
-	target        ui.ID
+	target        gfx.ID
 	group         *hostGroup
 	key           string
 	// searchOnly rows are indexed for the search but stay out of the
@@ -129,15 +129,15 @@ func (state *State) shellsListed() {
 
 // connectPickEdit is the pencil of a host row, named by the host: zero for the
 // rows that are not a saved host.
-func connectPickEdit(target ui.ID) ui.ID {
+func connectPickEdit(target gfx.ID) gfx.ID {
 	if target.Scope() != hitConnectPickList {
-		return ui.ID{}
+		return gfx.ID{}
 	}
 	return hitConnectPickEdit.At(item(target))
 }
 
 // clickConnectPick connects the picker's choice in a tab of its own.
-func (state *State) clickConnectPick(id ui.ID) bool {
+func (state *State) clickConnectPick(id gfx.ID) bool {
 	switch {
 	case id == hitConnectPickWorkspaceNew:
 		state.openWorkspaceDraft(workspaceDraftTemporary)

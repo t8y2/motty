@@ -2,8 +2,8 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"slices"
 	"strings"
 )
@@ -22,7 +22,7 @@ type noteViewState struct {
 	previewSelect                                        components.TextSelection
 	previewSource                                        string
 	treeBar, previewBar, popupBar                        noteScrollbar
-	pointer                                              ui.Point
+	pointer                                              gfx.Point
 	pointerValid                                         bool
 	previewArea                                          components.ScrollArea
 	previewDragging                                      bool
@@ -35,7 +35,7 @@ type noteViewState struct {
 	tagPopupScroll, tagPopupGrab                         float32
 	tagPopupDragging                                     bool
 	tagQuery                                             string
-	returnFocus                                          ui.ID
+	returnFocus                                          gfx.ID
 	treeFolderSelection                                  bool
 	scrollDrag                                           bool
 	scrollGrab                                           float32
@@ -44,11 +44,11 @@ type noteViewState struct {
 	collapsed                                            bool
 	expanded                                             map[string]bool
 	searchOpen, drawer                                   bool
-	treeBounds, workspace, documentBounds, overlayAnchor ui.Rect
+	treeBounds, workspace, documentBounds, overlayAnchor gfx.Rect
 	// overlayFrom is the control the open menu or popup hangs under, found by
 	// its identity each paint; without one the overlay hangs at overlayAnchor,
 	// the point a context menu was opened at.
-	overlayFrom              ui.ID
+	overlayFrom              gfx.ID
 	listArea                 components.ScrollArea
 	treeScroll               float32
 	noteTokens, folderTokens map[string]int
@@ -56,7 +56,7 @@ type noteViewState struct {
 	inlineID, inlineParent   string
 	inlineFolder, inlineNew  bool
 	inline                   text.Editor
-	focus                    ui.ID
+	focus                    gfx.ID
 	menu                     string
 	menuID                   string
 	menuFolder               bool
@@ -68,7 +68,7 @@ type noteViewState struct {
 type noteDrop struct {
 	parent, before string
 	valid, folder  bool
-	bounds         ui.Rect
+	bounds         gfx.Rect
 	inside         bool
 }
 
@@ -220,14 +220,14 @@ func (s *State) commitNoteInline() bool {
 
 // overlayAnchorRect is where the open menu or popup hangs: under the control
 // that opened it, as this paint declared it, or at the point it was opened at.
-func (v *noteViewState) overlayAnchorRect(c *ui.Canvas) ui.Rect {
+func (v *noteViewState) overlayAnchorRect(c *gfx.Canvas) gfx.Rect {
 	if bounds, ok := c.HitBounds(v.overlayFrom); ok {
 		return bounds
 	}
 	return v.overlayAnchor
 }
 
-func (s *State) noteViewClick(id ui.ID) bool {
+func (s *State) noteViewClick(id gfx.ID) bool {
 	if s.clickNoteFindActions(id) {
 		return true
 	}

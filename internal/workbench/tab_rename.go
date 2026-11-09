@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
@@ -52,7 +52,7 @@ func (state *State) openTabRename(workspace layoutcore.WorkspaceID) {
 	state.modal = modalRenameTab
 }
 
-func (state *State) clickTabRenameDialog(id ui.ID) {
+func (state *State) clickTabRenameDialog(id gfx.ID) {
 	switch id {
 	case hitTabRenameClose, hitTabRenameCancel:
 		state.modal = modalNone
@@ -88,31 +88,31 @@ func (state *State) clickTabRenameDialog(id ui.ID) {
 }
 
 // tabRenameKey makes Enter in the field, or on the button, submit.
-func (state *State) tabRenameKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.modal != modalRenameTab || event.Key != ui.KeyEnter || event.Repeat {
-		return ui.EventResult{}, false
+func (state *State) tabRenameKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalRenameTab || event.Key != gfx.KeyEnter || event.Repeat {
+		return gfx.EventResult{}, false
 	}
 	if event.Target != hitTabRenameField && event.Target != hitTabRenameSubmit {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.clickTabRenameDialog(hitTabRenameSubmit)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintTabRenameDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintTabRenameDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	messages := state.messages
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitTabRenameClose, InitialFocusID: hitTabRenameField,
-		ContentSize: ui.Size{Width: 460}, FitBody: true, BodyHeight: 62,
+		ContentSize: gfx.Size{Width: 460}, FitBody: true, BodyHeight: 62,
 	})
 	title, placeholder := messages.RenameTabTitle, messages.RenameTabPlaceholder
 	if state.tabRename.session != 0 {
 		title, placeholder = messages.RenameTerminalTitle, messages.RenameTerminalPlaceholder
 	}
 	layout := dialog.Begin(title, "")
-	var slot flex.Box
+	var slot ui.Box
 	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() { slot = f.Slot().Height(62) })
 	f.End()

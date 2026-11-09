@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
 )
@@ -26,11 +26,11 @@ import (
 // the page with the seeded journal. OnWake is the production wake path, so
 // typing into the native search field becomes a query exactly as it does in a
 // window.
-func openSessionLogsWindow(t *testing.T, state *State, size ui.Size) *headless.Session {
+func openSessionLogsWindow(t *testing.T, state *State, size gfx.Size) *headless.Session {
 	return openSessionLogsWindowWithInvalidator(t, state, size, nil)
 }
 
-func openSessionLogsWindowWithInvalidator(t *testing.T, state *State, size ui.Size, invalidator *app.Invalidator) *headless.Session {
+func openSessionLogsWindowWithInvalidator(t *testing.T, state *State, size gfx.Size, invalidator *app.Invalidator) *headless.Session {
 	t.Helper()
 	view, err := headless.Open(app.Config{
 		Title: "Session Logs", Width: int(size.Width), Height: int(size.Height), Tree: Tree(),
@@ -83,7 +83,7 @@ func testSessionLogsIdleMidnightRefresh(t *testing.T, zone string) {
 	state.sessionLogs.view.timeRange = sessionLogTimeToday
 	state.openSessionLogs()
 	sessionLogsWait(t, state)
-	view := openSessionLogsWindowWithInvalidator(t, state, ui.Size{Width: 1180, Height: 807}, &invalidator)
+	view := openSessionLogsWindowWithInvalidator(t, state, gfx.Size{Width: 1180, Height: 807}, &invalidator)
 	if state.sessionLogs.view.matched != 1 {
 		t.Fatal("initial today row missing")
 	}
@@ -134,7 +134,7 @@ func sessionLogsSettle(t *testing.T, view *headless.Session, state *State) {
 
 // windowHitInside reports whether every painted control of the page is inside
 // the window, which is what keeps it clickable at the stress size.
-func windowHitsInside(t *testing.T, view *headless.Session, size ui.Size) {
+func windowHitsInside(t *testing.T, view *headless.Session, size gfx.Size) {
 	t.Helper()
 	for _, hit := range view.Snapshot().Hits {
 		if hit.ID.IsZero() || hit.Block {
@@ -161,7 +161,7 @@ func hasHitLabel(view *headless.Session, label string) bool {
 
 // textAt finds the painted text value inside a row, for the icon-alignment
 // check between two navigation rows.
-func textAt(texts []ui.Text, value string, row ui.Rect) (ui.Text, bool) {
+func textAt(texts []gfx.Text, value string, row gfx.Rect) (gfx.Text, bool) {
 	for _, text := range texts {
 		if text.Value == value && text.Bounds.X >= row.X && text.Bounds.Y >= row.Y &&
 			text.Bounds.X+text.Bounds.Width <= row.X+row.Width &&
@@ -169,14 +169,14 @@ func textAt(texts []ui.Text, value string, row ui.Rect) (ui.Text, bool) {
 			return text, true
 		}
 	}
-	return ui.Text{}, false
+	return gfx.Text{}, false
 }
 
 // The page paints at both window sizes, in both themes and languages: readable
 // text, a navigation row aligned with its siblings, and a detail panel that
 // switches rows with the pointer.
 func TestSessionLogsNativeLayout(t *testing.T) {
-	sizes := []ui.Size{{Width: 1400, Height: 900}, {Width: 1180, Height: 807}, {Width: 760, Height: 620}}
+	sizes := []gfx.Size{{Width: 1400, Height: 900}, {Width: 1180, Height: 807}, {Width: 760, Height: 620}}
 	for _, size := range sizes {
 		for _, language := range []i18n.Language{i18n.English, i18n.Chinese} {
 			for _, look := range []appearance{appearanceDark, appearanceLight} {
@@ -196,7 +196,7 @@ func TestSessionLogsNativeLayout(t *testing.T) {
 
 					snapshot := view.Snapshot()
 					nav, ok := view.Hit(m.Title)
-					if !ok || nav.Role != ui.RoleMenuItem || !nav.Selected {
+					if !ok || nav.Role != gfx.RoleMenuItem || !nav.Selected {
 						t.Fatalf("the sidebar row = %+v, ok=%v", nav, ok)
 					}
 					// The row matches the Monitor row it follows, and its label
@@ -320,7 +320,7 @@ func TestSessionLogsNativeP1Actions(t *testing.T) {
 	state := sessionLogsState(t, true)
 	state.setLanguage(i18n.Chinese)
 	state.setAppearance(appearanceDark)
-	size := ui.Size{Width: 1180, Height: 807}
+	size := gfx.Size{Width: 1180, Height: 807}
 	view := openSessionLogsWindow(t, state, size)
 	m := state.messages.SessionLogs
 	if err := view.ClickLabel(state.sessionLogs.view.page[1].favoriteLabel); err != nil {
@@ -404,7 +404,7 @@ func TestSessionLogsNativeP2QueryActions(t *testing.T) {
 	state := sessionLogsState(t, true)
 	state.setLanguage(i18n.English)
 	state.setAppearance(appearanceLight)
-	size := ui.Size{Width: 760, Height: 620}
+	size := gfx.Size{Width: 760, Height: 620}
 	view := openSessionLogsWindow(t, state, size)
 	m := state.messages.SessionLogs
 	if err := view.ClickLabel(m.FilterSort); err != nil {
@@ -478,7 +478,7 @@ func TestSessionLogsNativeP2QueryActions(t *testing.T) {
 // Typing into the native field filters the page, Escape empties it, and the
 // keyboard walks the filters and rows in the order they are painted.
 func TestSessionLogsNativeKeyboardFlow(t *testing.T) {
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	state := newTestState(t, sessionLogsTestOptions(t))
 	sessionLogsSeed(t, state)
 	state.openSessionLogs()
@@ -567,7 +567,7 @@ func TestSessionLogsNativeKeyboardFlow(t *testing.T) {
 // A warm paint does no database work and allocates nothing: the page's strings
 // are prepared off the paint path, and only the query completion replaces them.
 func TestSessionLogsNativePaintIsInert(t *testing.T) {
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	state := newTestState(t, sessionLogsTestOptions(t))
 	sessionLogsSeed(t, state)
 	state.openSessionLogs()
@@ -580,7 +580,7 @@ func TestSessionLogsNativePaintIsInert(t *testing.T) {
 
 	generation := state.sessionLogs.requestGeneration
 	loading := state.sessionLogs.view.loading
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(20, func() {
 		canvas.Reset()

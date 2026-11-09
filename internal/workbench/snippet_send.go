@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 
@@ -63,7 +63,7 @@ func (state *State) sendTargetOptions() [3]components.SegmentOption {
 	}
 }
 
-func sendTargetOf(id ui.ID) (sendTarget, bool) {
+func sendTargetOf(id gfx.ID) (sendTarget, bool) {
 	switch id {
 	case hitSendTargetCurrent:
 		return sendCurrent, true
@@ -203,7 +203,7 @@ func (state *State) submitSend() {
 }
 
 // clickSnippetSend handles the controls of the send form.
-func (state *State) clickSnippetSend(id ui.ID) bool {
+func (state *State) clickSnippetSend(id gfx.ID) bool {
 	if !state.commandPalette.snippets {
 		return false
 	}
@@ -224,7 +224,7 @@ func (state *State) clickSnippetSend(id ui.ID) bool {
 }
 
 // paintSnippetSend paints the send form into the boxes the palette declared.
-func (state *State) paintSnippetSend(canvas *ui.Canvas, input, button, targets flex.Box, run flex.Box) {
+func (state *State) paintSnippetSend(canvas *gfx.Canvas, input, button, targets ui.Box, run ui.Box) {
 	m, theme := state.messages.Tools, state.Theme()
 	sender := &state.snippetSend
 	value := sender.input.String()
@@ -238,7 +238,7 @@ func (state *State) paintSnippetSend(canvas *ui.Canvas, input, button, targets f
 		ID: hitSnippetSendButton, Label: m.SendCommandButton, Disabled: empty,
 	})
 	options := state.sendTargetOptions()
-	selected := [...]ui.ID{sendCurrent: hitSendTargetCurrent, sendAll: hitSendTargetAll, sendChosen: hitSendTargetChosen}[sender.target]
+	selected := [...]gfx.ID{sendCurrent: hitSendTargetCurrent, sendAll: hitSendTargetAll, sendChosen: hitSendTargetChosen}[sender.target]
 	components.BeginSegmentedControl(canvas, theme, targets.Rect(), options[:], selected).Paint()
 	state.paintDialogCheckbox(canvas, hitSendRun, m.SendRun, sender.runs(), run)
 }

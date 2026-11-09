@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 )
@@ -135,11 +135,11 @@ func ownerPropertyValue(name string, id uint32) string {
 	return fmt.Sprintf("%s (%d)", name, id)
 }
 
-func (state *State) paintFileProperties(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintFileProperties(canvas *gfx.Canvas, viewport gfx.Rect) {
 	state.paintSFTPFileProperties(canvas, viewport, &state.fileProperties)
 }
 
-func (state *State) paintSFTPFileProperties(canvas *ui.Canvas, viewport ui.Rect, properties *sftpFileProperties) {
+func (state *State) paintSFTPFileProperties(canvas *gfx.Canvas, viewport gfx.Rect, properties *sftpFileProperties) {
 	if properties == nil || !properties.open {
 		return
 	}
@@ -149,7 +149,7 @@ func (state *State) paintSFTPFileProperties(canvas *ui.Canvas, viewport ui.Rect,
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitFilePropertiesDismiss, CloseID: hitFilePropertiesClose, InitialFocusID: hitFilePropertiesClose,
-		ContentSize: ui.Size{Width: contentWidth}, FitBody: true,
+		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true,
 		BodyHeight: float32(len(rows)) * filePropertiesRowHeight,
 	})
 	layout := dialog.Begin(m.PropertiesTitle, properties.entry.Name)
@@ -159,8 +159,8 @@ func (state *State) paintSFTPFileProperties(canvas *ui.Canvas, viewport ui.Rect,
 			if index > 0 {
 				f.Slot().Height(1).Background(state.pal.line)
 			}
-			f.Row().Height(filePropertiesRowHeight-1).PadSides(10, 8, 10, 8).Gap(16).Items(flex.Center).Children(func() {
-				f.Text(row.label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.muted).
+			f.Row().Height(filePropertiesRowHeight-1).PadSides(10, 8, 10, 8).Gap(16).Items(ui.Center).Children(func() {
+				f.Text(row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).
 					LineHeight(20).Width(92).Shrink(0).Ellipsis()
 				f.Text(row.value).FontSize(metrics.FontSizeM).Color(state.pal.text).
 					LineHeight(20).Grow(1).Ellipsis()
@@ -172,7 +172,7 @@ func (state *State) paintSFTPFileProperties(canvas *ui.Canvas, viewport ui.Rect,
 	dialog.End()
 }
 
-func (state *State) clickFileProperties(id ui.ID) {
+func (state *State) clickFileProperties(id gfx.ID) {
 	if id != hitFilePropertiesDismiss && id != hitFilePropertiesClose {
 		return
 	}
@@ -180,7 +180,7 @@ func (state *State) clickFileProperties(id ui.ID) {
 	state.fileProperties = sftpFileProperties{}
 }
 
-func (w *sftpWindow) clickFileProperties(id ui.ID) bool {
+func (w *sftpWindow) clickFileProperties(id gfx.ID) bool {
 	if !w.fileProperties.open {
 		return false
 	}
@@ -190,39 +190,39 @@ func (w *sftpWindow) clickFileProperties(id ui.ID) bool {
 	return true
 }
 
-func (state *State) filePropertiesKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) filePropertiesKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalFileProperties {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape || event.Key == ui.KeyEnter && event.Target == hitFilePropertiesClose {
+	if event.Key == gfx.KeyEscape || event.Key == gfx.KeyEnter && event.Target == hitFilePropertiesClose {
 		state.clickFileProperties(hitFilePropertiesClose)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (w *sftpWindow) filePropertiesKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (w *sftpWindow) filePropertiesKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if !w.fileProperties.open {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape || event.Key == ui.KeyEnter && event.Target == hitFilePropertiesClose {
+	if event.Key == gfx.KeyEscape || event.Key == gfx.KeyEnter && event.Target == hitFilePropertiesClose {
 		w.fileProperties = sftpFileProperties{}
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{Handled: true}, true
+	return gfx.EventResult{Handled: true}, true
 }
 
 // modalFilePropertiesKey keeps a single-column properties dialog modal: only
 // its own Enter target and Escape reach it. Everything else is consumed before
 // file-list shortcuts can act on the row behind the dialog.
-func (state *State) modalFilePropertiesKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) modalFilePropertiesKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalFileProperties {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape && !event.Repeat ||
-		event.Key == ui.KeyEnter && event.Target == hitFilePropertiesClose {
+	if event.Key == gfx.KeyEscape && !event.Repeat ||
+		event.Key == gfx.KeyEnter && event.Target == hitFilePropertiesClose {
 		state.clickFileProperties(hitFilePropertiesClose)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{Handled: true}, true
+	return gfx.EventResult{Handled: true}, true
 }

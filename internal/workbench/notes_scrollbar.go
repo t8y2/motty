@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var hitNotePreviewThumb = tree.ID(notesHits, "preview-thumb")
@@ -17,7 +17,7 @@ type noteScrollbar struct {
 	activity bool
 }
 
-func (bar *noteScrollbar) fade(c *ui.Canvas, id ui.ID, offset float32, active, scrollable bool) float32 {
+func (bar *noteScrollbar) fade(c *gfx.Canvas, id gfx.ID, offset float32, active, scrollable bool) float32 {
 	if !scrollable {
 		*bar = noteScrollbar{offset: offset}
 		return 0
@@ -38,7 +38,7 @@ func (bar *noteScrollbar) fade(c *ui.Canvas, id ui.ID, offset float32, active, s
 			bar.lit = false
 		}
 	}
-	return c.Animate(id, 0, target, ui.DefaultMotion())
+	return c.Animate(id, 0, target, gfx.DefaultMotion())
 }
 
 func (v *noteViewState) resetPopupScrollbar() {
@@ -46,7 +46,7 @@ func (v *noteViewState) resetPopupScrollbar() {
 	v.tagPopupDragging = false
 }
 
-func (s *State) noteScrollHover(bounds ui.Rect) bool {
+func (s *State) noteScrollHover(bounds gfx.Rect) bool {
 	v := &s.noteContent().view
 	return v.pointerValid && pointInRect(v.pointer.X, v.pointer.Y, bounds)
 }
@@ -73,7 +73,7 @@ func (s *State) noteScrollRegions() uint8 {
 }
 
 // The local theme belongs only to the scroll area's bars, not its contents.
-func (s *State) noteHoverScrollArea(c *ui.Canvas, bounds ui.Rect, content ui.Size, offset float32, viewport, thumb ui.ID, label string, bar *noteScrollbar, dragging, hovered bool) components.ScrollArea {
+func (s *State) noteHoverScrollArea(c *gfx.Canvas, bounds gfx.Rect, content gfx.Size, offset float32, viewport, thumb gfx.ID, label string, bar *noteScrollbar, dragging, hovered bool) components.ScrollArea {
 	theme := s.Theme()
 	area := components.BeginScrollArea(nil, theme, bounds, content).Offset(0, offset).HoverScrollbars(true)
 	geometry := area.Geometry()
@@ -84,10 +84,10 @@ func (s *State) noteHoverScrollArea(c *ui.Canvas, bounds ui.Rect, content ui.Siz
 		Viewport(viewport, label).VerticalScrollbar(thumb, label, "").HoverScrollbars(fade > 0)
 }
 
-func (s *State) notePreviewScrollbarPointer(e ui.PointerEvent) ui.EventResult {
+func (s *State) notePreviewScrollbarPointer(e gfx.PointerEvent) gfx.EventResult {
 	v := &s.noteContent().view
 	geo := v.previewArea.Geometry()
-	if e.Kind == ui.PointerDown && e.Target == hitNotePreviewThumb && (e.Button == ui.PointerButtonPrimary || e.Button == ui.PointerButtonNone) && geo.MaxOffsetY > 0 {
+	if e.Kind == gfx.PointerDown && e.Target == hitNotePreviewThumb && (e.Button == gfx.PointerButtonPrimary || e.Button == gfx.PointerButtonNone) && geo.MaxOffsetY > 0 {
 		v.previewDragging = true
 		v.previewGrab = geo.VerticalThumb.Height / 2
 		if e.Y >= geo.VerticalThumb.Y && e.Y < geo.VerticalThumb.Y+geo.VerticalThumb.Height {
@@ -95,17 +95,17 @@ func (s *State) notePreviewScrollbarPointer(e ui.PointerEvent) ui.EventResult {
 		}
 	}
 	if !v.previewDragging {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	switch e.Kind {
-	case ui.PointerMove, ui.PointerDown, ui.PointerUp:
+	case gfx.PointerMove, gfx.PointerDown, gfx.PointerUp:
 		s.noteScrollDriver(true)
 		s.noteContent().previewScroll = geo.VerticalOffsetForThumb(e.Y - v.previewGrab)
-		if e.Kind == ui.PointerUp {
+		if e.Kind == gfx.PointerUp {
 			v.previewDragging = false
 		}
 	default:
 		v.previewDragging = false
 	}
-	return ui.EventResult{Handled: true, Repaint: true}
+	return gfx.EventResult{Handled: true, Repaint: true}
 }

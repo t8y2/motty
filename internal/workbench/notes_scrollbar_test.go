@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestNotesScrollbarActivityLingersAndIsIndependent(t *testing.T) {
-	var c ui.Canvas
+	var c gfx.Canvas
 	var bar, idle noteScrollbar
 	sample := func(at time.Duration, over bool, offset float32) float32 {
 		c.SetClock(func() time.Duration { return at })
@@ -51,12 +51,12 @@ func TestNotesPreviewScrollbarDragsWithoutChangingDraft(t *testing.T) {
 	s.Click(hitNoteAdd)
 	s.notes.body.Insert(strings.Repeat("paragraph\n\n", 300))
 	s.notes.view.mode = notePreview
-	var c ui.Canvas
+	var c gfx.Canvas
 	at := time.Duration(0)
 	paint := func() {
 		c.SetClock(func() time.Duration { return at })
 		c.BeginFrame()
-		s.Paint(&c, ui.Size{Width: 1400, Height: 900})
+		s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
 		c.EndFrame()
 	}
 	paint()
@@ -64,7 +64,7 @@ func TestNotesPreviewScrollbarDragsWithoutChangingDraft(t *testing.T) {
 		t.Fatal("idle preview has an invisible scrollbar hit")
 	}
 	b := s.notes.previewBounds
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerMove, X: b.X + 20, Y: b.Y + 20})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: b.X + 20, Y: b.Y + 20})
 	at = time.Second
 	paint()
 	at = 1200 * time.Millisecond
@@ -78,12 +78,12 @@ func TestNotesPreviewScrollbarDragsWithoutChangingDraft(t *testing.T) {
 	}
 	before := s.notes.body.String()
 	x, y := geo.VerticalThumb.X+2, geo.VerticalThumb.Y+2
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitNotePreviewThumb, X: x, Y: y})
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerMove, X: x, Y: geo.VerticalTrack.Y + geo.VerticalTrack.Height + 100})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitNotePreviewThumb, X: x, Y: y})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: x, Y: geo.VerticalTrack.Y + geo.VerticalTrack.Height + 100})
 	if s.notes.previewScroll != geo.MaxOffsetY || !s.notes.view.previewDragging {
 		t.Fatal("dragging did not reach the bottom")
 	}
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerUp, X: x, Y: geo.VerticalTrack.Y})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerUp, X: x, Y: geo.VerticalTrack.Y})
 	if s.notes.previewScroll != 0 || s.notes.view.previewDragging || s.notes.body.String() != before {
 		t.Fatal("drag release changed draft or failed to reach top")
 	}
@@ -97,9 +97,9 @@ func TestNotesTreeAndPickerScrollbarsKeepNativeGeometryAndReset(t *testing.T) {
 	for i := 0; i < 80; i++ {
 		s.notes.list = append(s.notes.list, savedNote{ID: fmt.Sprint(i), Title: fmt.Sprint(i)})
 	}
-	var c ui.Canvas
+	var c gfx.Canvas
 	c.BeginFrame()
-	s.Paint(&c, ui.Size{Width: 1400, Height: 900})
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
 	c.EndFrame()
 	geo := s.notes.view.listArea.Geometry()
 	if geo.MaxOffsetY <= 0 || geo.VerticalTrack.Width > 6 {
@@ -133,12 +133,12 @@ func TestNotesPickerOverlayDrags(t *testing.T) {
 	v := &s.notes.view
 	v.popup = "tags"
 	v.documentBounds.Width = 600
-	v.overlayAnchor = ui.Rect{X: 500, Y: 50, Width: 28, Height: 28}
-	var c ui.Canvas
+	v.overlayAnchor = gfx.Rect{X: 500, Y: 50, Width: 28, Height: 28}
+	var c gfx.Canvas
 	paint := func(at time.Duration) {
 		c.SetClock(func() time.Duration { return at })
 		c.BeginFrame()
-		s.paintNoteTagPopup(&c, ui.Rect{Width: 1400, Height: 900})
+		s.paintNoteTagPopup(&c, gfx.Rect{Width: 1400, Height: 900})
 		c.EndFrame()
 	}
 	paint(0)
@@ -149,7 +149,7 @@ func TestNotesPickerOverlayDrags(t *testing.T) {
 	if _, ok := hitByID(&c, hitNoteTagPickerThumb); ok {
 		t.Fatal("idle picker intercepts clicks on its hidden track")
 	}
-	s.notesScroll(ui.ScrollEvent{X: geo.Viewport.X + 20, Y: geo.Viewport.Y + 20, DeltaY: 80})
+	s.notesScroll(gfx.ScrollEvent{X: geo.Viewport.X + 20, Y: geo.Viewport.Y + 20, DeltaY: 80})
 	paint(time.Second)
 	paint(1200 * time.Millisecond)
 	if _, ok := hitByID(&c, hitNoteTagPickerThumb); !ok {
@@ -157,8 +157,8 @@ func TestNotesPickerOverlayDrags(t *testing.T) {
 	}
 	geo = v.tagPopupArea.Geometry()
 	x, y := geo.VerticalThumb.X+2, geo.VerticalThumb.Y+2
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerDown, Target: hitNoteTagPickerThumb, X: x, Y: y})
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerUp, X: x, Y: geo.VerticalTrack.Y + geo.VerticalTrack.Height + 100})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitNoteTagPickerThumb, X: x, Y: y})
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerUp, X: x, Y: geo.VerticalTrack.Y + geo.VerticalTrack.Height + 100})
 	if v.tagPopupScroll != geo.MaxOffsetY || v.tagPopupDragging {
 		t.Fatal("picker thumb did not reach bottom and release")
 	}

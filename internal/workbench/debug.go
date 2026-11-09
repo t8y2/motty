@@ -5,7 +5,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/inspector"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
@@ -50,7 +50,7 @@ var (
 // only what a steady paint would otherwise rebuild. A release build keeps none
 // of it.
 type devState struct {
-	layout  flex.View
+	layout  ui.View
 	editor  text.Editor
 	code    components.CodeEditor
 	started bool
@@ -80,17 +80,17 @@ func (state *State) devEditor() *text.Editor {
 }
 
 // devDeclareNavigation puts the gallery in the sidebar, above Settings.
-func (state *State) devDeclareNavigation(f *flex.Frame) {
+func (state *State) devDeclareNavigation(f *ui.Frame) {
 	state.navigationItem(f, hitDebug, iconBug, state.messages.NavDebug, state.activeSection == sectionDebug, 4)
 }
 
 // devPlaysIconMotion reports whether id is the gallery's row. It is a sidebar
 // row like the others, so its icon moves when it is chosen; only the row itself
 // is missing from a release build.
-func devPlaysIconMotion(id ui.ID) bool { return id == hitDebug }
+func devPlaysIconMotion(id gfx.ID) bool { return id == hitDebug }
 
 // devClick opens the gallery from the sidebar and handles its controls.
-func (state *State) devClick(id ui.ID) bool {
+func (state *State) devClick(id gfx.ID) bool {
 	if id == hitDebug {
 		state.activeSection = sectionDebug
 		state.save()
@@ -109,26 +109,26 @@ func (state *State) devBeginPaint() {}
 // devInspectorChord is the shortcut that cycles the inspector: off, the control
 // under the pointer, every control. Command or Control with Alt and Shift, so no
 // terminal program or page binding comes near it.
-var devInspectorChord = keymap.Chord{Modifiers: keymap.Primary | ui.ModifierAlt | ui.ModifierShift, Char: 'i'}
+var devInspectorChord = keymap.Chord{Modifiers: keymap.Primary | gfx.ModifierAlt | gfx.ModifierShift, Char: 'i'}
 
 // devEndPaint paints the inspector over the finished frame.
-func (state *State) devEndPaint(canvas *ui.Canvas, size ui.Size) {
-	state.dev.inspector.Paint(canvas, ui.Rect{Width: size.Width, Height: size.Height})
+func (state *State) devEndPaint(canvas *gfx.Canvas, size gfx.Size) {
+	state.dev.inspector.Paint(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
 }
 
 // devShortcut cycles the inspector.
-func (state *State) devShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) devShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if chord, ok := keymap.FromEvent(event); !ok || chord != devInspectorChord {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if !event.Release && !event.Repeat {
 		state.dev.inspector.Cycle()
 	}
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 // devPaintPage paints the gallery and reports whether it was the page on show.
-func (state *State) devPaintPage(canvas *ui.Canvas, bounds ui.Rect) bool {
+func (state *State) devPaintPage(canvas *gfx.Canvas, bounds gfx.Rect) bool {
 	if state.activeSection != sectionDebug {
 		return false
 	}
@@ -161,7 +161,7 @@ func (state *State) devRestoreWorkspace(workspace string) bool {
 // devEditorFor hands the gallery's editor to the text system, so typing reaches
 // it the way it reaches a file window: composition, paste and the caret are the
 // framework's, and only the text stays here.
-func (state *State) devEditorFor(hit ui.ID) *text.Editor {
+func (state *State) devEditorFor(hit gfx.ID) *text.Editor {
 	if state.activeSection != sectionDebug || state.modal != modalNone || hit != hitDebugEditor {
 		return nil
 	}
@@ -183,15 +183,15 @@ func (state *State) devEditorInput() *app.TextInput {
 
 // devEditorKey is what the keys of the gallery's editor do: the editing commands
 // and the movement keys, exactly as in a file window.
-func (state *State) devEditorKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) devEditorKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.activeSection != sectionDebug || state.modal != modalNone || event.Target != hitDebugEditor {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if event.Release {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	editor := state.devEditor()
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if command, ok := components.CodeEditorCommandForKey(event); ok && command.Apply(editor) {
 		state.dev.code.Reveal(editor.ByteOffset(editor.Caret()))
 		return handled, true
@@ -202,25 +202,25 @@ func (state *State) devEditorKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		editor.MoveTo(len([]rune(value[:offset])), extend)
 		return handled, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // devEditorPointer routes pointer events to the editor, which uses them for its
 // scrollbars. Placing the caret is the text system's job, not the page's.
-func (state *State) devEditorPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) devEditorPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if state.activeSection != sectionDebug || state.modal != modalNone {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if event.Target != hitDebugScroll && event.Target != hitDebugScrollX {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.dev.code.Pointer(event), true
 }
 
 // devEditorScroll scrolls the gallery's editor over it.
-func (state *State) devEditorScroll(event ui.ScrollEvent) (ui.EventResult, bool) {
+func (state *State) devEditorScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	if state.activeSection != sectionDebug || state.modal != modalNone {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	return state.dev.code.Scroll(event), true
 }

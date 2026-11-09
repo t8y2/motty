@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/datadir"
 	"motty/internal/workbench"
 )
@@ -17,7 +17,7 @@ type minSizeHost struct {
 
 type minSizeWindow struct {
 	config app.Config
-	frame  ui.Rect
+	frame  gfx.Rect
 	closed func()
 	done   bool
 }
@@ -34,12 +34,12 @@ func (w *minSizeWindow) Close() {
 		w.closed()
 	}
 }
-func (w *minSizeWindow) Hide()                  {}
-func (w *minSizeWindow) Show()                  {}
-func (w *minSizeWindow) Frame() (ui.Rect, bool) { return w.frame, true }
+func (w *minSizeWindow) Hide()                   {}
+func (w *minSizeWindow) Show()                   {}
+func (w *minSizeWindow) Frame() (gfx.Rect, bool) { return w.frame, true }
 
-func (h *minSizeHost) OpenWindow(config app.Config, _ *ui.Canvas, closed func()) (app.WindowControl, error) {
-	w := &minSizeWindow{config: config, frame: ui.Rect{Width: float32(config.Width), Height: float32(config.Height)}, closed: closed}
+func (h *minSizeHost) OpenWindow(config app.Config, _ *gfx.Canvas, closed func()) (app.WindowControl, error) {
+	w := &minSizeWindow{config: config, frame: gfx.Rect{Width: float32(config.Width), Height: float32(config.Height)}, closed: closed}
 	h.windows = append(h.windows, w)
 	return w, nil
 }
@@ -80,7 +80,7 @@ func TestMainWindowKeepsItsMinimumAndCorrectsARestoredTinyFrame(t *testing.T) {
 			window := host.windows[len(host.windows)-1]
 			opened = window.config
 			if shrink {
-				window.config.OnFrameChange(ui.Rect{Width: 400, Height: 300})
+				window.config.OnFrameChange(gfx.Rect{Width: 400, Height: 300})
 			}
 			window.Close()
 			return nil

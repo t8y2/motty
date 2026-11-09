@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 )
 
@@ -111,7 +111,7 @@ func TestSFTPDirectoryTreeIsOffByDefaultAndLoadsLocalChildrenOnExpand(t *testing
 	if index < 0 {
 		t.Fatal("nested folder is missing from the visible tree")
 	}
-	if result := w.key(ui.KeyEvent{Target: sftpWindowTreeDisclosures[0].At(index), Key: ui.KeyEnter}); !result.Handled {
+	if result := w.key(gfx.KeyEvent{Target: sftpWindowTreeDisclosures[0].At(index), Key: gfx.KeyEnter}); !result.Handled {
 		t.Fatal("keyboard activation of a tree disclosure was not handled")
 	}
 	waitDirectoryTree(t, state, w, view, func() bool {
@@ -144,25 +144,25 @@ func TestSFTPDirectoryTreeKeyboardNavigatesAndLoadsLocalChild(t *testing.T) {
 	if branchIndex < 0 {
 		t.Fatal("directory is not in the visible tree")
 	}
-	if result := window.key(ui.KeyEvent{Target: sftpWindowTreeRows[0].At(branchIndex), Key: ui.KeyRight}); !result.Handled || !branch.expanded {
+	if result := window.key(gfx.KeyEvent{Target: sftpWindowTreeRows[0].At(branchIndex), Key: gfx.KeyRight}); !result.Handled || !branch.expanded {
 		t.Fatal("Right did not expand the branch")
 	}
 	waitDirectoryTree(t, state, window, view, func() bool {
 		return branch.loaded && !branch.loading && directoryTreeIndex(window, true, childDirectory) >= 0
 	})
 	branchIndex = directoryTreeIndex(window, true, branch.path)
-	result := window.key(ui.KeyEvent{Target: sftpWindowTreeRows[0].At(branchIndex), Key: ui.KeyRight})
+	result := window.key(gfx.KeyEvent{Target: sftpWindowTreeRows[0].At(branchIndex), Key: gfx.KeyRight})
 	childIndex := directoryTreeIndex(window, true, childDirectory)
 	if !result.Handled || result.Focus != sftpWindowTreeRows[0].At(childIndex) ||
 		!sameDirectoryTreeTestLocation(true, window.directoryTree[0].selectedPath, childDirectory) {
 		t.Fatalf("Right did not select the child: focus=%+v childIndex=%d selected=%q child=%q", result, childIndex, window.directoryTree[0].selectedPath, childDirectory)
 	}
-	result = window.key(ui.KeyEvent{Target: result.Focus, Key: ui.KeyLeft})
+	result = window.key(gfx.KeyEvent{Target: result.Focus, Key: gfx.KeyLeft})
 	if !result.Handled || result.Focus != sftpWindowTreeRows[0].At(branchIndex) ||
 		!sameDirectoryTreePath(true, window.directoryTree[0].selectedPath, branch.path) {
 		t.Fatalf("Left did not select the parent: %+v", result)
 	}
-	result = window.key(ui.KeyEvent{Target: result.Focus, Key: ui.KeyLeft})
+	result = window.key(gfx.KeyEvent{Target: result.Focus, Key: gfx.KeyLeft})
 	if !result.Handled || branch.expanded {
 		t.Fatalf("Left did not collapse the parent: %+v", result)
 	}
@@ -354,7 +354,7 @@ func TestSFTPDirectoryTreeWidthKeepsFileListUsable(t *testing.T) {
 }
 
 func TestSFTPDirectoryTreeLeafKeepsDisclosureColumn(t *testing.T) {
-	content := ui.Rect{X: 20, Y: 10, Width: 160, Height: 28}
+	content := gfx.Rect{X: 20, Y: 10, Width: 160, Height: 28}
 	branch := directoryTreeContentBounds(content, true)
 	leaf := directoryTreeContentBounds(content, false)
 	if branch != content {
@@ -425,9 +425,9 @@ func TestSFTPDirectoryTreeRightKeyAtDepthLimitDoesNotPanic(t *testing.T) {
 		}
 		tree.visible[index] = sftpTreeVisibleRow{node: node, depth: uint8(index)}
 	}
-	result, handled := w.directoryTreeKey(ui.KeyEvent{
+	result, handled := w.directoryTreeKey(gfx.KeyEvent{
 		Target: sftpWindowTreeRows[1].At(maxDirectoryTreeDepth),
-		Key:    ui.KeyRight,
+		Key:    gfx.KeyRight,
 	})
 	if !handled || !result.Handled {
 		t.Fatal("right arrow at the depth limit was not handled")
@@ -522,13 +522,13 @@ func TestSFTPLocationProfileHoverShowsQuickActions(t *testing.T) {
 		t.Fatal("hovering the profiles button did not open the quick card")
 	}
 	dualHit(t, view, hitSFTPProfileHoverItems.At(0))
-	result, handled := w.profileQuickKey(ui.KeyEvent{Target: hitSFTPProfileHoverItems.At(0), Key: ui.KeyEscape})
+	result, handled := w.profileQuickKey(gfx.KeyEvent{Target: hitSFTPProfileHoverItems.At(0), Key: gfx.KeyEscape})
 	if !handled || !result.Handled || w.ui.profileHoverOpen || result.Focus != hitSFTPLocationProfiles {
 		t.Fatal("Escape did not close the focused profile preview and restore trigger focus")
 	}
 	w.ui.profileHoverOpen = true
 	w.ui.profileHoverTrigger = hitSFTPProfileQuick
-	result, handled = w.profileQuickKey(ui.KeyEvent{Target: hitSFTPProfileHoverItems.At(0), Key: ui.KeyEscape})
+	result, handled = w.profileQuickKey(gfx.KeyEvent{Target: hitSFTPProfileHoverItems.At(0), Key: gfx.KeyEscape})
 	if !handled || !result.Handled || result.Focus != hitSFTPProfileQuick {
 		t.Fatal("Escape did not return focus to the profile quick trigger")
 	}

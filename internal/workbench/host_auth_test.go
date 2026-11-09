@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -15,8 +15,8 @@ func TestHostDialogSelectsAPrivateKey(t *testing.T) {
 	identityFingerprint := state.identities[0].Fingerprint
 	state.Click(hitAddHost)
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogAuth); !ok {
 		t.Fatal("SSH form has no authentication choice")
 	}
@@ -27,7 +27,7 @@ func TestHostDialogSelectsAPrivateKey(t *testing.T) {
 	state.Click(hitDialogAuth)
 	state.Click(hitDialogAuthItemList.At(int(authPrivateKey)))
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogIdentity); !ok {
 		t.Fatal("private-key authentication has no key choice")
 	}
@@ -113,8 +113,8 @@ func TestAgentAuthenticationHidesAndDoesNotSaveAPassword(t *testing.T) {
 	typeInto(state, hitDialogPassword, "discard me")
 	state.Click(hitDialogAuth)
 	state.Click(hitDialogAuthItemList.At(int(authAgent)))
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogPassword); ok {
 		t.Fatal("agent-only authentication paints a password field")
 	}

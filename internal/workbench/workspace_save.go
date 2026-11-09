@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
@@ -44,7 +44,7 @@ func (state *State) openWorkspaceSave(workspace layoutcore.WorkspaceID) {
 	state.modal = modalWorkspaceSave
 }
 
-func (state *State) clickWorkspaceSave(id ui.ID) {
+func (state *State) clickWorkspaceSave(id gfx.ID) {
 	switch id {
 	case hitWorkspaceSaveDismiss, hitWorkspaceSaveClose, hitWorkspaceSaveCancel:
 		state.closeModal()
@@ -159,13 +159,13 @@ func (state *State) workspaceSaveHostCatalogIDs(workspace layoutcore.WorkspaceID
 	return hostIDs, nil
 }
 
-func (state *State) paintWorkspaceSaveDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintWorkspaceSaveDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	messages := state.messages
 	save := &state.workspaceSave
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitWorkspaceSaveDismiss, CloseID: hitWorkspaceSaveClose, InitialFocusID: hitWorkspaceSaveName,
-		ContentSize: ui.Size{Width: 500}, FitBody: true, BodyHeight: 92,
+		ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: 92,
 	})
 	description := ""
 	if index, ok := state.workspaceTab(save.workspace); ok {
@@ -173,7 +173,7 @@ func (state *State) paintWorkspaceSaveDialog(canvas *ui.Canvas, viewport ui.Rect
 			len(state.deck.Panes(save.workspace, nil)))
 	}
 	layout := dialog.Begin(messages.WorkspaceSaveTitle, description)
-	var field flex.Box
+	var field ui.Box
 	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().Children(func() { field = f.Slot().Height(62) })
 	f.End()
@@ -198,23 +198,23 @@ func (state *State) paintWorkspaceSaveDialog(canvas *ui.Canvas, viewport ui.Rect
 
 // workspaceSaveKey keeps the save dialog's keyboard behavior local to it:
 // Escape closes, and Enter submits from either the name field or the button.
-func (state *State) workspaceSaveKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) workspaceSaveKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalWorkspaceSave {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape && !event.Repeat {
+	if event.Key == gfx.KeyEscape && !event.Repeat {
 		state.closeModal()
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if event.Key != ui.KeyEnter || event.Repeat ||
+	if event.Key != gfx.KeyEnter || event.Repeat ||
 		(event.Target != hitWorkspaceSaveName && event.Target != hitWorkspaceSaveSubmit) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if editor := state.EditorFor(event.Target); editor != nil {
 		if _, composing := editor.Composition(); composing {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 	}
 	state.submitWorkspaceSave()
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }

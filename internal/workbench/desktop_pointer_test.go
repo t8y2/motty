@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/desktop"
 )
 
@@ -48,7 +48,7 @@ func TestTheRemotePointerIsTheCursorOverThePicture(t *testing.T) {
 		remote = &pointingDesktop{followingDesktop: newFollowingDesktop(1600, 900, false)}
 		return remote, nil
 	}
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	screen := newFrames(state, 2)
 	screen.paint(size, 0)
 	eventCanvases[state] = &screen.canvas
@@ -57,7 +57,7 @@ func TestTheRemotePointerIsTheCursorOverThePicture(t *testing.T) {
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	waitUntil(t, state, "the picture", func() bool { return session.desk != nil && session.desk.width > 0 })
 
-	cursorOverPicture := func() ui.Hit {
+	cursorOverPicture := func() gfx.Hit {
 		t.Helper()
 		state.Wake()
 		screen.paint(size, 0)
@@ -69,17 +69,17 @@ func TestTheRemotePointerIsTheCursorOverThePicture(t *testing.T) {
 			}
 		}
 		t.Fatal("the desktop page has no hit")
-		return ui.Hit{}
+		return gfx.Hit{}
 	}
 
-	if hit := cursorOverPicture(); hit.Cursor != ui.PointerCursorCrosshair || hit.CursorImage != nil {
+	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorCrosshair || hit.CursorImage != nil {
 		t.Fatalf("before the remote names a pointer: %v, %v", hit.Cursor, hit.CursorImage)
 	}
 
 	// A shape becomes the system's pointer, as big as it was drawn in the screen's own pixels.
 	remote.say(desktop.PointerBitmap, pointerShapeOf(32, 32, 4, 5))
 	hit := cursorOverPicture()
-	if hit.Cursor != ui.PointerCursorImage || hit.CursorImage == nil {
+	if hit.Cursor != gfx.PointerCursorImage || hit.CursorImage == nil {
 		t.Fatalf("a named shape: %v, %v", hit.Cursor, hit.CursorImage)
 	}
 	if width, height := hit.CursorImage.Size(); width != 32 || height != 32 {
@@ -110,17 +110,17 @@ func TestTheRemotePointerIsTheCursorOverThePicture(t *testing.T) {
 	}
 
 	remote.say(desktop.PointerHidden, desktop.PointerShape{})
-	if hit := cursorOverPicture(); hit.Cursor != ui.PointerCursorHidden || hit.CursorImage != nil {
+	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorHidden || hit.CursorImage != nil {
 		t.Fatalf("a hidden pointer: %v, %v", hit.Cursor, hit.CursorImage)
 	}
 	remote.say(desktop.PointerSystem, desktop.PointerShape{})
-	if hit := cursorOverPicture(); hit.Cursor != ui.PointerCursorDefault || hit.CursorImage != nil {
+	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorDefault || hit.CursorImage != nil {
 		t.Fatalf("the ordinary pointer: %v, %v", hit.Cursor, hit.CursorImage)
 	}
 
 	// A picture no system could draw is not worth losing the pointer over.
-	remote.say(desktop.PointerBitmap, pointerShapeOf(ui.MaxCursorImageSize+1, 1, 0, 0))
-	if hit := cursorOverPicture(); hit.Cursor != ui.PointerCursorDefault || hit.CursorImage != nil {
+	remote.say(desktop.PointerBitmap, pointerShapeOf(gfx.MaxCursorImageSize+1, 1, 0, 0))
+	if hit := cursorOverPicture(); hit.Cursor != gfx.PointerCursorDefault || hit.CursorImage != nil {
 		t.Fatalf("an oversized shape: %v, %v", hit.Cursor, hit.CursorImage)
 	}
 }

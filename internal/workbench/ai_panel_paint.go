@@ -9,7 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/risk"
@@ -61,7 +61,7 @@ type aiRowView struct {
 
 	top      float32 // below the top of the list, set by every paint
 	height   float32
-	textRect ui.Rect // the painted Markdown body, for pointer selection
+	textRect gfx.Rect // the painted Markdown body, for pointer selection
 	// lines are the wrapped lines of a user message, a reasoning or a notice; of a
 	// tool card the first commandLines are its command, the rest its output.
 	lines        []string
@@ -72,7 +72,7 @@ type aiRowView struct {
 	// User messages and tool cards use plain-text source maps for the same
 	// selection contract. Their slots are transient geometry of the last paint.
 	plain       [aiTextPartCount]aiPlainTextView
-	textSlots   [aiTextPartCount]flex.Box
+	textSlots   [aiTextPartCount]ui.Box
 	textSlotSet [aiTextPartCount]bool
 
 	detail  string // the command or path a tool card shows
@@ -143,9 +143,9 @@ func aiMonoWrap(dst []string, value string, cols, maxLines int) ([]string, bool)
 
 // aiWrap appends value, wrapped as body text of the given size, to the lines of
 // view and returns how many lines that made.
-func (state *State) aiWrap(canvas *ui.Canvas, view *aiRowView, value string, size, width float32) int {
+func (state *State) aiWrap(canvas *gfx.Canvas, view *aiRowView, value string, size, width float32) int {
 	panel := &state.ai.panel
-	panel.wrapped = canvas.WrapLines(panel.wrapped[:0], value, size, ui.WeightRegular, width, aiMaxLines)
+	panel.wrapped = canvas.WrapLines(panel.wrapped[:0], value, size, gfx.WeightRegular, width, aiMaxLines)
 	view.lines = append(view.lines, panel.wrapped...)
 	return len(panel.wrapped)
 }
@@ -230,7 +230,7 @@ func aiToolIcon(name string) uint8 {
 }
 
 // aiStatusText is the words and the color a tool's status is shown with.
-func (state *State) aiStatusText(status aiToolStatus) (string, ui.Color) {
+func (state *State) aiStatusText(status aiToolStatus) (string, gfx.Color) {
 	m, pal := state.messages.AIPanel, state.pal
 	switch status {
 	case aiToolWaiting:
@@ -259,13 +259,13 @@ func (state *State) aiRiskText(level risk.Level) string {
 }
 
 // aiRiskColors are the badge's text color and its fill for a level.
-func (state *State) aiRiskColors(level risk.Level) (foreground, fill ui.Color) {
+func (state *State) aiRiskColors(level risk.Level) (foreground, fill gfx.Color) {
 	pal := state.pal
 	switch level {
 	case risk.Medium:
 		return pal.warning, withAlpha(pal.warning, 0.16)
 	case risk.High:
-		orange := ui.Color{
+		orange := gfx.Color{
 			Red: (pal.warning.Red + pal.danger.Red) / 2, Green: (pal.warning.Green + pal.danger.Green) / 2,
 			Blue: (pal.warning.Blue + pal.danger.Blue) / 2, Alpha: 1,
 		}
@@ -299,7 +299,7 @@ const (
 
 // aiBuild measures one message for the given width: the lines it wraps to and its
 // height.
-func (state *State) aiBuild(canvas *ui.Canvas, view *aiRowView, item *aiItem, width, cell, cellHeight float32, title string) {
+func (state *State) aiBuild(canvas *gfx.Canvas, view *aiRowView, item *aiItem, width, cell, cellHeight float32, title string) {
 	if view.kind != item.kind {
 		view.expanded = false
 	}
@@ -388,7 +388,7 @@ func (state *State) aiLayoutTool(view *aiRowView, item *aiItem, width, cell, cel
 
 // aiScrollbarTheme keeps the narrow thumb visible against the panel at rest,
 // and gives hover and press a clear contrast increase.
-func (state *State) aiScrollbarTheme() ui.Theme {
+func (state *State) aiScrollbarTheme() gfx.Theme {
 	theme := state.Theme()
 	theme.Border = state.pal.faint
 	theme.MutedForeground = state.pal.text
@@ -414,27 +414,27 @@ func (state *State) aiScrollbarValue(history bool, offset, maximum float32) stri
 // is not painted again stops catching the wheel.
 func (state *State) aiPanelBeginPaint() {
 	panel := &state.ai.panel
-	panel.rect, panel.list, panel.listing = ui.Rect{}, ui.Rect{}, false
+	panel.rect, panel.list, panel.listing = gfx.Rect{}, gfx.Rect{}, false
 	panel.scrollbar.geometry = components.MessageScrollerGeometry{}
 	if !state.aiPanelVisible() {
 		panel.scrollbar.dragging = false
 	}
 	panel.copyCount = 0
-	panel.answer = ui.Rect{}
+	panel.answer = gfx.Rect{}
 	panel.linkRows, panel.linkBase = 0, 0
 }
 
 // paintAIPanel draws the assistant over the active terminal workspace: a column
 // the panes made room for, or a drawer when the window is too narrow.
-func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
+func (state *State) paintAIPanel(canvas *gfx.Canvas, size gfx.Size) {
 	if !state.aiPanelVisible() {
 		return
 	}
-	state.ai.panel.window = ui.Rect{Width: size.Width, Height: size.Height}
+	state.ai.panel.window = gfx.Rect{Width: size.Width, Height: size.Height}
 	defer state.paintAIDrop(canvas)
 	pal := state.pal
 	if reserve := state.aiSectionReserve(size); reserve > 0 {
-		bounds := ui.Rect{
+		bounds := gfx.Rect{
 			X: size.Width - reserve + sectionCardMargin, Y: windowBarHeight,
 			Width: reserve - 2*sectionCardMargin, Height: max(size.Height-windowBarHeight-sectionCardMargin-state.toolbarDockBottomReserve(false), 0),
 		}
@@ -443,8 +443,8 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 		// Keep the resize target in the gutter. Only hover/press/focus paints a
 		// separator; the resting cards already have their own rounded borders.
 		theme := state.Theme()
-		theme.Border = ui.Color{}
-		window := ui.Rect{Y: bounds.Y, Width: size.Width, Height: bounds.Height}
+		theme.Border = gfx.Color{}
+		window := gfx.Rect{Y: bounds.Y, Width: size.Width, Height: bounds.Height}
 		dividerX := bounds.X - (sectionCardMargin+1)/2
 		components.BeginResizable(canvas, theme, hitAIDivider, window, dividerX/max(window.Width-1, 1)).
 			Limits(0, 1).HandleSize(sectionCardMargin).Paint(state.messages.AIPanel.ResizePanel)
@@ -456,9 +456,9 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 	}
 	if reserve := state.aiReserve(state.deck.ActiveWorkspace(), size); reserve > 0 {
 		// Under the window bar, at the right: a hairline, then the panel.
-		var bounds, divider flex.Box
+		var bounds, divider ui.Box
 		inner := state.baseWorkspacePixelBounds(size)
-		f := state.aiFlex.shell.Begin(canvas, state.Theme(), ui.Rect{X: inner.X, Width: inner.Width, Height: inner.Y + inner.Height})
+		f := state.aiFlex.shell.Begin(canvas, state.Theme(), gfx.Rect{X: inner.X, Width: inner.Width, Height: inner.Y + inner.Height})
 		f.Column().Fill().Children(func() {
 			f.Column().Height(windowBarHeight).Shrink(0)
 			f.Row().Grow(1).Children(func() {
@@ -471,7 +471,7 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 		})
 		f.End()
 		// The hairline is the panel's left edge, and can be dragged to change its width.
-		window := ui.Rect{X: inner.X, Y: windowBarHeight, Width: inner.Width, Height: inner.Height}
+		window := gfx.Rect{X: inner.X, Y: windowBarHeight, Width: inner.Width, Height: inner.Height}
 		components.BeginResizable(canvas, state.Theme(), hitAIDivider, window, (divider.Rect().X-inner.X)/max(window.Width-1, 1)).
 			Limits(0, 1).HandleSize(8).Paint(state.messages.AIPanel.ResizePanel)
 		state.paintAIBody(canvas, bounds.Rect())
@@ -484,15 +484,15 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 	extent := state.aiPanelExtent(size)
 	drawerExtent := min(extent, size.Width*0.92)
 	drawer := components.BeginDrawer(canvas, state.Theme(), viewport, components.DrawerOptions{
-		Layer: drawerLayer, Scope: ui.ID{}, DismissID: hitAIDrawerDismiss,
+		Layer: drawerLayer, Scope: gfx.ID{}, DismissID: hitAIDrawerDismiss,
 		Side: components.DrawerRight, ContentExtent: drawerExtent,
 		InitialFocusID: hitAIInput,
 	})
 	layout := drawer.Begin("", "")
 	if layout.Content.Width > 0 && layout.Content.Height > 0 {
 		theme := state.Theme()
-		theme.Border = ui.Color{}
-		window := ui.Rect{X: viewport.X, Y: viewport.Y, Width: viewport.Width, Height: viewport.Height}
+		theme.Border = gfx.Color{}
+		window := gfx.Rect{X: viewport.X, Y: viewport.Y, Width: viewport.Width, Height: viewport.Height}
 		components.BeginResizable(canvas, theme, hitAIDivider, window, (layout.Content.X-viewport.X)/max(viewport.Width-1, 1)).
 			Limits(0, 1).HandleSize(8).Paint(state.messages.AIPanel.ResizePanel)
 	}
@@ -510,7 +510,7 @@ func (state *State) paintAIPanel(canvas *ui.Canvas, size ui.Size) {
 // paintAIMenuOverlay paints the open chip menus after the panel body. They are
 // window-level popups: beside the home card a menu may open outside the card, so
 // the body's clip and layer must not cut them or their dismiss backdrop.
-func (state *State) paintAIMenuOverlay(canvas *ui.Canvas) {
+func (state *State) paintAIMenuOverlay(canvas *gfx.Canvas) {
 	state.paintAIAutoScopeMenu(canvas)
 	state.paintAIReasoningMenu(canvas)
 	if !state.ai.panel.modelMenu {
@@ -522,7 +522,7 @@ func (state *State) paintAIMenuOverlay(canvas *ui.Canvas) {
 	state.paintAIModelMenu(canvas)
 }
 
-func (state *State) paintAIBody(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintAIBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	m := state.messages.AIPanel
 	panel.rect = bounds
@@ -534,13 +534,13 @@ func (state *State) paintAIBody(canvas *ui.Canvas, bounds ui.Rect) {
 		setupLabel, setupSummary = state.messages.AISettings.CLIAuthLogin, state.messages.AISettings.CLIAuthSignedOut
 	}
 	boxHeight := state.aiPrepareBottom(canvas, width)
-	setupWidth := min(max(canvas.TextWidthWeight(setupLabel, aiSmallSize, ui.WeightMedium)+32, 110), width*0.5)
+	setupWidth := min(max(canvas.TextWidthWeight(setupLabel, aiSmallSize, gfx.WeightMedium)+32, 110), width*0.5)
 
 	var body aiBody
 	f := state.aiFlex.body.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().Children(func() {
 		// The title row: the name, a new conversation, the history, and the way out.
-		f.Row().Height(aiTitleRow).PadX(aiPad).Gap(4).Items(flex.Center).Children(func() {
+		f.Row().Height(aiTitleRow).PadX(aiPad).Gap(4).Items(ui.Center).Children(func() {
 			f.Icon(lucideIcons[iconBot]).Color(pal.accent).MarginSides(0, 4, 0, 0)
 			f.Text(m.Title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(22).Grow(1)
 			body.newChat = f.Slot().Size(barToolSize, barToolSize)
@@ -549,8 +549,8 @@ func (state *State) paintAIBody(canvas *ui.Canvas, bounds ui.Rect) {
 		})
 		// The way to get a model; once there is one, the message box names it.
 		if showSetup {
-			f.Row().Height(56).MarginSides(0, aiPad, 8, aiPad).PadX(12).Gap(12).Items(flex.Center).Background(pal.surface).Border(1, pal.line).Radius(radius.control).Children(func() {
-				f.Paragraph(setupSummary, 3).FontSize(aiSmallSize).Weight(ui.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).Grow(1)
+			f.Row().Height(56).MarginSides(0, aiPad, 8, aiPad).PadX(12).Gap(12).Items(ui.Center).Background(pal.surface).Border(1, pal.line).Radius(radius.control).Children(func() {
+				f.Paragraph(setupSummary, 3).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).Grow(1)
 				body.setup = f.Slot().Size(setupWidth, 30)
 			})
 		}
@@ -601,7 +601,7 @@ func (state *State) aiModelText() (string, bool) {
 }
 
 // paintAIHeader paints the controls of the title row into their slots.
-func (state *State) paintAIHeader(canvas *ui.Canvas, body *aiBody) {
+func (state *State) paintAIHeader(canvas *gfx.Canvas, body *aiBody) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	m := state.messages.AIPanel
 	state.paintIconButton(canvas, hitAIClose, iconClose, body.close.Rect(), m.Close, false, iconButtonQuiet, pal.workspace)
@@ -618,17 +618,17 @@ func historyStyle(open bool) iconButtonStyle {
 
 // paintAIEmpty is the panel before the first question: a third of the free room
 // above the icon, the title, the hint and the examples, and two thirds below.
-func (state *State) paintAIEmpty(canvas *ui.Canvas, list ui.Rect) {
+func (state *State) paintAIEmpty(canvas *gfx.Canvas, list gfx.Rect) {
 	pal := state.pal
 	title, hint, texts := state.aiEmptyTexts()
-	var examples [aiExamples]flex.Box
+	var examples [aiExamples]ui.Box
 	f := state.aiFlex.empty.Begin(canvas, state.Theme(), list)
 	f.Column().Fill().PadX(aiPad).Children(func() {
 		f.Spacer().MinHeight(8)
 		f.Column().Shrink(0).Children(func() {
-			f.Icon(lucideIcons[iconBot]).Size(26, 26).Color(pal.accent).Self(flex.Center)
+			f.Icon(lucideIcons[iconBot]).Size(26, 26).Color(pal.accent).Self(ui.Center)
 			f.Text(title).FontSize(15).Bold().Color(pal.text).LineHeight(24).TextCenter().MarginSides(14, 0, 0, 0)
-			f.Paragraph(hint, 4).FontSize(aiSmallSize).Weight(ui.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).TextCenter().MarginSides(8, 12, 0, 12)
+			f.Paragraph(hint, 4).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).TextCenter().MarginSides(8, 12, 0, 12)
 			f.Column().Gap(6).MarginSides(16, 0, 6, 0).Children(func() {
 				for index := range examples {
 					examples[index] = f.Slot().Height(36)
@@ -653,9 +653,9 @@ func (state *State) paintAIEmpty(canvas *ui.Canvas, list ui.Rect) {
 			background = pal.surfaceSoft
 		}
 		r := state.aiFlex.row.Begin(canvas, state.Theme(), bounds)
-		r.Row().Fill().PadSides(0, 10, 0, 12).Gap(8).Items(flex.Center).Background(background).Radius(radius.control).
-			HitWith(id, example, ui.HitOptions{Role: ui.RoleButton}).Children(func() {
-			r.Text(example).FontSize(aiSmallSize).Weight(ui.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Grow(1)
+		r.Row().Fill().PadSides(0, 10, 0, 12).Gap(8).Items(ui.Center).Background(background).Radius(radius.control).
+			HitWith(id, example, gfx.HitOptions{Role: gfx.RoleButton}).Children(func() {
+			r.Text(example).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Grow(1)
 			r.Icon(lucideIcons[iconChevronRight]).Size(14, 14).Color(pal.muted).Shrink(0)
 		})
 		r.End()
@@ -681,14 +681,14 @@ const (
 
 // paintAIHistory lists the saved conversations in place of the messages. Only the
 // rows on screen are declared; the rows above and below are one block each.
-func (state *State) paintAIHistory(canvas *ui.Canvas, list ui.Rect) {
+func (state *State) paintAIHistory(canvas *gfx.Canvas, list gfx.Rect) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	m := state.messages.AIPanel
-	var body flex.Box
+	var body ui.Box
 	f := state.aiFlex.history.Begin(canvas, state.Theme(), list)
 	f.Column().Fill().Children(func() {
 		f.Column().Height(aiHistoryHeader).Shrink(0).PadSides(8, aiPad, 0, aiPad).Children(func() {
-			f.Text(m.HistoryTitle).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(22)
+			f.Text(m.HistoryTitle).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22)
 		})
 		if len(ai.conversations) == 0 {
 			f.Column().Grow(1).PadSides(24, aiPad, 0, aiPad).Children(func() {
@@ -734,7 +734,7 @@ func (state *State) paintAIHistory(canvas *ui.Canvas, list ui.Rect) {
 		conversation := &ai.conversations[index]
 		openID, deleteID := hitAIHistoryOpen.At(index), hitAIHistoryDelete.At(index)
 		renameID := hitAIHistoryRename.At(index)
-		var background ui.Color
+		var background gfx.Color
 		switch {
 		case canvas.Pressed() == openID:
 			background = pal.surfaceHot
@@ -743,12 +743,12 @@ func (state *State) paintAIHistory(canvas *ui.Canvas, list ui.Rect) {
 		case conversation.ID == ai.conv:
 			background = pal.accentSoft
 		}
-		var remove, rename flex.Box
+		var remove, rename ui.Box
 		r := state.aiFlex.row.Begin(canvas, state.Theme(), slot.Rect())
-		r.Row().Fill().PadSides(0, 4, 0, 10).Gap(10).Items(flex.Center).Background(background).Radius(radius.control).
-			HitWith(openID, conversation.Title, ui.HitOptions{Role: ui.RoleButton, Hint: m.HistoryOpen}).Children(func() {
+		r.Row().Fill().PadSides(0, 4, 0, 10).Gap(10).Items(ui.Center).Background(background).Radius(radius.control).
+			HitWith(openID, conversation.Title, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.HistoryOpen}).Children(func() {
 			r.Column().Grow(1).Children(func() {
-				r.Text(conversation.Title).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text).LineHeight(20).Ellipsis()
+				r.Text(conversation.Title).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(20).Ellipsis()
 				if index < len(panel.historyDates) {
 					r.Text(panel.historyDates[index]).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16)
 				}
@@ -764,13 +764,13 @@ func (state *State) paintAIHistory(canvas *ui.Canvas, list ui.Rect) {
 }
 
 // intersectRect is the part of a that lies inside b.
-func intersectRect(a, b ui.Rect) ui.Rect {
+func intersectRect(a, b gfx.Rect) gfx.Rect {
 	left, top := max(a.X, b.X), max(a.Y, b.Y)
 	right, bottom := min(a.X+a.Width, b.X+b.Width), min(a.Y+a.Height, b.Y+b.Height)
 	if right <= left || bottom <= top {
-		return ui.Rect{}
+		return gfx.Rect{}
 	}
-	return ui.Rect{X: left, Y: top, Width: right - left, Height: bottom - top}
+	return gfx.Rect{X: left, Y: top, Width: right - left, Height: bottom - top}
 }
 
 // paintAIMessages draws the conversation in a scrolling list. Every message keeps
@@ -778,7 +778,7 @@ func intersectRect(a, b ui.Rect) ui.Rect {
 // long conversation costs the rows on screen only: those are declared in a flex
 // Scroll between two blocks as tall as the rows above and below them, and flex
 // places them.
-func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
+func (state *State) paintAIMessages(canvas *gfx.Canvas, list gfx.Rect) {
 	ai, panel := &state.ai, &state.ai.panel
 	m := state.messages.AIPanel
 	rowW := list.Width - 2*aiPad
@@ -786,11 +786,11 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 	status, usage := state.aiRunStatusText()
 	statusHeight := float32(0)
 	if status != "" {
-		panel.statusLines = canvas.WrapLines(panel.statusLines[:0], status, aiSmallSize, ui.WeightRegular, max(rowW-20, 1), 4)
+		panel.statusLines = canvas.WrapLines(panel.statusLines[:0], status, aiSmallSize, gfx.WeightRegular, max(rowW-20, 1), 4)
 		panel.usageLines = panel.usageLines[:0]
 		statusHeight = float32(len(panel.statusLines)) * aiSmallLine
 		if usage != "" {
-			panel.usageLines = canvas.WrapLines(panel.usageLines, usage, aiSmallSize, ui.WeightRegular, max(rowW-20, 1), 8)
+			panel.usageLines = canvas.WrapLines(panel.usageLines, usage, aiSmallSize, gfx.WeightRegular, max(rowW-20, 1), 8)
 			statusHeight += float32(len(panel.usageLines))*aiSmallLine + 4
 		}
 	}
@@ -852,7 +852,7 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 	// under the clip of the viewport, so that a row's hits are followed by its
 	// copy buttons, in the order the keyboard visits them.
 	panel.rowSlots = panel.rowSlots[:0]
-	var statusSlot flex.Box
+	var statusSlot ui.Box
 	f := state.aiFlex.messages.Begin(canvas, state.Theme(), list)
 	f.Scroll(scroll).Fill().PadX(aiPad).Children(func() {
 		if first < 0 {
@@ -872,7 +872,7 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 	f.End()
 
 	scroller := components.BeginMessageScroller(canvas, state.aiScrollbarTheme(), list, content, scroll).
-		Scrollbar(hitAIMessageBar, m.ScrollbarLabel, state.aiScrollbarValue(false, scroll, panel.maxScroll)).Buttons(ui.ID{}, "", hitAIToEnd, m.ScrollToEnd)
+		Scrollbar(hitAIMessageBar, m.ScrollbarLabel, state.aiScrollbarValue(false, scroll, panel.maxScroll)).Buttons(gfx.ID{}, "", hitAIToEnd, m.ScrollToEnd)
 	scroller.BeginContent()
 	for offset, slot := range panel.rowSlots {
 		index := first + offset
@@ -901,11 +901,11 @@ func (state *State) paintAIMessages(canvas *ui.Canvas, list ui.Rect) {
 	panel.scrollbar.geometry = scroller.EndContent()
 }
 
-func (state *State) paintAIRunStatus(canvas *ui.Canvas, bounds ui.Rect, label string) {
+func (state *State) paintAIRunStatus(canvas *gfx.Canvas, bounds gfx.Rect, label string) {
 	panel, pal := &state.ai.panel, state.pal
-	var activity flex.Box
+	var activity ui.Box
 	f := state.aiFlex.status.Begin(canvas, state.Theme(), bounds)
-	f.Column().Fill().Gap(4).HitWith(hitAIRunStatus, label, ui.HitOptions{Role: ui.RoleGroup, SkipTab: true}).Children(func() {
+	f.Column().Fill().Gap(4).HitWith(hitAIRunStatus, label, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true}).Children(func() {
 		f.Row().Gap(8).Children(func() {
 			activity = f.Slot().Size(12, 12).Shrink(0).MarginSides(2, 0, 0, 0)
 			f.Column().Grow(1).Children(func() {
@@ -939,14 +939,14 @@ func (state *State) aiThinking(index int) bool {
 }
 
 // aiTextLines declares wrapped lines of body text, one element each.
-func aiTextLines(f *flex.Frame, lines []string, size, lineHeight float32, color ui.Color) {
+func aiTextLines(f *ui.Frame, lines []string, size, lineHeight float32, color gfx.Color) {
 	for _, line := range lines {
-		f.Text(line).FontSize(size).Weight(ui.WeightRegular).Color(color).LineHeight(lineHeight)
+		f.Text(line).FontSize(size).Weight(gfx.WeightRegular).Color(color).LineHeight(lineHeight)
 	}
 }
 
 // aiMonoLines declares lines in the terminal's font.
-func (state *State) aiMonoLines(f *flex.Frame, lines []string, color ui.Color) {
+func (state *State) aiMonoLines(f *ui.Frame, lines []string, color gfx.Color) {
 	for _, line := range lines {
 		f.Text(line).FontSize(aiMonoSize).MonoFace(state.terminalFontFace).Color(color)
 	}
@@ -958,14 +958,14 @@ func (state *State) aiMonoLines(f *flex.Frame, lines []string, color ui.Color) {
 // An assistant message is painted by its Markdown view; the box returned is the
 // room that view is painted in, and the copy buttons of its code blocks are
 // declared over it.
-func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item *aiItem) flex.Box {
+func (state *State) declareAIRow(f *ui.Frame, index int, view *aiRowView, item *aiItem) ui.Box {
 	pal, m := state.pal, state.messages.AIPanel
 	row := f.Column()
-	var body flex.Box
+	var body ui.Box
 	view.textSlotSet = [aiTextPartCount]bool{}
 	switch item.kind {
 	case aiUser:
-		row.Items(flex.End).Children(func() {
+		row.Items(ui.End).Children(func() {
 			f.Column().MaxWidth(view.width).PadSides(aiUserPadY, aiUserPadX, aiUserPadY, aiUserPadX).Background(pal.accentSoft).Radius(radius.popup).Children(func() {
 				text := f.Column().Children(func() {
 					aiTextLines(f, view.lines, aiBodySize, aiBodyLine, pal.text)
@@ -973,11 +973,11 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 				view.textSlots[aiTextPrimary] = text
 				view.textSlotSet[aiTextPrimary] = true
 				if index < aiMaxRowHits {
-					text.HitWith(hitAIAnswerText.At(index), item.text, ui.HitOptions{Role: ui.RoleGroup, SkipTab: true})
+					text.HitWith(hitAIAnswerText.At(index), item.text, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
 				}
 				if len(item.attachments) > 0 {
 					// What the question was sent with, under its words.
-					f.Row().Height(aiAttachedLine).Gap(5).Items(flex.Center).Children(func() {
+					f.Row().Height(aiAttachedLine).Gap(5).Items(ui.Center).Children(func() {
 						f.Icon(lucideIcons[iconPaperclip]).Size(12, 12).Color(pal.muted).Shrink(0)
 						f.Text(view.detail).FontSize(aiSmallSize).Color(pal.muted).LineHeight(aiSmallLine).Ellipsis().Shrink(1)
 					})
@@ -985,8 +985,8 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 			})
 		})
 	case aiTargetChange:
-		row.Height(view.height).Items(flex.Center).Children(func() {
-			f.Row().Fill().Gap(10).Items(flex.Center).Children(func() {
+		row.Height(view.height).Items(ui.Center).Children(func() {
+			f.Row().Fill().Gap(10).Items(ui.Center).Children(func() {
 				f.Column().Grow(1).Height(1).Background(pal.line)
 				f.Text(view.detail).FontSize(aiSmallSize).Color(pal.faint).LineHeight(aiSmallLine).MaxWidth(max(view.width-48, 0)).Ellipsis()
 				f.Column().Grow(1).Height(1).Background(pal.line)
@@ -1010,7 +1010,7 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 		})
 	case aiReasoning:
 		row.Children(func() {
-			header := f.Row().Height(aiReasonHeader).PadX(4).Gap(6).Items(flex.Center).Radius(radius.item).Children(func() {
+			header := f.Row().Height(aiReasonHeader).PadX(4).Gap(6).Items(ui.Center).Radius(radius.item).Children(func() {
 				icon := iconChevronRight
 				if view.expanded {
 					icon = iconChevronDown
@@ -1020,10 +1020,10 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 				} else {
 					f.Icon(lucideIcons[icon]).Size(12, 12).Color(pal.muted)
 				}
-				f.Text(view.title).FontSize(aiSmallSize).Weight(ui.WeightMedium).Color(pal.muted).LineHeight(18)
+				f.Text(view.title).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18)
 			})
 			if index < aiMaxRowHits {
-				header.Hover(flex.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, ui.HitOptions{Role: ui.RoleButton, Expanded: view.expanded})
+				header.Hover(ui.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, gfx.HitOptions{Role: gfx.RoleButton, Expanded: view.expanded})
 			}
 			if view.expanded {
 				// The thread down the left side, and the thought beside it.
@@ -1047,17 +1047,17 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 		statusText, statusColor := state.aiStatusText(item.status)
 		row.Border(1, border).PadSides(aiToolPadY-1, aiToolPad-1, aiToolPadY-1, aiToolPad-1).Background(pal.surface).Radius(radius.control).Children(func() {
 			// The name and the risk at the left, the status at the right.
-			f.Row().Height(aiToolHeader).Items(flex.Center).Children(func() {
+			f.Row().Height(aiToolHeader).Items(ui.Center).Children(func() {
 				f.Icon(lucideIcons[aiToolIcon(item.call.Name)]).Size(14, 14).Color(pal.muted).MarginSides(0, 8, 0, 0)
-				f.Text(view.title).FontSize(aiSmallSize).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(20).Ellipsis()
+				f.Text(view.title).FontSize(aiSmallSize).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Ellipsis()
 				if item.call.Name == tools.NameTerminalExec || item.call.Name == tools.NameTerminalExecMany {
 					foreground, fill := state.aiRiskColors(item.risk)
 					f.Row().Height(16).PadX(6).Center().Shrink(0).MarginSides(0, 0, 0, 8).Background(fill).Radius(radius.control).Children(func() {
-						f.Text(state.aiRiskText(item.risk)).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(14)
+						f.Text(state.aiRiskText(item.risk)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(14)
 					})
 				}
 				f.Spacer().MinWidth(8)
-				f.Row().Shrink(0).Items(flex.Center).Children(func() {
+				f.Row().Shrink(0).Items(ui.Center).Children(func() {
 					switch item.status {
 					case aiToolDone:
 						f.Icon(lucideIcons[iconCircleCheck]).Size(13, 13).Color(statusColor).MarginSides(0, 4, 0, 0)
@@ -1071,7 +1071,7 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 							f.Column().Size(7, 7).Background(statusColor).Radius(3.5).MarginSides(0, 5, 0, 0)
 						}
 					}
-					f.Text(statusText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(statusColor).LineHeight(aiToolHeader)
+					f.Text(statusText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(statusColor).LineHeight(aiToolHeader)
 				})
 			})
 			if view.commandLines > 0 {
@@ -1082,7 +1082,7 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 					view.textSlots[aiTextPrimary] = text
 					view.textSlotSet[aiTextPrimary] = true
 					if index < aiMaxRowHits {
-						text.HitWith(hitAIAnswerText.At(index), view.detail, ui.HitOptions{Role: ui.RoleGroup, SkipTab: true})
+						text.HitWith(hitAIAnswerText.At(index), view.detail, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
 					}
 				})
 			}
@@ -1094,16 +1094,16 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 			if view.expanded {
 				label, icon = m.HideOutput, iconChevronDown
 			}
-			strip := f.Row().Height(aiToolHeader).MarginSides(0, -4, 0, -4).PadX(4).Gap(6).Items(flex.Center).Radius(radius.item).Children(func() {
+			strip := f.Row().Height(aiToolHeader).MarginSides(0, -4, 0, -4).PadX(4).Gap(6).Items(ui.Center).Radius(radius.item).Children(func() {
 				f.Icon(lucideIcons[icon]).Size(12, 12).Color(pal.muted)
-				f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).LineHeight(16).Shrink(0).MarginSides(0, 4, 0, 0)
+				f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(16).Shrink(0).MarginSides(0, 4, 0, 0)
 				if !view.expanded && view.excerpt != "" {
 					f.Text(view.excerpt).FontSize(metrics.FontSizeS).MonoFace(state.terminalFontFace).Color(pal.faint)
 				}
 			})
 			if index < aiMaxRowHits {
-				strip.Hover(flex.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, ui.HitOptions{
-					Role: ui.RoleButton, Expanded: view.expanded, Value: statusText, Hint: label,
+				strip.Hover(ui.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, gfx.HitOptions{
+					Role: gfx.RoleButton, Expanded: view.expanded, Value: statusText, Hint: label,
 				})
 			}
 			if view.expanded {
@@ -1114,7 +1114,7 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 					view.textSlots[aiTextOutput] = text
 					view.textSlotSet[aiTextOutput] = true
 					if index < aiMaxRowHits {
-						text.HitWith(hitAIToolOutputText.At(index), view.plain[aiTextOutput].source, ui.HitOptions{Role: ui.RoleGroup, SkipTab: true})
+						text.HitWith(hitAIToolOutputText.At(index), view.plain[aiTextOutput].source, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
 					}
 				})
 			}
@@ -1128,7 +1128,7 @@ func (state *State) declareAIRow(f *flex.Frame, index int, view *aiRowView, item
 
 // paintAIPlainTextSelections records the text geometry flex just produced and
 // paints the selected user or tool block. Selection uses the assistant's color.
-func (state *State) paintAIPlainTextSelections(canvas *ui.Canvas, list ui.Rect, view *aiRowView, index int) {
+func (state *State) paintAIPlainTextSelections(canvas *gfx.Canvas, list gfx.Rect, view *aiRowView, index int) {
 	panel := &state.ai.panel
 	for part := range aiTextPartCount {
 		if view.textSlotSet[part] {
@@ -1153,20 +1153,20 @@ func (state *State) paintAIPlainTextSelections(canvas *ui.Canvas, list ui.Rect, 
 
 // paintAIAssistant paints an assistant message, which is Markdown, in the room
 // flex gave it, then the copy buttons of its code blocks over it.
-func (state *State) paintAIAssistant(canvas *ui.Canvas, bounds, list ui.Rect, view *aiRowView, index int) {
+func (state *State) paintAIAssistant(canvas *gfx.Canvas, bounds, list gfx.Rect, view *aiRowView, index int) {
 	pal, m := state.pal, state.messages.AIPanel
 	panel := &state.ai.panel
 	look := components.MarkdownLookFor(state.Theme())
 	blue := pal.ansi[4] // the accent is nearly white; a link has to stand out from the text
-	look.Text, look.Muted, look.Link = pal.text, pal.muted, ui.RGB(blue[0], blue[1], blue[2])
+	look.Text, look.Muted, look.Link = pal.text, pal.muted, gfx.RGB(blue[0], blue[1], blue[2])
 	look.CodeFill, look.InlineCodeFill, look.Line, look.Radius = pal.terminal, pal.surfaceSoft, pal.line, radius.control
 	// MarkdownLookFor tints a selection with theme.Primary at 50%, and this
 	// palette's accent is its text colour: on the dark palette that is a grey
 	// band the selected text barely stands out from. Use the terminal's
 	// selection recipe instead, so both places look the same.
 	look.Selection = withAlpha(pal.text, 0.25)
-	ansi := func(index int) ui.Color { return ui.RGB(pal.ansi[index][0], pal.ansi[index][1], pal.ansi[index][2]) }
-	look.Code = [components.MarkdownCodeClasses]ui.Color{
+	ansi := func(index int) gfx.Color { return gfx.RGB(pal.ansi[index][0], pal.ansi[index][1], pal.ansi[index][2]) }
+	look.Code = [components.MarkdownCodeClasses]gfx.Color{
 		components.CodeComment: pal.faint, components.CodeString: ansi(2), components.CodeNumber: ansi(3),
 		components.CodeKeyword: ansi(5), components.CodeFunction: ansi(4), components.CodeVariable: ansi(6),
 		components.CodeFlag: ansi(6), components.CodeKey: ansi(4), components.CodeAdded: ansi(2), components.CodeRemoved: ansi(1),
@@ -1175,10 +1175,10 @@ func (state *State) paintAIAssistant(canvas *ui.Canvas, bounds, list ui.Rect, vi
 		panel.linkTable[panel.linkRows] = aiLinkRow{base: panel.linkBase, row: index}
 		panel.linkRows++
 	}
-	text := ui.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: min(bounds.Height, view.md.Height())}
+	text := gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: min(bounds.Height, view.md.Height())}
 	view.textRect = text
 	if index < aiMaxRowHits {
-		canvas.HitWithOptions(hitAIAnswerText.At(index), text, m.AnswerText, ui.HitOptions{Role: ui.RoleGroup, SkipTab: true})
+		canvas.HitWithOptions(hitAIAnswerText.At(index), text, m.AnswerText, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
 	}
 	view.md.Paint(canvas, components.MarkdownPaint{
 		Look: look, X: bounds.X, Y: bounds.Y, Clip: list, Links: hitAILinks, Base: panel.linkBase,
@@ -1211,12 +1211,12 @@ func (state *State) paintAIAssistant(canvas *ui.Canvas, bounds, list ui.Rect, vi
 	}
 }
 
-func (state *State) paintAIAnswerActions(canvas *ui.Canvas, bounds, list ui.Rect, index int) {
+func (state *State) paintAIAnswerActions(canvas *gfx.Canvas, bounds, list gfx.Rect, index int) {
 	panel, pal := &state.ai.panel, state.pal
 	m := state.messages.AIPanel
 	panel.answer = bounds
 	panel.answerOver = pointInRect(panel.pointer.X, panel.pointer.Y, bounds)
-	action := ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height - aiAnswerAction, Width: bounds.Width, Height: aiAnswerAction}
+	action := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height - aiAnswerAction, Width: bounds.Width, Height: aiAnswerAction}
 	if visible := intersectRect(action, list); visible.Height < action.Height {
 		return
 	}
@@ -1224,7 +1224,7 @@ func (state *State) paintAIAnswerActions(canvas *ui.Canvas, bounds, list ui.Rect
 		return
 	}
 	item := &state.ai.items[index]
-	button := ui.Rect{X: action.X, Y: action.Y + 3, Width: 20, Height: 20}
+	button := gfx.Rect{X: action.X, Y: action.Y + 3, Width: 20, Height: 20}
 	icon := iconCopy
 	if panel.copied == item.text {
 		if left := aiCopiedFor - (state.now() - panel.copiedAt); left > 0 {
@@ -1237,15 +1237,15 @@ func (state *State) paintAIAnswerActions(canvas *ui.Canvas, bounds, list ui.Rect
 
 // aiCopySlot is where the copy button of a code block goes, once flex has placed it.
 type aiCopySlot struct {
-	slot flex.Box
+	slot ui.Box
 	code string
 }
 
 // aiFlexViews are the layouts the assistant's panel is declared with.
 type aiFlexViews struct {
-	body, empty, mention, summary, send, menu flex.View
-	shell, barButton                          flex.View
-	history, historyRows, messages            flex.View
-	row                                       flex.View // one row of the history or of the conversation, declared into its slot
-	status                                    flex.View
+	body, empty, mention, summary, send, menu ui.View
+	shell, barButton                          ui.View
+	history, historyRows, messages            ui.View
+	row                                       ui.View // one row of the history or of the conversation, declared into its slot
+	status                                    ui.View
 }

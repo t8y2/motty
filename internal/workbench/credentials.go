@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
@@ -177,7 +177,7 @@ func (state *State) openCredentialDialog(id string) {
 	state.modal = modalCredential
 }
 
-func (state *State) clickCredentialDialog(id ui.ID) {
+func (state *State) clickCredentialDialog(id gfx.ID) {
 	switch id {
 	case hitCredentialSubmit:
 		state.submitCredential()
@@ -272,7 +272,7 @@ func (state *State) deleteCredential(id string) {
 	state.save()
 }
 
-func (state *State) paintCredentialDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintCredentialDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, pal, theme := state.messages.Credentials, state.pal, state.Theme()
 	form := &state.credentialForm
 	title := m.DialogAddTitle
@@ -283,20 +283,20 @@ func (state *State) paintCredentialDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitCredentialClose, InitialFocusID: hitCredentialName,
-		ContentSize: ui.Size{Width: 520}, FitBody: true, BodyHeight: withError(float32(68*2+8), form.dialogError),
+		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: withError(float32(68*2+8), form.dialogError),
 	})
 	layout := dialog.Begin(title, "")
-	var name, password flex.Box
+	var name, password ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		name = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
 		password = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
 		if form.dialogError != "" {
-			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
 		}
 	})
 	f.End()
-	field := func(box flex.Box, id ui.ID, label, placeholder, value string, secret bool) {
+	field := func(box ui.Box, id gfx.ID, label, placeholder, value string, secret bool) {
 		content := components.BeginField(canvas, theme, box.Rect()).Paint(label, "", "")
 		focused := canvas.Focused() == id
 		state.paintSecretInput(canvas, content, components.InputSnapshot{
@@ -336,7 +336,7 @@ func (state *State) paintCredentialSettings(page *settingsPage) {
 }
 
 // clickCredentialSettings handles the Settings group's buttons.
-func (state *State) clickCredentialSettings(id ui.ID) bool {
+func (state *State) clickCredentialSettings(id gfx.ID) bool {
 	switch {
 	case id == hitSettingsCredentialAdd:
 		state.openCredentialDialog("")
@@ -395,7 +395,7 @@ func (state *State) hostTakesCredential() bool {
 // shared passwords to choose from. The key button at its start opens the list.
 // With a shared password chosen the field is a read-only line naming it, and a
 // button at its end goes back to this host's own.
-func (state *State) paintHostPasswordWithCredential(canvas *ui.Canvas, content ui.Rect, title, placeholder string) {
+func (state *State) paintHostPasswordWithCredential(canvas *gfx.Canvas, content gfx.Rect, title, placeholder string) {
 	editor, theme, m := &state.editor, state.Theme(), state.messages.Credentials
 	state.revealHostField(canvas, hitDialogPassword, content)
 	editor.credentialAnchor = content
@@ -425,7 +425,7 @@ func (state *State) paintHostPasswordWithCredential(canvas *ui.Canvas, content u
 }
 
 // paintHostCredentialMenu is the list of shared passwords under the field.
-func (state *State) paintHostCredentialMenu(canvas *ui.Canvas) {
+func (state *State) paintHostCredentialMenu(canvas *gfx.Canvas) {
 	editor, m := &state.editor, state.messages.Credentials
 	if !editor.credentialOpen || !state.hostOffersCredential() {
 		return
@@ -449,7 +449,7 @@ func (state *State) paintHostCredentialMenu(canvas *ui.Canvas) {
 	}
 }
 
-func (state *State) clickHostCredential(id ui.ID) bool {
+func (state *State) clickHostCredential(id gfx.ID) bool {
 	editor := &state.editor
 	switch {
 	case id == hitDialogCredential, id == hitDialogCredentialValue:

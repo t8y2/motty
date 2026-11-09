@@ -12,9 +12,9 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
 )
@@ -83,7 +83,7 @@ type notesUI struct {
 	input      app.TextInput
 	drafts     map[string]*noteDraft
 	windowView bool
-	viewport   ui.Rect
+	viewport   gfx.Rect
 	selection  noteEditorSelection
 	sidebar    *noteSidebar
 
@@ -107,10 +107,10 @@ type notesUI struct {
 	confirm                                 string
 	dragID                                  string
 	dragFolder                              bool
-	dragStart                               ui.Point
+	dragStart                               gfx.Point
 	dragging                                bool
 	rows                                    []noteRow
-	listBounds, sourceBounds, previewBounds ui.Rect
+	listBounds, sourceBounds, previewBounds gfx.Rect
 	previewHeight                           float32
 	images                                  []noteImage
 	imageSource                             string
@@ -121,7 +121,7 @@ type notesUI struct {
 type noteRow struct {
 	id     string
 	folder bool
-	bounds ui.Rect
+	bounds gfx.Rect
 }
 
 var notesHits = tree.Feature("notes")
@@ -172,10 +172,10 @@ func noteHash(body string) string { h := sha256.Sum256([]byte(body)); return hex
 func (s *State) noteIndex(id string) int {
 	return slices.IndexFunc(s.notes.list, func(n savedNote) bool { return n.ID == id })
 }
-func (s *State) noteEditor(id ui.ID) *text.Editor {
+func (s *State) noteEditor(id gfx.ID) *text.Editor {
 	return s.noteViewEditor(s.noteContent(), id, true)
 }
-func (s *State) noteViewEditor(n *notesUI, id ui.ID, activate bool) *text.Editor {
+func (s *State) noteViewEditor(n *notesUI, id gfx.ID, activate bool) *text.Editor {
 	if s.noteSidebarVisible() {
 		if id == hitNoteSearch {
 			return &s.noteSidebarState().content.query
@@ -437,7 +437,7 @@ func (s *State) selectNoteWithoutSave(id string) {
 	s.notes.view.splitScroll = noteSplitScroll{}
 	s.notes.view.codeActions.source = ""
 	s.notes.view.codeActions.targets = nil
-	s.notes.view.codeActions.copied = ui.ID{}
+	s.notes.view.codeActions.copied = gfx.ID{}
 	n := &s.notes
 	s.cancelNoteImages()
 	n.selected = id
@@ -445,7 +445,7 @@ func (s *State) selectNoteWithoutSave(id string) {
 	n.selection = noteEditorSelection{}
 
 }
-func (s *State) autosaveNotes(c *ui.Canvas) {
+func (s *State) autosaveNotes(c *gfx.Canvas) {
 	if len(s.notes.groupJobs) > 0 && !s.noteComposing() {
 		c.AfterPaint(func() { s.save() })
 	}
@@ -474,7 +474,7 @@ func (s *State) autosaveNotes(c *ui.Canvas) {
 	}
 
 }
-func (s *State) clickNotes(id ui.ID) bool {
+func (s *State) clickNotes(id gfx.ID) bool {
 	s.noteTokens()
 	n := &s.notes
 	if id == hitNotes {

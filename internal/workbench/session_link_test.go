@@ -4,13 +4,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
-func menuHas(state *State, id ui.ID) bool {
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+func menuHas(state *State, id gfx.ID) bool {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	_, ok := hitByID(&canvas, id)
 	return ok
 }

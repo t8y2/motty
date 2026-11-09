@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestNoteCodeCopiesOriginalAndRejectsStaleTargets(t *testing.T) {
@@ -16,8 +16,8 @@ func TestNoteCodeCopiesOriginalAndRejectsStaleTargets(t *testing.T) {
 	code := "\t中文 := 123\n\n  // trailing spaces  \n"
 	s.notes.body.Insert("```go\n" + code + "```\n\n```go\n" + code + "```\n")
 	s.notes.view.mode = notePreview
-	var c ui.Canvas
-	paint := func() { c.Reset(); s.Paint(&c, ui.Size{Width: 1400, Height: 900}) }
+	var c gfx.Canvas
+	paint := func() { c.Reset(); s.Paint(&c, gfx.Size{Width: 1400, Height: 900}) }
 	paint()
 	n := &s.notes
 	targets := n.view.codeActions.targets
@@ -56,7 +56,7 @@ func TestNoteCodeCopiesOriginalAndRejectsStaleTargets(t *testing.T) {
 	side.content.selected = n.selected
 	s.syncNoteSidebar()
 	c.Reset()
-	s.paintNotePreviewContent(&c, ui.Rect{Width: 600, Height: 500}, &side.content)
+	s.paintNotePreviewContent(&c, gfx.Rect{Width: 600, Height: 500}, &side.content)
 	id := hitNoteCodeCopies.At(side.content.view.codeActions.targets[0].token)
 	s.clickNoteCodeCopy(id, &side.content)
 	if copied != code || side.content.view.codeActions.copied.IsZero() {
@@ -70,8 +70,8 @@ func TestNoteCodeHighlightAndCopyAffordance(t *testing.T) {
 	s.Click(hitNoteAdd)
 	s.notes.body.Insert("```go\nvar value = 123\n```\n\n```unknown\nplain\n```\n")
 	s.notes.view.mode = notePreview
-	var c ui.Canvas
-	paint := func() { c.Reset(); s.Paint(&c, ui.Size{Width: 1400, Height: 900}) }
+	var c gfx.Canvas
+	paint := func() { c.Reset(); s.Paint(&c, gfx.Size{Width: 1400, Height: 900}) }
 	paint()
 	n := &s.notes
 	target := hitNoteCodeCopies.At(n.view.codeActions.targets[0].token)
@@ -80,8 +80,8 @@ func TestNoteCodeHighlightAndCopyAffordance(t *testing.T) {
 	}
 	// Hover inside the block must request a paint even within the same preview region.
 	b := n.previewBounds
-	s.notesPointer(ui.PointerEvent{Kind: ui.PointerMove, X: b.X + 15, Y: b.Y + 15})
-	if r := s.notesPointer(ui.PointerEvent{Kind: ui.PointerMove, X: b.X + 25, Y: b.Y + 20}); !r.Repaint {
+	s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: b.X + 15, Y: b.Y + 15})
+	if r := s.notesPointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: b.X + 25, Y: b.Y + 20}); !r.Repaint {
 		t.Fatal("block hover did not repaint")
 	}
 	if len(highlightCode("go", "var value = 123", nil)) == 0 || len(highlightCode("unknown", "var value = 123", nil)) != 0 || len(highlightCode("", "var value = 123", nil)) != 0 {
@@ -90,7 +90,7 @@ func TestNoteCodeHighlightAndCopyAffordance(t *testing.T) {
 	s.options.SetClipboardText = func(string) error { return nil }
 	now := time.Second
 	s.options.Now = func() time.Duration { return now }
-	s.notesKey(ui.KeyEvent{Target: target, Key: ui.KeyEnter})
+	s.notesKey(gfx.KeyEvent{Target: target, Key: gfx.KeyEnter})
 	if n.view.codeActions.copied != target {
 		t.Fatal("keyboard copy failed")
 	}

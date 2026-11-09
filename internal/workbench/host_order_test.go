@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func chooseDisplayOrder(state *State, order string) {
@@ -150,7 +150,7 @@ func TestHostDisplayOrderGroupManualActionsAreDisabled(t *testing.T) {
 	chooseDisplayOrder(state, "name")
 	state.Click(hitHostGroupMore.At(state.hostGroupIndex("Team/Dev")))
 	canvas, _ := paintedTexts(state)
-	for _, id := range []ui.ID{hitGroupUp, hitGroupDown} {
+	for _, id := range []gfx.ID{hitGroupUp, hitGroupDown} {
 		hit, ok := hitByID(canvas, id)
 		if !ok || !hit.Disabled {
 			t.Fatalf("manual group action %v is enabled under automatic order", id)
@@ -162,12 +162,12 @@ func TestHostDisplayOrderMenuIndicatesCurrentChoice(t *testing.T) {
 	state := displayOrderState(t)
 	for _, choice := range []struct {
 		name string
-		id   ui.ID
+		id   gfx.ID
 	}{{"name", hitHostOrderName}, {"ip", hitHostOrderIP}, {"manual", hitHostOrderManual}} {
 		chooseDisplayOrder(state, choice.name)
 		state.Click(hitHostOrder)
 		canvas, _ := paintedTexts(state)
-		for _, id := range []ui.ID{hitHostOrderManual, hitHostOrderName, hitHostOrderIP} {
+		for _, id := range []gfx.ID{hitHostOrderManual, hitHostOrderName, hitHostOrderIP} {
 			hit, ok := hitByID(canvas, id)
 			if !ok || hit.Selected != (id == choice.id) {
 				t.Fatalf("current %s menu item %s: %+v", choice.name, tree.Text(id), hit)

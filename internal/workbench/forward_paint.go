@@ -2,12 +2,12 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/portforward"
 )
 
-func (state *State) paintForwardsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	pal, messages := state.pal, state.messages
 	canAdd := state.sshHostCount() > 0
 	selected, hasSelection := state.forwardByID(state.selectedForwardID)
@@ -36,12 +36,12 @@ func (state *State) paintForwardsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 		detailColor = pal.danger
 	}
 
-	var content, emptyIcon, emptyAdd, remove, edit, action, add flex.Box
+	var content, emptyIcon, emptyAdd, remove, edit, action, add ui.Box
 	f := state.forwardLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(flex.Start).Children(func() {
+		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
 			f.Column().Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-				f.Text(messages.ForwardTitle).FontSize(18).Weight(ui.WeightSemibold).Color(pal.text).Ellipsis()
+				f.Text(messages.ForwardTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				f.Paragraph(messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
 			remove = f.Slot().Size(removeWidth, toolbarHeight)
@@ -55,8 +55,8 @@ func (state *State) paintForwardsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 			content = f.Slot().Grow(1).MarginSides(0, 0, 9, 0)
 		}
 		f.Divider().Background(pal.line)
-		f.Row().Height(50).PadSides(8, 0, 20, 0).Items(flex.Center).Children(func() {
-			f.Text(state.forwardCountText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).Width(124)
+		f.Row().Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
+			f.Text(state.forwardCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(124)
 			if hasSelection && selected.detail != "" {
 				f.Text(selected.detail).FontSize(metrics.FontSizeS).Color(detailColor).Grow(1)
 			}
@@ -92,7 +92,7 @@ func (state *State) paintForwardsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	}
 }
 
-func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintForwardDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	messages, theme := state.messages, state.Theme()
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
@@ -100,7 +100,7 @@ func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		Scope:          dialogScope,
 		CloseID:        hitForwardDialogClose,
 		InitialFocusID: hitForwardDialogLabel,
-		ContentSize:    ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(4*58+2+30, state.forwardDialogError), // four rows of fields, then the checkbox
+		ContentSize:    gfx.Size{Width: 560}, FitBody: true, BodyHeight: withError(4*58+2+30, state.forwardDialogError), // four rows of fields, then the checkbox
 	})
 	dialogTitle := messages.ForwardDialogTitle
 	submitLabel := messages.ForwardCreate
@@ -113,7 +113,7 @@ func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	// Four rows of fields; the last holds the port beside the destination,
 	// 24% / 44% / 24% of the row with 4% between.
 	const rowHeight = 58
-	var name, host, mode, port, destination, destinationPort, resume, resumeHelp flex.Box
+	var name, host, mode, port, destination, destinationPort, resume, resumeHelp ui.Box
 	hint := messages.ForwardSOCKS5Hint
 	if state.forwardEditor.mode == portforward.ModeHTTPConnect {
 		hint = messages.ForwardHTTPConnectHint
@@ -138,7 +138,7 @@ func (state *State) paintForwardDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		})
 		resume, resumeHelp = state.declareDialogCheckboxHelp(f, messages.ForwardFieldResume, 4, 6)
 		if state.forwardDialogError != "" {
-			f.Text(state.forwardDialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
+			f.Text(state.forwardDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
 		}
 	})
 	f.End()
@@ -178,7 +178,7 @@ func (state *State) forwardModeOptions() [4]components.SegmentOption {
 	}
 }
 
-func (state *State) paintForwardModeField(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintForwardModeField(canvas *gfx.Canvas, bounds gfx.Rect) {
 	content := components.BeginField(canvas, state.Theme(), bounds).Paint(state.messages.ForwardFieldType, "", "")
 	selected := hitForwardModeLocal
 	switch state.forwardEditor.mode {
@@ -193,7 +193,7 @@ func (state *State) paintForwardModeField(canvas *ui.Canvas, bounds ui.Rect) {
 	components.BeginSegmentedControl(canvas, state.Theme(), content, options[:], selected).Paint()
 }
 
-func (state *State) paintForwardDialogField(canvas *ui.Canvas, id ui.ID, field forwardField, title, placeholder string, bounds ui.Rect) {
+func (state *State) paintForwardDialogField(canvas *gfx.Canvas, id gfx.ID, field forwardField, title, placeholder string, bounds gfx.Rect) {
 	theme := state.Theme()
 	content := components.BeginField(canvas, theme, bounds).Paint(title, "", "")
 	value := state.forwardEditor.field(field).String()
@@ -211,7 +211,7 @@ func (state *State) paintForwardDialogField(canvas *ui.Canvas, id ui.ID, field f
 // paintForwardHostField paints the searchable host picker. Typing filters by
 // name, address, account and group, which is what makes a long host list
 // navigable without paging.
-func (state *State) paintForwardHostField(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintForwardHostField(canvas *gfx.Canvas, bounds gfx.Rect) {
 	theme := state.Theme()
 	content := components.BeginField(canvas, theme, bounds).Paint(state.messages.ForwardFieldHost, "", "")
 	layout := components.PaintSingleSelect(canvas, theme, content, &state.forwardEditor.hostSelect, components.SingleSelectOptions{

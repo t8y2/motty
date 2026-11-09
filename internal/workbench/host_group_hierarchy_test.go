@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func nestedHostGroupState(t *testing.T) *State {
@@ -102,7 +102,7 @@ func TestHostGroupEditingEnterDoesNotSubmitIMEComposition(t *testing.T) {
 		groups := len(state.hostGroups)
 		chooseHostGroupAction(t, state, "Team", action)
 		state.hostGroupEditor.SetMarkedText("中文", text.Range{Start: 2, End: 2})
-		state.Key(ui.KeyEvent{Target: hitMoveGroupField, Key: ui.KeyEnter})
+		state.Key(gfx.KeyEvent{Target: hitMoveGroupField, Key: gfx.KeyEnter})
 		if state.modal != modalMoveHostGroup || !reflect.DeepEqual(before, state.hosts) || len(state.hostGroups) != groups {
 			t.Fatalf("%s submitted an IME candidate", action)
 		}
@@ -166,7 +166,7 @@ func TestHostGroupRightClickNewHostPrefillsClickedGroup(t *testing.T) {
 		if view == hostViewGrid {
 			row = hitHostGroupOpenList.At(index)
 		}
-		pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: row, X: 400, Y: 300})
+		pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: row, X: 400, Y: 300})
 		canvas, _ := paintedTexts(state)
 		newHost := tree.ID(tree.Feature("host-group-actions"), "new-host")
 		if _, ok := hitByID(canvas, newHost); !ok {

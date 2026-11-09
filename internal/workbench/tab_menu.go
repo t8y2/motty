@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/desktop"
 	layoutcore "motty/internal/workspace"
 )
@@ -64,37 +64,37 @@ var (
 type tabMenu struct {
 	open      bool
 	workspace layoutcore.WorkspaceID
-	at        ui.Point
+	at        gfx.Point
 }
 
 // tabMenuPointer closes an open menu on a secondary press outside it (the
 // backdrop swallows the press; only a primary one is also a click). Opening it is
 // the paint of a tab (openTabMenuOn).
-func (state *State) tabMenuPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if event.Kind != ui.PointerDown || event.Button == ui.PointerButtonNone || event.Button == ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+func (state *State) tabMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone || event.Button == gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	if state.tabMenu.open && event.Target == hitTabMenuDismiss {
 		state.tabMenu.open = false
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // openTabMenuOn is called while painting a tab and its close button: when this
 // paint is the event pass of a secondary press on either, it opens the tab's menu.
-func (state *State) openTabMenuOn(canvas *ui.Canvas, workspace layoutcore.WorkspaceID, tab, closeButton ui.ID) {
+func (state *State) openTabMenuOn(canvas *gfx.Canvas, workspace layoutcore.WorkspaceID, tab, closeButton gfx.ID) {
 	event, ok := canvas.PointerOn(tab)
 	if !ok {
 		event, ok = canvas.PointerOn(closeButton)
 	}
-	if !ok || event.Kind != ui.PointerDown || event.Button != ui.PointerButtonSecondary || state.modal != modalNone {
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary || state.modal != modalNone {
 		return
 	}
 	if _, ok := state.workspaceTab(workspace); !ok {
 		return
 	}
-	state.tabMenu = tabMenu{open: true, workspace: workspace, at: ui.Point{X: event.X, Y: event.Y}}
+	state.tabMenu = tabMenu{open: true, workspace: workspace, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
 }
 
@@ -130,7 +130,7 @@ func (state *State) tabMenuHost(session *Session) (Host, bool) {
 	return Host{}, false
 }
 
-func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintTabMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if !state.tabMenu.open {
 		return
 	}
@@ -146,7 +146,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	disconnect := hasSession && state.canDisconnect(session)
 	var keys [6]string
 	closeKeys := state.shortcuts.chords.Chord(shortcutCloseTab).Keycaps(keys[:0])
-	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	address, name := "", ""
 	if hasSession {
@@ -217,7 +217,7 @@ func (state *State) paintTabMenu(canvas *ui.Canvas, viewport ui.Rect) {
 }
 
 // clickTabMenu runs a menu choice. A press anywhere else only closes the menu.
-func (state *State) clickTabMenu(id ui.ID) bool {
+func (state *State) clickTabMenu(id gfx.ID) bool {
 	if !state.tabMenu.open {
 		return false
 	}
@@ -230,7 +230,7 @@ func (state *State) clickTabMenu(id ui.ID) bool {
 	switch id {
 	case hitTabMenuNewWindow:
 		if frame, ok := state.windowFrameOnScreen(); ok && state.canTearOffTab() {
-			state.tearOffTab(workspace, ui.Point{X: frame.X + tearOffCascade, Y: frame.Y + tearOffCascade})
+			state.tearOffTab(workspace, gfx.Point{X: frame.X + tearOffCascade, Y: frame.Y + tearOffCascade})
 		}
 	case hitTabMenuCopyAddress:
 		if session, ok := state.tabMenuSessionFor(workspace); ok {

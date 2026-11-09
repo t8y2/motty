@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func rightClickHost(state *State, host uint32) {
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitHostList.At(int(host)), X: 400, Y: 300})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitHostList.At(int(host)), X: 400, Y: 300})
 }
 
 func TestRightClickOnAHostOpensItsMenuWithoutChangingWhatIsChecked(t *testing.T) {
@@ -27,7 +27,7 @@ func TestRightClickOnAHostOpensItsMenuWithoutChangingWhatIsChecked(t *testing.T)
 		t.Fatalf("selection = %v selected %d, want the original check and the pointed host highlighted", state.hostSelections, state.selectedHostID)
 	}
 	canvas, _ := paintedTexts(state)
-	for _, id := range []ui.ID{hitHostMenuConnect, hitHostMenuAddress, hitHostMenuName, hitHostMenuEdit, hitHostMenuCopy, hitHostMenuMove, hitHostMenuDelete} {
+	for _, id := range []gfx.ID{hitHostMenuConnect, hitHostMenuAddress, hitHostMenuName, hitHostMenuEdit, hitHostMenuCopy, hitHostMenuMove, hitHostMenuDelete} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled {
 			t.Errorf("menu item %d: %+v found=%v", id, hit, ok)
 		}
@@ -99,7 +99,7 @@ func TestHostMenuKeepsTheConnectionCopyRowsTogether(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	rightClickHost(state, state.hosts[1].ID)
 	canvas, _ := paintedTexts(state)
-	order := []ui.ID{hitHostMenuAddress, hitHostMenuName, hitHostMenuCopy, hitHostMenuEdit}
+	order := []gfx.ID{hitHostMenuAddress, hitHostMenuName, hitHostMenuCopy, hitHostMenuEdit}
 	previous := float32(0)
 	for index, id := range order {
 		hit, ok := hitByID(canvas, id)
@@ -169,7 +169,7 @@ func TestRightClickInsideSeveralCheckedHostsKeepsThemAndDisablesTheSingleOnes(t 
 		t.Fatalf("selection = %v, want both kept", state.hostSelections)
 	}
 	canvas, _ := paintedTexts(state)
-	for id, disabled := range map[ui.ID]bool{hitHostMenuConnect: true, hitHostMenuAddress: true, hitHostMenuName: true, hitHostMenuEdit: true, hitHostMenuCopy: true, hitHostMenuMove: false, hitHostMenuDelete: false} {
+	for id, disabled := range map[gfx.ID]bool{hitHostMenuConnect: true, hitHostMenuAddress: true, hitHostMenuName: true, hitHostMenuEdit: true, hitHostMenuCopy: true, hitHostMenuMove: false, hitHostMenuDelete: false} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled != disabled {
 			t.Errorf("item %d: found=%v disabled=%v, want disabled=%v", id, ok, hit.Disabled, disabled)
 		}
@@ -187,12 +187,12 @@ func TestHostMenuClosesOnAnOutsidePressAndIgnoresOtherRightClicks(t *testing.T) 
 	if state.hostMenu.open {
 		t.Fatal("an outside press left the menu open")
 	}
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitSearch, X: 50, Y: 50})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSearch, X: 50, Y: 50})
 	if state.hostMenu.open {
 		t.Fatal("a right click away from a host opened the menu")
 	}
 	rightClickHost(state, state.hosts[0].ID)
-	if result := pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitHostMenuDismiss}); !result.Handled || state.hostMenu.open {
+	if result := pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitHostMenuDismiss}); !result.Handled || state.hostMenu.open {
 		t.Fatalf("a secondary press outside: %+v open=%v", result, state.hostMenu.open)
 	}
 }
@@ -225,11 +225,11 @@ func TestHostMenuIsAsWideAsItsLabelsAskInBothLanguages(t *testing.T) {
 func TestHostMenuTypeaheadHighlightsRowsByName(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	rightClickHost(state, state.hosts[0].ID)
-	paintAt(state, ui.Size{Width: 900, Height: 600}) // list the menu's rows for the keyboard
+	paintAt(state, gfx.Size{Width: 900, Height: 600}) // list the menu's rows for the keyboard
 
-	key := func(text string) ui.ID {
+	key := func(text string) gfx.ID {
 		t.Helper()
-		result := state.Key(ui.KeyEvent{Key: ui.KeyUnknown, Text: text})
+		result := state.Key(gfx.KeyEvent{Key: gfx.KeyUnknown, Text: text})
 		if !result.Handled || result.Focus.IsZero() {
 			t.Fatalf("%q: %+v", text, result)
 		}
@@ -272,8 +272,8 @@ func TestMoveGroupFromAHostsMenuOpensThePickerWhereTheMenuWas(t *testing.T) {
 func TestTabStaysInsideAContextMenu(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	rightClickHost(state, state.hosts[0].ID)
-	paintAt(state, ui.Size{Width: 900, Height: 600})
-	state.Key(ui.KeyEvent{Key: ui.KeyTab, Target: hitHostMenuConnect})
+	paintAt(state, gfx.Size{Width: 900, Height: 600})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Target: hitHostMenuConnect})
 	if !state.hostMenu.open {
 		t.Fatal("Tab left the context menu")
 	}

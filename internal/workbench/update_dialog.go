@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/update"
 )
 
@@ -73,13 +73,13 @@ func (state *State) updateNotesText() string {
 }
 
 // wrappedLines is how many lines text takes in width, counting a blank line as one.
-func wrappedLines(canvas *ui.Canvas, text string, size, width float32) int {
+func wrappedLines(canvas *gfx.Canvas, text string, size, width float32) int {
 	total := 0
 	var scratch []string
 	for _, line := range strings.Split(text, "\n") {
 		scratch = scratch[:0]
 		if line != "" {
-			scratch = canvas.WrapLines(scratch, line, size, ui.WeightRegular, width, 1<<12)
+			scratch = canvas.WrapLines(scratch, line, size, gfx.WeightRegular, width, 1<<12)
 		}
 		total += max(len(scratch), 1)
 	}
@@ -90,7 +90,7 @@ func wrappedLines(canvas *ui.Canvas, text string, size, width float32) int {
 // their height, plus whether they are more than fit, in which case the scrollbar
 // takes some of that width. Markdown shapes the height (headings and code blocks
 // are taller than their lines), so it is measured rather than counted in lines.
-func (state *State) measureNotes(canvas *ui.Canvas, width float32) {
+func (state *State) measureNotes(canvas *gfx.Canvas, width float32) {
 	notes := &state.update.notes
 	text := state.updateNotesText()
 	if notes.contentHeight > 0 && notes.measuredWidth == width && notes.measuredText == text {
@@ -107,7 +107,7 @@ func (state *State) measureNotes(canvas *ui.Canvas, width float32) {
 	notes.contentHeight = height
 }
 
-func (state *State) paintUpdateDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintUpdateDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m := state.messages.Tools
 	notes := &state.update.notes
 	install := state.canInstallUpdate()
@@ -140,15 +140,15 @@ func (state *State) paintUpdateDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitUpdateDismiss, CloseID: hitUpdateClose, InitialFocusID: primary.ID,
-		ContentSize: ui.Size{Width: contentWidth}, FitBody: true, BodyHeight: boxHeight + whyHeight,
+		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: boxHeight + whyHeight,
 	})
 	layout := dialog.Begin(fmt.Sprintf(m.UpdateDialogTitleFmt, state.update.release.Version), description)
 
-	box := ui.Rect{X: layout.Body.X, Y: layout.Body.Y, Width: layout.Body.Width, Height: boxHeight}
+	box := gfx.Rect{X: layout.Body.X, Y: layout.Body.Y, Width: layout.Body.Width, Height: boxHeight}
 	canvas.RoundedBorder(box, radius.control, 1, state.pal.line, state.pal.surface)
-	view := ui.Rect{X: box.X + updateNotesPadX, Y: box.Y + updateNotesPadY, Width: box.Width - updateNotesPadX - updateNotesPadRight, Height: notes.viewHeight}
+	view := gfx.Rect{X: box.X + updateNotesPadX, Y: box.Y + updateNotesPadY, Width: box.Width - updateNotesPadX - updateNotesPadRight, Height: notes.viewHeight}
 	if notes.scrolls {
-		canvas.HitWithOptions(hitUpdateNotes, view, m.UpdateNotesLabel, ui.HitOptions{Role: ui.RoleGroup})
+		canvas.HitWithOptions(hitUpdateNotes, view, m.UpdateNotesLabel, gfx.HitOptions{Role: gfx.RoleGroup})
 	}
 	scroller := components.BeginMessageScroller(canvas, state.Theme(), view, notes.contentHeight, notes.scroll).
 		Scrollbar(hitUpdateNotesScrollbar, m.UpdateNotesLabel, "")
@@ -157,12 +157,12 @@ func (state *State) paintUpdateDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	look.Text, look.Muted = state.pal.muted, state.pal.faint
 	look.Line, look.CodeFill, look.InlineCodeFill = state.pal.line, state.pal.terminal, state.pal.surfaceSoft
 	blue := state.pal.ansi[4] // the accent is nearly white; a link has to stand out from the text
-	look.Link = ui.RGB(blue[0], blue[1], blue[2])
+	look.Link = gfx.RGB(blue[0], blue[1], blue[2])
 	look.Selection = withAlpha(state.pal.text, 0.25)
-	ansi := func(index int) ui.Color {
-		return ui.RGB(state.pal.ansi[index][0], state.pal.ansi[index][1], state.pal.ansi[index][2])
+	ansi := func(index int) gfx.Color {
+		return gfx.RGB(state.pal.ansi[index][0], state.pal.ansi[index][1], state.pal.ansi[index][2])
 	}
-	look.Code = [components.MarkdownCodeClasses]ui.Color{
+	look.Code = [components.MarkdownCodeClasses]gfx.Color{
 		components.CodeComment: state.pal.faint, components.CodeString: ansi(2), components.CodeNumber: ansi(3),
 		components.CodeKeyword: ansi(5), components.CodeFunction: ansi(4), components.CodeVariable: ansi(6),
 		components.CodeFlag: ansi(6), components.CodeKey: ansi(4), components.CodeAdded: ansi(2), components.CodeRemoved: ansi(1),
@@ -175,7 +175,7 @@ func (state *State) paintUpdateDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	notes.bar = geometry
 
 	if why != "" {
-		f := state.partLayout.Begin(canvas, state.Theme(), ui.Rect{X: box.X, Y: box.Y + box.Height + 12, Width: box.Width, Height: whyHeight - 12})
+		f := state.partLayout.Begin(canvas, state.Theme(), gfx.Rect{X: box.X, Y: box.Y + box.Height + 12, Width: box.Width, Height: whyHeight - 12})
 		f.Paragraph(why, updateWhyLines).FontSize(metrics.FontSizeS).Color(state.pal.text).LineHeight(updateNotesLine)
 		f.End()
 	}
@@ -189,30 +189,30 @@ func (state *State) paintUpdateDialog(canvas *ui.Canvas, viewport ui.Rect) {
 
 // scrollUpdateNotes is the wheel over the update dialog: the notes move, and
 // nothing behind the dialog does.
-func (state *State) scrollUpdateNotes(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollUpdateNotes(event gfx.ScrollEvent) gfx.EventResult {
 	notes := &state.update.notes
 	step := event.StepY(updateNotesLine)
 	before := notes.scroll
 	notes.scroll = min(max(before+step, 0), notes.max)
-	return ui.EventResult{Handled: true, Repaint: notes.scroll != before}
+	return gfx.EventResult{Handled: true, Repaint: notes.scroll != before}
 }
 
 // updateDialogPointer drags the release-notes thumb. MessageScroller supplies
 // the geometry and offset mapping; the runtime pointer session belongs here.
-func (state *State) updateDialogPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) updateDialogPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if state.modal != modalUpdate {
 		state.update.notes.dragging = false
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	notes := &state.update.notes
 	if event.Target != hitUpdateNotesScrollbar && !notes.dragging {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 
 	switch event.Kind {
-	case ui.PointerDown:
-		if event.Button != ui.PointerButtonPrimary && event.Button != ui.PointerButtonNone {
-			return ui.EventResult{}, false
+	case gfx.PointerDown:
+		if event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone {
+			return gfx.EventResult{}, false
 		}
 		thumb := notes.bar.Thumb
 		notes.grab = thumb.Height / 2
@@ -221,69 +221,69 @@ func (state *State) updateDialogPointer(event ui.PointerEvent) (ui.EventResult, 
 		}
 		notes.dragging = true
 		notes.scroll = notes.bar.OffsetForThumb(event.Y - notes.grab)
-		return ui.EventResult{Handled: true, Repaint: true, Focus: event.Target}, true
-	case ui.PointerMove, ui.PointerUp:
-		if !notes.dragging || event.Kind == ui.PointerMove && !event.Captured {
-			return ui.EventResult{}, false
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: event.Target}, true
+	case gfx.PointerMove, gfx.PointerUp:
+		if !notes.dragging || event.Kind == gfx.PointerMove && !event.Captured {
+			return gfx.EventResult{}, false
 		}
 		before := notes.scroll
 		notes.scroll = notes.bar.OffsetForThumb(event.Y - notes.grab)
-		if event.Kind == ui.PointerUp {
+		if event.Kind == gfx.PointerUp {
 			notes.dragging = false
 		}
-		return ui.EventResult{Handled: true, Repaint: notes.scroll != before}, true
-	case ui.PointerExit:
+		return gfx.EventResult{Handled: true, Repaint: notes.scroll != before}, true
+	case gfx.PointerExit:
 		if !notes.dragging {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		notes.dragging = false
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 }
 
-func (state *State) updateKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if state.modal != modalUpdate || event.Repeat && event.Key == ui.KeyEnter {
-		return ui.EventResult{}, false
+func (state *State) updateKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalUpdate || event.Repeat && event.Key == gfx.KeyEnter {
+		return gfx.EventResult{}, false
 	}
 	notes := &state.update.notes
 	if event.Target == hitUpdateNotes || event.Target == hitUpdateNotesScrollbar {
 		if offset, ok := notes.offsetForKey(event.Key); ok {
 			notes.scroll = offset
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key != ui.KeyEnter {
-		return ui.EventResult{}, false
+	if event.Key != gfx.KeyEnter {
+		return gfx.EventResult{}, false
 	}
 	switch event.Target {
 	case hitUpdateInstall, hitUpdateDownload, hitUpdateSkip, hitUpdateLater:
 		state.clickUpdateDialog(event.Target)
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // offsetForKey is where the keyboard moves the notes to: a line or two for the
 // arrows, a screen for the page keys, the ends for Home and End.
-func (notes *updateNotes) offsetForKey(key ui.Key) (float32, bool) {
+func (notes *updateNotes) offsetForKey(key gfx.Key) (float32, bool) {
 	step := 2 * updateNotesLine
 	page := max(notes.viewHeight*0.9, step)
 	offset := notes.scroll
 	switch key {
-	case ui.KeyUp:
+	case gfx.KeyUp:
 		offset -= step
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		offset += step
-	case ui.KeyPageUp:
+	case gfx.KeyPageUp:
 		offset -= page
-	case ui.KeyPageDown:
+	case gfx.KeyPageDown:
 		offset += page
-	case ui.KeyHome:
+	case gfx.KeyHome:
 		offset = 0
-	case ui.KeyEnd:
+	case gfx.KeyEnd:
 		offset = notes.max
 	default:
 		return offset, false

@@ -15,8 +15,8 @@ import (
 	"unicode"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/mcp"
 	"motty/internal/ai/probe"
@@ -222,14 +222,14 @@ type aiSettingsUI struct {
 	notice             string // why the last change could not be stored
 	clearedDone        bool
 	copied             aiCopyState
-	copyTarget         ui.ID
+	copyTarget         gfx.ID
 	mcpClient          aiMCPClient
 	mcpSelectOpen      bool
-	mcpSelectBounds    ui.Rect
+	mcpSelectBounds    gfx.Rect
 	mcpPreviewLines    []string
 	agentClient        aiMCPClient
 	agentSelectOpen    bool
-	agentSelectBounds  ui.Rect
+	agentSelectBounds  gfx.Rect
 	agentPreviewLines  []string
 	agentProgram       string
 	agentDataDir       string
@@ -269,7 +269,7 @@ func (state *State) aiSettingsOpened() {
 	}
 }
 
-func (state *State) aiSettingsClick(id ui.ID) bool {
+func (state *State) aiSettingsClick(id gfx.ID) bool {
 	if !state.aiSettingsVisible() {
 		return false
 	}
@@ -437,7 +437,7 @@ func onOff(on bool) string {
 	return "off"
 }
 
-func (state *State) aiDialogClick(id ui.ID) {
+func (state *State) aiDialogClick(id gfx.ID) {
 	cfg := &state.ai.cfg
 	switch cfg.dialog {
 	case aiDialogCLILogin:
@@ -576,7 +576,7 @@ func (state *State) aiDialogClick(id ui.ID) {
 }
 
 // aiImportDialogClick handles the import dialog's three steps.
-func (state *State) aiImportDialogClick(id ui.ID) {
+func (state *State) aiImportDialogClick(id gfx.ID) {
 	cfg := &state.ai.cfg
 	switch cfg.importStep {
 	case aiImportSources:
@@ -628,56 +628,56 @@ func (state *State) aiCloseDialog() {
 	cfg.reasoningMode, cfg.reasoningPreset = 0, 0
 }
 
-func (state *State) aiSettingsPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) aiSettingsPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if state.ai.login != nil && event.Target == hitAICLILoginTerminal {
-		return ui.EventResult{Handled: true, Focus: hitAICLILoginTerminal}, true
+		return gfx.EventResult{Handled: true, Focus: hitAICLILoginTerminal}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) aiSettingsScroll(event ui.ScrollEvent) (ui.EventResult, bool) {
+func (state *State) aiSettingsScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	if state.ai.login != nil && state.ai.cfg.dialog == aiDialogCLILogin {
 		state.ai.login.term.screen.Scroll(int(event.StepY(state.cellHeight) / max(state.cellHeight, 1)))
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.ai.login != nil && state.ai.cfg.dialog == aiDialogCLILogin {
-		if event.Key == ui.KeyEscape {
+		if event.Key == gfx.KeyEscape {
 			state.aiStopCLILogin()
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 		return state.aiCLILoginKey(event), true
 	}
 	if !state.aiSettingsVisible() {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	cfg := &state.ai.cfg
 	if cfg.dialog == aiDialogMCPAllowAll || cfg.dialog == aiDialogAgentAllowAll {
-		return ui.EventResult{}, false // the alert's focus trap owns its keys
+		return gfx.EventResult{}, false // the alert's focus trap owns its keys
 	}
-	if event.Key == ui.KeyEnter && !event.Repeat {
+	if event.Key == gfx.KeyEnter && !event.Repeat {
 		switch {
 		case cfg.dialog == aiDialogProvider && (event.Target == hitAISetFormName || event.Target == hitAISetFormURL || event.Target == hitAISetFormModelsURL || event.Target == hitAISetFormKey || event.Target == hitAISetFormCLIPath):
 			state.aiSubmitProvider()
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		case cfg.dialog == aiDialogNone && event.Target == hitAISetModelInput:
 			state.aiAddModel()
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 	}
 	var options []components.SegmentOption
-	if event.Target == hitAISetMCPSelect && cfg.dialog == aiDialogNone && !cfg.mcpSelectOpen && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+	if event.Target == hitAISetMCPSelect && cfg.dialog == aiDialogNone && !cfg.mcpSelectOpen && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		cfg.mcpSelectOpen = true
 		cfg.agentSelectOpen = false
-		return ui.EventResult{Focus: aiMCPClientID(cfg.mcpClient), FocusVisible: true, Handled: true, Repaint: true}, true
+		return gfx.EventResult{Focus: aiMCPClientID(cfg.mcpClient), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
-	if event.Target == hitAISetAgentSelect && cfg.dialog == aiDialogNone && !cfg.agentSelectOpen && (event.Key == ui.KeyDown || event.Key == ui.KeyUp) {
+	if event.Target == hitAISetAgentSelect && cfg.dialog == aiDialogNone && !cfg.agentSelectOpen && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		cfg.agentSelectOpen = true
 		cfg.mcpSelectOpen = false
-		return ui.EventResult{Focus: aiAgentClientID(cfg.agentClient), FocusVisible: true, Handled: true, Repaint: true}, true
+		return gfx.EventResult{Focus: aiAgentClientID(cfg.agentClient), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
 	var kind [2]components.SegmentOption
 	var auth [2]components.SegmentOption
@@ -716,20 +716,20 @@ func (state *State) aiSettingsKey(event ui.KeyEvent) (ui.EventResult, bool) {
 		agents = state.aiAgentModeOptions()
 		options = agents[:]
 	default:
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	next, handled := components.SegmentedControlKeyDown(event.Target, options, components.DirectionLTR, event.Key)
 	if !handled {
-		return ui.EventResult{}, true
+		return gfx.EventResult{}, true
 	}
 	state.Click(next)
 	if cfg.dialog == aiDialogMCPAllowAll || cfg.dialog == aiDialogAgentAllowAll {
-		return ui.EventResult{Focus: hitAISetConfirmCancel, FocusVisible: true, Handled: true, Repaint: true}, true
+		return gfx.EventResult{Focus: hitAISetConfirmCancel, FocusVisible: true, Handled: true, Repaint: true}, true
 	}
-	return ui.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
+	return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
 }
 
-func (state *State) aiSettingsEditor(hit ui.ID) *text.Editor {
+func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {
 	if !state.aiSettingsVisible() || !tree.Within(hit.Scope(), aiSettingsHits) {
 		return nil
 	}
@@ -1422,7 +1422,7 @@ func (state *State) aiMCPReady() bool {
 	return state.ai.settings.mcpEnabled && state.ai.mcpAddr != "" && state.ai.mcpToken != ""
 }
 
-func (state *State) aiCopyMCP(target ui.ID, value string) {
+func (state *State) aiCopyMCP(target gfx.ID, value string) {
 	if !state.aiMCPReady() {
 		return
 	}

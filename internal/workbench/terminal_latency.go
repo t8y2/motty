@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
@@ -32,7 +32,7 @@ const latencyStaleAfter = 4 * latencyProbeInterval
 
 // wantLatencyProbe records a session Paint saw that may need a sample and
 // keeps the refresh frame coming; the request itself is sent from Wake.
-func (state *State) wantLatencyProbe(session *Session, canvas *ui.Canvas) {
+func (state *State) wantLatencyProbe(session *Session, canvas *gfx.Canvas) {
 	if !state.terminalShowLatency || session == nil || session.isLocal() || session.phase != sshconn.PhaseConnected {
 		return
 	}
@@ -147,9 +147,9 @@ func (session *Session) resetLatency() {
 }
 
 // latencyInfo returns the latency text and status color (<100ms green, <200ms yellow, >=200ms red).
-func (state *State) latencyInfo(session *Session) (text string, color ui.Color, ok bool) {
+func (state *State) latencyInfo(session *Session) (text string, color gfx.Color, ok bool) {
 	if !state.latencyAvailable(session) {
-		return "", ui.Color{}, false
+		return "", gfx.Color{}, false
 	}
 	ms := atomic.LoadInt64(&session.rttMs)
 	text = fmt.Sprintf("RTT %dms", ms)
@@ -165,7 +165,7 @@ func (state *State) latencyAvailable(session *Session) bool {
 		atomic.LoadInt64(&session.rttMs) >= 0
 }
 
-func (state *State) latencyColor(ms int64) ui.Color {
+func (state *State) latencyColor(ms int64) gfx.Color {
 	switch {
 	case ms < 100:
 		return state.pal.success
@@ -177,15 +177,15 @@ func (state *State) latencyColor(ms int64) ui.Color {
 }
 
 // declareLatencyTag renders the latency badge in the bar.
-func (state *State) declareLatencyTag(f *flex.Frame, canvas *ui.Canvas, session *Session) {
+func (state *State) declareLatencyTag(f *ui.Frame, canvas *gfx.Canvas, session *Session) {
 	latencyText, latencyColor, ok := state.latencyInfo(session)
 	if !ok {
 		return
 	}
-	textWidth := canvas.TextWidthWeight(latencyText, metrics.FontSizeS, ui.WeightMedium) + 2
-	f.Row().PadSides(2, 6, 2, 6).MarginSides(0, 8, 0, 0).Items(flex.Center).
+	textWidth := canvas.TextWidthWeight(latencyText, metrics.FontSizeS, gfx.WeightMedium) + 2
+	f.Row().PadSides(2, 6, 2, 6).MarginSides(0, 8, 0, 0).Items(ui.Center).
 		Background(withAlpha(latencyColor, 0.14)).Radius(4).Children(func() {
-		f.Text(latencyText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).
+		f.Text(latencyText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
 			Color(latencyColor).LineHeight(16).Width(textWidth)
 	})
 }

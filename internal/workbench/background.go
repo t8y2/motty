@@ -13,7 +13,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
@@ -302,7 +302,7 @@ func (state *State) removeBackground() {
 	state.save()
 }
 
-func (state *State) clickBackground(id ui.ID) bool {
+func (state *State) clickBackground(id gfx.ID) bool {
 	switch id {
 	case hitBgChoose:
 		state.chooseBackground()
@@ -331,7 +331,7 @@ func (state *State) backgroundOn() bool { return state.bg.set && state.bg.pix !=
 
 // ground is the color of a terminal's ground: the color itself, or, while the
 // picture is showing, the color at the picture's visibility.
-func (state *State) ground(color ui.Color) ui.Color {
+func (state *State) ground(color gfx.Color) gfx.Color {
 	if state.showsBackground() {
 		color.Alpha *= state.bg.strength.opacity()
 	}
@@ -346,14 +346,14 @@ func (state *State) showsBackground() bool {
 
 // paintBackground puts the picture behind the terminal area, cover-fit below the
 // window bar, and reports whether it did.
-func (state *State) paintBackground(canvas *ui.Canvas, size ui.Size) bool {
+func (state *State) paintBackground(canvas *gfx.Canvas, size gfx.Size) bool {
 	bg := &state.bg
 	if !state.showsBackground() {
 		return false
 	}
 	// The picture fills what lies under the window bar.
-	var under flex.Box
-	f := state.paneChrome.Begin(canvas, state.Theme(), ui.Rect{Width: size.Width, Height: size.Height})
+	var under ui.Box
+	f := state.paneChrome.Begin(canvas, state.Theme(), gfx.Rect{Width: size.Width, Height: size.Height})
 	f.Column().Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
 		under = f.Slot().Fill()
 	})
@@ -362,8 +362,8 @@ func (state *State) paintBackground(canvas *ui.Canvas, size ui.Size) bool {
 	if area.Width <= 0 || area.Height <= 0 {
 		return false
 	}
-	size = ui.Size{Width: area.Width, Height: area.Height}
-	source := ui.Rect{Width: float32(bg.width), Height: float32(bg.height)}
+	size = gfx.Size{Width: area.Width, Height: area.Height}
+	source := gfx.Rect{Width: float32(bg.width), Height: float32(bg.height)}
 	if windowAspect, imageAspect := size.Width/size.Height, float32(bg.width)/float32(bg.height); imageAspect > windowAspect {
 		source.Width = float32(bg.height) * windowAspect
 		source.X = (float32(bg.width) - source.Width) / 2
@@ -371,7 +371,7 @@ func (state *State) paintBackground(canvas *ui.Canvas, size ui.Size) bool {
 		source.Height = float32(bg.width) / windowAspect
 		source.Y = (float32(bg.height) - source.Height) / 2
 	}
-	canvas.DrawBackdrop(ui.Bitmap{Pix: bg.pix, Width: bg.width, Height: bg.height, Stride: bg.width * 4, ID: bg.id}, source, area)
+	canvas.DrawBackdrop(gfx.Bitmap{Pix: bg.pix, Width: bg.width, Height: bg.height, Stride: bg.width * 4, ID: bg.id}, source, area)
 	return true
 }
 

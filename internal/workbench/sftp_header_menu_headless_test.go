@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 // The files panel's More menu dims the window, so its backdrop reaches the window
@@ -29,7 +29,7 @@ func TestSettingsButtonWithFilesMenuOpenOnlyClosesTheMenu(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	hitOf := func(id ui.ID) ui.Hit {
+	hitOf := func(id gfx.ID) gfx.Hit {
 		t.Helper()
 		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 		if !ok {
@@ -37,7 +37,7 @@ func TestSettingsButtonWithFilesMenuOpenOnlyClosesTheMenu(t *testing.T) {
 		}
 		return hit
 	}
-	click := func(id ui.ID) {
+	click := func(id gfx.ID) {
 		t.Helper()
 		hit := hitOf(id)
 		if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {

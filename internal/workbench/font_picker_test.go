@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 )
 
@@ -43,11 +43,11 @@ func TestChoosingAnInstalledFontSwitchesTheTerminalAndIsKept(t *testing.T) {
 	if state.modal != modalFontPicker || !state.fonts.loading {
 		t.Fatalf("modal %d, loading %v", state.modal, state.fonts.loading)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900}) // "Reading the installed fonts…"
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900}) // "Reading the installed fonts…"
 	waitFor(t, state, func() bool { return !state.fonts.loading })
-	canvas = ui.Canvas{}
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	texts := canvas.Texts()
 	var labels []string
 	for _, text := range texts {
@@ -61,13 +61,13 @@ func TestChoosingAnInstalledFontSwitchesTheTerminalAndIsKept(t *testing.T) {
 
 	// Typing narrows the list; Enter takes the highlighted row.
 	typeInto(state, hitFontPickerSearch, "jet")
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if len(state.fonts.filtered) != 1 {
 		t.Fatalf("filtered to %d rows", len(state.fonts.filtered))
 	}
 	before := state.cellWidth
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerSearch})
-	if state.modal != modalNone || state.fonts.family != "JetBrains Mono" || ui.MonoFamilyName(state.terminalFontFace) != "JetBrains Mono" {
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitFontPickerSearch})
+	if state.modal != modalNone || state.fonts.family != "JetBrains Mono" || gfx.MonoFamilyName(state.terminalFontFace) != "JetBrains Mono" {
 		t.Fatalf("modal %d, family %q, face %d", state.modal, state.fonts.family, state.terminalFontFace)
 	}
 	_ = before
@@ -77,7 +77,7 @@ func TestChoosingAnInstalledFontSwitchesTheTerminalAndIsKept(t *testing.T) {
 
 	// A new window starts with it, and does not need the list to draw.
 	restored := newTestState(t, options)
-	if restored.fonts.family != "JetBrains Mono" || ui.MonoFamilyName(restored.terminalFontFace) != "JetBrains Mono" {
+	if restored.fonts.family != "JetBrains Mono" || gfx.MonoFamilyName(restored.terminalFontFace) != "JetBrains Mono" {
 		t.Fatalf("restored family %q face %d", restored.fonts.family, restored.terminalFontFace)
 	}
 }
@@ -94,7 +94,7 @@ func TestAFontThatIsNoLongerInstalledFallsBackToTheSystemOne(t *testing.T) {
 		t.Fatalf("restored family %q", second.fonts.family)
 	}
 	waitFor(t, second, func() bool { return second.fonts.family == "" })
-	if second.terminalFontFace != ui.MonoSystem || !strings.Contains(second.status, "Iosevka") {
+	if second.terminalFontFace != gfx.MonoSystem || !strings.Contains(second.status, "Iosevka") {
 		t.Fatalf("face %d, status %q", second.terminalFontFace, second.status)
 	}
 	if third := newTestState(t, options); third.fonts.family != "" {
@@ -131,23 +131,23 @@ func TestFontPickerKeysMoveScrollAndLeaveTheFontAloneOnEscape(t *testing.T) {
 		t.Fatalf("rows %d, selected %d", len(state.fonts.filtered), state.fonts.selected)
 	}
 	for range 12 {
-		state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitFontPickerSearch})
+		state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitFontPickerSearch})
 	}
 	if state.fonts.selected != 12 || state.fonts.scroll != 12*fontPickerRowStep+30-fontPickerListHeight {
 		t.Fatalf("selected %d scroll %g: the window must follow the selection", state.fonts.selected, state.fonts.scroll)
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyPageUp, Target: hitFontPickerSearch})
-	state.Key(ui.KeyEvent{Key: ui.KeyPageUp, Target: hitFontPickerSearch})
-	state.Key(ui.KeyEvent{Key: ui.KeyUp, Target: hitFontPickerSearch}) // already at the top
+	state.Key(gfx.KeyEvent{Key: gfx.KeyPageUp, Target: hitFontPickerSearch})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyPageUp, Target: hitFontPickerSearch})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyUp, Target: hitFontPickerSearch}) // already at the top
 	if state.fonts.selected != 0 {
 		t.Fatalf("selected %d", state.fonts.selected)
 	}
-	state.Scroll(ui.ScrollEvent{DeltaY: 100})
+	state.Scroll(gfx.ScrollEvent{DeltaY: 100})
 	if state.fonts.scroll != 100 {
 		t.Fatalf("wheel moved the list to %g", state.fonts.scroll)
 	}
 	before := state.terminalFontFace
-	state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitFontPickerSearch})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitFontPickerSearch})
 	if state.modal != modalNone || state.terminalFontFace != before || state.fonts.family != "" {
 		t.Fatal("Escape changed the font")
 	}
@@ -171,7 +171,7 @@ func TestTheBuiltInFacesAreChosenFromTheSameList(t *testing.T) {
 	waitFor(t, state, func() bool { return !state.fonts.loading })
 	state.Click(hitFontPickerItemList.At(1)) // Classic
 	state.Click(hitFontPickerConfirm)
-	if state.terminalFontFace != ui.MonoClassic || state.fonts.family != "" {
+	if state.terminalFontFace != gfx.MonoClassic || state.fonts.family != "" {
 		t.Fatalf("face %d family %q", state.terminalFontFace, state.fonts.family)
 	}
 	state.save()
@@ -186,7 +186,7 @@ func TestADamagedFamilyInTheStateFileIsIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := newTestState(t, options)
-	if state.fonts.family != "" || state.terminalFontFace != ui.MonoClassic {
+	if state.fonts.family != "" || state.terminalFontFace != gfx.MonoClassic {
 		t.Fatalf("family %q face %d", state.fonts.family, state.terminalFontFace)
 	}
 }
@@ -203,15 +203,15 @@ func TestFallbackFontsAreAddedInOrderKeptAndRestored(t *testing.T) {
 			t.Fatalf("the picker for a fallback offers %+v", state.fonts.entries[index])
 		}
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerSearch}) // Fira Code
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitFontPickerSearch}) // Fira Code
 	state.openFontPicker(true)
 	typeInto(state, hitFontPickerSearch, "iosev")
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerSearch})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitFontPickerSearch})
 	if got := state.fonts.fallbacks; len(got) != 2 || got[0] != "Fira Code" || got[1] != "Iosevka" {
 		t.Fatalf("fallbacks = %q", got)
 	}
-	if got := ui.MonoFallbacks(state.terminalFontFace); len(got) != 2 || ui.MonoFamilyName(state.terminalFontFace) != "Menlo" {
-		t.Fatalf("the terminal draws in %q behind %q", got, ui.MonoFamilyName(state.terminalFontFace))
+	if got := gfx.MonoFallbacks(state.terminalFontFace); len(got) != 2 || gfx.MonoFamilyName(state.terminalFontFace) != "Menlo" {
+		t.Fatalf("the terminal draws in %q behind %q", got, gfx.MonoFamilyName(state.terminalFontFace))
 	}
 	state.openFontPicker(true)
 	state.refreshFontPicker()
@@ -223,10 +223,10 @@ func TestFallbackFontsAreAddedInOrderKeptAndRestored(t *testing.T) {
 	state.closeModal()
 
 	restored := newTestState(t, options)
-	if got := restored.fonts.fallbacks; len(got) != 2 || got[0] != "Fira Code" || got[1] != "Iosevka" || len(ui.MonoFallbacks(restored.terminalFontFace)) != 2 {
+	if got := restored.fonts.fallbacks; len(got) != 2 || got[0] != "Fira Code" || got[1] != "Iosevka" || len(gfx.MonoFallbacks(restored.terminalFontFace)) != 2 {
 		t.Fatalf("restored fallbacks = %q", got)
 	}
-	if !restored.clearFallbackFonts() || len(ui.MonoFallbacks(restored.terminalFontFace)) != 0 || restored.fonts.family != "Menlo" {
+	if !restored.clearFallbackFonts() || len(gfx.MonoFallbacks(restored.terminalFontFace)) != 0 || restored.fonts.family != "Menlo" {
 		t.Fatal("clearing the fallbacks must leave the font alone")
 	}
 }
@@ -265,7 +265,7 @@ func TestFallbackFontsNotInstalledHereAreSkippedButNotForgotten(t *testing.T) {
 
 	other := newTestState(t, options)
 	waitFor(t, other, func() bool { return other.fonts.installed != nil })
-	if got := ui.MonoFallbacks(other.terminalFontFace); len(got) != 1 || got[0] != "Fira Code" {
+	if got := gfx.MonoFallbacks(other.terminalFontFace); len(got) != 1 || got[0] != "Fira Code" {
 		t.Fatalf("the face behind a missing family draws with %q", got)
 	}
 	if len(other.fonts.fallbacks) != 2 || other.snapshot().TerminalFontFallbacks[1] != "Songti Elsewhere" {
@@ -329,15 +329,15 @@ func TestFontPickerEnterOnAButtonIsThatButtonsOwn(t *testing.T) {
 	waitFor(t, state, func() bool { return !state.fonts.loading })
 	state.Click(hitFontPickerItemList.At(2))
 
-	for _, target := range []ui.ID{hitFontPickerCancel, hitFontPickerClose} {
-		result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: target})
+	for _, target := range []gfx.ID{hitFontPickerCancel, hitFontPickerClose} {
+		result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: target})
 		if result.Handled || state.modal != modalFontPicker || state.fonts.family != "" {
 			t.Fatalf("Enter on %v: handled %v, modal %d, family %q", target, result.Handled, state.modal, state.fonts.family)
 		}
 	}
 
 	// On the focused row it takes that row, whichever one is highlighted.
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerItemList.At(3)})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitFontPickerItemList.At(3)})
 	if state.modal != modalNone || state.fonts.family != "Iosevka" {
 		t.Fatalf("modal %d, family %q", state.modal, state.fonts.family)
 	}
@@ -349,7 +349,7 @@ func TestFontPickerCannotConfirmWhatTheButtonRefuses(t *testing.T) {
 	if !state.fonts.loading {
 		t.Fatal("the list was read at once")
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerSearch})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitFontPickerSearch})
 	if state.modal != modalFontPicker {
 		t.Fatal("Enter confirmed while the fonts were being read")
 	}
@@ -357,7 +357,7 @@ func TestFontPickerCannotConfirmWhatTheButtonRefuses(t *testing.T) {
 
 	typeInto(state, hitFontPickerSearch, "no such font")
 	state.refreshFontPicker()
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerSearch})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitFontPickerSearch})
 	if state.modal != modalFontPicker || state.fonts.family != "" {
 		t.Fatalf("Enter confirmed an empty list: modal %d, family %q", state.modal, state.fonts.family)
 	}

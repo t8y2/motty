@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/risk"
@@ -39,18 +39,18 @@ type aiApprovalLayout struct {
 // aiBody holds where the panel's hand-painted parts went once its layout was
 // done: the controls and fields that are not flex elements.
 type aiBody struct {
-	close, history, newChat            flex.Box
-	setup, list                        flex.Box
-	summary, confirm, decline, approve flex.Box
-	mentions                           [maxMentionSuggestions]flex.Box
-	box                                flex.Box
+	close, history, newChat            ui.Box
+	setup, list                        ui.Box
+	summary, confirm, decline, approve ui.Box
+	mentions                           [maxMentionSuggestions]ui.Box
+	box                                ui.Box
 }
 
 // aiPrepareBottom measures what the declaration of the bottom needs to know
 // before it is declared, and returns the height of the message box. The box grows
 // with the text, up to a few rows, and scrolls beyond that; the text is wrapped
 // and laid out by the box itself (components.TextareaLayout).
-func (state *State) aiPrepareBottom(canvas *ui.Canvas, width float32) (boxHeight float32) {
+func (state *State) aiPrepareBottom(canvas *gfx.Canvas, width float32) (boxHeight float32) {
 	ai, panel := &state.ai, &state.ai.panel
 	theme := state.Theme()
 	lineHeight := theme.Metrics.FontSizeM + 7
@@ -82,13 +82,13 @@ func aiByteOffset(value string, n int) int {
 // declareAIBottom declares what sits under the messages, from the top down: the
 // notice, the pinned question, the sessions an @ can name and the message box.
 // The divider above is the first pixel of the 8 pixels between it and them.
-func (state *State) declareAIBottom(f *flex.Frame, body *aiBody, boxHeight float32) {
+func (state *State) declareAIBottom(f *ui.Frame, body *aiBody, boxHeight float32) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	f.Column().Children(func() {
 		f.Column().PadSides(7, aiPad, 0, aiPad).Gap(8).Children(func() {
 			if text := state.aiNoticeText(); text != "" {
 				f.Column().PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
-					f.Paragraph(text, 6).FontSize(aiSmallSize).Weight(ui.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
+					f.Paragraph(text, 6).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
 				})
 			}
 			if len(ai.approvals) > 0 {
@@ -129,7 +129,7 @@ func (state *State) aiNoticeText() string {
 
 // aiLayoutApprovalSummary wraps the command of the pinned question in the
 // terminal's font, which sets the height of the box it is painted in.
-func (state *State) aiLayoutApprovalSummary(canvas *ui.Canvas, approval *aiApproval, width float32) {
+func (state *State) aiLayoutApprovalSummary(canvas *gfx.Canvas, approval *aiApproval, width float32) {
 	layout := &state.ai.panel.approvalLay
 	cell, cellHeight := canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
 	layout.summary, _ = aiMonoWrap(layout.summary[:0], approval.request.Summary, max(int((width-2*aiApprovalPad-12)/cell), 8), aiMaxSummary)
@@ -139,7 +139,7 @@ func (state *State) aiLayoutApprovalSummary(canvas *ui.Canvas, approval *aiAppro
 // declareAIApproval declares the pinned question (a border is inside the padding,
 // hence one pixel less of it): what is asked, how risky it is,
 // the command, why, a safer way, the word that confirms it, and the answer.
-func (state *State) declareAIApproval(f *flex.Frame, body *aiBody) {
+func (state *State) declareAIApproval(f *ui.Frame, body *aiBody) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	m := state.messages.AIPanel
 	approval := ai.approvals[0]
@@ -153,11 +153,11 @@ func (state *State) declareAIApproval(f *flex.Frame, body *aiBody) {
 	}
 
 	f.Column().PadSides(0, aiApprovalPad-1, aiApprovalPad-1, aiApprovalPad-1).Background(pal.surface).Border(1, withAlpha(foreground, 0.7)).Radius(radius.popup).Children(func() {
-		f.Row().Height(aiApprovalPad + 24).Items(flex.Start).Children(func() {
+		f.Row().Height(aiApprovalPad + 24).Items(ui.Start).Children(func() {
 			f.Text(title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(20).Grow(1).MarginSides(8, 0, 0, 0)
 			if !approval.escalation {
 				f.Row().Height(16).PadX(6).Center().Shrink(0).MarginSides(10, 0, 0, 0).Background(fill).Radius(radius.control).Children(func() {
-					f.Text(state.aiRiskText(assessment.Level)).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).LineHeight(14)
+					f.Text(state.aiRiskText(assessment.Level)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(14)
 				})
 			}
 		})
@@ -171,17 +171,17 @@ func (state *State) declareAIApproval(f *flex.Frame, body *aiBody) {
 					if index == aiMaxReasons {
 						break
 					}
-					f.Row().Items(flex.Start).Children(func() {
+					f.Row().Items(ui.Start).Children(func() {
 						f.Text("•").FontSize(aiApprovalSize).Color(pal.muted).LineHeight(aiApprovalLine).Width(12)
-						f.Paragraph(reason, 2).FontSize(aiApprovalSize).Weight(ui.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine).Grow(1)
+						f.Paragraph(reason, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine).Grow(1)
 					})
 				}
 			})
 		}
 		if assessment.Safer != "" {
 			f.Column().MarginSides(0, 0, 4, 0).Children(func() {
-				f.Text(m.ApprovalSafer).FontSize(aiApprovalSize).Weight(ui.WeightMedium).Color(pal.text).LineHeight(aiApprovalLine)
-				f.Paragraph(assessment.Safer, 2).FontSize(aiApprovalSize).Weight(ui.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine)
+				f.Text(m.ApprovalSafer).FontSize(aiApprovalSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiApprovalLine)
+				f.Paragraph(assessment.Safer, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine)
 			})
 		}
 		if request.NeedsText {
@@ -190,11 +190,11 @@ func (state *State) declareAIApproval(f *flex.Frame, body *aiBody) {
 				panel.confirmText = fmt.Sprintf(m.ConfirmFmt, request.Confirm)
 			}
 			f.Column().MarginSides(0, 0, 8, 0).Children(func() {
-				f.Text(panel.confirmText).FontSize(aiSmallSize).Weight(ui.WeightMedium).Color(pal.text).LineHeight(18).MarginSides(0, 0, 2, 0)
+				f.Text(panel.confirmText).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(18).MarginSides(0, 0, 2, 0)
 				body.confirm = f.Slot().Height(32)
 			})
 		}
-		f.Row().Height(aiButtonHeight).Gap(8).Items(flex.Center).Children(func() {
+		f.Row().Height(aiButtonHeight).Gap(8).Items(ui.Center).Children(func() {
 			// More questions behind this one.
 			if more := len(ai.approvals) - 1; more > 0 {
 				if panel.moreCount != more || panel.moreFormat != m.ApprovalMoreFmt {
@@ -214,7 +214,7 @@ func (state *State) declareAIApproval(f *flex.Frame, body *aiBody) {
 // paintAIBottom paints into the slots of the bottom the parts that are not flex
 // elements, in the order the keyboard visits them: the pinned question's field and
 // buttons, the sessions an @ can name, the message box and Send.
-func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
+func (state *State) paintAIBottom(canvas *gfx.Canvas, body *aiBody) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	m := state.messages.AIPanel
 	theme := state.Theme()
@@ -258,15 +258,15 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 
 	for index, name := range panel.mentions {
 		id := hitAIMentions.At(index)
-		background := ui.Color{}
+		background := gfx.Color{}
 		if panel.mentionIndex == index || canvas.FocusVisible() == id {
 			background = pal.surfaceHot
 		}
 		label := "@" + name.name
 		row := state.aiFlex.mention.Begin(canvas, theme, body.mentions[index].Rect())
-		row.Row().Fill().PadX(8).Gap(10).Items(flex.Center).Background(background).Radius(radius.item).
-			HitWith(id, label, ui.HitOptions{Role: ui.RoleButton, Hint: name.detail, Selected: panel.mentionIndex == index, SkipTab: true}).Children(func() {
-			row.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.text).LineHeight(18).Ellipsis().Grow(1)
+		row.Row().Fill().PadX(8).Gap(10).Items(ui.Center).Background(background).Radius(radius.item).
+			HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: name.detail, Selected: panel.mentionIndex == index, SkipTab: true}).Children(func() {
+			row.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(18).Ellipsis().Grow(1)
 			row.Text(name.detail).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16).MaxWidth(120).Ellipsis()
 		})
 		row.End()
@@ -277,7 +277,7 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 	focused := canvas.Focused() == hitAIInput
 	selection, composition := ai.input.Selection(), ai.input.Composition
 	box := body.box.Rect()
-	panel.targetBounds = ui.Rect{X: box.X + 8, Y: box.Y + 6, Width: min(200, max(box.Width-16, 0)), Height: 24}
+	panel.targetBounds = gfx.Rect{X: box.X + 8, Y: box.Y + 6, Width: min(200, max(box.Width-16, 0)), Height: 24}
 	placeholder := m.InputPlaceholder
 	if ai.mode == agent.ModeAsk {
 		placeholder = m.InputPlaceholderAsk
@@ -297,8 +297,8 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 	panel.composer = box
 	panel.boxHeight = box.Height
 	// The box's top edge is what is dragged to make it taller.
-	canvas.HitWithOptions(hitAIComposerGrip, ui.Rect{X: box.X + 8, Y: box.Y - 3, Width: max(box.Width-16, 0), Height: 7}, m.ResizeComposer,
-		ui.HitOptions{Role: ui.RoleSlider, Cursor: ui.PointerCursorResizeVertical, SkipFocus: true})
+	canvas.HitWithOptions(hitAIComposerGrip, gfx.Rect{X: box.X + 8, Y: box.Y - 3, Width: max(box.Width-16, 0), Height: 7}, m.ResizeComposer,
+		gfx.HitOptions{Role: gfx.RoleSlider, Cursor: gfx.PointerCursorResizeVertical, SkipFocus: true})
 
 	running := ai.run != nil
 	_, hasModel := state.aiModelText()
@@ -317,11 +317,11 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 	case canvas.Pressed() == hitAISend, canvas.Hovered() == hitAISend:
 		fill = pal.accentHot
 	}
-	var chip, scopeChip, reasoningChip flex.Box
+	var chip, scopeChip, reasoningChip ui.Box
 	_, _, hasReasoning := state.aiCurrentModelReasoning()
 	f := state.aiFlex.send.Begin(canvas, theme, box)
-	f.Column().Fill().Justify(flex.End).Children(func() {
-		f.Row().Height(aiSendSize+8).PadSides(0, 12, 6, 12).Gap(5).Items(flex.Center).Children(func() {
+	f.Column().Fill().Justify(ui.End).Children(func() {
+		f.Row().Height(aiSendSize+8).PadSides(0, 12, 6, 12).Gap(5).Items(ui.Center).Children(func() {
 			state.declareAIModePill(f)
 			if hasModel {
 				chip = state.declareAIModelChip(f)
@@ -343,7 +343,7 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 					f.Column().Fill().Margin(-2).Background(withAlpha(pal.accent, 0.5)).Radius(aiSendSize/2 + 2)
 				}
 				f.Column().Fill().Center().Background(fill).Radius(aiSendSize/2).
-					HitWith(hitAISend, label, ui.HitOptions{Role: ui.RoleButton, Disabled: disabled, Hint: label}).Children(func() {
+					HitWith(hitAISend, label, gfx.HitOptions{Role: gfx.RoleButton, Disabled: disabled, Hint: label}).Children(func() {
 					if running {
 						// Stop is a solid square; the lucide stop glyph is a circle in a circle, twice round inside this round button.
 						f.Column().Size(10, 10).Background(foreground).Radius(2)
@@ -359,23 +359,23 @@ func (state *State) paintAIBottom(canvas *ui.Canvas, body *aiBody) {
 	f.End()
 	if hasModel {
 		panel.chip = chip.Rect()
-		panel.scopeChip = ui.Rect{}
+		panel.scopeChip = gfx.Rect{}
 		if ai.mode == agent.ModeAgent {
 			panel.scopeChip = scopeChip.Rect()
 		}
 		if hasReasoning {
 			panel.reasoningChip = reasoningChip.Rect()
 		} else {
-			panel.reasoningChip = ui.Rect{}
+			panel.reasoningChip = gfx.Rect{}
 		}
 	} else {
-		panel.reasoningChip = ui.Rect{}
+		panel.reasoningChip = gfx.Rect{}
 	}
 }
 
 // declareAIReasoningChip declares the pill in the message box that shows and controls
 // the reasoning effort of the current model.
-func (state *State) declareAIReasoningChip(f *flex.Frame) flex.Box {
+func (state *State) declareAIReasoningChip(f *ui.Frame) ui.Box {
 	pal, m := state.pal, state.messages.AIPanel
 	effort := state.aiEffectiveReasoningEffort()
 	label := state.aiReasoningEffortLabel(effort)
@@ -385,10 +385,10 @@ func (state *State) declareAIReasoningChip(f *flex.Frame) flex.Box {
 	if f.Canvas().Pressed() == hitAIReasoningChip || f.Canvas().Hovered() == hitAIReasoningChip || state.ai.panel.reasoningMenu {
 		fill = pal.surfaceHot
 	}
-	return f.Row().Height(aiSendSize-4).PadX(9).Gap(5).Shrink(1).MinWidth(50).Items(flex.Center).Background(fill).Radius((aiSendSize-4)/2).
-		HitWith(hitAIReasoningChip, displayText, ui.HitOptions{Role: ui.RoleButton, Expanded: state.ai.panel.reasoningMenu, Hint: m.ReasoningEffortHint}).Children(func() {
+	return f.Row().Height(aiSendSize-4).PadX(9).Gap(5).Shrink(1).MinWidth(50).Items(ui.Center).Background(fill).Radius((aiSendSize-4)/2).
+		HitWith(hitAIReasoningChip, displayText, gfx.HitOptions{Role: gfx.RoleButton, Expanded: state.ai.panel.reasoningMenu, Hint: m.ReasoningEffortHint}).Children(func() {
 		f.Icon(lucideIcons[iconSliders]).Size(12, 12).Color(pal.muted).Shrink(0)
-		f.Text(displayText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).Ellipsis().Shrink(1)
+		f.Text(displayText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Ellipsis().Shrink(1)
 		f.Icon(lucideIcons[iconChevronDown]).Size(12, 12).Color(pal.muted).Shrink(0).MarginSides(0, 0, 0, 2)
 	})
 }
@@ -396,7 +396,7 @@ func (state *State) declareAIReasoningChip(f *flex.Frame) flex.Box {
 // declareAIModePill declares the switch between Ask and Agent in the message box:
 // a pill naming the mode, which a click turns into the other. Agent, the mode that
 // runs commands, is the one painted in the accent.
-func (state *State) declareAIModePill(f *flex.Frame) {
+func (state *State) declareAIModePill(f *ui.Frame) {
 	pal, m := state.pal, state.messages.AIPanel
 	label, hint := m.ModeAsk, m.ModeHintAsk
 	fill, foreground := pal.surfaceSoft, pal.muted
@@ -409,29 +409,29 @@ func (state *State) declareAIModePill(f *flex.Frame) {
 	} else if f.Canvas().Hovered() == hitAIMode && state.ai.mode == agent.ModeAsk {
 		fill = pal.surfaceHot
 	}
-	f.Row().Height(aiSendSize-4).PadX(10).Shrink(0).Items(flex.Center).Background(fill).Radius((aiSendSize-4)/2).
-		HitWith(hitAIMode, label, ui.HitOptions{Role: ui.RoleButton, Value: label, Hint: hint}).Children(func() {
-		f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground)
+	f.Row().Height(aiSendSize-4).PadX(10).Shrink(0).Items(ui.Center).Background(fill).Radius((aiSendSize-4)/2).
+		HitWith(hitAIMode, label, gfx.HitOptions{Role: gfx.RoleButton, Value: label, Hint: hint}).Children(func() {
+		f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground)
 	})
 }
 
 // declareAIModelChip declares the pill in the message box that names the model and
 // opens the list of the others.
-func (state *State) declareAIModelChip(f *flex.Frame) flex.Box {
+func (state *State) declareAIModelChip(f *ui.Frame) ui.Box {
 	pal := state.pal
 	fill := pal.surfaceSoft
 	if f.Canvas().Pressed() == hitAIModelChip || f.Canvas().Hovered() == hitAIModelChip || state.ai.panel.modelMenu {
 		fill = pal.surfaceHot
 	}
 	label := state.ai.settings.defaultModel
-	return f.Row().Height(aiSendSize-4).PadX(9).Gap(5).Shrink(1).MinWidth(56).Items(flex.Center).Background(fill).Radius((aiSendSize-4)/2).
-		HitWith(hitAIModelChip, fmt.Sprintf(state.messages.AIPanel.ModelChooseFmt, label), ui.HitOptions{Role: ui.RoleButton, Expanded: state.ai.panel.modelMenu}).Children(func() {
+	return f.Row().Height(aiSendSize-4).PadX(9).Gap(5).Shrink(1).MinWidth(56).Items(ui.Center).Background(fill).Radius((aiSendSize-4)/2).
+		HitWith(hitAIModelChip, fmt.Sprintf(state.messages.AIPanel.ModelChooseFmt, label), gfx.HitOptions{Role: gfx.RoleButton, Expanded: state.ai.panel.modelMenu}).Children(func() {
 		chipIcon, known := state.aiDefaultProviderIcon()
 		if !known {
 			chipIcon = lucideIcons[iconSliders]
 		}
 		f.Icon(chipIcon).Size(13, 13).Color(pal.muted).Shrink(0)
-		f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).Ellipsis().Shrink(1)
+		f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Ellipsis().Shrink(1)
 		f.Icon(lucideIcons[iconChevronDown]).Size(12, 12).Color(pal.muted).Shrink(0).MarginSides(0, 0, 0, 2)
 	})
 }
@@ -443,7 +443,7 @@ func (state *State) declareAIModelChip(f *flex.Frame) flex.Box {
 // Agent mode runs commands, so only it shows the chip; a request already running
 // or waiting for an answer keeps the scope it started with, which is why locked
 // disables the chip but still names it.
-func (state *State) declareAIAutoScopeChip(f *flex.Frame, locked bool) flex.Box {
+func (state *State) declareAIAutoScopeChip(f *ui.Frame, locked bool) ui.Box {
 	pal, m := state.pal, state.messages.AIPanel
 	level := state.aiAutoUpTo()
 	label := state.aiScopeName(level)
@@ -459,10 +459,10 @@ func (state *State) declareAIAutoScopeChip(f *flex.Frame, locked bool) flex.Box 
 	if locked {
 		hint = m.AutoScopeBusy
 	}
-	return f.Row().Height(aiSendSize-4).PadX(9).Gap(4).Shrink(0).Items(flex.Center).Background(fill).Radius((aiSendSize-4)/2).
-		HitWith(hitAIAutoScope, label, ui.HitOptions{Role: ui.RoleButton, Hint: hint, Disabled: locked, Expanded: state.ai.panel.autoMenu}).Children(func() {
+	return f.Row().Height(aiSendSize-4).PadX(9).Gap(4).Shrink(0).Items(ui.Center).Background(fill).Radius((aiSendSize-4)/2).
+		HitWith(hitAIAutoScope, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint, Disabled: locked, Expanded: state.ai.panel.autoMenu}).Children(func() {
 		f.Icon(lucideIcons[icon]).Size(12, 12).Color(foreground).Shrink(0)
-		f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(foreground).Ellipsis()
+		f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).Ellipsis()
 		f.Icon(lucideIcons[iconChevronDown]).Size(12, 12).Color(pal.muted).Shrink(0).MarginSides(0, 0, 0, 2)
 	})
 }
@@ -498,20 +498,20 @@ func (state *State) aiScopeName(level risk.Level) string {
 }
 
 // aiDefaultProviderIcon is the mark of the provider new questions go to.
-func (state *State) aiDefaultProviderIcon() (ui.Icon, bool) {
+func (state *State) aiDefaultProviderIcon() (gfx.Icon, bool) {
 	for _, provider := range state.ai.providers {
 		if provider.ID == state.ai.settings.defaultProvider {
 			return aiProviderIcon(provider), true
 		}
 	}
-	return ui.Icon{}, false
+	return gfx.Icon{}, false
 }
 
 // aiMenuProvider is a provider the chip's menu offers, with the models that were
 // fetched or added for it.
 type aiMenuProvider struct {
 	id, name string
-	icon     ui.Icon
+	icon     gfx.Icon
 	models   []aiMenuModel
 }
 
@@ -570,7 +570,7 @@ func (state *State) aiMenuOpeningRow() (provider, scroll int) {
 // paintAIModelMenu is the chip's menu, above it: the providers, and beside them
 // the models of the one that is open, a few rows at a time and scrolled with the
 // wheel.
-func (state *State) paintAIModelMenu(canvas *ui.Canvas) {
+func (state *State) paintAIModelMenu(canvas *gfx.Canvas) {
 	panel := &state.ai.panel
 	providers := state.aiMenuProviders()
 	if len(providers) == 0 {
@@ -601,13 +601,13 @@ func (state *State) paintAIModelMenu(canvas *ui.Canvas) {
 	// The providers first.
 	var providersWidth float32
 	for _, provider := range providers {
-		providersWidth = max(providersWidth, canvas.TextWidthWeight(provider.name, size, ui.WeightRegular))
+		providersWidth = max(providersWidth, canvas.TextWidthWeight(provider.name, size, gfx.WeightRegular))
 	}
 	providersWidth += 24 // the mark before each name
 	providersHeight := float32(32*len(providers) + 8)
-	first := state.aiMenuRect(canvas, menuWidth(providersWidth), providersHeight, func(popup flex.Box) { popup.Above(panel.chip, 6, flex.Start) })
+	first := state.aiMenuRect(canvas, menuWidth(providersWidth), providersHeight, func(popup ui.Box) { popup.Above(panel.chip, 6, ui.Start) })
 	menu := components.BeginDropdownMenu(canvas, theme, first, options)
-	var row ui.Rect
+	var row gfx.Rect
 	for index, provider := range providers {
 		item := menu.AddItem(components.DropdownMenuItem{
 			ID: hitAIModelProviders.At(index), Label: provider.name, Icon: provider.icon, Kind: components.DropdownMenuSubmenu,
@@ -619,7 +619,7 @@ func (state *State) paintAIModelMenu(canvas *ui.Canvas) {
 	}
 	menu.End()
 	if !submenuOpen {
-		panel.modelsRect = ui.Rect{}
+		panel.modelsRect = gfx.Rect{}
 		return
 	}
 
@@ -627,16 +627,16 @@ func (state *State) paintAIModelMenu(canvas *ui.Canvas) {
 	visible := min(len(open.models), aiMenuRows)
 	var modelsWidth float32
 	for _, model := range open.models {
-		modelsWidth = max(modelsWidth, canvas.TextWidthWeight(model.name, size, ui.WeightRegular))
+		modelsWidth = max(modelsWidth, canvas.TextWidthWeight(model.name, size, gfx.WeightRegular))
 	}
 	modelsHeight := float32(32*visible + 8)
 	width := menuWidth(modelsWidth)
 	// Beside the row that opened them, top aligned, flipping left at the edge.
-	models := components.SubmenuPlacement(row, ui.Size{Width: width, Height: modelsHeight}, panel.window)
+	models := components.SubmenuPlacement(row, gfx.Size{Width: width, Height: modelsHeight}, panel.window)
 	panel.modelsRect = models
 	// The model list owns Escape while it is open; its parent's backdrop still
 	// dismisses both. It has no backdrop of its own.
-	options.DismissID, options.Viewport = hitAIModelSubDismiss, ui.Rect{}
+	options.DismissID, options.Viewport = hitAIModelSubDismiss, gfx.Rect{}
 	options.ID = hitAIModelList
 	options.Scroll = &panel.modelList
 	menu = components.BeginDropdownMenu(canvas, theme, models, options)
@@ -650,7 +650,7 @@ func (state *State) paintAIModelMenu(canvas *ui.Canvas) {
 // each lets run without asking. It is a context menu because every row carries a
 // description, which the animated dropdown menu has no room for; the cost is that
 // it appears at once instead of growing out of the chip.
-func (state *State) paintAIAutoScopeMenu(canvas *ui.Canvas) {
+func (state *State) paintAIAutoScopeMenu(canvas *gfx.Canvas) {
 	panel := &state.ai.panel
 	if !panel.autoMenu || state.ai.mode == agent.ModeAsk {
 		return
@@ -673,7 +673,7 @@ func (state *State) paintAIAutoScopeMenu(canvas *ui.Canvas) {
 		height += components.ContextMenuItemHeight(theme, item, 0)
 	}
 	height += 8 // the surface's padding above and below the rows
-	bounds := state.aiMenuRect(canvas, width, height, func(popup flex.Box) { popup.Above(panel.scopeChip, 6, flex.Start) })
+	bounds := state.aiMenuRect(canvas, width, height, func(popup ui.Box) { popup.Above(panel.scopeChip, 6, ui.Start) })
 	menu := components.BeginContextMenu(canvas, theme, bounds, components.ContextMenuOptions{
 		Layer: dialogLayer, Scope: hitAIAutoScopeDismiss, DismissID: hitAIAutoScopeDismiss,
 		Viewport: panel.window, Scroll: &panel.autoScroll,
@@ -691,7 +691,7 @@ func (state *State) paintAIAutoScopeMenu(canvas *ui.Canvas) {
 }
 
 // paintAIReasoningMenu is the reasoning chip's popup menu, above it: lists the supported levels.
-func (state *State) paintAIReasoningMenu(canvas *ui.Canvas) {
+func (state *State) paintAIReasoningMenu(canvas *gfx.Canvas) {
 	panel := &state.ai.panel
 	if !panel.reasoningMenu {
 		return
@@ -718,7 +718,7 @@ func (state *State) paintAIReasoningMenu(canvas *ui.Canvas) {
 		height += components.ContextMenuItemHeight(theme, item, 0)
 	}
 	height += 8
-	bounds := state.aiMenuRect(canvas, width, height, func(popup flex.Box) { popup.Above(panel.reasoningChip, 6, flex.Start) })
+	bounds := state.aiMenuRect(canvas, width, height, func(popup ui.Box) { popup.Above(panel.reasoningChip, 6, ui.Start) })
 	menu := components.BeginContextMenu(canvas, theme, bounds, components.ContextMenuOptions{
 		Layer:     dialogLayer,
 		Scope:     hitAIReasoningDismiss,
@@ -736,7 +736,7 @@ func (state *State) paintAIReasoningMenu(canvas *ui.Canvas) {
 
 // aiMenuRect is where a menu width wide and height tall goes: place says where it
 // hangs (above the chip, or at a point), and flex keeps it inside the window.
-func (state *State) aiMenuRect(canvas *ui.Canvas, width, height float32, place func(flex.Box)) ui.Rect {
+func (state *State) aiMenuRect(canvas *gfx.Canvas, width, height float32, place func(ui.Box)) gfx.Rect {
 	f := state.aiFlex.menu.Begin(canvas, state.Theme(), state.ai.panel.window)
 	popup := f.Popup().Size(width, height)
 	place(popup)

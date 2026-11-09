@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -122,7 +122,7 @@ func (state *State) monitorShown(workspace layoutcore.WorkspaceID) bool {
 	c, ok := state.deck.Context(workspace)
 	return ok && c.MonitorOpen
 }
-func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size ui.Size) float32 {
+func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size gfx.Size) float32 {
 	c, _ := state.deck.Context(workspace)
 	width := c.MonitorWidth
 	if width == 0 {
@@ -142,7 +142,7 @@ func (state *State) monitorPanelWidth(workspace layoutcore.WorkspaceID, size ui.
 // aiPreferredWidth returns the configured or default width of the AI panel,
 // without querying aiPanelLimits or aiSharedWidth (avoiding circular recursion
 // with independentMonitorReserve).
-func (state *State) aiPreferredWidth(size ui.Size) float32 {
+func (state *State) aiPreferredWidth(size gfx.Size) float32 {
 	if state.ai.panelWidth > 0 {
 		return max(state.ai.panelWidth, aiPanelMin)
 	}
@@ -151,7 +151,7 @@ func (state *State) aiPreferredWidth(size ui.Size) float32 {
 
 // monitorAndAICanCoexist reports whether the workspace has room to dock both the
 // resource monitor and the assistant beside the terminal and context panels.
-func (state *State) monitorAndAICanCoexist(workspace layoutcore.WorkspaceID, size ui.Size) bool {
+func (state *State) monitorAndAICanCoexist(workspace layoutcore.WorkspaceID, size gfx.Size) bool {
 	if size.Width < contextDrawerAt || size.Width < aiDockAt {
 		return false
 	}
@@ -166,7 +166,7 @@ func (state *State) monitorAndAICanCoexist(workspace layoutcore.WorkspaceID, siz
 	return base.Width-files-monitorWidth-aiWidth >= minTerminal
 }
 
-func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, size ui.Size) float32 {
+func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, size gfx.Size) float32 {
 	if !state.monitorShown(workspace) || size.Width < contextDrawerAt {
 		return 0
 	}
@@ -188,7 +188,7 @@ func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, 
 	}
 	return width + 1
 }
-func (state *State) monitorDrawer(size ui.Size) bool {
+func (state *State) monitorDrawer(size gfx.Size) bool {
 	return state.monitorShown(state.deck.ActiveWorkspace()) && state.independentMonitorReserve(state.deck.ActiveWorkspace(), size) == 0
 }
 
@@ -236,7 +236,7 @@ func (state *State) showMonitor() {
 	_ = state.deck.SetContext(id, c)
 	state.ensureMonitor(session)
 	state.monitorMenu = false
-	state.contextRect = ui.Rect{}
+	state.contextRect = gfx.Rect{}
 	state.fitWorkspaceTerminals(id)
 	state.fitSFTP(state.viewport)
 	state.save()
@@ -250,13 +250,13 @@ func (state *State) closeMonitor() {
 	_ = state.deck.SetContext(id, c)
 	state.stopRemoteStats(state.contextSession())
 	state.monitorMenu = false
-	state.monitorRect = ui.Rect{}
+	state.monitorRect = gfx.Rect{}
 	state.fitWorkspaceTerminals(id)
 	state.fitSFTP(state.viewport)
 	state.save()
 }
 
-func (state *State) clickMonitor(id ui.ID) bool {
+func (state *State) clickMonitor(id gfx.ID) bool {
 	switch id {
 	case hitMonitorSide:
 		state.toggleMonitorSide()
@@ -361,7 +361,7 @@ func (state *State) toggleMonitorSide() {
 	state.monitorResizing = false
 	state.draggedContextDivider = false
 	state.monitorMenu = false
-	state.monitorRect, state.contextRect = ui.Rect{}, ui.Rect{}
+	state.monitorRect, state.contextRect = gfx.Rect{}, gfx.Rect{}
 	state.fitWorkspaceTerminals(id)
 	state.fitSFTP(state.viewport)
 	state.save()

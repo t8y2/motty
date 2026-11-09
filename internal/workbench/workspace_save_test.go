@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -75,8 +75,8 @@ func TestOnlyTemporaryWorkspaceTabsOfferSave(t *testing.T) {
 		connect(t, state, world)
 		workspaceID := state.deck.ActiveWorkspace()
 		rightClickTab(state, hitTabList.At(int(workspaceID)))
-		var canvas ui.Canvas
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		if _, ok := hitByID(&canvas, hitTabMenuSaveWorkspace); ok {
 			t.Fatal("an ordinary session tab offers Save as Workspace Template")
 		}
@@ -88,15 +88,15 @@ func TestOnlyTemporaryWorkspaceTabsOfferSave(t *testing.T) {
 		template := mustWorkspaceTemplate(t, "Saved", workspaceCatalogIDs(state, 0, 1), 2)
 		state.templates = []WorkspaceTemplate{template}
 		state.activeSection = sectionWorkspaces
-		paintAt(state, ui.Size{Width: 1400, Height: 900})
+		paintAt(state, gfx.Size{Width: 1400, Height: 900})
 		state.Click(hitWorkspaceTemplateOpen.At(0))
 		workspaceID := state.deck.ActiveWorkspace()
 		if len(world.configs) != 2 {
 			t.Fatalf("applied template dialed %d hosts", len(world.configs))
 		}
 		rightClickTab(state, hitTabList.At(int(workspaceID)))
-		var canvas ui.Canvas
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		if _, ok := hitByID(&canvas, hitTabMenuSaveWorkspace); ok {
 			t.Fatal("a fixed-template tab offers Save as Workspace Template")
 		}
@@ -173,10 +173,10 @@ func TestSavingTemporaryWorkspaceUsesTheCurrentHeaderColumns(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
 	workspaceID := launchTemporaryWorkspaceWithColumns(t, state, 2, 0, 1, 2)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
 	state.Click(hitWorkspaceHeaderLayout)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceHeaderPresets.At(2))
 	if !isGrid(state.temporaryWorkspaceLayouts[workspaceID], 3) {
 		t.Fatalf("temporary source columns = %+v, want 3", state.temporaryWorkspaceLayouts[workspaceID])
@@ -414,7 +414,7 @@ func TestSavedTemporaryWorkspaceCanBeAppliedAndReorderedAgain(t *testing.T) {
 	first := state.templates[0]
 	world.configs = nil
 	state.activeSection = sectionWorkspaces
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceTemplateOpen.At(0))
 	if len(world.configs) != 2 || world.configs[0].Host != "prod.example.com" || world.configs[1].Host != "staging.example.com" {
 		t.Fatalf("applied dials = %+v", world.configs)
@@ -466,7 +466,7 @@ func workspaceCatalogIDs(state *State, indexes ...int) []string {
 	return ids
 }
 
-func workspaceDraftColumnID(columns uint8) ui.ID {
+func workspaceDraftColumnID(columns uint8) gfx.ID {
 	switch columns {
 	case 2:
 		return hitWorkspaceDraftPresets.At(1)

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/store"
 	"motty/internal/i18n"
 	"motty/internal/localshell"
@@ -38,7 +38,7 @@ func TestCLILoginNativeInputAndFormRendering(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer view.Close()
-	clickID := func(id ui.ID) {
+	clickID := func(id gfx.ID) {
 		t.Helper()
 		for _, h := range view.Snapshot().Hits {
 			if h.ID == id && !h.Block {

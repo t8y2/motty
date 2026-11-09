@@ -2,8 +2,8 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 )
@@ -167,7 +167,7 @@ func (state *State) switchSudoSFTP(session *Session, view *sftpView, password st
 	state.listSFTP(view, view.sftpFolder.path)
 }
 
-func (state *State) clickSudoSFTP(id ui.ID) {
+func (state *State) clickSudoSFTP(id gfx.ID) {
 	switch id {
 	case hitSudoSFTPEnable:
 		state.submitSudoSFTP()
@@ -181,7 +181,7 @@ func (state *State) clickSudoSFTP(id ui.ID) {
 	}
 }
 
-func (state *State) paintSudoSFTP(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintSudoSFTP(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages, state.Theme()
 	title, hint := m.SFTPSudoEnable, m.SFTPSudoHint
 	if state.sudoSFTP.commands {
@@ -193,7 +193,7 @@ func (state *State) paintSudoSFTP(canvas *ui.Canvas, viewport ui.Rect) {
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitSudoSFTPDismiss, CloseID: hitSudoSFTPCancel, InitialFocusID: hitSudoSFTPPassword,
-		ContentSize: ui.Size{Width: 540}, FitBody: true, BodyHeight: state.secretFieldBody(""),
+		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: state.secretFieldBody(""),
 	})
 	layout := dialog.Begin(title, hint)
 	field := components.BeginField(canvas, theme, state.layoutSecretField(canvas, layout.Body, ""))

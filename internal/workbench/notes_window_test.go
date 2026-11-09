@@ -9,8 +9,8 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
@@ -37,7 +37,7 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 		}
 		m.activate(file.cacheKey)
 		s.noteTokens()
-		s.noteSidebarPointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: hitNoteRows.At(s.notes.view.noteTokens["note"]), ClickCount: 2})
+		s.noteSidebarPointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitNoteRows.At(s.notes.view.noteTokens["note"]), ClickCount: 2})
 		if m.activeDocument() != d {
 			t.Fatal("double click did not activate note")
 		}
@@ -56,12 +56,12 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 		if m.activeDocument() != d || len(m.order) != 2 || s.noteSidebarState().content.selected != "second" {
 			t.Fatal("row open must activate the existing window without changing the preview")
 		}
-		var c ui.Canvas
-		m.paint(&c, ui.Size{Width: 800, Height: 600})
+		var c gfx.Canvas
+		m.paint(&c, gfx.Size{Width: 800, Height: 600})
 		if d.note.content.body.String() != mainBody {
 			t.Fatal("preview missed live draft")
 		}
-		for _, id := range []ui.ID{hitDocumentInput, hitDocumentSave, hitDocumentReload, hitDocumentEncoding} {
+		for _, id := range []gfx.ID{hitDocumentInput, hitDocumentSave, hitDocumentReload, hitDocumentEncoding} {
 			if _, ok := hitByID(&c, id); ok {
 				t.Fatalf("file control leaked: %v", id)
 			}
@@ -73,14 +73,14 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 			t.Fatal("note exposes text input")
 		}
 		d.click(hitDocumentSave)
-		d.shortcut(ui.KeyEvent{Text: "s", Modifiers: keymap.Primary})
+		d.shortcut(gfx.KeyEvent{Text: "s", Modifiers: keymap.Primary})
 		if d.dirty() || s.notes.list[0].Body != mainBody || s.notes.body.String() != mainBody {
 			t.Fatal("note save affected file editor or lost draft")
 		}
 		var copied string
 		s.options.SetClipboardText = func(value string) error { copied = value; return nil }
-		d.shortcut(ui.KeyEvent{Target: hitNotePreviewText, Text: "a", Modifiers: keymap.Primary})
-		d.shortcut(ui.KeyEvent{Target: hitNotePreviewText, Text: "c", Modifiers: keymap.Primary})
+		d.shortcut(gfx.KeyEvent{Target: hitNotePreviewText, Text: "a", Modifiers: keymap.Primary})
+		d.shortcut(gfx.KeyEvent{Target: hitNotePreviewText, Text: "c", Modifiers: keymap.Primary})
 		if !strings.Contains(copied, "live") {
 			t.Fatalf("copy missed content: %q", copied)
 		}
@@ -99,7 +99,7 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 		s.notes.list = s.notes.list[1:]
 		s.syncNoteWindows()
 		c.Reset()
-		m.paint(&c, ui.Size{Width: 600, Height: 420})
+		m.paint(&c, gfx.Size{Width: 600, Height: 420})
 		if !d.note.missing || d.note.content.body.String() != "" {
 			t.Fatal("deleted note retained content")
 		}
@@ -124,8 +124,8 @@ func TestNotesSidebarEmptyPreviewAndOpenEntry(t *testing.T) {
 	s.activeSection = sectionTerminal
 	s.Click(hitNotesPanel)
 	s.noteSidebarState().content.sideAll = true
-	var c ui.Canvas
-	paint := func() { c.Reset(); s.Paint(&c, ui.Size{Width: 1200, Height: 800}) }
+	var c gfx.Canvas
+	paint := func() { c.Reset(); s.Paint(&c, gfx.Size{Width: 1200, Height: 800}) }
 	paint()
 	v := s.noteSidebarState()
 	full := v.content.listBounds.Height

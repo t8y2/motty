@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
@@ -149,7 +149,7 @@ func TestAssistantSettingsChangedInOneWindowReachOtherWindows(t *testing.T) {
 	windows, hub := assistantWindowsOnOneStore(t)
 	for _, change := range []struct {
 		window int
-		hit    ui.ID
+		hit    gfx.ID
 	}{
 		{0, hitAISetSteps24}, {0, hitAISetContext0}, {1, hitAISetRiskHigh},
 		{2, hitAISetRedact}, {0, hitAISetHistory}, {1, hitAISetSteps6},

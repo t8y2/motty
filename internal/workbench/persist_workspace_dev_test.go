@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/backup"
 	"motty/internal/configstore"
 	layoutcore "motty/internal/workspace"
@@ -787,8 +787,8 @@ func TestDevelopmentWorkspaceCorruptionIsLocalAndRecoverable(t *testing.T) {
 			if state.modal != modalStateNotice || state.stateNotice.workspaceErr == "" {
 				t.Fatalf("restore failure has no visible notice: modal=%d notice=%+v", state.modal, state.stateNotice)
 			}
-			var canvas ui.Canvas
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 			if state.stateNotice.title != state.messages.DevelopmentWorkspaceRestoreTitle ||
 				!strings.Contains(state.stateNotice.body, "Could not restore the development workspace") {
 				t.Fatalf("restore notice = %+v", state.stateNotice)

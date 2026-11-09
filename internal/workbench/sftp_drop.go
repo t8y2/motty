@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -19,7 +19,7 @@ import (
 // paintSFTPDropOverlay is presentation only: it declares no hits, so the file
 // row under the pointer remains the target of the eventual system drop. label
 // says what the drop will do.
-func (state *State) paintSFTPDropOverlay(canvas *ui.Canvas, bounds ui.Rect, label string) {
+func (state *State) paintSFTPDropOverlay(canvas *gfx.Canvas, bounds gfx.Rect, label string) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
@@ -28,7 +28,7 @@ func (state *State) paintSFTPDropOverlay(canvas *ui.Canvas, bounds ui.Rect, labe
 	canvas.Clip(bounds)
 	defer canvas.Unclip()
 
-	gray := ui.RGB(128, 128, 128)
+	gray := gfx.RGB(128, 128, 128)
 	// Quiet the list below the hint without turning the drop area into a solid
 	// slab. Both surfaces and the icon stay neutral in either theme.
 	canvas.Fill(bounds, withAlpha(state.pal.workspace, 0.92))
@@ -47,17 +47,17 @@ func (state *State) paintSFTPDropOverlay(canvas *ui.Canvas, bounds ui.Rect, labe
 		}
 	}
 	dashes(bounds.Width, func(offset, length float32) {
-		canvas.Fill(ui.Rect{X: bounds.X + offset, Y: bounds.Y, Width: length, Height: stroke}, gray)
-		canvas.Fill(ui.Rect{X: bounds.X + offset, Y: bounds.Y + bounds.Height - stroke, Width: length, Height: stroke}, gray)
+		canvas.Fill(gfx.Rect{X: bounds.X + offset, Y: bounds.Y, Width: length, Height: stroke}, gray)
+		canvas.Fill(gfx.Rect{X: bounds.X + offset, Y: bounds.Y + bounds.Height - stroke, Width: length, Height: stroke}, gray)
 	})
 	dashes(bounds.Height, func(offset, length float32) {
-		canvas.Fill(ui.Rect{X: bounds.X, Y: bounds.Y + offset, Width: stroke, Height: length}, gray)
-		canvas.Fill(ui.Rect{X: bounds.X + bounds.Width - stroke, Y: bounds.Y + offset, Width: stroke, Height: length}, gray)
+		canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y + offset, Width: stroke, Height: length}, gray)
+		canvas.Fill(gfx.Rect{X: bounds.X + bounds.Width - stroke, Y: bounds.Y + offset, Width: stroke, Height: length}, gray)
 	})
 
-	textStyle := ui.TextStyle{Size: 15, Weight: ui.WeightMedium, Color: state.pal.text}
-	icon := ui.Rect{Width: 36, Height: 36}
-	text := ui.Rect{X: bounds.X + 12, Width: max(bounds.Width-24, 0), Height: 22}
+	textStyle := gfx.TextStyle{Size: 15, Weight: gfx.WeightMedium, Color: state.pal.text}
+	icon := gfx.Rect{Width: 36, Height: 36}
+	text := gfx.Rect{X: bounds.X + 12, Width: max(bounds.Width-24, 0), Height: 22}
 	if bounds.Height < 100 {
 		// A folder row has room for a single centered icon-and-label line.
 		textStyle.Size = 13
@@ -65,7 +65,7 @@ func (state *State) paintSFTPDropOverlay(canvas *ui.Canvas, bounds ui.Rect, labe
 		width := min(canvas.TextWidthWeight(label, textStyle.Size, textStyle.Weight), max(bounds.Width-44, 0))
 		icon.X = bounds.X + (bounds.Width-icon.Width-8-width)/2
 		icon.Y = bounds.Y + (bounds.Height-icon.Height)/2
-		text = ui.Rect{X: icon.X + icon.Width + 8, Y: bounds.Y + (bounds.Height-20)/2, Width: width, Height: 20}
+		text = gfx.Rect{X: icon.X + icon.Width + 8, Y: bounds.Y + (bounds.Height-20)/2, Width: width, Height: 20}
 	} else {
 		const groupHeight = float32(72)
 		icon.X = bounds.X + (bounds.Width-icon.Width)/2
@@ -107,7 +107,7 @@ func (state *State) dropPanel(x, y float32) (*Session, *sftpView) {
 }
 
 // dropFolderRow is the row of a folder under the pointer, or -1.
-func (state *State) dropFolderRow(view *sftpView, target ui.ID) int {
+func (state *State) dropFolderRow(view *sftpView, target gfx.ID) int {
 	local, ok := tree.Local(contextMount, target)
 	if !ok || local.Scope() != hitSFTPEntryList {
 		return -1
@@ -123,7 +123,7 @@ func (state *State) dropFolderRow(view *sftpView, target ui.ID) int {
 // from: the pane it fills and the folder on the server they would go into.
 type terminalDrop struct {
 	session   uint32
-	bounds    ui.Rect
+	bounds    gfx.Rect
 	directory string
 	// desktop marks a remote desktop's picture: what is dropped on it is offered
 	// to the remote clipboard, not uploaded.
@@ -131,28 +131,28 @@ type terminalDrop struct {
 }
 
 // FileDrop receives files dragged from the system over the window.
-func (state *State) FileDrop(event ui.FileDropEvent) ui.EventResult {
+func (state *State) FileDrop(event gfx.FileDropEvent) gfx.EventResult {
 	if state.modal == modalFileProperties {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
-	if event.Phase == ui.FileDropLeave {
+	if event.Phase == gfx.FileDropLeave {
 		repaint := state.clearDrop() || state.aiDropHover(false)
 		if w := state.activeSFTPWindow(); w != nil && w.drag.active {
 			w.cancelDrag()
 			repaint = true
 		}
-		return ui.EventResult{Repaint: repaint}
+		return gfx.EventResult{Repaint: repaint}
 	}
 	// The assistant panel is a place of its own, over the page beside it: files
 	// dropped on it are attached to the next question.
 	if state.aiDropsOnPanel(event.X, event.Y) {
 		repaint := state.clearDrop()
-		if event.Phase == ui.FileDropOver {
-			return ui.EventResult{Handled: true, Repaint: state.aiDropHover(true) || repaint}
+		if event.Phase == gfx.FileDropOver {
+			return gfx.EventResult{Handled: true, Repaint: state.aiDropHover(true) || repaint}
 		}
 		state.aiDropHover(false)
 		state.aiAttachPaths(event.Paths)
-		return ui.EventResult{Handled: len(event.Paths) > 0, Repaint: true}
+		return gfx.EventResult{Handled: len(event.Paths) > 0, Repaint: true}
 	}
 	left := state.aiDropHover(false)
 	if state.fileTabVerticalRailAt(event.X, event.Y) {
@@ -161,7 +161,7 @@ func (state *State) FileDrop(event ui.FileDropEvent) ui.EventResult {
 			w.cancelDrag()
 			repaint = true
 		}
-		return ui.EventResult{Handled: true, Repaint: repaint}
+		return gfx.EventResult{Handled: true, Repaint: repaint}
 	}
 	result := state.fileDropOnPage(event)
 	result.Repaint = result.Repaint || left
@@ -170,36 +170,36 @@ func (state *State) FileDrop(event ui.FileDropEvent) ui.EventResult {
 
 // fileDropOnPage is FileDrop for files that are not over the assistant: the file
 // panel and the terminals.
-func (state *State) fileDropOnPage(event ui.FileDropEvent) ui.EventResult {
+func (state *State) fileDropOnPage(event gfx.FileDropEvent) gfx.EventResult {
 	if result, handled := state.sftpTabFileDrop(event); handled {
 		return result
 	}
 	switch event.Phase {
-	case ui.FileDropOver:
+	case gfx.FileDropOver:
 		if _, view := state.dropPanel(event.X, event.Y); view != nil {
 			row := state.dropFolderRow(view, event.Target)
 			changed := !view.dropping || view.dropRow != row
 			view.dropping, view.dropRow = true, row
 			others := state.clearDropExcept(view)
 			terminal := state.clearTerminalDrop()
-			return ui.EventResult{Handled: true, Repaint: changed || others || terminal}
+			return gfx.EventResult{Handled: true, Repaint: changed || others || terminal}
 		}
 		repaint := state.clearDropPanels()
 		if session, bounds, ok := state.desktopDropAt(event.X, event.Y); ok {
 			target := terminalDrop{session: session.ID, bounds: bounds, desktop: true}
 			changed := state.terminalDrop != target
 			state.terminalDrop = target
-			return ui.EventResult{Handled: true, Repaint: repaint || changed}
+			return gfx.EventResult{Handled: true, Repaint: repaint || changed}
 		}
 		if upload, ok := state.terminalUploadAt(event.X, event.Y); ok {
 			changed := state.terminalDrop != upload
 			state.terminalDrop = upload
-			return ui.EventResult{Handled: true, Repaint: repaint || changed}
+			return gfx.EventResult{Handled: true, Repaint: repaint || changed}
 		}
 		if state.clearTerminalDrop() {
 			repaint = true
 		}
-		return ui.EventResult{Handled: state.terminalTakesPaths(event.X, event.Y), Repaint: repaint}
+		return gfx.EventResult{Handled: state.terminalTakesPaths(event.X, event.Y), Repaint: repaint}
 	}
 	repaint := state.clearDrop()
 	if session, view := state.dropPanel(event.X, event.Y); view != nil {
@@ -220,27 +220,27 @@ func (state *State) fileDropOnPage(event ui.FileDropEvent) ui.EventResult {
 			view.status = fmt.Sprintf(state.messages.Tools.DropUploadingFmt, queued, remoteDir)
 		}
 		_ = session
-		return ui.EventResult{Handled: queued > 0, Repaint: true}
+		return gfx.EventResult{Handled: queued > 0, Repaint: true}
 	}
 	if session, _, ok := state.desktopDropAt(event.X, event.Y); ok {
 		paths := slices.Clone(event.Paths)
 		state.dropDesktopFiles(session.desk, paths)
-		return ui.EventResult{Handled: len(paths) > 0, Repaint: true}
+		return gfx.EventResult{Handled: len(paths) > 0, Repaint: true}
 	}
 	if upload, ok := state.terminalUploadAt(event.X, event.Y); ok {
-		return ui.EventResult{Handled: state.uploadToTerminalFolder(upload, event.Paths), Repaint: true}
+		return gfx.EventResult{Handled: state.uploadToTerminalFolder(upload, event.Paths), Repaint: true}
 	}
 	if state.terminalTakesPaths(event.X, event.Y) {
 		session, _ := state.sessionByIDPointer(state.activeSessionID)
 		session.term.send([]byte(quotedPaths(event.Paths, session.wslDistro()) + " "))
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	return ui.EventResult{Repaint: repaint}
+	return gfx.EventResult{Repaint: repaint}
 }
 
 // paintTerminalDrop marks the terminal that files being dragged over it would
 // be uploaded from, and where.
-func (state *State) paintTerminalDrop(canvas *ui.Canvas) {
+func (state *State) paintTerminalDrop(canvas *gfx.Canvas) {
 	if drop := state.terminalDrop; drop.session != 0 {
 		label := fmt.Sprintf(state.messages.Tools.DropTerminalUploadFmt, drop.directory)
 		if drop.desktop {
@@ -251,9 +251,9 @@ func (state *State) paintTerminalDrop(canvas *ui.Canvas) {
 }
 
 // paneAt is the session under a window point, with the pane it fills.
-func (state *State) paneAt(x, y float32) (*Session, ui.Rect, bool) {
+func (state *State) paneAt(x, y float32) (*Session, gfx.Rect, bool) {
 	if state.activeSection != sectionTerminal || state.modal != modalNone || state.pointInContext(x, y) {
-		return nil, ui.Rect{}, false
+		return nil, gfx.Rect{}, false
 	}
 	state.refreshWorkspaceViews()
 	frame := state.workspacePixelBounds(state.viewport)
@@ -264,18 +264,18 @@ func (state *State) paneAt(x, y float32) (*Session, ui.Rect, bool) {
 		}
 		session, ok := state.sessionByIDPointer(state.panes[index].SessionID)
 		if !ok {
-			return nil, ui.Rect{}, false
+			return nil, gfx.Rect{}, false
 		}
 		return session, bounds, true
 	}
-	return nil, ui.Rect{}, false
+	return nil, gfx.Rect{}, false
 }
 
 // terminalPaneAt is the terminal under a window point, with the pane it fills.
-func (state *State) terminalPaneAt(x, y float32) (*Session, ui.Rect, bool) {
+func (state *State) terminalPaneAt(x, y float32) (*Session, gfx.Rect, bool) {
 	session, bounds, ok := state.paneAt(x, y)
 	if !ok || session.term == nil || session.term.shell == nil {
-		return nil, ui.Rect{}, false
+		return nil, gfx.Rect{}, false
 	}
 	return session, bounds, true
 }

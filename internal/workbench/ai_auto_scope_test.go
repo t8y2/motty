@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/risk"
 )
@@ -142,7 +142,7 @@ func TestApprovalScopeChipWaitsForRunningWork(t *testing.T) {
 func TestApprovalScopeMenuKeysChooseAndClose(t *testing.T) {
 	state := agentPanel(t)
 	paintAt(state, panelWide)
-	result := state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitAIAutoScope})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIAutoScope})
 	if !state.ai.panel.autoMenu {
 		t.Fatal("Down on the chip did not open the menu")
 	}
@@ -150,11 +150,11 @@ func TestApprovalScopeMenuKeysChooseAndClose(t *testing.T) {
 		t.Fatalf("Down focused %d, want the first scope", result.Focus)
 	}
 	paintAt(state, panelWide)
-	result = state.Key(ui.KeyEvent{Key: ui.KeyDown, Target: hitAIAutoScopeLevels.At(0)})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIAutoScopeLevels.At(0)})
 	if result.Focus != hitAIAutoScopeLevels.At(1) {
 		t.Fatalf("second Down focused %d, want the second scope", result.Focus)
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitAIAutoScopeLevels.At(1)})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitAIAutoScopeLevels.At(1)})
 	if state.aiAutoUpTo() != risk.Medium {
 		t.Fatalf("Enter chose %v", state.aiAutoUpTo())
 	}
@@ -167,7 +167,7 @@ func TestApprovalScopeMenuKeysChooseAndClose(t *testing.T) {
 	paintAt(state, panelWide)
 	state.Click(hitAIAutoScope)
 	paintAt(state, panelWide)
-	result = state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitAIAutoScopeLevels.At(1)})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIAutoScopeLevels.At(1)})
 	if state.ai.panel.autoMenu {
 		t.Fatal("Escape left the menu open")
 	}
@@ -186,7 +186,7 @@ func TestApprovalScopeMenuStartsOnTheFirstScopeAndKeepsTheWheel(t *testing.T) {
 	}
 	row := panelHit(t, canvas, hitAIAutoScopeLevels.At(0))
 	before := state.ai.scroll.Offset()
-	result := state.Scroll(ui.ScrollEvent{X: row.Bounds.X + 4, Y: row.Bounds.Y + 4, DeltaY: 120, Precise: true, Viewport: panelWide})
+	result := state.Scroll(gfx.ScrollEvent{X: row.Bounds.X + 4, Y: row.Bounds.Y + 4, DeltaY: 120, Precise: true, Viewport: panelWide})
 	if !result.Handled {
 		t.Fatal("wheel over the open menu was not consumed")
 	}
@@ -229,9 +229,9 @@ func TestApprovalScopeChoosingTheSettingFollowsIt(t *testing.T) {
 
 func TestApprovalScopeChipFitsAtTheMinimumWindow(t *testing.T) {
 	state := agentPanel(t)
-	canvas, _ := paintAt(state, ui.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight})
+	canvas, _ := paintAt(state, gfx.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight})
 	panel := state.ai.panel.rect
-	controls := []ui.Rect{
+	controls := []gfx.Rect{
 		panelHit(t, canvas, hitAIModelChip).Bounds,
 		panelHit(t, canvas, hitAIAutoScope).Bounds,
 		panelHit(t, canvas, hitAISend).Bounds,

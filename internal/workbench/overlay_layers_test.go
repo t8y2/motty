@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	"motty/internal/update"
 )
@@ -39,8 +39,8 @@ func TestTheAssistantDrawerKeepsItsOwnLayerUnderADialog(t *testing.T) {
 	state.activeSection = sectionTerminal
 
 	// 726 is narrower than aiDockAt, so the assistant is the drawer.
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 726, Height: 546})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 726, Height: 546})
 
 	assistantLayer, dialogLayer := -1, -1
 	for _, text := range canvas.Texts() {

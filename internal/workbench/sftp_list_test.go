@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // openLargeSFTP opens the file panel on a directory of count entries.
@@ -30,8 +30,8 @@ func openLargeSFTP(t testing.TB, count int) (*State, *Session) {
 
 func TestSFTPListOfThousandsPaintsOnlyWhatIsVisible(t *testing.T) {
 	state, session := openLargeSFTP(t, 5000)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	view := session.files
 	if view.visibleRows <= 0 || view.visibleRows >= 100 {
 		t.Fatalf("visible rows = %d of %d", view.visibleRows, len(view.rows))
@@ -52,8 +52,8 @@ func TestSFTPListOfThousandsPaintsOnlyWhatIsVisible(t *testing.T) {
 func TestSFTPEditorShowsWhichFileIsOpen(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	openSFTPTextEditor(t, state, session, "notes.txt")
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	found := false
 	for _, text := range canvas.Texts() {
 		found = found || text.Value == "notes.txt" && text.Bounds.Width > 0
@@ -65,8 +65,8 @@ func TestSFTPEditorShowsWhichFileIsOpen(t *testing.T) {
 
 func TestRemoteToolsTabsAndSortKeepApartInANarrowWindow(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 520, Height: 380})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 520, Height: 380})
 	tabs, ok := hitByID(&canvas, hitRemoteTabContainers)
 	sort, sortOK := hitByID(&canvas, hitRemoteSortMemory)
 	if !ok || !sortOK {
@@ -79,8 +79,8 @@ func TestRemoteToolsTabsAndSortKeepApartInANarrowWindow(t *testing.T) {
 
 func benchmarkPaintLargeSFTP(b *testing.B, scrolled bool) {
 	state, session := openLargeSFTP(b, 5000)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if scrolled {
 		session.files.first = 2500

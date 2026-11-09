@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -99,7 +99,7 @@ func TestTerminalInputGuardNativeChoiceAndLocaleNotice(t *testing.T) {
 				}
 			}
 			before := shell.typed()
-			if err := preview.Driver().Key(ui.KeyEscape, 0); err != nil {
+			if err := preview.Driver().Key(gfx.KeyEscape, 0); err != nil {
 				t.Fatal(err)
 			}
 			if state.modal != modalNone || shell.typed() != before {
@@ -113,7 +113,7 @@ func TestTerminalInputGuardNativeSpaceActivatesFocusedChoice(t *testing.T) {
 	for _, choice := range []struct {
 		name   string
 		tabs   int
-		target ui.ID
+		target gfx.ID
 		want   string
 	}{
 		{"cancel", 0, hitInputCancel, ""}, {"keep", 1, hitInputKeep, "\u2014"}, {"replace", 2, hitInputReplace, "-"},
@@ -123,7 +123,7 @@ func TestTerminalInputGuardNativeSpaceActivatesFocusedChoice(t *testing.T) {
 			owner := &state.sessions[0]
 			inputGuardPrompt(state, owner, shell, "utf8", "")
 			state.terminalText(owner.ID, app.TextEvent{Kind: app.TextInsert, Text: "\u2014"})
-			driver := paneDriver(t, state, ui.Size{Width: 840, Height: 600})
+			driver := paneDriver(t, state, gfx.Size{Width: 840, Height: 600})
 			if err := driver.Pump(); err != nil {
 				t.Fatal(err)
 			}
@@ -131,14 +131,14 @@ func TestTerminalInputGuardNativeSpaceActivatesFocusedChoice(t *testing.T) {
 				t.Fatal("initial choice was not cancel")
 			}
 			for range choice.tabs {
-				if err := driver.Key(ui.KeyTab, 0); err != nil {
+				if err := driver.Key(gfx.KeyTab, 0); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if driver.Snapshot().Focused != choice.target {
 				t.Fatal("Tab did not reach explicit replacement")
 			}
-			if err := driver.Key(ui.KeySpace, 0); err != nil {
+			if err := driver.Key(gfx.KeySpace, 0); err != nil {
 				t.Fatal(err)
 			}
 			if state.modal != modalNone || shell.typed() != choice.want {

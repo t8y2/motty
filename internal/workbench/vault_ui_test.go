@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
 )
@@ -299,7 +299,7 @@ func TestAVaultFromAnEarlierVersionAsksForItsMasterPasswordThenAnswers(t *testin
 		t.Fatalf("modal %d, error %q", state.modal, state.secrets.dialogError)
 	}
 	typeInto(state, hitVaultUnlockField, "master password")
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitVaultUnlockField})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitVaultUnlockField})
 	if state.modal != modalNone || len(second.passwords) != 1 || second.passwords[0] != "hunter2" {
 		t.Fatalf("modal %d, sent %v: unlocking should have answered the question", state.modal, second.passwords)
 	}
@@ -417,7 +417,7 @@ func TestARestoredTabConnectsItselfWhenTheVaultHasItsPassword(t *testing.T) {
 
 // settingsShows looks for a control on every category of the settings page, from
 // the top down.
-func settingsShows(state *State, id ui.ID) bool {
+func settingsShows(state *State, id gfx.ID) bool {
 	for category := settingsCategory(0); category < settingsCategoryCount; category++ {
 		state.selectSettingsCategory(category)
 		for range 60 {
@@ -425,7 +425,7 @@ func settingsShows(state *State, id ui.ID) bool {
 			if _, ok := hitByID(canvas, id); ok {
 				return true
 			}
-			state.scrollSettings(ui.ScrollEvent{DeltaY: 120, Precise: true})
+			state.scrollSettings(gfx.ScrollEvent{DeltaY: 120, Precise: true})
 		}
 	}
 	return false

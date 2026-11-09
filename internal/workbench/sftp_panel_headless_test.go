@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -27,7 +27,7 @@ func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer preview.Close()
-			click := func(id ui.ID) {
+			click := func(id gfx.ID) {
 				t.Helper()
 				hit, ok := findSnapshotHit(preview.Snapshot(), id)
 				if !ok {
@@ -44,7 +44,7 @@ func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {
 			}
 			click(contextID(hitSFTPPanelSide))
 			context, _ := state.deck.Context(state.deck.ActiveWorkspace())
-			panel, terminal, assistant := state.contextRect, state.workspacePixelBounds(ui.Size{Width: 1600, Height: 900}), state.ai.panel.rect
+			panel, terminal, assistant := state.contextRect, state.workspacePixelBounds(gfx.Size{Width: 1600, Height: 900}), state.ai.panel.rect
 			if context.Side != layoutcore.ContextRight || panel.X <= 0 || terminal.X != 0 ||
 				terminal.X+terminal.Width > panel.X || panel.X+panel.Width > assistant.X || assistant.Width == 0 {
 				t.Fatalf("right panel overlaps terminal/AI: terminal=%+v files=%+v AI=%+v", terminal, panel, assistant)
@@ -73,11 +73,11 @@ func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {
 			}
 			// Where the panel was is the terminal now: it may take an upload of its
 			// own, but the panel's drop target must not show there.
-			state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropOver, X: oldPanel.X + 10, Y: oldPanel.Y + 70, Paths: paths[:1]})
+			state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropOver, X: oldPanel.X + 10, Y: oldPanel.Y + 70, Paths: paths[:1]})
 			if files.dropping {
 				t.Fatal("the old left-panel location still shows the panel's drop target")
 			}
-			state.FileDrop(ui.FileDropEvent{Phase: ui.FileDropLeave})
+			state.FileDrop(gfx.FileDropEvent{Phase: gfx.FileDropLeave})
 			row := -1
 			for i, candidate := range files.rows {
 				if candidate.entry.Name == "docs" {
@@ -88,7 +88,7 @@ func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {
 			if row < 0 || !ok {
 				t.Fatal("missing destination folder")
 			}
-			if accepted, err := preview.Drop(ui.FileDropEvent{Phase: ui.FileDropDrop, X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2, Paths: paths[:1]}); err != nil || !accepted {
+			if accepted, err := preview.Drop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2, Paths: paths[:1]}); err != nil || !accepted {
 				t.Fatal("right-side folder did not accept upload", err)
 			}
 			waitTransfersDone(t, state, session, 1)
@@ -103,7 +103,7 @@ func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {
 			if err := preview.Resize(800, 640); err != nil {
 				t.Fatal(err)
 			}
-			if state.contextRect.X+state.contextRect.Width/2 <= 400 || state.workspacePixelBounds(ui.Size{Width: 800, Height: 640}) != state.baseWorkspacePixelBounds(ui.Size{Width: 800, Height: 640}) {
+			if state.contextRect.X+state.contextRect.Width/2 <= 400 || state.workspacePixelBounds(gfx.Size{Width: 800, Height: 640}) != state.baseWorkspacePixelBounds(gfx.Size{Width: 800, Height: 640}) {
 				t.Fatal("right drawer reserved terminal width or appeared on the left")
 			}
 			click(contextID(hitSFTPPanelSide))

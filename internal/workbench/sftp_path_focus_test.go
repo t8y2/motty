@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -38,7 +38,7 @@ func sftpPathFocusDriver(t *testing.T, state *State) *app.Driver {
 	return driver
 }
 
-func clickSFTPPathFocusHit(t *testing.T, driver *app.Driver, id ui.ID) {
+func clickSFTPPathFocusHit(t *testing.T, driver *app.Driver, id gfx.ID) {
 	t.Helper()
 	hit := hitOf(t, driver, id)
 	if err := driver.Click(hit.Bounds.X+hit.Bounds.Width-3, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
@@ -105,13 +105,13 @@ func TestSFTPPathTemporaryInputRevertsWhenClickingAFile(t *testing.T) {
 }
 
 func TestSFTPPathTemporaryInputRevertsOnKeyboardFocusTraversal(t *testing.T) {
-	for _, modifiers := range []ui.Modifiers{0, ui.ModifierShift} {
-		t.Run(map[ui.Modifiers]string{0: "tab", ui.ModifierShift: "shift-tab"}[modifiers], func(t *testing.T) {
+	for _, modifiers := range []gfx.Modifiers{0, gfx.ModifierShift} {
+		t.Run(map[gfx.Modifiers]string{0: "tab", gfx.ModifierShift: "shift-tab"}[modifiers], func(t *testing.T) {
 			state, session, _, _ := openTestSFTP(t)
 			driver := sftpPathFocusDriver(t, state)
 			clickSFTPPathFocusHit(t, driver, contextID(hitSFTPPathEdit))
 			typeSFTPPathDraft(t, driver, state, "unsubmitted-folder")
-			if err := driver.Key(ui.KeyTab, modifiers); err != nil {
+			if err := driver.Key(gfx.KeyTab, modifiers); err != nil {
 				t.Fatal(err)
 			}
 			assertSFTPPathBreadcrumbs(t, driver, session.files)
@@ -206,7 +206,7 @@ func TestSFTPPathFailedNativeNavigationKeepsTheFocusedDraft(t *testing.T) {
 	driver := sftpPathFocusDriver(t, state)
 	clickSFTPPathFocusHit(t, driver, contextID(hitSFTPPathEdit))
 	typeSFTPPathDraft(t, driver, state, "missing")
-	if err := driver.Key(ui.KeyEnter, 0); err != nil {
+	if err := driver.Key(gfx.KeyEnter, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := driver.Pump(); err != nil {
@@ -277,7 +277,7 @@ func TestSFTPPathEscapeAbandonsAPendingNavigation(t *testing.T) {
 	driver := sftpPathFocusDriver(t, state)
 	clickSFTPPathFocusHit(t, driver, contextID(hitSFTPPathEdit))
 	typeSFTPPathDraft(t, driver, state, "docs")
-	if err := driver.Key(ui.KeyEnter, 0); err != nil {
+	if err := driver.Key(gfx.KeyEnter, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := driver.Pump(); err != nil {
@@ -286,7 +286,7 @@ func TestSFTPPathEscapeAbandonsAPendingNavigation(t *testing.T) {
 	if !view.busy || view.pathRequest != "/home/test/docs" {
 		t.Fatalf("navigation was not pending: busy=%v request=%q", view.busy, view.pathRequest)
 	}
-	if result, handled := state.sftpPathKey(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEscape}); !handled || !result.Handled {
+	if result, handled := state.sftpPathKey(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEscape}); !handled || !result.Handled {
 		t.Fatalf("Escape in the path input was not handled: %+v", result)
 	}
 	if view.pathRequest != "" || view.abandonedPath != "/home/test/docs" {

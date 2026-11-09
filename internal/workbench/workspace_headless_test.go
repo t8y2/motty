@@ -8,8 +8,8 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
 
@@ -22,7 +22,7 @@ func TestHeadlessIdleMultiPaneWorkspaceDoesNotRepaint(t *testing.T) {
 	paints := 0
 	session, err := headless.Open(app.Config{
 		Title: "idle workspace", Width: 1400, Height: 900,
-		Paint: func(canvas *ui.Canvas, size ui.Size) {
+		Paint: func(canvas *gfx.Canvas, size gfx.Size) {
 			paints++
 			state.Paint(canvas, size)
 		},
@@ -68,7 +68,7 @@ func TestHeadlessWorkspaceLaunchAndExplicitBroadcastFlow(t *testing.T) {
 	}
 	defer view.Close()
 
-	click := func(id ui.ID) {
+	click := func(id gfx.ID) {
 		t.Helper()
 		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 		if !ok || hit.Block || hit.Disabled {

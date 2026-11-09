@@ -7,8 +7,8 @@ import (
 	"motty/internal/workbench/icons"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 var hostPickerHits = tree.Feature("host-color-picker")
@@ -26,7 +26,7 @@ type hostColorPicker struct {
 	hex                text.Editor
 	seen, summary      string
 	invalid            bool
-	trigger            ui.Rect
+	trigger            gfx.Rect
 	layout             components.ColorPickerLayout
 }
 
@@ -56,7 +56,7 @@ func (p *hostColorPicker) syncHex() {
 	}
 }
 
-func (state *State) hostPickerOptions(canvas *ui.Canvas) components.ColorPickerOptions {
+func (state *State) hostPickerOptions(canvas *gfx.Canvas) components.ColorPickerOptions {
 	p, m := &state.editor.colorPicker, state.messages
 	p.syncHex()
 	value, empty := p.draft, false
@@ -85,7 +85,7 @@ func (state *State) hostPickerOptions(canvas *ui.Canvas) components.ColorPickerO
 	return o
 }
 
-func (state *State) paintHostColorPicker(canvas *ui.Canvas) {
+func (state *State) paintHostColorPicker(canvas *gfx.Canvas) {
 	p := &state.editor.colorPicker
 	if p.restoreFocus {
 		canvas.RequestFocus(hostPickerIDs.Trigger)
@@ -98,7 +98,7 @@ func (state *State) paintHostColorPicker(canvas *ui.Canvas) {
 
 func (p *hostColorPicker) close() { p.open = false; p.restoreFocus = true }
 
-func (state *State) clickHostColorPicker(id ui.ID) bool {
+func (state *State) clickHostColorPicker(id gfx.ID) bool {
 	p := &state.editor.colorPicker
 	switch id {
 	case hostPickerIDs.Trigger:
@@ -140,10 +140,10 @@ func (state *State) clickHostColorPicker(id ui.ID) bool {
 	return false
 }
 
-func (state *State) hostPickerPointer(event ui.PointerEvent) ui.EventResult {
+func (state *State) hostPickerPointer(event gfx.PointerEvent) gfx.EventResult {
 	p := &state.editor.colorPicker
 	if state.modal != modalNewHost || !p.open {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	value, result := p.layout.Pointer(event, p.draft)
 	if value != p.draft {
@@ -152,23 +152,23 @@ func (state *State) hostPickerPointer(event ui.PointerEvent) ui.EventResult {
 	return result
 }
 
-func (state *State) hostPickerKey(event ui.KeyEvent) ui.EventResult {
+func (state *State) hostPickerKey(event gfx.KeyEvent) gfx.EventResult {
 	p := &state.editor.colorPicker
 	if state.modal != modalNewHost || !p.open || event.Release {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	if event.Key == ui.KeyEscape || event.Key == ui.KeyEnter && event.Target == hostPickerIDs.Hex && event.Modifiers == 0 {
+	if event.Key == gfx.KeyEscape || event.Key == gfx.KeyEnter && event.Target == hostPickerIDs.Hex && event.Modifiers == 0 {
 		if _, composing := p.hex.Composition(); composing {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 		if !event.Repeat {
-			if event.Key == ui.KeyEscape {
+			if event.Key == gfx.KeyEscape {
 				p.close()
 			} else {
 				state.clickHostColorPicker(hostPickerIDs.Apply)
 			}
 		}
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	value, result := p.layout.Key(event, p.draft)
 	if value != p.draft {

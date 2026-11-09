@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 type hostOrderMode uint8
@@ -106,7 +106,7 @@ func (state *State) sortVisibleHosts() {
 	})
 }
 
-func (state *State) clickHostOrder(id ui.ID) bool {
+func (state *State) clickHostOrder(id gfx.ID) bool {
 	if !state.hostOrderMenu && id != hitHostOrder {
 		return false
 	}
@@ -133,14 +133,14 @@ func (state *State) clickHostOrder(id ui.ID) bool {
 	return true
 }
 
-func (state *State) paintHostOrder(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintHostOrder(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if !state.hostOrderMenu || state.activeSection != sectionHosts || state.modal != modalNone {
 		return
 	}
 	messages := state.messages.HostCatalog
 	var rows menuRows
 	for _, option := range [...]struct {
-		id    ui.ID
+		id    gfx.ID
 		label string
 		mode  hostOrderMode
 	}{
@@ -160,7 +160,7 @@ func (state *State) paintHostOrder(canvas *ui.Canvas, viewport ui.Rect) {
 	menu.End()
 }
 
-func (state *State) paintHostOrderButton(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintHostOrderButton(canvas *gfx.Canvas, bounds gfx.Rect) {
 	state.hostOrderButton = bounds
 	style := iconButtonQuiet
 	if state.hostOrder != hostOrderManual {

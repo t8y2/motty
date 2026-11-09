@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 func workspaceEditorView(t *testing.T, state *State) *headless.Session {
@@ -33,7 +33,7 @@ func workspaceEditorView(t *testing.T, state *State) *headless.Session {
 	return view
 }
 
-func workspaceEditorClick(t *testing.T, view *headless.Session, id ui.ID) {
+func workspaceEditorClick(t *testing.T, view *headless.Session, id gfx.ID) {
 	t.Helper()
 	hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 	if !ok || hit.Disabled || hit.Block {
@@ -47,7 +47,7 @@ func workspaceEditorClick(t *testing.T, view *headless.Session, id ui.ID) {
 	}
 }
 
-func workspaceEditorDrag(t *testing.T, view *headless.Session, from, to ui.ID) {
+func workspaceEditorDrag(t *testing.T, view *headless.Session, from, to gfx.ID) {
 	t.Helper()
 	source, ok := hitByIDSnapshot(view.Snapshot().Hits, from)
 	if !ok {
@@ -89,7 +89,7 @@ func TestWorkspaceLayoutDragAutoSavesWithoutReconnectAndEscapeReturnsFocus(t *te
 	if state.activeSessionID != active || len(world.configs) != dials || !isGrid(state.managedWorkspaceLayouts[workspace], 2) {
 		t.Fatal("layout apply changed sessions or dialed again")
 	}
-	if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+	if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if view.Snapshot().Focused != state.activeTerminalFocusHit() {
@@ -253,7 +253,7 @@ func TestWorkspaceCardDragCancelsOutsideAndEscapeKeepsSavedEdits(t *testing.T) {
 	if err := view.Move(target.Bounds.X+20, target.Bounds.Y+20); err != nil {
 		t.Fatal(err)
 	}
-	if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+	if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Release(target.Bounds.X+20, target.Bounds.Y+20); err != nil {
@@ -262,7 +262,7 @@ func TestWorkspaceCardDragCancelsOutsideAndEscapeKeepsSavedEdits(t *testing.T) {
 	if !slices.Equal(state.templates[0].HostIDs, saved) || state.workspaceCardDrag.active {
 		t.Fatal("Escape during drag changed a completed edit")
 	}
-	if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+	if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(state.templates[0].HostIDs, saved) {
@@ -277,7 +277,7 @@ func TestWorkspaceCardKeyboardReorderKeepsTheMovedHostFocused(t *testing.T) {
 	state.templates = []WorkspaceTemplate{template}
 	view := workspaceEditorView(t, state)
 	workspaceEditorClick(t, view, hitWorkspaceTemplateCards.At(0))
-	if err := view.Driver().Key(ui.KeyRight, ui.ModifierAlt); err != nil {
+	if err := view.Driver().Key(gfx.KeyRight, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{template.HostIDs[1], template.HostIDs[0], template.HostIDs[2]}

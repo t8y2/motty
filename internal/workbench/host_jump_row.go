@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -65,15 +65,15 @@ func (state *State) openHostJumpRoute() {
 	state.openProxyDialogForHost(targetID, true)
 }
 
-func (state *State) paintHostJumpRow(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintHostJumpRow(canvas *gfx.Canvas, bounds gfx.Rect) {
 	messages, theme := state.messages.Tools, state.Theme()
 	content := components.BeginField(canvas, theme, bounds).Paint(messages.HostJumpRow, "", "")
-	button := components.BeginButton(canvas, theme, hitHostJumpConfigure, ui.Rect{}).XSmall().SizeToFit(messages.ProxyConfigure)
-	var action flex.Box
+	button := components.BeginButton(canvas, theme, hitHostJumpConfigure, gfx.Rect{}).XSmall().SizeToFit(messages.ProxyConfigure)
+	var action ui.Box
 	f := state.partLayout.Begin(canvas, theme, content)
 	// The summary sits in a box like the other fields' inputs, with its button
 	// inside, so the row has the same edge and height as they do.
-	f.Row().Fill().Items(flex.Center).Gap(8).PadSides(0, 4, 0, 12).
+	f.Row().Fill().Items(ui.Center).Gap(8).PadSides(0, 4, 0, 12).
 		Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
 		f.Text(state.hostJumpDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
 		action = f.Slot().Size(button.BoundsWidth(), 24)

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -83,7 +83,7 @@ func TestSFTPHistoryPairedRemoteEscapeRetiresRequest(t *testing.T) {
 				t.Fatal(err)
 			}
 			dualClickID(t, preview, sftpWindowPath[1])
-			if err := preview.Driver().Key(ui.KeyEscape, 0); err != nil {
+			if err := preview.Driver().Key(gfx.KeyEscape, 0); err != nil {
 				t.Fatal(err)
 			}
 			close(gate)
@@ -135,7 +135,7 @@ func TestSFTPHistoryPairedAsyncLocalEscapeRetiresRequest(t *testing.T) {
 			if window.pendingLocal != child || window.browse.pending == nil {
 				t.Fatal("fixture did not start an asynchronous local paired request")
 			}
-			window.key(ui.KeyEvent{Target: sftpWindowPath[0], Key: ui.KeyEscape})
+			window.key(gfx.KeyEvent{Target: sftpWindowPath[0], Key: gfx.KeyEscape})
 			historyUntil(t, func() bool {
 				state.ai.inbox.mu.Lock()
 				defer state.ai.inbox.mu.Unlock()

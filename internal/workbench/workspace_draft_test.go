@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestWorkspaceDraftCreatesTemporaryAndFixedWorkspaces(t *testing.T) {
@@ -18,7 +18,7 @@ func TestWorkspaceDraftCreatesTemporaryAndFixedWorkspaces(t *testing.T) {
 		state := newTestState(t, options)
 		state.activeSection = sectionWorkspaces
 
-		canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+		canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 		panelHit(t, canvas, hitWorkspaceNew)
 		state.Click(hitWorkspaceNew)
 		if state.modal != modalWorkspaceDraft || state.workspaceDraft.mode != workspaceDraftTemporary {
@@ -66,7 +66,7 @@ func TestWorkspaceDraftCreatesTemporaryAndFixedWorkspaces(t *testing.T) {
 			state.selectedWorkspaceTemplateID != template.ID {
 			t.Fatalf("modal=%d section=%d selected=%q", state.modal, state.activeSection, state.selectedWorkspaceTemplateID)
 		}
-		canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+		canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 		panelHit(t, canvas, hitWorkspaceTemplateRowList.At(0))
 	})
 }
@@ -118,7 +118,7 @@ func TestWorkspaceDraftSavesAndReappliesACompositionOnlyTemplate(t *testing.T) {
 		t.Fatalf("loaded templates = %+v, want %+v", loaded.WorkspaceTemplates, template)
 	}
 
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceTemplateOpen.At(0))
 	if len(world.configs) != 2 || world.configs[0].Host != "prod.example.com" || world.configs[1].Host != "staging.example.com" {
 		t.Fatalf("dials = %+v, want saved host-list order", world.configs)
@@ -160,7 +160,7 @@ func TestWorkspaceDraftSearchAndClicksStillUseHostListOrder(t *testing.T) {
 	state.activeSection = sectionWorkspaces
 	state.Click(hitWorkspaceNew)
 	state.EditorFor(hitWorkspaceDraftSearch).Insert("example.com")
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceDraftHostList.At(1))
 	state.Click(hitWorkspaceDraftHostList.At(0))
 	state.Click(hitWorkspaceDraftSubmit)
@@ -234,9 +234,9 @@ func TestWorkspaceDraftEnforcesTheTwelveHostLimitAndCatalogOrder(t *testing.T) {
 	for index := 0; index < maxWorkspaceTemplateHosts; index++ {
 		state.Click(workspaceDraftHostID(index))
 	}
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
-	state.workspaceDraftScroll(ui.ScrollEvent{X: state.workspaceDraft.bounds.X + 20, Y: state.workspaceDraft.bounds.Y + 20, DeltaY: 1000})
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	state.workspaceDraftScroll(gfx.ScrollEvent{X: state.workspaceDraft.bounds.X + 20, Y: state.workspaceDraft.bounds.Y + 20, DeltaY: 1000})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if !panelHit(t, canvas, workspaceDraftHostID(maxWorkspaceTemplateHosts)).Disabled {
 		t.Fatal("the first host past the limit is not disabled")
 	}
@@ -347,7 +347,7 @@ func TestWorkspaceDraftEditUpdatesTheSameTemplateAndPersists(t *testing.T) {
 	if next, ok := components.SegmentedControlKeyDown(hitWorkspaceDraftPresets.At(1),
 		[]components.SegmentOption{
 			{ID: hitWorkspaceDraftPresets.At(0)}, {ID: hitWorkspaceDraftPresets.At(1)}, {ID: hitWorkspaceDraftPresets.At(2)},
-		}, components.DirectionLTR, ui.KeyRight); !ok || next != hitWorkspaceDraftPresets.At(2) {
+		}, components.DirectionLTR, gfx.KeyRight); !ok || next != hitWorkspaceDraftPresets.At(2) {
 		t.Fatalf("columns test setup = %v, %v", next, ok)
 	}
 	state.Click(hitWorkspaceDraftPresets.At(2))
@@ -433,7 +433,7 @@ func TestWorkspaceDraftEditCancelDoesNotChangeAnOpenWorkspace(t *testing.T) {
 	}{
 		{"cancel", func(state *State) { state.Click(hitWorkspaceDraftCancel) }},
 		{"dismiss", func(state *State) { state.Click(hitWorkspaceDraftDismiss) }},
-		{"escape", func(state *State) { state.Key(ui.KeyEvent{Key: ui.KeyEscape}) }},
+		{"escape", func(state *State) { state.Key(gfx.KeyEvent{Key: gfx.KeyEscape}) }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			world, options := newWorld(t)
@@ -473,7 +473,7 @@ func TestWorkspaceDraftEditTogglesCurrentHostsAtTheEndOfTheSavedOrder(t *testing
 	}, 2)
 	state.templates = []WorkspaceTemplate{template}
 	state.openWorkspaceDraftEdit(template.ID)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(workspaceDraftHostID(0))
 	if want := []string{state.hosts[1].CatalogID, "host_deleted", state.hosts[0].CatalogID}; !slices.Equal(state.workspaceDraft.order, want) {
 		t.Fatalf("adding a host = %v, want %v", state.workspaceDraft.order, want)
@@ -492,7 +492,7 @@ func TestWorkspaceDraftEditPreviewAndReorderKeepMissingReferences(t *testing.T) 
 	}, 2)
 	state.templates = []WorkspaceTemplate{template}
 	state.openWorkspaceDraftEdit(template.ID)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 
 	items := state.workspaceItemsForRegion(workspaceCardRegion{view: workspaceCardsDraft})
 	if len(items) != 3 || items[1].host != "host_deleted" {
@@ -543,17 +543,17 @@ func TestWorkspaceDraftDefaultColumnsFollowSelectionUntilChosen(t *testing.T) {
 func TestWorkspaceLibraryOffersBothCreationModes(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.activeSection = sectionWorkspaces
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	panelHit(t, canvas, hitWorkspaceNew)
 	state.Click(hitWorkspaceNew)
-	canvas, _ = paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	panelHit(t, canvas, hitWorkspaceDraftTemporary)
 	panelHit(t, canvas, hitWorkspaceDraftFixed)
 	if state.modal != modalWorkspaceDraft {
 		t.Fatalf("modal = %d", state.modal)
 	}
 	state.Click(hitWorkspaceDraftCancel)
-	paintAt(state, ui.Size{Width: 1400, Height: 900})
+	paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	state.Click(hitWorkspaceNew)
 	state.Click(hitWorkspaceDraftFixed)
 	if state.modal != modalWorkspaceDraft || state.workspaceDraft.mode != workspaceDraftFixed {
@@ -561,7 +561,7 @@ func TestWorkspaceLibraryOffersBothCreationModes(t *testing.T) {
 	}
 }
 
-func workspaceDraftHostID(index int) ui.ID {
+func workspaceDraftHostID(index int) gfx.ID {
 	// Unfiltered choices put this computer before the saved SSH hosts.
 	return hitWorkspaceDraftHostList.At(index + 1)
 }

@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
@@ -231,7 +231,7 @@ func TestDevelopmentImportReadOnlyKeysRejectWrites(t *testing.T) {
 // the advance of its missing-glyph boxes, narrower than the one em the metrics
 // give a CJK character, so the dialog reports a spill the product does not have.
 func TestDevelopmentImportNativeDialog(t *testing.T) {
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 600}} {
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 600}} {
 		options, sourceKeys := developmentImportFixture(t)
 		state := newTestState(t, options)
 		if size.Width == 900 {

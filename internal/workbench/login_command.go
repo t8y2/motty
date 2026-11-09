@@ -5,7 +5,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // maxLoginCommand bounds the line a host types after login.
@@ -100,7 +100,7 @@ func (state *State) runLoginCommand(session *Session) {
 // requestLoginCommandFrames asks for the frame that lets the quiet rule apply to
 // a shell whose output has stopped. A terminal with no login command waiting
 // asks for nothing.
-func (state *State) requestLoginCommandFrames(canvas *ui.Canvas) {
+func (state *State) requestLoginCommandFrames(canvas *gfx.Canvas) {
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		t := session.term

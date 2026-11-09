@@ -3,7 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // sftpManagersAvailable reports whether the chosen host can accept a manager.
@@ -240,7 +240,7 @@ func (state *State) sftpFileTabTitle(tab *sftpWindow) string {
 	return tab.tabTitle
 }
 
-func (state *State) activeTopTabFocusHit() ui.ID {
+func (state *State) activeTopTabFocusHit() gfx.ID {
 	if state.activeSection == sectionSFTP {
 		if manager := state.activeSFTPWindow(); manager != nil {
 			return tree.MountID(sftpWindowMount(manager), sftpWindowPath[0])
@@ -249,29 +249,29 @@ func (state *State) activeTopTabFocusHit() ui.ID {
 	return state.activeTerminalFocusHit()
 }
 
-func (state *State) paintSFTPTab(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintSFTPTab(canvas *gfx.Canvas, bounds gfx.Rect) {
 	w := state.activeSFTPWindow()
 	if w == nil || bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
 	mount := sftpWindowMount(w)
 	state.fileManagerView.BeginEmbedded(canvas, mount)
-	w.paint(&state.fileManagerView, ui.Size{Width: bounds.Width, Height: bounds.Height})
+	w.paint(&state.fileManagerView, gfx.Size{Width: bounds.Width, Height: bounds.Height})
 	if clickID, ok := state.fileManagerView.ClickTarget(); ok {
 		canvas.AfterPaint(func() { w.click(clickID) })
 	}
 	state.fileManagerView.EndFrame()
 	state.fileManagerRect = bounds
 	canvas.Clip(bounds)
-	canvas.Embed(&state.fileManagerView, ui.Point{X: bounds.X, Y: bounds.Y}, mount)
+	canvas.Embed(&state.fileManagerView, gfx.Point{X: bounds.X, Y: bounds.Y}, mount)
 	canvas.Unclip()
 	adoptEmbeddedFocus(canvas, &state.fileManagerView, mount)
 }
 
-func (state *State) sftpTabLocalID(id ui.ID) (ui.ID, *sftpWindow, bool) {
+func (state *State) sftpTabLocalID(id gfx.ID) (gfx.ID, *sftpWindow, bool) {
 	w := state.activeSFTPWindow()
 	if w == nil || id.IsZero() {
-		return ui.ID{}, nil, false
+		return gfx.ID{}, nil, false
 	}
 	local, ok := tree.Local(sftpWindowMount(w), id)
 	return local, w, ok
@@ -289,40 +289,40 @@ func (state *State) SFTPTabInput(context app.TextInputContext) *app.TextInput {
 	return w.textInput(context)
 }
 
-func (state *State) sftpTabPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) sftpTabPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	w := state.activeSFTPWindow()
 	if w == nil {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	// A narrow assistant is a drawer over the file manager. A field on the
 	// drawer may decline the press so Viva's normal text-input handling can
 	// place the caret; it still must not fall through to the page behind it.
 	if state.aiPanelVisible() && state.ai.panel.rect.Width > 0 &&
 		pointInRect(event.X, event.Y, state.ai.panel.rect) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	local, _, mounted := state.sftpTabLocalID(event.Target)
 	if !mounted && !pointInRect(event.X, event.Y, state.fileManagerRect) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	mount := sftpWindowMount(w)
 	event.Target = local
 	event.X -= state.fileManagerRect.X
 	event.Y -= state.fileManagerRect.Y
-	event.Viewport = ui.Size{Width: state.fileManagerRect.Width, Height: state.fileManagerRect.Height}
+	event.Viewport = gfx.Size{Width: state.fileManagerRect.Width, Height: state.fileManagerRect.Height}
 	result := w.pointer(event)
 	result.Focus = tree.MountID(mount, result.Focus)
 	return result, true
 }
 
-func (state *State) sftpTabKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) sftpTabKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	w := state.activeSFTPWindow()
 	if w == nil {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	local, _, mounted := state.sftpTabLocalID(event.Target)
 	if !mounted {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	mount := sftpWindowMount(w)
 	event.Target = local
@@ -331,14 +331,14 @@ func (state *State) sftpTabKey(event ui.KeyEvent) (ui.EventResult, bool) {
 	return result, true
 }
 
-func (state *State) sftpTabShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) sftpTabShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	w := state.activeSFTPWindow()
 	if w == nil {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	local, _, mounted := state.sftpTabLocalID(event.Target)
 	if !mounted {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	mount := sftpWindowMount(w)
 	event.Target = local
@@ -347,10 +347,10 @@ func (state *State) sftpTabShortcut(event ui.KeyEvent) (ui.EventResult, bool) {
 	return result, result.Handled
 }
 
-func (state *State) sftpTabScroll(event ui.ScrollEvent) (ui.EventResult, bool) {
+func (state *State) sftpTabScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	w := state.activeSFTPWindow()
 	if w == nil || !pointInRect(event.X, event.Y, state.fileManagerRect) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	mount := sftpWindowMount(w)
 	event.X -= state.fileManagerRect.X
@@ -360,10 +360,10 @@ func (state *State) sftpTabScroll(event ui.ScrollEvent) (ui.EventResult, bool) {
 	return result, true
 }
 
-func (state *State) sftpTabFileDrop(event ui.FileDropEvent) (ui.EventResult, bool) {
+func (state *State) sftpTabFileDrop(event gfx.FileDropEvent) (gfx.EventResult, bool) {
 	w := state.activeSFTPWindow()
-	if w == nil || event.Phase != ui.FileDropLeave && !pointInRect(event.X, event.Y, state.fileManagerRect) {
-		return ui.EventResult{}, false
+	if w == nil || event.Phase != gfx.FileDropLeave && !pointInRect(event.X, event.Y, state.fileManagerRect) {
+		return gfx.EventResult{}, false
 	}
 	mount := sftpWindowMount(w)
 	event.X -= state.fileManagerRect.X

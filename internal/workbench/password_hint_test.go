@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func passwordHintSession(t *testing.T) (*State, *Session, *fakeShell) {
@@ -26,7 +26,7 @@ func TestEnterSendsTheSavedPasswordAtASudoPrompt(t *testing.T) {
 	if shell.typed() != "" {
 		t.Fatalf("the password was sent before Enter: %q", shell.typed())
 	}
-	state.terminalKey(session, ui.KeyEvent{Key: ui.KeyEnter})
+	state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyEnter})
 	if got := shell.typed(); got != "hunter2\r" {
 		t.Fatalf("typed %q", got)
 	}
@@ -40,7 +40,7 @@ func TestTypingTakesTheSudoOfferBack(t *testing.T) {
 	shell.say("[sudo] password for dev: ")
 	state.Wake()
 	state.typed(session, []byte("x"))
-	state.terminalKey(session, ui.KeyEvent{Key: ui.KeyEnter})
+	state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyEnter})
 	if got := shell.typed(); got != "x\r" {
 		t.Fatalf("typed %q: the saved password was added to what the user typed", got)
 	}

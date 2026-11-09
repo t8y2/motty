@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"golang.org/x/crypto/ssh"
 	"motty/internal/keyidentity"
 	"motty/internal/sshconn"
@@ -272,7 +272,7 @@ func TestForgettingAllSavedPasswordsWarnsAboutStoredKeys(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	addKeyByHand(t, state, string(identityPEM(t, "")), "only copy")
 	state.openVaultForget()
-	_, texts := paintAt(state, ui.Size{Width: 1000, Height: 800})
+	_, texts := paintAt(state, gfx.Size{Width: 1000, Height: 800})
 	found := false
 	for _, text := range texts {
 		found = found || strings.Contains(text, "1 SSH keys")
@@ -302,18 +302,18 @@ func TestEnterInTheKeyFieldIsANewLineAndArrowsMoveByRow(t *testing.T) {
 	state.Click(hitKeysPaste)
 	field := &state.form.fields[0]
 	field.editor.Insert("first\nsecond\nthird")
-	canvas, _ := paintAt(state, ui.Size{Width: 1000, Height: 800})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1000, Height: 800})
 	if _, ok := hitByID(canvas, hitFormFieldList.At(0)); !ok {
 		t.Fatal("the key field was not painted")
 	}
 	target := hitFormFieldList.At(0)
 	end := field.editor.Caret()
-	state.Key(ui.KeyEvent{Key: ui.KeyUp, Target: target})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyUp, Target: target})
 	if up := field.editor.Caret(); up >= end || up == 0 {
 		t.Fatalf("Up moved the caret from %d to %d", end, up)
 	}
 	// Enter is the native editor's new line; the form must not take it as Submit.
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: target})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: target})
 	if state.modal != modalForm {
 		t.Fatal("Enter in the key field submitted the form")
 	}

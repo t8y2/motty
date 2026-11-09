@@ -5,8 +5,8 @@ import (
 	"unicode"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 var (
@@ -23,7 +23,7 @@ type hostGroupPicker struct {
 	control    components.SingleSelectState
 	serialized string
 	ready      bool
-	popup      ui.Rect
+	popup      gfx.Rect
 }
 
 func validHostGroup(value string) bool {
@@ -84,7 +84,7 @@ func (state *State) commitHostGroupQuery() bool {
 	return true
 }
 
-func (state *State) clickHostGroupPicker(id ui.ID) bool {
+func (state *State) clickHostGroupPicker(id gfx.ID) bool {
 	p := state.hostGroupPicker()
 	switch {
 	case id == hitDialogGroup:
@@ -107,48 +107,48 @@ func (state *State) clickHostGroupPicker(id ui.ID) bool {
 	return true
 }
 
-func (state *State) hostGroupPickerKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) hostGroupPickerKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNewHost {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	p := state.hostGroupPicker()
-	if event.Target != hitDialogGroup && (!p.control.Open || event.Key != ui.KeyEscape && event.Key != ui.KeyTab) {
-		return ui.EventResult{}, false
+	if event.Target != hitDialogGroup && (!p.control.Open || event.Key != gfx.KeyEscape && event.Key != gfx.KeyTab) {
+		return gfx.EventResult{}, false
 	}
-	if event.Target == hitDialogGroup && event.Key == ui.KeyEnter && event.Modifiers == 0 && !event.Release {
+	if event.Target == hitDialogGroup && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Release {
 		// Enter means "take what is typed", and with nothing typed it means the
 		// form's Enter: save. The picker must not consume it for a group it did
 		// not choose.
 		if _, composing := p.control.Query.Composition(); composing || event.Repeat {
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 		if strings.TrimSpace(p.control.Query.String()) == "" {
 			if p.control.Open {
 				p.control.Dismiss()
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		if !state.commitHostGroupQuery() {
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	result := p.control.Key(event)
 	state.syncHostGroup()
 	return result, result.Handled || result.Repaint
 }
 
-func isHostGroupPickerTarget(id ui.ID) bool {
+func isHostGroupPickerTarget(id gfx.ID) bool {
 	return id == hitDialogGroup || id == hitHostGroupTrigger || id == hitHostGroupClear || id == hitHostGroupPickerScroll || id.Scope() == hitHostGroupChoices
 }
 
-func (state *State) paintHostGroupPicker(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintHostGroupPicker(canvas *gfx.Canvas, bounds gfx.Rect) {
 	p := state.hostGroupPicker()
 	input := components.BeginField(canvas, state.Theme(), bounds).For(hitDialogGroup).Paint(state.messages.FieldGroup, "", "")
 	state.revealHostField(canvas, hitDialogGroup, input)
 	query := strings.TrimSpace(p.control.Query.String())
-	viewport := ui.Rect{Width: state.viewport.Width, Height: state.viewport.Height}
+	viewport := gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}
 	if state.editor.form.clipped {
 		// Keep every option and the scrollbar inside the form's actual clip.
 		viewport = state.editor.form.geometry.Viewport

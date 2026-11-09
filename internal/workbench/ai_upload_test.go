@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/tools"
@@ -252,7 +252,7 @@ func TestAgentUploadsPickedBinaryOnlyAfterApproval(t *testing.T) {
 		return textTurn("No confirmed transfer")
 	}}
 	state, _ := assistantTestSession(t, model)
-	state.Paint(&ui.Canvas{}, panelWide)
+	state.Paint(&gfx.Canvas{}, panelWide)
 	state.Click(hitAIToggle)
 	state.ai.mode = agent.ModeAgent
 	remote := &workbenchSFTPRemote{cwd: "/home/test", entries: map[string][]os.FileInfo{"/home/test": {}}, files: make(map[string][]byte)}

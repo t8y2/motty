@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -85,11 +85,11 @@ func TestRemoteAutoRefreshRunsFromAnimationFramesOnCapturedConnection(t *testing
 		other.runCommand = otherServer.run
 		other.mu.Unlock()
 		w.click(hitRemoteIntervals.At(0))
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		now := 5 * time.Second
 		canvas.SetClock(func() time.Duration { return now })
 		canvas.BeginFrame() // a plain render, not a click's event pass
-		w.paint(&canvas, ui.Size{Width: 1100, Height: 780})
+		w.paint(&canvas, gfx.Size{Width: 1100, Height: 780})
 		canvas.EndFrame()
 		host.until(t, func() bool { return server.ran("LC_ALL=C ps") == 2 && !w.ui.remote.loading })
 		if otherServer.ran("LC_ALL=C ps") != 0 {
@@ -107,11 +107,11 @@ func TestRemoteAutoRefreshClockSchedulingAndMenuKeyboard(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	state.Click(hitRemoteIntervals.At(1))
 	for _, reduced := range []bool{false, true} {
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		canvas.SetReduceMotion(reduced)
 		canvas.SetClock(func() time.Duration { return time.Second })
 		canvas.BeginFrame()
-		state.paintRemoteRefresh(&canvas, ui.Rect{Width: 174, Height: 34})
+		state.paintRemoteRefresh(&canvas, gfx.Rect{Width: 174, Height: 34})
 		canvas.EndFrame()
 		delay, scheduled := canvas.NextFrame()
 		if !scheduled || (reduced && delay != 9*time.Second) || (!reduced && (delay <= 0 || delay > time.Second/6)) {
@@ -130,17 +130,17 @@ func TestRemoteAutoRefreshClockSchedulingAndMenuKeyboard(t *testing.T) {
 			t.Fatalf("auto refresh declared %d controls for one button", hits)
 		}
 	}
-	result := state.remoteRefreshKey(ui.KeyEvent{Target: hitRemoteAutoRefresh, Key: ui.KeyDown})
+	result := state.remoteRefreshKey(gfx.KeyEvent{Target: hitRemoteAutoRefresh, Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != hitRemoteAutoToggle {
 		t.Fatal("keyboard could not open the interval menu")
 	}
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.paintRemoteRefreshMenu(&canvas)
-	result = state.remoteRefreshKey(ui.KeyEvent{Target: hitRemoteAutoToggle, Key: ui.KeyDown})
+	result = state.remoteRefreshKey(gfx.KeyEvent{Target: hitRemoteAutoToggle, Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != hitRemoteIntervals.At(0) {
 		t.Fatal("arrow keys cannot navigate refresh intervals")
 	}
-	result = state.remoteRefreshKey(ui.KeyEvent{Key: ui.KeyEscape})
+	result = state.remoteRefreshKey(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if !result.Handled || state.remote.auto.open || state.modal != modalRemoteTools {
 		t.Fatal("Escape closed the utility instead of its interval menu")
 	}
@@ -152,8 +152,8 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 	server.failures["docker ps"] = errors.New("exit status 127")
 	server.mu.Unlock()
 	state.Click(hitRemoteTabContainers)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if len(state.remote.rows) != 0 {
 		t.Fatal("initial Docker detection reused process rows")
 	}
@@ -164,17 +164,17 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 	}
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if !state.remote.noDocker || !remoteCanvasHasText(&canvas, state.messages.Tools.RemoteDockerMissing) {
 		t.Fatal("missing Docker has no illustrated empty state")
 	}
 	server.mu.Lock()
 	requests := len(server.commands)
 	server.mu.Unlock()
-	for _, tab := range []ui.ID{hitRemoteTabImages, hitRemoteTabVolumes, hitRemoteTabNetworks, hitRemoteTabCompose, hitRemoteTabContainers} {
+	for _, tab := range []gfx.ID{hitRemoteTabImages, hitRemoteTabVolumes, hitRemoteTabNetworks, hitRemoteTabCompose, hitRemoteTabContainers} {
 		state.Click(tab)
 		canvas.Reset()
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		if state.remote.loading || !state.remote.noDocker || !remoteCanvasHasText(&canvas, state.messages.Tools.RemoteDockerMissing) {
 			t.Fatal("switching Docker tabs flashed a table or discarded the known empty state")
 		}
@@ -189,13 +189,13 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	selectRemoteToolsRow(state, 0)
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if !state.remote.noDocker || remoteCanvasHasText(&canvas, state.messages.Tools.RemoteDockerMissing) {
 		t.Fatal("processes lost the Docker availability cache or displayed the wrong empty state")
 	}
 	state.Click(hitRemoteRowList.At(0))
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(&canvas, hitRemoteKill); !ok || hit.Disabled {
 		t.Fatal("missing Docker disabled unrelated process operations")
 	}
@@ -254,17 +254,17 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 			}
 			for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
 				state.setLanguage(language)
-				for _, size := range []ui.Size{{Width: 600, Height: 500}, {Width: 1100, Height: 780}} {
+				for _, size := range []gfx.Size{{Width: 600, Height: 500}, {Width: 1100, Height: 780}} {
 					if err := view.Resize(int(size.Width), int(size.Height)); err != nil {
 						t.Fatal(err)
 					}
 					w.window.Invalidate()
 					view.Driver().Pump()
-					var canvas ui.Canvas
+					var canvas gfx.Canvas
 					canvas.SetPixelScale(float32(scale))
 					w.paint(&canvas, size)
 					tab, _ := hitByID(&canvas, hitRemoteTabProcesses)
-					for _, id := range []ui.ID{hitRemoteRefresh, hitRemoteAutoRefresh, hitRemoteSortCPU, hitRemoteSortMemory, hitRemoteClose} {
+					for _, id := range []gfx.ID{hitRemoteRefresh, hitRemoteAutoRefresh, hitRemoteSortCPU, hitRemoteSortMemory, hitRemoteClose} {
 						hit, ok := hitByID(&canvas, id)
 						if !ok || hit.Bounds.X < 0 || hit.Bounds.Y < 0 || hit.Bounds.X+hit.Bounds.Width > size.Width+.01 || hit.Bounds.Y+hit.Bounds.Height > size.Height+.01 {
 							t.Fatalf("language=%v size=%v: unreachable control %v: %+v", language, size, id, hit)
@@ -283,7 +283,7 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 			}
 			// Exercise the actual native-window event path, including keyboard
 			// activation and virtual timer frames, rather than calling handlers.
-			click := func(id ui.ID) {
+			click := func(id gfx.ID) {
 				t.Helper()
 				box := dualHit(t, view, id)
 				if err := view.Click(box.X+box.Width/2, box.Y+box.Height/2); err != nil {
@@ -382,7 +382,7 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 	}
 }
 
-func remoteCanvasHasText(canvas *ui.Canvas, text string) bool {
+func remoteCanvasHasText(canvas *gfx.Canvas, text string) bool {
 	for _, painted := range canvas.Texts() {
 		if strings.Contains(painted.Value, text) {
 			return true

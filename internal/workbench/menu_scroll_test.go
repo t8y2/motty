@@ -3,7 +3,7 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // A window so short that the host menu's rows do not fit: the menu scrolls,
@@ -11,13 +11,13 @@ import (
 // starts at the top again when it is opened another time.
 func TestAMenuTallerThanTheWindowScrollsAndItsLastItemIsReachable(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	size := ui.Size{Width: 900, Height: 110}
-	paint := func() *ui.Canvas {
-		var canvas ui.Canvas
+	size := gfx.Size{Width: 900, Height: 110}
+	paint := func() *gfx.Canvas {
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		return &canvas
 	}
-	inside := func(canvas *ui.Canvas, id ui.ID) bool {
+	inside := func(canvas *gfx.Canvas, id gfx.ID) bool {
 		hit, ok := hitByID(canvas, id)
 		surface := state.popups.surface
 		return ok && hit.Bounds.Y >= surface.Y && hit.Bounds.Y+hit.Bounds.Height <= surface.Y+surface.Height
@@ -33,7 +33,7 @@ func TestAMenuTallerThanTheWindowScrollsAndItsLastItemIsReachable(t *testing.T) 
 		t.Fatal("the last item shows before anything scrolled")
 	}
 
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEnd, Target: hitHostMenuConnect})
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnd, Target: hitHostMenuConnect})
 	if !result.Handled || result.Focus != hitHostMenuDelete {
 		t.Fatalf("End: %+v, want focus on Delete", result)
 	}
@@ -41,7 +41,7 @@ func TestAMenuTallerThanTheWindowScrollsAndItsLastItemIsReachable(t *testing.T) 
 		t.Fatal("End did not scroll the last item into view")
 	}
 	surface := state.popups.surface
-	if result := state.Scroll(ui.ScrollEvent{X: surface.X + 20, Y: surface.Y + 20, DeltaY: -1000}); !result.Handled || state.popups.scroll.Offset != 0 {
+	if result := state.Scroll(gfx.ScrollEvent{X: surface.X + 20, Y: surface.Y + 20, DeltaY: -1000}); !result.Handled || state.popups.scroll.Offset != 0 {
 		t.Fatalf("wheel up: %+v offset %v", result, state.popups.scroll.Offset)
 	}
 
@@ -50,8 +50,8 @@ func TestAMenuTallerThanTheWindowScrollsAndItsLastItemIsReachable(t *testing.T) 
 	if !ok {
 		t.Fatal("a scrolling menu declares no scrollbar")
 	}
-	for _, kind := range []ui.PointerEventKind{ui.PointerDown, ui.PointerMove, ui.PointerUp} {
-		if r := pointer(state, ui.PointerEvent{Kind: kind, Button: ui.PointerButtonPrimary, Target: hitMenuScrollBar, X: bar.Bounds.X + 2, Y: bar.Bounds.Y + bar.Bounds.Height - 1, Viewport: size}); !r.Handled {
+	for _, kind := range []gfx.PointerEventKind{gfx.PointerDown, gfx.PointerMove, gfx.PointerUp} {
+		if r := pointer(state, gfx.PointerEvent{Kind: kind, Button: gfx.PointerButtonPrimary, Target: hitMenuScrollBar, X: bar.Bounds.X + 2, Y: bar.Bounds.Y + bar.Bounds.Height - 1, Viewport: size}); !r.Handled {
 			t.Fatalf("scrollbar %v was not taken: %+v", kind, r)
 		}
 	}
@@ -77,9 +77,9 @@ func TestAMenuTallerThanTheWindowScrollsAndItsLastItemIsReachable(t *testing.T) 
 // behind it, as Base UI's menu locks page scroll.
 func TestWheelOutsideAnOpenMenuDoesNotScrollThePageBehindIt(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	size := ui.Size{Width: 900, Height: 600}
+	size := gfx.Size{Width: 900, Height: 600}
 	paint := func() {
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 	}
 	paint()
@@ -88,7 +88,7 @@ func TestWheelOutsideAnOpenMenuDoesNotScrollThePageBehindIt(t *testing.T) {
 	if state.popups.owner.IsZero() {
 		t.Fatal("the menu did not claim a popup position")
 	}
-	result := state.Scroll(ui.ScrollEvent{X: 20, Y: 20, DeltaY: 120})
+	result := state.Scroll(gfx.ScrollEvent{X: 20, Y: 20, DeltaY: 120})
 	if !result.Handled {
 		t.Fatal("the wheel outside the menu reached the page")
 	}

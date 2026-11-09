@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
@@ -29,11 +29,11 @@ var (
 // workspaceHeaderPaint keeps the controls whose popup anchors are needed after
 // the headless layout has finished.
 type workspaceHeaderPaint struct {
-	back       flex.Box
-	connection flex.Box
-	broadcast  flex.Box
-	layout     flex.Box
-	save       flex.Box
+	back       ui.Box
+	connection ui.Box
+	broadcast  ui.Box
+	layout     ui.Box
+	save       ui.Box
 }
 
 func (state *State) workspaceManaged(workspaceID layoutcore.WorkspaceID) bool {
@@ -41,7 +41,7 @@ func (state *State) workspaceManaged(workspaceID layoutcore.WorkspaceID) bool {
 	return ok
 }
 
-func (state *State) paintWorkspaceHeader(canvas *ui.Canvas, size ui.Size) (open bool) {
+func (state *State) paintWorkspaceHeader(canvas *gfx.Canvas, size gfx.Size) (open bool) {
 	workspaceID := state.deck.ActiveWorkspace()
 	if !state.workspaceManaged(workspaceID) || workspaceID == 0 || state.activeSection != sectionTerminal {
 		return false
@@ -49,10 +49,10 @@ func (state *State) paintWorkspaceHeader(canvas *ui.Canvas, size ui.Size) (open 
 
 	pal, m := state.pal, state.messages
 	frame := state.workspacePixelBoundsFor(workspaceID, size)
-	bounds := ui.Rect{X: frame.X, Y: windowBarHeight, Width: frame.Width, Height: workspaceHeaderHeight}
+	bounds := gfx.Rect{X: frame.X, Y: windowBarHeight, Width: frame.Width, Height: workspaceHeaderHeight}
 	background := pal.workspace
 	canvas.Fill(bounds, background)
-	canvas.Fill(ui.Rect{X: bounds.X, Y: bounds.Y + bounds.Height - 1, Width: bounds.Width, Height: 1}, pal.line)
+	canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height - 1, Width: bounds.Width, Height: 1}, pal.line)
 
 	status := state.workspaceConnectionState(workspaceID)
 	connection := fmt.Sprintf(m.WorkspaceHeaderConnectionFmt, status.Connected, status.Panes)
@@ -65,17 +65,17 @@ func (state *State) paintWorkspaceHeader(canvas *ui.Canvas, size ui.Size) (open 
 	}
 	light, color := state.workspaceConnectionLight(status)
 	color = state.workspaceStatusInk(color)
-	connectionWidth := canvas.TextWidthWeight(connection, metrics.FontSizeS, ui.WeightMedium) + 28
+	connectionWidth := canvas.TextWidthWeight(connection, metrics.FontSizeS, gfx.WeightMedium) + 28
 	broadcasting := state.broadcast == workspaceID
 	broadcastLabel := m.WorkspaceHeaderBroadcast
 	if broadcasting {
 		broadcastLabel = fmt.Sprintf(m.WorkspaceHeaderBroadcastingFmt, status.Connected)
 	}
-	broadcastWidth := canvas.TextWidthWeight(broadcastLabel, workspaceHeaderLabelSize, ui.WeightMedium) + 36
+	broadcastWidth := canvas.TextWidthWeight(broadcastLabel, workspaceHeaderLabelSize, gfx.WeightMedium) + 36
 	layoutLabel := m.WorkspaceHeaderLayout
-	layoutWidth := canvas.TextWidthWeight(layoutLabel, workspaceHeaderLabelSize, ui.WeightMedium) + 36
+	layoutWidth := canvas.TextWidthWeight(layoutLabel, workspaceHeaderLabelSize, gfx.WeightMedium) + 36
 	_, temporary := state.temporaryWorkspaceLayouts[workspaceID]
-	saveWidth := canvas.TextWidthWeight(m.WorkspaceDraftSave, workspaceHeaderLabelSize, ui.WeightMedium) + 36
+	saveWidth := canvas.TextWidthWeight(m.WorkspaceDraftSave, workspaceHeaderLabelSize, gfx.WeightMedium) + 36
 	compactWidth := float32(640)
 	if temporary {
 		compactWidth = max(compactWidth, connectionWidth+broadcastWidth+layoutWidth+saveWidth+180)
@@ -88,10 +88,10 @@ func (state *State) paintWorkspaceHeader(canvas *ui.Canvas, size ui.Size) (open 
 	// Every painted element reserves its measured width, including status text.
 	var slots workspaceHeaderPaint
 	f := state.workspaceHeaderLayout.Begin(canvas, state.Theme(), bounds)
-	f.Row().Fill().PadX(10).Gap(6).Items(flex.Center).Children(func() {
+	f.Row().Fill().PadX(10).Gap(6).Items(ui.Center).Children(func() {
 		slots.back = f.Slot().Size(30, 30).Shrink(0)
 		f.Column().Grow(1).Gap(0).Children(func() {
-			f.Text(state.workspaceTitle(workspaceID)).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).
+			f.Text(state.workspaceTitle(workspaceID)).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).
 				Color(pal.text).LineHeight(20).Ellipsis()
 			if compact {
 				f.Text(connection).FontSize(11).Color(color).LineHeight(15).Ellipsis()
@@ -113,8 +113,8 @@ func (state *State) paintWorkspaceHeader(canvas *ui.Canvas, size ui.Size) (open 
 	if !compact {
 		box := slots.connection.Rect()
 		paintLight(canvas, box.X+8, box.Y+box.Height/2, light, color, background)
-		canvas.Label(connection, ui.Rect{X: box.X + 20, Y: box.Y, Width: box.Width - 20, Height: box.Height},
-			ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: color})
+		canvas.Label(connection, gfx.Rect{X: box.X + 20, Y: box.Y, Width: box.Width - 20, Height: box.Height},
+			gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: color})
 	}
 	state.paintWorkspaceBroadcast(canvas, slots.broadcast.Rect(), broadcastLabel, status, broadcasting)
 	if temporary {
@@ -143,14 +143,14 @@ func (state *State) paintWorkspaceHeader(canvas *ui.Canvas, size ui.Size) (open 
 
 // Broadcast uses a warning treatment because it changes where keystrokes go.
 // The text and switch semantics change immediately; only the surface eases.
-func (state *State) paintWorkspaceBroadcast(canvas *ui.Canvas, bounds ui.Rect, label string, status workspaceConnectionState, enabled bool) {
+func (state *State) paintWorkspaceBroadcast(canvas *gfx.Canvas, bounds gfx.Rect, label string, status workspaceConnectionState, enabled bool) {
 	pal := state.pal
 	available := enabled || workspaceCanBroadcast(status)
 	target := float32(0)
 	if enabled {
 		target = 1
 	}
-	amount := canvas.Animate(hitWorkspaceHeaderBroadcast, 0, target, ui.Motion{Duration: 140 * time.Millisecond, Easing: ui.EaseOut})
+	amount := canvas.Animate(hitWorkspaceHeaderBroadcast, 0, target, gfx.Motion{Duration: 140 * time.Millisecond, Easing: gfx.EaseOut})
 	background := pal.workspace.Mix(pal.warning, .12*amount)
 	foreground := state.workspaceStatusInk(pal.muted)
 	hint := state.messages.Tools.BroadcastStart
@@ -171,25 +171,25 @@ func (state *State) paintWorkspaceBroadcast(canvas *ui.Canvas, bounds ui.Rect, l
 	if canvas.FocusVisible() == hitWorkspaceHeaderBroadcast {
 		canvas.RoundedBorder(bounds, radius.control, 1.5, pal.accent, background)
 	}
-	canvas.DrawIcon(lucideIcons[iconRadio], ui.Rect{X: bounds.X + 9, Y: bounds.Y + 7, Width: 16, Height: 16}, foreground)
-	canvas.Label(label, ui.Rect{X: bounds.X + 30, Y: bounds.Y, Width: max(0, bounds.Width-36), Height: bounds.Height},
-		ui.TextStyle{Size: workspaceHeaderLabelSize, Weight: ui.WeightMedium, Color: foreground})
-	canvas.HitWithOptions(hitWorkspaceHeaderBroadcast, bounds, hint, ui.HitOptions{
-		Role: ui.RoleSwitch, Checked: enabled, Disabled: !available, Hint: hint,
+	canvas.DrawIcon(lucideIcons[iconRadio], gfx.Rect{X: bounds.X + 9, Y: bounds.Y + 7, Width: 16, Height: 16}, foreground)
+	canvas.Label(label, gfx.Rect{X: bounds.X + 30, Y: bounds.Y, Width: max(0, bounds.Width-36), Height: bounds.Height},
+		gfx.TextStyle{Size: workspaceHeaderLabelSize, Weight: gfx.WeightMedium, Color: foreground})
+	canvas.HitWithOptions(hitWorkspaceHeaderBroadcast, bounds, hint, gfx.HitOptions{
+		Role: gfx.RoleSwitch, Checked: enabled, Disabled: !available, Hint: hint,
 		Description: label,
 	})
 }
 
 // Semantic colors also serve as small text here, so daylight needs darker ink
 // than the status-dot palette, including over the broadcast button's tint.
-func (state *State) workspaceStatusInk(color ui.Color) ui.Color {
+func (state *State) workspaceStatusInk(color gfx.Color) gfx.Color {
 	if !state.pal.dark {
 		return color.Mix(state.pal.text, .28)
 	}
 	return color.Mix(state.pal.text, .08)
 }
 
-func (state *State) workspaceConnectionLight(status workspaceConnectionState) (lightKind, ui.Color) {
+func (state *State) workspaceConnectionLight(status workspaceConnectionState) (lightKind, gfx.Color) {
 	switch {
 	case status.Pending > 0:
 		return lightBusy, state.pal.warning
@@ -215,7 +215,7 @@ func (state *State) workspaceTitle(workspaceID layoutcore.WorkspaceID) string {
 	return ""
 }
 
-func (state *State) clickWorkspaceHeader(id ui.ID) bool {
+func (state *State) clickWorkspaceHeader(id gfx.ID) bool {
 	if state.clickWorkspaceArrangement(id) || state.clickWorkspacePaneTools(id) {
 		return true
 	}
@@ -264,18 +264,18 @@ func (state *State) rebuildManagedWorkspace(workspaceID layoutcore.WorkspaceID) 
 	state.save()
 }
 
-func (state *State) workspaceHeaderKey(event ui.KeyEvent) ui.EventResult {
+func (state *State) workspaceHeaderKey(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release || state.workspaceHeaderMenu == workspaceHeaderMenuNone {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	if event.Key == ui.KeyEscape && !event.Repeat {
+	if event.Key == gfx.KeyEscape && !event.Repeat {
 		state.workspaceHeaderMenu = workspaceHeaderMenuNone
-		return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}
 	}
 	if result, handled := state.menuKey(event); handled {
 		return result
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
 type workspaceHeaderMenuState uint8

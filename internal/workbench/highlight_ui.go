@@ -11,7 +11,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -97,7 +97,7 @@ func (state *State) openHighlightDialog() {
 	state.modal = modalHighlightRule
 }
 
-func (state *State) clickHighlightDialog(id ui.ID) {
+func (state *State) clickHighlightDialog(id gfx.ID) {
 	form := &state.highlighting
 	switch {
 	case id == hitHighlightSubmit:
@@ -261,30 +261,30 @@ func (state *State) slotName(slot highlight.Slot) string {
 }
 
 // slotColor is the color a slot has in the terminal's scheme, as a swatch shows.
-func (state *State) slotColor(slot highlight.Slot) ui.Color {
+func (state *State) slotColor(slot highlight.Slot) gfx.Color {
 	ansi := state.termPal.ansi[slot.ANSI()]
-	return ui.RGB(ansi[0], ansi[1], ansi[2])
+	return gfx.RGB(ansi[0], ansi[1], ansi[2])
 }
 
-func (state *State) paintHighlightDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintHighlightDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, pal, theme := state.messages.Tools, state.pal, state.Theme()
 	form := &state.highlighting
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitHighlightClose, InitialFocusID: hitHighlightPattern,
-		ContentSize: ui.Size{Width: 520}, FitBody: true, BodyHeight: withError(198, form.dialogError), // the pattern, two boxes and the colors
+		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: withError(198, form.dialogError), // the pattern, two boxes and the colors
 	})
 	layout := dialog.Begin(m.HighlightDialogTitle, "")
 	slots := highlight.Slots()
-	var field, regex, folded flex.Box
-	var colors [6]flex.Box
+	var field, regex, folded ui.Box
+	var colors [6]ui.Box
 	f := state.settingsRow.Begin(canvas, theme, layout.Body)
 	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
 		field = f.Slot().Height(62)
 		regex = state.declareDialogCheckbox(f, m.HighlightRegex, 11, 0)
 		folded = state.declareDialogCheckbox(f, m.HighlightCase, 12, 0)
-		f.Text(m.HighlightColor).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(19, 0, 4, 2)
+		f.Text(m.HighlightColor).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(19, 0, 4, 2)
 		f.Row().Gap(8).MarginSides(0, 0, 0, 2).Children(func() {
 			for index, slot := range slots {
 				selected := form.slot == slot
@@ -298,7 +298,7 @@ func (state *State) paintHighlightDialog(canvas *ui.Canvas, viewport ui.Rect) {
 			}
 		})
 		if form.dialogError != "" {
-			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
+			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
 		}
 	})
 	f.End()
@@ -312,7 +312,7 @@ func (state *State) paintHighlightDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	state.paintDialogCheckbox(canvas, hitHighlightRegex, m.HighlightRegex, form.regex, regex)
 	state.paintDialogCheckbox(canvas, hitHighlightCase, m.HighlightCase, form.folded, folded)
 	for index, slot := range slots {
-		canvas.HitWithOptions(hitHighlightColorList.At(index), colors[index].Rect(), state.slotName(slot), ui.HitOptions{Role: ui.RoleButton, Selected: form.slot == slot})
+		canvas.HitWithOptions(hitHighlightColorList.At(index), colors[index].Rect(), state.slotName(slot), gfx.HitOptions{Role: gfx.RoleButton, Selected: form.slot == slot})
 	}
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitHighlightCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
@@ -326,21 +326,21 @@ func (state *State) paintHighlightDialog(canvas *ui.Canvas, viewport ui.Rect) {
 // painted in (paintDialogCheckbox), after the fields above it, so the keyboard
 // visits them in the order they are on the page. It returns the row, which
 // holds the checkbox and its words.
-func (state *State) declareDialogCheckbox(f *flex.Frame, label string, above, below float32) flex.Box {
+func (state *State) declareDialogCheckbox(f *ui.Frame, label string, above, below float32) ui.Box {
 	side := components.CheckboxExtent(state.Theme())
-	return f.Row().Height(20).Gap(24-side).Items(flex.Center).MarginSides(above, 0, below, 2).Children(func() {
+	return f.Row().Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
 		f.Slot().Size(side, side).Shrink(0)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
+		f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
 	})
 }
 
 // declareDialogCheckboxHelp is declareDialogCheckbox with a help icon right after
 // the label, which paintHelpIcon fills in.
-func (state *State) declareDialogCheckboxHelp(f *flex.Frame, label string, above, below float32) (row, help flex.Box) {
+func (state *State) declareDialogCheckboxHelp(f *ui.Frame, label string, above, below float32) (row, help ui.Box) {
 	side := components.CheckboxExtent(state.Theme())
-	row = f.Row().Height(20).Gap(24-side).Items(flex.Center).MarginSides(above, 0, below, 2).Children(func() {
+	row = f.Row().Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
 		f.Slot().Size(side, side).Shrink(0)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(ui.WeightMedium).Color(state.pal.text).LineHeight(20)
+		f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20)
 		help = f.Slot().Size(16, 16).Shrink(0)
 		f.Spacer().Grow(1)
 	})
@@ -349,24 +349,24 @@ func (state *State) declareDialogCheckboxHelp(f *flex.Frame, label string, above
 
 // paintHelpIcon draws a question mark in bounds that shows hint as a tooltip when
 // the pointer rests on it.
-func (state *State) paintHelpIcon(canvas *ui.Canvas, id ui.ID, hint string, bounds ui.Rect) {
+func (state *State) paintHelpIcon(canvas *gfx.Canvas, id gfx.ID, hint string, bounds gfx.Rect) {
 	if hint == "" || bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
-	canvas.HitWithOptions(id, bounds, hint, ui.HitOptions{Role: ui.RoleButton, SkipFocus: true, Hint: hint})
+	canvas.HitWithOptions(id, bounds, hint, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: hint})
 	paintIcon(canvas, iconHelp, insetRect(bounds, 0.08), state.pal.muted)
 }
 
 // paintDialogCheckbox paints the checkbox of a declared row and makes the words
 // beside it its label, so pressing them toggles it.
-func (state *State) paintDialogCheckbox(canvas *ui.Canvas, id ui.ID, label string, checked bool, row flex.Box) {
+func (state *State) paintDialogCheckbox(canvas *gfx.Canvas, id gfx.ID, label string, checked bool, row ui.Box) {
 	rect := row.Rect()
 	state.rememberHostControl(id, rect)
 	side := components.CheckboxExtent(state.Theme())
-	components.BeginCheckbox(canvas, state.Theme(), id, ui.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, checked).Label(label).Paint()
+	components.BeginCheckbox(canvas, state.Theme(), id, gfx.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, checked).Label(label).Paint()
 	// The checkbox's own hit reaches 12px past its box; the label starts there.
 	words := rect.X + side + 12
-	canvas.HitLabel(id, ui.Rect{X: words, Y: rect.Y, Width: max(rect.X+rect.Width-words, 0), Height: rect.Height}, label, false)
+	canvas.HitLabel(id, gfx.Rect{X: words, Y: rect.Y, Width: max(rect.X+rect.Width-words, 0), Height: rect.Height}, label, false)
 }
 
 // paintHighlightSettings is the Keyword highlighting group of Settings.
@@ -432,7 +432,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 		if len(entry.Key) != 1 {
 			continue
 		}
-		chord := keymap.Chord{Modifiers: ui.Modifiers(entry.Modifiers), Char: entry.Key[0]}
+		chord := keymap.Chord{Modifiers: gfx.Modifiers(entry.Modifiers), Char: entry.Key[0]}
 		for index := range state.snippets.list {
 			// The first snippet of that name without a shortcut takes it; a chord
 			// that a built-in action or an earlier snippet has is not given twice.

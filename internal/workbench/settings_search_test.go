@@ -4,12 +4,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
-func searchSettings(t *testing.T, state *State, query string) *ui.Canvas {
+func searchSettings(t *testing.T, state *State, query string) *gfx.Canvas {
 	t.Helper()
 	state.Click(hitSettings)
 	typeInto(state, hitSettingsSearch, query)
@@ -71,9 +71,9 @@ func TestSearchFindsShortcutsByNameOrChordAndTextInTheOtherLanguage(t *testing.T
 func TestChoosingAResultOpensItsCategoryScrolledToItAndLeavesTheSearch(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
-	size := ui.Size{Width: 1200, Height: 520}
+	size := gfx.Size{Width: 1200, Height: 520}
 	typeInto(state, hitSettingsSearch, state.messages.AISettings.ClearHistory)
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	// Other "clear" actions are listed too; pick the assistant's own row rather
 	// than relying on it being the first match.
@@ -92,12 +92,12 @@ func TestChoosingAResultOpensItsCategoryScrolledToItAndLeavesTheSearch(t *testin
 		t.Fatalf("category %d, query %q", state.settingsCategory, state.settings.search.String())
 	}
 	// Two paints: the first scrolls, the second shows it there and asks for no more.
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	if _, scheduled := canvas.NextFrame(); !scheduled {
 		t.Fatal("scrolling to a result did not ask for the paint that shows it")
 	}
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	if state.settingsScroll == 0 {
 		t.Fatal("the page was not scrolled to the group")
@@ -119,12 +119,12 @@ func TestChoosingAResultOpensItsCategoryScrolledToItAndLeavesTheSearch(t *testin
 func TestSearchBoxKeys(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	searchSettings(t, state, "keepalive")
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitSettingsSearch}); !result.Handled || state.settings.search.RuneCount() != 0 {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitSettingsSearch}); !result.Handled || state.settings.search.RuneCount() != 0 {
 		t.Fatalf("Escape: %+v, text %q", result, state.settings.search.String())
 	}
 	typeInto(state, hitSettingsSearch, "keepalive")
 	paintedTexts(state)
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitSettingsSearch}); !result.Handled || state.settingsCategory != settingsConnection {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitSettingsSearch}); !result.Handled || state.settingsCategory != settingsConnection {
 		t.Fatalf("Enter: %+v, category %d", result, state.settingsCategory)
 	}
 	// Choosing a category by hand also leaves a search.
@@ -140,8 +140,8 @@ func TestSearchResultsSteadyPaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
 	typeInto(state, hitSettingsSearch, "Con")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -211,10 +211,10 @@ func TestEveryEntryOfTheSearchIndexPointsAtSomethingThePageDraws(t *testing.T) {
 	if len(entries)*4 > maxSettingsEntries*3 {
 		t.Fatalf("%d entries fill more than three quarters of the %d-slot index; raise it before the rest spills out", len(entries), maxSettingsEntries)
 	}
-	size := ui.Size{Width: 1400, Height: 3400}
+	size := gfx.Size{Width: 1400, Height: 3400}
 	for _, entry := range entries {
 		state.selectSettingsCategory(entry.category)
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		drawn := false
 		for _, text := range canvas.Texts() {

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -78,8 +78,10 @@ func bulkConflict(t testing.TB, state *State, view *sftpView, remote *workbenchS
 	return id, target
 }
 
-func bulkAction(name string) ui.ID { return tree.ID(transferCenterHits, name) }
-func bulkHost(index int) ui.ID     { return tree.Sub(transferCenterHits, tree.Name("host-item")).At(index) }
+func bulkAction(name string) gfx.ID { return tree.ID(transferCenterHits, name) }
+func bulkHost(index int) gfx.ID {
+	return tree.Sub(transferCenterHits, tree.Name("host-item")).At(index)
+}
 
 func TestTransferCenterHostFilterScopesClearWithIdenticalWorkerIDs(t *testing.T) {
 	_, options := newWorld(t)
@@ -354,8 +356,8 @@ func TestTransferCenterBulkViewsKeepSteadyPaintAllocationBudget(t *testing.T) {
 			if mode == "confirmation" {
 				state.Click(bulkAction("replace-visible"))
 			}
-			var canvas ui.Canvas
-			size := ui.Size{Width: 900, Height: 640}
+			var canvas gfx.Canvas
+			size := gfx.Size{Width: 900, Height: 640}
 			for range 3 {
 				canvas.Reset()
 				state.Paint(&canvas, size)

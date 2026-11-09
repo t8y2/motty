@@ -16,9 +16,9 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/sshconn"
 	"motty/internal/systemproxy"
@@ -452,8 +452,8 @@ func TestLocalProxyPanelPaintsControlsOnFirstFrame(t *testing.T) {
 	}
 	state.openLocalProxy(session)
 
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{hitLocalProxyPort, hitLocalProxyStart} {
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	for _, id := range []gfx.ID{hitLocalProxyPort, hitLocalProxyStart} {
 		if _, ok := hitByID(canvas, id); !ok {
 			t.Fatalf("first frame did not paint hit %d: texts=%+v hits=%+v", id, canvas.Texts(), canvas.Hits())
 		}
@@ -479,7 +479,7 @@ func TestLocalProxyDockerPanelPaintsNavigationOnFirstFrame(t *testing.T) {
 		phase: localProxyConnected, users: make(map[localProxySubscription]struct{}),
 	}
 
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	foundBack := false
 	foundCancel := false
 	foundHTTP := false
@@ -530,7 +530,7 @@ func TestLocalProxyPanelFitsSmallWindowsInBothLanguages(t *testing.T) {
 
 			for _, docker := range []bool{false, true} {
 				state.localProxyUI.docker = docker
-				size := ui.Size{Width: 900, Height: 640}
+				size := gfx.Size{Width: 900, Height: 640}
 				canvas, _ := paintAt(state, size)
 				snapshot := app.Snapshot{Width: int(size.Width), Height: int(size.Height), Texts: canvas.Texts(), Hits: canvas.Hits()}
 				if problems := headless.CheckLayout(snapshot); len(problems) > 0 {
@@ -559,7 +559,7 @@ func TestLocalProxyPanelKeyboardAndHiddenActiveEntry(t *testing.T) {
 	if state.localProxyUI.port.String() != strconv.Itoa(int(defaultLocalProxyPort)) {
 		t.Fatalf("initial port = %q", state.localProxyUI.port.String())
 	}
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape}); !result.Handled || state.modal != modalNone || result.Focus != state.activeTerminalFocusHit() {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape}); !result.Handled || state.modal != modalNone || result.Focus != state.activeTerminalFocusHit() {
 		t.Fatalf("Escape = %+v modal=%v", result, state.modal)
 	}
 	state.toolbars.customize(toolbarTerminal)
@@ -598,8 +598,8 @@ func TestLocalProxyCloseButtonReturnsFocusToTerminal(t *testing.T) {
 		t.Fatal("connected session is missing")
 	}
 	state.openLocalProxy(session)
-	result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hitLocalProxyClose,
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitLocalProxyClose,
 	})
 	if state.modal != modalNone {
 		t.Fatal("close button did not close the panel")
@@ -609,7 +609,7 @@ func TestLocalProxyCloseButtonReturnsFocusToTerminal(t *testing.T) {
 	}
 }
 
-func containsBarTool(tools []barTool, id ui.ID) bool {
+func containsBarTool(tools []barTool, id gfx.ID) bool {
 	for _, tool := range tools {
 		if tool.id == id {
 			return true
@@ -857,13 +857,13 @@ func TestLocalProxyPanelWheelScrollsBothDirections(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	state.localProxyUI.scroll = 100
 	state.localProxyUI.scrollGeometry = components.ScrollAreaGeometry{
-		Bounds: ui.Rect{Width: 600, Height: 200}, Content: ui.Rect{Width: 600, Height: 470},
+		Bounds: gfx.Rect{Width: 600, Height: 200}, Content: gfx.Rect{Width: 600, Height: 470},
 	}
-	state.scrollLocalProxy(ui.ScrollEvent{DeltaY: -40, Precise: true})
+	state.scrollLocalProxy(gfx.ScrollEvent{DeltaY: -40, Precise: true})
 	if got := state.localProxyUI.scroll; got != 60 {
 		t.Fatalf("upward scroll = %v, want 60", got)
 	}
-	state.scrollLocalProxy(ui.ScrollEvent{DeltaY: 20, Precise: true})
+	state.scrollLocalProxy(gfx.ScrollEvent{DeltaY: 20, Precise: true})
 	if got := state.localProxyUI.scroll; got != 80 {
 		t.Fatalf("downward scroll = %v, want 80", got)
 	}
@@ -903,7 +903,7 @@ func TestLocalProxyStoppedPanelKeepsRestoreWithoutOfferingStaleSetup(t *testing.
 	state.closeModal()
 	state.openLocalProxy(session)
 	state.Click(hitLocalProxyMore)
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByID(canvas, hitLocalProxyDisableCopy); !ok || hit.Disabled {
 		t.Fatal("reopened stopped panel has no usable restore action")
 	}
@@ -938,7 +938,7 @@ func TestLocalProxyPortCanBeEditedBeforeStartAndAfterStop(t *testing.T) {
 	defer driver.Close()
 	edit := func(value string) {
 		t.Helper()
-		var bounds ui.Rect
+		var bounds gfx.Rect
 		for _, hit := range driver.Snapshot().Hits {
 			if hit.ID == hitLocalProxyPort {
 				bounds = hit.Bounds
@@ -953,7 +953,7 @@ func TestLocalProxyPortCanBeEditedBeforeStartAndAfterStop(t *testing.T) {
 		if _, err := driver.Shortcut('a'); err != nil {
 			t.Fatal(err)
 		}
-		if err := driver.Key(ui.KeyBackspace, 0); err != nil {
+		if err := driver.Key(gfx.KeyBackspace, 0); err != nil {
 			t.Fatal(err)
 		}
 		if err := driver.Type(value); err != nil {
@@ -1048,7 +1048,7 @@ func TestLocalProxyStartCopiesOnlyAfterConnectingAndCanRetryClipboard(t *testing
 			if !strings.Contains(state.status, "Paste") {
 				t.Fatalf("copy feedback does not explain execution: %q", state.status)
 			}
-			canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+			canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 			if got, want := canvas.FocusRequest(), state.activeTerminalFocusHit(); got != want {
 				t.Fatalf("returned focus = %v, want %v", got, want)
 			}
@@ -1062,8 +1062,8 @@ func TestLocalProxyMoreKeepsRecoveryAvailableAndMainPanelCompact(t *testing.T) {
 	world.connectFirst(t, state)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	state.openLocalProxy(session)
-	canvas, _ := paintAt(state, ui.Size{Width: 900, Height: 640})
-	for _, id := range []ui.ID{hitLocalProxyDisableCopy, hitLocalProxyTest} {
+	canvas, _ := paintAt(state, gfx.Size{Width: 900, Height: 640})
+	for _, id := range []gfx.ID{hitLocalProxyDisableCopy, hitLocalProxyTest} {
 		if _, ok := hitByID(canvas, id); ok {
 			t.Fatal("secondary action is competing with the initial start action")
 		}
@@ -1074,7 +1074,7 @@ func TestLocalProxyMoreKeepsRecoveryAvailableAndMainPanelCompact(t *testing.T) {
 			break
 		}
 	}
-	canvas, _ = paintAt(state, ui.Size{Width: 900, Height: 640})
+	canvas, _ = paintAt(state, gfx.Size{Width: 900, Height: 640})
 	if hit, ok := hitByID(canvas, hitLocalProxyDisableCopy); !ok || hit.Disabled {
 		t.Fatal("expanded options have no restore command before starting a tunnel")
 	}
@@ -1125,7 +1125,7 @@ func TestLocalProxyCopyReturnsToTheBoundTerminalFromOtherPages(t *testing.T) {
 			if clipboard != localProxyEnableCommand(43217) || state.activeSection != sectionTerminal || state.activeSessionID != session.ID || len(state.sessions) != 1 {
 				t.Fatalf("copy returned to section=%d session=%d, want the existing terminal", state.activeSection, state.activeSessionID)
 			}
-			canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+			canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 			if got, want := canvas.FocusRequest(), state.activeTerminalFocusHit(); got != want || got.IsZero() {
 				t.Fatalf("terminal focus = %v, want %v", got, want)
 			}
@@ -1233,7 +1233,7 @@ func TestLocalProxyStopStillStopsWhenClipboardFailsAndOffersRestoreRetry(t *test
 	if state.localProxyManager().Snapshot(target).Phase != localProxyDisconnected || state.modal != modalLocalProxy {
 		t.Fatal("clipboard failure prevented stopping or hid the failure")
 	}
-	canvas, _ := paintAt(state, ui.Size{Width: 900, Height: 640})
+	canvas, _ := paintAt(state, gfx.Size{Width: 900, Height: 640})
 	if hit, ok := hitByID(canvas, hitLocalProxyDisableCopy); !ok || hit.Disabled {
 		t.Fatal("stopped panel did not offer a restore retry after clipboard failure")
 	}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 )
 
@@ -83,7 +83,7 @@ func TestAITargetFollowsRenamedTabWithoutChangingIdentity(t *testing.T) {
 		t.Fatal("explicit no-target choice followed the active tab")
 	}
 	state.ai.open = true
-	_, texts := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	_, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if !hasText(texts, state.messages.AIPanel.TargetChoose) {
 		t.Fatal("missing compact no-target label")
 	}
@@ -91,11 +91,11 @@ func TestAITargetFollowsRenamedTabWithoutChangingIdentity(t *testing.T) {
 
 func TestAITargetLongCaptionKeepsTheSessionNumber(t *testing.T) {
 	var panel aiPanel
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	for _, title := range []string{"Production database in a very long region-2", "服务器连接名称很长需要区分会话-3"} {
 		caption := panel.targetCaption(&canvas, title, 13, 130)
 		if !strings.HasSuffix(caption, title[len(title)-2:]) || !strings.Contains(caption, "…") ||
-			canvas.TextWidthWeight(caption, 13, ui.WeightRegular) > 130 {
+			canvas.TextWidthWeight(caption, 13, gfx.WeightRegular) > 130 {
 			t.Fatalf("long caption = %q", caption)
 		}
 		if got := testing.AllocsPerRun(20, func() { panel.targetCaption(&canvas, title, 13, 130) }); got != 0 {

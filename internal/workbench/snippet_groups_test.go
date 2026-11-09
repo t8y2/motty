@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 // "cd " and "ssh " are sent to be finished by hand: the space the user typed
@@ -56,7 +56,7 @@ func TestMultilineSnippetKeepsLinesAndSendsAsPaste(t *testing.T) {
 	state.openSnippetDialog(-1)
 	state.snippets.name.Insert("deploy")
 	state.snippets.command.Insert("echo one\r\necho two")
-	if result := state.Key(ui.KeyEvent{Target: hitSnippetCommand, Key: ui.KeyEnter}); result.Handled || state.modal != modalSnippet {
+	if result := state.Key(gfx.KeyEvent{Target: hitSnippetCommand, Key: gfx.KeyEnter}); result.Handled || state.modal != modalSnippet {
 		t.Fatalf("Enter in multiline command: result=%+v modal=%d", result, state.modal)
 	}
 	state.Click(hitSnippetSubmit)
@@ -103,12 +103,12 @@ func TestSnippetManualOrderPersistsThroughSortingAndFiltering(t *testing.T) {
 	}
 	state.snippets.filter = snippetFilter{}
 	state.refreshSnippets()
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := canvasHit(canvas.Hits(), hitSnippetHandles.At(0)); !ok {
 		t.Fatal("manual ordering did not expose a drag handle")
 	}
-	result, handled := state.snippetReorderKey(ui.KeyEvent{Target: hitSnippetHandles.At(0), Key: ui.KeyDown})
+	result, handled := state.snippetReorderKey(gfx.KeyEvent{Target: hitSnippetHandles.At(0), Key: gfx.KeyDown})
 	if !handled || result.Focus != hitSnippetHandles.At(1) || state.snippets.list[1].Name != "beta" {
 		t.Fatalf("keyboard reorder: handled=%v focus=%s order=%v", handled, tree.Text(result.Focus), state.snippets.list)
 	}
@@ -153,8 +153,8 @@ func BenchmarkPaintSnippetsPage(b *testing.B) {
 		})
 	}
 	state.refreshSnippets()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -315,11 +315,11 @@ func TestSnippetGroupIsChosenOrCreatedInTheDialog(t *testing.T) {
 	state.snippets.name.Insert("c")
 	state.snippets.command.Insert("c")
 	state.snippets.groupPicker.Query.Insert("Dev")
-	state.Key(ui.KeyEvent{Target: hitSnippetGroup, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSnippetGroup, Key: gfx.KeyEnter})
 	if state.modal != modalSnippet || state.snippets.groupPicker.Value() != "Dev" {
 		t.Fatalf("Enter in the group field: modal %v, value %q", state.modal, state.snippets.groupPicker.Value())
 	}
-	state.Key(ui.KeyEvent{Target: hitSnippetGroup, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSnippetGroup, Key: gfx.KeyEnter})
 	if state.modal != modalNone || state.snippets.list[2].Group != "Dev" {
 		t.Fatalf("second Enter did not save into Dev: %+v", state.snippets.list[2])
 	}
@@ -432,24 +432,24 @@ func TestSnippetPickerGroupsFoldFromTheKeyboard(t *testing.T) {
 	addTestSnippets(state, snippet{Name: "a", Command: "a", Group: "Ops"})
 	state.openSnippetPicker()
 	palette := &state.commandPalette
-	press := func(key ui.Key) {
+	press := func(key gfx.Key) {
 		t.Helper()
-		if _, handled := state.commandPaletteKey(ui.KeyEvent{Key: key, Target: hitCommandPaletteSearch}); !handled {
+		if _, handled := state.commandPaletteKey(gfx.KeyEvent{Key: key, Target: hitCommandPaletteSearch}); !handled {
 			t.Fatalf("key %v not handled", key)
 		}
 	}
 	if palette.entries[palette.visible[palette.selected]].label != "Ops" {
 		t.Fatal("the first choice is not the group row")
 	}
-	press(ui.KeyRight)
+	press(gfx.KeyRight)
 	if got, want := pickerShape(state), []string{"#Ops", "a"}; !sameShape(got, want) {
 		t.Fatalf("Right: %v, want %v", got, want)
 	}
-	press(ui.KeyLeft)
+	press(gfx.KeyLeft)
 	if got, want := pickerShape(state), []string{"#Ops"}; !sameShape(got, want) {
 		t.Fatalf("Left: %v, want %v", got, want)
 	}
-	press(ui.KeyEnter)
+	press(gfx.KeyEnter)
 	if got, want := pickerShape(state), []string{"#Ops", "a"}; !sameShape(got, want) {
 		t.Fatalf("Enter on a group: %v, want %v", got, want)
 	}

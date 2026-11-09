@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 )
 
@@ -96,7 +96,7 @@ func TestSidebarLocalTerminalMenuOpensAnotherShellInANewTab(t *testing.T) {
 	closeLocalShells(t, state)
 	withShellChoices(t, state, []localshell.Choice{{Name: "Alpha", Path: "/bin/sh", Default: true}, {Name: "Beta", Path: "/bin/bash"}}, nil)
 
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitLocalTerminal, X: 60, Y: 700})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitLocalTerminal, X: 60, Y: 700})
 	if !state.localShellPicker.open || state.localShellPicker.inPane {
 		t.Fatalf("picker = %+v", state.localShellPicker)
 	}
@@ -122,13 +122,13 @@ func TestLocalShellPickerIsAbsentWhereTheShellIsNotChosen(t *testing.T) {
 	previous := localShellsSupported
 	localShellsSupported = false
 	t.Cleanup(func() { localShellsSupported = previous })
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonSecondary, Target: hitLocalTerminal, X: 60, Y: 700})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitLocalTerminal, X: 60, Y: 700})
 	if state.localShellPicker.open {
 		t.Fatal("a computer with one login shell offered a shell menu")
 	}
 	openEmptyTab(state)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitNewTabShells); ok {
 		t.Fatal("the new-tab page shows a shell arrow where there is nothing to choose")
 	}
@@ -141,7 +141,7 @@ func TestChosenShellIsKeptByReconnectDuplicateAndRestart(t *testing.T) {
 	closeLocalShells(t, first)
 	withShellChoices(t, first, []localshell.Choice{{Name: "Alpha", Path: "/bin/sh", Default: true}, {Name: "Beta", Path: "/bin/bash"}}, nil)
 	first.localShell = "/bin/sh"
-	first.openLocalShellPicker(ui.Point{X: 10, Y: 10}, false)
+	first.openLocalShellPicker(gfx.Point{X: 10, Y: 10}, false)
 	first.Click(hitLocalShellPickerItems.At(1))
 	session, _ := first.sessionByIDPointer(first.activeSessionID)
 
@@ -304,10 +304,10 @@ func TestNewTabPickerKeyboardExpandsAndCollapsesShells(t *testing.T) {
 	state.openConnectPicker()
 	paintedTexts(state)
 	local := hitCommandPaletteItems.At(0)
-	if result := state.Key(ui.KeyEvent{Target: local, Key: ui.KeyRight}); !result.Handled || !state.commandPalette.localShells {
+	if result := state.Key(gfx.KeyEvent{Target: local, Key: gfx.KeyRight}); !result.Handled || !state.commandPalette.localShells {
 		t.Fatalf("Right did not expand the shells: result=%+v expanded=%v", result, state.commandPalette.localShells)
 	}
-	if result := state.Key(ui.KeyEvent{Target: hitCommandPaletteItems.At(0), Key: ui.KeyLeft}); !result.Handled || state.commandPalette.localShells {
+	if result := state.Key(gfx.KeyEvent{Target: hitCommandPaletteItems.At(0), Key: gfx.KeyLeft}); !result.Handled || state.commandPalette.localShells {
 		t.Fatalf("Left did not collapse the shells: result=%+v expanded=%v", result, state.commandPalette.localShells)
 	}
 }

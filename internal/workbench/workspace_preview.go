@@ -3,20 +3,20 @@ package workbench
 import (
 	"fmt"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
 // Preview geometry comes from the same layout tree as a launched workspace,
 // including the full-width last row when it has fewer panes.
-func (state *State) paintWorkspaceGridPreview(canvas *ui.Canvas, bounds ui.Rect, hosts []string, spec layoutcore.LayoutSpec) {
+func (state *State) paintWorkspaceGridPreview(canvas *gfx.Canvas, bounds gfx.Rect, hosts []string, spec layoutcore.LayoutSpec) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
 	if len(hosts) == 0 {
 		canvas.RoundedBorder(bounds, radius.control, 1, state.pal.line, state.pal.terminal)
 		if bounds.Width > 180 {
-			monitorLabel(canvas, elide(canvas, state.messages.WorkspaceDraftPreviewEmpty, 12, ui.WeightRegular, bounds.Width-24), bounds.Inset(ui.All(12)), 12, state.pal.muted, ui.WeightRegular)
+			monitorLabel(canvas, elide(canvas, state.messages.WorkspaceDraftPreviewEmpty, 12, gfx.WeightRegular, bounds.Width-24), bounds.Inset(gfx.All(12)), 12, state.pal.muted, gfx.WeightRegular)
 		}
 		return
 	}
@@ -31,7 +31,7 @@ func (state *State) paintWorkspaceGridPreview(canvas *ui.Canvas, bounds ui.Rect,
 	state.paintWorkspacePreviewNode(canvas, bounds, &layout, layout.Root(), hosts)
 }
 
-func (state *State) paintWorkspacePreviewNode(canvas *ui.Canvas, bounds ui.Rect, layout *layoutcore.Layout, id layoutcore.NodeID, hosts []string) {
+func (state *State) paintWorkspacePreviewNode(canvas *gfx.Canvas, bounds gfx.Rect, layout *layoutcore.Layout, id layoutcore.NodeID, hosts []string) {
 	node, ok := layout.Node(id)
 	if !ok {
 		return
@@ -42,18 +42,18 @@ func (state *State) paintWorkspacePreviewNode(canvas *ui.Canvas, bounds ui.Rect,
 		state.paintWorkspacePreviewNode(canvas, pixelBounds(bounds, second), layout, node.Second, hosts)
 		return
 	}
-	box := bounds.Inset(ui.All(2))
+	box := bounds.Inset(gfx.All(2))
 	canvas.RoundedBorder(box, 4, 1, state.pal.line, state.pal.terminal)
 	index := int(node.Session) - 1
 	color := state.pal.muted
 	label := fmt.Sprintf("%d", index+1)
 	if host, ok := state.workspaceHostByID(hosts[index]); ok {
 		if accent := hostAccent(host.Color); accent.Alpha > 0 {
-			canvas.Rounded(ui.Rect{X: box.X + box.Width - 10, Y: box.Y + 6, Width: 4, Height: 4}, 2, accent)
+			canvas.Rounded(gfx.Rect{X: box.X + box.Width - 10, Y: box.Y + 6, Width: 4, Height: 4}, 2, accent)
 		}
 		if box.Width >= 88 && box.Height >= 38 {
 			label += "  " + host.Label
 		}
 	}
-	monitorLabel(canvas, elide(canvas, label, 11, ui.WeightMedium, max(0, box.Width-16)), box.Inset(ui.All(8)), 11, color, ui.WeightMedium)
+	monitorLabel(canvas, elide(canvas, label, 11, gfx.WeightMedium, max(0, box.Width-16)), box.Inset(gfx.All(8)), 11, color, gfx.WeightMedium)
 }

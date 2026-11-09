@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -16,8 +16,8 @@ func TestDesktopRTTDoesNotScheduleIdlePolling(t *testing.T) {
 	defer view.close()
 	view.fullscreen = true
 	session := &Session{ID: 1, Address: "desktop.example", desk: view, phase: sshconn.PhaseConnected}
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1920, Height: 1080}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1920, Height: 1080}
 	state.paintDesktopPage(&canvas, size, session)
 	canvas.Reset()
 	state.paintDesktopPage(&canvas, size, session)
@@ -38,8 +38,8 @@ func BenchmarkPaintDesktopFullscreen(b *testing.B) {
 	defer view.close()
 	view.fullscreen = true
 	session := &Session{ID: 1, Address: "desktop.example", desk: view, phase: sshconn.PhaseConnected}
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1920, Height: 1080}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1920, Height: 1080}
 	b.ReportAllocs()
 	for b.Loop() {
 		canvas.Reset()

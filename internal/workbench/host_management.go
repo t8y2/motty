@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 
 	"motty/internal/keyidentity"
 	"motty/internal/sshconn"
@@ -23,7 +23,7 @@ const (
 	hostDialogCopy
 )
 
-func (state *State) clickHostManagement(id ui.ID) bool {
+func (state *State) clickHostManagement(id gfx.ID) bool {
 	if state.importMenu {
 		// A choice closes the menu and then runs as if it had been clicked
 		// directly; any other press only dismisses it.
@@ -154,7 +154,7 @@ func (state *State) selectedHostsWorkspaceEligible() bool {
 	return true
 }
 
-func (state *State) hostIDForSelectionHit(id ui.ID) (uint32, bool) {
+func (state *State) hostIDForSelectionHit(id gfx.ID) (uint32, bool) {
 	if id.Scope() != hitHostCheckList {
 		return 0, false
 	}
@@ -617,7 +617,7 @@ func (state *State) hostReferenceError(ids []uint32) string {
 	return ""
 }
 
-func (state *State) clickDeleteHostDialog(id ui.ID) {
+func (state *State) clickDeleteHostDialog(id gfx.ID) {
 	switch id {
 	case hitHostDeleteDismiss, hitHostDeleteClose, hitHostDeleteCancel:
 		state.modal = modalNone
@@ -709,7 +709,7 @@ func containsHostID(ids []uint32, id uint32) bool {
 	return false
 }
 
-func (state *State) clickMoveHostGroupDialog(id ui.ID) {
+func (state *State) clickMoveHostGroupDialog(id gfx.ID) {
 	if state.groupActions.op == hostGroupRelocate {
 		switch {
 		case id == hitMoveGroupField:
@@ -826,9 +826,9 @@ func (state *State) pruneHostSelections() {
 	state.refreshHostSelection()
 }
 
-func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	handled := ui.EventResult{Handled: true, Repaint: true}
-	if state.hostOrderMenu && event.Key == ui.KeyEscape {
+func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	handled := gfx.EventResult{Handled: true, Repaint: true}
+	if state.hostOrderMenu && event.Key == gfx.KeyEscape {
 		state.hostOrderMenu = false
 		return handled, true
 	}
@@ -841,29 +841,29 @@ func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			}
 			return result, true
 		}
-		if event.Key == ui.KeyEscape && event.Modifiers == 0 && !event.Release && !event.Repeat {
+		if event.Key == gfx.KeyEscape && event.Modifiers == 0 && !event.Release && !event.Repeat {
 			state.hostSort.grid.Cancel()
 			state.hostSort.enabled = false
 			return handled, true
 		}
 	}
-	if state.groupActions.drag.pressed && event.Key == ui.KeyEscape {
+	if state.groupActions.drag.pressed && event.Key == gfx.KeyEscape {
 		state.groupActions.drag = hostGroupDrag{}
 		return handled, true
 	}
-	if state.groupActions.open && event.Key == ui.KeyEscape {
+	if state.groupActions.open && event.Key == gfx.KeyEscape {
 		state.groupActions.open = false
 		return handled, true
 	}
 	if state.modal == modalDeleteHost {
-		if event.Key == ui.KeyEnter && event.Target == hitHostDeleteConfirm && !event.Repeat {
+		if event.Key == gfx.KeyEnter && event.Target == hitHostDeleteConfirm && !event.Repeat {
 			state.confirmDeleteHosts()
 			return handled, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if state.modal == modalMoveHostGroup {
-		if state.groupActions.parentOpen && event.Key == ui.KeyEscape {
+		if state.groupActions.parentOpen && event.Key == gfx.KeyEscape {
 			state.groupActions.parentOpen = false
 			return handled, true
 		}
@@ -871,38 +871,38 @@ func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			choices := state.groupDeleteChoices()
 			if next, ok := components.RadioGroupKeyDown(event.Target, choices[:], components.DirectionLTR, event.Key); ok {
 				state.groupActions.ungroup = next == hitGroupDeleteUngroup
-				return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}, true
 			}
 		}
 		editable := state.groupActions.op == hostGroupMoveHosts || state.groupActions.op == hostGroupRename || state.groupActions.op == hostGroupCreateChild
-		if event.Key == ui.KeyEnter && event.Modifiers == 0 && !event.Release && (editable && event.Target == hitMoveGroupField || event.Target == hitMoveGroupSubmit) {
+		if event.Key == gfx.KeyEnter && event.Modifiers == 0 && !event.Release && (editable && event.Target == hitMoveGroupField || event.Target == hitMoveGroupSubmit) {
 			if _, composing := state.hostGroupEditor.Composition(); event.Repeat || editable && composing {
 				return handled, true
 			}
 			state.clickMoveHostGroupDialog(hitMoveGroupSubmit)
 			return handled, true
 		}
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if state.importMenu && event.Key == ui.KeyEscape {
+	if state.importMenu && event.Key == gfx.KeyEscape {
 		state.importMenu = false
 		return handled, true
 	}
 	if result, ok := state.hostChipMenuKey(event); ok {
 		return result, true
 	}
-	if state.hostFilterMenu && event.Key == ui.KeyEscape {
+	if state.hostFilterMenu && event.Key == gfx.KeyEscape {
 		state.hostFilterMenu = false
 		return handled, true
 	}
-	if state.hostGroupMenu && event.Key == ui.KeyEscape {
+	if state.hostGroupMenu && event.Key == gfx.KeyEscape {
 		state.hostGroupMenu = false
 		return handled, true
 	}
 	if state.activeSection != sectionHosts || state.modal != modalNone || event.Repeat {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeySpace && !event.Release && state.clickHostScopeSelection(event.Target) {
+	if event.Key == gfx.KeySpace && !event.Release && state.clickHostScopeSelection(event.Target) {
 		return handled, true
 	}
 	hostID, checkbox := state.hostIDForSelectionHit(event.Target)
@@ -911,17 +911,17 @@ func (state *State) hostManagementKey(event ui.KeyEvent) (ui.EventResult, bool) 
 			hostID = host.ID
 		}
 	}
-	if hostID != 0 && event.Key == ui.KeySpace {
+	if hostID != 0 && event.Key == gfx.KeySpace {
 		state.selectedHostID = hostID
 		state.toggleHostSelection(hostID)
 		return handled, true
 	}
-	if event.Key == ui.KeyDelete && (hostID != 0 || len(state.hostSelections) > 0) {
+	if event.Key == gfx.KeyDelete && (hostID != 0 || len(state.hostSelections) > 0) {
 		if hostID != 0 {
 			state.selectedHostID = hostID
 		}
 		state.openDeleteHosts()
 		return handled, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }

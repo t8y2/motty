@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func (state *State) shortcutActionLabel(action shortcutAction) string {
@@ -72,11 +72,11 @@ func (state *State) openShortcutCapture(action shortcutAction) {
 	state.modal = modalShortcutCapture
 }
 
-func (state *State) clickShortcutCapture(id ui.ID) {
+func (state *State) clickShortcutCapture(id gfx.ID) {
 	switch id {
 	case hitShortcutCaptureReset:
 		defaults := defaultShortcuts()
-		state.captureShortcut(ui.KeyEvent{}, defaults.chords.Chord(state.shortcutCapture))
+		state.captureShortcut(gfx.KeyEvent{}, defaults.chords.Chord(state.shortcutCapture))
 	case hitShortcutCaptureDelete:
 		state.clearShortcut(state.shortcutCapture)
 	case hitShortcutCaptureDismiss, hitShortcutCaptureClose, hitShortcutCaptureCancel:
@@ -130,7 +130,7 @@ func (state *State) paintShortcutSettings(page *settingsPage) {
 	})
 }
 
-func (state *State) paintShortcutCaptureDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintShortcutCaptureDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	messages := state.messages
 	// The name of the action, and under it the reason a key was refused.
 	body := float32(34)
@@ -140,14 +140,14 @@ func (state *State) paintShortcutCaptureDialog(canvas *ui.Canvas, viewport ui.Re
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitShortcutCaptureDismiss, CloseID: hitShortcutCaptureClose,
-		ContentSize: ui.Size{Width: 480}, FitBody: true, BodyHeight: body,
+		ContentSize: gfx.Size{Width: 480}, FitBody: true, BodyHeight: body,
 	})
 	layout := dialog.Begin(messages.ShortcutsCaptureTitle, messages.ShortcutsCaptureDescription)
 	f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
 	f.Column().Fill().PadX(4).Children(func() {
 		f.Text(state.shortcutActionLabel(state.shortcutCapture)).FontSize(metrics.FontSizeM).Bold().Color(state.pal.text).LineHeight(24).MarginSides(8, 0, 0, 0)
 		if state.shortcutError != "" {
-			f.Text(state.shortcutError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).LineHeight(40).MarginSides(14, 0, 0, 0)
+			f.Text(state.shortcutError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(40).MarginSides(14, 0, 0, 0)
 		}
 	})
 	f.End()

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestNewTabButtonAsksWhereToConnectAndMakesNoTabYet(t *testing.T) {
@@ -20,8 +20,8 @@ func TestNewTabButtonAsksWhereToConnectAndMakesNoTabYet(t *testing.T) {
 	if got := len(state.deck.Workspaces(nil)); got != before {
 		t.Fatalf("the tab was created before a choice: %d -> %d", before, got)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitCommandPaletteItems.At(0)); !ok {
 		t.Fatal("the picker lists nothing")
 	}
@@ -104,7 +104,7 @@ func TestNewTabWorkspaceTabOffersCreationWithoutTemplates(t *testing.T) {
 	if len(state.commandPalette.visible) != 1 || state.commandPalette.entries[state.commandPalette.visible[0]].target != hitConnectPickWorkspaceNew {
 		t.Fatalf("empty workspaces offer = %+v", state.commandPalette.entries)
 	}
-	result := state.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyEnter})
+	result := state.Key(gfx.KeyEvent{Target: hitCommandPaletteSearch, Key: gfx.KeyEnter})
 	if !result.Handled || state.modal != modalWorkspaceDraft || len(state.deck.Workspaces(nil)) != 0 {
 		t.Fatalf("keyboard new workspace: result=%+v modal=%d tabs=%d", result, state.modal, len(state.deck.Workspaces(nil)))
 	}
@@ -209,8 +209,8 @@ func TestTheCommandPaletteIsStillTheCommandPalette(t *testing.T) {
 // clickPickerRow presses the picker row that shows label.
 func clickPickerRow(t *testing.T, state *State, label string) {
 	t.Helper()
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, hit := range canvas.Hits() {
 		if hit.ID.Scope() == hitCommandPaletteItems && hit.Label == label {
 			state.Click(hit.ID)
@@ -225,8 +225,8 @@ func TestPickerPencilOpensTheHostForEditing(t *testing.T) {
 	before := len(state.deck.Workspaces(nil))
 	host := state.hosts[0]
 	state.Click(hitNewTab)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitConnectPickEdit.At(int(host.ID))); !ok {
 		t.Fatal("the host's row has no pencil")
 	}
@@ -242,17 +242,17 @@ func TestPickerPencilOpensTheHostForEditing(t *testing.T) {
 func TestNewTabPickerKeyboardStepsOverGroupHeadings(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitNewTab)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	// Local terminal, then a heading for Network and Router under it, so the
 	// row after the first is a heading the keyboard must not land on.
 	first := hitCommandPaletteItems.At(0)
-	result := state.Key(ui.KeyEvent{Target: first, Key: ui.KeyDown})
+	result := state.Key(gfx.KeyEvent{Target: first, Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != hitCommandPaletteItems.At(2) {
 		t.Fatalf("down from the first row focused %v, want the row under the heading", result.Focus)
 	}
 	last := hitCommandPaletteItems.At(len(state.commandPalette.visible) - 1)
-	result = state.Key(ui.KeyEvent{Target: result.Focus, Key: ui.KeyEnd})
+	result = state.Key(gfx.KeyEvent{Target: result.Focus, Key: gfx.KeyEnd})
 	if !result.Handled || result.Focus != last {
 		t.Fatalf("End focused %v, want the last choice %v", result.Focus, last)
 	}
@@ -279,8 +279,8 @@ func TestNewTabPickerGroupsHostsAndTheWheelSurvivesTheNextPaint(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitNewTab)
 
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	texts := map[string]bool{}
 	for _, text := range canvas.Texts() {
@@ -295,7 +295,7 @@ func TestNewTabPickerGroupsHostsAndTheWheelSurvivesTheNextPaint(t *testing.T) {
 	if !ok {
 		t.Fatal("the picker paints no first row")
 	}
-	if result := state.Scroll(ui.ScrollEvent{DeltaY: 120, Target: first.ID}); !result.Repaint || state.commandPalette.scroll == 0 {
+	if result := state.Scroll(gfx.ScrollEvent{DeltaY: 120, Target: first.ID}); !result.Repaint || state.commandPalette.scroll == 0 {
 		t.Fatalf("the wheel did not move the list: %+v, scroll %g", result, state.commandPalette.scroll)
 	}
 	top := state.commandPalette.scroll
@@ -321,9 +321,9 @@ func TestRecentPickerShowsSuccessfulHostBeforeLocalAndKeepsDefaultOrder(t *testi
 	connection.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
 	state.Wake()
 	state.Click(hitNewTab)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	var recent ui.ID
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	var recent gfx.ID
 	for _, hit := range canvas.Hits() {
 		if hit.Label == "Recent login" {
 			recent = hit.ID
@@ -334,7 +334,7 @@ func TestRecentPickerShowsSuccessfulHostBeforeLocalAndKeepsDefaultOrder(t *testi
 	}
 	state.Click(recent)
 	canvas.Reset()
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	first, ok := hitByID(&canvas, hitCommandPaletteItems.At(1)) // group title precedes the host
 	if !ok || first.Label != host.Label {
 		t.Fatalf("recent first host = %q, want %q", first.Label, host.Label)
@@ -343,14 +343,14 @@ func TestRecentPickerShowsSuccessfulHostBeforeLocalAndKeepsDefaultOrder(t *testi
 	second := newTestState(t, options)
 	second.Click(hitNewTab)
 	canvas.Reset()
-	second.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	second.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	first, ok = hitByID(&canvas, hitCommandPaletteItems.At(1))
 	if !ok || first.Label != host.Label {
 		t.Fatalf("recent after restart = %q, want %q", first.Label, host.Label)
 	}
 	second.Click(hitConnectSortDefault)
 	canvas.Reset()
-	second.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	second.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	first, ok = hitByID(&canvas, hitCommandPaletteItems.At(0))
 	if !ok || first.Label != second.messages.LocalTerminal {
 		t.Fatalf("default first = %q", first.Label)
@@ -359,8 +359,8 @@ func TestRecentPickerShowsSuccessfulHostBeforeLocalAndKeepsDefaultOrder(t *testi
 
 // pickerRowLabels reads the actual painted rows, including non-selectable headings.
 func pickerRowLabels(state *State) []string {
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	var labels []string
 	for _, hit := range canvas.Hits() {
 		if hit.ID.Scope() == hitCommandPaletteItems || hit.ID.Scope() == hitCommandPaletteHeaders {
@@ -417,7 +417,7 @@ func TestRecentPickerFiltersThenGroupsAndKeepsAnOpenListStill(t *testing.T) {
 		t.Fatalf("default search = %v", got)
 	}
 	state.Click(hitConnectSortRecent)
-	result := state.Key(ui.KeyEvent{Target: hitCommandPaletteSearch, Key: ui.KeyEnter})
+	result := state.Key(gfx.KeyEvent{Target: hitCommandPaletteSearch, Key: gfx.KeyEnter})
 	if !result.Handled || state.modal != modalNone {
 		t.Fatalf("Enter did not select first connection: %+v", result)
 	}

@@ -3,7 +3,7 @@ package workbench
 import (
 	"errors"
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/cli"
 	"motty/internal/ai/store"
@@ -63,7 +63,7 @@ func TestCLILoginIsExplicitLocalSensitiveAndCancelable(t *testing.T) {
 		t.Fatal("login has no native terminal input")
 	}
 	input.OnEvent(app.TextEvent{Kind: app.TextInsert, Text: "code"})
-	s.aiSettingsKey(ui.KeyEvent{Target: hitAICLILoginTerminal, Key: ui.KeyEnter})
+	s.aiSettingsKey(gfx.KeyEvent{Target: hitAICLILoginTerminal, Key: gfx.KeyEnter})
 	if string(shell.input) != "code\r" {
 		t.Fatal("interactive input not delivered")
 	}
@@ -114,7 +114,7 @@ func TestLoginPasteShortcutCannotReachActiveSSHSession(t *testing.T) {
 	s.ai.cfg.dialog = aiDialogCLILogin
 	s.options.ClipboardText = func() (string, error) { return "sensitive-login-code", nil }
 	chord := s.shortcuts.chords.Chord(shortcutPaste)
-	s.Shortcut(ui.KeyEvent{Target: hitAICLILoginTerminal, Modifiers: chord.Modifiers, Text: string(chord.Char)})
+	s.Shortcut(gfx.KeyEvent{Target: hitAICLILoginTerminal, Modifiers: chord.Modifiers, Text: string(chord.Char)})
 	if remote.typed() != "" {
 		t.Fatal("login clipboard was sent to the active SSH session")
 	}
@@ -294,9 +294,9 @@ func TestCLIAuthActionsStayReachableInNarrowSettings(t *testing.T) {
 	s.reloadAI()
 	s.aiSelectProvider(0)
 	for _, width := range []float32{800, 900, 1000, 1200} {
-		var canvas ui.Canvas
-		s.Paint(&canvas, ui.Size{Width: width, Height: 900})
-		for _, id := range []ui.ID{hitAICLIRecheck, hitAICLIDevice, hitAICLILogin} {
+		var canvas gfx.Canvas
+		s.Paint(&canvas, gfx.Size{Width: width, Height: 900})
+		for _, id := range []gfx.ID{hitAICLIRecheck, hitAICLIDevice, hitAICLILogin} {
 			hit, ok := hitByID(&canvas, id)
 			if !ok || hit.Bounds.Width < 20 || hit.Bounds.X < 0 || hit.Bounds.X+hit.Bounds.Width > width {
 				t.Fatalf("width %.0f: auth control %d missing or clipped: %+v, %t", width, id, hit.Bounds, ok)

@@ -4,12 +4,12 @@ import (
 	"fmt"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var toolbarSettingsHits = tree.Feature("toolbar-settings")
 var (
-	hitToolbarSettingsOpen    = [3]ui.ID{tree.ID(toolbarSettingsHits, "window"), tree.ID(toolbarSettingsHits, "terminal"), tree.ID(toolbarSettingsHits, "sftp")}
+	hitToolbarSettingsOpen    = [3]gfx.ID{tree.ID(toolbarSettingsHits, "window"), tree.ID(toolbarSettingsHits, "terminal"), tree.ID(toolbarSettingsHits, "sftp")}
 	hitToolbarSettingsClose   = tree.ID(toolbarSettingsHits, "close")
 	hitToolbarSettingsDismiss = tree.ID(toolbarSettingsHits, "dismiss")
 	hitToolbarEnableAll       = tree.ID(toolbarSettingsHits, "enable-all")
@@ -84,7 +84,7 @@ func (state *State) openToolbarSettings(group toolbarGroup) {
 	state.modal = modalToolbarSettings
 }
 
-func (state *State) clickToolbarSettings(id ui.ID) {
+func (state *State) clickToolbarSettings(id gfx.ID) {
 	editor := &state.toolbarEditor
 	switch {
 	case id == hitToolbarSettingsClose || id == hitToolbarSettingsDismiss:
@@ -127,7 +127,7 @@ func (state *State) clickToolbarSettings(id ui.ID) {
 			} else if zone == toolbarDockLeftBottom {
 				next = toolbarDockTop
 			}
-			state.moveToolbarDockTool(spec.id, next, ui.ID{})
+			state.moveToolbarDockTool(spec.id, next, gfx.ID{})
 			return
 		}
 	case id == hitToolbarEnableAll || id == hitToolbarDisableAll:
@@ -194,47 +194,47 @@ func (state *State) moveToolbarEntry(move components.ReorderMove) {
 	state.toolbarDockChanged()
 }
 
-func (state *State) toolbarSettingsPointer(event ui.PointerEvent) ui.EventResult {
+func (state *State) toolbarSettingsPointer(event gfx.PointerEvent) gfx.EventResult {
 	if state.modal != modalToolbarSettings {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	editor := &state.toolbarEditor
 	if event.Target == hitToolbarScroll || editor.scrollDrag {
-		if event.Kind == ui.PointerExit {
+		if event.Kind == gfx.PointerExit {
 			editor.scrollDrag = false
-			return ui.EventResult{Handled: true}
+			return gfx.EventResult{Handled: true}
 		}
 		switch event.Kind {
-		case ui.PointerDown:
-			if event.Button != ui.PointerButtonPrimary {
-				return ui.EventResult{}
+		case gfx.PointerDown:
+			if event.Button != gfx.PointerButtonPrimary {
+				return gfx.EventResult{}
 			}
 			editor.scrollDrag = true
 			editor.thumbOffset = event.Y - editor.geometry.VerticalThumb.Y
 			if editor.thumbOffset < 0 || editor.thumbOffset > editor.geometry.VerticalThumb.Height {
 				editor.thumbOffset = editor.geometry.VerticalThumb.Height / 2
 			}
-		case ui.PointerUp:
+		case gfx.PointerUp:
 			editor.scrollDrag = false
 		}
 		editor.scroll = editor.geometry.VerticalOffsetForThumb(event.Y - editor.thumbOffset)
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	move, result := editor.list.Pointer(event)
 	state.moveToolbarEntry(move)
 	return result
 }
 
-func (state *State) toolbarSettingsKey(event ui.KeyEvent) ui.EventResult {
+func (state *State) toolbarSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalToolbarSettings {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	if state.toolbarEditor.group == toolbarTerminal && !event.Release &&
 		(event.Target == hitToolbarSizeSmall || event.Target == hitToolbarSizeMedium || event.Target == hitToolbarSizeLarge) {
 		options := state.settingsToolbarSizeOptions()
 		if next, handled := components.SegmentedControlKeyDown(event.Target, options[:], components.DirectionLTR, event.Key); handled {
 			state.clickToolbarSettings(next)
-			return ui.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
 		}
 	}
 	move, result := state.toolbarEditor.list.Key(event)
@@ -242,24 +242,24 @@ func (state *State) toolbarSettingsKey(event ui.KeyEvent) ui.EventResult {
 		state.moveToolbarEntry(move)
 		return result
 	}
-	if event.Key == ui.KeyEscape && !event.Release && !event.Repeat {
+	if event.Key == gfx.KeyEscape && !event.Release && !event.Repeat {
 		state.closeModal()
-		return ui.EventResult{Handled: true, Repaint: true}
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (state *State) toolbarSettingsScroll(event ui.ScrollEvent) ui.EventResult {
+func (state *State) toolbarSettingsScroll(event gfx.ScrollEvent) gfx.EventResult {
 	editor := &state.toolbarEditor
 	if !pointInRect(event.X, event.Y, editor.geometry.Viewport) {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	before := editor.scroll
 	editor.scroll = min(max(before+event.DeltaY, 0), editor.geometry.MaxOffsetY)
-	return ui.EventResult{Handled: true, Repaint: before != editor.scroll}
+	return gfx.EventResult{Handled: true, Repaint: before != editor.scroll}
 }
 
-func (state *State) paintToolbarSettings(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintToolbarSettings(canvas *gfx.Canvas, viewport gfx.Rect) {
 	editor, m, theme := &state.toolbarEditor, state.messages.Toolbars, state.Theme()
 	entries := state.toolbars.entries(editor.group)
 	height := float32(len(entries))*48 - 4
@@ -269,22 +269,22 @@ func (state *State) paintToolbarSettings(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitToolbarSettingsDismiss, CloseID: hitToolbarSettingsClose,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: min(height+controlsHeight, max(viewport.Height-250, 96)),
+		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: min(height+controlsHeight, max(viewport.Height-250, 96)),
 	})
 	layout := dialog.Begin(state.toolbarGroupName(editor.group), m.Hint)
 	body := layout.Body
 	if editor.group == toolbarTerminal {
-		label := ui.Rect{X: body.X, Y: body.Y, Width: min(200, body.Width/2), Height: 32}
-		canvas.Label(canvas.FitLine(state.messages.SettingsToolbarSize, theme.Metrics.FontSizeM, ui.WeightRegular, label.Width), label, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.MutedForeground})
+		label := gfx.Rect{X: body.X, Y: body.Y, Width: min(200, body.Width/2), Height: 32}
+		canvas.Label(canvas.FitLine(state.messages.SettingsToolbarSize, theme.Metrics.FontSizeM, gfx.WeightRegular, label.Width), label, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.MutedForeground})
 		options := state.settingsToolbarSizeOptions()
 		selected := options[state.terminalToolbarSize].ID
-		components.BeginSegmentedControl(canvas, theme, ui.Rect{
+		components.BeginSegmentedControl(canvas, theme, gfx.Rect{
 			X: label.X + label.Width + 12, Y: body.Y, Width: max(body.Width-label.Width-12, 0), Height: 32,
 		}, options[:], selected).Paint()
 		body.Y += controlsHeight
 		body.Height = max(body.Height-controlsHeight, 0)
 	}
-	area := components.BeginScrollArea(canvas, theme, body, ui.Size{Width: body.Width, Height: height}).Offset(0, editor.scroll).VerticalScrollbar(hitToolbarScroll, "", "")
+	area := components.BeginScrollArea(canvas, theme, body, gfx.Size{Width: body.Width, Height: height}).Offset(0, editor.scroll).VerticalScrollbar(hitToolbarScroll, "", "")
 	geometry := area.BeginContent()
 	editor.geometry, editor.scroll = geometry, geometry.OffsetY
 	bounds := geometry.Content
@@ -302,24 +302,24 @@ func (state *State) paintToolbarSettings(canvas *ui.Canvas, viewport ui.Rect) {
 		if !entry.Enabled {
 			color = theme.MutedForeground
 		}
-		canvas.DrawIcon(lucideIcons[spec.icon], ui.Rect{X: row.Content.X, Y: row.Content.Y + (row.Content.Height-18)/2, Width: 18, Height: 18}, color)
-		caption := ui.Rect{X: row.Content.X + 28, Y: row.Content.Y, Width: max(row.Content.Width-80, 0), Height: row.Content.Height}
+		canvas.DrawIcon(lucideIcons[spec.icon], gfx.Rect{X: row.Content.X, Y: row.Content.Y + (row.Content.Height-18)/2, Width: 18, Height: 18}, color)
+		caption := gfx.Rect{X: row.Content.X + 28, Y: row.Content.Y, Width: max(row.Content.Width-80, 0), Height: row.Content.Height}
 		zoneLabel, zoneWidth := "", float32(0)
 		if editor.group <= toolbarTerminal {
 			zoneLabel = state.toolbarDockZoneLabel(state.toolbarDockZoneFor(editor.group, entry.Key))
-			zoneWidth = components.BeginButton(canvas, theme, ui.ID{}, ui.Rect{}).SizeToFit(zoneLabel).BoundsWidth()
+			zoneWidth = components.BeginButton(canvas, theme, gfx.ID{}, gfx.Rect{}).SizeToFit(zoneLabel).BoundsWidth()
 			caption.Width = max(caption.Width-zoneWidth-2, 0)
 		}
-		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, ui.WeightRegular, caption.Width), caption, ui.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
+		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, gfx.WeightRegular, caption.Width), caption, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
 		if editor.group <= toolbarTerminal {
-			components.BeginButton(canvas, theme, hitToolbarPositions.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 52 - zoneWidth, Y: row.Content.Y + (row.Content.Height-28)/2, Width: zoneWidth}).Outline(zoneLabel)
+			components.BeginButton(canvas, theme, hitToolbarPositions.At(index), gfx.Rect{X: row.Content.X + row.Content.Width - 52 - zoneWidth, Y: row.Content.Y + (row.Content.Height-28)/2, Width: zoneWidth}).Outline(zoneLabel)
 		}
 		checked := entry.Enabled
 		if editor.group == toolbarTerminal && entry.Key == "latency" {
 			// This switch is the same preference as Settings > Show latency.
 			checked = state.terminalShowLatency
 		}
-		components.BeginSwitch(canvas, state.switchTheme(), hitToolbarToggles.At(index), ui.Rect{X: row.Content.X + row.Content.Width - 42, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, checked).Label(label).Paint()
+		components.BeginSwitch(canvas, state.switchTheme(), hitToolbarToggles.At(index), gfx.Rect{X: row.Content.X + row.Content.Width - 42, Y: row.Content.Y + (row.Content.Height-22)/2, Width: 38, Height: 22}, checked).Label(label).Paint()
 	}
 	list.End()
 	area.EndContent()

@@ -12,7 +12,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/zmodem"
 )
@@ -301,7 +301,7 @@ func (state *State) startTransfer(session *Session, engine zmodem.Engine) {
 	state.afterTransferFeed(session)
 }
 
-func (state *State) clickTransfer(id ui.ID) {
+func (state *State) clickTransfer(id gfx.ID) {
 	transfer := &state.transfer
 	session, ok := state.sessionByIDPointer(transfer.sessionID)
 	if !ok || transfer.phase == transferNone {
@@ -532,7 +532,7 @@ func (target *folderTarget) close() {
 	}
 }
 
-func (state *State) paintFileTransferDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintFileTransferDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	transfer, m, pal := &state.transfer, state.messages.Tools, state.pal
 	session, _ := state.sessionByIDPointer(transfer.sessionID)
 	address := ""
@@ -553,7 +553,7 @@ func (state *State) paintFileTransferDialog(canvas *ui.Canvas, viewport ui.Rect)
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitTransferDismiss, CloseID: hitTransferClose, InitialFocusID: hitTransferDecline,
-		ContentSize: ui.Size{Width: 540}, FitBody: true, BodyHeight: bodyHeight,
+		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: bodyHeight,
 	})
 	layout := dialog.Begin(title, description)
 	if transfer.phase == transferRunning {
@@ -571,10 +571,10 @@ func (state *State) paintFileTransferDialog(canvas *ui.Canvas, viewport ui.Rect)
 			}
 		}
 		// The file's name, the bar and the amount done.
-		var bar flex.Box
+		var bar ui.Box
 		f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
 		f.Column().Fill().Children(func() {
-			f.Text(name).FontSize(metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text).Ellipsis().LineHeight(22).MarginSides(4, 0, 0, 0)
+			f.Text(name).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().LineHeight(22).MarginSides(4, 0, 0, 0)
 			bar = f.Slot().Height(8).Shrink(0).MarginSides(8, 0, 0, 0)
 			f.Text(transfer.text.line).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(6, 0, 0, 0)
 		})
@@ -591,7 +591,7 @@ func (state *State) paintFileTransferDialog(canvas *ui.Canvas, viewport ui.Rect)
 	}
 	if transfer.dialogError != "" {
 		f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
-		f.Text(transfer.dialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.danger).LineHeight(20).MarginSides(8, 0, 0, 0)
+		f.Text(transfer.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(20).MarginSides(8, 0, 0, 0)
 		f.End()
 	}
 	decline := components.ButtonAction{ID: hitTransferDecline, Label: m.TransferDecline, Variant: components.ButtonSecondary}

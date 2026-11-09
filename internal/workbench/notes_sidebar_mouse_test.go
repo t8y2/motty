@@ -4,7 +4,7 @@ package workbench
 
 import (
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"testing"
 )
 
@@ -12,7 +12,7 @@ func TestNotesSidebarNativeMouseActivatesAssociationSwitch(t *testing.T) {
 	s, _, _, _ := liveSession(t)
 	s.activeSection = sectionTerminal
 	s.Click(hitNotesPanel)
-	var c ui.Canvas
+	var c gfx.Canvas
 	driver, err := app.NewDriver(app.Config{Title: "notes sidebar mouse", Width: 1200, Height: 800, Tree: Tree(), Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key}, &c)
 	if err != nil {
 		t.Fatal(err)

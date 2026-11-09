@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 var (
@@ -101,7 +101,7 @@ func (state *State) toggleHostScope(group string, grouped bool) {
 	state.refreshHostSelection()
 }
 
-func (state *State) clickHostScopeSelection(id ui.ID) bool {
+func (state *State) clickHostScopeSelection(id gfx.ID) bool {
 	switch {
 	case id == hitHostSelectAll:
 		state.toggleHostScope("", false)
@@ -116,10 +116,10 @@ func (state *State) clickHostScopeSelection(id ui.ID) bool {
 	return true
 }
 
-func (state *State) paintHostScopeCheckbox(canvas *ui.Canvas, id ui.ID, bounds ui.Rect, count hostSelectionCount) {
+func (state *State) paintHostScopeCheckbox(canvas *gfx.Canvas, id gfx.ID, bounds gfx.Rect, count hostSelectionCount) {
 	theme := state.Theme()
 	side := components.CheckboxExtent(theme)
-	checkbox := components.BeginCheckbox(canvas, theme, id, ui.Rect{
+	checkbox := components.BeginCheckbox(canvas, theme, id, gfx.Rect{
 		X: bounds.X + (bounds.Width-side)/2, Y: bounds.Y + (bounds.Height-side)/2,
 	}, count.total > 0 && count.total == count.selected).Label(count.label).HitBounds(bounds)
 	if count.selected > 0 && count.selected < count.total {
@@ -131,8 +131,8 @@ func (state *State) paintHostScopeCheckbox(canvas *ui.Canvas, id ui.ID, bounds u
 	checkbox.Paint()
 	if id.Scope() == hitHostGroupCheck {
 		event, ok := canvas.PointerOn(id)
-		if ok && event.Kind == ui.PointerDown && event.Button == ui.PointerButtonSecondary {
-			state.openHostGroupActions(state.hostGroups[item(id)].Name, ui.Point{X: event.X, Y: event.Y})
+		if ok && event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonSecondary {
+			state.openHostGroupActions(state.hostGroups[item(id)].Name, gfx.Point{X: event.X, Y: event.Y})
 			canvas.Consume()
 		}
 	}

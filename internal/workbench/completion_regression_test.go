@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/cmdhistory"
 )
 
@@ -146,7 +146,7 @@ func TestCompletionRegressionStaticGhostDrainsBeforeAccepting(t *testing.T) {
 	}
 	before := w.shell.typed()
 	w.shell.say("\x1b]133;C;motty=" + w.session.term.folderToken + "\x07")
-	w.state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: terminalHit(w.state, 0)})
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: terminalHit(w.state, 0)})
 	if got := w.shell.typed(); got != before {
 		t.Fatalf("stale static suffix reached running program: %q", got[len(before):])
 	}
@@ -157,7 +157,7 @@ func TestCompletionRepeatedEnterDoesNotExecuteWhileListIsOpen(t *testing.T) {
 	w.type_("git s")
 	w.state.openCompletions()
 	before := w.shell.typed()
-	w.state.Key(ui.KeyEvent{Key: ui.KeyEnter, Repeat: true, Target: terminalHit(w.state, 0)})
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Repeat: true, Target: terminalHit(w.state, 0)})
 	if got := w.shell.typed(); got != before {
 		t.Fatalf("repeated Enter sent %q", got[len(before):])
 	}
@@ -168,7 +168,7 @@ func TestCompletionListRetiresWhenIMECompositionBegins(t *testing.T) {
 	w.type_("git s")
 	w.state.openCompletions()
 	w.session.term.preedit.Composing = true
-	w.state.completionKey(ui.KeyEvent{Key: ui.KeyDown})
+	w.state.completionKey(gfx.KeyEvent{Key: gfx.KeyDown})
 	if w.state.completion.list.active {
 		t.Fatal("list retained navigation while IME was composing")
 	}

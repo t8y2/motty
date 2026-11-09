@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestWorkspaceLocalReferenceCannotCollideWithASavedHost(t *testing.T) {
@@ -122,7 +122,7 @@ func TestWorkspaceLocalTerminalLaunchesWithSSHAndBroadcasts(t *testing.T) {
 	if len(state.templates) != 1 || !slices.Equal(state.templates[0].HostIDs, []string{remote.host.CatalogID, localRef}) {
 		t.Fatalf("saving the temporary workspace lost its local terminal: %+v", state.templates)
 	}
-	paintAt(state, ui.Size{Width: 1200, Height: 800})
+	paintAt(state, gfx.Size{Width: 1200, Height: 800})
 }
 
 func TestWorkspaceLocalTemplateReopensFreshWithoutACatalog(t *testing.T) {
@@ -177,7 +177,7 @@ func TestWorkspaceLocalShellFailureSettlesAndRetriesIndependently(t *testing.T) 
 		t.Fatal("failed local shell has no retry path")
 	}
 	state.ActivatePane(local.ID)
-	paintAt(state, ui.Size{Width: 1200, Height: 800})
+	paintAt(state, gfx.Size{Width: 1200, Height: 800})
 	state.Click(state.paneIdentity(local, hitConnRetry))
 	if len(world.conns) != 1 || workspaceSessionState(remote) != workspacePaneConnected {
 		t.Fatal("retrying the local terminal disturbed its SSH peer")

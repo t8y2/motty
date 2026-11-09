@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestHostGroupMoveSubtreeAndRejectCyclesOrCollisions(t *testing.T) {
@@ -157,13 +157,13 @@ func TestHostGroupDragMovesSubtreeAndEscapeCancels(t *testing.T) {
 	canvas, _ := paintedTexts(state)
 	source, _ := hitByID(canvas, hitHostGroupRowList.At(state.hostGroupIndex("Team/Prod")))
 	target, _ := hitByID(canvas, hitHostGroupRowList.At(state.hostGroupIndex("Team2")))
-	down := ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, Target: source.ID, X: source.Bounds.X + 40, Y: source.Bounds.Y + 20}
-	move := ui.PointerEvent{Kind: ui.PointerMove, Target: target.ID, X: target.Bounds.X + 40, Y: target.Bounds.Y + 20}
+	down := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: source.ID, X: source.Bounds.X + 40, Y: source.Bounds.Y + 20}
+	move := gfx.PointerEvent{Kind: gfx.PointerMove, Target: target.ID, X: target.Bounds.X + 40, Y: target.Bounds.Y + 20}
 	up := move
-	up.Kind, up.Button = ui.PointerUp, ui.PointerButtonPrimary
+	up.Kind, up.Button = gfx.PointerUp, gfx.PointerButtonPrimary
 	pointer(state, down)
 	pointer(state, move)
-	state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	pointer(state, up)
 	if state.hosts[0].Group != "Team/Prod/EU" {
 		t.Fatal("Escape did not cancel the drag")
@@ -184,7 +184,7 @@ func TestHostGroupDragCannotTargetClippedRows(t *testing.T) {
 	state.hosts[0].Group = "Team/Dev"
 	state.hostDataChanged()
 	state.hostView = hostViewList
-	size := ui.Size{Width: 900, Height: 600}
+	size := gfx.Size{Width: 900, Height: 600}
 	paintAt(state, size)
 	group := state.hostGroupIndex("Team/Dev")
 	row := state.groupActions.rows[group]

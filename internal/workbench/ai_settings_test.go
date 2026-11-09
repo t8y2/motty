@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
 	"motty/internal/ai/gate"
@@ -113,9 +113,9 @@ func (world *settingsWorld) open(t *testing.T) *State {
 	return state
 }
 
-func (world *settingsWorld) paint() (*ui.Canvas, []string) {
-	var canvas ui.Canvas
-	world.state.Paint(&canvas, ui.Size{Width: 1400, Height: 3200})
+func (world *settingsWorld) paint() (*gfx.Canvas, []string) {
+	var canvas gfx.Canvas
+	world.state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3200})
 	var texts []string
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
@@ -124,7 +124,7 @@ func (world *settingsWorld) paint() (*ui.Canvas, []string) {
 }
 
 // type puts text into the field behind a hit the way the runtime does.
-func (world *settingsWorld) typeInto(t *testing.T, hit ui.ID, value string) {
+func (world *settingsWorld) typeInto(t *testing.T, hit gfx.ID, value string) {
 	t.Helper()
 	editor := world.state.EditorFor(hit)
 	if editor == nil {
@@ -789,7 +789,7 @@ func TestAIModelsCanBeAddedByNameAndPaged(t *testing.T) {
 func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
-	for _, hit := range []ui.ID{hitAISetRiskHigh, hitAISetSteps24, hitAISetContext120, hitAISetText8} {
+	for _, hit := range []gfx.ID{hitAISetRiskHigh, hitAISetSteps24, hitAISetContext120, hitAISetText8} {
 		state.Click(hit)
 	}
 	state.Click(hitAISetRedact)
@@ -815,7 +815,7 @@ func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 		t.Fatalf("a new window has %+v, want %+v", again.ai.settings, want)
 	}
 	canvas, _ := paintedSettings(again)
-	for _, id := range []ui.ID{hitAISetRedact, hitAISetHistory} {
+	for _, id := range []gfx.ID{hitAISetRedact, hitAISetHistory} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Checked {
 			t.Errorf("switch %d should be off: %+v", id, hit)
 		}
@@ -832,9 +832,9 @@ func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 	}
 }
 
-func paintedSettings(state *State) (*ui.Canvas, []string) {
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 3200})
+func paintedSettings(state *State) (*gfx.Canvas, []string) {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 3200})
 	var texts []string
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
@@ -1005,13 +1005,13 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 	state.Click(hitAISetFetchModels)
 	pumpSettings(t, state, "the fetch", func() bool { return state.ai.cfg.fetch == nil })
 	canvas, _ := world.paint()
-	var order []ui.ID
+	var order []gfx.ID
 	for _, hit := range canvas.Hits() {
 		if hit.Focusable && tree.Within(hit.ID.Scope(), aiSettingsHits) && !hit.Disabled {
 			order = append(order, hit.ID)
 		}
 	}
-	want := []ui.ID{
+	want := []gfx.ID{
 		hitAISetProviderRow.At(0), hitAISetProviderSwitch.At(0), hitAISetProviderEdit.At(0), hitAISetProviderDelete.At(0), hitAISetProviderAdd,
 		hitAISetFetchModels, hitAISetModelUse.At(1), hitAISetModelSwitch.At(1), hitAISetModelInput, hitAISetModelAdd,
 		hitAISetRiskLow, hitAISetSteps12, hitAISetContext60, hitAISetRedact, hitAISetHistory, hitAISetClearHistory,
@@ -1046,7 +1046,7 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 	}
 	next := 0
 	for _, got := range order {
-		if next < 3 && got == []ui.ID{hitAISetMCPEnabled, hitAISetMCPObserve, hitAISetMCPReset}[next] {
+		if next < 3 && got == []gfx.ID{hitAISetMCPEnabled, hitAISetMCPObserve, hitAISetMCPReset}[next] {
 			next++
 		}
 	}
@@ -1059,16 +1059,16 @@ func TestSettingsPageScrollsToTheAssistantSection(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	state.selectSettingsCategory(settingsAssistant)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1200, Height: 700}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1200, Height: 700}
 	state.Paint(&canvas, size)
 	if state.settingsContent <= size.Height {
 		t.Fatalf("the page (%v) is not taller than the window", state.settingsContent)
 	}
 	for range 80 {
-		state.scrollSettings(ui.ScrollEvent{DeltaY: 200, Precise: true})
+		state.scrollSettings(gfx.ScrollEvent{DeltaY: 200, Precise: true})
 	}
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	var visible bool
 	for _, text := range canvas.Texts() {

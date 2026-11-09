@@ -12,7 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/monitoring"
@@ -64,7 +64,7 @@ type dashboardEditor struct {
 	selected                             []string
 	error                                string
 	scroll, content                      float32
-	bounds                               ui.Rect
+	bounds                               gfx.Rect
 	fromHosts                            bool
 	page                                 int
 	order                                components.ReorderListState
@@ -82,18 +82,18 @@ type dashboardState struct {
 	search          text.Editor
 	editor          dashboardEditor
 	menu            int
-	selectBounds    [3]ui.Rect
-	body            ui.Rect
+	selectBounds    [3]gfx.Rect
+	body            gfx.Rect
 	scroll, content float32
 	width           int
 	refresh         monitorView
-	emptyLayout     flex.View
+	emptyLayout     ui.View
 	scrollX         float32
 	dragging        bool
 	dragX           bool
 	grab            float32
 	addHosts        []string
-	addAnchor       ui.Rect
+	addAnchor       gfx.Rect
 	// visible reports whether the dashboard is the page the window last
 	// painted, so a background panel does not repaint the window from another
 	// section. Paint writes it; collector goroutines read it.
@@ -527,7 +527,7 @@ func (s *State) deleteDashboard() {
 		return ""
 	}})
 }
-func (s *State) dashboardEditorFor(hit ui.ID) *text.Editor {
+func (s *State) dashboardEditorFor(hit gfx.ID) *text.Editor {
 	if s.modal == modalDashboard {
 		if s.dashboard.editor.page != 0 {
 			return nil
@@ -546,7 +546,7 @@ func (s *State) dashboardEditorFor(hit ui.ID) *text.Editor {
 	}
 	return nil
 }
-func (s *State) clickDashboard(id ui.ID) bool {
+func (s *State) clickDashboard(id gfx.ID) bool {
 	d := &s.dashboard
 	if s.clickDashboardManagement(id) {
 		return true

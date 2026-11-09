@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
-func groupToolbarHit(name string) ui.ID {
+func groupToolbarHit(name string) gfx.ID {
 	return tree.ID(tree.Feature("host-group-toolbar"), name)
 }
 
@@ -89,7 +89,7 @@ func TestHostGroupToolbarSelectionKeepsFiltersAndAddsOnlyOneRow(t *testing.T) {
 		t.Run(fmt.Sprint(mode), func(t *testing.T) {
 			state := newTestState(t, testOptions(t))
 			state.hostView = mode
-			size := ui.Size{Width: 960, Height: 600}
+			size := gfx.Size{Width: 960, Height: 600}
 			paintAt(state, size)
 			listTop := state.chrome.hostList.Y
 			first, second := state.hosts[0].ID, state.hosts[1].ID
@@ -109,7 +109,7 @@ func TestHostGroupToolbarSelectionKeepsFiltersAndAddsOnlyOneRow(t *testing.T) {
 				if state.chrome.hostList.Y <= listTop {
 					t.Fatal("selection toolbar did not reserve its own row")
 				}
-				for _, id := range []ui.ID{hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDashboardAddHosts, hitDeleteHost} {
+				for _, id := range []gfx.ID{hitExportHosts, hitEditHost, hitCopyHost, hitMoveHostGroup, hitDashboardAddHosts, hitDeleteHost} {
 					hit, ok := hitByID(canvas, id)
 					if !ok || hit.Bounds.Y < filter.Bounds.Y+filter.Bounds.Height || hit.Bounds.Y+hit.Bounds.Height > state.chrome.hostList.Y {
 						t.Fatalf("batch action %s overlaps filters or host list: %+v", tree.Text(id), hit)

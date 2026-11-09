@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // aiPlainTextLine is one painted row of a selectable, non-Markdown text block.
@@ -23,22 +23,22 @@ type aiPlainTextView struct {
 	source string
 	lines  []aiPlainTextLine
 
-	canvas           *ui.Canvas
-	rect             ui.Rect
+	canvas           *gfx.Canvas
+	rect             gfx.Rect
 	size, lineHeight float32
 	cell             float32
 	mono             bool
-	selectionScratch []ui.TextSpan
+	selectionScratch []gfx.TextSpan
 }
 
 func (v *aiPlainTextView) reset(source string) {
 	v.source = source
 	v.lines = v.lines[:0]
 	v.canvas = nil
-	v.rect = ui.Rect{}
+	v.rect = gfx.Rect{}
 }
 
-func (v *aiPlainTextView) layoutBody(canvas *ui.Canvas, source string, size, lineHeight, width float32, maxLines int) {
+func (v *aiPlainTextView) layoutBody(canvas *gfx.Canvas, source string, size, lineHeight, width float32, maxLines int) {
 	v.reset(source)
 	v.size, v.lineHeight, v.mono = size, lineHeight, false
 	if source == "" || maxLines <= 0 {
@@ -46,7 +46,7 @@ func (v *aiPlainTextView) layoutBody(canvas *ui.Canvas, source string, size, lin
 	}
 	from := 0
 	for from >= 0 && len(v.lines) < maxLines {
-		row, next := canvas.WrapRow(source, from, size, ui.WeightRegular, width)
+		row, next := canvas.WrapRow(source, from, size, gfx.WeightRegular, width)
 		// WrapLines, which this block replaces for user messages, does not add
 		// another empty row after a final newline.
 		if next < 0 && row.Start == len(source) && len(v.lines) > 0 {
@@ -124,7 +124,7 @@ func (v *aiPlainTextView) SelectedText(selection components.MarkdownSelection) s
 
 // OffsetAt returns the source byte offset nearest a window point. Points beyond
 // the block clamp to its nearest row so a captured drag can leave the text.
-func (v *aiPlainTextView) OffsetAt(point ui.Point) (int, bool) {
+func (v *aiPlainTextView) OffsetAt(point gfx.Point) (int, bool) {
 	if v.canvas == nil || len(v.lines) == 0 || v.lineHeight <= 0 {
 		return 0, false
 	}
@@ -136,7 +136,7 @@ func (v *aiPlainTextView) OffsetAt(point ui.Point) (int, bool) {
 	}
 	x := point.X - v.rect.X
 	if !v.mono {
-		offset := v.canvas.TextOffsetAt(line.text, v.size, ui.WeightRegular, x)
+		offset := v.canvas.TextOffsetAt(line.text, v.size, gfx.WeightRegular, x)
 		if offset == len(line.text) {
 			// Trailing spaces are not painted, but they belong to the source row
 			// and a drag to its end must include them.
@@ -164,7 +164,7 @@ func (v *aiPlainTextView) OffsetAt(point ui.Point) (int, bool) {
 
 // paintSelection paints the translucent selection over flex's labels. The alpha
 // matches assistant selections and leaves the already-painted text readable.
-func (v *aiPlainTextView) paintSelection(canvas *ui.Canvas, selection components.MarkdownSelection, color ui.Color) {
+func (v *aiPlainTextView) paintSelection(canvas *gfx.Canvas, selection components.MarkdownSelection, color gfx.Color) {
 	start, end := aiPlainTextRange(v.source, selection)
 	if start >= end || color.Alpha == 0 {
 		return
@@ -180,12 +180,12 @@ func (v *aiPlainTextView) paintSelection(canvas *ui.Canvas, selection components
 		if v.mono {
 			x := v.rect.X + aiMonoTextWidth(line.text[:from], v.cell)
 			width := aiMonoTextWidth(line.text[from:to], v.cell)
-			canvas.Fill(ui.Rect{X: x, Y: y, Width: width, Height: v.lineHeight}, color)
+			canvas.Fill(gfx.Rect{X: x, Y: y, Width: width, Height: v.lineHeight}, color)
 			continue
 		}
-		v.selectionScratch = canvas.TextSelection(v.selectionScratch[:0], line.text, v.size, ui.WeightRegular, from, to)
+		v.selectionScratch = canvas.TextSelection(v.selectionScratch[:0], line.text, v.size, gfx.WeightRegular, from, to)
 		for _, span := range v.selectionScratch {
-			canvas.Fill(ui.Rect{X: v.rect.X + span.X, Y: y, Width: span.Width, Height: v.lineHeight}, color)
+			canvas.Fill(gfx.Rect{X: v.rect.X + span.X, Y: y, Width: span.Width, Height: v.lineHeight}, color)
 		}
 	}
 }
@@ -214,14 +214,14 @@ func aiPlainTextRange(text string, selection components.MarkdownSelection) (star
 }
 
 // textBounds is where the last paint that reached the row put a block's text.
-func (v *aiRowView) textBounds(part aiTextPart) (ui.Rect, bool) {
+func (v *aiRowView) textBounds(part aiTextPart) (gfx.Rect, bool) {
 	if v.kind == aiAssistant {
 		return v.textRect, part == aiTextPrimary
 	}
 	if part < aiTextPartCount && v.textSlotSet[part] {
 		return v.plain[part].rect, true
 	}
-	return ui.Rect{}, false
+	return gfx.Rect{}, false
 }
 
 // textLayout returns the selectable block identified by part, or nil when the

@@ -11,21 +11,21 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 )
 
-func dualClickID(t *testing.T, view *headless.Session, id ui.ID) {
+func dualClickID(t *testing.T, view *headless.Session, id gfx.ID) {
 	t.Helper()
 	hit := dualHit(t, view, id)
 	if err := view.Click(hit.X+hit.Width/2, hit.Y+hit.Height/2); err != nil {
 		t.Fatal(err)
 	}
 }
-func dualFind(t *testing.T, view *headless.Session, w *sftpWindow, local bool) ui.ID {
+func dualFind(t *testing.T, view *headless.Session, w *sftpWindow, local bool) gfx.ID {
 	t.Helper()
 	folder := w.folder(local)
 	if len(folder.rows) > 0 {
@@ -260,7 +260,7 @@ func TestSFTPWindowHeaderMenuHasUniqueHitsAndNarrowTransfers(t *testing.T) {
 		t.Fatal(err)
 	}
 	dualClickID(t, view, sftpWindowMore[1])
-	seen := make(map[ui.ID]bool)
+	seen := make(map[gfx.ID]bool)
 	for _, hit := range view.Snapshot().Hits {
 		if hit.Block || hit.ID.IsZero() {
 			continue
@@ -270,7 +270,7 @@ func TestSFTPWindowHeaderMenuHasUniqueHitsAndNarrowTransfers(t *testing.T) {
 		}
 		seen[hit.ID] = true
 	}
-	for _, id := range []ui.ID{sftpWindowFilterToggle[1], hitSFTPWindowUpload, hitSFTPWindowDownload, sftpWindowNewFolder[1], hitSFTPNewLink} {
+	for _, id := range []gfx.ID{sftpWindowFilterToggle[1], hitSFTPWindowUpload, hitSFTPWindowDownload, sftpWindowNewFolder[1], hitSFTPNewLink} {
 		dualHit(t, view, id)
 	}
 	if err := view.Keys("escape"); err != nil {
@@ -307,7 +307,7 @@ func TestSFTPWindowFilterCaretKeepsPreciseScrollAndIME(t *testing.T) {
 		t.Fatalf("native preedit=%+v err=%v", next, err)
 	}
 	before := w.view.filterEditor.String()
-	w.key(ui.KeyEvent{Target: id, Key: ui.KeyEscape})
+	w.key(gfx.KeyEvent{Target: id, Key: gfx.KeyEscape})
 	if w.view.filterEditor.String() != before || !w.view.filterOpen {
 		t.Fatal("Escape destroyed composing text")
 	}
@@ -392,9 +392,9 @@ func BenchmarkSFTPWindowFilter(b *testing.B) {
 func TestSFTPWindowFilterShortcutUsesFocusedSideToolbar(t *testing.T) {
 	_, w, _, _, _ := dualSFTPFixture(t, 1)
 	for side := range 2 {
-		for _, id := range []ui.ID{sftpWindowRefresh[side], sftpWindowUp[side], sftpWindowActions[side].At(0)} {
+		for _, id := range []gfx.ID{sftpWindowRefresh[side], sftpWindowUp[side], sftpWindowActions[side].At(0)} {
 			w.activeLocal, w.view.local = side != 0, side != 0
-			got := w.shortcut(ui.KeyEvent{Target: id, Modifiers: keymap.Primary, Text: "f"})
+			got := w.shortcut(gfx.KeyEvent{Target: id, Modifiers: keymap.Primary, Text: "f"})
 			if !got.Handled || got.Focus != sftpWindowFilter[side] {
 				t.Fatalf("toolbar %v opened wrong side filter: %+v", id, got)
 			}
@@ -411,7 +411,7 @@ func TestSFTPPanelDefaultOrderingPreservesExistingListing(t *testing.T) {
 }
 
 func TestSFTPWindowNativeFindFromRemoteToolbarAfterTab(t *testing.T) {
-	for _, target := range []ui.ID{hitSFTPWindowUpload, hitSFTPWindowDownload, hitSFTPBookmarkList, hitSFTPBookmarkToggle} {
+	for _, target := range []gfx.ID{hitSFTPWindowUpload, hitSFTPWindowDownload, hitSFTPBookmarkList, hitSFTPBookmarkToggle} {
 		t.Run(tree.Text(target), func(t *testing.T) {
 			_, w, _, host, _ := dualSFTPFixture(t, 1)
 			view := host.windows[0].view
@@ -421,7 +421,7 @@ func TestSFTPWindowNativeFindFromRemoteToolbarAfterTab(t *testing.T) {
 				if steps >= 80 {
 					t.Fatal("remote control not keyboard reachable")
 				}
-				if err := view.Driver().Key(ui.KeyTab, 0); err != nil {
+				if err := view.Driver().Key(gfx.KeyTab, 0); err != nil {
 					t.Fatal(err)
 				}
 			}

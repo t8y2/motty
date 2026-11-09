@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -33,7 +33,7 @@ func (state *State) refreshSnippets() {
 // enterKeyLabel is the keycap of a snippet that presses Enter after it is sent.
 const enterKeyLabel = "↵"
 
-func (state *State) clickSnippetsPage(id ui.ID) bool {
+func (state *State) clickSnippetsPage(id gfx.ID) bool {
 	if state.activeSection != sectionSnippets || state.modal != modalNone {
 		return false
 	}
@@ -69,7 +69,7 @@ func (state *State) clickSnippetsPage(id ui.ID) bool {
 
 // paintSnippetsWorkspace is the Snippets page: the commands kept to send to a
 // terminal, with the shortcut of each, and the way to add, edit and remove them.
-func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	pal, m := state.pal, state.messages.Tools
 	form := &state.snippets
 	canAdd := len(form.list) < maxSnippets
@@ -88,12 +88,12 @@ func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	editWidth, editIcon := toolbarButtonLayout(canvas, m.SnippetEdit, 0, iconPencil, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, m.SnippetAdd, iconPlus, iconPlus, condensed)
 
-	var content, filter, emptyIcon, emptyAdd, remove, edit, send, add flex.Box
+	var content, filter, emptyIcon, emptyAdd, remove, edit, send, add ui.Box
 	f := form.layout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(flex.Start).Children(func() {
+		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
 			f.Column().Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-				f.Text(m.SnippetsTitle).FontSize(18).Weight(ui.WeightSemibold).Color(pal.text).Ellipsis()
+				f.Text(m.SnippetsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				f.Paragraph(m.SnippetsPageDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
 			remove = f.Slot().Size(removeWidth, toolbarHeight)
@@ -112,8 +112,8 @@ func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 			content = f.Slot().Grow(1).MarginSides(0, 0, 9, 0)
 		}
 		f.Divider().Background(pal.line)
-		f.Row().Height(50).PadSides(8, 0, 20, 0).Items(flex.Center).Children(func() {
-			f.Text(form.countText).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(pal.faint).Width(162)
+		f.Row().Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
+			f.Text(form.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
 			if hasSelection {
 				f.Text(form.list[form.selected].Name).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1).Ellipsis()
 			}
@@ -123,7 +123,7 @@ func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 
 	state.paintToolbarButton(canvas, hitSnippetRemove, remove.Rect().X, remove.Rect().Y, removeWidth, m.SnippetDelete, removeIcon, false, hasSelection, condensed)
 	state.paintToolbarButton(canvas, hitSnippetEdit, edit.Rect().X, edit.Rect().Y, editWidth, m.SnippetEdit, editIcon, false, hasSelection, condensed)
-	form.sendAt = ui.Point{X: send.Rect().X, Y: send.Rect().Y + toolbarHeight + 4}
+	form.sendAt = gfx.Point{X: send.Rect().X, Y: send.Rect().Y + toolbarHeight + 4}
 	state.paintToolbarButton(canvas, hitSnippetSend, send.Rect().X, send.Rect().Y, sendWidth, m.SnippetSend, sendIcon, false, hasSelection, condensed)
 	state.paintToolbarButton(canvas, hitSnippetAdd, add.Rect().X, add.Rect().Y, addWidth, m.SnippetAdd, addIcon, true, canAdd, condensed)
 
@@ -135,7 +135,7 @@ func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	// snippets that press it, so the commands of all rows start at the same place.
 	theme := state.Theme()
 	keyHeight := theme.Metrics.FontSizeS + 9
-	keyWidth := max(canvas.TextWidthWeight(enterKeyLabel, theme.Metrics.FontSizeS, ui.WeightMedium)+8, keyHeight)
+	keyWidth := max(canvas.TextWidthWeight(enterKeyLabel, theme.Metrics.FontSizeS, gfx.WeightMedium)+8, keyHeight)
 	manualOrder := form.sort.Direction == components.TableSortNone && form.filter.all() && len(form.list) > 1
 	nameInset := float32(0)
 	if manualOrder {
@@ -169,18 +169,18 @@ func (state *State) paintSnippetsWorkspace(canvas *ui.Canvas, bounds ui.Rect) {
 	}
 	for _, index := range form.visible {
 		rowID := hitSnippetRowList.At(index)
-		var cellRects [4]ui.Rect
+		var cellRects [4]gfx.Rect
 		row := table.RowLayout(rowID, form.list[index].cells[:], components.TableRowState{Selected: index == form.selected}, cellRects[:0])
 		if manualOrder && row.Bounds.Height > 0 {
 			grid.Item(hitSnippetHandles.At(index), form.list[index].Name, 0, index, row.Bounds,
-				ui.Rect{X: row.Bounds.X + 7, Y: row.Bounds.Y + (row.Bounds.Height-24)/2, Width: 24, Height: 24}, false)
+				gfx.Rect{X: row.Bounds.X + 7, Y: row.Bounds.Y + (row.Bounds.Height-24)/2, Width: 24, Height: 24}, false)
 		}
 		if clicked, ok := canvas.ClickedIn(hitSnippetRowList); ok && clicked == index && state.modal == modalNone {
 			form.selected = index
 		}
 		if form.list[index].Run && len(row.Cells) == len(cellRects) {
 			command := row.Cells[3]
-			components.Kbd(canvas, theme, ui.Rect{X: command.X + theme.Metrics.GapItem, Y: command.Y + (command.Height-keyHeight)/2, Height: keyHeight}, enterKeyLabel)
+			components.Kbd(canvas, theme, gfx.Rect{X: command.X + theme.Metrics.GapItem, Y: command.Y + (command.Height-keyHeight)/2, Height: keyHeight}, enterKeyLabel)
 		}
 		state.sendSnippetOn(canvas, rowID, index)
 		state.openSnippetMenuOn(canvas, rowID, index)

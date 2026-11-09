@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/reasoning"
 	"motty/internal/ai/store"
@@ -176,7 +176,7 @@ func TestAIReasoningPaintWithoutPanic(t *testing.T) {
 	_ = db.SetDefaultModel("p1", "gpt-4o")
 	state.reloadAI()
 
-	canvas := &ui.Canvas{}
+	canvas := &gfx.Canvas{}
 	defer func() {
 		if r := recover(); r != nil {
 			t.Fatalf("paint panicked with unsupported reasoning model: %v", r)
@@ -287,8 +287,8 @@ func TestAIModelReasoningManualOverride(t *testing.T) {
 	// 6. 验证渲染弹窗不发生 panic
 	state.Click(hitAISetModelReasoning.At(0))
 	state.Click(hitAISetReasoningEnable)
-	canvas := &ui.Canvas{}
-	state.paintAIDialogs(canvas, ui.Rect{Width: 800, Height: 600})
+	canvas := &gfx.Canvas{}
+	state.paintAIDialogs(canvas, gfx.Rect{Width: 800, Height: 600})
 	state.Click(hitAISetReasoningCancel)
 	if state.ai.cfg.dialog != aiDialogNone {
 		t.Fatalf("expected dialog to close after cancel")

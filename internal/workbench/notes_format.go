@@ -3,14 +3,14 @@ package workbench
 import (
 	"strings"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/workbench/icons"
 )
 
 var noteFormatLabels = []string{"H1", "B", "I", "`", "{ }", "•", "1.", "☑", "❞", "↗", "Table", "---"}
 
-func noteFormatIcon(i int) ui.Icon {
+func noteFormatIcon(i int) gfx.Icon {
 	switch i {
 	case 2:
 		return icons.Italic
@@ -19,7 +19,7 @@ func noteFormatIcon(i int) ui.Icon {
 	case 11:
 		return icons.Minus
 	}
-	return ui.Icon{}
+	return gfx.Icon{}
 }
 func (s *State) noteFormatName(i int) string {
 	en := []string{"Heading", "Bold", "Italic", "Inline code", "Code block", "Bullet list", "Numbered list", "Task list", "Quote", "Link", "Table", "Horizontal rule"}

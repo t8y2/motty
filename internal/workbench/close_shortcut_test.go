@@ -3,15 +3,15 @@ package workbench
 import (
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
 // commandW presses the close shortcut with the modifier this platform's defaults
 // use: Command on macOS, Control elsewhere.
-func commandW(state *State) ui.EventResult {
-	return state.Shortcut(ui.KeyEvent{Modifiers: keymap.Primary, Text: "w", Key: ui.Key('w')})
+func commandW(state *State) gfx.EventResult {
+	return state.Shortcut(gfx.KeyEvent{Modifiers: keymap.Primary, Text: "w", Key: gfx.Key('w')})
 }
 
 func TestCommandWClosesAConnectingTab(t *testing.T) {

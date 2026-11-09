@@ -6,15 +6,15 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestHeadlessSFTPMultiDeleteThroughContextMenu(t *testing.T) {
 	state, session, _, remote := openTestSFTP(t)
 	state.Click(hitSFTPEntryList.At(sftpRowIndex(t, session.files, "notes.txt")))
 	state.Click(hitSFTPEntryList.At(sftpRowIndex(t, session.files, "docs")))
-	state.sftpMenu = sftpMenu{open: true, session: session.ID, at: ui.Point{X: 400, Y: 300}}
+	state.sftpMenu = sftpMenu{open: true, session: session.ID, at: gfx.Point{X: 400, Y: 300}}
 	preview, err := headless.Open(app.Config{
 		Title: "selected files", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnResize: state.Resize,
@@ -23,7 +23,7 @@ func TestHeadlessSFTPMultiDeleteThroughContextMenu(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer preview.Close()
-	click := func(id ui.ID) {
+	click := func(id gfx.ID) {
 		t.Helper()
 		if err := preview.Rest(); err != nil {
 			t.Fatal(err)

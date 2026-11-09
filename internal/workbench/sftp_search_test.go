@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
 
@@ -87,8 +87,8 @@ func TestSFTPSearchFindsNamesInSubfoldersOverAChannelOfItsOwn(t *testing.T) {
 		t.Fatalf("status = %q, want %q", view.status, want)
 	}
 
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	toggle, ok := hitByID(&canvas, contextID(hitSFTPSearchToggle))
 	if !ok || toggle.Label != state.messages.Tools.FilesSearchSubfolders {
 		t.Fatalf("toggle hit = %+v, present %v", toggle, ok)
@@ -107,7 +107,7 @@ func TestSFTPSearchFindsNamesInSubfoldersOverAChannelOfItsOwn(t *testing.T) {
 
 	// A press on a result selects it, and only it: nothing of the folder is
 	// selected for the buttons and keys that act on a selection.
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 1, Target: contextID(hitSFTPEntryList.At(1))})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1, Target: contextID(hitSFTPEntryList.At(1))})
 	if search.selected != 1 || !search.rows[1].selected || selectedSFTPCount(view) != 0 {
 		t.Fatalf("selected result %d, folder selection %d", search.selected, selectedSFTPCount(view))
 	}
@@ -131,14 +131,14 @@ func TestSFTPSearchLeadsToAResultInItsFolder(t *testing.T) {
 	// does not for the folder's rows.
 	view.busy = true
 	target := contextID(hitSFTPEntryList.At(0))
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2, Target: target})
-	state.Key(ui.KeyEvent{Target: target, Key: ui.KeyEnter})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: target})
+	state.Key(gfx.KeyEvent{Target: target, Key: gfx.KeyEnter})
 	if view.path != "/home/test" || view.sftpFolder.search == nil || view.sftpFolder.filterEditor.String() != "v2" {
 		t.Fatalf("a busy server was navigated: path %q, query %q", view.path, view.sftpFolder.filterEditor.String())
 	}
 	view.busy = false
 
-	state.Key(ui.KeyEvent{Target: target, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: target, Key: gfx.KeyEnter})
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs/api" })
 	if view.sftpFolder.filterEditor.String() != "" || view.sftpFolder.search != nil {
 		t.Fatalf("the search stayed: query %q", view.sftpFolder.filterEditor.String())
@@ -156,7 +156,7 @@ func TestSFTPSearchLeadsToAFolderResultIntoThatFolder(t *testing.T) {
 	state.Click(hitSFTPSearchToggle)
 	replaceSFTPFilter(t, state, session, false, "api")
 	waitSearchDone(t, state, session, false)
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2, Target: contextID(hitSFTPEntryList.At(0))})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: contextID(hitSFTPEntryList.At(0))})
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs/api" })
 	if view.selected >= 0 && view.rows[view.selected].selected {
 		t.Fatalf("a folder result selected %q in the folder it opened", view.rows[view.selected].entry.Name)
@@ -177,7 +177,7 @@ func TestSFTPSearchRevealBelongsToItsNavigation(t *testing.T) {
 	remote.mu.Lock()
 	remote.unreadable = map[string]bool{"/home/test/docs/api": true}
 	remote.mu.Unlock()
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2, Target: contextID(hitSFTPEntryList.At(0))})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: contextID(hitSFTPEntryList.At(0))})
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.errorText != "" })
 	if view.path != "/home/test" {
 		t.Fatalf("the failed navigation left %q", view.path)
@@ -244,7 +244,7 @@ func TestSFTPSearchOnThisComputerLeavesHiddenFoldersAloneUntilShown(t *testing.T
 
 	state.Click(hitSFTPSearchToggle)
 	waitSearchDone(t, state, session, true)
-	state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2, Target: contextID(hitSFTPEntryList.At(1))})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: contextID(hitSFTPEntryList.At(1))})
 	folder := &view.lfolder
 	if want := filepath.Join(dir, "photos", "2024"); folder.path != want || folder.selected < 0 || folder.rows[folder.selected].entry.Name != "beach.jpg" {
 		t.Fatalf("the local result led to %q with rows %v, selected %d", folder.path, rowNames(folder.rows), folder.selected)

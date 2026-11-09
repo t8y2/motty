@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -41,7 +41,7 @@ func TestHostGroupPickerNativeQuerySelectionAndDismissal(t *testing.T) {
 				if err := view.Rest(); err != nil {
 					t.Fatal(err)
 				}
-				click := func(id ui.ID) {
+				click := func(id gfx.ID) {
 					t.Helper()
 					for _, hit := range view.Snapshot().Hits {
 						if hit.ID == id {

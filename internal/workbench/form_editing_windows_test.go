@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // Use the same generic text provider as the desktop entry point. No field-specific
@@ -41,10 +41,10 @@ func formEditingDriver(t *testing.T, state *State) *app.Driver {
 	return driver
 }
 
-func focusFormField(t *testing.T, driver *app.Driver, id ui.ID) {
+func focusFormField(t *testing.T, driver *app.Driver, id gfx.ID) {
 	t.Helper()
 	for _, hit := range driver.Snapshot().Hits {
-		if hit.ID != id || hit.IsLabel || (hit.Role != ui.RoleTextField && hit.Role != ui.RoleCombobox) {
+		if hit.ID != id || hit.IsLabel || (hit.Role != gfx.RoleTextField && hit.Role != gfx.RoleCombobox) {
 			continue
 		}
 		if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
@@ -58,7 +58,7 @@ func focusFormField(t *testing.T, driver *app.Driver, id ui.ID) {
 	t.Fatalf("field %s was not painted", tree.Text(id))
 }
 
-func formChord(t *testing.T, driver *app.Driver, mods ui.Modifiers, key rune) {
+func formChord(t *testing.T, driver *app.Driver, mods gfx.Modifiers, key rune) {
 	t.Helper()
 	if handled, err := driver.ShortcutChord(mods, key); err != nil || !handled {
 		t.Fatalf("%c handled=%v err=%v", key, handled, err)
@@ -79,10 +79,10 @@ func TestWindowsHostFormsUseFrameworkEditing(t *testing.T) {
 			}
 			state.editor.advancedOpen, state.editor.algoMode = true, algoCustom
 			driver := formEditingDriver(t, state)
-			for _, id := range []ui.ID{hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPort, hitDialogGroup, hitDialogTags, hitDialogAlgorithms, hitDialogOTP} {
+			for _, id := range []gfx.ID{hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPort, hitDialogGroup, hitDialogTags, hitDialogAlgorithms, hitDialogOTP} {
 				focusFormField(t, driver, id)
 				editor := state.EditorFor(id)
-				formChord(t, driver, ui.ModifierControl, 'a')
+				formChord(t, driver, gfx.ModifierControl, 'a')
 				if err := driver.Type("前旧值后"); err != nil {
 					t.Fatal(err)
 				}
@@ -90,32 +90,32 @@ func TestWindowsHostFormsUseFrameworkEditing(t *testing.T) {
 					t.Fatal(err)
 				}
 				driver.SetClipboard("中文主机")
-				formChord(t, driver, ui.ModifierControl, 'v')
+				formChord(t, driver, gfx.ModifierControl, 'v')
 				if editor.String() != "前中文主机后" {
 					t.Fatalf("%s paste=%q", tree.Text(id), editor.String())
 				}
-				formChord(t, driver, ui.ModifierControl, 'z')
+				formChord(t, driver, gfx.ModifierControl, 'z')
 				if editor.String() != "前旧值后" {
 					t.Fatal("undo did not restore selected text")
 				}
-				formChord(t, driver, ui.ModifierControl, 'y')
-				formChord(t, driver, ui.ModifierControl, 'a')
-				formChord(t, driver, ui.ModifierControl, 'c')
+				formChord(t, driver, gfx.ModifierControl, 'y')
+				formChord(t, driver, gfx.ModifierControl, 'a')
+				formChord(t, driver, gfx.ModifierControl, 'c')
 				if driver.Clipboard() != "前中文主机后" {
 					t.Fatal("copy lost Unicode selection")
 				}
-				formChord(t, driver, ui.ModifierControl, 'x')
+				formChord(t, driver, gfx.ModifierControl, 'x')
 				if editor.String() != "" {
 					t.Fatal("cut did not remove selection")
 				}
-				formChord(t, driver, ui.ModifierControl, 'z')
+				formChord(t, driver, gfx.ModifierControl, 'z')
 				if editor.String() != "前中文主机后" {
 					t.Fatal("cut was not undoable")
 				}
 				// Searchable selectors own their popup until it is dismissed;
 				// leave it before testing editing in the next independent field.
 				if id == hitDialogGroup || id == hitDialogTags {
-					if err := driver.Key(ui.KeyEscape, 0); err != nil {
+					if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -130,23 +130,23 @@ func TestWindowsProviderFormUsesFrameworkClipboard(t *testing.T) {
 	state.Click(hitAISetProviderAdd)
 	driver := formEditingDriver(t, state)
 	for _, tc := range []struct {
-		id    ui.ID
+		id    gfx.ID
 		value string
 	}{
 		{hitAISetFormName, "测试服务商"}, {hitAISetFormURL, "https://example.com/v1"}, {hitAISetFormModelsURL, "https://example.com/models/v1"}, {hitAISetFormKey, "sk-test-key"},
 	} {
 		focusFormField(t, driver, tc.id)
-		formChord(t, driver, ui.ModifierControl, 'a')
+		formChord(t, driver, gfx.ModifierControl, 'a')
 		driver.SetClipboard(tc.value)
-		formChord(t, driver, ui.ModifierControl, 'v')
+		formChord(t, driver, gfx.ModifierControl, 'v')
 		if got := state.EditorFor(tc.id).String(); got != tc.value {
 			t.Fatalf("provider field %s=%q", tree.Text(tc.id), got)
 		}
-		formChord(t, driver, ui.ModifierControl, 'a')
+		formChord(t, driver, gfx.ModifierControl, 'a')
 		driver.SetClipboard("previous clipboard")
-		formChord(t, driver, ui.ModifierControl, 'c')
+		formChord(t, driver, gfx.ModifierControl, 'c')
 		if tc.id == hitAISetFormKey {
-			formChord(t, driver, ui.ModifierControl, 'x')
+			formChord(t, driver, gfx.ModifierControl, 'x')
 			if driver.Clipboard() != "previous clipboard" || state.EditorFor(tc.id).String() != tc.value {
 				t.Fatal("secure field exported or cut its key")
 			}
@@ -162,19 +162,19 @@ func TestWindowsFormNavigationSingleLineAndFocus(t *testing.T) {
 	driver := formEditingDriver(t, state)
 	focusFormField(t, driver, hitDialogAddress)
 	driver.SetClipboard("\r\nhost.example.com\r\n")
-	formChord(t, driver, ui.ModifierControl, 'v')
+	formChord(t, driver, gfx.ModifierControl, 'v')
 	editor := state.EditorFor(hitDialogAddress)
 	if editor.String() != "host.example.com" {
 		t.Fatalf("single line=%q", editor.String())
 	}
 	for _, tc := range []struct {
-		key   ui.Key
-		mods  ui.Modifiers
+		key   gfx.Key
+		mods  gfx.Modifiers
 		caret int
 	}{
-		{ui.KeyHome, 0, 0}, {ui.KeyEnd, ui.ModifierShift, 16},
-		{ui.KeyEnd, 0, 16}, {ui.KeyLeft, ui.ModifierControl, 13},
-		{ui.KeyLeft, ui.ModifierControl | ui.ModifierShift, 12},
+		{gfx.KeyHome, 0, 0}, {gfx.KeyEnd, gfx.ModifierShift, 16},
+		{gfx.KeyEnd, 0, 16}, {gfx.KeyLeft, gfx.ModifierControl, 13},
+		{gfx.KeyLeft, gfx.ModifierControl | gfx.ModifierShift, 12},
 	} {
 		if err := driver.Key(tc.key, tc.mods); err != nil {
 			t.Fatal(err)
@@ -183,26 +183,26 @@ func TestWindowsFormNavigationSingleLineAndFocus(t *testing.T) {
 			t.Fatalf("key %v caret=%d", tc.key, editor.Caret())
 		}
 	}
-	formChord(t, driver, ui.ModifierControl, 'a')
+	formChord(t, driver, gfx.ModifierControl, 'a')
 	driver.SetClipboard("")
-	formChord(t, driver, ui.ModifierControl, 'v')
+	formChord(t, driver, gfx.ModifierControl, 'v')
 	if editor.String() != "host.example.com" {
 		t.Fatal("empty clipboard deleted selection")
 	}
 	initial := driver.Snapshot().Focused
-	if err := driver.Key(ui.KeyTab, 0); err != nil {
+	if err := driver.Key(gfx.KeyTab, 0); err != nil {
 		t.Fatal(err)
 	}
 	if driver.Snapshot().Focused == initial {
 		t.Fatal("Tab did not move focus")
 	}
-	if err := driver.Key(ui.KeyTab, ui.ModifierShift); err != nil {
+	if err := driver.Key(gfx.KeyTab, gfx.ModifierShift); err != nil {
 		t.Fatal(err)
 	}
 	if driver.Snapshot().Focused != initial {
 		t.Fatal("Shift+Tab did not return focus")
 	}
-	if err := driver.Key(ui.KeyEscape, 0); err != nil {
+	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if state.modal != modalNone {
@@ -218,7 +218,7 @@ func TestWindowsFormPasteDoesNotReachActiveTerminal(t *testing.T) {
 	driver := formEditingDriver(t, state)
 	focusFormField(t, driver, hitAISetFormName)
 	driver.SetClipboard("provider name")
-	formChord(t, driver, ui.ModifierControl, 'v')
+	formChord(t, driver, gfx.ModifierControl, 'v')
 	if shell.typed() != "" || state.ai.cfg.name.String() != "provider name" {
 		t.Fatalf("terminal=%q field=%q", shell.typed(), state.ai.cfg.name.String())
 	}

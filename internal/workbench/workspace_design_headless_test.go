@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -125,7 +125,7 @@ func TestWorkspacePaneToolsThroughWindowDriver(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer view.Close()
-	click := func(id ui.ID) {
+	click := func(id gfx.ID) {
 		t.Helper()
 		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 		if !ok || hit.Disabled || hit.Block {
@@ -140,7 +140,7 @@ func TestWorkspacePaneToolsThroughWindowDriver(t *testing.T) {
 	if state.workspaceHeaderMenu != workspaceHeaderMenuTools {
 		t.Fatal("embedded terminal menu did not open")
 	}
-	if err := view.Driver().Key(ui.KeyEscape, 0); err != nil {
+	if err := view.Driver().Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if state.workspaceHeaderMenu != workspaceHeaderMenuNone || view.Snapshot().Focused != state.activeTerminalFocusHit() {

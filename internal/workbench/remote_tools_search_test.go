@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
 )
 
@@ -92,7 +92,7 @@ func TestRemoteSearchNativeFocusTypingAndEscape(t *testing.T) {
 	if len(state.remote.rows) != 1 || state.remote.rows[0].cells[0] != "3000" {
 		t.Fatal("native text input did not filter process rows")
 	}
-	if err := driver.Key(ui.KeyEscape, 0); err != nil {
+	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}
 	if state.modal != modalRemoteTools || len(state.remote.rows) != 3 {
@@ -111,7 +111,7 @@ func TestRemoteSearchNativeFocusTypingAndEscape(t *testing.T) {
 func TestRemoteSearchEscapeClearsQueryAfterResultsTakeFocus(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	replaceRemoteQuery(t, state, "nginx")
-	result := state.remoteSearchKey(ui.KeyEvent{Target: hitRemoteRowList.At(0), Key: ui.KeyEscape})
+	result := state.remoteSearchKey(gfx.KeyEvent{Target: hitRemoteRowList.At(0), Key: gfx.KeyEscape})
 	if !result.Handled || state.remote.searches[remoteProcesses].editor.String() != "" || len(state.remote.rows) != 3 {
 		t.Fatal("Escape from the result list did not clear its query before closing")
 	}
@@ -145,8 +145,8 @@ func TestRemoteSearchNativeUtilityWindowUsesItsOwnInput(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer driver.Close()
-		state.shortcuts.bind(shortcutFind, keymap.Chord{Key: ui.KeyF8})
-		if err := driver.Key(ui.KeyF8, 0); err != nil {
+		state.shortcuts.bind(shortcutFind, keymap.Chord{Key: gfx.KeyF8})
+		if err := driver.Key(gfx.KeyF8, 0); err != nil {
 			t.Fatal(err)
 		}
 		if driver.Snapshot().Focused != hitRemoteSearch {
@@ -163,7 +163,7 @@ func TestRemoteSearchNativeUtilityWindowUsesItsOwnInput(t *testing.T) {
 		if len(w.ui.remote.rows) != 1 || w.ui.remote.rows[0].cells[0] != "3000" || state.modal != modalNone {
 			t.Fatal("native utility search was routed to the workbench or lost its source")
 		}
-		if err := driver.Key(ui.KeyEscape, 0); err != nil {
+		if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 			t.Fatal(err)
 		}
 		if w.closed || len(w.ui.remote.rows) != 3 {

@@ -5,9 +5,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/text/find"
-	"github.com/vivaui/viva/ui"
 )
 
 var (
@@ -29,7 +29,7 @@ type notePreviewLayout struct {
 	ready         bool
 	source        string
 	width, height float32
-	face          ui.MonoFace
+	face          gfx.MonoFace
 }
 
 func (s *State) configureNoteEditor(e *text.Editor) {
@@ -64,7 +64,7 @@ func (s *State) openNoteFind(n *notesUI) {
 	n.editing.find.Update(n.body.String())
 }
 
-func (s *State) clickNoteFindActions(id ui.ID) bool {
+func (s *State) clickNoteFindActions(id gfx.ID) bool {
 	n := s.noteContent()
 	switch id {
 	case hitNoteFindNext, hitNoteFindPrevious:
@@ -80,20 +80,20 @@ func (s *State) clickNoteFindActions(id ui.ID) bool {
 
 // Run before native text shortcuts, and from the ordinary key handler for Tab
 // and visual-row navigation. Commands act on the shared draft's active view.
-func (s *State) noteEditingKey(e ui.KeyEvent) ui.EventResult {
+func (s *State) noteEditingKey(e gfx.KeyEvent) gfx.EventResult {
 	n := s.noteContent()
 	if !s.notesVisible() || s.noteSidebarVisible() || n.selected == "" || n.view.menu != "" || n.view.popup != "" || n.confirm != "" || e.Release {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	inFind := e.Target == hitNoteFind && n.editing.findOpen
 	command, hasCommand := components.FindBarCommandForKey(e, inFind)
 	toggle := hasCommand && command == components.FindBarOpen && tree.Within(e.Target.Scope(), notesHits)
 	findControl := n.editing.findOpen && (inFind || e.Target == hitNoteFindNext || e.Target == hitNoteFindPrevious || e.Target == hitNoteFindClose)
 	if e.Target != hitNoteBody && e.Target != hitNotePreviewText && !findControl && !toggle {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
-	if e.Key == ui.KeyEscape && n.editing.findOpen {
+	handled := gfx.EventResult{Handled: true, Repaint: true}
+	if e.Key == gfx.KeyEscape && n.editing.findOpen {
 		n.editing.findOpen, n.editing.findFocus = false, false
 		handled.Focus = hitNoteBody
 		return handled
@@ -112,27 +112,27 @@ func (s *State) noteEditingKey(e ui.KeyEvent) ui.EventResult {
 			}
 		case components.FindBarNext, components.FindBarPrevious:
 			if !n.editing.findOpen {
-				return ui.EventResult{}
+				return gfx.EventResult{}
 			}
 			s.stepNoteFind(n, command == components.FindBarNext)
 		case components.FindBarCloseCommand:
 			if !n.editing.findOpen {
-				return ui.EventResult{}
+				return gfx.EventResult{}
 			}
 			n.editing.findOpen, n.editing.findFocus = false, false
 			handled.Focus = hitNoteBody
 		default:
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 		return handled
 	}
 	if e.Target != hitNoteBody || !s.activateNoteView(n) || n.composing() {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
 	s.configureNoteEditor(&n.body)
 	if command, ok := components.CodeEditorCommandForKey(e); ok {
 		if !command.Apply(&n.body) {
-			return ui.EventResult{}
+			return gfx.EventResult{}
 		}
 		n.code.Reveal(n.body.ByteOffset(n.body.Caret()))
 		n.captureNoteSelection()
@@ -146,10 +146,10 @@ func (s *State) noteEditingKey(e ui.KeyEvent) ui.EventResult {
 		n.captureNoteSelection()
 		return handled
 	}
-	return ui.EventResult{}
+	return gfx.EventResult{}
 }
 
-func (s *State) paintNoteFind(c *ui.Canvas, n *notesUI, b ui.Rect) ui.Rect {
+func (s *State) paintNoteFind(c *gfx.Canvas, n *notesUI, b gfx.Rect) gfx.Rect {
 	if !n.editing.findOpen {
 		return b
 	}
@@ -161,7 +161,7 @@ func (s *State) paintNoteFind(c *ui.Canvas, n *notesUI, b ui.Rect) ui.Rect {
 		status = fmt.Sprintf("%d / %d", current, total)
 	}
 	height := components.FindBarHeight(s.Theme(), false)
-	components.PaintFindBar(c, s.Theme(), ui.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: height}, components.FindBarSnapshot{
+	components.PaintFindBar(c, s.Theme(), gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: height}, components.FindBarSnapshot{
 		Find:       editorField(c, hitNoteFind, s.noteText("Find in note", "在当前笔记中查找"), s.noteText("Find in note", "在当前笔记中查找"), &f.Query, false),
 		PreviousID: hitNoteFindPrevious, NextID: hitNoteFindNext, CloseID: hitNoteFindClose,
 		Status: status, NoResults: !f.Empty() && total == 0, Disabled: total == 0,

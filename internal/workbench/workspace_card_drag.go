@@ -3,23 +3,23 @@ package workbench
 import (
 	"slices"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
-func (state *State) workspaceCardsPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) workspaceCardsPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	drag := &state.workspaceCardDrag
 	switch event.Kind {
-	case ui.PointerDown:
+	case gfx.PointerDown:
 		state.startWorkspaceCardDrag(event)
-	case ui.PointerMove:
+	case gfx.PointerMove:
 		return state.trackWorkspaceCardDrag(event)
 
-	case ui.PointerUp:
+	case gfx.PointerUp:
 		finished := *drag
 		*drag = workspaceCardDrag{}
 		if finished.active {
-			at := ui.Point{X: event.X, Y: event.Y}
+			at := gfx.Point{X: event.X, Y: event.Y}
 			target, zone := state.workspaceCardDropIndex(finished.region, at)
 			if slices.Equal(finished.order, state.workspaceItemsForRegion(finished.region)) {
 				if zone == zoneSwap {
@@ -28,47 +28,47 @@ func (state *State) workspaceCardsPointer(event ui.PointerEvent) (ui.EventResult
 					state.dockWorkspaceCard(finished.region, target, zone)
 				}
 			}
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-	case ui.PointerExit:
+	case gfx.PointerExit:
 		*drag = workspaceCardDrag{}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) startWorkspaceCardDrag(event ui.PointerEvent) {
+func (state *State) startWorkspaceCardDrag(event gfx.PointerEvent) {
 	drag := &state.workspaceCardDrag
 
 	*drag = workspaceCardDrag{}
-	if event.Button != ui.PointerButtonPrimary && event.Button != ui.PointerButtonNone {
+	if event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone {
 		return
 	}
 	for _, region := range state.workspaceCardRegions {
 		if region.id == event.Target {
-			*drag = workspaceCardDrag{pressed: true, region: region, start: ui.Point{X: event.X, Y: event.Y}, target: -1, order: slices.Clone(state.workspaceItemsForRegion(region))}
+			*drag = workspaceCardDrag{pressed: true, region: region, start: gfx.Point{X: event.X, Y: event.Y}, target: -1, order: slices.Clone(state.workspaceItemsForRegion(region))}
 			break
 		}
 	}
 }
 
-func (state *State) trackWorkspaceCardDrag(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) trackWorkspaceCardDrag(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	drag := &state.workspaceCardDrag
 
 	if !drag.pressed {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	dx, dy := event.X-drag.start.X, event.Y-drag.start.Y
 	if !drag.active && dx*dx+dy*dy < tabDragThreshold*tabDragThreshold {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	drag.active, drag.at = true, ui.Point{X: event.X, Y: event.Y}
+	drag.active, drag.at = true, gfx.Point{X: event.X, Y: event.Y}
 	drag.target, drag.zone = state.workspaceCardDropIndex(drag.region, drag.at)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 // workspaceCardDropIndex is the card under at and the part of it. A card is not
 // docked beside itself, so over its own edges the drop is a plain swap.
-func (state *State) workspaceCardDropIndex(source workspaceCardRegion, at ui.Point) (int, workspaceCardZone) {
+func (state *State) workspaceCardDropIndex(source workspaceCardRegion, at gfx.Point) (int, workspaceCardZone) {
 	for _, region := range state.workspaceCardRegions {
 		if region.view == source.view && region.template == source.template &&
 			pointInRect(at.X, at.Y, region.bounds) && pointInRect(at.X, at.Y, region.viewport) {
@@ -116,36 +116,36 @@ func (state *State) moveWorkspaceCard(source workspaceCardRegion, target int) {
 	}
 }
 
-func (state *State) workspaceCardsKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) workspaceCardsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if event.Release {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape && state.workspaceCardDrag.pressed {
+	if event.Key == gfx.KeyEscape && state.workspaceCardDrag.pressed {
 		state.workspaceCardDrag = workspaceCardDrag{}
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if event.Modifiers != ui.ModifierAlt {
-		return ui.EventResult{}, false
+	if event.Modifiers != gfx.ModifierAlt {
+		return gfx.EventResult{}, false
 	}
 	for _, region := range state.workspaceCardRegions {
 		if region.id == event.Target {
 			return state.workspaceCardKey(event, region)
 		}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) workspaceCardKey(event ui.KeyEvent, source workspaceCardRegion) (ui.EventResult, bool) {
+func (state *State) workspaceCardKey(event gfx.KeyEvent, source workspaceCardRegion) (gfx.EventResult, bool) {
 	spec := state.workspaceCardLayout(source)
 	delta, ok := workspaceCardKeyDelta(event.Key, spec.GridColumns())
 	if !ok {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 
 	target := source.index + delta
 	count := len(state.workspaceItemsForRegion(source))
 	if target < 0 || target >= count {
-		return ui.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}, true
 	}
 	state.moveWorkspaceCard(source, target)
 	state.revealWorkspaceCard(source, target, count, spec)
@@ -157,7 +157,7 @@ func (state *State) workspaceCardKey(event ui.KeyEvent, source workspaceCardRegi
 	case workspaceCardsDraft:
 		focus = hitWorkspaceDraftCards.At(target)
 	}
-	return ui.EventResult{Handled: true, Repaint: true, Focus: focus, FocusVisible: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: focus, FocusVisible: true}, true
 }
 
 func (state *State) workspaceCardLayout(region workspaceCardRegion) layoutcore.LayoutSpec {
@@ -182,7 +182,7 @@ func (state *State) revealWorkspaceCard(source workspaceCardRegion, target, coun
 	cells := workspaceLayoutCells(count, spec)
 	height := workspaceCardContentHeight(count, spec)
 	origin := source.bounds.Y - 4 - cells[source.index].Y*height
-	box := ui.Rect{Y: origin + cells[target].Y*height + 4, Height: workspaceCardHeight - 8}
+	box := gfx.Rect{Y: origin + cells[target].Y*height + 4, Height: workspaceCardHeight - 8}
 	delta := float32(0)
 	if box.Y < source.viewport.Y {
 		delta = box.Y - source.viewport.Y
@@ -200,15 +200,15 @@ func (state *State) revealWorkspaceCard(source workspaceCardRegion, target, coun
 	}
 }
 
-func workspaceCardKeyDelta(key ui.Key, columns uint8) (int, bool) {
+func workspaceCardKeyDelta(key gfx.Key, columns uint8) (int, bool) {
 	switch key {
-	case ui.KeyLeft:
+	case gfx.KeyLeft:
 		return -1, true
-	case ui.KeyRight:
+	case gfx.KeyRight:
 		return 1, true
-	case ui.KeyUp:
+	case gfx.KeyUp:
 		return -int(columns), true
-	case ui.KeyDown:
+	case gfx.KeyDown:
 		return int(columns), true
 	default:
 		return 0, false

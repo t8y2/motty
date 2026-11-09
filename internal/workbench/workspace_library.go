@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -44,7 +44,7 @@ const (
 // clickWorkspaceLibrary expands a template, opens its action, or creates a new
 // workspace.
 // It reports whether id belonged to the library.
-func (state *State) clickWorkspaceLibrary(id ui.ID) bool {
+func (state *State) clickWorkspaceLibrary(id gfx.ID) bool {
 	if state.activeSection != sectionWorkspaces || state.modal != modalNone {
 		return false
 	}
@@ -80,53 +80,53 @@ func (state *State) clickWorkspaceLibrary(id ui.ID) bool {
 // workspaceLibraryPointer opens the template hit by the first press of a
 // double click, before the row's single-click expansion state can replace the
 // pointer target.
-func (state *State) workspaceLibraryPointer(event ui.PointerEvent) (ui.EventResult, bool) {
+func (state *State) workspaceLibraryPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if state.activeSection != sectionWorkspaces || state.modal != modalNone ||
-		event.Kind != ui.PointerDown || event.Button != ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+		event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	if event.ClickCount > 1 {
 		templateID := state.workspaceLibraryPointerID
 		state.workspaceLibraryPointerID = ""
 		if templateID == "" || event.Target.Scope() != hitWorkspaceTemplateRowList {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		state.selectedWorkspaceTemplateID = templateID
 		state.applySelectedWorkspaceTemplate()
-		return ui.EventResult{Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	state.workspaceLibraryPointerID = ""
 	if index, ok := event.Target.In(hitWorkspaceTemplateRowList); ok &&
 		index >= 0 && index < len(state.templates) {
 		state.workspaceLibraryPointerID = state.templates[index].ID
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // workspaceLibraryKey opens the selected template from a row or the page while
 // the library is showing. The library owns Enter only when no other editor or
 // popup has already claimed it.
-func (state *State) workspaceLibraryKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) workspaceLibraryKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.activeSection != sectionWorkspaces || state.modal != modalNone || event.Release ||
-		event.Key != ui.KeyEnter || event.Repeat || event.Modifiers != 0 {
-		return ui.EventResult{}, false
+		event.Key != gfx.KeyEnter || event.Repeat || event.Modifiers != 0 {
+		return gfx.EventResult{}, false
 	}
-	if event.Target != (ui.ID{}) && event.Target.Scope() != hitWorkspaceTemplateRowList {
-		return ui.EventResult{}, false
+	if event.Target != (gfx.ID{}) && event.Target.Scope() != hitWorkspaceTemplateRowList {
+		return gfx.EventResult{}, false
 	}
 	index := state.selectedWorkspaceTemplateIndex()
 	if index < 0 {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Target != (ui.ID{}) {
+	if event.Target != (gfx.ID{}) {
 		row, ok := event.Target.In(hitWorkspaceTemplateRowList)
 		if !ok || row < 0 || row >= len(state.templates) {
-			return ui.EventResult{}, false
+			return gfx.EventResult{}, false
 		}
 		state.selectedWorkspaceTemplateID = state.templates[row].ID
 	}
 	state.applySelectedWorkspaceTemplate()
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 // applySelectedWorkspaceTemplate resolves the saved host references through the
@@ -191,12 +191,12 @@ func (state *State) expandedWorkspaceTemplateIndex() int {
 
 // paintWorkspaceLibrary lists templates as openable catalog rows. The sidebar
 // deliberately carries no template count.
-func (state *State) paintWorkspaceLibrary(canvas *ui.Canvas, bounds ui.Rect) {
+func (state *State) paintWorkspaceLibrary(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m, pal := state.messages, state.pal
 	newWidth, newIcon := toolbarButtonLayout(canvas, m.WorkspaceNew, iconPlus, iconPlus, bounds.Width < 520)
 
-	var content, emptyIcon, emptyButton flex.Box
-	var create flex.Box
+	var content, emptyIcon, emptyButton ui.Box
+	var create ui.Box
 	f := state.workspaceLibraryLayout.Begin(canvas, state.Theme(), bounds)
 	padding := float32(22)
 	if bounds.Width < 340 {
@@ -204,14 +204,14 @@ func (state *State) paintWorkspaceLibrary(canvas *ui.Canvas, bounds ui.Rect) {
 	}
 	f.Column().Fill().PadSides(18, padding, 0, padding).Children(func() {
 		if bounds.Width < 520 {
-			f.Text(m.WorkspaceLibraryTitle).FontSize(20).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(28).Ellipsis()
+			f.Text(m.WorkspaceLibraryTitle).FontSize(20).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Ellipsis()
 			f.Row().Gap(8).MarginSides(12, 0, 20, 0).Children(func() {
 				create = f.Slot().Size(newWidth, toolbarHeight)
 			})
 		} else {
-			f.Row().MinHeight(74).Gap(10).MarginSides(0, 0, 14, 0).Items(flex.Start).Children(func() {
+			f.Row().MinHeight(74).Gap(10).MarginSides(0, 0, 14, 0).Items(ui.Start).Children(func() {
 				f.Column().Grow(1).Gap(6).Children(func() {
-					f.Text(m.WorkspaceLibraryTitle).FontSize(20).Weight(ui.WeightSemibold).Color(pal.text).LineHeight(28).Ellipsis()
+					f.Text(m.WorkspaceLibraryTitle).FontSize(20).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Ellipsis()
 					f.Paragraph(m.WorkspaceLibraryDescription, 2).FontSize(12).LineHeight(19).Color(pal.muted)
 				})
 				create = f.Slot().Size(newWidth, toolbarHeight)
@@ -240,22 +240,22 @@ func (state *State) paintWorkspaceLibrary(canvas *ui.Canvas, bounds ui.Rect) {
 type workspaceLibraryRow struct {
 	index    int
 	expanded bool
-	bounds   ui.Rect
+	bounds   gfx.Rect
 }
 
-func (state *State) paintWorkspaceLibraryRows(canvas *ui.Canvas, bounds ui.Rect, expandedIndex int) {
+func (state *State) paintWorkspaceLibraryRows(canvas *gfx.Canvas, bounds gfx.Rect, expandedIndex int) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
 	contentWidth := max(0, bounds.Width-workspaceLibraryScrollbarReserve)
 	rows, contentHeight := state.workspaceLibraryRowLayout(contentWidth, expandedIndex)
-	scroll := components.BeginScrollArea(canvas, state.Theme(), bounds, ui.Size{
+	scroll := components.BeginScrollArea(canvas, state.Theme(), bounds, gfx.Size{
 		Width: contentWidth, Height: contentHeight,
 	}).
 		Offset(0, state.workspaceLibraryScroll).
 		ReserveScrollbars().
 		Viewport(hitWorkspaceLibraryScroll, state.messages.WorkspaceLibraryTitle).
-		VerticalScrollbar(ui.ID{}, "", "")
+		VerticalScrollbar(gfx.ID{}, "", "")
 	geometry := scroll.BeginContent()
 	state.workspaceLibraryScroll = geometry.OffsetY
 	state.workspaceLibraryBounds = bounds
@@ -288,7 +288,7 @@ func (state *State) workspaceLibraryRowLayout(width float32, expandedIndex int) 
 		height := workspaceLibraryRowHeight(template, width, expanded)
 		rows = append(rows, workspaceLibraryRow{
 			index: index, expanded: expanded,
-			bounds: ui.Rect{
+			bounds: gfx.Rect{
 				X: 0, Y: y, Width: width, Height: height,
 			},
 		})
@@ -310,7 +310,7 @@ func workspaceLibraryRowHeight(template WorkspaceTemplate, width float32, expand
 	return workspaceLibraryHeaderHeight + workspaceLibraryLayoutHeight(width) + workspaceCardContentHeight(len(template.HostIDs), template.Layout) + workspaceLibraryBottomInset
 }
 
-func (state *State) paintWorkspaceLibraryRow(canvas *ui.Canvas, bounds ui.Rect, index int,
+func (state *State) paintWorkspaceLibraryRow(canvas *gfx.Canvas, bounds gfx.Rect, index int,
 	template WorkspaceTemplate, expanded bool) {
 	pal, m := state.pal, state.messages
 	rowID := hitWorkspaceTemplateRowList.At(index)
@@ -351,8 +351,8 @@ func (state *State) paintWorkspaceLibraryRow(canvas *ui.Canvas, bounds ui.Rect, 
 	if len(hostLabels) > 0 {
 		label += ", " + strings.Join(hostLabels, ", ")
 	}
-	canvas.HitWithOptions(rowID, headerBounds, label, ui.HitOptions{
-		Role: ui.RoleButton, Hint: m.WorkspaceOpenHint,
+	canvas.HitWithOptions(rowID, headerBounds, label, gfx.HitOptions{
+		Role: gfx.RoleButton, Hint: m.WorkspaceOpenHint,
 		Selected: expanded, Expanded: expanded, Expandable: true,
 	})
 
@@ -364,33 +364,33 @@ func (state *State) paintWorkspaceLibraryRow(canvas *ui.Canvas, bounds ui.Rect, 
 	if expanded {
 		target = float32(math.Pi)
 	}
-	transform := ui.IconTransform{Rotate: canvas.Animate(rowID, 0, target, ui.Motion{Duration: 160 * time.Millisecond, Easing: ui.EaseOut})}
-	canvas.DrawIconTransformed(lucideIcons[iconChevronDown], ui.Rect{
+	transform := gfx.IconTransform{Rotate: canvas.Animate(rowID, 0, target, gfx.Motion{Duration: 160 * time.Millisecond, Easing: gfx.EaseOut})}
+	canvas.DrawIconTransformed(lucideIcons[iconChevronDown], gfx.Rect{
 		X: bounds.X + 16, Y: bounds.Y + 30, Width: 16, Height: 16,
 	}, chevronColor, transform)
 
-	openWidth := components.BeginButton(canvas, state.Theme(), ui.ID{}, ui.Rect{}).Small().WithIcon(lucideIcons[iconPlay]).SizeToFit(m.WorkspaceEnter).BoundsWidth()
+	openWidth := components.BeginButton(canvas, state.Theme(), gfx.ID{}, gfx.Rect{}).Small().WithIcon(lucideIcons[iconPlay]).SizeToFit(m.WorkspaceEnter).BoundsWidth()
 	compact := bounds.Width < 340
 	if compact {
 		openWidth = 32
 	}
-	moreBounds := ui.Rect{X: bounds.X + bounds.Width - 16 - 28, Y: bounds.Y + 22, Width: 28, Height: 32}
-	openBounds := ui.Rect{X: moreBounds.X - 8 - openWidth, Y: bounds.Y + 22, Width: openWidth, Height: 32}
+	moreBounds := gfx.Rect{X: bounds.X + bounds.Width - 16 - 28, Y: bounds.Y + 22, Width: 28, Height: 32}
+	openBounds := gfx.Rect{X: moreBounds.X - 8 - openWidth, Y: bounds.Y + 22, Width: openWidth, Height: 32}
 	for len(state.workspaceTemplateMoreBounds) <= index {
-		state.workspaceTemplateMoreBounds = append(state.workspaceTemplateMoreBounds, ui.Rect{})
+		state.workspaceTemplateMoreBounds = append(state.workspaceTemplateMoreBounds, gfx.Rect{})
 	}
 	state.workspaceTemplateMoreBounds[index] = moreBounds
 	state.paintIconButton(canvas, hitWorkspaceTemplateMore.At(index), iconEllipsis, moreBounds,
 		m.WorkspaceTemplateActions, false, iconButtonQuiet, background)
 	titleX := bounds.X + 48
 	titleWidth := max(0, openBounds.X-titleX-12)
-	canvas.Label(elide(canvas, template.Name, 16, ui.WeightSemibold, titleWidth), ui.Rect{X: titleX, Y: bounds.Y + 11, Width: titleWidth, Height: 24}, ui.TextStyle{Size: 16, Weight: ui.WeightSemibold, Color: pal.text})
+	canvas.Label(elide(canvas, template.Name, 16, gfx.WeightSemibold, titleWidth), gfx.Rect{X: titleX, Y: bounds.Y + 11, Width: titleWidth, Height: 24}, gfx.TextStyle{Size: 16, Weight: gfx.WeightSemibold, Color: pal.text})
 	meta, metaColor := hostCount, pal.muted
 	if missing > 0 {
 		meta += " · " + m.WorkspaceTemplateMissingFmt
 		metaColor = state.workspaceStatusInk(pal.warning)
 	}
-	canvas.Label(elide(canvas, meta, 12, ui.WeightRegular, titleWidth), ui.Rect{X: titleX, Y: bounds.Y + 39, Width: titleWidth, Height: 20}, ui.TextStyle{Size: 12, Color: metaColor})
+	canvas.Label(elide(canvas, meta, 12, gfx.WeightRegular, titleWidth), gfx.Rect{X: titleX, Y: bounds.Y + 39, Width: titleWidth, Height: 20}, gfx.TextStyle{Size: 12, Color: metaColor})
 	button := components.BeginButton(canvas, state.Theme(), hitWorkspaceTemplateOpen.At(index), openBounds).Small().WithIcon(lucideIcons[iconPlay])
 	if compact {
 		button = button.Size(components.ButtonSizeIconSmall)
@@ -404,27 +404,27 @@ func (state *State) paintWorkspaceLibraryRow(canvas *ui.Canvas, bounds ui.Rect, 
 	state.paintWorkspaceLibraryHosts(canvas, bounds, template, index)
 }
 
-func (state *State) paintWorkspaceLibraryHosts(canvas *ui.Canvas, bounds ui.Rect, template WorkspaceTemplate, index int) {
-	panel := ui.Rect{X: bounds.X + 12, Y: bounds.Y + workspaceLibraryHeaderHeight, Width: max(0, bounds.Width-24)}
-	state.paintWorkspaceLayoutPresets(canvas, ui.Rect{X: panel.X + 4, Y: panel.Y + 4, Width: max(0, panel.Width-8), Height: workspacePresetStripHeight(max(0, panel.Width-8))}, hitWorkspaceTemplatePresets, index*len(workspacePresets), template.Layout)
+func (state *State) paintWorkspaceLibraryHosts(canvas *gfx.Canvas, bounds gfx.Rect, template WorkspaceTemplate, index int) {
+	panel := gfx.Rect{X: bounds.X + 12, Y: bounds.Y + workspaceLibraryHeaderHeight, Width: max(0, bounds.Width-24)}
+	state.paintWorkspaceLayoutPresets(canvas, gfx.Rect{X: panel.X + 4, Y: panel.Y + 4, Width: max(0, panel.Width-8), Height: workspacePresetStripHeight(max(0, panel.Width-8))}, hitWorkspaceTemplatePresets, index*len(workspacePresets), template.Layout)
 	items := workspaceTemplateItems(template)
 	height := workspaceCardContentHeight(len(items), template.Layout)
-	content := ui.Rect{X: panel.X, Y: panel.Y + workspaceLibraryLayoutHeight(bounds.Width), Width: panel.Width, Height: height}
+	content := gfx.Rect{X: panel.X, Y: panel.Y + workspaceLibraryLayoutHeight(bounds.Width), Width: panel.Width, Height: height}
 	state.paintWorkspaceCards(canvas, content, state.workspaceLibraryBounds, items, template.Layout, workspaceCardsTemplate, template.ID, index)
 
 }
 
-func (state *State) scrollWorkspaceLibrary(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollWorkspaceLibrary(event gfx.ScrollEvent) gfx.EventResult {
 	if state.activeSection != sectionWorkspaces || state.modal != modalNone ||
 		!pointInRect(event.X, event.Y, state.workspaceLibraryBounds) {
-		return ui.EventResult{}
+		return gfx.EventResult{}
 	}
-	area := components.BeginScrollArea(nil, state.Theme(), state.workspaceLibraryBounds, ui.Size{
+	area := components.BeginScrollArea(nil, state.Theme(), state.workspaceLibraryBounds, gfx.Size{
 		Width:  max(0, state.workspaceLibraryBounds.Width-workspaceLibraryScrollbarReserve),
 		Height: state.workspaceLibraryContent,
 	}).Offset(0, state.workspaceLibraryScroll).ReserveScrollbars()
 	geometry := area.Geometry()
 	before := state.workspaceLibraryScroll
 	state.workspaceLibraryScroll = min(max(0, before+event.StepY(36)), geometry.MaxOffsetY)
-	return ui.EventResult{Handled: true, Repaint: before != state.workspaceLibraryScroll}
+	return gfx.EventResult{Handled: true, Repaint: before != state.workspaceLibraryScroll}
 }

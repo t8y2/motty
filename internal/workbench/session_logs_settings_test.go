@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/configstore"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
@@ -94,7 +94,7 @@ func TestSessionLogsSettingsRowPaintsWithoutAVault(t *testing.T) {
 			t.Fatalf("the security page does not paint %q", want)
 		}
 	}
-	for _, id := range []ui.ID{hitSessionLogsSettingsToggle, hitSessionLogsSettingsClear, hitSessionLogsSettingsClearAll} {
+	for _, id := range []gfx.ID{hitSessionLogsSettingsToggle, hitSessionLogsSettingsClear, hitSessionLogsSettingsClearAll} {
 		if _, ok := hitByID(canvas, id); !ok {
 			t.Fatalf("the security page has no control %d", id)
 		}

@@ -9,17 +9,17 @@ import (
 
 	"github.com/pkg/sftp"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 )
 
 func TestSFTPPathSettingPreservesBreadcrumbsByDefaultAndSavesTheChoice(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
-	paint := func() *ui.Canvas {
-		canvas := &ui.Canvas{}
-		state.Paint(canvas, ui.Size{Width: 1400, Height: 900})
+	paint := func() *gfx.Canvas {
+		canvas := &gfx.Canvas{}
+		state.Paint(canvas, gfx.Size{Width: 1400, Height: 900})
 		return canvas
 	}
 	if _, ok := hitByID(paint(), contextID(hitSFTPPath)); ok || state.EditorFor(hitSFTPPath) != nil {
@@ -30,8 +30,8 @@ func TestSFTPPathSettingPreservesBreadcrumbsByDefaultAndSavesTheChoice(t *testin
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
-	for _, id := range []ui.ID{hitSettingsPathBreadcrumbs, hitSettingsPathInput} {
-		if hit, ok := hitByID(paint(), id); !ok || hit.Role != ui.RoleRadio || hit.Selected != (id == hitSettingsPathBreadcrumbs) {
+	for _, id := range []gfx.ID{hitSettingsPathBreadcrumbs, hitSettingsPathInput} {
+		if hit, ok := hitByID(paint(), id); !ok || hit.Role != gfx.RoleRadio || hit.Selected != (id == hitSettingsPathBreadcrumbs) {
 			t.Fatalf("path style option = %+v, present = %v", hit, ok)
 		}
 	}
@@ -49,7 +49,7 @@ func TestSFTPPathSettingPreservesBreadcrumbsByDefaultAndSavesTheChoice(t *testin
 	// need a second click that would now toggle it shut.
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path != "" })
 	canvas := paint()
-	if hit, ok := hitByID(canvas, contextID(hitSFTPPath)); !ok || hit.Role != ui.RoleTextField || hit.Value != session.files.path {
+	if hit, ok := hitByID(canvas, contextID(hitSFTPPath)); !ok || hit.Role != gfx.RoleTextField || hit.Value != session.files.path {
 		t.Fatalf("path input hit = %+v, present = %v", hit, ok)
 	}
 	if _, ok := hitByID(canvas, contextID(hitSFTPBreadcrumbList.At(1))); ok {
@@ -76,7 +76,7 @@ func TestSFTPPathEnterNavigatesRelativeAndAbsoluteRemoteDirectories(t *testing.T
 			t.Fatal("mounted path input has no editor")
 		}
 		*editor = *text.NewEditor(step.input)
-		result := state.Key(ui.KeyEvent{Target: contextID(hitSFTPPath), Key: ui.KeyEnter})
+		result := state.Key(gfx.KeyEvent{Target: contextID(hitSFTPPath), Key: gfx.KeyEnter})
 		if !result.Handled {
 			t.Fatal("Enter was not handled")
 		}
@@ -118,19 +118,19 @@ func TestSFTPPathLocalNavigationAndErrorsLeaveTheCurrentFolderIntact(t *testing.
 		{dir, dir},
 	} {
 		*state.EditorFor(hitSFTPPath) = *text.NewEditor(step.input)
-		state.Key(ui.KeyEvent{Target: contextID(hitSFTPPath), Key: ui.KeyEnter})
+		state.Key(gfx.KeyEvent{Target: contextID(hitSFTPPath), Key: gfx.KeyEnter})
 		if view.lfolder.path != step.want || state.EditorFor(hitSFTPPath).String() != step.want {
 			t.Fatalf("local path = %q after %q, want %q", view.lfolder.path, step.input, step.want)
 		}
 	}
 	for _, invalid := range []string{"missing-folder", "report.txt", ""} {
 		*state.EditorFor(hitSFTPPath) = *text.NewEditor(invalid)
-		state.Key(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEnter})
+		state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 		if view.lfolder.path != dir || view.errorText != "" || state.EditorFor(hitSFTPPath).String() != invalid || len(state.fileNotices.items) == 0 {
 			t.Fatalf("invalid %q: path = %q, error = %q", invalid, view.lfolder.path, view.errorText)
 		}
 	}
-	state.Key(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEscape})
+	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEscape})
 	if state.EditorFor(hitSFTPPath).String() != dir || session.files == nil {
 		t.Fatal("Escape did not reset the path while keeping the panel open")
 	}
@@ -140,7 +140,7 @@ func TestSFTPPathStyleSelectorSupportsKeyboardAndSearch(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
-	result := state.Key(ui.KeyEvent{Target: hitSettingsPathBreadcrumbs, Key: ui.KeyRight})
+	result := state.Key(gfx.KeyEvent{Target: hitSettingsPathBreadcrumbs, Key: gfx.KeyRight})
 	if !result.Handled || !state.sftpPathInput || result.Focus != hitSettingsPathInput {
 		t.Fatalf("right arrow = %+v, input = %v", result, state.sftpPathInput)
 	}
@@ -148,7 +148,7 @@ func TestSFTPPathStyleSelectorSupportsKeyboardAndSearch(t *testing.T) {
 	if !state.sftpPathInput {
 		t.Fatal("selecting Input field twice changed the style")
 	}
-	result = state.Key(ui.KeyEvent{Target: hitSettingsPathInput, Key: ui.KeyLeft})
+	result = state.Key(gfx.KeyEvent{Target: hitSettingsPathInput, Key: gfx.KeyLeft})
 	if !result.Handled || state.sftpPathInput {
 		t.Fatal("left arrow did not select breadcrumbs")
 	}
@@ -185,7 +185,7 @@ func TestSFTPPathRemoteFailureUsesAGlobalToastWithTheRequestedPath(t *testing.T)
 			view.remember("/home/test/missing", nil)
 			for attempt := 0; attempt < 2; attempt++ {
 				*state.EditorFor(hitSFTPPath) = *text.NewEditor("missing")
-				state.Key(ui.KeyEvent{Target: contextID(hitSFTPPath), Key: ui.KeyEnter})
+				state.Key(gfx.KeyEvent{Target: contextID(hitSFTPPath), Key: gfx.KeyEnter})
 				waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy })
 			}
 			if view.path != "/home/test" || view.errorText != "" || state.EditorFor(hitSFTPPath).String() != "missing" || view.pathRequest != "" {
@@ -204,8 +204,8 @@ func TestSFTPPathRemoteFailureUsesAGlobalToastWithTheRequestedPath(t *testing.T)
 			if cause == os.ErrPermission && !strings.Contains(notice.detail, cause.Error()) {
 				t.Fatalf("failure reason missing from %q", notice.detail)
 			}
-			var canvas ui.Canvas
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 			if hit, ok := hitByID(&canvas, notice.id); !ok || hit.Bounds.Y > 250 {
 				t.Fatalf("global toast close button = %+v, present = %v", hit, ok)
 			}
@@ -224,7 +224,7 @@ func TestSFTPPathMissingLocalDirectoryShowsItsPathInTheGlobalToast(t *testing.T)
 	dir := localFixture(t)
 	view := openLocalPane(t, state, session, dir)
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("不存在的目录")
-	state.Key(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	want := fmt.Sprintf(state.messages.Tools.FilesPathNotFoundFmt, filepath.Join(dir, "不存在的目录"))
 	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].detail != want || view.errorText != "" || view.lfolder.path != dir {
 		t.Fatalf("local path failure: notices=%+v, path=%q, inline error=%q", state.fileNotices.items, view.lfolder.path, view.errorText)
@@ -238,14 +238,14 @@ func TestSFTPPathDoesNotNavigateOnRepeatsModifiersOrIMEConfirmation(t *testing.T
 	editor := state.EditorFor(hitSFTPPath)
 	*editor = *text.NewEditor("docs")
 	before := remote.readCount("/home/test/docs")
-	for _, event := range []ui.KeyEvent{
-		{Target: hitSFTPPath, Key: ui.KeyEnter, Repeat: true},
-		{Target: hitSFTPPath, Key: ui.KeyEnter, Modifiers: ui.ModifierShift},
+	for _, event := range []gfx.KeyEvent{
+		{Target: hitSFTPPath, Key: gfx.KeyEnter, Repeat: true},
+		{Target: hitSFTPPath, Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift},
 	} {
 		state.Key(event)
 	}
 	editor.SetMarkedText("目录", text.Range{Start: 0, End: 2})
-	state.Key(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	if view.busy || view.path != "/home/test" || remote.readCount("/home/test/docs") != before {
 		t.Fatal("an uncommitted input started navigation")
 	}
@@ -255,7 +255,7 @@ func TestSFTPPathShortcutOpensTemporaryEditorWithoutChangingPreference(t *testin
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
 	shortcut := state.shortcuts.chords.Chord(shortcutFilesPath)
-	result := state.Shortcut(ui.KeyEvent{
+	result := state.Shortcut(gfx.KeyEvent{
 		Target: contextID(hitSFTPEntryList.At(0)), Modifiers: shortcut.Modifiers, Text: string(shortcut.Char),
 	})
 	if !result.Handled || result.Focus != contextID(hitSFTPPath) || !result.FocusVisible || !view.sftpFolder.pathEditing {
@@ -264,16 +264,16 @@ func TestSFTPPathShortcutOpensTemporaryEditorWithoutChangingPreference(t *testin
 	if state.sftpPathInput {
 		t.Fatal("temporary path editing changed the saved path-bar preference")
 	}
-	var canvas ui.Canvas
-	canvas.SetInteraction(ui.ID{}, ui.ID{}, result.Focus, result.FocusVisible)
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	if hit, ok := hitByID(&canvas, contextID(hitSFTPPath)); !ok || hit.Role != ui.RoleTextField || hit.Value != view.path {
+	var canvas gfx.Canvas
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, result.Focus, result.FocusVisible)
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if hit, ok := hitByID(&canvas, contextID(hitSFTPPath)); !ok || hit.Role != gfx.RoleTextField || hit.Value != view.path {
 		t.Fatalf("temporary path field=%+v, present=%v", hit, ok)
 	}
 
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("remote draft")
 	openLocalPane(t, state, session, localFixture(t))
-	result = state.Shortcut(ui.KeyEvent{Target: contextID(hitSFTPEntryList.At(0)), Modifiers: shortcut.Modifiers, Text: string(shortcut.Char)})
+	result = state.Shortcut(gfx.KeyEvent{Target: contextID(hitSFTPEntryList.At(0)), Modifiers: shortcut.Modifiers, Text: string(shortcut.Char)})
 	if !result.Handled || !view.lfolder.pathEditing || state.EditorFor(hitSFTPPath).String() != view.lfolder.path {
 		t.Fatalf("local temporary editor result=%+v value=%q", result, state.EditorFor(hitSFTPPath).String())
 	}
@@ -283,7 +283,7 @@ func TestSFTPPathShortcutOpensTemporaryEditorWithoutChangingPreference(t *testin
 		t.Fatalf("remote temporary draft=%q editing=%v", state.EditorFor(hitSFTPPath).String(), view.sftpFolder.pathEditing)
 	}
 	state.tooltip.Dismiss()
-	state.Key(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEscape})
+	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEscape})
 	if view.sftpFolder.pathEditing || state.EditorFor(hitSFTPPath) != nil || view.sftpFolder.pathInput().String() != view.path {
 		t.Fatalf("Escape left editing=%v value=%q", view.sftpFolder.pathEditing, view.sftpFolder.pathInput().String())
 	}
@@ -295,14 +295,14 @@ func TestSFTPPathShortcutOpensTemporaryEditorWithoutChangingPreference(t *testin
 
 func TestSFTPPathBreadcrumbBackgroundStartsTemporaryEditing(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	hit, ok := hitByID(&canvas, contextID(hitSFTPPathEdit))
-	if !ok || hit.Role != ui.RoleButton || hit.Label != state.messages.Tools.FilesPathLabel {
+	if !ok || hit.Role != gfx.RoleButton || hit.Label != state.messages.Tools.FilesPathLabel {
 		t.Fatalf("breadcrumb edit hit=%+v, present=%v", hit, ok)
 	}
-	result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 1, Target: contextID(hitSFTPPathEdit),
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1, Target: contextID(hitSFTPPathEdit),
 	})
 	if !result.Handled || result.Focus != contextID(hitSFTPPath) || !session.files.sftpFolder.pathEditing {
 		t.Fatalf("breadcrumb pointer result=%+v editing=%v", result, session.files.sftpFolder.pathEditing)
@@ -324,13 +324,13 @@ func TestSFTPPathBreadcrumbClickDoesNotStartWhileRemoteBusy(t *testing.T) {
 	state.sftpPathInput = false
 	view := session.files
 	view.busy = true
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, contextID(hitSFTPPathEdit)); !ok {
 		t.Fatal("busy remote panel did not paint the breadcrumb edit target")
 	}
-	result := state.Pointer(ui.PointerEvent{
-		Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 1,
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1,
 		Target: contextID(hitSFTPPathEdit),
 	})
 	if result.Handled || view.sftpFolder.pathEditing {
@@ -343,7 +343,7 @@ func TestSFTPPathTemporaryEditorExitsOnSuccessAndKeepsFailedDraft(t *testing.T) 
 	view := session.files
 	state.startSFTPPathEditing(view)
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("docs")
-	state.Key(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
 	if view.sftpFolder.pathEditing || state.EditorFor(hitSFTPPath) != nil {
 		t.Fatal("successful remote navigation kept temporary editing open")
@@ -354,7 +354,7 @@ func TestSFTPPathTemporaryEditorExitsOnSuccessAndKeepsFailedDraft(t *testing.T) 
 	view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return pathErrorRemote{remote, os.ErrNotExist}, nil }, nil)
 	state.startSFTPPathEditing(view)
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("/home/test/missing")
-	state.Key(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy })
 	if !view.sftpFolder.pathEditing || state.EditorFor(hitSFTPPath).String() != "/home/test/missing" || view.path != "/home/test/docs" {
 		t.Fatalf("failed remote path editing=%v draft=%q path=%q", view.sftpFolder.pathEditing, state.EditorFor(hitSFTPPath).String(), view.path)
@@ -364,13 +364,13 @@ func TestSFTPPathTemporaryEditorExitsOnSuccessAndKeepsFailedDraft(t *testing.T) 
 	openLocalPane(t, state, session, dir)
 	state.startSFTPPathEditing(view)
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("photos")
-	state.Key(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	if view.lfolder.pathEditing || view.lfolder.path != filepath.Join(dir, "photos") {
 		t.Fatalf("successful local path editing=%v path=%q", view.lfolder.pathEditing, view.lfolder.path)
 	}
 	state.startSFTPPathEditing(view)
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("missing")
-	state.Key(ui.KeyEvent{Target: hitSFTPPath, Key: ui.KeyEnter})
+	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	if !view.lfolder.pathEditing || state.EditorFor(hitSFTPPath).String() != "missing" || view.lfolder.path != filepath.Join(dir, "photos") {
 		t.Fatalf("failed local path editing=%v draft=%q path=%q", view.lfolder.pathEditing, state.EditorFor(hitSFTPPath).String(), view.lfolder.path)
 	}

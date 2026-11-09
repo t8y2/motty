@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -80,7 +80,7 @@ func (state *State) finishBackgroundCommand(session *Session, code int) {
 
 // Only the silence deadline needs a wake when a title is not being painted.
 // Animated frames are requested by visible titles alone.
-func (state *State) refreshOutputAlerts(canvas *ui.Canvas) {
+func (state *State) refreshOutputAlerts(canvas *gfx.Canvas) {
 	now := state.now()
 	for i := range state.sessions {
 		session := &state.sessions[i]
@@ -118,21 +118,21 @@ func (state *State) workspaceOutputAlert(id layoutcore.WorkspaceID) outputAlertK
 	return kind
 }
 
-func (state *State) paintOutputAlertTitle(canvas *ui.Canvas, tab *barTab, strip ui.Rect) {
+func (state *State) paintOutputAlertTitle(canvas *gfx.Canvas, tab *barTab, strip gfx.Rect) {
 	bounds := tab.title.Rect()
 	if bounds.Width <= 0 || bounds.Height <= 0 || bounds.X >= strip.X+strip.Width || bounds.X+bounds.Width <= strip.X || bounds.Y >= strip.Y+strip.Height || bounds.Y+bounds.Height <= strip.Y {
 		return
 	}
-	style := ui.TextStyle{Size: metrics.FontSizeS, Weight: ui.WeightMedium, Color: state.pal.success}
+	style := gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.success}
 	label := canvas.FitLine(tab.label, style.Size, style.Weight, bounds.Width)
 	if tab.pathLabel != "" {
 		label = elideTabDirectory(tab.pathLabel, func(value string) bool {
 			return canvas.TextWidthWeight(value, style.Size, style.Weight) <= bounds.Width
 		})
 	}
-	blue, highlight := ui.RGB24(0x75b8ff), ui.RGB24(0xedfaff)
+	blue, highlight := gfx.RGB24(0x75b8ff), gfx.RGB24(0xedfaff)
 	if !state.pal.dark {
-		blue, highlight = ui.RGB24(0x2465a8), ui.RGB24(0x659bd4)
+		blue, highlight = gfx.RGB24(0x2465a8), gfx.RGB24(0x659bd4)
 	}
 	switch tab.output {
 	case outputAlertRunning:
@@ -159,7 +159,7 @@ func (state *State) paintOutputAlertTitle(canvas *ui.Canvas, tab *barTab, strip 
 	}
 	phase := float32(canvas.Now()%(1800*time.Millisecond)) / float32(1800*time.Millisecond)
 	center, band := (phase*1.6-.3)*width, max(width*.24, 12)
-	origin := canvas.LabelOrigin(label, bounds, style, ui.AlignStart)
+	origin := canvas.LabelOrigin(label, bounds, style, gfx.AlignStart)
 	// The sweep is drawn as flat runs of a fixed palette rather than one band per
 	// three pixels: a text layer is cached by its color, so a distinct color per
 	// band would rebuild the whole line's texture on every frame of the 1.8s
@@ -178,7 +178,7 @@ func (state *State) paintOutputAlertTitle(canvas *ui.Canvas, tab *barTab, strip 
 		}
 		end = min(end, width)
 		style.Color = blue.Mix(highlight, float32(step)/sweepBands)
-		canvas.Clip(ui.Rect{X: origin + x, Y: bounds.Y, Width: end - x, Height: bounds.Height})
+		canvas.Clip(gfx.Rect{X: origin + x, Y: bounds.Y, Width: end - x, Height: bounds.Height})
 		canvas.Label(label, bounds, style)
 		canvas.Unclip()
 		x = end

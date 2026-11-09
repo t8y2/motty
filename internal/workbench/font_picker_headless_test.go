@@ -4,7 +4,7 @@ package workbench
 
 import (
 	"fmt"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"testing"
 )
 
@@ -48,7 +48,7 @@ func TestFontPickerNavigationConfirmsTheHighlightedFont(t *testing.T) {
 			if err := view.Keys("Enter"); err != nil {
 				t.Fatal(err)
 			}
-			if state.modal != modalNone || state.fonts.family != want.family || state.fonts.classic != (want.face == ui.MonoClassic) {
+			if state.modal != modalNone || state.fonts.family != want.family || state.fonts.classic != (want.face == gfx.MonoClassic) {
 				t.Fatalf("Enter applied family %q (classic=%v), want %q", state.fonts.family, state.fonts.classic, want.label)
 			}
 		})

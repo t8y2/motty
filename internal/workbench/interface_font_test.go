@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -76,7 +76,7 @@ func TestTheInterfaceFontIsPreviewedConfirmedKeptAndRestored(t *testing.T) {
 	if len(state.fonts.filtered) != 1 {
 		t.Fatalf("filtered to %d rows", len(state.fonts.filtered))
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerSearch})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitFontPickerSearch})
 	if state.modal != modalNone || state.uiFont.family != "Microsoft YaHei UI" || lastTold(told) != "Microsoft YaHei UI" {
 		t.Fatalf("modal %d, family %q, told %v", state.modal, state.uiFont.family, *told)
 	}
@@ -121,7 +121,7 @@ func TestTheInterfaceFontPickerGuardsItsButtonsLikeTheTerminalFontOne(t *testing
 		t.Fatal("the list was read at once")
 	}
 	// Nothing can be applied while the families are being read.
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitFontPickerSearch})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitFontPickerSearch})
 	if state.modal != modalFontPicker || state.uiFont.family != "" {
 		t.Fatalf("Enter confirmed while the list was being read: modal %d, family %q", state.modal, state.uiFont.family)
 	}
@@ -130,8 +130,8 @@ func TestTheInterfaceFontPickerGuardsItsButtonsLikeTheTerminalFontOne(t *testing
 
 	// Enter on a button is that button's own.
 	state.Click(hitFontPickerItemList.At(1))
-	for _, target := range []ui.ID{hitFontPickerCancel, hitFontPickerClose} {
-		result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: target})
+	for _, target := range []gfx.ID{hitFontPickerCancel, hitFontPickerClose} {
+		result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: target})
 		if result.Handled || state.modal != modalFontPicker || state.uiFont.family != "" {
 			t.Fatalf("Enter on %v: handled %v, modal %d, family %q", target, result.Handled, state.modal, state.uiFont.family)
 		}
@@ -211,8 +211,8 @@ func TestWhereThePlatformCannotFollowAFamilyTheRowIsHiddenOrSaysSo(t *testing.T)
 	state := newTestState(t, options)
 	state.Click(hitSettings)
 	for range 3 {
-		var canvas ui.Canvas
-		state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		if _, ok := hitByID(&canvas, hitInterfaceFontChoose); ok {
 			t.Fatal("a platform without a say in the family still offers the row")
 		}
@@ -279,7 +279,7 @@ func TestTheInterfaceFontRowNamesTheFontBesideTheButton(t *testing.T) {
 	if !ok {
 		t.Fatal("the row offers no button to choose a font with")
 	}
-	var value ui.Rect
+	var value gfx.Rect
 	found := false
 	for _, text := range canvas.Texts() {
 		if text.Value == "Segoe UI" {

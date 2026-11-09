@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
@@ -35,11 +35,11 @@ func liveSession(t testing.TB) (*State, *world, *fakeConn, *fakeShell) {
 	return state, world, fake, shell
 }
 
-func terminalHit(state *State, index int) ui.ID {
+func terminalHit(state *State, index int) gfx.ID {
 	return hitTerminalList.At(int(state.sessions[index].ID))
 }
 
-func key(state *State, index int, event ui.KeyEvent) ui.EventResult {
+func key(state *State, index int, event gfx.KeyEvent) gfx.EventResult {
 	event.Target = terminalHit(state, index)
 	return state.Key(event)
 }
@@ -85,7 +85,7 @@ func TestShellOutputReachesTheScreenWithItsColors(t *testing.T) {
 		t.Fatalf("screen:\n%s", screenText(state, 0))
 	}
 	canvas, _ := paintedTexts(state)
-	var prompt, files ui.Text
+	var prompt, files gfx.Text
 	for _, text := range canvas.Texts() {
 		switch {
 		case strings.HasPrefix(text.Value, "deploy@prod"):
@@ -99,11 +99,11 @@ func TestShellOutputReachesTheScreenWithItsColors(t *testing.T) {
 	}
 	runs := canvas.TextRuns(prompt)
 	brightGreen := state.pal.ansi[10] // bold 32 is drawn in the bright variant
-	if runs[0].Color != ui.RGB(brightGreen[0], brightGreen[1], brightGreen[2]) || runs[0].Weight != ui.WeightBold || runs[0].Column != 0 {
+	if runs[0].Color != gfx.RGB(brightGreen[0], brightGreen[1], brightGreen[2]) || runs[0].Weight != gfx.WeightBold || runs[0].Column != 0 {
 		t.Errorf("first prompt run = %+v, want bold bright green at column 0", runs[0])
 	}
 	fileRuns := canvas.TextRuns(files)
-	if len(fileRuns) != 2 || fileRuns[0].Color != ui.RGB(240, 120, 120) || fileRuns[0].Bytes != 9 ||
+	if len(fileRuns) != 2 || fileRuns[0].Color != gfx.RGB(240, 120, 120) || fileRuns[0].Bytes != 9 ||
 		fileRuns[1].Column != 9 || fileRuns[1].Color != state.pal.text {
 		t.Errorf("file runs = %+v, want red \"red.txt\" (and the blanks after it) then plain at column 9", fileRuns)
 	}
@@ -117,7 +117,7 @@ func TestTheWindowSizeDecidesTheTerminalSizeOfEverySession(t *testing.T) {
 	state.Click(hitPaneChooseHost)
 	state.Click(hitHostList.At(2))
 	connect(t, state, world) // a second session, still connecting
-	state.Resize(ui.Size{Width: 1000, Height: 700})
+	state.Resize(gfx.Size{Width: 1000, Height: 700})
 	geometry := state.layout()
 	if geometry.cols >= 150 {
 		t.Fatalf("1000 points fit %d columns", geometry.cols)
@@ -133,7 +133,7 @@ func TestTheWindowSizeDecidesTheTerminalSizeOfEverySession(t *testing.T) {
 		t.Fatalf("the pty was told %v, want its final %dx%d", shell.resizes, firstGeometry.cols, firstGeometry.rows)
 	}
 	resizeCount := len(shell.resizes)
-	state.Resize(ui.Size{Width: 1000, Height: 700})
+	state.Resize(gfx.Size{Width: 1000, Height: 700})
 	if len(shell.resizes) != resizeCount {
 		t.Fatalf("an unchanged size resized the pty %d more times", len(shell.resizes)-resizeCount)
 	}
@@ -141,10 +141,10 @@ func TestTheWindowSizeDecidesTheTerminalSizeOfEverySession(t *testing.T) {
 
 func TestRawKeysBecomeTheBytesAProgramExpects(t *testing.T) {
 	state, _, _, shell := liveSession(t)
-	for _, event := range []ui.KeyEvent{
-		{Key: ui.KeyEnter}, {Key: ui.KeyUp}, {Key: ui.KeyTab}, {Key: ui.KeyEscape}, {Key: ui.KeyBackspace},
-		{Modifiers: ui.ModifierControl, Text: "c"}, {Key: ui.KeyLeft, Modifiers: ui.ModifierAlt}, {Key: ui.KeyF5},
-		{Key: ui.KeyPageUp}, {Key: ui.KeyDelete},
+	for _, event := range []gfx.KeyEvent{
+		{Key: gfx.KeyEnter}, {Key: gfx.KeyUp}, {Key: gfx.KeyTab}, {Key: gfx.KeyEscape}, {Key: gfx.KeyBackspace},
+		{Modifiers: gfx.ModifierControl, Text: "c"}, {Key: gfx.KeyLeft, Modifiers: gfx.ModifierAlt}, {Key: gfx.KeyF5},
+		{Key: gfx.KeyPageUp}, {Key: gfx.KeyDelete},
 	} {
 		if result := key(state, 0, event); !result.Handled {
 			t.Fatalf("%+v was not taken", event)
@@ -167,13 +167,13 @@ func TestRawKeysBecomeTheBytesAProgramExpects(t *testing.T) {
 	shell.say("\x1b[?1h")
 	state.Wake()
 	before := len(shell.typed())
-	key(state, 0, ui.KeyEvent{Key: ui.KeyUp})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyUp})
 	if got := shell.typed()[before:]; got != "\x1bOA" {
 		t.Fatalf("application-mode Up = %q", got)
 	}
 	// Command chords are the application's, not the program's.
 	before = len(shell.typed())
-	key(state, 0, ui.KeyEvent{Modifiers: ui.ModifierMeta, Text: "c"})
+	key(state, 0, gfx.KeyEvent{Modifiers: gfx.ModifierMeta, Text: "c"})
 	if len(shell.typed()) != before {
 		t.Fatal("a Command chord reached the program")
 	}
@@ -181,7 +181,7 @@ func TestRawKeysBecomeTheBytesAProgramExpects(t *testing.T) {
 
 func TestTextPasteAndInputMethodsReachTheProgram(t *testing.T) {
 	state, _, _, shell := liveSession(t)
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	context := app.TextInputContext{ID: terminalHit(state, 0), Terminal: true}
 	input := state.TerminalInput(context)
 	if input == nil || input.OnEvent == nil {
@@ -246,7 +246,7 @@ func TestTheProgramsAnswersGoBackToIt(t *testing.T) {
 
 func TestAnEndedSessionSaysSoAndEnterConnectsAgain(t *testing.T) {
 	state, world, fake, shell := liveSession(t)
-	key(state, 0, ui.KeyEvent{Key: ui.KeyEnter}) // the user typed; the shell did not end by itself
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyEnter}) // the user typed; the shell did not end by itself
 	shell.say("bye\r\n")
 	shell.end(&exitStatus{3})
 	state.Wake()
@@ -263,11 +263,11 @@ func TestAnEndedSessionSaysSoAndEnterConnectsAgain(t *testing.T) {
 	}
 
 	// Typing at a dead session does nothing; Enter dials the same host in the same tab.
-	key(state, 0, ui.KeyEvent{Key: ui.KeyUp})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyUp})
 	if len(world.conns) != 1 {
 		t.Fatal("a key redialed")
 	}
-	if result := key(state, 0, ui.KeyEvent{Key: ui.KeyEnter}); !result.Handled || !result.Repaint {
+	if result := key(state, 0, gfx.KeyEvent{Key: gfx.KeyEnter}); !result.Handled || !result.Repaint {
 		t.Fatalf("Enter result = %+v", result)
 	}
 	if len(world.conns) != 2 || len(state.sessions) != 1 {
@@ -306,7 +306,7 @@ func TestAShellTheServerEndsKeepsTheConnectionForTheFiles(t *testing.T) {
 func TestTheConnectionOutlivesAUsersShellWhileTheFilesUseIt(t *testing.T) {
 	state, session, fake, _ := openTestSFTP(t)
 	shell := fake.shell(t)
-	key(state, 0, ui.KeyEvent{Key: ui.KeyEnter})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyEnter})
 	shell.end(&exitStatus{0})
 	state.Wake()
 	if !session.term.ended || fake.canceled != 0 || session.files == nil {
@@ -337,7 +337,7 @@ func TestAFailedConnectionStaysOnScreenAndOffersAnotherTry(t *testing.T) {
 	if len(fake.shells) != 0 {
 		t.Fatal("a failed connection opened a shell")
 	}
-	key(state, 0, ui.KeyEvent{Key: ui.KeyEnter})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyEnter})
 	if len(world.conns) != 2 {
 		t.Fatal("Enter did not dial again")
 	}
@@ -400,8 +400,8 @@ func TestDigitChordsDriveTheTabs(t *testing.T) {
 	// A tab is a workspace on the tab bar: selecting one has to move the bar,
 	// not only the session the keyboard goes to.
 	workspaces := state.deck.Workspaces(nil)
-	digit := func(text string) ui.EventResult {
-		return state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: text})
+	digit := func(text string) gfx.EventResult {
+		return state.Shortcut(gfx.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: text})
 	}
 	digit("1")
 	if state.activeSessionID != first || state.deck.ActiveWorkspace() != workspaces[0].ID {
@@ -411,18 +411,18 @@ func TestDigitChordsDriveTheTabs(t *testing.T) {
 	if state.activeSessionID != second || state.deck.ActiveWorkspace() != workspaces[1].ID {
 		t.Fatal("the second digit did not select the second tab")
 	}
-	if result := digit("9"); result.Handled != (keymap.Primary == ui.ModifierMeta) {
+	if result := digit("9"); result.Handled != (keymap.Primary == gfx.ModifierMeta) {
 		t.Fatalf("a digit with no tab behind it: handled=%v", result.Handled)
 	}
 	if state.activeSessionID != second {
 		t.Fatal("a missing tab changed the selection")
 	}
-	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "t"})
+	state.Shortcut(gfx.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "t"})
 	if state.modal != modalCommandPalette || !state.commandPalette.connect {
 		t.Fatal("new-tab shortcut did not open the connection picker")
 	}
 	state.Click(hitCommandPaletteClose)
-	state.Shortcut(ui.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "w"})
+	state.Shortcut(gfx.KeyEvent{Target: state.activeTerminalFocusHit(), Modifiers: keymap.Primary, Text: "w"})
 	if len(state.sessions) != 1 || state.activeSessionID != first {
 		t.Fatalf("close-tab shortcut left sessions=%d active=%d", len(state.sessions), state.activeSessionID)
 	}
@@ -444,25 +444,25 @@ func TestTheWheelScrollsBackAndTypingReturnsToTheBottom(t *testing.T) {
 	}
 
 	// A notch of three lines upward reveals older output: negative deltas.
-	result := state.Scroll(ui.ScrollEvent{DeltaY: -3 * state.cellHeight, Precise: true})
+	result := state.Scroll(gfx.ScrollEvent{DeltaY: -3 * state.cellHeight, Precise: true})
 	if !result.Handled || !result.Repaint || t0.screen.ViewOffset() != 3 {
 		t.Fatalf("scroll up: %+v, offset %d", result, t0.screen.ViewOffset())
 	}
 	// Sub-line travel accumulates instead of being lost.
 	for range 4 {
-		state.Scroll(ui.ScrollEvent{DeltaY: state.cellHeight / 4, Precise: true})
+		state.Scroll(gfx.ScrollEvent{DeltaY: state.cellHeight / 4, Precise: true})
 	}
 	if t0.screen.ViewOffset() != 2 {
 		t.Fatalf("after a line of fractional travel the offset is %d, want 2", t0.screen.ViewOffset())
 	}
-	key(state, 0, ui.KeyEvent{Key: ui.KeyEnter})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyEnter})
 	if t0.screen.ViewOffset() != 0 {
 		t.Fatal("typing did not return to the bottom")
 	}
 
 	// Shift+PageUp pages through history without touching the program.
 	typed := len(shell.typed())
-	key(state, 0, ui.KeyEvent{Key: ui.KeyPageUp, Modifiers: ui.ModifierShift})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyPageUp, Modifiers: gfx.ModifierShift})
 	_, rows := t0.screen.Size()
 	if t0.screen.ViewOffset() != rows-1 || len(shell.typed()) != typed {
 		t.Fatalf("Shift+PageUp: offset %d, sent %q", t0.screen.ViewOffset(), shell.typed()[typed:])
@@ -474,14 +474,14 @@ func TestTheWheelScrollsBackAndTypingReturnsToTheBottom(t *testing.T) {
 	shell.say("\x1b[?1049h")
 	state.Wake()
 	typed = len(shell.typed())
-	state.Scroll(ui.ScrollEvent{DeltaY: 2 * state.cellHeight, Precise: true})
+	state.Scroll(gfx.ScrollEvent{DeltaY: 2 * state.cellHeight, Precise: true})
 	if got := shell.typed()[typed:]; got != "\x1b[B\x1b[B" {
 		t.Fatalf("wheel on the alternate screen sent %q", got)
 	}
 	shell.say("\x1b[?1007l")
 	state.Wake()
 	typed = len(shell.typed())
-	state.Scroll(ui.ScrollEvent{DeltaY: 2 * state.cellHeight, Precise: true})
+	state.Scroll(gfx.ScrollEvent{DeltaY: 2 * state.cellHeight, Precise: true})
 	if got := shell.typed()[typed:]; got != "" {
 		t.Fatalf("wheel with alternate-scroll mode reset sent %q", got)
 	}
@@ -489,7 +489,7 @@ func TestTheWheelScrollsBackAndTypingReturnsToTheBottom(t *testing.T) {
 	// may take it, but the terminal's view stays where it was.
 	state.Click(hitHosts)
 	offset, typed := t0.screen.ViewOffset(), len(shell.typed())
-	state.Scroll(ui.ScrollEvent{DeltaY: 100})
+	state.Scroll(gfx.ScrollEvent{DeltaY: 100})
 	if t0.screen.ViewOffset() != offset || len(shell.typed()) != typed {
 		t.Fatal("a wheel over the host list moved or typed into the terminal")
 	}
@@ -499,7 +499,7 @@ func TestTheTerminalHasTheKeyboardWhenItAppears(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	canvas, _ := paintedTexts(state)
 	hit, ok := hitByID(canvas, terminalHit(state, 0))
-	if !ok || hit.Role != ui.RoleTerminal || !hit.Autofocus || !hit.Focusable {
+	if !ok || hit.Role != gfx.RoleTerminal || !hit.Autofocus || !hit.Focusable {
 		t.Fatalf("terminal hit = %+v, %v", hit, ok)
 	}
 	if hit.Label != "Terminal deploy@prod.example.com:22" {
@@ -511,7 +511,7 @@ func TestTheTerminalHasTheKeyboardWhenItAppears(t *testing.T) {
 		t.Fatalf("the terminal %+v does not fill the window below the bars", hit.Bounds)
 	}
 	// Window-bar buttons leave the keyboard where it is.
-	for _, id := range []ui.ID{hitHome, hitNewTab, hitGitHub, hitTheme, hitWindowSettings, hitTabCloseList.At(int(state.sessions[0].ID))} {
+	for _, id := range []gfx.ID{hitHome, hitNewTab, hitGitHub, hitTheme, hitWindowSettings, hitTabCloseList.At(int(state.sessions[0].ID))} {
 		bar, ok := hitByID(canvas, id)
 		if !ok || bar.Focusable {
 			t.Errorf("hit %d = %+v, %v; want a mouse-only button", id, bar, ok)
@@ -600,7 +600,7 @@ func TestALargeFloodIsParsedInOneWakeWithoutAnInvalidator(t *testing.T) {
 
 // oscRGB spells a color the way an OSC 10/11 reply does: sixteen bits a channel,
 // each 8-bit value repeated.
-func oscRGB(c ui.Color) string {
+func oscRGB(c gfx.Color) string {
 	channel := func(v float32) string { return fmt.Sprintf("%02x%02x", uint8(v*255+0.5), uint8(v*255+0.5)) }
 	return channel(c.Red) + "/" + channel(c.Green) + "/" + channel(c.Blue)
 }
@@ -672,7 +672,7 @@ func TestTerminalEscapeWithOpenSFTPDoesNotCloseSFTP(t *testing.T) {
 	}
 
 	shell.input = nil
-	result := key(state, 0, ui.KeyEvent{Key: ui.KeyEscape})
+	result := key(state, 0, gfx.KeyEvent{Key: gfx.KeyEscape})
 	if !result.Handled {
 		t.Fatal("Escape in terminal was not handled")
 	}
@@ -684,7 +684,7 @@ func TestTerminalEscapeWithOpenSFTPDoesNotCloseSFTP(t *testing.T) {
 	}
 
 	// Pressing Escape while focused inside the SFTP panel should still close it.
-	result = state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitSFTPEntryList.At(0)})
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitSFTPEntryList.At(0)})
 	if !result.Handled {
 		t.Fatal("Escape inside SFTP panel was not handled")
 	}
@@ -705,7 +705,7 @@ func TestTerminalEscapeWithAnOpenEditorLeavesItAlone(t *testing.T) {
 	session.files.editPath = "/home/test/notes.txt"
 	shell.input = nil
 
-	result := key(state, 0, ui.KeyEvent{Key: ui.KeyEscape})
+	result := key(state, 0, gfx.KeyEvent{Key: gfx.KeyEscape})
 	if !result.Handled {
 		t.Fatal("Escape in terminal was not handled")
 	}
@@ -727,7 +727,7 @@ func TestEscapeOutsideThePanelStillClosesIt(t *testing.T) {
 		t.Fatal("SFTP panel failed to open")
 	}
 	workspace := state.deck.ActiveWorkspace()
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitTabList.At(int(workspace))}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitTabList.At(int(workspace))}); !result.Handled {
 		t.Fatal("Escape outside the panel was not handled")
 	}
 	if session.files != nil {

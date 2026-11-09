@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
@@ -49,14 +49,14 @@ type localProxyUI struct {
 	docker         bool
 	more           bool
 	copyTarget     localProxyTarget
-	returnFocus    ui.ID
+	returnFocus    gfx.ID
 	scroll         float32
 	scrollGeometry components.ScrollAreaGeometry
 	lastRemotePort uint16
 	lastStopped    bool
-	copied         ui.ID
+	copied         gfx.ID
 	copyError      string
-	retryCopy      ui.ID
+	retryCopy      gfx.ID
 }
 
 func (state *State) openLocalProxy(session *Session) {
@@ -130,7 +130,7 @@ func (state *State) localProxyActionVisible(session *Session) bool {
 	return ok
 }
 
-func (state *State) clickLocalProxy(id ui.ID) {
+func (state *State) clickLocalProxy(id gfx.ID) {
 	switch id {
 	case hitLocalProxyOpen:
 		session, _ := state.sessionByIDPointer(state.activeSessionID)
@@ -180,13 +180,13 @@ func (state *State) clickLocalProxy(id ui.ID) {
 	}
 }
 
-func (state *State) localProxyPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if state.modal != modalLocalProxy || event.Kind != ui.PointerUp || event.Button != ui.PointerButtonPrimary ||
+func (state *State) localProxyPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if state.modal != modalLocalProxy || event.Kind != gfx.PointerUp || event.Button != gfx.PointerButtonPrimary ||
 		event.Target != hitLocalProxyDismiss && event.Target != hitLocalProxyClose {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.clickLocalProxy(event.Target)
-	return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
 }
 
 func (state *State) localProxyCommandPort() uint16 {
@@ -212,8 +212,8 @@ func (state *State) startLocalProxy() bool {
 	state.localProxyPort = port
 	state.localProxyPortSet = true
 	state.localProxyUI.copyError = ""
-	state.localProxyUI.retryCopy = ui.ID{}
-	state.localProxyUI.copied = ui.ID{}
+	state.localProxyUI.retryCopy = gfx.ID{}
+	state.localProxyUI.copied = gfx.ID{}
 	state.localProxyUI.lastRemotePort = 0
 	state.localProxyUI.lastStopped = false
 	session.localProxy, _ = state.localProxyManager().Start(target, session.conn, port, session.localProxy)
@@ -244,7 +244,7 @@ func (state *State) finishLocalProxyStart() {
 	}
 }
 
-func (state *State) copyLocalProxyAndReturn(id ui.ID, value, notice string) {
+func (state *State) copyLocalProxyAndReturn(id gfx.ID, value, notice string) {
 	if !state.copyLocalProxyText(id, value) {
 		return
 	}
@@ -255,9 +255,9 @@ func (state *State) copyLocalProxyAndReturn(id ui.ID, value, notice string) {
 	state.showActionInfo(state.messages.LocalProxy.Title, notice)
 }
 
-func (state *State) paintLocalProxyFocus(canvas *ui.Canvas) {
+func (state *State) paintLocalProxyFocus(canvas *gfx.Canvas) {
 	focus := state.localProxyUI.returnFocus
-	state.localProxyUI.returnFocus = ui.ID{}
+	state.localProxyUI.returnFocus = gfx.ID{}
 	if !focus.IsZero() && state.modal == modalNone && state.activeSection == sectionTerminal && focus == state.activeTerminalFocusHit() {
 		canvas.RequestFocus(focus)
 	}
@@ -276,11 +276,11 @@ func (state *State) stopLocalProxy() {
 	}
 	state.localProxyUI.lastStopped = snapshot.Phase != localProxyDisconnected
 	state.localProxyManager().Stop(target)
-	state.localProxyUI.copied = ui.ID{}
+	state.localProxyUI.copied = gfx.ID{}
 	state.localProxyUI.copyError = ""
 }
 
-func (state *State) copyLocalProxyText(id ui.ID, value string) bool {
+func (state *State) copyLocalProxyText(id gfx.ID, value string) bool {
 	if value == "" {
 		return false
 	}
@@ -290,74 +290,74 @@ func (state *State) copyLocalProxyText(id ui.ID, value string) bool {
 		return false
 	}
 	if err := state.options.SetClipboardText(value); err != nil {
-		state.localProxyUI.copied = ui.ID{}
+		state.localProxyUI.copied = gfx.ID{}
 		state.localProxyUI.copyError = fmt.Sprintf(state.messages.LocalProxy.CopyFailedFmt, err)
 		state.localProxyUI.retryCopy = id
 		return false
 	}
 	state.localProxyUI.copied = id
 	state.localProxyUI.copyError = ""
-	state.localProxyUI.retryCopy = ui.ID{}
+	state.localProxyUI.retryCopy = gfx.ID{}
 	return true
 }
 
-func (state *State) localProxyKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) localProxyKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalLocalProxy {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	if event.Release || event.Repeat {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	if event.Key == ui.KeyEscape {
+	if event.Key == gfx.KeyEscape {
 		if state.localProxyUI.docker {
 			state.localProxyUI.docker = false
 			state.localProxyUI.scroll = 0
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		} else {
 			state.closeModal()
-			return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
 		}
 	}
-	if (event.Key == ui.KeyEnter || event.Key == ui.KeySpace) && (event.Target == hitLocalProxyDismiss || event.Target == hitLocalProxyClose) {
+	if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && (event.Target == hitLocalProxyDismiss || event.Target == hitLocalProxyClose) {
 		state.clickLocalProxy(event.Target)
-		return ui.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.activeTerminalFocusHit()}, true
 	}
-	if event.Key == ui.KeyEnter {
+	if event.Key == gfx.KeyEnter {
 		switch event.Target {
 		case hitLocalProxyPort, hitLocalProxyStart:
 			if !state.localProxyUIPortLocked() {
 				state.clickLocalProxy(hitLocalProxyStart)
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 		case hitLocalProxyTest:
 			if state.localProxySnapshot(state.localProxySession()).Phase == localProxyConnected {
 				state.clickLocalProxy(hitLocalProxyTest)
-				return ui.EventResult{Handled: true, Repaint: true}, true
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 		case hitLocalProxyStop:
 			state.clickLocalProxy(hitLocalProxyStop)
-			return ui.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 	}
 	area := components.BeginScrollArea(nil, state.Theme(), state.localProxyUI.scrollGeometry.Bounds, state.localProxyContentSize())
 	x, y, handled := area.ScrollForKey(0, state.localProxyUI.scroll, event.Key, 32)
 	if handled {
 		state.localProxyUI.scroll = y
-		return ui.EventResult{Handled: true, Repaint: x != 0 || y != 0}, true
+		return gfx.EventResult{Handled: true, Repaint: x != 0 || y != 0}, true
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
-func (state *State) scrollLocalProxy(event ui.ScrollEvent) ui.EventResult {
+func (state *State) scrollLocalProxy(event gfx.ScrollEvent) gfx.EventResult {
 	before := state.localProxyUI.scroll
 	area := components.BeginScrollArea(nil, state.Theme(), state.localProxyUI.scrollGeometry.Bounds, state.localProxyContentSize())
 	state.localProxyUI.scroll = area.Offset(0, before+event.DeltaY).Geometry().OffsetY
-	return ui.EventResult{Handled: true, Repaint: before != state.localProxyUI.scroll}
+	return gfx.EventResult{Handled: true, Repaint: before != state.localProxyUI.scroll}
 }
 
-func (state *State) localProxyContentSize() ui.Size {
+func (state *State) localProxyContentSize() gfx.Size {
 	geometry := state.localProxyUI.scrollGeometry
-	return ui.Size{Width: geometry.Content.Width, Height: max(geometry.Content.Height, localProxyMainHeight)}
+	return gfx.Size{Width: geometry.Content.Width, Height: max(geometry.Content.Height, localProxyMainHeight)}
 }
 
 func (state *State) localProxyContentHeight(snapshot localProxySnapshot) float32 {
@@ -377,7 +377,7 @@ func (state *State) localProxyContentHeight(snapshot localProxySnapshot) float32
 	return height
 }
 
-func (state *State) localProxyPhaseLine(snapshot localProxySnapshot) (string, ui.Color) {
+func (state *State) localProxyPhaseLine(snapshot localProxySnapshot) (string, gfx.Color) {
 	m, pal := state.messages.LocalProxy, state.pal
 	switch snapshot.Phase {
 	case localProxyConnecting:
@@ -427,7 +427,7 @@ func (state *State) localProxyServerText(session *Session) string {
 	return fmt.Sprintf(state.messages.LocalProxy.ServerFmt, state.sessionAddress(session.host))
 }
 
-func (state *State) paintLocalProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) paintLocalProxyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages.LocalProxy, state.Theme()
 	session := state.localProxySession()
 	snapshot := state.localProxySnapshot(session)
@@ -454,11 +454,11 @@ func (state *State) paintLocalProxyDialog(canvas *ui.Canvas, viewport ui.Rect) {
 	}
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitLocalProxyDismiss, CloseID: closeID,
-		InitialFocusID: initialFocus, ContentSize: ui.Size{Width: min(width, max(float32(360), viewport.Width-32))},
+		InitialFocusID: initialFocus, ContentSize: gfx.Size{Width: min(width, max(float32(360), viewport.Width-32))},
 		FitBody: true, BodyHeight: min(contentHeight, max(float32(180), viewport.Height-210)),
 	})
 	layout := dialog.Begin(title, description)
-	contentSize := ui.Size{
+	contentSize := gfx.Size{
 		Width:  max(layout.Body.Width-10, 0),
 		Height: contentHeight,
 	}
@@ -506,9 +506,9 @@ func (state *State) localProxyActions(snapshot localProxySnapshot) []components.
 	}
 }
 
-func (state *State) paintLocalProxyMain(canvas *ui.Canvas, bounds ui.Rect, snapshot localProxySnapshot) {
+func (state *State) paintLocalProxyMain(canvas *gfx.Canvas, bounds gfx.Rect, snapshot localProxySnapshot) {
 	m, pal, theme := state.messages.LocalProxy, state.pal, state.Theme()
-	var field, phase, docker, more, restore, test flex.Box
+	var field, phase, docker, more, restore, test ui.Box
 	fieldHeight := float32(60)
 	if snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected {
 		fieldHeight = 90
@@ -540,7 +540,7 @@ func (state *State) paintLocalProxyMain(canvas *ui.Canvas, bounds ui.Rect, snaps
 				line, color := state.localProxyTestLine(snapshot)
 				f.Wrap(line).FontSize(theme.Metrics.FontSizeS).Color(color).LineHeight(18)
 			}
-			f.Text(m.HowItWorks).FontSize(theme.Metrics.FontSizeM).Weight(ui.WeightMedium).Color(pal.text)
+			f.Text(m.HowItWorks).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
 			f.Wrap(m.Flow).FontSize(theme.Metrics.FontSizeS).Color(pal.text).LineHeight(18)
 			f.Wrap(m.TerminalHint).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 			f.Wrap(m.ProtocolHint).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
@@ -573,7 +573,7 @@ func (state *State) paintLocalProxyMain(canvas *ui.Canvas, bounds ui.Rect, snaps
 	}
 }
 
-func (state *State) localProxyTestLine(snapshot localProxySnapshot) (string, ui.Color) {
+func (state *State) localProxyTestLine(snapshot localProxySnapshot) (string, gfx.Color) {
 	switch snapshot.TestPhase {
 	case localProxyTestRunning:
 		return state.messages.LocalProxy.Testing, state.pal.accent
@@ -584,7 +584,7 @@ func (state *State) localProxyTestLine(snapshot localProxySnapshot) (string, ui.
 	}
 }
 
-func (state *State) paintLocalProxyPortField(canvas *ui.Canvas, bounds ui.Rect, snapshot localProxySnapshot, label, hint string, theme ui.Theme) {
+func (state *State) paintLocalProxyPortField(canvas *gfx.Canvas, bounds gfx.Rect, snapshot localProxySnapshot, label, hint string, theme gfx.Theme) {
 	locked := snapshot.Phase == localProxyConnecting || snapshot.Phase == localProxyConnected
 	description := ""
 	if locked {
@@ -601,33 +601,33 @@ func (state *State) paintLocalProxyPortField(canvas *ui.Canvas, bounds ui.Rect, 
 	})
 }
 
-func (state *State) paintLocalProxyPhase(canvas *ui.Canvas, bounds ui.Rect, line string, color ui.Color, theme ui.Theme) {
+func (state *State) paintLocalProxyPhase(canvas *gfx.Canvas, bounds gfx.Rect, line string, color gfx.Color, theme gfx.Theme) {
 	icon := uint8(iconCircleCheck)
 	if color == state.pal.warning || color == state.pal.danger || color == state.pal.muted {
 		icon = iconAlert
 	}
-	canvas.DrawIcon(lucideIcons[icon], ui.Rect{X: bounds.X, Y: bounds.Y + 3, Width: 16, Height: 16}, color)
-	canvas.Label(canvas.FitLine(line, theme.Metrics.FontSizeS, ui.WeightMedium, max(bounds.Width-22, 0)), ui.Rect{
+	canvas.DrawIcon(lucideIcons[icon], gfx.Rect{X: bounds.X, Y: bounds.Y + 3, Width: 16, Height: 16}, color)
+	canvas.Label(canvas.FitLine(line, theme.Metrics.FontSizeS, gfx.WeightMedium, max(bounds.Width-22, 0)), gfx.Rect{
 		X: bounds.X + 22, Y: bounds.Y, Width: max(bounds.Width-22, 0), Height: bounds.Height,
-	}, ui.TextStyle{Size: theme.Metrics.FontSizeS, Weight: ui.WeightMedium, Color: color})
+	}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightMedium, Color: color})
 }
 
-func (state *State) localProxyCopyLabel(id ui.ID, normal, copied string) string {
+func (state *State) localProxyCopyLabel(id gfx.ID, normal, copied string) string {
 	if state.localProxyUI.copied == id {
 		return copied
 	}
 	return normal
 }
 
-func (state *State) paintLocalProxyDocker(canvas *ui.Canvas, bounds ui.Rect, snapshot localProxySnapshot) {
+func (state *State) paintLocalProxyDocker(canvas *gfx.Canvas, bounds gfx.Rect, snapshot localProxySnapshot) {
 	m, pal, theme := state.messages.LocalProxy, state.pal, state.Theme()
 	port := state.localProxyCommandPort()
-	var config, docs, restore flex.Box
+	var config, docs, restore ui.Box
 	f := state.settingsRow.Begin(canvas, theme, bounds)
 	f.Column().Fill().PadSides(2, 4, 10, 6).Gap(8).Children(func() {
 		f.Wrap(m.DockerScope).FontSize(theme.Metrics.FontSizeS).Color(pal.warning).LineHeight(18)
 		f.Wrap(m.DockerWarning).FontSize(theme.Metrics.FontSizeS).Color(pal.danger).LineHeight(18)
-		f.Text(m.DockerSteps).FontSize(theme.Metrics.FontSizeM).Weight(ui.WeightSemibold).Color(pal.text)
+		f.Text(m.DockerSteps).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text)
 		if port != 0 {
 			for _, line := range strings.Split(fmt.Sprintf(m.DockerConfigFmt, port, port), "\n") {
 				f.Text(line).Mono().FontSize(11).Color(pal.text).LineHeight(16)
