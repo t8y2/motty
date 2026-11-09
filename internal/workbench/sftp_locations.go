@@ -368,11 +368,6 @@ func (state *State) sftpPlacesPointer(event gfx.PointerEvent) (gfx.EventResult, 
 		return gfx.EventResult{}, false
 	}
 	view := session.files
-	if _, local, mounted := state.decodePaneHit(event.Target); mounted {
-		event.Target = local
-		event.X -= state.contextRect.X
-		event.Y -= state.contextRect.Y - windowBarHeight
-	}
 	wasDragging := view.places.scroll.Dragging()
 	changed := view.places.scroll.Drag(event)
 	if wasDragging || changed || view.places.scroll.Dragging() {

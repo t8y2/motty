@@ -1652,10 +1652,10 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result, handled := state.scrollMonitor(event); handled {
 		return result
 	}
-	// A wheel over a control of the files panel belongs to the panel's list. It
-	// must not be treated as a pane event: that would shift its coordinates by a
-	// pane's origin.
-	if mount, ok := tree.MountOf(event.Target.Scope()); ok && mount == contextMount {
+	// A wheel over a control of the files panel belongs to the panel's list. The
+	// panel is part of the workbench page now, so the event already has window
+	// coordinates and the control's own identity.
+	if state.contextPanelOwns(event.Target) {
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.files != nil && state.activeSection == sectionTerminal && state.modal == modalNone {
 			return state.scrollSFTP(session.files, event)
 		}

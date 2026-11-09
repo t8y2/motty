@@ -28,14 +28,9 @@ const (
 	sftpHeaderButton = float32(24)
 )
 
-// The docked files panel, its editor and the panel before it has a list are
-// pages: one Page per region, each with a Root of its own, so the panel's
-// controls are named where Viva's page layer expects them.
-const (
-	sftpPanelRoot  = "sftp-panel"
-	sftpEditorRoot = "sftp-editor"
-	sftpEmptyRoot  = "sftp-empty"
-)
+// The docked files panel is part of the workbench page: its view is declared in
+// a container the page names, and its editor replaces that view in the same
+// container. The panel's hand-painted parts keep the identities they always had.
 
 // sftpPanelScratch is the room the panel's page leaves for what is painted by
 // hand after it has been laid out: the icon buttons, the filter, the path and
@@ -43,6 +38,10 @@ const (
 type sftpPanelScratch struct {
 	view    *sftpView
 	session *Session
+	// bounds is the panel's rectangle in the window. The view is declared in a
+	// container of the workbench page, whose bounds are the window's, so the
+	// sizes the layout needs are kept here.
+	bounds gfx.Rect
 
 	// headerTools is where orderToolbarTools builds the header's actions.
 	headerTools [8]barTool
@@ -69,62 +68,13 @@ type sftpEditorScratch struct {
 // sftpEmptyScratch is the room the pre-list panel page leaves for its chrome.
 type sftpEmptyScratch struct {
 	session      *Session
+	bounds       gfx.Rect
 	canConnect   bool
 	header       ui.Box
 	closeButton  ui.Box
 	sideButton   ui.Box
 	sessionTitle ui.Box
 	openButton   ui.Box
-}
-
-// sftpPanelPointer gives the docked files panel's pages the pointer events they
-// own. The panel is painted into an embedded canvas, and the host has already
-// translated the event to the page's own identities.
-func (state *State) sftpPanelPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if state.activeSection != sectionTerminal {
-		return gfx.EventResult{}, false
-	}
-	chrome := &state.chrome
-	if chrome.sftpEditorPage != nil {
-		if result, ok := chrome.sftpEditorPage.Pointer(event); ok {
-			return result, true
-		}
-	}
-	if chrome.sftpPanelPage != nil {
-		if result, ok := chrome.sftpPanelPage.Pointer(event); ok {
-			return result, true
-		}
-	}
-	if chrome.sftpEmptyPage != nil {
-		if result, ok := chrome.sftpEmptyPage.Pointer(event); ok {
-			return result, true
-		}
-	}
-	return gfx.EventResult{}, false
-}
-
-// sftpPanelKey is sftpPanelPointer for the keyboard.
-func (state *State) sftpPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if state.activeSection != sectionTerminal {
-		return gfx.EventResult{}, false
-	}
-	chrome := &state.chrome
-	if chrome.sftpEditorPage != nil {
-		if result, ok := chrome.sftpEditorPage.Key(event); ok {
-			return result, true
-		}
-	}
-	if chrome.sftpPanelPage != nil {
-		if result, ok := chrome.sftpPanelPage.Key(event); ok {
-			return result, true
-		}
-	}
-	if chrome.sftpEmptyPage != nil {
-		if result, ok := chrome.sftpEmptyPage.Key(event); ok {
-			return result, true
-		}
-	}
-	return gfx.EventResult{}, false
 }
 
 // sftpIconButton is an icon button declared into a slot of the page and painted
@@ -150,29 +100,17 @@ func (state *State) paintSFTPIconButtons(canvas *gfx.Canvas, buttons []sftpIconB
 	}
 }
 
-func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Session) {
-	view := session.files
+// paintSFTPPanelDetails paints what the panel's view lays out but does not
+// paint: the icon buttons, the filter, the path and the list's own parts. It
+// runs after the view's children, inside the panel container.
+func (state *State) paintSFTPPanelDetails(canvas *gfx.Canvas) {
+	s := &state.chrome.sftpPanel
+	view, session := s.view, s.session
 	if view == nil {
-		return
-	}
-	if view.editPath != "" {
-		state.paintSFTPEditor(canvas, size, session, view)
 		return
 	}
 	pal := state.pal
 	folder, local := view.active(), view.local
-	if folder.pathEditing && !state.sftpPathInput && canvas.Focused() != hitSFTPPath {
-		folder.pathEditing = false
-		folder.resetPathInput()
-	}
-	chrome := &state.chrome
-	if chrome.sftpPanelPage == nil {
-		chrome.sftpPanelPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: sftpPanelRoot, Theme: &state.theme})
-		chrome.sftpPanelView = state.declareSFTPPanel
-	}
-	chrome.sftpPanel = sftpPanelScratch{view: view, session: session}
-	chrome.sftpPanelPage.Draw(canvas, gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)}, chrome.sftpPanelView)
-	s := &chrome.sftpPanel
 
 	for index := range s.buttons[:s.buttonCount] {
 		if s.buttons[index].id == hitSFTPHeaderMore {
@@ -197,11 +135,11 @@ func (state *State) paintSFTPPage(canvas *gfx.Canvas, size gfx.Size, session *Se
 	} else {
 		state.paintSFTPBreadcrumbs(canvas, s.crumbs.Rect(), folder.crumbs)
 	}
-	state.paintSFTPList(canvas, size, s, session, view)
+	state.paintSFTPList(canvas, s, session, view)
 	view.places.anchors[sideIndex(local)] = s.crumbs.Rect()
 	if view.bookmarksOpen {
 		places := sftpPlaceBrowser{owner: state, session: session, view: view}
-		places.paintDirectoryPlaces(canvas, gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)})
+		places.paintDirectoryPlaces(canvas, state.contextRect)
 	}
 	if view.busy {
 		components.PaintSpinner(canvas, state.Theme(), s.spinnerSlot.Rect(), components.SpinnerPhase(canvas.Now()/(125*time.Millisecond)))
@@ -333,7 +271,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		// The rows are one Viva List, under a header that sorts them by a
 		// column. The List takes what the header leaves.
 		searching, rows := folder.searching(), folder.shownRows()
-		width := max(c.Bounds().Width-2*sftpPad, 0)
+		width := max(s.bounds.Width-2*sftpPad, 0)
 		visible := 0
 		if folder.listHeight > 0 {
 			visible = int(folder.listHeight / sftpRowHeight)
@@ -466,7 +404,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 // header, the scroll bar, the empty or loading message and the place dropped
 // files would go. The rows themselves are declared as elements by
 // declareSFTPListRow, and the header by declareSFTPColumnHeader.
-func (state *State) paintSFTPList(canvas *gfx.Canvas, size gfx.Size, s *sftpPanelScratch, session *Session, view *sftpView) {
+func (state *State) paintSFTPList(canvas *gfx.Canvas, s *sftpPanelScratch, session *Session, view *sftpView) {
 	pal := state.pal
 	folder, local := view.active(), view.local
 	searching, rows := folder.searching(), folder.shownRows()
@@ -785,15 +723,14 @@ func (state *State) paintSFTPBreadcrumbs(canvas *gfx.Canvas, bounds gfx.Rect, cr
 	}
 }
 
-func (state *State) paintSFTPEditor(canvas *gfx.Canvas, size gfx.Size, session *Session, view *sftpView) {
-	chrome := &state.chrome
-	if chrome.sftpEditorPage == nil {
-		chrome.sftpEditorPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: sftpEditorRoot, Theme: &state.theme})
-		chrome.sftpEditorView = state.declareSFTPEditor
+// paintSFTPEditorDetails paints the editor's text area and spinner after its
+// view has been laid out in the panel container.
+func (state *State) paintSFTPEditorDetails(canvas *gfx.Canvas) {
+	editor := &state.chrome.sftpEditor
+	view := editor.view
+	if view == nil {
+		return
 	}
-	chrome.sftpEditor = sftpEditorScratch{view: view}
-	chrome.sftpEditorPage.Draw(canvas, gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(0, size.Height-windowBarHeight)}, chrome.sftpEditorView)
-	editor := &chrome.sftpEditor
 
 	value := view.editEditor.String()
 	focused := canvas.Focused() == hitSFTPEditor

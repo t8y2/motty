@@ -38,10 +38,10 @@ var (
 
 // Where an embedded session page is painted. Every pane paints the same page with
 // the same controls; mounting it in the pane's place makes them that pane's own
-// identities (see Tree.Mount), and the context panel is a mount of its own.
+// identities (see Tree.Mount). The docked files panel is part of the workbench
+// page now, so its controls keep their window identities.
 var (
 	panesHits     = tree.Feature("panes")
-	contextMount  = tree.Feature("context")
 	fileTabsHits  = tree.Feature("file-tabs")
 	filePagesHits = tree.Feature("file-pages")
 
@@ -67,8 +67,10 @@ func paneMount(session *Session) gfx.Scope {
 	return tree.Sub(panesHits, gfx.Index(int(session.paneSlot)))
 }
 
-// contextID is the identity a control of the files panel has in the window.
-func contextID(id gfx.ID) gfx.ID { return tree.MountID(contextMount, id) }
+// contextID is the identity a control of the files panel has in the window. The
+// panel is part of the workbench page, so a control's identity is its own: the
+// helper stays for the tests that name the panel's controls.
+func contextID(id gfx.ID) gfx.ID { return id }
 
 // item is the number of the list item an identity names, or zero for a control.
 func item(id gfx.ID) int {

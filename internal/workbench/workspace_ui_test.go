@@ -1007,3 +1007,64 @@ func TestSplitPaneEventsGoThroughTheWorkbenchPage(t *testing.T) {
 		t.Fatalf("key reached %q, want the second pane's shell", got)
 	}
 }
+
+// The docked files panel is a component of the workbench page now: its List's
+// rows are the page's identities, not a mount of a panel page. A click, a key
+// and typed text must reach it through the page and the window's own ids.
+func TestDockedFilesPanelEventsGoThroughTheWorkbenchPage(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	page := state.chrome.windowPage
+	if page == nil {
+		t.Fatal("the workbench page was not created")
+	}
+	view := session.files
+	folder := view.active()
+	row := sftpRowIndex(t, view, "notes.txt")
+	rowID := sftpListRowID(t, folder, row)
+	if !page.Owns(rowID) || !state.contextPanelOwns(rowID) {
+		t.Fatalf("the files list row is not in the workbench page: %v", rowID)
+	}
+	hit, ok := hitByID(&canvas, rowID)
+	if !ok {
+		t.Fatal("the files list row was not painted")
+	}
+
+	// A press on the row selects it. The page declared the row, so the event
+	// carries the window's identity and is not translated by a mount.
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1,
+		Target: rowID, X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2, Viewport: size,
+	})
+	if !result.Handled || !folder.rows[row].selected {
+		t.Fatalf("press through the page = %+v, selected=%v", result, folder.rows[row].selected)
+	}
+
+	// The arrows are the List's, routed by the workbench page.
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyUp, Target: rowID}); !result.Handled {
+		t.Fatalf("key through the page = %+v", result)
+	}
+	if folder.list.Selected() != 0 {
+		t.Fatalf("arrow moved the List to row %d, want 0", folder.list.Selected())
+	}
+
+	// Typing reaches the filter by the identity the panel paints in the window,
+	// with no embedded page to translate it.
+	state.Click(hitSFTPFilterToggle)
+	state.Paint(&canvas, size)
+	if !state.contextPanelHit(hitSFTPFilter) {
+		t.Fatal("the filter is not part of the docked panel")
+	}
+	input := state.SFTPInput(app.TextInputContext{ID: hitSFTPFilter})
+	if input == nil || input.OnEvent == nil {
+		t.Fatal("the docked filter has no native text input")
+	}
+	if _, err := input.OnEvent(app.TextEvent{Kind: app.TextInsert, Text: "note"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := folder.filterInputEditor().String(); got != "note" {
+		t.Fatalf("typed filter = %q, want note", got)
+	}
+}

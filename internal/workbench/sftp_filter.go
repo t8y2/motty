@@ -185,11 +185,11 @@ func (state *State) paintQueuedSFTPHeaderMenu(canvas *gfx.Canvas) {
 		if request.anchor.Width == 0 || state.contextRect.Width == 0 {
 			return
 		}
-		// The panel is embedded at the context mount, with its own origin.
-		origin := gfx.Point{X: state.contextRect.X, Y: state.contextRect.Y - windowBarHeight}
-		state.sftpHeaderMenu.owner = tree.MountID(contextMount, hitSFTPHeaderMenuDismiss)
-		state.sftpHeaderMenu.mount = contextMount
-		state.paintSFTPHeaderMenu(canvas, origin, contextMount, state.windowRect(), request.anchor, request.folder, request.view)
+		// The panel is part of the workbench page, so its anchor is already a
+		// window rectangle and its identities need no mount.
+		state.sftpHeaderMenu.owner = hitSFTPHeaderMenuDismiss
+		state.sftpHeaderMenu.mount = 0
+		state.paintSFTPHeaderMenu(canvas, gfx.Point{}, 0, state.windowRect(), request.anchor, request.folder, request.view)
 		return
 	}
 	if request.window.closed || request.window.window != nil {
@@ -269,6 +269,11 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, origin gfx.Point, mo
 
 func (state *State) sftpFilterShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	session, local, ok := state.decodePaneHit(target)
+	if !ok {
+		if panelSession, panelOK := state.contextPanelSession(target); panelOK {
+			session, local, ok = panelSession, target, true
+		}
+	}
 	if !ok || local != hitSFTPFilter && local.Scope() != hitSFTPEntryList && !session.files.active().onListRow(local) {
 		return gfx.EventResult{}, false
 	}
@@ -276,8 +281,7 @@ func (state *State) sftpFilterShortcut(target gfx.ID) (gfx.EventResult, bool) {
 		return gfx.EventResult{}, false
 	}
 	session.files.active().filterOpen = true
-	mount, _ := tree.MountOf(target.Scope())
-	return gfx.EventResult{Handled: true, Repaint: true, Focus: tree.MountID(mount, hitSFTPFilter), FocusVisible: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitSFTPFilter, FocusVisible: true}, true
 }
 
 func (state *State) paintSFTPFilter(canvas *gfx.Canvas, bounds gfx.Rect, folder *sftpFolder) {

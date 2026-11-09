@@ -57,12 +57,16 @@ func (state *State) startSFTPPathEditing(view *sftpView) gfx.EventResult {
 func (state *State) sftpPathShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	session, local, ok := state.decodePaneHit(target)
 	if !ok {
-		session = state.terminalSession(target)
-		if session == nil {
-			session = state.terminalPageSession(target)
+		if panelSession, panelOK := state.contextPanelSession(target); panelOK {
+			session, local, ok = panelSession, target, true
+		} else {
+			session = state.terminalSession(target)
+			if session == nil {
+				session = state.terminalPageSession(target)
+			}
+			local = target
+			ok = session != nil
 		}
-		local = target
-		ok = session != nil
 	}
 	if !ok || session.files == nil || session.ID != state.activeSessionID || state.activeSection != sectionTerminal || state.modal != modalNone {
 		return gfx.EventResult{}, false
@@ -79,7 +83,6 @@ func (state *State) sftpPathShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	if !result.Handled {
 		return gfx.EventResult{}, false
 	}
-	result.Focus = tree.MountID(contextMount, result.Focus)
 	return result, true
 }
 

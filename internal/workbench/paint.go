@@ -237,6 +237,11 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		chrome.windowPage = ui.NewPage(ui.PageConfig{Root: shellPageRoot, Theme: &state.theme})
 		chrome.windowView = state.declareShell
 	}
+	// The files panel is declared in the page and asks for its More menu as it
+	// paints, so the menu lifecycle starts before the page. The embedded file
+	// header also paints a popup: starting before workspace content keeps its
+	// scroll/focus state.
+	state.beginMenus()
 	chrome.windowPage.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, chrome.windowView)
 	workspaceSlot := chrome.workspaceSlot
 	state.paintWindowBarParts(canvas, geometry.area)
@@ -244,9 +249,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintLockup(canvas, chrome.lockup.Rect())
 	}
 
-	// The embedded file header also paints a popup: start the shared menu
-	// lifecycle before workspace content so its scroll/focus state survives.
-	state.beginMenus()
 	if terminal {
 		state.paintWorkspacePanes(canvas, size)
 		state.paintNotesPanel(canvas, size)
@@ -568,6 +570,7 @@ func (state *State) declareShell(c ui.C) {
 	})
 	if chrome.shellFullPage && state.terminalPage() {
 		state.declareWorkspacePanes(c)
+		state.declareContextPanel(c)
 	}
 	state.declareAIPanel(c)
 }
@@ -1098,17 +1101,12 @@ type chromeLayout struct {
 	newTabShells ui.Box
 	// hostList is the hosts list: where the wheel is aimed.
 	hostList gfx.Rect
-	// sftpPanelPage and sftpEditorPage declare the docked files panel and its
-	// editor; sftpEmptyPage declares the panel before it has a list.
-	sftpPanelPage  *ui.Page
-	sftpPanelView  func(ui.C)
-	sftpPanel      sftpPanelScratch
-	sftpEditorPage *ui.Page
-	sftpEditorView func(ui.C)
-	sftpEditor     sftpEditorScratch
-	sftpEmptyPage  *ui.Page
-	sftpEmptyView  func(ui.C)
-	sftpEmpty      sftpEmptyScratch
+	// sftpPanel, sftpEditor and sftpEmpty are the slots the docked files panel's
+	// page view declares. The view is part of the workbench page now; the slots
+	// let the hand-painted parts find their rectangles after layout.
+	sftpPanel  sftpPanelScratch
+	sftpEditor sftpEditorScratch
+	sftpEmpty  sftpEmptyScratch
 }
 
 // declareNavigation declares the sidebar: the name of the application over the

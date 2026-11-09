@@ -740,14 +740,28 @@ type State struct {
 	sftpColumnEditor sftpColumnSettingsUI
 
 	// contextRect is where the last paint put the side panel (empty when there
-	// was none), so wheel events can tell which view they are over.
-	contextRect      gfx.Rect
-	shortcuts        shortcutMap
-	shortcutCapture  shortcutAction
-	shortcutError    string
-	reconnectWaiters int
-	pal              *palette
-	theme            gfx.Theme
+	// was none), so wheel events can tell which view they are over. The panel is
+	// declared inside the workbench page now, so contextPanelScope is the page
+	// container its elements live in, and contextPanelMode says which view it
+	// declared. contextDrawer is the page's drawer chrome while the panel is a
+	// narrow overlay; its description is kept for the paint that opens it.
+	contextRect              gfx.Rect
+	contextPanelScope        gfx.Scope
+	contextPanelMode         contextPanelMode
+	contextDrawer            components.Drawer
+	contextDrawerDescription string
+	contextDrawerOpen        bool
+	// The panel's Draw callbacks are method values made once: a paint that made
+	// them again would allocate.
+	contextPanelDraw   func(*ui.DrawContext)
+	contextDrawerBegin func(*ui.DrawContext)
+	contextDrawerEnd   func(*ui.DrawContext)
+	shortcuts          shortcutMap
+	shortcutCapture    shortcutAction
+	shortcutError      string
+	reconnectWaiters   int
+	pal                *palette
+	theme              gfx.Theme
 	// termPal is the terminal's own look: pal with the chosen color scheme and
 	// the highlight rules applied. termEpoch counts its rebuilds.
 	termPal   palette
@@ -849,7 +863,6 @@ type State struct {
 	pixelScale            float32
 	cellWidth, cellHeight float32
 	paneCanvas            gfx.Canvas
-	contextCanvas         gfx.Canvas
 	panes                 []Pane
 	paneSplits            []PaneSplit
 	terminalDrop          terminalDrop // the terminal that files being dragged over would be uploaded from
@@ -2428,6 +2441,11 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	}
 	if result, handled := state.sftpListPointer(event); handled {
 		return result
+	}
+	if state.modal == modalNone && state.activeSection == sectionTerminal {
+		if result, handled := state.contextPanelPointer(event); handled {
+			return result
+		}
 	}
 	return gfx.EventResult{}
 }

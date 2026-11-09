@@ -354,7 +354,7 @@ func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 			var entry, files gfx.Rect
 			source, _ := state.sessionByIDPointer(w.session.ID)
 			for _, hit := range canvas.Hits() {
-				if local, ok := tree.Local(contextMount, hit.ID); ok && local == hitSFTPDetach {
+				if hit.ID == hitSFTPDetach && pointInRect(hit.Bounds.X, hit.Bounds.Y, state.contextRect) {
 					t.Fatal("standalone entry still lives in side panel")
 				}
 				local, ok := tree.Local(paneMount(source), hit.ID)
