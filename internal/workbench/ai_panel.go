@@ -44,7 +44,6 @@ var (
 	hitAIModelChip     = tree.ID(aiPanelHits, "ai-model-chip")
 	hitAIDivider       = tree.ID(aiPanelHits, "ai-divider")
 	hitAIComposerGrip  = tree.ID(aiPanelHits, "ai-composer-grip")
-	hitAIModelDismiss  = tree.ID(aiPanelHits, "ai-model-dismiss")
 	hitAIAutoScope     = tree.ID(aiPanelHits, "ai-auto-scope")
 	hitAIReasoningChip = tree.ID(aiPanelHits, "ai-reasoning-chip")
 	hitAIRunStatus     = tree.ID(aiPanelHits, "ai-run-status")
@@ -75,7 +74,6 @@ var (
 	hitAICopyAnswer     = tree.ID(aiPanelHits, "ai-copy-answer")                  // copy the last answer
 	hitAILinks          = tree.Sub(aiPanelHits, tree.Name("ai-links"))            // links in the assistant's answers
 	hitAIMentions       = tree.Sub(aiPanelHits, tree.Name("ai-mentions"))         // sessions an @ can name
-	hitAIModels         = tree.Sub(aiPanelHits, tree.Name("ai-models"))           // the models of the provider the chip menu has open
 )
 
 // The terminal menu's two assistant items.
@@ -365,15 +363,11 @@ type aiPanel struct {
 	dragStart float32 // and how tall the box was
 	boxHeight float32 // how tall it was painted
 
-	// The model chip and its menu. modelList and modelTypeahead remain for the
-	// window's shared menu wiring (menu_scroll.go), which still reaches the old
-	// assistant menu; the menu itself is now declared by menuPage below.
-	modelMenu      bool
-	modelList      components.MenuScroll
-	modelTypeahead components.MenuTypeahead
-	window         gfx.Rect // the whole window, for the menus to be placed and dismissed in
-	chip           gfx.Rect
-	approvalLay    aiApprovalLayout
+	// The model chip and its menu: modelMenu is whether the ui.Menu is open.
+	modelMenu   bool
+	window      gfx.Rect // the whole window, for the menus to be placed and dismissed in
+	chip        gfx.Rect
+	approvalLay aiApprovalLayout
 
 	// menuPage declares the open chip menus in a page of the whole window, so a
 	// menu may open outside the panel and its dismiss backdrop covers the window.
