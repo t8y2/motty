@@ -103,6 +103,7 @@ func TestCredSSPFallbackDoesNotRetryCredentials(t *testing.T) {
 		{"raw password refusal", true, 0x80090308, 0xC000006D, false, true, 2, 1},
 		{"SPNEGO protocol error", false, 0, 0x80090308, false, false, 1, 1},
 		{"SPNEGO password refusal", false, 0, 0xC000006D, false, true, 1, 1},
+		{"close after Authenticate", false, 0, closeAfterAuth, false, false, 1, 1},
 		{"explicit refusal before challenge", false, 0xC000006D, 0, false, true, 1, 0},
 		{"raw fallback certificate refused", true, 0x80090308, 0, true, false, 2, 0},
 	}
@@ -187,6 +188,9 @@ func TestCredSSPFallbackDoesNotRetryCredentials(t *testing.T) {
 							return errors.New("missing Authenticate message")
 						}
 						attempts.Add(1)
+						if test.authError == closeAfterAuth {
+							return nil // the deferred Close is the whole answer
+						}
 						return writeNLATestRequest(secured, nlaTestRequest{Version: 6, ErrorCode: test.authError})
 					}()
 					if err != nil {
@@ -232,6 +236,10 @@ func TestCredSSPFallbackDoesNotRetryCredentials(t *testing.T) {
 		})
 	}
 }
+
+// closeAfterAuth stands in for the error code of a server that answers the
+// Authenticate message by dropping the connection.
+const closeAfterAuth = -1
 
 func mustTestPort(t *testing.T, text string) int {
 	t.Helper()

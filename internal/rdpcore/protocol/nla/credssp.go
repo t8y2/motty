@@ -31,6 +31,14 @@ var ErrNegotiateToken = errors.New("token negotiation failed")
 // was attempted. Callers must not retry credentials or fall back to TLS-only.
 var ErrCredentialsSent = errors.New("failed after credentials were sent")
 
+// ErrClosedAfterCredentials marks a server that dropped the connection right
+// after the NTLM Authenticate message, without an error code. A server that
+// refuses the password and one that cannot handle this client's handshake
+// (older CredSSP versions in particular) look the same here, so it is not a
+// credential refusal: the saved password must not be discarded on its account.
+// It is still a failed logon attempt, so callers must not retry.
+var ErrClosedAfterCredentials = errors.New("the server closed the connection after the credentials were sent; the password may be wrong, or the server may not accept this client's NLA handshake")
+
 // isFatalNTSTATUS returns true for error codes where retrying is pointless.
 func isFatalNTSTATUS(code int) bool {
 	switch uint32(code) {
@@ -271,11 +279,12 @@ func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 	resp2, err := readTSRequest(tlsConn)
 	if err != nil {
 		log.LogAttrs(ctx, slog.LevelError, "failed reading server pubKeyAuth", slog.String("error", err.Error()))
-		// Motty divergence: the password has been sent. A server that drops the
-		// connection now has refused it (Windows does not say so), and trying again
-		// under another TLS or CredSSP version would be another failed logon for the
-		// account, enough to lock it out after a single mistyped password.
-		return fmt.Errorf("%w: credssp: the server closed the connection after the credentials were sent: %w", ErrCredentialsFatal, err)
+		// Motty divergence: the password has been sent, and trying again under
+		// another TLS or CredSSP version would be another failed logon for the
+		// account, enough to lock it out after a single mistyped password. The
+		// close is not proof of a refusal, though (Windows Server 2012 closes on
+		// handshake mismatches too), so it is not reported as one.
+		return fmt.Errorf("%w: credssp: %w", ErrClosedAfterCredentials, err)
 	}
 	log.LogAttrs(ctx, slog.LevelDebug, "received server pubKeyAuth response", slog.Int("pubKeyAuthBytes", len(resp2.PubKeyAuth)), util.Hex8("errorCode", uint32(resp2.ErrorCode)))
 	if resp2.ErrorCode != 0 {

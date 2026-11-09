@@ -311,7 +311,7 @@ func TestCredSSPErrorStages(t *testing.T) {
 		{"token rejected after Authenticate", true, 0x80090308, ErrCredentialsSent},
 		{"password refused", true, 0xC000006D, ErrCredentialsFatal},
 		{"SSPI password refused", true, 0x8009030C, ErrCredentialsFatal},
-		{"connection closed after Authenticate", true, 0, ErrCredentialsSent},
+		{"connection closed after Authenticate", true, 0, ErrClosedAfterCredentials},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -334,6 +334,9 @@ func TestCredSSPErrorStages(t *testing.T) {
 			})
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+			if test.code == 0 && (!errors.Is(err, ErrCredentialsSent) || errors.Is(err, ErrCredentialsFatal)) {
+				t.Fatalf("a close after Authenticate must block retries without claiming the password was refused: %v", err)
 			}
 			if test.afterAuth && errors.Is(err, ErrNegotiateToken) {
 				t.Fatalf("credentials could be retried after Authenticate: %v", err)
