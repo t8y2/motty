@@ -296,11 +296,12 @@ func TestToolbarDockPresenceCheckDoesNotAllocate(t *testing.T) {
 	}
 }
 
-// The dock's strips are pages: their tool cells come from the page's layout,
-// and the page leaves the identities (and so the drag and keyboard paths) to the
-// window. A click delivered in a paint's event pass still reaches the action the
-// window dispatches for the tool.
-func TestToolbarDockStripsArePagesAndKeepTheWindowActions(t *testing.T) {
+// The bottom and side strips are pages of their own; the top strip is declared
+// in the window bar's page. Their tool cells come from that layout, and they
+// leave the identities (and so the drag and keyboard paths) to the window. A
+// click delivered in a paint's event pass still reaches the action the window
+// dispatches for the tool.
+func TestToolbarDockStripsKeepTheWindowActions(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	state.activeSection = sectionTerminal
 	size := gfx.Size{Width: 1200, Height: 800}
@@ -310,8 +311,8 @@ func TestToolbarDockStripsArePagesAndKeepTheWindowActions(t *testing.T) {
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	dock := &state.toolbarDock
-	if dock.topPage == nil || dock.bottomPage == nil || dock.sidePages[0] == nil {
-		t.Fatalf("strips painted without pages: top=%t bottom=%t side=%t", dock.topPage != nil, dock.bottomPage != nil, dock.sidePages[0] != nil)
+	if dock.bottomPage == nil || dock.sidePages[0] == nil {
+		t.Fatalf("strips painted without pages: bottom=%t side=%t", dock.bottomPage != nil, dock.sidePages[0] != nil)
 	}
 	// The tools keep the identities the window names by hand, so the page does
 	// not take the press the dock drag starts on, an arrow key, or the wheel the
@@ -332,7 +333,17 @@ func TestToolbarDockStripsArePagesAndKeepTheWindowActions(t *testing.T) {
 	pass.EndEventPass()
 	pass.RunAfterPaint()
 	if state.appearance == before {
-		t.Fatal("the event pass did not reach the top strip's theme action")
+		t.Fatal("the event pass did not reach the side strip's theme action")
+	}
+	// The top strip has no page of its own: its tool stays the window's, and a
+	// click on it in the event pass opens the command palette.
+	var topPass gfx.Canvas
+	topPass.BeginEventPass(hitCommandPalette, gfx.ClickInfo{})
+	state.Paint(&topPass, size)
+	topPass.EndEventPass()
+	topPass.RunAfterPaint()
+	if state.modal != modalCommandPalette {
+		t.Fatal("the event pass did not reach the top strip's command palette action")
 	}
 }
 

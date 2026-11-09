@@ -71,18 +71,7 @@ type verticalTabGrouping struct {
 	collapsed map[verticalTabKey]bool
 	revealed  layoutcore.WorkspaceID
 	compact   bool
-	// The grouped rows are their own page. The page and its declaration are kept
-	// between paints; pageWidth and pageCompact are this paint's values.
-	page        *ui.Page
-	pageView    func(ui.C)
-	pageWidth   float32
-	pageCompact bool
 }
-
-// verticalTabGroupsPageRoot names the grouped tab list's page. It is separate
-// from hitVerticalTabGroups, the identities the list gives its rows by hand, so
-// the page's own elements and the window's controls do not share names.
-const verticalTabGroupsPageRoot = "vertical-tab-groups-page"
 
 func (state *State) verticalTabsGrouped() bool {
 	return state.tabOrientation == tabsVertical && state.verticalTabs.grouping
@@ -288,26 +277,14 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 	}
 }
 
-// declareGroupedVerticalTabs reserves the grouped list's region and leaves it to
-// its page. The sidebar lays the list out in a Frame it keeps for the virtual
-// rows, so Frame.Page is the seam: the region's rectangle is only known once
-// that Frame is laid out.
-func (state *State) declareGroupedVerticalTabs(f *ui.Frame, width float32, compact bool) {
+// declareGroupedVerticalTabs declares the grouped rows inside the sidebar's tab
+// page: a server header, then its connections indented beneath it. The width and
+// compact state are the page's this paint, set by paintVerticalTabs. The rows
+// keep the identities the window names by hand, because tab dragging and the
+// tree keyboard address them.
+func (state *State) declareGroupedVerticalTabs(c ui.C) {
 	view := &state.verticalTabs.grouped
-	view.pageWidth, view.pageCompact = width, compact
-	if view.page == nil {
-		view.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: verticalTabGroupsPageRoot, Theme: &state.theme})
-		view.pageView = state.declareGroupedVerticalTabsPage
-	}
-	f.Page(view.page, view.pageView).Fill()
-}
-
-// declareGroupedVerticalTabsPage declares the grouped rows: a server header, then
-// its connections indented beneath it. The rows keep the identities the window
-// names by hand, because tab dragging and the tree keyboard address them.
-func (state *State) declareGroupedVerticalTabsPage(c ui.C) {
-	view := &state.verticalTabs.grouped
-	width, compact := view.pageWidth, view.pageCompact
+	width, compact := state.verticalTabs.pageWidth, state.verticalTabs.pageCompact
 	for _, row := range view.rows {
 		if row.tab < 0 {
 			state.declareVerticalTabGroup(c, row.group, width)
@@ -370,30 +347,6 @@ func (state *State) paintVerticalTabGroupIcons(canvas *gfx.Canvas) {
 	}
 }
 
-// verticalTabGroupsPagePointer gives the grouped list's page the pointer events
-// it owns before the window's own pointer routing. The page owns no identity of
-// its own: its rows and headers are the identities the window names by hand, so
-// an event aimed at them is left to the drag and click paths as before.
-func (state *State) verticalTabGroupsPagePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	page := state.verticalTabs.grouped.page
-	if page == nil {
-		return gfx.EventResult{}, false
-	}
-	return page.Pointer(event)
-}
-
-// verticalTabGroupsPageWheel is verticalTabGroupsPagePointer for the wheel. The
-// list's scrolling belongs to the scroll area the sidebar wraps it in, outside
-// the page; the page takes only what it declares as its own.
-func (state *State) verticalTabGroupsPageWheel(event gfx.ScrollEvent) (gfx.EventResult, bool) {
-	page := state.verticalTabs.grouped.page
-	if page == nil {
-		return gfx.EventResult{}, false
-	}
-	result := page.Wheel(event)
-	return result, result.Handled || result.Repaint
-}
-
 func (state *State) setVerticalTabGroupCollapsed(key verticalTabKey, collapsed bool) {
 	view := &state.verticalTabs.grouped
 	if !collapsed {
@@ -412,11 +365,6 @@ func (state *State) setVerticalTabGroupCollapsed(key verticalTabKey, collapsed b
 // screen, so the children of a collapsed group are skipped. It owns every key in the list.
 func (state *State) verticalTabGroupKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	view := &state.verticalTabs.grouped
-	if view.page != nil {
-		if result, handled := view.page.Key(event); handled {
-			return result, true
-		}
-	}
 	if !state.verticalTabsGrouped() || event.Target.Scope() != hitTabList && event.Target.Scope() != hitVerticalTabGroups {
 		return gfx.EventResult{}, false
 	}

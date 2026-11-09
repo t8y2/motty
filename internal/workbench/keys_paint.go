@@ -35,7 +35,7 @@ func (state *State) paintKeysWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	selectedEncrypted := hasSelection && selected.Encrypted
 	canCopy := hasSelection && selected.Error == ""
 
-	var content, addButton, removeButton, passphraseButton, copyButton ui.Box
+	var content, addButton, removeButton, passphraseButton, copyButton, empty ui.Box
 	f := state.keysLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().Children(func() {
@@ -49,7 +49,7 @@ func (state *State) paintKeysWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 			addButton = f.Slot().Size(addWidth, toolbarHeight).Shrink(0)
 		})
 		if len(state.identities) == 0 {
-			state.declareEmptyPage(f, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd)
+			empty = state.reserveEmptyPage(f, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd)
 		} else {
 			content = f.Slot().Grow(1).MarginSides(17, 0, 9, 0)
 		}
@@ -70,7 +70,7 @@ func (state *State) paintKeysWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	state.paintToolbarButton(canvas, hitKeysAdd, addButton.Rect().X, addButton.Rect().Y, addWidth, messages.KeyAdd, addIcon, true, true, condensed)
 
 	if len(state.identities) == 0 {
-		state.paintEmptyPage(canvas, iconKey, hitKeysAdd, messages.KeyAdd, true)
+		state.drawReservedEmptyPage(canvas, empty, iconKey, hitKeysAdd, messages.KeyAdd, true)
 		state.paintKeysMenu(canvas)
 		return
 	}

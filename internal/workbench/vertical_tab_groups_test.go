@@ -486,41 +486,32 @@ func TestVerticalTabGroupingKeysWalkTheRowsAsATree(t *testing.T) {
 	}
 }
 
-// The grouped list is a page: its header's click is read in the paint's event
-// pass, and the page owns no target the window's drag and keyboard paths must
-// still see.
-func TestVerticalTabGroupHeaderClickIsReadByThePage(t *testing.T) {
+// The grouped list is declared in the sidebar's normal tab page: its header's
+// click is read in the paint's event pass, and the rows keep the identities the
+// window's drag and keyboard paths address.
+func TestVerticalTabGroupHeaderClickIsReadInTheEventPass(t *testing.T) {
 	state := restoredGroupedTabs(t, groupingEntries()...)
 	size := gfx.Size{Width: 1200, Height: 760}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	page := state.verticalTabs.grouped.page
-	if page == nil {
-		t.Fatal("the grouped list painted without a page")
+	if state.verticalTabs.page == nil {
+		t.Fatal("the grouped list painted without the sidebar's tab page")
 	}
 	group := state.verticalTabs.grouped.groups[0]
 	id := group.id()
-	// The header's identities belong to the window, not to the page, so a press
-	// still reaches the tab drag that starts on it.
-	if _, ok := state.verticalTabGroupsPagePointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: id, X: 4, Y: 4}); ok {
-		t.Fatal("the page took a press aimed at a header")
-	}
-	if _, ok := state.verticalTabGroupsPageWheel(gfx.ScrollEvent{Y: 4}); ok {
-		t.Fatal("the page took a wheel event it does not scroll")
-	}
 	// A click outside the event pass no longer collapses: the central dispatcher
-	// leaves the header to the page.
+	// leaves the header to the event pass.
 	state.Click(id)
 	if state.verticalTabs.grouped.collapsed[group.key] {
 		t.Fatal("a click outside the event pass collapsed the group")
 	}
 	clickVerticalTabGroupPage(t, state, id, size)
 	if !state.verticalTabs.grouped.collapsed[group.key] {
-		t.Fatal("the page did not read the header's click")
+		t.Fatal("the event pass did not read the header's click")
 	}
 	clickVerticalTabGroupPage(t, state, id, size)
 	if state.verticalTabs.grouped.collapsed[group.key] {
-		t.Fatal("the page did not read the second click")
+		t.Fatal("the event pass did not read the second click")
 	}
 }
 

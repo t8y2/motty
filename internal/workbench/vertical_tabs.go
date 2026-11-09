@@ -69,8 +69,8 @@ type verticalTabs struct {
 	tabs        []barTab
 }
 
-// verticalTabsPageRoot names the plain tab list's page in the window's Tree. The
-// grouped list has its own root (verticalTabGroupsPageRoot).
+// verticalTabsPageRoot names the sidebar tab list's page in the window's Tree.
+// The grouped and flat lists share it: grouping only changes the rows declared.
 const verticalTabsPageRoot = "vertical-tabs-page"
 
 func (state *State) setTabOrientation(orientation tabOrientation) bool {
@@ -298,7 +298,7 @@ func (state *State) declareVerticalTabsRows(c ui.C) {
 	view := &state.verticalTabs
 	ui.Column(c).Fill().Children(func() {
 		if view.grouping {
-			state.declareGroupedVerticalTabs(c.Frame(), view.pageWidth, view.pageCompact)
+			state.declareGroupedVerticalTabs(c)
 			return
 		}
 		for index, workspace := range state.workspaceTabs {

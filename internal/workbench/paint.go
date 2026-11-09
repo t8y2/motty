@@ -796,7 +796,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 				chrome.probeArea = area
 			}
 		})
-		state.declareToolbarDockTop(c.Frame(), probe)
+		state.declareToolbarDockTop(c, probe)
 	})
 }
 

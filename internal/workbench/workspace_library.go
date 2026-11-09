@@ -193,7 +193,7 @@ func (state *State) paintWorkspaceLibrary(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m, pal := state.messages, state.pal
 	newWidth, newIcon := toolbarButtonLayout(canvas, m.WorkspaceNew, iconPlus, iconPlus, bounds.Width < 520)
 
-	var content, create ui.Box
+	var content, create, empty ui.Box
 	f := state.workspaceLibraryLayout.Begin(canvas, state.Theme(), bounds)
 	padding := float32(22)
 	if bounds.Width < 340 {
@@ -215,7 +215,7 @@ func (state *State) paintWorkspaceLibrary(canvas *gfx.Canvas, bounds gfx.Rect) {
 			})
 		}
 		if len(state.templates) == 0 {
-			state.declareEmptyPage(f, bounds, m.WorkspaceLibraryEmpty, m.WorkspaceLibraryEmptySub, m.WorkspaceNew)
+			empty = state.reserveEmptyPage(f, bounds, m.WorkspaceLibraryEmpty, m.WorkspaceLibraryEmptySub, m.WorkspaceNew)
 		} else {
 			content = f.Slot().Grow(1).MarginSides(0, 0, 14, 0)
 		}
@@ -224,7 +224,7 @@ func (state *State) paintWorkspaceLibrary(canvas *gfx.Canvas, bounds gfx.Rect) {
 	f.End()
 
 	if len(state.templates) == 0 {
-		state.paintEmptyPage(canvas, iconColumns2, hitWorkspaceNew, m.WorkspaceNew, true)
+		state.drawReservedEmptyPage(canvas, empty, iconColumns2, hitWorkspaceNew, m.WorkspaceNew, true)
 		return
 	}
 

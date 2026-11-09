@@ -45,11 +45,9 @@ type toolbarDockUI struct {
 	sideViewports           [4]gfx.Rect
 	bottomScroll, bottomMax [2]float32
 	bottomViewports         [2]gfx.Rect
-	// Each painted strip is a page of its own. The pages and their declaration
-	// functions are kept between paints; the scratch values below are this
-	// paint's.
-	topPage           *ui.Page
-	topView           func(ui.C)
+	// Each painted strip is a page of its own except the top, which the window
+	// bar's page declares directly. The pages and their declaration functions
+	// are kept between paints; the scratch values below are this paint's.
 	topTools          []barTool
 	topOverflow       bool
 	topBuffer         [maxBarTools]barTool
@@ -73,12 +71,10 @@ type toolbarDockSideScratch struct {
 	top, bottom             ui.Box
 }
 
-// Each page names its controls in the window's one identity tree, so every
-// painted strip has a root of its own.
-const (
-	toolbarDockTopPageRoot    = "toolbar-dock-top-page"
-	toolbarDockBottomPageRoot = "toolbar-dock-bottom-page"
-)
+// Each strip declared as a page names its controls in the window's one identity
+// tree, so it has a root of its own. The top strip has none: it is declared in
+// the window bar's page.
+const toolbarDockBottomPageRoot = "toolbar-dock-bottom-page"
 
 var toolbarDockSidePageRoots = [2]string{"toolbar-dock-side-right-page", "toolbar-dock-side-left-page"}
 
@@ -150,22 +146,23 @@ func (state *State) toolbarDockTopTools(buffer *[maxBarTools]barTool) ([]barTool
 	return tools, overflow
 }
 
-// declareToolbarDockTop reserves the top strip's room in the window bar and
-// leaves it to its page. The strip is laid out inside a Frame the bar owns, so
-// Frame.Page is the seam: the region's rectangle is only known once the bar is
-// laid out.
-func (state *State) declareToolbarDockTop(f *ui.Frame, probe bool) {
+// declareToolbarDockTop declares the top strip in the window bar's page: one
+// fixed cell per tool, and the overflow button when the row does not fit. The
+// bar lays the strip out with its own row, so no Frame of its own is needed;
+// paintToolbarDockTop paints the buttons into their cells once the page is laid
+// out.
+func (state *State) declareToolbarDockTop(c ui.C, probe bool) {
 	dock := &state.toolbarDock
 	tools, overflow := state.toolbarDockTopTools(&dock.topBuffer)
 	if probe {
 		// The measuring pass only needs the same room; it paints nothing.
-		area := f.Row().Shrink(0).MinWidth(barButtonSize).Height(barButtonSize).MarginSides(0, 0, 0, 10).Gap(2)
+		area := ui.Row(c).Shrink(0).MinWidth(barButtonSize).Height(barButtonSize).MarginSides(0, 0, 0, 10).Gap(2)
 		area.Children(func() {
 			for range tools {
-				f.Slot().Size(barButtonSize, barButtonSize).Shrink(0)
+				ui.Slot(c).Size(barButtonSize, barButtonSize).Shrink(0)
 			}
 			if overflow {
-				f.Slot().Size(barButtonSize, barButtonSize).Shrink(0)
+				ui.Slot(c).Size(barButtonSize, barButtonSize).Shrink(0)
 			}
 		})
 		return
@@ -180,20 +177,10 @@ func (state *State) declareToolbarDockTop(f *ui.Frame, probe bool) {
 	if count > 0 {
 		width = float32(count)*barButtonSize + float32(count-1)*2
 	}
-	if dock.topPage == nil {
-		dock.topPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: toolbarDockTopPageRoot, Theme: &state.theme})
-		dock.topView = state.declareToolbarDockTopPage
-	}
-	dock.topArea = f.Page(dock.topPage, dock.topView).Shrink(0).Width(width).Height(barButtonSize).MarginSides(0, 0, 0, 10)
-}
-
-// declareToolbarDockTopPage declares the top strip: one fixed cell per tool, and
-// the overflow button when the row does not fit. The buttons are painted into
-// their cells once the page is laid out.
-func (state *State) declareToolbarDockTopPage(c ui.C) {
-	dock := &state.toolbarDock
-	ui.Row(c).Fill().Gap(2).Children(func() {
-		for _, tool := range dock.topTools {
+	area := ui.Row(c).Shrink(0).Width(width).Height(barButtonSize).MarginSides(0, 0, 0, 10).Gap(2)
+	dock.topArea = area
+	area.Children(func() {
+		for _, tool := range tools {
 			box := ui.Slot(c).Size(barButtonSize, barButtonSize).Shrink(0)
 			dock.topSlots = append(dock.topSlots, toolbarDockSlot{tool, box})
 			if tool.id == hitAIToggle {
@@ -729,13 +716,14 @@ func (state *State) toolbarDockDropAt(at gfx.Point) toolbarDockDrop {
 	return toolbarDockDrop{}
 }
 
-// toolbarDockPagePointer gives the painted strips their pages' pointer events
+// toolbarDockPagePointer gives the strips declared as pages their pointer events
 // before the window's own routing. The strips paint their buttons into slots
 // with the identities the window names by hand, so the pages own no target the
-// drag below must still see.
+// drag below must still see. The top strip is declared in the window bar's page,
+// which the window routes itself.
 func (state *State) toolbarDockPagePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	dock := &state.toolbarDock
-	for _, page := range [4]*ui.Page{dock.topPage, dock.bottomPage, dock.sidePages[0], dock.sidePages[1]} {
+	for _, page := range [3]*ui.Page{dock.bottomPage, dock.sidePages[0], dock.sidePages[1]} {
 		if page == nil {
 			continue
 		}
@@ -749,7 +737,7 @@ func (state *State) toolbarDockPagePointer(event gfx.PointerEvent) (gfx.EventRes
 // toolbarDockPageKey is toolbarDockPagePointer for the keyboard.
 func (state *State) toolbarDockPageKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	dock := &state.toolbarDock
-	for _, page := range [4]*ui.Page{dock.topPage, dock.bottomPage, dock.sidePages[0], dock.sidePages[1]} {
+	for _, page := range [3]*ui.Page{dock.bottomPage, dock.sidePages[0], dock.sidePages[1]} {
 		if page == nil {
 			continue
 		}
@@ -765,7 +753,7 @@ func (state *State) toolbarDockPageKey(event gfx.KeyEvent) (gfx.EventResult, boo
 // the pages take only what they declare as their own.
 func (state *State) toolbarDockPageWheel(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	dock := &state.toolbarDock
-	for _, page := range [4]*ui.Page{dock.topPage, dock.bottomPage, dock.sidePages[0], dock.sidePages[1]} {
+	for _, page := range [3]*ui.Page{dock.bottomPage, dock.sidePages[0], dock.sidePages[1]} {
 		if page == nil {
 			continue
 		}

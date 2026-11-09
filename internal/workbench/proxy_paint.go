@@ -32,7 +32,7 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 
-	var content, remove, edit, action, add ui.Box
+	var content, remove, edit, action, add, empty ui.Box
 	f := state.proxyLayout.Begin(canvas, state.Theme(), bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
 		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
@@ -46,7 +46,7 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 			add = f.Slot().Size(addWidth, toolbarHeight)
 		})
 		if len(state.proxies) == 0 {
-			state.declareEmptyPage(f, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd)
+			empty = state.reserveEmptyPage(f, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd)
 		} else {
 			content = f.Slot().Grow(1).MarginSides(0, 0, 9, 0)
 		}
@@ -66,7 +66,7 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	state.paintToolbarButton(canvas, hitProxyAdd, add.Rect().X, add.Rect().Y, addWidth, messages.ProxyAdd, addIcon, true, canAdd, condensed)
 
 	if len(state.proxies) == 0 {
-		state.paintEmptyPage(canvas, iconGlobe, hitProxyAdd, messages.ProxyAdd, canAdd)
+		state.drawReservedEmptyPage(canvas, empty, iconGlobe, hitProxyAdd, messages.ProxyAdd, canAdd)
 		return
 	}
 	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 120}, {Width: 0}}

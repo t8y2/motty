@@ -851,7 +851,7 @@ func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas, bounds gfx.Rec
 	}
 	var search, timeSlot, statusSlot, protocolSlot, outcomeSlot, sortSlot, favoriteFilterBox ui.Box
 	var moreButton ui.Box
-	var content, detailSlot, loadMore ui.Box
+	var content, detailSlot, loadMore, emptySlot ui.Box
 
 	f := state.sessionLogsLayout.Begin(canvas, theme, bounds)
 	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
@@ -901,7 +901,7 @@ func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas, bounds gfx.Rec
 			if view.emptyDanger {
 				descriptionColor = pal.danger
 			}
-			state.declareEmptyPageWithColor(f, bounds, view.emptyTitle, view.emptyText, view.emptyAction, descriptionColor)
+			emptySlot = state.reserveEmptyPageWithColor(f, bounds, view.emptyTitle, view.emptyText, view.emptyAction, descriptionColor)
 		case sideDetail:
 			f.Row().Grow(1).Basis(0).Gap(14).Children(func() {
 				content = f.Slot().Grow(1).Basis(0)
@@ -950,7 +950,7 @@ func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas, bounds gfx.Rec
 
 	switch {
 	case empty:
-		state.paintEmptyPage(canvas, view.emptyIcon, hitSessionLogsClearFilters, view.emptyAction, true)
+		state.drawReservedEmptyPage(canvas, emptySlot, view.emptyIcon, hitSessionLogsClearFilters, view.emptyAction, true)
 	case sideDetail:
 		state.paintSessionLogTable(canvas, content.Rect())
 		state.paintSessionLogDetails(canvas, detailSlot.Rect(), false)

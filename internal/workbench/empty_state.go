@@ -32,35 +32,42 @@ type emptyStateUI struct {
 	button ui.Box
 }
 
-// declareEmptyPage declares the shared empty-state page in f, a frame that keeps
-// a region of a larger layout. The icon sits a little above the middle of the
-// region, followed by one title, one description and, when add is not empty, one
-// primary action. paintEmptyPage paints the icon and action once f has laid out.
-func (state *State) declareEmptyPage(f *ui.Frame, bounds gfx.Rect, title, sub, add string) {
-	state.declareEmptyPageWithColor(f, bounds, title, sub, add, state.pal.muted)
+// reserveEmptyPage records what the shared empty-state page draws and reserves
+// the region it fills in f, a frame that keeps a region of a larger layout. The
+// icon sits a little above the middle of the region, followed by one title, one
+// description and, when add is not empty, one primary action. The caller draws
+// the page into the returned box once f has laid out, with
+// drawReservedEmptyPage.
+func (state *State) reserveEmptyPage(f *ui.Frame, bounds gfx.Rect, title, sub, add string) ui.Box {
+	return state.reserveEmptyPageWithColor(f, bounds, title, sub, add, state.pal.muted)
 }
 
-func (state *State) declareEmptyPageWithColor(f *ui.Frame, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color) {
-	state.empty.bounds = bounds
-	state.empty.title, state.empty.sub, state.empty.add, state.empty.color = title, sub, add, descriptionColor
-	state.empty.icon, state.empty.button = ui.Box{}, ui.Box{}
-	state.emptyPage()
-	f.Page(state.empty.page, state.empty.view).Grow(1)
+func (state *State) reserveEmptyPageWithColor(f *ui.Frame, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color) ui.Box {
+	state.prepareEmptyPage(bounds, title, sub, add, descriptionColor)
+	return f.Slot().Grow(1)
+}
+
+// drawReservedEmptyPage draws the shared empty-state page into the region
+// reserveEmptyPage reserved and paints its icon and action over it.
+func (state *State) drawReservedEmptyPage(canvas *gfx.Canvas, slot ui.Box, icon uint8, id gfx.ID, label string, enabled bool) {
+	state.empty.page.Draw(canvas, slot.Rect(), state.empty.view)
+	state.paintEmptyPage(canvas, icon, id, label, enabled)
 }
 
 // drawEmptyPage paints the shared empty state as a page filling bounds, for a
 // region that holds nothing else.
 func (state *State) drawEmptyPage(canvas *gfx.Canvas, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color, icon uint8, id gfx.ID, label string, enabled bool) {
-	state.empty.bounds = bounds
-	state.empty.title, state.empty.sub, state.empty.add, state.empty.color = title, sub, add, descriptionColor
-	state.empty.icon, state.empty.button = ui.Box{}, ui.Box{}
-	state.emptyPage()
+	state.prepareEmptyPage(bounds, title, sub, add, descriptionColor)
 	state.empty.page.Draw(canvas, bounds, state.empty.view)
 	state.paintEmptyPage(canvas, icon, id, label, enabled)
 }
 
-// emptyPage makes the page and its declaration once.
-func (state *State) emptyPage() {
+// prepareEmptyPage records what the shared page draws and makes the page and
+// its declaration once.
+func (state *State) prepareEmptyPage(bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color) {
+	state.empty.bounds = bounds
+	state.empty.title, state.empty.sub, state.empty.add, state.empty.color = title, sub, add, descriptionColor
+	state.empty.icon, state.empty.button = ui.Box{}, ui.Box{}
 	if state.empty.page == nil {
 		state.empty.page = ui.NewPage(ui.PageConfig{Root: emptyStateRoot, Theme: &state.theme})
 		state.empty.view = state.declareEmptyPageView
