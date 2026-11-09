@@ -98,8 +98,60 @@ func monitorContentHeight(p *monitorView) float32 {
 				h += 24
 			}
 		}
+		if !p.loginsUnsupported {
+			h += monitorGap + monitorLoginsHeight(p)
+		}
 	}
 	return h + 8
+}
+
+func monitorLoginsHeight(p *monitorView) float32 {
+	if p.loginsClosed {
+		return 32
+	}
+	if len(p.data.Logins) == 0 || p.detailsFailed || !p.data.LoginsAvailable {
+		return 32 + 36
+	}
+	height := 32 + float32(len(p.data.Logins))*43 + 8
+	if p.data.LoginsTruncated {
+		height += 24
+	}
+	return height
+}
+
+func (s *State) paintMonitorLogins(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) {
+	colors, messages := s.monitorColors(), s.messages.Monitor
+	if monitorRowVisible(viewport, b.Y, b.Height) {
+		c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
+	}
+	s.monitorSection(c, hitMonitorLogins, gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 32}, messages.Logins, icons.Activity, colors.cpu, !p.loginsClosed)
+	if p.loginsClosed {
+		return
+	}
+	rowY := b.Y + 32
+	if len(p.data.Logins) == 0 || p.detailsFailed || !p.data.LoginsAvailable {
+		message := messages.NoLogins
+		if !p.haveDetails {
+			message = messages.WaitingDetails
+		} else if p.detailsFailed || !p.data.LoginsAvailable {
+			message = messages.LoginsUnavailable
+		}
+		if monitorRowVisible(viewport, rowY, 36) {
+			monitorLabel(c, message, gfx.Rect{X: b.X + 10, Y: rowY, Width: b.Width - 20, Height: 36}, 11, colors.muted, gfx.WeightRegular)
+		}
+		return
+	}
+	for _, login := range p.data.Logins {
+		if monitorRowVisible(viewport, rowY, 43) {
+			monitorLabel(c, login.User, gfx.Rect{X: b.X + 10, Y: rowY, Width: b.Width*.48 - 10, Height: 21}, 12, colors.text, gfx.WeightSemibold)
+			monitorRight(c, login.Terminal, gfx.Rect{X: b.X + b.Width*.48, Y: rowY, Width: b.Width*.52 - 10, Height: 21}, 11, colors.muted, gfx.WeightRegular)
+			monitorLabel(c, login.Since, gfx.Rect{X: b.X + 10, Y: rowY + 20, Width: b.Width - 20, Height: 19}, 10, colors.muted, gfx.WeightRegular)
+		}
+		rowY += 43
+	}
+	if p.data.LoginsTruncated && monitorRowVisible(viewport, rowY, 24) {
+		monitorLabel(c, messages.LoginsTruncated, gfx.Rect{X: b.X + 10, Y: rowY, Width: b.Width - 20, Height: 24}, 10, colors.muted, gfx.WeightRegular)
+	}
 }
 
 func (s *State) monitorSection(c *gfx.Canvas, id gfx.ID, b gfx.Rect, label string, icon gfx.Icon, tint gfx.Color, open bool) {
@@ -300,12 +352,18 @@ func (s *State) paintMonitorSections(c *gfx.Canvas, v *remoteStatsView, b, viewp
 			}
 			if len(p.sample.GPUs) == 0 {
 				monitorLabel(c, m.NoHardware, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: 28}, 11, colors.muted, gfx.WeightRegular)
+				y += 28
 			} else {
 				for _, part := range v.parts[min(int(statsMetricCount), len(v.parts)):] {
 					monitorLabel(c, part, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: 28}, 11, colors.muted, gfx.WeightRegular)
 					y += 28
 				}
 			}
+		}
+		if !p.loginsUnsupported {
+			y += monitorGap
+			h = monitorLoginsHeight(p)
+			s.paintMonitorLogins(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
 		}
 	case 1:
 		s.monitorTile(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorTileHeight}, m.PrimaryDisk, p.diskText, p.diskCapacity, icons.HardDrive, colors.disk, monitorDisk)

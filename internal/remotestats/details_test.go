@@ -45,6 +45,23 @@ func TestDetailsRejectsMalformedSystemAndBoundsOptionalRecords(t *testing.T) {
 	}
 }
 
+func TestDetailsLoginSessionsAreOptionalBoundedAndSanitized(t *testing.T) {
+	rows := "logins-ready\nlogin\talice\tpts/1\t2026-11-09 10:40 (10.0.0.22)\n" +
+		"login\tbob\tconsole\tNov 9 09:00\nlogin\tbad\t\tno-terminal\n"
+	rows += strings.Repeat("login\tother\tpts/2\tNov 9 10:00\n", 40) + "logins-truncated\n"
+	details, err := parseDetails([]byte(detailsFixture + rows))
+	if err != nil || !details.LoginsAvailable || !details.LoginsTruncated || len(details.Logins) != 32 ||
+		details.Logins[0] != (Login{User: "alice", Terminal: "pts/1", Since: "2026-11-09 10:40 (10.0.0.22)"}) {
+		t.Fatalf("bounded login sessions=%+v, err=%v", details.Logins, err)
+	}
+	for _, input := range []string{"", "logins-unavailable\n", "logins-ready\n"} {
+		details, err := parseDetails([]byte(detailsFixture + input))
+		if err != nil || len(details.Logins) != 0 || details.LoginsAvailable != (input == "logins-ready\n") {
+			t.Fatalf("login status %q: %+v, err=%v", input, details, err)
+		}
+	}
+}
+
 func TestNetworkRatesHandleCounterResetAndNewInterfaces(t *testing.T) {
 	before := Details{Networks: []Network{{Name: "eth0", Received: 1000, Sent: 500}, {Name: "reset", Received: 999, Sent: 999}}}
 	after := Details{Networks: []Network{{Name: "eth0", Received: 3000, Sent: 1500}, {Name: "reset", Received: 1, Sent: 1}, {Name: "new", Received: 5000, Sent: 5000}}}

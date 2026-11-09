@@ -27,6 +27,9 @@ settle 800
 click "Show the host's CPU, memory, network and GPU"
 waitfor "CPU " 15000
 settle 4000
+scroll 1100 500 0 4000
+expect text "Login sessions (who)" within 5000
+layout
 texts
 shot /tmp/monitor-macos-ssh.png
 click "Stop the resource monitor"
@@ -41,6 +44,9 @@ settle 1500
 click "Show the host's CPU, memory, network and GPU"
 waitfor "CPU " 15000
 settle 4000
+scroll 1100 500 0 4000
+expect text "Login sessions (who)" within 5000
+layout
 texts
 shot /tmp/monitor-macos-local.png
 click "Stop the resource monitor"

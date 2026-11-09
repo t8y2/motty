@@ -256,6 +256,7 @@ now=$(date +%s)
 printf 'info\t%s\t%s\t%s\t%s\n' "$cores" "$load" "$((now - boot))" "$(uname -r 2>/dev/null)"
 { mount 2>/dev/null; printf '__MOTTY_DF__\n'; df -Pk -l 2>/dev/null; } | awk '` + darwinDiskAwk + `'
 netstat -ibn 2>/dev/null | awk '` + darwinInterfaceAwk + `'
+` + loginsCommand + `
 `
 
 func darwinScript(seconds int) string {

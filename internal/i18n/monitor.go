@@ -16,6 +16,7 @@ type MonitorMessages struct {
 	NoDisks, WaitingDetails, DetailsUnavailable                                string
 	Pause, Resume, Paused, Updated, Interval, IntervalFmt, Retry, NotConnected string
 	Collapse                                                                   string
+	Logins, NoLogins, LoginsUnavailable, LoginsTruncated                       string
 }
 
 var chineseMonitor = MonitorMessages{
@@ -34,6 +35,7 @@ var chineseMonitor = MonitorMessages{
 	NoDisks: "没有可用的磁盘信息", WaitingDetails: "正在读取主机信息…", DetailsUnavailable: "部分主机信息暂不可用，稍后自动重试",
 	Pause: "暂停监控", Resume: "继续监控", Paused: "已暂停", Updated: "自动刷新 · 刚刚更新", Interval: "刷新间隔", IntervalFmt: "%d 秒", Retry: "重试", NotConnected: "连接到服务器后可查看监控。",
 	Collapse: "收起",
+	Logins:   "登录会话 (who)", NoLogins: "系统未报告登录会话", LoginsUnavailable: "无法读取登录会话", LoginsTruncated: "仅显示前 32 条会话",
 }
 
 var englishMonitor = MonitorMessages{
@@ -52,4 +54,5 @@ var englishMonitor = MonitorMessages{
 	NoDisks: "No disk information available", WaitingDetails: "Reading host information…", DetailsUnavailable: "Some host information is unavailable. Retrying automatically.",
 	Pause: "Pause monitoring", Resume: "Resume monitoring", Paused: "Paused", Updated: "Auto refresh · just updated", Interval: "Refresh interval", IntervalFmt: "%ds", Retry: "Retry", NotConnected: "Connect to a server to view monitoring.",
 	Collapse: "Collapse",
+	Logins:   "Login sessions (who)", NoLogins: "No login sessions reported", LoginsUnavailable: "Login sessions unavailable", LoginsTruncated: "Showing the first 32 sessions",
 }

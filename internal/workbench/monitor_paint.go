@@ -73,6 +73,7 @@ func (state *State) paintMonitor(canvas *gfx.Canvas, b gfx.Rect, s *Session) {
 	}
 	v := s.stats
 	p := &v.panel
+	p.loginsUnsupported = s.host.System == sshconn.SystemWindows
 	if p.language != state.language.String() {
 		state.formatMonitor(v)
 	}

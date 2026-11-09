@@ -43,6 +43,13 @@ type Details struct {
 	Kernel          string
 	Disks           []Disk
 	Networks        []Network
+	Logins          []Login
+	LoginsAvailable bool
+	LoginsTruncated bool
+}
+
+type Login struct {
+	User, Terminal, Since string
 }
 
 type DetailResult struct {
@@ -145,6 +152,23 @@ awk 'NR>2 {
     if (name!="lo") printf "net\t%s\t%s\t%s\n",name,v[1],v[9]
     if (++n>=64) exit
 }' /proc/net/dev
+` + loginsCommand
+
+const loginsCommand = `if command -v who >/dev/null 2>&1; then
+	if logins=$(who 2>/dev/null); then
+		printf 'logins-ready\n'
+		printf '%s\n' "$logins" | awk 'NF>=3 {
+			if (++count>32) { print "logins-truncated"; exit }
+			printf "login\t%s\t%s\t", $1, $2
+			for (i=3; i<=NF; i++) printf "%s%s", (i==3 ? "" : " "), $i
+			printf "\n"
+		}'
+	else
+		printf 'logins-unavailable\n'
+	fi
+else
+	printf 'logins-unavailable\n'
+fi
 `
 
 func parseDetails(data []byte) (Details, error) {
@@ -155,6 +179,20 @@ func parseDetails(data []byte) (Details, error) {
 	for _, line := range strings.Split(string(data), "\n") {
 		p := strings.SplitN(strings.TrimSuffix(line, "\r"), "\t", 7)
 		switch p[0] {
+		case "logins-ready":
+			d.LoginsAvailable = true
+		case "logins-unavailable":
+			d.LoginsAvailable = false
+		case "logins-truncated":
+			d.LoginsTruncated = true
+		case "login":
+			if len(p) != 4 || len(d.Logins) >= 32 || !d.LoginsAvailable {
+				continue
+			}
+			user, terminal, since := detailText(p[1], 64), detailText(p[2], 64), detailText(p[3], 160)
+			if user != "" && terminal != "" && since != "" {
+				d.Logins = append(d.Logins, Login{User: user, Terminal: terminal, Since: since})
+			}
 		case "info":
 			if len(p) != 7 {
 				return Details{}, ErrMalformed

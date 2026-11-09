@@ -27,6 +27,7 @@ var (
 	hitMonitorSudo          = tree.ID(monitorHits, "sudo")
 	hitMonitorDisks         = tree.ID(monitorHits, "more-disks")
 	hitMonitorHardware      = tree.ID(monitorHits, "hardware")
+	hitMonitorLogins        = tree.ID(monitorHits, "logins")
 	hitMonitorOverview      = tree.ID(monitorHits, "overview")
 	hitMonitorDiskPage      = tree.ID(monitorHits, "disk-page")
 	hitMonitorNetworkPage   = tree.ID(monitorHits, "network-page")
@@ -82,38 +83,38 @@ type monitorView struct {
 	dragging                                                  bool
 	grab                                                      float32
 
-	worker                             *remotestats.DetailsWorker
-	data                               remotestats.Details
-	sample                             remotestats.Sample
-	haveDetails, detailsFailed, paused bool
-	interval                           int
-	disksOpen, hardwareOpen            bool
-	scroll, contentHeight              float32
-	count                              int
-	origin                             time.Time
-	x, cpu, memory, disk, down, up     [61]float32
-	diskIdentity, networkIdentity      string
-	charts                             [4]monitorChart
-	refreshStarted                     time.Duration
-	refreshVersion                     uint32
-	refreshRunning                     bool
-	refreshReset                       bool
-	version                            uint32
-	cpuText                            string
-	memoryText                         string
-	memoryCapacity                     string
-	availableMemory                    string
-	downText                           string
-	upText                             string
-	loadText                           string
-	coresText                          string
-	uptimeText                         string
-	networkText                        string
-	intervalText                       string
-	moreDisks                          string
-	disks                              []monitorDiskText
-	networks                           []monitorNetworkText
-	language                           string
+	worker                                                   *remotestats.DetailsWorker
+	data                                                     remotestats.Details
+	sample                                                   remotestats.Sample
+	haveDetails, detailsFailed, paused                       bool
+	interval                                                 int
+	disksOpen, hardwareOpen, loginsClosed, loginsUnsupported bool
+	scroll, contentHeight                                    float32
+	count                                                    int
+	origin                                                   time.Time
+	x, cpu, memory, disk, down, up                           [61]float32
+	diskIdentity, networkIdentity                            string
+	charts                                                   [4]monitorChart
+	refreshStarted                                           time.Duration
+	refreshVersion                                           uint32
+	refreshRunning                                           bool
+	refreshReset                                             bool
+	version                                                  uint32
+	cpuText                                                  string
+	memoryText                                               string
+	memoryCapacity                                           string
+	availableMemory                                          string
+	downText                                                 string
+	upText                                                   string
+	loadText                                                 string
+	coresText                                                string
+	uptimeText                                               string
+	networkText                                              string
+	intervalText                                             string
+	moreDisks                                                string
+	disks                                                    []monitorDiskText
+	networks                                                 []monitorNetworkText
+	language                                                 string
 }
 
 // Panel width is workspace state. Narrow windows use a drawer without
@@ -324,6 +325,8 @@ func (state *State) clickMonitor(id gfx.ID) bool {
 		v.panel.disksOpen = !v.panel.disksOpen
 	case hitMonitorHardware:
 		v.panel.hardwareOpen = !v.panel.hardwareOpen
+	case hitMonitorLogins:
+		v.panel.loginsClosed = !v.panel.loginsClosed
 	case hitMonitorOverview, hitMonitorDiskPage, hitMonitorNetworkPage:
 		v.panel.page = 0
 		if id == hitMonitorDiskPage {
