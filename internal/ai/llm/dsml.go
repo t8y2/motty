@@ -55,8 +55,16 @@ const (
 
 // dsmlFilter is the streaming half of the recovery: it is fed one content
 // delta at a time and returns the text that is safe to publish.
+//
+// Stripping and recovery are separate policies. Markup is protocol, never
+// prose, so every streaming channel strips it, including the turns that offer
+// no tools. Recovery turns a complete block into tool calls, and only runs when
+// the request declared tools: a call fabricated in a turn that cannot run it
+// would either be dropped or fail the turn, and a model quoting the markup in
+// its reasoning must not start a command.
 type dsmlFilter struct {
-	enabled bool
+	strip   bool
+	recover bool
 	// held is text withheld because it may still grow into a tag.
 	held string
 	// region is the markup buffered since an opener, and scan is how much of
@@ -70,12 +78,23 @@ type dsmlFilter struct {
 	calls  int
 }
 
-func newDSMLFilter(enabled bool) dsmlFilter { return dsmlFilter{enabled: enabled} }
+func newDSMLFilter(strip, recover bool) dsmlFilter {
+	return dsmlFilter{strip: strip, recover: recover}
+}
+
+// reset discards an unfinished region. A channel that only strips markup uses
+// it to drop a runaway block without ending a turn that can still answer.
+func (f *dsmlFilter) reset() {
+	f.held = ""
+	f.region = f.region[:0]
+	f.kind = dsmlNone
+	f.scan = 0
+}
 
 // push consumes one content delta and returns the text to publish plus any
 // tool calls the delta completed.
 func (f *dsmlFilter) push(delta string) (string, []ToolCall, error) {
-	if !f.enabled || delta == "" {
+	if !f.strip || delta == "" {
 		return delta, nil, nil
 	}
 	work := delta
@@ -147,7 +166,7 @@ func (f *dsmlFilter) push(delta string) (string, []ToolCall, error) {
 // invokes of a markup region the provider never closed, and reports markup
 // that yielded no call.
 func (f *dsmlFilter) flush() (string, []ToolCall, error) {
-	if !f.enabled {
+	if !f.strip {
 		return "", nil, nil
 	}
 	var calls []ToolCall
@@ -160,7 +179,7 @@ func (f *dsmlFilter) flush() (string, []ToolCall, error) {
 		// A truncated tag: protocol output, never prose.
 		text = ""
 	}
-	if f.blocks > 0 && f.calls == 0 {
+	if f.recover && f.blocks > 0 && f.calls == 0 {
 		return text, calls, errDSMLUnrecovered
 	}
 	return text, calls, nil
@@ -176,7 +195,10 @@ func (f *dsmlFilter) openRegion(kind dsmlKind, opener string) {
 
 // closeRegion ends the open region at end, recovering its calls.
 func (f *dsmlFilter) closeRegion(end int) []ToolCall {
-	found := recoverDSMLCalls(string(f.region[:end]))
+	var found []ToolCall
+	if f.recover {
+		found = recoverDSMLCalls(string(f.region[:end]))
+	}
 	f.calls += len(found)
 	f.region = f.region[:0]
 	f.scan = 0
@@ -400,8 +422,11 @@ func dsmlAttribute(attrs, key string) string {
 }
 
 var (
-	dsmlInvokeRe = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*invoke\b([^>]*)>(.*?)</\s*[｜|][\s｜|]*DSML[\s｜|]*invoke\s*>`)
-	dsmlParamRe  = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*parameter\b([^>]*)>(.*?)</\s*[｜|][\s｜|]*DSML[\s｜|]*parameter\s*>`)
+	// The closers accept a space between "<" and "/" because dsmlTag does: a
+	// lane may write the closing tag as "< / ｜ DSML ｜ invoke>", and the
+	// scanner must not recognize a block whose calls it then cannot recover.
+	dsmlInvokeRe = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*invoke\b([^>]*)>(.*?)<[ \t]*/[ \t]*[｜|][\s｜|]*DSML[\s｜|]*invoke[ \t]*>`)
+	dsmlParamRe  = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*parameter\b([^>]*)>(.*?)<[ \t]*/[ \t]*[｜|][\s｜|]*DSML[\s｜|]*parameter[ \t]*>`)
 )
 
 // recoverDSMLCalls turns the complete invokes of a markup region into calls.

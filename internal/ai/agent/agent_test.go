@@ -661,6 +661,29 @@ func TestEmptyAnswerIsAnError(t *testing.T) {
 	}
 }
 
+// An answer the provider cut off at its output limit before any prose arrived
+// is a truncation, not the model answering nothing: the panel turns the stop
+// reason into its notice, and the returned history is the unanswered round.
+func TestEmptyTruncatedAnswerFinishesWithoutError(t *testing.T) {
+	for _, reason := range []string{"length", "max_tokens", "max_output_tokens"} {
+		t.Run(reason, func(t *testing.T) {
+			p := &fakeProvider{turns: []turn{{events: []llm.Event{{Kind: llm.EventDone, StopReason: reason}}}}}
+			var last Event
+			got, err := Run(context.Background(), Config{Provider: p, Model: "m", Mode: ModeAgent,
+				Gate: gate.Gate{Policy: risk.Policy{Enabled: false}}}, nil, "hi", func(ev Event) { last = ev })
+			if err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if last.Kind != EventDone || last.StopReason != reason {
+				t.Fatalf("last event = %+v", last)
+			}
+			if len(got) != 1 || got[0].Role != llm.RoleUser || got[0].Text != "hi" {
+				t.Fatalf("new messages = %+v, want the unanswered user message", got)
+			}
+		})
+	}
+}
+
 // Ask mode offers only the escalation tool; a call to anything else cannot run,
 // and with no prose beside it the turn has nothing to show.
 func TestAskModeDroppedCallIsAnError(t *testing.T) {

@@ -173,8 +173,10 @@ func messageBytes(message llm.Message) int {
 // It returns the NEW messages of this run (the user message, assistant
 // messages with their tool calls, RoleTool results, the final answer) for the
 // caller to append to its history. They always form a valid history: on
-// failure or cancellation only the complete rounds are returned. On
-// cancellation the error is ctx.Err() and no event is emitted.
+// failure or cancellation only the complete rounds are returned, and a turn cut
+// off at the output limit before any prose ends the run without an assistant
+// message, leaving an unanswered round. On cancellation the error is ctx.Err()
+// and no event is emitted.
 func Run(ctx context.Context, cfg Config, history []llm.Message, userText string, emit func(Event)) ([]llm.Message, error) {
 	if emit == nil {
 		emit = func(Event) {}
@@ -297,8 +299,14 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 		}
 		if final || len(calls) == 0 {
 			// A turn with no prose and no calls is never a real answer: say so
-			// instead of ending on an empty bubble.
+			// instead of ending on an empty bubble. The exception is an answer
+			// the provider cut off at its output limit before any prose
+			// arrived: report that as the truncation it is.
 			if strings.TrimSpace(text) == "" {
+				if llm.StopsAtLimit(stop) {
+					emit(Event{Kind: EventDone, Step: turn, Usage: usage, StopReason: stop, UsageIncomplete: usageIncomplete})
+					return newMsgs(), nil
+				}
 				err := errors.New("agent: the model returned an empty answer")
 				emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				return newMsgs(), err

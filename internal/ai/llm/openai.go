@@ -227,7 +227,10 @@ func (p *openAI) Stream(ctx context.Context, req Request) (<-chan Event, error) 
 	if err != nil {
 		return nil, err
 	}
-	return p.pump(ctx, resp.Body, &oaHandler{dsml: newDSMLFilter(len(req.Tools) > 0)}), nil
+	return p.pump(ctx, resp.Body, &oaHandler{
+		dsml:      newDSMLFilter(true, len(req.Tools) > 0),
+		reasoning: newDSMLFilter(true, len(req.Tools) > 0),
+	}), nil
 }
 
 func (p *openAI) Models(ctx context.Context) ([]string, error) {
@@ -329,6 +332,16 @@ type oaHandler struct {
 	// one was, so the stop reason can name the turn a tool turn.
 	dsml      dsmlFilter
 	recovered bool
+	// reasoning keeps tool-call markup out of the thinking channel. Its calls
+	// are held until the turn ends: only a turn that would otherwise be empty
+	// acts on them, so a call the model merely planned while it also answered
+	// (or called natively) never runs twice.
+	reasoning      dsmlFilter
+	reasoningCalls []ToolCall
+	// toolSent says a tool call already left this turn, and texted says the
+	// content channel published prose.
+	toolSent bool
+	texted   bool
 	// chunk is reused between events. Strings and tool calls still allocate
 	// inside it; this only saves rebuilding the outer struct and the choices
 	// slice for every token.
@@ -382,6 +395,7 @@ func (h *oaHandler) flushTools(em *emitter) error {
 			id = "call_" + strconv.Itoa(i)
 		}
 		tc := &ToolCall{ID: id, Name: c.name, Arguments: args}
+		h.toolSent = true
 		if err := em.send(Event{Kind: EventToolCall, ToolCall: tc}); err != nil {
 			return err
 		}
@@ -391,10 +405,16 @@ func (h *oaHandler) flushTools(em *emitter) error {
 }
 
 func (h *oaHandler) finish(em *emitter) error {
+	if err := h.flushReasoning(em); err != nil {
+		return err
+	}
 	if err := h.flushTools(em); err != nil {
 		return err
 	}
 	if err := h.flushText(em); err != nil {
+		return err
+	}
+	if err := h.emitReasoningCalls(em); err != nil {
 		return err
 	}
 	if h.recovered && (h.stop == "" || h.stop == "stop") {
@@ -413,7 +433,25 @@ func (h *oaHandler) text(delta string, em *emitter) error {
 	return h.emitText(text, calls, em)
 }
 
-// flushText publishes what the filter still holds when the model has finished.
+// reasoningText publishes one thinking delta after the DSML filter has taken
+// the markup out of it. A thinking block that breaks the parser is dropped
+// rather than ending a turn that can still answer: the model may quote the
+// markup while reasoning about it.
+func (h *oaHandler) reasoningText(delta string, em *emitter) error {
+	text, calls, err := h.reasoning.push(delta)
+	if err != nil {
+		h.reasoning.reset()
+		return nil
+	}
+	h.reasoningCalls = append(h.reasoningCalls, calls...)
+	if text != "" {
+		return em.send(Event{Kind: EventReasoning, Text: text})
+	}
+	return nil
+}
+
+// flushText publishes what the content filter still holds when the model has
+// finished.
 func (h *oaHandler) flushText(em *emitter) error {
 	text, calls, err := h.dsml.flush()
 	if err != nil {
@@ -422,14 +460,51 @@ func (h *oaHandler) flushText(em *emitter) error {
 	return h.emitText(text, calls, em)
 }
 
+// flushReasoning publishes the tail of the thinking channel and holds any call
+// it recovered until the turn ends.
+func (h *oaHandler) flushReasoning(em *emitter) error {
+	text, calls, err := h.reasoning.flush()
+	if err != nil {
+		// Thinking that yields no call is not a broken answer.
+		h.reasoning.reset()
+		text, calls = "", nil
+	}
+	h.reasoningCalls = append(h.reasoningCalls, calls...)
+	if text != "" {
+		return em.send(Event{Kind: EventReasoning, Text: text})
+	}
+	return nil
+}
+
+// emitReasoningCalls acts on a call the provider wrote into the thinking
+// channel. It runs only when nothing else answered the turn: a call the model
+// also made natively would otherwise run twice, and markup the model merely
+// quoted would run a command it never asked for.
+func (h *oaHandler) emitReasoningCalls(em *emitter) error {
+	defer func() { h.reasoningCalls = nil }()
+	if h.toolSent || h.texted {
+		return nil
+	}
+	for i := range h.reasoningCalls {
+		h.toolSent, h.recovered = true, true
+		if err := em.send(Event{Kind: EventToolCall, ToolCall: &h.reasoningCalls[i]}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (h *oaHandler) emitText(text string, calls []ToolCall, em *emitter) error {
 	if text != "" {
+		if strings.TrimSpace(text) != "" {
+			h.texted = true
+		}
 		if err := em.send(Event{Kind: EventText, Text: text}); err != nil {
 			return err
 		}
 	}
 	for i := range calls {
-		h.recovered = true
+		h.recovered, h.toolSent = true, true
 		if err := em.send(Event{Kind: EventToolCall, ToolCall: &calls[i]}); err != nil {
 			return err
 		}
@@ -473,7 +548,7 @@ func (h *oaHandler) event(ev sseEvent, em *emitter) (bool, error) {
 		r = ch.Delta.Reasoning
 	}
 	if r != "" {
-		if err := em.send(Event{Kind: EventReasoning, Text: r}); err != nil {
+		if err := h.reasoningText(r, em); err != nil {
 			return false, err
 		}
 	}

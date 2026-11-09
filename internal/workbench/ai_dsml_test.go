@@ -37,6 +37,12 @@ func chatFinish() string {
 	return "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
 }
 
+// chatReasoning is one OpenAI-compatible thinking chunk.
+func chatReasoning(text string) string {
+	quoted, _ := json.Marshal(text)
+	return "data: {\"choices\":[{\"delta\":{\"reasoning_content\":" + string(quoted) + "}}]}\n\n"
+}
+
 // A model that writes its tool call as text must still run the tool and finish
 // the answer, and the markup must reach neither the user nor the next request.
 func TestAssistantRecoversAToolCallWrittenAsText(t *testing.T) {
@@ -104,5 +110,66 @@ func TestAssistantRecoversAToolCallWrittenAsText(t *testing.T) {
 	}
 	if !strings.Contains(bodies[1], "dsml-recovered") {
 		t.Fatalf("the tool result is missing from the second request: %s", bodies[1])
+	}
+}
+
+// The same lane can write the call into the thinking channel. The answer is
+// then empty, and before recovery the panel showed "the model returned an
+// empty answer" while the tool never ran.
+func TestAssistantRecoversAToolCallWrittenAsReasoningText(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		bodies  []string
+		request int
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, string(body))
+		turn := request
+		request++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		if turn == 0 {
+			io.WriteString(w, chatReasoning(leakProse+leakHead))
+			w.(http.Flusher).Flush()
+			io.WriteString(w, chatReasoning(leakTail))
+			io.WriteString(w, chatFinish())
+			return
+		}
+		io.WriteString(w, chatDelta("The load is fine."))
+		io.WriteString(w, chatFinish())
+	}))
+	defer srv.Close()
+
+	state, shell := assistantSession(t, llm.NewOpenAI(llm.Config{BaseURL: srv.URL, APIKey: "test"}))
+	state.Paint(&gfx.Canvas{}, panelWide)
+	state.Click(hitAIToggle)
+	ask(state, "check the load", agent.ModeAgent)
+	pumpUntil(t, state, "the run to end", func() bool { return state.ai.run == nil })
+
+	if !strings.Contains(shell.typed(), "echo dsml-recovered") {
+		t.Fatalf("the call written into the thinking channel never ran: %q", shell.typed())
+	}
+	for _, item := range state.ai.items {
+		if item.kind == aiNotice {
+			t.Fatalf("the run reported an error: %q", item.text)
+		}
+		if strings.Contains(item.text, "DSML") {
+			t.Fatalf("markup reached the conversation: %q", item.text)
+		}
+	}
+	_, texts := paintAt(state, panelWide)
+	if !hasText(texts, "The load is fine.") || hasText(texts, "DSML") {
+		t.Fatalf("the answer is not shown cleanly: %q", texts)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) != 2 {
+		t.Fatalf("requests = %d", len(bodies))
+	}
+	if strings.Contains(bodies[1], "DSML") || !strings.Contains(bodies[1], "dsml-recovered") {
+		t.Fatalf("the second request did not carry the tool result cleanly: %s", bodies[1])
 	}
 }

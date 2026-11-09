@@ -26,6 +26,15 @@ func oaText(parts ...string) string {
 	return sb.String()
 }
 
+func oaReasoning(parts ...string) string {
+	var sb strings.Builder
+	for _, p := range parts {
+		b, _ := json.Marshal(p)
+		sb.WriteString(oaData(`{"choices":[{"delta":{"reasoning_content":` + string(b) + `}}]}`))
+	}
+	return sb.String()
+}
+
 func oaFinish(reason string) string {
 	return oaData(`{"choices":[{"delta":{},"finish_reason":"`+reason+`"}]}`) +
 		oaData(`{"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3}}`) + oaData("[DONE]")
@@ -90,6 +99,15 @@ func rsText(parts ...string) string {
 
 func rsCompleted() string {
 	return rsEv("response.completed", `"response":{"status":"completed","usage":{"input_tokens":7,"output_tokens":3}}`)
+}
+
+func rsThink(parts ...string) string {
+	s := rsEv("response.created", `"response":{"status":"in_progress"}`)
+	for _, p := range parts {
+		b, _ := json.Marshal(p)
+		s += rsEv("response.reasoning_text.delta", `"item_id":"rs_1","output_index":0,"delta":`+string(b))
+	}
+	return s
 }
 
 func rsToolItem(idx int, callID, name, args string, chunk int) string {
