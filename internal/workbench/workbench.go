@@ -574,8 +574,8 @@ type State struct {
 	managedWorkspaceLayouts map[layoutcore.WorkspaceID]layoutcore.LayoutSpec
 	workspaceSave           workspaceSave
 
-	forwardLayout, proxyLayout, forwardDialogLayout, proxyDialogLayout ui.View // the Port Forwarding and Proxies pages and their dialogs
-	chrome                                                             chromeLayout
+	forwardLayout, proxyLayout ui.View // the Port Forwarding and Proxies pages
+	chrome                     chromeLayout
 
 	// iconMotions are the rows whose icon is playing the motion of a click, by
 	// hit id; the painter drops each one when its motion is over (icon_motion.go).
@@ -830,8 +830,7 @@ type State struct {
 	paneChrome         ui.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
-	filesHeader ui.View
-	filesPopup  ui.View
+	filesPopup ui.View
 	// filesRowIcons is scratch for the visible rows of the list.
 	filesRowIcons []ui.Box
 

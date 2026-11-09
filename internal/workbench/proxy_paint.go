@@ -95,29 +95,15 @@ func (state *State) paintProxyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		submitLabel = messages.ProxyRouteSave
 	}
 	layout := dialog.Begin(dialogTitle, "")
-	const rowHeight = 64
-	var target, jump, via, viaHelp, relay ui.Box
 	viaShell := state.proxyEditor.viaShell
-	f := state.proxyDialogLayout.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		target = f.Slot().Height(rowHeight)
-		jump = f.Slot().Height(rowHeight)
-		via, viaHelp = state.declareDialogCheckboxHelp(f, messages.ProxyFieldViaShell, 4, 6)
-		if viaShell {
-			relay = f.Slot().Height(rowHeight)
-			f.Paragraph(state.proxyRelayNote(), 2).FontSize(metrics.FontSizeS).Color(state.pal.muted).MarginSides(0, 6, 0, 6)
-		}
-		if state.proxyDialogError != "" {
-			f.Text(state.proxyDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
-		}
-	})
-	f.End()
-	state.paintProxyHostField(canvas, target.Rect(), true)
-	state.paintProxyHostField(canvas, jump.Rect(), false)
-	state.paintDialogCheckbox(canvas, hitProxyDialogViaShell, messages.ProxyFieldViaShell, viaShell, via)
-	state.paintHelpIcon(canvas, hitProxyDialogViaHelp, messages.ProxyViaShellHelp, viaHelp.Rect())
+	state.proxyDialogPage().Draw(canvas, layout.Body, state.proxyEditor.dialogView)
+	body := &state.proxyEditor.dialogBody
+	state.paintProxyHostField(canvas, body.target.Rect(), true)
+	state.paintProxyHostField(canvas, body.jump.Rect(), false)
+	state.paintDialogCheckbox(canvas, hitProxyDialogViaShell, messages.ProxyFieldViaShell, viaShell, body.via)
+	state.paintHelpIcon(canvas, hitProxyDialogViaHelp, messages.ProxyViaShellHelp, body.viaHelp.Rect())
 	if viaShell {
-		content := components.BeginField(canvas, theme, relay.Rect()).Paint(messages.ProxyFieldRelay, "", "")
+		content := components.BeginField(canvas, theme, body.relay.Rect()).Paint(messages.ProxyFieldRelay, "", "")
 		value := state.proxyEditor.relay.String()
 		focused := canvas.Focused() == hitProxyDialogRelay
 		components.PaintInput(canvas, theme, content, components.InputSnapshot{
@@ -130,6 +116,41 @@ func (state *State) paintProxyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		components.ButtonAction{ID: hitProxyDialogSubmit, Label: submitLabel},
 	)
 	dialog.End()
+}
+
+// proxyDialogBodyRoot names the page the route dialog's body is declared in.
+const proxyDialogBodyRoot = "proxy-dialog-body"
+
+// proxyDialogPage makes the page the route dialog's body is declared in.
+func (state *State) proxyDialogPage() *ui.Page {
+	editor := &state.proxyEditor
+	if editor.dialogPage == nil {
+		editor.dialogPage = ui.NewPage(ui.PageConfig{Root: proxyDialogBodyRoot, Theme: &state.theme})
+		editor.dialogView = state.declareProxyDialogBody
+	}
+	return editor.dialogPage
+}
+
+// declareProxyDialogBody lays out the route dialog: the target and jump hosts,
+// the shell-relay box and, when it is on, the relay command and its note.
+func (state *State) declareProxyDialogBody(c ui.C) {
+	editor, messages := &state.proxyEditor, state.messages
+	viaShell := editor.viaShell
+	b := &editor.dialogBody
+	*b = proxyDialogBody{}
+	const rowHeight = 64
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		b.target = ui.Slot(c).Height(rowHeight)
+		b.jump = ui.Slot(c).Height(rowHeight)
+		b.via, b.viaHelp = state.declareDialogCheckboxHelpC(c, messages.ProxyFieldViaShell, 4, 6)
+		if viaShell {
+			b.relay = ui.Slot(c).Height(rowHeight)
+			ui.Paragraph(c, state.proxyRelayNote(), 2).FontSize(metrics.FontSizeS).Color(state.pal.muted).MarginSides(0, 6, 0, 6)
+		}
+		if state.proxyDialogError != "" {
+			ui.Text(c, state.proxyDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
+		}
+	})
 }
 
 // proxyDialogBodyHeight is the height of the dialog's fields: the two hosts, the

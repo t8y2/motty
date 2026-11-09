@@ -22,7 +22,16 @@ type tabsClose struct {
 	// again" box.
 	running []string
 	quiet   bool
+	// page declares the running-session list's body, with view kept so a paint
+	// makes no new method value; quietRow is the box the quiet checkbox is
+	// painted in.
+	page     *ui.Page
+	view     func(ui.C)
+	quietRow ui.Box
 }
+
+// closeTabsBodyRoot names the page the close confirmation's body is declared in.
+const closeTabsBodyRoot = "close-tabs-body"
 
 // sessionRunning reports whether closing the session would end something live: a
 // shell that has not ended.
@@ -144,7 +153,15 @@ func (state *State) clickCloseTabsDialog(id gfx.ID) {
 
 // closeTabsKey makes Enter on the confirm button confirm.
 func (state *State) closeTabsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if state.modal != modalCloseTabs || event.Key != gfx.KeyEnter || event.Target != hitTabsCloseConfirm || event.Repeat {
+	if state.modal != modalCloseTabs {
+		return gfx.EventResult{}, false
+	}
+	if state.tabsClose.page != nil {
+		if result, handled := state.tabsClose.page.Key(event); handled {
+			return result, true
+		}
+	}
+	if event.Key != gfx.KeyEnter || event.Target != hitTabsCloseConfirm || event.Repeat {
 		return gfx.EventResult{}, false
 	}
 	state.clickCloseTabsDialog(hitTabsCloseConfirm)
@@ -179,25 +196,40 @@ func (state *State) paintCloseTabsDialog(canvas *gfx.Canvas, viewport gfx.Rect) 
 	}
 	layout := dialog.Begin(title, description)
 	if asking {
-		var quiet ui.Box
-		f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
-		f.Column().Fill().Children(func() {
-			for index, name := range state.tabsClose.running {
-				if index == 6 {
-					f.Text(fmt.Sprintf("+%d", len(state.tabsClose.running)-index)).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(20)
-					break
-				}
-				f.Text(name).FontSize(metrics.FontSizeM).Color(state.pal.text).LineHeight(20)
-			}
-			f.Spacer().Grow(1)
-			quiet = state.declareDialogCheckbox(f, messages.CloseRunningAsk, 0, 0)
-		})
-		f.End()
-		state.paintDialogCheckbox(canvas, hitTabsCloseQuiet, messages.CloseRunningAsk, state.tabsClose.quiet, quiet)
+		state.closeTabsDialogPage().Draw(canvas, layout.Body, state.tabsClose.view)
+		state.paintDialogCheckbox(canvas, hitTabsCloseQuiet, messages.CloseRunningAsk, state.tabsClose.quiet, state.tabsClose.quietRow)
 	}
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitTabsCloseCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitTabsCloseConfirm, Label: messages.CloseTabsConfirm, Variant: components.ButtonDestructive},
 	)
 	dialog.End()
+}
+
+// closeTabsDialogPage makes the page the running-session list's body is
+// declared in.
+func (state *State) closeTabsDialogPage() *ui.Page {
+	pending := &state.tabsClose
+	if pending.page == nil {
+		pending.page = ui.NewPage(ui.PageConfig{Root: closeTabsBodyRoot, Theme: &state.theme})
+		pending.view = state.declareCloseTabsBody
+	}
+	return pending.page
+}
+
+// declareCloseTabsBody lays out the running sessions, at most six, and the box
+// that stops asking.
+func (state *State) declareCloseTabsBody(c ui.C) {
+	pending, messages := &state.tabsClose, state.messages
+	ui.Column(c).Fill().Children(func() {
+		for index, name := range pending.running {
+			if index == 6 {
+				ui.Textf(c, "+%d", len(pending.running)-index).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(20)
+				break
+			}
+			ui.Text(c, name).FontSize(metrics.FontSizeM).Color(state.pal.text).LineHeight(20)
+		}
+		ui.Spacer(c).Grow(1)
+		pending.quietRow = state.declareDialogCheckboxC(c, messages.CloseRunningAsk, 0, 0)
+	})
 }

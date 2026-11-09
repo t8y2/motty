@@ -92,6 +92,16 @@ type snippetsUI struct {
 	capturing     bool // the next chord pressed becomes shortcut
 	dialogError   string
 
+	// dialogPage declares the editor's body, with dialogView kept so a paint
+	// makes no new method value; the boxes are the slots the controls are
+	// painted in.
+	dialogPage     *ui.Page
+	dialogView     func(ui.C)
+	dialogFields   [2]ui.Box
+	dialogGroup    ui.Box
+	dialogRun      ui.Box
+	dialogShortcut ui.Box
+
 	// The page: the selected row, its layout and the count under the table.
 	selected  int
 	sort      components.TableSortState
@@ -517,25 +527,9 @@ func (state *State) paintSnippetDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		{hitSnippetName, m.SnippetName, m.SnippetNamePlaceholder, form.name.String()},
 		{hitSnippetCommand, m.SnippetCommand, m.SnippetCommandPlaceholder, form.command.String()},
 	}
-	var fields [len(entries)]ui.Box
-	var group, run, shortcutButtons ui.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		fields[0] = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		fields[1] = f.Slot().Height(140).MarginSides(0, 0, 6, 0)
-		group = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		run = state.declareDialogCheckbox(f, m.SnippetRun, 7, 0)
-		f.Row().Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
-			f.Text(m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
-			shortcutButtons = f.Slot().Size(240, 32).Shrink(0)
-		})
-		if form.dialogError != "" {
-			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
-		}
-	})
-	f.End()
+	state.snippetDialogPage().Draw(canvas, layout.Body, form.dialogView)
 	for index, entry := range entries {
-		content := components.BeginField(canvas, theme, fields[index].Rect()).Paint(entry.label, "", "")
+		content := components.BeginField(canvas, theme, form.dialogFields[index].Rect()).Paint(entry.label, "", "")
 		focused := canvas.Focused() == entry.id
 		if entry.id == hitSnippetCommand {
 			selection := form.command.Selection()
@@ -557,8 +551,8 @@ func (state *State) paintSnippetDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 			Focused: focused, PlatformEditing: focused && entry.value != "", Invalid: form.dialogError != "",
 		})
 	}
-	state.paintSnippetGroupField(canvas, group.Rect())
-	state.paintDialogCheckbox(canvas, hitSnippetRun, m.SnippetRun, form.run, run)
+	state.paintSnippetGroupField(canvas, form.dialogGroup.Rect())
+	state.paintDialogCheckbox(canvas, hitSnippetRun, m.SnippetRun, form.run, form.dialogRun)
 	label := m.SnippetShortcutNone
 	switch {
 	case form.capturing:
@@ -570,10 +564,42 @@ func (state *State) paintSnippetDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		{ID: hitSnippetShortcut, Label: label, Variant: components.ButtonOutline},
 		{ID: hitSnippetShortcutOff, Label: m.SnippetShortcutClear, Variant: components.ButtonGhost, Disabled: !form.shortcut.Valid() && !form.capturing},
 	}
-	components.BeginButtonRow(canvas, theme, shortcutButtons.Rect()).Paint(buttons[:]...)
+	components.BeginButtonRow(canvas, theme, form.dialogShortcut.Rect()).Paint(buttons[:]...)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitSnippetCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitSnippetSubmit, Label: m.SnippetSave},
 	)
 	dialog.End()
+}
+
+// snippetDialogBodyRoot names the page the snippet editor's body is declared in.
+const snippetDialogBodyRoot = "snippet-dialog-body"
+
+// snippetDialogPage makes the page the snippet editor's body is declared in.
+func (state *State) snippetDialogPage() *ui.Page {
+	form := &state.snippets
+	if form.dialogPage == nil {
+		form.dialogPage = ui.NewPage(ui.PageConfig{Root: snippetDialogBodyRoot, Theme: &state.theme})
+		form.dialogView = state.declareSnippetDialogBody
+	}
+	return form.dialogPage
+}
+
+// declareSnippetDialogBody lays out the snippet editor: name, command, group,
+// the run box and the shortcut row.
+func (state *State) declareSnippetDialogBody(c ui.C) {
+	form, m := &state.snippets, state.messages.Tools
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		form.dialogFields[0] = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		form.dialogFields[1] = ui.Slot(c).Height(140).MarginSides(0, 0, 6, 0)
+		form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		form.dialogRun = state.declareDialogCheckboxC(c, m.SnippetRun, 7, 0)
+		ui.Row(c).Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
+			ui.Text(c, m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
+			form.dialogShortcut = ui.Slot(c).Size(240, 32).Shrink(0)
+		})
+		if form.dialogError != "" {
+			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+		}
+	})
 }

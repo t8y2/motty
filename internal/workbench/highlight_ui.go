@@ -346,20 +346,11 @@ func (state *State) declareHighlightDialogBody(c ui.C) {
 	})
 }
 
-// declareDialogCheckbox declares a checkbox and its label inside a dialog's body,
-// the given room above and below it, and returns the box the checkbox is
-// painted in (paintDialogCheckbox), after the fields above it, so the keyboard
-// visits them in the order they are on the page. It returns the row, which
-// holds the checkbox and its words.
-func (state *State) declareDialogCheckbox(f *ui.Frame, label string, above, below float32) ui.Box {
-	side := components.CheckboxExtent(state.Theme())
-	return f.Row().Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
-		f.Slot().Size(side, side).Shrink(0)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
-	})
-}
-
-// declareDialogCheckboxC is declareDialogCheckbox for a body declared as a page.
+// declareDialogCheckboxC declares a checkbox and its label inside a dialog's
+// body declared as a page, the given room above and below it, and returns the
+// box the checkbox is painted in (paintDialogCheckbox), after the fields above
+// it, so the keyboard visits them in the order they are on the page. It returns
+// the row, which holds the checkbox and its words.
 func (state *State) declareDialogCheckboxC(c ui.C, label string, above, below float32) ui.Box {
 	side := components.CheckboxExtent(state.Theme())
 	return ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
@@ -368,15 +359,15 @@ func (state *State) declareDialogCheckboxC(c ui.C, label string, above, below fl
 	})
 }
 
-// declareDialogCheckboxHelp is declareDialogCheckbox with a help icon right after
-// the label, which paintHelpIcon fills in.
-func (state *State) declareDialogCheckboxHelp(f *ui.Frame, label string, above, below float32) (row, help ui.Box) {
+// declareDialogCheckboxHelpC is declareDialogCheckboxC with a help icon right
+// after the label, which paintHelpIcon fills in.
+func (state *State) declareDialogCheckboxHelpC(c ui.C, label string, above, below float32) (row, help ui.Box) {
 	side := components.CheckboxExtent(state.Theme())
-	row = f.Row().Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
-		f.Slot().Size(side, side).Shrink(0)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20)
-		help = f.Slot().Size(16, 16).Shrink(0)
-		f.Spacer().Grow(1)
+	row = ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
+		ui.Slot(c).Size(side, side).Shrink(0)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20)
+		help = ui.Slot(c).Size(16, 16).Shrink(0)
+		ui.Spacer(c).Grow(1)
 	})
 	return row, help
 }

@@ -1056,6 +1056,13 @@ type chromeLayout struct {
 	// an icon button): each paints what it declared before the next begins, so the
 	// view is shared. dialog is the body of one dialog.
 	widget, dialog ui.View
+	// deleteHostPage, hostKeyPage and passwordPage declare the bodies of the
+	// dialogs that keep no state struct of their own. Each is made on its first
+	// paint and kept, so a repaint declares into the same page. passwordSave is
+	// the slot the save box of the password dialog was laid out in.
+	deleteHostPage, hostKeyPage, passwordPage *ui.Page
+	deleteHostView, hostKeyView, passwordView func(ui.C)
+	passwordSave                              ui.Box
 	// newTabPage declares the empty tab, with newTabView its declaration kept so a
 	// paint makes no new method value; newTabAdd and newTabAll are its footer
 	// buttons, painted by hand once the page has laid them out.
@@ -2281,6 +2288,15 @@ func paintIcon(canvas *gfx.Canvas, kind uint8, bounds gfx.Rect, foreground gfx.C
 	canvas.DrawIcon(lucideIcons[kind], bounds, foreground)
 }
 
+// The dialog bodies declared in this file each name their own page, so no two
+// declarations share names in the window's Tree.
+const (
+	deleteHostBodyRoot = "delete-host-body"
+	hostKeyBodyRoot    = "host-key-body"
+	passwordBodyRoot   = "password-body"
+	moveGroupBodyRoot  = "move-group-body"
+)
+
 // paintHostDialog renders the modal New Host form on its own layer.
 func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages, state.Theme()
@@ -2309,8 +2325,6 @@ func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	const rowHeight = hostFormRowHeight
 	ssh := sshHost
 	vncHost := state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP
-	var vncRows ui.Box
-	var protocol, label, endpoint, group, tags, iconField, colorField, transfer, proxy, jump, advanced ui.Box
 	form := &state.editor.form
 	form.count = 0
 	if form.lastError != state.dialogError {
@@ -2326,63 +2340,29 @@ func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		form.lastFocus = gfx.ID{}
 	}
 	form.geometry, form.offset, form.clipped = geometry, geometry.OffsetY, true
-	body := geometry.Content
+	bodyRect := geometry.Content
 	if geometry.MaxOffsetY > 0 {
-		body.Width -= 12
+		bodyRect.Width -= 12
 	}
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		protocol = f.Slot().Height(34).MarginSides(0, 0, 10, 0)
-		f.Row().Height(rowHeight).Gap(8).Children(func() {
-			label = f.Slot().Grow(1)
-			colorField = f.Slot().Grow(1)
-		})
-		endpoint = f.Slot().Height(float32(state.hostEndpointRows()) * rowHeight)
-		f.Row().Height(rowHeight).Gap(8).Children(func() {
-			group = f.Slot().Grow(1)
-			tags = f.Slot().Grow(1)
-		})
-		f.Row().Height(rowHeight).Gap(8).Children(func() {
-			iconField = f.Slot().Grow(1)
-			if ssh {
-				transfer = f.Slot().Grow(1)
-			}
-		})
-		if networkHost {
-			// The proxy is its own row: sharing the icon row clipped both the
-			// icon value and the proxy summary on VNC, RDP and Telnet.
-			proxy = f.Slot().Height(rowHeight)
-		}
-		if ssh {
-			jump = f.Slot().Height(rowHeight)
-			advanced = f.Slot().Height(state.advancedSectionHeight())
-		}
-		if vncHost {
-			vncRows = f.Slot().Height(state.desktopRowsHeight())
-		}
-		if state.dialogError != "" {
-			// The serial line's error is long: up to two lines.
-			f.Paragraph(state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
-		}
-	})
-	f.End()
-	state.paintHostProtocolSwitch(canvas, protocol.Rect())
-	state.paintDialogField(canvas, hitDialogLabel, fieldLabel, m.FieldLabel, m.FieldLabelPlaceholder, label.Rect())
-	state.paintHostEndpointRows(canvas, endpoint.Rect().X, endpoint.Rect().Y, endpoint.Rect().Width, rowHeight)
-	state.paintHostGroupPicker(canvas, group.Rect())
-	state.paintHostTags(canvas, tags.Rect())
-	state.paintHostIconChoice(canvas, iconField.Rect())
-	state.paintHostColorChoice(canvas, colorField.Rect())
+	state.hostFormPage().Draw(canvas, bodyRect, form.view)
+	b := &form.body
+	state.paintHostProtocolSwitch(canvas, b.protocol.Rect())
+	state.paintDialogField(canvas, hitDialogLabel, fieldLabel, m.FieldLabel, m.FieldLabelPlaceholder, b.label.Rect())
+	state.paintHostEndpointRows(canvas, b.endpoint.Rect().X, b.endpoint.Rect().Y, b.endpoint.Rect().Width, rowHeight)
+	state.paintHostGroupPicker(canvas, b.group.Rect())
+	state.paintHostTags(canvas, b.tags.Rect())
+	state.paintHostIconChoice(canvas, b.iconField.Rect())
+	state.paintHostColorChoice(canvas, b.colorField.Rect())
 	if networkHost {
-		state.paintHostProxyRow(canvas, proxy.Rect())
+		state.paintHostProxyRow(canvas, b.proxy.Rect())
 	}
 	if vncHost {
-		state.paintVNCRows(canvas, vncRows.Rect())
+		state.paintVNCRows(canvas, b.vncRows.Rect())
 	}
 	if ssh {
-		state.paintHostJumpRow(canvas, jump.Rect())
-		state.paintTransferChoice(canvas, transfer.Rect())
-		state.paintAdvancedSection(canvas, advanced.Rect())
+		state.paintHostJumpRow(canvas, b.jump.Rect())
+		state.paintTransferChoice(canvas, b.transfer.Rect())
+		state.paintAdvancedSection(canvas, b.advanced.Rect())
 	}
 
 	area.EndContent()
@@ -2401,6 +2381,64 @@ func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	dialog.End()
 }
 
+// hostFormPage makes the page the host form's body is declared in.
+func (state *State) hostFormPage() *ui.Page {
+	form := &state.editor.form
+	if form.page == nil {
+		form.page = ui.NewPage(ui.PageConfig{Root: hostFormBodyRoot, Theme: &state.theme})
+		form.view = state.declareHostFormBody
+	}
+	return form.page
+}
+
+// declareHostFormBody lays out the host form: the protocol switch, the fields,
+// and the sections whose controls are painted into the slots by hand. The
+// controls stay painted by hand so their focus order, clip and invalid looks
+// are the ones they already have.
+func (state *State) declareHostFormBody(c ui.C) {
+	editor := &state.editor
+	b := &editor.form.body
+	ssh := editor.protocol == protocolSSH
+	networkHost := editor.protocol != protocolSerial
+	vncHost := editor.protocol == protocolVNC || editor.protocol == protocolRDP
+	rowHeight := float32(hostFormRowHeight)
+	*b = hostFormBody{}
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		b.protocol = ui.Slot(c).Height(34).MarginSides(0, 0, 10, 0)
+		ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+			b.label = ui.Slot(c).Grow(1)
+			b.colorField = ui.Slot(c).Grow(1)
+		})
+		b.endpoint = ui.Slot(c).Height(float32(state.hostEndpointRows()) * rowHeight)
+		ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+			b.group = ui.Slot(c).Grow(1)
+			b.tags = ui.Slot(c).Grow(1)
+		})
+		ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+			b.iconField = ui.Slot(c).Grow(1)
+			if ssh {
+				b.transfer = ui.Slot(c).Grow(1)
+			}
+		})
+		if networkHost {
+			// The proxy is its own row: sharing the icon row clipped both the
+			// icon value and the proxy summary on VNC, RDP and Telnet.
+			b.proxy = ui.Slot(c).Height(rowHeight)
+		}
+		if ssh {
+			b.jump = ui.Slot(c).Height(rowHeight)
+			b.advanced = ui.Slot(c).Height(state.advancedSectionHeight())
+		}
+		if vncHost {
+			b.vncRows = ui.Slot(c).Height(state.desktopRowsHeight())
+		}
+		if state.dialogError != "" {
+			// The serial line's error is long: up to two lines.
+			ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
+		}
+	})
+}
+
 func (state *State) paintDeleteHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	body := float32(0)
 	if state.dialogError != "" {
@@ -2413,17 +2451,35 @@ func (state *State) paintDeleteHostDialog(canvas *gfx.Canvas, viewport gfx.Rect)
 	})
 	layout := dialog.Begin(state.messages.DeleteHostTitle, state.hostDialogText)
 	if state.dialogError != "" {
-		f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-		f.Column().Fill().Children(func() {
-			f.Text(state.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(20)
-		})
-		f.End()
+		state.deleteHostDialogPage().Draw(canvas, layout.Body, state.chrome.deleteHostView)
 	}
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitHostDeleteCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitHostDeleteConfirm, Label: state.messages.DeleteHostConfirm, Variant: components.ButtonDestructive},
 	)
 	dialog.End()
+}
+
+// deleteHostDialogPage makes the page the delete confirmation's body is
+// declared in.
+func (state *State) deleteHostDialogPage() *ui.Page {
+	chrome := &state.chrome
+	if chrome.deleteHostPage == nil {
+		chrome.deleteHostPage = ui.NewPage(ui.PageConfig{Root: deleteHostBodyRoot, Theme: &state.theme})
+		chrome.deleteHostView = state.declareDeleteHostBody
+	}
+	return chrome.deleteHostPage
+}
+
+// declareDeleteHostBody lays out the confirmation's error line, when the host
+// could not be deleted.
+func (state *State) declareDeleteHostBody(c ui.C) {
+	if state.dialogError == "" {
+		return
+	}
+	ui.Column(c).Fill().Children(func() {
+		ui.Text(c, state.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(20)
+	})
 }
 
 func (state *State) paintMoveHostGroupDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
@@ -2451,11 +2507,9 @@ func (state *State) paintMoveHostGroupDialog(canvas *gfx.Canvas, viewport gfx.Re
 		description = elide(canvas, state.groupActions.path, state.Theme().Metrics.FontSizeM, gfx.WeightRegular, dialog.Layout("").Header.Width)
 	}
 	layout := dialog.Begin(title, description)
-	var slot ui.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() { slot = f.Slot().Height(90) })
-	f.End()
-	field := components.BeginField(canvas, state.Theme(), slot.Rect()).For(hitMoveGroupField)
+	state.moveGroupDialogPage().Draw(canvas, layout.Body, state.groupActions.view)
+	slot := state.groupActions.slot.Rect()
+	field := components.BeginField(canvas, state.Theme(), slot).For(hitMoveGroupField)
 	if state.dialogError != "" {
 		field = field.Invalid()
 	}
@@ -2476,6 +2530,24 @@ func (state *State) paintMoveHostGroupDialog(canvas *gfx.Canvas, viewport gfx.Re
 		components.ButtonAction{ID: hitMoveGroupSubmit, Label: submit},
 	)
 	dialog.End()
+}
+
+// moveGroupDialogPage makes the page the move/rename dialog's body is declared
+// in.
+func (state *State) moveGroupDialogPage() *ui.Page {
+	actions := &state.groupActions
+	if actions.page == nil {
+		actions.page = ui.NewPage(ui.PageConfig{Root: moveGroupBodyRoot, Theme: &state.theme})
+		actions.view = state.declareMoveGroupBody
+	}
+	return actions.page
+}
+
+// declareMoveGroupBody lays out the one field the dialog shows.
+func (state *State) declareMoveGroupBody(c ui.C) {
+	ui.Column(c).Fill().Children(func() {
+		state.groupActions.slot = ui.Slot(c).Height(90)
+	})
 }
 
 // paintDialogField paints one label + input row wired to its editor. The
@@ -2665,7 +2737,7 @@ func (state *State) paintDialogFieldWithSecurity(canvas *gfx.Canvas, id gfx.ID, 
 // paintHostKeyDialog asks whether to trust a server's key. The safe choice,
 // Reject, holds the initial focus.
 func (state *State) paintHostKeyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, pal, theme := state.messages, state.pal, state.Theme()
+	m, theme := state.messages, state.Theme()
 	session := state.promptSession()
 	if session == nil {
 		return
@@ -2676,21 +2748,7 @@ func (state *State) paintHostKeyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: 3*30 - 8, // three rows of address, type and fingerprint
 	})
 	layout := dialog.Begin(m.HostKeyTitle, state.hostKeyDescription)
-	rows := [...]struct{ label, value string }{
-		{m.FieldAddress, session.hostKey.Address},
-		{m.HostKeyType, session.hostKey.Type},
-		{m.HostKeyFingerprint, session.hostKey.Fingerprint},
-	}
-	f := state.chrome.dialog.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().Gap(8).Children(func() {
-		for _, row := range rows {
-			f.Row().Height(22).Gap(6).Children(func() {
-				f.Text(row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).Width(90).Shrink(0)
-				f.Text(row.value).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(pal.text).LineHeight(22)
-			})
-		}
-	})
-	f.End()
+	state.hostKeyDialogPage().Draw(canvas, layout.Body, state.chrome.hostKeyView)
 	actions := [...]components.ButtonAction{
 		{ID: hitHostKeyReject, Label: m.HostKeyReject, Variant: components.ButtonSecondary},
 		{ID: hitHostKeyOnce, Label: m.HostKeyOnce, Variant: components.ButtonOutline},
@@ -2703,6 +2761,38 @@ func (state *State) paintHostKeyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	}
 	dialog.Actions(layout, actions[:actionCount]...)
 	dialog.End()
+}
+
+// hostKeyDialogPage makes the page the host-key question's body is declared in.
+func (state *State) hostKeyDialogPage() *ui.Page {
+	chrome := &state.chrome
+	if chrome.hostKeyPage == nil {
+		chrome.hostKeyPage = ui.NewPage(ui.PageConfig{Root: hostKeyBodyRoot, Theme: &state.theme})
+		chrome.hostKeyView = state.declareHostKeyBody
+	}
+	return chrome.hostKeyPage
+}
+
+// declareHostKeyBody lays out the address, type and fingerprint of the key.
+func (state *State) declareHostKeyBody(c ui.C) {
+	session := state.promptSession()
+	if session == nil {
+		return
+	}
+	m, pal := state.messages, state.pal
+	rows := [...]struct{ label, value string }{
+		{m.FieldAddress, session.hostKey.Address},
+		{m.HostKeyType, session.hostKey.Type},
+		{m.HostKeyFingerprint, session.hostKey.Fingerprint},
+	}
+	ui.Column(c).Fill().Gap(8).Children(func() {
+		for _, row := range rows {
+			ui.Row(c).Height(22).Gap(6).Children(func() {
+				ui.Text(c, row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).Width(90).Shrink(0)
+				ui.Text(c, row.value).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(pal.text).LineHeight(22)
+			})
+		}
+	})
 }
 
 // paintPasswordDialog asks every question of one authentication round, each in
@@ -2785,31 +2875,47 @@ func (state *State) layoutPasswordFields(canvas *gfx.Canvas, body gfx.Rect) (fie
 		boxes = make([]ui.Box, len(state.passwordQuestions))
 		state.passwordRects, state.passwordBoxes = fields, boxes
 	}
-	multi := len(boxes) > 1
-	var saveBox ui.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		for index := range boxes {
-			boxes[index] = f.Slot().Height(62).MarginSides(0, 0, 4, 0)
-		}
-		state.hintLine(f)
-		state.problemLine(f, state.passwordError)
-		if state.secrets.canSave {
-			if multi {
-				saveBox = f.Slot().Height(20).MarginSides(12, 0, 0, 0)
-			} else {
-				saveBox = f.Slot().Height(20).MarginSides(8, 0, 0, 0)
-			}
-		}
-	})
-	f.End()
+	state.passwordDialogPage().Draw(canvas, body, state.chrome.passwordView)
 	for index := range boxes {
 		fields[index] = boxes[index].Rect()
 	}
 	if state.secrets.canSave {
-		save = saveBox.Rect()
+		save = state.chrome.passwordSave.Rect()
 	}
 	return fields, save
+}
+
+// passwordDialogPage makes the page the password dialog's body is declared in.
+func (state *State) passwordDialogPage() *ui.Page {
+	chrome := &state.chrome
+	if chrome.passwordPage == nil {
+		chrome.passwordPage = ui.NewPage(ui.PageConfig{Root: passwordBodyRoot, Theme: &state.theme})
+		chrome.passwordView = state.declarePasswordBody
+	}
+	return chrome.passwordPage
+}
+
+// declarePasswordBody lays out one field per question, the hint and error under
+// them and, when the vault can keep it, the box that offers to save it. The
+// fields themselves are painted into their slots by paintPasswordDialog.
+func (state *State) declarePasswordBody(c ui.C) {
+	boxes := state.passwordBoxes
+	multi := len(boxes) > 1
+	state.chrome.passwordSave = ui.Box{}
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		for index := range boxes {
+			boxes[index] = ui.Slot(c).Height(62).MarginSides(0, 0, 4, 0)
+		}
+		state.hintLineC(c)
+		state.problemLineC(c, state.passwordError)
+		if state.secrets.canSave {
+			if multi {
+				state.chrome.passwordSave = ui.Slot(c).Height(20).MarginSides(12, 0, 0, 0)
+			} else {
+				state.chrome.passwordSave = ui.Slot(c).Height(20).MarginSides(8, 0, 0, 0)
+			}
+		}
+	})
 }
 
 // passwordHintText is the guidance about submitting and saving: a help icon on
@@ -2828,15 +2934,15 @@ func (state *State) passwordHintText() string {
 	return hint
 }
 
-// hintLine declares the hint row under the fields. The field's description
+// hintLineC declares the hint row under the fields. The field's description
 // slot would draw past its fixed 62 pixel slot onto the error line, so the
 // hint is a row of its own.
-func (state *State) hintLine(f *ui.Frame) {
+func (state *State) hintLineC(c ui.C) {
 	if state.secrets.canSave {
 		return
 	}
 	if hint := state.passwordHintText(); hint != "" {
-		f.Text(hint).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(state.pal.muted).LineHeight(18)
+		ui.Text(c, hint).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(state.pal.muted).LineHeight(18)
 	}
 }
 
