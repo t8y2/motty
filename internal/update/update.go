@@ -143,6 +143,7 @@ type Package uint8
 const (
 	PackageArchive Package = iota
 	PackageDeb
+	PackagePortable
 )
 
 // CheckPackage selects the package matching the installation on this machine.
@@ -182,6 +183,12 @@ func StableName(goos, goarch string) string {
 
 // StableNamePackage names a DEB only for the architectures we publish.
 func StableNamePackage(goos, goarch string, pkg Package) string {
+	if pkg == PackagePortable {
+		if goos == "windows" && (goarch == "arm64" || goarch == "amd64") {
+			return "motty-windows-" + goarch + ".zip"
+		}
+		return ""
+	}
 	if pkg == PackageDeb {
 		if goos == "linux" && (goarch == "arm64" || goarch == "amd64") {
 			return "motty_" + goarch + ".deb"

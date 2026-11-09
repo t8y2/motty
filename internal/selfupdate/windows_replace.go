@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+
+	"motty/internal/datadir"
 )
 
 // replaceWindowsExecutable retires the installed image on the same volume before
@@ -47,6 +50,33 @@ func replaceWindowsExecutable(root, name string, install func() error) error {
 	// a later update can remove it; no active process or remote command is killed.
 	cleanRetiredExecutables(root, prefix)
 	return nil
+}
+
+func (job Job) applyPortable() error {
+	if !strings.EqualFold(filepath.Base(job.Exe), "motty.exe") || !strings.EqualFold(filepath.Clean(filepath.Dir(job.Exe)), filepath.Clean(job.Root)) ||
+		filepath.Base(job.Staged) != "motty.exe" || !isDir(filepath.Join(job.Root, datadir.PortableName)) ||
+		exists(filepath.Join(job.Root, "Uninstall.exe")) ||
+		exists(filepath.Join(job.Root, "install.json")) || exists(filepath.Join(job.Root, "manifest.json")) {
+		return ErrUnsupported
+	}
+	if runtime.GOOS == "windows" {
+		install, reason := Detect(job.Exe, SystemEnv())
+		if reason != ReasonNone || install.Kind != KindWindowsPortable || !strings.EqualFold(install.Root, job.Root) {
+			return ErrUnsupported
+		}
+	}
+	stage, err := os.MkdirTemp(job.Root, ".motty-portable-stage-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	ready := filepath.Join(stage, "motty.exe")
+	if err := copyExecutable(job.Staged, ready); err != nil {
+		return err
+	}
+	return replaceWindowsExecutable(job.Root, "motty.exe", func() error {
+		return os.Rename(ready, job.Exe)
+	})
 }
 
 // restoreExecutable puts the retired image back at the install path. A partial

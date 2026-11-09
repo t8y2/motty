@@ -106,6 +106,20 @@ func TestAnUpdateThatCanBeInstalledIsInstalledAndTheApplicationQuits(t *testing.
 	}
 }
 
+func TestPortableUpdateOffersAnInPlaceInstall(t *testing.T) {
+	updater, quits, opened := &fakeUpdater{packageType: update.PackagePortable}, 0, []string(nil)
+	state := updateWindow(t, updater, &quits, &opened)
+	_, texts := paintedTexts(state)
+	if !contains(texts, state.messages.Tools.UpdateInstall) || contains(texts, state.messages.Tools.GeneralUpdateDownload) {
+		t.Fatalf("portable update still offers only a manual download: %q", texts)
+	}
+	state.Click(hitUpdateInstall)
+	waitUpdate(t, state, func() bool { return quits == 1 })
+	if updater.launches() != 1 || len(opened) != 0 {
+		t.Fatalf("portable update launched %d times and opened %q", updater.launches(), opened)
+	}
+}
+
 func TestDebUpdateAsksForAdministratorAuthorization(t *testing.T) {
 	updater, quits, opened := &fakeUpdater{packageType: update.PackageDeb}, 0, []string(nil)
 	state := updateWindow(t, updater, &quits, &opened)

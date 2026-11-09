@@ -289,7 +289,7 @@ What the app downloads is chosen by name, so these must stay as they are:
 
 - the stable asset names in `update.StableNamePackage` (`motty-darwin-<arch>.zip`,
   `motty-linux-<arch>.tar.gz`, `motty_<arch>.deb`,
-  `motty-windows-<arch>-setup.exe`) match what
+  `motty-windows-<arch>-setup.exe`, `motty-windows-<arch>.zip`) match what
   `viva package` produces, after the mirror takes the version out;
 - `latest.json` keeps `version`, `tag` (`v` plus the version) and, per file, `name`,
   `size`, `sha256` and `signature`;
@@ -304,7 +304,7 @@ signature alone, which is what lets Windows update without a code-signing
 certificate.
 
 Only a user-owned installation replaces its own files (an app bundle in a writable folder,
-the per-user Windows installer, a Linux `install.sh` prefix). On Windows, custom
+the per-user Windows installer, a self-managed portable ZIP, a Linux `install.sh` prefix). On Windows, custom
 directories are recognised from the application's per-user uninstall registration
 and still require the uninstaller and write access. The helper passes that exact
 directory to the installer. A dpkg-registered `/usr/bin/motty` selects the signed
@@ -318,6 +318,10 @@ attempts keep the downloaded package for a checked retry. This does not make dpk
 transactional: a failure during package unpacking or maintainer scripts may require
 repair with the system package manager. Missing Polkit, unregistered system installs,
 Snap, Flatpak, and all-users Windows installations use the manual update path.
+An unregistered writable Windows copy with a writable `motty-data` marker selects
+the signed portable ZIP. The updater extracts and checks its executable before
+the helper replaces only `motty.exe`; the data folder and vault key are untouched.
+Scoop's version directories remain externally managed and use `scoop update motty`.
 
 The replacement is made by a helper that outlives the app and waits for the
 desktop process to exit. On Windows, stdio MCP servers may still be using the
@@ -357,9 +361,10 @@ when it is opened.
 
 The Windows `.zip` is the portable copy, made by `tools/portablezip` from the same
 signed program the installer carries: `motty.exe` beside a `motty-data` folder, which
-is what switches Motty to keeping its data next to itself (`internal/datadir`). It is
-not offered to the in-app updater, which only replaces installations it owns; a
-portable copy sends the user to the download page.
+is what switches Motty to keeping its data next to itself (`internal/datadir`).
+Self-managed copies can update in place using this signed ZIP, without overwriting
+their data. Scoop-managed copies must use `scoop update motty`; read-only or otherwise
+unsupported copies still go to the download page.
 
 A signed release also carries `SIGNATURES`, the minisign signature of every
 package. That is 14 release assets: the packages above, `SHA256SUMS` and

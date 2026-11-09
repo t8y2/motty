@@ -115,7 +115,10 @@ scoop install t8y2/motty
 ```
 
 The cask installs the notarized disk image and is marked as self-updating, so an
-installed copy updates itself. Scoop installs the portable copy: its
+installed copy updates itself. A manually unpacked Windows portable ZIP can
+update itself when a signed release is available; it keeps `motty-data` intact.
+Older portable builds need one manual ZIP replacement before this is available.
+Scoop installs the portable copy but manages its version directories: its
 `motty-data` folder is persisted across versions and `scoop update motty` is how
 it updates.
 

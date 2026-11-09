@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -126,6 +127,69 @@ func testWindowsUpdateWithRunningMCPImage(t *testing.T, fail bool) {
 	entries, _ := os.ReadDir(root)
 	if len(entries) != 1 {
 		t.Fatalf("retired image not cleaned after process exit: %v", entries)
+	}
+}
+
+func TestWindowsPortableUpdateKeepsMappedProcessesAndData(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(t.TempDir(), "Portable Motty")
+	dataDir := filepath.Join(root, "motty-data")
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(root, "motty.exe")
+	if err := copyExecutable(self, exe); err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(exe)
+	child.Env = append(os.Environ(), "MOTTY_TEST_HOLD_IMAGE=1")
+	input, err := child.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { input.Close(); child.Process.Kill(); child.Wait() }()
+	if line, err := bufio.NewReader(output).ReadString('\n'); err != nil || strings.TrimSpace(line) != "ready" {
+		t.Fatalf("mapped process not ready: %q %v", line, err)
+	}
+	staged := filepath.Join(t.TempDir(), "motty.exe")
+	if err := copyExecutable(self, staged); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(staged, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write([]byte("new portable image")); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	key := []byte("persistent portable key")
+	if err := os.WriteFile(filepath.Join(dataDir, "vault.key"), key, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Job{Kind: KindWindowsPortable, Staged: staged, Root: root, Exe: exe}).applyPortable(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(exe); err != nil || !bytes.HasSuffix(got, []byte("new portable image")) {
+		t.Fatalf("new image was not installed: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(dataDir, "vault.key")); err != nil || !bytes.Equal(got, key) {
+		t.Fatalf("portable key changed: %v", err)
+	}
+	if err := child.Process.Kill(); err != nil {
+		t.Fatalf("the mapped process did not survive replacement: %v", err)
 	}
 }
 

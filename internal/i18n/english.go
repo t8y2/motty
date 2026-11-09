@@ -2076,7 +2076,7 @@ var englishTools = ToolsMessages{
 	UpdateInstall:                   "Install and restart",
 	UpdateInstallDescriptionFmt:     "You are on %s. Motty quits to install the update and opens again when it is done.",
 	UpdateDebDescriptionFmt:         "You are on %s. Motty quits, requests administrator authorization to install the DEB with dpkg, then reopens as your user. No sudo password is stored.",
-	UpdateWhyNotUserInstall:         "This copy was not installed the way Motty's own packages install it, so it cannot update itself.",
+	UpdateWhyNotUserInstall:         "This copy is not a self-updating installation or portable copy. Use its original installation method to upgrade.",
 	UpdateWhyNotWritable:            "Motty cannot write to where it is installed.",
 	UpdateWhyTranslocated:           "macOS is running Motty from a temporary place. Move it to Applications first.",
 	UpdateWhySystemInstall:          "This copy was installed system-wide, so Motty cannot replace it. Update it with your package manager, or run the new installer.",

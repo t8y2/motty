@@ -65,6 +65,24 @@ func TestDebPackageSelection(t *testing.T) {
 	}
 }
 
+func TestPortableWindowsUsesTheSignedZipInsteadOfTheInstaller(t *testing.T) {
+	for _, architecture := range []string{"amd64", "arm64"} {
+		stable := "motty-windows-" + architecture + ".zip"
+		if got := StableNamePackage("windows", architecture, PackagePortable); got != stable {
+			t.Fatalf("%s: %s", architecture, got)
+		}
+		server := mirrorServer(t, `{"version":"1.2.3","tag":"v1.2.3","source":"https://github.com/t8y2/motty/releases/tag/v1.2.3","files":[{"name":"`+stable+`","size":100,"sha256":"`+goodHash+`","signature":"c2ln"},{"name":"motty-windows-`+architecture+`-setup.exe","size":100,"sha256":"`+goodHash+`"}]}`)
+		release, err := latestMirrorPackage(context.Background(), server.Client(), server.URL, "windows", architecture, PackagePortable)
+		server.Close()
+		if err != nil || release.Asset.Name != "motty-1.2.3-windows-"+architecture+".zip" || release.Asset.Signature == "" {
+			t.Fatalf("%s: %+v, %v", architecture, release.Asset, err)
+		}
+	}
+	if StableNamePackage("windows", "386", PackagePortable) != "" || StableNamePackage("linux", "amd64", PackagePortable) != "" {
+		t.Fatal("off-platform portable package was offered")
+	}
+}
+
 func TestCurrentMatchesTheManifest(t *testing.T) {
 	data, err := os.ReadFile("../../viva.toml")
 	if os.IsNotExist(err) {

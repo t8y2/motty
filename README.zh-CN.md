@@ -107,8 +107,10 @@ scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
 scoop install t8y2/motty
 ```
 
-cask 安装的是已公证的磁盘映像，并标记为自行更新，安装后的副本会原地升级。Scoop 安装
-的是便携版：`motty-data` 会在版本间保留，升级走 `scoop update motty`。
+cask 安装的是已公证的磁盘映像，并标记为自行更新，安装后的副本会原地升级。自行解压的
+Windows 便携版在有签名更新时也可原地升级，并保留 `motty-data`。旧版便携版需要先手动
+替换一次 ZIP 中的 `motty.exe` 才能使用应用内更新。Scoop 安装的也是便携版，但其版本
+目录由 Scoop 管理：`motty-data` 会在版本间保留，升级走 `scoop update motty`。
 
 ## 快速开始
 

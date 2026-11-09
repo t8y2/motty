@@ -31,8 +31,10 @@ and leaves nothing else on this computer.
 - The key to the saved passwords is a file in this folder (vault.key), not part of
   Windows. Whoever can copy this folder can read the saved passwords, so keep it
   somewhere you trust.
-- Motty does not update itself in a portable copy. To update, download the new
-  zip and replace motty.exe, keeping this folder.
+- Self-managed portable copies can update from within Motty when a signed update
+  is available. If automatic updating is unavailable, download the new zip and
+  replace only motty.exe, keeping this folder.
+- Copies installed by Scoop are managed by Scoop: use scoop update motty.
 - To use the normal location instead, move this folder away from motty.exe.
 
 便携版
@@ -44,7 +46,9 @@ and leaves nothing else on this computer.
 - 把 motty.exe 和这个文件夹一起复制或移动,就能带走你的全部配置。
 - 已保存密码的密钥是这个文件夹里的一个文件(vault.key),不依赖 Windows。
   能拷走这个文件夹的人就能读出已保存的密码,请把它放在可信的地方。
-- 便携版不会自我更新。更新时下载新的 zip,替换 motty.exe,保留这个文件夹。
+- 自行解压的便携版在有签名更新时可以通过 Motty 自动更新。如果无法自动更新,
+  请下载新版 zip,仅替换 motty.exe,保留这个文件夹。
+- 通过 Scoop 安装的副本由 Scoop 管理,请使用 scoop update motty。
 - 想改用默认位置,把这个文件夹从 motty.exe 旁边移走即可。
 `
 

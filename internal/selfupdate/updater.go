@@ -105,7 +105,7 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 	switch install.Kind {
 	case KindMacApp:
 		want, err = macIdentity(ctx, install.Root)
-	case KindWindowsSetup:
+	case KindWindowsSetup, KindWindowsPortable:
 		// A Windows installer may be unsigned: the release signature is what
 		// decides whether it can be installed. If this copy is signed, the new
 		// installer still has to be signed by the same subject.
@@ -165,6 +165,21 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 			}
 		}
 		staged.Path = archive
+	case KindWindowsPortable:
+		unpacked := filepath.Join(dir, "unpacked")
+		if err := extractPortable(archive, unpacked); err != nil {
+			return Staged{}, err
+		}
+		candidate := filepath.Join(unpacked, "motty.exe")
+		if err := verifyPortableArchitecture(candidate); err != nil {
+			return Staged{}, err
+		}
+		if want.Subject != "" {
+			if err := verifyWindows(ctx, candidate, want); err != nil {
+				return Staged{}, err
+			}
+		}
+		staged.Path = candidate
 	case KindLinuxPrefix:
 		unpacked := filepath.Join(dir, "unpacked")
 		if err := ExtractTarGz(archive, unpacked); err != nil {

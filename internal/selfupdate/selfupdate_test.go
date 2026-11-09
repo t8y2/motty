@@ -299,6 +299,49 @@ func TestCustomWindowsInstallsUseRegistrationAndWriteAccess(t *testing.T) {
 	}
 }
 
+func TestOnlyAnUnmanagedWindowsPortableCopyReplacesItsExecutable(t *testing.T) {
+	base := t.TempDir()
+	user := filepath.Join(base, "AppData", "Local")
+	root := filepath.Join(base, "portable")
+	scoop := filepath.Join(base, "scoop")
+	for _, test := range []struct {
+		name, dir, registered                   string
+		marker, writable, uninstaller, manifest bool
+		wantKind                                Kind
+		wantReason                              Reason
+	}{
+		{"portable", root, "", true, true, false, false, KindWindowsPortable, ReasonNone},
+		{"without marker", root, "", false, true, false, false, KindNone, ReasonNotUserInstall},
+		{"read only", root, "", true, false, false, false, KindNone, ReasonNotWritable},
+		{"registered", root, root, true, true, true, false, KindWindowsSetup, ReasonNone},
+		{"registered without uninstaller", root, root, true, true, false, false, KindNone, ReasonNotUserInstall},
+		{"copied installer", root, "", true, true, true, false, KindNone, ReasonNotUserInstall},
+		{"scoop default", filepath.Join(scoop, "apps", "motty", "current"), "", true, true, false, false, KindNone, ReasonNotUserInstall},
+		{"scoop version", filepath.Join(scoop, "apps", "motty", "1.2.3"), "", true, true, false, false, KindNone, ReasonNotUserInstall},
+		{"scoop metadata", root, "", true, true, false, true, KindNone, ReasonNotUserInstall},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env := Env{
+				GOOS: "windows", LocalAppData: user, ScoopRoots: []string{scoop},
+				Writable: func(string) bool { return test.writable },
+				IsDir:    func(path string) bool { return test.marker && path == filepath.Join(test.dir, "motty-data") },
+				Exists: func(path string) bool {
+					return (test.uninstaller && path == filepath.Join(test.dir, "Uninstall.exe")) ||
+						(test.manifest && path == filepath.Join(test.dir, "manifest.json"))
+				},
+				WindowsUserDir: test.registered,
+			}
+			install, reason := Detect(filepath.Join(test.dir, "motty.exe"), env)
+			if install.Kind != test.wantKind || reason != test.wantReason {
+				t.Fatalf("%+v, %v; want %v, %v", install, reason, test.wantKind, test.wantReason)
+			}
+			if install.Kind == KindWindowsPortable && install.Package() != update.PackagePortable {
+				t.Fatal("portable copy selected the installer")
+			}
+		})
+	}
+}
+
 func TestWindowsInstallsAreRecognisedByTheirInstallerDirectory(t *testing.T) {
 	env := Env{GOOS: "windows", LocalAppData: `C:\Users\me\AppData\Local`, Writable: func(string) bool { return true }, Exists: func(string) bool { return true }}
 	if filepath.Separator != '\\' {

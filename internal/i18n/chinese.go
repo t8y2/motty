@@ -2076,7 +2076,7 @@ var chineseTools = ToolsMessages{
 	UpdateInstall:                   "安装并重启",
 	UpdateInstallDescriptionFmt:     "当前版本 %s。安装前会先退出 Motty，完成后自动重新打开。",
 	UpdateDebDescriptionFmt:         "当前版本 %s。Motty 退出后将请求系统管理员授权，通过 dpkg 安装 DEB，再以当前用户重新打开；不会保存 sudo 密码。",
-	UpdateWhyNotUserInstall:         "这份 Motty 不是按官方安装包的方式安装的，无法自行更新。",
+	UpdateWhyNotUserInstall:         "这份 Motty 不属于可自行更新的安装或便携版，请通过原安装方式升级。",
 	UpdateWhyNotWritable:            "没有权限写入 Motty 的安装位置。",
 	UpdateWhyTranslocated:           "macOS 正从临时位置运行 Motty，请先把它移到“应用程序”文件夹。",
 	UpdateWhySystemInstall:          "这份 Motty 是系统级安装的，无法自行替换；请用包管理器更新，或重新运行安装程序。",
