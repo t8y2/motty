@@ -26,6 +26,9 @@ func formEditingDriver(t *testing.T, state *State) *app.Driver {
 			if special := state.AIPanelInput(context); special != nil {
 				return special
 			}
+			if input := state.AIProviderFormInput(context); input != nil {
+				return input
+			}
 			editor := state.EditorFor(context.ID)
 			if editor == nil {
 				return nil

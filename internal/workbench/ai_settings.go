@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -216,14 +217,31 @@ type aiSettingsUI struct {
 	reasoningMode       int // 0: Auto, 1: Enabled, 2: Disabled
 	reasoningPreset     int // 0: 3档(low,medium,high), 1: 6档(minimal..max), 2: 2档(default,high)
 
-	// The dialogs' choices are declared in pages of their own: a dialog painted
-	// outside the settings page has no page context for them otherwise. Each is
-	// made once and reused while the window lives.
-	probePage      *ui.Page
-	reasoningPage  *ui.Page
-	formKindPage   *ui.Page
-	formAuthPage   *ui.Page
-	formFormatPage *ui.Page
+	// The probe and reasoning dialogs' choices are declared in pages of their
+	// own: a dialog painted outside the settings page has no page context for
+	// them otherwise. Each is made once and reused while the window lives.
+	probePage     *ui.Page
+	reasoningPage *ui.Page
+
+	// The provider form is one page: its fields, choices and the preset its
+	// placement starts from are declared in it, so a click and the arrow keys
+	// reach them the way they reach a control on the settings page.
+	formPage *ui.Page
+	// The form's fields share the editors the application reads. They are bound
+	// once, when the page is made.
+	formName      ui.Field
+	formCLIPath   ui.Field
+	formBaseURL   ui.Field
+	formModelsURL ui.Field
+	formAPIKey    ui.Field
+	// formKeyShown shows the API key instead of its bullets.
+	formKeyShown bool
+	// formPreset is the slot the preset list is painted into. The list is
+	// painted after the page when it is open, so it lies over the fields below
+	// it; closed, it is painted in its place, so Tab reaches it before them.
+	formPreset ui.Box
+	// formKind, formAuth and formFormat are the forms' choices' bound values.
+	formKind, formAuth, formFormat string
 }
 
 func (state *State) aiSettingsVisible() bool {
@@ -487,6 +505,7 @@ func (state *State) aiCloseDialog() {
 	cfg.name, cfg.baseURL, cfg.modelsURL, cfg.apiKey = text.Editor{}, text.Editor{}, text.Editor{}, text.Editor{}
 	cfg.cliPath, cfg.authStyle, cfg.apiFormat = text.Editor{}, "", ""
 	cfg.cliAutoPath, cfg.cliPathMissing = "", false
+	cfg.formKeyShown, cfg.formPreset = false, ui.Box{}
 	// The import candidates hold credentials in memory; closing the dialog is
 	// also how they are forgotten.
 	cfg.importStep, cfg.importErr = aiImportSources, ""
@@ -562,25 +581,24 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			}
 		}
 	case aiDialogProvider:
-		if !store.IsCLIKind(cfg.kind) {
-			if cfg.formKindPage != nil {
-				if result, handled := cfg.formKindPage.Key(event); handled {
-					return result, true
-				}
-			}
-			if cfg.kind == store.KindAnthropic && cfg.formAuthPage != nil {
-				if result, handled := cfg.formAuthPage.Key(event); handled {
-					return result, true
-				}
-			}
-			if cfg.kind == store.KindOpenAI && cfg.formFormatPage != nil {
-				if result, handled := cfg.formFormatPage.Key(event); handled {
-					return result, true
-				}
+		if cfg.formPage != nil {
+			if result, handled := cfg.formPage.Key(event); handled {
+				return result, true
 			}
 		}
 	}
 	return gfx.EventResult{}, false
+}
+
+// AIProviderFormInput is the platform's text input for a field of the open
+// provider form: the page that declares the form owns its editors, under the
+// identities the window's own routing names.
+func (state *State) AIProviderFormInput(context app.TextInputContext) *app.TextInput {
+	cfg := &state.ai.cfg
+	if !state.aiSettingsVisible() || cfg.dialog != aiDialogProvider || cfg.formPage == nil {
+		return nil
+	}
+	return cfg.formPage.TextInput(context)
 }
 
 func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {

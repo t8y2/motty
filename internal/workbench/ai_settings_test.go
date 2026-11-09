@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"motty/internal/ai/agent"
@@ -123,9 +124,15 @@ func (world *settingsWorld) paint() (*gfx.Canvas, []string) {
 	return &canvas, texts
 }
 
-// type puts text into the field behind a hit the way the runtime does.
+// type puts text into the field behind a hit the way the runtime does: the
+// provider form's page owns its editors, so it is painted first.
 func (world *settingsWorld) typeInto(t *testing.T, hit gfx.ID, value string) {
 	t.Helper()
+	world.paint()
+	if input := world.state.AIProviderFormInput(app.TextInputContext{ID: hit}); input != nil {
+		input.Editor.Insert(value)
+		return
+	}
 	editor := world.state.EditorFor(hit)
 	if editor == nil {
 		t.Fatalf("hit %d has no editor", hit)
