@@ -296,6 +296,46 @@ func TestToolbarDockPresenceCheckDoesNotAllocate(t *testing.T) {
 	}
 }
 
+// The dock's strips are pages: their tool cells come from the page's layout,
+// and the page leaves the identities (and so the drag and keyboard paths) to the
+// window. A click delivered in a paint's event pass still reaches the action the
+// window dispatches for the tool.
+func TestToolbarDockStripsArePagesAndKeepTheWindowActions(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.activeSection = sectionTerminal
+	size := gfx.Size{Width: 1200, Height: 800}
+	state.moveToolbarDockTool(hitConnExport, toolbarDockBottom, gfx.ID{})
+	state.moveToolbarDockTool(hitTheme, toolbarDockSideBottom, gfx.ID{})
+	state.Resize(size)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	dock := &state.toolbarDock
+	if dock.topPage == nil || dock.bottomPage == nil || dock.sidePages[0] == nil {
+		t.Fatalf("strips painted without pages: top=%t bottom=%t side=%t", dock.topPage != nil, dock.bottomPage != nil, dock.sidePages[0] != nil)
+	}
+	// The tools keep the identities the window names by hand, so the page does
+	// not take the press the dock drag starts on, an arrow key, or the wheel the
+	// dock's own scroll handler reads.
+	if _, ok := state.toolbarDockPagePointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitConnExport, X: 4, Y: 4}); ok {
+		t.Fatal("a strip page took a press aimed at a tool")
+	}
+	if _, ok := state.toolbarDockPageKey(gfx.KeyEvent{Target: hitConnExport, Key: gfx.KeyRight}); ok {
+		t.Fatal("a strip page took an arrow key aimed at a tool")
+	}
+	if _, ok := state.toolbarDockPageWheel(gfx.ScrollEvent{X: 4, Y: 4}); ok {
+		t.Fatal("a strip page took a wheel event it does not scroll")
+	}
+	before := state.appearance
+	var pass gfx.Canvas
+	pass.BeginEventPass(hitTheme, gfx.ClickInfo{})
+	state.Paint(&pass, size)
+	pass.EndEventPass()
+	pass.RunAfterPaint()
+	if state.appearance == before {
+		t.Fatal("the event pass did not reach the top strip's theme action")
+	}
+}
+
 func TestToolbarDockManagedCompactionUsesActualVisibleSide(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	state.activeSection = sectionTerminal

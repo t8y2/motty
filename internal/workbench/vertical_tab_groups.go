@@ -71,7 +71,18 @@ type verticalTabGrouping struct {
 	collapsed map[verticalTabKey]bool
 	revealed  layoutcore.WorkspaceID
 	compact   bool
+	// The grouped rows are their own page. The page and its declaration are kept
+	// between paints; pageWidth and pageCompact are this paint's values.
+	page        *ui.Page
+	pageView    func(ui.C)
+	pageWidth   float32
+	pageCompact bool
 }
+
+// verticalTabGroupsPageRoot names the grouped tab list's page. It is separate
+// from hitVerticalTabGroups, the identities the list gives its rows by hand, so
+// the page's own elements and the window's controls do not share names.
+const verticalTabGroupsPageRoot = "vertical-tab-groups-page"
 
 func (state *State) verticalTabsGrouped() bool {
 	return state.tabOrientation == tabsVertical && state.verticalTabs.grouping
@@ -277,49 +288,74 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 	}
 }
 
+// declareGroupedVerticalTabs reserves the grouped list's region and leaves it to
+// its page. The sidebar lays the list out in a Frame it keeps for the virtual
+// rows, so Frame.Page is the seam: the region's rectangle is only known once
+// that Frame is laid out.
 func (state *State) declareGroupedVerticalTabs(f *ui.Frame, width float32, compact bool) {
-	view := &state.verticalTabs
-	for _, row := range view.grouped.rows {
+	view := &state.verticalTabs.grouped
+	view.pageWidth, view.pageCompact = width, compact
+	if view.page == nil {
+		view.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: verticalTabGroupsPageRoot, Theme: &state.theme})
+		view.pageView = state.declareGroupedVerticalTabsPage
+	}
+	f.Page(view.page, view.pageView).Fill()
+}
+
+// declareGroupedVerticalTabsPage declares the grouped rows: a server header, then
+// its connections indented beneath it. The rows keep the identities the window
+// names by hand, because tab dragging and the tree keyboard address them.
+func (state *State) declareGroupedVerticalTabsPage(c ui.C) {
+	view := &state.verticalTabs.grouped
+	width, compact := view.pageWidth, view.pageCompact
+	for _, row := range view.rows {
 		if row.tab < 0 {
-			state.declareVerticalTabGroup(f, row.group, width)
+			state.declareVerticalTabGroup(c, row.group, width)
 			continue
 		}
 		indent := float32(0)
 		if row.indented {
 			indent = verticalTabIndent
 		}
-		f.Row().Size(width, verticalTabHeight).Shrink(0).MarginSides(0, 0, barGap, 0).Children(func() {
+		ui.Row(c).Size(width, verticalTabHeight).Shrink(0).MarginSides(0, 0, barGap, 0).Children(func() {
 			if indent > 0 {
-				f.Slot().Width(indent).Shrink(0)
+				ui.Slot(c).Width(indent).Shrink(0)
 			}
-			view.tabs = append(view.tabs, state.declareWorkspaceTab(f, state.workspaceTabs[row.tab], max(width-indent, 0), verticalTabHeight, 0, true, compact, row.number))
+			state.verticalTabs.tabs = append(state.verticalTabs.tabs, state.declareWorkspaceTab(c.Frame(), state.workspaceTabs[row.tab], max(width-indent, 0), verticalTabHeight, 0, true, compact, row.number))
 		})
 	}
 }
 
-func (state *State) declareVerticalTabGroup(f *ui.Frame, index int, width float32) {
+func (state *State) declareVerticalTabGroup(c ui.C, index int, width float32) {
 	view, pal := &state.verticalTabs.grouped, state.pal
 	group := &view.groups[index]
 	id := group.id()
 	expanded := !view.collapsed[group.key]
 	fill := pal.shell
+	canvas := c.Frame().Canvas()
 	if group.active {
 		fill = pal.surfaceHot
-	} else if f.Canvas().Hovered() == id {
+	} else if canvas != nil && canvas.Hovered() == id {
 		fill = pal.surfaceSoft
 	}
 	icon := uint8(iconChevronRight)
 	if expanded {
 		icon = iconChevronDown
 	}
-	f.Row().Size(width, verticalTabHeight).Shrink(0).MarginSides(0, 0, barGap, 0).PadX(4).Gap(4).Items(ui.Center).
+	ui.Row(c).Size(width, verticalTabHeight).Shrink(0).MarginSides(0, 0, barGap, 0).PadX(4).Gap(4).Items(ui.Center).
 		Radius(radius.item).Background(fill).
 		HitWith(id, group.label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: expanded, Expandable: true, Selected: group.active, Hint: group.label}).Children(func() {
-		f.Icon(lucideIcons[icon]).Size(12, 12).Shrink(0).Color(pal.muted)
-		group.badge = f.Slot().Size(18, 18).Shrink(0)
-		f.Text(group.title).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).Ellipsis().Grow(1).Basis(0)
-		f.Text(group.countText).FontSize(metrics.FontSizeS).Color(pal.muted).Shrink(0)
+		ui.Icon(c, lucideIcons[icon]).Size(12, 12).Shrink(0).Color(pal.muted)
+		group.badge = ui.Slot(c).Size(18, 18).Shrink(0)
+		ui.Text(c, group.title).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).Ellipsis().Grow(1).Basis(0)
+		ui.Text(c, group.countText).FontSize(metrics.FontSizeS).Color(pal.muted).Shrink(0)
 	})
+	// The page reads the header's click in the event pass, as it reads any
+	// control it declares; the window's central dispatcher no longer collapses
+	// groups itself.
+	if canvas != nil && canvas.Clicked(id) {
+		state.setVerticalTabGroupCollapsed(group.key, !view.collapsed[group.key])
+	}
 }
 
 func (state *State) paintVerticalTabGroupIcons(canvas *gfx.Canvas) {
@@ -334,17 +370,28 @@ func (state *State) paintVerticalTabGroupIcons(canvas *gfx.Canvas) {
 	}
 }
 
-func (state *State) clickVerticalTabGroup(id gfx.ID) bool {
-	if !state.verticalTabsGrouped() || id.Scope() != hitVerticalTabGroups {
-		return false
+// verticalTabGroupsPagePointer gives the grouped list's page the pointer events
+// it owns before the window's own pointer routing. The page owns no identity of
+// its own: its rows and headers are the identities the window names by hand, so
+// an event aimed at them is left to the drag and click paths as before.
+func (state *State) verticalTabGroupsPagePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	page := state.verticalTabs.grouped.page
+	if page == nil {
+		return gfx.EventResult{}, false
 	}
-	for _, group := range state.verticalTabs.grouped.groups {
-		if group.count > 1 && group.id() == id {
-			state.setVerticalTabGroupCollapsed(group.key, !state.verticalTabs.grouped.collapsed[group.key])
-			return true
-		}
+	return page.Pointer(event)
+}
+
+// verticalTabGroupsPageWheel is verticalTabGroupsPagePointer for the wheel. The
+// list's scrolling belongs to the scroll area the sidebar wraps it in, outside
+// the page; the page takes only what it declares as its own.
+func (state *State) verticalTabGroupsPageWheel(event gfx.ScrollEvent) (gfx.EventResult, bool) {
+	page := state.verticalTabs.grouped.page
+	if page == nil {
+		return gfx.EventResult{}, false
 	}
-	return true
+	result := page.Wheel(event)
+	return result, result.Handled || result.Repaint
 }
 
 func (state *State) setVerticalTabGroupCollapsed(key verticalTabKey, collapsed bool) {
@@ -364,10 +411,15 @@ func (state *State) setVerticalTabGroupCollapsed(key verticalTabKey, collapsed b
 // or goes back to its header, and Home, End and the page keys jump. The rows are the ones on
 // screen, so the children of a collapsed group are skipped. It owns every key in the list.
 func (state *State) verticalTabGroupKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	view := &state.verticalTabs.grouped
+	if view.page != nil {
+		if result, handled := view.page.Key(event); handled {
+			return result, true
+		}
+	}
 	if !state.verticalTabsGrouped() || event.Target.Scope() != hitTabList && event.Target.Scope() != hitVerticalTabGroups {
 		return gfx.EventResult{}, false
 	}
-	view := &state.verticalTabs.grouped
 	current := slices.IndexFunc(view.options, func(option components.TabOption) bool { return option.ID == event.Target })
 	pageRows := 1
 	if pitch := state.tabStrip.pitch; pitch > 0 {

@@ -1618,9 +1618,6 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.openLocalProxy(session)
 		return
 	}
-	if state.clickVerticalTabGroup(id) {
-		return
-	}
 	if state.clickRemoteStats(id) {
 		return
 	}
@@ -2178,6 +2175,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	}
 	if state.trackVerticalTabs(event) {
 		defer func() { outcome.Repaint = true }()
+	}
+	if result, handled := state.verticalTabGroupsPagePointer(event); handled {
+		return result
 	}
 	if result, handled := state.verticalTabsScrollPointer(event); handled {
 		return result

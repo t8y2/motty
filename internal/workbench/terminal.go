@@ -1642,6 +1642,9 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result, handled := state.aiScroll(event); handled {
 		return result
 	}
+	if result, handled := state.verticalTabGroupsPageWheel(event); handled {
+		return result
+	}
 	tabScroll := &state.tabStrip
 	if state.tabOrientation == tabsVertical && len(state.sftpTabs) > 0 &&
 		pointInRect(event.X, event.Y, state.fileTabStrip.area) {
