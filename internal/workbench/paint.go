@@ -568,9 +568,14 @@ func (state *State) declareShell(c ui.C) {
 				Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
 		})
 	})
-	if chrome.shellFullPage && state.terminalPage() {
-		state.declareWorkspacePanes(c)
-		state.declareContextPanel(c)
+	if chrome.shellFullPage {
+		if state.terminalPage() {
+			state.declareWorkspacePanes(c)
+			state.declareContextPanel(c)
+		} else {
+			// The file-manager tab is part of the page like the panes.
+			state.declareSFTPTab(c)
+		}
 	}
 	if !chrome.shellFullPage && state.activeSection == sectionSettings {
 		state.declareSettingsWorkspace(c)

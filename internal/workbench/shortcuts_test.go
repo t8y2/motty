@@ -152,11 +152,10 @@ func TestFlexibleShortcutLeavesEmbeddedFileFieldsEditable(t *testing.T) {
 	state.shortcuts.bind(shortcutCommandPalette, keymap.Chord{Char: 'x'})
 	manager.view.lfolder.filterOpen = true
 	for _, id := range []gfx.ID{sftpWindowPath[0], sftpWindowFilter[0]} {
-		mounted := tree.MountID(sftpWindowMount(manager), id)
-		if !state.shortcutTextInput(mounted) {
+		if !state.shortcutTextInput(id) {
 			t.Fatalf("file field %v was not recognized as native input", id)
 		}
-		if result := state.Shortcut(gfx.KeyEvent{Text: "x", Target: mounted}); result.Handled || state.modal != modalNone {
+		if result := state.Shortcut(gfx.KeyEvent{Text: "x", Target: id}); result.Handled || state.modal != modalNone {
 			t.Fatalf("typing in file field %v ran a shortcut: %+v modal=%d", id, result, state.modal)
 		}
 	}

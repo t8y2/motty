@@ -72,7 +72,7 @@ func (w *sftpWindow) toggleDirectoryFavorite(local bool) {
 func (w *sftpWindow) openDirectoryPlaces(local bool) { w.placeBrowser().openDirectoryPlaces(local) }
 func (w *sftpWindow) clickDirectoryPlace(id gfx.ID)  { w.placeBrowser().clickDirectoryPlace(id) }
 func (w *sftpWindow) paintDirectoryPlaces(canvas *gfx.Canvas) {
-	w.placeBrowser().paintDirectoryPlaces(canvas, gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height})
+	w.placeBrowser().paintDirectoryPlaces(canvas, w.ui.bounds)
 }
 
 func (w sftpPlaceBrowser) folder(local bool) *sftpFolder {

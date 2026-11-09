@@ -415,7 +415,6 @@ type State struct {
 	fileTabOptions   []components.TabOption
 	windowTabOptions []components.TabOption
 	fileTabStrip     tabStrip
-	fileManagerView  gfx.Canvas
 	fileManagerRect  gfx.Rect
 	remoteWindows    []*remoteToolsWindow
 	remoteWindow     *remoteToolsWindow // set only on a native tool window's isolated presenter
@@ -1797,7 +1796,20 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case tree.Within(id.Scope(), keysHits):
 		state.clickKeys(id)
 	case tree.Within(id.Scope(), sftpHits):
-		state.clickSFTP(id)
+		// While a file-manager tab is in front it is the only sftp view painted,
+		// so its overlays' window-named rows go to its window; otherwise the
+		// docked panel takes them.
+		if w := state.activeSFTPWindow(); w != nil && !w.closed {
+			w.click(id)
+		} else {
+			state.clickSFTP(id)
+		}
+	case tree.Within(id.Scope(), sftpWindowHits):
+		// The hand-painted controls of the file-manager tab keep the window's
+		// own identities; the workbench page routes the press to its window.
+		if w := state.activeSFTPWindow(); w != nil && !w.closed {
+			w.click(id)
+		}
 	case id.Scope() == hitTabCloseList:
 		state.closeWorkspace(layoutcore.WorkspaceID(uint32(item(id))))
 	case id.Scope() == hitTabList:

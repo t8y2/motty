@@ -30,7 +30,7 @@ func TestSFTPModeControlInFileTab(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer preview.Close()
-	modeID := tree.MountID(sftpWindowMount(window), hitSFTPWindowSudoMode)
+	modeID := hitSFTPWindowSudoMode
 	checkMode := func(active bool) gfx.Rect {
 		t.Helper()
 		invalidator.Invalidate()

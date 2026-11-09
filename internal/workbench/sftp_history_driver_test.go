@@ -255,7 +255,7 @@ func TestSFTPHistorySteadyPaintBudget(t *testing.T) {
 	// race builds, so the whole-window allocation count has no fixed ceiling.
 	allocs := testing.AllocsPerRun(30, func() {
 		canvas.Reset()
-		w.paintHeaderMenu(&canvas, 0, gfx.Point{}, 0, gfx.Rect{Width: 900, Height: 640}, &w.ui.headerScroll)
+		w.paintHeaderMenu(&canvas, 0, gfx.Rect{Width: 900, Height: 640}, &w.ui.headerScroll)
 	})
 	if allocs != 0 {
 		t.Fatalf("detached history menu allocations=%v, want zero", allocs)

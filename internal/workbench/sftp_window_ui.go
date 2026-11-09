@@ -59,16 +59,19 @@ var (
 type sftpWindowUI struct {
 	// root names this window's pages in the identity tree: every window is a
 	// page of its own, and no two windows may name their controls alike.
-	root                string
-	windowPage          *ui.Page
-	windowView          func(ui.C)
-	connectPage         *ui.Page
-	connectView         func(ui.C)
-	panePages           [2]*ui.Page
-	paneView            func(ui.C)
-	scratch             sftpWindowScratch
-	connect             sftpWindowConnectScratch
-	size                gfx.Size
+	root        string
+	windowPage  *ui.Page
+	windowView  func(ui.C)
+	connectPage *ui.Page
+	connectView func(ui.C)
+	panePages   [2]*ui.Page
+	paneView    func(ui.C)
+	scratch     sftpWindowScratch
+	connect     sftpWindowConnectScratch
+	size        gfx.Size
+	// bounds is the rectangle the view occupies in its canvas: the whole window
+	// for a native one, the tab's rectangle when hosted in the main window.
+	bounds              gfx.Rect
 	list                [2]gfx.Rect
 	offset              [2]float32
 	offsetSynced        [2]float32
@@ -99,12 +102,22 @@ type sftpWindowUI struct {
 	profileHoverOpen    bool
 	profileHoverAnchor  gfx.Rect
 	profileHoverTrigger gfx.ID
+	// tabPanes, tabBody and tabQueue are what the main-window tab declared: the
+	// page owns the tab's view, so its per-side room and the split are kept here
+	// between the declaration and the details painted after it.
+	tabPanes [2]sftpWindowScratch
+	tabBody  gfx.Rect
+	tabQueue gfx.Rect
 }
 
 // sftpWindowScratch is the room the window's page and each pane's page leave for
 // what is painted by hand after they have been laid out.
 type sftpWindowScratch struct {
 	body, queue ui.Box
+	// bounds is the pane's rectangle as the surrounding page sees it. A pane
+	// page is drawn in its own rectangle; a pane declared in the workbench page
+	// is not, so both read the size from here.
+	bounds      gfx.Rect
 	local       bool
 	address     ui.Box
 	list        ui.Box
@@ -141,6 +154,7 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 		canvas.AfterPaint(func() { w.click(id) })
 	}
 	w.ui.size = size
+	w.ui.bounds = gfx.Rect{Width: size.Width, Height: size.Height}
 	theme, m := w.owner.Theme(), w.owner.messages
 	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, theme.Background)
 	if w.view.worker == nil {
@@ -196,7 +210,7 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 		} else {
 			// A standalone window is its own canvas, so its own viewport is the
 			// whole window.
-			w.paintHeaderMenu(canvas, side, gfx.Point{}, 0, gfx.Rect{Width: size.Width, Height: size.Height}, &w.ui.headerScroll)
+			w.paintHeaderMenu(canvas, side, gfx.Rect{Width: size.Width, Height: size.Height}, &w.ui.headerScroll)
 		}
 	}
 	if w.bookmark.open {
@@ -217,46 +231,67 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	}
 }
 
+// The window's body is a padded column: the panes take what is left, the transfer
+// queue keeps a share at the bottom when it has entries, and the status line
+// closes it. The main-window tab lays the same parts out at absolute rectangles,
+// so both read the same metrics.
+const (
+	sftpWindowPad          = float32(12)
+	sftpWindowGap          = float32(8)
+	sftpWindowStatusHeight = float32(20)
+)
+
+func sftpQueueHeight(size gfx.Size) float32 {
+	return min(244, max(108, size.Height*.28))
+}
+
 // declareWindow declares the window's own chrome: the status line, and the room
 // the panes and the transfer queue take.
 func (w *sftpWindow) declareWindow(c ui.C) {
 	s := &w.ui.scratch
 	size := w.ui.size
-	theme, m := w.owner.Theme(), w.owner.messages
-	ui.Column(c).Fill().Pad(12).Gap(8).Children(func() {
+	ui.Column(c).Fill().Pad(sftpWindowPad).Gap(sftpWindowGap).Children(func() {
 		s.body = ui.Slot(c).Grow(1)
 		if w.queueCount() > 0 {
-			s.queue = ui.Slot(c).Height(min(244, max(108, size.Height*.28))).Shrink(0)
+			s.queue = ui.Slot(c).Height(sftpQueueHeight(size)).Shrink(0)
 		}
-		status := w.view.status
-		if w.view.errorText != "" {
-			status = w.view.errorText
-		}
-		if !w.connected() {
-			status = m.SFTPWindow.Disconnected
-		}
-		if status == "" {
-			if w.browse.enabled {
-				status = w.browseDescription()
-			} else {
-				status = m.SFTPWindow.DragHint
-			}
-		}
-		if w.browse.enabled {
-			ui.Row(c).Height(20).Gap(6).Items(ui.Center).Children(func() {
-				ui.Icon(c, lucideIcons[iconSFTPBrowseSync]).Size(14, 14).Color(w.owner.pal.success)
-				ui.Text(c, m.SFTPWindow.BrowseRootLabel).FontSize(theme.Metrics.FontSizeS).Color(theme.Foreground)
-				ui.Text(c, w.browse.roots[0]).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
-				ui.Icon(c, lucideIcons[iconForward]).Size(12, 12).Color(theme.MutedForeground)
-				ui.Text(c, w.browse.roots[1]).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
-				if status != "" && status != w.browseDescription() {
-					ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
-				}
-			})
-		} else {
-			ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(20)
-		}
+		w.declareStatusLine(c)
 	})
+}
+
+// declareStatusLine declares what the window says under the panes: the roots a
+// browse-synchronized pair shows, else its status, error or hint.
+func (w *sftpWindow) declareStatusLine(c ui.C) {
+	m := w.owner.messages
+	theme := w.owner.Theme()
+	status := w.view.status
+	if w.view.errorText != "" {
+		status = w.view.errorText
+	}
+	if !w.connected() {
+		status = m.SFTPWindow.Disconnected
+	}
+	if status == "" {
+		if w.browse.enabled {
+			status = w.browseDescription()
+		} else {
+			status = m.SFTPWindow.DragHint
+		}
+	}
+	if w.browse.enabled {
+		ui.Row(c).Height(sftpWindowStatusHeight).Gap(6).Items(ui.Center).Children(func() {
+			ui.Icon(c, lucideIcons[iconSFTPBrowseSync]).Size(14, 14).Color(w.owner.pal.success)
+			ui.Text(c, m.SFTPWindow.BrowseRootLabel).FontSize(theme.Metrics.FontSizeS).Color(theme.Foreground)
+			ui.Text(c, w.browse.roots[0]).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
+			ui.Icon(c, lucideIcons[iconForward]).Size(12, 12).Color(theme.MutedForeground)
+			ui.Text(c, w.browse.roots[1]).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
+			if status != "" && status != w.browseDescription() {
+				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().Grow(1)
+			}
+		})
+		return
+	}
+	ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(sftpWindowStatusHeight)
 }
 
 func (w *sftpWindow) canTransfer(local bool) bool {
@@ -268,8 +303,6 @@ func (w *sftpWindow) canTransfer(local bool) bool {
 
 func (w *sftpWindow) paintPane(canvas *gfx.Canvas, bounds gfx.Rect, local bool) {
 	side := sideIndex(local)
-	folder := w.folder(local)
-	theme, m := w.owner.Theme(), w.owner.messages
 	if w.ui.panePages[side] == nil {
 		name := "remote"
 		if local {
@@ -278,9 +311,19 @@ func (w *sftpWindow) paintPane(canvas *gfx.Canvas, bounds gfx.Rect, local bool) 
 		w.ui.panePages[side] = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot() + "-" + name, Theme: &w.owner.theme})
 		w.ui.paneView = w.declarePane
 	}
-	w.ui.scratch = sftpWindowScratch{local: local}
+	w.ui.scratch = sftpWindowScratch{local: local, bounds: bounds}
 	w.ui.panePages[side].Draw(canvas, bounds, w.ui.paneView)
-	s := &w.ui.scratch
+	w.paintPaneDetails(canvas, &w.ui.scratch, local)
+}
+
+// paintPaneDetails paints what a pane's view lays out but does not paint itself:
+// the icon buttons, the path and filter, the directory tree, the list's scroll
+// bar and the empty message. It runs after the view's elements, with the room the
+// declaration kept in s.
+func (w *sftpWindow) paintPaneDetails(canvas *gfx.Canvas, s *sftpWindowScratch, local bool) {
+	side := sideIndex(local)
+	folder := w.folder(local)
+	theme, m := w.owner.Theme(), w.owner.messages
 	if !local && sudoSFTPAvailable(&w.session, w.view) {
 		components.BeginToggle(canvas, theme, hitSFTPWindowSudoMode, s.sudoMode.Rect(), w.view.sudo).Small().Outline(m.SFTPModeToggle)
 	}
@@ -356,7 +399,7 @@ func (w *sftpWindow) declarePane(c ui.C) {
 	local := s.local
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
-	bounds := c.Bounds()
+	bounds := s.bounds
 	compact := bounds.Height < 230
 	icon := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
 		s.buttons[s.buttonCount] = sftpIconButton{box: ui.Slot(c).Size(28, 28), id: id, icon: glyph, hint: hint, disabled: disabled, style: iconButtonQuiet}
@@ -661,7 +704,7 @@ func (w *sftpWindow) paintMenu(canvas *gfx.Canvas) {
 	theme := w.owner.contextMenuTheme()
 	width, height := rows.size(canvas, theme)
 	width = min(width, 480)
-	menu := components.BeginContextMenu(canvas, theme, gfx.Rect{X: w.ui.menuAt.X, Y: w.ui.menuAt.Y, Width: width, Height: height}, components.ContextMenuOptions{Layer: popupLayer, Scope: hitSFTPWindowMenuDismiss, DismissID: hitSFTPWindowMenuDismiss, Viewport: gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height}, Scroll: &w.ui.menuScroll, RowHeight: contextMenuRow})
+	menu := components.BeginContextMenu(canvas, theme, gfx.Rect{X: w.ui.menuAt.X, Y: w.ui.menuAt.Y, Width: width, Height: height}, components.ContextMenuOptions{Layer: popupLayer, Scope: hitSFTPWindowMenuDismiss, DismissID: hitSFTPWindowMenuDismiss, Viewport: w.ui.bounds, Scroll: &w.ui.menuScroll, RowHeight: contextMenuRow})
 	rows.paint(&menu, nil)
 	menu.End()
 }

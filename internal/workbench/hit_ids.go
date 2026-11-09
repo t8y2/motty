@@ -38,12 +38,11 @@ var (
 
 // Where an embedded session page is painted. Every pane paints the same page with
 // the same controls; mounting it in the pane's place makes them that pane's own
-// identities (see Tree.Mount). The docked files panel is part of the workbench
-// page now, so its controls keep their window identities.
+// identities (see Tree.Mount). The docked files panel and the file-manager tab are
+// part of the workbench page now, so their controls keep their own identities.
 var (
-	panesHits     = tree.Feature("panes")
-	fileTabsHits  = tree.Feature("file-tabs")
-	filePagesHits = tree.Feature("file-pages")
+	panesHits    = tree.Feature("panes")
+	fileTabsHits = tree.Feature("file-tabs")
 
 	fileTabList      = tree.Sub(fileTabsHits, tree.Name("tab"))
 	fileTabCloseList = tree.Sub(fileTabsHits, tree.Name("tab-close"))
@@ -55,10 +54,6 @@ func sftpFileTabID(sessionID uint32) gfx.ID {
 
 func sftpFileTabCloseID(sessionID uint32) gfx.ID {
 	return fileTabCloseList.At(int(sessionID))
-}
-
-func sftpWindowMount(window *sftpWindow) gfx.Scope {
-	return tree.Sub(filePagesHits, gfx.Index(int(window.session.ID)))
 }
 
 // paneMount is the place the page of a session is mounted at when it is painted
