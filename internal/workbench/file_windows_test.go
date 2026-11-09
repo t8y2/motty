@@ -915,13 +915,14 @@ func TestDocumentWindowPageReceivesFooterButtonClicksAndKeys(t *testing.T) {
 	if err := view.Click(wrap.Bounds.X+wrap.Bounds.Width/2, wrap.Bounds.Y+wrap.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
-	if d.edit.noWrap == before {
+	afterClick := d.edit.noWrap
+	if afterClick == before {
 		t.Fatal("a click on a page button did not run its action")
 	}
 	if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
 		t.Fatal(err)
 	}
-	if d.edit.noWrap == before {
+	if d.edit.noWrap == afterClick {
 		t.Fatal("a key on the focused page button did not run its action")
 	}
 }
