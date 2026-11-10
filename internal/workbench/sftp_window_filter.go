@@ -151,7 +151,7 @@ func (w *sftpWindow) filterEscape(event gfx.KeyEvent) (gfx.EventResult, bool) {
 func (w *sftpWindow) paintHeaderMenu(canvas *gfx.Canvas, side int, viewport gfx.Rect, scroll *components.MenuScroll) {
 	m, folder, local := w.owner.messages, w.folder(side == 0), side == 0
 	anchor := w.ui.headerAnchor[side]
-	count := 6 + len(folder.history.recent)
+	count := 7 + len(folder.history.recent)
 	if label, _ := w.owner.sftpEditorItem(w.view, folder); label != "" {
 		count++
 	}
@@ -186,6 +186,10 @@ func (w *sftpWindow) paintHeaderMenu(canvas *gfx.Canvas, side int, viewport gfx.
 		menu.AddItem(components.DropdownMenuItem{ID: sftpWindowHeaderEditor[side], Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
 	}
 	busy := w.browse.pending != nil || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected())
+	menu.AddItem(components.DropdownMenuItem{
+		ID:    sftpWindowActions[side].At(sftpWindowActionIndex(hitSFTPCalculateDirectorySize)),
+		Label: m.SFTPWindow.CalculateDirectorySize, Icon: lucideIcons[iconInfo], Disabled: folder.path == "" || !local && w.view.openFiles == nil,
+	})
 	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowNewFolder[side], Label: m.SFTPNewDirectory, Icon: lucideIcons[iconFolderPlus], Disabled: busy})
 	if !local {
 		menu.AddItem(components.DropdownMenuItem{ID: hitSFTPNewLink, Label: m.Tools.TipNewLink, Icon: lucideIcons[iconLink], Disabled: busy})

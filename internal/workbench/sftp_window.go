@@ -278,6 +278,9 @@ func (w *sftpWindow) onClosed() {
 		return
 	}
 	w.closed = true
+	w.fileProperties.close()
+	w.view.sftpFolder.stopSizeCalculation()
+	w.view.lfolder.stopSizeCalculation()
 	if w.owner.modal == modalSudoSFTP && w.owner.sudoSFTP.window == w {
 		w.owner.closeModal()
 	}
