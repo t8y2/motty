@@ -257,18 +257,27 @@ func TestRemoteToolsListProcessesOnceAndNeverPoll(t *testing.T) {
 	}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	for _, id := range []gfx.ID{
-		hitRemoteSortMemory, hitRemoteRowList.At(0), hitRemoteRowList.At(2), hitRemoteRefresh,
-		hitRemoteTerminate, hitRemoteKill, hitRemoteNiceLower, hitRemoteNiceNormal, hitRemoteNiceHigher,
-	} {
+	m := state.messages.Tools
+	for _, id := range []gfx.ID{hitRemoteSortMemory, remoteTableHeaderID(remoteProcesses, 0)} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Errorf("control %d is not painted", id)
 		}
 	}
+	for _, label := range []string{
+		m.RemoteRefresh, m.RemoteClose, m.RemoteTerminate, m.RemoteForceKill,
+		m.RemoteReniceLower, m.RemoteReniceNormal, m.RemoteReniceHigher,
+	} {
+		if _, ok := hitByLabelRoleLast(&canvas, label, gfx.RoleButton); !ok {
+			t.Errorf("control %q is not painted", label)
+		}
+	}
+	if _, ok := hitByLabelRole(&canvas, m.RemoteTabProcesses, gfx.RoleGroup); !ok {
+		t.Error("the process table is not a page control")
+	}
 	if _, ok := settingsChoiceIn(&canvas, state.messages.Tools.RemoteTabProcesses); !ok {
 		t.Error("the process tab is not painted")
 	}
-	if _, ok := hitByID(&canvas, hitRemoteStop); ok {
+	if _, ok := hitByLabelRole(&canvas, state.messages.Tools.RemoteStop, gfx.RoleButton); ok {
 		t.Error("a container action shows on the process tab")
 	}
 	for index := 0; index < 5; index++ {
@@ -278,12 +287,12 @@ func TestRemoteToolsListProcessesOnceAndNeverPoll(t *testing.T) {
 	if server.ran("LC_ALL=C ps") != 1 {
 		t.Fatalf("%d listings for one open", server.ran("LC_ALL=C ps"))
 	}
-	state.Click(hitRemoteSortMemory)
+	clickRemoteToolsHeader(t, state, hitRemoteSortMemory)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if server.ran("LC_ALL=C ps") != 1 || state.remote.rows[0].cells[0] != "1" {
 		t.Fatalf("after sorting by memory: %q, first %q", server.commands, state.remote.rows[0].cells[0])
 	}
-	state.Click(hitRemoteSortMemory)
+	clickRemoteToolsHeader(t, state, hitRemoteSortMemory)
 	if state.remote.rows[0].cells[0] != "3000" || server.ran("LC_ALL=C ps") != 1 {
 		t.Fatal("descending should reorder the loaded snapshot without another command")
 	}
@@ -319,12 +328,16 @@ func TestRemoteProcessFooterSeparatesCollectionTimeFromSearchSummary(t *testing.
 
 func TestSignallingAProcessAsksFirstAndReturnsToTheList(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteTerminate)
-	if state.modal != modalRemoteTools || state.remote.status != state.messages.Tools.RemoteNeedSelection {
-		t.Fatalf("no selection: modal %d, %q", state.modal, state.remote.status)
+	canvas := remoteToolsPaint(t, state)
+	terminate, ok := hitByLabelRoleLast(canvas, state.messages.Tools.RemoteTerminate, gfx.RoleButton)
+	if !ok || !terminate.Disabled {
+		t.Fatalf("no-selection Terminate is offered: %+v found=%v", terminate, ok)
+	}
+	if state.modal != modalRemoteTools {
+		t.Fatalf("no selection: modal %d", state.modal)
 	}
 	selectRemoteToolsRow(state, 0) // the busiest, process 2211
-	state.Click(hitRemoteKill)
+	clickRemoteToolsAction(t, state, hitRemoteKill)
 	if state.modal != modalForm || state.form.title != state.messages.Tools.RemoteConfirmKillTitle || !strings.Contains(state.form.description, "2211") {
 		t.Fatalf("no confirmation: modal %d %q %q", state.modal, state.form.title, state.form.description)
 	}
@@ -332,7 +345,7 @@ func TestSignallingAProcessAsksFirstAndReturnsToTheList(t *testing.T) {
 	if state.modal != modalRemoteTools || server.ran("kill") != 0 {
 		t.Fatalf("cancelling: modal %d, %d signals", state.modal, server.ran("kill"))
 	}
-	state.Click(hitRemoteKill)
+	clickRemoteToolsAction(t, state, hitRemoteKill)
 	state.Click(hitFormSubmit)
 	if state.modal != modalRemoteTools {
 		t.Fatalf("confirming left modal %d", state.modal)
@@ -349,7 +362,7 @@ func TestAServerThatRefusesASignalIsReportedInTheDialog(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	server.failures["kill -TERM"] = errors.New("exit status 1")
 	selectRemoteToolsRow(state, 1)
-	state.Click(hitRemoteTerminate)
+	clickRemoteToolsAction(t, state, hitRemoteTerminate)
 	state.Click(hitFormSubmit)
 	waitFor(t, state, func() bool { return state.remote.failed && !state.remote.loading })
 	if !strings.Contains(state.remote.status, "denied by the test") || strings.Contains(state.remote.status, "second line") {
@@ -365,12 +378,12 @@ func TestRemoteToolsManageContainers(t *testing.T) {
 		t.Fatalf("rows %+v", state.remote.rows)
 	}
 	selectRemoteToolsRow(state, 1) // old-job, stopped
-	state.Click(hitRemoteStart)
+	clickRemoteToolsAction(t, state, hitRemoteStart)
 	waitFor(t, state, func() bool {
 		return server.ran("docker start a1b2c3d4e5f6") == 1 && !state.remote.loading && server.ran("docker ps") == 2
 	})
 
-	state.Click(hitRemoteRemove)
+	clickRemoteToolsAction(t, state, hitRemoteRemove)
 	if state.modal != modalForm || !strings.Contains(state.form.description, "old-job") {
 		t.Fatalf("no confirmation before removing: modal %d", state.modal)
 	}
@@ -379,7 +392,7 @@ func TestRemoteToolsManageContainers(t *testing.T) {
 
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	selectRemoteToolsRow(state, 0) // web
-	state.Click(hitRemoteLogs)
+	clickRemoteToolsAction(t, state, hitRemoteLogs)
 	if state.modal != modalNone || !strings.Contains(shell.typed(), "docker logs -f --tail 200 0f1e2d3c4b5a\r") {
 		t.Fatalf("modal %d, the terminal got %q", state.modal, shell.typed())
 	}
@@ -399,11 +412,11 @@ func TestRemoteToolsContainerShellOpensSharedTabWithoutTypingIntoOriginal(t *tes
 	selectRemoteToolsRow(state, 0) // running web
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	button, painted := hitByID(&canvas, hitRemoteShell)
+	button, painted := hitByLabelRoleLast(&canvas, state.messages.Tools.RemoteEnterShell, gfx.RoleButton)
 	if !painted || button.Disabled {
 		t.Fatalf("container Shell action missing or disabled: %+v, painted=%v", button, painted)
 	}
-	state.Click(hitRemoteShell)
+	clickRemoteToolsAction(t, state, hitRemoteShell)
 	waitFor(t, state, func() bool { return len(state.sessions) == 2 && state.modal == modalNone })
 	if len(world.conns) != 1 || len(world.shared) != 1 ||
 		len(original.shells) != 1 || len(world.shared[0].configs) != 1 ||
@@ -420,11 +433,11 @@ func TestRemoteToolsContainerShellRejectsStoppedSelection(t *testing.T) {
 	selectRemoteToolsRow(state, 1) // exited job
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	button, painted := hitByID(&canvas, hitRemoteShell)
+	button, painted := hitByLabelRoleLast(&canvas, state.messages.Tools.RemoteEnterShell, gfx.RoleButton)
 	if !painted || !button.Disabled {
 		t.Fatalf("stopped container offered Shell: button=%+v painted=%v", button, painted)
 	}
-	state.Click(hitRemoteShell)
+	clickRemoteToolsAction(t, state, hitRemoteShell)
 	if server.ran("docker exec") != 0 || len(state.sessions) != 1 || state.modal != modalRemoteTools {
 		t.Fatalf("stopped container opened a Shell: probes=%q tabs=%d modal=%d", server.commands, len(state.sessions), state.modal)
 	}
@@ -439,11 +452,11 @@ func TestRemoteToolsWindowsHostNeverProbesPOSIXContainerShell(t *testing.T) {
 	selectRemoteToolsRow(state, 0)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	button, painted := hitByID(&canvas, hitRemoteShell)
+	button, painted := hitByLabelRoleLast(&canvas, state.messages.Tools.RemoteEnterShell, gfx.RoleButton)
 	if !painted || !button.Disabled {
 		t.Fatalf("Windows SSH host offered Shell: button=%+v painted=%v", button, painted)
 	}
-	state.Click(hitRemoteShell)
+	clickRemoteToolsAction(t, state, hitRemoteShell)
 	if server.ran("docker inspect") != 0 || server.ran("docker exec") != 0 || len(state.sessions) != 1 {
 		t.Fatalf("Windows host probed a POSIX container Shell: commands=%q", server.commands)
 	}
@@ -461,7 +474,7 @@ func TestRemoteToolsContainerShellFailureDoesNotCreateATab(t *testing.T) {
 	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	selectRemoteToolsRow(state, 0)
-	state.Click(hitRemoteShell)
+	clickRemoteToolsAction(t, state, hitRemoteShell)
 	waitFor(t, state, func() bool { return !state.remote.loading && state.remote.failed })
 	if len(state.sessions) != 1 || len(world.shared) != 0 || state.modal != modalRemoteTools {
 		t.Fatalf("failed probe opened tab: sessions=%d shares=%d modal=%d", len(state.sessions), len(world.shared), state.modal)
@@ -494,9 +507,9 @@ func TestRemoteToolsContainerShellIgnoresClosedDialogResult(t *testing.T) {
 	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	selectRemoteToolsRow(state, 0)
-	state.Click(hitRemoteShell)
+	clickRemoteToolsAction(t, state, hitRemoteShell)
 	<-started
-	state.Click(hitRemoteClose)
+	clickRemoteToolsAction(t, state, hitRemoteClose)
 	for len(notified) > 0 {
 		<-notified
 	}
@@ -551,7 +564,7 @@ func TestClosingRemoteToolsWhileALoadIsOnItsWayIgnoresTheAnswer(t *testing.T) {
 	}
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	state.openRemoteTools(session)
-	state.Click(hitRemoteClose)
+	clickRemoteToolsAction(t, state, hitRemoteClose)
 	close(release)
 	for index := 0; index < 50; index++ {
 		state.Wake()
@@ -597,7 +610,7 @@ func TestRemoteToolsReadFromOldHostCannotReplaceNewHostRows(t *testing.T) {
 	state.activeSessionID = a.ID
 	state.openRemoteTools(a)
 	<-startA
-	state.Click(hitRemoteClose)
+	clickRemoteToolsAction(t, state, hitRemoteClose)
 	state.activeSessionID = b.ID
 	state.openRemoteTools(b)
 	waitFor(t, state, func() bool {
@@ -627,20 +640,20 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 	}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitRemoteRemove); !ok {
+	if _, ok := hitByLabelRoleLast(&canvas, state.messages.Tools.RemoteRemove, gfx.RoleButton); !ok {
 		t.Error("an image tab has no Remove")
 	}
-	if _, ok := hitByID(&canvas, hitRemoteStart); ok {
+	if _, ok := hitByLabelRoleLast(&canvas, state.messages.Tools.RemoteStart, gfx.RoleButton); ok {
 		t.Error("a container action shows on the images tab")
 	}
 
 	// Remove asks first, and removes a tagged image by its reference.
-	state.Click(hitRemoteRemove)
+	clickRemoteToolsAction(t, state, hitRemoteRemove)
 	if state.remote.status != state.messages.Tools.RemoteNeedSelection {
 		t.Fatalf("nothing selected, status %q", state.remote.status)
 	}
 	selectRemoteToolsRow(state, 0)
-	state.Click(hitRemoteRemove)
+	clickRemoteToolsAction(t, state, hitRemoteRemove)
 	if state.modal != modalForm || state.form.title != state.messages.Tools.RemoteConfirmRemoveImageTitle || !strings.Contains(state.form.description, "debian:bookworm-slim") {
 		t.Fatalf("no confirmation: modal %d %q", state.modal, state.form.title)
 	}
@@ -648,7 +661,7 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 	if server.ran("docker rmi") != 0 {
 		t.Fatal("cancelling still removed the image")
 	}
-	state.Click(hitRemoteRemove)
+	clickRemoteToolsAction(t, state, hitRemoteRemove)
 	state.Click(hitFormSubmit)
 	waitFor(t, state, func() bool {
 		return server.ran("docker rmi debian:bookworm-slim") == 1 && !state.remote.loading && server.ran("docker images") == 2
@@ -656,7 +669,7 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 
 	// An image without a tag has nothing to be addressed by but its ID.
 	selectRemoteToolsRow(state, 1)
-	state.Click(hitRemoteRemove)
+	clickRemoteToolsAction(t, state, hitRemoteRemove)
 	state.Click(hitFormSubmit)
 	waitFor(t, state, func() bool { return server.ran("docker rmi cf001c2f8af7") == 1 })
 
@@ -664,7 +677,7 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabVolumes)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 1 })
 	selectRemoteToolsRow(state, 0)
-	state.Click(hitRemoteRemove)
+	clickRemoteToolsAction(t, state, hitRemoteRemove)
 	if state.form.title != state.messages.Tools.RemoteConfirmRemoveVolumeTitle {
 		t.Fatalf("a volume's confirmation is %q", state.form.title)
 	}
@@ -674,12 +687,13 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 
 func TestReniceUsesTheSelectedProcessAndShowsTheServersRefusal(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteNiceLower)
-	if state.remote.status != state.messages.Tools.RemoteNeedSelection {
-		t.Fatalf("nothing selected, status %q", state.remote.status)
+	canvas := remoteToolsPaint(t, state)
+	renice, ok := hitByLabelRoleLast(canvas, state.messages.Tools.RemoteReniceLower, gfx.RoleButton)
+	if !ok || !renice.Disabled {
+		t.Fatalf("no-selection renice is offered: %+v found=%v", renice, ok)
 	}
 	selectRemoteToolsRow(state, 0) // 2211
-	state.Click(hitRemoteNiceLower)
+	clickRemoteToolsAction(t, state, hitRemoteNiceLower)
 	waitFor(t, state, func() bool {
 		return server.ran("renice 10 -p 2211") == 1 && !state.remote.loading && server.ran("LC_ALL=C ps") == 2
 	})
@@ -687,7 +701,7 @@ func TestReniceUsesTheSelectedProcessAndShowsTheServersRefusal(t *testing.T) {
 		t.Fatalf("status %q", state.remote.status)
 	}
 	server.failures["renice -5"] = errors.New("exit status 1")
-	state.Click(hitRemoteNiceHigher)
+	clickRemoteToolsAction(t, state, hitRemoteNiceHigher)
 	waitFor(t, state, func() bool { return state.remote.failed && !state.remote.loading })
 	if !strings.Contains(state.remote.status, "denied by the test") {
 		t.Fatalf("status %q", state.remote.status)
@@ -702,12 +716,12 @@ func TestRemoteToolsManageComposeProjects(t *testing.T) {
 		t.Fatalf("rows %+v", state.remote.rows)
 	}
 	selectRemoteToolsRow(state, 0)
-	state.Click(hitRemoteRestart)
+	clickRemoteToolsAction(t, state, hitRemoteRestart)
 	waitFor(t, state, func() bool {
 		return server.ran("docker compose -p batch restart") == 1 && !state.remote.loading && server.ran("docker compose ls") == 2
 	})
 	// Down asks first.
-	state.Click(hitRemoteDown)
+	clickRemoteToolsAction(t, state, hitRemoteDown)
 	if state.modal != modalForm || !strings.Contains(state.form.description, "batch") {
 		t.Fatalf("no confirmation: modal %d", state.modal)
 	}
@@ -715,7 +729,7 @@ func TestRemoteToolsManageComposeProjects(t *testing.T) {
 	if server.ran("docker compose -p batch down") != 0 {
 		t.Fatal("cancelling still ran down")
 	}
-	state.Click(hitRemoteDown)
+	clickRemoteToolsAction(t, state, hitRemoteDown)
 	state.Click(hitFormSubmit)
 	waitFor(t, state, func() bool { return server.ran("docker compose -p batch down") == 1 })
 }
@@ -733,14 +747,14 @@ func TestPullingAnImageTypesTheCommandIntoTheTerminal(t *testing.T) {
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitRemotePull); !ok {
+	if _, ok := hitByLabelRoleLast(&canvas, state.messages.Tools.RemotePull, gfx.RoleButton); !ok {
 		t.Fatal("the images tab has no Pull")
 	}
-	if _, ok := hitByID(&canvas, hitRemoteCreate); ok {
+	if _, ok := hitByLabelRoleLast(&canvas, state.messages.Tools.RemoteCreate, gfx.RoleButton); ok {
 		t.Fatal("the images tab offers to create one")
 	}
 
-	state.Click(hitRemotePull)
+	clickRemoteToolsAction(t, state, hitRemotePull)
 	if state.modal != modalForm {
 		t.Fatalf("no question: modal %d", state.modal)
 	}
@@ -773,10 +787,10 @@ func TestCreatingAVolumeAndANetworkFromTheirTabs(t *testing.T) {
 		waitFor(t, state, func() bool { return !state.remote.loading })
 		var canvas gfx.Canvas
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-		if _, ok := hitByID(&canvas, hitRemotePull); ok {
+		if _, ok := hitByLabelRoleLast(&canvas, state.messages.Tools.RemotePull, gfx.RoleButton); ok {
 			t.Fatal("a tab that creates offers a pull")
 		}
-		state.Click(hitRemoteCreate)
+		clickRemoteToolsAction(t, state, hitRemoteCreate)
 		if state.modal != modalForm || state.form.title != entry.title {
 			t.Fatalf("modal %d, form %q, want %q", state.modal, state.form.title, entry.title)
 		}

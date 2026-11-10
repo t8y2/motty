@@ -346,12 +346,8 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintDeleteRuleDialog(canvas, viewport)
 	case modalFontPicker:
 		state.paintFontPicker(canvas, viewport)
-	case modalRemoteTools:
-		state.paintRemoteTools(canvas, viewport)
 	case modalSFTPColumns:
 		state.paintSFTPColumnSettings(canvas, viewport)
-	case modalSudoSFTP:
-		state.paintSudoSFTP(canvas, viewport)
 	case modalRemoteClipboard:
 		state.paintRemoteClipboardDialog(canvas, viewport)
 	case modalFileTransfer:
@@ -2459,6 +2455,10 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declarePasswordDialog(c)
 	case modalCloseTabs:
 		state.declareCloseTabsDialog(c)
+	case modalRemoteTools:
+		state.declareRemoteToolsModal(c)
+	case modalSudoSFTP:
+		state.declareSudoSFTPDialog(c)
 	case modalForm:
 		state.declareFormDialog(c)
 	case modalOutboundProxy:

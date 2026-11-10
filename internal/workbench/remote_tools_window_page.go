@@ -39,13 +39,13 @@ func (w *remoteToolsWindow) pageRoot() string {
 func (w *remoteToolsWindow) windowPage() *ui.Page {
 	if w.page == nil {
 		w.tableHandlers = ui.Handlers{Role: gfx.RoleGroup, Key: w.processTableKey, Pointer: w.tablePointer}
-		w.refreshHandlers = ui.Handlers{Role: gfx.RoleButton, Key: w.refreshKey, Pointer: w.refreshPointer}
-		w.autoHandlers = ui.Handlers{Role: gfx.RoleButton, Key: w.autoKey, Pointer: w.autoPointer}
+		w.refreshHandlers = ui.Handlers{Role: gfx.RoleButton, Key: w.ui.remoteRefreshControlKey, Pointer: w.ui.remoteRefreshControlPointer}
+		w.autoHandlers = ui.Handlers{Role: gfx.RoleButton, Key: w.ui.remoteAutoControlKey, Pointer: w.ui.remoteAutoControlPointer}
 		w.footerFlow.gap = remoteToolsActionGap
 		w.tableDraw = w.drawTableControl
 		w.tableHeaderDraw = w.drawProcessHeader
-		w.refreshDraw = w.drawRefreshControl
-		w.autoDraw = w.drawAutoControl
+		w.refreshDraw = w.ui.drawRemoteRefreshControl
+		w.autoDraw = w.ui.drawRemoteAutoControl
 		w.page = ui.NewPage(ui.PageConfig{
 			Tree: &tree, Root: w.pageRoot(), Theme: &w.ui.theme, View: w.declareWindow,
 		})
@@ -140,9 +140,9 @@ func (w *remoteToolsWindow) declareToolbar(c ui.C, size gfx.Size) remoteTab {
 func (w *remoteToolsWindow) declareRefreshControls(c ui.C) {
 	ui.Control(c, w.ui.messages.Tools.RemoteRefresh, &w.refreshHandlers).
 		Size(40, remoteToolbarHeight).Shrink(0).Draw(w.refreshDraw)
-	auto := ui.Control(c, w.remoteAutoAccessibleLabel(), &w.autoHandlers).
+	auto := ui.Control(c, w.ui.remoteAutoAccessibleLabel(), &w.autoHandlers).
 		Size(134, remoteToolbarHeight).Shrink(0).MarginLeft(remoteToolsActionGap).Draw(w.autoDraw)
-	ui.Menu(c, auto, &w.ui.remote.auto.open, w.declareAutoMenu)
+	ui.Menu(c, auto, &w.ui.remote.auto.open, w.ui.declareRemoteAutoMenu)
 }
 
 func (w *remoteToolsWindow) declareSudo(c ui.C) {
@@ -588,284 +588,29 @@ func (w *remoteToolsWindow) paintObjectTable(canvas *gfx.Canvas, bounds gfx.Rect
 	}
 }
 
-// drawRefreshControl paints the manual refresh button inside its page control.
-func (w *remoteToolsWindow) drawRefreshControl(d *ui.DrawContext) {
-	theme := *d.Theme
-	theme.Metrics.ControlHeight = d.Rect.Height
-	button := components.BeginButton(d.Canvas, theme, gfx.ID{}, d.Rect).WithState(components.ButtonState{
-		Hovered: d.State.Hovered, Pressed: d.State.Pressed, Focused: d.State.Focused,
-	})
-	if w.ui.remote.loading {
-		button = button.Disabled()
-	}
-	button.Ghost("")
-	foreground := w.ui.pal.muted
-	if d.State.Hovered || d.State.Pressed {
-		foreground = w.ui.pal.text
-	}
-	if w.ui.remote.loading {
-		foreground.Alpha *= 0.4
-	}
-	size := min(d.Rect.Width, d.Rect.Height) * .375
-	d.Canvas.DrawIcon(lucideIcons[iconRefresh], gfx.Rect{
-		X: d.Rect.X + (d.Rect.Width-size)/2, Y: d.Rect.Y + (d.Rect.Height-size)/2,
-		Width: size, Height: size,
-	}, foreground)
-}
-
-// drawAutoControl paints the auto-refresh button, including its countdown and
-// its clock hands.
-func (w *remoteToolsWindow) drawAutoControl(d *ui.DrawContext) {
-	m, theme, auto := w.ui.messages.Tools, *d.Theme, &w.ui.remote.auto
-	auto.now = d.Canvas.Now()
-	format, seconds := m.RemoteAutoRefresh, 0
-	if auto.enabled {
-		format, seconds = m.RemoteRefreshIntervalFmt, int(auto.period()/1e9)
-	}
-	if auto.label == "" || auto.labelFormat != format || auto.labelSeconds != seconds || auto.labelAction != m.RemoteAutoRefresh {
-		auto.labelFormat, auto.labelSeconds, auto.labelAction = format, seconds, m.RemoteAutoRefresh
-		auto.label = format
-		if auto.enabled {
-			auto.label = fmt.Sprintf(format, seconds)
-		}
-		auto.accessibleLabel = m.RemoteAutoRefresh + ": " + auto.label
-	}
-	buttonTheme := theme
-	buttonTheme.Metrics.ControlHeight = d.Rect.Height
-	button := components.BeginButton(d.Canvas, buttonTheme, gfx.ID{}, d.Rect).WithState(components.ButtonState{
-		Hovered: d.State.Hovered, Pressed: d.State.Pressed, Focused: d.State.Focused,
-	})
-	foreground := theme.MutedForeground
-	if auto.enabled {
-		button.Secondary("")
-		foreground = theme.Primary
-	} else {
-		button.Outline("")
-	}
-	clock := gfx.Rect{X: d.Rect.X + 9, Y: d.Rect.Y + (d.Rect.Height-18)/2, Width: 18, Height: 18}
-	phase := 0
-	if auto.enabled && !d.Canvas.ReduceMotion() {
-		phase = int(max(auto.now-auto.started, 0)*60/auto.period()) % 60
-	}
-	d.Canvas.DrawIcon(remoteRefreshClock, clock, foreground)
-	d.Canvas.DrawIcon(remoteRefreshHands[phase], clock, foreground)
-	d.Canvas.Label(auto.label, gfx.Rect{X: clock.X + 24, Y: d.Rect.Y, Width: max(d.Rect.Width-56, 0), Height: d.Rect.Height},
-		gfx.TextStyle{Size: theme.Metrics.FontSizeM, Weight: gfx.WeightMedium, Color: foreground})
-	d.Canvas.DrawIcon(lucideIcons[iconChevronDown], gfx.Rect{
-		X: d.Rect.X + d.Rect.Width - 20, Y: d.Rect.Y + (d.Rect.Height-12)/2, Width: 12, Height: 12,
-	}, foreground)
-	if auto.enabled {
-		remaining := max(auto.next-auto.now, 0)
-		delay := remaining
-		if !d.Canvas.ReduceMotion() {
-			step := auto.period() / 60
-			delay = min(remaining, step-(max(auto.now-auto.started, 0)%step))
-		}
-		if remaining > 0 {
-			d.Canvas.RequestFrameIn(delay)
-		}
-		if remaining == 0 && !auto.pending {
-			auto.pending = true
-			now, session, serial := auto.now, w.ui.remote.session, w.ui.remote.serial
-			w.ui.postRemoteToolsUpdate(func(state *State) {
-				state.remote.auto.pending = false
-				if state.remote.session != session || state.remote.serial != serial {
-					return
-				}
-				state.tickRemoteRefresh(now)
-			})
-		}
-	}
-}
-
-// remoteAutoAccessibleLabel is the auto-refresh control's name for assistive
-// technology.
-func (w *remoteToolsWindow) remoteAutoAccessibleLabel() string {
-	m, auto := w.ui.messages.Tools, &w.ui.remote.auto
-	label := m.RemoteAutoRefresh
-	if auto.enabled {
-		label += ": " + fmt.Sprintf(m.RemoteRefreshIntervalFmt, int(auto.period()/1e9))
-	}
-	return label
-}
-
-func (w *remoteToolsWindow) declareAutoMenu(menu *ui.MenuItems) {
-	m := w.ui.messages.Tools
-	auto := &w.ui.remote.auto
-	label := m.RemoteAutoStart
-	if auto.enabled {
-		label = m.RemoteAutoStop
-	}
-	if menu.Item(label).Checked(auto.enabled).Clicked() {
-		auto.enabled = !auto.enabled
-		auto.restart()
-	}
-	for i, period := range remoteRefreshIntervals {
-		chosen := auto.enabled && auto.period() == period
-		if menu.Item(fmt.Sprintf(m.RemoteRefreshIntervalFmt, int(period/1e9))).Chosen(chosen).Clicked() {
-			auto.interval = remoteRefreshIntervals[i]
-			auto.enabled = true
-			auto.restart()
-		}
-	}
-}
-
 // declareProcessMenu declares the process context menu: the row the table's
 // control last selected, and the same actions the process buttons offer.
 func (w *remoteToolsWindow) declareProcessMenu(menu *ui.MenuItems) {
-	m := w.ui.messages.Tools
-	process, found := w.ui.selectedProcess()
-	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
-	blocked := !found || w.ui.remoteProcessActionsBlocked(process)
-	run := func(fn func()) {
+	after := func(fn func()) {
 		if w.menuCtx != nil {
 			w.menuCtx.After(fn)
 			return
 		}
 		fn()
 	}
-	if menu.Item(m.RemoteProcessDetails).Icon(icon(iconInfo)).Disabled(!found).Clicked() && found {
-		run(func() { w.ui.openRemoteProcessDetails(process) })
-	}
-	if menu.Item(m.RemoteProcessCopyPID).Icon(icon(iconCopy)).Disabled(!found).Clicked() && found {
-		run(func() { w.ui.copyRemoteProcessValue(fmt.Sprint(process.PID)) })
-	}
-	if menu.Item(m.RemoteProcessCopyUser).Icon(icon(iconCopy)).
-		Disabled(!found || process.User == "" || process.User == "—").Clicked() && found {
-		run(func() { w.ui.copyRemoteProcessValue(process.User) })
-	}
-	if menu.Item(m.RemoteProcessCopyCommand).Icon(icon(iconCopy)).
-		Disabled(!found || process.Command == "").Clicked() && found {
-		run(func() { w.ui.copyRemoteProcessValue(process.Command) })
-	}
-	menu.Separator()
-	if menu.Item(m.RemoteTerminate).Icon(icon(iconStop)).Disabled(blocked).Clicked() && found {
-		run(func() { w.act(hitRemoteTerminate) })
-	}
-	if menu.Item(m.RemoteForceKill).Icon(icon(iconTrash)).Destructive().Disabled(blocked).Clicked() && found {
-		run(func() { w.act(hitRemoteKill) })
-	}
-	menu.Separator()
-	if menu.Item(m.RemoteReniceLower).Icon(icon(iconSliders)).Disabled(blocked).Clicked() && found {
-		run(func() { w.act(hitRemoteNiceLower) })
-	}
-	if menu.Item(m.RemoteReniceNormal).Icon(icon(iconSliders)).Disabled(blocked).Clicked() && found {
-		run(func() { w.act(hitRemoteNiceNormal) })
-	}
-	if menu.Item(m.RemoteReniceHigher).Icon(icon(iconArrowUp)).Disabled(blocked).Clicked() && found {
-		run(func() { w.act(hitRemoteNiceHigher) })
-	}
+	w.ui.declareRemoteProcessMenuItems(menu, after, w.act)
 }
 
 // declareProcessDetails declares the open process details as a dialog of the
-// window's page. Its body stays a painted slot: the environment table's text
-// selection is the application's.
+// window's page.
 func (w *remoteToolsWindow) declareProcessDetails(c ui.C, m i18n.ToolsMessages) {
-	details := &w.ui.remote.processDetails
-	if !details.open {
-		return
-	}
-	process := details.process
-	description := shortCommand(process.Command)
-	if description == "" {
-		description = fmt.Sprintf("PID %d", process.PID)
-	}
-	viewport := c.Bounds()
-	contentWidth := min(float32(980), max(viewport.Width-32, 360))
-	bodyHeight := min(float32(620), max(viewport.Height-132, 320))
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), gfx.Rect{Width: viewport.Width, Height: viewport.Height}, components.DialogOptions{
-		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
-		ButtonSize: components.ButtonSizeSmall,
-	}).Layout(description)
-	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: m.RemoteProcessDetailsTitle, Description: description, Width: contentWidth,
-		Height: layout.Content.Height, Layer: dialogLayer + 2, Scope: dialogScope,
-		DismissID: hitRemoteProcessDetailsDismiss, CloseID: hitRemoteProcessDetailsClose,
-	})
-	dialog.Body(func() {
-		ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
-			w.ui.paintRemoteProcessDetailsBody(d.Canvas, d.Rect, process, details.collectedAt)
-		})
-	})
-	if canvas := c.Canvas(); canvas != nil {
-		switch {
-		case canvas.Clicked(hitRemoteProcessDetailsCommand):
-			c.After(func() { w.ui.selectRemoteProcessDetailTab(hitRemoteProcessDetailsCommand) })
-		case canvas.Clicked(hitRemoteProcessDetailsEnv):
-			c.After(func() { w.ui.selectRemoteProcessDetailTab(hitRemoteProcessDetailsEnv) })
-		}
-	}
-	blocked := w.ui.remoteProcessActionsBlocked(process)
-	dialog.Footer(func() {
-		action := func(id gfx.ID, label string, variant components.ButtonVariant) {
-			button := ui.Button(c, label).Small().Shrink(0)
-			switch variant {
-			case components.ButtonDestructive:
-				button = button.Destructive()
-			default:
-				button = button.Outline()
-			}
-			if button.Disabled(blocked).Clicked() {
-				c.After(func() {
-					w.ui.closeRemoteProcessDetails()
-					w.act(id)
-				})
-			}
-		}
-		action(hitRemoteTerminate, m.RemoteTerminate, components.ButtonOutline)
-		action(hitRemoteKill, m.RemoteForceKill, components.ButtonDestructive)
-		action(hitRemoteNiceLower, m.RemoteReniceLower, components.ButtonOutline)
-		action(hitRemoteNiceNormal, m.RemoteReniceNormal, components.ButtonOutline)
-		action(hitRemoteNiceHigher, m.RemoteReniceHigher, components.ButtonOutline)
-		if ui.Button(c, m.RemoteClose).Secondary().Small().Shrink(0).AutoFocus().Clicked() {
-			c.After(func() { w.ui.closeRemoteProcessDetails() })
-		}
-	})
-	if dialog.Dismissed() {
-		c.After(func() { w.ui.closeRemoteProcessDetails() })
-	}
+	w.ui.declareRemoteProcessDetailsDialog(c, w.act)
 }
 
 // declareContainerDetails declares the open container details as a dialog of
 // the window's page.
 func (w *remoteToolsWindow) declareContainerDetails(c ui.C, m i18n.ToolsMessages) {
-	details := &w.ui.remote.containerDetails
-	if !details.open {
-		return
-	}
-	viewport := c.Bounds()
-	contentWidth := min(float32(940), max(viewport.Width-32, 360))
-	bodyHeight := min(float32(620), max(viewport.Height-132, 320))
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), gfx.Rect{Width: viewport.Width, Height: viewport.Height}, components.DialogOptions{
-		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
-		ButtonSize: components.ButtonSizeSmall,
-	}).Layout(details.container.Name)
-	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: m.RemoteContainerDetailsTitle, Description: details.container.Name, Width: contentWidth,
-		Height: layout.Content.Height, Layer: dialogLayer + 2, Scope: dialogScope,
-		DismissID: hitRemoteContainerDetailsDismiss, CloseID: hitRemoteContainerDetailsClose,
-	})
-	dialog.Body(func() {
-		ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
-			w.ui.paintRemoteContainerDetailsBody(d.Canvas, d.Rect, details.container)
-		})
-	})
-	if canvas := c.Canvas(); canvas != nil {
-		switch {
-		case canvas.Clicked(hitRemoteContainerDetailsOverview):
-			c.After(func() { w.ui.selectRemoteContainerDetailTab(hitRemoteContainerDetailsOverview) })
-		case canvas.Clicked(hitRemoteContainerDetailsEnvironment):
-			c.After(func() { w.ui.selectRemoteContainerDetailTab(hitRemoteContainerDetailsEnvironment) })
-		}
-	}
-	dialog.Footer(func() {
-		if ui.Button(c, m.RemoteClose).Secondary().Small().Shrink(0).AutoFocus().Clicked() {
-			c.After(func() { w.ui.closeRemoteContainerDetails() })
-		}
-	})
-	if dialog.Dismissed() {
-		c.After(func() { w.ui.closeRemoteContainerDetails() })
-	}
+	w.ui.declareRemoteContainerDetailsDialog(c)
 }
 
 // declareFormDialog declares the open form dialog. Its fields and buttons are
@@ -1057,60 +802,4 @@ func (w *remoteToolsWindow) tableRowAt(x, y float32) int {
 		return -1
 	}
 	return index
-}
-
-// refreshPointer runs the explicit refresh on a primary release.
-func (w *remoteToolsWindow) refreshPointer(event gfx.PointerEvent) gfx.EventResult {
-	if event.Kind != gfx.PointerUp || event.Button != gfx.PointerButtonPrimary {
-		return gfx.EventResult{}
-	}
-	w.refresh()
-	return gfx.EventResult{Handled: true, Repaint: true}
-}
-
-// refreshKey runs the explicit refresh from the keyboard.
-func (w *remoteToolsWindow) refreshKey(event gfx.KeyEvent) gfx.EventResult {
-	if event.Release || event.Repeat {
-		return gfx.EventResult{}
-	}
-	if event.Key != gfx.KeyEnter && event.Key != gfx.KeySpace {
-		return gfx.EventResult{}
-	}
-	w.refresh()
-	return gfx.EventResult{Handled: true, Repaint: true}
-}
-
-func (w *remoteToolsWindow) refresh() {
-	if w.ui.remote.loading {
-		return
-	}
-	// An explicit refresh rechecks Docker as well, so an answer from before the
-	// installation does not outlive it.
-	w.ui.remote.noDocker = false
-	w.ui.refreshRemoteTools()
-}
-
-// autoPointer opens or closes the interval menu on a primary release.
-func (w *remoteToolsWindow) autoPointer(event gfx.PointerEvent) gfx.EventResult {
-	if event.Kind != gfx.PointerUp || event.Button != gfx.PointerButtonPrimary {
-		return gfx.EventResult{}
-	}
-	w.ui.remote.auto.open = !w.ui.remote.auto.open
-	return gfx.EventResult{Handled: true, Repaint: true}
-}
-
-// autoKey opens the interval menu with Down or toggles it with Enter and Space.
-func (w *remoteToolsWindow) autoKey(event gfx.KeyEvent) gfx.EventResult {
-	if event.Release || event.Repeat {
-		return gfx.EventResult{}
-	}
-	switch event.Key {
-	case gfx.KeyDown:
-		w.ui.remote.auto.open = true
-	case gfx.KeyEnter, gfx.KeySpace:
-		w.ui.remote.auto.open = !w.ui.remote.auto.open
-	default:
-		return gfx.EventResult{}
-	}
-	return gfx.EventResult{Handled: true, Repaint: true}
 }

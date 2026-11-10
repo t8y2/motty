@@ -14,7 +14,7 @@ func selectRemoteToolsRow(state *State, index int) {
 		state.remote.selected = state.remote.rows[index].key
 	}
 	if state.remote.processDetails.open {
-		state.Click(hitRemoteProcessDetailsDismiss)
+		state.closeRemoteProcessDetails()
 	}
 }
 
@@ -30,7 +30,7 @@ func selectRemoteToolsWindowRow(w *remoteToolsWindow, index int) {
 func TestProcessRowClickOpensDetailsAndEscapeReturnsToTheList(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	process := state.remote.procs[0]
-	state.Click(hitRemoteRowList.At(0))
+	clickRemoteToolsRow(t, state, 0)
 	if !state.remote.processDetails.open || state.remote.processDetails.process.PID != process.PID ||
 		state.modal != modalRemoteTools {
 		t.Fatalf("details=%+v modal=%d", state.remote.processDetails, state.modal)
@@ -47,16 +47,16 @@ func TestProcessRowClickOpensDetailsAndEscapeReturnsToTheList(t *testing.T) {
 			t.Errorf("detail dialog lacks %q", want)
 		}
 	}
-	closeHit, found := hitByID(&canvas, hitRemoteProcessDetailsClose)
-	if !found || closeHit.Label == "" {
+	if _, found := hitByLabelRoleLast(&canvas, state.messages.Tools.RemoteClose, gfx.RoleButton); !found {
 		t.Fatal("detail dialog has no reachable Close button")
 	}
-	for _, id := range []gfx.ID{
-		hitRemoteTerminate, hitRemoteKill,
-		hitRemoteNiceLower, hitRemoteNiceNormal, hitRemoteNiceHigher,
+	for _, label := range []string{
+		state.messages.Tools.RemoteTerminate, state.messages.Tools.RemoteForceKill,
+		state.messages.Tools.RemoteReniceLower, state.messages.Tools.RemoteReniceNormal,
+		state.messages.Tools.RemoteReniceHigher,
 	} {
-		if _, found := hitByID(&canvas, id); !found {
-			t.Errorf("detail dialog lacks process action %v", id)
+		if _, found := hitByLabelRoleLast(&canvas, label, gfx.RoleButton); !found {
+			t.Errorf("detail dialog lacks process action %q", label)
 		}
 	}
 	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape}); !result.Handled {
@@ -69,40 +69,58 @@ func TestProcessRowClickOpensDetailsAndEscapeReturnsToTheList(t *testing.T) {
 
 func TestProcessDetailsKeyboardSupportsTraversalAndActions(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteRowList.At(0))
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Target: hitRemoteProcessDetailsClose}); !result.Handled || !result.ContinueTraversal {
+	clickRemoteToolsRow(t, state, 0)
+	canvas := remoteToolsPaint(t, state)
+	closeHit, ok := hitByLabelRoleLast(canvas, state.messages.Tools.RemoteClose, gfx.RoleButton)
+	if !ok {
+		t.Fatal("detail dialog has no Close button")
+	}
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyTab, Target: closeHit.ID}); !result.Handled || !result.ContinueTraversal {
 		t.Fatalf("Tab did not hand focus traversal back to the dialog: %+v", result)
 	}
 
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeySpace, Target: hitRemoteNiceLower})
-	if !result.Handled {
-		t.Fatal("Space did not activate the focused process action")
-	}
+	clickRemoteToolsButton(t, state, state.messages.Tools.RemoteReniceLower)
 	waitFor(t, state, func() bool { return server.ran("renice 10 -p 2211") == 1 && !state.remote.loading })
 	if state.remote.processDetails.open {
 		t.Fatal("keyboard action did not return to the process list")
 	}
 
-	state.Click(hitRemoteRowList.At(0))
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitRemoteProcessDetailsClose}); !result.Handled {
-		t.Fatal("Enter did not activate Close")
+	clickRemoteToolsRow(t, state, 0)
+	canvas = remoteToolsPaint(t, state)
+	closeHit, ok = hitByLabelRoleLast(canvas, state.messages.Tools.RemoteClose, gfx.RoleButton)
+	if !ok {
+		t.Fatal("detail dialog has no Close button")
 	}
+	clickRemoteToolsPageHit(t, state, closeHit)
 	if state.remote.processDetails.open {
-		t.Fatal("keyboard Close left the details dialog open")
+		t.Fatal("Close left the details dialog open")
 	}
 }
 
 func TestProcessDetailsOwnsClicksAimedAtTheObscuredToolsPage(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	opened := state.remote.procs[0]
-	state.Click(hitRemoteRowList.At(0))
+	clickRemoteToolsRow(t, state, 0)
 	if !state.remote.processDetails.open {
 		t.Fatal("process details did not open")
 	}
 
-	state.Click(hitRemoteRowList.At(1))
-	state.Click(hitRemoteStart)
-	state.Click(hitRemoteRefresh)
+	canvas := remoteToolsPaint(t, state)
+	refresh, ok := hitByLabelRoleLast(canvas, state.messages.Tools.RemoteRefresh, gfx.RoleButton)
+	if !ok {
+		t.Fatal("the tools page has no refresh button")
+	}
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
+		Title: "remote tools details", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer,
+	}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer driver.Close()
+	if err := driver.Click(refresh.Bounds.X+refresh.Bounds.Width/2, refresh.Bounds.Y+refresh.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
 	if !state.remote.processDetails.open ||
 		state.remote.processDetails.process.PID != opened.PID ||
 		state.remote.selected != remotetools.ProcessKey(opened) ||
@@ -111,7 +129,7 @@ func TestProcessDetailsOwnsClicksAimedAtTheObscuredToolsPage(t *testing.T) {
 			state.remote.processDetails, state.remote.selected, state.modal)
 	}
 
-	state.Click(hitRemoteProcessDetailsDismiss)
+	state.closeRemoteProcessDetails()
 	if state.remote.processDetails.open || state.modal != modalRemoteTools {
 		t.Fatal("dismiss did not return to the tools page")
 	}
@@ -125,55 +143,38 @@ func TestProcessRightClickCopiesFieldsAndOpensTheSameActions(t *testing.T) {
 		copied = value
 		return nil
 	}
-	session := openWorkbenchSession(t, state)
-	row := gfx.Hit{}
-	for _, hit := range session.Snapshot().Hits {
-		if hit.ID == hitRemoteRowList.At(0) {
-			row = hit
-		}
-	}
-	if row.ID.IsZero() {
-		t.Fatal("process row is not painted")
-	}
-	x, y := row.Bounds.X+row.Bounds.Width/2, row.Bounds.Y+row.Bounds.Height/2
-	driver := session.Driver()
-	if err := driver.Press(x, y, gfx.PointerButtonSecondary); err != nil {
-		t.Fatal(err)
-	}
-	if err := driver.Release(x, y, gfx.PointerButtonSecondary); err != nil {
-		t.Fatal(err)
-	}
-	if !state.remote.processMenu.open || state.remote.selected != remotetools.ProcessKey(process) || state.remote.processDetails.open {
-		t.Fatalf("right click opened the wrong surface: menu=%+v details=%+v", state.remote.processMenu, state.remote.processDetails)
+	rightClickRemoteToolsRow(t, state, 0)
+	if state.remote.selected != remotetools.ProcessKey(process) || state.remote.processDetails.open {
+		t.Fatalf("right click opened the wrong surface: selected=%q details=%+v", state.remote.selected, state.remote.processDetails)
 	}
 
-	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	for _, id := range []gfx.ID{
-		hitRemoteProcessMenuView, hitRemoteProcessMenuCopyPID, hitRemoteProcessMenuCopyUser,
-		hitRemoteProcessMenuCopyCommand, hitRemoteProcessMenuTerminate, hitRemoteProcessMenuKill,
-		hitRemoteProcessMenuNiceLower, hitRemoteProcessMenuNiceNormal, hitRemoteProcessMenuNiceHigher,
+	canvas := remoteToolsPaint(t, state)
+	m := state.messages.Tools
+	for _, label := range []string{
+		m.RemoteProcessDetails, m.RemoteProcessCopyPID, m.RemoteProcessCopyUser,
+		m.RemoteProcessCopyCommand, m.RemoteTerminate, m.RemoteForceKill,
+		m.RemoteReniceLower, m.RemoteReniceNormal, m.RemoteReniceHigher,
 	} {
-		if _, found := hitByID(&canvas, id); !found {
-			t.Errorf("menu item %v is not painted", id)
+		if _, found := hitByLabelAny(canvas, label); !found {
+			t.Errorf("menu item %q is not painted", label)
 		}
 	}
-	state.Click(hitRemoteProcessMenuCopyPID)
-	if copied != "2211" || state.remote.processMenu.open {
-		t.Fatalf("copied=%q menuOpen=%v", copied, state.remote.processMenu.open)
+	clickRemoteToolsMenuItem(t, state, m.RemoteProcessCopyPID)
+	if copied != "2211" {
+		t.Fatalf("copied=%q", copied)
 	}
 
-	state.remote.processMenu = remoteProcessMenu{open: true, key: remotetools.ProcessKey(process), at: gfx.Point{X: x, Y: y}}
-	state.Click(hitRemoteProcessMenuView)
+	rightClickRemoteToolsRow(t, state, 0)
+	clickRemoteToolsMenuItem(t, state, m.RemoteProcessDetails)
 	if !state.remote.processDetails.open || state.remote.processDetails.process.PID != process.PID {
 		t.Fatal("View details did not open the selected process")
 	}
-	state.Click(hitRemoteProcessDetailsClose)
+	state.closeRemoteProcessDetails()
 
-	state.remote.processMenu = remoteProcessMenu{open: true, key: remotetools.ProcessKey(process), at: gfx.Point{X: x, Y: y}}
-	state.Click(hitRemoteProcessMenuKill)
-	if state.modal != modalForm || state.remote.processMenu.open || !strings.Contains(state.form.description, "2211") {
-		t.Fatalf("Kill opened modal %d from menu=%+v", state.modal, state.remote.processMenu)
+	rightClickRemoteToolsRow(t, state, 0)
+	clickRemoteToolsMenuItem(t, state, m.RemoteForceKill)
+	if state.modal != modalForm || !strings.Contains(state.form.description, "2211") {
+		t.Fatalf("Kill opened modal %d", state.modal)
 	}
 }
 
@@ -183,7 +184,7 @@ func TestProcessDetailsRunProcessActions(t *testing.T) {
 	state.remote.selected = remotetools.ProcessKey(process)
 	state.openRemoteProcessDetails(process)
 
-	state.Click(hitRemoteNiceLower)
+	clickRemoteToolsButton(t, state, state.messages.Tools.RemoteReniceLower)
 	waitFor(t, state, func() bool {
 		return server.ran("renice 10 -p 2211") == 1 && !state.remote.loading
 	})

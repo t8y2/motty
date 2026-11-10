@@ -67,11 +67,11 @@ func TestRemoteSortPrecedesPaginationAndKeepsConfirmationTarget(t *testing.T) {
 	state.remote.procs[0].StartIdentity = "linux:12345678-1234-1234-1234-123456789abc:100001"
 	state.rebuildRemoteRows()
 	state.remote.selected, state.remote.page = remotetools.ProcessKey(state.remote.procs[0]), 2
-	state.Click(remoteTableHeaderID(remoteProcesses, 0))
+	clickRemoteToolsHeader(t, state, remoteTableHeaderID(remoteProcesses, 0))
 	if state.remote.rows[0].key != "971" || state.remote.page != 0 {
 		t.Fatal("PID sorted lexically, sorted only a page, or did not return to the first page")
 	}
-	state.Click(hitRemoteKill)
+	clickRemoteToolsAction(t, state, hitRemoteKill)
 	if state.modal != modalForm || !strings.Contains(state.form.description, "1000") {
 		t.Fatal("confirmation targeted a row index instead of the selected PID")
 	}
@@ -80,10 +80,10 @@ func TestRemoteSortPrecedesPaginationAndKeepsConfirmationTarget(t *testing.T) {
 
 func TestRemoteSortSurvivesRefreshAndIsRememberedForEachTab(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	state.Click(remoteTableHeaderID(remoteProcesses, 1))
-	state.Click(remoteTableHeaderID(remoteProcesses, 1)) // username descending
+	clickRemoteToolsHeader(t, state, remoteTableHeaderID(remoteProcesses, 1))
+	clickRemoteToolsHeader(t, state, remoteTableHeaderID(remoteProcesses, 1)) // username descending
 	selectedOrder := state.remote.tableSort()
-	state.Click(hitRemoteIntervals.At(0))
+	clickRemoteToolsInterval(t, state, 0)
 	state.tickRemoteRefresh(5 * time.Second)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if state.remote.tableSort() != selectedOrder || state.remote.rows[0].cells[0] != "2211" {
@@ -92,11 +92,11 @@ func TestRemoteSortSurvivesRefreshAndIsRememberedForEachTab(t *testing.T) {
 	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	for column := 0; column < remoteColumnCounts[remoteContainers]; column++ {
-		state.Click(remoteTableHeaderID(remoteContainers, column))
+		clickRemoteToolsHeader(t, state, remoteTableHeaderID(remoteContainers, column))
 		if order := state.remote.tableSort(); order.Column != column || order.Direction != components.TableSortAscending {
 			t.Fatal("Docker header did not start in ascending order")
 		}
-		state.Click(remoteTableHeaderID(remoteContainers, column))
+		clickRemoteToolsHeader(t, state, remoteTableHeaderID(remoteContainers, column))
 		if state.remote.tableSort().Direction != components.TableSortDescending {
 			t.Fatal("Docker header did not switch to descending")
 		}

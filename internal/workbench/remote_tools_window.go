@@ -308,11 +308,21 @@ func (w *remoteToolsWindow) act(id gfx.ID) {
 	case modalForm:
 		w.ui.clickForm(id)
 	default:
-		if id == hitRemoteClose || id == hitRemoteDismiss {
+		switch {
+		case id == hitRemoteClose || id == hitRemoteDismiss:
 			w.close()
-			return
+		case id == hitRemoteAutoToggle:
+			w.ui.remote.auto.enabled = !w.ui.remote.auto.enabled
+			w.ui.remote.auto.restart()
+		case id.Scope() == hitRemoteIntervals:
+			if index := item(id); index >= 0 && index < len(remoteRefreshIntervals) {
+				w.ui.remote.auto.interval = remoteRefreshIntervals[index]
+				w.ui.remote.auto.enabled = true
+				w.ui.remote.auto.restart()
+			}
+		default:
+			w.ui.clickRemoteTools(id)
 		}
-		w.ui.clickRemoteTools(id)
 	}
 }
 
@@ -353,7 +363,7 @@ func (w *remoteToolsWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			return result
 		}
 	}
-	if w.ui.remote.auto.open || w.ui.remote.processMenu.open {
+	if w.ui.remote.auto.open {
 		// The page's menu has the keyboard.
 		return gfx.EventResult{}
 	}
@@ -382,7 +392,7 @@ func (w *remoteToolsWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 		return gfx.EventResult{Handled: true}
 	}
 	w.ui.shortcuts = w.owner.shortcuts
-	if w.ui.modal == modalForm || w.ui.modal == modalSudoSFTP || w.ui.remote.auto.open || w.ui.remote.processMenu.open {
+	if w.ui.modal == modalForm || w.ui.modal == modalSudoSFTP || w.ui.remote.auto.open {
 		return gfx.EventResult{}
 	}
 	if result, handled := w.ui.remoteDetailShortcut(event); handled {

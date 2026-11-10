@@ -37,7 +37,11 @@ func TestRemoteContainersRetryWithSudoOnlyAfterUserConfirmation(t *testing.T) {
 	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 700, Height: 650}} {
 		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
-		if hit, ok := hitByID(&canvas, hitRemoteSudo); !ok || hit.Bounds.Width <= 0 || hit.Bounds.Height <= 0 {
+		label := state.messages.SudoCommandsEnable
+		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.sudoCommands {
+			label = state.messages.SudoCommandsDisable
+		}
+		if hit, ok := hitByLabelRole(&canvas, label, gfx.RoleButton); !ok || hit.Bounds.Width <= 0 || hit.Bounds.Height <= 0 {
 			t.Fatalf("sudo control is missing in remote tools at %+v", size)
 		}
 	}
@@ -59,7 +63,7 @@ func TestRemoteContainersRetryWithSudoOnlyAfterUserConfirmation(t *testing.T) {
 	if before != 0 {
 		t.Fatal("container listing used sudo without confirmation")
 	}
-	state.Click(hitRemoteSudo)
+	clickRemoteToolsSudo(t, state)
 	if state.modal != modalSudoSFTP {
 		t.Fatal("container privilege prompt did not open")
 	}
@@ -72,7 +76,7 @@ func TestRemoteContainersRetryWithSudoOnlyAfterUserConfirmation(t *testing.T) {
 	if after <= before || password != "secret" {
 		t.Fatalf("privileged container calls=%d, password=%q", after, password)
 	}
-	state.Click(hitRemoteSudo)
+	clickRemoteToolsSudo(t, state)
 	if session.sudoCommands || session.sudoPassword != "" {
 		t.Fatal("container tools retained privilege after disabling sudo")
 	}

@@ -1541,7 +1541,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.clickForm(id)
 		return
 	case modalRemoteTools:
-		state.clickRemoteTools(id)
+		// Its controls are page elements and act during the page's paint.
 		return
 	case modalToolbarSettings:
 		state.clickToolbarSettings(id)
@@ -2378,9 +2378,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result, handled := state.updateDialogPointer(event); handled {
 		return result
 	}
-	if result, handled := state.remoteProcessMenuPointer(event); handled {
-		return result
-	}
 	if result, handled := state.remoteProcessDetailsTextPointer(event); handled {
 		return result
 	}
@@ -2584,8 +2581,8 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.remoteContainerDetailsKey(event); handled {
 		return result
 	}
-	if result, handled := state.remoteProcessTableKey(event); handled {
-		return result
+	if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat && state.clickRemoteTableSort(event.Target) {
+		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result := state.workspaceDraftKey(event); result.Handled {
 		return result
@@ -2627,9 +2624,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result := state.sftpColumnSettingsKey(event); result.Handled {
-		return result
-	}
-	if result := state.remoteRefreshKey(event); result.Handled {
 		return result
 	}
 	if result, handled := state.hostTagsKey(event); handled {
