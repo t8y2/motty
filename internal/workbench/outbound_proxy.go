@@ -70,12 +70,8 @@ type outboundProxyForm struct {
 	// choice is the proxy kind the page Choice offers, derived from inherit and
 	// kind before every paint.
 	choice outboundProxyChoice
-	// kindPage declares the kind switch, and kindView caches its view.
-	kindPage *ui.Page
-	kindView func(ui.C)
-	// kindBox and slots are where the dialog body laid the controls out.
-	kindBox ui.Box
-	slots   [4]ui.Box
+	// slots are where the dialog body laid the fields out.
+	slots [4]ui.Box
 	// text is the settings row's description, made for textKind, textFor (the
 	// address) and textLanguage.
 	text, textFor string
@@ -509,16 +505,13 @@ func (state *State) submitOutboundProxy() {
 	state.save()
 }
 
-// outboundProxyKindRoot names the proxy kind switch in the window's Tree.
-const outboundProxyKindRoot = "outbound-proxy-kind"
-
 // declareOutboundProxyBody lays out the route settings: the kind switch, the
 // four fields and the error line.
 func (state *State) declareOutboundProxyBody(c ui.C) {
 	form := &state.proxyForm
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
-		form.kindBox = ui.Slot(c).Height(34).MarginSides(0, 0, 14, 0)
+		ui.Column(c).Height(34).MarginSides(0, 0, 14, 0).Children(func() { state.declareOutboundProxyKind(c) })
 		for index := range form.slots {
 			form.slots[index] = ui.Slot(c).Height(62).MarginSides(0, 0, 4, 0)
 		}
@@ -552,20 +545,11 @@ func (state *State) outboundProxyChoiceLabel(choice outboundProxyChoice) string 
 	return m.ProxyNone
 }
 
-// drawOutboundProxyKind paints the proxy kind switch in its slot. It is a page
-// Choice, so its arrows move between the options.
-func (state *State) drawOutboundProxyKind(canvas *gfx.Canvas, bounds gfx.Rect) {
-	form := &state.proxyForm
-	form.choice = form.selectedChoice()
-	if form.kindPage == nil {
-		form.kindPage = ui.NewPage(ui.PageConfig{Root: outboundProxyKindRoot, Theme: &state.theme})
-		form.kindView = state.declareOutboundProxyKind
-	}
-	form.kindPage.Draw(canvas, bounds, form.kindView)
-}
-
+// declareOutboundProxyKind declares the proxy kind switch in the dialog body. It
+// is a page Choice, so its arrows move between the options.
 func (state *State) declareOutboundProxyKind(c ui.C) {
 	form := &state.proxyForm
+	form.choice = form.selectedChoice()
 	choices := outboundProxyHostChoices[:]
 	if !form.forHost {
 		choices = outboundProxyGlobalChoices[:]
@@ -598,7 +582,6 @@ func (state *State) paintOutboundProxyFields(canvas *gfx.Canvas) {
 		{hitOutboundProxyPassword, m.ProxyPassword, m.ProxyPasswordPlaceholder, &form.password, true},
 		{hitOutboundProxyBypass, m.ProxyBypass, defaultProxyBypass, &form.bypass, false},
 	}
-	state.drawOutboundProxyKind(canvas, form.kindBox.Rect())
 	for index, entry := range entries {
 		content := components.BeginField(canvas, theme, form.slots[index].Rect()).Paint(entry.label, "", "")
 		value := entry.editor.String()

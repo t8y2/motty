@@ -167,9 +167,6 @@ type forwardEditor struct {
 	resume     bool
 	editing    bool
 	forwardID  uint32
-	// modePage declares the forward type switch, and modeView caches its view.
-	modePage *ui.Page
-	modeView func(ui.C)
 	// dialogBody is where the dialog body laid out the controls painted by hand.
 	dialogBody forwardDialogBody
 }
@@ -177,7 +174,7 @@ type forwardEditor struct {
 // forwardDialogBody is where the forward editor's body put each control it
 // paints by hand.
 type forwardDialogBody struct {
-	name, host, mode, port       ui.Box
+	name, host, port             ui.Box
 	destination, destinationPort ui.Box
 	resume, resumeHelp           ui.Box
 }
@@ -425,9 +422,9 @@ func (state *State) forwardDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool)
 		return gfx.EventResult{}, false
 	}
 	editor := &state.forwardEditor
-	if editor.modePage != nil {
-		// The forward type switch is a page Choice: its arrows are the page's.
-		if result, handled := editor.modePage.Key(event); handled {
+	// The forward type switch is a page Choice: its arrows are the page's.
+	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
+		if result, handled := page.Key(event); handled && result.Handled {
 			return result, true
 		}
 	}

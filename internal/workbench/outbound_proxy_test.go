@@ -245,6 +245,37 @@ func TestADamagedSavedHostProxyFallsBackToInheritance(t *testing.T) {
 	}
 }
 
+func TestTheOutboundProxyKindSwitchTakesArrowsAndClicks(t *testing.T) {
+	_, options := proxyWorld(t)
+	state := newTestState(t, options)
+	state.openOutboundProxyDialog()
+	// The switch is a page Choice declared in the dialog body: its arrows report
+	// the segment to activate as a click, and the click's event pass writes it.
+	canvas, _ := paintedTexts(state)
+	none, ok := settingsChoiceIn(canvas, state.messages.Tools.ProxyNone)
+	if !ok {
+		t.Fatalf("no kind switch offering %q", state.messages.Tools.ProxyNone)
+	}
+	socks, ok := settingsChoiceIn(canvas, state.messages.Tools.ProxySOCKS5)
+	if !ok {
+		t.Fatalf("no kind switch offering %q", state.messages.Tools.ProxySOCKS5)
+	}
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: none.ID})
+	if !result.Handled || result.Focus != socks.ID || result.Activate != socks.ID {
+		t.Fatalf("kind key result = %+v", result)
+	}
+	activateChoice(t, state, result.Activate)
+	if state.proxyForm.kind != sshconn.ProxySOCKS5 || state.proxyForm.choice != proxyChoiceSOCKS5 {
+		t.Fatalf("kind after Right = %+v", state.proxyForm)
+	}
+	// A mouse press on the last option takes the same event pass.
+	http := settingsChoiceHit(t, state, state.messages.Tools.ProxyHTTP)
+	clickSettingsChoiceHit(t, state, http)
+	if state.proxyForm.kind != sshconn.ProxyHTTPConnect || state.proxyForm.choice != proxyChoiceHTTP {
+		t.Fatalf("kind after a click = %+v", state.proxyForm)
+	}
+}
+
 func TestTheHostProxyDialogStagesAProxyUntilTheHostIsSaved(t *testing.T) {
 	_, options := proxyWorld(t)
 	state := newTestState(t, options)

@@ -451,6 +451,22 @@ func TestForwardDialogModesShowDestinationsAndSupportKeyboard(t *testing.T) {
 	press(remote, local, gfx.KeyLeft, portforward.ModeLocal)
 }
 
+func TestForwardDialogModeSwitchTakesClicks(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openForwardEditor(t, state)
+	canvas, _ := paintedTexts(state)
+	socks := forwardModeChoice(t, canvas, state.messages.ForwardModeSOCKS5)
+	clickSettingsChoiceHit(t, state, socks)
+	if state.forwardEditor.mode != portforward.ModeSOCKS5 {
+		t.Fatalf("mode after a click = %d", state.forwardEditor.mode)
+	}
+	local := settingsChoiceHit(t, state, state.messages.ForwardModeLocal)
+	clickSettingsChoiceHit(t, state, local)
+	if state.forwardEditor.mode != portforward.ModeLocal {
+		t.Fatalf("mode after a second click = %d", state.forwardEditor.mode)
+	}
+}
+
 // forwardModeChoice finds the forward type switch's segment with label in the
 // painted dialog.
 func forwardModeChoice(t testing.TB, canvas *gfx.Canvas, label string) gfx.Hit {

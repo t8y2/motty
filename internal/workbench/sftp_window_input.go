@@ -209,15 +209,10 @@ func (w *sftpWindow) dropTarget(x, y float32, fromLocal bool) (local bool, targe
 	return
 }
 
-// pagePointer gives the window's panes the pointer events they own: the
-// connecting page, then each pane. The window's own chrome is the page the
-// window's Config routes.
+// pagePointer gives the window's panes the pointer events they own. The
+// window's own chrome, including the connecting state, is the page the window's
+// Config routes.
 func (w *sftpWindow) pagePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if w.ui.connectPage != nil {
-		if result, ok := w.ui.connectPage.Pointer(event); ok {
-			return result, true
-		}
-	}
 	for _, page := range w.ui.panePages {
 		if page != nil {
 			if result, ok := page.Pointer(event); ok {
@@ -230,11 +225,6 @@ func (w *sftpWindow) pagePointer(event gfx.PointerEvent) (gfx.EventResult, bool)
 
 // pageKey is pagePointer for the keyboard.
 func (w *sftpWindow) pageKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if w.ui.connectPage != nil {
-		if result, ok := w.ui.connectPage.Key(event); ok {
-			return result, true
-		}
-	}
 	for _, page := range w.ui.panePages {
 		if page != nil {
 			if result, ok := page.Key(event); ok {

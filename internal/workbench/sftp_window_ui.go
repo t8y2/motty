@@ -59,16 +59,14 @@ var (
 type sftpWindowUI struct {
 	// root names this window's pages in the identity tree: every window is a
 	// page of its own, and no two windows may name their controls alike.
-	root        string
-	windowPage  *ui.Page
-	windowView  func(ui.C)
-	connectPage *ui.Page
-	connectView func(ui.C)
-	panePages   [2]*ui.Page
-	paneView    func(ui.C)
-	scratch     sftpWindowScratch
-	connect     sftpWindowConnectScratch
-	size        gfx.Size
+	root       string
+	windowPage *ui.Page
+	windowView func(ui.C)
+	panePages  [2]*ui.Page
+	paneView   func(ui.C)
+	scratch    sftpWindowScratch
+	connect    sftpWindowConnectScratch
+	size       gfx.Size
 	// bounds is the rectangle the view occupies in its canvas: the whole window
 	// for a native one, the tab's rectangle when hosted in the main window.
 	bounds              gfx.Rect
@@ -141,9 +139,9 @@ func (w *sftpWindow) pageRoot() string {
 	return w.ui.root
 }
 
-// windowPage is the page that declares the window's own chrome. Config takes it
-// as the standalone window's page; a pane and the connecting state are pages of
-// their own, drawn into part of this window.
+// windowPage is the page that declares the window's own chrome and its
+// connecting state. Config takes it as the standalone window's page; each pane
+// is a page of its own, drawn into part of this window.
 func (w *sftpWindow) windowPage() *ui.Page {
 	if w.ui.windowPage == nil {
 		w.ui.windowPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot(), Theme: &w.owner.theme, View: w.declareWindow})
@@ -168,12 +166,15 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	w.ui.bounds = gfx.Rect{Width: size.Width, Height: size.Height}
 	theme, m := w.owner.Theme(), w.owner.messages
 	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, theme.Background)
-	if w.view.worker == nil {
-		w.paintConnecting(canvas, size)
-		return
-	}
+	// The event pass a connecting control delivers may start the browser while
+	// the page declares; this paint still shows what it declared.
+	connecting := w.view.worker == nil
 	w.ui.scratch = sftpWindowScratch{}
 	w.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.ui.windowView)
+	if connecting {
+		w.paintConnectingDetails(canvas)
+		return
+	}
 	body := w.ui.scratch.body.Rect()
 	var queue gfx.Rect
 	if w.queueCount() > 0 {
@@ -252,9 +253,15 @@ func sftpQueueHeight(size gfx.Size) float32 {
 	return min(244, max(108, size.Height*.28))
 }
 
-// declareWindow declares the window's own chrome: the status line, and the room
-// the panes and the transfer queue take.
+// declareWindow declares the window's own chrome: the connecting state while
+// there is no browser, else the status line and the room the panes and the
+// transfer queue take.
 func (w *sftpWindow) declareWindow(c ui.C) {
+	if w.view.worker == nil {
+		w.ui.connect = sftpWindowConnectScratch{}
+		w.declareConnecting(c)
+		return
+	}
 	s := &w.ui.scratch
 	size := w.ui.size
 	ui.Column(c).Fill().Pad(sftpWindowPad).Gap(sftpWindowGap).Children(func() {

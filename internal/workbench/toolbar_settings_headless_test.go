@@ -127,6 +127,34 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 	}
 }
 
+func TestToolbarSettingsSizeSwitchTakesClicks(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openToolbarSettings(toolbarTerminal)
+	var invalidator app.Invalidator
+	state.options.Invalidate = invalidator.Invalidate
+	view, err := headless.Open(app.Config{Width: 1200, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	view.Driver().Advance(250 * time.Millisecond)
+	for _, test := range []struct {
+		label string
+		want  terminalToolbarSize
+	}{
+		{state.messages.SettingsToolbarSizeMedium, terminalToolbarMedium},
+		{state.messages.SettingsToolbarSizeLarge, terminalToolbarLarge},
+	} {
+		segment := dualChoiceHit(t, view, test.label)
+		if err := view.Click(segment.Bounds.X+segment.Bounds.Width/2, segment.Bounds.Y+segment.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if state.terminalToolbarSize != test.want {
+			t.Fatalf("size after clicking %q = %s", test.label, state.terminalToolbarSize.String())
+		}
+	}
+}
+
 func TestToolbarSettingsSmallWindowCanScrollDuringDrag(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.setAppearance(appearanceLight)

@@ -2793,10 +2793,12 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		state.submitVaultUnlock()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if state.modal == modalOutboundProxy && state.proxyForm.kindPage != nil {
-		// The proxy kind switch is a page Choice: its arrows are the page's.
-		if result, handled := state.proxyForm.kindPage.Key(event); handled {
-			return result
+	// The proxy kind switch is a page Choice: its arrows are the page's.
+	if state.modal == modalOutboundProxy {
+		if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
+			if result, handled := page.Key(event); handled && result.Handled {
+				return result
+			}
 		}
 	}
 	if state.modal == modalOutboundProxy && event.Key == gfx.KeyEnter && !event.Repeat &&

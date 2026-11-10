@@ -138,7 +138,7 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 	column.Children(func() {
 		b.name = ui.Slot(c).Height(rowHeight)
 		b.host = ui.Slot(c).Height(rowHeight)
-		b.mode = ui.Slot(c).Height(rowHeight)
+		ui.Column(c).Height(rowHeight).Children(func() { state.declareForwardMode(c) })
 		ui.Row(c).Height(rowHeight).Children(func() {
 			b.port = ui.Slot(c).Grow(24)
 			ui.Spacer(c).Grow(4)
@@ -167,7 +167,6 @@ func (state *State) paintForwardDialogFields(canvas *gfx.Canvas, mode portforwar
 	b := &state.forwardEditor.dialogBody
 	state.paintForwardDialogField(canvas, hitForwardDialogLabel, forwardFieldLabel, messages.ForwardFieldName, "", b.name.Rect())
 	state.paintForwardHostField(canvas, b.host.Rect())
-	state.paintForwardModeField(canvas, b.mode.Rect())
 	portTitle := messages.ForwardFieldLocalPort
 	if mode == portforward.ModeRemote {
 		portTitle = messages.ForwardFieldRemotePort
@@ -184,14 +183,6 @@ func (state *State) paintForwardDialogFields(canvas *gfx.Canvas, mode portforwar
 	state.paintDialogCheckbox(canvas, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, b.resume)
 	state.paintHelpIcon(canvas, hitForwardDialogResumeHelp, messages.ForwardResumeHelp, b.resumeHelp.Rect())
 }
-
-func (state *State) paintForwardModeField(canvas *gfx.Canvas, bounds gfx.Rect) {
-	content := components.BeginField(canvas, state.Theme(), bounds).Paint(state.messages.ForwardFieldType, "", "")
-	state.drawForwardMode(canvas, content)
-}
-
-// forwardModeRoot names the forward type switch in the window's Tree.
-const forwardModeRoot = "forward-mode"
 
 // forwardModeChoices are the four kinds of forward the dialog offers.
 var forwardModeChoices = [...]portforward.Mode{
@@ -211,19 +202,13 @@ func (state *State) forwardModeLabel(mode portforward.Mode) string {
 	return m.ForwardModeLocal
 }
 
-// drawForwardMode paints the forward type switch in its slot. It is a page
-// Choice, so its arrows move between the options.
-func (state *State) drawForwardMode(canvas *gfx.Canvas, bounds gfx.Rect) {
-	editor := &state.forwardEditor
-	if editor.modePage == nil {
-		editor.modePage = ui.NewPage(ui.PageConfig{Root: forwardModeRoot, Theme: &state.theme})
-		editor.modeView = state.declareForwardMode
-	}
-	editor.modePage.Draw(canvas, bounds, editor.modeView)
-}
-
+// declareForwardMode declares the forward type switch in the dialog body. It is
+// a page Choice, so its arrows move between the options.
 func (state *State) declareForwardMode(c ui.C) {
-	choice := ui.Choice(c, &state.forwardEditor.mode, forwardModeChoices[:], state.forwardModeLabel).Fill()
+	metrics := c.Theme().Metrics
+	gap := metrics.GapItem / 2
+	ui.Text(c, state.messages.ForwardFieldType).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(metrics.FontSizeM + 4).Ellipsis()
+	choice := ui.Choice(c, &state.forwardEditor.mode, forwardModeChoices[:], state.forwardModeLabel).Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
 	// Any press on the switch clears a validation error, including a press on the
 	// mode that is already chosen.
 	if _, clicked := choice.ChosenIndex(); clicked {

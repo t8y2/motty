@@ -336,8 +336,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintFontPicker(canvas, viewport)
 	case modalRemoteTools:
 		state.paintRemoteTools(canvas, viewport)
-	case modalToolbarSettings:
-		state.paintToolbarSettings(canvas, viewport)
 	case modalSFTPColumns:
 		state.paintSFTPColumnSettings(canvas, viewport)
 	case modalSudoSFTP:
@@ -2393,6 +2391,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareAutofillDialog(c)
 	case modalAutofillConfirm:
 		state.declareAutofillConfirm(c)
+	case modalToolbarSettings:
+		state.declareToolbarSettings(c)
 	case modalHighlightRule:
 		state.declareHighlightDialog(c)
 	case modalNewForward:
