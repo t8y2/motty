@@ -125,70 +125,102 @@ func (state *State) declareHostAlgoChoice(c ui.C) ui.Box {
 	return choice
 }
 
-// paintHostEndpointRows draws where the host is: its address and, beside it, the
-// port it is reached on, and on the row below the credentials the protocol takes.
-// A serial port takes the device, its line and, on its own row, the flow
-// control; a Telnet host has no credentials in the form, so it takes one row.
-func (state *State) paintHostEndpointRows(canvas *gfx.Canvas, x, y, width, rowHeight float32) {
-	m, tools := state.messages, state.messages.Tools
+// declareHostEndpointSlots lays the endpoint block out in the form's page: the
+// address and the port, and the credentials under them, by the protocol. The
+// painter fills the slots this leaves with the dialog's fields.
+func (state *State) declareHostEndpointSlots(c ui.C, parent ui.Box, rowHeight float32) {
 	editor := &state.editor
-	var address, picker, second, password, third, authentication, identity, passphrase ui.Box
-	f := state.partLayout.Begin(canvas, state.Theme(), gfx.Rect{X: x, Y: y, Width: width, Height: float32(state.hostEndpointRows()) * rowHeight})
-	f.Column().Fill().Children(func() {
+	slots := &editor.form.body.endpointSlots
+	*slots = hostEndpointSlots{}
+	parent.Children(func() {
 		switch editor.protocol {
 		case protocolSerial:
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				address = f.Slot().Grow(1)
-				picker = f.Slot().WidthPercent(30)
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				slots.picker = ui.Slot(c).WidthPercent(30)
 			})
 			// The flow control is a three-way choice: it takes the row under
 			// the line settings rather than sharing one with them, where its
 			// labels would be cut.
-			second = f.Slot().Height(rowHeight)
-			third = f.Slot().Height(rowHeight)
+			slots.second = ui.Slot(c).Height(rowHeight)
+			slots.third = ui.Slot(c).Height(rowHeight)
 		case protocolTelnet:
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				address = f.Slot().Grow(1)
-				third = f.Slot().Width(hostPortWidth).Shrink(0)
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
 			})
 		case protocolVNC:
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				address = f.Slot().Grow(1)
-				third = f.Slot().Width(hostPortWidth).Shrink(0)
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
 			})
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				second = f.Slot().Grow(1)
-				password = f.Slot().Grow(1)
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.second = ui.Slot(c).Grow(1)
+				slots.password = ui.Slot(c).Grow(1)
 			})
 		case protocolSSH:
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				address = f.Slot().Grow(1)
-				third = f.Slot().Width(hostPortWidth).Shrink(0)
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
 			})
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				second = f.Slot().Grow(1)
-				authentication = f.Slot().Grow(1)
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.second = ui.Slot(c).Grow(1)
+				slots.authentication = ui.Slot(c).Grow(1)
 				if editor.auth == authPrivateKey {
-					identity = f.Slot().Grow(1)
+					slots.identity = ui.Slot(c).Grow(1)
 				} else if editor.auth != authAgent {
-					password = f.Slot().Grow(1)
+					slots.password = ui.Slot(c).Grow(1)
 				}
 			})
 			if state.hostAsksKeyPassphrase() {
-				passphrase = f.Slot().Height(rowHeight)
+				slots.passphrase = ui.Slot(c).Height(rowHeight)
 			}
 		default:
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				address = f.Slot().Grow(1)
-				third = f.Slot().Width(hostPortWidth).Shrink(0)
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
 			})
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				second = f.Slot().Grow(1)
-				password = f.Slot().Grow(1)
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.second = ui.Slot(c).Grow(1)
+				slots.password = ui.Slot(c).Grow(1)
 			})
 		}
 	})
-	f.End()
+	// A role this protocol has no row for aliases one it does, so a protocol
+	// change can paint the new protocol in the frame's event pass.
+	if !slots.picker.Valid() {
+		slots.picker = slots.address
+	}
+	if !slots.second.Valid() {
+		slots.second = slots.address
+	}
+	if !slots.authentication.Valid() {
+		slots.authentication = slots.second
+	}
+	if !slots.password.Valid() {
+		slots.password = slots.second
+	}
+	if !slots.identity.Valid() {
+		slots.identity = slots.second
+	}
+	if !slots.passphrase.Valid() {
+		slots.passphrase = slots.third
+	}
+}
+
+// paintHostEndpointRows draws where the host is: its address and, beside it, the
+// port it is reached on, and on the row below the credentials the protocol takes.
+// A serial port takes the device, its line and, on its own row, the flow
+// control; a Telnet host has no credentials in the form, so it takes one row.
+// The slots were declared with the form's page; the switch reads the protocol now
+// in effect, as the event pass of a protocol click still paints it.
+func (state *State) paintHostEndpointRows(canvas *gfx.Canvas) {
+	m, tools := state.messages, state.messages.Tools
+	editor := &state.editor
+	slots := &editor.form.body.endpointSlots
+	address, picker, second := slots.address, slots.picker, slots.second
+	password, third := slots.password, slots.third
+	authentication, identity, passphrase := slots.authentication, slots.identity, slots.passphrase
 	switch editor.protocol {
 	case protocolSerial:
 		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, tools.FieldDevice, tools.FieldDevicePlaceholder, address.Rect())
@@ -463,27 +495,32 @@ func (state *State) hostDialogExtra() float32 {
 // left with too little width for its own placeholder.
 const otpButtonsRow = 38
 
-// paintAdvancedSection draws the row that opens or closes an SSH host's
-// less-used settings and, while open, the settings under it.
-func (state *State) paintAdvancedSection(canvas *gfx.Canvas, bounds gfx.Rect) {
+// declareHostAdvancedHeader declares the row that opens or closes an SSH host's
+// less-used settings, and the chevron it paints, in the form's page.
+func (state *State) declareHostAdvancedHeader(c ui.C) (header, icon ui.Box) {
 	pal, open := state.pal, state.editor.advancedOpen
 	label := state.messages.Tools.AdvancedOptions
+	header = ui.Row(c).FillWidth().MarginTop(advancedHeaderGap).Height(32).PadSides(0, 0, 0, 2).Gap(8).Items(ui.Center).
+		Radius(radius.control).Hover(ui.Look{}.Background(pal.surfaceSoft)).
+		HitWith(hitDialogAdvanced, label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: open})
+	header.Children(func() {
+		icon = ui.Slot(c).Size(16, 16)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(20)
+	})
+	return header, icon
+}
+
+// paintAdvancedSection draws the row that opens or closes an SSH host's
+// less-used settings and, while open, the settings under it.
+func (state *State) paintAdvancedSection(canvas *gfx.Canvas) {
+	pal, open := state.pal, state.editor.advancedOpen
+	header := state.editor.form.body.advancedHeader
+	icon := state.editor.form.body.advancedHeaderIcon
+	state.rememberHostControl(hitDialogAdvanced, header.Rect())
 	chevron := iconChevronRight
 	if open {
 		chevron = iconChevronDown
 	}
-	var icon ui.Box
-	header := gfx.Rect{X: bounds.X, Y: bounds.Y + advancedHeaderGap, Width: bounds.Width, Height: 32}
-	state.rememberHostControl(hitDialogAdvanced, header)
-	f := state.partLayout.Begin(canvas, state.Theme(), header)
-	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(8).Items(ui.Center).
-		Radius(radius.control).Hover(ui.Look{}.Background(pal.surfaceSoft)).
-		HitWith(hitDialogAdvanced, label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: open}).
-		Children(func() {
-			icon = f.Slot().Size(16, 16)
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(20)
-		})
-	f.End()
 	paintIcon(canvas, uint8(chevron), icon.Rect(), pal.muted)
 	if open {
 		state.paintAlgorithmRows(canvas)

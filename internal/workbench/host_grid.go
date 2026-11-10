@@ -51,6 +51,32 @@ func (state *State) ensureHostGridDrag() *hostGridDrag {
 	return drag
 }
 
+// hostGridPaintState keeps the functions the grid's declaration uses across
+// paints: the reorder surface that wraps its items, and the drawers that paint
+// them.
+type hostGridPaintState struct {
+	sortUnder, sortOver func(*ui.DrawContext)
+}
+
+// ensureHostGridPaint makes the grid's paint callbacks, once.
+func (state *State) ensureHostGridPaint() *hostGridPaintState {
+	paint := &state.hostGridPaint
+	if paint.sortUnder == nil {
+		paint.sortUnder, paint.sortOver = state.drawHostGridSortUnder, state.drawHostGridSortOver
+	}
+	return paint
+}
+
+// drawHostGridSortUnder starts the reorder overlay in the grid's viewport, and
+// drawHostGridSortOver ends it once the page has painted the cards.
+func (state *State) drawHostGridSortUnder(d *ui.DrawContext) {
+	state.beginHostSortPaint(d.Canvas, d.Rect)
+}
+
+func (state *State) drawHostGridSortOver(*ui.DrawContext) {
+	state.endHostSortPaint()
+}
+
 // hostGroupOpenHit maps a grid group header's hit identity back to its group.
 func (state *State) hostGroupOpenHit(id gfx.ID) (int, bool) {
 	if id.Scope() != hitHostGroupOpenList {
@@ -201,16 +227,21 @@ func (state *State) hostGridHeight(width float32) float32 {
 	return height
 }
 
-// hostGridItem is a card or a group header that is on screen, with the box
-// the layout gave it.
-type hostGridItem struct {
-	box   ui.Box
+// hostGridDrawer paints one card or group header the page declared. The Draw of
+// an item is kept for the frame; the drawer carries its row so the callback reads
+// the right entry, like the list's hostRowDrawer.
+type hostGridDrawer struct {
+	owner *State
 	entry int // the index into hostTreeRows
+	fn    func(*ui.DrawContext)
 }
+
+func (d *hostGridDrawer) paint(ctx *ui.DrawContext) { d.owner.paintHostGridEntry(ctx, d.entry) }
 
 // declareHostGrid declares the cards of the grid view inside the hosts page:
 // only what is on screen, scrolled by hostsScroll, as the list's Tree declares
-// only its visible rows. The slots are kept for the paint that follows.
+// only its visible rows. Each item paints itself through the Draw of the page
+// element that carries its hit and, for a group header, its drag state.
 func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32) {
 	rows := state.hostTreeRows
 	bounds := gfx.Rect{X: 18, Y: headerHeight, Width: max(width-36, 0), Height: max(height-headerHeight-18, 0)}
@@ -242,12 +273,17 @@ func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32)
 		state.hostsScroll = geometry.OffsetY
 		viewport = geometry.Viewport
 	}
-	state.hostGridItems = state.hostGridItems[:0]
+	state.hostGridDrawerCount = 0
+	paint := state.ensureHostGridPaint()
 	drag := state.ensureHostGridDrag()
 	columns := hostGridColumns(viewport.Width)
 	y := viewport.Y - state.hostsScroll
 	bottom := viewport.Y + viewport.Height
-	ui.Column(c).Absolute().Left(viewport.X).Top(viewport.Y).Width(viewport.Width).Height(viewport.Height).Clip().Children(func() {
+	grid := ui.Column(c).Absolute().Left(viewport.X).Top(viewport.Y).Width(viewport.Width).Height(viewport.Height).Clip()
+	// The reorder overlay wraps the cards the page paints: its surface starts
+	// before the first item and ends after the last.
+	grid.Draw(paint.sortUnder).DrawOver(paint.sortOver)
+	grid.Children(func() {
 		for index := 0; index < len(rows) && y < bottom; {
 			if rows[index].Kind == hostTreeGroup {
 				// Its text sits on the same line as a group row's in the list view.
@@ -261,8 +297,8 @@ func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32)
 						Role: gfx.RoleButton, Expanded: group.Expanded, Hint: group.Name,
 					}).Radius(radius.control).Hover(ui.Look{}.Background(state.pal.surfaceSoft)).
 						DragSource(&drag.state).
-						DropTarget(&drag.state, drag.accept, drag.drop)
-					state.hostGridItems = append(state.hostGridItems, hostGridItem{box, index})
+						DropTarget(&drag.state, drag.accept, drag.drop).
+						Draw(state.hostGridDrawerFor(index))
 				}
 				y += hostGridHeader
 				index++
@@ -279,7 +315,7 @@ func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32)
 					for column := 0; column < columns; column++ {
 						card := ui.Slot(c).Grow(1).Basis(0)
 						if index+column < end {
-							state.hostGridItems = append(state.hostGridItems, hostGridItem{card, index + column})
+							card.Draw(state.hostGridDrawerFor(index + column))
 						}
 					}
 				})
@@ -290,24 +326,39 @@ func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32)
 	})
 }
 
-// paintHostGrid draws the cards the page declared, scrolled by hostsScroll.
-func (state *State) paintHostGrid(canvas *gfx.Canvas, bounds gfx.Rect) {
-	state.beginHostSortPaint(canvas, bounds)
+// paintHostGridEntry paints one card or group header the page declared, scrolled
+// by hostsScroll, from its entry into hostTreeRows.
+func (state *State) paintHostGridEntry(ctx *ui.DrawContext, entry int) {
 	rows := state.hostTreeRows
-	for _, item := range state.hostGridItems {
-		if rows[item.entry].Kind == hostTreeGroup {
-			groupIndex := rows[item.entry].GroupIndex
-			state.paintHostGridHeader(canvas, item.box.Rect(), groupIndex, rows[item.entry].Depth)
-			if state.hostGridDrag.state.Target() == hitHostGroupOpenList.At(groupIndex) {
-				header := item.box.Rect()
-				canvas.Fill(gfx.Rect{X: header.X, Y: header.Y, Width: header.Width, Height: 2}, state.pal.accent)
-			}
-		} else {
-			host := state.hosts[rows[item.entry].HostIndex]
-			state.paintHostCard(canvas, item.box.Rect(), host)
-		}
+	if entry < 0 || entry >= len(rows) {
+		return
 	}
-	state.endHostSortPaint()
+	if rows[entry].Kind == hostTreeGroup {
+		groupIndex := rows[entry].GroupIndex
+		state.paintHostGridHeader(ctx.Canvas, ctx.Rect, groupIndex, rows[entry].Depth)
+		if state.hostGridDrag.state.Target() == hitHostGroupOpenList.At(groupIndex) {
+			header := ctx.Rect
+			ctx.Canvas.Fill(gfx.Rect{X: header.X, Y: header.Y, Width: header.Width, Height: 2}, state.pal.accent)
+		}
+		return
+	}
+	host := state.hosts[rows[entry].HostIndex]
+	state.paintHostCard(ctx.Canvas, ctx.Rect, host)
+}
+
+// hostGridDrawerFor gives the next declared item a drawer that paints its row.
+// Drawers are reused between paints and keep one method value each, so declaring
+// a frame's items makes no closure per card.
+func (state *State) hostGridDrawerFor(entry int) func(*ui.DrawContext) {
+	if state.hostGridDrawerCount == len(state.hostGridDrawers) {
+		drawer := &hostGridDrawer{owner: state}
+		drawer.fn = drawer.paint
+		state.hostGridDrawers = append(state.hostGridDrawers, drawer)
+	}
+	drawer := state.hostGridDrawers[state.hostGridDrawerCount]
+	state.hostGridDrawerCount++
+	drawer.entry = entry
+	return drawer.fn
 }
 
 // paintHostGridHeader draws the row that opens or closes a group of cards.
@@ -325,7 +376,7 @@ func (state *State) paintHostGridHeader(canvas *gfx.Canvas, header gfx.Rect, gro
 		chevron = iconChevronDown
 	}
 	var icon, groupCheck ui.Box
-	f := state.partLayout.Begin(canvas, state.Theme(), header)
+	f := state.hostGridInner.Begin(canvas, state.Theme(), header)
 	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(8).Items(ui.Center).
 		Radius(radius.control).
 		Children(func() {
@@ -397,7 +448,7 @@ func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) 
 		tagCount = state.fitHostTags(canvas, host, room, &tagList)
 	}
 	var grip, avatar, light ui.Box
-	f := state.partLayout.Begin(canvas, state.Theme(), card)
+	f := state.hostGridInner.Begin(canvas, state.Theme(), card)
 	f.Row().Fill().PadSides(0, 12, 0, 14).Gap(12).Items(ui.Center).Children(func() {
 		f.Stack().Size(36, 36).Shrink(0).Children(func() {
 			avatar = f.Slot()

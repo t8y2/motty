@@ -1934,16 +1934,14 @@ func (state *State) sessionStatus(session *Session) (string, gfx.Color) {
 }
 
 // paintHostGridTable paints the card grid's scroll bar over the page's
-// declaration. The cards keep Motty's own scroll position; only the list view is
-// a framework Tree.
+// declaration. The cards keep Motty's own scroll position and paint themselves
+// in the page; only the bar is painted after it. Only the list view is a
+// framework Tree.
 func (state *State) paintHostGridTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
 	// The cards were declared at this scroll position; the bar is Viva's scroll
 	// area, and it paints nothing at all while the content fits.
 	area, geometry := hostListScrollArea(canvas, state.Theme(), treeBounds, state.hostsContent, state.hostsScroll)
 	state.hostsGridViewport = geometry.Viewport
-	canvas.Clip(geometry.Viewport)
-	state.paintHostGrid(canvas, geometry.Viewport)
-	canvas.Unclip()
 	area.EndContent()
 }
 
@@ -2735,6 +2733,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				b.colorField = ui.Slot(c).Grow(1)
 			})
 			b.endpoint = ui.Slot(c).Height(float32(state.hostEndpointRows()) * rowHeight)
+			state.declareHostEndpointSlots(c, b.endpoint, rowHeight)
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				b.group = ui.Slot(c).Grow(1)
 				b.tags = ui.Slot(c).Grow(1)
@@ -2753,6 +2752,20 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 			if ssh {
 				b.jump = ui.Slot(c).Height(rowHeight)
 				b.advanced = ui.Slot(c).Height(state.advancedSectionHeight())
+				advanced := b.advanced
+				advanced.Children(func() {
+					b.advancedHeader, b.advancedHeaderIcon = state.declareHostAdvancedHeader(c)
+					if editor.advancedOpen {
+						// The rows and the choice are declared as the same overlay:
+						// the choice keeps its press for after the rows laid out.
+						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
+							state.declareHostAlgoRows(c)
+						})
+						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Height(rowHeight).Children(func() {
+							b.algo = state.declareHostAlgoChoice(c)
+						})
+					}
+				})
 			}
 			if vncHost {
 				b.vncRows = ui.Slot(c).Height(state.desktopRowsHeight())
@@ -2770,8 +2783,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				// takes the row under them.
 				endpoint := b.endpoint
 				endpoint.Children(func() {
-					ui.Column(c).Fill().Children(func() {
-						ui.Slot(c).Height(2 * rowHeight)
+					ui.Column(c).Absolute().Left(0).Right(0).Top(2 * rowHeight).Height(rowHeight).Children(func() {
 						b.flow = state.declareHostFlowChoice(c)
 					})
 				})
@@ -2781,19 +2793,6 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				transfer.Children(func() {
 					b.transfer = state.declareHostTransferChoice(c)
 				})
-				if editor.advancedOpen {
-					advanced := b.advanced
-					advanced.Children(func() {
-						// The rows and the choice are declared as the same overlay:
-						// the choice keeps its press for after the rows laid out.
-						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
-							state.declareHostAlgoRows(c)
-						})
-						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Height(rowHeight).Children(func() {
-							b.algo = state.declareHostAlgoChoice(c)
-						})
-					})
-				}
 			}
 			protocol := b.protocol
 			protocol.Children(func() {
@@ -2866,7 +2865,7 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	editor.form.clipped = true
 	defer func() { editor.form.clipped = false }()
 	state.paintDialogField(canvas, hitDialogLabel, fieldLabel, m.FieldLabel, m.FieldLabelPlaceholder, b.label.Rect())
-	state.paintHostEndpointRows(canvas, b.endpoint.Rect().X, b.endpoint.Rect().Y, b.endpoint.Rect().Width, hostFormRowHeight)
+	state.paintHostEndpointRows(canvas)
 	state.paintHostGroupPicker(canvas, b.group.Rect())
 	state.paintHostTags(canvas, b.tags.Rect())
 	state.paintHostIconChoice(canvas, b.iconField.Rect())
@@ -2879,7 +2878,7 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	}
 	if ssh {
 		state.paintHostJumpRow(canvas, b.jump.Rect())
-		state.paintAdvancedSection(canvas, b.advanced.Rect())
+		state.paintAdvancedSection(canvas)
 	}
 	// The choices are the page's controls: keep the option the tab ring reaches
 	// in the form's stops, by the identity its paint reported.

@@ -49,6 +49,19 @@ type hostFormBody struct {
 	iconField, colorField, transfer, proxy, jump, advanced ui.Box
 	vncRows                                                ui.Box
 	flow, algo                                             ui.Box
+	// endpointSlots are the rows the endpoint block declared for its fields.
+	endpointSlots hostEndpointSlots
+	// advancedHeader and advancedHeaderIcon are the row that opens the Advanced
+	// section and the chevron it paints, both declared by the page.
+	advancedHeader, advancedHeaderIcon ui.Box
+}
+
+// hostEndpointSlots is the endpoint block's declared geometry, by the role the
+// painter gives each slot. A role the current protocol does not use aliases a
+// slot that exists, so the event pass of a protocol change can still paint the
+// protocol now in effect without a box of its own.
+type hostEndpointSlots struct {
+	address, picker, second, password, third, authentication, identity, passphrase ui.Box
 }
 
 type hostFormStop struct {

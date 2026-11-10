@@ -544,7 +544,9 @@ type State struct {
 	sessionImport     sessionImportPreview
 	mobaEncoding      mobaEncodingPrompt
 	knownHosts        knownHostsView
-	partLayout        ui.View // a host card or a group header painted into a paint-time rectangle
+	// partLayout lays out the proxy and jump summary rows, which still need the
+	// control rectangle components.BeginField.Paint returns at paint time.
+	partLayout ui.View
 	// selectedWorkspaceTemplateID is the template the library will apply next.
 	// It is view state only and is not persisted.
 	selectedWorkspaceTemplateID   string
@@ -854,7 +856,14 @@ type State struct {
 	filesRowIcons []ui.Box
 
 	// area: keychain, palette, import and the rest
-	hostGridItems []hostGridItem
+	// hostGridPaint and hostGridDrawers are the card grid's declaration: the
+	// reorder surface around its items and the reusable painters of each item.
+	hostGridPaint       hostGridPaintState
+	hostGridDrawers     []*hostGridDrawer
+	hostGridDrawerCount int
+	// hostGridInner lays out one card or group header inside the element that
+	// declared its hit, so the grid paints its items in the page, not after it.
+	hostGridInner ui.View
 	// dev is the development-only component gallery's state; a release build
 	// keeps none of it (see debug.go and debug_release.go).
 	dev devState
