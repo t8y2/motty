@@ -92,6 +92,7 @@ func (state *State) applyTabOrientation() {
 	state.tabStrip = tabStrip{vertical: state.tabOrientation == tabsVertical}
 	state.chrome.geometry.valid = false
 	state.verticalTabs.over, state.verticalTabs.barDrag = false, false
+	state.windowBarScroll = windowBarScroll{}
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
 }

@@ -281,6 +281,7 @@ type Messages struct {
 	VerticalTabsPin                        string
 	VerticalTabsAutoHide                   string
 	VerticalTabsScrollbar                  string
+	TabStripScrollbar                      string
 	SettingsNetworkProxy                   string
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string

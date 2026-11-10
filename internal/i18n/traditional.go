@@ -246,6 +246,7 @@ var TraditionalMessages = Messages{
 	VerticalTabsPin:                        "固定展開分頁列",
 	VerticalTabsAutoHide:                   "自動收起分頁列",
 	VerticalTabsScrollbar:                  "工作階段清單捲軸",
+	TabStripScrollbar:                      "工作階段分頁列捲軸",
 	SettingsNetworkProxy:                   "本機終端機代理",
 	SettingsNetworkProxyDescription:        "預設不設定，終端機沿用繼承的環境；跟隨系統時按系統代理設定 HTTP_PROXY 等變數。對新增和重新連線的終端機生效，WSL 除外。",
 	SettingsNetworkProxySystem:             "跟隨系統",

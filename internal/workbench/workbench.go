@@ -457,6 +457,7 @@ type State struct {
 	// workspacePaneTabLabels is the tab strip's labels, reused every frame.
 	workspacePaneTabLabels []string
 	tabStrip               tabStrip
+	windowBarScroll        windowBarScroll
 	tabOrientation         tabOrientation
 	tabNumbers             bool // each tab shows its place number next to the name
 	verticalTabs           verticalTabs
@@ -2192,6 +2193,12 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		defer func() { outcome.Repaint = true }()
 	}
 	if result, handled := state.verticalTabsScrollPointer(event); handled {
+		return result
+	}
+	if state.trackWindowBarScroll(event) {
+		defer func() { outcome.Repaint = true }()
+	}
+	if result, handled := state.windowBarScrollPointer(event); handled {
 		return result
 	}
 	if result := state.toolbarSettingsPointer(event); result.Handled {
