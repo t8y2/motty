@@ -185,14 +185,15 @@ jobs:
   # ways comes within ten percent of its ideal, and the per-shard checkout and
   # toolchain make a sixth shard cheaper than its wall-clock gain.
   #
-  # The two other Windows checks ride on the first shard instead of a job of
-  # their own. They are a checkout and a toolchain plus thirteen seconds of
-  # tests, so a separate runner bought nothing but a sixth Windows machine to
-  # wait for; here they run before the workbench tests that would otherwise be
-  # the only thing this runner did. The remote-tools tests build only on
-  # Windows and -short skips the real CIM query, which needs a live host, and
-  # the completion catalog and ssh_config parser check the CRLF checkout this
-  # job makes anyway.
+  # The other Windows checks ride on the first shard instead of a job of their
+  # own. They are a checkout and a toolchain plus a few seconds of tests, so a
+  # separate runner bought nothing but a sixth Windows machine to wait for;
+  # here they run before the workbench tests that would otherwise be the only
+  # thing this runner did. The remote-tools tests build only on Windows and
+  # -short skips the real CIM query, which needs a live host. The localshell
+  # environment tests run separately from the package's broader integration
+  # suite, which has unrelated host path expectations. The completion catalog
+  # and ssh_config parser check the CRLF checkout this job makes anyway.
   #
   # The skips are allocation and steady-paint budgets (#272): they count
   # allocations per paint and compare timings, so a hosted runner answers
@@ -253,6 +254,10 @@ jobs:
         if: matrix.shard == 0
         working-directory: motty
         run: go test ./internal/completion ./internal/sshconfig -count=1
+      - name: Test Windows user environment refresh
+        if: matrix.shard == 0
+        working-directory: motty
+        run: go test ./internal/localshell -count=1 -run '^TestWindows(EnvironmentMerge|LocalShellRefreshes|ShellsReceive)'
       - name: Test the workbench
         shell: bash
         working-directory: motty

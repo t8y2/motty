@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"sync"
 	"unsafe"
@@ -91,19 +92,13 @@ func startBackend(config Config) (backend, error) {
 			return fail(err)
 		}
 	}
-	environment := append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
+	environment := refreshWindowsEnvironment()
+	environment = mergeWindowsEnvironment(environment,
+		"TERM=xterm-256color",
+		"COLORTERM=truecolor",
+	)
 	for _, entry := range config.Env {
-		key, _, _ := strings.Cut(entry, "=")
-		// Windows environment names are case-insensitive. An overridden PROMPT
-		// must replace the inherited entry, rather than create ambiguous twins.
-		filtered := environment[:0]
-		for _, inherited := range environment {
-			name, _, _ := strings.Cut(inherited, "=")
-			if !strings.EqualFold(name, key) {
-				filtered = append(filtered, inherited)
-			}
-		}
-		environment = append(filtered, entry)
+		environment = mergeWindowsEnvironment(environment, entry)
 	}
 	block, err := environmentBlock(environment)
 	if err != nil {
@@ -166,6 +161,50 @@ func startBackend(config Config) (backend, error) {
 	}, nil
 }
 
+// refreshWindowsEnvironment uses the current user's persisted environment,
+// while retaining variables inherited from the process that launched Motty.
+// A desktop application can stay resident while the user changes Environment
+// Variables; os.Environ alone would keep the snapshot from when it first
+// started. CreateEnvironmentBlock rebuilds that snapshot for every new shell,
+// so cmd, PowerShell and Git Bash all see current user variables without
+// restarting Motty.
+func refreshWindowsEnvironment() []string {
+	environment, err := windows.GetCurrentProcessToken().Environ(true)
+	if err == nil {
+		return environment
+	}
+	return os.Environ()
+}
+
+// mergeWindowsEnvironment applies entries in order, replacing an earlier value
+// for the same case-insensitive name. Windows names the drive-current-directory
+// entries with a leading '=' (for example =C:=C:\work), so their name extends
+// through the next '='.
+func mergeWindowsEnvironment(environment []string, entries ...string) []string {
+	for _, entry := range entries {
+		name := environmentName(entry)
+		filtered := environment[:0]
+		for _, inherited := range environment {
+			if !strings.EqualFold(environmentName(inherited), name) {
+				filtered = append(filtered, inherited)
+			}
+		}
+		environment = append(filtered, entry)
+	}
+	return environment
+}
+
+func environmentName(entry string) string {
+	offset := 0
+	if strings.HasPrefix(entry, "=") {
+		offset = 1
+	}
+	if cut := strings.IndexByte(entry[offset:], '='); cut >= 0 {
+		return entry[:offset+cut]
+	}
+	return entry
+}
+
 // consoleIO is the two pipe ends of a pseudo console as one stream.
 type consoleIO struct {
 	output, input *os.File
@@ -198,6 +237,9 @@ func defaultShell() string {
 
 // environmentBlock is the UTF-16, double-NUL-terminated block CreateProcess takes.
 func environmentBlock(environment []string) ([]uint16, error) {
+	slices.SortFunc(environment, func(left, right string) int {
+		return strings.Compare(strings.ToLower(environmentName(left)), strings.ToLower(environmentName(right)))
+	})
 	var block []uint16
 	for _, entry := range environment {
 		if strings.IndexByte(entry, 0) >= 0 {
