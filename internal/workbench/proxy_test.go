@@ -47,7 +47,7 @@ func TestJumpChainPersistsAndReachesTheConnectionOutermostFirst(t *testing.T) {
 		t.Fatalf("default route = %+v", route)
 	}
 	addProxyRoute(t, first, first.hosts[1].ID, first.hosts[2].ID)
-	if first.proxies[0].label != "Production → Staging → Router" || first.proxies[0].cells[3] != "prod.example.com → staging.example.com → 192.168.1.1" {
+	if first.proxies[0].label != "Router → Staging → Production" || first.proxies[0].cells[3] != "192.168.1.1 → staging.example.com → prod.example.com" {
 		t.Fatalf("expanded route = %+v", first.proxies[0])
 	}
 
@@ -62,7 +62,7 @@ func TestJumpChainPersistsAndReachesTheConnectionOutermostFirst(t *testing.T) {
 	target, _ := second.hostByID(restored.TargetID)
 	inner, _ := second.hostByID(restored.JumpID)
 	outer := second.hosts[2]
-	if target.Label != "Production" || inner.Label != "Staging" || restored.label != "Production → Staging → Router" {
+	if target.Label != "Production" || inner.Label != "Staging" || restored.label != "Router → Staging → Production" {
 		t.Fatalf("restored route=%+v target=%+v inner=%+v", restored, target, inner)
 	}
 
@@ -143,7 +143,7 @@ func TestStoppedOuterJumpShortensTheConnectionButKeepsTheConfiguredRoute(t *test
 	if !valid || len(chain) != 1 || chain[0].ID != state.hosts[1].ID {
 		t.Fatalf("running chain = %+v, valid=%t", chain, valid)
 	}
-	if state.proxies[0].label != "Production → Staging → Router" || state.proxies[1].cells[2] != state.messages.ProxyStopped {
+	if state.proxies[0].label != "Router → Staging → Production" || state.proxies[1].cells[2] != state.messages.ProxyStopped {
 		t.Fatalf("configured routes = %+v", state.proxies)
 	}
 
@@ -201,7 +201,7 @@ func TestIndependentJumpRoutesCanShareAJumpHost(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addProxyRoute(t, state, state.hosts[0].ID, state.hosts[1].ID)
 	addProxyRoute(t, state, state.hosts[2].ID, state.hosts[1].ID)
-	if len(state.proxies) != 2 || state.proxies[1].label != "Router → Staging" {
+	if len(state.proxies) != 2 || state.proxies[1].label != "Staging → Router" {
 		t.Fatalf("independent routes = %+v", state.proxies)
 	}
 }
@@ -219,7 +219,7 @@ func TestRestoreJumpRoutesSkipsMissingAndCycleClosingEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := newTestState(t, options)
-	if len(state.proxies) != 1 || state.proxies[0].label != "Production → Staging" {
+	if len(state.proxies) != 1 || state.proxies[0].label != "Staging → Production" {
 		t.Fatalf("restored routes = %+v", state.proxies)
 	}
 }
