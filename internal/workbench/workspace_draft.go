@@ -845,8 +845,9 @@ func (state *State) paintWorkspaceDraftGroup(canvas *gfx.Canvas, group workspace
 	count := fmt.Sprintf("(%d)", group.count)
 	countWidth := canvas.TextWidth(count, 12)
 	// The count follows the name, like the sidebar's group headers, and a long
-	// name gives way to it.
-	labelWidth := min(canvas.TextWidth(group.label, 13), max(0, right-x-countWidth-6))
+	// name gives way to it. The name is measured at the weight it is drawn at,
+	// the one elide budgets against.
+	labelWidth := min(canvas.TextWidthWeight(group.label, 13, gfx.WeightSemibold), max(0, right-x-countWidth-6))
 	monitorLabel(canvas, elide(canvas, group.label, 13, gfx.WeightSemibold, labelWidth), gfx.Rect{X: x, Y: bounds.Y, Width: labelWidth, Height: bounds.Height}, 13, pal.text, gfx.WeightSemibold)
 	monitorLabel(canvas, count, gfx.Rect{X: x + labelWidth + 6, Y: bounds.Y, Width: countWidth + 4, Height: bounds.Height}, 12, pal.faint, gfx.WeightRegular)
 }
