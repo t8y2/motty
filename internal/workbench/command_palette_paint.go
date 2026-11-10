@@ -68,10 +68,10 @@ func (state *State) declareCommandPalette(c ui.C) {
 	// The palette is a dialog's peer: on its own layer it paints over a terminal's
 	// native view and over the page behind it.
 	ui.PopupLayer(c, dialogLayer)
-	// The palette's Dialog is declared here without a Page of its own: the
-	// workbench page names its controls, and the Dialog's explicit layer keeps its
-	// paint above the assistant drawer's.
-	dialog := c.Frame().Dialog(ui.DialogSpec{
+	// The palette's Dialog is declared in the workbench page: the page names its
+	// controls, and the explicit layer keeps its paint above the assistant
+	// drawer's.
+	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Width: commandPaletteWidth, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitCommandPaletteDismiss, CloseID: hitCommandPaletteClose,
 		InitialFocusID: hitCommandPaletteSearch,
