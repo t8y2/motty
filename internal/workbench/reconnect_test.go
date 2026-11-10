@@ -141,6 +141,14 @@ func TestAFirstDialFailureIsRetriedUnderThePolicy(t *testing.T) {
 			if len(world.conns) != 1 {
 				t.Fatalf("conns = %d, want the failed attempt alone", len(world.conns))
 			}
+			if test.policy == reconnectOff {
+				// "off" must not narrate a reconnect lifecycle it never ran.
+				for _, event := range session.connectionStory {
+					if event.kind == connectionEventReconnectStopped || event.kind == connectionEventReconnectWaiting {
+						t.Fatalf("off policy recorded %v after a dial failure", event.kind)
+					}
+				}
+			}
 		})
 	}
 }

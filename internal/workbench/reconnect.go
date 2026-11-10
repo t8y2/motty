@@ -126,9 +126,12 @@ func (state *State) updateReconnect(session *Session, status sshconn.Status) {
 		// A first attempt that never reached the server is retried as well. The
 		// moment a network path changes, the retry that follows it fails once
 		// before the new path is ready, and without this the policy would have
-		// spent its whole budget on nothing. The limit is queueReconnect's, so
-		// "off" still retries nothing.
-		state.queueReconnect(session)
+		// spent its whole budget on nothing. The limit is queueReconnect's, and
+		// like PhaseClosed above, "off" skips the call so a dial failure under
+		// it logs no stopped-reconnect event.
+		if state.connectionReconnect != reconnectOff {
+			state.queueReconnect(session)
+		}
 	}
 }
 
