@@ -606,18 +606,23 @@ type State struct {
 	networkProxy        networkProxyMode
 	lookupSystemProxy   func() systemproxy.Settings
 	stopAppearanceWatch func()
-	terminalOption      terminalOptionMode
-	recentConnectSort   bool
-	recentConnections   map[string]time.Time
-	localShell          string // executable on this computer; empty uses the platform default
-	localStart          localStartPolicy
-	lastLocalDirectory  string // where a local shell last was; a new local terminal starts there when no local tab is in front
-	localShellMenu      localShellSelect
-	editorMenu          editorSelect
-	terminalFontSize    float32
-	terminalFontFace    gfx.MonoFace
-	terminalLineHeight  lineHeight
-	terminalScrollback  int
+	stopLinkWatch       func()
+	// linkPending and linkUp carry the network watcher's last report from its
+	// goroutine to Wake, which is where sessions are touched.
+	linkPending        atomic.Bool
+	linkUp             atomic.Bool
+	terminalOption     terminalOptionMode
+	recentConnectSort  bool
+	recentConnections  map[string]time.Time
+	localShell         string // executable on this computer; empty uses the platform default
+	localStart         localStartPolicy
+	lastLocalDirectory string // where a local shell last was; a new local terminal starts there when no local tab is in front
+	localShellMenu     localShellSelect
+	editorMenu         editorSelect
+	terminalFontSize   float32
+	terminalFontFace   gfx.MonoFace
+	terminalLineHeight lineHeight
+	terminalScrollback int
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
 	textScale           textScale
@@ -956,6 +961,10 @@ func (state *State) Close() {
 	if state.stopAppearanceWatch != nil {
 		state.stopAppearanceWatch()
 	}
+	if state.stopLinkWatch != nil {
+		state.stopLinkWatch()
+		state.stopLinkWatch = nil
+	}
 	state.closeWindowChrome()
 	state.closeAI()
 	state.closeHistory()
@@ -1106,6 +1115,9 @@ func New(options Options) *State {
 	}
 	state.sshSyncStart()
 	state.offerDevelopmentImport()
+	// Last, so a change that arrives while the window is still starting finds
+	// every session it may need to ask about already restored.
+	state.watchNetworkChanges()
 	return state
 }
 

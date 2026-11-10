@@ -13,6 +13,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/linkwatch"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 )
@@ -46,6 +47,10 @@ type fakeConn struct {
 	exec              func(context.Context, string, int) (sshconn.ExecResult, error)
 	streamCommand     func(context.Context, string, int, func([]byte) bool) error
 	commandCalls      []string
+	// verifies counts link checks, and verifyErr is what they answer. A link
+	// change asks every established connection; the fake lets a test see that.
+	verifies  int
+	verifyErr error
 }
 
 type fakeDialCall struct {
@@ -59,6 +64,21 @@ type fakeListenCall struct {
 }
 
 // OpenShell hands out a scripted shell, as a connected server would.
+// Verify answers a link check without touching a network, as a connection that
+// survived the change would.
+func (fake *fakeConn) Verify(context.Context) error {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	fake.verifies++
+	return fake.verifyErr
+}
+
+func (fake *fakeConn) verifyCount() int {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	return fake.verifies
+}
+
 func (fake *fakeConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
@@ -338,6 +358,7 @@ func newWorld(t testing.TB) (*world, Options) {
 		PreferredLanguages:    func() []string { return nil },
 		SystemAppearance:      func() app.Appearance { return app.AppearanceUnknown },
 		WatchSystemAppearance: func(func()) func() { return func() {} },
+		WatchNetworkChanges:   func(func(linkwatch.Change)) func() { return func() {} },
 		SetNativeAppearance:   func(app.Appearance) {},
 		Dial: func(config sshconn.Config) Connection {
 			fake := &fakeConn{}
