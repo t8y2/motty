@@ -48,6 +48,7 @@ type savedState struct {
 	NetworkProxy               string             `json:"network_proxy,omitempty"`
 	TerminalOption             string             `json:"terminalOption,omitempty"`
 	LocalShell                 string             `json:"local_shell,omitempty"`
+	HiddenShells               []string           `json:"hidden_shells,omitempty"`
 	LocalStart                 string             `json:"local_start,omitempty"`
 	LastLocalDirectory         string             `json:"last_local_directory,omitempty"`
 	SSHAgent                   string             `json:"ssh_agent,omitempty"`
@@ -476,6 +477,7 @@ func (state *State) snapshot() savedState {
 		NetworkProxy:               state.networkProxy.String(),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
+		HiddenShells:               slices.Clone(state.hiddenShells),
 		LocalStart:                 state.localStart.String(),
 		LastLocalDirectory:         state.lastLocalDirectory,
 		RecentConnectSort:          state.recentConnectSort,
@@ -942,6 +944,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
 	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
 	state.localShell = saved.LocalShell
+	state.hiddenShells = cleanShellPaths(saved.HiddenShells)
 	state.recentConnectSort = saved.RecentConnectSort
 	state.recentConnections = maps.Clone(saved.RecentConnections)
 	state.sessionLogsOff = saved.SessionLogsOff

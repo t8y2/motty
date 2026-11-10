@@ -267,6 +267,8 @@ var ChineseMessages = Messages{
 	SettingsLocalShellEmpty:                "未检测到可用 Shell",
 	LocalShellDefault:                      "默认",
 	LocalShellChoose:                       "选择 Shell",
+	ShellEyeHide:                           "从各列表中隐藏",
+	ShellEyeShow:                           "在各列表中显示",
 	SettingsTerminalFontSize:               "终端字号",
 	SettingsTerminalFontSizeDescription:    "所有标签页一起调整。",
 	SettingsTerminalFontFamily:             "终端字体",

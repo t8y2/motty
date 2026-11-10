@@ -267,6 +267,8 @@ var EnglishMessages = Messages{
 	SettingsLocalShellEmpty:                "No shells found",
 	LocalShellDefault:                      "Default",
 	LocalShellChoose:                       "Choose a shell",
+	ShellEyeHide:                           "Hide from the lists",
+	ShellEyeShow:                           "Show in the lists",
 	SettingsTerminalFontSize:               "Terminal font size",
 	SettingsTerminalFontSizeDescription:    "Changes every tab at once.",
 	SettingsTerminalFontFamily:             "Terminal font family",

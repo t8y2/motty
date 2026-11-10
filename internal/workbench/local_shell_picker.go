@@ -75,6 +75,9 @@ func (state *State) paintLocalShellPicker(canvas *gfx.Canvas, viewport gfx.Rect)
 	icon := lucideIcons[iconTerminal]
 	var rows menuRows
 	for index, choice := range menuState.choices {
+		if state.shellHidden(choice) {
+			continue // hidden here, still listed in the setting itself
+		}
 		item := components.ContextMenuItem{ID: hitLocalShellPickerItems.At(index), Label: choice.Name, Icon: icon}
 		if index == selected {
 			item.Shortcut = m.LocalShellDefault

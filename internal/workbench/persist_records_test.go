@@ -40,6 +40,9 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"sftp_window_order": true, "sftp_open_mode": true, "sftp_directory_tree": true, "custom_editor_path": true,
 		"toolbars":    true,
 		"local_shell": true, "local_start": true, "last_local_directory": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
+		// The shells a computer hides from its pickers name this machine's own
+		// programs and distributions; another device hides its own.
+		"hidden_shells": true,
 		// What a launch opens is chosen per computer: the shells and hosts of
 		// this machine, not a preference to carry across devices.
 		"startup_disabled": true, "startup_local": true, "startup_shell": true, "startup_hosts": true, "startup_no_reuse": true,

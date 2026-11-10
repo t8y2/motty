@@ -88,8 +88,11 @@ type connectPickerCandidate struct {
 func (state *State) eachConnectPickerCandidate(add func(connectPickerCandidate)) {
 	local := localHost(state.messages.LocalTerminalTitle)
 	add(connectPickerCandidate{label: state.messages.LocalTerminal, detail: local.Address, target: hitConnectPickLocal, key: "local-terminal"})
-	if choices := state.localShellMenu.choices; localShellSettingVisible() && len(choices) > 1 {
+	if choices := state.localShellMenu.choices; localShellSettingVisible() && state.visibleShellCount() > 1 {
 		for index, choice := range choices {
+			if state.shellHidden(choice) {
+				continue
+			}
 			add(connectPickerCandidate{label: state.messages.LocalTerminal + " · " + choice.Name, detail: local.Address, target: hitConnectPickShells.At(index), key: "local-terminal", searchOnly: true})
 		}
 	}
