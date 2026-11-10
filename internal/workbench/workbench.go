@@ -2156,7 +2156,10 @@ func (state *State) hostForRow(id gfx.ID) (Host, bool) {
 // double click on a host row connects to it.
 func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if state.noteExit != nil {
-		return gfx.EventResult{Handled: true, Repaint: true}
+		if isNoteExitHit(event.Target) {
+			return gfx.EventResult{}
+		}
+		return gfx.EventResult{Handled: true}
 	}
 	defer state.afterEvent(&outcome)
 	if result := state.notesPointer(event); result.Handled {

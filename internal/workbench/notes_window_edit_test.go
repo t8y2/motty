@@ -238,6 +238,59 @@ func TestNoteCloseFailureRetryCancelAndDiscard(t *testing.T) {
 	}
 }
 
+func TestNoteExitPointerAllowsClicks(t *testing.T) {
+	s := newTestState(t, testOptions(t))
+	s.activeSection = sectionNotes
+	s.notes.list = []savedNote{{ID: "a", Body: "saved"}}
+	s.selectNote("a")
+	s.pauseSave = 1
+	s.notes.body.Insert(" pending")
+	allowed := false
+	if !s.ConfirmDocumentClose(func() { allowed = true }) || allowed || s.noteExit == nil {
+		t.Fatal("failed notes did not block quit")
+	}
+
+	for _, target := range []gfx.ID{hitNoteExitCancel, hitNoteExitRetry, hitNoteExitDiscard} {
+		down := s.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target})
+		up := s.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: target})
+		if up.Handled {
+			t.Fatalf("PointerUp on %v was handled, preventing click delivery", target)
+		}
+		if down.Handled {
+			t.Fatalf("PointerDown on %v was handled, preventing focus/click interaction", target)
+		}
+	}
+
+	// Verify background click is properly blocked while dialog is open
+	background := s.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitNotes})
+	if !background.Handled {
+		t.Fatal("background pointer event was not blocked during noteExit")
+	}
+
+	// Verify Click dismisses noteExit
+	s.Click(hitNoteExitCancel)
+	if s.noteExit != nil {
+		t.Fatal("click on hitNoteExitCancel did not dismiss noteExit")
+	}
+
+	// Test Retry and Discard clicks
+	s.ConfirmDocumentClose(func() { allowed = true })
+	s.pauseSave = 0
+	s.Click(hitNoteExitRetry)
+	if s.noteExit != nil || !allowed || s.hasUnsavedNotes() {
+		t.Fatal("click on hitNoteExitRetry did not retry and close")
+	}
+
+	s.pauseSave = 1
+	s.notes.body.Insert(" discard2")
+	allowed = false
+	s.ConfirmDocumentClose(func() { allowed = true })
+	s.Click(hitNoteExitDiscard)
+	if s.noteExit != nil || !allowed || s.hasUnsavedNotes() {
+		t.Fatal("click on hitNoteExitDiscard did not discard and close")
+	}
+}
+
 func TestNoteWindowAssociationsFollowCatalogChanges(t *testing.T) {
 	s := newTestState(t, testOptions(t))
 	s.notes.list = []savedNote{{ID: "a", Tags: []string{"ordinary", encodeNoteHostGroup("A/DB")}}}
