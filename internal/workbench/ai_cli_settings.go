@@ -44,49 +44,6 @@ func (cfg *aiSettingsUI) bindAIFormFields() {
 	cfg.formAPIKey.Bind(&cfg.apiKey)
 }
 
-// ensureAIFormPage makes the page the provider form is declared in. Its fields
-// are bound once to the editors the application reads, so typing reaches them
-// with the platform's editing, input methods and clipboard.
-func (state *State) ensureAIFormPage() *ui.Page {
-	cfg := &state.ai.cfg
-	if cfg.formPage != nil {
-		return cfg.formPage
-	}
-	cfg.formPage = ui.NewPage(ui.PageConfig{Root: aiFormRoot, Theme: &state.theme})
-	cfg.bindAIFormFields()
-	return cfg.formPage
-}
-
-// paintAIProviderForm paints the provider dialog. The form inside it is one
-// page, whatever kind of provider it is adding or editing.
-func (state *State) paintAIProviderForm(canvas *gfx.Canvas, viewport gfx.Rect) {
-	theme := state.Theme()
-	cfg := &state.ai.cfg
-	title, description, submit, height := state.aiProviderFormGeometry()
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, CloseID: hitAISetFormClose,
-		InitialFocusID: hitAISetFormName, ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: withError(height, cfg.formErr),
-	})
-	layout := dialog.Begin(title, description)
-	page := state.ensureAIFormPage()
-	page.Draw(canvas, layout.Body, state.declareAIProviderForm)
-	// An open preset list lies over the fields under it, so it is painted after
-	// the page; closed, the list paints itself in its place and Tab reaches it
-	// before the fields.
-	if cfg.presetOpen && cfg.editID == "" {
-		state.paintAIPresetField(canvas, cfg.formPreset.Rect())
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitAISetFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitAISetFormSubmit, Label: submit},
-	)
-	dialog.End()
-}
-
-// aiProviderFormGeometry is the form's title, description, submit label and the
-// body height its fields need, by which kind of provider it is adding or
-// editing.
 func (state *State) aiProviderFormGeometry() (title, description, submit string, height float32) {
 	m := state.messages.AISettings
 	cfg := &state.ai.cfg
@@ -127,9 +84,6 @@ func (state *State) aiProviderFormGeometry() (title, description, submit string,
 	return title, description, submit, height
 }
 
-// declareAIProviderFormDialog declares the provider form in the window page.
-// Its fields, choices and its preset list are page controls, so the page takes
-// their keys, keeps the focus order and gives the platform their editors.
 func (state *State) declareAIProviderFormDialog(c ui.C) {
 	if !state.aiSettingsVisible() || state.ai.cfg.dialog != aiDialogProvider {
 		return

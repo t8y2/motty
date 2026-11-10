@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/reasoning"
 	"motty/internal/ai/store"
@@ -289,8 +290,7 @@ func TestAIModelReasoningManualOverride(t *testing.T) {
 	// 6. 验证渲染弹窗不发生 panic
 	state.Click(hitAISetModelReasoning.At(0))
 	clickSettingsChoice(t, state, state.messages.AISettings.ModelReasoningEnable)
-	canvas := &gfx.Canvas{}
-	state.paintAIDialogs(canvas, gfx.Rect{Width: 800, Height: 600})
+	drawDialogPage(t, state, func(c ui.C) { state.declareAIDialogs(c) })
 	state.Click(hitAISetReasoningCancel)
 	if state.ai.cfg.dialog != aiDialogNone {
 		t.Fatalf("expected dialog to close after cancel")

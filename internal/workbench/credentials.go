@@ -361,52 +361,6 @@ func (state *State) credentialField(c ui.C, id gfx.ID, field *ui.Field, title, p
 	})
 }
 
-func (state *State) paintCredentialDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, pal, theme := state.messages.Credentials, state.pal, state.Theme()
-	form := &state.credentialForm
-	title := m.DialogAddTitle
-	if form.editing != "" {
-		title = m.DialogEditTitle
-	}
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitCredentialClose, InitialFocusID: hitCredentialName,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: withError(float32(68*2+8), form.dialogError),
-	})
-	layout := dialog.Begin(title, "")
-	var name, password ui.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		name = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		password = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		if form.dialogError != "" {
-			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
-		}
-	})
-	f.End()
-	field := func(box ui.Box, id gfx.ID, label, placeholder, value string, secret bool) {
-		content := components.BeginField(canvas, theme, box.Rect()).Paint(label, "", "")
-		focused := canvas.Focused() == id
-		state.paintSecretInput(canvas, content, components.InputSnapshot{
-			ID: id, Label: label, Value: value, Placeholder: placeholder, Secure: secret,
-			Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
-		})
-	}
-	field(name, hitCredentialName, m.Name, m.NamePlaceholder, form.name.String(), false)
-	placeholder := ""
-	if form.editing != "" {
-		placeholder = m.PasswordKeep
-	}
-	field(password, hitCredentialPassword, m.Password, placeholder, form.password.String(), true)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitCredentialCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitCredentialSubmit, Label: m.Save},
-	)
-	dialog.End()
-}
-
-// paintCredentialSettings is the Shared passwords group of Settings.
 func (state *State) paintCredentialSettings(page *settingsPage) {
 	m := state.messages.Credentials
 	page.group(m.Group, func() {

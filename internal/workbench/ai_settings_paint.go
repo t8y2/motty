@@ -699,46 +699,6 @@ func (page *settingsPage) mcpAccessWarning(message string) {
 	})
 }
 
-// paintAIDialogs paints the section's open dialog above everything else.
-func (state *State) paintAIDialogs(canvas *gfx.Canvas, viewport gfx.Rect) {
-	if !state.aiSettingsVisible() {
-		return
-	}
-	switch state.ai.cfg.dialog {
-	case aiDialogCLILogin:
-		state.paintAICLILogin(canvas, viewport)
-	case aiDialogProvider:
-		state.paintAIProviderForm(canvas, viewport)
-	case aiDialogDelete:
-		provider, _ := state.aiProviderByID(state.ai.cfg.deleteID)
-		state.paintAIConfirm(canvas, viewport, state.messages.AISettings.DeleteTitle,
-			fmt.Sprintf(state.messages.AISettings.DeleteBodyFmt, provider.Name), state.messages.AISettings.DeleteConfirm)
-	case aiDialogClear:
-		m := state.messages.AISettings
-		state.paintAIConfirm(canvas, viewport, m.ClearTitle, m.ClearBody, m.ClearConfirm)
-	case aiDialogMCPAllowAll:
-		m := state.messages.AISettings
-		body := m.MCPAllowAllBody
-		if state.ai.cfg.notice != "" {
-			body += "\n\n" + state.ai.cfg.notice
-		}
-		state.paintAIConfirm(canvas, viewport, m.MCPAllowAllTitle, body, m.MCPAllowAllConfirm)
-	case aiDialogAgentAllowAll:
-		m := state.messages.AISettings
-		body := m.AgentAllowAllBody
-		if state.ai.cfg.notice != "" {
-			body += "\n\n" + state.ai.cfg.notice
-		}
-		state.paintAIConfirm(canvas, viewport, m.MCPAllowAllTitle, body, m.MCPAllowAllConfirm)
-	case aiDialogImport:
-		state.paintAIImport(canvas, viewport)
-	case aiDialogProbe:
-		state.paintAIProbeDialog(canvas, viewport)
-	case aiDialogModelReasoning:
-		state.paintAIModelReasoningDialog(canvas, viewport)
-	}
-}
-
 // declareAIDialogs declares the assistant's open dialog in the window page.
 // The section's controls keep their identities and visuals; the dialog shell,
 // its fields, its choices and its buttons are the page's.
@@ -883,37 +843,6 @@ func (state *State) declareAIReasoning(c ui.C) {
 	}
 }
 
-func (state *State) paintAIConfirm(canvas *gfx.Canvas, viewport gfx.Rect, title, body, action string) {
-	dialog := components.BeginAlertDialog(canvas, state.Theme(), viewport, components.AlertDialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		ActionID: hitAISetConfirmAction, CancelID: hitAISetConfirmCancel,
-		ContentSize: gfx.Size{Width: 480}, ActionVariant: components.ButtonDestructive,
-		InitialFocusID: hitAISetConfirmCancel,
-	})
-	dialog.Begin(title, body, action, state.messages.Cancel)
-	dialog.End()
-}
-
-func (state *State) paintAIProbeDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages.AISettings, state.Theme()
-	cfg := &state.ai.cfg
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitAISetFormClose, InitialFocusID: hitAISetProbeStart,
-		ContentSize: gfx.Size{Width: 460}, FitBody: true, BodyHeight: 140,
-	})
-	layout := dialog.Begin(m.ProbeDialogTitle, m.ProbeDialogDesc)
-	if cfg.probePage == nil {
-		cfg.probePage = ui.NewPage(ui.PageConfig{Root: aiProbeBodyRoot, Theme: &state.theme})
-	}
-	cfg.probePage.Draw(canvas, layout.Body, state.declareAIProbeBody)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitAISetFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitAISetProbeStart, Label: m.ProbeStartAction},
-	)
-	dialog.End()
-}
-
 // declareAIProbeBody declares the probe dialog's two choices. The concurrency
 // and the timeout are the effective values, so the defaults (4 and 15s) show as
 // chosen before anything was stored.
@@ -935,38 +864,6 @@ func (state *State) declareAIProbeBody(c ui.C) {
 			}
 		})
 	})
-}
-
-func (state *State) paintAIModelReasoningDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages.AISettings, state.Theme()
-	cfg := &state.ai.cfg
-
-	modeHeight := float32(84)
-	presetHeight := float32(0)
-	if cfg.reasoningMode == 1 {
-		presetHeight = 84
-	}
-	bodyHeight := modeHeight + 4
-	if presetHeight > 0 {
-		bodyHeight += presetHeight + 10
-	}
-
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitAISetFormClose, InitialFocusID: hitAISetReasoningSave,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: bodyHeight,
-	})
-	desc := fmt.Sprintf("%s (%s)", m.ModelReasoningDesc, cfg.reasoningModelName)
-	layout := dialog.Begin(m.ModelReasoningTitle, desc)
-	if cfg.reasoningPage == nil {
-		cfg.reasoningPage = ui.NewPage(ui.PageConfig{Root: aiReasoningBodyRoot, Theme: &state.theme})
-	}
-	cfg.reasoningPage.Draw(canvas, layout.Body, state.declareAIReasoningBody)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitAISetReasoningCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitAISetReasoningSave, Label: m.ModelReasoningSave},
-	)
-	dialog.End()
 }
 
 // declareAIReasoningBody declares the reasoning dialog: the mode, and the effort

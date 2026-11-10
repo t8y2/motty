@@ -39,9 +39,6 @@ type workspaceDraft struct {
 	previewContent float32
 	// nameField is the page's handle on the same editor the dialog reads.
 	nameField ui.Field
-	// modePage declares the temporary/fixed switch, and modeView caches its view.
-	modePage *ui.Page
-	modeView func(ui.C)
 }
 
 func (draft *workspaceDraft) reset() {
@@ -396,33 +393,9 @@ func (state *State) workspaceDraftModeName(mode workspaceDraftMode) string {
 	return state.messages.WorkspaceDraftTemporary
 }
 
-// workspaceDraftModeRoot names the draft's temporary/fixed switch in the Tree.
-const workspaceDraftModeRoot = "workspace-draft-mode"
-
 // workspaceDraftModeChoices are the two modes the switch offers; the edit mode
 // has no switch and shows its fields instead.
 var workspaceDraftModeChoices = [...]workspaceDraftMode{workspaceDraftTemporary, workspaceDraftFixed}
-
-// drawWorkspaceDraftMode paints the temporary/fixed switch in its slot. It is a
-// page Choice, so its arrows move between the options.
-func (state *State) drawWorkspaceDraftMode(canvas *gfx.Canvas, bounds gfx.Rect) {
-	draft := &state.workspaceDraft
-	if draft.modePage == nil {
-		draft.modePage = ui.NewPage(ui.PageConfig{Root: workspaceDraftModeRoot, Theme: &state.theme})
-		draft.modeView = state.declareWorkspaceDraftMode
-	}
-	draft.modePage.Draw(canvas, bounds, draft.modeView)
-}
-
-func (state *State) declareWorkspaceDraftMode(c ui.C) {
-	draft := &state.workspaceDraft
-	choice := ui.Choice(c, &draft.mode, workspaceDraftModeChoices[:], state.workspaceDraftModeName).Fill()
-	// Any press on the switch clears the error, including a press on the mode
-	// that is already chosen.
-	if _, clicked := choice.ChosenIndex(); clicked {
-		draft.error = ""
-	}
-}
 
 // declareWorkspaceDraft declares the draft dialog in the window page. The
 // mode switch and the name field are page controls; the preview, the search
@@ -536,63 +509,6 @@ func (state *State) drawWorkspaceDraftRest(canvas *gfx.Canvas, bounds gfx.Rect) 
 		hint, color = draft.error, state.pal.danger
 	}
 	monitorLabel(canvas, elide(canvas, hint, 12, gfx.WeightRegular, bounds.Width), gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height - 22, Width: bounds.Width, Height: 22}, 12, color, gfx.WeightRegular)
-}
-
-func (state *State) paintWorkspaceDraft(canvas *gfx.Canvas, viewport gfx.Rect) {
-	state.paintWorkspaceDraftDialog(canvas, viewport)
-}
-
-func (state *State) paintWorkspaceDraftDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	draft, m, theme := &state.workspaceDraft, state.messages, state.Theme()
-	// The mode switch is a page Choice, which writes the new mode during this
-	// paint. The dialog was laid out from the mode at the start of the paint, so
-	// the rest of the paint reads that same mode; the next paint shows the new
-	// one.
-	mode := draft.mode
-	title, submit := m.WorkspaceDraftTitleTemporary, m.WorkspaceDraftLaunch
-	// The mode switch is a page Choice now, so its segment identities are the
-	// page's and not known here; the temporary draft opens without an initial
-	// focus and the dialog's trap settles it on the first press.
-	var initial gfx.ID
-	description := m.WorkspaceDraftDescription
-	if mode == workspaceDraftFixed {
-		title, submit, initial = m.WorkspaceDraftTitleFixed, m.WorkspaceDraftSave, hitWorkspaceDraftName
-	} else if mode == workspaceDraftEdit {
-		title, submit, initial = m.WorkspaceDraftTitleEdit, m.WorkspaceDraftSaveChanges, hitWorkspaceDraftName
-		description = m.WorkspaceDraftEditDescription
-	}
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitWorkspaceDraftDismiss, CloseID: hitWorkspaceDraftCancel,
-		InitialFocusID: initial, ContentSize: gfx.Size{Width: 860}, FitBody: true,
-		BodyHeight: min(440, max(0, viewport.Height-236)),
-	})
-	layout := dialog.Begin(title, description)
-	body := layout.Body
-	y := body.Y
-	if mode != workspaceDraftEdit {
-		state.drawWorkspaceDraftMode(canvas, gfx.Rect{X: body.X, Y: body.Y, Width: min(300, body.Width), Height: 32})
-		y += 44
-	}
-	if mode == workspaceDraftFixed || mode == workspaceDraftEdit {
-		field := components.BeginField(canvas, theme, gfx.Rect{X: body.X, Y: y, Width: body.Width, Height: 60}).For(hitWorkspaceDraftName)
-		control := field.Paint(m.WorkspaceDraftName, "", "")
-		components.PaintInput(canvas, theme, control, components.InputSnapshot{
-			ID: hitWorkspaceDraftName, Label: m.WorkspaceDraftName,
-			Value: draft.name.String(), Placeholder: m.WorkspaceDraftNamePlaceholder,
-			Focused:         canvas.Focused() == hitWorkspaceDraftName,
-			PlatformEditing: canvas.Focused() == hitWorkspaceDraftName && draft.name.String() != "",
-		})
-		y += 68
-	}
-
-	// The preview sits beside the host list when there is room; compact dialogs
-	// keep one short layout strip above the list and never cover the footer.
-	state.drawWorkspaceDraftRest(canvas, gfx.Rect{X: body.X, Y: y, Width: body.Width, Height: max(0, body.Y+body.Height-y)})
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitWorkspaceDraftCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitWorkspaceDraftSubmit, Label: submit},
-	)
-	dialog.End()
 }
 
 func (state *State) paintWorkspaceDraftLayout(canvas *gfx.Canvas, bounds gfx.Rect, compact bool) {
@@ -711,7 +627,6 @@ func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalWorkspaceDraft || event.Release {
 		return gfx.EventResult{}
 	}
-	draft := &state.workspaceDraft
 	if event.Key == gfx.KeyEscape {
 		if state.workspaceDraft.mode == workspaceDraftEdit {
 			state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(state.workspaceDraft.editID)
@@ -732,12 +647,6 @@ func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {
 	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
 		// The temporary/fixed switch is a page Choice: its arrows are the page's.
 		if result, handled := page.Key(event); handled {
-			return result
-		}
-	}
-	if draft.modePage != nil {
-		// The old dialog body declared its switch in a page of its own.
-		if result, handled := draft.modePage.Key(event); handled {
 			return result
 		}
 	}

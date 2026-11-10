@@ -371,34 +371,6 @@ func (s *State) declareAICLILogin(c ui.C) {
 	}
 }
 
-func (s *State) paintAICLILogin(canvas *gfx.Canvas, viewport gfx.Rect) {
-	login := s.ai.login
-	if login == nil {
-		return
-	}
-	m := s.messages.AISettings
-	height := min(float32(420), max(float32(180), viewport.Height-230))
-	dialog := components.BeginDialog(canvas, s.Theme(), viewport, components.DialogOptions{Layer: dialogLayer, Scope: dialogScope, DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: hitAICLILoginTerminal, ContentSize: gfx.Size{Width: min(float32(920), max(float32(320), viewport.Width-40))}, FitBody: true, BodyHeight: height})
-	layout := dialog.Begin(m.CLIAuthTitle+" · "+login.provider.Name, m.CLIAuthSensitive)
-	area := layout.Body
-	cols := max(20, int(area.Width/max(s.cellWidth, 1)))
-	rows := max(5, int(area.Height/max(s.cellHeight, 1)))
-	if c, r := login.term.screen.Size(); c != cols || r != rows {
-		login.term.screen.Resize(cols, rows)
-		if login.term.shell != nil {
-			login.term.shell.Resize(cols, rows)
-		}
-	}
-	login.geometry = terminalGeometry{area: area, left: area.X, top: area.Y, cols: cols, rows: rows}
-	canvas.Fill(area, s.termPal.terminal)
-	s.paintGridWithID(canvas, &Session{Title: m.CLIAuthTitle, Address: m.CLIAuthTitle, term: login.term}, login.geometry, hitAICLILoginTerminal, true)
-	label := s.messages.Cancel
-	if login.finished {
-		label = m.FormSave
-	}
-	dialog.Actions(layout, components.ButtonAction{ID: hitAISetFormCancel, Label: label, Variant: components.ButtonSecondary})
-	dialog.End()
-}
 func (s *State) paintAICLIAuth(page *settingsPage) {
 	p, ok := s.aiSelectedProvider()
 	if !ok || !store.IsCLIKind(p.Kind) {

@@ -217,45 +217,6 @@ func (state *State) declareWorkspaceSave(c ui.C) {
 	}
 }
 
-func (state *State) paintWorkspaceSaveDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	messages := state.messages
-	save := &state.workspaceSave
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitWorkspaceSaveDismiss, CloseID: hitWorkspaceSaveClose, InitialFocusID: hitWorkspaceSaveName,
-		ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: 92,
-	})
-	description := ""
-	if index, ok := state.workspaceTab(save.workspace); ok {
-		description = fmt.Sprintf(messages.WorkspaceSaveDescriptionFmt, state.tabLabel(state.workspaceTabs[index]),
-			len(state.deck.Panes(save.workspace, nil)))
-	}
-	layout := dialog.Begin(messages.WorkspaceSaveTitle, description)
-	var field ui.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() { field = f.Slot().Height(62) })
-	f.End()
-	beginField := components.BeginField(canvas, state.Theme(), field.Rect())
-	if save.error != "" {
-		beginField = beginField.Invalid()
-	}
-	content := beginField.Paint(messages.WorkspaceDraftName, "", save.error)
-	value := save.name.String()
-	focused := canvas.Focused() == hitWorkspaceSaveName
-	content.Height = 32
-	components.PaintInput(canvas, state.Theme(), content, components.InputSnapshot{
-		ID: hitWorkspaceSaveName, Label: messages.WorkspaceDraftName, Value: value,
-		Placeholder: messages.WorkspaceDraftNamePlaceholder, Focused: focused, PlatformEditing: focused && value != "",
-	})
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitWorkspaceSaveCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitWorkspaceSaveSubmit, Label: messages.WorkspaceDraftSave},
-	)
-	dialog.End()
-}
-
-// workspaceSaveKey keeps the save dialog's keyboard behavior local to it:
-// Escape closes, and Enter submits from either the name field or the button.
 func (state *State) workspaceSaveKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalWorkspaceSave {
 		return gfx.EventResult{}, false

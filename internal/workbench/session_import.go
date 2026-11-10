@@ -416,28 +416,6 @@ func (state *State) declareSessionImportPreview(c ui.C) {
 	}
 }
 
-func (state *State) paintMobaEncoding(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m := state.messages.Tools
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitMobaEncodingCancel, CloseID: hitMobaEncodingClose, InitialFocusID: hitMobaChooseUTF8,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: 52,
-	})
-	layout := dialog.Begin(m.ImportEncodingTitle, m.ImportEncodingBody)
-	content := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	content.Column().Fill().Gap(6).Children(func() {
-		content.Text(fmt.Sprintf(m.ImportEncodingSampleUTF8Fmt, state.mobaEncoding.utf8)).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Ellipsis()
-		content.Text(fmt.Sprintf(m.ImportEncodingSampleGBFmt, state.mobaEncoding.gb)).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Ellipsis()
-	})
-	content.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitMobaEncodingCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitMobaChooseUTF8, Label: "UTF-8", Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitMobaChooseGB18030, Label: "GB18030"},
-	)
-	dialog.End()
-}
-
 func (state *State) sessionImportPasswords(result sessionimport.Result, plan hostImportPlan) ([]sessionImportPassword, int) {
 	hosts := make(map[hostConnection]Host, len(state.hosts)+len(plan.hosts))
 	for _, host := range state.hosts {
@@ -549,36 +527,6 @@ func (state *State) clickSessionImportPreview(id gfx.ID) {
 	}
 }
 
-func (state *State) paintSessionImportPreview(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m := state.messages.Tools
-	bodyHeight := float32(0)
-	if state.dialogError != "" {
-		bodyHeight = 24
-	}
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitImportPreviewCancel, CloseID: hitImportPreviewClose, InitialFocusID: hitImportConnectionsOnly,
-		ContentSize: gfx.Size{Width: 550}, FitBody: true, BodyHeight: bodyHeight,
-	})
-	layout := dialog.Begin(m.ImportPasswordPreviewTitle,
-		fmt.Sprintf(m.ImportPasswordPreviewBodyFmt, len(state.sessionImport.plan.hosts), len(state.sessionImport.passwords), state.sessionImport.eligible))
-	if state.dialogError != "" {
-		content := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-		content.Column().Fill().Children(func() {
-			content.Text(state.dialogError).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(24)
-		})
-		content.End()
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitImportPreviewCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitImportConnectionsOnly, Label: m.ImportConnectionsOnly, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitImportSavePasswords, Label: m.ImportSavePasswords},
-	)
-	dialog.End()
-}
-
-// sessionImportPlan turns sessions into new hosts, leaving out one whose address,
-// user and port a saved host (or an earlier session) already has.
 func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPlan {
 	builder := newHostImportBuilder(state, sshconfig.Result{})
 	for _, entry := range result.Entries {
@@ -608,53 +556,6 @@ func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPla
 	return builder.plan
 }
 
-func (state *State) paintImportSessionsDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m := state.messages.Tools
-	theme := state.Theme()
-	choices := [...]struct {
-		id    gfx.ID
-		label string
-	}{
-		{hitImportPuTTY, "PuTTY"},
-		{hitImportXshell, "Xshell"},
-		{hitImportMobaXterm, "MobaXterm"},
-		{hitImportWindTerm, "WindTerm"},
-		{hitImportElecterm, "Electerm"},
-		{hitImportNetcatty, "Netcatty"},
-	}
-	const columns = 2
-	rowHeight := components.BeginButton(nil, theme, gfx.ID{}, gfx.Rect{}).Large().BoundsHeight()
-	gap := theme.Metrics.GapItem
-	rows := float32((len(choices) + columns - 1) / columns)
-
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitImportSessionsDismiss, CloseID: hitImportSessionsClose, InitialFocusID: hitImportPuTTY,
-		ContentSize: gfx.Size{Width: 480}, FitBody: true,
-		BodyHeight: rows*rowHeight + (rows-1)*gap,
-	})
-	layout := dialog.Begin(m.ImportChooserTitle, m.ImportChooserBody)
-	cellWidth := (layout.Body.Width - gap*(columns-1)) / columns
-	for index, choice := range choices {
-		cell := gfx.Rect{
-			X:     layout.Body.X + float32(index%columns)*(cellWidth+gap),
-			Y:     layout.Body.Y + float32(index/columns)*(rowHeight+gap),
-			Width: cellWidth,
-		}
-		components.BeginButton(canvas, theme, choice.id, cell).Large().Outline(choice.label)
-	}
-	// Where each client keeps what this dialog reads is told in the docs, which
-	// the link opens; it sits at the footer's left, across from Cancel.
-	components.BeginButton(canvas, theme, hitImportGuide, gfx.Rect{X: layout.Footer.X, Y: layout.Footer.Y}).
-		WithIcon(icons.BookOpen).SizeToFit(m.ImportGuide).Link(m.ImportGuide)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitImportSessionsCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-	)
-	dialog.End()
-}
-
-// planStreamImport turns a Telnet or serial session into a host, unless the
-// saved hosts or an earlier session already have that destination.
 func (state *State) planStreamImport(plan *hostImportPlan, usedIDs map[string]struct{}, entry sessionimport.Entry) {
 	host := Host{
 		ID: plan.nextHostID, Label: entry.Name, Group: entry.Group,
