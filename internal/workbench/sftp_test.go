@@ -529,7 +529,7 @@ func replaceSFTPText(t testing.TB, state *State, value string) {
 // sftpPageButtonHit finds the page control with this accessible label.
 func sftpPageButtonHit(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
 	for _, hit := range canvas.Hits() {
-		if hit.Label == label && hit.Role == gfx.RoleButton {
+		if hit.Label == label && hit.Role == gfx.RoleButton && !hit.Disabled && !hit.Block {
 			return hit, true
 		}
 	}
@@ -645,6 +645,9 @@ func TestSFTPRemoteTextEditorOpensAndSavesAtomically(t *testing.T) {
 	}
 
 	replaceSFTPText(t, state, "saved remotely\n中文\n")
+	if !sftpEditorDirty(view) {
+		t.Fatal("typing did not make the editor dirty")
+	}
 	clickSFTPPageButton(t, state, state.messages.SFTPEditSave)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return !view.busy && !sftpEditorDirty(view) && view.status == state.messages.SFTPEditSaved
