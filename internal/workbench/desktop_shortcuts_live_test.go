@@ -23,6 +23,7 @@ import (
 	"context"
 	"os"
 	"runtime"
+	"slices"
 	"sync"
 	"syscall"
 	"testing"
@@ -37,12 +38,11 @@ import (
 var liveUser32 = syscall.NewLazyDLL("user32.dll")
 
 var (
-	liveFindWindow  = liveUser32.NewProc("FindWindowW")
-	liveSwitchTo    = liveUser32.NewProc("SwitchToThisWindow")
-	liveForeground  = liveUser32.NewProc("GetForegroundWindow")
-	liveSendInput   = liveUser32.NewProc("SendInput")
-	liveSendMessage = liveUser32.NewProc("SendMessageW")
-	liveAsyncKey    = liveUser32.NewProc("GetAsyncKeyState")
+	liveFindWindow = liveUser32.NewProc("FindWindowW")
+	liveSwitchTo   = liveUser32.NewProc("SwitchToThisWindow")
+	liveForeground = liveUser32.NewProc("GetForegroundWindow")
+	liveSendInput  = liveUser32.NewProc("SendInput")
+	liveAsyncKey   = liveUser32.NewProc("GetAsyncKeyState")
 )
 
 // liveKeyInput is INPUT for one keyboard event, padded the way the viva hook
@@ -126,8 +126,7 @@ func TestLiveSystemShortcutsReachARemoteDesktop(t *testing.T) {
 
 	var captureMu sync.Mutex
 	var captureAsks []bool
-	type windowBox struct{ window *app.Window }
-	ready := make(chan *windowBox, 1)
+	ready := make(chan *app.Window, 1)
 	done := make(chan error, 1)
 	go func() {
 		done <- app.RunApplication(func(application *app.Application) error {
@@ -162,18 +161,30 @@ func TestLiveSystemShortcutsReachARemoteDesktop(t *testing.T) {
 				captureMu.Unlock()
 				return window.CaptureSystemShortcuts(want)
 			})
-			ready <- &windowBox{window}
+			ready <- window
 			return nil
 		})
 	}()
+	var window *app.Window
 	select {
-	case <-ready:
+	case window = <-ready:
 	case err := <-done:
 		t.Fatalf("the application exited early: %v", err)
 	case <-time.After(15 * time.Second):
 		t.Fatal("the window never opened")
 	}
+	chordsSent := false
 	defer func() {
+		if chordsSent {
+			for _, vk := range []uintptr{0x5b, 0x5c, 0xa4, 0xa5, 0x09, 0x71} {
+				if held, _, _ := liveAsyncKey.Call(vk); held&0x8000 != 0 {
+					event := liveKeyInput{Type: 1, Vk: uint16(vk), Flags: 2}
+					liveSendInput.Call(1, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
+					time.Sleep(20 * time.Millisecond)
+				}
+			}
+		}
+		window.Close()
 		select {
 		case err := <-done:
 			if err != nil {
@@ -229,26 +240,20 @@ func TestLiveSystemShortcutsReachARemoteDesktop(t *testing.T) {
 	const vkLeftWin, vkAlt, vkTab, vkF2 = 0x5b, 0xa4, 0x09, 0x71
 
 	// Win+F2: harmless to the local shell, so a broken chain leaves no mess.
+	chordsSent = true
 	liveSendKeys(t, press{vkLeftWin, true}, press{vkF2, true}, press{vkF2, false}, press{vkLeftWin, false})
 	time.Sleep(400 * time.Millisecond)
 	keys := desk.sent()[len(before):]
-	has := func(match func(desktop.KeyEvent) bool) bool {
-		for _, event := range keys {
-			if match(event) {
-				return true
-			}
-		}
-		return false
-	}
 	t.Logf("after Win+F2 the desktop was sent: %v", keys)
 	captureMu.Lock()
 	t.Logf("capture asks so far: %v", captureAsks)
 	captureMu.Unlock()
-	if !has(func(e desktop.KeyEvent) bool { return e.Key == desktop.KeyMeta && e.Down }) {
-		t.Errorf("the Windows key did not reach the desktop: %v", keys)
+	want := []desktop.KeyEvent{
+		{Key: desktop.KeyMeta, Down: true}, {Key: desktop.KeyF1 + 1, Down: true},
+		{Key: desktop.KeyF1 + 1}, {Key: desktop.KeyMeta},
 	}
-	if !has(func(e desktop.KeyEvent) bool { return e.Key == desktop.KeyF1+1 && e.Down }) {
-		t.Errorf("Win+F2 did not reach the desktop as F2: %v", keys)
+	if !slices.Equal(keys, want) {
+		t.Errorf("Win+F2 remote keys = %v, want %v", keys, want)
 	}
 
 	// Alt+Tab: the chain keeps both the foreground window and sends Tab over.
@@ -257,20 +262,14 @@ func TestLiveSystemShortcutsReachARemoteDesktop(t *testing.T) {
 	time.Sleep(400 * time.Millisecond)
 	keys = desk.sent()[afterChord:]
 	t.Logf("after Alt+Tab the desktop was sent: %v", keys)
-	if !has(func(e desktop.KeyEvent) bool { return e.Key == desktop.KeyTab && e.Down }) {
-		t.Errorf("Alt+Tab did not reach the desktop as Tab: %v", keys)
+	want = []desktop.KeyEvent{
+		{Key: desktop.KeyAlt, Down: true}, {Key: desktop.KeyTab, Down: true},
+		{Key: desktop.KeyTab}, {Key: desktop.KeyAlt},
+	}
+	if !slices.Equal(keys, want) {
+		t.Errorf("Alt+Tab remote keys = %v, want %v", keys, want)
 	}
 	if !foregroundIsOurs() {
 		t.Error("Alt+Tab moved the focus away: the hook did not eat the chord")
 	}
-
-	// Leave nothing held: release whatever the chords may have left down.
-	for _, vk := range []uintptr{0x5b, 0x5c, 0xa4, 0xa5, vkTab, vkF2} {
-		if held, _, _ := liveAsyncKey.Call(vk); held&0x8000 != 0 {
-			event := liveKeyInput{Type: 1, Vk: uint16(vk), Flags: 2}
-			liveSendInput.Call(1, uintptr(unsafe.Pointer(&event)), unsafe.Sizeof(event))
-			time.Sleep(20 * time.Millisecond)
-		}
-	}
-	liveSendMessage.Call(handle, 0x0010, 0, 0) // WM_CLOSE
 }
