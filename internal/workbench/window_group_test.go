@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -230,7 +231,7 @@ func TestWhileOverAnotherWindowItShowsWhereTheTabWouldLand(t *testing.T) {
 	pair.second.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	zone := false
 	for _, rectangle := range canvas.Rectangles() {
-		if rectangle.Layer == tabDragLayer && rectangle.Color.Alpha < 1 && rectangle.Bounds == pair.second.foreign.drop.zone {
+		if rectangle.Layer == uint16(ui.LayerDrag) && rectangle.Color.Alpha < 1 && rectangle.Bounds == pair.second.foreign.drop.zone {
 			zone = true
 		}
 	}

@@ -213,7 +213,7 @@ func (state *State) paintWorkspaceCardDrag(canvas *gfx.Canvas, view workspaceCar
 		return
 	}
 	box := gfx.Rect{X: drag.at.X + 12, Y: drag.at.Y + 12, Width: min(176, drag.region.bounds.Width), Height: 32}
-	canvas.PushLayer(tabDragLayer)
+	canvas.PushLayer(dragOverlayLayer)
 	canvas.RoundedBorder(box, radius.control, 1, state.pal.accent, state.pal.surface)
 	label := fmt.Sprintf("%d", drag.region.index+1)
 	if items := state.workspaceItemsForRegion(drag.region); drag.region.index < len(items) {

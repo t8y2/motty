@@ -278,13 +278,11 @@ func (state *State) rebuildVerticalTabGroups(compact bool) {
 }
 
 // declareGroupedVerticalTabs declares the grouped rows inside the sidebar's tab
-// page: a server header, then its connections indented beneath it. The width and
-// compact state are the page's this paint, set by paintVerticalTabs. The rows
-// keep the identities the window names by hand, because tab dragging and the
-// tree keyboard address them.
-func (state *State) declareGroupedVerticalTabs(c ui.C) {
+// list: a server header, then its connections indented beneath it. The rows keep
+// the identities the window names by hand, because tab dragging and the tree
+// keyboard address them.
+func (state *State) declareGroupedVerticalTabs(c ui.C, width float32, compact bool) {
 	view := &state.verticalTabs.grouped
-	width, compact := state.verticalTabs.pageWidth, state.verticalTabs.pageCompact
 	for _, row := range view.rows {
 		if row.tab < 0 {
 			state.declareVerticalTabGroup(c, row.group, width)

@@ -2548,8 +2548,7 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if state.tabDrag.active && event.Key == gfx.KeyEscape {
-		state.closeTabPreview()
-		state.tabDrag = tabDrag{}
+		state.cancelTabDrag()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalNone {

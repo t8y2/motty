@@ -158,7 +158,21 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.toolbarDock.sideViewports = [4]gfx.Rect{}
 	state.contextRect = gfx.Rect{}
 	state.hostsBounds, state.chrome.hostList = gfx.Rect{}, gfx.Rect{}
-	state.verticalTabs.bounds, state.verticalTabs.slot, state.verticalTabs.slotRect = gfx.Rect{}, ui.Box{}, gfx.Rect{}
+	state.verticalTabs.bounds, state.verticalTabs.slot = gfx.Rect{}, ui.Box{}
+	// slotRect is not cleared: it is the navigation rail's list rectangle from
+	// the previous paint, and the next declaration of that list needs it for the
+	// page-coordinate geometry an overlay would otherwise have provided.
+	if state.dialogOrMenuOpen() {
+		// A dialog or menu that opened during an earlier event owns the pointer;
+		// the drag has no release left to finish, so let it go as Escape does.
+		// The host grid's page drag is cancelled the same way.
+		if state.tabDrag.active {
+			state.cancelTabDrag()
+		}
+		if state.hostGridDrag.state.Dragging() {
+			state.hostGridDrag.state.Cancel()
+		}
+	}
 	state.devBeginPaint()
 	state.ai.cfg.mcpSelectBounds = gfx.Rect{}
 	state.ai.cfg.agentSelectBounds = gfx.Rect{}
@@ -257,8 +271,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.beginMenus()
 	state.beginHostsPaint()
 	state.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, state.declareShell)
-	// The page's Boxes end when its frame ends; take the slot's rect before
-	// another DrawOver (the assistant's overlay) begins the page again.
 	if state.verticalTabs.slot != (ui.Box{}) {
 		state.verticalTabs.slotRect = state.verticalTabs.slot.Rect()
 	}
@@ -308,7 +320,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintToolbarDockSide(canvas, size)
 	}
 	state.paintToolbarDockBottom(canvas, size)
-	state.paintVerticalTabs(canvas, size)
 	viewport := state.windowRect()
 	state.paintAITargetSelect(canvas)
 	state.paintMCPClientSelect(canvas)
@@ -333,7 +344,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintLocalProxyScrollbar(canvas)
 	}
 	state.paintTerminalMenu(canvas, viewport)
-	state.paintTabDrag(canvas, viewport)
 	state.paintToolbarDockDrag(canvas)
 	state.paintToolbarDockMenu(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
@@ -561,6 +571,9 @@ func (state *State) declareShell(c ui.C) {
 			// The file-manager tab is part of the page like the panes.
 			state.declareSFTPTab(c)
 		}
+		// The sidebar is an overlay over the full-page workspace: it paints on
+		// the pane-chrome band and blocks presses on its blank surface.
+		state.declareVerticalTabsOverlay(c)
 	}
 	// The bottom strip and each side rail are containers of this page too, at
 	// the outer bands their reserves keep free. Their tools are painted by the
@@ -1091,12 +1104,13 @@ type chromeLayout struct {
 	probePage      *ui.Page
 	probeView      func(ui.C)
 	probeInput     barGeometry
-	// tabDragDropDraw, tabDragGhostDraw and tabDragHintDraw paint the hitless
-	// elements of a tab drag. They are made once, so a warm repaint declares the
-	// overlays without allocating a method value.
+	// tabDragDropDraw, tabDragGhostDraw, tabDragHintDraw and tabDragEdgeDraw
+	// paint the hitless elements of a tab drag. They are made once, so a warm
+	// repaint declares the overlays without allocating a method value.
 	tabDragDropDraw  func(*ui.DrawContext)
 	tabDragGhostDraw func(*ui.DrawContext)
 	tabDragHintDraw  func(*ui.DrawContext)
+	tabDragEdgeDraw  func(*ui.DrawContext)
 	// passwordSave is the slot the save box of the password dialog was laid out
 	// in.
 	passwordSave ui.Box
@@ -1227,14 +1241,13 @@ func (state *State) declareNavigation(c ui.C, height float32) {
 			state.navigationItem(c, item.id, item.icon, item.label, item.active, 4)
 		}
 		if state.tabOrientation == tabsVertical && len(state.workspaceTabs) > 0 {
-			state.verticalTabs.slot = ui.Slot(c).Grow(1).Basis(0).MarginSides(8, 9, 8, 9)
+			state.declareVerticalTabsNav(c)
+		} else {
+			ui.Spacer(c)
 		}
 		// A shell on this computer needs no host, so its way in is always at hand:
 		// above the Settings, at the bottom of the sidebar. A dev build also puts
-		// the component gallery there (see declareDevNavigation).
-		if state.tabOrientation != tabsVertical || len(state.workspaceTabs) == 0 {
-			ui.Spacer(c)
-		}
+		// the component gallery there (see devDeclareNavigation).
 		state.navigationItem(c, hitLocalTerminal, iconTerminal, m.LocalTerminal, false, 4)
 		state.openLocalShellPickerOn(c.Canvas(), hitLocalTerminal, false)
 		state.devDeclareNavigation(c)

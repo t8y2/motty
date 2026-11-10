@@ -883,7 +883,7 @@ func (state *State) paintToolbarDockDrag(canvas *gfx.Canvas) {
 	if !drag.active {
 		return
 	}
-	canvas.PushLayer(tabDragLayer + 1)
+	canvas.PushLayer(dragOverlayLayer + 1)
 	defer canvas.PopLayer()
 	for _, bounds := range state.toolbarDockDropZones() {
 		canvas.Rounded(bounds.Inset(gfx.All(1)), 4, withAlpha(state.pal.accent, 0.06))

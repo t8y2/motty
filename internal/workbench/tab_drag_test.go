@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -91,7 +92,7 @@ func TestDraggingATabAlongTheStripMovesIt(t *testing.T) {
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	found := false
 	for _, rectangle := range canvas.Rectangles() {
-		if rectangle.Layer == tabDragLayer && rectangle.Bounds.Width == 2 {
+		if rectangle.Layer == uint16(ui.LayerDrag) && rectangle.Bounds.Width == 2 {
 			found = true
 		}
 	}
@@ -176,7 +177,7 @@ func TestDraggingATabOntoAPaneEdgeDocksItThere(t *testing.T) {
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	highlighted := false
 	for _, rectangle := range canvas.Rectangles() {
-		if rectangle.Layer == tabDragLayer && rectangle.Bounds == drop.zone && rectangle.Color.Alpha < 1 {
+		if rectangle.Layer == uint16(ui.LayerDrag) && rectangle.Bounds == drop.zone && rectangle.Color.Alpha < 1 {
 			highlighted = true
 		}
 	}
@@ -325,7 +326,7 @@ func TestTabDragOverlaysAreHitlessPageElementsOnTheDragLayer(t *testing.T) {
 	}
 	ghost := false
 	for _, text := range dragged.Texts() {
-		if text.Value == state.tabDrag.title && text.Layer == tabDragLayer {
+		if text.Value == state.tabDrag.title && text.Layer == uint16(ui.LayerDrag) {
 			ghost = true
 		}
 	}
@@ -358,9 +359,9 @@ func TestTabDragOverlaysAreHitlessPageElementsOnTheDragLayer(t *testing.T) {
 	var ghostTitle, hint gfx.Text
 	for _, text := range tearOff.Texts() {
 		switch {
-		case text.Value == "Dragged" && text.Layer == tabDragLayer:
+		case text.Value == "Dragged" && text.Layer == uint16(ui.LayerDrag):
 			ghostTitle = text
-		case text.Value == state.messages.TabTearOffHint && text.Layer == tabDragLayer:
+		case text.Value == state.messages.TabTearOffHint && text.Layer == uint16(ui.LayerDrag):
 			hint = text
 		}
 	}
