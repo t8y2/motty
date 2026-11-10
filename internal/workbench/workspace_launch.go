@@ -93,8 +93,10 @@ func (state *State) launchWorkspaceWithIdentity(
 		}
 		state.temporaryWorkspaceLayouts[workspaceID] = layout
 	}
-	// Splitting focused each new pane, so the last one holds the deck's focus;
-	// a fresh workspace opens on its first pane, the one the user picked first.
+	// A split focuses the pane it opens, which is what a user splitting a pane
+	// wants. A launch splits only to build structure, so it picks the focus
+	// itself once the plan is in place: the first pane, the one the user chose
+	// first.
 	state.deck.ActivatePane(workspaceID, paneIDs[0])
 	state.syncActiveSession()
 	state.activeSection = sectionTerminal
