@@ -80,10 +80,6 @@ type settingsUI struct {
 	actions  []components.ButtonAction
 	colors   []gfx.Color
 
-	// workspace is the page the settings workspace is declared in, and
-	// workspaceView its declaration, kept so a paint makes no method value.
-	workspace     *ui.Page
-	workspaceView func(ui.C)
 	// declared is what the last declaration laid out: its scrolling column, the
 	// navigation list and the search anchor, read once the page has ended.
 	declared settingsPage
@@ -345,7 +341,7 @@ func (state *State) settingsSearchKey(event gfx.KeyEvent) (gfx.EventResult, bool
 func (state *State) paintSettingsResults(page *settingsPage) {
 	view := &state.settings
 	if view.count == 0 {
-		page.f.Text(view.empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(22).MarginSides(6, 4, 0, 4)
+		ui.Text(page.c, view.empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(22).MarginSides(6, 4, 0, 4)
 		return
 	}
 	page.controlWidth = 150 // room for the explanation; the button only names a category

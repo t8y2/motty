@@ -88,13 +88,13 @@ func (w *sftpWindow) paintProfileQuickMenu(canvas *gfx.Canvas) {
 	height := float32(min(360, 40+len(profiles)*32+42))
 	anchor := w.ui.profileQuickAnchor
 	bounds := gfx.Rect{X: anchor.X + anchor.Width - 300, Y: anchor.Y + anchor.Height + 4, Width: 300, Height: height}
-	if bounds.Y+bounds.Height > w.ui.size.Height-8 {
-		bounds.Y = max(8, anchor.Y-bounds.Height-4)
+	if bounds.Y+bounds.Height > w.ui.bounds.Bottom()-8 {
+		bounds.Y = max(w.ui.bounds.Y+8, anchor.Y-bounds.Height-4)
 	}
-	bounds.X = max(8, min(bounds.X, w.ui.size.Width-bounds.Width-8))
+	bounds.X = max(w.ui.bounds.X+8, min(bounds.X, w.ui.bounds.Right()-bounds.Width-8))
 	menu := components.BeginDropdownMenu(canvas, theme, bounds, components.DropdownMenuOptions{
 		Layer: popupLayer, Scope: hitSFTPProfileQuickMenu, DismissID: hitSFTPProfileQuickDismiss,
-		Viewport: gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height}, Scroll: &w.ui.profileQuickScroll,
+		Viewport: w.ui.bounds, Scroll: &w.ui.profileQuickScroll,
 	})
 	menu.AddLabel(m.ProfileChoose, true)
 	if len(profiles) == 0 {

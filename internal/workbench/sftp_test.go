@@ -486,6 +486,17 @@ func clickSFTPRow(t testing.TB, state *State, view *sftpView, name string) gfx.I
 	return id
 }
 
+// sftpListRowID is the window identity of a painted row of the folder's Viva
+// List. The List names its rows itself, so a test that finds one in a painted
+// snapshot asks the last paint for it.
+func sftpListRowID(t testing.TB, folder *sftpFolder, index int) gfx.ID {
+	t.Helper()
+	if folder.listRowsScope.IsZero() {
+		t.Fatal("the file list has not been painted")
+	}
+	return contextID(folder.listRowsScope.At(index))
+}
+
 func replaceSFTPDialogText(t testing.TB, state *State, value string) {
 	t.Helper()
 	editor := state.EditorFor(hitSFTPDialogField)
@@ -1423,7 +1434,9 @@ func TestSFTPListScrollsDownWithPositiveDeltaOnlyOverThePanel(t *testing.T) {
 	}
 
 	// Over empty space of the panel the wheel event names no control; over a
-	// row or a button it names that control. Both must reach the list.
+	// row or a button it names that control. Both must reach the list. The List
+	// scrolls by pixels, so a sub-row delta moves the view and the first row is
+	// the row the offset falls in.
 	var over gfx.ID
 	scroll := func(x, delta float32) {
 		state.Scroll(gfx.ScrollEvent{X: x, Y: panel.Y + 100, DeltaY: delta, Precise: true, Viewport: size, Target: over})
@@ -1436,28 +1449,31 @@ func TestSFTPListScrollsDownWithPositiveDeltaOnlyOverThePanel(t *testing.T) {
 	if view.first != 2 {
 		t.Fatalf("a negative wheel moved the first row to %d, want 2", view.first)
 	}
-	scroll(panel.X+panel.Width/2, sftpRowHeight/3) // less than a row
-	if view.first != 2 {
-		t.Fatalf("a third of a row moved the list to %d", view.first)
+	before := view.scrollOffset
+	scroll(panel.X+panel.Width/2, sftpRowHeight/3)
+	if view.first != 2 || view.scrollOffset != before+sftpRowHeight/3 {
+		t.Fatalf("a third of a row did not move the pixel offset: %f -> %f", before, view.scrollOffset)
 	}
-	scroll(panel.X+panel.Width/2, 2*sftpRowHeight/3+1) // the rest of it
+	scroll(panel.X+panel.Width/2, 2*sftpRowHeight/3+1)
 	if view.first != 3 {
-		t.Fatalf("banked travel did not add up to a row: first = %d", view.first)
+		t.Fatalf("the rest of a row did not reach row 3: first = %d", view.first)
 	}
 	over = contextID(hitSFTPEntryList.At(0)) // over a row of the list
-	scroll(panel.X+panel.Width/2, -1.1*sftpRowHeight)
-	if view.first != 2 {
-		t.Fatalf("a wheel over a row moved the first row to %d, want 2", view.first)
+	before = view.scrollOffset
+	scroll(panel.X+panel.Width/2, -sftpRowHeight)
+	if view.first != 2 || view.scrollOffset != before-sftpRowHeight {
+		t.Fatalf("a wheel over a row moved the list to first=%d offset=%f", view.first, view.scrollOffset)
 	}
-	scroll(panel.X+panel.Width/2, 1.1*sftpRowHeight)
 	over = gfx.ID{}
+	before = view.scrollOffset
 	scroll(panel.X+panel.Width+200, 5*sftpRowHeight) // over the terminal
-	if view.first != 3 {
-		t.Fatalf("a wheel over the terminal moved the file list to %d", view.first)
+	if view.scrollOffset != before {
+		t.Fatalf("a wheel over the terminal moved the file list: %f -> %f", before, view.scrollOffset)
 	}
 	scroll(panel.X+panel.Width/2, 1000*sftpRowHeight)
-	if want := len(view.rows) - view.visibleRows; view.first != want {
-		t.Fatalf("scrolling far down left the first row at %d, want the last page at %d", view.first, want)
+	state.Paint(&canvas, size)
+	if view.first != int(view.scrollOffset/sftpRowHeight) || view.scrollOffset != view.scroll.MaxOffsetY {
+		t.Fatalf("scrolling far down left offset %f first %d, max %f", view.scrollOffset, view.first, view.scroll.MaxOffsetY)
 	}
 
 	// Scrolling far down and painting anchors the list at the bottom. Further
@@ -1513,8 +1529,9 @@ func TestSFTPDragReleaseKeepsASubRowOffsetAndWheelUpReturnsToTheTop(t *testing.T
 
 	// As a scrollbar drag would leave it: released 17 pixels into the first row,
 	// past the half-row mark that used to round the row up and snap back.
-	view.scrollDrag = true
+	folder.listScroll.ScrollTo(17)
 	folder.scrollOffset = 17
+	view.scrollDrag = true
 	if result, handled := state.sftpListPointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Captured: true}); !handled || !result.Repaint {
 		t.Fatal("releasing the scrollbar drag was not handled")
 	}
@@ -1964,5 +1981,43 @@ func TestTheWheelOverTheTerminalBesideTheFilesPanelScrollsTheTerminal(t *testing
 	}
 	if session.files.first != first || len(session.files.rows) != rows {
 		t.Fatal("the wheel over the terminal moved the file list")
+	}
+}
+
+// TestSFTPChmodGridTransitionsThroughTheEventPass drives the permission grid
+// through the driver's real pointer event pass, not the test-only Click: the
+// dialog body is a page now, and its hand-painted checkbox hits must still
+// reach the central dispatcher and flip one bit of the octal field.
+func TestSFTPChmodGridTransitionsThroughTheEventPass(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "notes.txt")
+	state.Click(hitSFTPChmod)
+	if view.dialog != sftpDialogChmod || view.dialogEditor.String() != "644" {
+		t.Fatalf("chmod dialog = %d, value %q", view.dialog, view.dialogEditor.String())
+	}
+	driver := modalEventDriver(t, state)
+	if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitSFTPChmodBits.At(4)); !ok {
+		t.Fatal("the permission grid is not painted")
+	}
+	// Group write on 644: 664. The click goes through the event pass to the
+	// central dispatcher, which flips the bit of the field's value.
+	clickPaintedHit(t, driver, hitSFTPChmodBits.At(4))
+	if got := view.dialogEditor.String(); got != "664" {
+		t.Fatalf("after group-write click = %q, want 664", got)
+	}
+	if hit, ok := hitByIDInSnapshot(driver.Snapshot(), hitSFTPChmodBits.At(4)); !ok || !hit.Checked {
+		t.Fatalf("group-write box after the click = %+v, painted %v", hit, ok)
+	}
+	clickPaintedHit(t, driver, hitSFTPChmodBits.At(4))
+	if got := view.dialogEditor.String(); got != "644" {
+		t.Fatalf("after second click = %q, want 644", got)
+	}
+	// The field still moves the boxes: 700 has owner execute, and a click on
+	// that box clears it back to 600.
+	replaceSFTPDialogText(t, state, "700")
+	clickPaintedHit(t, driver, hitSFTPChmodBits.At(2))
+	if got := view.dialogEditor.String(); got != "600" {
+		t.Fatalf("after owner-exec click on 700 = %q, want 600", got)
 	}
 }

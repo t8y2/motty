@@ -72,7 +72,7 @@ func (w *sftpWindow) toggleDirectoryFavorite(local bool) {
 func (w *sftpWindow) openDirectoryPlaces(local bool) { w.placeBrowser().openDirectoryPlaces(local) }
 func (w *sftpWindow) clickDirectoryPlace(id gfx.ID)  { w.placeBrowser().clickDirectoryPlace(id) }
 func (w *sftpWindow) paintDirectoryPlaces(canvas *gfx.Canvas) {
-	w.placeBrowser().paintDirectoryPlaces(canvas, gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height})
+	w.placeBrowser().paintDirectoryPlaces(canvas, w.ui.bounds)
 }
 
 func (w sftpPlaceBrowser) folder(local bool) *sftpFolder {
@@ -368,11 +368,6 @@ func (state *State) sftpPlacesPointer(event gfx.PointerEvent) (gfx.EventResult, 
 		return gfx.EventResult{}, false
 	}
 	view := session.files
-	if _, local, mounted := state.decodePaneHit(event.Target); mounted {
-		event.Target = local
-		event.X -= state.contextRect.X
-		event.Y -= state.contextRect.Y - windowBarHeight
-	}
 	wasDragging := view.places.scroll.Dragging()
 	changed := view.places.scroll.Drag(event)
 	if wasDragging || changed || view.places.scroll.Dragging() {

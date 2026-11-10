@@ -6,6 +6,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 var (
@@ -36,6 +37,11 @@ type hostGroupActions struct {
 	ungroup    bool
 	parentOpen bool
 	drag       hostGroupDrag
+	// page declares the move/rename dialog's body, with view kept so a paint
+	// makes no new method value; slot is where the field is laid out.
+	page *ui.Page
+	view func(ui.C)
+	slot ui.Box
 }
 
 func hostGroupParent(path string) string {

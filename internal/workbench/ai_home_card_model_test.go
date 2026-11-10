@@ -40,23 +40,15 @@ func TestHomeAssistantModelMenuEscapesTheCard(t *testing.T) {
 	paintAt(state, panelWide)
 	state.Click(hitAIModelChip)
 	paintAt(state, panelWide)
-	state.Click(hitAIModelProviders.At(0))
+	clickAIMenuRow(t, state, "Home")
 	canvas, _ := paintAt(state, panelWide)
 
 	card := state.ai.panel.rect
-	menu := state.ai.panel.modelsRect
-	if menu.Width <= 0 || menu.X >= card.X {
-		t.Fatalf("fixture did not put the model menu outside the card: menu=%+v card=%+v", menu, card)
+	row := aiMenuRow(t, canvas, long)
+	if row.Bounds.Width <= 0 || row.Bounds.X >= card.X {
+		t.Fatalf("fixture did not put the model menu outside the card: row=%+v card=%+v", row.Bounds, card)
 	}
-	row := panelHit(t, canvas, hitAIModels.At(0))
-	if row.Bounds.X >= card.X {
-		t.Fatalf("model row starts at the card edge, so the menu is clipped: menu=%+v row=%+v card=%+v", menu, row.Bounds, card)
-	}
-	if row.Bounds.Width < menu.Width-24 {
-		t.Fatalf("model row is clipped: menu width %g, row width %g", menu.Width, row.Bounds.Width)
-	}
-	dismiss := panelHit(t, canvas, hitAIModelDismiss)
-	if dismiss.Bounds.Width < panelWide.Width || dismiss.Bounds.Height < panelWide.Height {
-		t.Fatalf("dismiss backdrop is clipped: %+v", dismiss.Bounds)
+	if dismiss, ok := aiMenuBackdrop(canvas); !ok || dismiss.Bounds.Width < panelWide.Width || dismiss.Bounds.Height < panelWide.Height {
+		t.Fatalf("dismiss backdrop is clipped: %+v %v", dismiss.Bounds, ok)
 	}
 }

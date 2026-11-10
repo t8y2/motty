@@ -143,7 +143,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.toolbarDock.sideViewports = [4]gfx.Rect{}
 	state.contextRect = gfx.Rect{}
 	state.hostsBounds, state.chrome.hostList = gfx.Rect{}, gfx.Rect{}
-	state.verticalTabs.bounds, state.verticalTabs.slot = gfx.Rect{}, ui.Box{}
+	state.verticalTabs.bounds, state.verticalTabs.slot, state.verticalTabs.slotRect = gfx.Rect{}, ui.Box{}, gfx.Rect{}
 	state.devBeginPaint()
 	state.ai.cfg.mcpSelectBounds = gfx.Rect{}
 	state.ai.cfg.agentSelectBounds = gfx.Rect{}
@@ -183,7 +183,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.fileNotices.paint(canvas, state.Theme(), state.windowRect())
 		return
 	}
-	pal := state.pal
 	// The window is a bar over a body. The terminals show the picture through their
 	// own ground, so with one set only the bar is shell-colored; the shell behind
 	// them must not cover it.
@@ -220,7 +219,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 			state.tabStrip.area = gfx.Rect{}
 		}
 	}
-	var workspaceSlot ui.Box
 	// The section and assistant are sibling cards, separated by the same margin
 	// the cards keep from the window's right and bottom edges.
 	cardRight := sectionCardMargin
@@ -228,31 +226,34 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		cardRight = reserve
 	}
 	cardRight += state.toolbarDockSideReserveFor(false, false)
-	f := chrome.window.Begin(canvas, state.Theme(), gfx.Rect{Width: size.Width, Height: size.Height})
-	root := f.Column().Fill()
-	if !picture {
-		root.Background(pal.shell)
+	chrome.workspaceSlot = ui.Box{}
+	chrome.shellPicture = picture
+	chrome.shellHeight = size.Height
+	chrome.shellGeometry = geometry
+	chrome.shellScroll = scroll
+	chrome.shellFullPage = fullPage
+	chrome.shellCardRight = cardRight
+	if chrome.windowPage == nil {
+		chrome.windowPage = ui.NewPage(ui.PageConfig{Root: shellPageRoot, Theme: &state.theme})
+		chrome.windowView = state.declareShell
 	}
-	root.Children(func() {
-		state.declareWindowBar(f, &chrome.bar, false, picture, geometry, scroll)
-		if !fullPage {
-			f.Row().Grow(1).Shrink(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
-				f.Slot().Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
-				state.declareNavigation(f, size.Height)
-				workspaceSlot = f.Slot().Grow(1).MarginSides(0, cardRight, sectionCardMargin, 0).
-					Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
-			})
-		}
-	})
-	f.End()
+	// The files panel is declared in the page and asks for its More menu as it
+	// paints, so the menu lifecycle starts before the page. The embedded file
+	// header also paints a popup: starting before workspace content keeps its
+	// scroll/focus state.
+	state.beginMenus()
+	chrome.windowPage.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, chrome.windowView)
+	// The page's Boxes end when its frame ends; take the slot's rect before
+	// another DrawOver (the assistant's overlay) begins the page again.
+	if state.verticalTabs.slot != (ui.Box{}) {
+		state.verticalTabs.slotRect = state.verticalTabs.slot.Rect()
+	}
+	workspaceSlot := chrome.workspaceSlot
 	state.paintWindowBarParts(canvas, geometry.area)
 	if !fullPage {
 		state.paintLockup(canvas, chrome.lockup.Rect())
 	}
 
-	// The embedded file header also paints a popup: start the shared menu
-	// lifecycle before workspace content so its scroll/focus state survives.
-	state.beginMenus()
 	if terminal {
 		state.paintWorkspacePanes(canvas, size)
 		state.paintNotesPanel(canvas, size)
@@ -281,7 +282,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 			case sectionProxies:
 				state.paintProxiesWorkspace(canvas, workspace)
 			case sectionSettings:
-				state.paintSettingsWorkspace(canvas, workspace)
+				state.paintSettingsDetails(canvas)
 			case sectionKnownHosts:
 				state.paintKnownHostsWorkspace(canvas, workspace)
 			case sectionNotes:
@@ -406,8 +407,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintUpdateProgress(canvas, viewport)
 	case modalFileProperties:
 		state.paintFileProperties(canvas, viewport)
-	case modalCommandPalette:
-		state.paintCommandPalette(canvas, viewport)
 	case modalHistory:
 		state.paintHistory(canvas, viewport)
 	case modalShortcutCapture:
@@ -550,6 +549,51 @@ type barGeometry struct {
 	tabWidth          float32
 }
 
+// declareShell declares the window's shell as a page: the bar over the body,
+// and under it, unless a pane fills the window, the navigation rail beside the
+// slot the sections are painted into. The inputs come from chromeLayout, kept by
+// Paint before the page is declared, because the page's view takes no arguments.
+func (state *State) declareShell(c ui.C) {
+	chrome, pal := &state.chrome, state.pal
+	root := ui.Column(c).Fill()
+	if !chrome.shellPicture {
+		root.Background(pal.shell)
+	}
+	root.Children(func() {
+		state.declareWindowBar(c, &chrome.bar, false, chrome.shellPicture, chrome.shellGeometry, chrome.shellScroll)
+		if chrome.shellFullPage {
+			return
+		}
+		ui.Row(c).Grow(1).Shrink(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
+			ui.Slot(c).Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
+			state.declareNavigation(c, chrome.shellHeight)
+			chrome.workspaceSlot = ui.Slot(c).Grow(1).MarginSides(0, chrome.shellCardRight, sectionCardMargin, 0).
+				Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
+		})
+	})
+	if chrome.shellFullPage {
+		if state.terminalPage() {
+			state.declareWorkspacePanes(c)
+			state.declareContextPanel(c)
+		} else {
+			// The file-manager tab is part of the page like the panes.
+			state.declareSFTPTab(c)
+		}
+	}
+	// The bottom strip and each side rail are containers of this page too, at
+	// the outer bands their reserves keep free. Their tools are painted by the
+	// window after the page, into the slots these declarations leave.
+	state.declareToolbarDockBottom(c)
+	state.declareToolbarDockSides(c)
+	if !chrome.shellFullPage && state.activeSection == sectionSettings {
+		state.declareSettingsWorkspace(c)
+	}
+	state.declareAIPanel(c)
+	// The command palette is a dialog of the window's own page: its search field,
+	// its list and its sort switch are page elements.
+	state.declareCommandPalette(c)
+}
+
 // windowBarGeometry lays the bar out once without its contents to find out how
 // wide the tabs come out: they stay barTabMax wide and shrink together to barTabMin
 // to share the room left of the buttons.
@@ -571,11 +615,12 @@ func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeom
 		geometry.leading == leading && geometry.trailing == trailing {
 		return *geometry
 	}
-	f := chrome.probe.Begin(canvas, state.Theme(), gfx.Rect{Width: width, Height: windowBarHeight})
-	f.Column().Fill().Children(func() {
-		state.declareWindowBar(f, &chrome.probeBar, true, false, barGeometry{locked: locked, numbers: state.tabNumbers}, 0)
-	})
-	f.End()
+	chrome.probeInput = barGeometry{locked: locked, numbers: state.tabNumbers}
+	if chrome.probePage == nil {
+		chrome.probePage = ui.NewPage(ui.PageConfig{Root: shellProbeRoot, Theme: &state.theme})
+		chrome.probeView = state.declareProbeBar
+	}
+	chrome.probePage.Draw(canvas, gfx.Rect{Width: width, Height: windowBarHeight}, chrome.probeView)
 	*geometry = barGeometry{
 		width: width, tabCount: tabCount, barButtons: buttons, leading: leading, trailing: trailing, valid: true,
 		locked:      locked,
@@ -589,13 +634,22 @@ func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeom
 	return *geometry
 }
 
+// declareProbeBar declares the window bar for measurement only: no picture, no
+// hits, just the places whose rectangles give the tabs their width.
+func (state *State) declareProbeBar(c ui.C) {
+	chrome := &state.chrome
+	ui.Column(c).Fill().Children(func() {
+		state.declareWindowBar(c, &chrome.probeBar, true, false, chrome.probeInput, 0)
+	})
+}
+
 // declareWindowBar declares the strip the custom titlebar leaves for the app: the
 // hosts button and one tab per session on the left, the local terminal, search,
 // language, theme and settings buttons on the right. The tabs share the room left of
 // the buttons; when even the narrowest do not fit they scroll under a clip, and the
 // new-tab button stays at the end of that room instead of being pushed out of the
 // window. With probe set only the places are declared, for windowBarGeometry.
-func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
+func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
 	m, pal, chrome := state.messages, state.pal, &state.chrome
 	leading, trailing := app.TitlebarInsets()
 	visibleFileTabs := 0
@@ -610,7 +664,7 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 	if probe {
 		chrome.probeTabs = chrome.probeTabs[:0]
 	}
-	row := f.Row().Height(windowBarHeight).PadSides(0, trailing+barMargin, 0, leading+barMargin).Items(ui.Center)
+	row := ui.Row(c).Height(windowBarHeight).PadSides(0, trailing+barMargin, 0, leading+barMargin).Items(ui.Center)
 	if !probe {
 		// The bar is where the window is moved from; its buttons and tabs, declared
 		// after it, take their own presses.
@@ -620,29 +674,29 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 		row.Background(pal.shell)
 	}
 	row.Children(func() {
-		state.barButton(f, probe, hitHome, iconHome, m.NavHosts).MarginSides(0, barGap+2, 0, 0)
+		state.barButton(c, probe, hitHome, iconHome, m.NavHosts).MarginSides(0, barGap+2, 0, 0)
 		if state.tabOrientation == tabsVertical {
 			if probe {
-				f.Spacer()
+				ui.Spacer(c)
 			} else {
 				// The name is drawn after the bar is laid out, centred over the
 				// workspace it names: see paintWindowBarTitle. The slot keeps the
 				// height of a tab so the drawn line sits on the row's middle.
-				bar.title = f.Slot().Grow(1).Height(barTabHeight)
+				bar.title = ui.Slot(c).Grow(1).Height(barTabHeight)
 				bar.titleLabel = state.windowBarTitle()
 			}
 		}
 		// The room of the tabs and the new-tab button. The tabs stay as wide as they
 		// like (barTabMax) and shrink together to barTabMin; the new-tab button
 		// follows the last of them, or ends the room when they do not fit.
-		tabRoom := f.Stack().Grow(1).MarginSides(0, barGap, 0, 0)
+		tabRoom := ui.Stack(c).Grow(1).MarginSides(0, barGap, 0, 0)
 		if state.tabOrientation == tabsVertical && visibleFileTabs == 0 {
 			tabRoom.Grow(0).Width(barButtonSize)
 		}
 		tabRoom.Children(func() {
-			area := f.Slot().Fill().MarginSides(0, barButtonSize, 0, 0)
-			f.Row().Fill().Items(ui.Center).Children(func() {
-				tabs := f.Row()
+			area := ui.Slot(c).Fill().MarginSides(0, barButtonSize, 0, 0)
+			ui.Row(c).Fill().Items(ui.Center).Children(func() {
+				tabs := ui.Row(c)
 				if probe {
 					chrome.probeRow = tabs
 				} else {
@@ -668,7 +722,7 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 								// The number sits beside the name, which keeps its room.
 								minimum += tabNumberMinExtra
 							}
-							tab = f.Slot().Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
+							tab = ui.Slot(c).Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
 							chrome.probeTabs = append(chrome.probeTabs, tab)
 							bar.tabs = append(bar.tabs, barTab{})
 							continue
@@ -677,7 +731,7 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 						if index == 0 {
 							first = -scroll
 						}
-						entry := state.declareWorkspaceTab(f, workspace, geometry.tabWidth, barTabHeight, first, false, false, index+1)
+						entry := state.declareWorkspaceTab(c, workspace, geometry.tabWidth, barTabHeight, first, false, false, index+1)
 						bar.tabs = append(bar.tabs, entry)
 					}
 					for fileIndex, fileTab := range state.sftpTabs {
@@ -694,7 +748,7 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 							if geometry.numbers {
 								minimum += tabNumberMinExtra
 							}
-							tab := f.Slot().Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
+							tab := ui.Slot(c).Width(barTabMax).MinWidth(minimum).Height(barTabHeight).Shrink(1).MarginSides(0, barGap, 0, 0)
 							chrome.probeTabs = append(chrome.probeTabs, tab)
 							bar.tabs = append(bar.tabs, barTab{})
 							continue
@@ -704,7 +758,7 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 							entry.number = tabNumber(index + 1)
 						}
 						active := state.activeSection == sectionSFTP && state.activeSFTPTab == fileTab.session.ID
-						hovered := f.Canvas().Hovered() == id || f.Canvas().Hovered() == closeID
+						hovered := c.Canvas().Hovered() == id || c.Canvas().Hovered() == closeID
 						foreground := pal.muted
 						fill, edge := pal.tab, pal.line
 						switch {
@@ -731,51 +785,51 @@ func (state *State) declareWindowBar(f *ui.Frame, bar *windowBar, probe, picture
 							first = -scroll
 						}
 						label := state.sftpFileTabTitle(fileTab)
-						f.Row().Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
+						ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
 							HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 							HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active}).Children(func() {
-							entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
+							entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
 							if state.tabNumbers && entry.number != "" {
 								// File tabs follow the session tabs in the number row,
 								// as they do for the number shortcuts.
-								f.Text(entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+								ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
 							}
-							f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
-							entry.light = f.Slot().Size(9, 20).MarginSides(0, 0, 0, 7)
-							f.Spacer()
+							ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
+							entry.light = ui.Slot(c).Size(9, 20).MarginSides(0, 0, 0, 7)
+							ui.Spacer(c)
 							if !active && !hovered {
-								f.Slot().Size(20, 20)
+								ui.Slot(c).Size(20, 20)
 								return
 							}
 							var closeFill gfx.Color
-							if f.Canvas().Hovered() == closeID {
+							if c.Canvas().Hovered() == closeID {
 								closeFill = pal.line
 								if active {
 									closeFill = pal.tabCloseHot
 								}
 							}
-							f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
+							ui.Row(c).Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
 								HitWith(closeID, m.LabelCloseTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true}).Children(func() {
-								f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+								ui.Icon(c, lucideIcons[iconClose]).Size(14, 14).Color(foreground)
 							})
 						})
 						bar.tabs = append(bar.tabs, entry)
 					}
 				})
-				state.barButton(f, probe, hitNewTab, iconPlus, m.LabelNewTab)
+				state.barButton(c, probe, hitNewTab, iconPlus, m.LabelNewTab)
 			})
 			if probe {
 				chrome.probeArea = area
 			}
 		})
-		state.declareToolbarDockTop(f, probe)
+		state.declareToolbarDockTop(c, probe)
 	})
 }
 
 // declareWorkspaceTab shares tab styling and hit identities between both
 // orientations. number is the tab's place in the number row, zero for a tab no
 // number key reaches.
-func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.WorkspaceInfo, width, height, first float32, vertical, compact bool, number int) barTab {
+func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceInfo, width, height, first float32, vertical, compact bool, number int) barTab {
 	m, pal := state.messages, state.pal
 	id, closeID := hitTabList.At(int(workspace.ID)), hitTabCloseList.At(int(workspace.ID))
 	entry := barTab{workspace: workspace, id: id, closeID: closeID}
@@ -784,7 +838,7 @@ func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.Worksp
 		entry.number = tabNumber(number)
 	}
 	active := state.activeSection == sectionTerminal && state.deck.ActiveWorkspace() == workspace.ID
-	hovered := f.Canvas().Hovered() == id || f.Canvas().Hovered() == closeID
+	hovered := c.Canvas().Hovered() == id || c.Canvas().Hovered() == closeID
 	foreground := pal.muted
 	fill, edge := pal.tab, pal.line
 	switch {
@@ -830,7 +884,7 @@ func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.Worksp
 			tabOptions.Hint = hint
 		}
 	}
-	row := f.Row().Size(width, height).Shrink(0)
+	row := ui.Row(c).Size(width, height).Shrink(0)
 	if vertical {
 		row.MarginSides(first, 0, barGap, 0)
 	} else {
@@ -840,15 +894,15 @@ func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.Worksp
 		PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 		HitWith(id, label, tabOptions).Children(func() {
 		if compact {
-			f.Spacer()
-			entry.badge = f.Slot().Size(20, 20).Shrink(0)
-			f.Spacer()
+			ui.Spacer(c)
+			entry.badge = ui.Slot(c).Size(20, 20).Shrink(0)
+			ui.Spacer(c)
 			return
 		}
-		entry.badge = f.Slot().Size(20, 20).MarginSides(0, 7, 0, 0)
+		entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
 		if state.tabNumbers && entry.number != "" {
 			// The number names the name beside it, so it carries less ink.
-			f.Text(entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+			ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
 		}
 		titleColor := foreground
 		if entry.output != outputAlertNone {
@@ -859,35 +913,35 @@ func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.Worksp
 			// Reserve the same layout space as text, then shorten the path once
 			// the actual width is known. Ordinary names keep tail ellipsis.
 			entry.pathLabel = label
-			title = f.Slot().Size(f.Canvas().TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium), 20).Shrink(1)
+			title = ui.Slot(c).Size(c.Canvas().TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium), 20).Shrink(1)
 		} else {
-			title = f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(titleColor).LineHeight(20).Ellipsis()
+			title = ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(titleColor).LineHeight(20).Ellipsis()
 		}
 		entry.title = title
 		if vertical {
 			title.Grow(1).Basis(0)
 		}
 		if workspace.Locked {
-			f.Icon(lucideIcons[iconLock]).Size(13, 13).Shrink(0).MarginSides(0, 0, 0, 5).Color(foreground)
+			ui.Icon(c, lucideIcons[iconLock]).Size(13, 13).Shrink(0).MarginSides(0, 0, 0, 5).Color(foreground)
 		}
-		entry.light = f.Slot().Size(9, 20).MarginSides(0, 0, 0, 7)
+		entry.light = ui.Slot(c).Size(9, 20).MarginSides(0, 0, 0, 7)
 		if !vertical {
-			f.Spacer()
+			ui.Spacer(c)
 		}
 		if !active && !hovered {
-			f.Slot().Size(20, 20)
+			ui.Slot(c).Size(20, 20)
 			return
 		}
 		var closeFill gfx.Color
-		if f.Canvas().Hovered() == closeID {
+		if c.Canvas().Hovered() == closeID {
 			closeFill = pal.line
 			if active {
 				closeFill = pal.tabCloseHot
 			}
 		}
-		f.Row().Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
+		ui.Row(c).Size(20, 20).Shrink(0).Center().Radius(radius.item).Background(closeFill).
 			HitWith(closeID, m.LabelCloseTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true}).Children(func() {
-			f.Icon(lucideIcons[iconClose]).Size(14, 14).Color(foreground)
+			ui.Icon(c, lucideIcons[iconClose]).Size(14, 14).Color(foreground)
 		})
 	})
 	entry.compact = compact
@@ -897,11 +951,11 @@ func (state *State) declareWorkspaceTab(f *ui.Frame, workspace layoutcore.Worksp
 // barButton declares a square icon button of the window bar. These buttons do not
 // take keyboard focus when pressed, so using one never pulls the keyboard out of a
 // terminal. With probe set it is only the place.
-func (state *State) barButton(f *ui.Frame, probe bool, id gfx.ID, icon uint8, label string) ui.Box {
+func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label string) ui.Box {
 	if probe {
-		return f.Slot().Size(barButtonSize, barButtonSize)
+		return ui.Slot(c).Size(barButtonSize, barButtonSize)
 	}
-	pal, canvas := state.pal, f.Canvas()
+	pal, canvas := state.pal, c.Canvas()
 	foreground := pal.muted
 	var fill gfx.Color
 	switch {
@@ -910,9 +964,9 @@ func (state *State) barButton(f *ui.Frame, probe bool, id gfx.ID, icon uint8, la
 	case canvas.Hovered() == id:
 		fill, foreground = pal.tabHover, pal.text
 	}
-	return f.Row().Size(barButtonSize, barButtonSize).Shrink(0).Center().Radius(radius.item).Background(fill).
+	return ui.Row(c).Size(barButtonSize, barButtonSize).Shrink(0).Center().Radius(radius.item).Background(fill).
 		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: label}).Children(func() {
-		f.Icon(lucideIcons[icon]).Color(foreground)
+		ui.Icon(c, lucideIcons[icon]).Color(foreground)
 	})
 }
 
@@ -994,14 +1048,47 @@ func elide(canvas *gfx.Canvas, value string, size, weight, width float32) string
 	return string(runes[:fits]) + "…"
 }
 
+// shellPageRoot names the shell's controls in the window's Tree, and
+// shellProbeRoot the window-bar page that measures the tabs. They are separate
+// pages, so each needs a root of its own.
+const (
+	shellPageRoot  = "window-shell"
+	shellProbeRoot = "window-bar-probe"
+)
+
 // chromeLayout keeps the ui.View of each area of the window chrome that is laid
 // out by github.com/vivaui/viva/flex, and the few rectangles another painter needs from them.
 type chromeLayout struct {
-	window, probe, header, hostRow, empty, popup ui.View
+	header, hostRow, popup ui.View
+	// windowPage declares the shell (the window bar, the navigation rail and the
+	// workspace slot), with windowView its declaration kept so a paint makes no new
+	// method value. workspaceSlot is the slot the sections paint into, and the
+	// shell* fields are what the cached view reads for the paint in progress.
+	// probePage declares the window bar once without its contents to find how wide
+	// the tabs come out; probeInput is what its cached view reads.
+	windowPage     *ui.Page
+	windowView     func(ui.C)
+	workspaceSlot  ui.Box
+	shellPicture   bool
+	shellHeight    float32
+	shellGeometry  barGeometry
+	shellScroll    float32
+	shellFullPage  bool
+	shellCardRight float32
+	probePage      *ui.Page
+	probeView      func(ui.C)
+	probeInput     barGeometry
 	// widget lays out one small control at a time (a bar or toolbar button, a chip,
 	// an icon button): each paints what it declared before the next begins, so the
 	// view is shared. dialog is the body of one dialog.
 	widget, dialog ui.View
+	// deleteHostPage, hostKeyPage and passwordPage declare the bodies of the
+	// dialogs that keep no state struct of their own. Each is made on its first
+	// paint and kept, so a repaint declares into the same page. passwordSave is
+	// the slot the save box of the password dialog was laid out in.
+	deleteHostPage, hostKeyPage, passwordPage *ui.Page
+	deleteHostView, hostKeyView, passwordView func(ui.C)
+	passwordSave                              ui.Box
 	// newTabPage declares the empty tab, with newTabView its declaration kept so a
 	// paint makes no new method value; newTabAdd and newTabAll are its footer
 	// buttons, painted by hand once the page has laid them out.
@@ -1033,22 +1120,17 @@ type chromeLayout struct {
 	newTabShells ui.Box
 	// hostList is the hosts list: where the wheel is aimed.
 	hostList gfx.Rect
-	// sftpPanelPage and sftpEditorPage declare the docked files panel and its
-	// editor; sftpEmptyPage declares the panel before it has a list.
-	sftpPanelPage  *ui.Page
-	sftpPanelView  func(ui.C)
-	sftpPanel      sftpPanelScratch
-	sftpEditorPage *ui.Page
-	sftpEditorView func(ui.C)
-	sftpEditor     sftpEditorScratch
-	sftpEmptyPage  *ui.Page
-	sftpEmptyView  func(ui.C)
-	sftpEmpty      sftpEmptyScratch
+	// sftpPanel, sftpEditor and sftpEmpty are the slots the docked files panel's
+	// page view declares. The view is part of the workbench page now; the slots
+	// let the hand-painted parts find their rectangles after layout.
+	sftpPanel  sftpPanelScratch
+	sftpEditor sftpEditorScratch
+	sftpEmpty  sftpEmptyScratch
 }
 
 // declareNavigation declares the sidebar: the name of the application over the
 // pages, and the way to a shell on this computer and to the settings at the bottom.
-func (state *State) declareNavigation(f *ui.Frame, height float32) {
+func (state *State) declareNavigation(c ui.C, height float32) {
 	m := state.messages
 	logoGap := float32(20)
 	if height < 640 {
@@ -1072,42 +1154,42 @@ func (state *State) declareNavigation(f *ui.Frame, height float32) {
 		{hitSnippets, iconNote, m.NavSnippets, state.activeSection == sectionSnippets},
 		{hitNotes, iconNotebook, state.noteText("Notes", "笔记"), state.activeSection == sectionNotes},
 	}
-	f.Column().Width(navigationWidth).Shrink(0).Children(func() {
+	ui.Column(c).Width(navigationWidth).Shrink(0).Children(func() {
 		// The logo with the name beside it, painted into this slot after layout.
-		state.chrome.lockup = f.Slot().Size(lockupWidth, lockupHeight).MarginSides(15, 0, logoGap, 0).Self(ui.Center)
+		state.chrome.lockup = ui.Slot(c).Size(lockupWidth, lockupHeight).MarginSides(15, 0, logoGap, 0).Self(ui.Center)
 		for _, item := range items {
-			state.navigationItem(f, item.id, item.icon, item.label, item.active, 4)
+			state.navigationItem(c, item.id, item.icon, item.label, item.active, 4)
 		}
 		if state.tabOrientation == tabsVertical && len(state.workspaceTabs) > 0 {
-			state.verticalTabs.slot = f.Slot().Grow(1).Basis(0).MarginSides(8, 9, 8, 9)
+			state.verticalTabs.slot = ui.Slot(c).Grow(1).Basis(0).MarginSides(8, 9, 8, 9)
 		}
 		// A shell on this computer needs no host, so its way in is always at hand:
 		// above the Settings, at the bottom of the sidebar. A dev build also puts
 		// the component gallery there (see declareDevNavigation).
 		if state.tabOrientation != tabsVertical || len(state.workspaceTabs) == 0 {
-			f.Spacer()
+			ui.Spacer(c)
 		}
-		state.navigationItem(f, hitLocalTerminal, iconTerminal, m.LocalTerminal, false, 4)
-		state.openLocalShellPickerOn(f.Canvas(), hitLocalTerminal, false)
-		state.devDeclareNavigation(f)
-		state.navigationItem(f, hitSettings, iconSettings, m.NavSettings, state.activeSection == sectionSettings, 16)
+		state.navigationItem(c, hitLocalTerminal, iconTerminal, m.LocalTerminal, false, 4)
+		state.openLocalShellPickerOn(c.Canvas(), hitLocalTerminal, false)
+		state.devDeclareNavigation(c)
+		state.navigationItem(c, hitSettings, iconSettings, m.NavSettings, state.activeSection == sectionSettings, 16)
 	})
 }
 
 // navigationItem declares one row of the sidebar: an icon and a name, filled while
 // it is the page on show or the pointer is on it.
-func (state *State) navigationItem(f *ui.Frame, id gfx.ID, icon uint8, label string, active bool, below float32) {
+func (state *State) navigationItem(c ui.C, id gfx.ID, icon uint8, label string, active bool, below float32) {
 	pal := state.pal
 	var fill gfx.Color
 	if active {
 		fill = pal.surfaceHot
-	} else if f.Canvas().Hovered() == id {
+	} else if c.Canvas().Hovered() == id {
 		fill = pal.surfaceSoft
 	}
-	f.Row().Height(36).MarginSides(0, 9, below, 9).PadSides(0, 9, 0, 15).Gap(12).Items(ui.Center).Radius(radius.control).Background(fill).
+	ui.Row(c).Height(36).MarginSides(0, 9, below, 9).PadSides(0, 9, 0, 15).Gap(12).Items(ui.Center).Radius(radius.control).Background(fill).
 		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleMenuItem, Selected: active}).Children(func() {
-		f.Icon(lucideIcons[icon]).IconTransform(state.iconMotion(f.Canvas(), id, icon)).Color(pal.text)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
+		ui.Icon(c, lucideIcons[icon]).IconTransform(state.iconMotion(c.Canvas(), id, icon)).Color(pal.text)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
 	})
 }
 
@@ -2118,21 +2200,13 @@ func (state *State) hostBadgeFill(background gfx.Color) gfx.Color {
 // invited to add one.
 func (state *State) paintEmptyHosts(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m := state.messages
-	var icon, add ui.Box
-	f := state.chrome.empty.Begin(canvas, state.Theme(), bounds)
-	icon, add = state.declareEmptyPage(f, bounds, m.HostsEmpty, m.HostsEmptySub, m.NewHost)
-	f.End()
-	state.paintEmptyPage(canvas, icon, add, iconHosts, hitAddHostEmpty, m.NewHost, true)
+	state.drawEmptyPage(canvas, bounds, m.HostsEmpty, m.HostsEmptySub, m.NewHost, state.pal.muted, iconHosts, hitAddHostEmpty, m.NewHost, true)
 }
 
 // paintNoMatches is what the list shows when the search box hides every host.
 func (state *State) paintNoMatches(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m := state.messages
-	var icon, add ui.Box
-	f := state.chrome.empty.Begin(canvas, state.Theme(), bounds)
-	icon, add = state.declareEmptyPage(f, bounds, m.NoMatches, m.NoMatchesSub, "")
-	f.End()
-	state.paintEmptyPage(canvas, icon, add, iconSearch, gfx.ID{}, "", true)
+	state.drawEmptyPage(canvas, bounds, m.NoMatches, m.NoMatchesSub, "", state.pal.muted, iconSearch, gfx.ID{}, "", true)
 }
 
 // lucideIcons maps the internal icon kinds to compiled Lucide icons
@@ -2235,6 +2309,15 @@ func paintIcon(canvas *gfx.Canvas, kind uint8, bounds gfx.Rect, foreground gfx.C
 	canvas.DrawIcon(lucideIcons[kind], bounds, foreground)
 }
 
+// The dialog bodies declared in this file each name their own page, so no two
+// declarations share names in the window's Tree.
+const (
+	deleteHostBodyRoot = "delete-host-body"
+	hostKeyBodyRoot    = "host-key-body"
+	passwordBodyRoot   = "password-body"
+	moveGroupBodyRoot  = "move-group-body"
+)
+
 // paintHostDialog renders the modal New Host form on its own layer.
 func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, theme := state.messages, state.Theme()
@@ -2263,8 +2346,6 @@ func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	const rowHeight = hostFormRowHeight
 	ssh := sshHost
 	vncHost := state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP
-	var vncRows ui.Box
-	var protocol, label, endpoint, group, tags, iconField, colorField, transfer, proxy, jump, advanced ui.Box
 	form := &state.editor.form
 	form.count = 0
 	if form.lastError != state.dialogError {
@@ -2280,63 +2361,29 @@ func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		form.lastFocus = gfx.ID{}
 	}
 	form.geometry, form.offset, form.clipped = geometry, geometry.OffsetY, true
-	body := geometry.Content
+	bodyRect := geometry.Content
 	if geometry.MaxOffsetY > 0 {
-		body.Width -= 12
+		bodyRect.Width -= 12
 	}
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		protocol = f.Slot().Height(34).MarginSides(0, 0, 10, 0)
-		f.Row().Height(rowHeight).Gap(8).Children(func() {
-			label = f.Slot().Grow(1)
-			colorField = f.Slot().Grow(1)
-		})
-		endpoint = f.Slot().Height(float32(state.hostEndpointRows()) * rowHeight)
-		f.Row().Height(rowHeight).Gap(8).Children(func() {
-			group = f.Slot().Grow(1)
-			tags = f.Slot().Grow(1)
-		})
-		f.Row().Height(rowHeight).Gap(8).Children(func() {
-			iconField = f.Slot().Grow(1)
-			if ssh {
-				transfer = f.Slot().Grow(1)
-			}
-		})
-		if networkHost {
-			// The proxy is its own row: sharing the icon row clipped both the
-			// icon value and the proxy summary on VNC, RDP and Telnet.
-			proxy = f.Slot().Height(rowHeight)
-		}
-		if ssh {
-			jump = f.Slot().Height(rowHeight)
-			advanced = f.Slot().Height(state.advancedSectionHeight())
-		}
-		if vncHost {
-			vncRows = f.Slot().Height(state.desktopRowsHeight())
-		}
-		if state.dialogError != "" {
-			// The serial line's error is long: up to two lines.
-			f.Paragraph(state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
-		}
-	})
-	f.End()
-	state.paintHostProtocolSwitch(canvas, protocol.Rect())
-	state.paintDialogField(canvas, hitDialogLabel, fieldLabel, m.FieldLabel, m.FieldLabelPlaceholder, label.Rect())
-	state.paintHostEndpointRows(canvas, endpoint.Rect().X, endpoint.Rect().Y, endpoint.Rect().Width, rowHeight)
-	state.paintHostGroupPicker(canvas, group.Rect())
-	state.paintHostTags(canvas, tags.Rect())
-	state.paintHostIconChoice(canvas, iconField.Rect())
-	state.paintHostColorChoice(canvas, colorField.Rect())
+	state.hostFormPage().Draw(canvas, bodyRect, form.view)
+	b := &form.body
+	state.paintHostProtocolSwitch(canvas, b.protocol.Rect())
+	state.paintDialogField(canvas, hitDialogLabel, fieldLabel, m.FieldLabel, m.FieldLabelPlaceholder, b.label.Rect())
+	state.paintHostEndpointRows(canvas, b.endpoint.Rect().X, b.endpoint.Rect().Y, b.endpoint.Rect().Width, rowHeight)
+	state.paintHostGroupPicker(canvas, b.group.Rect())
+	state.paintHostTags(canvas, b.tags.Rect())
+	state.paintHostIconChoice(canvas, b.iconField.Rect())
+	state.paintHostColorChoice(canvas, b.colorField.Rect())
 	if networkHost {
-		state.paintHostProxyRow(canvas, proxy.Rect())
+		state.paintHostProxyRow(canvas, b.proxy.Rect())
 	}
 	if vncHost {
-		state.paintVNCRows(canvas, vncRows.Rect())
+		state.paintVNCRows(canvas, b.vncRows.Rect())
 	}
 	if ssh {
-		state.paintHostJumpRow(canvas, jump.Rect())
-		state.paintTransferChoice(canvas, transfer.Rect())
-		state.paintAdvancedSection(canvas, advanced.Rect())
+		state.paintHostJumpRow(canvas, b.jump.Rect())
+		state.paintTransferChoice(canvas, b.transfer.Rect())
+		state.paintAdvancedSection(canvas, b.advanced.Rect())
 	}
 
 	area.EndContent()
@@ -2355,6 +2402,64 @@ func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	dialog.End()
 }
 
+// hostFormPage makes the page the host form's body is declared in.
+func (state *State) hostFormPage() *ui.Page {
+	form := &state.editor.form
+	if form.page == nil {
+		form.page = ui.NewPage(ui.PageConfig{Root: hostFormBodyRoot, Theme: &state.theme})
+		form.view = state.declareHostFormBody
+	}
+	return form.page
+}
+
+// declareHostFormBody lays out the host form: the protocol switch, the fields,
+// and the sections whose controls are painted into the slots by hand. The
+// controls stay painted by hand so their focus order, clip and invalid looks
+// are the ones they already have.
+func (state *State) declareHostFormBody(c ui.C) {
+	editor := &state.editor
+	b := &editor.form.body
+	ssh := editor.protocol == protocolSSH
+	networkHost := editor.protocol != protocolSerial
+	vncHost := editor.protocol == protocolVNC || editor.protocol == protocolRDP
+	rowHeight := float32(hostFormRowHeight)
+	*b = hostFormBody{}
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		b.protocol = ui.Slot(c).Height(34).MarginSides(0, 0, 10, 0)
+		ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+			b.label = ui.Slot(c).Grow(1)
+			b.colorField = ui.Slot(c).Grow(1)
+		})
+		b.endpoint = ui.Slot(c).Height(float32(state.hostEndpointRows()) * rowHeight)
+		ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+			b.group = ui.Slot(c).Grow(1)
+			b.tags = ui.Slot(c).Grow(1)
+		})
+		ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+			b.iconField = ui.Slot(c).Grow(1)
+			if ssh {
+				b.transfer = ui.Slot(c).Grow(1)
+			}
+		})
+		if networkHost {
+			// The proxy is its own row: sharing the icon row clipped both the
+			// icon value and the proxy summary on VNC, RDP and Telnet.
+			b.proxy = ui.Slot(c).Height(rowHeight)
+		}
+		if ssh {
+			b.jump = ui.Slot(c).Height(rowHeight)
+			b.advanced = ui.Slot(c).Height(state.advancedSectionHeight())
+		}
+		if vncHost {
+			b.vncRows = ui.Slot(c).Height(state.desktopRowsHeight())
+		}
+		if state.dialogError != "" {
+			// The serial line's error is long: up to two lines.
+			ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
+		}
+	})
+}
+
 func (state *State) paintDeleteHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	body := float32(0)
 	if state.dialogError != "" {
@@ -2367,17 +2472,35 @@ func (state *State) paintDeleteHostDialog(canvas *gfx.Canvas, viewport gfx.Rect)
 	})
 	layout := dialog.Begin(state.messages.DeleteHostTitle, state.hostDialogText)
 	if state.dialogError != "" {
-		f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-		f.Column().Fill().Children(func() {
-			f.Text(state.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(20)
-		})
-		f.End()
+		state.deleteHostDialogPage().Draw(canvas, layout.Body, state.chrome.deleteHostView)
 	}
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitHostDeleteCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitHostDeleteConfirm, Label: state.messages.DeleteHostConfirm, Variant: components.ButtonDestructive},
 	)
 	dialog.End()
+}
+
+// deleteHostDialogPage makes the page the delete confirmation's body is
+// declared in.
+func (state *State) deleteHostDialogPage() *ui.Page {
+	chrome := &state.chrome
+	if chrome.deleteHostPage == nil {
+		chrome.deleteHostPage = ui.NewPage(ui.PageConfig{Root: deleteHostBodyRoot, Theme: &state.theme})
+		chrome.deleteHostView = state.declareDeleteHostBody
+	}
+	return chrome.deleteHostPage
+}
+
+// declareDeleteHostBody lays out the confirmation's error line, when the host
+// could not be deleted.
+func (state *State) declareDeleteHostBody(c ui.C) {
+	if state.dialogError == "" {
+		return
+	}
+	ui.Column(c).Fill().Children(func() {
+		ui.Text(c, state.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(20)
+	})
 }
 
 func (state *State) paintMoveHostGroupDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
@@ -2405,11 +2528,9 @@ func (state *State) paintMoveHostGroupDialog(canvas *gfx.Canvas, viewport gfx.Re
 		description = elide(canvas, state.groupActions.path, state.Theme().Metrics.FontSizeM, gfx.WeightRegular, dialog.Layout("").Header.Width)
 	}
 	layout := dialog.Begin(title, description)
-	var slot ui.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() { slot = f.Slot().Height(90) })
-	f.End()
-	field := components.BeginField(canvas, state.Theme(), slot.Rect()).For(hitMoveGroupField)
+	state.moveGroupDialogPage().Draw(canvas, layout.Body, state.groupActions.view)
+	slot := state.groupActions.slot.Rect()
+	field := components.BeginField(canvas, state.Theme(), slot).For(hitMoveGroupField)
 	if state.dialogError != "" {
 		field = field.Invalid()
 	}
@@ -2430,6 +2551,24 @@ func (state *State) paintMoveHostGroupDialog(canvas *gfx.Canvas, viewport gfx.Re
 		components.ButtonAction{ID: hitMoveGroupSubmit, Label: submit},
 	)
 	dialog.End()
+}
+
+// moveGroupDialogPage makes the page the move/rename dialog's body is declared
+// in.
+func (state *State) moveGroupDialogPage() *ui.Page {
+	actions := &state.groupActions
+	if actions.page == nil {
+		actions.page = ui.NewPage(ui.PageConfig{Root: moveGroupBodyRoot, Theme: &state.theme})
+		actions.view = state.declareMoveGroupBody
+	}
+	return actions.page
+}
+
+// declareMoveGroupBody lays out the one field the dialog shows.
+func (state *State) declareMoveGroupBody(c ui.C) {
+	ui.Column(c).Fill().Children(func() {
+		state.groupActions.slot = ui.Slot(c).Height(90)
+	})
 }
 
 // paintDialogField paints one label + input row wired to its editor. The
@@ -2619,7 +2758,7 @@ func (state *State) paintDialogFieldWithSecurity(canvas *gfx.Canvas, id gfx.ID, 
 // paintHostKeyDialog asks whether to trust a server's key. The safe choice,
 // Reject, holds the initial focus.
 func (state *State) paintHostKeyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, pal, theme := state.messages, state.pal, state.Theme()
+	m, theme := state.messages, state.Theme()
 	session := state.promptSession()
 	if session == nil {
 		return
@@ -2630,21 +2769,7 @@ func (state *State) paintHostKeyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: 3*30 - 8, // three rows of address, type and fingerprint
 	})
 	layout := dialog.Begin(m.HostKeyTitle, state.hostKeyDescription)
-	rows := [...]struct{ label, value string }{
-		{m.FieldAddress, session.hostKey.Address},
-		{m.HostKeyType, session.hostKey.Type},
-		{m.HostKeyFingerprint, session.hostKey.Fingerprint},
-	}
-	f := state.chrome.dialog.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().Gap(8).Children(func() {
-		for _, row := range rows {
-			f.Row().Height(22).Gap(6).Children(func() {
-				f.Text(row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).Width(90).Shrink(0)
-				f.Text(row.value).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(pal.text).LineHeight(22)
-			})
-		}
-	})
-	f.End()
+	state.hostKeyDialogPage().Draw(canvas, layout.Body, state.chrome.hostKeyView)
 	actions := [...]components.ButtonAction{
 		{ID: hitHostKeyReject, Label: m.HostKeyReject, Variant: components.ButtonSecondary},
 		{ID: hitHostKeyOnce, Label: m.HostKeyOnce, Variant: components.ButtonOutline},
@@ -2657,6 +2782,38 @@ func (state *State) paintHostKeyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	}
 	dialog.Actions(layout, actions[:actionCount]...)
 	dialog.End()
+}
+
+// hostKeyDialogPage makes the page the host-key question's body is declared in.
+func (state *State) hostKeyDialogPage() *ui.Page {
+	chrome := &state.chrome
+	if chrome.hostKeyPage == nil {
+		chrome.hostKeyPage = ui.NewPage(ui.PageConfig{Root: hostKeyBodyRoot, Theme: &state.theme})
+		chrome.hostKeyView = state.declareHostKeyBody
+	}
+	return chrome.hostKeyPage
+}
+
+// declareHostKeyBody lays out the address, type and fingerprint of the key.
+func (state *State) declareHostKeyBody(c ui.C) {
+	session := state.promptSession()
+	if session == nil {
+		return
+	}
+	m, pal := state.messages, state.pal
+	rows := [...]struct{ label, value string }{
+		{m.FieldAddress, session.hostKey.Address},
+		{m.HostKeyType, session.hostKey.Type},
+		{m.HostKeyFingerprint, session.hostKey.Fingerprint},
+	}
+	ui.Column(c).Fill().Gap(8).Children(func() {
+		for _, row := range rows {
+			ui.Row(c).Height(22).Gap(6).Children(func() {
+				ui.Text(c, row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).Width(90).Shrink(0)
+				ui.Text(c, row.value).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(pal.text).LineHeight(22)
+			})
+		}
+	})
 }
 
 // paintPasswordDialog asks every question of one authentication round, each in
@@ -2739,31 +2896,47 @@ func (state *State) layoutPasswordFields(canvas *gfx.Canvas, body gfx.Rect) (fie
 		boxes = make([]ui.Box, len(state.passwordQuestions))
 		state.passwordRects, state.passwordBoxes = fields, boxes
 	}
-	multi := len(boxes) > 1
-	var saveBox ui.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		for index := range boxes {
-			boxes[index] = f.Slot().Height(62).MarginSides(0, 0, 4, 0)
-		}
-		state.hintLine(f)
-		state.problemLine(f, state.passwordError)
-		if state.secrets.canSave {
-			if multi {
-				saveBox = f.Slot().Height(20).MarginSides(12, 0, 0, 0)
-			} else {
-				saveBox = f.Slot().Height(20).MarginSides(8, 0, 0, 0)
-			}
-		}
-	})
-	f.End()
+	state.passwordDialogPage().Draw(canvas, body, state.chrome.passwordView)
 	for index := range boxes {
 		fields[index] = boxes[index].Rect()
 	}
 	if state.secrets.canSave {
-		save = saveBox.Rect()
+		save = state.chrome.passwordSave.Rect()
 	}
 	return fields, save
+}
+
+// passwordDialogPage makes the page the password dialog's body is declared in.
+func (state *State) passwordDialogPage() *ui.Page {
+	chrome := &state.chrome
+	if chrome.passwordPage == nil {
+		chrome.passwordPage = ui.NewPage(ui.PageConfig{Root: passwordBodyRoot, Theme: &state.theme})
+		chrome.passwordView = state.declarePasswordBody
+	}
+	return chrome.passwordPage
+}
+
+// declarePasswordBody lays out one field per question, the hint and error under
+// them and, when the vault can keep it, the box that offers to save it. The
+// fields themselves are painted into their slots by paintPasswordDialog.
+func (state *State) declarePasswordBody(c ui.C) {
+	boxes := state.passwordBoxes
+	multi := len(boxes) > 1
+	state.chrome.passwordSave = ui.Box{}
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		for index := range boxes {
+			boxes[index] = ui.Slot(c).Height(62).MarginSides(0, 0, 4, 0)
+		}
+		state.hintLineC(c)
+		state.problemLineC(c, state.passwordError)
+		if state.secrets.canSave {
+			if multi {
+				state.chrome.passwordSave = ui.Slot(c).Height(20).MarginSides(12, 0, 0, 0)
+			} else {
+				state.chrome.passwordSave = ui.Slot(c).Height(20).MarginSides(8, 0, 0, 0)
+			}
+		}
+	})
 }
 
 // passwordHintText is the guidance about submitting and saving: a help icon on
@@ -2782,15 +2955,15 @@ func (state *State) passwordHintText() string {
 	return hint
 }
 
-// hintLine declares the hint row under the fields. The field's description
+// hintLineC declares the hint row under the fields. The field's description
 // slot would draw past its fixed 62 pixel slot onto the error line, so the
 // hint is a row of its own.
-func (state *State) hintLine(f *ui.Frame) {
+func (state *State) hintLineC(c ui.C) {
 	if state.secrets.canSave {
 		return
 	}
 	if hint := state.passwordHintText(); hint != "" {
-		f.Text(hint).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(state.pal.muted).LineHeight(18)
+		ui.Text(c, hint).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(state.pal.muted).LineHeight(18)
 	}
 }
 

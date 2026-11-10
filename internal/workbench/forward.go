@@ -170,6 +170,19 @@ type forwardEditor struct {
 	// modePage declares the forward type switch, and modeView caches its view.
 	modePage *ui.Page
 	modeView func(ui.C)
+	// dialogPage declares the dialog's body, dialogView caches its view, and
+	// dialogBody is where the body laid out the controls painted by hand.
+	dialogPage *ui.Page
+	dialogView func(ui.C)
+	dialogBody forwardDialogBody
+}
+
+// forwardDialogBody is where the forward editor's body put each control it
+// paints by hand.
+type forwardDialogBody struct {
+	name, host, mode, port       ui.Box
+	destination, destinationPort ui.Box
+	resume, resumeHelp           ui.Box
 }
 
 type forwardField uint8
@@ -415,6 +428,12 @@ func (state *State) forwardDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool)
 		return gfx.EventResult{}, false
 	}
 	editor := &state.forwardEditor
+	if editor.dialogPage != nil {
+		// The body page's controls, if any, take the key before the picker.
+		if result, handled := editor.dialogPage.Key(event); handled {
+			return result, true
+		}
+	}
 	if editor.modePage != nil {
 		// The forward type switch is a page Choice: its arrows are the page's.
 		if result, handled := editor.modePage.Key(event); handled {
@@ -446,6 +465,12 @@ func (state *State) forwardDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool)
 
 func (state *State) forwardPickerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	editor := &state.forwardEditor
+	if editor.dialogPage != nil {
+		// The dialog's body page gets the pointer before the picker's own paths.
+		if result, handled := editor.dialogPage.Pointer(event); handled {
+			return result, true
+		}
+	}
 	if !editor.hostSelect.Open {
 		return gfx.EventResult{}, false
 	}

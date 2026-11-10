@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/store"
 	"motty/internal/i18n"
@@ -150,7 +151,7 @@ func (state *State) agentAuditLines() []string {
 }
 
 func (state *State) paintAIAgents(page *settingsPage) {
-	pal, m := state.pal, state.messages.AISettings
+	c, pal, m := page.c, state.pal, state.messages.AISettings
 	hosts := state.agentHostsText()
 	entries := state.ai.agentAudit
 	activity := m.AgentActivityNone
@@ -158,8 +159,8 @@ func (state *State) paintAIAgents(page *settingsPage) {
 		activity = m.AgentActivityDesc
 	}
 	page.group(m.AgentsTitle, func() {
-		page.f.Column().Pad(18).Children(func() {
-			page.f.Wrap(m.AgentsDescription).FontSize(metrics.FontSizeS).LineHeight(18).Color(pal.muted)
+		ui.Column(c).Pad(18).Children(func() {
+			ui.Wrap(c, m.AgentsDescription).FontSize(metrics.FontSizeS).LineHeight(18).Color(pal.muted)
 		})
 		mode := state.ai.settings.agentMode
 		settingsChoiceRow(page, m.AgentMode, m.AgentModeDesc, &mode, aiAgentModeChoices[:], state.aiAgentModeLabel,
@@ -183,10 +184,9 @@ func (state *State) paintAIAgents(page *settingsPage) {
 			return
 		}
 		page.separator()
-		f := page.f
-		f.Column().Pad(18).Gap(4).Children(func() {
+		ui.Column(c).Pad(18).Gap(4).Children(func() {
 			for _, line := range state.agentAuditLines() {
-				f.Wrap(line).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16)
+				ui.Wrap(c, line).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16)
 			}
 		})
 	})

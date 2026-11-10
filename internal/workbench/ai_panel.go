@@ -26,34 +26,27 @@ import (
 var aiPanelHits = tree.Feature("ai-panel")
 
 var (
-	hitAIToggle           = tree.ID(aiPanelHits, "ai-toggle")
-	hitAIClose            = tree.ID(aiPanelHits, "ai-close")
-	hitAINew              = tree.ID(aiPanelHits, "ai-new")
-	hitAIHistory          = tree.ID(aiPanelHits, "ai-history")
-	hitAIMode             = tree.ID(aiPanelHits, "ai-mode")
-	hitAISetup            = tree.ID(aiPanelHits, "ai-setup")
-	hitAISend             = tree.ID(aiPanelHits, "ai-send")
-	hitAIInput            = tree.ID(aiPanelHits, "ai-input")
-	hitAIConfirm          = tree.ID(aiPanelHits, "ai-confirm")
-	hitAIApprove          = tree.ID(aiPanelHits, "ai-approve")
-	hitAIDecline          = tree.ID(aiPanelHits, "ai-decline")
-	hitAIToEnd            = tree.ID(aiPanelHits, "ai-to-end")
-	hitAIMessageBar       = tree.ID(aiPanelHits, "ai-message-scroll-bar")
-	hitAIHistoryBar       = tree.ID(aiPanelHits, "ai-history-scroll-bar")
-	hitAIDrawerDismiss    = tree.ID(aiPanelHits, "ai-drawer-dismiss")
-	hitAIModelChip        = tree.ID(aiPanelHits, "ai-model-chip")
-	hitAIDivider          = tree.ID(aiPanelHits, "ai-divider")
-	hitAIComposerGrip     = tree.ID(aiPanelHits, "ai-composer-grip")
-	hitAIModelDismiss     = tree.ID(aiPanelHits, "ai-model-dismiss")
-	hitAIModelSubDismiss  = tree.ID(aiPanelHits, "ai-model-submenu-dismiss")
-	hitAIAutoScope        = tree.ID(aiPanelHits, "ai-auto-scope")
-	hitAIAutoScopeDismiss = tree.ID(aiPanelHits, "ai-auto-scope-dismiss")
-	hitAIReasoningChip    = tree.ID(aiPanelHits, "ai-reasoning-chip")
-	hitAIReasoningDismiss = tree.ID(aiPanelHits, "ai-reasoning-dismiss")
-	hitAIReasoningMenu    = tree.Sub(aiPanelHits, tree.Name("ai-reasoning-menu"))
-	hitAIModelList        = tree.ID(aiPanelHits, "ai-model-list") // names the models menu for its entrance and exit; it is not a control
-	hitAIModelBar         = tree.ID(aiPanelHits, "ai-model-scroll-bar")
-	hitAIRunStatus        = tree.ID(aiPanelHits, "ai-run-status")
+	hitAIToggle        = tree.ID(aiPanelHits, "ai-toggle")
+	hitAIClose         = tree.ID(aiPanelHits, "ai-close")
+	hitAINew           = tree.ID(aiPanelHits, "ai-new")
+	hitAIHistory       = tree.ID(aiPanelHits, "ai-history")
+	hitAIMode          = tree.ID(aiPanelHits, "ai-mode")
+	hitAISetup         = tree.ID(aiPanelHits, "ai-setup")
+	hitAISend          = tree.ID(aiPanelHits, "ai-send")
+	hitAIInput         = tree.ID(aiPanelHits, "ai-input")
+	hitAIConfirm       = tree.ID(aiPanelHits, "ai-confirm")
+	hitAIApprove       = tree.ID(aiPanelHits, "ai-approve")
+	hitAIDecline       = tree.ID(aiPanelHits, "ai-decline")
+	hitAIToEnd         = tree.ID(aiPanelHits, "ai-to-end")
+	hitAIMessageBar    = tree.ID(aiPanelHits, "ai-message-scroll-bar")
+	hitAIHistoryBar    = tree.ID(aiPanelHits, "ai-history-scroll-bar")
+	hitAIDrawerDismiss = tree.ID(aiPanelHits, "ai-drawer-dismiss")
+	hitAIModelChip     = tree.ID(aiPanelHits, "ai-model-chip")
+	hitAIDivider       = tree.ID(aiPanelHits, "ai-divider")
+	hitAIComposerGrip  = tree.ID(aiPanelHits, "ai-composer-grip")
+	hitAIAutoScope     = tree.ID(aiPanelHits, "ai-auto-scope")
+	hitAIReasoningChip = tree.ID(aiPanelHits, "ai-reasoning-chip")
+	hitAIRunStatus     = tree.ID(aiPanelHits, "ai-run-status")
 )
 
 const (
@@ -62,29 +55,25 @@ const (
 	aiMaxRowHits    = 3000
 	aiMaxCopyBlocks = 32
 	aiMaxLinkRows   = 64
-	aiMenuRows      = 10   // models the chip's menu shows at once
 	aiMenuModels    = 1000 // and the most it lists for one provider
 )
 
 var (
-	hitAIExamples        = tree.Sub(aiPanelHits, tree.Name("ai-examples"))       // the example prompts
-	hitAIHistoryOpen     = tree.Sub(aiPanelHits, tree.Name("ai-history-open"))   // saved conversations, to open
-	hitAIHistoryDelete   = tree.Sub(aiPanelHits, tree.Name("ai-history-delete")) // and to delete
-	hitAIHistoryRename   = tree.Sub(aiPanelHits, tree.Name("ai-history-rename")) // and to rename
-	hitAIRenameClose     = tree.ID(aiPanelHits, "ai-rename-close")
-	hitAIRenameCancel    = tree.ID(aiPanelHits, "ai-rename-cancel")
-	hitAIRenameSubmit    = tree.ID(aiPanelHits, "ai-rename-submit")
-	hitAIRenameField     = tree.ID(aiPanelHits, "ai-rename-field")
-	hitAIRows            = tree.Sub(aiPanelHits, tree.Name("ai-rows"))              // collapsible rows of the conversation
-	hitAICopies          = tree.Sub(aiPanelHits, tree.Name("ai-copies"))            // copy buttons of code blocks
-	hitAIAnswerText      = tree.Sub(aiPanelHits, tree.Name("ai-answer-text"))       // selectable primary text of a conversation row
-	hitAIToolOutputText  = tree.Sub(aiPanelHits, tree.Name("ai-tool-output-text"))  // selectable output of a tool row
-	hitAICopyAnswer      = tree.ID(aiPanelHits, "ai-copy-answer")                   // copy the last answer
-	hitAILinks           = tree.Sub(aiPanelHits, tree.Name("ai-links"))             // links in the assistant's answers
-	hitAIMentions        = tree.Sub(aiPanelHits, tree.Name("ai-mentions"))          // sessions an @ can name
-	hitAIModels          = tree.Sub(aiPanelHits, tree.Name("ai-models"))            // the models of the provider the chip menu has open
-	hitAIModelProviders  = tree.Sub(aiPanelHits, tree.Name("ai-model-providers"))   // the providers the chip menu lists
-	hitAIAutoScopeLevels = tree.Sub(aiPanelHits, tree.Name("ai-auto-scope-levels")) // the scopes the approval chip offers
+	hitAIExamples       = tree.Sub(aiPanelHits, tree.Name("ai-examples"))       // the example prompts
+	hitAIHistoryOpen    = tree.Sub(aiPanelHits, tree.Name("ai-history-open"))   // saved conversations, to open
+	hitAIHistoryDelete  = tree.Sub(aiPanelHits, tree.Name("ai-history-delete")) // and to delete
+	hitAIHistoryRename  = tree.Sub(aiPanelHits, tree.Name("ai-history-rename")) // and to rename
+	hitAIRenameClose    = tree.ID(aiPanelHits, "ai-rename-close")
+	hitAIRenameCancel   = tree.ID(aiPanelHits, "ai-rename-cancel")
+	hitAIRenameSubmit   = tree.ID(aiPanelHits, "ai-rename-submit")
+	hitAIRenameField    = tree.ID(aiPanelHits, "ai-rename-field")
+	hitAIRows           = tree.Sub(aiPanelHits, tree.Name("ai-rows"))             // collapsible rows of the conversation
+	hitAICopies         = tree.Sub(aiPanelHits, tree.Name("ai-copies"))           // copy buttons of code blocks
+	hitAIAnswerText     = tree.Sub(aiPanelHits, tree.Name("ai-answer-text"))      // selectable primary text of a conversation row
+	hitAIToolOutputText = tree.Sub(aiPanelHits, tree.Name("ai-tool-output-text")) // selectable output of a tool row
+	hitAICopyAnswer     = tree.ID(aiPanelHits, "ai-copy-answer")                  // copy the last answer
+	hitAILinks          = tree.Sub(aiPanelHits, tree.Name("ai-links"))            // links in the assistant's answers
+	hitAIMentions       = tree.Sub(aiPanelHits, tree.Name("ai-mentions"))         // sessions an @ can name
 )
 
 // The terminal menu's two assistant items.
@@ -101,7 +90,14 @@ const (
 	aiMinTerminal = float32(360)            // the panes keep at least this much beside the panel
 )
 
-func inAIPanel(id gfx.ID) bool { return tree.Within(id.Scope(), aiPanelHits) }
+func inAIPanel(id gfx.ID) bool {
+	if id.IsZero() {
+		return false
+	}
+	// The page-declared elements live under the workbench page's assistant
+	// container; the ones this package paints by hand keep their own feature.
+	return tree.Within(id.Scope(), aiPanelHits) || tree.Within(id.Scope(), aiPanelScope())
+}
 
 type aiDragKind uint8
 
@@ -374,27 +370,30 @@ type aiPanel struct {
 	dragStart float32 // and how tall the box was
 	boxHeight float32 // how tall it was painted
 
-	// The model chip and its menu.
-	modelMenu     bool
-	modelProvider int                     // which provider of the menu is open
-	modelList     components.MenuScroll   // where the list of that provider's models is scrolled to
-	modelSubmenu  components.SubmenuState // which provider's model list is open
-	modelHover    components.HoverIntent  // the provider row the pointer is resting on
-	// modelTypeahead is the typed prefix that highlights a model by name.
-	modelTypeahead components.MenuTypeahead
-	modelsRect     gfx.Rect // where the list of models was painted, for the wheel
-	window         gfx.Rect // the whole window, for the menu to be dismissed from
-	chip           gfx.Rect
-	approvalLay    aiApprovalLayout
+	// The model chip and its menu: modelMenu is whether the ui.Menu is open.
+	modelMenu   bool
+	approvalLay aiApprovalLayout
 
-	// page declares the panel's chrome; pageView is its declaration kept so a
-	// paint makes no method value. body holds what the page left for the
-	// hand-painted controls and lists, and pageScratch the values its
-	// declaration reads.
-	page        *ui.Page
-	pageView    func(ui.C)
-	body        aiBody
-	pageScratch aiPanelPageScratch
+	// mode is how the workbench page placed the panel in its last paint, and
+	// declared whether it declared it at all. drawerOpen is the page Drawer's open
+	// bool: its address is the drawer's identity, so it must stay one field.
+	mode       aiPanelMode
+	declared   bool
+	drawerOpen bool
+	resize     aiPanelResize
+
+	// contentDraw and overDraw paint the parts the page's declaration left for
+	// the last pass, kept so a paint makes no method values. composerDraw paints
+	// the native textarea into the box the page reserved, and is kept for the
+	// same reason. The message and history list is the page's Control: listDraw
+	// paints its rows and listHandlers takes the gestures over them, both kept
+	// here so a paint declares no closures.
+	contentDraw, overDraw func(*ui.DrawContext)
+	composerDraw          func(*ui.DrawContext)
+	listDraw              func(*ui.DrawContext)
+	listHandlers          ui.Handlers
+	body                  aiBody
+	pageScratch           aiPanelPageScratch
 
 	// importPages is the provider import dialog's page and the slots its
 	// hand-painted buttons go into.
@@ -402,14 +401,11 @@ type aiPanel struct {
 
 	// The approval scope chip and the menu it opens. The scope itself belongs to
 	// the conversation (ai.autoUpTo); this is only its view state.
-	autoMenu   bool
-	autoScroll components.MenuScroll
-	scopeChip  gfx.Rect // where the chip was painted, for the menu to hang above
+	autoMenu bool
 
 	// Reasoning effort chip and menu
 	reasoningMenu   bool
 	reasoningEffort string
-	reasoningChip   gfx.Rect
 
 	// mentions is what the @ before the caret can name, from the last layout.
 	mentionBuf       [maxMentionSuggestions]mentionName
@@ -651,59 +647,18 @@ func (state *State) aiPanelClick(id gfx.ID) bool {
 		panel.autoMenu = false
 		panel.reasoningMenu = false
 		panel.modelMenu = !panel.modelMenu
-		panel.modelTypeahead.Reset()
-		panel.modelHover.Reset()
-		if panel.modelMenu {
-			panel.modelProvider, panel.modelList = state.aiMenuOpening()
-			panel.modelSubmenu = panel.modelSubmenu.Open(hitAIModelProviders.At(panel.modelProvider))
-		} else {
-			panel.modelSubmenu = panel.modelSubmenu.Close()
-		}
-	case id.Scope() == hitAIModelProviders:
-		if index, ok := id.In(hitAIModelProviders); ok {
-			panel.modelProvider, panel.modelList = index, components.MenuScroll{BarID: hitAIModelBar}
-			panel.modelSubmenu = panel.modelSubmenu.Open(id)
-			panel.modelTypeahead.Reset()
-		}
-	case id == hitAIModelDismiss:
-		panel.modelMenu = false
-		panel.modelSubmenu = panel.modelSubmenu.Close()
-	case id == hitAIModelSubDismiss:
-		panel.modelSubmenu = panel.modelSubmenu.Close()
 	case id == hitAIAutoScope:
 		if !state.aiScopeLocked() {
 			panel.targetOpen = false
 			panel.modelMenu = false
 			panel.reasoningMenu = false
 			panel.autoMenu = !panel.autoMenu
-			panel.autoScroll = components.MenuScroll{}
-		}
-	case id == hitAIAutoScopeDismiss:
-		panel.autoMenu = false
-	case id.Scope() == hitAIAutoScopeLevels:
-		if index, ok := id.In(hitAIAutoScopeLevels); ok && index < len(state.aiScopes()) {
-			state.aiSetAutoUpTo(state.aiScopes()[index].level)
-			panel.autoMenu = false
 		}
 	case id == hitAIReasoningChip:
 		panel.targetOpen = false
 		panel.modelMenu = false
 		panel.autoMenu = false
 		panel.reasoningMenu = !panel.reasoningMenu
-	case id == hitAIReasoningDismiss:
-		panel.reasoningMenu = false
-	case id.Scope() == hitAIReasoningMenu:
-		if index, ok := id.In(hitAIReasoningMenu); ok {
-			_, levels, okLevels := state.aiCurrentModelReasoning()
-			if okLevels && index < len(levels) {
-				panel.reasoningEffort = levels[index]
-			}
-			panel.reasoningMenu = false
-		}
-	case id.Scope() == hitAIModels:
-		if index, ok := id.In(hitAIModels); ok {
-			state.aiChooseModel(index)
-		}
 	case id == hitAISend:
 		if ai.run != nil {
 			state.aiStop()
@@ -977,14 +932,40 @@ func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventRe
 // text hit is a focusable group outside the Tab order; links and copy buttons
 // are declared after it and still win the press.
 func (state *State) aiPanelPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	panel := &state.ai.panel
-	// The page's own targets (and any overlay it declares) come first. Its Root
-	// is the panel's page, so the controls this file names by hand stay outside
-	// it and are handled below.
-	if panel.page != nil {
-		if result, ok := panel.page.Pointer(event); ok {
+	// The panel and its menus are part of the workbench page now: its controls
+	// and the open menu's backdrop are the page's, so it reads their presses
+	// first. The identities this file paints by hand are outside the page, so a
+	// press on them falls through to the gestures below.
+	page := state.chrome.windowPage
+	if state.aiMenuShown() {
+		// An open chip menu owns the pointer over the whole window: over it, the
+		// page's menu acts; anywhere else the press goes nowhere.
+		if page != nil && inAIPanel(event.Target) {
+			if result, ok := page.Pointer(event); ok {
+				return result, true
+			}
+		}
+		return gfx.EventResult{Handled: true}, true
+	}
+	if page != nil && inAIPanel(event.Target) {
+		if result, ok := page.Pointer(event); ok {
 			return result, true
 		}
+	}
+	return state.aiPanelPointerGesture(event)
+}
+
+// aiPanelPointerGesture is what the panel does with a pointer event after the
+// page has had it: the scrollbar, a text selection, the mentions, the examples
+// and a drag of an edge. The list Control's Pointer handler is this function, so
+// a press the page routes to the control and one that falls through to the
+// hand-painted list identities act the same way.
+func (state *State) aiPanelPointerGesture(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	panel := &state.ai.panel
+	if state.aiMenuShown() {
+		// Called from the page for a press on the list control while a chip menu
+		// is open: the menu owns the window and the press goes nowhere.
+		return gfx.EventResult{Handled: true}, true
 	}
 	if result, handled := state.aiPanelScrollbarPointer(event); handled {
 		return result, true
@@ -1047,6 +1028,13 @@ func (state *State) aiPanelPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 	return gfx.EventResult{Handled: true}, true
 }
 
+// aiPanelListPointer is the list Control's Pointer: the same gestures a press
+// that falls through to the hand-painted rows gets.
+func (state *State) aiPanelListPointer(event gfx.PointerEvent) gfx.EventResult {
+	result, _ := state.aiPanelPointerGesture(event)
+	return result
+}
+
 // aiDrag follows the pointer while the panel's left edge or the message box's top
 // edge is being dragged.
 func (state *State) aiDrag(event gfx.PointerEvent) gfx.EventResult {
@@ -1065,12 +1053,36 @@ func (state *State) aiDrag(event gfx.PointerEvent) gfx.EventResult {
 // aiPanelScroll scrolls the message list, or the history list. A wheel over the
 // rest of the panel is swallowed: it must not scroll the terminal behind it.
 func (state *State) aiPanelScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
-	panel := &state.ai.panel
-	if panel.autoMenu {
-		return gfx.EventResult{Handled: true, Repaint: panel.autoScroll.Wheel(event)}, true
+	// The chip menus are the workbench page's popups: an open one owns the wheel
+	// over the whole window, scrolling its own list where the pointer is over it
+	// and going nowhere otherwise.
+	page := state.chrome.windowPage
+	if state.aiMenuShown() {
+		if page != nil && inAIPanel(event.Target) {
+			if result := page.Wheel(event); result.Handled || result.Repaint {
+				return result, true
+			}
+		}
+		return gfx.EventResult{Handled: true}, true
 	}
-	if panel.modelMenu && pointInRect(event.X, event.Y, panel.modelsRect) {
-		return gfx.EventResult{Handled: true, Repaint: panel.modelList.Wheel(event)}, true
+	if page != nil && inAIPanel(event.Target) {
+		if result := page.Wheel(event); result.Handled || result.Repaint {
+			return result, true
+		}
+	}
+	return state.aiPanelScrollGesture(event)
+}
+
+// aiPanelScrollGesture is the wheel's work after the page has had it: the
+// composer's own scroll, the conversation or history list, and swallowing a
+// wheel over the rest of the panel so the terminal behind it stays still. The
+// list Control's Scroll handler is this function.
+func (state *State) aiPanelScrollGesture(event gfx.ScrollEvent) (gfx.EventResult, bool) {
+	panel := &state.ai.panel
+	if state.aiMenuShown() {
+		// Called from the page for a wheel over the list control while a chip
+		// menu is open: the menu owns the window's wheel.
+		return gfx.EventResult{Handled: true}, true
 	}
 	if panel.rect.Width <= 0 || !pointInRect(event.X, event.Y, panel.rect) {
 		return gfx.EventResult{}, false
@@ -1083,6 +1095,13 @@ func (state *State) aiPanelScroll(event gfx.ScrollEvent) (gfx.EventResult, bool)
 		return gfx.EventResult{Handled: true}, true
 	}
 	return state.aiPanelScrollBy(event.StepY(24)), true
+}
+
+// aiPanelListScroll is the list Control's Scroll: the same scrolling a wheel
+// that falls through to the hand-painted list gets.
+func (state *State) aiPanelListScroll(event gfx.ScrollEvent) gfx.EventResult {
+	result, _ := state.aiPanelScrollGesture(event)
+	return result
 }
 
 // aiPanelScrollTo moves the active list to an absolute offset.
@@ -1134,71 +1153,68 @@ func (state *State) aiPanelScrollBy(step float32) gfx.EventResult {
 	return gfx.EventResult{Handled: true, Repaint: ai.scroll.Offset() != before}
 }
 
-// aiAutoScopeKey moves through and closes the approval chip's menu. A scope that
-// is fixed for the running request is not opened again: its rows would report a
-// choice the request does not take.
-func (state *State) aiAutoScopeKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	panel := &state.ai.panel
-	onChip := event.Target == hitAIAutoScope
-	onRow := event.Target.Scope() == hitAIAutoScopeLevels
-	if !panel.autoMenu {
-		if !onChip || event.Repeat || (event.Key != gfx.KeyDown && event.Key != gfx.KeyUp) || state.aiScopeLocked() {
-			return gfx.EventResult{}, false
-		}
-		panel.targetOpen = false
-		panel.modelMenu = false
-		panel.autoMenu = true
-		panel.autoScroll = components.MenuScroll{}
-		return gfx.EventResult{Handled: true, Repaint: true, Focus: hitAIAutoScopeLevels.At(0), FocusVisible: true}, true
-	}
-	if !onChip && !onRow {
+func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalNone || event.Target == hitAIToggle {
 		return gfx.EventResult{}, false
 	}
-	backToChip := gfx.EventResult{Handled: true, Repaint: true, Focus: hitAIAutoScope, FocusVisible: true}
-	switch event.Key {
-	case gfx.KeyEscape:
-		panel.autoMenu = false
-		return backToChip, true
-	case gfx.KeyEnter, gfx.KeySpace:
-		if event.Repeat || !onRow {
-			return gfx.EventResult{Handled: true, Repaint: true}, true
+	page := state.chrome.windowPage
+	// The chip menus are the workbench page's popups: their rows carry the page's
+	// identities, so it routes their keys before the panel's own.
+	if state.aiMenuShown() {
+		if page != nil && inAIPanel(event.Target) {
+			if result, handled := page.Key(event); handled {
+				return result, true
+			}
 		}
-		if index, ok := event.Target.In(hitAIAutoScopeLevels); ok && index < len(state.aiScopes()) {
-			state.aiSetAutoUpTo(state.aiScopes()[index].level)
-			panel.autoMenu = false
-		}
-		return backToChip, true
-	case gfx.KeyUp, gfx.KeyDown, gfx.KeyHome, gfx.KeyEnd, gfx.KeyPageUp, gfx.KeyPageDown:
-		if event.Repeat {
-			return gfx.EventResult{Handled: true, Repaint: true}, true
-		}
-		if id, ok := panel.autoScroll.Navigate(event.Key, event.Target, true); ok {
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: id, FocusVisible: true}, true
-		}
+		return state.aiPanelKeyGesture(event)
+	}
+	if !inAIPanel(event.Target) {
 		return gfx.EventResult{}, false
 	}
-	return gfx.EventResult{}, false
+	// The page's controls and shortcuts take their keys before the panel's own
+	// handling. The identities this file declares by hand are outside the page,
+	// so those still fall through to the code below.
+	if page != nil {
+		if result, handled := page.Key(event); handled {
+			return result, true
+		}
+	}
+	return state.aiPanelKeyGesture(event)
 }
 
-func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if state.modal != modalNone || !inAIPanel(event.Target) || event.Target == hitAIToggle {
+// aiPanelKeyGesture is the panel's key handling after the page has had the key.
+// The list Control's Key handler is this function: a key the control is given
+// when it has the focus acts like one aimed at the hand-painted rows.
+func (state *State) aiPanelKeyGesture(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalNone || event.Target == hitAIToggle {
 		return gfx.EventResult{}, false
 	}
 	ai := &state.ai
 	panel := &ai.panel
-	// The page's Controls, TextAreas and Shortcuts take their keys before the
-	// panel's own handling. Its Root is separate from the identities this file
-	// declares by hand, so those still fall through to the code below.
-	if panel.page != nil {
-		if result, handled := panel.page.Key(event); handled {
-			return result, true
+	if state.aiMenuShown() {
+		switch event.Key {
+		case gfx.KeyEscape, gfx.KeyEnter, gfx.KeySpace, gfx.KeyTab:
+			return gfx.EventResult{}, true
 		}
+		return gfx.EventResult{Handled: true}, true
+	}
+	if !inAIPanel(event.Target) {
+		return gfx.EventResult{}, false
 	}
 	if event.Target.Scope() == hitAIExamples && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
 		return gfx.EventResult{Focus: hitAIInput, Repaint: true}, true
 	}
-	if result, handled := state.aiAutoScopeKey(event); handled {
-		return result, true
+	// Up and Down on the closed approval chip open its menu, as they always
+	// have. The page menu takes the keyboard itself, so the first row is
+	// reached by the next Up or Down; there is no way to name it before it is
+	// declared.
+	if event.Target == hitAIAutoScope && !panel.autoMenu && !event.Repeat &&
+		(event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) && !state.aiScopeLocked() {
+		panel.targetOpen = false
+		panel.modelMenu = false
+		panel.reasoningMenu = false
+		panel.autoMenu = true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if result, handled := state.aiPanelScrollbarKey(event); handled {
@@ -1208,28 +1224,6 @@ func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		panel.targetOpen = true
 		panel.modelMenu = false
 		return handled, true
-	}
-	// Right opens the provider's models and Left returns to the provider row,
-	// as a submenu moves between levels in Base UI.
-	if command, ok := components.SubmenuCommandForKey(event.Key); ok && !event.Repeat {
-		if _, providerRow := event.Target.In(hitAIModelProviders); providerRow && command == components.SubmenuCommandOpen {
-			if index, _ := event.Target.In(hitAIModelProviders); index < len(state.aiMenuProviders()) {
-				panel.modelProvider = index
-				panel.modelList = components.MenuScroll{BarID: hitAIModelBar}
-				panel.modelSubmenu = panel.modelSubmenu.Open(event.Target)
-				panel.modelTypeahead.Reset()
-				providers := state.aiMenuProviders()
-				if len(providers[index].models) > 0 {
-					return gfx.EventResult{Handled: true, Repaint: true, Focus: hitAIModels.At(0), FocusVisible: true}, true
-				}
-				return handled, true
-			}
-		}
-		if command == components.SubmenuCommandClose && panel.modelSubmenu.IsAnyOpen() {
-			trigger := panel.modelSubmenu.Trigger()
-			panel.modelSubmenu = panel.modelSubmenu.Close()
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: trigger, FocusVisible: true}, true
-		}
 	}
 	if event.Target == hitAIInput {
 		if _, composing := ai.input.Composition(); composing {
@@ -1305,6 +1299,14 @@ func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	return gfx.EventResult{}, false
 }
 
+// aiPanelListKey is the list Control's Key: the same handling a key aimed at the
+// hand-painted rows gets, including the scrollbar's arrows, the page keys and
+// Escape over selected text.
+func (state *State) aiPanelListKey(event gfx.KeyEvent) gfx.EventResult {
+	result, _ := state.aiPanelKeyGesture(event)
+	return result
+}
+
 // aiPanelEnter is Enter in the message box. With a question waiting for an
 // answer and nothing typed, it answers yes (when the word is in, if one was
 // asked for); otherwise it sends.
@@ -1374,10 +1376,10 @@ func (state *State) AIPanelInput(context app.TextInputContext) *app.TextInput {
 		return nil
 	}
 	panel := &state.ai.panel
-	// A page field of the panel would take the platform's editor first; the
-	// composer itself is the hand-painted editor below.
-	if panel.page != nil {
-		if input := panel.page.TextInput(context); input != nil {
+	// A field declared by the workbench page would take the platform's editor
+	// first; the composer itself is painted by hand and served below.
+	if page := state.chrome.windowPage; page != nil {
+		if input := page.TextInput(context); input != nil {
 			return input
 		}
 	}

@@ -29,16 +29,16 @@ func TestSettingsControlStaysInsideANarrowCard(t *testing.T) {
 	canvas.SetTree(Tree())
 	for _, width := range []float32{212, 140, 600} {
 		bounds := gfx.Rect{X: 100, Y: 50, Width: width, Height: 400}
-		var view ui.View
-		f := view.Begin(&canvas, state.Theme(), bounds)
-		page := settingsPage{state: state, f: f, width: width, rowHeight: settingsRowHeight}
 		var control ui.Box
-		f.Column().Fill().Children(func() {
-			page.group("", func() {
-				control = page.line("A setting", "What it does, in a sentence that wraps when there is room for it.", 300)
+		pageView := ui.NewPage(ui.PageConfig{})
+		pageView.Draw(&canvas, bounds, func(c ui.C) {
+			page := settingsPage{state: state, c: c, width: width, rowHeight: settingsRowHeight}
+			ui.Column(c).Fill().Children(func() {
+				page.group("", func() {
+					control = page.line("A setting", "What it does, in a sentence that wraps when there is room for it.", 300)
+				})
 			})
 		})
-		f.End()
 		rect := control.Rect()
 		if rect.X < bounds.X || rect.X+rect.Width > bounds.X+bounds.Width {
 			t.Errorf("in a card %v wide the control spans %v to %v, outside the card (%v to %v)",

@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -191,12 +192,28 @@ func TestConnectionColorTintsTabsButKeepsFileHeaderNeutral(t *testing.T) {
 	}
 }
 
+// paintEmptyPanelForTest declares the panel's empty view in a page the way the
+// workbench page does, so the test checks the same declaration and painter.
+func paintEmptyPanelForTest(state *State, session *Session) *gfx.Canvas {
+	const width, height = float32(340), float32(800)
+	state.chrome.sftpEmpty = sftpEmptyScratch{session: session}
+	canvas := new(gfx.Canvas)
+	canvas.SetTree(&tree)
+	page := ui.NewPage(ui.PageConfig{Tree: &tree, Root: shellPageRoot, Theme: &state.theme})
+	page.Draw(canvas, gfx.Rect{Width: width, Height: height}, func(c ui.C) {
+		c.Part(contextPanelPart)
+		ui.Column(c).Absolute().Left(0).Top(0).Width(width).Height(height).
+			DrawOver(func(d *ui.DrawContext) { state.paintEmptyContextPanelDetails(d.Canvas) }).
+			Children(func() { state.declareEmptyContextSFTP(c) })
+	})
+	return canvas
+}
+
 func TestConnectionColorKeepsEmptyFilePanelNeutral(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	for _, session := range []*Session{nil, {host: Host{Color: "#a855f7"}}, {}} {
-		var canvas gfx.Canvas
-		state.paintEmptyContextSFTP(&canvas, gfx.Size{Width: 340, Height: 800}, session)
-		button, ok := hitByID(&canvas, hitSFTPClose)
+		canvas := paintEmptyPanelForTest(state, session)
+		button, ok := hitByID(canvas, hitSFTPClose)
 		if !ok {
 			t.Fatal("empty panel has no close action")
 		}

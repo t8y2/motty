@@ -11,6 +11,18 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
+// clickVerticalTabGroupPage delivers a click on a grouped header in the event
+// pass of a paint, where the grouped list's page reads it, and runs the actions
+// the paint deferred, as the runtime does after an event pass.
+func clickVerticalTabGroupPage(t testing.TB, state *State, id gfx.ID, size gfx.Size) {
+	t.Helper()
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(id, gfx.ClickInfo{})
+	state.Paint(&canvas, size)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+}
+
 // Restored, disconnected tabs exercise grouping without a network substitute.
 func restoredGroupedTabs(t *testing.T, entries ...savedSession) *State {
 	t.Helper()
@@ -96,7 +108,7 @@ func TestVerticalTabGroupingCollapsesWithoutChangingTheDeck(t *testing.T) {
 	if first.Bounds.X <= hit.Bounds.X || third.Bounds.Y <= first.Bounds.Y {
 		t.Fatal("group members must be indented below their server")
 	}
-	state.Click(header)
+	clickVerticalTabGroupPage(t, state, header, size)
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	if _, ok := hitByID(&canvas, hitTabList.At(int(before[2]))); ok {
@@ -261,7 +273,7 @@ func TestVerticalTabGroupingRevealsActivatedConnectionsAfterOverflow(t *testing.
 		t.Fatal("active child must scroll into view beneath its server header")
 	}
 	group := state.verticalTabs.grouped.groups[0]
-	state.Click(group.id())
+	clickVerticalTabGroupPage(t, state, group.id(), size)
 	canvas.Reset()
 	state.Paint(&canvas, size)
 	if state.tabStrip.offset > state.tabStrip.max {
@@ -471,6 +483,35 @@ func TestVerticalTabGroupingKeysWalkTheRowsAsATree(t *testing.T) {
 	}
 	if got := press(order[4], gfx.KeyPageUp); got.Focus != header {
 		t.Errorf("PageUp focused %v, want the first row of a short list", got.Focus)
+	}
+}
+
+// The grouped list is declared in the sidebar's normal tab page: its header's
+// click is read in the paint's event pass, and the rows keep the identities the
+// window's drag and keyboard paths address.
+func TestVerticalTabGroupHeaderClickIsReadInTheEventPass(t *testing.T) {
+	state := restoredGroupedTabs(t, groupingEntries()...)
+	size := gfx.Size{Width: 1200, Height: 760}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	if state.verticalTabs.page == nil {
+		t.Fatal("the grouped list painted without the sidebar's tab page")
+	}
+	group := state.verticalTabs.grouped.groups[0]
+	id := group.id()
+	// A click outside the event pass no longer collapses: the central dispatcher
+	// leaves the header to the event pass.
+	state.Click(id)
+	if state.verticalTabs.grouped.collapsed[group.key] {
+		t.Fatal("a click outside the event pass collapsed the group")
+	}
+	clickVerticalTabGroupPage(t, state, id, size)
+	if !state.verticalTabs.grouped.collapsed[group.key] {
+		t.Fatal("the event pass did not read the header's click")
+	}
+	clickVerticalTabGroupPage(t, state, id, size)
+	if state.verticalTabs.grouped.collapsed[group.key] {
+		t.Fatal("the event pass did not read the second click")
 	}
 }
 

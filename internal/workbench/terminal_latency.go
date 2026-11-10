@@ -177,15 +177,16 @@ func (state *State) latencyColor(ms int64) gfx.Color {
 }
 
 // declareLatencyTag renders the latency badge in the bar.
-func (state *State) declareLatencyTag(f *ui.Frame, canvas *gfx.Canvas, session *Session) {
+func (state *State) declareLatencyTag(c ui.C, session *Session) {
 	latencyText, latencyColor, ok := state.latencyInfo(session)
 	if !ok {
 		return
 	}
+	canvas := c.Canvas()
 	textWidth := canvas.TextWidthWeight(latencyText, metrics.FontSizeS, gfx.WeightMedium) + 2
-	f.Row().PadSides(2, 6, 2, 6).MarginSides(0, 8, 0, 0).Items(ui.Center).
+	ui.Row(c).PadSides(2, 6, 2, 6).MarginSides(0, 8, 0, 0).Items(ui.Center).
 		Background(withAlpha(latencyColor, 0.14)).Radius(4).Children(func() {
-		f.Text(latencyText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+		ui.Text(c, latencyText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
 			Color(latencyColor).LineHeight(16).Width(textWidth)
 	})
 }

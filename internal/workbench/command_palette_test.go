@@ -20,6 +20,96 @@ func TestCommandPaletteIdentitiesAreItsOwn(t *testing.T) {
 	}
 }
 
+// clickCommandPaletteClose paints the open palette and clicks the dialog's close
+// button in an event pass, as the window does.
+func clickCommandPaletteClose(t testing.TB, state *State) {
+	t.Helper()
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	var close gfx.ID
+	for _, hit := range canvas.Hits() {
+		if hit.Label == "Close dialog" && !hit.ID.IsZero() {
+			close = hit.ID
+			break
+		}
+	}
+	if close.IsZero() {
+		t.Fatal("the palette dialog has no close button")
+	}
+	canvas.Reset()
+	canvas.BeginEventPass(close, gfx.ClickInfo{})
+	state.Paint(&canvas, size)
+	canvas.EndEventPass()
+	if state.modal != modalNone {
+		t.Fatalf("the close button left modal %d", state.modal)
+	}
+}
+
+// TestCommandPaletteEventPassTypesAndActivatesARow drives the palette the way
+// the window does: the workbench page owns the search field, the event pass of a
+// click focuses it, typing filters the page-declared rows, and the event pass of
+// a press on a row runs the command.
+func TestCommandPaletteEventPassTypesAndActivatesARow(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitCommandPalette)
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	if got := canvas.InitialFocus(); got != hitCommandPaletteSearch {
+		t.Fatalf("initial focus = %s, want the palette search", tree.Text(got))
+	}
+	// The field is the workbench page's: it serves the platform editor, bound to
+	// the palette's own text.
+	input := state.chrome.windowPage.TextInput(app.TextInputContext{ID: hitCommandPaletteSearch})
+	if input == nil || input.Editor != &state.commandPalette.search {
+		t.Fatalf("the page does not serve the palette's search field: %+v", input)
+	}
+	app.TextEvent{Kind: app.TextInsert, Text: "settings"}.Apply(input.Editor)
+	state.refreshCommandPalette()
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	row, ok := hitByID(&canvas, hitCommandPaletteItems.At(0))
+	if !ok || row.Label != state.messages.NavSettings {
+		t.Fatalf("typed row = %+v, ok=%v", row, ok)
+	}
+	canvas.Reset()
+	canvas.BeginEventPass(row.ID, gfx.ClickInfo{})
+	state.Paint(&canvas, size)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+	if state.modal != modalNone || state.activeSection != sectionSettings {
+		t.Fatalf("row activation left modal=%d section=%d", state.modal, state.activeSection)
+	}
+}
+
+// TestCommandPaletteDismissesFromItsBackdrop presses the window outside the
+// dialog, which the page's Dialog reports as a dismissal.
+func TestCommandPaletteDismissesFromItsBackdrop(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitCommandPalette)
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	var backdrop gfx.ID
+	for _, hit := range canvas.Hits() {
+		if hit.Backdrop && !hit.ID.IsZero() {
+			backdrop = hit.ID
+			break
+		}
+	}
+	if backdrop.IsZero() {
+		t.Fatal("the palette dialog has no backdrop")
+	}
+	canvas.Reset()
+	canvas.BeginEventPass(backdrop, gfx.ClickInfo{})
+	state.Paint(&canvas, size)
+	canvas.EndEventPass()
+	if state.modal != modalNone {
+		t.Fatalf("the backdrop left modal %d", state.modal)
+	}
+}
+
 func TestCommandPaletteFiltersAndExecutesCommands(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitCommandPalette)

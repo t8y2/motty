@@ -142,7 +142,7 @@ func (d *fileDocument) windowPage() *ui.Page {
 // kept here.
 func (d *fileDocument) declareEditWindow(c ui.C) {
 	theme, m := d.owner.Theme(), d.owner.messages.FileWindow
-	bounds := c.Frame().Bounds()
+	bounds := c.Bounds()
 	shared := d.owner.fileWindows.painting
 	d.ui.encodingBox, d.ui.saveBox = ui.Box{}, ui.Box{}
 	ui.Column(c).Fill().Pad(12).Gap(8).Children(func() {
@@ -788,35 +788,6 @@ func (d *fileDocument) shortcut(event gfx.KeyEvent) gfx.EventResult {
 	return gfx.EventResult{}
 }
 
-// windowKey, windowPointer and windowTextInput are the document windows own
-// input callbacks: the page first, as a host routes it, then the document.
-func (d *fileDocument) windowKey(event gfx.KeyEvent) gfx.EventResult {
-	if d.ui.page != nil {
-		if result, ok := d.ui.page.Key(event); ok {
-			return result
-		}
-	}
-	return d.key(event)
-}
-
-func (d *fileDocument) windowPointer(event gfx.PointerEvent) gfx.EventResult {
-	if d.ui.page != nil {
-		if result, ok := d.ui.page.Pointer(event); ok {
-			return result
-		}
-	}
-	return d.pointer(event)
-}
-
-func (d *fileDocument) windowTextInput(context app.TextInputContext) *app.TextInput {
-	if d.ui.page != nil {
-		if input := d.ui.page.TextInput(context); input != nil {
-			return input
-		}
-	}
-	return d.textInput(context)
-}
-
 func (d *fileDocument) comparisonShortcut(event gfx.KeyEvent) gfx.EventResult {
 	if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 || event.Release || !d.comparison.active {
 		return gfx.EventResult{}
@@ -879,6 +850,9 @@ func (d *fileDocument) scroll(event gfx.ScrollEvent) gfx.EventResult {
 }
 
 func (d *fileDocument) pointer(event gfx.PointerEvent) gfx.EventResult {
+	if result, claimed := pagePointerClaim(d.ui.page, event); claimed {
+		return result
+	}
 	if d.owner.noteExit != nil {
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}

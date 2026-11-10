@@ -104,6 +104,11 @@ func TestDualPanePropertiesPaintAndCloseInsideTheirWindow(t *testing.T) {
 		t.Fatalf("the independent transfer window changed the main window modal to %d", state.modal)
 	}
 	view.Rest()
+	// The dialog is painted by the window's next frame; Rest only settles
+	// animations, so pump the invalidation the action queued.
+	if err := view.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
 	dualHit(t, view, hitFilePropertiesClose)
 	dualClickID(t, view, hitFilePropertiesClose)
 	if w.fileProperties.open {

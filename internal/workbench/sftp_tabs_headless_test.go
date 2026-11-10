@@ -49,7 +49,7 @@ func TestSFTPFileTabHeadlessCompactThemesAndNativeInput(t *testing.T) {
 
 				snapshot := preview.Snapshot()
 				if state.fileManagerRect.Width <= 0 || state.fileManagerRect.Height <= 0 {
-					t.Fatal("the embedded file manager was not painted")
+					t.Fatal("the file manager tab was not painted")
 				}
 				localText, localOK := textBoundsFromSnapshot(snapshot, "local.yml")
 				remoteText, remoteOK := textBoundsFromSnapshot(snapshot, "notes.txt")
@@ -64,15 +64,14 @@ func TestSFTPFileTabHeadlessCompactThemesAndNativeInput(t *testing.T) {
 					t.Fatalf("long file tab escaped the compact title bar: %+v, hit=%t", tabHit, ok)
 				}
 
-				mount := sftpWindowMount(w)
-				modeHit, ok := hitByIDFromSnapshot(snapshot, tree.MountID(mount, hitSFTPWindowSudoMode))
+				modeHit, ok := hitByIDFromSnapshot(snapshot, hitSFTPWindowSudoMode)
 				if !ok || modeHit.Width <= 0 || modeHit.Y+modeHit.Height > w.ui.list[1].Y || modeHit.X < 0 || modeHit.X+modeHit.Width > float32(snapshot.Width) {
 					t.Fatalf("remote mode control escaped compact header: %+v, hit=%t", modeHit, ok)
 				}
-				pathID := tree.MountID(mount, sftpWindowPath[0])
+				pathID := sftpWindowPath[0]
 				pathHit, ok := hitByIDFromSnapshot(snapshot, pathID)
 				if !ok {
-					t.Fatal("the local path field has no mounted hit identity")
+					t.Fatal("the local path field has no window hit identity")
 				}
 				if err := preview.Click(pathHit.X+pathHit.Width/2, pathHit.Y+pathHit.Height/2); err != nil {
 					t.Fatal(err)
@@ -82,7 +81,7 @@ func TestSFTPFileTabHeadlessCompactThemesAndNativeInput(t *testing.T) {
 				}
 				editor := preview.Snapshot().Editor
 				if editor == nil {
-					t.Fatal("the embedded local path field did not open a native editor")
+					t.Fatal("the local path field did not open a native editor")
 				}
 				if editor.Value != w.view.lfolder.path {
 					t.Fatalf("native editor value = %q, want local path %q", editor.Value, w.view.lfolder.path)
@@ -144,8 +143,8 @@ func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
 	for _, delta := range []float32{24, 48, 72, -24} {
 		before := w.ui.offset[0]
 		if err := preview.Scroll(gfx.ScrollEvent{
-			X:      state.fileManagerRect.X + list.X + 24,
-			Y:      state.fileManagerRect.Y + list.Y + 24,
+			X:      list.X + 24,
+			Y:      list.Y + 24,
 			DeltaY: delta, Precise: true,
 		}); err != nil {
 			t.Fatal(err)
@@ -160,8 +159,8 @@ func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
 
 	geometry := w.ui.bars[0]
 	thumb := geometry.VerticalThumb
-	x := state.fileManagerRect.X + thumb.X + thumb.Width/2
-	y := state.fileManagerRect.Y + thumb.Y + thumb.Height/2
+	x := thumb.X + thumb.Width/2
+	y := thumb.Y + thumb.Height/2
 	if err := preview.Press(x, y); err != nil {
 		t.Fatal(err)
 	}
@@ -171,14 +170,14 @@ func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
 	last := w.ui.offset[0]
 	jitter := w.pointer(gfx.PointerEvent{
 		Kind: gfx.PointerMove, Captured: true,
-		X: x - state.fileManagerRect.X, Y: y - state.fileManagerRect.Y,
+		X: x, Y: y,
 	})
 	if jitter.Repaint || w.ui.offset[0] != last {
 		t.Fatalf("a move that did not change the offset repainted the tab: offset %.1f -> %.1f, repaint %v", last, w.ui.offset[0], jitter.Repaint)
 	}
 	capturedExit := w.pointer(gfx.PointerEvent{
 		Kind: gfx.PointerExit, Captured: true,
-		X: x - state.fileManagerRect.X, Y: y - state.fileManagerRect.Y,
+		X: x, Y: y,
 	})
 	if w.ui.barDrag != 1 || !capturedExit.Handled {
 		t.Fatalf("a captured exit stopped the scrollbar drag: local drag %d, result %+v", w.ui.barDrag, capturedExit)
@@ -197,6 +196,111 @@ func TestSFTPFileTabWheelAndScrollbarStayUnderThePointer(t *testing.T) {
 	}
 	if w.ui.barDrag != 0 {
 		t.Fatal("scrollbar release left the drag captured")
+	}
+}
+
+// A file tab's view is part of the workbench page, so a click completes in its
+// List, the keys aimed at a row are the page's, and typing reaches the field's
+// editor through the host. None of these identities is mounted.
+func TestSFTPFileTabEventsRouteThroughTheWorkbenchPage(t *testing.T) {
+	state, _, w, _, _ := openSFTPTabFixture(t)
+	var invalidator app.Invalidator
+	preview, err := headless.Open(app.Config{
+		Title: "File tab events", Width: 1100, Height: 720, Tree: Tree(),
+		Invalidator: &invalidator, Paint: state.Paint,
+		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
+		OnScroll: state.Scroll, OnFileDrop: state.FileDrop, OnResize: state.Resize,
+		TextInput: state.SFTPTabInput,
+	}, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer preview.Close()
+	if err := preview.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	row := w.view.sftpFolder.listRowsScope.At(0)
+	if row.IsZero() || !state.fileTabOwns(row) {
+		t.Fatalf("remote row identity %v is not the workbench page's", tree.Text(row))
+	}
+	snapshot := preview.Snapshot()
+	hit, ok := hitByIDFromSnapshot(snapshot, row)
+	if !ok {
+		t.Fatalf("the workbench page did not paint remote row %v", tree.Text(row))
+	}
+	if err := preview.Click(hit.X+hit.Width/2, hit.Y+hit.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := preview.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	if w.view.sftpFolder.selected != 0 || !w.view.sftpFolder.rows[0].selected {
+		t.Fatalf("a press on a page-declared row did not choose it: selected=%d rows=%v", w.view.sftpFolder.selected, w.view.sftpFolder.rows[0].selected)
+	}
+	if result := state.Key(gfx.KeyEvent{Target: row, Key: gfx.KeyDown}); !result.Handled {
+		t.Fatal("the workbench page did not take a key aimed at its row")
+	}
+	if w.view.sftpFolder.selected != 1 {
+		t.Fatalf("the page's List did not move the row on Down: selected=%d", w.view.sftpFolder.selected)
+	}
+
+	snapshot = preview.Snapshot()
+	pathHit, ok := hitByIDFromSnapshot(snapshot, sftpWindowPath[0])
+	if !ok {
+		t.Fatal("the local path field has no window hit identity")
+	}
+	if err := preview.Click(pathHit.X+pathHit.Width/2, pathHit.Y+pathHit.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := preview.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	if preview.Snapshot().Editor == nil {
+		t.Fatal("the tab's path field did not open the host editor")
+	}
+	before := w.view.lfolder.pathInput().String()
+	if err := preview.Type("x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := preview.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	after := w.view.lfolder.pathInput().String()
+	if after == before || !strings.Contains(after, "x") {
+		t.Fatalf("typing did not reach the tab's path editor: %q -> %q", before, after)
+	}
+
+	// The tab's More menu is painted by the workbench page over the window, with
+	// the window's own identities: a press on one of its rows reaches the window
+	// with no mount between them.
+	snapshot = preview.Snapshot()
+	more, ok := hitByIDFromSnapshot(snapshot, sftpWindowMore[0])
+	if !ok {
+		t.Fatal("the local pane has no More button")
+	}
+	if err := preview.Click(more.X+more.Width/2, more.Y+more.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := preview.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	if !w.view.lfolder.headerMenuOpen {
+		t.Fatal("the tab's More menu did not open")
+	}
+	hidden, ok := hitByIDFromSnapshot(preview.Snapshot(), sftpWindowHeaderHidden[0])
+	if !ok {
+		t.Fatal("the tab's More menu is not painted by the workbench page")
+	}
+	wasHidden := w.view.lfolder.showHidden
+	if err := preview.Click(hidden.X+hidden.Width/2, hidden.Y+hidden.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := preview.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+	if w.view.lfolder.showHidden == wasHidden || w.view.lfolder.headerMenuOpen {
+		t.Fatalf("the menu row did not act on the tab: hidden=%t->%t open=%t", wasHidden, w.view.lfolder.showHidden, w.view.lfolder.headerMenuOpen)
 	}
 }
 

@@ -157,30 +157,27 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 		t.Fatalf("top tab order: workspace=%+v/%t file=%+v/%t", workspaceHit.Bounds, workspaceOK, fileHit.Bounds, fileOK)
 	}
 
-	mount := sftpWindowMount(w)
-	inputID := tree.MountID(mount, sftpWindowPath[1])
-	if state.SFTPTabInput(app.TextInputContext{ID: inputID}) == nil {
-		t.Fatal("the embedded file manager did not resolve a text input")
-	}
 	remoteRow := rowIndexByName(t, w, false, "notes.txt")
-	target := tree.MountID(mount, sftpWindowRows[1].At(remoteRow))
+	target := w.view.sftpFolder.listRowsScope.At(remoteRow)
+	if state.SFTPTabInput(app.TextInputContext{ID: sftpWindowPath[1]}) == nil {
+		t.Fatal("the file manager tab did not resolve a text input")
+	}
 	if result := state.Pointer(gfx.PointerEvent{
 		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: target,
 		X: w.ui.list[1].X + 24, Y: w.ui.list[1].Y + 24,
 		Viewport: gfx.Size{Width: 1500, Height: 900},
 	}); !result.Handled {
-		t.Fatal("the embedded file manager did not receive pointer input")
+		t.Fatal("the file manager tab did not receive pointer input")
 	}
 	if result := state.Key(gfx.KeyEvent{Target: target, Key: gfx.KeyDown}); !result.Handled {
-		t.Fatal("the embedded file manager did not receive key input")
+		t.Fatal("the file manager tab did not receive key input")
 	}
 	scrollRect := w.ui.list[1]
 	if result := state.Scroll(gfx.ScrollEvent{
-		X: state.fileManagerRect.X + scrollRect.X + 24,
-		Y: state.fileManagerRect.Y + scrollRect.Y + 24, DeltaY: 10,
+		X: scrollRect.X + 24, Y: scrollRect.Y + 24, DeltaY: 10,
 		Viewport: gfx.Size{Width: 1500, Height: 900},
 	}); !result.Handled {
-		t.Fatal("the embedded file manager did not receive scrolling")
+		t.Fatal("the file manager tab did not receive scrolling")
 	}
 
 	external := filepath.Join(t.TempDir(), "dropped.txt")
@@ -195,13 +192,9 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 	var remoteLeftCanvas gfx.Canvas
 	state.Paint(&remoteLeftCanvas, gfx.Size{Width: 1500, Height: 900})
 	remoteRect := w.ui.list[1]
-	dropX := state.fileManagerRect.X + remoteRect.X + 24
-	dropY := state.fileManagerRect.Y + remoteRect.Y + remoteRect.Height - 12
-	_, remoteDropDir, _, valid := w.dropTarget(
-		dropX-state.fileManagerRect.X,
-		dropY-state.fileManagerRect.Y,
-		true,
-	)
+	dropX := remoteRect.X + 24
+	dropY := remoteRect.Y + remoteRect.Height - 12
+	_, remoteDropDir, _, valid := w.dropTarget(dropX, dropY, true)
 	if !valid {
 		t.Fatal("the remote pane did not accept the system file drop")
 	}
@@ -211,7 +204,7 @@ func TestSFTPTabsShareHostEventsAndCollectInTheBackground(t *testing.T) {
 		Y:     dropY,
 		Paths: []string{external},
 	}); !result.Handled {
-		t.Fatal("the embedded file manager did not accept a system file drop")
+		t.Fatal("the file manager tab did not accept a system file drop")
 	}
 	remoteDropPath := path.Join(remoteDropDir, filepath.Base(external))
 	waitSFTPTab(t, state, w, func() bool {
@@ -383,8 +376,8 @@ func TestSFTPFileTabVerticalRailOwnsInputWhenExpanded(t *testing.T) {
 		t.Fatalf("expanded rail = %+v, file manager starts at %.1f", panel, state.fileManagerRect.X)
 	}
 	remoteList := w.ui.list[1]
-	x := state.fileManagerRect.X + remoteList.X + 10
-	y := state.fileManagerRect.Y + remoteList.Y + remoteList.Height/2
+	x := remoteList.X + 10
+	y := remoteList.Y + remoteList.Height/2
 	if !pointInRect(x, y, panel) {
 		t.Fatalf("test point %.1f,%.1f is outside expanded rail %+v", x, y, panel)
 	}
@@ -662,6 +655,23 @@ func TestMiddleClickFileTabUsesItsCloseConfirmation(t *testing.T) {
 	pointer(state, press)
 	if !w.closed || len(state.sftpTabs) != 0 {
 		t.Fatal("middle press did not close the file tab")
+	}
+}
+
+// A file tab's menus use a few rows named by the shared sftp features rather
+// than the window's own. While the tab is in front it is the only sftp view
+// painted, so those rows must reach its window, not the docked panel's view.
+func TestFileTabOwnsWindowNamedMenuRows(t *testing.T) {
+	state, source, w, _, _ := openSFTPTabFixture(t)
+	if source.files == nil {
+		t.Fatal("fixture has no docked file view to guard")
+	}
+	state.click(hitSFTPNewLink, false)
+	if w.view.dialog != sftpDialogSymlink {
+		t.Fatalf("the tab did not take the window-named menu row: dialog %v", w.view.dialog)
+	}
+	if source.files.dialog != sftpDialogNone {
+		t.Fatalf("the docked view took the tab's menu row: dialog %v", source.files.dialog)
 	}
 }
 

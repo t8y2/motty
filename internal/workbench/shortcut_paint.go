@@ -3,6 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 func (state *State) shortcutActionLabel(action shortcutAction) string {
@@ -123,7 +124,7 @@ func (state *State) paintShortcutSettings(page *settingsPage) {
 		page.group(messages.Completion.KeysGroup, func() {
 			for _, help := range state.completionKeys() {
 				page.line(help.label, help.description, 180).Children(func() {
-					page.f.Text(help.keys).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(21)
+					ui.Text(page.c, help.keys).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(21)
 				})
 			}
 		})

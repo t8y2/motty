@@ -1131,6 +1131,12 @@ func saveLocalDocument(location string, data []byte, revision sftpclient.Revisio
 	return os.Rename(name, location)
 }
 
+// config is a document's own window. Its page routes the window's controls;
+// Paint stays the document's, which paints the editor and its overlays after
+// the page lays them out.
 func (d *fileDocument) config() app.Config {
-	return app.Config{Title: d.name + " — " + d.source, Icon: AppIcon(), Width: 1000, Height: 760, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, Tree: Tree(), Paint: d.paint, TextInput: d.windowTextInput, OnPointer: d.windowPointer, OnKey: d.windowKey, OnShortcut: d.shortcut, OnScroll: d.scroll, OnCloseRequest: d.requestClose, OnClosed: d.onClosed}
+	base := app.Config{Title: d.name + " — " + d.source, Icon: AppIcon(), Width: 1000, Height: 760, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, Tree: Tree(), Paint: d.paint, TextInput: d.textInput, OnPointer: d.pointer, OnKey: d.key, OnShortcut: d.shortcut, OnScroll: d.scroll, OnCloseRequest: d.requestClose, OnClosed: d.onClosed}
+	config := d.documentPage().Config(base)
+	config.Paint = base.Paint
+	return config
 }

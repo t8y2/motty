@@ -30,7 +30,10 @@ func TestSFTPHistoryNativeListAltAndTextPassThrough(t *testing.T) {
 	state.navigateSFTPDirectory(view, "/home/test/docs")
 	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
 	driver := sftpPathFocusDriver(t, state)
-	historyDriverClick(t, driver, contextID(hitSFTPEntryList.At(0)))
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+	historyDriverClick(t, driver, sftpListRowID(t, view.active(), 0))
 	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +255,7 @@ func TestSFTPHistorySteadyPaintBudget(t *testing.T) {
 	// race builds, so the whole-window allocation count has no fixed ceiling.
 	allocs := testing.AllocsPerRun(30, func() {
 		canvas.Reset()
-		w.paintHeaderMenu(&canvas, 0, gfx.Point{}, 0, gfx.Rect{Width: 900, Height: 640}, &w.ui.headerScroll)
+		w.paintHeaderMenu(&canvas, 0, gfx.Rect{Width: 900, Height: 640}, &w.ui.headerScroll)
 	})
 	if allocs != 0 {
 		t.Fatalf("detached history menu allocations=%v, want zero", allocs)

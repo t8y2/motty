@@ -382,3 +382,25 @@ func TestVerticalTabsRevealScrollbarOnHoverAndDragIt(t *testing.T) {
 		t.Fatal("the scrollbar stayed after the pointer left the sidebar")
 	}
 }
+
+// The vertical tabs take the shell's slot rect after the shell page is drawn.
+// Reading the slot's Box there is too late: the assistant's overlay declares the
+// same page again and a Box ends when its frame does.
+func TestVerticalTabsUseTheSlotRectNotAStaleBox(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.activeSection = sectionSettings
+	state.settingsCategory = settingsGeneral
+	state.tabOrientation = tabsHorizontal
+	// The click flips the orientation inside the event pass, after the shell
+	// declared the slot for the horizontal layout: the tabs must not read the
+	// Box the shell left, which that paint does not declare.
+	clickSettingsChoice(t, state, state.messages.SettingsTabsVertical)
+	if state.tabOrientation != tabsVertical {
+		t.Fatalf("orientation = %v, want vertical", state.tabOrientation)
+	}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if state.verticalTabs.slotRect.Width <= 0 || state.verticalTabs.slotRect.Height <= 0 {
+		t.Fatalf("vertical tabs slot = %+v", state.verticalTabs.slotRect)
+	}
+}

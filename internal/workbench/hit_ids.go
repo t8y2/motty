@@ -38,12 +38,11 @@ var (
 
 // Where an embedded session page is painted. Every pane paints the same page with
 // the same controls; mounting it in the pane's place makes them that pane's own
-// identities (see Tree.Mount), and the context panel is a mount of its own.
+// identities (see Tree.Mount). The docked files panel and the file-manager tab are
+// part of the workbench page now, so their controls keep their own identities.
 var (
-	panesHits     = tree.Feature("panes")
-	contextMount  = tree.Feature("context")
-	fileTabsHits  = tree.Feature("file-tabs")
-	filePagesHits = tree.Feature("file-pages")
+	panesHits    = tree.Feature("panes")
+	fileTabsHits = tree.Feature("file-tabs")
 
 	fileTabList      = tree.Sub(fileTabsHits, tree.Name("tab"))
 	fileTabCloseList = tree.Sub(fileTabsHits, tree.Name("tab-close"))
@@ -57,18 +56,16 @@ func sftpFileTabCloseID(sessionID uint32) gfx.ID {
 	return fileTabCloseList.At(int(sessionID))
 }
 
-func sftpWindowMount(window *sftpWindow) gfx.Scope {
-	return tree.Sub(filePagesHits, gfx.Index(int(window.session.ID)))
-}
-
 // paneMount is the place the page of a session is mounted at when it is painted
 // in one of several panes.
 func paneMount(session *Session) gfx.Scope {
 	return tree.Sub(panesHits, gfx.Index(int(session.paneSlot)))
 }
 
-// contextID is the identity a control of the files panel has in the window.
-func contextID(id gfx.ID) gfx.ID { return tree.MountID(contextMount, id) }
+// contextID is the identity a control of the files panel has in the window. The
+// panel is part of the workbench page, so a control's identity is its own: the
+// helper stays for the tests that name the panel's controls.
+func contextID(id gfx.ID) gfx.ID { return id }
 
 // item is the number of the list item an identity names, or zero for a control.
 func item(id gfx.ID) int {

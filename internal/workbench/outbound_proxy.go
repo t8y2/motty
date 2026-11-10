@@ -73,6 +73,12 @@ type outboundProxyForm struct {
 	// kindPage declares the kind switch, and kindView caches its view.
 	kindPage *ui.Page
 	kindView func(ui.C)
+	// page declares the dialog's body, with view kept so a paint makes no new
+	// method value; kindBox and slots are where it laid the controls out.
+	page    *ui.Page
+	view    func(ui.C)
+	kindBox ui.Box
+	slots   [4]ui.Box
 	// text is the settings row's description, made for textKind, textFor (the
 	// address) and textLanguage.
 	text, textFor string
@@ -509,6 +515,34 @@ func (state *State) submitOutboundProxy() {
 // outboundProxyKindRoot names the proxy kind switch in the window's Tree.
 const outboundProxyKindRoot = "outbound-proxy-kind"
 
+// outboundProxyBodyRoot names the page the route settings dialog's body is
+// declared in.
+const outboundProxyBodyRoot = "outbound-proxy-body"
+
+// outboundProxyDialogPage makes the page the route settings dialog's body is
+// declared in.
+func (state *State) outboundProxyDialogPage() *ui.Page {
+	form := &state.proxyForm
+	if form.page == nil {
+		form.page = ui.NewPage(ui.PageConfig{Root: outboundProxyBodyRoot, Theme: &state.theme})
+		form.view = state.declareOutboundProxyBody
+	}
+	return form.page
+}
+
+// declareOutboundProxyBody lays out the route settings: the kind switch, the
+// four fields and the error line.
+func (state *State) declareOutboundProxyBody(c ui.C) {
+	form := &state.proxyForm
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		form.kindBox = ui.Slot(c).Height(34).MarginSides(0, 0, 14, 0)
+		for index := range form.slots {
+			form.slots[index] = ui.Slot(c).Height(62).MarginSides(0, 0, 4, 0)
+		}
+		state.problemLineC(c, form.dialogError)
+	})
+}
+
 var (
 	// The host dialog also offers inheriting the global proxy and a proxy
 	// command; the global dialog offers only the kinds it can carry.
@@ -592,20 +626,10 @@ func (state *State) paintOutboundProxyDialog(canvas *gfx.Canvas, viewport gfx.Re
 		{hitOutboundProxyPassword, m.ProxyPassword, m.ProxyPasswordPlaceholder, &form.password, true},
 		{hitOutboundProxyBypass, m.ProxyBypass, defaultProxyBypass, &form.bypass, false},
 	}
-	var kind ui.Box
-	var slots [len(entries)]ui.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		kind = f.Slot().Height(34).MarginSides(0, 0, 14, 0)
-		for index := range slots {
-			slots[index] = f.Slot().Height(62).MarginSides(0, 0, 4, 0)
-		}
-		state.problemLine(f, form.dialogError)
-	})
-	f.End()
-	state.drawOutboundProxyKind(canvas, kind.Rect())
+	state.outboundProxyDialogPage().Draw(canvas, layout.Body, form.view)
+	state.drawOutboundProxyKind(canvas, form.kindBox.Rect())
 	for index, entry := range entries {
-		content := components.BeginField(canvas, theme, slots[index].Rect()).Paint(entry.label, "", "")
+		content := components.BeginField(canvas, theme, form.slots[index].Rect()).Paint(entry.label, "", "")
 		value := entry.editor.String()
 		focused := canvas.Focused() == entry.id
 		login := entry.id == hitOutboundProxyUser || entry.id == hitOutboundProxyPassword

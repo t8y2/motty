@@ -112,8 +112,7 @@ func (m *fileWindowManager) present(d *fileDocument) error {
 	if m.window == nil {
 		m.windowEpoch++
 		epoch := m.windowEpoch
-		config := m.config()
-		config.OnClosed = func() { m.onWindowClosed(epoch) }
+		config := m.configWithClosed(func() { m.onWindowClosed(epoch) })
 		window, err := d.owner.options.OpenContentWindow(config, nil)
 		if err != nil {
 			if m.windowEpoch == epoch {
@@ -174,6 +173,7 @@ func (m *fileWindowManager) forgetDocument(d *fileDocument) {
 			window := m.window
 			m.window = nil
 			m.windowEpoch = 0
+			m.page = nil
 			window.Close()
 			return
 		}
@@ -280,6 +280,7 @@ func (m *fileWindowManager) onWindowClosed(epoch uint64) {
 	}
 	m.window = nil
 	m.windowEpoch = 0
+	m.page = nil
 	m.active = ""
 	m.pending = ""
 	m.order = nil
@@ -306,6 +307,7 @@ func (m *fileWindowManager) forceClose() {
 	window := m.window
 	m.window = nil
 	m.windowEpoch = 0
+	m.page = nil
 	m.active = ""
 	m.pending = ""
 	m.order = nil
@@ -341,7 +343,15 @@ func (m *fileWindowManager) confirming() bool {
 }
 
 func (m *fileWindowManager) config() app.Config {
-	return app.Config{
+	return m.configWithClosed(nil)
+}
+
+// configWithClosed is config for present, whose window reports its close through
+// onClosed. The page routes the window's input and supplies its Invalidator; the
+// window's Paint stays, because it also paints what the page only lays out (the
+// editor, the menus and the notices).
+func (m *fileWindowManager) configWithClosed(onClosed func()) app.Config {
+	base := app.Config{
 		Title:          m.messagesTitle(),
 		Icon:           AppIcon(),
 		Width:          1000,
@@ -356,7 +366,11 @@ func (m *fileWindowManager) config() app.Config {
 		OnShortcut:     m.shortcut,
 		OnScroll:       m.scroll,
 		OnCloseRequest: m.requestClose,
+		OnClosed:       onClosed,
 	}
+	config := m.editPage(m.pageTheme()).Config(base)
+	config.Paint = base.Paint
+	return config
 }
 
 func (m *fileWindowManager) discardPendingDocuments() {
@@ -442,18 +456,55 @@ func documentTabLayout(available float32, count int) (width, content float32, ov
 func (m *fileWindowManager) editPage(theme *gfx.Theme) *ui.Page {
 	if m.page == nil {
 		root := fmt.Sprintf("file-window-%d", fileWindowPageSeq.Add(1))
-		m.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: root, Theme: theme})
+		m.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: root, Theme: theme, View: m.declareWindow})
 	}
 	return m.page
+}
+
+// declareWindow is the window's page: the active document's own declaration.
+func (m *fileWindowManager) declareWindow(c ui.C) {
+	d := m.activeDocument()
+	if d == nil {
+		return
+	}
+	if d.note != nil {
+		d.declareNoteWindow(c)
+		return
+	}
+	d.declareEditWindow(c)
+}
+
+// pageTheme is the theme the shared page paints with: the active document's
+// owner, whose theme the controls follow as the application's appearance changes.
+func (m *fileWindowManager) pageTheme() *gfx.Theme {
+	if d := m.activeDocument(); d != nil && d.owner != nil {
+		return &d.owner.theme
+	}
+	for _, key := range m.order {
+		if d := m.documents[key]; d != nil && d.owner != nil {
+			return &d.owner.theme
+		}
+	}
+	theme := gfx.LightTheme()
+	return &theme
 }
 
 // documentPage is editPage for a document painted in a window of its own.
 func (d *fileDocument) documentPage() *ui.Page {
 	if d.ui.page == nil {
 		root := fmt.Sprintf("file-document-%d", fileWindowPageSeq.Add(1))
-		d.ui.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: root, Theme: &d.owner.theme})
+		d.ui.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: root, Theme: &d.owner.theme, View: d.declareWindow})
 	}
 	return d.ui.page
+}
+
+// declareWindow is a document's window page: the note or the editor it paints.
+func (d *fileDocument) declareWindow(c ui.C) {
+	if d.note != nil {
+		d.declareNoteWindow(c)
+		return
+	}
+	d.declareEditWindow(c)
 }
 
 // declareTabsSection declares the tab strip at the top of the window's page: the
@@ -504,7 +555,7 @@ func (m *fileWindowManager) declareTabsSection(c ui.C, width float32) {
 // dispatcher does not see it as well.
 func (m *fileWindowManager) declareDocumentTabRows(c ui.C, activeDocument *fileDocument, metrics gfx.Metrics, scroll float32) {
 	pal := activeDocument.owner.pal
-	canvas := c.Frame().Canvas()
+	canvas := c.Canvas()
 	for index, key := range m.order {
 		d := m.documents[key]
 		if d == nil || d.closed {
@@ -691,12 +742,24 @@ func (m *fileWindowManager) clickTab(id gfx.ID) bool {
 	return id.Scope() == hitDocumentTabList || id.Scope() == hitDocumentTabCloseList
 }
 
-func (m *fileWindowManager) textInput(context app.TextInputContext) *app.TextInput {
-	if m.page != nil {
-		if input := m.page.TextInput(context); input != nil {
-			return input
-		}
+// pagePointerClaim reports the pointer an application's callback must leave to
+// the page it hosts: the page's own target after its handlers have had it, or
+// anything under an open overlay. Config routes the page's controls and falls
+// back here, as a host that called Page.Pointer itself would have stopped.
+func pagePointerClaim(page *ui.Page, event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if page == nil {
+		return gfx.EventResult{}, false
 	}
+	if page.Owns(event.Target) {
+		return gfx.EventResult{}, true
+	}
+	if page.Overlay() {
+		return gfx.EventResult{Handled: true}, true
+	}
+	return gfx.EventResult{}, false
+}
+
+func (m *fileWindowManager) textInput(context app.TextInputContext) *app.TextInput {
 	if d := m.activeDocument(); d != nil {
 		return d.textInput(context)
 	}
@@ -705,13 +768,11 @@ func (m *fileWindowManager) textInput(context app.TextInputContext) *app.TextInp
 
 func (m *fileWindowManager) pointer(event gfx.PointerEvent) gfx.EventResult {
 	hoverChanged := m.trackTabPointer(event)
-	if m.page != nil {
-		if result, ok := m.page.Pointer(event); ok {
-			if hoverChanged {
-				result.Repaint = true
-			}
-			return result
+	if result, claimed := pagePointerClaim(m.page, event); claimed {
+		if hoverChanged {
+			result.Repaint = true
 		}
+		return result
 	}
 	if result, handled := m.tabScrollbarPointer(event); handled {
 		if hoverChanged {
@@ -732,11 +793,6 @@ func (m *fileWindowManager) pointer(event gfx.PointerEvent) gfx.EventResult {
 func (m *fileWindowManager) key(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release {
 		return gfx.EventResult{}
-	}
-	if m.page != nil {
-		if result, ok := m.page.Key(event); ok {
-			return result
-		}
 	}
 	if event.Target.Scope() == hitDocumentTabList || event.Target.Scope() == hitDocumentTabCloseList {
 		return m.tabKey(event)

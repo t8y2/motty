@@ -71,9 +71,32 @@ type autofillUI struct {
 	send                        autofill.Send
 	enter                       bool
 	dialogError                 string
+	// page and confirmPage declare the bodies of the rule editor and of the
+	// question before a rule first sends. Each is made on its dialog's first
+	// paint and kept, with its view so a paint makes no new method value; the
+	// slots are where the controls are painted.
+	page, confirmPage   *ui.Page
+	view, confirmView   func(ui.C)
+	nameBox, patternBox ui.Box
+	fixedBox, scopeBox  ui.Box
+	enterRow            ui.Box
+	sendChoices         [3]ui.Box
 
 	ask autofillAsk
 }
+
+// The rule editor's and the confirmation's bodies name their own pages.
+const (
+	autofillBodyRoot        = "autofill-rule-body"
+	autofillConfirmBodyRoot = "autofill-confirm-body"
+)
+
+// autofillSendKinds are the ways a rule may answer, in the order the dialog
+// shows them.
+var autofillSendKinds = [...]struct {
+	id   gfx.ID
+	send autofill.Send
+}{{hitAutofillPassword, autofill.SendPassword}, {hitAutofillOTP, autofill.SendOTP}, {hitAutofillText, autofill.SendText}}
 
 // autofillAsk is a rule waiting for the user's word before it answers.
 type autofillAsk struct {
@@ -487,7 +510,7 @@ func (state *State) sendKindName(send autofill.Send) string {
 // Painting
 
 func (state *State) paintAutofillDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, pal, theme := state.messages.Autofill, state.pal, state.Theme()
+	m, theme := state.messages.Autofill, state.Theme()
 	form := &state.autofillRules
 	title := m.DialogAddTitle
 	if form.editing != nil {
@@ -504,39 +527,7 @@ func (state *State) paintAutofillDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		ContentSize: gfx.Size{Width: 600}, FitBody: true, BodyHeight: withError(body, form.dialogError),
 	})
 	layout := dialog.Begin(title, "")
-	kinds := [...]struct {
-		id   gfx.ID
-		send autofill.Send
-	}{{hitAutofillPassword, autofill.SendPassword}, {hitAutofillOTP, autofill.SendOTP}, {hitAutofillText, autofill.SendText}}
-	var name, pattern, fixed, scope, enter ui.Box
-	var choices [len(kinds)]ui.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		name = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		pattern = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		f.Text(m.Send).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 4, 2)
-		f.Row().Gap(8).Height(30).MarginSides(0, 0, 8, 0).Children(func() {
-			for index, kind := range kinds {
-				border, width := withAlpha(pal.line, 0.9), float32(1)
-				if form.send == kind.send {
-					border, width = pal.accent, 2
-				}
-				choices[index] = f.Row().Grow(1).Height(30).Items(ui.Center).PadX(12).Background(pal.terminal).
-					Radius(radius.control).Border(width, border).Children(func() {
-					f.Text(state.sendKindName(kind.send)).FontSize(metrics.FontSizeM).Color(pal.text)
-				})
-			}
-		})
-		if form.send == autofill.SendText {
-			fixed = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		}
-		scope = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		enter = state.declareDialogCheckbox(f, m.Enter, 4, 0)
-		if form.dialogError != "" {
-			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
-		}
-	})
-	f.End()
+	state.drawAutofillDialogBody(canvas, layout.Body)
 	field := func(box ui.Box, id gfx.ID, label, placeholder, value string, secret bool) {
 		content := components.BeginField(canvas, theme, box.Rect()).Paint(label, "", "")
 		focused := canvas.Focused() == id
@@ -545,20 +536,20 @@ func (state *State) paintAutofillDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 			Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
 		})
 	}
-	field(name, hitAutofillName, m.Name, m.NamePlaceholder, form.name.String(), false)
-	field(pattern, hitAutofillPattern, m.Pattern, m.PatternPlaceholder, form.pattern.String(), false)
-	for index, kind := range kinds {
-		canvas.HitWithOptions(kind.id, choices[index].Rect(), state.sendKindName(kind.send), gfx.HitOptions{Role: gfx.RoleButton, Selected: form.send == kind.send})
+	field(form.nameBox, hitAutofillName, m.Name, m.NamePlaceholder, form.name.String(), false)
+	field(form.patternBox, hitAutofillPattern, m.Pattern, m.PatternPlaceholder, form.pattern.String(), false)
+	for index, kind := range autofillSendKinds {
+		canvas.HitWithOptions(kind.id, form.sendChoices[index].Rect(), state.sendKindName(kind.send), gfx.HitOptions{Role: gfx.RoleButton, Selected: form.send == kind.send})
 	}
 	if form.send == autofill.SendText {
 		placeholder := ""
 		if form.editing != nil && form.editing.Send == autofill.SendText {
 			placeholder = m.FixedTextHint
 		}
-		field(fixed, hitAutofillFixed, m.FixedText, placeholder, form.fixed.String(), true)
+		field(form.fixedBox, hitAutofillFixed, m.FixedText, placeholder, form.fixed.String(), true)
 	}
-	field(scope, hitAutofillScope, m.Scope, m.ScopePlaceholder, form.scope.String(), false)
-	state.paintDialogCheckbox(canvas, hitAutofillEnter, m.Enter, form.enter, enter)
+	field(form.scopeBox, hitAutofillScope, m.Scope, m.ScopePlaceholder, form.scope.String(), false)
+	state.paintDialogCheckbox(canvas, hitAutofillEnter, m.Enter, form.enter, form.enterRow)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitAutofillCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitAutofillSubmit, Label: m.Save},
@@ -566,8 +557,50 @@ func (state *State) paintAutofillDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	dialog.End()
 }
 
+// drawAutofillDialogBody draws the rule editor's body into bounds.
+func (state *State) drawAutofillDialogBody(canvas *gfx.Canvas, bounds gfx.Rect) {
+	form := &state.autofillRules
+	if form.page == nil {
+		form.page = ui.NewPage(ui.PageConfig{Root: autofillBodyRoot, Theme: &state.theme})
+		form.view = state.declareAutofillBody
+	}
+	form.page.Draw(canvas, bounds, form.view)
+}
+
+// declareAutofillBody lays out the rule editor: the name and pattern fields, the
+// sending choice, the fixed text when it sends one, the scope and the Enter box.
+func (state *State) declareAutofillBody(c ui.C) {
+	m, pal := state.messages.Autofill, state.pal
+	form := &state.autofillRules
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+		form.nameBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		form.patternBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		ui.Text(c, m.Send).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 4, 2)
+		ui.Row(c).Gap(8).Height(30).MarginSides(0, 0, 8, 0).Children(func() {
+			for index, kind := range autofillSendKinds {
+				border, width := withAlpha(pal.line, 0.9), float32(1)
+				if form.send == kind.send {
+					border, width = pal.accent, 2
+				}
+				form.sendChoices[index] = ui.Row(c).Grow(1).Height(30).Items(ui.Center).PadX(12).Background(pal.terminal).
+					Radius(radius.control).Border(width, border).Children(func() {
+					ui.Text(c, state.sendKindName(kind.send)).FontSize(metrics.FontSizeM).Color(pal.text)
+				})
+			}
+		})
+		if form.send == autofill.SendText {
+			form.fixedBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		}
+		form.scopeBox = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		form.enterRow = state.declareDialogCheckboxC(c, m.Enter, 4, 0)
+		if form.dialogError != "" {
+			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+		}
+	})
+}
+
 func (state *State) paintAutofillConfirm(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, pal, theme := state.messages.Autofill, state.pal, state.Theme()
+	m, theme := state.messages.Autofill, state.Theme()
 	ask := state.autofillRules.ask
 	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
 		Layer: dialogLayer, Scope: dialogScope,
@@ -582,25 +615,41 @@ func (state *State) paintAutofillConfirm(canvas *gfx.Canvas, viewport gfx.Rect) 
 	if ask.rule != nil {
 		name = ask.rule.Name
 	}
-	kind := ""
-	if ask.rule != nil {
-		kind = state.sendKindName(ask.rule.Send)
-	}
 	layout := dialog.Begin(m.ConfirmTitle, fmt.Sprintf(m.ConfirmFmt, name, address))
-	f := state.partLayout.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().Children(func() {
-		f.Text(fmt.Sprintf(m.ConfirmSendsFmt, kind)).FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(20)
-		f.Row().Height(58).Shrink(0).Items(ui.Center).PadX(11).MarginSides(8, 0, 0, 0).
-			Border(1, pal.line).Background(pal.surface).Radius(radius.control).Children(func() {
-			f.Text(m.ConfirmLine + ": " + clipboardPreview(ask.line)).FontSize(metrics.FontSizeS).Color(pal.text)
-		})
-	})
-	f.End()
+	state.drawAutofillConfirmBody(canvas, layout.Body)
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitAutofillDeny, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitAutofillAllow, Label: m.ConfirmAllow},
 	)
 	dialog.End()
+}
+
+// drawAutofillConfirmBody draws the question before a rule first sends.
+func (state *State) drawAutofillConfirmBody(canvas *gfx.Canvas, bounds gfx.Rect) {
+	form := &state.autofillRules
+	if form.confirmPage == nil {
+		form.confirmPage = ui.NewPage(ui.PageConfig{Root: autofillConfirmBodyRoot, Theme: &state.theme})
+		form.confirmView = state.declareAutofillConfirmBody
+	}
+	form.confirmPage.Draw(canvas, bounds, form.confirmView)
+}
+
+// declareAutofillConfirmBody lays out what would be sent and the line that
+// prompted it.
+func (state *State) declareAutofillConfirmBody(c ui.C) {
+	m, pal := state.messages.Autofill, state.pal
+	ask := state.autofillRules.ask
+	kind := ""
+	if ask.rule != nil {
+		kind = state.sendKindName(ask.rule.Send)
+	}
+	ui.Column(c).Fill().Children(func() {
+		ui.Textf(c, m.ConfirmSendsFmt, kind).FontSize(metrics.FontSizeM).Color(pal.text).LineHeight(20)
+		ui.Row(c).Height(58).Shrink(0).Items(ui.Center).PadX(11).MarginSides(8, 0, 0, 0).
+			Border(1, pal.line).Background(pal.surface).Radius(radius.control).Children(func() {
+			ui.Text(c, m.ConfirmLine+": "+clipboardPreview(ask.line)).FontSize(metrics.FontSizeS).Color(pal.text)
+		})
+	})
 }
 
 // paintAutofillSettings is the Autofill rules group of Settings.

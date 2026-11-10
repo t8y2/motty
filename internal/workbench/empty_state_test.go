@@ -3,8 +3,11 @@ package workbench
 import (
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 )
 
 func emptyStateActionHit(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
@@ -172,5 +175,40 @@ func TestHostSearchNoMatchesUsesTheSharedEmptyState(t *testing.T) {
 		if hit.Bounds.Width == emptyStateActionWidth && hit.Bounds.Height == toolbarHeight {
 			t.Fatalf("the no-match state painted an action: %+v", hit)
 		}
+	}
+}
+
+// The empty state's action is painted by the page and still takes a real press:
+// the first-run screen opens the New Host dialog.
+func TestEmptyStateActionTakesARealPress(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.hosts, state.visible = nil, nil
+	state.activeSection = sectionHosts
+	view, err := headless.Open(app.Config{
+		Title: "hosts", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	action, ok := hitByIDInSnapshot(view.Snapshot(), hitAddHostEmpty)
+	if !ok {
+		t.Fatal("the empty state painted no add action")
+	}
+	if action.Bounds.Width != emptyStateActionWidth || action.Bounds.Height != toolbarHeight {
+		t.Fatalf("the empty-state action is %v, want %.0fx%.0f", action.Bounds, emptyStateActionWidth, toolbarHeight)
+	}
+	if err := view.Click(action.Bounds.X+action.Bounds.Width/2, action.Bounds.Y+action.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNewHost {
+		t.Fatalf("pressing the empty-state action opened modal %d, want the New Host dialog", state.modal)
 	}
 }

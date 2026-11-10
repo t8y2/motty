@@ -135,7 +135,7 @@ func (w *sftpWindow) filterEscape(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			folder.filterOpen = false
 			result.Focus = sftpWindowList[side]
 			if len(folder.rows) > 0 {
-				result.Focus = sftpWindowRows[side].At(max(0, folder.selected))
+				result.Focus = w.rowID(side, max(0, folder.selected))
 			}
 		}
 		return result, true
@@ -143,17 +143,14 @@ func (w *sftpWindow) filterEscape(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	return gfx.EventResult{}, false
 }
 
-// paintHeaderMenu paints one pane's More menu. origin and mount place it: a file
-// tab paints over the page, so its menu has to as well — the page clips whatever
-// an embedded canvas contributes, which would cut the dismiss backdrop down to
-// the tab and leave the window bar unreachable. A standalone transfer window
-// passes the zero point and scope, since its canvas is the whole window.
-func (w *sftpWindow) paintHeaderMenu(canvas *gfx.Canvas, side int, origin gfx.Point, mount gfx.Scope, viewport gfx.Rect, scroll *components.MenuScroll) {
+// paintHeaderMenu paints one pane's More menu. A file tab paints over the page,
+// so its menu does too: the page clips what is drawn inside the tab, which would
+// cut the dismiss backdrop down to the tab and leave the window bar unreachable.
+// A standalone transfer window's canvas is the whole window, so its menu does not
+// need the page's popup state.
+func (w *sftpWindow) paintHeaderMenu(canvas *gfx.Canvas, side int, viewport gfx.Rect, scroll *components.MenuScroll) {
 	m, folder, local := w.owner.messages, w.folder(side == 0), side == 0
-	id := func(local gfx.ID) gfx.ID { return tree.MountID(mount, local) }
-	route := func(local gfx.Scope) gfx.Scope { return tree.Mount(mount, local) }
 	anchor := w.ui.headerAnchor[side]
-	anchor.X, anchor.Y = anchor.X+origin.X, anchor.Y+origin.Y
 	count := 6 + len(folder.history.recent)
 	if label, _ := w.owner.sftpEditorItem(w.view, folder); label != "" {
 		count++
@@ -166,33 +163,35 @@ func (w *sftpWindow) paintHeaderMenu(canvas *gfx.Canvas, side int, origin gfx.Po
 		count += 2
 	}
 	bounds := gfx.Rect{X: anchor.X + anchor.Width - 224, Y: anchor.Y + anchor.Height + 4, Width: 224, Height: float32(count*32 + 8)}
-	dismiss := id(hitSFTPWindowHeaderDismiss)
-	if !mount.IsZero() {
-		// Painted over the page: the menu takes the page's popup state, so the
-		// wheel, the keyboard and Escape reach it as they reach any other menu.
+	dismiss := hitSFTPWindowHeaderDismiss
+	// A window hosted in a main-window tab has no native window of its own: its
+	// menu is painted over the page, so it takes the page's popup state and the
+	// wheel, the keyboard and Escape reach it as they reach any other menu.
+	overPage := w.window == nil
+	if overPage {
 		scroll = w.owner.menuScrollFor(dismiss)
 	}
 	menu := components.BeginDropdownMenu(canvas, w.owner.Theme(), bounds, components.DropdownMenuOptions{Layer: popupLayer, Scope: dismiss, DismissID: dismiss, Viewport: viewport, Scroll: scroll})
-	if !mount.IsZero() {
+	if overPage {
 		w.owner.menuPlaced(menu.Bounds())
 	}
-	w.owner.paintSFTPHistoryMenu(&menu, w.view, local, id(sftpWindowHistoryBack[side]), id(sftpWindowHistoryForward[side]), route(sftpWindowRecentHits[side]))
-	menu.AddItem(components.DropdownMenuItem{ID: id(sftpWindowFilterToggle[side]), Label: m.Tools.FilesFilterLabel, Icon: lucideIcons[iconSearch], Selected: folder.filterOpen || folder.filterInputEditor().String() != ""})
+	w.owner.paintSFTPHistoryMenu(&menu, w.view, local, sftpWindowHistoryBack[side], sftpWindowHistoryForward[side], sftpWindowRecentHits[side])
+	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowFilterToggle[side], Label: m.Tools.FilesFilterLabel, Icon: lucideIcons[iconSearch], Selected: folder.filterOpen || folder.filterInputEditor().String() != ""})
 	hiddenIcon, hiddenLabel := uint8(iconEyeOff), m.Tools.FilesShowHidden
 	if folder.showHidden {
 		hiddenIcon, hiddenLabel = iconEye, m.Tools.FilesHideHidden
 	}
-	menu.AddItem(components.DropdownMenuItem{ID: id(sftpWindowHeaderHidden[side]), Label: hiddenLabel, Icon: lucideIcons[hiddenIcon], Selected: folder.showHidden})
+	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowHeaderHidden[side], Label: hiddenLabel, Icon: lucideIcons[hiddenIcon], Selected: folder.showHidden})
 	if label, disabled := w.owner.sftpEditorItem(w.view, folder); label != "" {
-		menu.AddItem(components.DropdownMenuItem{ID: id(sftpWindowHeaderEditor[side]), Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
+		menu.AddItem(components.DropdownMenuItem{ID: sftpWindowHeaderEditor[side], Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
 	}
 	busy := w.browse.pending != nil || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected())
-	menu.AddItem(components.DropdownMenuItem{ID: id(sftpWindowNewFolder[side]), Label: m.SFTPNewDirectory, Icon: lucideIcons[iconFolderPlus], Disabled: busy})
+	menu.AddItem(components.DropdownMenuItem{ID: sftpWindowNewFolder[side], Label: m.SFTPNewDirectory, Icon: lucideIcons[iconFolderPlus], Disabled: busy})
 	if !local {
-		menu.AddItem(components.DropdownMenuItem{ID: id(hitSFTPNewLink), Label: m.Tools.TipNewLink, Icon: lucideIcons[iconLink], Disabled: busy})
+		menu.AddItem(components.DropdownMenuItem{ID: hitSFTPNewLink, Label: m.Tools.TipNewLink, Icon: lucideIcons[iconLink], Disabled: busy})
 		if narrow {
-			menu.AddItem(components.DropdownMenuItem{ID: id(hitSFTPWindowUpload), Label: m.SFTPWindow.Upload, Icon: lucideIcons[iconUpload], Disabled: !w.canTransfer(true)})
-			menu.AddItem(components.DropdownMenuItem{ID: id(hitSFTPWindowDownload), Label: m.SFTPWindow.Download, Icon: lucideIcons[iconDownload], Disabled: !w.canTransfer(false)})
+			menu.AddItem(components.DropdownMenuItem{ID: hitSFTPWindowUpload, Label: m.SFTPWindow.Upload, Icon: lucideIcons[iconUpload], Disabled: !w.canTransfer(true)})
+			menu.AddItem(components.DropdownMenuItem{ID: hitSFTPWindowDownload, Label: m.SFTPWindow.Download, Icon: lucideIcons[iconDownload], Disabled: !w.canTransfer(false)})
 		}
 	}
 	menu.End()

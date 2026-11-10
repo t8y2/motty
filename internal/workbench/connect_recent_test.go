@@ -110,7 +110,7 @@ func TestRecentPickerDoesNotRecordAutomaticReconnect(t *testing.T) {
 	state, world, connection, clock := reconnectingSession(t, reconnectThree)
 	// The first manual success has a timestamp; the automatic one must keep it.
 	before := recentHostHint(t, state, state.hosts[0].Label)
-	state.Click(hitCommandPaletteClose)
+	clickCommandPaletteClose(t, state)
 	state.options.WallNow = func() time.Time { return time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC) }
 	disconnectEstablished(connection, state)
 	*clock += time.Second
@@ -164,7 +164,7 @@ func TestRecentPickerLocalInstancesShareSuccessfulStartupTime(t *testing.T) {
 	if first[0] != state.messages.LocalTerminal {
 		t.Fatalf("local did not sort first: %v", first)
 	}
-	state.Click(hitCommandPaletteClose)
+	clickCommandPaletteClose(t, state)
 	now = now.Add(time.Hour)
 	state.Click(hitLocalTerminal)
 	state.Click(hitNewTab)
@@ -174,7 +174,7 @@ func TestRecentPickerLocalInstancesShareSuccessfulStartupTime(t *testing.T) {
 	if !ok || hit.Hint != now.Local().Format("2006-01-02 15:04:05 MST") {
 		t.Fatalf("second local time = %q", hit.Hint)
 	}
-	state.Click(hitCommandPaletteClose)
+	clickCommandPaletteClose(t, state)
 	state.localShell = "/does-not-exist/motty-test-shell"
 	now = now.Add(time.Hour)
 	state.Click(hitLocalTerminal)
@@ -217,7 +217,7 @@ func TestRecentPickerKeepsSuccessesFromOtherWindows(t *testing.T) {
 		if got := recentHostHint(t, restarted, restarted.hosts[index].Label); got != at.Local().Format("2006-01-02 15:04:05 MST") {
 			t.Errorf("recent time for %s = %q, want %v", restarted.hosts[index].Label, got, at)
 		}
-		restarted.Click(hitCommandPaletteClose)
+		clickCommandPaletteClose(t, restarted)
 	}
 	// A writer with an older clock must not replace a newer success for the same host.
 	now = productionAt.Add(-time.Hour)

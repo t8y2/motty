@@ -51,35 +51,35 @@ func (state *State) paintMCPExportSelect(canvas *gfx.Canvas, bounds gfx.Rect, op
 // too little room for a two-column row.
 func (page *settingsPage) mcpFrame(label, description string, color gfx.Color, control func()) {
 	page.separator()
-	f := page.f
+	c := page.c
 	if page.width >= 500 {
-		row := f.Row().FillWidth().MinHeight(settingsRowHeight).Pad(18).Gap(24).Items(ui.Center)
+		row := ui.Row(c).FillWidth().MinHeight(settingsRowHeight).Pad(18).Gap(24).Items(ui.Center)
 		page.matchAnchor(label, row, 0)
 		row.Children(func() {
-			f.Column().Grow(1).Gap(2).Children(func() {
-				f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.text)
-				f.Wrap(description).FontSize(metrics.FontSizeS).LineHeight(18).Color(color)
+			ui.Column(c).Grow(1).Gap(2).Children(func() {
+				ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.text)
+				ui.Wrap(c, description).FontSize(metrics.FontSizeS).LineHeight(18).Color(color)
 			})
-			f.Row().Shrink(0).Children(control)
+			ui.Row(c).Shrink(0).Children(control)
 		})
 		return
 	}
-	column := f.Column().Pad(18).Gap(10)
+	column := ui.Column(c).Pad(18).Gap(10)
 	page.matchAnchor(label, column, 0)
 	column.Children(func() {
-		f.Column().Gap(2).Children(func() {
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.text)
-			f.Wrap(description).FontSize(metrics.FontSizeS).LineHeight(18).Color(color)
+		ui.Column(c).Gap(2).Children(func() {
+			ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(page.state.pal.text)
+			ui.Wrap(c, description).FontSize(metrics.FontSizeS).LineHeight(18).Color(color)
 		})
-		f.Row().Children(control)
+		ui.Row(c).Children(control)
 	})
 }
 
 func (page *settingsPage) mcpCopyButton(id gfx.ID, label string, disabled bool) {
 	state, m := page.state, page.state.messages.AISettings
-	width, _ := state.aiButtonSize(page.f.Canvas(), label)
+	width, _ := state.aiButtonSize(page.canvas(), label)
 	for _, value := range []string{m.MCPCopied, m.MCPCopyFailed} {
-		w, _ := state.aiButtonSize(page.f.Canvas(), value)
+		w, _ := state.aiButtonSize(page.canvas(), value)
 		width = max(width, w)
 	}
 	if state.ai.cfg.copyTarget == id {
@@ -160,40 +160,40 @@ type aiMCPConfigView struct {
 }
 
 func (state *State) paintMCPConfigBlock(page *settingsPage, view aiMCPConfigView) {
-	f, pal, m := page.f, state.pal, state.messages.AISettings
-	column := f.Column().Pad(18).Gap(14)
+	c, pal, m := page.c, state.pal, state.messages.AISettings
+	column := ui.Column(c).Pad(18).Gap(14)
 	page.matchAnchor(view.title, column, 0)
 	column.Children(func() {
-		f.Text(view.title).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
-		f.Wrap(view.description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
-		page.add(settingsControl{kind: view.selectKind, slot: f.Slot().FillWidth().Height(36)})
+		ui.Text(c, view.title).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
+		ui.Wrap(c, view.description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+		page.add(settingsControl{kind: view.selectKind, slot: ui.Slot(c).FillWidth().Height(36)})
 		if view.hint != "" {
-			f.Wrap(view.hint).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+			ui.Wrap(c, view.hint).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 		}
-		f.Column().Background(pal.surfaceSoft).Border(1, pal.line).Radius(radius.control).Children(func() {
+		ui.Column(c).Background(pal.surfaceSoft).Border(1, pal.line).Radius(radius.control).Children(func() {
 			// The header names what the block holds, so the room the copy
 			// button takes says something instead of staying blank.
-			f.Row().PadSides(10, 14, 10, 14).Items(ui.Center).Children(func() {
-				f.Text(aiMCPPreviewFormat(view.client, m)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted)
-				f.Spacer()
+			ui.Row(c).PadSides(10, 14, 10, 14).Items(ui.Center).Children(func() {
+				ui.Text(c, aiMCPPreviewFormat(view.client, m)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted)
+				ui.Spacer(c)
 				page.mcpCopyButton(view.copyID, m.MCPCopy, !view.ready)
 			})
-			f.Column().MarginSides(0, 14, 14, 14).Children(func() {
+			ui.Column(c).MarginSides(0, 14, 14, 14).Children(func() {
 				if !view.ready {
-					f.Wrap(view.preview).FontSize(12).LineHeight(19).Color(pal.muted)
+					ui.Wrap(c, view.preview).FontSize(12).LineHeight(19).Color(pal.muted)
 					return
 				}
 				// Wrap by monospace cells, preserving JSON indentation and newlines.
-				cell, _ := f.Canvas().MonoCellSize(12, 0)
+				cell, _ := c.Canvas().MonoCellSize(12, 0)
 				cols := max(1, int((page.width-36-28-2)/max(cell, 1)))
 				*view.lines, _ = aiMonoWrap((*view.lines)[:0], view.preview, cols, len(view.preview)+1)
 				for _, line := range *view.lines {
-					f.Text(line).Mono().FontSize(12).LineHeight(19).Color(pal.text)
+					ui.Text(c, line).Mono().FontSize(12).LineHeight(19).Color(pal.text)
 				}
 			})
 		})
 		if view.footer != "" {
-			f.Wrap(view.footer).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
+			ui.Wrap(c, view.footer).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 		}
 	})
 }

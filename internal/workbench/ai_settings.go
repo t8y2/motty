@@ -165,6 +165,20 @@ type aiFetch struct {
 }
 
 // aiSettingsUI is the transient state of the settings section: the open
+// aiFormFocus says which field of the provider form the application asks the
+// focus for; zero means none. The form binds its fields to it, so an invalid
+// field can take the focus after a rejected submit.
+type aiFormFocus uint8
+
+const (
+	aiFormFocusNone aiFormFocus = iota
+	aiFormFocusName
+	aiFormFocusCLIPath
+	aiFormFocusURL
+	aiFormFocusModelsURL
+	aiFormFocusKey
+)
+
 // dialog, the selected provider and the outcome of the last action. The saved
 // choices themselves are in aiState.settings.
 type aiSettingsUI struct {
@@ -188,6 +202,7 @@ type aiSettingsUI struct {
 	apiFormat      string // OpenAI-compatible only; empty means Chat Completions
 	hadKey         bool
 	formErr        string
+	formFocus      aiFormFocus
 	// deleteID is the provider the delete question is about.
 	deleteID string
 
@@ -555,6 +570,7 @@ func (state *State) aiImportDialogClick(id gfx.ID) {
 func (state *State) aiCloseDialog() {
 	cfg := &state.ai.cfg
 	cfg.dialog, cfg.editID, cfg.deleteID, cfg.formErr, cfg.hadKey, cfg.presetOpen = aiDialogNone, "", "", "", false, false
+	cfg.formFocus = aiFormFocusNone
 	cfg.notice = ""
 	cfg.name, cfg.baseURL, cfg.modelsURL, cfg.apiKey = text.Editor{}, text.Editor{}, text.Editor{}, text.Editor{}
 	cfg.cliPath, cfg.authStyle, cfg.apiFormat = text.Editor{}, "", ""
@@ -773,6 +789,7 @@ func (state *State) aiOpenProviderForm(id string) {
 	}
 	state.aiCloseDialog()
 	cfg.dialog, cfg.kind, cfg.preset = aiDialogProvider, store.KindOpenAI, aiPresetCustom
+	cfg.formFocus = aiFormFocusNone
 	cfg.name.Restrict(printableLine, 64)
 	// The importer accepts a base URL up to MaxURLRunes; the editor must not
 	// silently shorten such a provider when it is opened for an unrelated edit.
@@ -836,15 +853,19 @@ func (state *State) aiSubmitProvider() {
 	switch {
 	case name == "":
 		cfg.formErr = m.ErrFormName
+		cfg.formFocus = aiFormFocusName
 		return
 	case !cliProvider && base != "" && !validBaseURL(base):
 		cfg.formErr = m.ErrFormBaseURL
+		cfg.formFocus = aiFormFocusURL
 		return
 	case !cliProvider && modelsURL != "" && !validBaseURL(modelsURL):
 		cfg.formErr = m.ErrFormModelsURL
+		cfg.formFocus = aiFormFocusModelsURL
 		return
 	case !cliProvider && base == "" && key == "" && !cfg.hadKey:
 		cfg.formErr = m.ErrFormKey
+		cfg.formFocus = aiFormFocusKey
 		return
 	}
 	provider := store.Provider{ID: cfg.editID, Name: name, Kind: cfg.kind, BaseURL: base, ModelsURL: modelsURL, APIKey: key, HasKey: key != "", Enabled: true}

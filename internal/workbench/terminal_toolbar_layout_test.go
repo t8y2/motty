@@ -352,9 +352,9 @@ func TestTerminalPointerCellsFollowEachPaintedSplit(t *testing.T) {
 		}
 		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
-		hit, ok := hitByID(&canvas, tree.MountID(paneMount(session), terminalTestHit(state, session)))
+		hit, ok := hitByID(&canvas, terminalTestHit(state, session))
 		if !ok {
-			t.Fatalf("session %d has no mounted terminal hit", session.ID)
+			t.Fatalf("session %d has no painted terminal hit", session.ID)
 		}
 		geometry := state.layoutForSession(session.ID)
 		x := geometry.left + state.cellWidth*1.5
@@ -388,13 +388,9 @@ func TestSplitMouseReportingUsesPaintedPaneCoordinates(t *testing.T) {
 
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	hit, ok := hitByID(&canvas, tree.MountID(paneMount(session), terminalTestHit(state, session)))
+	hit, ok := hitByID(&canvas, terminalTestHit(state, session))
 	if !ok {
 		t.Fatal("the second split has no painted terminal hit")
-	}
-	bounds, _, viewport, embedded := state.paneEventGeometry(session.ID, size)
-	if !embedded {
-		t.Fatal("the second split did not report embedded geometry")
 	}
 	geometry := state.layoutForSession(session.ID)
 	windowX := geometry.left + state.cellWidth*4.5
@@ -404,7 +400,7 @@ func TestSplitMouseReportingUsesPaintedPaneCoordinates(t *testing.T) {
 		X: windowX, Y: windowY, Viewport: size,
 	})
 	if !result.Handled || shell.typed() != "\x1b[<0;5;3M" {
-		t.Fatalf("pane=%+v viewport=%v result=%+v input=%q", bounds, viewport, result, shell.typed())
+		t.Fatalf("pane=%v result=%+v input=%q", hit.Bounds, result, shell.typed())
 	}
 }
 
@@ -427,20 +423,16 @@ func TestSplitScrollbarUsesPaintedPaneCoordinates(t *testing.T) {
 
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	bar, ok := hitByID(&canvas, tree.MountID(paneMount(session), terminalControlParts(session.ID).At(terminalPartScrollbar)))
+	bar, ok := hitByID(&canvas, terminalControlParts(session.ID).At(terminalPartScrollbar))
 	if !ok {
 		t.Fatal("the second split has no painted scrollbar")
 	}
-	_, origin, _, embedded := state.paneEventGeometry(session.ID, size)
-	if !embedded {
-		t.Fatal("the second split did not report embedded geometry")
-	}
 	geometry := state.terminalScrollArea(nil, session, state.layoutForSession(session.ID).area, 1).Geometry()
-	x := bar.Bounds.X + bar.Bounds.Width/2 + origin.X
-	grab := origin.Y + geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2
+	x := bar.Bounds.X + bar.Bounds.Width/2
+	grab := geometry.VerticalThumb.Y + geometry.VerticalThumb.Height/2
 	result := state.Pointer(gfx.PointerEvent{
 		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
-		Target: tree.MountID(paneMount(session), terminalControlParts(session.ID).At(terminalPartScrollbar)),
+		Target: terminalControlParts(session.ID).At(terminalPartScrollbar),
 		X:      x, Y: grab, Viewport: size,
 	})
 	if !result.Handled || !session.term.barDragging {

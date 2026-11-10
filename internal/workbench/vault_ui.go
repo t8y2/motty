@@ -567,15 +567,8 @@ func (state *State) paintSaveBoxAt(canvas *gfx.Canvas, bounds gfx.Rect, id gfx.I
 	}
 }
 
-// problemLine declares the one-line error under a dialog's fields, when
+// problemLineC declares the one-line error under a dialog's fields, when
 // there is one.
-func (state *State) problemLine(f *ui.Frame, problem string) {
-	if problem != "" {
-		f.Text(problem).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18)
-	}
-}
-
-// problemLineC is problemLine for a dialog body declared as a page.
 func (state *State) problemLineC(c ui.C, problem string) {
 	if problem != "" {
 		ui.Text(c, problem).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18)

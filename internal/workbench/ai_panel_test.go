@@ -92,11 +92,27 @@ func paintAt(state *State, size gfx.Size) (*gfx.Canvas, []string) {
 // actions the page deferred, as the runtime does after an event pass.
 func clickAIPanelPage(t testing.TB, state *State, id gfx.ID) {
 	t.Helper()
+	clickAIPanelPageAt(t, state, panelWide, id)
+}
+
+func clickAIPanelPageAt(t testing.TB, state *State, size gfx.Size, id gfx.ID) {
+	t.Helper()
 	var canvas gfx.Canvas
 	canvas.BeginEventPass(id, gfx.ClickInfo{})
-	state.Paint(&canvas, panelWide)
+	state.Paint(&canvas, size)
 	canvas.EndEventPass()
 	canvas.RunAfterPaint()
+}
+
+// aiDrawerDismiss is the hit that dismisses the open assistant drawer: the
+// page's Drawer paints its backdrop over the window.
+func aiDrawerDismiss(canvas *gfx.Canvas) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Backdrop {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
 }
 
 func panelHit(t testing.TB, canvas *gfx.Canvas, id gfx.ID) gfx.Hit {
@@ -106,6 +122,62 @@ func panelHit(t testing.TB, canvas *gfx.Canvas, id gfx.ID) gfx.Hit {
 		t.Fatalf("hit %d is not painted", id)
 	}
 	return hit
+}
+
+// aiMenuRowNamed finds a row of an open assistant menu by its label: the menu
+// rows are the painted hits with the menu item role.
+func aiMenuRowNamed(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleMenuItem && hit.Label == label {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+func aiMenuRow(t testing.TB, canvas *gfx.Canvas, label string) gfx.Hit {
+	t.Helper()
+	hit, ok := aiMenuRowNamed(canvas, label)
+	if !ok {
+		t.Fatalf("no assistant menu row %q is painted", label)
+	}
+	return hit
+}
+
+// aiMenuBackdrop is the hit that dismisses the open menu: the whole window.
+func aiMenuBackdrop(canvas *gfx.Canvas) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Backdrop {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// clickMenuItem delivers a click on an open menu's row in an event pass, where
+// the menu's declaration reads it, and runs the actions deferred after it.
+func clickMenuItem(t testing.TB, state *State, hit gfx.Hit) {
+	t.Helper()
+	clickMenuItemByID(t, state, hit.ID)
+}
+
+func clickMenuItemByID(t testing.TB, state *State, id gfx.ID) {
+	t.Helper()
+	if id.IsZero() {
+		t.Fatal("a menu row or escape target is not painted")
+	}
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(id, gfx.ClickInfo{})
+	state.Paint(&canvas, panelWide)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+}
+
+// clickAIMenuRow opens the painted row named label in an event pass.
+func clickAIMenuRow(t testing.TB, state *State, label string) {
+	t.Helper()
+	canvas, _ := paintAt(state, panelWide)
+	clickMenuItem(t, state, aiMenuRow(t, canvas, label))
 }
 
 func terminalColumns(state *State) int {
@@ -447,11 +519,17 @@ func TestModelChipSwitchesTheModelThatAnswers(t *testing.T) {
 	}
 	state.Click(hitAIModelChip)
 	canvas, texts := paintAt(state, panelWide)
+	if !hasText(texts, "Work") {
+		t.Fatalf("the menu should list the provider: %q", texts)
+	}
+	// The provider's models open beside its row.
+	clickAIMenuRow(t, state, "Work")
+	_, texts = paintAt(state, panelWide)
 	if !hasText(texts, "gpt-y") || !hasText(texts, "gpt-off") {
 		t.Fatalf("the menu should list every model that was fetched, switched on or not: %q", texts)
 	}
 	// A fetched model that is still off is switched on by choosing it.
-	state.Click(hitAIModels.At(0)) // gpt-off, the first by name
+	clickAIMenuRow(t, state, "gpt-off")
 	if _, model, err := state.aiModel(); err != nil || model != "gpt-off" {
 		t.Fatalf("model after choosing = %q %v", model, err)
 	}
@@ -461,7 +539,7 @@ func TestModelChipSwitchesTheModelThatAnswers(t *testing.T) {
 		}
 	}
 	canvas, _ = paintAt(state, panelWide)
-	if _, ok := hitByID(canvas, hitAIModels.At(0)); ok {
+	if _, ok := aiMenuRowNamed(canvas, "gpt-off"); ok {
 		t.Error("the menu stayed open after a choice")
 	}
 }
@@ -485,31 +563,34 @@ func TestModelMenuScrollsAProviderWithManyModels(t *testing.T) {
 	state.ai.open = true
 	paintAt(state, panelWide)
 	state.Click(hitAIModelChip)
-	canvas, texts := paintAt(state, panelWide)
-	shown := 0
-	for _, text := range texts {
-		if strings.HasPrefix(text, "model-") || text == "gpt-x" {
-			shown++
-		}
-	}
-	if shown == 0 || shown > aiMenuRows+1 { // +1: the chip names the model that answers
-		t.Fatalf("%d models shown at once, want a window of at most %d: %q", shown, aiMenuRows, texts)
-	}
-	rect := state.ai.panel.modelsRect
-	list := &state.ai.panel.modelList
-	before := list.Offset
-	state.Scroll(gfx.ScrollEvent{X: rect.X + 10, Y: rect.Y + 10, DeltaY: 96, Precise: true})
-	if list.Offset != before+96 {
-		t.Fatalf("scrolled from %v to %v, want 96 pixels further", before, list.Offset)
-	}
-	// The keyboard reaches the last model of a long list, and it is clickable there.
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEnd, Target: hitAIModels.At(0)})
+	canvas, _ := paintAt(state, panelWide)
+	clickAIMenuRow(t, state, "Work")
 	canvas, _ = paintAt(state, panelWide)
-	last := hitAIModels.At(40)
-	if hit, ok := hitByID(canvas, last); !ok || hit.Bounds.Y+hit.Bounds.Height > rect.Y+rect.Height {
-		t.Fatalf("after End the last model is %+v (painted %v) outside the menu %+v", hit, ok, rect)
+	first, ok := aiMenuRowNamed(canvas, "model-00")
+	if !ok {
+		t.Fatal("the first model is not painted")
 	}
-	_ = canvas
+	// The wheel over the long list scrolls the menu, not the conversation.
+	before := state.ai.scroll.Offset()
+	state.Scroll(gfx.ScrollEvent{X: first.Bounds.X + 10, Y: first.Bounds.Y + 10, DeltaY: 96, Precise: true, Viewport: panelWide, Target: first.ID})
+	if state.ai.scroll.Offset() != before {
+		t.Error("wheel over the model menu scrolled the conversation")
+	}
+	canvas, _ = paintAt(state, panelWide)
+	if moved, ok := aiMenuRowNamed(canvas, "model-00"); ok && moved.Bounds.Y >= first.Bounds.Y {
+		t.Errorf("the list did not scroll: model-00 stayed at %v", moved.Bounds.Y)
+	}
+	// The keyboard reaches the last model of a long list.
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnd, Target: first.ID})
+	canvas, _ = paintAt(state, panelWide)
+	listed := state.aiModelList("p")
+	last, ok := hitByID(canvas, result.Focus)
+	if !ok || last.Label != listed[len(listed)-1].Name {
+		t.Fatalf("End focused %+v, want the last model %q", last.Label, listed[len(listed)-1].Name)
+	}
+	if last.Bounds.Y+last.Bounds.Height > panelWide.Height {
+		t.Fatalf("the last model is painted outside the window: %+v", last.Bounds)
+	}
 }
 
 func TestModelChipListsProvidersFirstWhenThereAreSeveral(t *testing.T) {
@@ -534,17 +615,17 @@ func TestModelChipListsProvidersFirstWhenThereAreSeveral(t *testing.T) {
 	state.Click(hitAIModelChip)
 	canvas, texts := paintAt(state, panelWide)
 	if !hasText(texts, "Work") || !hasText(texts, "Home") || hasText(texts, "llama-a") {
-		t.Fatalf("the menu should list both providers and the models of the current one: %q", texts)
+		t.Fatalf("the menu should list the providers before a provider is opened: %q", texts)
 	}
-	if _, ok := hitByID(canvas, hitAIModelProviders.At(1)); !ok {
+	if _, ok := aiMenuRowNamed(canvas, "Home"); !ok {
 		t.Fatal("the second provider is not offered")
 	}
-	state.Click(hitAIModelProviders.At(0)) // Home, which sorts before Work
+	clickAIMenuRow(t, state, "Home") // Home sorts before Work
 	_, texts = paintAt(state, panelWide)
 	if !hasText(texts, "llama-b") {
 		t.Fatalf("opening a provider should show its models: %q", texts)
 	}
-	state.Click(hitAIModels.At(1))
+	clickAIMenuRow(t, state, "llama-b")
 	if provider, model, err := state.aiModel(); err != nil || model != "llama-b" || provider.ID != "q" {
 		t.Fatalf("model after choosing = %v %q %v", provider, model, err)
 	}
@@ -671,7 +752,10 @@ func TestNarrowWindowsGetADrawerAndTerminalsKeepTheirWidth(t *testing.T) {
 	state.Click(hitAIToggle)
 	canvas, _ := paintAt(state, panelNarrow)
 	panelHit(t, canvas, hitAIInput)
-	dismiss := panelHit(t, canvas, hitAIDrawerDismiss)
+	dismiss, ok := aiDrawerDismiss(canvas)
+	if !ok {
+		t.Fatal("the drawer painted no dismiss backdrop")
+	}
 	if terminalColumns(state) != before {
 		t.Fatalf("a drawer took terminal width: %d -> %d", before, terminalColumns(state))
 	}
@@ -679,7 +763,7 @@ func TestNarrowWindowsGetADrawerAndTerminalsKeepTheirWidth(t *testing.T) {
 	if input.Bounds.X+input.Bounds.Width > panelNarrow.Width || input.Bounds.X < panelNarrow.Width*0.4 {
 		t.Fatalf("drawer input at %+v", input.Bounds)
 	}
-	state.Click(dismiss.ID)
+	clickAIPanelPageAt(t, state, panelNarrow, dismiss.ID)
 	canvas, _ = paintAt(state, panelNarrow)
 	if _, ok := hitByID(canvas, hitAIInput); ok || state.ai.open {
 		t.Fatal("the drawer did not close")
@@ -1254,9 +1338,9 @@ func nextFrameAfterPaint(state *State) (time.Duration, bool) {
 	return canvas.NextFrame()
 }
 
-// The model list is a submenu level: Escape and Left close it and leave the
-// provider menu open, and Right opens it again.
-func TestModelSubmenuOwnsEscapeAndTheLeftRightKeys(t *testing.T) {
+// The model list is a submenu level: Right opens it, Left closes it and leaves
+// the provider menu open, and Escape closes both.
+func TestModelSubmenuWithTheKeyboard(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
 	db, err := state.aiStore()
@@ -1271,41 +1355,40 @@ func TestModelSubmenuOwnsEscapeAndTheLeftRightKeys(t *testing.T) {
 	paintAt(state, panelWide)
 	state.Click(hitAIModelChip)
 	canvas, _ := paintAt(state, panelWide)
-	if canvas.EscapeTarget() != hitAIModelSubDismiss {
-		t.Fatalf("Escape target = %v, want the model submenu", canvas.EscapeTarget())
+	if canvas.EscapeTarget().IsZero() {
+		t.Fatal("the open menu names no escape target")
 	}
-	if _, ok := hitByID(canvas, hitAIModels.At(0)); !ok {
-		t.Fatal("the model list is not open")
-	}
-
-	state.Click(hitAIModelSubDismiss)
-	canvas, _ = paintAt(state, panelWide)
-	if !state.ai.panel.modelMenu || state.ai.panel.modelSubmenu.IsAnyOpen() {
-		t.Fatalf("closing the submenu: menu=%v submenu=%v", state.ai.panel.modelMenu, state.ai.panel.modelSubmenu)
-	}
-	if _, ok := hitByID(canvas, hitAIModels.At(0)); ok {
-		t.Fatal("the model list stayed open")
-	}
-	if canvas.EscapeTarget() != hitAIModelDismiss {
-		t.Fatalf("after closing the submenu Escape = %v, want the provider menu", canvas.EscapeTarget())
+	if _, ok := aiMenuRowNamed(canvas, "gpt-x"); ok {
+		t.Fatal("the provider menu opened with its submenu already showing")
 	}
 
-	provider := hitAIModelProviders.At(0)
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: provider})
-	if !result.Handled || result.Focus != hitAIModels.At(0) {
-		t.Fatalf("Right = %+v, want the first model focused", result)
-	}
 	canvas, _ = paintAt(state, panelWide)
-	if _, ok := hitByID(canvas, hitAIModels.At(0)); !ok {
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIModelChip})
+	provider, ok := hitByID(canvas, result.Focus)
+	if !ok || provider.Role != gfx.RoleMenuItem {
+		t.Fatalf("Down from the chip focused %v, not the provider row", result.Focus)
+	}
+	state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: provider.ID})
+	canvas, _ = paintAt(state, panelWide)
+	model, ok := aiMenuRowNamed(canvas, "gpt-x")
+	if !ok {
 		t.Fatal("Right did not open the model list")
 	}
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyLeft, Target: hitAIModels.At(0)})
-	if !result.Handled || result.Focus != provider {
-		t.Fatalf("Left = %+v, want the provider row focused", result)
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyLeft, Target: model.ID})
+	if result.Focus != provider.ID {
+		t.Fatalf("Left focused %v, want the provider row", result.Focus)
 	}
 	canvas, _ = paintAt(state, panelWide)
-	if _, ok := hitByID(canvas, hitAIModels.At(0)); ok {
+	if _, ok := aiMenuRowNamed(canvas, "gpt-x"); ok {
 		t.Fatal("Left left the model list open")
+	}
+
+	// Escape reaches the menu as the runtime's click on its escape target.
+	target := canvas.EscapeTarget()
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: provider.ID})
+	clickMenuItemByID(t, state, target)
+	if state.ai.panel.modelMenu {
+		t.Fatal("Escape left the menu open")
 	}
 }
 

@@ -88,7 +88,7 @@ func (state *State) terminalScrollbarPointer(session *Session, event gfx.Pointer
 		t.barDragging = false
 		return gfx.EventResult{}
 	}
-	layout := state.terminalLayoutForEvent(session.ID, event.Viewport)
+	layout := state.terminalWindowLayout(session.ID)
 	geometry := state.terminalScrollArea(nil, session, layout.area, 1).Geometry()
 	switch event.Kind {
 	case gfx.PointerDown:

@@ -83,14 +83,10 @@ func (state *State) menuWheel(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 }
 
 // openMenuScroll is the scroll position of the menu that has the keyboard and the
-// scrollbar: the popup that is open, or the list of models of the assistant's
-// chip. It is nil when neither is.
+// scrollbar, or nil when none is open.
 func (state *State) openMenuScroll() *components.MenuScroll {
 	if !state.popups.owner.IsZero() {
 		return &state.popups.scroll
-	}
-	if state.ai.panel.modelMenu {
-		return &state.ai.panel.modelList
 	}
 	return nil
 }
@@ -124,22 +120,11 @@ func (state *State) menuKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if scroll == nil || event.Release {
 		return gfx.EventResult{}, false
 	}
-	// The assistant's menu has a list of providers beside the models: the keys
-	// belong to the models only when they are the ones that have the keyboard.
 	typeahead := &state.popups.typeahead
-	if scroll != &state.popups.scroll {
-		if !event.Target.IsZero() && event.Target.Scope() != hitAIModels {
-			return gfx.EventResult{}, false
-		}
-		typeahead = &state.ai.panel.modelTypeahead
-	}
 	// Tab leaves a dropdown or a select and continues through the page, as Base
 	// UI does; a context menu keeps Tab inside itself (TabCloses is false).
 	if event.Key == gfx.KeyTab && scroll.TabCloses {
 		dismiss := state.popups.owner
-		if scroll != &state.popups.scroll {
-			dismiss = hitAIModelDismiss
-		}
 		if !dismiss.IsZero() {
 			state.Click(dismiss)
 			return gfx.EventResult{Handled: true, Repaint: true, ContinueTraversal: true}, true

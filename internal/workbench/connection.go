@@ -173,6 +173,10 @@ type Options struct {
 	// Invalidate asks the window to repaint. Connection goroutines call it
 	// when their status changes; the window then calls Wake.
 	Invalidate func()
+	// Invalidator is the same window's invalidator, for a page that declares a
+	// ui.Effect: the effect wakes the window itself when its work finishes. Nil
+	// leaves such a page's results waiting for the next paint.
+	Invalidator *app.Invalidator
 	// NewWindow creates another independent workbench window through Viva's
 	// application lifecycle. Nil means the host did not enable multi-window.
 	NewWindow func() error
@@ -1235,6 +1239,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalAutofillConfirm {
 		state.autofillRules.ask = autofillAsk{}
+	}
+	if state.modal == modalFontPicker {
+		state.closeFontPickerPage()
 	}
 	if state.modal == modalDeleteRule {
 		state.ruleDelete = ruleDelete{}

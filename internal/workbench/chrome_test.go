@@ -19,6 +19,84 @@ func hitByID(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
 	return gfx.Hit{}, false
 }
 
+// The shell is declared by a page of its own, and that page keeps the hit
+// identities the central dispatcher names by hand: the window bar above the
+// navigation rail, the rail's rows under it, and the slot the sections paint
+// into. A bar button never takes focus, so pressing one leaves the keyboard in
+// the terminal it was over.
+func TestShellPageKeepsBarAndNavigationHits(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	canvas, _ := paintedTexts(state)
+	if state.chrome.windowPage == nil {
+		t.Fatal("the shell is not declared by a page")
+	}
+	if state.chrome.probePage == nil {
+		t.Fatal("the window bar was not measured by its page")
+	}
+
+	buttons := []struct {
+		id    gfx.ID
+		label string
+	}{
+		{hitHome, state.messages.NavHosts},
+		{hitNewTab, state.messages.LabelNewTab},
+		{hitWindowLocalTerminal, state.messages.LocalTerminal},
+		{hitWindowSettings, state.messages.NavSettings},
+	}
+	for _, button := range buttons {
+		hit := panelHit(t, canvas, button.id)
+		if hit.Label != button.label {
+			t.Errorf("%q reads %q", button.label, hit.Label)
+		}
+		if hit.Role != gfx.RoleButton {
+			t.Errorf("%q has role %v, want a button", button.label, hit.Role)
+		}
+		if hit.Focusable {
+			t.Errorf("%q takes focus; a bar button must leave the keyboard alone", button.label)
+		}
+		if hit.Bounds.Y < 0 || hit.Bounds.Y+hit.Bounds.Height > windowBarHeight {
+			t.Errorf("%q is outside the window bar: %+v", button.label, hit.Bounds)
+		}
+	}
+
+	rows := []struct {
+		id       gfx.ID
+		label    string
+		selected bool
+	}{
+		{hitHosts, state.messages.NavHosts, true},
+		{hitSettings, state.messages.NavSettings, false},
+		{hitLocalTerminal, state.messages.LocalTerminal, false},
+	}
+	for _, row := range rows {
+		hit := panelHit(t, canvas, row.id)
+		if hit.Label != row.label {
+			t.Errorf("%q reads %q", row.label, hit.Label)
+		}
+		if hit.Role != gfx.RoleMenuItem {
+			t.Errorf("%q has role %v, want a menu item", row.label, hit.Role)
+		}
+		if hit.Selected != row.selected {
+			t.Errorf("%q selected=%t, want %t", row.label, hit.Selected, row.selected)
+		}
+		if hit.Bounds.X < 0 || hit.Bounds.X+hit.Bounds.Width > navigationWidth || hit.Bounds.Y < windowBarHeight {
+			t.Errorf("%q is outside the navigation rail: %+v", row.label, hit.Bounds)
+		}
+	}
+
+	slot := state.chrome.workspaceSlot.Rect()
+	if slot.Width <= 0 || slot.Height <= 0 {
+		t.Fatalf("the shell recorded no workspace slot: %+v", slot)
+	}
+	window := state.windowRect()
+	if slot.X < navigationWidth {
+		t.Errorf("the workspace slot overlaps the navigation rail: %+v", slot)
+	}
+	if slot.X+slot.Width > window.Width || slot.Y+slot.Height > window.Height {
+		t.Errorf("the workspace slot spills out of the window: %+v in %+v", slot, window)
+	}
+}
+
 func TestChromeHasOnlyTheControlsThatDoSomething(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	canvas, texts := paintedTexts(state)

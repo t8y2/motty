@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/agent"
 	"motty/internal/ai/risk"
 	"motty/internal/ai/tools"
 	"motty/internal/i18n"
@@ -32,13 +33,20 @@ const (
 	aiMaxLines     = 4096 // the most lines one message is laid out in
 )
 
-// aiPanelPageRoot names the panel's page. It is separate from aiPanelHits, the
-// place of the identities this package names by hand, so the page's controls and
-// the hand-painted ones do not share names.
-const aiPanelPageRoot = "ai-panel-page"
+// aiPanelPart names the assistant's container in the workbench page. The page
+// declares one Part-named, window-filling box for the panel, and the panel's
+// body, menus and text live under it: their identities are the page's, so the
+// page routes its controls, menus and wheel, while the identities this package
+// names by hand (aiPanelHits) keep their own place.
+const aiPanelPart = "ai-panel"
 
-// aiPanelPageScratch is what paintAIBody measures before declaring the panel's
-// page, so the page's view reads the values instead of measuring them again.
+// aiPanelScope is where the workbench page names the assistant's elements.
+func aiPanelScope() gfx.Scope {
+	return tree.Sub(tree.Feature(shellPageRoot), tree.Name(aiPanelPart))
+}
+
+// aiPanelPageScratch is what the panel's declaration measures before declaring
+// its body, so the body's view reads the values instead of measuring them again.
 type aiPanelPageScratch struct {
 	boxHeight, setupWidth    float32
 	showSetup                bool
@@ -424,122 +432,279 @@ func (state *State) aiScrollbarValue(history bool, offset, maximum float32) stri
 }
 
 // aiPanelBeginPaint forgets the geometry of the previous paint, so a panel that
-// is not painted again stops catching the wheel.
+// is not painted again stops catching the wheel, and makes sure the workbench
+// page will declare it.
 func (state *State) aiPanelBeginPaint() {
 	panel := &state.ai.panel
 	panel.rect, panel.list, panel.listing = gfx.Rect{}, gfx.Rect{}, false
 	panel.scrollbar.geometry = components.MessageScrollerGeometry{}
 	if !state.aiPanelVisible() {
 		panel.scrollbar.dragging = false
+		panel.drawerOpen = false
 	}
+	panel.declared = false
 	panel.copyCount = 0
 	panel.answer = gfx.Rect{}
 	panel.linkRows, panel.linkBase = 0, 0
 }
 
-// paintAIPanel draws the assistant over the active terminal workspace: a column
-// the panes made room for, or a drawer when the window is too narrow.
-func (state *State) paintAIPanel(canvas *gfx.Canvas, size gfx.Size) {
-	if !state.aiPanelVisible() {
+// aiPanelMode is how the last paint placed the panel: a card beside a section, a
+// column the panes made room for, or a drawer over the window.
+type aiPanelMode uint8
+
+const (
+	aiPanelSection aiPanelMode = iota
+	aiPanelDocked
+	aiPanelDrawer
+)
+
+// aiPanelResize is the edge the panel is dragged by: the window the handle moves
+// in, where it sits in it, and how wide it is.
+type aiPanelResize struct {
+	window gfx.Rect
+	ratio  float32
+	handle float32
+}
+
+// declareAIPanel declares the assistant in the workbench page: one Part-named box
+// over the window, holding the panel at the rect this window gives it and, above
+// it, the open chip menus. The page names them, so pointer, key, wheel and text
+// routing go through the page rather than a page of the panel's own.
+func (state *State) declareAIPanel(c ui.C) {
+	panel := &state.ai.panel
+	if !state.aiPanelVisible() || panel.declared {
 		return
 	}
-	state.ai.panel.window = gfx.Rect{Width: size.Width, Height: size.Height}
-	defer state.paintAIDrop(canvas)
-	pal := state.pal
-	if reserve := state.aiSectionReserve(size); reserve > 0 {
-		bounds := gfx.Rect{
-			X: size.Width - reserve + sectionCardMargin, Y: windowBarHeight,
-			Width: reserve - 2*sectionCardMargin, Height: max(size.Height-windowBarHeight-sectionCardMargin-state.toolbarDockBottomReserve(false), 0),
+	panel.declared = true
+	size := gfx.Size{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	if panel.contentDraw == nil {
+		panel.contentDraw = state.paintAIPanelContent
+		panel.overDraw = state.paintAIPanelChrome
+	}
+	c.Part(aiPanelPart)
+	ui.Stack(c).Absolute().Inset(0).Children(func() {
+		switch {
+		case state.aiSectionReserve(size) > 0:
+			panel.mode = aiPanelSection
+			state.declareAISectionPanel(c, size)
+		case state.aiReserve(state.deck.ActiveWorkspace(), size) > 0:
+			panel.mode = aiPanelDocked
+			state.declareAIDockedPanel(c, size)
+		default:
+			panel.mode = aiPanelDrawer
+			state.declareAIDrawer(c, size)
 		}
-		bounds.X -= state.toolbarDockSideReserveFor(false, false)
-		canvas.RoundedBorder(bounds, radius.surface, 1, pal.windowStroke, pal.workspace)
-		// Keep the resize target in the gutter. Only hover/press/focus paints a
-		// separator; the resting cards already have their own rounded borders.
-		theme := state.Theme()
-		theme.Border = gfx.Color{}
-		window := gfx.Rect{Y: bounds.Y, Width: size.Width, Height: bounds.Height}
-		dividerX := bounds.X - (sectionCardMargin+1)/2
-		components.BeginResizable(canvas, theme, hitAIDivider, window, dividerX/max(window.Width-1, 1)).
-			Limits(0, 1).HandleSize(sectionCardMargin).Paint(state.messages.AIPanel.ResizePanel)
-		canvas.Clip(bounds)
-		state.paintAIBody(canvas, bounds)
-		canvas.Unclip()
-		state.paintAIMenuOverlay(canvas)
-		return
+	})
+}
+
+// declareAISectionPanel declares the card beside a section: the rounded card the
+// section makes room for, and its body inside it.
+func (state *State) declareAISectionPanel(c ui.C, size gfx.Size) {
+	panel, pal := &state.ai.panel, state.pal
+	reserve := state.aiSectionReserve(size)
+	bounds := gfx.Rect{
+		X: size.Width - reserve + sectionCardMargin, Y: windowBarHeight,
+		Width: reserve - 2*sectionCardMargin, Height: max(size.Height-windowBarHeight-sectionCardMargin-state.toolbarDockBottomReserve(false), 0),
 	}
-	if reserve := state.aiReserve(state.deck.ActiveWorkspace(), size); reserve > 0 {
-		// Under the window bar, at the right: a hairline, then the panel.
-		var bounds, divider ui.Box
-		inner := state.baseWorkspacePixelBounds(size)
-		f := state.aiFlex.shell.Begin(canvas, state.Theme(), gfx.Rect{X: inner.X, Width: inner.Width, Height: inner.Y + inner.Height})
-		f.Column().Fill().Children(func() {
-			f.Column().Height(windowBarHeight).Shrink(0)
-			f.Row().Grow(1).Children(func() {
-				f.Spacer()
-				f.Row().Width(reserve).Children(func() {
-					divider = f.Slot().Width(1).Shrink(0)
-					bounds = f.Slot().Grow(1).Background(pal.workspace)
-				})
-			})
-		})
-		f.End()
-		// The hairline is the panel's left edge, and can be dragged to change its width.
-		window := gfx.Rect{X: inner.X, Y: windowBarHeight, Width: inner.Width, Height: inner.Height}
-		components.BeginResizable(canvas, state.Theme(), hitAIDivider, window, (divider.Rect().X-inner.X)/max(window.Width-1, 1)).
-			Limits(0, 1).HandleSize(8).Paint(state.messages.AIPanel.ResizePanel)
-		state.paintAIBody(canvas, bounds.Rect())
-		state.paintAIMenuOverlay(canvas)
-		return
+	bounds.X -= state.toolbarDockSideReserveFor(false, false)
+	panel.rect = bounds
+	window := gfx.Rect{Y: bounds.Y, Width: size.Width, Height: bounds.Height}
+	dividerX := bounds.X - (sectionCardMargin+1)/2
+	panel.resize = aiPanelResize{window: window, ratio: dividerX / max(window.Width-1, 1), handle: sectionCardMargin}
+	ui.Column(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).
+		Background(pal.workspace).Border(1, pal.windowStroke).Radius(radius.surface).Clip().Children(func() {
+		state.declareAIPanelBody(c)
+	})
+}
+
+// declareAIDockedPanel declares the column at the right of a workspace, where the
+// panes left it room.
+func (state *State) declareAIDockedPanel(c ui.C, size gfx.Size) {
+	panel, pal := &state.ai.panel, state.pal
+	reserve := state.aiReserve(state.deck.ActiveWorkspace(), size)
+	inner := state.baseWorkspacePixelBounds(size)
+	bounds := gfx.Rect{
+		X: inner.X + inner.Width - reserve + 1, Y: windowBarHeight,
+		Width: reserve - 1, Height: inner.Height,
 	}
-	// A section page has no visible terminal rail, even while a background
-	// terminal keeps its PTY fitted for that rail.
+	panel.rect = bounds
+	window := gfx.Rect{X: inner.X, Y: windowBarHeight, Width: inner.Width, Height: inner.Height}
+	panel.resize = aiPanelResize{window: window, ratio: (inner.Width - reserve) / max(window.Width-1, 1), handle: 8}
+	ui.Column(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).
+		Background(pal.workspace).Children(func() {
+		state.declareAIPanelBody(c)
+	})
+}
+
+// declareAIDrawer declares the panel as a drawer over the window, as Viva's page
+// Drawer: it paints its scrim and surface on a layer above the page's content
+// and declares the body inside that layer, so a section painted after the page
+// does not cover it.
+func (state *State) declareAIDrawer(c ui.C, size gfx.Size) {
+	panel := &state.ai.panel
 	viewport := state.visibleWorkspacePixelBounds(size)
 	extent := state.aiPanelExtent(size)
 	drawerExtent := min(extent, size.Width*0.92)
-	drawer := components.BeginDrawer(canvas, state.Theme(), viewport, components.DrawerOptions{
-		Layer: drawerLayer, Scope: gfx.ID{}, DismissID: hitAIDrawerDismiss,
-		Side: components.DrawerRight, ContentExtent: drawerExtent,
-		InitialFocusID: hitAIInput,
-	})
-	layout := drawer.Begin("", "")
-	if layout.Content.Width > 0 && layout.Content.Height > 0 {
-		theme := state.Theme()
-		theme.Border = gfx.Color{}
-		window := gfx.Rect{X: viewport.X, Y: viewport.Y, Width: viewport.Width, Height: viewport.Height}
-		components.BeginResizable(canvas, theme, hitAIDivider, window, (layout.Content.X-viewport.X)/max(viewport.Width-1, 1)).
-			Limits(0, 1).HandleSize(8).Paint(state.messages.AIPanel.ResizePanel)
+	contentWidth := min(drawerExtent, viewport.Width)
+	bounds := gfx.Rect{X: viewport.X + viewport.Width - contentWidth, Y: viewport.Y, Width: contentWidth, Height: viewport.Height}
+	panel.rect = bounds
+	panel.resize = aiPanelResize{window: viewport, ratio: (bounds.X - viewport.X) / max(viewport.Width-1, 1), handle: 8}
+	panel.drawerOpen = true
+	dismissed := ui.Drawer(c, &panel.drawerOpen, "", ui.DrawerSpec{
+		Side: ui.DrawerRight, Size: drawerExtent, NonModal: true,
+	}, func() {
+		state.declareAIPanelBody(c)
+	}, nil)
+	if dismissed || !panel.drawerOpen {
+		panel.drawerOpen = true // closing now; the next open starts open
+		c.After(state.closeAIPanel)
 	}
-	state.paintAIBody(canvas, layout.Content)
-	drawer.End()
-	// A zero Scope keeps the drawer from trapping focus, and Drawer.End only
-	// installs InitialFocusID for a trapped drawer; ask the runtime for the
-	// composer explicitly so typing goes to the assistant when it opens. The
-	// runtime applies one request once, so later frames leave the focus the user
-	// chose alone.
-	canvas.RequestFocus(hitAIInput)
-	state.paintAIMenuOverlay(canvas)
 }
 
-// paintAIMenuOverlay paints the open chip menus after the panel body. They are
-// window-level popups: beside the home card a menu may open outside the card, so
-// the body's clip and layer must not cut them or their dismiss backdrop.
-func (state *State) paintAIMenuOverlay(canvas *gfx.Canvas) {
-	state.paintAIAutoScopeMenu(canvas)
-	state.paintAIReasoningMenu(canvas)
-	if !state.ai.panel.modelMenu {
+// paintAIPanel paints what the declared panel needs outside the page: its resize
+// edge and the file-drop hint. The drawer keeps them inside its own layer, where
+// the page's over hook painted them; the docked and section panels paint them at
+// the page's layer, after it, as the panel always has.
+func (state *State) paintAIPanel(canvas *gfx.Canvas, size gfx.Size) {
+	panel := &state.ai.panel
+	if !state.aiPanelVisible() || !panel.declared {
 		return
 	}
-	if _, hasModel := state.aiModelText(); !hasModel {
-		return
+	switch panel.mode {
+	case aiPanelDrawer:
+		// A zero drawer scope does not take focus when it opens; ask for the
+		// composer explicitly so typing reaches the assistant. The runtime applies
+		// one request once, so later frames leave the focus the user chose alone.
+		canvas.RequestFocus(hitAIInput)
+	default:
+		state.paintAIResize(canvas)
+		state.paintAIDrop(canvas)
 	}
-	state.paintAIModelMenu(canvas)
 }
 
-func (state *State) paintAIBody(canvas *gfx.Canvas, bounds gfx.Rect) {
+// paintAIResize paints the panel's resize edge: only hover, press and focus show
+// it, since the cards already carry their own border.
+func (state *State) paintAIResize(canvas *gfx.Canvas) {
+	panel := &state.ai.panel
+	if panel.resize.window.Width <= 0 {
+		return
+	}
+	theme := state.Theme()
+	theme.Border = gfx.Color{}
+	components.BeginResizable(canvas, theme, hitAIDivider, panel.resize.window, panel.resize.ratio).
+		Limits(0, 1).HandleSize(panel.resize.handle).Paint(state.messages.AIPanel.ResizePanel)
+}
+
+// aiMenuOpen reports whether one of the chip menus is showing. A menu whose
+// models or levels are gone paints nothing, so it is not open then either.
+func (state *State) aiMenuOpen() bool {
+	panel := &state.ai.panel
+	if panel.reasoningMenu {
+		if _, levels, ok := state.aiCurrentModelReasoning(); ok && len(levels) > 0 {
+			return true
+		}
+	}
+	if panel.autoMenu && state.ai.mode != agent.ModeAsk {
+		if _, has := state.aiModelText(); has {
+			return true
+		}
+	}
+	if panel.modelMenu {
+		if _, has := state.aiModelText(); has {
+			return true
+		}
+	}
+	return false
+}
+
+// aiMenuShown reports whether the workbench page's last paint declared an open
+// chip menu. aiMenuOpen says one is wanted, but a menu with no models or levels
+// paints no popup; only a shown menu owns the pointer and keys over the window.
+func (state *State) aiMenuShown() bool {
+	page := state.chrome.windowPage
+	return state.aiMenuOpen() && page != nil && page.Overlay()
+}
+
+// aiMenuWidth is the assistant chip menu's width: what its words need plus room
+// for the mark and the padding, between 140 and 320 pixels.
+func aiMenuWidth(text float32) float32 { return min(max(text+56, 140), 320) }
+
+// aiMenuContextWidth is the least width a menu with description rows may have:
+// the same 144 a context menu keeps, which the approval and reasoning menus were
+// before they became page menus.
+const aiMenuContextWidth = float32(144)
+
+// paintAIPanelContent paints the parts the declaration left for the last pass,
+// once the page has laid the body out: the title buttons and setup card in their
+// slots and the bottom's field and buttons. The list itself is the page's
+// Control and paints in its own Draw (paintAIList).
+func (state *State) paintAIPanelContent(d *ui.DrawContext) {
+	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
+	s := &panel.pageScratch
+	state.paintAIHeader(canvas, &panel.body)
+	if s.showSetup {
+		components.BeginButton(canvas, state.Theme(), hitAISetup, panel.body.setup.Rect()).Small().Default(s.setupLabel)
+	}
+	// Keep the list's rectangle even when it is the empty state, which paints no
+	// Control: the wheel and the scrollbar read it between paints.
+	panel.list = panel.body.list.Rect()
+	panel.listing = panel.history
+	// A row that is gone takes the selection that pointed into it, whether the
+	// list paints rows at all: the empty state has no Draw to do it later.
+	panel.textSelect.Clamp(len(ai.items)*int(aiTextPartCount), panel.textLength)
+	state.paintAIBottom(canvas, &panel.body)
+}
+
+// paintAIList is the list Control's Draw: the saved conversations or the
+// conversation, painted with the rows' own layouts inside the control's
+// rectangle. It is the last user of the frame-based row painters; they are not
+// called from anywhere else.
+func (state *State) paintAIList(d *ui.DrawContext) {
+	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
+	// The list slot is wider than the control by the divider's hit strip: the
+	// rows are measured and painted from the slot, so their pixels do not move
+	// when the control keeps clear of the resize handle.
+	list := panel.list
+	if list.Width <= 0 {
+		list = d.Rect
+	}
+	panel.list = list
+	panel.listing = panel.history
+	panel.textFirst, panel.textLast = -1, -1
+	switch {
+	case panel.history:
+		state.paintAIHistory(canvas, list)
+	case len(ai.items) > 0:
+		state.paintAIMessages(canvas, list)
+	}
+}
+
+// paintAIPanelChrome paints what must come over the body's controls: the
+// composer's resize grip, and, for the drawer, the panel's resize edge and the
+// file-drop hint, which belong on the drawer's layer rather than the page's.
+func (state *State) paintAIPanelChrome(d *ui.DrawContext) {
+	canvas, panel := d.Canvas, &state.ai.panel
+	if box := panel.composer; box.Width > 0 {
+		// The box's top edge is what is dragged to make it taller.
+		canvas.HitWithOptions(hitAIComposerGrip, gfx.Rect{X: box.X + 8, Y: box.Y - 3, Width: max(box.Width-16, 0), Height: 7}, state.messages.AIPanel.ResizeComposer,
+			gfx.HitOptions{Role: gfx.RoleSlider, Cursor: gfx.PointerCursorResizeVertical, SkipFocus: true})
+	}
+	if panel.mode == aiPanelDrawer {
+		state.paintAIResize(canvas)
+		state.paintAIDrop(canvas)
+	}
+}
+
+// declareAIPanelBody declares the panel's chrome in the container the workbench
+// page gave it: the title row, the setup card, the divider and the message list,
+// with the bottom under them. The icon buttons and the list content are painted
+// into the slots once the page is laid out. The title row's controls read their
+// click here, in the page's declaration.
+func (state *State) declareAIPanelBody(c ui.C) {
 	ai, panel := &state.ai, &state.ai.panel
 	m := state.messages.AIPanel
-	panel.rect = bounds
-	width := bounds.Width - 2*aiPad
+	pal := state.pal
+	width := panel.rect.Width - 2*aiPad
 	s := &panel.pageScratch
 	_, hasModel := state.aiModelText()
 	s.setupLabel, s.setupSummary = m.SetupModel, m.SetupSummary
@@ -547,45 +712,22 @@ func (state *State) paintAIBody(canvas *gfx.Canvas, bounds gfx.Rect) {
 	if ai.needLogin != "" {
 		s.setupLabel, s.setupSummary = state.messages.AISettings.CLIAuthLogin, state.messages.AISettings.CLIAuthSignedOut
 	}
-	s.boxHeight = state.aiPrepareBottom(canvas, width)
-	s.setupWidth = min(max(canvas.TextWidthWeight(s.setupLabel, aiSmallSize, gfx.WeightMedium)+32, 110), width*0.5)
+	if canvas := c.Canvas(); canvas != nil {
+		s.boxHeight = state.aiPrepareBottom(canvas, width)
+		s.setupWidth = min(max(canvas.TextWidthWeight(s.setupLabel, aiSmallSize, gfx.WeightMedium)+32, 110), width*0.5)
+	}
+	if panel.composerDraw == nil {
+		panel.composerDraw = state.paintAIComposerTextarea
+	}
+	if panel.listDraw == nil {
+		panel.listDraw = state.paintAIList
+		panel.listHandlers.Pointer = state.aiPanelListPointer
+		panel.listHandlers.Key = state.aiPanelListKey
+		panel.listHandlers.Scroll = state.aiPanelListScroll
+	}
 
 	panel.body = aiBody{}
-	if panel.page == nil {
-		panel.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: aiPanelPageRoot, Theme: &state.theme})
-		panel.pageView = state.declareAIPanelPage
-	}
-	panel.page.Draw(canvas, bounds, panel.pageView)
-
-	state.paintAIHeader(canvas, &panel.body)
-	if s.showSetup {
-		components.BeginButton(canvas, state.Theme(), hitAISetup, panel.body.setup.Rect()).Small().Default(s.setupLabel)
-	}
-	list := panel.body.list.Rect()
-	panel.list = list
-	panel.listing = panel.history
-	panel.textFirst, panel.textLast = -1, -1
-	panel.textSelect.Clamp(len(ai.items)*int(aiTextPartCount), panel.textLength)
-	switch {
-	case panel.history:
-		state.paintAIHistory(canvas, list)
-	case len(ai.items) == 0:
-		state.paintAIEmpty(canvas, list)
-	default:
-		state.paintAIMessages(canvas, list)
-	}
-	state.paintAIBottom(canvas, &panel.body)
-}
-
-// declareAIPanelPage declares the panel's chrome: the title row, the setup card,
-// the divider and the message list, with the bottom under them. The icon buttons
-// and the list content are painted into the slots once the page is laid out. The
-// title row's controls read their click here, in the page's declaration.
-func (state *State) declareAIPanelPage(c ui.C) {
-	panel := &state.ai.panel
-	pal, m := state.pal, state.messages.AIPanel
-	s := &panel.pageScratch
-	ui.Column(c).Fill().Children(func() {
+	ui.Column(c).Fill().Draw(panel.contentDraw).DrawOver(panel.overDraw).Children(func() {
 		// The title row: the name, a new conversation, the history, and the way out.
 		ui.Row(c).Height(aiTitleRow).PadX(aiPad).Gap(4).Items(ui.Center).Children(func() {
 			ui.Icon(c, lucideIcons[iconBot]).Color(pal.accent).MarginSides(0, 4, 0, 0)
@@ -602,14 +744,27 @@ func (state *State) declareAIPanelPage(c ui.C) {
 			})
 		}
 		ui.Divider(c).Background(pal.line)
-		panel.body.list = ui.Slot(c).Grow(1)
+		// With nothing to show, the list's room is the page's own empty state;
+		// the history and the conversation are one Control the page declares, so
+		// its scroll gestures go to the control's handlers. The control starts at
+		// the divider's hit strip so it does not cross the resize handle; the
+		// strip is list padding, and the list is painted from the slot's whole
+		// rectangle below.
+		if panel.history || len(state.ai.items) > 0 {
+			inset := panel.resize.handle/2 + 1
+			panel.body.list = ui.Column(c).Grow(1).Children(func() {
+				ui.Control(c, m.ListLabel, &panel.listHandlers).Fill().MarginLeft(inset).Draw(panel.listDraw)
+			})
+		} else {
+			panel.body.list = state.declareAIEmpty(c)
+		}
 		state.declareAIBottom(c, &panel.body, s.boxHeight)
 	})
 	// The title row's controls are painted by hand into their slots; the page
 	// reads their click while it declares them, so an event-pass paint delivers
 	// it there rather than through the window's central dispatcher. The action
 	// runs after the paint, as the central dispatcher did.
-	if canvas := c.Frame().Canvas(); canvas != nil && state.modal == modalNone {
+	if canvas := c.Canvas(); canvas != nil && state.modal == modalNone {
 		switch {
 		case canvas.Clicked(hitAIClose):
 			c.After(state.closeAIPanel)
@@ -657,50 +812,46 @@ func historyStyle(open bool) iconButtonStyle {
 	return iconButtonQuiet
 }
 
-// paintAIEmpty is the panel before the first question: a third of the free room
-// above the icon, the title, the hint and the examples, and two thirds below.
-func (state *State) paintAIEmpty(canvas *gfx.Canvas, list gfx.Rect) {
+// declareAIEmpty declares the panel before the first question: a third of the
+// free room above the icon, the title, the hint and the examples, and two thirds
+// below.
+func (state *State) declareAIEmpty(c ui.C) ui.Box {
 	pal := state.pal
 	title, hint, texts := state.aiEmptyTexts()
-	var examples [aiExamples]ui.Box
-	f := state.aiFlex.empty.Begin(canvas, state.Theme(), list)
-	f.Column().Fill().PadX(aiPad).Children(func() {
-		f.Spacer().MinHeight(8)
-		f.Column().Shrink(0).Children(func() {
-			f.Icon(lucideIcons[iconBot]).Size(26, 26).Color(pal.accent).Self(ui.Center)
-			f.Text(title).FontSize(15).Bold().Color(pal.text).LineHeight(24).TextCenter().MarginSides(14, 0, 0, 0)
-			f.Paragraph(hint, 4).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).TextCenter().MarginSides(8, 12, 0, 12)
-			f.Column().Gap(6).MarginSides(16, 0, 6, 0).Children(func() {
-				for index := range examples {
-					examples[index] = f.Slot().Height(36)
+	return ui.Column(c).Grow(1).FillWidth().PadX(aiPad).Clip().Children(func() {
+		ui.Spacer(c).MinHeight(8)
+		ui.Column(c).Shrink(0).Children(func() {
+			ui.Icon(c, lucideIcons[iconBot]).Size(26, 26).Color(pal.accent).Self(ui.Center)
+			ui.Text(c, title).FontSize(15).Bold().Color(pal.text).LineHeight(24).TextCenter().MarginSides(14, 0, 0, 0)
+			ui.Paragraph(c, hint, 4).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).TextCenter().MarginSides(8, 12, 0, 12)
+			ui.Column(c).Gap(6).MarginSides(16, 0, 6, 0).Children(func() {
+				for index, example := range texts {
+					state.declareAIExample(c, index, example)
 				}
 			})
 		})
-		f.Spacer().Grow(2)
+		ui.Spacer(c).Grow(2)
 	})
-	f.End()
+}
 
-	for index, example := range texts {
-		bounds := examples[index].Rect()
-		if bounds.Y+bounds.Height > list.Y+list.Height {
-			break
-		}
-		id := hitAIExamples.At(index)
-		background := pal.surface
+// declareAIExample declares one prompt of the empty panel as a row a click
+// fills in.
+func (state *State) declareAIExample(c ui.C, index int, example string) {
+	pal, id := state.pal, hitAIExamples.At(index)
+	background := pal.surface
+	if canvas := c.Canvas(); canvas != nil {
 		switch {
 		case canvas.Pressed() == id:
 			background = pal.surfaceHot
 		case canvas.Hovered() == id:
 			background = pal.surfaceSoft
 		}
-		r := state.aiFlex.row.Begin(canvas, state.Theme(), bounds)
-		r.Row().Fill().PadSides(0, 10, 0, 12).Gap(8).Items(ui.Center).Background(background).Radius(radius.control).
-			HitWith(id, example, gfx.HitOptions{Role: gfx.RoleButton}).Children(func() {
-			r.Text(example).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Grow(1)
-			r.Icon(lucideIcons[iconChevronRight]).Size(14, 14).Color(pal.muted).Shrink(0)
-		})
-		r.End()
 	}
+	ui.Row(c).Height(36).PadSides(0, 10, 0, 12).Gap(8).Items(ui.Center).Background(background).Radius(radius.control).
+		HitWith(id, example, gfx.HitOptions{Role: gfx.RoleButton}).Children(func() {
+		ui.Text(c, example).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Grow(1)
+		ui.Icon(c, lucideIcons[iconChevronRight]).Size(14, 14).Color(pal.muted).Shrink(0)
+	})
 }
 
 // aiEmptyTexts are the words of the empty panel: about the terminal when there
@@ -979,15 +1130,29 @@ func (state *State) aiThinking(index int) bool {
 	return ai.run != nil && index == len(ai.items)-1 && ai.items[index].kind == aiReasoning
 }
 
+// aiRowFrame is the part of the frame API the conversation rows are declared
+// with. The list is a page Control whose Draw paints into the canvas; naming
+// only the methods the rows use keeps the row painters independent of the
+// concrete frame type.
+type aiRowFrame interface {
+	Column() ui.Box
+	Icon(gfx.Icon) ui.Box
+	Row() ui.Box
+	Slot() ui.Box
+	Spacer() ui.Box
+	Stack() ui.Box
+	Text(string) ui.Box
+}
+
 // aiTextLines declares wrapped lines of body text, one element each.
-func aiTextLines(f *ui.Frame, lines []string, size, lineHeight float32, color gfx.Color) {
+func aiTextLines(f aiRowFrame, lines []string, size, lineHeight float32, color gfx.Color) {
 	for _, line := range lines {
 		f.Text(line).FontSize(size).Weight(gfx.WeightRegular).Color(color).LineHeight(lineHeight)
 	}
 }
 
 // aiMonoLines declares lines in the terminal's font.
-func (state *State) aiMonoLines(f *ui.Frame, lines []string, color gfx.Color) {
+func (state *State) aiMonoLines(f aiRowFrame, lines []string, color gfx.Color) {
 	for _, line := range lines {
 		f.Text(line).FontSize(aiMonoSize).MonoFace(state.terminalFontFace).Color(color)
 	}
@@ -999,7 +1164,7 @@ func (state *State) aiMonoLines(f *ui.Frame, lines []string, color gfx.Color) {
 // An assistant message is painted by its Markdown view; the box returned is the
 // room that view is painted in, and the copy buttons of its code blocks are
 // declared over it.
-func (state *State) declareAIRow(f *ui.Frame, index int, view *aiRowView, item *aiItem) ui.Box {
+func (state *State) declareAIRow(f aiRowFrame, index int, view *aiRowView, item *aiItem) ui.Box {
 	pal, m := state.pal, state.messages.AIPanel
 	row := f.Column()
 	var body ui.Box
@@ -1284,9 +1449,8 @@ type aiCopySlot struct {
 
 // aiFlexViews are the layouts the assistant's panel is declared with.
 type aiFlexViews struct {
-	empty, mention, summary, send, menu ui.View
-	shell, barButton                    ui.View
-	history, historyRows, messages      ui.View
-	row                                 ui.View // one row of the history or of the conversation, declared into its slot
-	status                              ui.View
+	history, historyRows ui.View
+	messages             ui.View
+	row                  ui.View // one row of the history or of the conversation, declared into its slot
+	status               ui.View
 }

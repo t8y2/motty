@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
 )
@@ -227,10 +228,12 @@ func TestAISettingsImportPreviewListsEveryCandidateAndWritesNothingWhenEmpty(t *
 	// The whole list is present; the wheel moves it instead of the page.
 	if hit, ok := hitByID(canvas, hitAISetImportList); !ok {
 		t.Fatal("the preview list has no scroll group")
-	} else if scroll := state.settingsRow.ScrollState(hitAISetImportList); scroll == nil || scroll.Max() <= 0 {
+	} else if scroll := state.aiImportListScroll(); scroll == nil || scroll.Max() <= 0 {
 		t.Fatal("the preview list does not scroll when it is taller than its viewport")
 	} else {
-		state.Scroll(gfx.ScrollEvent{X: hit.Bounds.X + 20, Y: hit.Bounds.Y + 20, DeltaY: 120, Precise: true})
+		// The terminal's scroll dispatcher hands the wheel to the import page
+		// while the preview is open; this is that route.
+		state.aiImportWheel(gfx.ScrollEvent{X: hit.Bounds.X + 20, Y: hit.Bounds.Y + 20, DeltaY: 120, Precise: true})
 		if scroll.Offset == 0 {
 			t.Fatal("the wheel over the preview list did not scroll it")
 		}
@@ -618,5 +621,83 @@ func TestAISettingsImportReportsAProviderSavedWithoutItsKey(t *testing.T) {
 		if strings.Contains(text, "secret-novault") {
 			t.Fatalf("a credential is painted: %q", text)
 		}
+	}
+}
+
+// TestAISettingsImportPreviewTakesRealPointerAndWheel proves the preview's
+// controls are wired after the list moved into the import page: a real press on
+// a candidate's checkbox toggles the selection, and the page's wheel route moves
+// the list. The terminal's dispatcher hands that route the wheel while the
+// preview is open (aiImportWheel, see State.Scroll).
+func TestAISettingsImportPreviewTakesRealPointerAndWheel(t *testing.T) {
+	var candidates []aiproviderimport.Candidate
+	for index := 0; index < 14; index++ {
+		candidates = append(candidates, importCandidate(
+			fmt.Sprintf("Relay %d", index), store.KindOpenAI,
+			fmt.Sprintf("https://relay%d.example.com/v1", index), "key", "m1",
+		))
+	}
+	candidates = append(candidates, aiproviderimport.Candidate{
+		Source: aiproviderimport.SourceCCSwitch, Name: "Disabled", SkipReason: aiproviderimport.ReasonDisabled,
+	})
+	world := newSettingsWorldWith(t, newLister(), func(options *Options) {
+		options.AIProviderScan = func() []aiproviderimport.SourceInfo {
+			return []aiproviderimport.SourceInfo{
+				importSource(aiproviderimport.ToolCCSwitch, "/tmp/cc-switch.db", candidates...),
+			}
+		}
+	})
+	state := world.state
+	importOpen(t, world)
+	importPreview(t, world, 0)
+	view, err := headless.Open(app.Config{
+		Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnResize: state.Resize,
+		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	find := func(id gfx.ID) gfx.Hit {
+		t.Helper()
+		for _, hit := range view.Snapshot().Hits {
+			if hit.ID == id {
+				return hit
+			}
+		}
+		t.Fatalf("hit %v is not painted", id)
+		return gfx.Hit{}
+	}
+
+	before := state.aiImportSelectedCount()
+	row := find(hitAISetImportRow.At(0))
+	if err := view.Click(row.Bounds.X+row.Bounds.Width/2, row.Bounds.Y+row.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if got := state.aiImportSelectedCount(); got != before-1 {
+		t.Fatalf("a real press on a checkbox left %d selected, want %d", got, before-1)
+	}
+
+	scroll := state.aiImportListScroll()
+	if scroll == nil || scroll.Max() <= 0 {
+		t.Fatal("the preview list does not scroll")
+	}
+	list := find(hitAISetImportList)
+	if err := view.Scroll(gfx.ScrollEvent{
+		X: list.Bounds.X + 20, Y: list.Bounds.Y + 20, DeltaY: 160, Precise: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if scroll.Offset == 0 {
+		t.Fatal("the wheel event did not move the preview list")
+	}
+	if got := state.aiImportSelectedCount(); got != before-1 {
+		t.Fatalf("scrolling changed the selection: %d selected, want %d", got, before-1)
 	}
 }

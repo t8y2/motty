@@ -561,71 +561,118 @@ func (state *State) paintAdvancedSection(canvas *gfx.Canvas, bounds gfx.Rect) {
 	}
 }
 
+// hostVNCRowsRoot and hostAlgoRowsRoot name the pages the desktop switches and
+// the SSH algorithm rows are declared in.
+const (
+	hostVNCRowsRoot  = "host-vnc-rows"
+	hostAlgoRowsRoot = "host-algo-rows"
+	// The widths of the one-time code row's buttons.
+	algoRemoveWidth, algoScanWidth, algoPasteWidth = 84, 132, 96
+)
+
+// hostVNCRowsBody is where the desktop switches' body put each checkbox row.
+type hostVNCRowsBody struct {
+	tunnel, clipboard, chromeless, console ui.Box
+}
+
+// hostAlgoRowsBody is where the SSH algorithm rows put each control.
+type hostAlgoRowsBody struct {
+	algo, custom, login, otp, scan, paste, remove ui.Box
+	x11, agentFwd, noHistory, interactive         ui.Box
+	agentAccess, agentHelp                        ui.Box
+}
+
+func (state *State) hostVNCRowsPage() *ui.Page {
+	form := &state.editor.form
+	if form.vncPage == nil {
+		form.vncPage = ui.NewPage(ui.PageConfig{Root: hostVNCRowsRoot, Theme: &state.theme})
+		form.vncView = state.declareHostVNCRows
+	}
+	return form.vncPage
+}
+
+func (state *State) hostAlgoRowsPage() *ui.Page {
+	form := &state.editor.form
+	if form.algoPage == nil {
+		form.algoPage = ui.NewPage(ui.PageConfig{Root: hostAlgoRowsRoot, Theme: &state.theme})
+		form.algoView = state.declareHostAlgoRows
+	}
+	return form.algoPage
+}
+
 // paintAlgorithmRows draws the SSH algorithm choice and, for a custom one, the
 // list that is allowed, then the one-time code secret.
 func (state *State) paintAlgorithmRows(canvas *gfx.Canvas, x, y, width, rowHeight float32) {
-	m, editor, pal := state.messages.Tools, &state.editor, state.pal
+	m, editor := state.messages.Tools, &state.editor
 	// The page's choice may write a new mode while it is declared; the rows this
-	// frame laid out are the ones before it, so draw the custom field only when
+	// page laid out are the ones before it, so draw the custom field only when
 	// its row was laid out.
 	customMode := editor.algoMode == algoCustom
 	rows := float32(1)
 	if customMode {
 		rows++
 	}
-	const removeWidth, scanWidth, pasteWidth = 84, 132, 96
-	var algo, custom, login, otp, scan, paste, remove, x11, agentFwd, noHistory, interactive, agentAccess, agentHelp ui.Box
-	f := state.partLayout.Begin(canvas, state.Theme(), gfx.Rect{X: x, Y: y, Width: width, Height: (rows+1)*rowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight})
-	heading := func(title string) {
-		f.Column().Height(groupHeadingHeight).Children(func() {
-			f.Column().Height(1).MarginSides(12, 0, 0, 0).Background(withAlpha(pal.line, 0.7))
-			f.Text(title).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).MarginSides(8, 0, 0, 2)
-		})
-	}
-	f.Column().Fill().Children(func() {
-		algo = f.Slot().Height(rowHeight)
-		if customMode {
-			custom = f.Slot().Height(rowHeight)
-		}
-		login = f.Slot().Height(rowHeight)
-		f.Row().Height(otpFieldHeight).Gap(8).Children(func() {
-			otp = f.Slot().Grow(1)
-		})
-		f.Row().Height(otpButtonsRow).Gap(8).Children(func() {
-			scan = f.Slot().Size(scanWidth, 30).Self(ui.Start)
-			paste = f.Slot().Size(pasteWidth, 30).Self(ui.Start)
-			remove = f.Slot().Size(removeWidth, 30).Self(ui.Start)
-		})
-		heading(m.AdvancedSession)
-		x11 = state.declareDialogCheckbox(f, m.X11Forward, 4, 0)
-		agentFwd = state.declareDialogCheckbox(f, m.AgentForward, 12, 0)
-		noHistory = state.declareDialogCheckbox(f, state.messages.History.HostNoRecord, 12, 0)
-		interactive = state.declareDialogCheckbox(f, m.InteractiveOnly, 12, 0)
-		heading(m.AdvancedAgents)
-		agentAccess, agentHelp = state.declareDialogCheckboxHelp(f, m.AgentAccess, 4, 0)
-	})
-	f.End()
+	b := &editor.form.algoBody
+	state.hostAlgoRowsPage().Draw(canvas, gfx.Rect{X: x, Y: y, Width: width, Height: (rows+1)*rowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight}, editor.form.algoView)
 
-	content := components.BeginField(canvas, state.Theme(), algo.Rect()).Paint(m.AlgoField, "", "")
+	content := components.BeginField(canvas, state.Theme(), b.algo.Rect()).Paint(m.AlgoField, "", "")
 	state.drawDialogChoice(canvas, content, &editor.algoChoice, "host-dialog-algorithm", hostAlgoChoice)
 	state.rememberHostChoice(canvas, content, &editor.algoChoice, state.hostAlgoChoiceLabel(editor.algoMode))
 	if customMode {
-		state.paintDialogField(canvas, hitDialogAlgorithms, fieldAlgorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, custom.Rect())
+		state.paintDialogField(canvas, hitDialogAlgorithms, fieldAlgorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, b.custom.Rect())
 	}
-	state.paintDialogField(canvas, hitDialogLoginCommand, fieldLoginCommand, m.LoginCommandField, m.LoginCommandPlaceholder, login.Rect())
+	state.paintDialogField(canvas, hitDialogLoginCommand, fieldLoginCommand, m.LoginCommandField, m.LoginCommandPlaceholder, b.login.Rect())
 	var removeRect gfx.Rect
 	if editor.otpSaved {
-		removeRect = remove.Rect()
+		removeRect = b.remove.Rect()
 	}
-	state.paintOTPRow(canvas, otp.Rect(), scan.Rect(), paste.Rect(), removeRect)
-	state.paintDialogCheckbox(canvas, hitDialogForwardX11, m.X11Forward, editor.forwardX11, x11)
-	state.paintDialogCheckbox(canvas, hitDialogAgentForward, m.AgentForward, editor.agentForward, agentFwd)
-	state.paintDialogCheckbox(canvas, hitDialogNoHistory, state.messages.History.HostNoRecord, editor.noHistory, noHistory)
-	state.paintDialogCheckbox(canvas, hitDialogInteractiveOnly, m.InteractiveOnly, editor.interactiveOnly, interactive)
-	state.paintDialogCheckbox(canvas, hitDialogAgentAccess, m.AgentAccess, editor.agentAccess, agentAccess)
+	state.paintOTPRow(canvas, b.otp.Rect(), b.scan.Rect(), b.paste.Rect(), removeRect)
+	state.paintDialogCheckbox(canvas, hitDialogForwardX11, m.X11Forward, editor.forwardX11, b.x11)
+	state.paintDialogCheckbox(canvas, hitDialogAgentForward, m.AgentForward, editor.agentForward, b.agentFwd)
+	state.paintDialogCheckbox(canvas, hitDialogNoHistory, state.messages.History.HostNoRecord, editor.noHistory, b.noHistory)
+	state.paintDialogCheckbox(canvas, hitDialogInteractiveOnly, m.InteractiveOnly, editor.interactiveOnly, b.interactive)
+	state.paintDialogCheckbox(canvas, hitDialogAgentAccess, m.AgentAccess, editor.agentAccess, b.agentAccess)
 	// After the checkbox, whose words reach to the end of the row, so that this is
 	// the hit on top where the two meet.
-	state.paintHelpIcon(canvas, hitDialogAgentAccessHelp, m.AgentAccessNote, agentHelp.Rect())
+	state.paintHelpIcon(canvas, hitDialogAgentAccessHelp, m.AgentAccessNote, b.agentHelp.Rect())
+}
+
+// declareHostAlgoRows lays out the SSH algorithm choice, the custom list, the
+// login command, the one-time code row and the session and agent switches.
+func (state *State) declareHostAlgoRows(c ui.C) {
+	m, editor, pal := state.messages.Tools, &state.editor, state.pal
+	b := &editor.form.algoBody
+	*b = hostAlgoRowsBody{}
+	customMode := editor.algoMode == algoCustom
+	rowHeight := float32(hostFormRowHeight)
+	ui.Column(c).Fill().Children(func() {
+		b.algo = ui.Slot(c).Height(rowHeight)
+		if customMode {
+			b.custom = ui.Slot(c).Height(rowHeight)
+		}
+		b.login = ui.Slot(c).Height(rowHeight)
+		ui.Row(c).Height(otpFieldHeight).Gap(8).Children(func() {
+			b.otp = ui.Slot(c).Grow(1)
+		})
+		ui.Row(c).Height(otpButtonsRow).Gap(8).Children(func() {
+			b.scan = ui.Slot(c).Size(algoScanWidth, 30).Self(ui.Start)
+			b.paste = ui.Slot(c).Size(algoPasteWidth, 30).Self(ui.Start)
+			b.remove = ui.Slot(c).Size(algoRemoveWidth, 30).Self(ui.Start)
+		})
+		heading := func(title string) {
+			ui.Column(c).Height(groupHeadingHeight).Children(func() {
+				ui.Column(c).Height(1).MarginSides(12, 0, 0, 0).Background(withAlpha(pal.line, 0.7))
+				ui.Text(c, title).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).MarginSides(8, 0, 0, 2)
+			})
+		}
+		heading(m.AdvancedSession)
+		b.x11 = state.declareDialogCheckboxC(c, m.X11Forward, 4, 0)
+		b.agentFwd = state.declareDialogCheckboxC(c, m.AgentForward, 12, 0)
+		b.noHistory = state.declareDialogCheckboxC(c, state.messages.History.HostNoRecord, 12, 0)
+		b.interactive = state.declareDialogCheckboxC(c, m.InteractiveOnly, 12, 0)
+		heading(m.AdvancedAgents)
+		b.agentAccess, b.agentHelp = state.declareDialogCheckboxHelpC(c, m.AgentAccess, 4, 0)
+	})
 }
 
 // paintOTPRow draws the one-time code secret: a field for a new one, a button to
@@ -676,21 +723,30 @@ func (state *State) desktopRowsHeight() float32 {
 // console (administrative) session.
 func (state *State) paintVNCRows(canvas *gfx.Canvas, bounds gfx.Rect) {
 	editor, m := &state.editor, state.messages.Desktop
-	var tunnel, clipboard, chromeless, console ui.Box
-	f := state.partLayout.Begin(canvas, state.Theme(), bounds)
-	f.Column().Fill().Children(func() {
-		tunnel = state.declareDialogCheckbox(f, m.ViaSSH, 4, 0)
-		clipboard = state.declareDialogCheckbox(f, m.ShareClipboard, 12, 0)
-		chromeless = state.declareDialogCheckbox(f, m.HideBars, 12, 0)
+	b := &editor.form.vncBody
+	state.hostVNCRowsPage().Draw(canvas, bounds, editor.form.vncView)
+	state.paintDialogCheckbox(canvas, hitDialogViaSSH, m.ViaSSH, editor.viaSSH, b.tunnel)
+	state.paintDialogCheckbox(canvas, hitDialogClipboard, m.ShareClipboard, editor.clipboard, b.clipboard)
+	state.paintDialogCheckbox(canvas, hitDialogChromeless, m.HideBars, editor.chromeless, b.chromeless)
+	if editor.protocol == protocolRDP {
+		state.paintDialogCheckbox(canvas, hitDialogConsole, m.ConsoleSession, editor.console, b.console)
+	}
+}
+
+// declareHostVNCRows lays out the switches of a VNC or RDP host: connecting
+// through SSH, sharing the clipboard, showing the picture without the bars
+// around it and, for RDP, asking Windows for its console (administrative)
+// session.
+func (state *State) declareHostVNCRows(c ui.C) {
+	editor, m := &state.editor, state.messages.Desktop
+	b := &editor.form.vncBody
+	*b = hostVNCRowsBody{}
+	ui.Column(c).Fill().Children(func() {
+		b.tunnel = state.declareDialogCheckboxC(c, m.ViaSSH, 4, 0)
+		b.clipboard = state.declareDialogCheckboxC(c, m.ShareClipboard, 12, 0)
+		b.chromeless = state.declareDialogCheckboxC(c, m.HideBars, 12, 0)
 		if editor.protocol == protocolRDP {
-			console = state.declareDialogCheckbox(f, m.ConsoleSession, 12, 0)
+			b.console = state.declareDialogCheckboxC(c, m.ConsoleSession, 12, 0)
 		}
 	})
-	f.End()
-	state.paintDialogCheckbox(canvas, hitDialogViaSSH, m.ViaSSH, editor.viaSSH, tunnel)
-	state.paintDialogCheckbox(canvas, hitDialogClipboard, m.ShareClipboard, editor.clipboard, clipboard)
-	state.paintDialogCheckbox(canvas, hitDialogChromeless, m.HideBars, editor.chromeless, chromeless)
-	if editor.protocol == protocolRDP {
-		state.paintDialogCheckbox(canvas, hitDialogConsole, m.ConsoleSession, editor.console, console)
-	}
 }

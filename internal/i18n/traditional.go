@@ -1159,6 +1159,7 @@ var traditionalAIPanel = AIPanelMessages{
 	Example3:       "看看哪些程序在監聽哪些連接埠",
 	ScrollToEnd:    "捲動到最新訊息",
 	ScrollbarLabel: "訊息捲動位置",
+	ListLabel:      "對話",
 
 	IdleTitle:    "問問 SSH 和命令列的事",
 	IdleHint:     "先連線一台主機，助手就能看到它的終端機；在代理模式下還能替你在上面執行指令。在那之前，它只根據你的提問來回答。",

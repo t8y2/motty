@@ -5,11 +5,15 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 var hostFormHits = tree.Feature("host-form")
 var hitHostFormViewport = tree.ID(hostFormHits, "viewport")
 var hitHostFormScrollbar = tree.ID(hostFormHits, "scrollbar")
+
+// hostFormBodyRoot names the page the host form's body is declared in.
+const hostFormBodyRoot = "host-form-body"
 
 type hostFormScroll struct {
 	offset, grab      float32
@@ -19,6 +23,24 @@ type hostFormScroll struct {
 	lastError         string
 	stops             [64]hostFormStop
 	count             int
+	// page declares the body, with view kept so a paint makes no new method
+	// value, and body the slots it laid out for the controls painted by hand.
+	page *ui.Page
+	view func(ui.C)
+	body hostFormBody
+	// vncPage and algoPage declare the sections painted inside the form, each
+	// with its view kept and the slots it laid out.
+	vncPage, algoPage *ui.Page
+	vncView, algoView func(ui.C)
+	vncBody           hostVNCRowsBody
+	algoBody          hostAlgoRowsBody
+}
+
+// hostFormBody is where the host form's body put each control it paints by hand.
+type hostFormBody struct {
+	protocol, label, endpoint, group, tags                 ui.Box
+	iconField, colorField, transfer, proxy, jump, advanced ui.Box
+	vncRows                                                ui.Box
 }
 
 type hostFormStop struct {
@@ -133,6 +155,13 @@ func (state *State) hostFormKey(event gfx.KeyEvent) gfx.EventResult {
 		return gfx.EventResult{}
 	}
 	f := &state.editor.form
+	if f.page != nil {
+		// The body page's controls, if any, take the key before the form's own
+		// focus and scrolling paths.
+		if result, handled := f.page.Key(event); handled {
+			return result
+		}
+	}
 	old := f.offset
 	if event.Key == gfx.KeyTab && event.Modifiers & ^gfx.ModifierShift == 0 && f.count > 0 {
 		at := -1

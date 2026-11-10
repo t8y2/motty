@@ -130,6 +130,22 @@ func dualHit(t *testing.T, view *headless.Session, id gfx.ID) gfx.Rect {
 			return h.Bounds
 		}
 	}
+	// A row named by the scope it had before it was a List resolves through the
+	// scope the List declared for it in the last paint.
+	for side, scope := range sftpWindowRows {
+		index, ok := id.In(scope)
+		if !ok {
+			continue
+		}
+		if listScope := sftpWindowListRows[side]; !listScope.IsZero() {
+			want := listScope.At(index)
+			for _, h := range view.Snapshot().Hits {
+				if h.ID == want && !h.Block {
+					return h.Bounds
+				}
+			}
+		}
+	}
 	t.Fatal("missing hit", id)
 	return gfx.Rect{}
 }
@@ -338,7 +354,7 @@ func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 			var entry, files gfx.Rect
 			source, _ := state.sessionByIDPointer(w.session.ID)
 			for _, hit := range canvas.Hits() {
-				if local, ok := tree.Local(contextMount, hit.ID); ok && local == hitSFTPDetach {
+				if hit.ID == hitSFTPDetach && pointInRect(hit.Bounds.X, hit.Bounds.Y, state.contextRect) {
 					t.Fatal("standalone entry still lives in side panel")
 				}
 				local, ok := tree.Local(paneMount(source), hit.ID)
@@ -537,5 +553,146 @@ func TestSFTPWindowShowsServerDotfilesByDefault(t *testing.T) {
 	w := state.newSFTPWindow(source)
 	if !w.view.sftpFolder.showHidden {
 		t.Fatal("a detached transfer window hid the server's dotfiles")
+	}
+}
+
+func sftpWindowRowIndex(t *testing.T, w *sftpWindow, local bool, name string) int {
+	t.Helper()
+	for i, row := range w.folder(local).rows {
+		if row.entry.Name == name {
+			return i
+		}
+	}
+	t.Fatal("missing row", name)
+	return -1
+}
+
+func sftpWindowPrimaryModifier() string {
+	if runtime.GOOS == "darwin" {
+		return "cmd"
+	}
+	return "ctrl"
+}
+
+// A Shift press chooses the range from the row chosen last and a Command or
+// Control press toggles one row, as a file list does; the List carries the same
+// choice, so the rows show what the model will act on.
+func TestSFTPWindowListShiftAndPrimarySelection(t *testing.T) {
+	state, w, _, host, dir := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	for i := range 5 {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("sel-%d.txt", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.navigate(true, dir)
+	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.pendingLocal == "" && len(w.view.lfolder.rows) >= 8 })
+	folder := &w.view.lfolder
+	first := sftpWindowRowIndex(t, w, true, "sel-0.txt")
+	third := sftpWindowRowIndex(t, w, true, "sel-2.txt")
+	dualClickID(t, view, dualRow(t, w, true, "sel-0.txt"))
+	if err := view.KeyDown("shift"); err != nil {
+		t.Fatal(err)
+	}
+	dualClickID(t, view, dualRow(t, w, true, "sel-2.txt"))
+	if err := view.KeyUp("shift"); err != nil {
+		t.Fatal(err)
+	}
+	from, to := min(first, third), max(first, third)
+	for i := range folder.rows {
+		want := i >= from && i <= to
+		if folder.rows[i].selected != want || folder.list.Selection.Has(i) != want {
+			t.Fatalf("Shift range row %d: selected=%t list=%t want %t", i, folder.rows[i].selected, folder.list.Selection.Has(i), want)
+		}
+	}
+	// Primary (Command, Control elsewhere) takes one row out of the range.
+	if err := view.KeyDown(sftpWindowPrimaryModifier()); err != nil {
+		t.Fatal(err)
+	}
+	dualClickID(t, view, dualRow(t, w, true, "sel-1.txt"))
+	if err := view.KeyUp(sftpWindowPrimaryModifier()); err != nil {
+		t.Fatal(err)
+	}
+	toggle := sftpWindowRowIndex(t, w, true, "sel-1.txt")
+	if folder.rows[toggle].selected || folder.list.Selection.Has(toggle) {
+		t.Fatal("Primary click did not take the row out of the choice")
+	}
+	if !folder.rows[first].selected || !folder.rows[third].selected {
+		t.Fatal("Primary click cleared the rest of the range")
+	}
+}
+
+// A double click submits the row: the window opens it, entering a folder.
+func TestSFTPWindowListDoubleClickOpensRow(t *testing.T) {
+	state, w, _, host, _ := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	row := dualHit(t, view, dualRow(t, w, false, "docs"))
+	if err := view.DoubleClick(row.X+30, row.Y+row.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.view.path == "/home/test/docs" })
+}
+
+// The List owns the offset; the custom scrollbar is drawn from it and its drag
+// moves it, while the model fields the drop target reads follow.
+func TestSFTPWindowListScrollbarOffset(t *testing.T) {
+	state, w, _, host, dir := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	for i := range 60 {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("scroll-%02d.txt", i)), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.navigate(true, dir)
+	dualWait(t, state, w, view, func() bool { return !w.view.busy && w.pendingLocal == "" && len(w.view.lfolder.rows) >= 60 })
+	folder := &w.view.lfolder
+	if w.ui.bars[0].MaxOffsetY <= 0 {
+		t.Fatal("long folder has no scrollbar")
+	}
+	scroll := folder.listScroll
+	if scroll == nil {
+		t.Fatal("the list has no scroll state")
+	}
+	center := w.ui.list[0]
+	if err := view.Scroll(gfx.ScrollEvent{X: center.X + 20, Y: center.Y + 20, DeltaY: 10000}); err != nil {
+		t.Fatal(err)
+	}
+	if w.ui.offset[0] != scroll.Offset || w.ui.offset[0] != folder.scrollOffset || folder.first != int(scroll.Offset/sftpRowHeight) {
+		t.Fatalf("wheel offset not carried by the List: ui=%v list=%v first=%d", w.ui.offset[0], scroll.Offset, folder.first)
+	}
+	if w.ui.offset[0] <= 0 {
+		t.Fatal("wheel did not move the list")
+	}
+	thumb := w.ui.bars[0].VerticalThumb
+	before := scroll.Offset
+	if err := view.Press(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Move(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2-30); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Release(thumb.X+thumb.Width/2, thumb.Y+thumb.Height/2-30); err != nil {
+		t.Fatal(err)
+	}
+	if scroll.Offset >= before || w.ui.offset[0] != scroll.Offset {
+		t.Fatalf("scrollbar drag did not move the List: %v -> %v", before, scroll.Offset)
+	}
+}
+
+// A system drop maps a List row to the folder it names through the window's
+// offset, and the empty room below the rows to the folder on show.
+func TestSFTPWindowListDropTargetMapsRows(t *testing.T) {
+	_, w, _, host, _ := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	docs := dualHit(t, view, dualRow(t, w, false, "docs"))
+	local, target, row, valid := w.dropTarget(docs.X+20, docs.Y+docs.Height/2, true)
+	index := sftpWindowRowIndex(t, w, false, "docs")
+	if !valid || local || row != index || target != "/home/test/docs" {
+		t.Fatalf("folder row drop = local %t row %d target %q valid %t", local, row, target, valid)
+	}
+	list := w.ui.list[1]
+	local, target, row, valid = w.dropTarget(list.X+10, list.Y+list.Height-5, true)
+	if !valid || local || row != -1 || target != "/home/test" {
+		t.Fatalf("folder drop = local %t row %d target %q valid %t", local, row, target, valid)
 	}
 }

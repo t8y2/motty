@@ -88,38 +88,38 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	editWidth, editIcon := toolbarButtonLayout(canvas, m.SnippetEdit, 0, iconPencil, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, m.SnippetAdd, iconPlus, iconPlus, condensed)
 
-	var content, filter, emptyIcon, emptyAdd, remove, edit, send, add ui.Box
-	f := form.layout.Begin(canvas, state.Theme(), bounds)
-	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Row().MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
-			f.Column().Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-				f.Text(m.SnippetsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-				f.Paragraph(m.SnippetsPageDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
-			})
-			remove = f.Slot().Size(removeWidth, toolbarHeight)
-			edit = f.Slot().Size(editWidth, toolbarHeight)
-			send = f.Slot().Size(sendWidth, toolbarHeight)
-			add = f.Slot().Size(addWidth, toolbarHeight)
-		})
-		if len(form.list) == 0 {
-			emptyIcon, emptyAdd = state.declareEmptyPage(f, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd)
-		} else {
-			if len(form.groups) > 0 {
-				f.Row().Height(toolbarHeight).MarginSides(0, 0, 9, 0).Children(func() {
-					filter = f.Slot().Size(220, toolbarHeight)
+	var content, filter, remove, edit, send, add, empty ui.Box
+	state.drawSectionBody(canvas, bounds, func(c ui.C) {
+		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
+			ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
+				ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
+					ui.Text(c, m.SnippetsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+					ui.Paragraph(c, m.SnippetsPageDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 				})
+				remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
+				edit = ui.Slot(c).Size(editWidth, toolbarHeight)
+				send = ui.Slot(c).Size(sendWidth, toolbarHeight)
+				add = ui.Slot(c).Size(addWidth, toolbarHeight)
+			})
+			if len(form.list) == 0 {
+				empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd)
+			} else {
+				if len(form.groups) > 0 {
+					ui.Row(c).Height(toolbarHeight).MarginSides(0, 0, 9, 0).Children(func() {
+						filter = ui.Slot(c).Size(220, toolbarHeight)
+					})
+				}
+				content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
 			}
-			content = f.Slot().Grow(1).MarginSides(0, 0, 9, 0)
-		}
-		f.Divider().Background(pal.line)
-		f.Row().Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
-			f.Text(form.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
-			if hasSelection {
-				f.Text(form.list[form.selected].Name).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1).Ellipsis()
-			}
+			ui.Divider(c).Background(pal.line)
+			ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
+				ui.Text(c, form.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
+				if hasSelection {
+					ui.Text(c, form.list[form.selected].Name).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1).Ellipsis()
+				}
+			})
 		})
 	})
-	f.End()
 
 	state.paintToolbarButton(canvas, hitSnippetRemove, remove.Rect().X, remove.Rect().Y, removeWidth, m.SnippetDelete, removeIcon, false, hasSelection, condensed)
 	state.paintToolbarButton(canvas, hitSnippetEdit, edit.Rect().X, edit.Rect().Y, editWidth, m.SnippetEdit, editIcon, false, hasSelection, condensed)
@@ -128,7 +128,7 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	state.paintToolbarButton(canvas, hitSnippetAdd, add.Rect().X, add.Rect().Y, addWidth, m.SnippetAdd, addIcon, true, canAdd, condensed)
 
 	if len(form.list) == 0 {
-		state.paintEmptyPage(canvas, emptyIcon, emptyAdd, iconNote, hitSnippetAdd, m.SnippetAdd, canAdd)
+		state.drawReservedEmptyPage(canvas, empty, iconNote, hitSnippetAdd, m.SnippetAdd, canAdd)
 		return
 	}
 	// The command column leaves room before its text for the Enter keycap of the

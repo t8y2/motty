@@ -41,20 +41,24 @@ const (
 	terminalBarToolGap     = float32(4)
 )
 
-// paintTerminalPage draws a session. Active panes get a configurable tool rail
-// with only connection latency and actions. Every split pane reserves the same
-// bar height and identifies its own session there, so switching focus cannot
-// move or resize a PTY. Find mode puts its search controls in that strip, as a
-// macOS terminal puts its search bar above the text rather than over it, and
-// leaves the shared rail where it is.
-func (state *State) paintTerminalPage(canvas *gfx.Canvas, size gfx.Size, session *Session) {
+// paintTerminalPaneDetails paints what the pane declares but the page does not
+// own as elements: the find bar's text surface, the spinner and status light of
+// a split bar, the completion popover and the input notice. It runs after the
+// page painted the pane, clipped to the pane as the old embedded view was.
+//
+// Active panes get a configurable tool rail with only connection latency and
+// actions. Every split pane reserves the same bar height and identifies its own
+// session there, so switching focus cannot move or resize a PTY. Find mode puts
+// its search controls in that strip, as a macOS terminal puts its search bar
+// above the text rather than over it, and leaves the shared rail where it is.
+func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
 	if session.term == nil {
 		return
 	}
 	state.wantLatencyProbe(session, canvas)
-	page := state.terminalPageFor(session)
-	page.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, session.term.pageView)
 	t := session.term
+	canvas.Clip(bounds)
+	defer canvas.Unclip()
 	switch {
 	case t.paintFinding:
 		state.paintFindBarSlots(canvas, session, t.paintFind)
@@ -367,8 +371,8 @@ func (state *State) paintAIMarking(canvas *gfx.Canvas, geometry terminalGeometry
 // remains a reliable focus marker. Both show the name and connection state, and
 // the active bar is the only one that can carry a busy spinner in that slot.
 // Resource readings stay in the dedicated monitor surface.
-func (state *State) declarePaneBar(f *ui.Frame, width float32, title, status string, session *Session, active bool) (spinner, light ui.Box) {
-	pal, canvas := state.pal, f.Canvas()
+func (state *State) declarePaneBar(c ui.C, width float32, title, status string, session *Session, active bool) (spinner, light ui.Box) {
+	pal := state.pal
 	readout := status
 	if state.workspaceManaged(state.deck.ActiveWorkspace()) && session.quietOK() {
 		readout = ""
@@ -377,31 +381,31 @@ func (state *State) declarePaneBar(f *ui.Frame, width float32, title, status str
 	if session.busy {
 		gap = 6
 	}
-	f.Row().Fill().PadX(termPadX).Items(ui.Center).Children(func() {
+	ui.Row(c).Fill().PadX(termPadX).Items(ui.Center).Children(func() {
 		if active {
-			light = f.Slot().Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0)
+			light = ui.Slot(c).Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0)
 		} else {
-			f.Icon(lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint).MarginSides(0, 7, 0, 0)
+			ui.Icon(c, lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint).MarginSides(0, 7, 0, 0)
 		}
 		titleColor := pal.muted
 		if active {
 			titleColor = pal.text
 		}
-		f.Text(title).FontSize(barTitleSize).Weight(gfx.WeightSemibold).Color(titleColor).LineHeight(22).
+		ui.Text(c, title).FontSize(barTitleSize).Weight(gfx.WeightSemibold).Color(titleColor).LineHeight(22).
 			Ellipsis().Grow(1).Shrink(1).MinWidth(0).MarginSides(0, gap, 0, 0)
-		state.declareLatencyTag(f, canvas, session)
+		state.declareLatencyTag(c, session)
 		if session.busy {
-			spinner = f.Slot().Size(14, 14).MarginSides(0, 9, 0, 0)
+			spinner = ui.Slot(c).Size(14, 14).MarginSides(0, 9, 0, 0)
 		}
 		readoutColor := pal.faint
 		if active {
 			readoutColor = pal.muted
 		}
-		f.Text(readout).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(readoutColor).LineHeight(20).
+		ui.Text(c, readout).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(readoutColor).LineHeight(20).
 			MaxWidth(width * 0.42).Ellipsis().Shrink(1)
 		if state.broadcasting(session.ID) {
 			// Typing goes to this pane too: the one mark an inactive bar carries.
-			f.Icon(lucideIcons[iconRadio]).Size(14, 14).Color(pal.accent).MarginSides(0, 0, 0, 8)
+			ui.Icon(c, lucideIcons[iconRadio]).Size(14, 14).Color(pal.accent).MarginSides(0, 0, 0, 8)
 		}
 	})
 	return spinner, light

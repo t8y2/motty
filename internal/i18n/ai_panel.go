@@ -107,6 +107,9 @@ type AIPanelMessages struct {
 	Example3       string
 	ScrollToEnd    string
 	ScrollbarLabel string
+	// ListLabel names the scrolling conversation or history list, the control the
+	// messages are painted in.
+	ListLabel string
 
 	// The empty panel while no terminal is open: what to do to give the assistant
 	// something to look at, and questions that need no terminal.

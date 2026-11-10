@@ -30,7 +30,13 @@ func openLargeSFTP(t testing.TB, count int) (*State, *Session) {
 
 func TestSFTPListOfThousandsPaintsOnlyWhatIsVisible(t *testing.T) {
 	state, session := openLargeSFTP(t, 5000)
+	// The List is declared inside the panel's region of the workbench page. Viva
+	// reads a nested area's viewport after the paint that lays it out, so the
+	// first paint estimates it from the page; measure the steady state, which is
+	// what every later frame paints.
 	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	canvas.Reset()
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	view := session.files
 	if view.visibleRows <= 0 || view.visibleRows >= 100 {
@@ -43,8 +49,9 @@ func TestSFTPListOfThousandsPaintsOnlyWhatIsVisible(t *testing.T) {
 		}
 	}
 	// The renderer keeps one partially visible row and a small scroll-ahead
-	// buffer, but must never build the whole directory.
-	if names < view.visibleRows || names > view.visibleRows+3 {
+	// buffer, but must never build the whole directory. A List declares two
+	// rows beyond each edge of the viewport.
+	if names < view.visibleRows || names > view.visibleRows+6 {
 		t.Fatalf("%d names painted for %d visible rows", names, view.visibleRows)
 	}
 }

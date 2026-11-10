@@ -62,6 +62,11 @@ func newTestState(t testing.TB, options Options) *State {
 		// their own.
 		options.Keystore = &memKeys{}
 	}
+	if options.Invalidator == nil {
+		// The window's invalidator, for pages that declare a ui.Effect: the
+		// effect wakes the window when its work finishes.
+		options.Invalidator = new(app.Invalidator)
+	}
 	state := New(options)
 	// The shells a Windows computer offers are whatever is installed on it, and
 	// naming WSL distributions starts wsl.exe: a test sees one shell and no

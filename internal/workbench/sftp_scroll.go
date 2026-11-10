@@ -52,5 +52,8 @@ func (state *State) sftpListPointer(event gfx.PointerEvent) (gfx.EventResult, bo
 	before := folder.scrollOffset
 	folder.scrollOffset = geometry.VerticalOffsetForThumb(event.Y - view.scrollGrab)
 	folder.first = min(max(0, int(math.Floor(float64(folder.scrollOffset/sftpRowHeight)))), max(0, len(folder.shownRows())-max(folder.visibleRows, 1)))
+	if scroll := folder.listScroll; scroll != nil {
+		scroll.ScrollTo(folder.scrollOffset)
+	}
 	return gfx.EventResult{Handled: true, Repaint: before != folder.scrollOffset}, true
 }

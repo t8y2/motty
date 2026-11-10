@@ -144,6 +144,67 @@ func clickSettingsChoiceInRow(t testing.TB, state *State, rowLabel, optionLabel 
 	canvas.EndEventPass()
 }
 
+// TestSettingsContentFillsTheWorkspaceSlot guards the one rectangle the shell
+// computes twice: the slot its flex lays out and the bounds the settings are
+// declared in. If they drift, the page paints outside the card it belongs to.
+func TestSettingsContentFillsTheWorkspaceSlot(t *testing.T) {
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 1000, Height: 700}, {Width: 900, Height: 520}} {
+		state := newTestState(t, testOptions(t))
+		state.Click(hitSettings)
+		var canvas gfx.Canvas
+		state.Paint(&canvas, size)
+		want := state.chrome.workspaceSlot.Rect().Inset(gfx.All(workspaceBorder))
+		if got := state.settingsWorkspaceBounds(gfx.Rect{Width: size.Width, Height: size.Height}); got != want {
+			t.Fatalf("%v: settings content at %+v, workspace slot %+v", size, got, want)
+		}
+	}
+}
+
+// TestSettingsChoiceAndSearchTakeInputThroughTheWorkbenchPage delivers a choice
+// row's click in the event pass and types into the search: both are controls the
+// workbench page declares now, not a settings page of their own.
+func TestSettingsChoiceAndSearchTakeInputThroughTheWorkbenchPage(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitSettings)
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	page := state.chrome.windowPage
+	if page == nil {
+		t.Fatal("the workbench page was not declared")
+	}
+
+	// Typing reaches the search editor the page's search box names.
+	if editor := state.EditorFor(hitSettingsSearch); editor != &state.settings.search {
+		t.Fatalf("the search box is not the settings search editor: %p", editor)
+	}
+	typeInto(state, hitSettingsSearch, "keepalive")
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	if !state.settingsSearching() || state.settings.count == 0 {
+		t.Fatalf("typing into the search box found %d settings", state.settings.count)
+	}
+
+	// Leave the search, then deliver a choice row's click in the event pass.
+	state.Click(hitSettingsCategoryList.At(int(settingsGeneral)))
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	choice, ok := settingsChoiceIn(&canvas, state.messages.SettingsLanguageChinese)
+	if !ok {
+		t.Fatal("the language row painted no Chinese segment")
+	}
+	scope := tree.Sub(tree.Feature(shellPageRoot), tree.Name(settingsWorkspacePart))
+	if !page.Owns(choice.ID) || !tree.Within(choice.ID.Scope(), scope) {
+		t.Fatalf("the choice %d is not inside the workbench page's settings container", choice.ID)
+	}
+	canvas.BeginEventPass(choice.ID, gfx.ClickInfo{})
+	state.Paint(&canvas, size)
+	canvas.EndEventPass()
+	if state.language != i18n.Chinese {
+		t.Fatalf("language = %v after the choice's click", state.language)
+	}
+}
+
 func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 	for _, entry := range []gfx.ID{hitSettings, hitWindowSettings} {
 		state := newTestState(t, testOptions(t))

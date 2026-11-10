@@ -42,39 +42,39 @@ func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect
 		emptyTitle, emptyDescription, emptyIconKind = messages.KnownHostsNoMatches, messages.KnownHostsNoMatchesSub, iconSearch
 	}
 
-	var search, content, emptyIconBox, pagination, refresh, retrust, remove ui.Box
-	f := state.knownHostsLayout.Begin(canvas, state.Theme(), bounds)
-	f.Column().Fill().PadSides(12, 18, 0, 18).Children(func() {
-		f.Column().MarginSides(4, 0, 12, 0).Gap(3).Children(func() {
-			f.Text(messages.KnownHostsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-			f.Paragraph(messages.KnownHostsDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
-		})
-		f.Row().Height(40).Gap(gap).Items(ui.Center).Children(func() {
-			search = f.Slot().Grow(1).MaxWidth(470).MinWidth(searchLeast).Height(40)
-			f.Spacer()
-			refresh = f.Slot().Size(refreshWidth, toolbarHeight)
-			retrust = f.Slot().Size(retrustWidth, toolbarHeight)
-			remove = f.Slot().Size(deleteWidth, toolbarHeight)
-		})
-		if empty {
-			emptyIconBox, _ = state.declareEmptyPageWithColor(f, bounds, emptyTitle, emptyDescription, "", emptyDescriptionColor)
-		} else {
-			content = f.Slot().Grow(1).MarginSides(14, 0, 0, 0)
-		}
-		f.Divider().Background(pal.line)
-		// The footer's columns narrow with the card so the status keeps its room.
-		countWidth := min(168, (bounds.Width-36)*0.30)
-		selectionWidth := min(138, (bounds.Width-36)*0.22)
-		f.Row().Height(49).Gap(12).Items(ui.Center).Children(func() {
-			f.Text(view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(countWidth).Ellipsis()
-			f.Text(view.selectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(selectionWidth).Ellipsis()
-			f.Text(view.status).FontSize(metrics.FontSizeS).Color(statusColor).Grow(1).Ellipsis()
-			if paginated {
-				pagination = f.Slot().Size(242, 30)
+	var search, content, pagination, refresh, retrust, remove, emptySlot ui.Box
+	state.drawSectionBody(canvas, bounds, func(c ui.C) {
+		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
+			ui.Column(c).MarginSides(4, 0, 12, 0).Gap(3).Children(func() {
+				ui.Text(c, messages.KnownHostsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+				ui.Paragraph(c, messages.KnownHostsDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+			})
+			ui.Row(c).Height(40).Gap(gap).Items(ui.Center).Children(func() {
+				search = ui.Slot(c).Grow(1).MaxWidth(470).MinWidth(searchLeast).Height(40)
+				ui.Spacer(c)
+				refresh = ui.Slot(c).Size(refreshWidth, toolbarHeight)
+				retrust = ui.Slot(c).Size(retrustWidth, toolbarHeight)
+				remove = ui.Slot(c).Size(deleteWidth, toolbarHeight)
+			})
+			if empty {
+				emptySlot = state.reserveEmptyPageWithColor(c, bounds, emptyTitle, emptyDescription, "", emptyDescriptionColor)
+			} else {
+				content = ui.Slot(c).Grow(1).MarginSides(14, 0, 0, 0)
 			}
+			ui.Divider(c).Background(pal.line)
+			// The footer's columns narrow with the card so the status keeps its room.
+			countWidth := min(168, (bounds.Width-36)*0.30)
+			selectionWidth := min(138, (bounds.Width-36)*0.22)
+			ui.Row(c).Height(49).Gap(12).Items(ui.Center).Children(func() {
+				ui.Text(c, view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(countWidth).Ellipsis()
+				ui.Text(c, view.selectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(selectionWidth).Ellipsis()
+				ui.Text(c, view.status).FontSize(metrics.FontSizeS).Color(statusColor).Grow(1).Ellipsis()
+				if paginated {
+					pagination = ui.Slot(c).Size(242, 30)
+				}
+			})
 		})
 	})
-	f.End()
 
 	state.paintToolbarButton(canvas, hitKnownHostsRefresh, refresh.Rect().X, refresh.Rect().Y, refreshWidth, messages.KnownHostsRefresh, refreshIcon, false, true, condensed)
 	state.paintToolbarButton(canvas, hitKnownHostsRetrust, retrust.Rect().X, retrust.Rect().Y, retrustWidth, messages.KnownHostsRetrust, retrustIcon, false, view.selected > 0, condensed)
@@ -86,7 +86,7 @@ func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect
 	})
 
 	if empty {
-		state.paintEmptyPage(canvas, emptyIconBox, ui.Box{}, emptyIconKind, gfx.ID{}, "", false)
+		state.drawReservedEmptyPage(canvas, emptySlot, emptyIconKind, gfx.ID{}, "", false)
 	} else {
 		state.paintKnownHostsTable(canvas, content.Rect())
 	}

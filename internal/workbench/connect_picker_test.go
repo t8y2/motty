@@ -26,7 +26,7 @@ func TestNewTabButtonAsksWhereToConnectAndMakesNoTabYet(t *testing.T) {
 		t.Fatal("the picker lists nothing")
 	}
 	// Closing it creates nothing either.
-	state.Click(hitCommandPaletteClose)
+	clickCommandPaletteClose(t, state)
 	if state.modal != modalNone || len(state.deck.Workspaces(nil)) != before {
 		t.Fatalf("after closing: modal %d tabs %d", state.modal, len(state.deck.Workspaces(nil)))
 	}
@@ -192,7 +192,7 @@ func TestNewTabPickerMatchesEverySpaceSeparatedKeywordInBothSortModes(t *testing
 func TestTheCommandPaletteIsStillTheCommandPalette(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitNewTab)
-	state.Click(hitCommandPaletteClose)
+	clickCommandPaletteClose(t, state)
 	state.openCommandPalette()
 	if state.commandPalette.connect {
 		t.Fatal("the palette opened as the picker")

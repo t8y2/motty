@@ -853,9 +853,12 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 	view.area = geometry.area
 	state.followDesktop(canvas, view)
 
-	var light, toolsSlot, captureSlot ui.Box
+	var light, toolsSlot, captureSlot, latencySlot ui.Box
+	var latencyBadge desktopLatencyUI
+	latencyShown := false
 	var tools []components.ButtonAction
 	if !view.chromeless && !view.fullscreen {
+		latencyBadge, latencyShown = state.desktopLatencyBadge(canvas, view)
 		title := session.Title
 		if title == "" {
 			title = session.Address
@@ -908,7 +911,9 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 				f.Row().FillWidth().Height(1).Self(ui.Start).Background(pal.line)
 				f.Row().Fill().PadX(termPadX).Items(ui.Center).Children(func() {
 					f.Text(state.desktopStripLeft(view, session)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(16).Grow(1).Ellipsis()
-					state.declareDesktopLatency(f, canvas, view)
+					if latencyShown {
+						latencySlot = f.Slot().Size(latencyBadge.width+12, 16).MarginSides(0, 8, 0, 0).Shrink(0)
+					}
 					chordText := m.Desktop.StripCaptured
 					colour := pal.muted
 					if view.released {
@@ -921,6 +926,10 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 			})
 		})
 		f.End()
+
+		if latencyShown {
+			state.paintDesktopLatency(canvas, latencySlot.Rect(), latencyBadge)
+		}
 
 		if session.busy {
 			components.PaintSpinner(canvas, state.Theme(), light.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))

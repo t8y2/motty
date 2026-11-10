@@ -415,7 +415,6 @@ type State struct {
 	fileTabOptions   []components.TabOption
 	windowTabOptions []components.TabOption
 	fileTabStrip     tabStrip
-	fileManagerView  gfx.Canvas
 	fileManagerRect  gfx.Rect
 	remoteWindows    []*remoteToolsWindow
 	remoteWindow     *remoteToolsWindow // set only on a native tool window's isolated presenter
@@ -542,7 +541,6 @@ type State struct {
 	sessionImport     sessionImportPreview
 	mobaEncoding      mobaEncodingPrompt
 	knownHosts        knownHostsView
-	knownHostsLayout  ui.View
 	settingsRow       ui.View
 	partLayout        ui.View // a dialog body, a host card or a group header: one at a time
 	// selectedWorkspaceTemplateID is the template the library will apply next.
@@ -550,7 +548,6 @@ type State struct {
 	selectedWorkspaceTemplateID   string
 	workspaceLibraryExpanded      bool
 	workspaceLibraryPointerID     string
-	workspaceLibraryLayout        ui.View
 	workspaceLibraryScroll        float32
 	workspaceLibraryBounds        gfx.Rect
 	workspaceLibraryContent       float32
@@ -574,8 +571,7 @@ type State struct {
 	managedWorkspaceLayouts map[layoutcore.WorkspaceID]layoutcore.LayoutSpec
 	workspaceSave           workspaceSave
 
-	forwardLayout, proxyLayout, forwardDialogLayout, proxyDialogLayout ui.View // the Port Forwarding and Proxies pages and their dialogs
-	chrome                                                             chromeLayout
+	chrome chromeLayout
 
 	// iconMotions are the rows whose icon is playing the motion of a click, by
 	// hit id; the painter drops each one when its motion is over (icon_motion.go).
@@ -743,14 +739,28 @@ type State struct {
 	sftpColumnEditor sftpColumnSettingsUI
 
 	// contextRect is where the last paint put the side panel (empty when there
-	// was none), so wheel events can tell which view they are over.
-	contextRect      gfx.Rect
-	shortcuts        shortcutMap
-	shortcutCapture  shortcutAction
-	shortcutError    string
-	reconnectWaiters int
-	pal              *palette
-	theme            gfx.Theme
+	// was none), so wheel events can tell which view they are over. The panel is
+	// declared inside the workbench page now, so contextPanelScope is the page
+	// container its elements live in, and contextPanelMode says which view it
+	// declared. contextDrawer is the page's drawer chrome while the panel is a
+	// narrow overlay; its description is kept for the paint that opens it.
+	contextRect              gfx.Rect
+	contextPanelScope        gfx.Scope
+	contextPanelMode         contextPanelMode
+	contextDrawer            components.Drawer
+	contextDrawerDescription string
+	contextDrawerOpen        bool
+	// The panel's Draw callbacks are method values made once: a paint that made
+	// them again would allocate.
+	contextPanelDraw   func(*ui.DrawContext)
+	contextDrawerBegin func(*ui.DrawContext)
+	contextDrawerEnd   func(*ui.DrawContext)
+	shortcuts          shortcutMap
+	shortcutCapture    shortcutAction
+	shortcutError      string
+	reconnectWaiters   int
+	pal                *palette
+	theme              gfx.Theme
 	// termPal is the terminal's own look: pal with the chosen color scheme and
 	// the highlight rules applied. termEpoch counts its rebuilds.
 	termPal   palette
@@ -765,13 +775,12 @@ type State struct {
 	// schemeFilter is the drawer's search box. View state, so it is not kept.
 	schemeFilter text.Editor
 	// schemeBrowserOpen shows the complete collection in a drawer. The drawer's
-	// view and body outlive a paint so wheel handling can use the last layout.
-	schemeBrowserOpen  bool
-	schemeDrawerView   ui.View
-	schemeDrawerBody   gfx.Rect
-	schemeDrawerFilter string
-	schemeDrawerReset  bool
-	terminalPad        terminalPad
+	// page and body outlive a paint so wheel handling can use the last layout.
+	schemeBrowserOpen bool
+	scheme            schemeUI
+	// empty is the shared empty-state page the catalog sections paint.
+	empty       emptyStateUI
+	terminalPad terminalPad
 	// terminalGutter is the per-line number/time strip; wallClock overrides the
 	// time source it stamps lines with.
 	terminalGutter terminalGutter
@@ -831,16 +840,12 @@ type State struct {
 	paneChrome         ui.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
-	filesList   ui.View
-	filesHeader ui.View
-	filesPopup  ui.View
-	// filesRowIcons and filesRowBoxes are scratch for the visible rows of the list.
+	filesPopup ui.View
+	// filesRowIcons is scratch for the visible rows of the list.
 	filesRowIcons []ui.Box
-	filesRowBoxes []ui.Box
 
 	// area: keychain, palette, import and the rest
 	railLayout            ui.View
-	keysLayout            ui.View
 	importLayout          ui.View
 	knownHostsTableLayout ui.View
 	hostToggleLayout      ui.View
@@ -857,7 +862,6 @@ type State struct {
 	pixelScale            float32
 	cellWidth, cellHeight float32
 	paneCanvas            gfx.Canvas
-	contextCanvas         gfx.Canvas
 	panes                 []Pane
 	paneSplits            []PaneSplit
 	terminalDrop          terminalDrop // the terminal that files being dragged over would be uploaded from
@@ -896,9 +900,6 @@ type State struct {
 	// when the user disabled metadata capture in the settings.
 	sessionLogs    sessionLogs
 	sessionLogsOff bool
-	// sessionLogsLayout is the session-log page's flex layout, reused so a paint
-	// does not allocate its nodes.
-	sessionLogsLayout ui.View
 	// ai is the built-in assistant; see ai_state.go.
 	ai                 aiState
 	localProxyPort     uint16
@@ -933,6 +934,7 @@ func (state *State) Close() {
 	state.closeRemoteContainerDetails()
 	state.remote.serial++
 	state.closeDashboard()
+	state.closeFontPickerPage()
 	state.flushTerminalDirectories()
 	state.closeRemoteToolsWindows()
 	state.closeFileWindows()
@@ -1618,9 +1620,6 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.openLocalProxy(session)
 		return
 	}
-	if state.clickVerticalTabGroup(id) {
-		return
-	}
 	if state.clickRemoteStats(id) {
 		return
 	}
@@ -1797,7 +1796,20 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case tree.Within(id.Scope(), keysHits):
 		state.clickKeys(id)
 	case tree.Within(id.Scope(), sftpHits):
-		state.clickSFTP(id)
+		// While a file-manager tab is in front it is the only sftp view painted,
+		// so its overlays' window-named rows go to its window; otherwise the
+		// docked panel takes them.
+		if w := state.activeSFTPWindow(); w != nil && !w.closed {
+			w.click(id)
+		} else {
+			state.clickSFTP(id)
+		}
+	case tree.Within(id.Scope(), sftpWindowHits):
+		// The hand-painted controls of the file-manager tab keep the window's
+		// own identities; the workbench page routes the press to its window.
+		if w := state.activeSFTPWindow(); w != nil && !w.closed {
+			w.click(id)
+		}
 	case id.Scope() == hitTabCloseList:
 		state.closeWorkspace(layoutcore.WorkspaceID(uint32(item(id))))
 	case id.Scope() == hitTabList:
@@ -2314,11 +2326,23 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		}
 		return result
 	}
-	session := state.terminalPageSession(event.Target)
-	if session == nil {
-		session = state.terminalSession(event.Target)
+	// The terminal pane is part of the workbench page, so its identities and
+	// coordinates are already the window's; the page routes the event to the
+	// control. A press still makes that pane the active one.
+	if session := state.terminalPageSession(event.Target); session != nil {
+		changed := false
+		if event.Kind == gfx.PointerDown {
+			changed = state.activeSessionID != session.ID
+			state.ActivatePane(session.ID)
+		}
+		result := state.pointer(event)
+		result.Repaint = result.Repaint || changed
+		if changed && event.Kind == gfx.PointerDown {
+			state.save()
+		}
+		return result
 	}
-	if session != nil {
+	if session := state.terminalSession(event.Target); session != nil {
 		_, origin, viewport, embedded := state.paneEventGeometry(session.ID, event.Viewport)
 		if embedded {
 			event.X -= origin.X
@@ -2330,6 +2354,11 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 }
 
 func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
+	if state.schemeBrowserOpen && state.modal == modalNone && state.scheme.page != nil {
+		if result, ok := state.scheme.page.Pointer(event); ok {
+			return result
+		}
+	}
 	if state.modal == modalSnippet && event.Kind == gfx.PointerDown {
 		state.snippets.abandonOther(event.Target)
 	}
@@ -2404,7 +2433,7 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 		return result
 	}
 	if session := state.terminalPageSession(event.Target); session != nil && state.modal == modalNone && state.activeSection == sectionTerminal {
-		if result, handled := state.panePagePointer(session, event); handled {
+		if result, handled := state.terminalPagePointer(session, event); handled {
 			return result
 		}
 	}
@@ -2416,14 +2445,19 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result, handled := state.sftpMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.sftpRowPointer(event); handled {
+		return result
+	}
 	if result, handled := state.sftpPathPointer(event); handled {
 		return result
 	}
 	if result, handled := state.sftpListPointer(event); handled {
 		return result
 	}
-	if result, handled := state.sftpRowPointer(event); handled {
-		return result
+	if state.modal == modalNone && state.activeSection == sectionTerminal {
+		if result, handled := state.contextPanelPointer(event); handled {
+			return result
+		}
 	}
 	return gfx.EventResult{}
 }
@@ -2503,15 +2537,28 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		state.ActivatePane(session.ID)
 		mount, _ = tree.MountOf(event.Target.Scope())
 		event.Target = local
+	} else if session := state.terminalPageSession(event.Target); session != nil {
+		// A terminal pane is part of the workbench page; its identity and focus
+		// are already the window's. A key there makes that pane the active one.
+		state.ActivatePane(session.ID)
 	} else if event.Target.IsZero() && state.sftpHeaderMenuOwns(state.popups.owner) {
 		// Opening an embedded menu can temporarily leave its focus trap empty.
 		// Its first keyboard-selected row still belongs to the file panel, and the
 		// row identities are already mounted where the menu was painted.
 		mount = 0
 	}
-	if state.activeSection == sectionSettings && state.modal == modalNone && state.settings.workspace != nil {
-		if result, handled := state.settings.workspace.Key(event); handled {
+	if state.schemeBrowserOpen && state.modal == modalNone && state.activeSection == sectionSettings && state.scheme.page != nil {
+		if result, handled := state.scheme.page.Key(event); handled {
 			return result
+		}
+	}
+	if state.activeSection == sectionSettings && state.modal == modalNone {
+		// The settings are part of the workbench page, so the page routes their
+		// keys: a Choice's arrows, a Control's own keys, an overlay's hold.
+		if page := state.chrome.windowPage; page != nil {
+			if result, handled := page.Key(event); handled {
+				return result
+			}
 		}
 	}
 	result := state.key(event)
@@ -2722,7 +2769,7 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		}
 	}
 	if session := state.terminalPageSession(event.Target); session != nil && state.modal == modalNone {
-		if result, handled := state.panePageKey(session, event); handled {
+		if result, handled := state.terminalPageKey(session, event); handled {
 			return result
 		}
 	}

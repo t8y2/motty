@@ -171,8 +171,8 @@ func TestTheTerminalTakesOverWhenTheShellFirstSpeaks(t *testing.T) {
 	if _, ok := hitByID(canvas, hitConnLog); ok {
 		t.Fatal("the connection page stayed up after the shell spoke")
 	}
-	if hit, ok := hitByID(canvas, terminalHit(state, 0)); !ok || !hit.Autofocus {
-		t.Fatalf("terminal hit = %+v, %v; want it painted and taking the keyboard", hit, ok)
+	if hit, ok := hitByID(canvas, terminalHit(state, 0)); !ok || canvas.FocusRequest() != terminalHit(state, 0) {
+		t.Fatalf("terminal hit = %+v, %v; focus request = %v; want it painted and taking the keyboard", hit, ok, canvas.FocusRequest())
 	}
 	if session.finished == 0 {
 		t.Fatal("the elapsed time kept running")
