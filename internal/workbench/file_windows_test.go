@@ -919,7 +919,6 @@ func TestDocumentWindowPageReceivesFooterButtonClicksAndKeys(t *testing.T) {
 	if afterClick == before {
 		t.Fatal("a click on a page button did not run its action")
 	}
-	afterClick := d.edit.noWrap
 	if err := view.Driver().Key(gfx.KeyEnter, 0); err != nil {
 		t.Fatal(err)
 	}
