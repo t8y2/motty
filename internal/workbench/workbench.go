@@ -2448,11 +2448,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result, handled := state.sftpListPointer(event); handled {
 		return result
 	}
-	if state.modal == modalNone && state.activeSection == sectionTerminal {
-		if result, handled := state.contextPanelPointer(event); handled {
-			return result
-		}
-	}
 	return gfx.EventResult{}
 }
 
@@ -2549,15 +2544,6 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		return state.aiCLILoginKey(event)
-	}
-	if state.activeSection == sectionSettings && state.modal == modalNone {
-		// The settings are part of the workbench page, so the page routes their
-		// keys: a Choice's arrows, a Control's own keys, an overlay's hold.
-		if page := state.chrome.windowPage; page != nil {
-			if result, handled := page.Key(event); handled {
-				return result
-			}
-		}
 	}
 	result := state.key(event)
 	result.Focus = tree.MountID(mount, result.Focus)
@@ -2792,14 +2778,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal == modalVaultUnlock && event.Key == gfx.KeyEnter && event.Target == hitVaultUnlockField && !event.Repeat {
 		state.submitVaultUnlock()
 		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	// The proxy kind switch is a page Choice: its arrows are the page's.
-	if state.modal == modalOutboundProxy {
-		if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
-			if result, handled := page.Key(event); handled && result.Handled {
-				return result
-			}
-		}
 	}
 	if state.modal == modalOutboundProxy && event.Key == gfx.KeyEnter && !event.Repeat &&
 		(event.Target == hitOutboundProxyAddress || event.Target == hitOutboundProxyUser || event.Target == hitOutboundProxyPassword || event.Target == hitOutboundProxyBypass) {

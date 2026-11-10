@@ -14,7 +14,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -572,31 +571,7 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		cfg.mcpSelectOpen = false
 		return gfx.EventResult{Focus: aiAgentClientID(cfg.agentClient), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
-	// The choices and controls of the dialogs are declared in the window page;
-	// the page owns their arrow keys and activation.
-	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
-		if result, handled := page.Key(event); handled {
-			return result, true
-		}
-	}
 	return gfx.EventResult{}, false
-}
-
-// AIProviderFormInput is the platform's text input for a field of the open
-// provider form: the page that declares the form owns its editors, under the
-// identities the window's own routing names.
-func (state *State) AIProviderFormInput(context app.TextInputContext) *app.TextInput {
-	cfg := &state.ai.cfg
-	if !state.aiSettingsVisible() || cfg.dialog != aiDialogProvider {
-		return nil
-	}
-	// The form is declared in the window page now; the page serves its editors.
-	if page := state.chrome.windowPage; page != nil {
-		if input := page.TextInput(context); input != nil {
-			return input
-		}
-	}
-	return nil
 }
 
 func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {

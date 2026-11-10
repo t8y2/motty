@@ -22,7 +22,7 @@ func TestVerticalTabsSettingsPersistAndSupportKeyboard(t *testing.T) {
 	}
 	horizontal := settingsChoiceHit(t, state, state.messages.SettingsTabsHorizontal)
 	vertical := settingsChoiceHit(t, state, state.messages.SettingsTabsVertical)
-	result := state.Key(gfx.KeyEvent{Target: horizontal.ID, Key: gfx.KeyRight})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: horizontal.ID, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != vertical.ID || result.Activate != vertical.ID {
 		t.Fatalf("keyboard choice: %+v", result)
 	}
@@ -162,7 +162,7 @@ func TestVerticalTabsScrollNavigateAndReorder(t *testing.T) {
 	state.Click(hitTabList.At(int(first)))
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	result = state.Key(gfx.KeyEvent{Target: hitTabList.At(int(first)), Key: gfx.KeyDown})
+	result = windowKeyRoutes(state, gfx.KeyEvent{Target: hitTabList.At(int(first)), Key: gfx.KeyDown})
 	if !result.Handled || result.Focus != hitTabList.At(int(second)) {
 		t.Fatalf("vertical tabs must navigate with Up/Down: %+v", result)
 	}

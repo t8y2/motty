@@ -422,12 +422,6 @@ func (state *State) forwardDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool)
 		return gfx.EventResult{}, false
 	}
 	editor := &state.forwardEditor
-	// The forward type switch is a page Choice: its arrows are the page's.
-	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
-		if result, handled := page.Key(event); handled && result.Handled {
-			return result, true
-		}
-	}
 	var result gfx.EventResult
 	switch {
 	case event.Target == hitForwardDialogHost || event.Target == hitForwardHostTrigger:

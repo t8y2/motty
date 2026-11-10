@@ -56,8 +56,8 @@ func TestDialogPageOwnsItsControls(t *testing.T) {
 			// The dialog's elements are declared by the workbench page, so the
 			// page's tree owns what ui.Dialog names in its scope even though the
 			// application's own identities live under their feature.
-			if page := state.chrome.windowPage; page == nil || !dialogPageOwns(page, dialogScope) {
-				t.Fatal("the dialog scope is not owned by the workbench page")
+			if !dialogPageOwns(dialogScope) {
+				t.Fatal("the dialog scope is not declared in the application's dialog scope")
 			}
 			if test.label != "" {
 				clickPaintedLabel(t, driver, test.label)

@@ -256,7 +256,7 @@ func TestTheHostFormOffersNoChoiceWhileNothingIsSaved(t *testing.T) {
 // window's page declares it, for tests of the page's event pass.
 func drawDialogPage(t *testing.T, state *State, view func(ui.C)) (*ui.Page, *gfx.Canvas) {
 	t.Helper()
-	page := ui.NewPage(ui.PageConfig{Tree: &tree, Root: shellPageRoot, Theme: &state.theme})
+	page := ui.NewPage(ui.PageConfig{Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: view})
 	state.chrome.windowPage = page
 	canvas := &gfx.Canvas{}
 	page.Draw(canvas, gfx.Rect{Width: 1400, Height: 900}, view)
@@ -315,11 +315,12 @@ func TestCredentialDialogPageServesItsFieldsAndSaves(t *testing.T) {
 	state.openCredentialDialog("")
 	view := func(c ui.C) { state.declareCredentialDialog(c) }
 	page, canvas := drawDialogPage(t, state, view)
-	name := page.TextInput(app.TextInputContext{ID: hitCredentialName})
+	config := page.Config(app.Config{})
+	name := config.TextInput(app.TextInputContext{ID: hitCredentialName})
 	if name == nil || name.Editor != &state.credentialForm.name {
 		t.Fatalf("the page does not serve the name field: %+v", name)
 	}
-	password := page.TextInput(app.TextInputContext{ID: hitCredentialPassword})
+	password := config.TextInput(app.TextInputContext{ID: hitCredentialPassword})
 	if password == nil || password.Editor != &state.credentialForm.password {
 		t.Fatalf("the page does not serve the password field: %+v", password)
 	}

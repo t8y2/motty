@@ -47,8 +47,8 @@ func TestAIPanelPageReadsItsTitleControls(t *testing.T) {
 
 	// The page is consulted before the panel's own key handling and leaves a
 	// key aimed at the hand-painted composer to it.
-	if result, handled := page.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIInput}); handled || result.Handled {
-		t.Fatalf("the page took a key aimed at the composer: %+v %v", result, handled)
+	if result := state.WindowConfig(app.Config{}).OnKey(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIInput}); result.Handled {
+		t.Fatalf("the page took a key aimed at the composer: %+v", result)
 	}
 }
 
@@ -118,11 +118,11 @@ func TestAIComposerPageControlsTakeRealPointerClicks(t *testing.T) {
 // the application's window does.
 func openAIPanelView(t testing.TB, state *State) *headless.Session {
 	t.Helper()
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnResize: state.Resize,
 		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll,
 		TextInput: state.AIPanelInput,
-	}, nil, headless.Options{})
+	}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,8 +181,8 @@ func TestAIPanelEventPassGoesThroughTheWorkbenchPage(t *testing.T) {
 	// The approval scope menu is a popup of the workbench page: the page owns its
 	// rows, and choosing one moves the scope.
 	clickHit(find(hitAIAutoScope))
-	if !page.Overlay() {
-		t.Fatal("the chip menu is not a popup of the workbench page")
+	if !state.aiMenuShown() {
+		t.Fatal("the chip menu was not declared as an open popup")
 	}
 	row, found := gfx.Hit{}, false
 	for _, hit := range view.Snapshot().Hits {
@@ -194,8 +194,8 @@ func TestAIPanelEventPassGoesThroughTheWorkbenchPage(t *testing.T) {
 	if !found {
 		t.Fatalf("no scope row %q in the page's menu", state.aiScopeName(risk.High))
 	}
-	if !page.Owns(row.ID) {
-		t.Fatalf("the workbench page does not own the menu row %v", row.ID)
+	if row.ID.IsZero() || !tree.Within(row.ID.Scope(), tree.Feature(shellPageRoot)) {
+		t.Fatalf("the menu row %v is not named by the workbench page", row.ID)
 	}
 	clickHit(row)
 	if state.aiAutoUpTo() != risk.High {

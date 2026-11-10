@@ -417,7 +417,7 @@ func TestForwardDialogModesShowDestinationsAndSupportKeyboard(t *testing.T) {
 	// as a click, and the click's event pass writes the value.
 	press := func(from, to gfx.Hit, key gfx.Key, want portforward.Mode) {
 		t.Helper()
-		result := state.Key(gfx.KeyEvent{Key: key, Target: from.ID})
+		result := windowKeyRoutes(state, gfx.KeyEvent{Key: key, Target: from.ID})
 		if !result.Handled || result.Focus != to.ID || result.Activate != to.ID {
 			t.Fatalf("mode key %v from %q result=%+v", key, from.Label, result)
 		}
@@ -970,7 +970,7 @@ func addForwardRule(t testing.TB, state *State, label string, localPort uint16, 
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
 	replaceForwardField(state, hitForwardDialogDestination, destination)
 	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
 		t.Fatal("Enter did not submit the forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -984,7 +984,7 @@ func addSOCKS5ForwardRule(t testing.TB, state *State, label string, localPort ui
 	clickSettingsChoice(t, state, state.messages.ForwardModeSOCKS5)
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
 		t.Fatal("Enter did not submit the SOCKS5 forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -1000,7 +1000,7 @@ func addRemoteForwardRule(t testing.TB, state *State, label string, remotePort u
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(remotePort))
 	replaceForwardField(state, hitForwardDialogDestination, destination)
 	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
 		t.Fatal("Enter did not submit the remote forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -1038,7 +1038,7 @@ func addHTTPConnectForwardRule(t testing.TB, state *State, label string, localPo
 	clickSettingsChoice(t, state, state.messages.ForwardModeHTTPConnect)
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogLocalPort}); !result.Handled {
 		t.Fatal("Enter did not submit the HTTP CONNECT forward dialog")
 	}
 	if state.modal != modalNone || state.forwardDialogError != "" {
@@ -1310,10 +1310,10 @@ func TestForwardHostSelectTakesTheArrowKeys(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	openForwardEditor(t, state)
 	state.Click(hitForwardDialogHost)
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitForwardDialogHost}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: hitForwardDialogHost}); !result.Handled {
 		t.Fatalf("Down was not taken: %+v", result)
 	}
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogHost})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogHost})
 	if !result.Handled || state.forwardEditor.hostID != state.hosts[1].ID || state.forwardEditor.hostSelect.Open {
 		t.Fatalf("Enter = %+v host=%d open=%v, want the second host closed", result, state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open)
 	}
@@ -1336,7 +1336,7 @@ func TestForwardHostSelectFiltersWhileTyping(t *testing.T) {
 	if len(choices) != 1 || choices[0].Label != "Staging" {
 		t.Fatalf("filter = %+v, want only Staging", choices)
 	}
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogHost})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogHost})
 	if !result.Handled || state.forwardEditor.hostSelect.Open || state.forwardEditor.hostID != staging {
 		t.Fatalf("Enter = %+v host=%d open=%v, want Staging closed", result, state.forwardEditor.hostID, state.forwardEditor.hostSelect.Open)
 	}
@@ -1352,7 +1352,7 @@ func TestTabClosesAnOpenSelectBeforeTraversal(t *testing.T) {
 	openForwardEditor(t, state)
 	state.Click(hitForwardDialogHost)
 	paintAt(state, gfx.Size{Width: 1400, Height: 900})
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Target: hitForwardDialogHost})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyTab, Target: hitForwardDialogHost})
 	if !result.ContinueTraversal || !result.Handled || state.forwardEditor.hostSelect.Open {
 		t.Fatalf("Tab = %+v open=%v, want close then traversal", result, state.forwardEditor.hostSelect.Open)
 	}

@@ -443,6 +443,7 @@ func (state *State) aiPanelBeginPaint() {
 		panel.drawerOpen = false
 	}
 	panel.declared = false
+	panel.menusShown = false
 	panel.copyCount = 0
 	panel.answer = gfx.Rect{}
 	panel.linkRows, panel.linkBase = 0, 0
@@ -621,8 +622,7 @@ func (state *State) aiMenuOpen() bool {
 // chip menu. aiMenuOpen says one is wanted, but a menu with no models or levels
 // paints no popup; only a shown menu owns the pointer and keys over the window.
 func (state *State) aiMenuShown() bool {
-	page := state.chrome.windowPage
-	return state.aiMenuOpen() && page != nil && page.Overlay()
+	return state.aiMenuOpen() && state.ai.panel.menusShown
 }
 
 // aiMenuWidth is the assistant chip menu's width: what its words need plus room
@@ -721,9 +721,14 @@ func (state *State) declareAIPanelBody(c ui.C) {
 	}
 	if panel.listDraw == nil {
 		panel.listDraw = state.paintAIList
-		panel.listHandlers.Pointer = state.aiPanelListPointer
-		panel.listHandlers.Key = state.aiPanelListKey
-		panel.listHandlers.Scroll = state.aiPanelListScroll
+		// The list's input is the application's own routing, as the terminal's
+		// is: a shortcut, a modal dialog or another panel handler acts before
+		// the conversation list's gestures, and the gestures are reached at the
+		// point the window always reached them. WindowConfig routes the event
+		// to this dispatcher because the control is the page's.
+		panel.listHandlers.Pointer = state.Pointer
+		panel.listHandlers.Key = state.Key
+		panel.listHandlers.Scroll = state.Scroll
 	}
 
 	panel.body = aiBody{}

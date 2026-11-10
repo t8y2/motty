@@ -496,15 +496,6 @@ func (state *State) sftpTabPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 	if !owns && !state.fileTabHit(event.Target) && !pointInRect(event.X, event.Y, state.fileManagerRect) {
 		return gfx.EventResult{}, false
 	}
-	if owns {
-		// The page completes a press on what it declared (a List's rows, a
-		// button); the window still gets the press when it declines.
-		if page := state.chrome.windowPage; page != nil {
-			if result, ok := page.Pointer(event); ok && result.Handled {
-				return result, true
-			}
-		}
-	}
 	// The window's own behavior: rows and the drag they arm, scroll bars, the
 	// split handle, popups and dialogs. Coordinates are already the window's.
 	return w.pointer(event), true
@@ -515,22 +506,8 @@ func (state *State) sftpTabKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if w == nil || !state.fileTabHit(event.Target) {
 		return gfx.EventResult{}, false
 	}
-	// The window opens the row Enter names before the List submits it.
-	if !event.Repeat && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !w.listBlocked() {
-		if _, _, ok := w.rowTarget(event.Target); ok {
-			return w.key(event), true
-		}
-	}
-	if state.fileTabOwns(event.Target) {
-		// The tab's Lists and other page controls take their keys through the
-		// workbench page: its arrows, Home and End, and Enter for a row.
-		if page := state.chrome.windowPage; page != nil {
-			if result, handled := page.Key(event); handled {
-				w.syncListChoice()
-				return result, true
-			}
-		}
-	}
+	// A key over the file tab's hand-painted chrome is the file window's; the
+	// page's Lists have already had their own keys.
 	return w.key(event), true
 }
 

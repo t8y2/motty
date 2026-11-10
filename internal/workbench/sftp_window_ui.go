@@ -544,6 +544,13 @@ func (w *sftpWindow) declarePane(c ui.C) {
 					folder.takeSFTPListChoice()
 					w.selectionChanged(local)
 				}
+				// Enter on a row opens it. The workbench page's List owns the
+				// key now, so the submit is where the window learns of it; the
+				// window's own key handler still takes Enter first when it is
+				// the one routing (its pane pages, and a List not painted yet).
+				if row, submitted := folder.list.Submitted(); submitted && !w.listBlocked() {
+					w.openEntry(local, row)
+				}
 			})
 		})
 		selection := w.selection(local)

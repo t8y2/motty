@@ -10,6 +10,21 @@ import (
 	"motty/internal/sshconn"
 )
 
+// windowKeyRoutes and its pointer and wheel peers deliver an event the way the
+// window's Config does: the page's own elements first, then the application's
+// handlers.
+func windowKeyRoutes(state *State, event gfx.KeyEvent) gfx.EventResult {
+	return state.WindowConfig(app.Config{OnKey: state.Key}).OnKey(event)
+}
+
+func windowPointerRoutes(state *State, event gfx.PointerEvent) gfx.EventResult {
+	return state.WindowConfig(app.Config{OnPointer: state.Pointer}).OnPointer(event)
+}
+
+func windowScrollRoutes(state *State, event gfx.ScrollEvent) gfx.EventResult {
+	return state.WindowConfig(app.Config{OnScroll: state.Scroll}).OnScroll(event)
+}
+
 func hitByID(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id {

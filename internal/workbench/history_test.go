@@ -283,11 +283,10 @@ func TestHistoryPickerHeadlessEvents(t *testing.T) {
 	h := pickerWorld(t)
 	state := h.state
 	state.openHistory(&state.sessions[0])
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "history", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-		TextInput: state.WindowPageInput,
-	}, nil, headless.Options{})
+	}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

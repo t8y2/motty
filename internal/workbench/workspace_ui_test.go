@@ -965,7 +965,7 @@ func TestSplitPaneEventsGoThroughTheWorkbenchPage(t *testing.T) {
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		hit := terminalTestHit(state, session)
-		if !page.Owns(hit) {
+		if !windowPageOwns(hit) {
 			t.Fatalf("session %d terminal is not in the workbench page: %v", session.ID, hit)
 		}
 		if _, ok := hitByID(&canvas, hit); !ok {
@@ -1000,7 +1000,7 @@ func TestSplitPaneEventsGoThroughTheWorkbenchPage(t *testing.T) {
 	if got := shells[1].typed(); got != "x" {
 		t.Fatalf("typed text reached %q, want the second pane's shell", got)
 	}
-	if result := state.Key(gfx.KeyEvent{Target: hit, Key: gfx.KeyEnter}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Target: hit, Key: gfx.KeyEnter}); !result.Handled {
 		t.Fatalf("key through the page = %+v", result)
 	}
 	if got := shells[1].typed(); got != "x\r" {
@@ -1024,7 +1024,7 @@ func TestDockedFilesPanelEventsGoThroughTheWorkbenchPage(t *testing.T) {
 	folder := view.active()
 	row := sftpRowIndex(t, view, "notes.txt")
 	rowID := sftpListRowID(t, folder, row)
-	if !page.Owns(rowID) || !state.contextPanelOwns(rowID) {
+	if !windowPageOwns(rowID) || !state.contextPanelOwns(rowID) {
 		t.Fatalf("the files list row is not in the workbench page: %v", rowID)
 	}
 	hit, ok := hitByID(&canvas, rowID)
@@ -1043,7 +1043,7 @@ func TestDockedFilesPanelEventsGoThroughTheWorkbenchPage(t *testing.T) {
 	}
 
 	// The arrows are the List's, routed by the workbench page.
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyUp, Target: rowID}); !result.Handled {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyUp, Target: rowID}); !result.Handled {
 		t.Fatalf("key through the page = %+v", result)
 	}
 	if folder.list.Selected() != 0 {

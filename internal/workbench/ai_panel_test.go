@@ -490,11 +490,11 @@ func TestMessageBoxWrapsLongMessagesAndMovesTheCaretByRow(t *testing.T) {
 
 	// Up from the end goes to the row above, not to the start of the message.
 	end := state.ai.input.Caret()
-	state.Key(gfx.KeyEvent{Key: gfx.KeyUp, Target: hitAIInput})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyUp, Target: hitAIInput})
 	if up := state.ai.input.Caret(); up >= end || up == 0 {
 		t.Fatalf("Up moved the caret from %d to %d", end, up)
 	}
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEnd, Modifiers: gfx.ModifierShift, Target: hitAIInput})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnd, Modifiers: gfx.ModifierShift, Target: hitAIInput})
 	if selection := state.ai.input.Selection(); selection.Start >= selection.End {
 		t.Errorf("Shift+End selected nothing: %+v", selection)
 	}
@@ -572,7 +572,7 @@ func TestModelMenuScrollsAProviderWithManyModels(t *testing.T) {
 	}
 	// The wheel over the long list scrolls the menu, not the conversation.
 	before := state.ai.scroll.Offset()
-	state.Scroll(gfx.ScrollEvent{X: first.Bounds.X + 10, Y: first.Bounds.Y + 10, DeltaY: 96, Precise: true, Viewport: panelWide, Target: first.ID})
+	windowScrollRoutes(state, gfx.ScrollEvent{X: first.Bounds.X + 10, Y: first.Bounds.Y + 10, DeltaY: 96, Precise: true, Viewport: panelWide, Target: first.ID})
 	if state.ai.scroll.Offset() != before {
 		t.Error("wheel over the model menu scrolled the conversation")
 	}
@@ -581,7 +581,7 @@ func TestModelMenuScrollsAProviderWithManyModels(t *testing.T) {
 		t.Errorf("the list did not scroll: model-00 stayed at %v", moved.Bounds.Y)
 	}
 	// The keyboard reaches the last model of a long list.
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnd, Target: first.ID})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnd, Target: first.ID})
 	canvas, _ = paintAt(state, panelWide)
 	listed := state.aiModelList("p")
 	last, ok := hitByID(canvas, result.Focus)
@@ -671,7 +671,7 @@ func TestApprovalCardShowsRiskReasonsAndGatesTheCriticalWord(t *testing.T) {
 	if panelHit(t, canvas, hitAIApprove).Disabled {
 		t.Fatal("Approve is still locked after the word")
 	}
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitAIConfirm})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitAIConfirm})
 	if !result.Handled || len(state.ai.approvals) != 0 {
 		t.Fatalf("Enter did not approve: %+v", result)
 	}
@@ -699,7 +699,7 @@ func TestApprovalButtonsAndEscapeAnswer(t *testing.T) {
 		t.Fatalf("first answer = %+v", answer)
 	}
 	paintAt(state, panelWide)
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIInput})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIInput})
 	if !result.Handled {
 		t.Fatal("Escape was not taken")
 	}
@@ -707,7 +707,7 @@ func TestApprovalButtonsAndEscapeAnswer(t *testing.T) {
 		t.Fatalf("Escape approved: %+v", answer)
 	}
 	// Escape from the terminal is not the panel's.
-	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: terminalHit(state, 0)}); result.Handled && len(state.ai.approvals) != 0 {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: terminalHit(state, 0)}); result.Handled && len(state.ai.approvals) != 0 {
 		t.Fatal("unexpected")
 	}
 }
@@ -900,7 +900,7 @@ func TestMessageBoxTakesEnterAndNewLines(t *testing.T) {
 	}
 	apply(app.TextEvent{Kind: app.TextInsert, Text: "first"})
 	// Shift+Enter, Ctrl+J and Cmd+J make a line break; plain Enter is not one.
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift, Target: hitAIInput})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift, Target: hitAIInput})
 	state.Shortcut(gfx.KeyEvent{Modifiers: gfx.ModifierControl, Text: "j", Target: hitAIInput})
 	apply(app.TextEvent{Kind: app.TextInsert, Text: "second"})
 	if got := state.ai.input.String(); got != "first\n\nsecond" {
@@ -1363,18 +1363,18 @@ func TestModelSubmenuWithTheKeyboard(t *testing.T) {
 	}
 
 	canvas, _ = paintAt(state, panelWide)
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIModelChip})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIModelChip})
 	provider, ok := hitByID(canvas, result.Focus)
 	if !ok || provider.Role != gfx.RoleMenuItem {
 		t.Fatalf("Down from the chip focused %v, not the provider row", result.Focus)
 	}
-	state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: provider.ID})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyRight, Target: provider.ID})
 	canvas, _ = paintAt(state, panelWide)
 	model, ok := aiMenuRowNamed(canvas, "gpt-x")
 	if !ok {
 		t.Fatal("Right did not open the model list")
 	}
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyLeft, Target: model.ID})
+	result = windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyLeft, Target: model.ID})
 	if result.Focus != provider.ID {
 		t.Fatalf("Left focused %v, want the provider row", result.Focus)
 	}
@@ -1385,7 +1385,7 @@ func TestModelSubmenuWithTheKeyboard(t *testing.T) {
 
 	// Escape reaches the menu as the runtime's click on its escape target.
 	target := canvas.EscapeTarget()
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: provider.ID})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: provider.ID})
 	clickMenuItemByID(t, state, target)
 	if state.ai.panel.modelMenu {
 		t.Fatal("Escape left the menu open")

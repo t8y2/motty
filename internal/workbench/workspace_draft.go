@@ -644,12 +644,6 @@ func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {
 		state.submitWorkspaceDraft()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
-		// The temporary/fixed switch is a page Choice: its arrows are the page's.
-		if result, handled := page.Key(event); handled {
-			return result
-		}
-	}
 	if event.Target == hitWorkspaceDraftScroll {
 		area := components.BeginScrollArea(nil, state.Theme(), state.workspaceDraft.bounds, gfx.Size{Width: state.workspaceDraft.bounds.Width, Height: state.workspaceDraft.content}).Offset(0, state.workspaceDraft.scroll)
 		if _, y, ok := area.ScrollForKey(0, state.workspaceDraft.scroll, event.Key, 32); ok {

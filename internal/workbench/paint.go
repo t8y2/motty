@@ -233,16 +233,12 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	chrome.shellScroll = scroll
 	chrome.shellFullPage = fullPage
 	chrome.shellCardRight = cardRight
-	if chrome.windowPage == nil {
-		chrome.windowPage = ui.NewPage(ui.PageConfig{Root: shellPageRoot, Theme: &state.theme})
-		chrome.windowView = state.declareShell
-	}
 	// The files panel is declared in the page and asks for its More menu as it
 	// paints, so the menu lifecycle starts before the page. The embedded file
 	// header also paints a popup: starting before workspace content keeps its
 	// scroll/focus state.
 	state.beginMenus()
-	chrome.windowPage.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, chrome.windowView)
+	state.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, state.declareShell)
 	// The page's Boxes end when its frame ends; take the slot's rect before
 	// another DrawOver (the assistant's overlay) begins the page again.
 	if state.verticalTabs.slot != (ui.Box{}) {
@@ -489,6 +485,29 @@ type barGeometry struct {
 	valid             bool
 	area, row         gfx.Rect
 	tabWidth          float32
+}
+
+// windowPage is the page the workbench window declares its shell in. Paint draws
+// it; WindowConfig gives it the window's input.
+func (state *State) windowPage() *ui.Page {
+	chrome := &state.chrome
+	if chrome.windowPage == nil {
+		chrome.windowPage = ui.NewPage(ui.PageConfig{
+			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareShell,
+		})
+	}
+	return chrome.windowPage
+}
+
+// WindowConfig returns base with the workbench page routing the shell's own
+// controls: its dialogs, choices, fields, lists and the assistant's menus take
+// their keys, pointer, wheel and text before the application's handlers. The
+// window's Paint stays its own, because it also paints the panes, the docks and
+// the bodies the page only lays out.
+func (state *State) WindowConfig(base app.Config) app.Config {
+	config := state.windowPage().Config(base)
+	config.Paint = base.Paint
+	return config
 }
 
 // declareShell declares the window's shell as a page: the bar over the body,
@@ -1013,18 +1032,23 @@ const (
 	shellProbeRoot = "window-bar-probe"
 )
 
+// windowPageOwns reports whether id is named by the workbench page: one of its
+// elements, a popup it declares, or a dialog body it declares. The page root is
+// what WindowConfig routes.
+func windowPageOwns(id gfx.ID) bool {
+	return !id.IsZero() && tree.Within(id.Scope(), tree.Feature(shellPageRoot))
+}
+
 // chromeLayout keeps the ui.View of each area of the window chrome that is laid
 // out by github.com/vivaui/viva/flex, and the few rectangles another painter needs from them.
 type chromeLayout struct {
 	header, hostRow, popup ui.View
 	// windowPage declares the shell (the window bar, the navigation rail and the
-	// workspace slot), with windowView its declaration kept so a paint makes no new
-	// method value. workspaceSlot is the slot the sections paint into, and the
+	// workspace slot). workspaceSlot is the slot the sections paint into, and the
 	// shell* fields are what the cached view reads for the paint in progress.
 	// probePage declares the window bar once without its contents to find how wide
 	// the tabs come out; probeInput is what its cached view reads.
 	windowPage     *ui.Page
-	windowView     func(ui.C)
 	workspaceSlot  ui.Box
 	shellPicture   bool
 	shellHeight    float32
@@ -2299,14 +2323,11 @@ func dialogContentRect(canvas *gfx.Canvas, theme gfx.Theme, viewport gfx.Rect, w
 	}).Layout(description)
 }
 
-// dialogPageOwns reports whether target is declared by the workbench page: its
-// own elements, or the body of a Dialog the page declared, which ui.Dialog
-// names in the application's dialog scope rather than the page root.
-func dialogPageOwns(page *ui.Page, target gfx.ID) bool {
-	if page == nil || target.IsZero() {
-		return false
-	}
-	return page.Owns(target) || tree.Within(target.Scope(), dialogScope.Scope())
+// dialogPageOwns reports whether target is declared in the application's dialog
+// scope, where ui.Dialog names the contents of a dialog the workbench page
+// declares.
+func dialogPageOwns(target gfx.ID) bool {
+	return !target.IsZero() && tree.Within(target.Scope(), dialogScope.Scope())
 }
 
 // dialogButton declares one of a Dialog footer's buttons with the look

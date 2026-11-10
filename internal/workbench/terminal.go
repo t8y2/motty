@@ -1618,11 +1618,6 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	// Dialogs own the wheel even over their backdrop. Menus and scrollable
 	// dialogs above have their own handlers; nothing behind them should move.
-	if state.aiSettingsVisible() && state.ai.cfg.dialog == aiDialogImport && state.ai.cfg.importStep == aiImportPreview {
-		// The import preview is one page: the wheel scrolls its candidate list
-		// while the settings page behind the dialog stays still.
-		return state.aiImportWheel(event)
-	}
 	if state.modal != modalNone || state.knownHosts.action != knownHostsActionNone ||
 		(state.aiSettingsVisible() && state.ai.cfg.dialog != aiDialogNone) {
 		return gfx.EventResult{Handled: true}

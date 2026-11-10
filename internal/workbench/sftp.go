@@ -1949,16 +1949,10 @@ func (state *State) scrollSFTP(view *sftpView, event gfx.ScrollEvent) gfx.EventR
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	folder := view.active()
-	// The List owns the offset and is part of the workbench page now, so the
-	// page finds it under the pointer with the event's own coordinates. One over
-	// the panel's other chrome still scrolls the List, as it did before the List
-	// existed.
-	if page := state.chrome.windowPage; page != nil {
-		if result := page.Wheel(event); result.Handled || result.Repaint {
-			state.syncSFTPListOffset(folder)
-			return result
-		}
-	}
+	// The List owns the offset and is part of the workbench page: WindowConfig's
+	// wheel routing finds it under the pointer with the event's own coordinates.
+	// One over the panel's other chrome still scrolls the List, as it did before
+	// the List existed.
 	if scroll := folder.listScroll; scroll != nil && len(folder.shownRows()) > folder.visibleRows {
 		result := scroll.Wheel(event)
 		state.syncSFTPListOffset(folder)
@@ -2028,9 +2022,6 @@ func (state *State) fitSFTP(size gfx.Size) {
 
 func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if result, handled := state.sftpListActivateKey(event); handled {
-		return result, true
-	}
-	if result, handled := state.contextPanelKey(event); handled {
 		return result, true
 	}
 	if result, handled := state.sftpPlacesKey(event); handled {

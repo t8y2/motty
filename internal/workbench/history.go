@@ -461,14 +461,6 @@ func (state *State) historyKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	state.rankHistory()
 	h := &state.history
-	// The host/all switch is a page Choice: its arrows are the page's. The page
-	// still holds the keyboard as the dialog's overlay, so only the keys it has
-	// actually acted on are taken from the picker below.
-	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
-		if result, handled := page.Key(event); handled && result.Handled {
-			return result, true
-		}
-	}
 	handled := gfx.EventResult{Handled: true, Repaint: true, Focus: hitHistorySearch}
 	switch event.Key {
 	case gfx.KeyEscape:

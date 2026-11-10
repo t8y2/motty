@@ -12,8 +12,8 @@ import (
 func labelDriver(t *testing.T, state *State) *app.Driver {
 	t.Helper()
 	var canvas gfx.Canvas
-	driver, err := app.NewDriver(app.Config{Title: "labels", Width: 1100, Height: 900, Tree: Tree(),
-		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize}, &canvas)
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{Title: "labels", Width: 1100, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize}), &canvas)
 	if err != nil {
 		t.Fatal(err)
 	}

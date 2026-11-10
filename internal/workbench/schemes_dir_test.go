@@ -242,11 +242,10 @@ func TestSchemeDrawerPageTakesPointerAndTyping(t *testing.T) {
 	var folded gfx.Canvas
 	state.Paint(&folded, gfx.Size{Width: 1400, Height: 900})
 	state.settingsScroll = max(state.settingsContent-900, 0)
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "schemes", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-		TextInput: state.WindowPageInput,
-	}, nil, headless.Options{})
+	}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

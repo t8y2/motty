@@ -260,7 +260,7 @@ func TestTheOutboundProxyKindSwitchTakesArrowsAndClicks(t *testing.T) {
 	if !ok {
 		t.Fatalf("no kind switch offering %q", state.messages.Tools.ProxySOCKS5)
 	}
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyRight, Target: none.ID})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyRight, Target: none.ID})
 	if !result.Handled || result.Focus != socks.ID || result.Activate != socks.ID {
 		t.Fatalf("kind key result = %+v", result)
 	}

@@ -33,7 +33,7 @@ func TestRecentPickerSwitchTakesTheKeyboardAndHandsItBack(t *testing.T) {
 	// and the click's event pass writes the value.
 	defaultHit := settingsChoiceHit(t, state, state.messages.NewTabSortDefault)
 	workspacesHit := settingsChoiceHit(t, state, state.messages.WorkspaceLibraryTitle)
-	result := state.Key(gfx.KeyEvent{Target: defaultHit.ID, Key: gfx.KeyRight})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: defaultHit.ID, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != workspacesHit.ID || result.Activate != workspacesHit.ID {
 		t.Fatalf("right on the switch = %+v", result)
 	}
@@ -43,7 +43,7 @@ func TestRecentPickerSwitchTakesTheKeyboardAndHandsItBack(t *testing.T) {
 	}
 	workspacesHit = settingsChoiceHit(t, state, state.messages.WorkspaceLibraryTitle)
 	recentHit := settingsChoiceHit(t, state, state.messages.NewTabSortRecent)
-	result = state.Key(gfx.KeyEvent{Target: workspacesHit.ID, Key: gfx.KeyRight})
+	result = windowKeyRoutes(state, gfx.KeyEvent{Target: workspacesHit.ID, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != recentHit.ID || result.Activate != recentHit.ID {
 		t.Fatalf("right from workspaces = %+v", result)
 	}
@@ -52,7 +52,7 @@ func TestRecentPickerSwitchTakesTheKeyboardAndHandsItBack(t *testing.T) {
 		t.Fatalf("right from workspaces = recent=%t workspaces=%t", state.recentConnectSort, state.commandPalette.workspaces)
 	}
 	recentHit = settingsChoiceHit(t, state, state.messages.NewTabSortRecent)
-	result = state.Key(gfx.KeyEvent{Target: recentHit.ID, Key: gfx.KeyEnter})
+	result = windowKeyRoutes(state, gfx.KeyEvent{Target: recentHit.ID, Key: gfx.KeyEnter})
 	if !result.Handled || result.Focus != hitCommandPaletteSearch {
 		t.Fatalf("enter on the switch = %+v", result)
 	}

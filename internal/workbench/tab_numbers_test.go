@@ -180,7 +180,7 @@ func TestTheNumberKeysSettingTakesTheKeyboard(t *testing.T) {
 	}
 	primary := settingsChoiceHit(t, state, labels[0].Label)
 	alt := settingsChoiceHit(t, state, labels[1].Label)
-	result := state.Key(gfx.KeyEvent{Target: primary.ID, Key: gfx.KeyRight})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: primary.ID, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != alt.ID || result.Activate != alt.ID {
 		t.Fatalf("keyboard choice: %+v", result)
 	}

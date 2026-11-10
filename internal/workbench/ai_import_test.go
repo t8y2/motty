@@ -232,9 +232,10 @@ func TestAISettingsImportPreviewListsEveryCandidateAndWritesNothingWhenEmpty(t *
 	} else if scroll := state.aiImportListScroll(); scroll == nil || scroll.Max() <= 0 {
 		t.Fatal("the preview list does not scroll when it is taller than its viewport")
 	} else {
-		// The terminal's scroll dispatcher hands the wheel to the import page
-		// while the preview is open; this is that route.
-		state.aiImportWheel(gfx.ScrollEvent{X: hit.Bounds.X + 20, Y: hit.Bounds.Y + 20, DeltaY: 120, Precise: true})
+		// WindowConfig's wheel route scrolls the page's candidate list, as the
+		// terminal's scroll dispatcher does for the window.
+		config := state.WindowConfig(app.Config{OnScroll: state.Scroll})
+		config.OnScroll(gfx.ScrollEvent{X: hit.Bounds.X + 20, Y: hit.Bounds.Y + 20, DeltaY: 120, Precise: true})
 		if scroll.Offset == 0 {
 			t.Fatal("the wheel over the preview list did not scroll it")
 		}
@@ -629,7 +630,7 @@ func TestAISettingsImportReportsAProviderSavedWithoutItsKey(t *testing.T) {
 // controls are wired after the list moved into the import page: a real press on
 // a candidate's checkbox toggles the selection, and the page's wheel route moves
 // the list. The terminal's dispatcher hands that route the wheel while the
-// preview is open (aiImportWheel, see State.Scroll).
+// preview is open (see State.Scroll).
 func TestAISettingsImportPreviewTakesRealPointerAndWheel(t *testing.T) {
 	var candidates []aiproviderimport.Candidate
 	for index := 0; index < 14; index++ {
@@ -651,10 +652,10 @@ func TestAISettingsImportPreviewTakesRealPointerAndWheel(t *testing.T) {
 	state := world.state
 	importOpen(t, world)
 	importPreview(t, world, 0)
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnResize: state.Resize,
 		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll,
-	}, nil, headless.Options{})
+	}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

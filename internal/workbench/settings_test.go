@@ -194,7 +194,7 @@ func TestSettingsChoiceAndSearchTakeInputThroughTheWorkbenchPage(t *testing.T) {
 		t.Fatal("the language row painted no Chinese segment")
 	}
 	scope := tree.Sub(tree.Feature(shellPageRoot), tree.Name(settingsWorkspacePart))
-	if !page.Owns(choice.ID) || !tree.Within(choice.ID.Scope(), scope) {
+	if !windowPageOwns(choice.ID) || !tree.Within(choice.ID.Scope(), scope) {
 		t.Fatalf("the choice %d is not inside the workbench page's settings container", choice.ID)
 	}
 	canvas.BeginEventPass(choice.ID, gfx.ClickInfo{})
@@ -467,7 +467,7 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q: no choice labeled %q", rowLabel, toLabel)
 		}
-		result := state.Key(gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
+		result := windowKeyRoutes(state, gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
 		if !result.Handled || result.Focus != to.ID || result.Activate != to.ID {
 			t.Fatalf("%q: from=%v to=%v result=%+v", rowLabel, from.ID, to.ID, result)
 		}

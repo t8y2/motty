@@ -370,8 +370,10 @@ type aiPanel struct {
 	dragStart float32 // and how tall the box was
 	boxHeight float32 // how tall it was painted
 
-	// The model chip and its menu: modelMenu is whether the ui.Menu is open.
+	// The model chip and its menu: modelMenu is whether the ui.Menu is open,
+	// menusShown whether the last paint declared one of the chip menus.
 	modelMenu   bool
+	menusShown  bool
 	approvalLay aiApprovalLayout
 
 	// mode is how the workbench page placed the panel in its last paint, and
@@ -932,25 +934,17 @@ func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventRe
 // text hit is a focusable group outside the Tab order; links and copy buttons
 // are declared after it and still win the press.
 func (state *State) aiPanelPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	// The panel and its menus are part of the workbench page now: its controls
-	// and the open menu's backdrop are the page's, so it reads their presses
-	// first. The identities this file paints by hand are outside the page, so a
-	// press on them falls through to the gestures below.
-	page := state.chrome.windowPage
+	// The panel and its menus are part of the workbench page now: WindowConfig
+	// gives its controls and the open menu's backdrop their presses first. The
+	// identities this file paints by hand are outside the page, so a press on
+	// them falls through to the gestures below.
 	if state.aiMenuShown() {
-		// An open chip menu owns the pointer over the whole window: over it, the
-		// page's menu acts; anywhere else the press goes nowhere.
-		if page != nil && inAIPanel(event.Target) {
-			if result, ok := page.Pointer(event); ok {
-				return result, true
-			}
+		if windowPageOwns(event.Target) {
+			// The page's menu rows take their choice in the click's event pass.
+			return gfx.EventResult{}, true
 		}
+		// An open chip menu owns the pointer over the rest of the window.
 		return gfx.EventResult{Handled: true}, true
-	}
-	if page != nil && inAIPanel(event.Target) {
-		if result, ok := page.Pointer(event); ok {
-			return result, true
-		}
 	}
 	return state.aiPanelPointerGesture(event)
 }
@@ -1028,13 +1022,6 @@ func (state *State) aiPanelPointerGesture(event gfx.PointerEvent) (gfx.EventResu
 	return gfx.EventResult{Handled: true}, true
 }
 
-// aiPanelListPointer is the list Control's Pointer: the same gestures a press
-// that falls through to the hand-painted rows gets.
-func (state *State) aiPanelListPointer(event gfx.PointerEvent) gfx.EventResult {
-	result, _ := state.aiPanelPointerGesture(event)
-	return result
-}
-
 // aiDrag follows the pointer while the panel's left edge or the message box's top
 // edge is being dragged.
 func (state *State) aiDrag(event gfx.PointerEvent) gfx.EventResult {
@@ -1053,22 +1040,12 @@ func (state *State) aiDrag(event gfx.PointerEvent) gfx.EventResult {
 // aiPanelScroll scrolls the message list, or the history list. A wheel over the
 // rest of the panel is swallowed: it must not scroll the terminal behind it.
 func (state *State) aiPanelScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
-	// The chip menus are the workbench page's popups: an open one owns the wheel
-	// over the whole window, scrolling its own list where the pointer is over it
-	// and going nowhere otherwise.
-	page := state.chrome.windowPage
+	// The chip menus are the workbench page's popups: WindowConfig offers the
+	// wheel to the page first, and an open menu owns the wheel over the whole
+	// window, scrolling its own list where the pointer is over it and going
+	// nowhere otherwise.
 	if state.aiMenuShown() {
-		if page != nil && inAIPanel(event.Target) {
-			if result := page.Wheel(event); result.Handled || result.Repaint {
-				return result, true
-			}
-		}
 		return gfx.EventResult{Handled: true}, true
-	}
-	if page != nil && inAIPanel(event.Target) {
-		if result := page.Wheel(event); result.Handled || result.Repaint {
-			return result, true
-		}
 	}
 	return state.aiPanelScrollGesture(event)
 }
@@ -1095,13 +1072,6 @@ func (state *State) aiPanelScrollGesture(event gfx.ScrollEvent) (gfx.EventResult
 		return gfx.EventResult{Handled: true}, true
 	}
 	return state.aiPanelScrollBy(event.StepY(24)), true
-}
-
-// aiPanelListScroll is the list Control's Scroll: the same scrolling a wheel
-// that falls through to the hand-painted list gets.
-func (state *State) aiPanelListScroll(event gfx.ScrollEvent) gfx.EventResult {
-	result, _ := state.aiPanelScrollGesture(event)
-	return result
 }
 
 // aiPanelScrollTo moves the active list to an absolute offset.
@@ -1157,27 +1127,15 @@ func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || event.Target == hitAIToggle {
 		return gfx.EventResult{}, false
 	}
-	page := state.chrome.windowPage
-	// The chip menus are the workbench page's popups: their rows carry the page's
-	// identities, so it routes their keys before the panel's own.
+	// WindowConfig gives the page's controls and shortcuts their keys first; the
+	// chip menus are the page's popups, so their rows take keys there too. The
+	// identities this file declares by hand are outside the page, so their keys
+	// fall through to the handling below.
 	if state.aiMenuShown() {
-		if page != nil && inAIPanel(event.Target) {
-			if result, handled := page.Key(event); handled {
-				return result, true
-			}
-		}
 		return state.aiPanelKeyGesture(event)
 	}
 	if !inAIPanel(event.Target) {
 		return gfx.EventResult{}, false
-	}
-	// The page's controls and shortcuts take their keys before the panel's own
-	// handling. The identities this file declares by hand are outside the page,
-	// so those still fall through to the code below.
-	if page != nil {
-		if result, handled := page.Key(event); handled {
-			return result, true
-		}
 	}
 	return state.aiPanelKeyGesture(event)
 }
@@ -1376,13 +1334,6 @@ func (state *State) AIPanelInput(context app.TextInputContext) *app.TextInput {
 		return nil
 	}
 	panel := &state.ai.panel
-	// A field declared by the workbench page would take the platform's editor
-	// first; the composer itself is painted by hand and served below.
-	if page := state.chrome.windowPage; page != nil {
-		if input := page.TextInput(context); input != nil {
-			return input
-		}
-	}
 	panel.input.Editor = nil
 	panel.input.State = app.TextStateOf(&state.ai.input)
 	if panel.input.OnEvent == nil {

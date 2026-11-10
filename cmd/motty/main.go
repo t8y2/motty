@@ -408,14 +408,6 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if input := state.NotesInput(context); input != nil {
 			return input
 		}
-		// The provider form's fields are declared in its own page; the page
-		// supplies the editor the platform types into.
-		if input := state.AIProviderFormInput(context); input != nil {
-			return input
-		}
-		if input := state.WindowPageInput(context); input != nil {
-			return input
-		}
 		editor := state.EditorFor(context.ID)
 		if editor == nil {
 			return nil
@@ -426,7 +418,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	}
 
 	var err error
-	mainWindow, err = application.OpenWindow(app.Config{
+	config := app.Config{
 		Title:          mainWindowTitle(),
 		Icon:           workbench.AppIcon(),
 		Tree:           workbench.Tree(),
@@ -480,7 +472,10 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 				status.refresh()
 			}
 		},
-	}, &canvas)
+	}
+	// The workbench page routes the shell's own elements and the application
+	// handlers keep the events it leaves; the workbench's Paint stays its own.
+	mainWindow, err = application.OpenWindow(state.WindowConfig(config), &canvas)
 	if err == nil {
 		state.SetWindow(mainWindow.Frame, func() bool { return !mainWindow.Hidden() && !mainWindow.Closed() })
 		state.SetShortcutCapture(mainWindow.CaptureSystemShortcuts)

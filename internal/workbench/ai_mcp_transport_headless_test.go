@@ -28,7 +28,7 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 				state.ai.mcpAddr, state.ai.mcpToken = "127.0.0.1:4455", "transport-preview-token"
 				state.Click(aiMCPClientID(aiMCPCodex))
 				state.Click(aiAgentClientID(aiMCPCodex))
-				view, err := headless.Open(app.Config{Title: "MCP transports", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: scale})
+				view, err := headless.Open(state.WindowConfig(app.Config{Title: "MCP transports", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{Scale: scale})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -153,7 +153,7 @@ func TestMCPConsentSaveErrorsAreForgottenAfterNativeEscape(t *testing.T) {
 				clickSettingsChoice(t, state, allowAll)
 			}
 			allow()
-			view, err := headless.Open(app.Config{Title: "MCP save failure", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnResize: state.Resize}, nil, headless.Options{})
+			view, err := headless.Open(state.WindowConfig(app.Config{Title: "MCP save failure", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnResize: state.Resize}), nil, headless.Options{})
 			if err != nil {
 				t.Fatal(err)
 			}

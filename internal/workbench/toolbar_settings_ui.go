@@ -232,12 +232,7 @@ func (state *State) toolbarSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalToolbarSettings {
 		return gfx.EventResult{}
 	}
-	// The size switch is a page Choice: its arrows are the page's.
-	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
-		if result, handled := page.Key(event); handled && result.Handled {
-			return result
-		}
-	}
+	// The size switch is a page Choice: WindowConfig routes its arrows.
 	move, result := state.toolbarEditor.list.Key(event)
 	if result.Handled {
 		state.moveToolbarEntry(move)

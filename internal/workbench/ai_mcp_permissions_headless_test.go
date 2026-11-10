@@ -24,7 +24,7 @@ func TestMCPAllowAllConsentThroughNativeInput(t *testing.T) {
 				state.setLanguage(language)
 				state.setAppearance(appearanceLight)
 				state.selectSettingsCategory(settingsMCP)
-				view, err := headless.Open(app.Config{Title: "MCP permissions", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: scale})
+				view, err := headless.Open(state.WindowConfig(app.Config{Title: "MCP permissions", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{Scale: scale})
 				if err != nil {
 					t.Fatal(err)
 				}

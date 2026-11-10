@@ -18,8 +18,8 @@ import (
 // The preview is one list, not pages. Importable rows lead and unavailable rows
 // follow under one explanation heading, so the selectable part stays together
 // and the reasons read as a reference block. The list is a scroll area of the
-// preview's own page: the page takes the wheel (aiImportWheel) and keeps the
-// offset, and the scrollbar reads the state the page's layout reported.
+// preview's own page: WindowConfig's wheel route moves it and keeps the offset,
+// and the scrollbar reads the state the page's layout reported.
 
 const (
 	aiImportSourceRowHeight   = float32(64)
@@ -366,16 +366,6 @@ func (state *State) aiImportListScroll() *ui.ScrollState {
 		return nil
 	}
 	return pages.list.ScrollState()
-}
-
-// aiImportWheel gives the wheel to the preview, which scrolls the candidate
-// list (and nothing behind the dialog). State.Scroll hands the wheel here while
-// the preview is open.
-func (state *State) aiImportWheel(event gfx.ScrollEvent) gfx.EventResult {
-	if page := state.chrome.windowPage; page != nil {
-		return page.Wheel(event)
-	}
-	return gfx.EventResult{}
 }
 
 // aiImportCandidateRow declares one selectable provider. A ticked row carries a

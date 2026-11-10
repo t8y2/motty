@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -552,31 +551,6 @@ func (state *State) contextPanelSession(id gfx.ID) (*Session, bool) {
 		return nil, false
 	}
 	return state.sessionByIDPointer(state.activeSessionID)
-}
-
-// contextPanelKey gives the workbench page the keys aimed at the controls it
-// declared in the docked panel (the List's arrows, Home and End, and Space).
-func (state *State) contextPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if !state.contextPanelOwns(event.Target) {
-		return gfx.EventResult{}, false
-	}
-	if page := state.chrome.windowPage; page != nil {
-		return page.Key(event)
-	}
-	return gfx.EventResult{}, false
-}
-
-// contextPanelPointer gives the workbench page the pointer events aimed at the
-// controls it declared in the docked panel, so a press on one completes in the
-// page instead of falling through to the window.
-func (state *State) contextPanelPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if !state.contextPanelOwns(event.Target) {
-		return gfx.EventResult{}, false
-	}
-	if page := state.chrome.windowPage; page != nil {
-		return page.Pointer(event)
-	}
-	return gfx.EventResult{}, false
 }
 
 // paintContextPanel paints what belongs to the window rather than the panel: a
@@ -1136,14 +1110,4 @@ func findPaneFractionBounds(layout *layoutcore.Layout, nodeID layoutcore.NodeID,
 // pointInRect reports whether (x, y) lies inside bounds.
 func pointInRect(x, y float32, bounds gfx.Rect) bool {
 	return x >= bounds.X && y >= bounds.Y && x < bounds.X+bounds.Width && y < bounds.Y+bounds.Height
-}
-
-// WindowPageInput is the platform's text input for a field the workbench page
-// declares: dialog fields (the provider form, credentials, imports) are page
-// elements now, so the page supplies their editor and the platform types there.
-func (state *State) WindowPageInput(context app.TextInputContext) *app.TextInput {
-	if page := state.chrome.windowPage; page != nil {
-		return page.TextInput(context)
-	}
-	return nil
 }

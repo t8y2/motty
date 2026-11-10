@@ -18,7 +18,7 @@ func modalEventDriver(t *testing.T, state *State) *app.Driver {
 // modalEventDriverSize is modalEventDriver for a window of a chosen size.
 func modalEventDriverSize(t *testing.T, state *State, width, height int) *app.Driver {
 	t.Helper()
-	driver, err := app.NewDriver(app.Config{
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
 		Title: "modal events", Width: width, Height: height, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
 		TextInput: func(c app.TextInputContext) *app.TextInput {
@@ -27,7 +27,7 @@ func modalEventDriverSize(t *testing.T, state *State, width, height int) *app.Dr
 			}
 			return nil
 		},
-	}, nil)
+	}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
