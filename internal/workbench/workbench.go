@@ -792,9 +792,12 @@ type State struct {
 	// page and body outlive a paint so wheel handling can use the last layout.
 	schemeBrowserOpen bool
 	scheme            schemeUI
-	// empty is the shared empty-state page the catalog sections paint.
-	empty       emptyStateUI
-	terminalPad terminalPad
+	// empty is the shared empty-state slots the catalog sections paint.
+	empty emptyStateUI
+	// sectionBodies are the catalog sections' declared slots, painted once the
+	// workbench page has laid them out.
+	sectionBodies sectionBodies
+	terminalPad   terminalPad
 	// terminalGutter is the per-line number/time strip; wallClock overrides the
 	// time source it stamps lines with.
 	terminalGutter terminalGutter

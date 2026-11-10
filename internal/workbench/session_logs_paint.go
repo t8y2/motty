@@ -825,10 +825,25 @@ func sessionLogFilterFor(id gfx.ID) sessionLogFilterMenu {
 	}
 }
 
-// paintSessionLogsWorkspace paints the page inside the section card.
-func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
+// sessionLogsSectionUI is what the session journal's declaration leaves for its
+// paint.
+type sessionLogsSectionUI struct {
+	search, timeSlot, statusSlot, protocolSlot, outcomeSlot, sortSlot, favoriteFilterBox ui.Box
+	moreButton, content, detailSlot, loadMore, emptySlot                                 ui.Box
+	condensed                                                                            bool
+	empty, sideDetail, detailOnly                                                        bool
+	// draw is the page hook that paints into these slots. It is kept so a paint
+	// does not build a closure for the hook.
+	draw func(*ui.DrawContext)
+}
+
+// declareSessionLogsWorkspace declares the session journal in the workbench
+// page: its header, search and filters, its table or empty state, and the list
+// of its last records.
+func (state *State) declareSessionLogsWorkspace(c ui.C) {
+	canvas := c.Canvas()
 	view, m, pal := &state.sessionLogs.view, &state.messages.SessionLogs, state.pal
-	theme := state.Theme()
+	bounds := state.catalogSectionBounds()
 	inner := max(bounds.Width-36, 0)
 	narrow := inner < sessionLogFullColumns
 	separateFilters := inner < 1260
@@ -849,122 +864,134 @@ func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas, bounds gfx.Rec
 	if separateFilters {
 		searchWidth = min(sessionLogSearchMost, max(sessionLogSearchLeast, inner-toolbarHeight-2*sessionLogToolbarGap))
 	}
-	var search, timeSlot, statusSlot, protocolSlot, outcomeSlot, sortSlot, favoriteFilterBox ui.Box
-	var moreButton ui.Box
-	var content, detailSlot, loadMore, emptySlot ui.Box
+	layout := &state.sectionBodies.sessionLogs
+	draw := layout.draw
+	*layout = sessionLogsSectionUI{condensed: condensed, empty: empty, sideDetail: sideDetail, detailOnly: detailOnly}
+	if draw == nil {
+		draw = func(d *ui.DrawContext) { state.paintSessionLogsWorkspace(d.Canvas) }
+	}
+	layout.draw = draw
 
-	state.drawSectionBody(canvas, bounds, func(c ui.C) {
-		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
-			ui.Row(c).Height(36).Gap(8).Items(ui.Center).Children(func() {
-				ui.Text(c, m.Title).FontSize(sessionLogTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
-				ui.Text(c, view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(min(inner*0.62, 360)).TextEnd().Ellipsis()
-				moreButton = ui.Slot(c).Size(30, 30)
-			})
-			if !narrow {
-				ui.Text(c, m.Description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).Ellipsis().MarginSides(0, 0, 8, 0)
+	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
+	body.Children(func() {
+		ui.Row(c).Height(36).Gap(8).Items(ui.Center).Children(func() {
+			ui.Text(c, m.Title).FontSize(sessionLogTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
+			ui.Text(c, view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(min(inner*0.62, 360)).TextEnd().Ellipsis()
+			layout.moreButton = ui.Slot(c).Size(30, 30)
+		})
+		if !narrow {
+			ui.Text(c, m.Description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).Ellipsis().MarginSides(0, 0, 8, 0)
+		}
+		ui.Row(c).Height(40).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
+			layout.search = ui.Slot(c).Size(searchWidth, toolbarHeight)
+			if !separateFilters {
+				ui.Spacer(c)
+				layout.timeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+				layout.statusSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+				layout.protocolSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+				layout.outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+				layout.sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+				layout.favoriteFilterBox = ui.Slot(c).Size(toolbarHeight, toolbarHeight)
+			} else {
+				ui.Spacer(c)
+				layout.favoriteFilterBox = ui.Slot(c).Size(toolbarHeight, toolbarHeight)
 			}
-			ui.Row(c).Height(40).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-				search = ui.Slot(c).Size(searchWidth, toolbarHeight)
-				if !separateFilters {
-					ui.Spacer(c)
-					timeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					statusSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					protocolSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					favoriteFilterBox = ui.Slot(c).Size(toolbarHeight, toolbarHeight)
-				} else {
-					ui.Spacer(c)
-					favoriteFilterBox = ui.Slot(c).Size(toolbarHeight, toolbarHeight)
+		})
+		if separateFilters {
+			ui.Row(c).Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
+				layout.timeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+				layout.statusSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+				layout.protocolSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+				if !stackedFilters {
+					layout.outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					layout.sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
 				}
 			})
-			if separateFilters {
+			if stackedFilters {
 				ui.Row(c).Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-					timeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					statusSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					protocolSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					if !stackedFilters {
-						outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-						sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					}
+					layout.outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					layout.sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
 				})
-				if stackedFilters {
-					ui.Row(c).Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-						outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-						sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					})
-				}
 			}
-			switch {
-			case empty:
-				descriptionColor := pal.muted
-				if view.emptyDanger {
-					descriptionColor = pal.danger
-				}
-				emptySlot = state.reserveEmptyPageWithColor(c, bounds, view.emptyTitle, view.emptyText, view.emptyAction, descriptionColor)
-			case sideDetail:
-				ui.Row(c).Grow(1).Basis(0).Gap(14).Children(func() {
-					content = ui.Slot(c).Grow(1).Basis(0)
-					detailSlot = ui.Slot(c).Width(min(sessionLogDetailWidth, inner*0.46))
-				})
-			case detailOnly:
-				detailSlot = ui.Slot(c).Grow(1).Basis(0)
-			default:
-				content = ui.Slot(c).Grow(1).Basis(0).MarginSides(4, 0, 0, 0)
+		}
+		switch {
+		case empty:
+			descriptionColor := pal.muted
+			if view.emptyDanger {
+				descriptionColor = pal.danger
 			}
-			ui.Divider(c).Background(pal.line)
-			ui.Row(c).Height(46).Gap(12).Items(ui.Center).Children(func() {
-				ui.Text(c, view.statusText).FontSize(metrics.FontSizeS).Color(state.sessionLogStatusColor()).Grow(1).Ellipsis()
-				if view.more {
-					loadMoreWidth, _ := toolbarButtonLayout(canvas, m.LoadMore, iconChevronDown, iconChevronDown, condensed)
-					loadMore = ui.Slot(c).Size(loadMoreWidth, toolbarHeight)
-				}
+			layout.emptySlot = state.reserveEmptyPageWithColor(c, bounds, view.emptyTitle, view.emptyText, view.emptyAction, descriptionColor)
+		case sideDetail:
+			ui.Row(c).Grow(1).Basis(0).Gap(14).Children(func() {
+				layout.content = ui.Slot(c).Grow(1).Basis(0)
+				layout.detailSlot = ui.Slot(c).Width(min(sessionLogDetailWidth, inner*0.46))
 			})
+		case detailOnly:
+			layout.detailSlot = ui.Slot(c).Grow(1).Basis(0)
+		default:
+			layout.content = ui.Slot(c).Grow(1).Basis(0).MarginSides(4, 0, 0, 0)
+		}
+		ui.Divider(c).Background(pal.line)
+		ui.Row(c).Height(46).Gap(12).Items(ui.Center).Children(func() {
+			ui.Text(c, view.statusText).FontSize(metrics.FontSizeS).Color(state.sessionLogStatusColor()).Grow(1).Ellipsis()
+			if view.more {
+				loadMoreWidth, _ := toolbarButtonLayout(canvas, m.LoadMore, iconChevronDown, iconChevronDown, condensed)
+				layout.loadMore = ui.Slot(c).Size(loadMoreWidth, toolbarHeight)
+			}
 		})
 	})
+	body.Clip().DrawOver(layout.draw)
+}
+
+// paintSessionLogsWorkspace paints the session journal's controls, table,
+// details and empty state into the slots its declaration left.
+func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas) {
+	view, m, pal := &state.sessionLogs.view, &state.messages.SessionLogs, state.pal
+	theme := state.Theme()
+	layout := &state.sectionBodies.sessionLogs
 
 	value := view.search.String()
-	components.PaintInputGroup(canvas, theme, search.Rect(), components.InputGroupSnapshot{
+	components.PaintInputGroup(canvas, theme, layout.search.Rect(), components.InputGroupSnapshot{
 		ID: hitSessionLogsSearch, Label: m.Search, Value: value, Placeholder: m.SearchPlaceholder,
 		NativeEditing: canvas.Focused() == hitSessionLogsSearch && value != "",
 		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
 	})
 	// The triggers' places are kept: the open menu opens under its own trigger
 	// in the frame's menu pass, outside the card's clip.
-	view.filterBounds[0], view.filterBounds[1], view.filterBounds[2] = timeSlot.Rect(), statusSlot.Rect(), protocolSlot.Rect()
-	view.filterBounds[3] = outcomeSlot.Rect()
-	view.filterBounds[4] = sortSlot.Rect()
-	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsTime, timeSlot.Rect(), sessionLogFilterTimeMenu)
-	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsStatus, statusSlot.Rect(), sessionLogFilterStatusMenu)
-	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsProtocol, protocolSlot.Rect(), sessionLogFilterProtocolMenu)
-	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsOutcome, outcomeSlot.Rect(), sessionLogFilterOutcomeMenu)
-	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsSort, sortSlot.Rect(), sessionLogFilterSortMenu)
-	state.paintSessionLogFavoriteFilter(canvas, favoriteFilterBox.Rect())
+	view.filterBounds[0], view.filterBounds[1], view.filterBounds[2] = layout.timeSlot.Rect(), layout.statusSlot.Rect(), layout.protocolSlot.Rect()
+	view.filterBounds[3] = layout.outcomeSlot.Rect()
+	view.filterBounds[4] = layout.sortSlot.Rect()
+	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsTime, layout.timeSlot.Rect(), sessionLogFilterTimeMenu)
+	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsStatus, layout.statusSlot.Rect(), sessionLogFilterStatusMenu)
+	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsProtocol, layout.protocolSlot.Rect(), sessionLogFilterProtocolMenu)
+	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsOutcome, layout.outcomeSlot.Rect(), sessionLogFilterOutcomeMenu)
+	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsSort, layout.sortSlot.Rect(), sessionLogFilterSortMenu)
+	state.paintSessionLogFavoriteFilter(canvas, layout.favoriteFilterBox.Rect())
 
-	view.moreBounds = moreButton.Rect()
+	view.moreBounds = layout.moreButton.Rect()
 	style := iconButtonQuiet
 	if view.moreMenu {
 		style = iconButtonActive
 	}
-	state.paintIconButton(canvas, hitSessionLogsMore, iconEllipsis, moreButton.Rect(), m.More, false, style, pal.surface)
+	state.paintIconButton(canvas, hitSessionLogsMore, iconEllipsis, layout.moreButton.Rect(), m.More, false, style, pal.surface)
 
 	switch {
-	case empty:
-		state.drawReservedEmptyPage(canvas, emptySlot, view.emptyIcon, hitSessionLogsClearFilters, view.emptyAction, true)
-	case sideDetail:
-		state.paintSessionLogTable(canvas, content.Rect())
-		state.paintSessionLogDetails(canvas, detailSlot.Rect(), false)
-	case detailOnly:
-		state.paintSessionLogDetails(canvas, detailSlot.Rect(), true)
+	case layout.empty:
+		state.drawReservedEmptyPage(canvas, layout.emptySlot, view.emptyIcon, hitSessionLogsClearFilters, view.emptyAction, true)
+	case layout.sideDetail:
+		state.paintSessionLogTable(canvas, layout.content.Rect())
+		state.paintSessionLogDetails(canvas, layout.detailSlot.Rect(), false)
+	case layout.detailOnly:
+		state.paintSessionLogDetails(canvas, layout.detailSlot.Rect(), true)
 	default:
-		state.paintSessionLogTable(canvas, content.Rect())
+		state.paintSessionLogTable(canvas, layout.content.Rect())
 	}
 	if view.more {
 		label := m.LoadMore
 		if view.loadingMore {
 			label = m.Loading
 		}
-		state.paintToolbarButtonIn(canvas, hitSessionLogsLoadMore, loadMore.Rect(), label, iconChevronDown, false, !view.loadingMore, condensed)
+		state.paintToolbarButtonIn(canvas, hitSessionLogsLoadMore, layout.loadMore.Rect(), label, iconChevronDown, false, !view.loadingMore, layout.condensed)
 	}
 	// A focus move an event handler asked for is honored by the next paint: a
 	// click has no return value to carry it, so it waits here for the one place

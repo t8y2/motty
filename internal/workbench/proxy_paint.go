@@ -8,9 +8,24 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
+// proxySectionUI is what the proxies page's declaration leaves for its paint.
+type proxySectionUI struct {
+	content, remove, edit, action, add, empty     ui.Box
+	removeWidth, editWidth, actionWidth, addWidth float32
+	removeIcon, editIcon, actionIcon, addIcon     uint8
+	actionLabel                                   string
+	condensed                                     bool
+	// draw is the page hook that paints into these slots. It is kept so a paint
+	// does not build a closure for the hook.
+	draw func(*ui.DrawContext)
+}
+
+// declareProxiesWorkspace declares the proxies page in the workbench page: its
+// header, its open/empty body and its footer. The buttons, the table and the
+// empty state's icon are painted into the slots it leaves.
+func (state *State) declareProxiesWorkspace(c ui.C) {
+	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
-	canAdd := state.sshHostCount() >= 2
 	selected, hasSelection := state.proxyByID(state.selectedProxyID)
 	actionLabel := messages.ProxyStart
 	actionIcon := uint8(iconPlay)
@@ -24,6 +39,7 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 		titleLeast = float32(220)
 		gap        = float32(10)
 	)
+	bounds := state.catalogSectionBounds()
 	labeled := toolbarButtonWidth(canvas, messages.ProxyRemove, false) + gap + toolbarButtonWidth(canvas, messages.ProxyEdit, false) +
 		gap + toolbarButtonWidth(canvas, actionLabel, false) + gap + toolbarButtonWidth(canvas, messages.ProxyAdd, true) + gap + titleLeast
 	condensed := labeled > bounds.Width-36
@@ -32,47 +48,65 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 
-	var content, remove, edit, action, add, empty ui.Box
-	state.drawSectionBody(canvas, bounds, func(c ui.C) {
-		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
-			ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
-				ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-					ui.Text(c, messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-					ui.Paragraph(c, messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
-				})
-				remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
-				edit = ui.Slot(c).Size(editWidth, toolbarHeight)
-				action = ui.Slot(c).Size(actionWidth, toolbarHeight)
-				add = ui.Slot(c).Size(addWidth, toolbarHeight)
+	view := &state.sectionBodies.proxies
+	draw := view.draw
+	*view = proxySectionUI{
+		removeWidth: removeWidth, editWidth: editWidth, actionWidth: actionWidth, addWidth: addWidth,
+		removeIcon: removeIcon, editIcon: editIcon, actionIcon: realActionIcon, addIcon: addIcon,
+		actionLabel: actionLabel, condensed: condensed,
+	}
+	if draw == nil {
+		draw = func(d *ui.DrawContext) { state.paintProxiesWorkspace(d.Canvas) }
+	}
+	view.draw = draw
+	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
+	body.Children(func() {
+		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
+			ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
+				ui.Text(c, messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+				ui.Paragraph(c, messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
-			if len(state.proxies) == 0 {
-				empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd)
-			} else {
-				content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+			view.remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
+			view.edit = ui.Slot(c).Size(editWidth, toolbarHeight)
+			view.action = ui.Slot(c).Size(actionWidth, toolbarHeight)
+			view.add = ui.Slot(c).Size(addWidth, toolbarHeight)
+		})
+		if len(state.proxies) == 0 {
+			view.empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd)
+		} else {
+			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+		}
+		ui.Divider(c).Background(pal.line)
+		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
+			ui.Text(c, state.proxyCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
+			if hasSelection {
+				ui.Text(c, state.proxyLabel(selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
 			}
-			ui.Divider(c).Background(pal.line)
-			ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
-				ui.Text(c, state.proxyCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
-				if hasSelection {
-					ui.Text(c, state.proxyLabel(selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
-				}
-			})
 		})
 	})
+	body.Clip().DrawOver(view.draw)
+}
 
-	state.paintToolbarButton(canvas, hitProxyRemove, remove.Rect().X, remove.Rect().Y, removeWidth, messages.ProxyRemove, removeIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitProxyEdit, edit.Rect().X, edit.Rect().Y, editWidth, messages.ProxyEdit, editIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitProxyStartStop, action.Rect().X, action.Rect().Y, actionWidth, actionLabel, realActionIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitProxyAdd, add.Rect().X, add.Rect().Y, addWidth, messages.ProxyAdd, addIcon, true, canAdd, condensed)
+// paintProxiesWorkspace paints the proxies page's buttons, table and empty state
+// into the slots its declaration left.
+func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas) {
+	view, messages := &state.sectionBodies.proxies, state.messages
+	_, hasSelection := state.proxyByID(state.selectedProxyID)
+	canAdd := state.sshHostCount() >= 2
+
+	state.paintToolbarButton(canvas, hitProxyRemove, view.remove.Rect().X, view.remove.Rect().Y, view.removeWidth, messages.ProxyRemove, view.removeIcon, false, hasSelection, view.condensed)
+	state.paintToolbarButton(canvas, hitProxyEdit, view.edit.Rect().X, view.edit.Rect().Y, view.editWidth, messages.ProxyEdit, view.editIcon, false, hasSelection, view.condensed)
+	state.paintToolbarButton(canvas, hitProxyStartStop, view.action.Rect().X, view.action.Rect().Y, view.actionWidth, view.actionLabel, view.actionIcon, false, hasSelection, view.condensed)
+	state.paintToolbarButton(canvas, hitProxyAdd, view.add.Rect().X, view.add.Rect().Y, view.addWidth, messages.ProxyAdd, view.addIcon, true, canAdd, view.condensed)
 
 	if len(state.proxies) == 0 {
-		state.drawReservedEmptyPage(canvas, empty, iconGlobe, hitProxyAdd, messages.ProxyAdd, canAdd)
+		state.drawReservedEmptyPage(canvas, view.empty, iconGlobe, hitProxyAdd, messages.ProxyAdd, canAdd)
 		return
 	}
 	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 120}, {Width: 0}}
 	headings := [...]string{messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnStatus, messages.ProxyColumnRoute}
 	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), content.Rect(), columns[:])
+	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
 	table.Header(headings[:])
 	for _, route := range state.proxies {
 		if table.RowAt(hitProxyRowList, int(route.ID), route.cells[:], route.ID == state.selectedProxyID) && state.modal == modalNone {

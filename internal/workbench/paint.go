@@ -284,28 +284,19 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		canvas.Clip(workspace)
 		if !state.devPaintPage(canvas, workspace) {
 			switch state.activeSection {
-			case sectionWorkspaces:
-				state.paintWorkspaceLibrary(canvas, workspace)
 			case sectionDashboard:
 				state.paintDashboard(canvas, workspace)
-			case sectionKeys:
-				state.paintKeysWorkspace(canvas, workspace)
-			case sectionForwards:
-				state.paintForwardsWorkspace(canvas, workspace)
-			case sectionProxies:
-				state.paintProxiesWorkspace(canvas, workspace)
 			case sectionSettings:
 				state.paintSettingsDetails(canvas)
-			case sectionKnownHosts:
-				state.paintKnownHostsWorkspace(canvas, workspace)
 			case sectionNotes:
 				state.paintNotesWorkspace(canvas, workspace)
-			case sectionSnippets:
-				state.paintSnippetsWorkspace(canvas, workspace)
-			case sectionSessionLogs:
-				state.paintSessionLogsWorkspace(canvas, workspace)
 			default:
-				state.paintHostsWorkspace(canvas, workspace)
+				// The other catalog sections are painted by their own
+				// declarations in the page; only the hosts page is left for the
+				// window to paint here.
+				if state.paintsHostsPage() {
+					state.paintHostsWorkspace(canvas, workspace)
+				}
 			}
 		}
 		canvas.Unclip()
@@ -547,6 +538,10 @@ func (state *State) declareShell(c ui.C) {
 			}
 			workspace.Children(func() { state.devDeclareWorkspace(c) })
 			workspace.Children(func() { state.declareDashboardEmpty(c) })
+			// The catalog sections are part of this page too: each declares its
+			// body here, beside its own slots, and paints the rows and buttons it
+			// lays out once the page has placed them.
+			workspace.Children(func() { state.declareCatalogSection(c) })
 			chrome.workspaceSlot = workspace
 		})
 	})

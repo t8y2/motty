@@ -7,9 +7,24 @@ import (
 	"motty/internal/portforward"
 )
 
-func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
+// forwardSectionUI is what the forwards page's declaration leaves for its paint.
+type forwardSectionUI struct {
+	content, remove, edit, action, add, empty     ui.Box
+	removeWidth, editWidth, actionWidth, addWidth float32
+	removeIcon, editIcon, actionIcon, addIcon     uint8
+	actionLabel                                   string
+	condensed                                     bool
+	// draw is the page hook that paints into these slots. It is kept so a paint
+	// does not build a closure for the hook.
+	draw func(*ui.DrawContext)
+}
+
+// declareForwardsWorkspace declares the forwards page in the workbench page:
+// its header, its open/empty body and its footer. The buttons, the table and the
+// empty state's icon are painted into the slots it leaves.
+func (state *State) declareForwardsWorkspace(c ui.C) {
+	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
-	canAdd := state.sshHostCount() > 0
 	selected, hasSelection := state.forwardByID(state.selectedForwardID)
 	actionLabel := messages.ForwardStart
 	actionIcon := uint8(iconPlay)
@@ -24,6 +39,7 @@ func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 		titleLeast = float32(220)
 		gap        = float32(10)
 	)
+	bounds := state.catalogSectionBounds()
 	labeled := toolbarButtonWidth(canvas, messages.ForwardRemove, false) + gap + toolbarButtonWidth(canvas, messages.ForwardEdit, false) +
 		gap + toolbarButtonWidth(canvas, actionLabel, false) + gap + toolbarButtonWidth(canvas, messages.ForwardAdd, true) + gap + titleLeast
 	condensed := labeled > bounds.Width-36
@@ -35,42 +51,59 @@ func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	if selected.lastError != "" {
 		detailColor = pal.danger
 	}
-
-	var content, remove, edit, action, add, empty ui.Box
-	state.drawSectionBody(canvas, bounds, func(c ui.C) {
-		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
-			ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
-				ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-					ui.Text(c, messages.ForwardTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-					ui.Paragraph(c, messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
-				})
-				remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
-				edit = ui.Slot(c).Size(editWidth, toolbarHeight)
-				action = ui.Slot(c).Size(actionWidth, toolbarHeight)
-				add = ui.Slot(c).Size(addWidth, toolbarHeight)
+	view := &state.sectionBodies.forwards
+	draw := view.draw
+	*view = forwardSectionUI{
+		removeWidth: removeWidth, editWidth: editWidth, actionWidth: actionWidth, addWidth: addWidth,
+		removeIcon: removeIcon, editIcon: editIcon, actionIcon: realActionIcon, addIcon: addIcon,
+		actionLabel: actionLabel, condensed: condensed,
+	}
+	if draw == nil {
+		draw = func(d *ui.DrawContext) { state.paintForwardsWorkspace(d.Canvas) }
+	}
+	view.draw = draw
+	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
+	body.Children(func() {
+		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
+			ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
+				ui.Text(c, messages.ForwardTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+				ui.Paragraph(c, messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
-			if len(state.forwards) == 0 {
-				empty = state.reserveEmptyPage(c, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd)
-			} else {
-				content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+			view.remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
+			view.edit = ui.Slot(c).Size(editWidth, toolbarHeight)
+			view.action = ui.Slot(c).Size(actionWidth, toolbarHeight)
+			view.add = ui.Slot(c).Size(addWidth, toolbarHeight)
+		})
+		if len(state.forwards) == 0 {
+			view.empty = state.reserveEmptyPage(c, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd)
+		} else {
+			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+		}
+		ui.Divider(c).Background(pal.line)
+		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
+			ui.Text(c, state.forwardCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(124)
+			if hasSelection && selected.detail != "" {
+				ui.Text(c, selected.detail).FontSize(metrics.FontSizeS).Color(detailColor).Grow(1)
 			}
-			ui.Divider(c).Background(pal.line)
-			ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
-				ui.Text(c, state.forwardCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(124)
-				if hasSelection && selected.detail != "" {
-					ui.Text(c, selected.detail).FontSize(metrics.FontSizeS).Color(detailColor).Grow(1)
-				}
-			})
 		})
 	})
+	body.Clip().DrawOver(view.draw)
+}
 
-	state.paintToolbarButton(canvas, hitForwardRemove, remove.Rect().X, remove.Rect().Y, removeWidth, messages.ForwardRemove, removeIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitForwardEdit, edit.Rect().X, edit.Rect().Y, editWidth, messages.ForwardEdit, editIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitForwardStartStop, action.Rect().X, action.Rect().Y, actionWidth, actionLabel, realActionIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitForwardAdd, add.Rect().X, add.Rect().Y, addWidth, messages.ForwardAdd, addIcon, true, canAdd, condensed)
+// paintForwardsWorkspace paints the forwards page's buttons, table and empty
+// state into the slots its declaration left.
+func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas) {
+	view, messages := &state.sectionBodies.forwards, state.messages
+	_, hasSelection := state.forwardByID(state.selectedForwardID)
+	canAdd := state.sshHostCount() > 0
+
+	state.paintToolbarButton(canvas, hitForwardRemove, view.remove.Rect().X, view.remove.Rect().Y, view.removeWidth, messages.ForwardRemove, view.removeIcon, false, hasSelection, view.condensed)
+	state.paintToolbarButton(canvas, hitForwardEdit, view.edit.Rect().X, view.edit.Rect().Y, view.editWidth, messages.ForwardEdit, view.editIcon, false, hasSelection, view.condensed)
+	state.paintToolbarButton(canvas, hitForwardStartStop, view.action.Rect().X, view.action.Rect().Y, view.actionWidth, view.actionLabel, view.actionIcon, false, hasSelection, view.condensed)
+	state.paintToolbarButton(canvas, hitForwardAdd, view.add.Rect().X, view.add.Rect().Y, view.addWidth, messages.ForwardAdd, view.addIcon, true, canAdd, view.condensed)
 
 	if len(state.forwards) == 0 {
-		state.drawReservedEmptyPage(canvas, empty, iconForward, hitForwardAdd, messages.ForwardAdd, canAdd)
+		state.drawReservedEmptyPage(canvas, view.empty, iconForward, hitForwardAdd, messages.ForwardAdd, canAdd)
 		return
 	}
 	columns := [...]components.TableColumn{{Width: 180}, {Width: 160}, {Width: 170}, {Width: 210}, {Width: 0}}
@@ -82,7 +115,7 @@ func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 		messages.ForwardColumnStatus,
 	}
 	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), content.Rect(), columns[:])
+	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
 	table.Header(headings[:])
 	for index := range state.forwards {
 		forward := &state.forwards[index]

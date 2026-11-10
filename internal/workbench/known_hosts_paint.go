@@ -6,11 +6,29 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
+// knownHostsSectionUI is what the known-hosts page's declaration leaves for its
+// paint.
+type knownHostsSectionUI struct {
+	search, content, pagination, refresh, retrust, remove, emptySlot ui.Box
+	refreshWidth, retrustWidth, deleteWidth                          float32
+	refreshIcon, retrustIcon, deleteIcon                             uint8
+	condensed                                                        bool
+	empty                                                            bool
+	emptyIcon                                                        uint8
+	// draw is the page hook that paints into these slots. It is kept so a paint
+	// does not build a closure for the hook.
+	draw func(*ui.DrawContext)
+}
+
+// declareKnownHostsWorkspace declares the known-hosts page in the workbench
+// page: its header, its search row, its table or empty state, and its footer.
+// The checks are slots over the table's first column.
+func (state *State) declareKnownHostsWorkspace(c ui.C) {
 	state.syncKnownHostsVisible()
+	canvas := c.Canvas()
 	view, messages, pal := &state.knownHosts, state.messages, state.pal
+	bounds := state.catalogSectionBounds()
 	view.checks = [knownHostsPageSize]ui.Box{}
-	value := view.search.String()
 	// The search box keeps the least width it works at and the buttons keep their
 	// labels while the row holds both; a narrower card shows their icons alone,
 	// whose tooltips name them.
@@ -42,58 +60,75 @@ func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect
 	case len(view.visible) == 0:
 		emptyTitle, emptyDescription, emptyIconKind = messages.KnownHostsNoMatches, messages.KnownHostsNoMatchesSub, iconSearch
 	}
-
-	var search, content, pagination, refresh, retrust, remove, emptySlot ui.Box
-	state.drawSectionBody(canvas, bounds, func(c ui.C) {
-		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
-			ui.Column(c).MarginSides(4, 0, 12, 0).Gap(3).Children(func() {
-				ui.Text(c, messages.KnownHostsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-				ui.Paragraph(c, messages.KnownHostsDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
-			})
-			ui.Row(c).Height(40).Gap(gap).Items(ui.Center).Children(func() {
-				search = ui.Slot(c).Grow(1).MaxWidth(470).MinWidth(searchLeast).Height(40)
-				ui.Spacer(c)
-				refresh = ui.Slot(c).Size(refreshWidth, toolbarHeight)
-				retrust = ui.Slot(c).Size(retrustWidth, toolbarHeight)
-				remove = ui.Slot(c).Size(deleteWidth, toolbarHeight)
-			})
-			if empty {
-				emptySlot = state.reserveEmptyPageWithColor(c, bounds, emptyTitle, emptyDescription, "", emptyDescriptionColor)
-			} else {
-				content = ui.Slot(c).Grow(1).MarginSides(14, 0, 0, 0)
-				state.declareKnownHostsChecks(c, content)
+	layout := &state.sectionBodies.knownHosts
+	draw := layout.draw
+	*layout = knownHostsSectionUI{
+		refreshWidth: refreshWidth, retrustWidth: retrustWidth, deleteWidth: deleteWidth,
+		refreshIcon: refreshIcon, retrustIcon: retrustIcon, deleteIcon: deleteIcon,
+		condensed: condensed, empty: empty, emptyIcon: emptyIconKind,
+	}
+	if draw == nil {
+		draw = func(d *ui.DrawContext) { state.paintKnownHostsWorkspace(d.Canvas) }
+	}
+	layout.draw = draw
+	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
+	body.Children(func() {
+		ui.Column(c).MarginSides(4, 0, 12, 0).Gap(3).Children(func() {
+			ui.Text(c, messages.KnownHostsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+			ui.Paragraph(c, messages.KnownHostsDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+		})
+		ui.Row(c).Height(40).Gap(gap).Items(ui.Center).Children(func() {
+			layout.search = ui.Slot(c).Grow(1).MaxWidth(470).MinWidth(searchLeast).Height(40)
+			ui.Spacer(c)
+			layout.refresh = ui.Slot(c).Size(refreshWidth, toolbarHeight)
+			layout.retrust = ui.Slot(c).Size(retrustWidth, toolbarHeight)
+			layout.remove = ui.Slot(c).Size(deleteWidth, toolbarHeight)
+		})
+		if empty {
+			layout.emptySlot = state.reserveEmptyPageWithColor(c, bounds, emptyTitle, emptyDescription, "", emptyDescriptionColor)
+		} else {
+			layout.content = ui.Slot(c).Grow(1).MarginSides(14, 0, 0, 0)
+			state.declareKnownHostsChecks(c, layout.content)
+		}
+		ui.Divider(c).Background(pal.line)
+		// The footer's columns narrow with the card so the status keeps its room.
+		countWidth := min(168, (bounds.Width-36)*0.30)
+		selectionWidth := min(138, (bounds.Width-36)*0.22)
+		ui.Row(c).Height(49).Gap(12).Items(ui.Center).Children(func() {
+			ui.Text(c, view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(countWidth).Ellipsis()
+			ui.Text(c, view.selectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(selectionWidth).Ellipsis()
+			ui.Text(c, view.status).FontSize(metrics.FontSizeS).Color(statusColor).Grow(1).Ellipsis()
+			if paginated {
+				layout.pagination = ui.Slot(c).Size(242, 30)
 			}
-			ui.Divider(c).Background(pal.line)
-			// The footer's columns narrow with the card so the status keeps its room.
-			countWidth := min(168, (bounds.Width-36)*0.30)
-			selectionWidth := min(138, (bounds.Width-36)*0.22)
-			ui.Row(c).Height(49).Gap(12).Items(ui.Center).Children(func() {
-				ui.Text(c, view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(countWidth).Ellipsis()
-				ui.Text(c, view.selectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(selectionWidth).Ellipsis()
-				ui.Text(c, view.status).FontSize(metrics.FontSizeS).Color(statusColor).Grow(1).Ellipsis()
-				if paginated {
-					pagination = ui.Slot(c).Size(242, 30)
-				}
-			})
 		})
 	})
+	body.Clip().DrawOver(layout.draw)
+}
 
-	state.paintToolbarButton(canvas, hitKnownHostsRefresh, refresh.Rect().X, refresh.Rect().Y, refreshWidth, messages.KnownHostsRefresh, refreshIcon, false, true, condensed)
-	state.paintToolbarButton(canvas, hitKnownHostsRetrust, retrust.Rect().X, retrust.Rect().Y, retrustWidth, messages.KnownHostsRetrust, retrustIcon, false, view.selected > 0, condensed)
-	state.paintToolbarButton(canvas, hitKnownHostsDelete, remove.Rect().X, remove.Rect().Y, deleteWidth, messages.KnownHostsDelete, deleteIcon, false, view.selected > 0, condensed)
-	components.PaintInputGroup(canvas, state.Theme(), search.Rect(), components.InputGroupSnapshot{
+// paintKnownHostsWorkspace paints the known-hosts page's buttons, search field,
+// table and empty state into the slots its declaration left.
+func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas) {
+	view, messages := &state.knownHosts, state.messages
+	layout := &state.sectionBodies.knownHosts
+	value := view.search.String()
+
+	state.paintToolbarButton(canvas, hitKnownHostsRefresh, layout.refresh.Rect().X, layout.refresh.Rect().Y, layout.refreshWidth, messages.KnownHostsRefresh, layout.refreshIcon, false, true, layout.condensed)
+	state.paintToolbarButton(canvas, hitKnownHostsRetrust, layout.retrust.Rect().X, layout.retrust.Rect().Y, layout.retrustWidth, messages.KnownHostsRetrust, layout.retrustIcon, false, view.selected > 0, layout.condensed)
+	state.paintToolbarButton(canvas, hitKnownHostsDelete, layout.remove.Rect().X, layout.remove.Rect().Y, layout.deleteWidth, messages.KnownHostsDelete, layout.deleteIcon, false, view.selected > 0, layout.condensed)
+	components.PaintInputGroup(canvas, state.Theme(), layout.search.Rect(), components.InputGroupSnapshot{
 		ID: hitKnownHostsSearch, Label: messages.NavSearch, Value: value, Placeholder: messages.KnownHostsSearchPlaceholder,
 		NativeEditing: canvas.Focused() == hitKnownHostsSearch && value != "",
 		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
 	})
 
-	if empty {
-		state.drawReservedEmptyPage(canvas, emptySlot, emptyIconKind, gfx.ID{}, "", false)
+	if layout.empty {
+		state.drawReservedEmptyPage(canvas, layout.emptySlot, layout.emptyIcon, gfx.ID{}, "", false)
 	} else {
-		state.paintKnownHostsTable(canvas, content.Rect())
+		state.paintKnownHostsTable(canvas, layout.content.Rect())
 	}
-	if paginated {
-		bar := components.BeginPagination(canvas, state.Theme(), pagination.Rect())
+	if layout.pagination.Valid() {
+		bar := components.BeginPagination(canvas, state.Theme(), layout.pagination.Rect())
 		bar.AddPrevious(hitKnownHostsPrevious, messages.KnownHostsPrevious, view.page == 0)
 		bar.AddPage(gfx.ID{}, view.pageText, true)
 		pages := (len(view.visible) + knownHostsPageSize - 1) / knownHostsPageSize

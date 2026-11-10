@@ -11,17 +11,55 @@ const (
 	emptyStateIconSize    = float32(24)
 	emptyStateTitleSize   = float32(17)
 	emptyStateActionWidth = float32(160)
-
-	// catalogSectionRoot names the shared page a catalog section declares its
-	// body in. One page is enough for the same reason: the sections are
-	// exclusive.
-	catalogSectionRoot = "catalog-section"
 )
 
+// sectionBodies holds what each catalog section's last declaration left for its
+// paint. Only one catalog section is on show at a time, so one body is declared
+// per paint and the rest keep their last, stale slots, which nothing reads.
+type sectionBodies struct {
+	forwards         forwardSectionUI
+	keys             keysSectionUI
+	knownHosts       knownHostsSectionUI
+	proxies          proxySectionUI
+	snippets         snippetsSectionUI
+	sessionLogs      sessionLogsSectionUI
+	workspaceLibrary workspaceLibrarySectionUI
+}
+
+// catalogSectionBounds is the room the workspace slot gives a catalog section:
+// the same rectangle hosts and dashboard compute before the page lays the slot
+// out. A section body only needs its width and height to decide its rows and
+// padding; its slots carry their own place once the page has laid them out.
+func (state *State) catalogSectionBounds() gfx.Rect {
+	width, height := state.hostsWorkspaceSize()
+	return gfx.Rect{Width: width, Height: height}
+}
+
+// declareCatalogSection declares the active catalog section's body in the
+// workbench page's workspace slot. The sections are exclusive; a section that
+// does not use this path (hosts, the dashboard and notes) declares itself.
+func (state *State) declareCatalogSection(c ui.C) {
+	switch state.activeSection {
+	case sectionWorkspaces:
+		state.declareWorkspaceLibrary(c)
+	case sectionKeys:
+		state.declareKeysWorkspace(c)
+	case sectionForwards:
+		state.declareForwardsWorkspace(c)
+	case sectionProxies:
+		state.declareProxiesWorkspace(c)
+	case sectionKnownHosts:
+		state.declareKnownHostsWorkspace(c)
+	case sectionSnippets:
+		state.declareSnippetsWorkspace(c)
+	case sectionSessionLogs:
+		state.declareSessionLogsWorkspace(c)
+	}
+}
+
 // emptyStateUI holds what an empty state's last declaration left for its icon
-// and action, which are painted by hand, and the page a catalog section declares
-// its own body in. The empty state itself is declared in that body: it is a
-// region of a section, not a page of its own.
+// and action, which are painted by hand. The empty state itself is declared in
+// the section's body: it is a region of a section, not a page of its own.
 type emptyStateUI struct {
 	bounds gfx.Rect
 	title  string
@@ -30,21 +68,6 @@ type emptyStateUI struct {
 	color  gfx.Color
 	icon   ui.Box
 	button ui.Box
-	// bodyPage is the shared page the catalog sections declare their own body
-	// in, made the first time one paints.
-	bodyPage *ui.Page
-}
-
-// drawSectionBody draws a catalog section's body in bounds, declaring it with a
-// page so the section can reserve its empty-state slot with ui.Slot instead of
-// a Frame. Only one catalog section is painted at a time, so one page serves
-// them all, as it does for the empty state.
-func (state *State) drawSectionBody(canvas *gfx.Canvas, bounds gfx.Rect, view func(ui.C)) {
-	e := &state.empty
-	if e.bodyPage == nil {
-		e.bodyPage = ui.NewPage(ui.PageConfig{Root: catalogSectionRoot, Theme: &state.theme})
-	}
-	e.bodyPage.Draw(canvas, bounds, view)
 }
 
 // reserveEmptyPage declares the empty state as the growing region of the
