@@ -298,6 +298,80 @@ func TestPingSendsNothingWhileAnEarlierProbeIsUnanswered(t *testing.T) {
 	}
 }
 
+func TestVerifyNotConnected(t *testing.T) {
+	conn := &Conn{}
+	if err := conn.Verify(context.Background()); err == nil {
+		t.Fatal("expected error when verifying a disconnected conn")
+	}
+}
+
+func TestVerifyKeepsAConnectionThatStillAnswers(t *testing.T) {
+	var requestType string
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.request = func(_ *ssh.ServerConn, request *ssh.Request) {
+			requestType = request.Type
+			_ = request.Reply(true, nil)
+		}
+	})
+	harness := connect(t, server)
+	if err := harness.conn.Verify(context.Background()); err != nil {
+		t.Fatalf("Verify failed: %v", err)
+	}
+	if requestType != keepAliveRequest {
+		t.Fatalf("Verify sent %q, want %q", requestType, keepAliveRequest)
+	}
+	if status := harness.conn.Status(); status.Phase != PhaseConnected || status.Err != nil {
+		t.Fatalf("status after a successful verify = %+v", status)
+	}
+}
+
+// A link change is exactly the case where the transport is gone without a
+// close: nothing answers, and the connection has to end so a reconnect starts.
+func TestVerifyEndsAConnectionTheServerStopsAnswering(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.request = func(_ *ssh.ServerConn, _ *ssh.Request) {}
+	})
+	harness := connect(t, server)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := harness.conn.Verify(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Verify error = %v, want deadline exceeded", err)
+	}
+	status := harness.phase(PhaseClosed)
+	if !errors.Is(status.Err, ErrDisconnected) {
+		t.Fatalf("error = %v, want ErrDisconnected", status.Err)
+	}
+	if errors.Is(status.Err, ErrKeepAliveTimeout) {
+		t.Fatalf("a link check reported a keepalive timeout: %v", status.Err)
+	}
+}
+
+func TestVerifySendsNothingWhileAnEarlierProbeIsUnanswered(t *testing.T) {
+	var received atomic.Int32
+	held := make(chan *ssh.Request, 4)
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.request = func(_ *ssh.ServerConn, request *ssh.Request) {
+			received.Add(1)
+			held <- request
+		}
+	})
+	harness := connect(t, server)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := harness.conn.Ping(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Ping error = %v, want deadline exceeded", err)
+	}
+	if err := harness.conn.Verify(context.Background()); !errors.Is(err, ErrPingPending) {
+		t.Fatalf("Verify while a probe is unanswered = %v, want ErrPingPending", err)
+	}
+	if got := received.Load(); got != 1 {
+		t.Fatalf("server received %d keepalive requests, want 1", got)
+	}
+}
+
 func BenchmarkKeepAliveDisabled(b *testing.B) {
 	conn := Conn{}
 	b.ReportAllocs()
