@@ -214,19 +214,23 @@ type hostMerge struct {
 // mergeKey is what makes two hosts one host for mergeSameHosts: the destination
 // and the name, as in sameHost.
 type mergeKey struct {
-	protocol uint8
-	terminal uint8
-	address  string
-	user     string
-	port     uint16
-	viaSSH   bool
-	label    string
+	protocol    uint8
+	terminal    uint8
+	address     string
+	user        string
+	port        uint16
+	viaSSH      bool
+	vncAuthOnly bool
+	label       string
 }
 
 func mergeKeyOf(host Host) mergeKey {
 	key := mergeKey{protocol: uint8(host.Protocol), terminal: uint8(host.Terminal), address: host.Address, label: strings.ToLower(strings.TrimSpace(host.Label))}
 	if host.Protocol != protocolSerial {
 		key.user, key.port, key.viaSSH = host.User, host.Port, host.ViaSSH
+	}
+	if host.Protocol == protocolVNC {
+		key.vncAuthOnly = host.VNCAuthOnly
 	}
 	return key
 }

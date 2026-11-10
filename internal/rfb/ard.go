@@ -79,6 +79,8 @@ func readARDParameters(reader io.Reader) (ardParameters, error) {
 // with AES-128-ECB under MD5 of the shared secret, followed by its own public
 // key. The RFB stream after it stays in the clear, so Encrypted remains false.
 func (client *Client) authenticateARD(config Config) error {
+	client.Authentication = "user-password"
+	client.Cipher = "AES-128-ECB"
 	parameters, err := readARDParameters(client.r)
 	if err != nil {
 		return err

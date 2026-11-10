@@ -45,6 +45,12 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	config := rfb.Config{
 		Username: opts.Username, Password: opts.Password,
 		AskPassword: opts.AskPassword, AskCredentials: opts.AskCredentials,
+		AllowUnencrypted: opts.AllowUnencrypted, ServerName: opts.ServerName,
+	}
+	if opts.VerifyCertificate != nil {
+		config.VerifyCertificate = func(der []byte) error {
+			return opts.VerifyCertificate(address, der)
+		}
 	}
 	if opts.VerifyServerKey != nil {
 		config.VerifyServerKey = func(publicKeyDER []byte) error {
@@ -64,7 +70,12 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	}
 	session := &Session{client: client, opts: opts, done: make(chan struct{})}
 	session.frame = desktop.NewFrame(opts.Notify)
-	session.info = desktop.Info{Protocol: "VNC", Name: client.Name, Encrypted: opts.Encrypted || client.Encrypted}
+	session.info = desktop.Info{
+		Protocol: "VNC", Name: client.Name, Encrypted: opts.Encrypted || client.Encrypted,
+		ProtocolEncrypted: client.Encrypted, Security: client.SecurityMode,
+		Authentication: client.Authentication, Cipher: client.Cipher, TLSVersion: client.TLSVersion,
+		SecurityTypes: client.SecurityTypes, SecuritySubtypes: client.SecuritySubtypes,
+	}
 	go session.run(conn)
 	return session, nil
 }

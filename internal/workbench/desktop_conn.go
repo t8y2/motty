@@ -125,6 +125,14 @@ func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Se
 		options.Username = host.User
 	}
 	options.AskCredentials = request.AskCredentials
+	options.AllowUnencrypted = host.VNCAuthOnly
+	options.ServerName = host.Address
+	if request.Verify != nil {
+		typedAddress := net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))
+		options.VerifyCertificate = func(_ string, der []byte) error {
+			return request.Verify(typedAddress, der)
+		}
+	}
 	if request.VerifyServerKey != nil {
 		typedAddress := net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))
 		options.VerifyServerKey = func(_ string, publicKeyDER []byte) error {
@@ -170,6 +178,7 @@ type desktopConn struct {
 	certs        *pins.Store
 	identityFile string
 	trusted      map[string]bool
+	verifiedKey  sshconn.HostKeyInfo
 	certAnswers  chan certReply
 	certAsking   bool
 	certAsked    int
@@ -215,12 +224,15 @@ func (conn *desktopConn) endpoint() sshconn.Endpoint {
 // certReply is the user's answer to a certificate question.
 type certReply struct{ accept, save bool }
 
-// verifyCertificate is the question an RDP server's certificate raises
+// verifyCertificate is the question a desktop server's certificate raises
 // mid-handshake. A certificate the user trusted before, as the same server,
 // passes; a new one, or a changed one, waits for the user, and a refusal ends
 // the connection. It blocks until the question is answered or the connection
 // cancelled.
 func (conn *desktopConn) verifyCertificate(address string, der []byte) error {
+	if conn.request.Host.Protocol == protocolVNC {
+		return conn.verifyIdentity(pins.Endpoint{Protocol: pins.VNC, Address: address}, vncCertificateType, der)
+	}
 	return conn.verifyIdentity(pins.Endpoint{Protocol: pins.RDP, Address: address}, rdpCertificateType, der)
 }
 
@@ -231,12 +243,14 @@ func (conn *desktopConn) verifyServerKey(address string, publicKeyDER []byte) er
 func (conn *desktopConn) verifyIdentity(endpoint pins.Endpoint, keyType string, der []byte) error {
 	fingerprint := pins.Fingerprint(der)
 	trustedName := endpoint.String() + "\x00" + fingerprint
+	info := sshconn.HostKeyInfo{Address: endpoint.Address, Type: keyType, Fingerprint: fingerprint, File: conn.identityFile}
 	conn.mu.Lock()
-	known := conn.trusted[trustedName]
-	conn.mu.Unlock()
-	if known {
+	if conn.trusted[trustedName] {
+		conn.verifiedKey = info
+		conn.mu.Unlock()
 		return nil
 	}
+	conn.mu.Unlock()
 	var previous string
 	if conn.certs != nil {
 		pinned, err := conn.certs.Lookup(endpoint)
@@ -246,12 +260,12 @@ func (conn *desktopConn) verifyIdentity(endpoint pins.Endpoint, keyType string, 
 		if pinned == fingerprint {
 			conn.mu.Lock()
 			conn.trusted[trustedName] = true
+			conn.verifiedKey = info
 			conn.mu.Unlock()
 			return nil
 		}
 		previous = pinned
 	}
-	info := sshconn.HostKeyInfo{Address: endpoint.Address, Type: keyType, Fingerprint: fingerprint, File: conn.identityFile}
 	if previous != "" {
 		info.Known = []string{previous}
 		if conn.request.Host.Protocol == protocolVNC {
@@ -296,14 +310,27 @@ func (conn *desktopConn) verifyIdentity(endpoint pins.Endpoint, keyType string, 
 	}
 	conn.mu.Lock()
 	conn.trusted[trustedName] = true
+	conn.verifiedKey = info
 	conn.mu.Unlock()
 	return nil
+}
+
+func (conn *desktopConn) verifiedServerIdentity() sshconn.HostKeyInfo {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	return conn.verifiedKey
 }
 
 // rdpCertificateType is what the host-key dialog calls an RDP server's key.
 const rdpCertificateType = "RDP certificate (X.509)"
 
 const vncServerKeyType = "VNC server key (RSA)"
+
+const vncCertificateType = "VNC certificate (X.509)"
+
+func vncIdentityKind(kind string) bool {
+	return kind == vncServerKeyType || kind == vncCertificateType
+}
 
 // startDirect begins dialing the VNC server.
 func (conn *desktopConn) startDirect() { go conn.run() }
@@ -385,6 +412,11 @@ func (conn *desktopConn) run() {
 	var session desktop.Session
 	var err error
 	for {
+		// Trust survives an authentication retry, but the displayed identity
+		// must come from this handshake, which may use a different security mode.
+		conn.mu.Lock()
+		conn.verifiedKey = sshconn.HostKeyInfo{}
+		conn.mu.Unlock()
 		session, err = conn.open(conn.ctx, conn.request)
 		if !isDesktopAuthFailure(err) || conn.ctx.Err() != nil {
 			break

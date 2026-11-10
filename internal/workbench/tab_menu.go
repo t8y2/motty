@@ -41,6 +41,7 @@ var (
 	hitTabMenuHideBars   = tree.ID(tabMenuHits, "tab-menu-hide-bars")
 	hitTabMenuFullscreen = tree.ID(tabMenuHits, "tab-menu-fullscreen")
 	hitTabMenuLatency    = tree.ID(tabMenuHits, "tab-menu-latency")
+	hitTabMenuSecurity   = tree.ID(tabMenuHits, "tab-menu-security")
 )
 
 // The rename dialog's identities, after the menu's.
@@ -193,6 +194,9 @@ func (state *State) paintTabMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	// bar, which a host may have asked to hide: the menu holds them either way.
 	if hasSession && session.desk != nil {
 		desktop := messages.Desktop
+		if session.host.Protocol == protocolVNC {
+			rows.add(components.ContextMenuItem{ID: hitTabMenuSecurity, Label: desktop.SecurityDetails, Icon: icon(iconDesktop)})
+		}
 		rows.add(components.ContextMenuItem{ID: hitTabMenuFit, Label: desktop.Fit, Icon: icon(iconDesktop), Kind: components.ContextMenuRadio, Selected: session.desk.fit})
 		rows.add(components.ContextMenuItem{ID: hitTabMenuActual, Label: desktop.Actual, Icon: icon(iconGrid2x2), Kind: components.ContextMenuRadio, Selected: !session.desk.fit})
 		rows.add(components.ContextMenuItem{ID: hitTabMenuCtrlAltDel, Label: desktop.CtrlAltDel, Icon: icon(iconKeyboard), Disabled: session.desk.ended})
@@ -302,13 +306,15 @@ func (state *State) clickTabMenu(id gfx.ID) bool {
 				state.openEditHostID(host.ID)
 			}
 		}
-	case hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency:
+	case hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency, hitTabMenuSecurity:
 		session, ok := state.tabMenuSessionFor(workspace)
 		if !ok || session.desk == nil {
 			return true
 		}
 		state.activateWorkspace(workspace)
 		switch id {
+		case hitTabMenuSecurity:
+			state.openDesktopSecurity(session)
 		case hitTabMenuFit:
 			session.desk.fit = true
 		case hitTabMenuActual:

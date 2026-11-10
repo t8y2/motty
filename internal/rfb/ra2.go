@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
 	"encoding/binary"
@@ -16,15 +17,17 @@ import (
 	"unicode/utf8"
 )
 
-// RA2 (security type 5) exchanges PKCS#1-v1.5-encrypted random values, binds
-// the RSA public keys with SHA-1, and uses directional AES-128-EAX records for
-// both authentication and the entire RFB session. SHA-1 is mandated by this
-// wire protocol; it is not a certificate signature or a password hash.
+// RSA-AES exchanges PKCS#1-v1.5-encrypted random values and uses directional
+// EAX records. RA2 (5) uses AES-128 and SHA-1; RA256 (129) uses AES-256 and
+// SHA-256. Both encrypt the entire RFB session. Their ne variants (6/130)
+// encrypt only authentication and require explicit permission to continue
+// with an unencrypted session. SHA-1 is mandated by the 128-bit wire protocol;
+// it is not a certificate signature or a password hash.
 //
 // Protocol references: noVNC core/ra2.js (the shared RA2/RA2ne handshake) and
 // TigerVNC common/rfb/CSecurityRSAAES.cxx. This implementation uses Go's RSA
-// primitives and independently implements the protocol; it does not enable
-// RA2ne, unverified type 13, or other proprietary security schemes.
+// primitives and independently implements the protocol; unverified type 13
+// and other proprietary security schemes remain unsupported.
 const (
 	ra2MinKeyBits    = 1024 // also interoperates with older RSA-AES servers
 	ra2MaxKeyBits    = 8192
@@ -78,7 +81,14 @@ func ra2PublicKeyWire(key *rsa.PublicKey) []byte {
 }
 
 func ra2Hash(parts ...[]byte) []byte {
+	return rsaAESHash(ra2RandomSize, parts...)
+}
+
+func rsaAESHash(randomSize int, parts ...[]byte) []byte {
 	hash := sha1.New()
+	if randomSize == sha256.Size {
+		hash = sha256.New()
+	}
 	for _, part := range parts {
 		_, _ = hash.Write(part)
 	}
@@ -100,6 +110,21 @@ func (client *Client) userWait(callback func() error) error {
 }
 
 func (client *Client) authenticateRA2(config Config) error {
+	randomSize, allEncrypted := ra2RandomSize, true
+	switch client.Security {
+	case 5:
+	case 129:
+		randomSize = sha256.Size
+	case 6:
+		allEncrypted = false
+	case 130:
+		randomSize, allEncrypted = sha256.Size, false
+	default:
+		return fmt.Errorf("%w: RSA-AES security type %d", ErrUnsupported, client.Security)
+	}
+	if !allEncrypted && !config.AllowUnencrypted {
+		return &UnsupportedSecurityError{Types: []uint32{uint32(client.Security)}, AuthenticationOnly: true}
+	}
 	if config.VerifyServerKey == nil {
 		return ErrServerKeyRequired
 	}
@@ -123,7 +148,7 @@ func (client *Client) authenticateRA2(config Config) error {
 	if _, err := client.conn.Write(clientWire); err != nil {
 		return err
 	}
-	clientRandom := make([]byte, ra2RandomSize)
+	clientRandom := make([]byte, randomSize)
 	if _, err := io.ReadFull(rand.Reader, clientRandom); err != nil {
 		return err
 	}
@@ -150,7 +175,7 @@ func (client *Client) authenticateRA2(config Config) error {
 	}
 	// On invalid PKCS#1 padding, keep a random session key and let the EAX
 	// proof fail uniformly, rather than exposing an RSA padding oracle.
-	serverRandom := make([]byte, ra2RandomSize)
+	serverRandom := make([]byte, randomSize)
 	if _, err := io.ReadFull(rand.Reader, serverRandom); err != nil {
 		return err
 	}
@@ -159,31 +184,39 @@ func (client *Client) authenticateRA2(config Config) error {
 		return fmt.Errorf("%w: invalid RSA-AES encrypted random", ErrProtocol)
 	}
 	defer clear(serverRandom)
-	readKey := ra2Hash(clientRandom, serverRandom)[:ra2RandomSize]
-	writeKey := ra2Hash(serverRandom, clientRandom)[:ra2RandomSize]
+	readKey := rsaAESHash(randomSize, clientRandom, serverRandom)[:randomSize]
+	writeKey := rsaAESHash(randomSize, serverRandom, clientRandom)[:randomSize]
 	defer clear(readKey)
 	defer clear(writeKey)
 	secured, err := newEAXConn(&readerConn{Conn: client.conn, reader: client.r}, readKey, writeKey)
 	if err != nil {
 		return err
 	}
-	// The wrapper owns the original buffered reader. Its replacement reads
-	// authenticated plaintext, including the SecurityResult and ServerInit.
-	client.conn = secured
-	client.r = bufio.NewReaderSize(secured, 64<<10)
-	if _, err := secured.Write(ra2Hash(clientWire, serverWire)); err != nil {
+	// Preserve the raw reader for ne modes: it may already contain bytes from
+	// the unencrypted session. Only full encryption replaces the connection.
+	authReader := bufio.NewReaderSize(secured, 64<<10)
+	if allEncrypted {
+		client.conn = secured
+		client.r = authReader
+	}
+	if _, err := secured.Write(rsaAESHash(randomSize, clientWire, serverWire)); err != nil {
 		return err
 	}
-	proof := make([]byte, sha1.Size)
-	if _, err := io.ReadFull(client.r, proof); err != nil {
+	proof := make([]byte, len(rsaAESHash(randomSize)))
+	if _, err := io.ReadFull(authReader, proof); err != nil {
 		return err
 	}
-	if subtle.ConstantTimeCompare(proof, ra2Hash(serverWire, clientWire)) != 1 {
+	if subtle.ConstantTimeCompare(proof, rsaAESHash(randomSize, serverWire, clientWire)) != 1 {
 		return fmt.Errorf("%w: RSA-AES server key proof does not match", ErrProtocol)
 	}
 	var subtype [1]byte
-	if _, err := io.ReadFull(client.r, subtype[:]); err != nil {
+	if _, err := io.ReadFull(authReader, subtype[:]); err != nil {
 		return err
+	}
+	if !allEncrypted && (authReader.Buffered() != 0 || len(secured.(*eaxConn).pending) != 0) {
+		// Extra encrypted plaintext cannot be interpreted as a raw SecurityResult
+		// after the upgrade boundary, or silently discarded before credentials.
+		return fmt.Errorf("%w: RSA-AES authentication has unexpected encrypted data", ErrProtocol)
 	}
 	credentials, err := client.ra2Credentials(config, subtype[0])
 	if err != nil {
@@ -196,7 +229,8 @@ func (client *Client) authenticateRA2(config Config) error {
 	if err := client.securityResult(); err != nil {
 		return err
 	}
-	client.Encrypted = true
+	client.Encrypted = allEncrypted
+	client.Cipher = fmt.Sprintf("AES-%d-EAX", randomSize*8)
 	return nil
 }
 
@@ -204,6 +238,7 @@ func (client *Client) ra2Credentials(config Config, subtype byte) ([]byte, error
 	username, password := config.Username, config.Password
 	switch subtype {
 	case ra2UserPass:
+		client.Authentication = "user-password"
 		if config.AskCredentials != nil {
 			if err := client.userWait(func() (err error) {
 				username, password, err = config.AskCredentials()
@@ -219,10 +254,14 @@ func (client *Client) ra2Credentials(config Config, subtype byte) ([]byte, error
 				return nil, err
 			}
 		}
+		// WayVNC can deliberately use an empty username when PAM is disabled.
+		// A supplied password or explicit credential callback still distinguishes
+		// this from missing credentials; no empty password is sent implicitly.
 		if password == "" {
 			return nil, ErrAuthRequired
 		}
 	case ra2Password:
+		client.Authentication = "vnc-password"
 		username = ""
 		if password == "" && config.AskPassword != nil {
 			if err := client.userWait(func() (err error) {
