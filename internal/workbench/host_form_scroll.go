@@ -31,12 +31,10 @@ type hostFormScroll struct {
 	// choiceIDs are the last painted option of each page Choice, kept so the
 	// form's tab ring can reach a choice while it lies outside the viewport.
 	choiceIDs hostFormChoiceIDs
-	// vncPage and algoPage declare the sections painted inside the form, each
-	// with its view kept and the slots it laid out.
-	vncPage, algoPage *ui.Page
-	vncView, algoView func(ui.C)
-	vncBody           hostVNCRowsBody
-	algoBody          hostAlgoRowsBody
+	// vncBody and algoBody are the slots the sections painted inside the form
+	// laid out.
+	vncBody  hostVNCRowsBody
+	algoBody hostAlgoRowsBody
 }
 
 // hostFormChoiceIDs is the chosen option hit of each Choice of the host form.

@@ -206,9 +206,6 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	if w.view.bookmarksOpen {
 		w.paintDirectoryPlaces(canvas)
 	}
-	if w.view.dialog != sftpDialogNone {
-		w.owner.paintSFTPDialog(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.view)
-	}
 	w.owner.paintSFTPFileProperties(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, &w.fileProperties)
 	if w.closeConfirm {
 		components.BeginAlertDialog(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, w.closeDescription(), m.SFTPWindow.CloseTransfers, m.Cancel)
@@ -301,6 +298,9 @@ func (w *sftpWindow) declareWindow(c ui.C) {
 	}
 	if w.bookmark.open {
 		w.declareBookmarkDialog(c, gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height})
+	}
+	if w.view.dialog != sftpDialogNone {
+		w.owner.declareSFTPDialog(c, bounds, w.view)
 	}
 }
 

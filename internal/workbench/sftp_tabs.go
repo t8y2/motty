@@ -338,6 +338,9 @@ func (state *State) declareSFTPTab(c ui.C) {
 	if w.bookmark.open && w.view.worker != nil {
 		w.declareBookmarkDialog(c, bounds)
 	}
+	if w.view.worker != nil && w.view.dialog != sftpDialogNone {
+		state.declareSFTPDialog(c, bounds, w.view)
+	}
 }
 
 // declareSFTPTabContent declares the window's body, transfer queue and status
@@ -434,9 +437,6 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 	}
 	if w.view.bookmarksOpen {
 		w.paintDirectoryPlaces(canvas)
-	}
-	if w.view.dialog != sftpDialogNone {
-		state.paintSFTPDialog(canvas, bounds, w.view)
 	}
 	state.paintSFTPFileProperties(canvas, bounds, &w.fileProperties)
 	if w.closeConfirm {

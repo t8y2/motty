@@ -344,8 +344,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintKeyPassphraseDialog(canvas, viewport)
 	case modalDeleteRule:
 		state.paintDeleteRuleDialog(canvas, viewport)
-	case modalFontPicker:
-		state.paintFontPicker(canvas, viewport)
 	case modalSFTPColumns:
 		state.paintSFTPColumnSettings(canvas, viewport)
 	case modalRemoteClipboard:
@@ -578,6 +576,8 @@ func (state *State) declareShell(c ui.C) {
 			if state.paintsHostsPage() {
 				workspace.Children(func() { state.declareHostsWorkspace(c) })
 			}
+			workspace.Children(func() { state.devDeclareWorkspace(c) })
+			workspace.Children(func() { state.declareDashboardEmpty(c) })
 			chrome.workspaceSlot = workspace
 		})
 	})
@@ -1138,14 +1138,13 @@ type chromeLayout struct {
 	hostFormScrollbarDraw func(*ui.DrawContext)
 	hostFormFieldsDraw    func(*ui.DrawContext)
 	hostDialogFooterDraw  func(*ui.DrawContext)
-	// newTabPage declares the empty tab, with newTabView its declaration kept so a
-	// paint makes no new method value; newTabAdd and newTabAll are its footer
-	// buttons, painted by hand once the page has laid them out.
-	newTabPage   *ui.Page
-	newTabView   func(ui.C)
+	// newTabAdd and newTabAll are the empty tab's footer buttons, painted by
+	// hand once the page has laid them out; newTabShown says the page declared
+	// the empty tab this paint.
 	newTabAdd    ui.Box
 	newTabAll    ui.Box
 	newTabFooter bool
+	newTabShown  bool
 	// importButton is where the toolbar's Import button was painted: the menu
 	// it opens hangs under it, right-aligned.
 	importButton gfx.Rect
@@ -1258,9 +1257,9 @@ func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	case len(state.hostTreeRows) > 0:
 		state.paintHostGridTable(canvas, list)
 	case len(state.hosts) == 0:
-		state.paintEmptyHosts(canvas, bounds)
+		state.paintEmptyHosts(canvas)
 	case len(state.visible) == 0:
-		state.paintNoMatches(canvas, bounds)
+		state.paintNoMatches(canvas)
 	}
 	state.hostsBounds = bounds
 }
@@ -2274,16 +2273,15 @@ func (state *State) hostBadgeFill(background gfx.Color) gfx.Color {
 }
 
 // paintEmptyHosts is the first-run screen: no hosts are invented, the user is
-// invited to add one.
-func (state *State) paintEmptyHosts(canvas *gfx.Canvas, bounds gfx.Rect) {
+// invited to add one. The page declared the state; this paints its action.
+func (state *State) paintEmptyHosts(canvas *gfx.Canvas) {
 	m := state.messages
-	state.drawEmptyPage(canvas, bounds, m.HostsEmpty, m.HostsEmptySub, m.NewHost, state.pal.muted, iconHosts, hitAddHostEmpty, m.NewHost, true)
+	state.paintEmptyPage(canvas, iconHosts, hitAddHostEmpty, m.NewHost, true)
 }
 
 // paintNoMatches is what the list shows when the search box hides every host.
-func (state *State) paintNoMatches(canvas *gfx.Canvas, bounds gfx.Rect) {
-	m := state.messages
-	state.drawEmptyPage(canvas, bounds, m.NoMatches, m.NoMatchesSub, "", state.pal.muted, iconSearch, gfx.ID{}, "", true)
+func (state *State) paintNoMatches(canvas *gfx.Canvas) {
+	state.paintEmptyPage(canvas, iconSearch, gfx.ID{}, "", true)
 }
 
 // lucideIcons maps the internal icon kinds to compiled Lucide icons
@@ -2494,6 +2492,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareSudoSFTPDialog(c)
 	case modalForm:
 		state.declareFormDialog(c)
+	case modalFontPicker:
+		state.declareFontPicker(c)
 	case modalOutboundProxy:
 		state.declareOutboundProxyDialog(c)
 	case modalAutofillRule:
@@ -2673,6 +2673,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 			}
 			if vncHost {
 				b.vncRows = ui.Slot(c).Height(state.desktopRowsHeight())
+				b.vncRows.Children(func() { state.declareHostVNCRows(c) })
 			}
 			if state.dialogError != "" {
 				// The serial line's error is long: up to two lines.
@@ -2700,6 +2701,11 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				if editor.advancedOpen {
 					advanced := b.advanced
 					advanced.Children(func() {
+						// The rows and the choice are declared as the same overlay:
+						// the choice keeps its press for after the rows laid out.
+						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
+							state.declareHostAlgoRows(c)
+						})
 						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Height(rowHeight).Children(func() {
 							b.algo = state.declareHostAlgoChoice(c)
 						})
@@ -2786,7 +2792,7 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 		state.paintHostProxyRow(canvas, b.proxy.Rect())
 	}
 	if vncHost {
-		state.paintVNCRows(canvas, b.vncRows.Rect())
+		state.paintVNCRows(canvas)
 	}
 	if ssh {
 		state.paintHostJumpRow(canvas, b.jump.Rect())

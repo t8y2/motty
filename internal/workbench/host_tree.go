@@ -336,6 +336,17 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 	width, height := state.hostsWorkspaceSize()
 	headerHeight := state.hostHeaderHeight(width, len(state.hostSelections) > 0)
 	list.header = ui.Slot(c).Absolute().Left(0).Right(0).Top(0).Height(headerHeight)
+	if len(state.hostTreeRows) == 0 {
+		// The page owns the empty state too: the window paints only its icon and
+		// action after the page has laid them out.
+		m, bounds := state.messages, gfx.Rect{Width: width, Height: height}
+		switch {
+		case len(state.hosts) == 0:
+			state.declareEmptyPageRegion(c, bounds, m.HostsEmpty, m.HostsEmptySub, m.NewHost, state.pal.muted)
+		case len(state.visible) == 0:
+			state.declareEmptyPageRegion(c, bounds, m.NoMatches, m.NoMatchesSub, "", state.pal.muted)
+		}
+	}
 	if state.hostView == hostViewGrid || len(state.hostTreeRows) == 0 {
 		list.scrollLive = false
 		return

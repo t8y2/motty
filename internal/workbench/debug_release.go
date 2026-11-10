@@ -19,6 +19,8 @@ type devState struct{}
 
 func (state *State) devDeclareNavigation(ui.C) {}
 
+func (state *State) devDeclareWorkspace(ui.C) {}
+
 func devPlaysIconMotion(gfx.ID) bool { return false }
 
 func (state *State) devClick(gfx.ID) bool { return false }

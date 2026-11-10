@@ -486,15 +486,13 @@ func (state *State) paintAdvancedSection(canvas *gfx.Canvas, bounds gfx.Rect) {
 	f.End()
 	paintIcon(canvas, uint8(chevron), icon.Rect(), pal.muted)
 	if open {
-		state.paintAlgorithmRows(canvas, bounds.X, bounds.Y+advancedHeaderHeight, bounds.Width, hostFormRowHeight)
+		state.paintAlgorithmRows(canvas)
 	}
 }
 
-// hostVNCRowsRoot and hostAlgoRowsRoot name the pages the desktop switches and
-// the SSH algorithm rows are declared in.
+// The desktop switches and the SSH algorithm rows are slots of the host form's
+// own page.
 const (
-	hostVNCRowsRoot  = "host-vnc-rows"
-	hostAlgoRowsRoot = "host-algo-rows"
 	// The widths of the one-time code row's buttons.
 	algoRemoveWidth, algoScanWidth, algoPasteWidth = 84, 132, 96
 )
@@ -511,40 +509,17 @@ type hostAlgoRowsBody struct {
 	agentAccess, agentHelp                        ui.Box
 }
 
-func (state *State) hostVNCRowsPage() *ui.Page {
-	form := &state.editor.form
-	if form.vncPage == nil {
-		form.vncPage = ui.NewPage(ui.PageConfig{Root: hostVNCRowsRoot, Theme: &state.theme})
-		form.vncView = state.declareHostVNCRows
-	}
-	return form.vncPage
-}
-
-func (state *State) hostAlgoRowsPage() *ui.Page {
-	form := &state.editor.form
-	if form.algoPage == nil {
-		form.algoPage = ui.NewPage(ui.PageConfig{Root: hostAlgoRowsRoot, Theme: &state.theme})
-		form.algoView = state.declareHostAlgoRows
-	}
-	return form.algoPage
-}
-
 // paintAlgorithmRows draws the SSH algorithm choice and, for a custom one, the
-// list that is allowed, then the one-time code secret. The choice itself is a
-// control of the form's page; this paints the rows that follow it.
-func (state *State) paintAlgorithmRows(canvas *gfx.Canvas, x, y, width, rowHeight float32) {
+// list that is allowed, then the one-time code secret. The rows were declared
+// with the host form's page; this paints into the slots it left.
+func (state *State) paintAlgorithmRows(canvas *gfx.Canvas) {
 	m, editor := state.messages.Tools, &state.editor
 	// The choice may write a new mode while the page's declaration delivered the
 	// click; the rows this frame laid out are the ones before it, so draw the
 	// custom field only when its row was laid out.
 	customMode := editor.form.algoLayout == algoCustom
-	rows := float32(1)
-	if customMode {
-		rows++
-	}
-	b := &editor.form.algoBody
-	state.hostAlgoRowsPage().Draw(canvas, gfx.Rect{X: x, Y: y, Width: width, Height: (rows+1)*rowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight}, editor.form.algoView)
 
+	b := &editor.form.algoBody
 	if customMode {
 		state.paintDialogField(canvas, hitDialogAlgorithms, fieldAlgorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, b.custom.Rect())
 	}
@@ -572,7 +547,7 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 	*b = hostAlgoRowsBody{}
 	customMode := editor.form.algoLayout == algoCustom
 	rowHeight := float32(hostFormRowHeight)
-	ui.Column(c).Fill().Children(func() {
+	ui.Column(c).FillWidth().Children(func() {
 		b.algo = ui.Slot(c).Height(rowHeight)
 		if customMode {
 			b.custom = ui.Slot(c).Height(rowHeight)
@@ -644,14 +619,13 @@ func (state *State) desktopRowsHeight() float32 {
 	return vncRowsHeight
 }
 
-// paintVNCRows declares the switches of a VNC or RDP host and paints them in
-// bounds' place: connecting through SSH, sharing the clipboard, showing the
-// picture without the bars around it and, for RDP, asking Windows for its
+// paintVNCRows paints the switches of a VNC or RDP host in the slots the host
+// form's page laid out: connecting through SSH, sharing the clipboard, showing
+// the picture without the bars around it and, for RDP, asking Windows for its
 // console (administrative) session.
-func (state *State) paintVNCRows(canvas *gfx.Canvas, bounds gfx.Rect) {
+func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
-	state.hostVNCRowsPage().Draw(canvas, bounds, editor.form.vncView)
 	state.paintDialogCheckbox(canvas, hitDialogViaSSH, m.ViaSSH, editor.viaSSH, b.tunnel)
 	state.paintDialogCheckbox(canvas, hitDialogClipboard, m.ShareClipboard, editor.clipboard, b.clipboard)
 	state.paintDialogCheckbox(canvas, hitDialogChromeless, m.HideBars, editor.chromeless, b.chromeless)

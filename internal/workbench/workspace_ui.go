@@ -143,16 +143,27 @@ func (state *State) declareWorkspacePanes(c ui.C) {
 	frame := state.workspacePixelBounds(state.viewport)
 	c.Part(terminalWorkspacePart)
 	ui.Stack(c).Absolute().Left(frame.X).Top(frame.Y).Width(frame.Width).Height(frame.Height).Clip().Children(func() {
+		if len(state.panes) == 0 {
+			// No pane at all: the whole area is the empty tab.
+			state.declareNewTabPage(c, gfx.Rect{Width: frame.Width, Height: frame.Height})
+			return
+		}
 		for index := range state.panes {
 			pane := state.panes[index]
 			if pane.Bounds.Width <= 0 || pane.Bounds.Height <= 0 {
 				continue // a tab that is not showing
 			}
 			session, ok := state.sessionByIDPointer(pane.SessionID)
-			if !ok || !state.paintsTerminalPane(session) {
+			bounds := pixelBounds(frame, pane.Bounds)
+			if !ok {
+				// The page owns the empty pane: the active one offers the empty
+				// tab, a background one only its label.
+				state.declareEmptyPane(c, frame, bounds, index, pane.Active)
 				continue
 			}
-			bounds := pixelBounds(frame, pane.Bounds)
+			if !state.paintsTerminalPane(session) {
+				continue
+			}
 			// The container itself is the pane's ground: a press here is a press
 			// inside the pane. The terminal control, declared below, paints after
 			// it and wins where it has a hit.
@@ -171,6 +182,24 @@ func (state *State) declareWorkspacePanes(c ui.C) {
 			})
 		}
 	})
+}
+
+// declareEmptyPane declares the page's content of a pane with no session: the
+// empty tab for the active one, its label for a background one. The pane itself
+// is the ground a press switches panes with.
+func (state *State) declareEmptyPane(c ui.C, frame, bounds gfx.Rect, index int, active bool) {
+	pane := ui.Column(c).Absolute().Left(bounds.X-frame.X).Top(bounds.Y-frame.Y).Width(bounds.Width).Height(bounds.Height).
+		HitWith(hitPaneActivateList.At(index), state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
+	if !active {
+		label := state.messages.LabelNewTab
+		pane.Background(state.pal.workspace).Children(func() {
+			ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(22).
+				Width(c.Canvas().TextWidthWeight(label, metrics.FontSizeM, gfx.WeightMedium)+8).
+				MaxWidth(max(bounds.Width-24, 0)).Self(ui.Start).MarginSides(42, 12, 0, 12)
+		})
+		return
+	}
+	pane.Children(func() { state.declareNewTabPage(c, gfx.Rect{Width: bounds.Width, Height: bounds.Height}) })
 }
 
 func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
@@ -202,13 +231,17 @@ func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 			state.paintTerminalPaneDetails(canvas, session, bounds)
 			continue
 		}
+		if !ok {
+			// The page owns the empty pane: only the active one paints what its
+			// declaration left by hand.
+			if pane.Active {
+				state.paintNewTabDetails(canvas)
+			}
+			continue
+		}
 		// Session views that are still frames of their own keep the interim
 		// embedded canvas. The pane's ground reaches them as before.
 		canvas.HitWithOptions(hitPaneActivateList.At(index), bounds, state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
-		if !ok {
-			state.paintEmptyPane(canvas, bounds, pane)
-			continue
-		}
 		var mount gfx.Scope
 		if !single {
 			mount = paneMount(session)
@@ -320,21 +353,9 @@ func snapRect(r gfx.Rect) gfx.Rect {
 }
 
 func (state *State) paintEmptyWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
-	state.paintNewTabPage(canvas, bounds)
-}
-
-func (state *State) paintEmptyPane(canvas *gfx.Canvas, bounds gfx.Rect, pane Pane) {
-	if pane.Active {
-		state.paintNewTabPage(canvas, bounds)
-		return
-	}
-	f := state.paneChrome.Begin(canvas, state.Theme(), bounds)
-	label := state.messages.LabelNewTab
-	f.Column().Fill().Background(state.pal.workspace).Children(func() {
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(22).
-			Width(canvas.TextWidthWeight(label, metrics.FontSizeM, gfx.WeightMedium)+8).MaxWidth(max(bounds.Width-24, 0)).Self(ui.Start).MarginSides(42, 12, 0, 12)
-	})
-	f.End()
+	// The page declared the empty tab; only its badges and footer are painted by
+	// hand.
+	state.paintNewTabDetails(canvas)
 }
 
 func (state *State) paintSessionPage(canvas *gfx.Canvas, size gfx.Size, session *Session) {
@@ -439,6 +460,9 @@ func (state *State) declareContextPanel(c ui.C) {
 			ui.Slot(c).Absolute().Left(0).Top(0).Width(0).Height(0).Draw(state.contextDrawerEnd)
 		})
 		state.contextPanelScope = tree.Sub(tree.Sub(tree.Feature(shellPageRoot), tree.Name(contextDrawerPart)), tree.Name(contextPanelPart))
+		if session != nil && session.files != nil && session.files.dialog != sftpDialogNone {
+			state.declareSFTPDialog(c, gfx.Rect{Width: size.Width, Height: size.Height}, session.files)
+		}
 		return
 	}
 	layout := state.sftpPanelResizable(nil, size, context).Paint(state.messages.SFTPFiles)
@@ -448,6 +472,9 @@ func (state *State) declareContextPanel(c ui.C) {
 	}
 	state.declareContextPanelBody(c, panel, gfx.Point{}, session)
 	state.contextPanelScope = tree.Sub(tree.Feature(shellPageRoot), tree.Name(contextPanelPart))
+	if session != nil && session.files != nil && session.files.dialog != sftpDialogNone {
+		state.declareSFTPDialog(c, gfx.Rect{Width: size.Width, Height: size.Height}, session.files)
+	}
 }
 
 // declareContextPanelBody declares the panel's container at rect (offset from
@@ -567,10 +594,6 @@ func (state *State) paintContextPanel(canvas *gfx.Canvas, size gfx.Size, workspa
 		// The divider between the panel and the workspace is the window's, not
 		// the panel's: paint its line and its drag target here, after the page.
 		state.sftpPanelResizable(canvas, size, context).Paint(state.messages.SFTPFiles)
-	}
-	session := state.contextSession()
-	if session != nil && session.files != nil && session.files.dialog != sftpDialogNone {
-		state.paintSFTPDialog(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, session.files)
 	}
 }
 

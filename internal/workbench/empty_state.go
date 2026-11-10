@@ -12,22 +12,17 @@ const (
 	emptyStateTitleSize   = float32(17)
 	emptyStateActionWidth = float32(160)
 
-	// emptyStateRoot names the shared empty-state page in the window's Tree. One
-	// page is enough: the catalog sections are exclusive, so one is painted at a
-	// time.
-	emptyStateRoot = "empty-state"
 	// catalogSectionRoot names the shared page a catalog section declares its
 	// body in. One page is enough for the same reason: the sections are
 	// exclusive.
 	catalogSectionRoot = "catalog-section"
 )
 
-// emptyStateUI holds the two pages the catalog shares: the empty-state page
-// and what its last paint left for the icon and the action, which are painted
-// by hand, and the page a section declares its own body in.
+// emptyStateUI holds what an empty state's last declaration left for its icon
+// and action, which are painted by hand, and the page a catalog section declares
+// its own body in. The empty state itself is declared in that body: it is a
+// region of a section, not a page of its own.
 type emptyStateUI struct {
-	page   *ui.Page
-	view   func(ui.C)
 	bounds gfx.Rect
 	title  string
 	sub    string
@@ -52,69 +47,68 @@ func (state *State) drawSectionBody(canvas *gfx.Canvas, bounds gfx.Rect, view fu
 	e.bodyPage.Draw(canvas, bounds, view)
 }
 
-// reserveEmptyPage records what the shared empty-state page draws and reserves
-// the region it fills in c. The icon sits a little above the middle of the
-// region, followed by one title, one description and, when add is not empty,
-// one primary action. The caller draws the page into the returned box once the
-// section body has laid out, with drawReservedEmptyPage.
+// reserveEmptyPage declares the empty state as the growing region of the
+// section's body. The icon sits a little above the middle of the region,
+// followed by one title, one description and, when add is not empty, one
+// primary action. The caller paints the icon and action once the body has laid
+// out, with drawReservedEmptyPage.
 func (state *State) reserveEmptyPage(c ui.C, bounds gfx.Rect, title, sub, add string) ui.Box {
 	return state.reserveEmptyPageWithColor(c, bounds, title, sub, add, state.pal.muted)
 }
 
 func (state *State) reserveEmptyPageWithColor(c ui.C, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color) ui.Box {
 	state.prepareEmptyPage(bounds, title, sub, add, descriptionColor)
-	return ui.Slot(c).Grow(1)
+	body := max(0, bounds.Height-142)
+	column := ui.Column(c).Grow(1).FillWidth().MarginSides(0, 0, 9, 0).
+		PadSides(max(20, body*0.40-48), 0, 0, 0).Items(ui.Center)
+	column.Children(func() { state.declareEmptyPageContent(c) })
+	return column
 }
 
-// drawReservedEmptyPage draws the shared empty-state page into the region
-// reserveEmptyPage reserved and paints its icon and action over it.
-func (state *State) drawReservedEmptyPage(canvas *gfx.Canvas, slot ui.Box, icon uint8, id gfx.ID, label string, enabled bool) {
-	state.empty.page.Draw(canvas, slot.Rect(), state.empty.view)
-	state.paintEmptyPage(canvas, icon, id, label, enabled)
-}
-
-// drawEmptyPage paints the shared empty state as a page filling bounds, for a
-// region that holds nothing else.
-func (state *State) drawEmptyPage(canvas *gfx.Canvas, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color, icon uint8, id gfx.ID, label string, enabled bool) {
+// declareEmptyPageRegion declares the empty state over a region that holds
+// nothing else, at the region's own origin. The caller paints the icon and
+// action once the page has laid out, with paintEmptyPage.
+func (state *State) declareEmptyPageRegion(c ui.C, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color) {
 	state.prepareEmptyPage(bounds, title, sub, add, descriptionColor)
-	state.empty.page.Draw(canvas, bounds, state.empty.view)
-	state.paintEmptyPage(canvas, icon, id, label, enabled)
+	body := max(0, bounds.Height-142)
+	column := ui.Column(c).Absolute().Left(0).Top(0).Width(bounds.Width).Height(bounds.Height).
+		MarginSides(0, 0, 9, 0).PadSides(max(20, body*0.40-48), 0, 0, 0).Items(ui.Center)
+	column.Children(func() { state.declareEmptyPageContent(c) })
 }
 
-// prepareEmptyPage records what the shared page draws and makes the page and
-// its declaration once.
+// declareEmptyPageContent declares the empty state's icon tile, title,
+// description and, when there is one, its action, inside the region
+// reserveEmptyPage returned.
+func (state *State) declareEmptyPageContent(c ui.C) {
+	e := &state.empty
+	pal := state.pal
+	contentWidth := min(max(e.bounds.Width-44, 0), 560)
+	ui.Column(c).Size(emptyStateTileSize, emptyStateTileSize).Center().Radius(emptyStateTileRadius).Background(pal.surface).Children(func() {
+		e.icon = ui.Slot(c).Size(emptyStateIconSize, emptyStateIconSize)
+	})
+	ui.Text(c, e.title).FontSize(emptyStateTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).Width(contentWidth).TextCenter().Ellipsis().MarginSides(20, 0, 0, 0)
+	ui.Paragraph(c, e.sub, 4).FontSize(metrics.FontSizeM).Color(e.color).LineHeight(23).Width(contentWidth).TextCenter().MarginSides(8, 0, 0, 0)
+	if e.add != "" {
+		e.button = ui.Slot(c).Size(emptyStateActionWidth, toolbarHeight).MarginSides(20, 0, 0, 0)
+	}
+}
+
+// prepareEmptyPage records what the empty state's declaration leaves for the
+// icon and the action.
 func (state *State) prepareEmptyPage(bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color) {
 	state.empty.bounds = bounds
 	state.empty.title, state.empty.sub, state.empty.add, state.empty.color = title, sub, add, descriptionColor
 	state.empty.icon, state.empty.button = ui.Box{}, ui.Box{}
-	if state.empty.page == nil {
-		state.empty.page = ui.NewPage(ui.PageConfig{Root: emptyStateRoot, Theme: &state.theme})
-		state.empty.view = state.declareEmptyPageView
-	}
 }
 
-// declareEmptyPageView declares the empty state inside the page: the icon tile,
-// the title and the description, and the action when there is one. The top
-// padding follows the region the caller gave, not the page's own slot, so a
-// shared frame places the block where the pane's height says.
-func (state *State) declareEmptyPageView(c ui.C) {
-	e := &state.empty
-	pal := state.pal
-	body := max(0, e.bounds.Height-142)
-	contentWidth := min(max(e.bounds.Width-44, 0), 560)
-	ui.Column(c).Fill().MarginSides(0, 0, 9, 0).PadSides(max(20, body*0.40-48), 0, 0, 0).Items(ui.Center).Children(func() {
-		ui.Column(c).Size(emptyStateTileSize, emptyStateTileSize).Center().Radius(emptyStateTileRadius).Background(pal.surface).Children(func() {
-			e.icon = ui.Slot(c).Size(emptyStateIconSize, emptyStateIconSize)
-		})
-		ui.Text(c, e.title).FontSize(emptyStateTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).Width(contentWidth).TextCenter().Ellipsis().MarginSides(20, 0, 0, 0)
-		ui.Paragraph(c, e.sub, 4).FontSize(metrics.FontSizeM).Color(e.color).LineHeight(23).Width(contentWidth).TextCenter().MarginSides(8, 0, 0, 0)
-		if e.add != "" {
-			e.button = ui.Slot(c).Size(emptyStateActionWidth, toolbarHeight).MarginSides(20, 0, 0, 0)
-		}
-	})
+// drawReservedEmptyPage paints the icon and action the empty state's
+// declaration laid out. The box is the region's declaration; its content is
+// already part of the page.
+func (state *State) drawReservedEmptyPage(canvas *gfx.Canvas, _ ui.Box, icon uint8, id gfx.ID, label string, enabled bool) {
+	state.paintEmptyPage(canvas, icon, id, label, enabled)
 }
 
-// paintEmptyPage paints the icon and action declared by the empty-state page. An
+// paintEmptyPage paints the icon and action declared by the empty state. An
 // empty label leaves the page without an action, which is useful for data that is
 // populated by another workflow rather than created on the page.
 func (state *State) paintEmptyPage(canvas *gfx.Canvas, icon uint8, id gfx.ID, label string, enabled bool) {

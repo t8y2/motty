@@ -60,10 +60,6 @@ const (
 	sftpDialogBrowseCreateDirectory
 )
 
-// sftpDialogBodyRoot names the page a file dialog's body is declared in. One
-// body page serves every kind of dialog, since only one is open at a time.
-const sftpDialogBodyRoot = "sftp-dialog-body"
-
 // sftpDialogShowsField reports whether the dialog edits a field: a folder, a
 // name, a destination, an octal mode or a link.
 func sftpDialogShowsField(kind sftpDialogKind) bool {
@@ -168,11 +164,19 @@ type sftpView struct {
 	dialog             sftpDialogKind
 	dialogEditor       text.Editor
 	dialogEditor2      text.Editor
-	// dialogPage declares the dialog's body; dialogView is its declaration,
-	// made once for the view. The boxes are where that body laid out the parts
-	// painted by hand: the one or two fields and the permission grid.
-	dialogPage            *ui.Page
-	dialogView            func(ui.C)
+	// dialogFieldLabel is the field title the open dialog's body declared; the
+	// window paints the field under it after the body, inside the dialog's focus
+	// scope. dialogDraw is that paint, kept once so a repaint makes no closure.
+	// The footer's labels and draw are kept the same way: the dialog can stand
+	// beside an application modal, so it does not share the window's footer
+	// scratch. The boxes are where that body laid out the parts painted by hand:
+	// the one or two fields and the permission grid.
+	dialogFieldLabel      string
+	dialogDraw            func(*ui.DrawContext)
+	dialogCancelLabel     string
+	dialogSubmitLabel     string
+	dialogSubmitVariant   components.ButtonVariant
+	dialogFooterDraw      func(*ui.DrawContext)
 	dialogFirst           ui.Box
 	dialogSecond          ui.Box
 	dialogChmod           [9]ui.Box

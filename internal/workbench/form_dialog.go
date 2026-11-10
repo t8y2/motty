@@ -75,18 +75,10 @@ type formDialog struct {
 	// cancel, if set, runs instead of closing when the user cancels; a form that
 	// stands between two screens uses it to go back.
 	cancel func(*State)
-	// page hosts the dialog in a window that paints without a workbench page (the
-	// remote tools window), with view kept so a paint makes no new method value;
 	// slots and checkBox are where the body laid the controls out.
-	page     *ui.Page
-	view     func(ui.C)
 	slots    [maxFormFields]ui.Box
 	checkBox ui.Box
 }
-
-// formDialogBodyRoot hosts the dialog in the remote tools window, which paints
-// without the workbench page.
-const formDialogBodyRoot = "form-dialog-view"
 
 // openForm shows a form. The fields are copied in; use the returned form to
 // preset their text.
@@ -268,13 +260,6 @@ func (form *formDialog) bodyHeight() float32 {
 	return withError(height, form.dialogError+form.testNote)
 }
 
-// paintFormDialog declares the form in a window that paints without the
-// workbench page (the remote tools window), in a page of its own that hosts the
-// dialog.
-func (state *State) paintFormDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	state.formDialogPage().Draw(canvas, viewport, state.form.view)
-}
-
 // declareFormDialog declares the open form as a dialog of the page.
 func (state *State) declareFormDialog(c ui.C) {
 	form := &state.form
@@ -304,16 +289,6 @@ func (state *State) declareFormDialog(c ui.C) {
 		actions = append(actions, components.ButtonAction{ID: hitFormSubmit, Label: form.submit, Variant: variant})
 		state.dialogActionFooter(c, actions...)
 	})
-}
-
-// formDialogPage hosts the dialog in a window that has no workbench page.
-func (state *State) formDialogPage() *ui.Page {
-	form := &state.form
-	if form.page == nil {
-		form.page = ui.NewPage(ui.PageConfig{Root: formDialogBodyRoot, Theme: &state.theme})
-		form.view = state.declareFormDialog
-	}
-	return form.page
 }
 
 // declareFormDialogBody lays out a form: its fields, its consent box and the

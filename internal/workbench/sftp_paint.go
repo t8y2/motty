@@ -818,8 +818,12 @@ func (state *State) declareSFTPEditor(c ui.C) {
 	})
 }
 
-func (state *State) paintSFTPDialog(canvas *gfx.Canvas, viewport gfx.Rect, view *sftpView) {
-	messages, theme := state.messages, state.Theme()
+// declareSFTPDialog declares the open file dialog in the page that hosts the
+// window: the standalone window's page, or the workbench page's file tab. Its
+// body and footer are page elements; the fields are painted into the slots it
+// leaves.
+func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView) {
+	messages := state.messages
 	title := ""
 	description := ""
 	fieldLabel := ""
@@ -920,53 +924,69 @@ func (state *State) paintSFTPDialog(canvas *gfx.Canvas, viewport gfx.Rect, view 
 	case showError:
 		body = 20
 	}
+	view.dialogFieldLabel = fieldLabel
+	view.dialogCancelLabel, view.dialogSubmitLabel, view.dialogSubmitVariant = cancelLabel, submitLabel, submitVariant
 	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer:          dialogLayer,
-		Scope:          dialogScope,
-		CloseID:        hitSFTPDialogClose,
-		InitialFocusID: initialFocus,
-		ContentSize:    gfx.Size{Width: 520}, FitBody: true, BodyHeight: body,
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, description, body)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitSFTPDialogClose, InitialFocusID: initialFocus,
 	})
-	layout := dialog.Begin(title, description)
-	if view.dialogPage == nil {
-		view.dialogPage = ui.NewPage(ui.PageConfig{Root: sftpDialogBodyRoot, Theme: &state.theme})
-		view.dialogView = func(c ui.C) { state.declareSFTPDialogBody(c, view) }
-	}
-	view.dialogPage.Draw(canvas, layout.Body, view.dialogView)
-	if fieldDialog {
-		field := components.BeginField(canvas, theme, view.dialogFirst.Rect())
-		if view.dialogError != "" {
-			field = field.Invalid()
+	dialog.Body(func() { state.declareSFTPDialogBody(c, view) })
+	dialog.Footer(func() { state.declareSFTPDialogFooter(c, view) })
+}
+
+// declareSFTPDialogFooter declares the dialog's buttons in its footer. They keep
+// the application's identities, and the view keeps the draw so the footer is
+// the same when an application modal stands beside the dialog.
+func (state *State) declareSFTPDialogFooter(c ui.C, view *sftpView) {
+	if view.dialogFooterDraw == nil {
+		view.dialogFooterDraw = func(d *ui.DrawContext) {
+			actions := [...]components.ButtonAction{
+				{ID: hitSFTPDialogCancel, Label: view.dialogCancelLabel, Variant: components.ButtonSecondary},
+				{ID: hitSFTPDialogSubmit, Label: view.dialogSubmitLabel, Variant: view.dialogSubmitVariant},
+			}
+			components.BeginButtonRow(d.Canvas, *d.Theme, d.Rect).Size(components.ButtonSizeDefault).Paint(actions[:]...)
 		}
-		content := field.Paint(fieldLabel, "", view.dialogError)
-		value := view.dialogEditor.String()
-		focused := canvas.Focused() == hitSFTPDialogField
-		components.PaintInput(canvas, theme, content, components.InputSnapshot{
-			ID:              hitSFTPDialogField,
-			Label:           fieldLabel,
-			Value:           value,
-			Focused:         focused,
-			PlatformEditing: focused && value != "",
+	}
+	ui.Slot(c).Fill().DrawOver(view.dialogFooterDraw)
+}
+
+// paintSFTPDialogDetails paints the open dialog's fields into the slots the
+// page laid out: one labelled input, two for a link, or the permission grid
+// under a chmod field.
+func (state *State) paintSFTPDialogDetails(canvas *gfx.Canvas, view *sftpView) {
+	if !sftpDialogShowsField(view.dialog) {
+		return
+	}
+	messages, theme := state.messages, state.Theme()
+	fieldLabel := view.dialogFieldLabel
+	field := components.BeginField(canvas, theme, view.dialogFirst.Rect())
+	if view.dialogError != "" {
+		field = field.Invalid()
+	}
+	content := field.Paint(fieldLabel, "", view.dialogError)
+	value := view.dialogEditor.String()
+	focused := canvas.Focused() == hitSFTPDialogField
+	components.PaintInput(canvas, theme, content, components.InputSnapshot{
+		ID:              hitSFTPDialogField,
+		Label:           fieldLabel,
+		Value:           value,
+		Focused:         focused,
+		PlatformEditing: focused && value != "",
+	})
+	if view.dialog == sftpDialogChmod {
+		state.paintSFTPChmodGrid(canvas, view, &view.dialogChmod)
+	}
+	if view.dialog == sftpDialogSymlink {
+		second := components.BeginField(canvas, theme, view.dialogSecond.Rect()).Paint(messages.Tools.LinkTarget, "", "")
+		secondValue := view.dialogEditor2.String()
+		secondFocused := canvas.Focused() == hitSFTPDialogField2
+		components.PaintInput(canvas, theme, second, components.InputSnapshot{
+			ID: hitSFTPDialogField2, Label: messages.Tools.LinkTarget, Value: secondValue,
+			Focused: secondFocused, PlatformEditing: secondFocused && secondValue != "",
 		})
-		if view.dialog == sftpDialogChmod {
-			state.paintSFTPChmodGrid(canvas, view, &view.dialogChmod)
-		}
-		if view.dialog == sftpDialogSymlink {
-			second := components.BeginField(canvas, theme, view.dialogSecond.Rect()).Paint(messages.Tools.LinkTarget, "", "")
-			secondValue := view.dialogEditor2.String()
-			secondFocused := canvas.Focused() == hitSFTPDialogField2
-			components.PaintInput(canvas, theme, second, components.InputSnapshot{
-				ID: hitSFTPDialogField2, Label: messages.Tools.LinkTarget, Value: secondValue,
-				Focused: secondFocused, PlatformEditing: secondFocused && secondValue != "",
-			})
-		}
 	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitSFTPDialogCancel, Label: cancelLabel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitSFTPDialogSubmit, Label: submitLabel, Variant: submitVariant},
-	)
-	dialog.End()
 }
 
 // declareSFTPDialogBody lays out the dialog's body: one labelled input, two for
@@ -977,6 +997,9 @@ func (state *State) declareSFTPDialogBody(c ui.C, view *sftpView) {
 	showError := view.dialog == sftpDialogDelete && view.dialogError != ""
 	view.dialogFirst, view.dialogSecond = ui.Box{}, ui.Box{}
 	view.dialogChmod = [9]ui.Box{}
+	if view.dialogDraw == nil {
+		view.dialogDraw = func(d *ui.DrawContext) { state.paintSFTPDialogDetails(d.Canvas, view) }
+	}
 	column := ui.Column(c).Fill()
 	if showError {
 		column.Justify(ui.Center) // as a label in the whole body
@@ -997,6 +1020,7 @@ func (state *State) declareSFTPDialogBody(c ui.C, view *sftpView) {
 			ui.Text(c, view.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).Ellipsis()
 		}
 	})
+	column.DrawOver(view.dialogDraw)
 }
 
 // declareSFTPChmodGrid lays out the three permission rows (owner, group,
