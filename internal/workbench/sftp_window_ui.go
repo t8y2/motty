@@ -57,16 +57,19 @@ var (
 )
 
 type sftpWindowUI struct {
-	// root names this window's pages in the identity tree: every window is a
+	// root names this window's page in the identity tree: every window is a
 	// page of its own, and no two windows may name their controls alike.
 	root       string
 	windowPage *ui.Page
-	windowView func(ui.C)
-	panePages  [2]*ui.Page
-	paneView   func(ui.C)
-	scratch    sftpWindowScratch
-	connect    sftpWindowConnectScratch
-	size       gfx.Size
+	// panes keeps what each pane's declaration leaves for the details painted
+	// after the page: the panes are keyed containers of the window page now, not
+	// pages of their own. body and queue are the rectangles the page laid out
+	// for the split and the transfer queue.
+	panes   [2]sftpWindowScratch
+	body    gfx.Rect
+	queue   gfx.Rect
+	connect sftpWindowConnectScratch
+	size    gfx.Size
 	// bounds is the rectangle the view occupies in its canvas: the whole window
 	// for a native one, the tab's rectangle when hosted in the main window.
 	bounds              gfx.Rect
@@ -108,13 +111,12 @@ type sftpWindowUI struct {
 	tabQueue gfx.Rect
 }
 
-// sftpWindowScratch is the room the window's page and each pane's page leave for
-// what is painted by hand after they have been laid out.
+// sftpWindowScratch is the room one pane's declaration leaves for what is
+// painted by hand after the page has been laid out. Every pane keeps its own, so
+// the details painted after the page read the slots of the side they belong to.
 type sftpWindowScratch struct {
-	body, queue ui.Box
-	// bounds is the pane's rectangle as the surrounding page sees it. A pane
-	// page is drawn in its own rectangle; a pane declared in the workbench page
-	// is not, so both read the size from here.
+	// bounds is the pane's rectangle as the page sees it: a pane declared in a
+	// page is not drawn in a page of its own, so it reads its size from here.
 	bounds      gfx.Rect
 	local       bool
 	address     ui.Box
@@ -139,13 +141,11 @@ func (w *sftpWindow) pageRoot() string {
 	return w.ui.root
 }
 
-// windowPage is the page that declares the window's own chrome and its
-// connecting state. Config takes it as the standalone window's page; each pane
-// is a page of its own, drawn into part of this window.
+// windowPage is the page that declares the window's own chrome, its connecting
+// state and its two panes. Config takes it as the standalone window's page.
 func (w *sftpWindow) windowPage() *ui.Page {
 	if w.ui.windowPage == nil {
 		w.ui.windowPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot(), Theme: &w.owner.theme, View: w.declareWindow})
-		w.ui.windowView = w.declareWindow
 	}
 	return w.ui.windowPage
 }
@@ -169,24 +169,26 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	// The event pass a connecting control delivers may start the browser while
 	// the page declares; this paint still shows what it declared.
 	connecting := w.view.worker == nil
-	w.ui.scratch = sftpWindowScratch{}
-	w.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.ui.windowView)
+	// The page declares the panes and keeps their slots here; the details painted
+	// after it read the side they belong to.
+	w.ui.panes = [2]sftpWindowScratch{}
+	w.ui.body, w.ui.queue = gfx.Rect{}, gfx.Rect{}
+	w.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.declareWindow)
 	if connecting {
 		w.paintConnectingDetails(canvas)
 		return
 	}
-	body := w.ui.scratch.body.Rect()
-	var queue gfx.Rect
-	if w.queueCount() > 0 {
-		queue = w.ui.scratch.queue.Rect()
-	}
-	w.ui.split = components.BeginResizable(canvas, theme, hitSFTPWindowSplit, body, w.ui.fraction).LimitsPx(220, 220)
-	panels := w.ui.split.Paint(m.SFTPWindow.Title)
+	w.ui.split = components.BeginResizable(canvas, theme, hitSFTPWindowSplit, w.ui.body, w.ui.fraction).LimitsPx(220, 220)
+	w.ui.split.Paint(m.SFTPWindow.Title)
 	firstLocal := w.owner.sftpWindowOrder == sftpLocalLeft
-	w.paintPane(canvas, panels.First, firstLocal)
-	w.paintPane(canvas, panels.Second, !firstLocal)
+	if s := &w.ui.panes[sideIndex(firstLocal)]; s.list.Valid() {
+		w.paintPaneDetails(canvas, s, firstLocal)
+	}
+	if s := &w.ui.panes[sideIndex(!firstLocal)]; s.list.Valid() {
+		w.paintPaneDetails(canvas, s, !firstLocal)
+	}
 	if w.queueCount() > 0 {
-		w.paintQueue(canvas, queue)
+		w.paintQueue(canvas, w.ui.queue)
 	} else {
 		w.ui.queueBounds = gfx.Rect{}
 		w.ui.queueOffset = 0
@@ -254,23 +256,44 @@ func sftpQueueHeight(size gfx.Size) float32 {
 }
 
 // declareWindow declares the window's own chrome: the connecting state while
-// there is no browser, else the status line and the room the panes and the
-// transfer queue take.
+// there is no browser, else the two panes, the transfer queue and the status
+// line. The panes are keyed containers of this page, laid out at the split's
+// panel rectangles exactly as the main-window tab lays them out.
 func (w *sftpWindow) declareWindow(c ui.C) {
 	if w.view.worker == nil {
 		w.ui.connect = sftpWindowConnectScratch{}
 		w.declareConnecting(c)
 		return
 	}
-	s := &w.ui.scratch
 	size := w.ui.size
-	ui.Column(c).Fill().Pad(sftpWindowPad).Gap(sftpWindowGap).Children(func() {
-		s.body = ui.Slot(c).Grow(1)
-		if w.queueCount() > 0 {
-			s.queue = ui.Slot(c).Height(sftpQueueHeight(size)).Shrink(0)
-		}
-		w.declareStatusLine(c)
+	bounds := gfx.Rect{Width: size.Width, Height: size.Height}
+	queue := w.queueCount() > 0
+	body, queueRect, status := sftpTabPaneRects(bounds, queue)
+	w.ui.body, w.ui.queue = body, queueRect
+	w.ui.split = components.BeginResizable(nil, w.owner.Theme(), hitSFTPWindowSplit, body, w.ui.fraction).LimitsPx(220, 220)
+	panels := w.ui.split.Paint("")
+	firstLocal := w.owner.sftpWindowOrder == sftpLocalLeft
+	ui.Column(c).Fill().Children(func() {
+		w.declarePaneSide(c, panels.First, firstLocal)
+		w.declarePaneSide(c, panels.Second, !firstLocal)
+		ui.Column(c).Absolute().
+			Left(status.X).Top(status.Y).Width(status.Width).Height(status.Height).
+			Children(func() { w.declareStatusLine(c) })
 	})
+}
+
+// declarePaneSide declares one pane as a keyed container of the window page and
+// keeps the room its declaration leaves for the details the page does not paint.
+func (w *sftpWindow) declarePaneSide(c ui.C, bounds gfx.Rect, local bool) {
+	if bounds.Width <= 0 || bounds.Height <= 0 {
+		return
+	}
+	side := sideIndex(local)
+	s := &w.ui.panes[side]
+	*s = sftpWindowScratch{local: local, bounds: bounds}
+	ui.Column(c.KeyInt(side)).Absolute().
+		Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).
+		Children(func() { w.declarePane(c, s) })
 }
 
 // declareStatusLine declares what the window says under the panes: the roots a
@@ -313,21 +336,6 @@ func (w *sftpWindow) canTransfer(local bool) bool {
 		return false
 	}
 	return w.selection(local).count > 0
-}
-
-func (w *sftpWindow) paintPane(canvas *gfx.Canvas, bounds gfx.Rect, local bool) {
-	side := sideIndex(local)
-	if w.ui.panePages[side] == nil {
-		name := "remote"
-		if local {
-			name = "local"
-		}
-		w.ui.panePages[side] = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot() + "-" + name, Theme: &w.owner.theme})
-		w.ui.paneView = w.declarePane
-	}
-	w.ui.scratch = sftpWindowScratch{local: local, bounds: bounds}
-	w.ui.panePages[side].Draw(canvas, bounds, w.ui.paneView)
-	w.paintPaneDetails(canvas, &w.ui.scratch, local)
 }
 
 // paintPaneDetails paints what a pane's view lays out but does not paint itself:
@@ -407,9 +415,10 @@ func (w *sftpWindow) paintPaneDetails(canvas *gfx.Canvas, s *sftpWindowScratch, 
 }
 
 // declarePane declares one side of the window: its title and actions, the path,
-// the filter, the column headers and the room the list takes.
-func (w *sftpWindow) declarePane(c ui.C) {
-	s := &w.ui.scratch
+// the filter, the column headers and the room the list takes. Its slots go into
+// the side's own scratch, so the details painted after the page read the right
+// side even when the panes swap places.
+func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 	local := s.local
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
@@ -544,10 +553,10 @@ func (w *sftpWindow) declarePane(c ui.C) {
 					folder.takeSFTPListChoice()
 					w.selectionChanged(local)
 				}
-				// Enter on a row opens it. The workbench page's List owns the
+				// Enter on a row opens it. The window page's List owns the
 				// key now, so the submit is where the window learns of it; the
-				// window's own key handler still takes Enter first when it is
-				// the one routing (its pane pages, and a List not painted yet).
+				// window's own key handler still takes Enter first only when
+				// the List has not been painted yet.
 				if row, submitted := folder.list.Submitted(); submitted && !w.listBlocked() {
 					w.openEntry(local, row)
 				}

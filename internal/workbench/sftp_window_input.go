@@ -79,26 +79,10 @@ func (w *sftpWindow) listBlocked() bool {
 		w.view.dialog != sftpDialogNone || w.ui.menuOpen || w.view.bookmarksOpen || w.headerMenuOpen()
 }
 
-// syncListChoice mirrors a choice the List made on the keyboard into the model
-// the actions and the status line read, and keeps the offset fields current.
-func (w *sftpWindow) syncListChoice() {
-	for side := range 2 {
-		folder := w.folder(side == 0)
-		if folder.list.Changed() {
-			folder.takeSFTPListChoice()
-			w.selectionChanged(side == 0)
-		}
-		if scroll := folder.listScroll; scroll != nil {
-			w.ui.offset[side], w.ui.offsetSynced[side] = scroll.Offset, scroll.Offset
-			folder.scrollOffset = scroll.Offset
-			folder.first = max(0, int(scroll.Offset/sftpRowHeight))
-		}
-	}
-}
-
-// listTypeahead moves to the row whose name begins with the letters typed: the
-// same session a Menu uses, fed from the window's OnShortcut because the pane
-// pages are painted rather than run as the window's page.
+// listTypeahead moves to the row whose name begins with the letters typed. The
+// window page's List has its own typeahead and sees the key first; this remains
+// for the window's own shortcut route, which is reached when a pane's List has
+// not been painted yet.
 func (w *sftpWindow) listTypeahead(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	text := event.Text
 	if text == "" && event.Key == gfx.KeySpace {
@@ -192,20 +176,9 @@ func (w *sftpWindow) dropTarget(x, y float32, fromLocal bool) (local bool, targe
 	return
 }
 
-// pageKey gives the window's panes the keyboard events they own. Config routes
-// the window page, but the panes are pages painted into it: their Lists keep
-// the arrow and Space semantics a page's own key route gives them.
-func (w *sftpWindow) pageKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	for _, page := range w.ui.panePages {
-		if page != nil {
-			if result, ok := page.Key(event); ok {
-				return result, true
-			}
-		}
-	}
-	return gfx.EventResult{}, false
-}
-
+// pointer sends a pointer event to the window's hand-painted chrome: the split,
+// the scroll bars, the row drags and drops, and the popups. The panes' Lists are
+// part of the window page now, so their clicks complete there first.
 func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if w.view.worker == nil {
 		return gfx.EventResult{}
@@ -662,10 +635,6 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			w.openEntry(local, index)
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-	}
-	if result, ok := w.pageKey(event); ok {
-		w.syncListChoice()
-		return result
 	}
 	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if w.view.worker == nil {

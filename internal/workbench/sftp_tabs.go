@@ -380,9 +380,7 @@ func (state *State) declareSFTPTabPane(c ui.C, w *sftpWindow, bounds, rect gfx.R
 		Width(rect.Width).Height(rect.Height)
 	s := &w.ui.tabPanes[sideIndex(local)]
 	*s = sftpWindowScratch{local: local, bounds: rect}
-	w.ui.scratch = *s
-	pane.Children(func() { w.declarePane(c) })
-	*s = w.ui.scratch
+	pane.Children(func() { w.declarePane(c, s) })
 }
 
 // declareSFTPTabStatus declares the line under the panes, as the window's view
@@ -420,8 +418,12 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 	w.ui.split = components.BeginResizable(canvas, state.Theme(), hitSFTPWindowSplit, w.ui.tabBody, w.ui.fraction).LimitsPx(220, 220)
 	w.ui.split.Paint(m.SFTPWindow.Title)
 	firstLocal := state.sftpWindowOrder == sftpLocalLeft
-	w.paintPaneDetails(canvas, &w.ui.tabPanes[sideIndex(firstLocal)], firstLocal)
-	w.paintPaneDetails(canvas, &w.ui.tabPanes[sideIndex(!firstLocal)], !firstLocal)
+	if s := &w.ui.tabPanes[sideIndex(firstLocal)]; s.list.Valid() {
+		w.paintPaneDetails(canvas, s, firstLocal)
+	}
+	if s := &w.ui.tabPanes[sideIndex(!firstLocal)]; s.list.Valid() {
+		w.paintPaneDetails(canvas, s, !firstLocal)
+	}
 	if w.ui.tabQueue.Width > 0 {
 		w.paintQueue(canvas, w.ui.tabQueue)
 	} else {
