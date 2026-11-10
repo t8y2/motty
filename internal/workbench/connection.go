@@ -508,6 +508,7 @@ const (
 	modalWorkspaceTemplateDelete
 	modalLocalProxy
 	modalCredential
+	modalDesktopSecurity
 )
 
 // tone colors a session's headline.
@@ -1066,6 +1067,8 @@ func (state *State) tellFailure(session *Session, status sshconn.Status) {
 		t.say("", "")
 		if status.HostKey.Type == vncServerKeyType {
 			t.say("", state.vncKeyDescription(status.HostKey))
+		} else if status.HostKey.Type == vncCertificateType {
+			t.say("", state.vncCertificateDescription(status.HostKey))
 		} else {
 			t.say("", fmt.Sprintf(m.ConnChangedBodyFmt, status.HostKey.Address))
 		}
@@ -1075,7 +1078,7 @@ func (state *State) tellFailure(session *Session, status sshconn.Status) {
 		}
 		t.say("", fmt.Sprintf(m.ConnChangedPresented, status.HostKey.Fingerprint))
 		t.say("", "")
-		if status.HostKey.Type == vncServerKeyType || status.HostKey.Type == rdpCertificateType {
+		if vncIdentityKind(status.HostKey.Type) || status.HostKey.Type == rdpCertificateType {
 			t.say(sgrMuted, m.HostKeyForgetHint)
 		} else {
 			t.say(sgrMuted, fmt.Sprintf(m.ConnChangedHintFmt, status.HostKey.File))
@@ -1087,7 +1090,11 @@ func (state *State) tellFailure(session *Session, status sshconn.Status) {
 	case errors.Is(status.Err, sshconn.ErrAuthFailed):
 		t.say(sgrFail, m.ConnAuthFailed)
 	default:
-		t.say(sgrFail, fmt.Sprintf(m.ConnFailedFmt, status.Err))
+		if description := state.vncFailureDescription(status.Err); description != "" {
+			t.say(sgrFail, fmt.Sprintf(m.ConnFailedFmt, description))
+		} else {
+			t.say(sgrFail, fmt.Sprintf(m.ConnFailedFmt, status.Err))
+		}
 	}
 	if status.ProbeRefused {
 		t.say(sgrWarn, m.ConnProbeRefused)
@@ -1178,6 +1185,8 @@ func (state *State) showNextPrompt() {
 				state.hostKeyDescription = state.rdpCertificateDescription(session.hostKey)
 			} else if session.hostKey.Type == vncServerKeyType {
 				state.hostKeyDescription = state.vncKeyDescription(session.hostKey)
+			} else if session.hostKey.Type == vncCertificateType {
+				state.hostKeyDescription = state.vncCertificateDescription(session.hostKey)
 			}
 		case sshconn.PhasePasswordPrompt:
 			state.modal = modalPassword

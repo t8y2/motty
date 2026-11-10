@@ -59,6 +59,10 @@ func TestSessionPresentsTheServersPictureAndSendsInput(t *testing.T) {
 	if info := session.Info(); info.Protocol != "VNC" || info.Name != "demo" || !info.Encrypted {
 		t.Fatalf("info = %+v", info)
 	}
+	if info := session.Info(); info.ProtocolEncrypted || info.Security != "None" || info.Authentication != "none" ||
+		info.SecurityTypes != "None" || info.SecuritySubtypes != "" || info.Cipher != "" || info.TLSVersion != "" {
+		t.Fatalf("SSH protection was confused with protocol encryption: %+v", info)
+	}
 	io.ReadFull(server, make([]byte, 10)) // the first update request
 	// A 4x2 raw rectangle of one color, a bell and a clipboard.
 	update := []byte{0, 0, 0, 1, 0, 0, 0, 0, 0, 4, 0, 2, 0, 0, 0, 0}

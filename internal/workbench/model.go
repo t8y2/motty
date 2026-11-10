@@ -73,6 +73,9 @@ type Host struct {
 	Clipboard  bool
 	Console    bool
 	Chromeless bool
+	// VNCAuthOnly permits RSA-AES modes that encrypt login credentials but
+	// leave the remote desktop session unencrypted. Off unless explicitly set.
+	VNCAuthOnly bool
 
 	// localShell is the shell a local terminal was opened with: a program path,
 	// or a WSL distribution as localshell.WSLShell names it. Empty starts the

@@ -381,6 +381,8 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintOutboundProxyDialog(canvas, viewport)
 	case modalForm:
 		state.paintFormDialog(canvas, viewport)
+	case modalDesktopSecurity:
+		state.paintDesktopSecurity(canvas, viewport)
 	case modalRemoteTools:
 		state.paintRemoteTools(canvas, viewport)
 	case modalToolbarSettings:

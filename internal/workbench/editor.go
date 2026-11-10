@@ -112,6 +112,7 @@ type hostEditor struct {
 	// console is RDP's own: it asks the server for its console (administrative)
 	// session.
 	viaSSH, clipboard, console, chromeless bool
+	vncAuthOnly                            bool
 	// ports are the serial ports found when the picker was last opened.
 	ports     []serial.Port
 	portsOpen bool
@@ -287,6 +288,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.protocol, editor.flow = host.Protocol, host.Line.Flow
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
+	editor.vncAuthOnly = host.Protocol == protocolVNC && host.VNCAuthOnly
 	editor.portsOpen = false
 	if host.Protocol == protocolSerial {
 		editor.port.Insert(host.Line.String())
@@ -319,6 +321,9 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	if editor.protocol == protocolRDP {
 		host.Console = editor.console
+	}
+	if editor.protocol == protocolVNC {
+		host.VNCAuthOnly = editor.vncAuthOnly
 	}
 	if editor.protocol == protocolSSH {
 		host.Auth, host.Identity = editor.auth, editor.identity

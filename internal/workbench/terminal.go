@@ -1616,6 +1616,10 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal == modalUpdate {
 		return state.scrollUpdateNotes(event)
 	}
+	if state.modal == modalDesktopSecurity {
+		state.desktopSecurity.layout.ScrollBy(event.StepY(18))
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
 	// Dialogs own the wheel even over their backdrop. Menus and scrollable
 	// dialogs above have their own handlers; nothing behind them should move.
 	if state.aiSettingsVisible() && state.ai.cfg.dialog == aiDialogImport && state.ai.cfg.importStep == aiImportPreview {

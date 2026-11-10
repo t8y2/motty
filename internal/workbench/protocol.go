@@ -134,10 +134,11 @@ type savedTransport struct {
 	// a desktop host's: its page shows the picture without the bars around it.
 	// The password is never here: it is asked for, and kept in the vault only if
 	// the user says so.
-	ViaSSH     bool `json:"via_ssh,omitempty"`
-	Clipboard  bool `json:"clipboard,omitempty"`
-	Console    bool `json:"console,omitempty"`
-	Chromeless bool `json:"chromeless,omitempty"`
+	ViaSSH      bool `json:"via_ssh,omitempty"`
+	Clipboard   bool `json:"clipboard,omitempty"`
+	Console     bool `json:"console,omitempty"`
+	Chromeless  bool `json:"chromeless,omitempty"`
+	VNCAuthOnly bool `json:"vnc_auth_only,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
@@ -148,6 +149,7 @@ func (host Host) transport() savedTransport {
 		return transport
 	case protocolVNC:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "vnc", host.ViaSSH, host.Clipboard, host.Chromeless
+		transport.VNCAuthOnly = host.VNCAuthOnly
 		return transport
 	case protocolRDP:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
@@ -199,6 +201,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.Protocol, host.Credential = protocolTelnet, ""
 	case "vnc":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolVNC, transport.ViaSSH, transport.Clipboard, transport.Chromeless
+		host.VNCAuthOnly = transport.VNCAuthOnly
 	case "rdp":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
@@ -481,7 +484,8 @@ func (host *Host) normalizeEndpoint() {
 // behind it is its own host. This is only the test for an accidental repeat, such
 // as adding or importing the same entry twice.
 func sameHost(a Host, b Host) bool {
-	return sameEndpoint(a, b) && strings.EqualFold(strings.TrimSpace(a.Label), strings.TrimSpace(b.Label))
+	return sameEndpoint(a, b) && strings.EqualFold(strings.TrimSpace(a.Label), strings.TrimSpace(b.Label)) &&
+		(a.Protocol != protocolVNC || a.VNCAuthOnly == b.VNCAuthOnly)
 }
 
 // hostIndexByEndpoint is where the list has a host that is the same destination

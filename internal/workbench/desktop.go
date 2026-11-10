@@ -28,13 +28,15 @@ import (
 var desktopHits = tree.Feature("desktop")
 
 var (
-	hitDesktopFit        = tree.ID(desktopHits, "fit")
-	hitDesktopActual     = tree.ID(desktopHits, "actual")
-	hitDesktopCapture    = tree.ID(desktopHits, "capture")
-	hitDesktopCtrlAltDel = tree.ID(desktopHits, "ctrl-alt-del")
-	hitDesktopReconnect  = tree.ID(desktopHits, "reconnect")
-	hitDesktopFullscreen = tree.ID(desktopHits, "fullscreen")
-	hitDesktopLatency    = tree.ID(desktopHits, "latency")
+	hitDesktopFit            = tree.ID(desktopHits, "fit")
+	hitDesktopActual         = tree.ID(desktopHits, "actual")
+	hitDesktopCapture        = tree.ID(desktopHits, "capture")
+	hitDesktopCtrlAltDel     = tree.ID(desktopHits, "ctrl-alt-del")
+	hitDesktopReconnect      = tree.ID(desktopHits, "reconnect")
+	hitDesktopFullscreen     = tree.ID(desktopHits, "fullscreen")
+	hitDesktopLatency        = tree.ID(desktopHits, "latency")
+	hitDesktopSecurity       = tree.ID(desktopHits, "security")
+	hitDesktopSecurityStatus = tree.ID(desktopHits, "security-status")
 )
 
 const (
@@ -104,6 +106,9 @@ type desktopView struct {
 	asked, pending desktopTarget
 	pendingSince   time.Duration
 	settling       bool
+	securityInfo   desktop.Info
+	securityLocale string
+	securityStatus string
 }
 
 // desktopTarget is the desktop a pane wants of a server that follows it: as
@@ -828,6 +833,8 @@ func (state *State) clickDesktop(id gfx.ID) bool {
 		state.toggleDesktopFullscreen(session)
 	case hitDesktopCapture:
 		state.toggleCapture(view)
+	case hitDesktopSecurity, hitDesktopSecurityStatus:
+		state.openDesktopSecurity(session)
 	case hitDesktopCtrlAltDel:
 		if !view.ended {
 			view.tap([]desktop.Key{desktop.KeyControl, desktop.KeyAlt}, desktop.KeyEvent{Key: desktop.KeyDelete})
@@ -856,7 +863,8 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 	var light, toolsSlot, captureSlot, latencySlot ui.Box
 	var latencyBadge desktopLatencyUI
 	latencyShown := false
-	var tools []components.ButtonAction
+	var toolsBuffer [5]components.ButtonAction
+	tools := toolsBuffer[:0]
 	if !view.chromeless && !view.fullscreen {
 		latencyBadge, latencyShown = state.desktopLatencyBadge(canvas, view)
 		title := session.Title
@@ -868,18 +876,22 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 
 		// The controls on the right: the scaling choice, Ctrl+Alt+Del where there is
 		// room, and the keyboard switch.
-		tools = []components.ButtonAction{
-			{ID: hitDesktopFit, Label: m.Desktop.Fit, Variant: components.ButtonGhost},
-			{ID: hitDesktopActual, Label: m.Desktop.Actual, Variant: components.ButtonGhost},
-			{ID: hitDesktopFullscreen, Label: m.Desktop.Fullscreen, Variant: components.ButtonGhost, Disabled: view.ended},
-		}
-		if view.fit {
-			tools[0].Variant = components.ButtonSecondary
-		} else {
-			tools[1].Variant = components.ButtonSecondary
-		}
 		if size.Width >= 760 {
-			tools = append([]components.ButtonAction{{ID: hitDesktopCtrlAltDel, Label: m.Desktop.CtrlAltDel, Variant: components.ButtonGhost, Disabled: view.ended}}, tools...)
+			tools = append(tools, components.ButtonAction{ID: hitDesktopCtrlAltDel, Label: m.Desktop.CtrlAltDel, Variant: components.ButtonGhost, Disabled: view.ended})
+		}
+		fitIndex := len(tools)
+		tools = append(tools,
+			components.ButtonAction{ID: hitDesktopFit, Label: m.Desktop.Fit, Variant: components.ButtonGhost},
+			components.ButtonAction{ID: hitDesktopActual, Label: m.Desktop.Actual, Variant: components.ButtonGhost},
+			components.ButtonAction{ID: hitDesktopFullscreen, Label: m.Desktop.Fullscreen, Variant: components.ButtonGhost, Disabled: view.ended},
+		)
+		if view.fit {
+			tools[fitIndex].Variant = components.ButtonSecondary
+		} else {
+			tools[fitIndex+1].Variant = components.ButtonSecondary
+		}
+		if session.host.Protocol == protocolVNC && size.Width >= 640 {
+			tools = append(tools, components.ButtonAction{ID: hitDesktopSecurity, Label: m.Desktop.SecurityDetails, Variant: components.ButtonGhost})
 		}
 		toolsWidth := float32(0)
 		for _, tool := range tools {
@@ -945,6 +957,10 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 			captureStyle, captureHint = iconButtonQuiet, fmt.Sprintf(m.Desktop.TipRelease, desktopEscapeChord)
 		}
 		state.paintIconButton(canvas, hitDesktopCapture, iconKeyboard, captureSlot.Rect(), captureHint, view.ended, captureStyle, pal.workspace)
+		if session.host.Protocol == protocolVNC {
+			strip := geometry.strip
+			canvas.HitWithOptions(hitDesktopSecurityStatus, gfx.Rect{X: termPadX, Y: strip.Y, Width: max(strip.Width-2*termPadX, 0), Height: strip.Height}, m.Desktop.SecurityDetails, gfx.HitOptions{Role: gfx.RoleButton})
+		}
 	}
 
 	// The picture, clipped to its area. The area behind it is the terminal's
@@ -1099,6 +1115,11 @@ func (state *State) desktopStripLeft(view *desktopView, session *Session) string
 		parts = append(parts, size)
 	}
 	switch {
+	case session.host.Protocol == protocolVNC && view.session.Info().Security != "":
+		parts = append(parts, state.vncSecurityStatus(view))
+		if session.host.tunneled() {
+			parts = append(parts, m.StripEncrypted)
+		}
 	case session.host.tunneled():
 		parts = append(parts, m.StripEncrypted)
 	case view.session.Info().Encrypted:
@@ -1171,4 +1192,12 @@ func (state *State) vncKeyDescription(key sshconn.HostKeyInfo) string {
 		return fmt.Sprintf(m.VNCKeyChangedFmt, key.Address, key.Known[0])
 	}
 	return fmt.Sprintf(m.VNCKeyNewFmt, key.Address)
+}
+
+func (state *State) vncCertificateDescription(key sshconn.HostKeyInfo) string {
+	m := state.messages.Desktop
+	if len(key.Known) > 0 {
+		return fmt.Sprintf(m.VNCCertChangedFmt, key.Address, key.Known[0])
+	}
+	return fmt.Sprintf(m.VNCCertNewFmt, key.Address)
 }

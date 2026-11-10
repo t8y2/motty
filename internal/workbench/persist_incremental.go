@@ -302,7 +302,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.InteractiveOnly == right.InteractiveOnly &&
 		left.NoHistory == right.NoHistory && left.LoginCommand == right.LoginCommand && left.Transfer == right.Transfer &&
 		left.ViaSSH == right.ViaSSH && left.Clipboard == right.Clipboard && left.Console == right.Console &&
-		left.Chromeless == right.Chromeless
+		left.Chromeless == right.Chromeless && left.VNCAuthOnly == right.VNCAuthOnly
 }
 
 func sameSavedProxy(left, right *savedOutboundProxy) bool {

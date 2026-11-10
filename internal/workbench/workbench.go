@@ -797,6 +797,7 @@ type State struct {
 	proxyForm       outboundProxyForm
 	agentSetting    agentDescriptionCache
 	form            formDialog
+	desktopSecurity desktopSecurityDialog
 	formSerial      uint32
 	// syncEpoch changes whenever the cloud service is replaced or cleared, so work
 	// that started against the old one can tell its result no longer belongs here.
@@ -1464,6 +1465,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	switch state.modal {
 	case modalNewHost:
 		state.clickHostDialog(id)
+		return
+	case modalDesktopSecurity:
+		state.clickDesktopSecurity(id)
 		return
 	case modalDeleteHost:
 		state.clickDeleteHostDialog(id)
@@ -2711,6 +2715,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.updateKey(event); handled {
+		return result
+	}
+	if result, handled := state.desktopSecurityKey(event); handled {
 		return result
 	}
 	if result, handled := state.launchKey(event); handled {

@@ -157,7 +157,7 @@ func (state *State) describe(session *Session) {
 	}
 
 	session.details[stageHostKey] = ""
-	if !session.host.isSSH() && !session.host.tunneled() {
+	if !session.host.isSSH() && !session.host.tunneled() && session.host.Protocol != protocolVNC {
 		// Nothing to verify and no one to log in to: whatever asks for a login
 		// does so in the terminal.
 		session.details[stageLogin] = ""
@@ -183,7 +183,9 @@ func (state *State) describe(session *Session) {
 	case key.Fingerprint != "" && session.stage > stageHostKey:
 		session.details[stageHostKey] = key.Type + " " + key.Fingerprint
 	case session.stage > stageHostKey:
-		session.details[stageHostKey] = m.ConnDetailKnownHost
+		if session.host.Protocol != protocolVNC {
+			session.details[stageHostKey] = m.ConnDetailKnownHost
+		}
 	}
 
 	session.details[stageLogin] = ""
@@ -195,13 +197,15 @@ func (state *State) describe(session *Session) {
 	case session.phase == sshconn.PhaseConnected && session.method != "":
 		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailMethodFmt, session.method)
 	case session.stage == stageLogin:
-		session.details[stageLogin] = m.ConnDetailAgent
+		if session.host.Protocol != protocolVNC {
+			session.details[stageLogin] = m.ConnDetailAgent
+		}
 	case session.stage > stageLogin && session.method != "":
 		session.details[stageLogin] = fmt.Sprintf(m.ConnDetailMethodFmt, session.method)
 	}
 
 	session.details[stageShell] = ""
-	if session.stage == stageShell && !session.failed() {
+	if session.stage == stageShell && !session.failed() && !session.host.isDesktop() {
 		session.details[stageShell] = m.ConnDetailShellOpening
 		if session.term != nil && session.term.shell != nil {
 			session.details[stageShell] = m.ConnDetailShellWaiting
@@ -217,6 +221,11 @@ func (state *State) describe(session *Session) {
 // failureLine is one line saying why a connection failed.
 func (state *State) failureLine(session *Session) string {
 	m, err := state.messages, session.err
+	if session.host.Protocol == protocolVNC {
+		if description := state.vncFailureDescription(err); description != "" {
+			return description
+		}
+	}
 	switch {
 	case err == nil:
 		return ""

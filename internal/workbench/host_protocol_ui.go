@@ -18,6 +18,7 @@ var (
 	hitDialogViaSSH          = tree.ID(hostProtocolUiHits, "dialog-via-ssh")
 	hitDialogClipboard       = tree.ID(hostProtocolUiHits, "dialog-clipboard")
 	hitDialogConsole         = tree.ID(hostProtocolUiHits, "dialog-console")
+	hitDialogVNCAuthOnly     = tree.ID(hostProtocolUiHits, "dialog-vnc-auth-only")
 	hitDialogChromeless      = tree.ID(hostProtocolUiHits, "dialog-chromeless")
 	hitDialogPortsTrigger    = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
 	hitDialogPortsDismiss    = tree.ID(hostProtocolUiHits, "dialog-ports-dismiss")
@@ -364,6 +365,10 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.chromeless = !editor.chromeless
 	case id == hitDialogConsole:
 		editor.console = !editor.console
+	case id == hitDialogVNCAuthOnly:
+		if editor.protocol == protocolVNC {
+			editor.vncAuthOnly = !editor.vncAuthOnly
+		}
 	case id == hitDialogAdvanced:
 		editor.advancedOpen = !editor.advancedOpen
 	case id == hitDialogForwardX11:
@@ -572,7 +577,7 @@ const (
 
 // hostVNCRowsBody is where the desktop switches' body put each checkbox row.
 type hostVNCRowsBody struct {
-	tunnel, clipboard, chromeless, console ui.Box
+	tunnel, clipboard, chromeless, console, authOnly ui.Box
 }
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
@@ -714,7 +719,11 @@ func (state *State) desktopRowsHeight() float32 {
 	if state.editor.protocol == protocolRDP {
 		return rdpRowsHeight
 	}
-	return vncRowsHeight
+	height := float32(vncRowsHeight + (12 + 20) + 12 + 54)
+	if state.editor.viaSSH {
+		height += 8 + 36
+	}
+	return height
 }
 
 // paintVNCRows declares the switches of a VNC or RDP host and paints them in
@@ -730,6 +739,8 @@ func (state *State) paintVNCRows(canvas *gfx.Canvas, bounds gfx.Rect) {
 	state.paintDialogCheckbox(canvas, hitDialogChromeless, m.HideBars, editor.chromeless, b.chromeless)
 	if editor.protocol == protocolRDP {
 		state.paintDialogCheckbox(canvas, hitDialogConsole, m.ConsoleSession, editor.console, b.console)
+	} else if editor.protocol == protocolVNC {
+		state.paintDialogCheckbox(canvas, hitDialogVNCAuthOnly, m.AllowVNCAuthOnly, editor.vncAuthOnly, b.authOnly)
 	}
 }
 
@@ -747,6 +758,12 @@ func (state *State) declareHostVNCRows(c ui.C) {
 		b.chromeless = state.declareDialogCheckboxC(c, m.HideBars, 12, 0)
 		if editor.protocol == protocolRDP {
 			b.console = state.declareDialogCheckboxC(c, m.ConsoleSession, 12, 0)
+		} else if editor.protocol == protocolVNC {
+			b.authOnly = state.declareDialogCheckboxC(c, m.AllowVNCAuthOnly, 12, 0)
+			ui.Paragraph(c, m.VNCNegotiationHint, 3).FontSize(metrics.FontSizeS).LineHeight(18).Color(state.pal.muted).MarginSides(12, 0, 0, 0)
+			if editor.viaSSH {
+				ui.Paragraph(c, m.VNCTunnelCredentialsHint, 2).FontSize(metrics.FontSizeS).LineHeight(18).Color(state.pal.muted).MarginSides(8, 0, 0, 0)
+			}
 		}
 	})
 }
