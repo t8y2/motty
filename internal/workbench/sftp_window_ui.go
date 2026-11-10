@@ -141,6 +141,17 @@ func (w *sftpWindow) pageRoot() string {
 	return w.ui.root
 }
 
+// windowPage is the page that declares the window's own chrome. Config takes it
+// as the standalone window's page; a pane and the connecting state are pages of
+// their own, drawn into part of this window.
+func (w *sftpWindow) windowPage() *ui.Page {
+	if w.ui.windowPage == nil {
+		w.ui.windowPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot(), Theme: &w.owner.theme, View: w.declareWindow})
+		w.ui.windowView = w.declareWindow
+	}
+	return w.ui.windowPage
+}
+
 func sideIndex(local bool) int {
 	if local {
 		return 0
@@ -161,12 +172,8 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 		w.paintConnecting(canvas, size)
 		return
 	}
-	if w.ui.windowPage == nil {
-		w.ui.windowPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot(), Theme: &w.owner.theme})
-		w.ui.windowView = w.declareWindow
-	}
 	w.ui.scratch = sftpWindowScratch{}
-	w.ui.windowPage.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.ui.windowView)
+	w.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.ui.windowView)
 	body := w.ui.scratch.body.Rect()
 	var queue gfx.Rect
 	if w.queueCount() > 0 {

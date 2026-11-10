@@ -636,3 +636,42 @@ func TestDocumentComparisonPaneEditsLikeTheEditor(t *testing.T) {
 		t.Fatalf("comment in the comparison gave %q", got)
 	}
 }
+
+// The editor window is one page: its Config routes the editor's typing and the
+// footer's buttons, which the window no longer sends to the page by hand.
+func TestEditorWindowPageRoutesTypingAndFooterClick(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc main() {}\n")
+	d.cacheKey = "main.go"
+	owner := d.owner
+	manager := &owner.fileWindows
+	manager.documents = map[string]*fileDocument{d.cacheKey: d}
+	manager.order = []string{d.cacheKey}
+	manager.active = d.cacheKey
+	config := manager.config()
+	config.Width, config.Height = 900, 620
+	view, err := headless.Open(config, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	pane := documentHitBounds(t, codeWindow{Session: view}, hitDocumentInput)
+	if err := view.Click(pane.X+40, pane.Y+20); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Type("typed"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(d.editor.String(), "typed") {
+		t.Fatalf("typing did not reach the editor: %q", d.editor.String())
+	}
+	before := d.edit.noWrap
+	if err := view.ClickLabel(owner.messages.CodeEditor.WrapOn); err != nil {
+		t.Fatal(err)
+	}
+	if d.edit.noWrap == before {
+		t.Fatal("a footer button click did not reach the page's action")
+	}
+}

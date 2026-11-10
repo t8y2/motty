@@ -129,7 +129,13 @@ func (w *sftpWindow) startBrowser() {
 }
 
 func (w *sftpWindow) config() app.Config {
-	return app.Config{Title: w.owner.messages.SFTPWindow.Title + " — " + w.session.Title + " · " + w.session.Address, Icon: AppIcon(), Width: 1200, Height: 800, MinWidth: sftpWindowMinWidth, MinHeight: sftpWindowMinHeight, Tree: Tree(), Paint: w.paint, OnWake: w.wake, OnPointer: w.pointer, OnKey: w.key, OnShortcut: w.shortcut, OnScroll: w.scroll, OnFileDrop: w.fileDrop, TextInput: w.textInput, OnCloseRequest: w.requestClose, OnClosed: w.onClosed}
+	base := app.Config{Title: w.owner.messages.SFTPWindow.Title + " — " + w.session.Title + " · " + w.session.Address, Icon: AppIcon(), Width: 1200, Height: 800, MinWidth: sftpWindowMinWidth, MinHeight: sftpWindowMinHeight, Tree: Tree(), Paint: w.paint, OnWake: w.wake, OnPointer: w.pointer, OnKey: w.key, OnShortcut: w.shortcut, OnScroll: w.scroll, OnFileDrop: w.fileDrop, TextInput: w.textInput, OnCloseRequest: w.requestClose, OnClosed: w.onClosed}
+	// The window's page routes its own chrome; the panes and the connecting
+	// state are pages painted into it, and the window's Paint also paints the
+	// toolbar controls, dialogs and transfer queue the page only lays out.
+	config := w.windowPage().Config(base)
+	config.Paint = base.Paint
+	return config
 }
 
 func (w *sftpWindow) connected() bool {
