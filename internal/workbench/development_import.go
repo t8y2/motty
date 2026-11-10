@@ -269,6 +269,62 @@ func (state *State) clickDevelopmentImport(id gfx.ID) {
 	}
 }
 
+// declareDevelopmentImport declares the development-profile import in the
+// window page: the explanation, the password choice and the error are page
+// controls, and the dialog's two actions are page buttons.
+func (state *State) declareDevelopmentImport(c ui.C) {
+	if state.modal != modalDevelopmentImport {
+		return
+	}
+	m, view := state.messages, &state.developmentImport
+	body := fmt.Sprintf(m.DevelopmentImportBodyFmt, view.hosts)
+	skip := m.DevelopmentImportEmpty
+	if view.recordsImported {
+		body, skip = m.DevelopmentImportResume, m.DevelopmentImportKeep
+	}
+	const width float32 = 600
+	bodyWidth := width - 2*(metrics.PadSurface+metrics.GapItem)
+	canvas := c.Canvas()
+	lines := wrappedLines(canvas, body, metrics.FontSizeM, bodyWidth)
+	errorText := ""
+	errorLines := 0
+	if view.err != "" {
+		errorText = fmt.Sprintf(m.DevelopmentImportFailedFmt, view.err)
+		errorLines = wrappedLines(canvas, errorText, metrics.FontSizeM, bodyWidth)
+	}
+	bodyHeight := float32(lines+errorLines)*stateNoticeLine + 40
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(canvas, *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout("")
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.DevelopmentImportTitle, Width: width, Height: layout.Content.Height + bodyHeight,
+		Layer: dialogLayer, Scope: dialogScope,
+		DismissID: hitDevelopmentClose, CloseID: hitDevelopmentClose,
+	})
+	dialog.Body(func() {
+		ui.Column(c).Fill().Children(func() {
+			ui.Paragraph(c, body, lines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
+			ui.Checkbox(c, &view.passwords, m.DevelopmentImportPasswords).Color(state.pal.text)
+			if errorLines != 0 {
+				ui.Paragraph(c, errorText, errorLines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
+			}
+		})
+	})
+	dialog.Footer(func() {
+		// The primary action takes the keyboard as the dialog opens, as it did.
+		if ui.Button(c, skip).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickDevelopmentImport(hitDevelopmentEmpty) })
+		}
+		if ui.Button(c, m.DevelopmentImportAction).Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.clickDevelopmentImport(hitDevelopmentImport) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.closeModal()
+	}
+}
+
 func (state *State) paintDevelopmentImport(canvas *gfx.Canvas, viewport gfx.Rect) {
 	m, view := state.messages, &state.developmentImport
 	body := fmt.Sprintf(m.DevelopmentImportBodyFmt, view.hosts)

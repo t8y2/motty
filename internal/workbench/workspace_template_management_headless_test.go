@@ -67,7 +67,7 @@ func TestWorkspaceTemplateEditThroughWindowDriver(t *testing.T) {
 	if err := view.Driver().Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
 		t.Fatal(err)
 	}
-	click(hitWorkspaceDraftSubmit)
+	workspaceEditorClickLabel(t, view, state.messages.WorkspaceDraftSaveChanges)
 	want := []string{state.hosts[1].CatalogID, state.hosts[0].CatalogID, state.hosts[2].CatalogID}
 	if state.modal != modalNone || len(state.templates) != 1 || state.templates[0].ID != template.ID ||
 		state.templates[0].Name != "Critical" || !isGrid(state.templates[0].Layout, 3) ||

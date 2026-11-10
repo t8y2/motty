@@ -288,16 +288,20 @@ func TestWorkspaceTemplateManagementFitsMinimumWindow(t *testing.T) {
 			if !hasText(texts, state.messages.WorkspaceDraftTitleEdit) {
 				t.Fatalf("missing edit title: %q", texts)
 			}
-			submit := panelHit(t, canvas, hitWorkspaceDraftSubmit)
+			submit := pageHitByLabel(t, canvas, state.messages.WorkspaceDraftSaveChanges)
 			if submit.Label != state.messages.WorkspaceDraftSaveChanges || state.workspaceDraft.bounds.Height < 56 {
 				t.Fatalf("edit footer=%+v host list=%+v", submit, state.workspaceDraft.bounds)
 			}
 			for _, id := range []gfx.ID{hitWorkspaceDraftName, hitWorkspaceDraftSearch, hitWorkspaceDraftPresets.At(0),
-				hitWorkspaceDraftPresets.At(1), hitWorkspaceDraftPresets.At(2), hitWorkspaceDraftRemoveItem.At(0), hitWorkspaceDraftCancel} {
+				hitWorkspaceDraftPresets.At(1), hitWorkspaceDraftPresets.At(2), hitWorkspaceDraftRemoveItem.At(0)} {
 				box := panelHit(t, canvas, id).Bounds
 				if box.X < 0 || box.Y < 0 || box.X+box.Width > MinimumWindowWidth || box.Y+box.Height > MinimumWindowHeight {
 					t.Fatalf("edit control %v outside window: %+v", id, box)
 				}
+			}
+			cancel := pageHitByLabel(t, canvas, state.messages.Cancel).Bounds
+			if cancel.X < 0 || cancel.Y < 0 || cancel.X+cancel.Width > MinimumWindowWidth || cancel.Y+cancel.Height > MinimumWindowHeight {
+				t.Fatalf("edit Cancel outside window: %+v", cancel)
 			}
 			if state.workspaceDraft.bounds.Y+state.workspaceDraft.bounds.Height >= submit.Bounds.Y ||
 				state.workspaceDraft.previewBounds.Y+state.workspaceDraft.previewBounds.Height >= submit.Bounds.Y {

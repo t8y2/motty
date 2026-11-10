@@ -159,11 +159,20 @@ type credentialUI struct {
 	editing        string
 	name, password text.Editor
 	dialogError    string
+	// passwordShown swaps the password's bullets for its text, as the field's
+	// eye button does; closing the dialog forgets it.
+	passwordShown bool
+	// nameField and passwordField are the page's handles on the same editors, so
+	// the platform edits and the dialog reads one text.
+	nameField, passwordField ui.Field
 }
 
 func (state *State) openCredentialDialog(id string) {
 	form := &state.credentialForm
 	*form = credentialUI{editing: id}
+	// The handles point at the form's own editors, which live as long as it does.
+	form.nameField.Bind(&form.name)
+	form.passwordField.Bind(&form.password)
 	if entry, ok := state.credentialByID(id); ok {
 		form.name.Insert(entry.Name)
 		// The dialog shows what is saved, as a host's does; a vault that cannot
@@ -270,6 +279,86 @@ func (state *State) deleteCredential(id string) {
 	}
 	state.hostDataChanged()
 	state.save()
+}
+
+// declareCredentialDialog declares the shared-password dialog in the window
+// page. The page names its two fields and their buttons, so typing, focus and
+// the initial focus are the page's; the dialog keeps no body page of its own.
+func (state *State) declareCredentialDialog(c ui.C) {
+	if state.modal != modalCredential {
+		return
+	}
+	form, m := &state.credentialForm, state.messages.Credentials
+	title := m.DialogAddTitle
+	if form.editing != "" {
+		title = m.DialogEditTitle
+	}
+	const width float32 = 520
+	bodyHeight := withError(float32(68*2+8), form.dialogError)
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout("")
+	// No scrim dismiss: a press beside the form must not discard its input.
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitCredentialClose, InitialFocusID: hitCredentialName,
+	})
+	dialog.Body(func() {
+		ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+			state.credentialField(c, hitCredentialName, &form.nameField, m.Name, m.NamePlaceholder, 62, false)
+			placeholder := ""
+			if form.editing != "" {
+				placeholder = m.PasswordKeep
+			}
+			state.credentialField(c, hitCredentialPassword, &form.passwordField, m.Password, placeholder, 62, true)
+			if form.dialogError != "" {
+				ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+					Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+			}
+		})
+	})
+	dialog.Footer(func() {
+		// The page owns its buttons; the window's dispatch runs after the paint,
+		// as it did when the dialog was painted by hand.
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickCredentialDialog(hitCredentialCancel) })
+		}
+		if ui.Button(c, m.Save).Shrink(0).Clicked() {
+			c.After(func() { state.clickCredentialDialog(hitCredentialSubmit) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.closeModal()
+	}
+}
+
+// credentialField declares one labelled field of the shared-password dialog in
+// the same row rhythm components.BeginField gives it. A secret field gets the
+// eye button that swaps bullets for text.
+func (state *State) credentialField(c ui.C, id gfx.ID, field *ui.Field, title, placeholder string, height float32, secret bool) {
+	theme := c.Theme()
+	m := theme.Metrics
+	gap := m.GapItem / 2
+	form := &state.credentialForm
+	field.Secure = secret && !form.passwordShown
+	ui.Column(c).Height(height).MarginSides(0, 0, 6, 0).Children(func() {
+		ui.Text(c, title).FontSize(m.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(m.FontSizeM + 4).Ellipsis()
+		box := ui.TextFieldID(c, id, field, title, placeholder).Height(m.ControlHeight).MarginSides(gap, 0, 0, 0)
+		if secret {
+			icon, label := lucideIcons[iconEye], state.messages.ShowSecret
+			if form.passwordShown {
+				icon, label = lucideIcons[iconEyeOff], state.messages.HideSecret
+			}
+			box.Action(icon, label)
+			if box.ActionClicked() {
+				form.passwordShown = !form.passwordShown
+				if state.options.Invalidate != nil {
+					state.options.Invalidate()
+				}
+			}
+		}
+	})
 }
 
 func (state *State) paintCredentialDialog(canvas *gfx.Canvas, viewport gfx.Rect) {

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/ui"
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
@@ -345,7 +346,7 @@ func TestImportPasswordsOnlyFillsMissingHostsAndKeepsExistingValues(t *testing.T
 		t.Fatalf("eligible passwords=%d, want only missing existing and new", state.sessionImport.eligible)
 	}
 	canvas, texts := paintedTexts(state)
-	if _, ok := hitByID(canvas, hitImportSavePasswords); !ok || !strings.Contains(strings.Join(texts, " "), "2 can be saved") {
+	if _, ok := hitByLabel(canvas, state.messages.Tools.ImportSavePasswords); !ok || !strings.Contains(strings.Join(texts, " "), "2 can be saved") {
 		t.Fatal("preview does not show an explicit password-save choice and eligible count")
 	}
 	state.Click(hitImportSavePasswords)
@@ -607,5 +608,33 @@ func TestSavedSpacedGroupPathReadsBackAsOneGroup(t *testing.T) {
 	}
 	if index := state.hostGroupIndex("65-Uyghur/Kashgar"); index < 0 || !state.hostGroups[index].Explicit {
 		t.Fatalf("the folder lost its explicit group: %+v", state.hostGroups[index])
+	}
+}
+
+// TestSessionImportDialogsReadTheirButtonsInThePage draws the chooser and the
+// password preview as the window page declares them and presses Cancel in the
+// event pass, so the page's buttons are what closes them.
+func TestSessionImportDialogsReadTheirButtonsInThePage(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.modal = modalImportSessions
+	view := func(c ui.C) { state.declareImportSessions(c) }
+	page, canvas := drawDialogPage(t, state, view)
+	cancel := pageHitByLabel(t, canvas, state.messages.Cancel)
+	if cancel.ID.IsZero() {
+		t.Fatal("the chooser's Cancel is not painted")
+	}
+	clickPageHit(t, state, page, canvas, view, cancel)
+	if state.modal != modalNone {
+		t.Fatalf("the chooser stayed open as modal %d", state.modal)
+	}
+
+	state.modal = modalSessionImportPreview
+	state.sessionImport = sessionImportPreview{plan: hostImportPlan{}}
+	view = func(c ui.C) { state.declareSessionImportPreview(c) }
+	page, canvas = drawDialogPage(t, state, view)
+	cancel = pageHitByLabel(t, canvas, state.messages.Cancel)
+	clickPageHit(t, state, page, canvas, view, cancel)
+	if state.modal != modalNone || len(state.sessionImport.passwords) != 0 {
+		t.Fatalf("the preview stayed open as modal %d", state.modal)
 	}
 }

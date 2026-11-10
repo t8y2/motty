@@ -319,6 +319,58 @@ func (s *State) aiCLILoginInput(context app.TextInputContext) *app.TextInput {
 	}
 	return &t.input
 }
+
+// declareAICLILogin declares the assistant's CLI sign-in in the window page.
+// The terminal it shows stays the canvas control it was; the dialog shell, its
+// focus and its Cancel are the page's.
+func (s *State) declareAICLILogin(c ui.C) {
+	login := s.ai.login
+	if login == nil {
+		return
+	}
+	m := s.messages.AISettings
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	width := min(float32(920), max(float32(320), viewport.Width-40))
+	height := min(float32(420), max(float32(180), viewport.Height-230))
+	description := m.CLIAuthSensitive
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.CLIAuthTitle + " · " + login.provider.Name, Description: description, Width: width,
+		Height: layout.Content.Height + height, Layer: dialogLayer, Scope: dialogScope,
+		DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose, InitialFocusID: hitAICLILoginTerminal,
+	})
+	dialog.Body(func() {
+		ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
+			area := d.Rect
+			cols := max(20, int(area.Width/max(s.cellWidth, 1)))
+			rows := max(5, int(area.Height/max(s.cellHeight, 1)))
+			if columns, lines := login.term.screen.Size(); columns != cols || lines != rows {
+				login.term.screen.Resize(cols, rows)
+				if login.term.shell != nil {
+					login.term.shell.Resize(cols, rows)
+				}
+			}
+			login.geometry = terminalGeometry{area: area, left: area.X, top: area.Y, cols: cols, rows: rows}
+			d.Canvas.Fill(area, s.termPal.terminal)
+			s.paintGridWithID(d.Canvas, &Session{Title: m.CLIAuthTitle, Address: m.CLIAuthTitle, term: login.term}, login.geometry, hitAICLILoginTerminal, true)
+		})
+	})
+	dialog.Footer(func() {
+		label := s.messages.Cancel
+		if login.finished {
+			label = m.FormSave
+		}
+		if ui.Button(c, label).Secondary().Shrink(0).Clicked() {
+			c.After(func() { s.aiDialogClick(hitAISetFormCancel) })
+		}
+	})
+	if dialog.Dismissed() {
+		s.aiStopCLILogin()
+	}
+}
+
 func (s *State) paintAICLILogin(canvas *gfx.Canvas, viewport gfx.Rect) {
 	login := s.ai.login
 	if login == nil {

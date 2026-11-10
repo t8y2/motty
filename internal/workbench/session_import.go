@@ -8,6 +8,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sessionimport"
 	"motty/internal/sshconfig"
 	"motty/internal/vault"
@@ -253,6 +254,165 @@ func (state *State) clickMobaEncoding(id gfx.ID) {
 			encoding = sessionimport.MobaGB18030
 		}
 		state.readSessionImport(sessionimport.MobaXterm, paths, sessionimport.ParseOptions{MobaEncoding: encoding})
+	}
+}
+
+// declareImportSessions declares the client chooser in the window page: one
+// large outline button per client, the guide link at the footer's left and
+// Cancel at its right.
+func (state *State) declareImportSessions(c ui.C) {
+	if state.modal != modalImportSessions {
+		return
+	}
+	m := state.messages.Tools
+	theme := *c.Theme()
+	choices := [...]struct {
+		id    gfx.ID
+		label string
+	}{
+		{hitImportPuTTY, "PuTTY"},
+		{hitImportXshell, "Xshell"},
+		{hitImportMobaXterm, "MobaXterm"},
+		{hitImportWindTerm, "WindTerm"},
+		{hitImportElecterm, "Electerm"},
+		{hitImportNetcatty, "Netcatty"},
+	}
+	const columns = 2
+	rowHeight := components.BeginButton(nil, theme, gfx.ID{}, gfx.Rect{}).Large().BoundsHeight()
+	gap := theme.Metrics.GapItem
+	rows := (len(choices) + columns - 1) / columns
+	bodyHeight := float32(rows)*rowHeight + float32(rows-1)*gap
+	const width float32 = 480
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), theme, viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(m.ImportChooserBody)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.ImportChooserTitle, Description: m.ImportChooserBody,
+		Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitImportSessionsDismiss, CloseID: hitImportSessionsClose,
+	})
+	dialog.Body(func() {
+		cellWidth := (layout.Body.Width - gap*(columns-1)) / columns
+		ui.Column(c).Fill().Gap(gap).Children(func() {
+			for row := 0; row < rows; row++ {
+				ui.Row(c).Height(rowHeight).Gap(gap).Children(func() {
+					for column := 0; column < columns; column++ {
+						index := row*columns + column
+						if index >= len(choices) {
+							ui.Spacer(c).Grow(1)
+							continue
+						}
+						choice := choices[index]
+						button := ui.Button(c, choice.label).Large().Outline().Width(cellWidth).Shrink(0)
+						if index == 0 {
+							button = button.AutoFocus()
+						}
+						if button.Clicked() {
+							c.After(func() { state.clickImportSessions(choice.id) })
+						}
+					}
+				})
+			}
+		})
+	})
+	dialog.Footer(func() {
+		if ui.Button(c, m.ImportGuide).Link().Icon(icons.BookOpen).Shrink(0).Clicked() {
+			c.After(func() { state.clickImportSessions(hitImportGuide) })
+		}
+		ui.Spacer(c).Grow(1)
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickImportSessions(hitImportSessionsCancel) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.closeModal()
+	}
+}
+
+// declareMobaEncoding declares the MobaXterm encoding question in the window
+// page: the two sample lines and the three answers.
+func (state *State) declareMobaEncoding(c ui.C) {
+	if state.modal != modalMobaEncoding {
+		return
+	}
+	m := state.messages.Tools
+	const width float32 = 520
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(m.ImportEncodingBody)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.ImportEncodingTitle, Description: m.ImportEncodingBody,
+		Width: width, Height: layout.Content.Height + 52, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitMobaEncodingCancel, CloseID: hitMobaEncodingClose,
+	})
+	dialog.Body(func() {
+		ui.Column(c).Fill().Gap(6).Children(func() {
+			ui.Text(c, fmt.Sprintf(m.ImportEncodingSampleUTF8Fmt, state.mobaEncoding.utf8)).
+				FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Ellipsis()
+			ui.Text(c, fmt.Sprintf(m.ImportEncodingSampleGBFmt, state.mobaEncoding.gb)).
+				FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Ellipsis()
+		})
+	})
+	dialog.Footer(func() {
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickMobaEncoding(hitMobaEncodingCancel) })
+		}
+		if ui.Button(c, "UTF-8").Secondary().Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.clickMobaEncoding(hitMobaChooseUTF8) })
+		}
+		if ui.Button(c, "GB18030").Shrink(0).Clicked() {
+			c.After(func() { state.clickMobaEncoding(hitMobaChooseGB18030) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.clickMobaEncoding(hitMobaEncodingCancel)
+	}
+}
+
+// declareSessionImportPreview declares the password preview in the window
+// page: its error line and the three ways out.
+func (state *State) declareSessionImportPreview(c ui.C) {
+	if state.modal != modalSessionImportPreview {
+		return
+	}
+	m := state.messages.Tools
+	bodyHeight := float32(0)
+	if state.dialogError != "" {
+		bodyHeight = 24
+	}
+	const width float32 = 550
+	description := fmt.Sprintf(m.ImportPasswordPreviewBodyFmt, len(state.sessionImport.plan.hosts), len(state.sessionImport.passwords), state.sessionImport.eligible)
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.ImportPasswordPreviewTitle, Description: description,
+		Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitImportPreviewCancel, CloseID: hitImportPreviewClose,
+	})
+	dialog.Body(func() {
+		ui.Column(c).Fill().Children(func() {
+			if state.dialogError != "" {
+				ui.Text(c, state.dialogError).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(24)
+			}
+		})
+	})
+	dialog.Footer(func() {
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickSessionImportPreview(hitImportPreviewCancel) })
+		}
+		if ui.Button(c, m.ImportConnectionsOnly).Secondary().Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.clickSessionImportPreview(hitImportConnectionsOnly) })
+		}
+		if ui.Button(c, m.ImportSavePasswords).Shrink(0).Clicked() {
+			c.After(func() { state.clickSessionImportPreview(hitImportSavePasswords) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.clickSessionImportPreview(hitImportPreviewCancel)
 	}
 }
 

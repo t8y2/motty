@@ -37,6 +37,8 @@ type workspaceDraft struct {
 	previewScroll  float32
 	previewBounds  gfx.Rect
 	previewContent float32
+	// nameField is the page's handle on the same editor the dialog reads.
+	nameField ui.Field
 	// modePage declares the temporary/fixed switch, and modeView caches its view.
 	modePage *ui.Page
 	modeView func(ui.C)
@@ -52,6 +54,7 @@ func (state *State) openWorkspaceDraft(mode workspaceDraftMode) {
 		selected: make(map[string]bool, maxWorkspaceTemplateHosts),
 		layout:   layoutcore.GridSpec(1),
 	}
+	state.workspaceDraft.nameField.Bind(&state.workspaceDraft.name)
 	state.modal = modalWorkspaceDraft
 }
 
@@ -77,6 +80,7 @@ func (state *State) openWorkspaceDraftEdit(templateID string) {
 		draft.selected[id] = true
 	}
 	state.workspaceDraft = draft
+	state.workspaceDraft.nameField.Bind(&state.workspaceDraft.name)
 	state.selectedWorkspaceTemplateID = template.ID
 	state.workspaceLibraryExpanded = true
 	state.modal = modalWorkspaceDraft
@@ -420,6 +424,120 @@ func (state *State) declareWorkspaceDraftMode(c ui.C) {
 	}
 }
 
+// declareWorkspaceDraft declares the draft dialog in the window page. The
+// mode switch and the name field are page controls; the preview, the search
+// field and the host list keep their hand-painted components in the body slot
+// where their exact geometry is the dialog's own.
+func (state *State) declareWorkspaceDraft(c ui.C) {
+	if state.modal != modalWorkspaceDraft {
+		return
+	}
+	draft, m := &state.workspaceDraft, state.messages
+	// The mode switch writes the new mode during this paint. The dialog was
+	// laid out from the mode at the start of the paint, so the rest of the paint
+	// reads that same mode; the next paint shows the new one.
+	mode := draft.mode
+	title, submit := m.WorkspaceDraftTitleTemporary, m.WorkspaceDraftLaunch
+	var initial gfx.ID
+	description := m.WorkspaceDraftDescription
+	if mode == workspaceDraftFixed {
+		title, submit, initial = m.WorkspaceDraftTitleFixed, m.WorkspaceDraftSave, hitWorkspaceDraftName
+	} else if mode == workspaceDraftEdit {
+		title, submit, initial = m.WorkspaceDraftTitleEdit, m.WorkspaceDraftSaveChanges, hitWorkspaceDraftName
+		description = m.WorkspaceDraftEditDescription
+	}
+	const width float32 = 860
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	bodyHeight := min(440, max(0, viewport.Height-236))
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: width, Height: layout.Content.Height + bodyHeight,
+		Layer: dialogLayer, Scope: dialogScope,
+		DismissID: hitWorkspaceDraftDismiss, CloseID: hitWorkspaceDraftCancel, InitialFocusID: initial,
+	})
+	bodyWidth := width - 2*(c.Theme().Metrics.PadSurface+c.Theme().Metrics.GapItem)
+	dialog.Body(func() {
+		ui.Column(c).Fill().Children(func() {
+			if mode != workspaceDraftEdit {
+				ui.Row(c).Height(32).Width(min(300, bodyWidth)).MarginSides(0, 0, 12, 0).Children(func() {
+					choice := ui.Choice(c, &draft.mode, workspaceDraftModeChoices[:], state.workspaceDraftModeName).Fill()
+					// Any press on the switch clears the error, including a press
+					// on the mode that is already chosen.
+					if _, clicked := choice.ChosenIndex(); clicked {
+						draft.error = ""
+					}
+				})
+			}
+			if mode == workspaceDraftFixed || mode == workspaceDraftEdit {
+				theme := c.Theme()
+				metrics := theme.Metrics
+				gap := metrics.GapItem / 2
+				ui.Column(c).Height(60).MarginSides(0, 0, 8, 0).Children(func() {
+					ui.Text(c, m.WorkspaceDraftName).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
+						Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
+					ui.TextFieldID(c, hitWorkspaceDraftName, &draft.nameField, m.WorkspaceDraftName, m.WorkspaceDraftNamePlaceholder).
+						Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
+				})
+			}
+			ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
+				state.drawWorkspaceDraftRest(d.Canvas, d.Rect)
+			})
+		})
+	})
+	dialog.Footer(func() {
+		if ui.Button(c, m.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickWorkspaceDraft(hitWorkspaceDraftCancel) })
+		}
+		if ui.Button(c, submit).Shrink(0).Clicked() {
+			c.After(func() { state.clickWorkspaceDraft(hitWorkspaceDraftSubmit) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.clickWorkspaceDraft(hitWorkspaceDraftDismiss)
+	}
+}
+
+// drawWorkspaceDraftRest paints the part of the draft below its fields: the
+// layout preview, the host search and the host list, with the hint on the
+// body's last line. bounds is the room the page gave the slot.
+func (state *State) drawWorkspaceDraftRest(canvas *gfx.Canvas, bounds gfx.Rect) {
+	draft, m := &state.workspaceDraft, state.messages
+	wide := bounds.Width >= 620
+	hostWidth := bounds.Width
+	y := bounds.Y
+	if wide {
+		hostWidth = bounds.Width * .48
+		state.paintWorkspaceDraftLayout(canvas, gfx.Rect{X: bounds.X + hostWidth + 24, Y: y, Width: max(0, bounds.Width-hostWidth-24), Height: max(0, bounds.Y+bounds.Height-y-32)}, false)
+	} else {
+		state.paintWorkspaceDraftLayout(canvas, gfx.Rect{X: bounds.X, Y: y, Width: bounds.Width, Height: 184}, true)
+		y += 196
+	}
+	components.PaintInputGroup(canvas, state.Theme(), gfx.Rect{X: bounds.X, Y: y, Width: hostWidth, Height: 34}, components.InputGroupSnapshot{
+		ID: hitWorkspaceDraftSearch, Label: m.WorkspaceDraftHostSearch,
+		Value: draft.query.String(), Placeholder: m.WorkspaceDraftHostSearch,
+		NativeEditing: canvas.Focused() == hitWorkspaceDraftSearch && draft.query.String() != "",
+		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: icons.Search},
+	})
+	y += 46
+	draft.bounds = gfx.Rect{X: bounds.X, Y: y, Width: hostWidth, Height: max(0, bounds.Y+bounds.Height-y-32)}
+	state.paintWorkspaceDraftHosts(canvas)
+	hint, color := m.WorkspaceDraftLimit, state.pal.muted
+	if draft.mode == workspaceDraftTemporary {
+		hint = m.WorkspaceDraftTemporaryHint
+	} else {
+		hint = m.WorkspaceDraftFixedHint
+	}
+	if !wide {
+		hint = fmt.Sprintf(m.WorkspaceDraftSelectedFmt, state.workspaceDraftSelectionCount()) + " · " + hint
+	}
+	if draft.error != "" {
+		hint, color = draft.error, state.pal.danger
+	}
+	monitorLabel(canvas, elide(canvas, hint, 12, gfx.WeightRegular, bounds.Width), gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height - 22, Width: bounds.Width, Height: 22}, 12, color, gfx.WeightRegular)
+}
+
 func (state *State) paintWorkspaceDraft(canvas *gfx.Canvas, viewport gfx.Rect) {
 	state.paintWorkspaceDraftDialog(canvas, viewport)
 }
@@ -469,39 +587,7 @@ func (state *State) paintWorkspaceDraftDialog(canvas *gfx.Canvas, viewport gfx.R
 
 	// The preview sits beside the host list when there is room; compact dialogs
 	// keep one short layout strip above the list and never cover the footer.
-	hostWidth := body.Width
-	wide := body.Width >= 620
-	if wide {
-		hostWidth = body.Width * .48
-		state.paintWorkspaceDraftLayout(canvas, gfx.Rect{X: body.X + hostWidth + 24, Y: y, Width: max(0, body.Width-hostWidth-24), Height: max(0, body.Y+body.Height-y-32)}, false)
-	} else {
-		state.paintWorkspaceDraftLayout(canvas, gfx.Rect{X: body.X, Y: y, Width: body.Width, Height: 184}, true)
-		y += 196
-	}
-	components.PaintInputGroup(canvas, theme, gfx.Rect{X: body.X, Y: y, Width: hostWidth, Height: 34}, components.InputGroupSnapshot{
-		ID: hitWorkspaceDraftSearch, Label: m.WorkspaceDraftHostSearch,
-		Value: draft.query.String(), Placeholder: m.WorkspaceDraftHostSearch,
-		NativeEditing: canvas.Focused() == hitWorkspaceDraftSearch && draft.query.String() != "",
-		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: icons.Search},
-	})
-	y += 46
-	draft.bounds = gfx.Rect{X: body.X, Y: y, Width: hostWidth, Height: max(0, body.Y+body.Height-y-32)}
-	state.paintWorkspaceDraftHosts(canvas)
-	hint, color := m.WorkspaceDraftLimit, state.pal.muted
-	if mode == workspaceDraftTemporary {
-		hint = m.WorkspaceDraftTemporaryHint
-	} else if mode == workspaceDraftEdit {
-		hint = m.WorkspaceDraftFixedHint
-	} else {
-		hint = m.WorkspaceDraftFixedHint
-	}
-	if !wide {
-		hint = fmt.Sprintf(m.WorkspaceDraftSelectedFmt, state.workspaceDraftSelectionCount()) + " · " + hint
-	}
-	if draft.error != "" {
-		hint, color = draft.error, state.pal.danger
-	}
-	monitorLabel(canvas, elide(canvas, hint, 12, gfx.WeightRegular, body.Width), gfx.Rect{X: body.X, Y: body.Y + body.Height - 22, Width: body.Width, Height: 22}, 12, color, gfx.WeightRegular)
+	state.drawWorkspaceDraftRest(canvas, gfx.Rect{X: body.X, Y: y, Width: body.Width, Height: max(0, body.Y+body.Height-y)})
 	dialog.Actions(layout,
 		components.ButtonAction{ID: hitWorkspaceDraftCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
 		components.ButtonAction{ID: hitWorkspaceDraftSubmit, Label: submit},
@@ -643,8 +729,14 @@ func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {
 		state.submitWorkspaceDraft()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
-	if draft.modePage != nil {
+	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
 		// The temporary/fixed switch is a page Choice: its arrows are the page's.
+		if result, handled := page.Key(event); handled {
+			return result
+		}
+	}
+	if draft.modePage != nil {
+		// The old dialog body declared its switch in a page of its own.
 		if result, handled := draft.modePage.Key(event); handled {
 			return result
 		}

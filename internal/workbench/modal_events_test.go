@@ -87,6 +87,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 			state.Click(hitAIToggle)
 			clickAIPanelPage(t, state, hitAIHistory)
 			var closeID gfx.ID
+			closeLabel := ""
 			switch name {
 			case "ai-rename":
 				state.Click(hitAIHistoryRename.At(0))
@@ -111,7 +112,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 					closeID = hitAISetFormClose
 				} else {
 					state.Click(hitAISetClearHistory)
-					closeID = hitAISetConfirmCancel
+					closeLabel = state.messages.Cancel
 				}
 			case "known-hosts":
 				writeKnownHostsFixture(t, state.options.KnownHostsPath)
@@ -148,7 +149,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 			}
 			var clicked bool
 			for _, hit := range driver.Snapshot().Hits {
-				if hit.ID == closeID && !hit.IsLabel {
+				if (!closeID.IsZero() && hit.ID == closeID && !hit.IsLabel) || (closeLabel != "" && hit.Label == closeLabel && hit.Role == gfx.RoleButton) {
 					if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
 						t.Fatal(err)
 					}

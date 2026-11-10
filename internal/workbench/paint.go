@@ -343,10 +343,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintSessionLinkDialog(canvas, viewport)
 	case modalHostImportResult:
 		state.paintHostImportResult(canvas, viewport)
-	case modalSessionImportPreview:
-		state.paintSessionImportPreview(canvas, viewport)
-	case modalMobaEncoding:
-		state.paintMobaEncoding(canvas, viewport)
 	case modalNewForward:
 		state.paintForwardDialog(canvas, viewport)
 	case modalNewProxy:
@@ -365,16 +361,12 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintHighlightDialog(canvas, viewport)
 	case modalAutofillRule:
 		state.paintAutofillDialog(canvas, viewport)
-	case modalCredential:
-		state.paintCredentialDialog(canvas, viewport)
 	case modalAutofillConfirm:
 		state.paintAutofillConfirm(canvas, viewport)
 	case modalDeleteRule:
 		state.paintDeleteRuleDialog(canvas, viewport)
 	case modalSnippet:
 		state.paintSnippetDialog(canvas, viewport)
-	case modalImportSessions:
-		state.paintImportSessionsDialog(canvas, viewport)
 	case modalFontPicker:
 		state.paintFontPicker(canvas, viewport)
 	case modalOutboundProxy:
@@ -399,8 +391,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintLaunchDialog(canvas, viewport)
 	case modalStateNotice:
 		state.paintStateNotice(canvas, viewport)
-	case modalDevelopmentImport:
-		state.paintDevelopmentImport(canvas, viewport)
 	case modalUpdate:
 		state.paintUpdateDialog(canvas, viewport)
 	case modalUpdateProgress:
@@ -411,10 +401,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintHistory(canvas, viewport)
 	case modalShortcutCapture:
 		state.paintShortcutCaptureDialog(canvas, viewport)
-	case modalWorkspaceDraft:
-		state.paintWorkspaceDraft(canvas, viewport)
-	case modalWorkspaceSave:
-		state.paintWorkspaceSaveDialog(canvas, viewport)
 	case modalWorkspaceTemplateDelete:
 		state.paintWorkspaceTemplateDelete(canvas, viewport)
 	case modalLocalProxy:
@@ -423,7 +409,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	if state.knownHosts.action != knownHostsActionNone {
 		state.paintKnownHostsDialog(canvas, viewport)
 	}
-	state.paintAIDialogs(canvas, viewport)
 	state.paintTerminalMenu(canvas, viewport)
 	state.paintTabDrag(canvas, viewport)
 	state.paintToolbarDockDrag(canvas)
@@ -592,6 +577,15 @@ func (state *State) declareShell(c ui.C) {
 	// The command palette is a dialog of the window's own page: its search field,
 	// its list and its sort switch are page elements.
 	state.declareCommandPalette(c)
+	// The workbench's modal dialogs are overlays of this same page.
+	state.declareAIDialogs(c)
+	state.declareCredentialDialog(c)
+	state.declareImportSessions(c)
+	state.declareMobaEncoding(c)
+	state.declareSessionImportPreview(c)
+	state.declareDevelopmentImport(c)
+	state.declareWorkspaceDraft(c)
+	state.declareWorkspaceSave(c)
 }
 
 // windowBarGeometry lays the bar out once without its contents to find out how

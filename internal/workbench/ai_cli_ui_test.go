@@ -53,6 +53,18 @@ func TestCLILoginNativeInputAndFormRendering(t *testing.T) {
 		}
 		t.Fatal("missing clickable control", id)
 	}
+	clickLabel := func(label string) {
+		t.Helper()
+		for _, h := range view.Snapshot().Hits {
+			if h.Label == label && h.Role == gfx.RoleButton && !h.Block && !h.Disabled {
+				if err := view.Click(h.Bounds.X+h.Bounds.Width/2, h.Bounds.Y+h.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+		t.Fatal("missing clickable control", label)
+	}
 	clickID(hitAISetProviderAdd)
 	for i, p := range aiPresets {
 		if p.kind == store.KindCodexCLI {
@@ -83,7 +95,7 @@ func TestCLILoginNativeInputAndFormRendering(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	clickID(hitAISetFormSubmit)
+	clickLabel(s.messages.AISettings.FormAdd)
 	s.cancelAIFetch()
 	if len(s.ai.providers) != 1 {
 		t.Fatal("native form did not save")

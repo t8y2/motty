@@ -2547,6 +2547,15 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		// row identities are already mounted where the menu was painted.
 		mount = 0
 	}
+	if state.ai.login != nil && event.Target == hitAICLILoginTerminal {
+		// The sign-in terminal is painted inside the page's dialog: its keys go
+		// to the shell, not to the page's overlay hold; Escape ends the login.
+		if event.Key == gfx.KeyEscape {
+			state.aiStopCLILogin()
+			return gfx.EventResult{Handled: true, Repaint: true}
+		}
+		return state.aiCLILoginKey(event)
+	}
 	if state.schemeBrowserOpen && state.modal == modalNone && state.activeSection == sectionSettings && state.scheme.page != nil {
 		if result, handled := state.scheme.page.Key(event); handled {
 			return result

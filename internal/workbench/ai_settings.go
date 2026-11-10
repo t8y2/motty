@@ -243,7 +243,8 @@ type aiSettingsUI struct {
 	// reach them the way they reach a control on the settings page.
 	formPage *ui.Page
 	// The form's fields share the editors the application reads. They are bound
-	// once, when the page is made.
+	// once, by the page that declares them.
+	formBound     bool
 	formName      ui.Field
 	formCLIPath   ui.Field
 	formBaseURL   ui.Field
@@ -581,8 +582,15 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		cfg.mcpSelectOpen = false
 		return gfx.EventResult{Focus: aiAgentClientID(cfg.agentClient), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
-	// The choices of the dialogs painted outside the settings page are declared
-	// in pages of their own; those pages own their arrow keys.
+	// The choices and controls of the dialogs are declared in the window page;
+	// the page owns their arrow keys and activation.
+	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
+		if result, handled := page.Key(event); handled {
+			return result, true
+		}
+	}
+	// The dialogs painted before the migration declared their choices in pages
+	// of their own; keep them working until those bodies are gone.
 	switch cfg.dialog {
 	case aiDialogProbe:
 		if cfg.probePage != nil {
@@ -611,10 +619,19 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 // identities the window's own routing names.
 func (state *State) AIProviderFormInput(context app.TextInputContext) *app.TextInput {
 	cfg := &state.ai.cfg
-	if !state.aiSettingsVisible() || cfg.dialog != aiDialogProvider || cfg.formPage == nil {
+	if !state.aiSettingsVisible() || cfg.dialog != aiDialogProvider {
 		return nil
 	}
-	return cfg.formPage.TextInput(context)
+	// The form is declared in the window page now; the page serves its editors.
+	if page := state.chrome.windowPage; page != nil {
+		if input := page.TextInput(context); input != nil {
+			return input
+		}
+	}
+	if cfg.formPage != nil {
+		return cfg.formPage.TextInput(context)
+	}
+	return nil
 }
 
 func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {

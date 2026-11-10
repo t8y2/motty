@@ -79,11 +79,23 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 				shot("stdio")
 				agentRun := state.messages.AISettings.AgentModeRun
 				allowAll := state.messages.AISettings.MCPModeAllowAll
+				clickButton := func(label string) {
+					t.Helper()
+					view.Rest()
+					hit, ok := snapshotButton(view.Snapshot(), label)
+					if !ok {
+						t.Fatalf("missing button %q", label)
+					}
+					if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+						t.Fatal(err)
+					}
+				}
 				clickLabel(agentRun, false)
 				if err := view.Keys("right"); err != nil {
 					t.Fatal(err)
 				}
-				if state.ai.cfg.dialog != aiDialogAgentAllowAll || state.ai.settings.agentMode != gate.ModeAsk || view.Snapshot().Focused != hitAISetConfirmCancel {
+				cancel, ok := snapshotButton(view.Snapshot(), state.messages.Cancel)
+				if state.ai.cfg.dialog != aiDialogAgentAllowAll || state.ai.settings.agentMode != gate.ModeAsk || !ok || view.Snapshot().Focused != cancel.ID {
 					t.Fatal("stdio full access did not wait on the safe confirmation action")
 				}
 				shot("stdio-confirm")
@@ -101,7 +113,7 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 					t.Fatal("Escape did not cancel")
 				}
 				clickLabel(allowAll, true)
-				click(hitAISetConfirmAction)
+				clickButton(state.messages.AISettings.MCPAllowAllConfirm)
 				if state.ai.settings.agentMode != gate.ModeAllowAll || state.ai.settings.mcpMode != gate.ModeObserve {
 					t.Fatal("confirmation changed the wrong MCP service")
 				}
@@ -149,14 +161,10 @@ func TestMCPConsentSaveErrorsAreForgottenAfterNativeEscape(t *testing.T) {
 			if err := world.db(t).Close(); err != nil {
 				t.Fatal(err)
 			}
-			found := false
-			for _, hit := range view.Snapshot().Hits {
-				if hit.ID == hitAISetConfirmAction && !hit.IsLabel {
-					if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
-						t.Fatal(err)
-					}
-					found = true
-					break
+			hit, found := snapshotButton(view.Snapshot(), state.messages.AISettings.MCPAllowAllConfirm)
+			if found {
+				if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+					t.Fatal(err)
 				}
 			}
 			if !found || state.ai.cfg.notice == "" {
