@@ -615,11 +615,16 @@ type State struct {
 	localStart          localStartPolicy
 	lastLocalDirectory  string // where a local shell last was; a new local terminal starts there when no local tab is in front
 	localShellMenu      localShellSelect
-	editorMenu          editorSelect
-	terminalFontSize    float32
-	terminalFontFace    gfx.MonoFace
-	terminalLineHeight  lineHeight
-	terminalScrollback  int
+	// hiddenShells are the shells the pickers leave out, by their choice path.
+	// An entry whose shell this computer stops detecting simply sits unseen:
+	// lists follow detection, so an uninstalled shell is gone either way, and
+	// one that returns comes back hidden until the eye opens it again.
+	hiddenShells       []string
+	editorMenu         editorSelect
+	terminalFontSize   float32
+	terminalFontFace   gfx.MonoFace
+	terminalLineHeight lineHeight
+	terminalScrollback int
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
 	textScale           textScale

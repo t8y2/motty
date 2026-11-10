@@ -526,7 +526,7 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		case gfx.KeyRight:
 			if row >= 0 && row < len(palette.visible) {
 				entry := palette.entries[palette.visible[row]]
-				if entry.target == hitConnectPickLocal && localShellSettingVisible() && len(state.localShellMenu.choices) > 1 {
+				if entry.target == hitConnectPickLocal && localShellSettingVisible() && state.visibleShellCount() > 1 {
 					return toggleShells(true)
 				}
 			}

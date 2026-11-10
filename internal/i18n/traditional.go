@@ -267,6 +267,8 @@ var TraditionalMessages = Messages{
 	SettingsLocalShellEmpty:                "未檢測到可用 Shell",
 	LocalShellDefault:                      "預設",
 	LocalShellChoose:                       "選擇 Shell",
+	ShellEyeHide:                           "從各清單中隱藏",
+	ShellEyeShow:                           "在各清單中顯示",
 	SettingsTerminalFontSize:               "終端機字號",
 	SettingsTerminalFontSizeDescription:    "所有分頁一起調整。",
 	SettingsTerminalFontFamily:             "終端機字型",

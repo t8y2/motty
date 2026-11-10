@@ -231,7 +231,7 @@ func (state *State) declareCommandPaletteRow(c ui.C, entry commandPaletteEntry, 
 		}
 		// The Local Terminal row keeps one plain choice and opens the shell list
 		// from its arrow without leaving this dialog.
-		if entry.target == hitConnectPickLocal && localShellSettingVisible() && len(state.localShellMenu.choices) > 1 {
+		if entry.target == hitConnectPickLocal && localShellSettingVisible() && state.visibleShellCount() > 1 {
 			expanded := state.commandPalette.localShells
 			glyph := iconChevronRight
 			if expanded {

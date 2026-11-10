@@ -301,6 +301,8 @@ type Messages struct {
 	SettingsLocalShellDescription          string
 	SettingsLocalShellEmpty                string
 	LocalShellDefault                      string
+	ShellEyeHide                           string
+	ShellEyeShow                           string
 	LocalShellChoose                       string
 	SettingsTerminalFontSize               string
 	SettingsTerminalFontSizeDescription    string
