@@ -145,6 +145,7 @@ func (state *State) applySelectedWorkspaceTemplate() {
 		state.showActionWarning(template.Name, detail)
 		return
 	}
+	plan.Commands = template.Commands
 	plan = orderedWorkspaceLaunch(plan, template.HostIDs)
 	workspaceID, _, err := state.launchWorkspaceWithIdentity(plan, template.Name, workspaceLaunchIdentity{
 		managedLayout: template.Layout,
@@ -304,7 +305,7 @@ func workspaceLibraryRowHeight(template WorkspaceTemplate, width float32, expand
 	if !expanded {
 		return workspaceLibraryHeaderHeight
 	}
-	return workspaceLibraryHeaderHeight + workspaceLibraryLayoutHeight(width) + workspaceCardContentHeight(len(template.HostIDs), template.Layout) + workspaceLibraryBottomInset
+	return workspaceLibraryHeaderHeight + workspaceLibraryLayoutHeight(width) + workspaceTemplateCardHeight(template) + workspaceLibraryBottomInset
 }
 
 func (state *State) paintWorkspaceLibraryRow(canvas *gfx.Canvas, bounds gfx.Rect, index int,
@@ -405,7 +406,7 @@ func (state *State) paintWorkspaceLibraryHosts(canvas *gfx.Canvas, bounds gfx.Re
 	panel := gfx.Rect{X: bounds.X + 12, Y: bounds.Y + workspaceLibraryHeaderHeight, Width: max(0, bounds.Width-24)}
 	state.paintWorkspaceLayoutPresets(canvas, gfx.Rect{X: panel.X + 4, Y: panel.Y + 4, Width: max(0, panel.Width-8), Height: workspacePresetStripHeight(max(0, panel.Width-8))}, hitWorkspaceTemplatePresets, index*len(workspacePresets), template.Layout)
 	items := workspaceTemplateItems(template)
-	height := workspaceCardContentHeight(len(items), template.Layout)
+	height := workspaceTemplateCardHeight(template)
 	content := gfx.Rect{X: panel.X, Y: panel.Y + workspaceLibraryLayoutHeight(bounds.Width), Width: panel.Width, Height: height}
 	state.paintWorkspaceCards(canvas, content, state.workspaceLibraryBounds, items, template.Layout, workspaceCardsTemplate, template.ID, index)
 

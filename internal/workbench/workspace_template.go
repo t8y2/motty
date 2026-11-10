@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"unicode"
@@ -31,14 +32,25 @@ var (
 	ErrWorkspaceSaveDuplicateHost  = errors.New("workbench: workspace panes repeat a host")
 )
 
+// WorkspaceCommand configures one SSH terminal within a workspace.
+type WorkspaceCommand struct {
+	Command string `json:"command"`
+}
+
+func (command WorkspaceCommand) normalized() WorkspaceCommand {
+	command.Command = restoredLoginCommand(command.Command)
+	return command
+}
+
 // WorkspaceTemplate is the small, shareable definition of a saved workspace.
 // It references catalog hosts or this computer's default local terminal and
 // never contains credentials, sessions, or terminal state.
 type WorkspaceTemplate struct {
-	ID      string                `json:"id"`
-	Name    string                `json:"name"`
-	HostIDs []string              `json:"host_ids"`
-	Layout  layoutcore.LayoutSpec `json:"layout"`
+	Commands map[string]WorkspaceCommand `json:"commands,omitempty"`
+	ID       string                      `json:"id"`
+	Name     string                      `json:"name"`
+	HostIDs  []string                    `json:"host_ids"`
+	Layout   layoutcore.LayoutSpec       `json:"layout"`
 	// Columns is read from files written before layouts existed, which stored
 	// only a grid width. normalizeWorkspaceTemplate folds it into Layout.
 	Columns uint8 `json:"columns,omitempty"`
@@ -83,6 +95,18 @@ func (template *WorkspaceTemplate) validate() error {
 		}
 		seen[hostID] = struct{}{}
 		template.HostIDs[index] = hostID
+	}
+	template.Commands = maps.Clone(template.Commands)
+	for id, command := range template.Commands {
+		command = command.normalized()
+		if _, ok := seen[id]; !ok || id == workspaceLocalTerminalRef || command.Command == "" {
+			delete(template.Commands, id)
+		} else {
+			template.Commands[id] = command
+		}
+	}
+	if len(template.Commands) == 0 {
+		template.Commands = nil
 	}
 	return nil
 }

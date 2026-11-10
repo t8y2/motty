@@ -283,18 +283,16 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 
 	t.paintFinding, t.paintInSplit, t.paintInactive = finding, inSplit, inactive
 	t.paintNoticeShown = showingInputNotice
+	t.paintCommandNoticeShown = state.workspaceCommandNoticeInWorkspace(session) && (inSplit || !finding)
+	t.paintCommandNotice = ui.Box{}
 	t.paintBarBackground = barBackground
 	t.paintGeometry = geometry
 	t.paintFind = findBarSlots{}
 	t.paintSpinner, t.paintLight, t.paintNotice = ui.Box{}, ui.Box{}, ui.Box{}
 
-	// The notice strip is part of the top chrome whenever the layout reserved
-	// it, so the control starts below it even on a pane that does not paint it.
-	noticeReserve := chrome.top
-	if inSplit || finding {
-		noticeReserve -= infoBarHeight
-	}
-	noticeReserved := noticeReserve > 0
+	// Each notice reserves its own strip across a split, including panes that
+	// do not own the notice, so changing focus does not resize the terminal.
+	noticeReserved := state.terminalInputNoticeVisibleInWorkspace(session) && (inSplit || !finding)
 
 	c.Part(terminalPanePart)
 	ui.Column(c).Fill().Children(func() {
@@ -310,6 +308,9 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 		}
 		c.Part(terminalBodyPart)
 		ui.Column(c).Grow(1).FillHeight().Children(func() {
+			if t.paintCommandNoticeShown {
+				t.paintCommandNotice = ui.Slot(c).Height(inputNoticeHeight).FillWidth().Shrink(0)
+			}
 			switch {
 			case showingInputNotice:
 				t.paintNotice = ui.Slot(c).Height(inputNoticeHeight).FillWidth().Shrink(0)

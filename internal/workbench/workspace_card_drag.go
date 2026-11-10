@@ -181,8 +181,16 @@ func (state *State) workspaceCardLayout(region workspaceCardRegion) layoutcore.L
 func (state *State) revealWorkspaceCard(source workspaceCardRegion, target, count int, spec layoutcore.LayoutSpec) {
 	cells := workspaceLayoutCells(count, spec)
 	height := workspaceCardContentHeight(count, spec)
+	if source.view == workspaceCardsTemplate {
+		for _, template := range state.templates {
+			if template.ID == source.template {
+				height = workspaceTemplateCardHeight(template)
+				break
+			}
+		}
+	}
 	origin := source.bounds.Y - 4 - cells[source.index].Y*height
-	box := gfx.Rect{Y: origin + cells[target].Y*height + 4, Height: workspaceCardHeight - 8}
+	box := gfx.Rect{Y: origin + cells[target].Y*height + 4, Height: cells[target].Height*height - 8}
 	delta := float32(0)
 	if box.Y < source.viewport.Y {
 		delta = box.Y - source.viewport.Y

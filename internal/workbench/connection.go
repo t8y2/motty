@@ -952,6 +952,7 @@ func (state *State) closeDisconnectedShell(session *Session) {
 	}
 	releaseShell(terminal.shell)
 	terminal.shell = nil
+	terminal.login = loginCommand{}
 	terminal.recording.stop()
 	terminal.ended = true
 	terminal.preedit = app.TextState{}

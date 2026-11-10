@@ -101,7 +101,8 @@ func (host *Host) finish() {
 // presentation state: conn owns the network, term holds the screen and the
 // shell, the other fields are what the window last read from the connection.
 type Session struct {
-	outputAlert terminalOutputAlert // runtime only; connection status stays independent
+	workspaceCommand WorkspaceCommand    // immutable workspace configuration for this session
+	outputAlert      terminalOutputAlert // runtime only; connection status stays independent
 
 	ID     uint32
 	HostID uint32

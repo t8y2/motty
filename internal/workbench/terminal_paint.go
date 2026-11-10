@@ -76,6 +76,9 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, t.paintBarBackground)
 		}
 	}
+	if t.paintCommandNoticeShown {
+		state.paintWorkspaceCommandNotice(canvas, session, t.paintCommandNotice.Rect())
+	}
 	state.paintCompletionList(canvas, session, t.paintGeometry)
 	if t.paintNoticeShown {
 		state.paintTerminalInputNotice(canvas, session, t.paintNotice.Rect())
