@@ -22,7 +22,7 @@ func TestVNCFailureDescriptionPreservesOfferNumbersAndTransportErrors(t *testing
 		format string
 		names  string
 	}{
-		{&rfb.UnsupportedSecurityError{Types: []uint32{30, 250}}, state.messages.Desktop.VNCUnsupportedSecurityFmt, "#30, #250"},
+		{&rfb.UnsupportedSecurityError{Types: []uint32{33, 250}}, state.messages.Desktop.VNCUnsupportedSecurityFmt, "#33, #250"},
 		{&rfb.UnsupportedSecurityError{Types: []uint32{257, 900}, VeNCrypt: true}, state.messages.Desktop.VNCUnsupportedVeNCryptFmt, "TLSNone, #900"},
 		{&rfb.UnsupportedSecurityError{Types: []uint32{6, 130}, AuthenticationOnly: true}, state.messages.Desktop.VNCAuthOnlyPermissionFmt, "RA2ne, RA256ne"},
 	} {

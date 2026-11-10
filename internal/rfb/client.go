@@ -101,9 +101,10 @@ type Config struct {
 	// same connection goes on with the answer, as a viewer's password dialog does.
 	// Returning an error ends the connection with it.
 	AskPassword func() (string, error)
-	// AskCredentials supplies the account and password after the encrypted
-	// handshake has authenticated the server identity. It takes precedence over
-	// Username/Password for UserPass, keeping system and VNC passwords separate.
+	// AskCredentials supplies the account and password for account authentication.
+	// RSA-AES and VeNCrypt authenticate the server before calling it; ARD encrypts
+	// the credentials without authenticating the server. It takes precedence over
+	// Username/Password, keeping system and VNC passwords separate.
 	// The handshake timeout is paused while the callback waits for the user.
 	AskCredentials func() (username, password string, err error)
 	// VerifyServerKey decides whether the RSA-AES server's canonical PKIX DER

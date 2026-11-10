@@ -333,8 +333,8 @@ type Options struct {
 	// Password is empty. It may block until the user has answered; the same
 	// connection then goes on. An error ends the attempt.
 	AskPassword func() (string, error)
-	// AskCredentials obtains an account and its password for VNC RSA-AES or
-	// VeNCrypt authentication. It is distinct from a legacy VNC password.
+	// AskCredentials obtains an account and its password for VNC RSA-AES,
+	// VeNCrypt or ARD authentication. It is distinct from a legacy VNC password.
 	AskCredentials func() (username, password string, err error)
 	// AllowUnencrypted permits VNC's explicitly requested authentication-only
 	// encryption modes; the session itself is not protected by those modes.

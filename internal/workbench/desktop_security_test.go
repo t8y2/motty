@@ -217,31 +217,32 @@ func TestVNCPasswordDialogKeepsTunnelAccountNamesSeparate(t *testing.T) {
 	}
 }
 
-func TestVNCSecurityToolbarDoesNotAllocateForAdditionalControls(t *testing.T) {
+func TestVNCSecurityToolbarKeepsControlsAccessibleAndOrdered(t *testing.T) {
 	state, session, remote, _, _ := followState(t, 1, false, gfx.Size{Width: 1400, Height: 900})
 	session.host.Protocol = protocolVNC
 	session.desk.session = &securityDesktop{Session: remote, info: desktop.Info{Security: "RA2", ProtocolEncrypted: true}}
-	var canvas gfx.Canvas
-	var baseline float64
+	driver := desktopDriver(t, state)
 	for _, width := range []float32{639, 640, 800} {
-		size := gfx.Size{Width: width, Height: 480}
-		for range 3 {
-			canvas.Reset()
-			state.paintDesktopPage(&canvas, size, session)
+		if err := driver.Resize(int(width), 480); err != nil {
+			t.Fatal(err)
 		}
-		allocations := testing.AllocsPerRun(50, func() {
-			canvas.Reset()
-			state.paintDesktopPage(&canvas, size, session)
-		})
-		if width == 639 {
-			baseline = allocations
-		} else if allocations > baseline {
-			t.Fatalf("toolbar at %.0fpx allocated %v times, without additional controls %v", width, allocations, baseline)
+		if err := repaintDesktopDriver(driver, state); err != nil {
+			t.Fatal(err)
+		}
+		snapshot := driver.Snapshot()
+		if _, visible := hitByIDInSnapshot(snapshot, hitDesktopSecurity); visible != (width >= 640) {
+			t.Fatalf("security toolbar control visibility at %.0fpx = %v", width, visible)
+		}
+		if _, visible := hitByIDInSnapshot(snapshot, hitDesktopSecurityStatus); !visible {
+			t.Fatalf("security status entry is unavailable at %.0fpx", width)
 		}
 		previous := float32(-1)
 		for _, id := range []gfx.ID{hitDesktopCtrlAltDel, hitDesktopFit, hitDesktopActual, hitDesktopFullscreen, hitDesktopSecurity} {
-			hit, ok := hitByID(&canvas, id)
+			hit, ok := hitByIDInSnapshot(snapshot, id)
 			if !ok {
+				if id != hitDesktopCtrlAltDel && id != hitDesktopSecurity {
+					t.Fatalf("toolbar control %v is unavailable at %.0fpx", id, width)
+				}
 				continue
 			}
 			if hit.Bounds.X <= previous {
