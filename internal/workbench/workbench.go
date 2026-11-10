@@ -857,14 +857,13 @@ type State struct {
 	filesRowIcons []ui.Box
 
 	// area: keychain, palette, import and the rest
-	// hostGridPaint and hostGridDrawers are the card grid's declaration: the
-	// reorder surface around its items and the reusable painters of each item.
-	hostGridPaint       hostGridPaintState
-	hostGridDrawers     []*hostGridDrawer
-	hostGridDrawerCount int
-	// hostGridInner lays out one card or group header inside the element that
-	// declared its hit, so the grid paints its items in the page, not after it.
-	hostGridInner ui.View
+	// hostGridPaint is the card grid's declaration: one control paints the cards
+	// and group headers, including the reorder surface around its items.
+	hostGridPaint hostGridPaintState
+	// hostGridHandlers owns the grid control's page identity. The cards and headers
+	// keep their application hit identities, so clicks still reach the central
+	// dispatch; the control gives the grid its focus and drag routing.
+	hostGridHandlers ui.Handlers
 	// dev is the development-only component gallery's state; a release build
 	// keeps none of it (see debug.go and debug_release.go).
 	dev devState
