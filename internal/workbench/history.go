@@ -72,14 +72,15 @@ type historyUI struct {
 	host      string // history key of the session it was opened for
 	all       bool   // every host, not only this one
 	search    text.Editor
-	entries   []cmdhistory.Entry
-	ranked    []int // indexes into entries, best first
-	query     string
-	selected  int
-	top       int // first listed result
-	// scopePage declares the host/all switch, and scopeView caches its view.
-	scopePage *ui.Page
-	scopeView func(ui.C)
+	// field is the page's handle on search; the platform types into the editor it
+	// binds.
+	field    ui.Field
+	bound    bool
+	entries  []cmdhistory.Entry
+	ranked   []int // indexes into entries, best first
+	query    string
+	selected int
+	top      int // first listed result
 }
 
 // historyKey is the key under which a session's commands are kept.
@@ -266,6 +267,12 @@ func (state *State) openHistory(session *Session) {
 	h.sessionID, h.host = session.ID, historyKey(session)
 	h.all = !state.historyAvailable(session) || session.host.NoHistory
 	h.search = text.Editor{}
+	if !h.bound {
+		// The picker's search is a page field now: the page gives the platform the
+		// editor it edits, and this keeps the one the application already reads.
+		h.field.Bind(&h.search)
+		h.bound = true
+	}
 	h.query = "\x00" // never equal to a typed query, so the first refresh ranks
 	state.modal = modalHistory
 	state.loadHistory()
@@ -454,9 +461,11 @@ func (state *State) historyKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	state.rankHistory()
 	h := &state.history
-	if h.scopePage != nil {
-		// The host/all switch is a page Choice: its arrows are the page's.
-		if result, handled := h.scopePage.Key(event); handled {
+	// The host/all switch is a page Choice: its arrows are the page's. The page
+	// still holds the keyboard as the dialog's overlay, so only the keys it has
+	// actually acted on are taken from the picker below.
+	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
+		if result, handled := page.Key(event); handled && result.Handled {
 			return result, true
 		}
 	}

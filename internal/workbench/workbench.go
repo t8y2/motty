@@ -826,7 +826,6 @@ type State struct {
 	snippets        snippetsUI
 	snippetSend     snippetSender
 	history         historyUI
-	historyLayout   ui.View
 	completion      completionUI
 	// broadcast is the tab whose panes type together, or zero.
 	broadcast layoutcore.WorkspaceID
@@ -2354,11 +2353,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 }
 
 func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
-	if state.schemeBrowserOpen && state.modal == modalNone && state.scheme.page != nil {
-		if result, ok := state.scheme.page.Pointer(event); ok {
-			return result
-		}
-	}
 	if state.modal == modalSnippet && event.Kind == gfx.PointerDown {
 		state.snippets.abandonOther(event.Target)
 	}
@@ -2555,11 +2549,6 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		return state.aiCLILoginKey(event)
-	}
-	if state.schemeBrowserOpen && state.modal == modalNone && state.activeSection == sectionSettings && state.scheme.page != nil {
-		if result, handled := state.scheme.page.Key(event); handled {
-			return result
-		}
 	}
 	if state.activeSection == sectionSettings && state.modal == modalNone {
 		// The settings are part of the workbench page, so the page routes their

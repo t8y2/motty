@@ -303,13 +303,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	}
 	state.paintToolbarDockBottom(canvas, size)
 	state.paintVerticalTabs(canvas, size)
-	if state.activeSection == sectionSettings &&
-		state.settingsCategory == settingsTerminal &&
-		!state.settingsSearching() &&
-		state.schemeBrowserOpen &&
-		state.modal == modalNone {
-		state.paintSchemeDrawer(canvas, state.baseWorkspacePixelBounds(size))
-	}
 	viewport := state.windowRect()
 	state.paintAITargetSelect(canvas)
 	state.paintMCPClientSelect(canvas)
@@ -365,8 +358,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintUpdateProgress(canvas, viewport)
 	case modalFileProperties:
 		state.paintFileProperties(canvas, viewport)
-	case modalHistory:
-		state.paintHistory(canvas, viewport)
 	case modalShortcutCapture:
 		state.paintShortcutCaptureDialog(canvas, viewport)
 	case modalWorkspaceTemplateDelete:
@@ -545,6 +536,8 @@ func (state *State) declareShell(c ui.C) {
 	// The command palette is a dialog of the window's own page: its search field,
 	// its list and its sort switch are page elements.
 	state.declareCommandPalette(c)
+	// The command-history picker is a dialog of the same page.
+	state.declareHistory(c)
 	// The workbench's modal dialogs are overlays of this same page.
 	state.declareAIDialogs(c)
 	state.declareCredentialDialog(c)

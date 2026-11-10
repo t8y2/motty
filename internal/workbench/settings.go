@@ -281,13 +281,16 @@ func (state *State) openSettings() {
 func (state *State) scrollSettings(event gfx.ScrollEvent) gfx.EventResult {
 	step := event.StepY(24)
 	if state.schemeBrowserOpen {
+		// The drawer is part of the workbench page now: a wheel over its body
+		// scrolls the page's drawer area, and the settings page behind it stays
+		// where it was. A wheel anywhere else while the drawer is open scrolls
+		// nothing, as a modal panel keeps the rest of the page still.
 		if pointInRect(event.X, event.Y, state.scheme.body) {
-			if state.scheme.page != nil {
-				result := state.scheme.page.Wheel(event)
+			if page := state.chrome.windowPage; page != nil {
+				result := page.Wheel(event)
 				result.Handled = true
 				return result
 			}
-			return gfx.EventResult{Handled: true}
 		}
 		return gfx.EventResult{Handled: true}
 	}
