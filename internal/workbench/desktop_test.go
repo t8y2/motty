@@ -492,3 +492,28 @@ func TestDesktopPasswordSaveSurvivesTheConnection(t *testing.T) {
 		t.Fatalf("saved value = %q found=%v err=%v", value, found, err)
 	}
 }
+
+// TestDesktopTextInputDisablesTheHostInputMethod guards the remote desktop's
+// keyboard contract: the host's input method is off while the picture is
+// focused, so the keys that switch and feed a method are the remote's own —
+// its candidate windows appear inside the picture, the way the platform's own
+// client behaves — while the whole keyboard keeps arriving as presses and
+// releases (KeyReleases) for the remote to interpret.
+func TestDesktopTextInputDisablesTheHostInputMethod(t *testing.T) {
+	state := newTestState(t, Options{})
+	session := &Session{ID: 1, Address: "desk:0"}
+	session.term = newTerminal(80, 24)
+	session.desk = newDesktopView(newFollowingDesktop(64, 48, false), false)
+	state.sessions = append(state.sessions, *session)
+	state.activeSessionID = 1
+	input := state.desktopTextInput(&state.sessions[0])
+	if input == nil {
+		t.Fatal("the focused desktop has no text input")
+	}
+	if !input.DisableIME {
+		t.Fatal("the desktop's text input leaves the host's input method on")
+	}
+	if !input.KeyReleases {
+		t.Fatal("the desktop's text input stopped asking for key releases")
+	}
+}

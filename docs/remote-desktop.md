@@ -250,7 +250,10 @@ fast-path updates, 32-bit colour. Input: keys as scancodes of a US keyboard (the
 remote layout decides characters; Shift is added where the character needs it,
 `internal/desktop/rdp/scancode.go`), the committed text of an input method and
 pastes as Unicode events (UTF-16 pairs; a server application that ignores Unicode
-events, such as a terminal in xrdp, shows only some of them), pointer with three
+events, such as a terminal in xrdp, shows only some of them; while the desktop is
+focused the host's input method is disabled — `TextInput.DisableIME` — so the keys
+that switch and feed a method reach the remote, which composes with its own),
+pointer with three
 buttons and horizontal/vertical wheel. Clipboard text and images, and files in
 both directions (CLIPRDR, see "Copying files to the server" and "Copying files from the server"), per host, off
 by default. Suppress Output while the tab is hidden. The initial desktop matches
