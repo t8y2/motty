@@ -911,15 +911,18 @@ func (state *State) paintWorkspaceDraftGroup(canvas *gfx.Canvas, group workspace
 	}
 	canvas.Rounded(bounds, radius.control, background)
 	canvas.HitWithOptions(id, bounds, group.label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: group.expanded})
+	// Labels draw from the top of their rect, so every element of the header
+	// centers on the row's own middle line, like the sidebar's headers do.
+	center := bounds.Y + bounds.Height/2
 	chevron := iconChevronRight
 	if group.expanded {
 		chevron = iconChevronDown
 	}
-	paintIcon(canvas, uint8(chevron), gfx.Rect{X: bounds.X + 10, Y: bounds.Y + 4, Width: 16, Height: 16}, pal.muted)
-	slot := gfx.Rect{X: bounds.X + 30, Y: bounds.Y + 5, Width: 36, Height: 28}
+	paintIcon(canvas, uint8(chevron), gfx.Rect{X: bounds.X + 10, Y: center - 8, Width: 16, Height: 16}, pal.muted)
+	slot := gfx.Rect{X: bounds.X + 30, Y: center - 14, Width: 36, Height: 28}
 	side := components.CheckboxExtent(theme)
 	checkbox := components.BeginCheckbox(canvas, theme, checkID, gfx.Rect{
-		X: slot.X + (slot.Width-side)/2, Y: slot.Y + (slot.Height-side)/2, Width: side, Height: side,
+		X: slot.X + (slot.Width-side)/2, Y: center - side/2, Width: side, Height: side,
 	}, group.count > 0 && group.selected == group.count).Label(group.label).HitBounds(slot)
 	if group.selected > 0 && group.selected < group.count {
 		checkbox = checkbox.Indeterminate()
@@ -933,8 +936,8 @@ func (state *State) paintWorkspaceDraftGroup(canvas *gfx.Canvas, group workspace
 	// name gives way to it. The name is measured at the weight it is drawn at,
 	// the one elide budgets against.
 	labelWidth := min(canvas.TextWidthWeight(group.label, 13, gfx.WeightSemibold), max(0, right-x-countWidth-6))
-	monitorLabel(canvas, elide(canvas, group.label, 13, gfx.WeightSemibold, labelWidth), gfx.Rect{X: x, Y: bounds.Y, Width: labelWidth, Height: bounds.Height}, 13, pal.text, gfx.WeightSemibold)
-	monitorLabel(canvas, count, gfx.Rect{X: x + labelWidth + 6, Y: bounds.Y, Width: countWidth + 4, Height: bounds.Height}, 12, pal.faint, gfx.WeightRegular)
+	monitorLabel(canvas, elide(canvas, group.label, 13, gfx.WeightSemibold, labelWidth), gfx.Rect{X: x, Y: center - 11, Width: labelWidth, Height: 22}, 13, pal.text, gfx.WeightSemibold)
+	monitorLabel(canvas, count, gfx.Rect{X: x + labelWidth + 6, Y: center - 11, Width: countWidth + 4, Height: 22}, 12, pal.faint, gfx.WeightRegular)
 }
 
 func (state *State) paintWorkspaceDraftHost(canvas *gfx.Canvas, host Host, bounds gfx.Rect, id gfx.ID, selected, disabled bool) {
