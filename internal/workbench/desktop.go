@@ -752,9 +752,11 @@ func (state *State) desktopScroll(session *Session, event gfx.ScrollEvent) gfx.E
 	return gfx.EventResult{Handled: true}
 }
 
-// desktopTextInput is the native text surface of a focused desktop: what an input
-// method commits, or a paste, is typed on the remote side. The input method's
-// window opens at the pointer.
+// desktopTextInput is the native text surface of a focused desktop: a paste, or
+// text a service inserts, is typed on the remote side. The host's input method
+// stays off it — the desktop on the other side runs its own, whose candidate
+// windows appear in the picture — so the keys that switch and feed a method are
+// the remote's raw keys, the way the platform's own client behaves.
 func (state *State) desktopTextInput(session *Session) *app.TextInput {
 	view, t := session.desk, session.term
 	t.input.Bounds = gfx.Rect{X: view.pointer.X, Y: view.pointer.Y, Width: 2, Height: 18}
@@ -763,6 +765,7 @@ func (state *State) desktopTextInput(session *Session) *app.TextInput {
 	t.input.State = t.preedit
 	t.input.AltSendsEscape = true
 	t.input.KeyReleases = true
+	t.input.DisableIME = true
 	if t.input.OnEvent == nil {
 		sessionID := session.ID
 		t.input.OnEvent = func(event app.TextEvent) (app.TextState, error) {
