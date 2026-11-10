@@ -183,12 +183,12 @@ func TestTypingNarrowsTheHostListAndTheCount(t *testing.T) {
 	if !contains(texts, "Production") || !contains(texts, "Staging") || contains(texts, "Router") {
 		t.Fatalf("painted rows: %v", texts)
 	}
-	for _, id := range []gfx.ID{hitHostList.At(1), hitHostList.At(2)} {
-		if _, ok := hitByID(canvas, id); !ok {
+	for _, id := range []uint32{1, 2} {
+		if _, ok := hostListHostHit(canvas, state, id); !ok {
 			t.Errorf("row %d is not clickable", id)
 		}
 	}
-	if _, ok := hitByID(canvas, hitHostList.At(3)); ok {
+	if _, ok := hostListHostHit(canvas, state, 3); ok {
 		t.Error("a hidden row is still clickable")
 	}
 	state.search = text.Editor{}
@@ -232,7 +232,7 @@ func TestHostSearchMatchesAllWordsInOneHost(t *testing.T) {
 			continue
 		}
 		canvas, _ := paintedTexts(state)
-		if _, ok := hitByID(canvas, hitHostList.At(int(state.hosts[state.visible[0]].ID))); !ok {
+		if _, ok := hostListHostHit(canvas, state, state.hosts[state.visible[0]].ID); !ok {
 			t.Errorf("%q did not render the matching host row", test.query)
 		}
 	}
@@ -298,7 +298,7 @@ func TestHostCatalogPointerDoesNotActivateAnOpenWorkspace(t *testing.T) {
 	state.newHostSession(state.hosts[1])
 	state.Click(hitHosts)
 
-	pointer(state, gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitHostGroupRowList.At(0)})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitHostList.At(0)})
 
 	if state.activeSection != sectionHosts {
 		t.Fatalf("section = %d; moving over the host catalog activated an open workspace", state.activeSection)

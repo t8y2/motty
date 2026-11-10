@@ -79,11 +79,19 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 						}
 					}
 					group := func(path string) gfx.Hit {
-						id := hitHostGroupRowList.At(state.hostGroupIndex(path))
+						hits := view.Snapshot().Hits
 						if mode == hostViewGrid {
-							id = hitHostGroupOpenList.At(state.hostGroupIndex(path))
+							h, ok := hitByIDSnapshot(hits, hitHostGroupOpenList.At(state.hostGroupIndex(path)))
+							if !ok {
+								t.Fatalf("view %d missing group %q", mode, path)
+							}
+							return h
 						}
-						return hit(id)
+						h, ok := hostListGroupHitIn(hits, state, state.hostGroupIndex(path))
+						if !ok {
+							t.Fatalf("view %d missing group %q", mode, path)
+						}
+						return h
 					}
 					right := func(path string) {
 						t.Helper()

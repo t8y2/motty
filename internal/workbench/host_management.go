@@ -78,10 +78,6 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 		state.toggleHostSelection(hostID)
 		return true
 	}
-	if id.Scope() == hitHostGroupRowList {
-		state.toggleHostGroup(item(id))
-		return true
-	}
 	if id.Scope() == hitHostGroupOpenList {
 		state.toggleHostGroup(item(id))
 		return true
@@ -847,10 +843,6 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			return handled, true
 		}
 	}
-	if state.groupActions.drag.pressed && event.Key == gfx.KeyEscape {
-		state.groupActions.drag = hostGroupDrag{}
-		return handled, true
-	}
 	if state.groupActions.open && event.Key == gfx.KeyEscape {
 		state.groupActions.open = false
 		return handled, true
@@ -898,6 +890,15 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	if state.hostGroupMenu && event.Key == gfx.KeyEscape {
 		state.hostGroupMenu = false
 		return handled, true
+	}
+	// The list view is a page of its own: its Tree moves between rows, opens and
+	// closes a group, and lets go of a drag. It runs after the menus above, so
+	// Escape closes an open menu first and cancels a drag only when none is open.
+	if state.activeSection == sectionHosts && state.modal == modalNone && !state.hostSort.enabled &&
+		state.hostView == hostViewList && state.hostList.page != nil {
+		if result, handled := state.hostList.page.Key(event); handled {
+			return result, true
+		}
 	}
 	if state.activeSection != sectionHosts || state.modal != modalNone || event.Repeat {
 		return gfx.EventResult{}, false

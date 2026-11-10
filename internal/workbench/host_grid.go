@@ -33,6 +33,73 @@ const (
 	hostGridHeader   = float32(42)
 )
 
+// hostGridDrag is the card grid's drag of a group header onto another group
+// header. The list view drags through its Tree; the grid is painted by hand, so
+// its headers are declared as a page DragState's sources and targets.
+type hostGridDrag struct {
+	state  ui.DragState
+	accept func(source, target gfx.ID) bool
+	drop   func(source, target gfx.ID)
+}
+
+// ensureHostGridDrag makes the callbacks the DragState keeps, once.
+func (state *State) ensureHostGridDrag() *hostGridDrag {
+	drag := &state.hostGridDrag
+	if drag.accept == nil {
+		drag.accept, drag.drop = state.hostGridDragAccept, state.hostGridDragDrop
+	}
+	return drag
+}
+
+// hostGroupOpenHit maps a grid group header's hit identity back to its group.
+func (state *State) hostGroupOpenHit(id gfx.ID) (int, bool) {
+	if id.Scope() != hitHostGroupOpenList {
+		return 0, false
+	}
+	index := item(id)
+	if index < 0 || index >= len(state.hostGroups) {
+		return 0, false
+	}
+	return index, true
+}
+
+// hostGridDragAccept takes a group header only where the list view would: the
+// destination is another group, not the source or what is inside it, and the
+// move does not meet a group of its own name.
+func (state *State) hostGridDragAccept(source, target gfx.ID) bool {
+	if state.activeSection != sectionHosts || state.modal != modalNone ||
+		state.hostSort.enabled || state.hostView != hostViewGrid {
+		return false
+	}
+	from, ok := state.hostGroupOpenHit(source)
+	if !ok {
+		return false
+	}
+	to, ok := state.hostGroupOpenHit(target)
+	if !ok {
+		return false
+	}
+	return state.hostGroupMoveAllowed(from, to)
+}
+
+// hostGridDragDrop moves the dragged group under the group it was let go on.
+func (state *State) hostGridDragDrop(source, target gfx.ID) {
+	if state.activeSection != sectionHosts || state.modal != modalNone || state.hostSort.enabled {
+		return
+	}
+	from, ok := state.hostGroupOpenHit(source)
+	if !ok {
+		return
+	}
+	to, ok := state.hostGroupOpenHit(target)
+	if !ok || !state.hostGroupMoveAllowed(from, to) {
+		return
+	}
+	if !state.moveHostGroup(state.hostGroups[from].Name, state.hostGroups[to].Name) {
+		state.status, state.dialogError = state.dialogError, ""
+	}
+}
+
 func hostViewFromString(value string) hostViewMode {
 	if value == "grid" {
 		return hostViewGrid
@@ -161,6 +228,7 @@ type hostGridItem struct {
 // known height and the layout is shifted up by what is left of the first one.
 func (state *State) paintHostGrid(canvas *gfx.Canvas, bounds gfx.Rect) {
 	state.beginHostSortPaint(canvas, bounds)
+	drag := state.ensureHostGridDrag()
 	columns := hostGridColumns(bounds.Width)
 	rows := state.hostTreeRows
 	items := state.hostGridItems[:0]
@@ -176,7 +244,17 @@ func (state *State) paintHostGrid(canvas *gfx.Canvas, bounds gfx.Rect) {
 					if first {
 						shift, first = y-bounds.Y, false
 					}
-					items = append(items, hostGridItem{f.Slot().Height(hostGridHeader-8).FillWidth().MarginSides(4, 0, 4, 0).Shrink(0), index})
+					// The header's cell is the drag source and drop target; its name
+					// toggles the group on a click, as the list's group row does.
+					groupIndex := rows[index].GroupIndex
+					group := state.hostGroups[groupIndex]
+					box := f.Slot().Height(hostGridHeader-8).FillWidth().MarginSides(4, 0, 4, 0).Shrink(0)
+					box.HitWith(hitHostGroupOpenList.At(groupIndex), state.hostGroupLabel(group), gfx.HitOptions{
+						Role: gfx.RoleButton, Expanded: group.Expanded, Hint: group.Name,
+					}).Radius(radius.control).Hover(ui.Look{}.Background(state.pal.surfaceSoft)).
+						DragSource(&drag.state).
+						DropTarget(&drag.state, drag.accept, drag.drop)
+					items = append(items, hostGridItem{box, index})
 				}
 				y += hostGridHeader
 				index++
@@ -210,7 +288,12 @@ func (state *State) paintHostGrid(canvas *gfx.Canvas, bounds gfx.Rect) {
 
 	for _, item := range items {
 		if rows[item.entry].Kind == hostTreeGroup {
-			state.paintHostGridHeader(canvas, item.box.Rect(), rows[item.entry].GroupIndex, rows[item.entry].Depth)
+			groupIndex := rows[item.entry].GroupIndex
+			state.paintHostGridHeader(canvas, item.box.Rect(), groupIndex, rows[item.entry].Depth)
+			if drag.state.Target() == hitHostGroupOpenList.At(groupIndex) {
+				header := item.box.Rect()
+				canvas.Fill(gfx.Rect{X: header.X, Y: header.Y, Width: header.Width, Height: 2}, state.pal.accent)
+			}
 		} else {
 			host := state.hosts[rows[item.entry].HostIndex]
 			state.paintHostCard(canvas, item.box.Rect(), host)
@@ -236,8 +319,7 @@ func (state *State) paintHostGridHeader(canvas *gfx.Canvas, header gfx.Rect, gro
 	var icon, groupCheck ui.Box
 	f := state.partLayout.Begin(canvas, state.Theme(), header)
 	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(8).Items(ui.Center).
-		Radius(radius.control).Hover(ui.Look{}.Background(pal.surfaceSoft)).
-		HitWith(hitHostGroupOpenList.At(groupIndex), label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: group.Expanded}).
+		Radius(radius.control).
 		Children(func() {
 			icon = f.Slot().Size(16, 16)
 			groupCheck = f.Slot().Size(40, 28).Shrink(0)

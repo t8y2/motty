@@ -162,12 +162,19 @@ func TestHostGroupRightClickNewHostPrefillsClickedGroup(t *testing.T) {
 		state := nestedHostGroupState(t)
 		state.hostView = view
 		index := state.hostGroupIndex("Team/Prod/EU")
-		row := hitHostGroupRowList.At(index)
-		if view == hostViewGrid {
-			row = hitHostGroupOpenList.At(index)
-		}
-		pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: row, X: 400, Y: 300})
 		canvas, _ := paintedTexts(state)
+		var row gfx.Hit
+		var ok bool
+		if view == hostViewGrid {
+			row, ok = hitByID(canvas, hitHostGroupOpenList.At(index))
+		} else {
+			row, ok = hostListGroupHit(canvas, state, index)
+		}
+		if !ok {
+			t.Fatalf("view %d did not paint the group row", view)
+		}
+		pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: row.ID, X: row.Bounds.X + 20, Y: row.Bounds.Y + row.Bounds.Height/2})
+		canvas, _ = paintedTexts(state)
 		newHost := tree.ID(tree.Feature("host-group-actions"), "new-host")
 		if _, ok := hitByID(canvas, newHost); !ok {
 			t.Fatalf("view %d did not offer New Host on group right click", view)
@@ -263,7 +270,11 @@ func TestFilteredHostGroupKeepsChildHierarchy(t *testing.T) {
 			{Kind: hostTreeHost, GroupIndex: eu, HostIndex: 0, Depth: 2},
 		})
 		canvas, _ := paintedTexts(state)
-		if _, ok := hitByID(canvas, hitHostGroupOpenList.At(prod)); !ok {
+		if mode == hostViewGrid {
+			if _, ok := hitByID(canvas, hitHostGroupOpenList.At(prod)); !ok {
+				t.Fatalf("view %d did not render the filtered child group", mode)
+			}
+		} else if _, ok := hostListGroupHit(canvas, state, prod); !ok {
 			t.Fatalf("view %d did not render the filtered child group", mode)
 		}
 		state.toggleHostGroup(prod)

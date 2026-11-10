@@ -23,18 +23,18 @@ func TestHostCatalogTreeFilterSelectionAndBatchMoveCompose(t *testing.T) {
 	if servers < 0 {
 		t.Fatalf("groups = %+v", state.hostGroups)
 	}
-	state.Click(hitHostGroupOpenList.At(servers))
+	state.toggleHostGroup(servers)
 	canvas, _ := paintedTexts(state)
-	if _, ok := hitByID(canvas, hitHostList.At(int(state.hosts[0].ID))); ok {
+	if _, ok := hostListHostHit(canvas, state, state.hosts[0].ID); ok {
 		t.Fatal("collapsed group still exposes a host row")
 	}
-	if _, ok := hitByID(canvas, hitHostList.At(int(state.hosts[2].ID))); !ok {
+	if _, ok := hostListHostHit(canvas, state, state.hosts[2].ID); !ok {
 		t.Fatal("collapsing Servers hid Network")
 	}
 
 	typeSearch(state, "Production")
 	canvas, _ = paintedTexts(state)
-	if _, ok := hitByID(canvas, hitHostList.At(int(state.hosts[0].ID))); !ok {
+	if _, ok := hostListHostHit(canvas, state, state.hosts[0].ID); !ok {
 		t.Fatal("filter did not reveal a match inside a collapsed group")
 	}
 	state.Click(hitHostCheckList.At(int(state.hosts[0].ID)))
@@ -51,7 +51,7 @@ func TestHostCatalogTreeFilterSelectionAndBatchMoveCompose(t *testing.T) {
 		t.Fatalf("batch move result host=%+v selection=%v", state.hosts[0], state.hostSelections)
 	}
 	canvas, _ = paintedTexts(state)
-	if _, ok := hitByID(canvas, hitHostList.At(int(state.hosts[0].ID))); !ok {
+	if _, ok := hostListHostHit(canvas, state, state.hosts[0].ID); !ok {
 		t.Fatal("moved selected host was not placed in the expanded target branch")
 	}
 }

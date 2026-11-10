@@ -36,12 +36,22 @@ type hostGroupActions struct {
 	rows       []gfx.Rect
 	ungroup    bool
 	parentOpen bool
-	drag       hostGroupDrag
 	// page declares the move/rename dialog's body, with view kept so a paint
 	// makes no new method value; slot is where the field is laid out.
 	page *ui.Page
 	view func(ui.C)
 	slot ui.Box
+}
+
+// hostGroupActionsPointer closes the group actions menu on a secondary press
+// outside it. The menu's dismiss target is its backdrop.
+func (state *State) hostGroupActionsPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	a := &state.groupActions
+	if a.open && event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonSecondary && event.Target == hitGroupActionDismiss {
+		a.open = false
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	return gfx.EventResult{}, false
 }
 
 func hostGroupParent(path string) string {
@@ -166,13 +176,6 @@ func (state *State) paintHostGroupActions(canvas *gfx.Canvas, viewport gfx.Rect)
 
 func (state *State) hostGroupRowEvents(canvas *gfx.Canvas, id gfx.ID, index int, bounds gfx.Rect) {
 	state.groupActions.rows[index] = bounds
-	for at := len(canvas.Hits()) - 1; at >= 0; at-- {
-		hit := &canvas.Hits()[at]
-		if hit.ID == id {
-			hit.Hint = state.hostGroups[index].Name
-			break
-		}
-	}
 	state.openHostGroupActionsOn(canvas, id, index)
 	button := gfx.Rect{X: bounds.X + bounds.Width - 34, Y: bounds.Y + (bounds.Height-28)/2, Width: 28, Height: 28}
 	state.paintIconButton(canvas, hitHostGroupMore.At(index), iconEllipsis, button, state.messages.HostGroupActions.Actions, false, iconButtonQuiet, state.pal.workspace)

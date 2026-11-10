@@ -56,7 +56,7 @@ func TestTheHostListPaintsTheScrollbarBesideTheRows(t *testing.T) {
 	if bar.Viewport.Width >= list.Width {
 		t.Fatalf("the bar's strip was not reserved: viewport %v in %v", bar.Viewport, list)
 	}
-	row, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID)))
+	row, ok := hostListHostHit(&canvas, state, state.hosts[0].ID)
 	if !ok {
 		t.Fatal("the first host is not painted")
 	}
@@ -124,7 +124,7 @@ func TestTheHostListScrollbarFollowsTheScroll(t *testing.T) {
 	if thumb := paintedIn(&bottom, atBottom.VerticalTrack); len(thumb) != 1 || thumb[0].Bounds != atBottom.VerticalThumb {
 		t.Fatalf("painted bar = %+v, want %v", thumb, atBottom.VerticalThumb)
 	}
-	if _, ok := hitByID(&bottom, hitHostList.At(int(state.hosts[len(state.hosts)-1].ID))); !ok {
+	if _, ok := hostListHostHit(&bottom, state, state.hosts[len(state.hosts)-1].ID); !ok {
 		t.Fatal("the last host is not reachable at the end of the list")
 	}
 }

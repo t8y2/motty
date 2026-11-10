@@ -119,13 +119,8 @@ func TestHostRowTakesRightClickAndDoubleClickThroughTheWindowPath(t *testing.T) 
 	session := openWorkbenchSession(t, state)
 	target := state.hosts[1]
 	// The row, not its checkbox: both carry the host's name.
-	var row gfx.Hit
-	for _, hit := range session.Snapshot().Hits {
-		if hit.ID == hitHostList.At(int(target.ID)) {
-			row = hit
-		}
-	}
-	if row.ID.IsZero() {
+	row, ok := hostListHostHitIn(session.Snapshot().Hits, state, target.ID)
+	if !ok {
 		t.Fatalf("no row for %q", target.Label)
 	}
 	x, y := row.Bounds.X+row.Bounds.Width/4, row.Bounds.Y+row.Bounds.Height/2

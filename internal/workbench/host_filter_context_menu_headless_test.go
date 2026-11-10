@@ -101,7 +101,14 @@ func TestHostFilterContextNativeSelectedAndUnselectedGroups(t *testing.T) {
 				}
 				selected := state.hostGroupIndex("停车生产本地")
 				click(hitHostFilterList.At(selected))
-				if _, ok := hitByIDSnapshot(view.Snapshot().Hits, hitHostGroupRowList.At(selected)); ok {
+				hits := view.Snapshot().Hits
+				header := false
+				if mode == hostViewList {
+					_, header = hostListGroupHitIn(hits, state, selected)
+				} else {
+					_, header = hitByIDSnapshot(hits, hitHostGroupOpenList.At(selected))
+				}
+				if header {
 					t.Fatal("selected filter fixture still exposes a list group header")
 				}
 				right(hitHostFilterList.At(selected))

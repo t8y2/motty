@@ -157,7 +157,6 @@ var (
 	hitHostGroupItemList  = tree.Sub(shellHits, tree.Name("host-group-item"))
 	hitHostFilterList     = tree.Sub(shellHits, tree.Name("host-filter"))
 	hitHostFilterMenuList = tree.Sub(shellHits, tree.Name("host-filter-menu-item"))
-	hitHostGroupRowList   = tree.Sub(shellHits, tree.Name("host-group-row"))
 	hitHostGroupOpenList  = tree.Sub(shellHits, tree.Name("host-group-open"))
 	// A top-level chip's chevron opens the menu of its nested groups.
 	hitHostFilterChevronList = tree.Sub(shellHits, tree.Name("host-filter-chevron"))
@@ -500,6 +499,8 @@ type State struct {
 	hostActionIDs      []uint32
 	hostGroups         []hostGroup
 	hostTreeRows       []hostTreeRow
+	hostList           hostCatalogList
+	hostGridDrag       hostGridDrag
 	hostsScroll        float32
 	tabDrag            tabDrag
 	tabPreview         tabPreview
@@ -2139,12 +2140,17 @@ func (state *State) connectParsed(parsed connection) {
 	state.openHostSession(adhoc)
 }
 
-// hostForRow maps a host row's hit identity back to its host.
+// hostForRow maps a host row's hit identity back to its host. The cards and the
+// other pages name a row with hitHostList; the list view's rows are named by its
+// Tree, whose keys the page maps back to the visible rows.
 func (state *State) hostForRow(id gfx.ID) (Host, bool) {
-	if id.Scope() != hitHostList {
-		return Host{}, false
+	if id.Scope() == hitHostList {
+		return state.hostByID(uint32(item(id)))
 	}
-	return state.hostByID(uint32(item(id)))
+	if entry, ok := state.hostListRowFromHit(id); ok && entry.Kind == hostTreeHost {
+		return state.hosts[entry.HostIndex], true
+	}
+	return Host{}, false
 }
 
 // Pointer handles the pointer events the runtime does not turn into clicks. A
@@ -2238,7 +2244,10 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.snippetReorderPointer(event); handled {
 		return result
 	}
-	if result, handled := state.hostGroupDragPointer(event); handled {
+	if result, handled := state.hostListPointer(event); handled {
+		return result
+	}
+	if result, handled := state.hostGroupActionsPointer(event); handled {
 		return result
 	}
 	if result, handled := state.localShellPickerPointer(event); handled {

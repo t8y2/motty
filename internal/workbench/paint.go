@@ -564,6 +564,12 @@ func (state *State) declareShell(c ui.C) {
 	state.declareDevelopmentImport(c)
 	state.declareWorkspaceDraft(c)
 	state.declareWorkspaceSave(c)
+	// The card grid is painted after this page, but its group headers are drag
+	// sources and targets of this page: hand over their drag state before the
+	// section paints them.
+	if state.activeSection == sectionHosts && state.modal == modalNone && state.hostView == hostViewGrid {
+		ui.Drag(c, &state.ensureHostGridDrag().state)
+	}
 	// The modal dialogs of the form family are page dialogs too: their bodies,
 	// fields and buttons keep the application's identities, and the page owns
 	// them.
@@ -1843,17 +1849,26 @@ func (state *State) sessionStatus(session *Session) (string, gfx.Color) {
 }
 
 func (state *State) paintHostTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
-	pal := state.pal
 	if cap(state.groupActions.rows) < len(state.hostGroups) {
 		state.groupActions.rows = make([]gfx.Rect, len(state.hostGroups))
 	} else {
 		state.groupActions.rows = state.groupActions.rows[:len(state.hostGroups)]
 		clear(state.groupActions.rows)
 	}
-	// The list scrolls under the toolbar: the tree starts above its window by the
-	// scrolled distance, and the clip keeps what is out of the window out of sight
-	// and out of reach. The bar is Viva's scroll area: it keeps its own strip out
-	// of the rows and paints nothing at all while the content fits.
+	if state.hostView == hostViewGrid {
+		state.paintHostGridTable(canvas, treeBounds)
+		return
+	}
+	state.paintHostListTable(canvas, treeBounds)
+}
+
+// paintHostGridTable draws the card grid inside its scroll area. The cards keep
+// Motty's own scroll position; only the list view is a framework Tree.
+func (state *State) paintHostGridTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
+	// The grid scrolls under the toolbar: the cards start above their window by
+	// the scrolled distance, and the clip keeps what is out of the window out of
+	// sight and out of reach. The bar is Viva's scroll area: it keeps its own
+	// strip out of the cards and paints nothing at all while the content fits.
 	content := state.hostListHeight(treeBounds.Width)
 	area, geometry := hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
 	if geometry.MaxOffsetY > 0 {
@@ -1863,7 +1878,6 @@ func (state *State) paintHostTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
 		area, geometry = hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
 	}
 	if state.hostRevealID != 0 {
-		// The revealed row is found at the width the list really has, bar included.
 		state.hostsScroll = state.sessionLogHostOffset(state.hostRevealID, geometry.Viewport.Width)
 		focus := hitHostList.At(int(state.hostRevealID))
 		if state.hostSort.enabled {
@@ -1881,77 +1895,114 @@ func (state *State) paintHostTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
 		viewport = geometry.Viewport
 	}
 	canvas.Clip(viewport)
-	if state.hostView == hostViewGrid {
-		state.paintHostGrid(canvas, viewport)
-		state.paintHostGroupDrop(canvas)
-		canvas.Unclip()
-		area.EndContent()
-		return
-	}
-	tree := components.BeginTree(canvas, state.Theme(), gfx.Rect{
-		X: viewport.X, Y: viewport.Y - state.hostsScroll, Width: viewport.Width, Height: viewport.Height + state.hostsScroll,
-	}).Indent(22)
-	state.beginHostSortPaint(canvas, viewport)
-	filtering := strings.TrimSpace(state.visibleQuery) != ""
-	for _, entry := range state.hostTreeRows {
-		switch entry.Kind {
-		case hostTreeGroup:
-			group := state.hostGroups[entry.GroupIndex]
-			tree = tree.RowHeight(hostGroupRowHeight)
-			row := tree.Item(components.TreeItem{
-				ID: hitHostGroupRowList.At(entry.GroupIndex), DisclosureID: hitHostGroupOpenList.At(entry.GroupIndex),
-				Label: state.hostGroupLabel(group), Depth: entry.Depth, Branch: true, Expanded: group.Expanded || filtering,
-			})
-			if row.Bounds.Y >= viewport.Y+viewport.Height {
-				state.endHostSortPaint()
-				state.paintHostGroupDrop(canvas)
-				canvas.Unclip()
-				area.EndContent()
-				return
-			}
-			content := row.Content
-			content.Width = max(0, content.Width-38)
-			var groupCheck ui.Box
-			f := state.chrome.hostRow.Begin(canvas, state.Theme(), content)
-			f.Row().Fill().PadSides(0, 0, 0, 2).Gap(6).Items(ui.Center).Children(func() {
-				groupCheck = f.Slot().Size(40, 28).Shrink(0)
-				if group.Pinned {
-					f.Icon(lucideIcons[iconStar]).Size(14, 14).Color(pal.accent)
-				}
-				label := group.Label
-				if group.Name == "" {
-					label = state.messages.HostGroupDefault
-				}
-				f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(23).Ellipsis().Shrink(1)
-				f.Text(group.Count).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(21)
-			})
-			f.End()
-			state.hostGroupRowEvents(canvas, hitHostGroupRowList.At(entry.GroupIndex), entry.GroupIndex, row.Bounds)
-			state.paintHostScopeCheckbox(canvas, hitHostGroupCheck.At(entry.GroupIndex), groupCheck.Rect(), state.hostScopeSelection.groups[entry.GroupIndex])
-		case hostTreeHost:
-			host := state.hosts[entry.HostIndex]
-			id := hitHostList.At(int(host.ID))
-			tree = tree.RowHeight(hostRowHeight)
-			rowID := id
-			if state.hostSort.enabled {
-				rowID = gfx.ID{}
-			}
-			row := tree.Item(components.TreeItem{ID: rowID, Label: host.Label, Depth: entry.Depth, Selected: host.ID == state.selectedHostID})
-			if row.Bounds.Y >= viewport.Y+viewport.Height {
-				state.endHostSortPaint()
-				state.paintHostGroupDrop(canvas)
-				canvas.Unclip()
-				area.EndContent()
-				return
-			}
-			state.paintHostTreeRow(canvas, row.Bounds, row.Content, host, id)
-			state.hostRowEvents(canvas, id, host)
-		}
-	}
-	state.endHostSortPaint()
-	state.paintHostGroupDrop(canvas)
+	state.paintHostGrid(canvas, viewport)
 	canvas.Unclip()
 	area.EndContent()
+}
+
+// paintHostListTable declares the list view as a framework Tree. The Tree owns
+// the rows' geometry, scrolling and drag and drop; the workbench still paints
+// what is in each row and the toolbar above it, and keeps Viva's scroll area bar
+// beside the rows as the list has always shown it.
+func (state *State) paintHostListTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
+	list := state.ensureHostList()
+	content := state.hostListHeight(treeBounds.Width)
+	_, geometry := hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
+	viewport := geometry.Viewport
+	reveal := state.hostRevealID
+	// An offset another part of the page asked for since the last paint (the
+	// sort drag's edge scroll, or a test) is applied before the Tree lays its
+	// rows out again.
+	if list.scroll != nil && state.hostsScroll != list.scroll.Offset {
+		list.scroll.ScrollTo(state.hostsScroll)
+	}
+	if reveal != 0 {
+		if row := state.hostListRowIndex(reveal); row >= 0 {
+			list.tree.ScrollIntoView(row)
+		}
+		state.hostRevealID = 0
+	}
+	if state.hostSortAutoScrollFrame(canvas, viewport, content) && list.scroll != nil {
+		list.scroll.ScrollTo(state.hostsScroll)
+	}
+	state.beginHostSortPaint(canvas, viewport)
+	canvas.Clip(viewport)
+	list.page.Draw(canvas, viewport, list.view)
+	canvas.Unclip()
+	state.endHostSortPaint()
+	if list.scroll != nil {
+		content = list.scroll.Content
+		state.hostsScroll, state.hostsContent = list.scroll.Offset, content
+	} else {
+		state.hostsContent = content
+	}
+	if reveal != 0 {
+		state.focusHostListRow(canvas, reveal)
+	}
+	// The bar is the one the list has always painted: it keeps its strip out of
+	// the rows and shows the Tree's offset over the list's content.
+	bar := components.BeginScrollArea(canvas, state.Theme(), treeBounds, gfx.Size{Height: content}).
+		Offset(0, state.hostsScroll).
+		ReserveScrollbars().
+		VerticalScrollbar(gfx.ID{}, "", "")
+	bar.EndContent()
+}
+
+// paintHostListRow paints one row of the list view inside the Tree's row. The
+// Tree has already indented the content and drawn its chevron; the workbench
+// puts back the row's own rectangle for the columns that follow the content.
+func (state *State) paintHostListRow(ctx *ui.DrawContext, i int) {
+	if i < 0 || i >= len(state.hostTreeRows) {
+		return
+	}
+	entry := state.hostTreeRows[i]
+	canvas := ctx.Canvas
+	left := float32(entry.Depth) * hostTreeIndent
+	if entry.Kind == hostTreeGroup {
+		left += 24 // the Tree's chevron takes this before the content
+	}
+	content := ctx.Rect
+	row := gfx.Rect{X: content.X - left, Y: content.Y, Width: content.Width + left + 8, Height: content.Height}
+	switch entry.Kind {
+	case hostTreeGroup:
+		state.paintHostGroupTreeRow(canvas, row, content, entry.GroupIndex)
+	case hostTreeHost:
+		host := state.hosts[entry.HostIndex]
+		hovered := false
+		if key, ok := state.hostListHitKey(canvas.Hovered()); ok {
+			hovered = key == state.hostListKey(i)
+		}
+		state.paintHostTreeRow(canvas, row, content, host, hovered)
+	}
+}
+
+// paintHostGroupTreeRow paints the contents of a group row: the pin, the name,
+// the count and the group's selection checkbox, with the actions button at the
+// row's right edge. The row itself is named by the Tree, which also reports a
+// click on it and a drop onto it.
+func (state *State) paintHostGroupTreeRow(canvas *gfx.Canvas, row, content gfx.Rect, groupIndex int) {
+	pal := state.pal
+	group := state.hostGroups[groupIndex]
+	content.Width = max(0, content.Width-38)
+	var groupCheck ui.Box
+	f := state.chrome.hostRow.Begin(canvas, state.Theme(), content)
+	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(6).Items(ui.Center).Children(func() {
+		groupCheck = f.Slot().Size(40, 28).Shrink(0)
+		if group.Pinned {
+			f.Icon(lucideIcons[iconStar]).Size(14, 14).Color(pal.accent)
+		}
+		label := group.Label
+		if group.Name == "" {
+			label = state.messages.HostGroupDefault
+		}
+		f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(23).Ellipsis().Shrink(1)
+		f.Text(group.Count).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(21)
+	})
+	f.End()
+	state.groupActions.rows[groupIndex] = row
+	button := gfx.Rect{X: row.X + row.Width - 34, Y: row.Y + (row.Height-28)/2, Width: 28, Height: 28}
+	state.paintIconButton(canvas, hitHostGroupMore.At(groupIndex), iconEllipsis, button, state.messages.HostGroupActions.Actions, false, iconButtonQuiet, pal.workspace)
+	state.paintHostScopeCheckbox(canvas, hitHostGroupCheck.At(groupIndex), groupCheck.Rect(), state.hostScopeSelection.groups[groupIndex])
 }
 
 // hostListTop is the base list offset below the toolbar and group filters;
@@ -1992,8 +2043,36 @@ func hostListScrollArea(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect, co
 	return area, area.Geometry()
 }
 
-// scrollHosts moves the hosts list with the wheel.
+// scrollHosts moves the hosts list with the wheel. The list view gives the
+// wheel to its Tree, which owns the scroll area; the grid keeps the offset the
+// cards are painted at.
 func (state *State) scrollHosts(event gfx.ScrollEvent) gfx.EventResult {
+	if state.hostView == hostViewList {
+		list := &state.hostList
+		if list.page == nil || !pointInRect(event.X, event.Y, state.chrome.hostList) {
+			return gfx.EventResult{}
+		}
+		result := list.page.Wheel(event)
+		if result.Handled {
+			if list.scroll != nil {
+				state.hostsScroll, state.hostsContent = list.scroll.Offset, list.scroll.Content
+			}
+			return result
+		}
+		// A wheel over the strip the bar keeps beside the rows is outside the
+		// Tree's area, so move the Tree's scroll state by the same step.
+		if list.scroll != nil {
+			before := list.scroll.Offset
+			next := min(max(before+event.StepY(24), 0), list.scroll.Max())
+			if next == before {
+				return gfx.EventResult{}
+			}
+			list.scroll.ScrollTo(next)
+			state.hostsScroll = list.scroll.Offset
+			return gfx.EventResult{Handled: true, Repaint: true}
+		}
+		return gfx.EventResult{}
+	}
 	step := event.StepY(24)
 	before := state.hostsScroll
 	visible := state.chrome.hostList.Height
@@ -2001,7 +2080,7 @@ func (state *State) scrollHosts(event gfx.ScrollEvent) gfx.EventResult {
 	return gfx.EventResult{Handled: true, Repaint: state.hostsScroll != before}
 }
 
-func (state *State) paintHostTreeRow(canvas *gfx.Canvas, row, content gfx.Rect, host Host, id gfx.ID) {
+func (state *State) paintHostTreeRow(canvas *gfx.Canvas, row, content gfx.Rect, host Host, hovered bool) {
 	pal := state.pal
 	// The selection fill is the tree's own accent (theme.Accent is surfaceHot);
 	// keep that tone underneath the connection tint so a colored selected row
@@ -2016,7 +2095,7 @@ func (state *State) paintHostTreeRow(canvas *gfx.Canvas, row, content gfx.Rect, 
 		rowBackground = pal.surfaceHot
 	case state.hostSortHovered(canvas, host.ID):
 		rowBackground = pal.accentSoft
-	case canvas.Hovered() == id:
+	case hovered:
 		rowBackground = pal.surfaceSoft
 	}
 	hasColor := hostAccent(host.Color).Alpha > 0
