@@ -840,10 +840,15 @@ func (state *State) paintWorkspaceDraftGroup(canvas *gfx.Canvas, group workspace
 		chevron = iconChevronDown
 	}
 	paintIcon(canvas, uint8(chevron), gfx.Rect{X: bounds.X + 10, Y: bounds.Y + 4, Width: 16, Height: 16}, pal.muted)
-	width := max(0, bounds.Width-96)
-	monitorLabel(canvas, elide(canvas, group.label, 13, gfx.WeightSemibold, width), gfx.Rect{X: bounds.X + 46, Y: bounds.Y, Width: width, Height: bounds.Height}, 13, pal.text, gfx.WeightSemibold)
+	x := bounds.X + 46
+	right := bounds.X + bounds.Width - 8
 	count := fmt.Sprintf("(%d)", group.count)
-	monitorRight(canvas, count, gfx.Rect{X: bounds.X + bounds.Width - 52, Y: bounds.Y, Width: 42, Height: bounds.Height}, 12, pal.faint, gfx.WeightRegular)
+	countWidth := canvas.TextWidth(count, 12)
+	// The count follows the name, like the sidebar's group headers, and a long
+	// name gives way to it.
+	labelWidth := min(canvas.TextWidth(group.label, 13), max(0, right-x-countWidth-6))
+	monitorLabel(canvas, elide(canvas, group.label, 13, gfx.WeightSemibold, labelWidth), gfx.Rect{X: x, Y: bounds.Y, Width: labelWidth, Height: bounds.Height}, 13, pal.text, gfx.WeightSemibold)
+	monitorLabel(canvas, count, gfx.Rect{X: x + labelWidth + 6, Y: bounds.Y, Width: countWidth + 4, Height: bounds.Height}, 12, pal.faint, gfx.WeightRegular)
 }
 
 func (state *State) paintWorkspaceDraftHost(canvas *gfx.Canvas, host Host, bounds gfx.Rect, id gfx.ID, selected, disabled bool) {
