@@ -607,22 +607,20 @@ type State struct {
 	lookupSystemProxy   func() systemproxy.Settings
 	stopAppearanceWatch func()
 	stopLinkWatch       func()
-	// linkPending and linkUp carry the network watcher's last report from its
-	// goroutine to Wake, which is where sessions are touched.
-	linkPending        atomic.Bool
-	linkUp             atomic.Bool
-	terminalOption     terminalOptionMode
-	recentConnectSort  bool
-	recentConnections  map[string]time.Time
-	localShell         string // executable on this computer; empty uses the platform default
-	localStart         localStartPolicy
-	lastLocalDirectory string // where a local shell last was; a new local terminal starts there when no local tab is in front
-	localShellMenu     localShellSelect
-	editorMenu         editorSelect
-	terminalFontSize   float32
-	terminalFontFace   gfx.MonoFace
-	terminalLineHeight lineHeight
-	terminalScrollback int
+	linkPending         atomic.Bool
+	linkUp              atomic.Bool
+	terminalOption      terminalOptionMode
+	recentConnectSort   bool
+	recentConnections   map[string]time.Time
+	localShell          string // executable on this computer; empty uses the platform default
+	localStart          localStartPolicy
+	lastLocalDirectory  string // where a local shell last was; a new local terminal starts there when no local tab is in front
+	localShellMenu      localShellSelect
+	editorMenu          editorSelect
+	terminalFontSize    float32
+	terminalFontFace    gfx.MonoFace
+	terminalLineHeight  lineHeight
+	terminalScrollback  int
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
 	textScale           textScale
@@ -1027,11 +1025,7 @@ func New(options Options) *State {
 		startupEnabled:     true,
 		// The defaults a fresh window starts from, before the saved state is
 		// read: the same ones a state file that says nothing gets.
-		hostCatalog: hostCatalog{
-			systemUser:          systemLogin(),
-			connectionTimeout:   10 * time.Second,
-			connectionKeepAlive: defaultConnectionKeepAlive,
-		},
+		hostCatalog:           hostCatalog{systemUser: systemLogin(), connectionTimeout: 10 * time.Second, connectionKeepAlive: defaultConnectionKeepAlive},
 		sftpParallel:          DefaultSFTPParallel,
 		sftpColumns:           defaultSFTPColumnPreferences(),
 		sftpDownloadDirectory: defaultDownloadDirectory(),
