@@ -164,7 +164,7 @@ func TestSFTPWindowLoadingCanCancelAuthenticationAndRespectsReducedMotion(t *tes
 				}
 				if hit, ok := sftpPageButtonHit(&canvas, state.messages.ConnClose); !ok {
 					t.Fatal("loading window cannot cancel its handshake")
-				} else if !w.windowPage().Owns(hit.ID) {
+				} else if !tree.Within(hit.ID.Scope(), tree.Feature(w.pageRoot())) {
 					t.Fatal("the connecting control is not declared by the window's page")
 				}
 			}

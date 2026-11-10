@@ -583,7 +583,7 @@ func clickPageControl(t *testing.T, w *remoteToolsWindow, canvas *gfx.Canvas, la
 
 // pointerPageControl delivers a pointer event to the page's control handlers.
 func pointerPageControl(w *remoteToolsWindow, event gfx.PointerEvent) {
-	w.windowPage().Pointer(event)
+	w.config().OnPointer(event)
 }
 
 func TestRemoteNativeWindowDialogsArePageControls(t *testing.T) {

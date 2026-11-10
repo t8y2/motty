@@ -217,7 +217,7 @@ func TestProcessMenuIsThePageControlMenuInTheNativeToolsWindow(t *testing.T) {
 			X: bounds.X + bounds.Width/2, Y: bounds.Y + w.ui.remote.tableRowHeight/2,
 			Target: table.ID, Viewport: size,
 		}
-		if _, handled := w.windowPage().Pointer(event); !handled {
+		if result := w.config().OnPointer(event); !result.Repaint {
 			t.Fatal("the table control did not take the right click")
 		}
 		canvas.BeginPointerPass(event)

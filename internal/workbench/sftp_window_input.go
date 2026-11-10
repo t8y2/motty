@@ -63,23 +63,6 @@ func (w *sftpWindow) rowTarget(id gfx.ID) (bool, int, bool) {
 	return false, 0, false
 }
 
-// listPointerTarget reports a pointer target the window handles itself even
-// though a pane page named it: a row, a list frame, or a scrollbar.
-func (w *sftpWindow) listPointerTarget(id gfx.ID) bool {
-	if _, _, ok := w.rowTarget(id); ok {
-		return true
-	}
-	if id == hitSFTPWindowQueueBar {
-		return true
-	}
-	for side := range 2 {
-		if id == sftpWindowBar[side] || id == sftpWindowList[side] {
-			return true
-		}
-	}
-	return false
-}
-
 // rowID is the identity of row index on a side: the List's, once it has
 // declared its rows, else the scope the rows had before it did.
 func (w *sftpWindow) rowID(side, index int) gfx.ID {
@@ -209,21 +192,9 @@ func (w *sftpWindow) dropTarget(x, y float32, fromLocal bool) (local bool, targe
 	return
 }
 
-// pagePointer gives the window's panes the pointer events they own. The
-// window's own chrome, including the connecting state, is the page the window's
-// Config routes.
-func (w *sftpWindow) pagePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	for _, page := range w.ui.panePages {
-		if page != nil {
-			if result, ok := page.Pointer(event); ok {
-				return result, true
-			}
-		}
-	}
-	return gfx.EventResult{}, false
-}
-
-// pageKey is pagePointer for the keyboard.
+// pageKey gives the window's panes the keyboard events they own. Config routes
+// the window page, but the panes are pages painted into it: their Lists keep
+// the arrow and Space semantics a page's own key route gives them.
 func (w *sftpWindow) pageKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	for _, page := range w.ui.panePages {
 		if page != nil {
@@ -236,15 +207,6 @@ func (w *sftpWindow) pageKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 }
 
 func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
-	if result, ok := w.pagePointer(event); ok {
-		// A pane page owns its List rows and the frame around them, but the
-		// window applies presses on them: the selection a drag carries and the
-		// context menu predate the List, and the List's click pass cannot run
-		// for an embedded page.
-		if result.Handled || !w.listPointerTarget(event.Target) {
-			return result
-		}
-	}
 	if w.view.worker == nil {
 		return gfx.EventResult{}
 	}

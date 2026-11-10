@@ -99,6 +99,34 @@ func TestSFTPWindowWheelMatchesPanelAndPreservesPreciseDeltas(t *testing.T) {
 	}
 }
 
+func TestSFTPWindowKeepsPaneRowKeyboardAndTypeahead(t *testing.T) {
+	_, w, _, host, _ := dualSFTPFixture(t, 1)
+	view := host.windows[0].view
+	view.Driver().Pump()
+	view.Rest()
+	folder := w.folder(false)
+	if len(folder.rows) < 2 || folder.listRowsScope.IsZero() {
+		t.Fatalf("remote pane declared %d rows in scope %v", len(folder.rows), folder.listRowsScope)
+	}
+	folder.selectRow(0, 0)
+	row := w.rowID(1, 0)
+	down := w.key(gfx.KeyEvent{Target: row, Key: gfx.KeyDown})
+	if !down.Handled || folder.selected != 1 {
+		t.Fatalf("Down on a pane row = %+v, selected %d", down, folder.selected)
+	}
+	if down.Focus != w.rowID(1, 1) || !down.FocusVisible {
+		t.Fatalf("Down did not focus the next row: %+v", down)
+	}
+	up := w.key(gfx.KeyEvent{Target: down.Focus, Key: gfx.KeyUp})
+	if !up.Handled || folder.selected != 0 {
+		t.Fatalf("Up on a pane row = %+v, selected %d", up, folder.selected)
+	}
+	typeahead := w.shortcut(gfx.KeyEvent{Target: row, Text: "n"})
+	if !typeahead.Handled || folder.selected != 1 || folder.rows[1].entry.Name != "notes.txt" {
+		t.Fatalf("typeahead = %+v, selected %d", typeahead, folder.selected)
+	}
+}
+
 func TestSFTPWindowToolbarAndNativeFileActions(t *testing.T) {
 	state, w, remote, host, _ := dualSFTPFixture(t, 1.5)
 	view := host.windows[0].view

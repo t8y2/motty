@@ -850,9 +850,6 @@ func (d *fileDocument) scroll(event gfx.ScrollEvent) gfx.EventResult {
 }
 
 func (d *fileDocument) pointer(event gfx.PointerEvent) gfx.EventResult {
-	if result, claimed := pagePointerClaim(d.ui.page, event); claimed {
-		return result
-	}
 	if d.owner.noteExit != nil {
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}

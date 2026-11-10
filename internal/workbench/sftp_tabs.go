@@ -471,22 +471,13 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 }
 
 // SFTPTabInput resolves text fields painted by the file manager hosted in a
-// main-window tab. Its hand-painted fields keep the window's own identities; a
-// field the page declared is resolved by the page.
+// main-window tab. Its hand-painted fields keep the window's own identities.
 func (state *State) SFTPTabInput(context app.TextInputContext) *app.TextInput {
 	w := state.activeSFTPWindow()
 	if w == nil || context.ID.IsZero() {
 		return nil
 	}
-	if tree.Within(context.ID.Scope(), sftpWindowHits) {
-		return w.textInput(context)
-	}
-	if state.fileTabOwns(context.ID) {
-		if page := state.chrome.windowPage; page != nil {
-			return page.TextInput(context)
-		}
-	}
-	return nil
+	return w.textInput(context)
 }
 
 func (state *State) sftpTabPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
