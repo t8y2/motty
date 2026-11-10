@@ -42,9 +42,13 @@ type secretsUI struct {
 	// actions is where Settings lays out its buttons, so painting them keeps no
 	// slice of its own.
 	actions [3]components.ButtonAction
-	// layout lays out the save box under a secret field; it is the Frame the
-	// other password dialogs still use.
-	layout ui.View
+	// The save box of the password dialog is declared in its page; the checkbox
+	// and help icon are painted into the slots it leaves. The key passphrase
+	// dialog still paints its own with the shared dialog layout.
+	saveBoxDraw               func(*ui.DrawContext)
+	saveBoxID, saveBoxHintID  gfx.ID
+	saveBoxLabel, saveBoxHint string
+	saveBoxCheck, saveBoxHelp ui.Box
 	// unlockField is the slot the unlock field is painted into, forgetText the
 	// description the forget body wraps.
 	unlockField ui.Box
@@ -522,15 +526,64 @@ func (state *State) paintSaveBox(canvas *gfx.Canvas, body gfx.Rect, id gfx.ID, l
 	state.paintSaveBoxAt(canvas, gfx.Rect{X: body.X, Y: body.Y + 99, Width: body.Width, Height: 20}, id, label, "", gfx.ID{})
 }
 
-// paintSaveBoxAt draws the box where a dialog laid it out. A hint becomes a
-// help icon at its right, so a password error can use the line under the field
-// without colliding with the instruction.
+// declareSaveBox declares the box that offers to save a secret in the page of a
+// dialog that has one: a checkbox, its label and, where there is a hint, the room
+// its help icon takes. The checkbox keeps its application identity, so the
+// window's dispatcher still handles its click.
+func (state *State) declareSaveBox(c ui.C, id gfx.ID, label, hint string, hintID gfx.ID) {
+	s := &state.secrets
+	s.saveBoxID, s.saveBoxLabel, s.saveBoxHint, s.saveBoxHintID = id, label, hint, hintID
+	s.saveBoxCheck, s.saveBoxHelp = ui.Box{}, ui.Box{}
+	width, height := components.CheckboxHitExtent(*c.Theme())
+	row := ui.Row(c).Fill().PadX(0).Gap(2).Items(ui.Center)
+	row.Children(func() {
+		// The checkbox slot is its hit extent; the square is centered in it.
+		// Pull the slot left so the box starts where the password field border does.
+		s.saveBoxCheck = ui.Slot(c).Width(width).Height(height).MarginSides(0, 0, 0, -8)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).MarginSides(0, 0, 0, -6)
+		if hint != "" {
+			s.saveBoxHelp = ui.Slot(c).Size(16, 16).MarginSides(0, 6, 0, 0).Shrink(0)
+		}
+		// Keep the help icon beside the label; the rest of the row stays empty
+		// instead of pushing it to the far edge.
+		ui.Spacer(c).Grow(1)
+	})
+	if s.saveBoxDraw == nil {
+		s.saveBoxDraw = state.paintSaveBoxSlots
+	}
+	row.DrawOver(s.saveBoxDraw)
+}
+
+// paintSaveBoxSlots paints the declared save box's checkbox and help icon into
+// the slots the page left.
+func (state *State) paintSaveBoxSlots(d *ui.DrawContext) {
+	s := &state.secrets
+	canvas, theme := d.Canvas, *d.Theme
+	r := s.saveBoxCheck.Rect()
+	side := components.CheckboxExtent(theme)
+	components.BeginCheckbox(canvas, theme, s.saveBoxID, gfx.Rect{
+		X: r.X + (r.Width-side)/2, Y: r.Y + (r.Height-side)/2, Width: side, Height: side,
+	}, s.save).Label(s.saveBoxLabel).Paint()
+	if s.saveBoxHint == "" {
+		return
+	}
+	help := s.saveBoxHelp.Rect()
+	if help.Width <= 0 || help.Height <= 0 {
+		return
+	}
+	canvas.HitWithOptions(s.saveBoxHintID, help, s.saveBoxHint, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: s.saveBoxHint})
+	paintIcon(canvas, iconHelp, insetRect(help, 0.08), state.pal.muted)
+}
+
+// paintSaveBoxAt draws the box where a dialog of the older form laid it out. A
+// hint becomes a help icon at its right, so a password error can use the line
+// under the field without colliding with the instruction.
 func (state *State) paintSaveBoxAt(canvas *gfx.Canvas, bounds gfx.Rect, id gfx.ID, label, hint string, hintID gfx.ID) {
 	if !state.secrets.canSave || bounds == (gfx.Rect{}) {
 		return
 	}
 	var help ui.Box
-	f := state.secrets.layout.Begin(canvas, state.Theme(), bounds)
+	f := state.chrome.dialog.Begin(canvas, state.Theme(), bounds)
 	f.Row().Fill().PadX(0).Gap(2).Items(ui.Center).Children(func() {
 		// The checkbox slot is 40px wide with the 16px box centered in it. Pull
 		// the slot left so the box starts where the password field border does.

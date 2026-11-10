@@ -335,6 +335,9 @@ func (state *State) declareSFTPTab(c ui.C) {
 		}
 		state.declareSFTPTabContent(c, w, bounds)
 	})
+	if w.bookmark.open && w.view.worker != nil {
+		w.declareBookmarkDialog(c, bounds)
+	}
 }
 
 // declareSFTPTabContent declares the window's body, transfer queue and status
@@ -344,9 +347,8 @@ func (state *State) declareSFTPTabContent(c ui.C, w *sftpWindow, bounds gfx.Rect
 	body, queueRect, status := sftpTabPaneRects(bounds, queue)
 	state.declareSFTPTabPanes(c, w, bounds, body)
 	if queue {
-		// The queue's rows are painted by the window after the page has drawn;
-		// the rect is what the window keeps of the declaration.
 		w.ui.tabQueue = queueRect
+		w.declareQueue(c, queueRect, bounds)
 	}
 	state.declareSFTPTabStatus(c, w, bounds, status)
 }
@@ -425,7 +427,7 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 		w.paintPaneDetails(canvas, s, !firstLocal)
 	}
 	if w.ui.tabQueue.Width > 0 {
-		w.paintQueue(canvas, w.ui.tabQueue)
+		w.paintQueueDetails(canvas, w.ui.tabQueue)
 	} else {
 		w.ui.queueBounds = gfx.Rect{}
 		w.ui.queueOffset = 0
@@ -453,9 +455,6 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 		// The tab's view is part of the page, so the page paints this menu over
 		// the whole window; its anchor is already a window rectangle.
 		state.requestSFTPWindowHeaderMenu(w, side, w.ui.headerAnchor[side])
-	}
-	if w.bookmark.open {
-		w.paintBookmarkDialog(canvas, bounds)
 	}
 	if w.ui.profileQuickOpen && !w.bookmark.open {
 		w.paintProfileQuickMenu(canvas)

@@ -61,6 +61,11 @@ type sftpWindowUI struct {
 	// page of its own, and no two windows may name their controls alike.
 	root       string
 	windowPage *ui.Page
+	// bookmarkBodyDraw and bookmarkFooterDraw paint the bookmark editor's
+	// hand-painted controls into the slots its dialog declares. They are made
+	// once so a warm repaint allocates nothing.
+	bookmarkBodyDraw   func(*ui.DrawContext)
+	bookmarkFooterDraw func(*ui.DrawContext)
 	// panes keeps what each pane's declaration leaves for the details painted
 	// after the page: the panes are keyed containers of the window page now, not
 	// pages of their own. body and queue are the rectangles the page laid out
@@ -72,25 +77,30 @@ type sftpWindowUI struct {
 	size    gfx.Size
 	// bounds is the rectangle the view occupies in its canvas: the whole window
 	// for a native one, the tab's rectangle when hosted in the main window.
-	bounds              gfx.Rect
-	list                [2]gfx.Rect
-	offset              [2]float32
-	offsetSynced        [2]float32
-	typeahead           [2]components.MenuTypeahead
-	bars                [2]components.ScrollAreaGeometry
-	barDrag             int // 1: local, 2: remote, 3: queue; zero when idle
-	barGrab             float32
-	treeBarDrag         int // 1: local tree, 2: remote tree; zero when idle
-	treeBarGrab         float32
-	fraction            float32
-	split               components.Resizable
-	splitting           bool
-	tooltip             components.HoverTooltip
-	menuOpen            bool
-	menuAt              gfx.Point
-	queueBounds         gfx.Rect
-	queueOffset         float32
-	queueBar            components.ScrollAreaGeometry
+	bounds       gfx.Rect
+	list         [2]gfx.Rect
+	offset       [2]float32
+	offsetSynced [2]float32
+	typeahead    [2]components.MenuTypeahead
+	bars         [2]components.ScrollAreaGeometry
+	barDrag      int // 1: local, 2: remote, 3: queue; zero when idle
+	barGrab      float32
+	treeBarDrag  int // 1: local tree, 2: remote tree; zero when idle
+	treeBarGrab  float32
+	fraction     float32
+	split        components.Resizable
+	splitting    bool
+	tooltip      components.HoverTooltip
+	menuOpen     bool
+	menuAt       gfx.Point
+	queueBounds  gfx.Rect
+	queueOffset  float32
+	queueBar     components.ScrollAreaGeometry
+	// The queue's cards are page elements now; these are the entries drawn and
+	// the scratch their hand-painted parts go into.
+	queueItems          int
+	queueVisible        []*transferEntry
+	queueCards          []transferCard
 	sort                [2]sftpWindowSort
 	menuScroll          components.MenuScroll
 	headerAnchor        [2]gfx.Rect
@@ -188,7 +198,7 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 		w.paintPaneDetails(canvas, s, !firstLocal)
 	}
 	if w.queueCount() > 0 {
-		w.paintQueue(canvas, w.ui.queue)
+		w.paintQueueDetails(canvas, w.ui.queue)
 	} else {
 		w.ui.queueBounds = gfx.Rect{}
 		w.ui.queueOffset = 0
@@ -223,9 +233,6 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 			w.paintHeaderMenu(canvas, side, gfx.Rect{Width: size.Width, Height: size.Height}, &w.ui.headerScroll)
 		}
 	}
-	if w.bookmark.open {
-		w.paintBookmarkDialog(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
-	}
 	if w.ui.profileQuickOpen && !w.bookmark.open {
 		w.paintProfileQuickMenu(canvas)
 	}
@@ -255,6 +262,15 @@ func sftpQueueHeight(size gfx.Size) float32 {
 	return min(244, max(108, size.Height*.28))
 }
 
+// bookmarkDraws makes the handlers that paint the bookmark editor's fields,
+// buttons and lists, once.
+func (w *sftpWindow) bookmarkDraws() {
+	if w.ui.bookmarkBodyDraw == nil {
+		w.ui.bookmarkBodyDraw = w.paintBookmarkBody
+		w.ui.bookmarkFooterDraw = w.paintBookmarkFooter
+	}
+}
+
 // declareWindow declares the window's own chrome: the connecting state while
 // there is no browser, else the two panes, the transfer queue and the status
 // line. The panes are keyed containers of this page, laid out at the split's
@@ -280,6 +296,12 @@ func (w *sftpWindow) declareWindow(c ui.C) {
 			Left(status.X).Top(status.Y).Width(status.Width).Height(status.Height).
 			Children(func() { w.declareStatusLine(c) })
 	})
+	if queue {
+		w.declareQueue(c, queueRect, gfx.Rect{})
+	}
+	if w.bookmark.open {
+		w.declareBookmarkDialog(c, gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height})
+	}
 }
 
 // declarePaneSide declares one pane as a keyed container of the window page and
@@ -678,31 +700,58 @@ func (w *sftpWindow) queueCount() int {
 	return count
 }
 
-func (w *sftpWindow) paintQueue(canvas *gfx.Canvas, bounds gfx.Rect) {
-	theme, m := w.owner.Theme(), w.owner.messages
-	canvas.Label(m.SFTPTransferQueue, gfx.Rect{X: bounds.X + 4, Y: bounds.Y, Width: bounds.Width - 8, Height: 20}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightSemibold, Color: theme.Foreground})
+// declareQueue declares the transfer queue's cards in the window page. The
+// queue is scrolled by the window's own offset, so only the cards on screen are
+// declared.
+func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
+	state := w.owner
 	w.ui.queueBounds = gfx.Rect{X: bounds.X, Y: bounds.Y + 24, Width: bounds.Width, Height: max(bounds.Height-24, 0)}
-	area := components.BeginScrollArea(canvas, theme, w.ui.queueBounds, gfx.Size{Height: float32(w.queueCount()) * transferCardHeight}).Offset(0, w.ui.queueOffset).VerticalScrollbar(hitSFTPWindowQueueBar, m.SFTPTransferQueue, "")
-	w.ui.queueBar = area.BeginContent()
-	w.ui.queueOffset = w.ui.queueBar.OffsetY
-	row := 0
+	w.ui.queueVisible = w.ui.queueVisible[:0]
 	for pass := 0; pass < 2; pass++ {
-		for i := len(w.owner.transfers.entries) - 1; i >= 0; i-- {
-			e := &w.owner.transfers.entries[i]
+		for i := len(state.transfers.entries) - 1; i >= 0; i-- {
+			e := &state.transfers.entries[i]
 			if e.owner != w.view || e.removed || (pass == 0) != transferActive(e.snapshot) {
 				continue
 			}
-			box := gfx.Rect{X: bounds.X, Y: w.ui.queueBounds.Y + float32(row)*transferCardHeight - w.ui.queueOffset, Width: bounds.Width - 12, Height: transferCardHeight - 8}
-			index := row
-			row++
-			if box.Y+box.Height < w.ui.queueBounds.Y || box.Y > w.ui.queueBounds.Y+w.ui.queueBounds.Height {
-				continue
-			}
-			canvas.HitWithOptions(sftpWindowQueueRows.At(index), box, e.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: e.paths})
-			w.owner.paintTransferCard(canvas, box, e)
+			w.ui.queueVisible = append(w.ui.queueVisible, e)
 		}
 	}
-	area.EndContent()
+	w.ui.queueItems = len(w.ui.queueVisible)
+	if cap(w.ui.queueCards) < w.ui.queueItems {
+		w.ui.queueCards = make([]transferCard, w.ui.queueItems)
+	} else {
+		w.ui.queueCards = w.ui.queueCards[:w.ui.queueItems]
+		for index := range w.ui.queueCards {
+			w.ui.queueCards[index] = transferCard{}
+		}
+	}
+	maxOffset := max(float32(w.ui.queueItems)*transferCardHeight-w.ui.queueBounds.Height, 0)
+	w.ui.queueOffset = min(max(w.ui.queueOffset, 0), maxOffset)
+	row := 0
+	for _, e := range w.ui.queueVisible {
+		box := gfx.Rect{X: bounds.X, Y: w.ui.queueBounds.Y + float32(row)*transferCardHeight - w.ui.queueOffset, Width: bounds.Width - 12, Height: transferCardHeight - 8}
+		index := row
+		row++
+		if box.Y+box.Height < w.ui.queueBounds.Y || box.Y > w.ui.queueBounds.Y+w.ui.queueBounds.Height {
+			continue
+		}
+		card := &w.ui.queueCards[index]
+		*card = transferCard{entry: e}
+		container := ui.Column(c.KeyInt(e.id)).Absolute().
+			Left(box.X - origin.X).Top(box.Y - origin.Y).Width(box.Width).Height(box.Height)
+		container.HitWith(sftpWindowQueueRows.At(index), e.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: e.paths})
+		state.declareTransferCard(c, container, e, card)
+	}
+}
+
+// paintQueueDetails paints the queue's header, scrollbar and the hand-painted
+// parts of its cards. The cards themselves are the page's.
+func (w *sftpWindow) paintQueueDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
+	theme, m := w.owner.Theme(), w.owner.messages
+	canvas.Label(m.SFTPTransferQueue, gfx.Rect{X: bounds.X + 4, Y: bounds.Y, Width: bounds.Width - 8, Height: 20}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightSemibold, Color: theme.Foreground})
+	area := components.BeginScrollArea(canvas, theme, w.ui.queueBounds, gfx.Size{Height: float32(w.ui.queueItems) * transferCardHeight}).Offset(0, w.ui.queueOffset).VerticalScrollbar(hitSFTPWindowQueueBar, m.SFTPTransferQueue, "")
+	w.owner.paintTransferCardsFor(canvas, theme, w.ui.queueCards)
+	w.ui.queueBar = area.EndContent()
 }
 
 func (w *sftpWindow) paintMenu(canvas *gfx.Canvas) {

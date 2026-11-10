@@ -324,7 +324,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintMonitorIntervalMenu(canvas)
 	state.paintDashboardMenu(canvas)
 	state.paintSessionLogFilters(canvas)
-	state.paintTransferCenter(canvas)
 	switch state.modal {
 	case modalTerminalInput:
 		state.paintTerminalInputConfirm(canvas, viewport)
@@ -563,6 +562,7 @@ func (state *State) declareShell(c ui.C) {
 	// window after the page, into the slots these declarations leave.
 	state.declareToolbarDockBottom(c)
 	state.declareToolbarDockSides(c)
+	state.declareTransferCenter(c)
 	if !chrome.shellFullPage && state.activeSection == sectionSettings {
 		state.declareSettingsWorkspace(c)
 	}
@@ -3211,6 +3211,9 @@ func (state *State) declarePasswordBody(c ui.C) {
 			} else {
 				state.chrome.passwordSave = ui.Slot(c).Height(20).MarginSides(8, 0, 0, 0)
 			}
+			state.chrome.passwordSave.Children(func() {
+				state.declareSaveBox(c, hitPasswordSave, state.messages.PasswordSave, state.passwordHintText(), hitPasswordHint)
+			})
 		}
 	})
 	column.DrawOver(state.passwordFieldsDraw())
@@ -3225,8 +3228,9 @@ func (state *State) passwordFieldsDraw() func(*ui.DrawContext) {
 	return state.chrome.passwordFieldsDraw
 }
 
-// drawPasswordFields paints a field per question and the box that offers to
-// save the password, into the slots the body declared.
+// drawPasswordFields paints a field per question into the slots the body
+// declared. The box that offers to save the password is a page element, declared
+// by declarePasswordBody.
 func (state *State) drawPasswordFields(d *ui.DrawContext) {
 	canvas, theme := d.Canvas, *d.Theme
 	for index := range state.passwordBoxes {
@@ -3244,9 +3248,6 @@ func (state *State) drawPasswordFields(d *ui.DrawContext) {
 			ID: id, Label: label, Value: value, Secure: question.Secret,
 			Focused: focused, PlatformEditing: focused && (value != "" || !question.Secret), Invalid: state.passwordError != "",
 		})
-	}
-	if state.secrets.canSave {
-		state.paintSaveBoxAt(canvas, state.chrome.passwordSave.Rect(), hitPasswordSave, state.messages.PasswordSave, state.passwordHintText(), hitPasswordHint)
 	}
 }
 
