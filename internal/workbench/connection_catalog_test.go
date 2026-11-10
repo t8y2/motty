@@ -8,12 +8,37 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
 	"motty/internal/i18n"
 	"motty/internal/sshconn"
 )
+
+// A state file that says nothing gets the default interval: a half-open
+// connection is otherwise discovered only by the next keystroke. "Off" is a
+// separate key, so choosing it can be told apart from never having chosen.
+func TestKeepAliveIsOnUnlessTheUserTurnedItOff(t *testing.T) {
+	cases := []struct {
+		name  string
+		saved savedState
+		want  time.Duration
+	}{
+		{name: "a state file that says nothing", want: 30 * time.Second},
+		{name: "a chosen interval", saved: savedState{ConnectionKeepAliveSeconds: 60}, want: 60 * time.Second},
+		{name: "the off choice", saved: savedState{ConnectionKeepAliveOff: true}, want: 0},
+		{name: "off wins over a stale interval", saved: savedState{ConnectionKeepAliveSeconds: 60, ConnectionKeepAliveOff: true}, want: 0},
+		{name: "an interval this build does not offer", saved: savedState{ConnectionKeepAliveSeconds: 45}, want: 30 * time.Second},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if got := connectionKeepAlive(test.saved); got != test.want {
+				t.Fatalf("connectionKeepAlive = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
 
 // writeTestIdentity saves an unencrypted ed25519 private key and returns its
 // path and fingerprint.
