@@ -430,6 +430,9 @@ func (state *State) workspaceDraftVisibleHost(index int, ok bool) *Host {
 const (
 	workspaceDraftHostRowHeight  = float32(60)
 	workspaceDraftGroupRowHeight = float32(42)
+	// workspaceDraftHostIndent is how far a host row sits in from its group's
+	// header, the one tree step the list has.
+	workspaceDraftHostIndent = float32(16)
 )
 
 // The local rows and the hosts without a group fold under keys no group can
