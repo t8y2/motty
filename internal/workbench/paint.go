@@ -262,6 +262,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	}
 	workspaceSlot := chrome.workspaceSlot
 	state.paintWindowBarParts(canvas, geometry.area)
+	state.paintWindowBarScrollbar(canvas)
 	if !fullPage {
 		state.paintLockup(canvas, chrome.lockup.Rect())
 	}
