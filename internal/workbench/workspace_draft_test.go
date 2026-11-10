@@ -565,6 +565,53 @@ func TestWorkspaceLibraryOffersBothCreationModes(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDraftGroupCheckboxSelectsTheGroup(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	draftGroupedHosts(t, state)
+	state.activeSection = sectionWorkspaces
+	state.Click(hitWorkspaceNew)
+
+	// Half of Servers is chosen by hand: the checkbox reads mixed.
+	state.Click(workspaceDraftHostID(2)) // host_beta in the flat list
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	if check := panelHit(t, canvas, hitWorkspaceDraftGroupCheckList.At(3)); !check.Mixed || check.Checked {
+		t.Fatalf("half-chosen group checkbox = %+v, want mixed", check)
+	}
+
+	// The checkbox completes the group, and a second press clears it.
+	state.Click(hitWorkspaceDraftGroupCheckList.At(3))
+	if !state.workspaceDraft.selected["host_beta"] || !state.workspaceDraft.selected["host_gamma"] {
+		t.Fatalf("group check selected %+v", state.workspaceDraft.selected)
+	}
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	if check := panelHit(t, canvas, hitWorkspaceDraftGroupCheckList.At(3)); !check.Checked || check.Mixed {
+		t.Fatalf("full group checkbox = %+v, want checked", check)
+	}
+
+	// A folded group still answers its checkbox: pick whole groups without
+	// opening them.
+	state.Click(hitWorkspaceDraftGroupList.At(3)) // fold Servers
+	state.Click(hitWorkspaceDraftGroupCheckList.At(3))
+	if state.workspaceDraft.selected["host_beta"] || state.workspaceDraft.selected["host_gamma"] {
+		t.Fatal("the folded group's checkbox did not clear its members")
+	}
+
+	// A group wider than the twelve-pane limit fills the limit and says so.
+	state.hosts = nil
+	for index := 0; index < maxWorkspaceTemplateHosts+2; index++ {
+		host := Host{
+			ID: uint32(index + 1), CatalogID: "host_big" + string(rune('a'+index)), Label: "Big",
+			Address: "big.example.com", Port: 22, Group: "Big",
+		}
+		host.finish()
+		state.hosts = append(state.hosts, host)
+	}
+	state.Click(hitWorkspaceDraftGroupCheckList.At(1)) // Local, then Big
+	if state.workspaceDraftSelectionCount() != maxWorkspaceTemplateHosts || state.workspaceDraft.error != state.messages.WorkspaceDraftLimit {
+		t.Fatalf("selection = %d, error = %q", state.workspaceDraftSelectionCount(), state.workspaceDraft.error)
+	}
+}
+
 func workspaceDraftHostID(index int) gfx.ID {
 	// Unfiltered choices put this computer before the saved SSH hosts.
 	return hitWorkspaceDraftHostList.At(index + 1)

@@ -26,6 +26,7 @@ var (
 	hitWorkspaceDraftSearch           = tree.ID(workspaceHits, "draft-search")
 	hitWorkspaceDraftHostList         = tree.Sub(workspaceHits, tree.Name("draft-host"))
 	hitWorkspaceDraftGroupList        = tree.Sub(workspaceHits, tree.Name("draft-group"))
+	hitWorkspaceDraftGroupCheckList   = tree.Sub(workspaceHits, tree.Name("draft-group-check"))
 	hitWorkspaceDraftScroll           = tree.ID(workspaceHits, "draft-scroll")
 	hitWorkspaceDraftScrollbar        = tree.ID(workspaceHits, "draft-scrollbar")
 	hitWorkspaceDraftPreviewScroll    = tree.ID(workspaceHits, "draft-preview-scroll")

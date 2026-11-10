@@ -147,6 +147,10 @@ func (state *State) clickWorkspaceDraft(id gfx.ID) {
 		if index, ok := id.In(hitWorkspaceDraftGroupList); ok {
 			state.toggleWorkspaceDraftGroup(index)
 		}
+	case id.Scope() == hitWorkspaceDraftGroupCheckList:
+		if index, ok := id.In(hitWorkspaceDraftGroupCheckList); ok {
+			state.toggleWorkspaceDraftGroupCheck(index)
+		}
 	case id.Scope() == hitWorkspaceDraftRemoveItem:
 		index, ok := id.In(hitWorkspaceDraftRemoveItem)
 		if ok {
@@ -445,12 +449,16 @@ const (
 
 // workspaceDraftGroup is one collapsible section of the host list. Expanded is
 // what the rows were built with, so searching — which renders every group —
-// still shows the chevron as open.
+// still shows the chevron as open. Members are the group's terminals as the
+// list currently shows them, folds included, so the header's checkbox can
+// select or clear the whole group at once.
 type workspaceDraftGroup struct {
 	key      string
 	label    string
 	count    int
+	selected int
 	expanded bool
+	members  []workspaceDraftRow
 }
 
 // workspaceDraftRow is one painted row of the host list: a group header, or a
@@ -516,6 +524,12 @@ func (state *State) workspaceDraftRows() []workspaceDraftRow {
 			continue
 		}
 		bucket.group.count = len(bucket.hosts)
+		bucket.group.members = bucket.hosts
+		for _, row := range bucket.hosts {
+			if state.workspaceDraft.selected[row.host.CatalogID] {
+				bucket.group.selected++
+			}
+		}
 		bucket.group.expanded = searching || !collapsed[bucket.group.key]
 		switch bucket.group.key {
 		case workspaceDraftLocalGroupKey:
@@ -566,6 +580,67 @@ func (state *State) toggleWorkspaceDraftGroup(index int) {
 		}
 		seen++
 	}
+}
+
+// toggleWorkspaceDraftGroupCheck is the group header's checkbox: it selects
+// every terminal the group shows, or clears them when all are already
+// selected. A folded group still answers, so whole groups can be picked
+// without opening them first.
+func (state *State) toggleWorkspaceDraftGroupCheck(index int) {
+	seen := 0
+	for _, row := range state.workspaceDraftRows() {
+		if row.group == nil {
+			continue
+		}
+		if seen == index {
+			state.toggleWorkspaceDraftGroupMembers(row.group.members)
+			return
+		}
+		seen++
+	}
+}
+
+// toggleWorkspaceDraftGroupMembers applies one group checkbox: everything on
+// when any member is missing, nothing when all are on. Selection keeps to the
+// twelve-pane limit and says so when a group does not fit.
+func (state *State) toggleWorkspaceDraftGroupMembers(members []workspaceDraftRow) {
+	draft := &state.workspaceDraft
+	full := true
+	for _, row := range members {
+		if !draft.selected[row.host.CatalogID] {
+			full = false
+			break
+		}
+	}
+	draft.error = ""
+	if full {
+		for _, row := range members {
+			if draft.selected[row.host.CatalogID] {
+				delete(draft.selected, row.host.CatalogID)
+				if draft.mode == workspaceDraftEdit {
+					draft.order = slices.DeleteFunc(draft.order, func(id string) bool {
+						return id == row.host.CatalogID
+					})
+				}
+			}
+		}
+	} else {
+		for _, row := range members {
+			id := row.host.CatalogID
+			if draft.selected[id] {
+				continue
+			}
+			if state.workspaceDraftSelectionCount() >= maxWorkspaceTemplateHosts {
+				draft.error = state.messages.WorkspaceDraftLimit
+				break
+			}
+			draft.selected[id] = true
+			if draft.mode == workspaceDraftEdit {
+				draft.order = append(draft.order, id)
+			}
+		}
+	}
+	state.workspaceDraftCountChanged()
 }
 
 func (state *State) workspaceDraftModeLabel() string {
@@ -826,9 +901,10 @@ func (state *State) workspaceDraftCommandConfigurable(host Host) bool {
 
 
 // paintWorkspaceDraftGroup paints one collapsible header of the host list: a
-// chevron, the group's name, and how many terminals it holds.
-func (state *State) paintWorkspaceDraftGroup(canvas *gfx.Canvas, group workspaceDraftGroup, bounds gfx.Rect, id gfx.ID) {
-	pal := state.pal
+// chevron, a select-the-group checkbox, the group's name, and how many
+// terminals it holds.
+func (state *State) paintWorkspaceDraftGroup(canvas *gfx.Canvas, group workspaceDraftGroup, bounds gfx.Rect, id, checkID gfx.ID) {
+	pal, theme := state.pal, state.Theme()
 	background := pal.surface
 	if canvas.Hovered() == id {
 		background = pal.surfaceSoft
@@ -840,7 +916,16 @@ func (state *State) paintWorkspaceDraftGroup(canvas *gfx.Canvas, group workspace
 		chevron = iconChevronDown
 	}
 	paintIcon(canvas, uint8(chevron), gfx.Rect{X: bounds.X + 10, Y: bounds.Y + 4, Width: 16, Height: 16}, pal.muted)
-	x := bounds.X + 46
+	slot := gfx.Rect{X: bounds.X + 30, Y: bounds.Y + 5, Width: 36, Height: 28}
+	side := components.CheckboxExtent(theme)
+	checkbox := components.BeginCheckbox(canvas, theme, checkID, gfx.Rect{
+		X: slot.X + (slot.Width-side)/2, Y: slot.Y + (slot.Height-side)/2, Width: side, Height: side,
+	}, group.count > 0 && group.selected == group.count).Label(group.label).HitBounds(slot)
+	if group.selected > 0 && group.selected < group.count {
+		checkbox = checkbox.Indeterminate()
+	}
+	checkbox.Paint()
+	x := bounds.X + 70
 	right := bounds.X + bounds.Width - 8
 	count := fmt.Sprintf("(%d)", group.count)
 	countWidth := canvas.TextWidth(count, 12)
