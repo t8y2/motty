@@ -102,6 +102,10 @@ const (
 	NameSFTPRead         = "sftp_read"
 	NameSFTPWrite        = "sftp_write"
 	NameSFTPRemove       = "sftp_remove"
+	// ZMODEM over the visible terminal. A jump host's shell, then another ssh,
+	// is not the host SFTP talks to; rz and sz ride that shell.
+	NameRZSZUpload   = "rzsz_upload"
+	NameRZSZDownload = "rzsz_download"
 
 	// NameRequestAgentMode is the one tool Ask mode offers. It runs nothing:
 	// the application asks the user to switch to Agent and retry.
@@ -298,7 +302,7 @@ func Headless(commands, writeFiles, localFiles bool) []Spec {
 	out := make([]Spec, 0, len(specs))
 	for _, spec := range specs {
 		switch {
-		case spec.Name == NameTerminalRead, spec.Name == NameToolOutputRead, isJobTool(spec.Name), spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
+		case spec.Name == NameTerminalRead, spec.Name == NameToolOutputRead, isJobTool(spec.Name), isRZSZ(spec.Name), spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
 			continue
 		}
 		schema := strings.ReplaceAll(string(spec.Schema), sessionHint, hostHint)
@@ -333,6 +337,12 @@ func Headless(commands, writeFiles, localFiles bool) []Spec {
 // only.
 func isJobTool(name string) bool {
 	return name == NameTerminalStart || name == NameTerminalPoll || name == NameTerminalStop
+}
+
+// isRZSZ reports the terminal ZMODEM tools. They need the visible shell, so a
+// headless server, which has no terminal, does not offer them.
+func isRZSZ(name string) bool {
+	return name == NameRZSZUpload || name == NameRZSZDownload
 }
 
 // Lookup finds a tool by name.

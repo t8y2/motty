@@ -691,8 +691,10 @@ type State struct {
 	// dialDesktop opens the remote desktop of a VNC host; tests replace it.
 	dialDesktop func(context.Context, desktopRequest) (desktop.Session, error)
 	// transfer is the file transfer in progress, if any; transferLeftover is what
-	// followed the end of one and belongs to the screen.
+	// followed the end of one and belongs to the screen. rzsz is an assistant
+	// transfer armed on the terminal, waiting for the remote rz or sz.
 	transfer  fileTransfer
+	rzsz      *rzszJob
 	transfers transferCenter
 	xy        xySetup
 	// Requests from outside to connect (see launch.go), the link being asked

@@ -146,6 +146,9 @@ func (state *State) scanTransfer(session *Session, rx []byte) []byte {
 	t.zmodemTail = t.zmodemTail[:0]
 	*transfer = fileTransfer{phase: transferOffered, sessionID: session.ID, sending: !receiving}
 	transfer.held = append(transfer.held, rx[index:]...)
+	if state.startArmedRZSZ(session, receiving) {
+		return rx[:index]
+	}
 	state.showNextPrompt()
 	return rx[:index]
 }
@@ -226,6 +229,7 @@ func (state *State) reportTransfer(session *Session) {
 
 // endTransfer lets go of everything a transfer held.
 func (state *State) endTransfer(session *Session) {
+	state.finishRZSZ()
 	transfer := &state.transfer
 	if transfer.engine != nil {
 		state.transferLeftover = append(state.transferLeftover[:0], transfer.engine.Leftover()...)
@@ -249,6 +253,7 @@ func (state *State) endTransfer(session *Session) {
 // pumpTransfer is run on every wake: it asks again when a transfer has gone
 // quiet, and stops waiting for a closing "OO" that never comes.
 func (state *State) pumpTransfer() {
+	state.watchRZSZ()
 	transfer := &state.transfer
 	if transfer.phase == transferNone {
 		return
