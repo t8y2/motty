@@ -109,12 +109,24 @@ func feed(lines ...string) streamFunc {
 	}
 }
 
+// statsWait is how long a test waits for the worker goroutine to publish a
+// result or stop. It reports a program the test cannot see, never a performance
+// budget, so a slow machine must not turn it into a failure. Windows is the
+// slow case: a hosted runner can take seconds to schedule the goroutine after
+// the process starts.
+func statsWait() time.Duration {
+	if runtime.GOOS == "windows" {
+		return 30 * time.Second
+	}
+	return 5 * time.Second
+}
+
 func nextResult(t *testing.T, worker *Worker) Result {
 	t.Helper()
 	select {
 	case result := <-worker.Results():
 		return result
-	case <-time.After(time.Second):
+	case <-time.After(statsWait()):
 		t.Fatal("worker produced no result")
 		return Result{}
 	}
@@ -129,7 +141,7 @@ func TestWorkerRunsOneFixedCommandAndSamplesFromTheSecondReading(t *testing.T) {
 			t.Errorf("command marker=%v limit=%d", strings.Contains(got, "# motty-stats-v2"), limit)
 		}
 		return feed(reading(1), reading(2), reading(3))(ctx, got, limit, line)
-	}), func() { notified <- struct{}{} }, time.Second, time.Second)
+	}), func() { notified <- struct{}{} }, statsWait(), statsWait())
 	defer worker.Close()
 
 	// Three readings make two samples: the first only sets the baseline.
@@ -146,7 +158,7 @@ func TestWorkerRunsOneFixedCommandAndSamplesFromTheSecondReading(t *testing.T) {
 	worker.Close()
 	select {
 	case <-worker.Done():
-	case <-time.After(time.Second):
+	case <-time.After(statsWait()):
 		t.Fatal("worker did not stop")
 	}
 }

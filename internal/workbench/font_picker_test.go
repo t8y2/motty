@@ -25,7 +25,7 @@ func fontOptions(t testing.TB, families []string) Options {
 // read off the window thread and arrives through them.
 func waitFor(t testing.TB, state *State, condition func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(waitBudget())
 	for !condition() {
 		if time.Now().After(deadline) {
 			t.Fatal("timed out waiting for the window")
