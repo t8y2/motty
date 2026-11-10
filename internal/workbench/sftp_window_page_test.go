@@ -42,15 +42,14 @@ func TestSFTPWindowPanesAreKeyedContainersOfTheWindowPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	view.Rest()
-	page := w.windowPage()
 	for side, local := range []bool{true, false} {
 		folder := w.folder(local)
 		if folder.listRowsScope.IsZero() {
 			t.Fatalf("side %d has no declared List rows", side)
 		}
 		row := w.rowID(side, 0)
-		if !page.Owns(row) {
-			t.Fatalf("side %d row %v is not owned by the window page", side, row)
+		if !tree.Within(row.Scope(), tree.Feature(w.pageRoot())) {
+			t.Fatalf("side %d row %v is not in the window page's tree", side, row)
 		}
 	}
 	// Remote on the left swaps the pane order. Each side keeps its own slots, so
