@@ -407,7 +407,7 @@ func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResu
 	// own backdrop and close button; it reads their presses first. The identities
 	// this file names by hand (the rows, the scrollbar) are outside the page, so
 	// those presses fall through to the gestures below.
-	if page := state.chrome.windowPage; page != nil && page.Owns(event.Target) {
+	if page := state.chrome.windowPage; palettePageOwns(page, event.Target) {
 		if result, ok := page.Pointer(event); ok {
 			return result, true
 		}
@@ -452,6 +452,16 @@ func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResu
 	return gfx.EventResult{}, false
 }
 
+// palettePageOwns reports whether target is declared by the workbench page:
+// its own elements, or the body of the palette's Dialog, which ui.Dialog gives
+// the application's dialog scope rather than the page root.
+func palettePageOwns(page *ui.Page, target gfx.ID) bool {
+	if page == nil || target.IsZero() {
+		return false
+	}
+	return page.Owns(target) || tree.Within(target.Scope(), dialogScope.Scope())
+}
+
 func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalCommandPalette {
 		return gfx.EventResult{}, false
@@ -468,7 +478,7 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	// filters the list.
 	page := state.chrome.windowPage
 	if palette.connect {
-		if page != nil && page.Owns(event.Target) {
+		if palettePageOwns(page, event.Target) {
 			if event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace {
 				return gfx.EventResult{Handled: true, Focus: hitCommandPaletteSearch}, true
 			}
@@ -480,7 +490,7 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	if palette.snippets {
 		// The send target is a page Choice in the body: its arrows are the page's.
 		// The other keys of the form stay the palette's.
-		if page != nil && page.Owns(event.Target) {
+		if palettePageOwns(page, event.Target) {
 			if result, handled := page.Key(event); handled {
 				return result, true
 			}
