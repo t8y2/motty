@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 var (
@@ -23,6 +24,10 @@ type remoteSearch struct {
 	editor text.Editor
 	input  app.TextInput
 	ready  bool
+	// field and fieldBound are the page field the tools window declares over the
+	// editor; the main window edits the same editor through RemoteToolsInput.
+	field      ui.Field
+	fieldBound bool
 }
 
 func (search *remoteSearch) queryEditor() *text.Editor {

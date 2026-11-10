@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/remotetools"
 )
@@ -22,7 +23,7 @@ func selectRemoteToolsWindowRow(w *remoteToolsWindow, index int) {
 		w.ui.remote.selected = w.ui.remote.rows[index].key
 	}
 	if w.ui.remote.processDetails.open {
-		w.click(hitRemoteProcessDetailsDismiss)
+		w.act(hitRemoteProcessDetailsDismiss)
 	}
 }
 
@@ -191,27 +192,52 @@ func TestProcessDetailsRunProcessActions(t *testing.T) {
 	}
 }
 
-func TestProcessMenuKeyboardNavigatesInTheNativeToolsWindow(t *testing.T) {
-	state, _, _ := openRemoteToolsDialog(t)
-	process := state.remote.procs[0]
-	state.remote.processMenu = remoteProcessMenu{
-		open: true, key: remotetools.ProcessKey(process), at: gfx.Point{X: 120, Y: 120},
-	}
-	var canvas gfx.Canvas
-	state.paintRemoteProcessMenu(&canvas, gfx.Rect{Width: 900, Height: 700})
+func TestProcessMenuIsThePageControlMenuInTheNativeToolsWindow(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		server := &remoteServer{}
+		fake.mu.Lock()
+		fake.runCommand = server.run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
 
-	w := &remoteToolsWindow{owner: state}
-	w.ui.modal = state.modal
-	w.ui.remote.processMenu = state.remote.processMenu
-	w.ui.popups = state.popups
-	result := w.key(gfx.KeyEvent{Target: hitRemoteProcessMenuView, Key: gfx.KeyDown})
-	if !result.Handled || result.Focus == hitRemoteProcessMenuView || !result.FocusVisible {
-		t.Fatalf("native process menu did not accept arrow-key focus: %+v", result)
-	}
-	result = w.key(gfx.KeyEvent{Key: gfx.KeyEscape})
-	if !result.Handled || w.ui.remote.processMenu.open {
-		t.Fatalf("native process menu did not close with Escape: %+v", result)
-	}
+		size := gfx.Size{Width: 1100, Height: 780}
+		var canvas gfx.Canvas
+		w.paint(&canvas, size)
+		table, ok := hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabProcesses, gfx.RoleGroup)
+		if !ok {
+			t.Fatal("the process table is not a page control")
+		}
+		bounds := w.ui.remote.tableBodyBounds
+		event := gfx.PointerEvent{
+			Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary,
+			X: bounds.X + bounds.Width/2, Y: bounds.Y + w.ui.remote.tableRowHeight/2,
+			Target: table.ID, Viewport: size,
+		}
+		if _, handled := w.windowPage().Pointer(event); !handled {
+			t.Fatal("the table control did not take the right click")
+		}
+		canvas.BeginPointerPass(event)
+		w.paint(&canvas, size)
+		canvas.EndPointerPass()
+		if w.ui.remote.selected == "" {
+			t.Fatal("right click did not select the process row")
+		}
+		item, ok := hitByLabelAny(&canvas, w.ui.messages.Tools.RemoteProcessDetails)
+		if !ok {
+			t.Fatal("the page context menu is not painted")
+		}
+		canvas.BeginEventPass(item.ID, gfx.ClickInfo{})
+		w.paint(&canvas, size)
+		canvas.EndEventPass()
+		canvas.RunAfterPaint()
+		if !w.ui.remote.processDetails.open {
+			t.Fatal("the context menu's View details did not open the dialog")
+		}
+	})
 }
 
 func TestProcessDetailStateLabelsAndUnknownValues(t *testing.T) {

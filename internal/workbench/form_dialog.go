@@ -40,6 +40,10 @@ type formField struct {
 	secure             bool
 	multiline          bool
 	editor             text.Editor
+	// pageField and pageBound are the page field the tools window declares over
+	// the editor; the main window paints and edits it directly.
+	pageField ui.Field
+	pageBound bool
 	// layout and rect are the rows and place of a multiline field as last painted.
 	layout components.TextareaLayout
 	rect   gfx.Rect

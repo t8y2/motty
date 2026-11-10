@@ -4,6 +4,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 )
@@ -21,6 +22,8 @@ type sudoSFTPDialog struct {
 	sessionID   uint32
 	window      *sftpWindow
 	password    text.Editor
+	field       ui.Field
+	bound       bool
 	commands    bool
 	dashboard   bool
 	returnTools bool

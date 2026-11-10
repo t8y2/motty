@@ -84,7 +84,7 @@ func TestRemoteAutoRefreshRunsFromAnimationFramesOnCapturedConnection(t *testing
 		other.mu.Lock()
 		other.runCommand = otherServer.run
 		other.mu.Unlock()
-		w.click(hitRemoteIntervals.At(0))
+		w.act(hitRemoteIntervals.At(0))
 		var canvas gfx.Canvas
 		now := 5 * time.Second
 		canvas.SetClock(func() time.Duration { return now })
@@ -267,16 +267,34 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 					if !ok {
 						t.Fatalf("language=%v size=%v: no process tab", language, size)
 					}
-					for _, id := range []gfx.ID{hitRemoteRefresh, hitRemoteAutoRefresh, hitRemoteSortCPU, hitRemoteSortMemory, hitRemoteClose} {
-						hit, ok := hitByID(&canvas, id)
-						if !ok || hit.Bounds.X < 0 || hit.Bounds.Y < 0 || hit.Bounds.X+hit.Bounds.Width > size.Width+.01 || hit.Bounds.Y+hit.Bounds.Height > size.Height+.01 {
-							t.Fatalf("language=%v size=%v: unreachable control %v: %+v", language, size, id, hit)
+					for _, control := range []struct {
+						label string
+						id    gfx.ID
+					}{
+						{state.messages.Tools.RemoteRefresh, gfx.ID{}},
+						{state.messages.Tools.RemoteAutoRefresh, gfx.ID{}},
+						{state.messages.Tools.RemoteSortCPU, hitRemoteSortCPU},
+						{state.messages.Tools.RemoteSortMemory, hitRemoteSortMemory},
+						{state.messages.Tools.RemoteClose, gfx.ID{}},
+					} {
+						var hit gfx.Hit
+						var ok bool
+						if control.id.IsZero() {
+							hit, ok = hitByLabelRole(&canvas, control.label, gfx.RoleButton)
+							if !ok {
+								hit, ok = hitByLabelPrefix(&canvas, control.label, gfx.RoleButton)
+							}
+						} else {
+							hit, ok = hitByID(&canvas, control.id)
 						}
-						if (id == hitRemoteSortCPU || id == hitRemoteSortMemory) && hit.Bounds.Y <= tab.Bounds.Y+tab.Bounds.Height {
+						if !ok || hit.Bounds.X < 0 || hit.Bounds.Y < 0 || hit.Bounds.X+hit.Bounds.Width > size.Width+.01 || hit.Bounds.Y+hit.Bounds.Height > size.Height+.01 {
+							t.Fatalf("language=%v size=%v: unreachable control %q: %+v", language, size, control.label, hit)
+						}
+						if (control.id == hitRemoteSortCPU || control.id == hitRemoteSortMemory) && hit.Bounds.Y <= tab.Bounds.Y+tab.Bounds.Height {
 							t.Fatal("sort control still belongs to the tab toolbar")
 						}
-						if (id == hitRemoteRefresh || id == hitRemoteAutoRefresh) && hit.Bounds.Height != tab.Bounds.Height {
-							t.Fatal("refresh controls and tabs use different heights")
+						if control.id.IsZero() && hit.Bounds.Y < tab.Bounds.Y {
+							t.Fatal("refresh control is above the tab row")
 						}
 					}
 					// The window's own titlebar names the tool; what must not
@@ -298,6 +316,13 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 			clickChoice := func(label string) {
 				t.Helper()
 				hit := dualChoiceHit(t, view, label)
+				if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+			}
+			clickLabel := func(label string) {
+				t.Helper()
+				hit := dualLabelHit(t, view, label, gfx.RoleButton)
 				if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
 					t.Fatal(err)
 				}
@@ -336,9 +361,13 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 			if err := view.Keys("Enter"); err != nil {
 				t.Fatal(err)
 			}
-			click(hitRemoteAutoRefresh)
-			if err := view.Keys("Down"); err != nil {
-				t.Fatal(err)
+			clickLabel(state.messages.Tools.RemoteAutoRefresh)
+			// The first Down reaches the start/stop item, the next the first
+			// interval, as a page Menu navigates from its trigger.
+			for range 2 {
+				if err := view.Keys("Down"); err != nil {
+					t.Fatal(err)
+				}
 			}
 			if err := view.Keys("Enter"); err != nil {
 				t.Fatal(err)
@@ -366,14 +395,14 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 				if err := view.Screenshot(filepath.Join(dir, fmt.Sprintf("remote-tools-%g.png", scale))); err != nil && !errors.Is(err, headless.ErrNoRenderer) {
 					t.Fatal(err)
 				}
-				click(hitRemoteAutoRefresh)
+				clickLabel(state.messages.Tools.RemoteAutoRefresh)
 				if err := view.Driver().Advance(250 * time.Millisecond); err != nil {
 					t.Fatal(err)
 				}
 				if err := view.Screenshot(filepath.Join(dir, fmt.Sprintf("remote-refresh-menu-%g.png", scale))); err != nil && !errors.Is(err, headless.ErrNoRenderer) {
 					t.Fatal(err)
 				}
-				click(hitRemoteAutoToggle)
+				clickChoice(state.messages.Tools.RemoteAutoStop)
 				view.Driver().Advance(250 * time.Millisecond)
 				server.mu.Lock()
 				server.failures = map[string]error{"docker ps": errors.New("exit status 127")}

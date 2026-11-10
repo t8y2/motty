@@ -527,31 +527,3 @@ func (state *State) remoteProcessMenuPointer(event gfx.PointerEvent) (gfx.EventR
 	state.remote.processMenu = remoteProcessMenu{}
 	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
-
-func (w *remoteToolsWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
-	if w.closed {
-		return gfx.EventResult{Handled: true}
-	}
-	if w.ui.modal == modalSudoSFTP {
-		return gfx.EventResult{}
-	}
-	if result, handled := w.ui.remoteProcessMenuPointer(event); handled {
-		return result
-	}
-	if result, handled := w.ui.remoteProcessDetailsTextPointer(event); handled {
-		return result
-	}
-	if result, handled := w.ui.remoteContainerDetailsTextPointer(event); handled {
-		return result
-	}
-	if result, handled := w.ui.remoteContainerDetailsScrollPointer(event); handled {
-		return result
-	}
-	if result, handled := w.ui.remoteProcessScrollPointer(event); handled {
-		return result
-	}
-	if result, handled := w.ui.menuPointer(event); handled {
-		return result
-	}
-	return gfx.EventResult{}
-}

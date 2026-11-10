@@ -208,19 +208,30 @@ func (state *State) remoteProcessTableKey(event gfx.KeyEvent) (gfx.EventResult, 
 	if !targeted {
 		return gfx.EventResult{}, false
 	}
+	return state.remoteProcessTableNavigate(event), true
+}
+
+// remoteProcessTableNavigate is the process table's roving selection, without
+// the hit identity check: the tools window's table is one page Control and its
+// keys reach the control directly.
+func (state *State) remoteProcessTableNavigate(event gfx.KeyEvent) gfx.EventResult {
+	view := &state.remote
+	if view.tab != remoteProcesses || event.Release {
+		return gfx.EventResult{}
+	}
 	if event.Key == gfx.KeyEnter && !event.Repeat {
 		if process, ok := state.selectedProcess(); ok {
 			state.openRemoteProcessDetails(process)
-			return gfx.EventResult{Handled: true, Repaint: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		return gfx.EventResult{Handled: true}, true
+		return gfx.EventResult{Handled: true}
 	}
 	if len(view.rows) == 0 {
 		switch event.Key {
 		case gfx.KeyUp, gfx.KeyDown, gfx.KeyPageUp, gfx.KeyPageDown, gfx.KeyHome, gfx.KeyEnd:
-			return gfx.EventResult{Handled: true}, true
+			return gfx.EventResult{Handled: true}
 		}
-		return gfx.EventResult{}, false
+		return gfx.EventResult{}
 	}
 
 	current := -1
@@ -255,7 +266,7 @@ func (state *State) remoteProcessTableKey(event gfx.KeyEvent) (gfx.EventResult, 
 	case gfx.KeyEnd:
 		next = len(view.rows) - 1
 	default:
-		return gfx.EventResult{}, false
+		return gfx.EventResult{}
 	}
 	view.selected = view.rows[next].key
 	top := float32(next) * rowHeight
@@ -269,7 +280,7 @@ func (state *State) remoteProcessTableKey(event gfx.KeyEvent) (gfx.EventResult, 
 	return gfx.EventResult{
 		Handled: true, Repaint: true,
 		Focus: hitRemoteRowList.At(next), FocusVisible: true,
-	}, true
+	}
 }
 
 func (state *State) processTableSchema(width float32) ([]components.TableColumn, []string) {

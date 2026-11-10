@@ -205,6 +205,9 @@ type remoteToolsView struct {
 	processScrollFirst                    int
 	processScrollCount                    int
 	processTableBounds                    gfx.Rect
+	tableBodyBounds                       gfx.Rect
+	tableBodyFirst                        int
+	tableRowHeight                        float32
 	processColumns                        [6]components.TableColumn
 	searches                              [6]remoteSearch
 	processMenu                           remoteProcessMenu
