@@ -643,21 +643,29 @@ func (state *State) hostProxyDescription() string {
 	return fmt.Sprintf(m.HostProxyDescriptionFmt, state.proxyKindName(proxy.kind), proxy.address)
 }
 
-func (state *State) paintHostProxyRow(canvas *gfx.Canvas, bounds gfx.Rect) {
-	m, theme := state.messages.Tools, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(m.HostProxyRow, "", "")
-	button := components.BeginButton(canvas, theme, hitHostProxyConfigure, gfx.Rect{}).XSmall().SizeToFit(m.ProxyConfigure)
-	var action ui.Box
-	f := state.partLayout.Begin(canvas, theme, content)
-	// The summary sits in a box like the other fields' inputs, with its button
-	// inside, so the row has the same edge and height as they do.
-	f.Row().Fill().Items(ui.Center).Gap(8).PadSides(0, 4, 0, 12).
-		Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
-		f.Text(state.hostProxyDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
-		action = f.Slot().Size(button.BoundsWidth(), 24)
+// declareHostProxyRow declares the host form's Outbound proxy row: a form
+// field whose control is the saved route's summary and its Configure button.
+func (state *State) declareHostProxyRow(c ui.C) ui.Box {
+	m, theme, form := state.messages.Tools, state.Theme(), &state.editor.form
+	button := components.BeginButton(c.Canvas(), theme, gfx.ID{}, gfx.Rect{}).XSmall().SizeToFit(m.ProxyConfigure)
+	field := ui.FormField(c, &form.proxyField, m.HostProxyRow).Height(float32(hostFormRowHeight))
+	field.Children(func() {
+		// The summary sits in a box like the other fields' inputs, with its
+		// button inside, so the row has the same edge and height as they do.
+		form.body.proxyRow = ui.Row(c).Fill().Items(ui.Center).Gap(8).PadSides(0, 4, 0, 12).
+			Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
+			ui.Text(c, state.hostProxyDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
+			form.body.proxyAction = ui.Slot(c).Size(button.BoundsWidth(), 24)
+		})
 	})
-	f.End()
-	components.BeginButton(canvas, theme, hitHostProxyConfigure, action.Rect()).XSmall().Outline(m.ProxyConfigure)
+	return field
+}
+
+// paintHostProxyRow paints the Configure button into the slot the declared
+// row left for it.
+func (state *State) paintHostProxyRow(canvas *gfx.Canvas) {
+	action := state.editor.form.body.proxyAction
+	components.BeginButton(canvas, state.Theme(), hitHostProxyConfigure, action.Rect()).XSmall().Outline(state.messages.Tools.ProxyConfigure)
 	state.rememberHostControl(hitHostProxyConfigure, action.Rect())
 }
 

@@ -2823,10 +2823,10 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 			if networkHost {
 				// The proxy is its own row: sharing the icon row clipped both the
 				// icon value and the proxy summary on VNC, RDP and Telnet.
-				b.proxy = ui.Slot(c).Height(rowHeight)
+				b.proxy = state.declareHostProxyRow(c)
 			}
 			if ssh {
-				b.jump = ui.Slot(c).Height(rowHeight)
+				b.jump = state.declareHostJumpRow(c)
 				b.advanced = ui.Slot(c).Height(state.advancedSectionHeight())
 				advanced := b.advanced
 				advanced.Children(func() {
@@ -2947,13 +2947,13 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	state.paintHostIconChoice(canvas, b.iconField.Rect())
 	state.paintHostColorChoice(canvas, b.colorField.Rect())
 	if networkHost {
-		state.paintHostProxyRow(canvas, b.proxy.Rect())
+		state.paintHostProxyRow(canvas)
 	}
 	if vncHost {
 		state.paintVNCRows(canvas)
 	}
 	if ssh {
-		state.paintHostJumpRow(canvas, b.jump.Rect())
+		state.paintHostJumpRow(canvas)
 		state.paintAdvancedSection(canvas)
 	}
 	// The choices are the page's controls: keep the option the tab ring reaches

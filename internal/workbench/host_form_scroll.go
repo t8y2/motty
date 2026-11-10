@@ -22,6 +22,10 @@ type hostFormScroll struct {
 	count             int
 	// body is the slots the page laid out for the controls painted by hand.
 	body hostFormBody
+	// proxyField and jumpField are the Outbound proxy and Jump route rows the
+	// page declares as form fields; each keeps its own measured layout between
+	// paints.
+	proxyField, jumpField ui.FormFieldState
 	// algoLayout is the algorithm mode this frame's advanced rows were laid out
 	// for, before the page's choice writes the mode a click chose.
 	algoLayout algoMode
@@ -49,6 +53,10 @@ type hostFormBody struct {
 	iconField, colorField, transfer, proxy, jump, advanced ui.Box
 	vncRows                                                ui.Box
 	flow, algo                                             ui.Box
+	// proxyRow and jumpRow are the controls the proxy and jump fields place,
+	// and proxyAction and jumpAction the slots their buttons are painted in.
+	proxyRow, jumpRow       ui.Box
+	proxyAction, jumpAction ui.Box
 	// endpointSlots are the rows the endpoint block declared for its fields.
 	endpointSlots hostEndpointSlots
 	// advancedHeader and advancedHeaderIcon are the row that opens the Advanced

@@ -65,26 +65,35 @@ func (state *State) openHostJumpRoute() {
 	state.openProxyDialogForHost(targetID, true)
 }
 
-func (state *State) paintHostJumpRow(canvas *gfx.Canvas, bounds gfx.Rect) {
-	messages, theme := state.messages.Tools, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(messages.HostJumpRow, "", "")
-	button := components.BeginButton(canvas, theme, hitHostJumpConfigure, gfx.Rect{}).XSmall().SizeToFit(messages.ProxyConfigure)
-	var action ui.Box
-	f := state.partLayout.Begin(canvas, theme, content)
-	// The summary sits in a box like the other fields' inputs, with its button
-	// inside, so the row has the same edge and height as they do.
-	f.Row().Fill().Items(ui.Center).Gap(8).PadSides(0, 4, 0, 12).
-		Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
-		f.Text(state.hostJumpDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
-		action = f.Slot().Size(button.BoundsWidth(), 24)
+// declareHostJumpRow declares the host form's Jump route row: a form field
+// whose control is the route summary and its Configure button.
+func (state *State) declareHostJumpRow(c ui.C) ui.Box {
+	messages, theme, form := state.messages.Tools, state.Theme(), &state.editor.form
+	button := components.BeginButton(c.Canvas(), theme, gfx.ID{}, gfx.Rect{}).XSmall().SizeToFit(messages.ProxyConfigure)
+	field := ui.FormField(c, &form.jumpField, messages.HostJumpRow).Height(float32(hostFormRowHeight))
+	field.Children(func() {
+		// The summary sits in a box like the other fields' inputs, with its
+		// button inside, so the row has the same edge and height as they do.
+		form.body.jumpRow = ui.Row(c).Fill().Items(ui.Center).Gap(8).PadSides(0, 4, 0, 12).
+			Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
+			ui.Text(c, state.hostJumpDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
+			form.body.jumpAction = ui.Slot(c).Size(button.BoundsWidth(), 24)
+		})
 	})
-	f.End()
+	return field
+}
+
+// paintHostJumpRow paints the Configure button into the slot the declared row
+// left for it.
+func (state *State) paintHostJumpRow(canvas *gfx.Canvas) {
+	messages := state.messages.Tools
+	action := state.editor.form.body.jumpAction
 	if state.hostJumpConfigureEnabled() {
-		components.BeginButton(canvas, theme, hitHostJumpConfigure, action.Rect()).XSmall().Outline(messages.ProxyConfigure)
+		components.BeginButton(canvas, state.Theme(), hitHostJumpConfigure, action.Rect()).XSmall().Outline(messages.ProxyConfigure)
 		// A disabled control is not a tab stop: cycling into it would leave the
 		// form's focus where it was and skip the fields after it.
 		state.rememberHostControl(hitHostJumpConfigure, action.Rect())
 		return
 	}
-	components.BeginButton(canvas, theme, hitHostJumpConfigure, action.Rect()).XSmall().Disabled().Outline(messages.ProxyConfigure)
+	components.BeginButton(canvas, state.Theme(), hitHostJumpConfigure, action.Rect()).XSmall().Disabled().Outline(messages.ProxyConfigure)
 }

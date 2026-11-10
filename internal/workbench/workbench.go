@@ -544,9 +544,6 @@ type State struct {
 	sessionImport     sessionImportPreview
 	mobaEncoding      mobaEncodingPrompt
 	knownHosts        knownHostsView
-	// partLayout lays out the proxy and jump summary rows, which still need the
-	// control rectangle components.BeginField.Paint returns at paint time.
-	partLayout ui.View
 	// selectedWorkspaceTemplateID is the template the library will apply next.
 	// It is view state only and is not persisted.
 	selectedWorkspaceTemplateID   string
