@@ -327,52 +327,20 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintDashboardAddMenu(canvas)
 	case modalDashboard:
 		state.paintDashboardDialog(canvas, viewport)
-	case modalNewHost:
-		state.paintHostDialog(canvas, viewport)
-	case modalDeleteHost:
-		state.paintDeleteHostDialog(canvas, viewport)
-	case modalMoveHostGroup:
-		state.paintMoveHostGroupDialog(canvas, viewport)
 	case modalRenameTab:
 		state.paintTabRenameDialog(canvas, viewport)
 	case modalAIRename:
 		state.paintAIRenameDialog(canvas, viewport)
-	case modalCloseTabs:
-		state.paintCloseTabsDialog(canvas, viewport)
 	case modalSessionLink:
 		state.paintSessionLinkDialog(canvas, viewport)
 	case modalHostImportResult:
 		state.paintHostImportResult(canvas, viewport)
-	case modalNewForward:
-		state.paintForwardDialog(canvas, viewport)
-	case modalNewProxy:
-		state.paintProxyDialog(canvas, viewport)
-	case modalHostKey:
-		state.paintHostKeyDialog(canvas, viewport)
 	case modalKeyPassphrase:
 		state.paintKeyPassphraseDialog(canvas, viewport)
-	case modalPassword:
-		state.paintPasswordDialog(canvas, viewport)
-	case modalVaultUnlock:
-		state.paintVaultUnlockDialog(canvas, viewport)
-	case modalVaultForget:
-		state.paintVaultForgetDialog(canvas, viewport)
-	case modalHighlightRule:
-		state.paintHighlightDialog(canvas, viewport)
-	case modalAutofillRule:
-		state.paintAutofillDialog(canvas, viewport)
-	case modalAutofillConfirm:
-		state.paintAutofillConfirm(canvas, viewport)
 	case modalDeleteRule:
 		state.paintDeleteRuleDialog(canvas, viewport)
-	case modalSnippet:
-		state.paintSnippetDialog(canvas, viewport)
 	case modalFontPicker:
 		state.paintFontPicker(canvas, viewport)
-	case modalOutboundProxy:
-		state.paintOutboundProxyDialog(canvas, viewport)
-	case modalForm:
-		state.paintFormDialog(canvas, viewport)
 	case modalRemoteTools:
 		state.paintRemoteTools(canvas, viewport)
 	case modalToolbarSettings:
@@ -586,6 +554,10 @@ func (state *State) declareShell(c ui.C) {
 	state.declareDevelopmentImport(c)
 	state.declareWorkspaceDraft(c)
 	state.declareWorkspaceSave(c)
+	// The modal dialogs of the form family are page dialogs too: their bodies,
+	// fields and buttons keep the application's identities, and the page owns
+	// them.
+	state.declareDialogs(c)
 }
 
 // windowBarGeometry lays the bar out once without its contents to find out how
@@ -1076,13 +1048,25 @@ type chromeLayout struct {
 	// an icon button): each paints what it declared before the next begins, so the
 	// view is shared. dialog is the body of one dialog.
 	widget, dialog ui.View
-	// deleteHostPage, hostKeyPage and passwordPage declare the bodies of the
-	// dialogs that keep no state struct of their own. Each is made on its first
-	// paint and kept, so a repaint declares into the same page. passwordSave is
-	// the slot the save box of the password dialog was laid out in.
-	deleteHostPage, hostKeyPage, passwordPage *ui.Page
-	deleteHostView, hostKeyView, passwordView func(ui.C)
-	passwordSave                              ui.Box
+	// passwordSave is the slot the save box of the password dialog was laid out
+	// in.
+	passwordSave ui.Box
+	// passwordFieldsDraw paints the password dialog's fields into the slots its
+	// body declared; it is kept so a warm repaint allocates nothing.
+	passwordFieldsDraw func(*ui.DrawContext)
+	// dialogFooter is the actions and painter of the open dialog's hand-painted
+	// footer; it is kept so a repaint declares the footer without allocating.
+	dialogFooter dialogFooterScratch
+	// hostDialogTitle labels the host form's scroll viewport. The handlers below
+	// are the form's Draw and DrawOver declarations kept once, so a warm repaint
+	// of the form allocates nothing.
+	hostDialogTitle       string
+	hostDialogCancelLabel string
+	hostDialogSubmitLabel string
+	hostFormViewportDraw  func(*ui.DrawContext)
+	hostFormScrollbarDraw func(*ui.DrawContext)
+	hostFormFieldsDraw    func(*ui.DrawContext)
+	hostDialogFooterDraw  func(*ui.DrawContext)
 	// newTabPage declares the empty tab, with newTabView its declaration kept so a
 	// paint makes no new method value; newTabAdd and newTabAll are its footer
 	// buttons, painted by hand once the page has laid them out.
@@ -2303,20 +2287,138 @@ func paintIcon(canvas *gfx.Canvas, kind uint8, bounds gfx.Rect, foreground gfx.C
 	canvas.DrawIcon(lucideIcons[kind], bounds, foreground)
 }
 
-// The dialog bodies declared in this file each name their own page, so no two
-// declarations share names in the window's Tree.
-const (
-	deleteHostBodyRoot = "delete-host-body"
-	hostKeyBodyRoot    = "host-key-body"
-	passwordBodyRoot   = "password-body"
-	moveGroupBodyRoot  = "move-group-body"
-)
+// dialogContentHeight is the height a dialog's surface takes when it fits a body
+// of bodyHeight: the same number components.Dialog's FitBody works out, clamped
+// to the frame. Pass it as ui.DialogSpec.Height so the body keeps exactly the
+// height the old components.Dialog gave it, whatever its declared children come
+// to.
+func dialogContentHeight(canvas *gfx.Canvas, theme gfx.Theme, viewport gfx.Rect, width float32, description string, bodyHeight float32) float32 {
+	layout := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true, BodyHeight: bodyHeight,
+	}).Layout(description)
+	return layout.Content.Height
+}
 
-// paintHostDialog renders the modal New Host form on its own layer.
-func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages, state.Theme()
-	networkHost := state.editor.protocol != protocolSerial
-	sshHost := state.editor.protocol == protocolSSH
+// dialogContentRect is dialogContentHeight's layout: where the dialog's header,
+// body and footer go, for a caller that paints into the body besides declaring
+// it.
+func dialogContentRect(canvas *gfx.Canvas, theme gfx.Theme, viewport gfx.Rect, width float32, description string, bodyHeight float32) components.DialogLayout {
+	return components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true, BodyHeight: bodyHeight,
+	}).Layout(description)
+}
+
+// dialogPageOwns reports whether target is declared by the workbench page: its
+// own elements, or the body of a Dialog the page declared, which ui.Dialog
+// names in the application's dialog scope rather than the page root.
+func dialogPageOwns(page *ui.Page, target gfx.ID) bool {
+	if page == nil || target.IsZero() {
+		return false
+	}
+	return page.Owns(target) || tree.Within(target.Scope(), dialogScope.Scope())
+}
+
+// dialogButton declares one of a Dialog footer's buttons with the look
+// components.ButtonAction gave it, as a page-owned control: the page names it,
+// so the keyboard and the event pass reach it, and Clicked reports the press.
+func dialogButton(c ui.C, label string, variant components.ButtonVariant, disabled bool) ui.Box {
+	button := ui.Button(c, label)
+	switch variant {
+	case components.ButtonSecondary:
+		button = button.Secondary()
+	case components.ButtonOutline:
+		button = button.Outline()
+	case components.ButtonGhost:
+		button = button.Ghost()
+	case components.ButtonDestructive:
+		button = button.Destructive()
+	case components.ButtonDestructiveOutline:
+		button = button.DestructiveOutline()
+	}
+	return button.Disabled(disabled)
+}
+
+// dialogFooterScratch keeps the state a dialog footer paints from: the
+// actions of the open dialog, and the handler that paints them. The handler is
+// made once, so a warm repaint declares the footer without allocating.
+type dialogFooterScratch struct {
+	actions []components.ButtonAction
+	draw    func(*ui.DrawContext)
+}
+
+// dialogActionFooter paints a footer whose buttons keep the application's own
+// identities, for a dialog that opens with one of them focused: DialogSpec's
+// InitialFocusID names a hit, and the page names its own buttons, so these
+// stay hand-painted beside the page's slots as the dialog's other controls are.
+// Their actions stay in the central click dispatcher.
+func (state *State) dialogActionFooter(c ui.C, actions ...components.ButtonAction) {
+	scratch := &state.chrome.dialogFooter
+	if cap(scratch.actions) < len(actions) {
+		scratch.actions = make([]components.ButtonAction, len(actions))
+	}
+	scratch.actions = scratch.actions[:len(actions)]
+	copy(scratch.actions, actions)
+	if scratch.draw == nil {
+		scratch.draw = state.drawDialogActions
+	}
+	ui.Slot(c).Fill().DrawOver(scratch.draw)
+}
+
+// drawDialogActions paints the open dialog's hand-painted footer.
+func (state *State) drawDialogActions(d *ui.DrawContext) {
+	components.BeginButtonRow(d.Canvas, *d.Theme, d.Rect).Size(components.ButtonSizeDefault).Paint(state.chrome.dialogFooter.actions...)
+}
+
+// dialogViewport is the frame the dialogs are centered in.
+func dialogViewport(c ui.C) gfx.Rect {
+	return gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+}
+
+// declareDialogs declares the open modal dialog of the form family in the
+// workbench page, as the palette is declared: the page owns its body and
+// footer, and the application keeps the identities the central click handler
+// dispatches.
+func (state *State) declareDialogs(c ui.C) {
+	switch state.modal {
+	case modalNewHost:
+		state.declareHostDialog(c)
+	case modalDeleteHost:
+		state.declareDeleteHostDialog(c)
+	case modalMoveHostGroup:
+		state.declareMoveHostGroupDialog(c)
+	case modalHostKey:
+		state.declareHostKeyDialog(c)
+	case modalPassword:
+		state.declarePasswordDialog(c)
+	case modalCloseTabs:
+		state.declareCloseTabsDialog(c)
+	case modalForm:
+		state.declareFormDialog(c)
+	case modalOutboundProxy:
+		state.declareOutboundProxyDialog(c)
+	case modalAutofillRule:
+		state.declareAutofillDialog(c)
+	case modalAutofillConfirm:
+		state.declareAutofillConfirm(c)
+	case modalHighlightRule:
+		state.declareHighlightDialog(c)
+	case modalNewForward:
+		state.declareForwardDialog(c)
+	case modalNewProxy:
+		state.declareProxyDialog(c)
+	case modalSnippet:
+		state.declareSnippetDialog(c)
+	case modalVaultUnlock:
+		state.declareVaultUnlockDialog(c)
+	case modalVaultForget:
+		state.declareVaultForgetDialog(c)
+	}
+}
+
+// declareHostDialog declares the New/Edit Host form as a dialog of the workbench
+// page.
+func (state *State) declareHostDialog(c ui.C) {
+	m := state.messages
 	title, submit := m.DialogTitle, m.AddHost
 	switch state.hostDialogMode {
 	case hostDialogEdit:
@@ -2324,22 +2426,6 @@ func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	case hostDialogCopy:
 		title, submit = m.CopyHostTitle, m.AddHost
 	}
-	// Not a menu: a press on the dimmed area beside the form does nothing, so a
-	// half-filled form is not lost by a click beside it. Escape, the close button
-	// and Cancel still cancel it.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer:          dialogLayer,
-		Scope:          dialogScope,
-		CloseID:        hitDialogClose,
-		InitialFocusID: hitDialogLabel,
-		ContentSize:    gfx.Size{Width: 680},
-		FitBody:        true, BodyHeight: state.hostFormHeight(),
-	})
-	layout := dialog.Begin(title, "")
-
-	const rowHeight = hostFormRowHeight
-	ssh := sshHost
-	vncHost := state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP
 	form := &state.editor.form
 	form.count = 0
 	if form.lastError != state.dialogError {
@@ -2348,22 +2434,193 @@ func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 			form.offset = state.hostFormHeight()
 		}
 	}
-	area := components.BeginScrollArea(canvas, theme, layout.Body, gfx.Size{Height: state.hostFormHeight()}).Offset(0, form.offset).
-		Viewport(hitHostFormViewport, title).VerticalScrollbar(hitHostFormScrollbar, title, "")
-	geometry := area.BeginContent()
-	if geometry.Viewport != form.geometry.Viewport {
+	// Not a menu: a press on the dimmed area beside the form does nothing, so a
+	// half-filled form is not lost by a click beside it. Escape, the close button
+	// and Cancel still cancel it.
+	viewport := dialogViewport(c)
+	bodyHeight := state.hostFormHeight()
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 680, "", bodyHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Width: 680, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitDialogClose, InitialFocusID: hitDialogLabel,
+	})
+	dialog.Body(func() { state.declareHostFormBody(c, title) })
+	dialog.Footer(func() { state.declareHostDialogFooter(c, m.Cancel, submit) })
+}
+
+// declareHostDialogFooter declares the form's footer: the Test connection
+// button and what the last test found at the left, and the dialog's own
+// buttons against the right edge. The buttons keep the application's
+// identities because they are stops of the form's own tab ring (see
+// hostFormKey), which matches the focused identity against them; the page
+// owns the footer slot they are painted into.
+func (state *State) declareHostDialogFooter(c ui.C, cancel, submit string) {
+	chrome := &state.chrome
+	chrome.hostDialogCancelLabel, chrome.hostDialogSubmitLabel = cancel, submit
+	if chrome.hostDialogFooterDraw == nil {
+		chrome.hostDialogFooterDraw = state.drawHostDialogFooter
+	}
+	ui.Slot(c).Fill().DrawOver(chrome.hostDialogFooterDraw)
+}
+
+// drawHostDialogFooter paints the footer the page laid out: the buttons against
+// the right edge and the test control at the left.
+func (state *State) drawHostDialogFooter(d *ui.DrawContext) {
+	chrome := &state.chrome
+	actions := [...]components.ButtonAction{
+		{ID: hitDialogCancel, Label: chrome.hostDialogCancelLabel, Variant: components.ButtonSecondary},
+		{ID: hitDialogSubmit, Label: chrome.hostDialogSubmitLabel},
+	}
+	components.BeginButtonRow(d.Canvas, *d.Theme, d.Rect).Size(components.ButtonSizeDefault).Paint(actions[:]...)
+	state.paintHostTest(d.Canvas, *d.Theme, d.Rect, chrome.hostDialogCancelLabel, chrome.hostDialogSubmitLabel)
+	form := &state.editor.form
+	if state.hostTestAvailable() {
+		form.addStop(hitDialogTest, d.Rect, false)
+	}
+	form.addStop(hitDialogCancel, d.Rect, false)
+	form.addStop(hitDialogSubmit, d.Rect, false)
+}
+
+// hostFormScrollGeometry is where the form's scroll area lies inside the dialog
+// body, for the body rect the dialog's layout gives.
+func (state *State) hostFormScrollGeometry(body gfx.Rect) components.ScrollAreaGeometry {
+	area := components.BeginScrollArea(nil, state.Theme(), body, gfx.Size{Height: state.hostFormHeight()}).
+		Offset(0, state.editor.form.offset)
+	return area.Geometry()
+}
+
+// declareHostFormBody lays out the host form: the protocol switch, the fields,
+// and the sections whose controls are painted into the slots by hand. The
+// controls stay painted by hand so their focus order, clip and invalid looks
+// are the ones they already have. The body scrolls in the dialog's own height,
+// as the form's scroll area did.
+func (state *State) declareHostFormBody(c ui.C, title string) {
+	editor := &state.editor
+	form := &editor.form
+	b := &editor.form.body
+	ssh := editor.protocol == protocolSSH
+	networkHost := editor.protocol != protocolSerial
+	vncHost := editor.protocol == protocolVNC || editor.protocol == protocolRDP
+	rowHeight := float32(hostFormRowHeight)
+	*b = hostFormBody{}
+	scroll := state.hostFormScrollGeometry(state.hostFormBodyRect(c))
+	if scroll.Viewport != form.geometry.Viewport {
 		form.lastFocus = gfx.ID{}
 	}
-	form.geometry, form.offset, form.clipped = geometry, geometry.OffsetY, true
-	bodyRect := geometry.Content
-	if geometry.MaxOffsetY > 0 {
-		bodyRect.Width -= 12
+	form.geometry, form.offset = scroll, scroll.OffsetY
+	chrome := &state.chrome
+	chrome.hostDialogTitle = title
+	if chrome.hostFormViewportDraw == nil {
+		chrome.hostFormViewportDraw = state.drawHostFormViewport
+		chrome.hostFormScrollbarDraw = state.drawHostFormScrollbar
+		chrome.hostFormFieldsDraw = state.drawHostFormFields
 	}
-	state.hostFormPage().Draw(canvas, bodyRect, form.view)
-	b := &form.body
+	viewport := ui.Column(c).Fill().Clip()
+	viewport.Draw(chrome.hostFormViewportDraw)
+	viewport.DrawOver(chrome.hostFormScrollbarDraw)
+	viewport.Children(func() {
+		content := ui.Column(c).FillWidth().Height(state.hostFormHeight()).MarginTop(-scroll.OffsetY).PadSides(2, 4, 0, 4)
+		if scroll.MaxOffsetY > 0 {
+			content = content.MarginRight(12)
+		}
+		content.Children(func() {
+			b.protocol = ui.Slot(c).Height(34).MarginSides(0, 0, 10, 0)
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				b.label = ui.Slot(c).Grow(1)
+				b.colorField = ui.Slot(c).Grow(1)
+			})
+			b.endpoint = ui.Slot(c).Height(float32(state.hostEndpointRows()) * rowHeight)
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				b.group = ui.Slot(c).Grow(1)
+				b.tags = ui.Slot(c).Grow(1)
+			})
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				b.iconField = ui.Slot(c).Grow(1)
+				if ssh {
+					b.transfer = ui.Slot(c).Grow(1)
+				}
+			})
+			if networkHost {
+				// The proxy is its own row: sharing the icon row clipped both the
+				// icon value and the proxy summary on VNC, RDP and Telnet.
+				b.proxy = ui.Slot(c).Height(rowHeight)
+			}
+			if ssh {
+				b.jump = ui.Slot(c).Height(rowHeight)
+				b.advanced = ui.Slot(c).Height(state.advancedSectionHeight())
+			}
+			if vncHost {
+				b.vncRows = ui.Slot(c).Height(state.desktopRowsHeight())
+			}
+			if state.dialogError != "" {
+				// The serial line's error is long: up to two lines.
+				ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
+			}
+		})
+		content.DrawOver(chrome.hostFormFieldsDraw)
+	})
+}
+
+// drawHostFormViewport names the scroll viewport of the host form, whose title
+// the declaration keeps.
+func (state *State) drawHostFormViewport(d *ui.DrawContext) {
+	if d.Rect.Width > 0 && d.Rect.Height > 0 {
+		d.Canvas.HitWithOptions(hitHostFormViewport, d.Rect, state.chrome.hostDialogTitle, gfx.HitOptions{Role: gfx.RoleGroup})
+	}
+}
+
+// drawHostFormScrollbar paints the form's scrollbar over the viewport.
+func (state *State) drawHostFormScrollbar(d *ui.DrawContext) {
+	state.paintHostFormScrollbar(d.Canvas)
+}
+
+// drawHostFormFields paints the form's controls into the slots the page laid
+// out.
+func (state *State) drawHostFormFields(d *ui.DrawContext) {
+	state.paintHostFormFields(d.Canvas)
+}
+
+// hostFormBodyRect is where the dialog lays the form's body, as the dialog
+// declaration lays it out.
+func (state *State) hostFormBodyRect(c ui.C) gfx.Rect {
+	layout := dialogContentRect(c.Canvas(), *c.Theme(), dialogViewport(c), 680, "", state.hostFormHeight())
+	return layout.Body
+}
+
+// paintHostFormScrollbar paints the form's scrollbar beside its content after
+// the page laid the body out.
+func (state *State) paintHostFormScrollbar(canvas *gfx.Canvas) {
+	form := &state.editor.form
+	area := components.BeginScrollArea(canvas, state.Theme(), form.geometry.Bounds, gfx.Size{Height: state.hostFormHeight()}).
+		Offset(0, form.offset).VerticalScrollbar(hitHostFormScrollbar, state.hostDialogTitle(), "")
+	area.EndContent()
+}
+
+// hostDialogTitle is the form's title, by the mode the dialog is open in.
+func (state *State) hostDialogTitle() string {
+	switch state.hostDialogMode {
+	case hostDialogEdit:
+		return state.messages.EditHostTitle
+	case hostDialogCopy:
+		return state.messages.CopyHostTitle
+	}
+	return state.messages.DialogTitle
+}
+
+// paintHostFormFields paints the form's controls into the slots the page laid
+// out.
+func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
+	editor := &state.editor
+	m := state.messages
+	ssh := editor.protocol == protocolSSH
+	networkHost := editor.protocol != protocolSerial
+	vncHost := editor.protocol == protocolVNC || editor.protocol == protocolRDP
+	b := &editor.form.body
+	editor.form.clipped = true
+	defer func() { editor.form.clipped = false }()
 	state.paintHostProtocolSwitch(canvas, b.protocol.Rect())
 	state.paintDialogField(canvas, hitDialogLabel, fieldLabel, m.FieldLabel, m.FieldLabelPlaceholder, b.label.Rect())
-	state.paintHostEndpointRows(canvas, b.endpoint.Rect().X, b.endpoint.Rect().Y, b.endpoint.Rect().Width, rowHeight)
+	state.paintHostEndpointRows(canvas, b.endpoint.Rect().X, b.endpoint.Rect().Y, b.endpoint.Rect().Width, hostFormRowHeight)
 	state.paintHostGroupPicker(canvas, b.group.Rect())
 	state.paintHostTags(canvas, b.tags.Rect())
 	state.paintHostIconChoice(canvas, b.iconField.Rect())
@@ -2379,111 +2636,34 @@ func (state *State) paintHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		state.paintTransferChoice(canvas, b.transfer.Rect())
 		state.paintAdvancedSection(canvas, b.advanced.Rect())
 	}
-
-	area.EndContent()
-	form.clipped = false
+	// The picker's backdrop must reach the whole window, not the scrolling body
+	// the form's clip covers.
+	portal := state.beginHostFormPopup(canvas, state.editor.colorPicker.open)
 	state.paintHostColorPicker(canvas)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitDialogCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitDialogSubmit, Label: submit},
-	)
-	state.paintHostTest(canvas, theme, layout.Footer, m.Cancel, submit)
-	if state.hostTestAvailable() {
-		form.addStop(hitDialogTest, layout.Footer, false)
-	}
-	form.addStop(hitDialogCancel, layout.Footer, false)
-	form.addStop(hitDialogSubmit, layout.Footer, false)
-	dialog.End()
+	state.endHostFormPopup(canvas, portal)
 }
 
-// hostFormPage makes the page the host form's body is declared in.
-func (state *State) hostFormPage() *ui.Page {
-	form := &state.editor.form
-	if form.page == nil {
-		form.page = ui.NewPage(ui.PageConfig{Root: hostFormBodyRoot, Theme: &state.theme})
-		form.view = state.declareHostFormBody
-	}
-	return form.page
-}
-
-// declareHostFormBody lays out the host form: the protocol switch, the fields,
-// and the sections whose controls are painted into the slots by hand. The
-// controls stay painted by hand so their focus order, clip and invalid looks
-// are the ones they already have.
-func (state *State) declareHostFormBody(c ui.C) {
-	editor := &state.editor
-	b := &editor.form.body
-	ssh := editor.protocol == protocolSSH
-	networkHost := editor.protocol != protocolSerial
-	vncHost := editor.protocol == protocolVNC || editor.protocol == protocolRDP
-	rowHeight := float32(hostFormRowHeight)
-	*b = hostFormBody{}
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
-		b.protocol = ui.Slot(c).Height(34).MarginSides(0, 0, 10, 0)
-		ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
-			b.label = ui.Slot(c).Grow(1)
-			b.colorField = ui.Slot(c).Grow(1)
-		})
-		b.endpoint = ui.Slot(c).Height(float32(state.hostEndpointRows()) * rowHeight)
-		ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
-			b.group = ui.Slot(c).Grow(1)
-			b.tags = ui.Slot(c).Grow(1)
-		})
-		ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
-			b.iconField = ui.Slot(c).Grow(1)
-			if ssh {
-				b.transfer = ui.Slot(c).Grow(1)
-			}
-		})
-		if networkHost {
-			// The proxy is its own row: sharing the icon row clipped both the
-			// icon value and the proxy summary on VNC, RDP and Telnet.
-			b.proxy = ui.Slot(c).Height(rowHeight)
-		}
-		if ssh {
-			b.jump = ui.Slot(c).Height(rowHeight)
-			b.advanced = ui.Slot(c).Height(state.advancedSectionHeight())
-		}
-		if vncHost {
-			b.vncRows = ui.Slot(c).Height(state.desktopRowsHeight())
-		}
-		if state.dialogError != "" {
-			// The serial line's error is long: up to two lines.
-			ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
-		}
-	})
-}
-
-func (state *State) paintDeleteHostDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareDeleteHostDialog declares the delete confirmation as a dialog of the
+// workbench page.
+func (state *State) declareDeleteHostDialog(c ui.C) {
 	body := float32(0)
 	if state.dialogError != "" {
 		body = 20
 	}
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitHostDeleteDismiss, CloseID: hitHostDeleteClose, InitialFocusID: hitHostDeleteCancel,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: body, // the error line, when there is one
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, state.hostDialogText, body)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: state.messages.DeleteHostTitle, Description: state.hostDialogText,
+		Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitHostDeleteDismiss, CloseID: hitHostDeleteClose, InitialFocusID: hitHostDeleteCancel,
 	})
-	layout := dialog.Begin(state.messages.DeleteHostTitle, state.hostDialogText)
-	if state.dialogError != "" {
-		state.deleteHostDialogPage().Draw(canvas, layout.Body, state.chrome.deleteHostView)
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitHostDeleteCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitHostDeleteConfirm, Label: state.messages.DeleteHostConfirm, Variant: components.ButtonDestructive},
-	)
-	dialog.End()
-}
-
-// deleteHostDialogPage makes the page the delete confirmation's body is
-// declared in.
-func (state *State) deleteHostDialogPage() *ui.Page {
-	chrome := &state.chrome
-	if chrome.deleteHostPage == nil {
-		chrome.deleteHostPage = ui.NewPage(ui.PageConfig{Root: deleteHostBodyRoot, Theme: &state.theme})
-		chrome.deleteHostView = state.declareDeleteHostBody
-	}
-	return chrome.deleteHostPage
+	dialog.Body(func() { state.declareDeleteHostBody(c) })
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitHostDeleteCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitHostDeleteConfirm, Label: state.messages.DeleteHostConfirm, Variant: components.ButtonDestructive},
+		)
+	})
 }
 
 // declareDeleteHostBody lays out the confirmation's error line, when the host
@@ -2497,17 +2677,14 @@ func (state *State) declareDeleteHostBody(c ui.C) {
 	})
 }
 
-func (state *State) paintMoveHostGroupDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareMoveHostGroupDialog declares the move/rename group dialog as a dialog
+// of the workbench page.
+func (state *State) declareMoveHostGroupDialog(c ui.C) {
 	if state.groupActions.op == hostGroupDelete {
-		state.paintHostGroupDeleteDialog(canvas, viewport)
+		state.declareHostGroupDeleteDialog(c)
 		return
 	}
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitMoveGroupClose, InitialFocusID: hitMoveGroupField,
-		ContentSize: gfx.Size{Width: 460}, FitBody: true, BodyHeight: 90,
-	})
+	layout := dialogContentRect(c.Canvas(), *c.Theme(), dialogViewport(c), 460, "", 90)
 	title, submit, label := state.messages.MoveGroupTitle, state.messages.MoveGroupSubmit, state.messages.MoveGroupField
 	switch state.groupActions.op {
 	case hostGroupRename:
@@ -2519,49 +2696,98 @@ func (state *State) paintMoveHostGroupDialog(canvas *gfx.Canvas, viewport gfx.Re
 	}
 	description := ""
 	if state.groupActions.op != hostGroupMoveHosts {
-		description = elide(canvas, state.groupActions.path, state.Theme().Metrics.FontSizeM, gfx.WeightRegular, dialog.Layout("").Header.Width)
+		description = elide(c.Canvas(), state.groupActions.path, c.Theme().Metrics.FontSizeM, gfx.WeightRegular, layout.Header.Width)
 	}
-	layout := dialog.Begin(title, description)
-	state.moveGroupDialogPage().Draw(canvas, layout.Body, state.groupActions.view)
-	slot := state.groupActions.slot.Rect()
-	field := components.BeginField(canvas, state.Theme(), slot).For(hitMoveGroupField)
-	if state.dialogError != "" {
-		field = field.Invalid()
-	}
-	content := field.Paint(label, "", state.dialogError)
-	value := state.hostGroupEditor.String()
-	focused := canvas.Focused() == hitMoveGroupField
-	content.Height = 32
-	if state.groupActions.op == hostGroupRelocate {
-		state.paintHostGroupParentSelect(canvas, content, viewport)
-	} else {
-		components.PaintInput(canvas, state.Theme(), content, components.InputSnapshot{
-			ID: hitMoveGroupField, Label: label, Value: value,
-			Placeholder: state.messages.FieldGroupPlaceholder, Focused: focused, PlatformEditing: focused && value != "",
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, description, 90)
+	// No scrim dismiss: a press beside the form must not discard its input.
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: 460, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitMoveGroupClose, InitialFocusID: hitMoveGroupField,
+	})
+	dialog.Body(func() { state.declareMoveGroupBody(c, label, viewport) })
+	dialog.Footer(func() {
+		if dialogButton(c, state.messages.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickMoveHostGroupDialog(hitMoveGroupCancel) })
+		}
+		if dialogButton(c, submit, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickMoveHostGroupDialog(hitMoveGroupSubmit) })
+		}
+	})
+}
+
+// declareHostGroupDeleteDialog declares the delete-group variant of the group
+// dialog: two radio choices for what happens to the hosts in it.
+func (state *State) declareHostGroupDeleteDialog(c ui.C) {
+	m := state.messages.HostGroupActions
+	layout := dialogContentRect(c.Canvas(), *c.Theme(), dialogViewport(c), 480, "", 130)
+	description := elide(c.Canvas(), state.groupActions.path, c.Theme().Metrics.FontSizeM, gfx.WeightRegular, layout.Header.Width)
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, 130)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.Delete, Description: description, Width: 480, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitMoveGroupDismiss, CloseID: hitMoveGroupClose, InitialFocusID: hitGroupDeleteParent,
+	})
+	dialog.Body(func() {
+		column := ui.Column(c).Fill()
+		column.DrawOver(func(d *ui.DrawContext) {
+			canvas, theme := d.Canvas, *d.Theme
+			choices := state.groupDeleteChoices()
+			fullLabels := [2]string{choices[0].Label, choices[1].Label}
+			for index := range choices {
+				choices[index].Label = elide(canvas, choices[index].Label, theme.Metrics.FontSizeM, gfx.WeightMedium, d.Rect.Width-32)
+			}
+			selected := hitGroupDeleteParent
+			if state.groupActions.ungroup {
+				selected = hitGroupDeleteUngroup
+			}
+			components.BeginRadioGroup(canvas, theme, d.Rect, choices[:], selected).Paint()
+			for index := range canvas.Hits() {
+				hit := &canvas.Hits()[index]
+				for option := range choices {
+					if hit.ID == choices[option].ID {
+						hit.Label, hit.Value, hit.Hint = fullLabels[option], fullLabels[option], fullLabels[option]
+					}
+				}
+			}
 		})
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitMoveGroupCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitMoveGroupSubmit, Label: submit},
-	)
-	dialog.End()
+	})
+	dialog.Footer(func() {
+		if dialogButton(c, state.messages.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickMoveHostGroupDialog(hitMoveGroupCancel) })
+		}
+		if dialogButton(c, m.Delete, components.ButtonDestructive, false).Clicked() {
+			c.After(func() { state.clickMoveHostGroupDialog(hitMoveGroupSubmit) })
+		}
+	})
 }
 
-// moveGroupDialogPage makes the page the move/rename dialog's body is declared
-// in.
-func (state *State) moveGroupDialogPage() *ui.Page {
-	actions := &state.groupActions
-	if actions.page == nil {
-		actions.page = ui.NewPage(ui.PageConfig{Root: moveGroupBodyRoot, Theme: &state.theme})
-		actions.view = state.declareMoveGroupBody
-	}
-	return actions.page
-}
-
-// declareMoveGroupBody lays out the one field the dialog shows.
-func (state *State) declareMoveGroupBody(c ui.C) {
-	ui.Column(c).Fill().Children(func() {
+// declareMoveGroupBody lays out the one field the dialog shows and paints it
+// into its slot.
+func (state *State) declareMoveGroupBody(c ui.C, label string, viewport gfx.Rect) {
+	column := ui.Column(c).Fill()
+	column.Children(func() {
 		state.groupActions.slot = ui.Slot(c).Height(90)
+	})
+	column.DrawOver(func(d *ui.DrawContext) {
+		canvas, theme := d.Canvas, *d.Theme
+		slot := state.groupActions.slot.Rect()
+		field := components.BeginField(canvas, theme, slot).For(hitMoveGroupField)
+		if state.dialogError != "" {
+			field = field.Invalid()
+		}
+		content := field.Paint(label, "", state.dialogError)
+		value := state.hostGroupEditor.String()
+		focused := canvas.Focused() == hitMoveGroupField
+		content.Height = 32
+		if state.groupActions.op == hostGroupRelocate {
+			state.paintHostGroupParentSelect(canvas, content, viewport)
+		} else {
+			components.PaintInput(canvas, theme, content, components.InputSnapshot{
+				ID: hitMoveGroupField, Label: label, Value: value,
+				Placeholder: state.messages.FieldGroupPlaceholder, Focused: focused, PlatformEditing: focused && value != "",
+			})
+		}
 	})
 }
 
@@ -2749,43 +2975,36 @@ func (state *State) paintDialogFieldWithSecurity(canvas *gfx.Canvas, id gfx.ID, 
 	})
 }
 
-// paintHostKeyDialog asks whether to trust a server's key. The safe choice,
-// Reject, holds the initial focus.
-func (state *State) paintHostKeyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages, state.Theme()
+// declareHostKeyDialog declares the host-key question as a dialog of the
+// workbench page. The safe choice, Reject, holds the initial focus.
+func (state *State) declareHostKeyDialog(c ui.C) {
+	m := state.messages
 	session := state.promptSession()
 	if session == nil {
 		return
 	}
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitHostKeyDismiss, CloseID: hitHostKeyClose, InitialFocusID: hitHostKeyReject,
-		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: 3*30 - 8, // three rows of address, type and fingerprint
+	bodyHeight := float32(3*30 - 8) // three rows of address, type and fingerprint
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 540, state.hostKeyDescription, bodyHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.HostKeyTitle, Description: state.hostKeyDescription,
+		Width: 540, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitHostKeyDismiss, CloseID: hitHostKeyClose, InitialFocusID: hitHostKeyReject,
 	})
-	layout := dialog.Begin(m.HostKeyTitle, state.hostKeyDescription)
-	state.hostKeyDialogPage().Draw(canvas, layout.Body, state.chrome.hostKeyView)
-	actions := [...]components.ButtonAction{
-		{ID: hitHostKeyReject, Label: m.HostKeyReject, Variant: components.ButtonSecondary},
-		{ID: hitHostKeyOnce, Label: m.HostKeyOnce, Variant: components.ButtonOutline},
-		{ID: hitHostKeyTrust, Label: m.HostKeyTrust},
-		{ID: hitHostKeyForget, Label: m.HostKeyForget, Variant: components.ButtonOutline},
-	}
-	actionCount := 3
-	if canForgetServerIdentity(session) {
-		actionCount++
-	}
-	dialog.Actions(layout, actions[:actionCount]...)
-	dialog.End()
-}
-
-// hostKeyDialogPage makes the page the host-key question's body is declared in.
-func (state *State) hostKeyDialogPage() *ui.Page {
-	chrome := &state.chrome
-	if chrome.hostKeyPage == nil {
-		chrome.hostKeyPage = ui.NewPage(ui.PageConfig{Root: hostKeyBodyRoot, Theme: &state.theme})
-		chrome.hostKeyView = state.declareHostKeyBody
-	}
-	return chrome.hostKeyPage
+	dialog.Body(func() { state.declareHostKeyBody(c) })
+	dialog.Footer(func() {
+		actions := [...]components.ButtonAction{
+			{ID: hitHostKeyReject, Label: m.HostKeyReject, Variant: components.ButtonSecondary},
+			{ID: hitHostKeyOnce, Label: m.HostKeyOnce, Variant: components.ButtonOutline},
+			{ID: hitHostKeyTrust, Label: m.HostKeyTrust},
+			{ID: hitHostKeyForget, Label: m.HostKeyForget, Variant: components.ButtonOutline},
+		}
+		count := 3
+		if canForgetServerIdentity(session) {
+			count++
+		}
+		state.dialogActionFooter(c, actions[:count]...)
+	})
 }
 
 // declareHostKeyBody lays out the address, type and fingerprint of the key.
@@ -2810,25 +3029,78 @@ func (state *State) declareHostKeyBody(c ui.C) {
 	})
 }
 
-// paintPasswordDialog asks every question of one authentication round, each in
-// a field of its own and in the server's order.
-func (state *State) paintPasswordDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages, state.Theme()
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitPasswordDismiss, CloseID: hitPasswordClose, InitialFocusID: hitPasswordField,
-		ContentSize: gfx.Size{Width: 460}, FitBody: true, BodyHeight: state.passwordBodyHeight(),
+// declarePasswordDialog declares the authentication questions as a dialog of
+// the workbench page, each in a field of its own and in the server's order.
+func (state *State) declarePasswordDialog(c ui.C) {
+	m := state.messages
+	viewport := dialogViewport(c)
+	bodyHeight := state.passwordBodyHeight()
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, state.passwordDescription, bodyHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.PasswordTitle, Description: state.passwordDescription,
+		Width: 460, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitPasswordDismiss, CloseID: hitPasswordClose, InitialFocusID: hitPasswordField,
 	})
-	layout := dialog.Begin(m.PasswordTitle, state.passwordDescription)
-	fields, save := state.layoutPasswordFields(canvas, layout.Body)
-	hint := state.passwordHintText()
-	for index, bounds := range fields {
+	dialog.Body(func() { state.declarePasswordBody(c) })
+	dialog.Footer(func() {
+		if dialogButton(c, m.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickPassword(hitPasswordCancel) })
+		}
+		if dialogButton(c, m.Connect, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickPassword(hitPasswordSubmit) })
+		}
+	})
+}
+
+// declarePasswordBody lays out one field per question, the hint and error under
+// them and, when the vault can keep it, the box that offers to save it. The
+// fields themselves are painted into their slots by the body's DrawOver.
+func (state *State) declarePasswordBody(c ui.C) {
+	boxes := state.passwordBoxes
+	if len(boxes) != len(state.passwordQuestions) {
+		boxes = make([]ui.Box, len(state.passwordQuestions))
+		state.passwordBoxes = boxes
+	}
+	multi := len(boxes) > 1
+	state.chrome.passwordSave = ui.Box{}
+	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
+	column.Children(func() {
+		for index := range boxes {
+			boxes[index] = ui.Slot(c).Height(62).MarginSides(0, 0, 4, 0)
+		}
+		state.hintLineC(c)
+		state.problemLineC(c, state.passwordError)
+		if state.secrets.canSave {
+			if multi {
+				state.chrome.passwordSave = ui.Slot(c).Height(20).MarginSides(12, 0, 0, 0)
+			} else {
+				state.chrome.passwordSave = ui.Slot(c).Height(20).MarginSides(8, 0, 0, 0)
+			}
+		}
+	})
+	column.DrawOver(state.passwordFieldsDraw())
+}
+
+// passwordFieldsDraw returns the handler that paints the password dialog's
+// fields, made once so a warm repaint allocates nothing.
+func (state *State) passwordFieldsDraw() func(*ui.DrawContext) {
+	if state.chrome.passwordFieldsDraw == nil {
+		state.chrome.passwordFieldsDraw = state.drawPasswordFields
+	}
+	return state.chrome.passwordFieldsDraw
+}
+
+// drawPasswordFields paints a field per question and the box that offers to
+// save the password, into the slots the body declared.
+func (state *State) drawPasswordFields(d *ui.DrawContext) {
+	canvas, theme := d.Canvas, *d.Theme
+	for index := range state.passwordBoxes {
 		question := state.passwordQuestions[index]
 		label := strings.TrimSpace(question.Text)
 		if label == "" {
-			label = m.PasswordLabel
+			label = state.messages.PasswordLabel
 		}
-		field := components.BeginField(canvas, theme, bounds)
+		field := components.BeginField(canvas, theme, state.passwordBoxes[index].Rect())
 		content := field.Paint(label, "", "")
 		value := state.passwordFields[index].String()
 		id := hitPasswordFields.At(index + 1)
@@ -2839,13 +3111,8 @@ func (state *State) paintPasswordDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		})
 	}
 	if state.secrets.canSave {
-		state.paintSaveBoxAt(canvas, save, hitPasswordSave, m.PasswordSave, hint, hitPasswordHint)
+		state.paintSaveBoxAt(canvas, state.chrome.passwordSave.Rect(), hitPasswordSave, state.messages.PasswordSave, state.passwordHintText(), hitPasswordHint)
 	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitPasswordCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitPasswordSubmit, Label: m.Connect},
-	)
-	dialog.End()
 }
 
 // passwordBodyHeight is tall enough for every question's field, the error line
@@ -2878,59 +3145,6 @@ func (state *State) passwordBodyHeight() float32 {
 		height += 32
 	}
 	return height
-}
-
-// layoutPasswordFields lays out one field per question and the save box under
-// them, and returns where each goes.
-func (state *State) layoutPasswordFields(canvas *gfx.Canvas, body gfx.Rect) (fields []gfx.Rect, save gfx.Rect) {
-	fields = state.passwordRects
-	boxes := state.passwordBoxes
-	if len(fields) != len(state.passwordQuestions) || len(boxes) != len(state.passwordQuestions) {
-		fields = make([]gfx.Rect, len(state.passwordQuestions))
-		boxes = make([]ui.Box, len(state.passwordQuestions))
-		state.passwordRects, state.passwordBoxes = fields, boxes
-	}
-	state.passwordDialogPage().Draw(canvas, body, state.chrome.passwordView)
-	for index := range boxes {
-		fields[index] = boxes[index].Rect()
-	}
-	if state.secrets.canSave {
-		save = state.chrome.passwordSave.Rect()
-	}
-	return fields, save
-}
-
-// passwordDialogPage makes the page the password dialog's body is declared in.
-func (state *State) passwordDialogPage() *ui.Page {
-	chrome := &state.chrome
-	if chrome.passwordPage == nil {
-		chrome.passwordPage = ui.NewPage(ui.PageConfig{Root: passwordBodyRoot, Theme: &state.theme})
-		chrome.passwordView = state.declarePasswordBody
-	}
-	return chrome.passwordPage
-}
-
-// declarePasswordBody lays out one field per question, the hint and error under
-// them and, when the vault can keep it, the box that offers to save it. The
-// fields themselves are painted into their slots by paintPasswordDialog.
-func (state *State) declarePasswordBody(c ui.C) {
-	boxes := state.passwordBoxes
-	multi := len(boxes) > 1
-	state.chrome.passwordSave = ui.Box{}
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
-		for index := range boxes {
-			boxes[index] = ui.Slot(c).Height(62).MarginSides(0, 0, 4, 0)
-		}
-		state.hintLineC(c)
-		state.problemLineC(c, state.passwordError)
-		if state.secrets.canSave {
-			if multi {
-				state.chrome.passwordSave = ui.Slot(c).Height(20).MarginSides(12, 0, 0, 0)
-			} else {
-				state.chrome.passwordSave = ui.Slot(c).Height(20).MarginSides(8, 0, 0, 0)
-			}
-		}
-	})
 }
 
 // passwordHintText is the guidance about submitting and saving: a help icon on

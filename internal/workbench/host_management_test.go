@@ -192,7 +192,7 @@ func TestHostPasswordFitsEveryHostDialogInAShortWindow(t *testing.T) {
 			if !ok {
 				t.Fatalf("last control %d was not painted", test.last)
 			}
-			submit, ok := hitByID(canvas, hitDialogSubmit)
+			submit, ok := hitByLabel(canvas, state.messages.AddHost)
 			if !ok {
 				t.Fatal("submit button was not painted")
 			}

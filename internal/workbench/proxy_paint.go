@@ -81,54 +81,33 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	}
 }
 
-func (state *State) paintProxyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	messages, theme := state.messages, state.Theme()
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, CloseID: hitProxyDialogClose,
-		InitialFocusID: hitProxyDialogTarget, ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: withError(state.proxyDialogBodyHeight(), state.proxyDialogError),
-	})
+// declareProxyDialog declares the route editor as a dialog of the workbench
+// page.
+func (state *State) declareProxyDialog(c ui.C) {
+	messages := state.messages
 	dialogTitle := messages.ProxyDialogTitle
 	submitLabel := messages.ProxyCreate
 	if state.proxyEditor.editing {
 		dialogTitle = messages.ProxyEditDialogTitle
 		submitLabel = messages.ProxyRouteSave
 	}
-	layout := dialog.Begin(dialogTitle, "")
-	viaShell := state.proxyEditor.viaShell
-	state.proxyDialogPage().Draw(canvas, layout.Body, state.proxyEditor.dialogView)
-	body := &state.proxyEditor.dialogBody
-	state.paintProxyHostField(canvas, body.target.Rect(), true)
-	state.paintProxyHostField(canvas, body.jump.Rect(), false)
-	state.paintDialogCheckbox(canvas, hitProxyDialogViaShell, messages.ProxyFieldViaShell, viaShell, body.via)
-	state.paintHelpIcon(canvas, hitProxyDialogViaHelp, messages.ProxyViaShellHelp, body.viaHelp.Rect())
-	if viaShell {
-		content := components.BeginField(canvas, theme, body.relay.Rect()).Paint(messages.ProxyFieldRelay, "", "")
-		value := state.proxyEditor.relay.String()
-		focused := canvas.Focused() == hitProxyDialogRelay
-		components.PaintInput(canvas, theme, content, components.InputSnapshot{
-			ID: hitProxyDialogRelay, Label: messages.ProxyFieldRelay, Value: value, Placeholder: messages.ProxyRelayPlaceholder,
-			Focused: focused, PlatformEditing: focused && value != "",
-		})
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitProxyDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitProxyDialogSubmit, Label: submitLabel},
-	)
-	dialog.End()
-}
-
-// proxyDialogBodyRoot names the page the route dialog's body is declared in.
-const proxyDialogBodyRoot = "proxy-dialog-body"
-
-// proxyDialogPage makes the page the route dialog's body is declared in.
-func (state *State) proxyDialogPage() *ui.Page {
-	editor := &state.proxyEditor
-	if editor.dialogPage == nil {
-		editor.dialogPage = ui.NewPage(ui.PageConfig{Root: proxyDialogBodyRoot, Theme: &state.theme})
-		editor.dialogView = state.declareProxyDialogBody
-	}
-	return editor.dialogPage
+	bodyHeight := withError(state.proxyDialogBodyHeight(), state.proxyDialogError)
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 500, "", bodyHeight)
+	// No scrim dismiss: a press beside the form must not discard its input.
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: dialogTitle, Width: 500, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitProxyDialogClose, InitialFocusID: hitProxyDialogTarget,
+	})
+	dialog.Body(func() { state.declareProxyDialogBody(c) })
+	dialog.Footer(func() {
+		if dialogButton(c, messages.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickProxyDialog(hitProxyDialogCancel) })
+		}
+		if dialogButton(c, submitLabel, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickProxyDialog(hitProxyDialogSubmit) })
+		}
+	})
 }
 
 // declareProxyDialogBody lays out the route dialog: the target and jump hosts,
@@ -139,7 +118,8 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 	b := &editor.dialogBody
 	*b = proxyDialogBody{}
 	const rowHeight = 64
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
+	column.Children(func() {
 		b.target = ui.Slot(c).Height(rowHeight)
 		b.jump = ui.Slot(c).Height(rowHeight)
 		b.via, b.viaHelp = state.declareDialogCheckboxHelpC(c, messages.ProxyFieldViaShell, 4, 6)
@@ -151,6 +131,27 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 			ui.Text(c, state.proxyDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
 		}
 	})
+	column.DrawOver(func(d *ui.DrawContext) { state.paintProxyDialogFields(d.Canvas) })
+}
+
+// paintProxyDialogFields paints the route editor's controls into the slots the
+// body laid out.
+func (state *State) paintProxyDialogFields(canvas *gfx.Canvas) {
+	messages, theme := state.messages, state.Theme()
+	b := &state.proxyEditor.dialogBody
+	state.paintProxyHostField(canvas, b.target.Rect(), true)
+	state.paintProxyHostField(canvas, b.jump.Rect(), false)
+	state.paintDialogCheckbox(canvas, hitProxyDialogViaShell, messages.ProxyFieldViaShell, state.proxyEditor.viaShell, b.via)
+	state.paintHelpIcon(canvas, hitProxyDialogViaHelp, messages.ProxyViaShellHelp, b.viaHelp.Rect())
+	if state.proxyEditor.viaShell {
+		content := components.BeginField(canvas, theme, b.relay.Rect()).Paint(messages.ProxyFieldRelay, "", "")
+		value := state.proxyEditor.relay.String()
+		focused := canvas.Focused() == hitProxyDialogRelay
+		components.PaintInput(canvas, theme, content, components.InputSnapshot{
+			ID: hitProxyDialogRelay, Label: messages.ProxyFieldRelay, Value: value, Placeholder: messages.ProxyRelayPlaceholder,
+			Focused: focused, PlatformEditing: focused && value != "",
+		})
+	}
 }
 
 // proxyDialogBodyHeight is the height of the dialog's fields: the two hosts, the

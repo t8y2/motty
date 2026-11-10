@@ -506,7 +506,7 @@ func TestHostProxyConfigurationFitsEveryNetworkDialogInAShortWindow(t *testing.T
 			if !ok {
 				t.Fatal("proxy configuration was not painted")
 			}
-			submit, ok := hitByID(canvas, hitDialogSubmit)
+			submit, ok := hitByLabel(canvas, state.messages.AddHost)
 			if !ok || proxy.Bounds.Y+proxy.Bounds.Height > submit.Bounds.Y {
 				t.Fatalf("proxy control %+v reaches footer %+v", proxy.Bounds, submit.Bounds)
 			}

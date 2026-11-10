@@ -92,78 +92,38 @@ func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	}
 }
 
-func (state *State) paintForwardDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	messages, theme := state.messages, state.Theme()
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer:          dialogLayer,
-		Scope:          dialogScope,
-		CloseID:        hitForwardDialogClose,
-		InitialFocusID: hitForwardDialogLabel,
-		ContentSize:    gfx.Size{Width: 560}, FitBody: true, BodyHeight: withError(4*58+2+30, state.forwardDialogError), // four rows of fields, then the checkbox
-	})
+// declareForwardDialog declares the forward editor as a dialog of the workbench
+// page.
+func (state *State) declareForwardDialog(c ui.C) {
+	messages := state.messages
 	dialogTitle := messages.ForwardDialogTitle
 	submitLabel := messages.ForwardCreate
 	if state.forwardEditor.editing {
 		dialogTitle = messages.ForwardEditDialogTitle
 		submitLabel = messages.ForwardSave
 	}
-	layout := dialog.Begin(dialogTitle, messages.ForwardDialogDescription)
-
-	// The mode switch is a page Choice, which writes the new mode during this
-	// paint. The rows were laid out from the mode at the start of the paint, so
-	// the rest of the paint must read that same mode; the next paint shows the
-	// new one.
-	mode := state.forwardEditor.mode
-
-	// Four rows of fields; the last holds the port beside the destination,
-	// 24% / 44% / 24% of the row with 4% between.
-	const rowHeight = 58
-	state.forwardDialogPage().Draw(canvas, layout.Body, state.forwardEditor.dialogView)
-	body := &state.forwardEditor.dialogBody
-
-	state.paintForwardDialogField(canvas, hitForwardDialogLabel, forwardFieldLabel, messages.ForwardFieldName, "", body.name.Rect())
-	state.paintForwardHostField(canvas, body.host.Rect())
-	state.paintForwardModeField(canvas, body.mode.Rect())
-	portTitle := messages.ForwardFieldLocalPort
-	if mode == portforward.ModeRemote {
-		portTitle = messages.ForwardFieldRemotePort
-	}
-	state.paintForwardDialogField(canvas, hitForwardDialogLocalPort, forwardFieldLocalPort, portTitle, "", body.port.Rect())
-	if !modeUsesClientDestination(mode) {
-		placeholder := messages.ForwardDestinationPlaceholder
-		if mode == portforward.ModeRemote {
-			placeholder = messages.ForwardLocalDestinationHint
+	bodyHeight := withError(4*58+2+30, state.forwardDialogError) // four rows of fields, then the checkbox
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, messages.ForwardDialogDescription, bodyHeight)
+	// No scrim dismiss: a press beside the form must not discard its input.
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: dialogTitle, Description: messages.ForwardDialogDescription,
+		Width: 560, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitForwardDialogClose, InitialFocusID: hitForwardDialogLabel,
+	})
+	dialog.Body(func() { state.declareForwardDialogBody(c) })
+	dialog.Footer(func() {
+		if dialogButton(c, messages.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickForwardDialog(hitForwardDialogCancel) })
 		}
-		state.paintForwardDialogField(canvas, hitForwardDialogDestination, forwardFieldDestinationHost, messages.ForwardFieldDestination, placeholder, body.destination.Rect())
-		state.paintForwardDialogField(canvas, hitForwardDialogDestinationPort, forwardFieldDestinationPort, messages.ForwardFieldDestinationPort, "", body.destinationPort.Rect())
-	}
-	state.paintDialogCheckbox(canvas, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, body.resume)
-	state.paintHelpIcon(canvas, hitForwardDialogResumeHelp, messages.ForwardResumeHelp, body.resumeHelp.Rect())
-
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitForwardDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitForwardDialogSubmit, Label: submitLabel},
-	)
-	dialog.End()
-}
-
-// forwardDialogBodyRoot names the page the forward editor's body is declared in.
-const forwardDialogBodyRoot = "forward-dialog-body"
-
-// forwardDialogPage makes the page the forward editor's body is declared in.
-func (state *State) forwardDialogPage() *ui.Page {
-	editor := &state.forwardEditor
-	if editor.dialogPage == nil {
-		editor.dialogPage = ui.NewPage(ui.PageConfig{Root: forwardDialogBodyRoot, Theme: &state.theme})
-		editor.dialogView = state.declareForwardDialogBody
-	}
-	return editor.dialogPage
+		if dialogButton(c, submitLabel, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickForwardDialog(hitForwardDialogSubmit) })
+		}
+	})
 }
 
 // declareForwardDialogBody lays out the forward editor: four rows of fields, the
-// resume box and the error line. The fields themselves are painted into their
-// slots by paintForwardDialog.
+// resume box and the error line, and paints the fields into their slots.
 func (state *State) declareForwardDialogBody(c ui.C) {
 	editor, messages := &state.forwardEditor, state.messages
 	mode := editor.mode
@@ -174,7 +134,8 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 		hint = messages.ForwardHTTPConnectHint
 	}
 	const rowHeight = 58
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
+	column.Children(func() {
 		b.name = ui.Slot(c).Height(rowHeight)
 		b.host = ui.Slot(c).Height(rowHeight)
 		b.mode = ui.Slot(c).Height(rowHeight)
@@ -196,6 +157,32 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 			ui.Text(c, state.forwardDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
 		}
 	})
+	column.DrawOver(func(d *ui.DrawContext) { state.paintForwardDialogFields(d.Canvas, mode) })
+}
+
+// paintForwardDialogFields paints the forward editor's fields into the slots the
+// body laid out.
+func (state *State) paintForwardDialogFields(canvas *gfx.Canvas, mode portforward.Mode) {
+	messages := state.messages
+	b := &state.forwardEditor.dialogBody
+	state.paintForwardDialogField(canvas, hitForwardDialogLabel, forwardFieldLabel, messages.ForwardFieldName, "", b.name.Rect())
+	state.paintForwardHostField(canvas, b.host.Rect())
+	state.paintForwardModeField(canvas, b.mode.Rect())
+	portTitle := messages.ForwardFieldLocalPort
+	if mode == portforward.ModeRemote {
+		portTitle = messages.ForwardFieldRemotePort
+	}
+	state.paintForwardDialogField(canvas, hitForwardDialogLocalPort, forwardFieldLocalPort, portTitle, "", b.port.Rect())
+	if !modeUsesClientDestination(mode) {
+		placeholder := messages.ForwardDestinationPlaceholder
+		if mode == portforward.ModeRemote {
+			placeholder = messages.ForwardLocalDestinationHint
+		}
+		state.paintForwardDialogField(canvas, hitForwardDialogDestination, forwardFieldDestinationHost, messages.ForwardFieldDestination, placeholder, b.destination.Rect())
+		state.paintForwardDialogField(canvas, hitForwardDialogDestinationPort, forwardFieldDestinationPort, messages.ForwardFieldDestinationPort, "", b.destinationPort.Rect())
+	}
+	state.paintDialogCheckbox(canvas, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, b.resume)
+	state.paintHelpIcon(canvas, hitForwardDialogResumeHelp, messages.ForwardResumeHelp, b.resumeHelp.Rect())
 }
 
 func (state *State) paintForwardModeField(canvas *gfx.Canvas, bounds gfx.Rect) {

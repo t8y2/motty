@@ -100,7 +100,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 				closeID = hitForwardDialogClose
 			case "proxy":
 				state.openProxyDialog()
-				closeID = hitProxyDialogCancel
+				closeID = hitProxyDialogClose
 			case "form":
 				state.openForm(formDialog{title: "Test form", submit: "Save"}, formField{label: "Name"})
 				closeID = hitFormCancel

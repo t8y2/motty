@@ -45,6 +45,16 @@ func TestHostTagsNativeQueryKeepsFocusAndDoesNotSubmitTheHost(t *testing.T) {
 			}
 			t.Fatal("missing hit", id)
 		}
+		clickLabel := func(label string) {
+			t.Helper()
+			hit, ok := hitByLabelSnapshot(view.Snapshot().Hits, label)
+			if !ok {
+				t.Fatal("missing button", label)
+			}
+			if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+		}
 		click(hitDialogTags)
 		if dir := os.Getenv("MOTTY_TAGS_SCREENSHOTS"); dir != "" && scale == 1 {
 			if err := os.MkdirAll(dir, 0700); err != nil {
@@ -126,7 +136,7 @@ func TestHostTagsNativeQueryKeepsFocusAndDoesNotSubmitTheHost(t *testing.T) {
 		if p.control.Open || state.modal != modalNewHost {
 			t.Fatal("outside click closed host dialog instead of dropdown")
 		}
-		click(hitDialogSubmit)
+		clickLabel(state.messages.AddHost)
 		if len(state.hosts) != 1 || state.hosts[0].Tags != "生产, 测试" {
 			t.Fatal("native tag save failed", state.dialogError)
 		}

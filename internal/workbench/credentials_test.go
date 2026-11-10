@@ -274,18 +274,6 @@ func snapshotButton(snapshot app.Snapshot, label string) (gfx.Hit, bool) {
 	return gfx.Hit{}, false
 }
 
-// hitByLabel finds the painted control a label names: a dialog declared in the
-// window page names its buttons by place, so their labels are the stable way
-// to reach them.
-func hitByLabel(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
-	for _, hit := range canvas.Hits() {
-		if hit.Label == label && !hit.ID.IsZero() {
-			return hit, true
-		}
-	}
-	return gfx.Hit{}, false
-}
-
 // pageHitByLabel finds the hit a page painted with label.
 func pageHitByLabel(t *testing.T, canvas *gfx.Canvas, label string) gfx.Hit {
 	t.Helper()

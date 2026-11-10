@@ -19,6 +19,24 @@ func hitByID(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
 	return gfx.Hit{}, false
 }
 
+// hitByLabel finds the first painted button with label: a page-owned dialog
+// button is named by its place, not by an application identity. The first
+// match is the dialog's, because the page declares dialogs before the section
+// body is painted; a section can carry a button with the same label.
+func hitByLabel(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	return hitByLabelSnapshot(canvas.Hits(), label)
+}
+
+// hitByLabelSnapshot is hitByLabel over a snapshot's hits.
+func hitByLabelSnapshot(hits []gfx.Hit, label string) (gfx.Hit, bool) {
+	for _, hit := range hits {
+		if hit.Label == label && hit.Role == gfx.RoleButton {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
 // The shell is declared by a page of its own, and that page keeps the hit
 // identities the central dispatcher names by hand: the window bar above the
 // navigation rail, the rail's rows under it, and the slot the sections paint
@@ -446,17 +464,24 @@ func TestDialogButtonsFitTheirLabelsAndSitAtTheRightEdge(t *testing.T) {
 	cases := []struct {
 		name   string
 		open   func(*State, *fakeConn)
-		layout []gfx.ID
+		layout func(*State) []string
 	}{
-		{"new host", func(state *State, _ *fakeConn) { state.Click(hitAddHost) }, []gfx.ID{hitDialogCancel, hitDialogSubmit}},
+		{"new host", func(state *State, _ *fakeConn) { state.Click(hitAddHost) }, func(state *State) []string {
+			return []string{state.messages.Cancel, state.messages.AddHost}
+		}},
 		{"host key", func(state *State, fake *fakeConn) {
 			fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseHostKeyPrompt; s.HostKey = testHostKey })
 			state.Wake()
-		}, []gfx.ID{hitHostKeyReject, hitHostKeyOnce, hitHostKeyTrust}},
+		}, func(state *State) []string {
+			m := state.messages
+			return []string{m.HostKeyReject, m.HostKeyOnce, m.HostKeyTrust}
+		}},
 		{"password", func(state *State, fake *fakeConn) {
 			fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhasePasswordPrompt; s.Attempt = 1 })
 			state.Wake()
-		}, []gfx.ID{hitPasswordCancel, hitPasswordSubmit}},
+		}, func(state *State) []string {
+			return []string{state.messages.Cancel, state.messages.Connect}
+		}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -466,13 +491,14 @@ func TestDialogButtonsFitTheirLabelsAndSitAtTheRightEdge(t *testing.T) {
 			test.open(state, fake)
 			canvas, _ := paintedTexts(state)
 			theme := state.Theme()
+			layout := test.layout(state)
 
 			var previousRight float32
 			var last gfx.Hit
-			for index, id := range test.layout {
-				hit, ok := hitByID(canvas, id)
+			for index, label := range layout {
+				hit, ok := hitByLabel(canvas, label)
 				if !ok {
-					t.Fatalf("button %d is not painted", id)
+					t.Fatalf("button %q is not painted", label)
 				}
 				fit := components.BeginButton(canvas, theme, gfx.ID{}, hit.Bounds).SizeToFit(hit.Label).BoundsWidth()
 				if math.Abs(float64(hit.Bounds.Width-fit)) > 0.5 {
@@ -544,9 +570,13 @@ func TestFieldTextHasTheSameSizeFocusedAndUnfocused(t *testing.T) {
 			hit = candidate
 		}
 	}
+	// The field's value is painted at the native editor's text bounds. Another
+	// control may show the same text (the host list can hold a host of the same
+	// name), so pick the paint inside the field, not the last match.
 	var painted gfx.Text
 	for _, candidate := range canvas.Texts() {
-		if candidate.Value == "Production" {
+		if candidate.Value == "Production" && candidate.Bounds.Y == hit.TextBounds.Y &&
+			candidate.Bounds.X >= hit.TextBounds.X && candidate.Bounds.X < hit.TextBounds.X+hit.TextBounds.Width {
 			painted = candidate
 		}
 	}
