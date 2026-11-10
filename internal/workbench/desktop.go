@@ -856,19 +856,13 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 	view.area = geometry.area
 	state.followDesktop(canvas, view)
 
-	var light, toolsSlot, captureSlot, latencySlot ui.Box
-	var latencyBadge desktopLatencyUI
-	latencyShown := false
-	var tools []components.ButtonAction
+	s := &state.sessionBodies
+	s.desktopID = session.ID
+	s.light, s.tools, s.capture, s.latency = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
+	s.latencyShown = false
 	if !view.chromeless && !view.fullscreen {
-		latencyBadge, latencyShown = state.desktopLatencyBadge(canvas, view)
-		title := session.Title
-		if title == "" {
-			title = session.Address
-		}
-		status, dot := state.sessionStatus(session)
-		showStatus := session.phase != sshconn.PhaseConnected || view.ended
-
+		var tools []components.ButtonAction
+		s.latencyBadge, s.latencyShown = state.desktopLatencyBadge(canvas, view)
 		// The controls on the right: the scaling choice, Ctrl+Alt+Del where there is
 		// room, and the keyboard switch.
 		tools = []components.ButtonAction{
@@ -884,72 +878,33 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 		if size.Width >= 760 {
 			tools = append([]components.ButtonAction{{ID: hitDesktopCtrlAltDel, Label: m.Desktop.CtrlAltDel, Variant: components.ButtonGhost, Disabled: view.ended}}, tools...)
 		}
-		toolsWidth := float32(0)
-		for _, tool := range tools {
-			toolsWidth += canvas.TextWidthWeight(tool.Label, metrics.FontSizeS, gfx.WeightMedium) + 24 + 4
-		}
+		s.desktopTools = tools
+	} else {
+		s.desktopTools = s.desktopTools[:0]
+	}
+	state.desktopPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, state.declareDesktopPage)
 
-		f := state.terminalPageLayout.Begin(canvas, state.Theme(), gfx.Rect{Width: size.Width, Height: size.Height})
-		f.Column().Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
-			f.Stack().Height(infoBarHeight).Shrink(0).Background(pal.workspace).Children(func() {
-				f.Row().Fill().PadSides(0, termPadX, 0, termPadX-2).Items(ui.Center).Children(func() {
-					f.Row().Grow(1).Gap(8).MarginSides(0, 10, 0, 0).Items(ui.Center).Children(func() {
-						light = f.Slot().Size(16, 16)
-						f.Text(title).FontSize(barTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).
-							Width(canvas.TextWidthWeight(title, barTitleSize, gfx.WeightSemibold)+2).Ellipsis().MarginSides(0, 4, 0, 0)
-						if showStatus {
-							f.Text(status).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).
-								Width(canvas.TextWidthWeight(status, metrics.FontSizeS, gfx.WeightMedium) + 2)
-						}
-					})
-					f.Row().Gap(barToolGap).Shrink(0).Items(ui.Center).Children(func() {
-						toolsSlot = f.Slot().Size(toolsWidth, 24).Shrink(0)
-						captureSlot = f.Slot().Size(barToolSize, barToolSize).Shrink(0)
-					})
-				})
-				f.Row().FillWidth().Height(1).Self(ui.End).Background(pal.line)
-			})
-			f.Row().Grow(1).Background(state.ground(state.termPal.terminal))
-			f.Stack().Height(desktopStripHeight).Shrink(0).Background(pal.workspace).Children(func() {
-				f.Row().FillWidth().Height(1).Self(ui.Start).Background(pal.line)
-				f.Row().Fill().PadX(termPadX).Items(ui.Center).Children(func() {
-					f.Text(state.desktopStripLeft(view, session)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(16).Grow(1).Ellipsis()
-					if latencyShown {
-						latencySlot = f.Slot().Size(latencyBadge.width+12, 16).MarginSides(0, 8, 0, 0).Shrink(0)
-					}
-					chordText := m.Desktop.StripCaptured
-					colour := pal.muted
-					if view.released {
-						chordText, colour = m.Desktop.StripReleased, pal.accent
-					}
-					chordText = fmt.Sprintf(chordText, desktopEscapeChord)
-					f.Text(chordText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(colour).LineHeight(16).
-						Width(canvas.TextWidthWeight(chordText, metrics.FontSizeS, gfx.WeightMedium) + 2).Shrink(0)
-				})
-			})
-		})
-		f.End()
-
-		if latencyShown {
-			state.paintDesktopLatency(canvas, latencySlot.Rect(), latencyBadge)
+	if !view.chromeless && !view.fullscreen {
+		if s.latencyShown {
+			state.paintDesktopLatency(canvas, s.latency.Rect(), s.latencyBadge)
 		}
 
 		if session.busy {
-			components.PaintSpinner(canvas, state.Theme(), light.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))
+			components.PaintSpinner(canvas, state.Theme(), s.light.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))
 			canvas.RequestFrameIn(spinnerStep)
 		} else {
 			kind, _ := state.sessionLight(session)
-			spot := light.Rect()
+			_, dot := state.sessionStatus(session)
+			spot := s.light.Rect()
 			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, pal.workspace)
 		}
-		components.BeginButtonRow(canvas, state.theme, toolsSlot.Rect()).Size(components.ButtonSizeXSmall).Paint(tools...)
+		components.BeginButtonRow(canvas, state.theme, s.tools.Rect()).Size(components.ButtonSizeXSmall).Paint(s.desktopTools...)
 		captureStyle, captureHint := iconButtonActive, fmt.Sprintf(m.Desktop.TipCapture, desktopEscapeChord)
 		if view.released {
 			captureStyle, captureHint = iconButtonQuiet, fmt.Sprintf(m.Desktop.TipRelease, desktopEscapeChord)
 		}
-		state.paintIconButton(canvas, hitDesktopCapture, iconKeyboard, captureSlot.Rect(), captureHint, view.ended, captureStyle, pal.workspace)
+		state.paintIconButton(canvas, hitDesktopCapture, iconKeyboard, s.capture.Rect(), captureHint, view.ended, captureStyle, pal.workspace)
 	}
-
 	// The picture, clipped to its area. The area behind it is the terminal's
 	// ground, so a picture that does not fill the pane sits on a quiet surface.
 	// The bars lay that ground in their flex stack; a chromeless session drops
@@ -989,6 +944,67 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 	} else if view.chromeless {
 		state.paintChromelessLatency(canvas, view, area)
 	}
+}
+
+// declareDesktopPage declares the bars of a remote desktop: the title and state
+// over the picture, and the strip that names the escape chord under it. The
+// controls painted by hand go into the slots it leaves.
+func (state *State) declareDesktopPage(c ui.C) {
+	session, ok := state.sessionByIDPointer(state.sessionBodies.desktopID)
+	if !ok || session.desk == nil {
+		return
+	}
+	view, s := session.desk, &state.sessionBodies
+	pal, m := state.pal, state.messages
+	canvas := c.Canvas()
+	title := session.Title
+	if title == "" {
+		title = session.Address
+	}
+	status, _ := state.sessionStatus(session)
+	showStatus := session.phase != sshconn.PhaseConnected || view.ended
+	toolsWidth := float32(0)
+	for _, tool := range s.desktopTools {
+		toolsWidth += canvas.TextWidthWeight(tool.Label, metrics.FontSizeS, gfx.WeightMedium) + 24 + 4
+	}
+	ui.Column(c).Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
+		ui.Stack(c).Height(infoBarHeight).Shrink(0).Background(pal.workspace).Children(func() {
+			ui.Row(c).Fill().PadSides(0, termPadX, 0, termPadX-2).Items(ui.Center).Children(func() {
+				ui.Row(c).Grow(1).Gap(8).MarginSides(0, 10, 0, 0).Items(ui.Center).Children(func() {
+					s.light = ui.Slot(c).Size(16, 16)
+					ui.Text(c, title).FontSize(barTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).
+						Width(canvas.TextWidthWeight(title, barTitleSize, gfx.WeightSemibold)+2).Ellipsis().MarginSides(0, 4, 0, 0)
+					if showStatus {
+						ui.Text(c, status).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).
+							Width(canvas.TextWidthWeight(status, metrics.FontSizeS, gfx.WeightMedium) + 2)
+					}
+				})
+				ui.Row(c).Gap(barToolGap).Shrink(0).Items(ui.Center).Children(func() {
+					s.tools = ui.Slot(c).Size(toolsWidth, 24).Shrink(0)
+					s.capture = ui.Slot(c).Size(barToolSize, barToolSize).Shrink(0)
+				})
+			})
+			ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(pal.line)
+		})
+		ui.Row(c).Grow(1).Background(state.ground(state.termPal.terminal))
+		ui.Stack(c).Height(desktopStripHeight).Shrink(0).Background(pal.workspace).Children(func() {
+			ui.Row(c).FillWidth().Height(1).Self(ui.Start).Background(pal.line)
+			ui.Row(c).Fill().PadX(termPadX).Items(ui.Center).Children(func() {
+				ui.Text(c, state.desktopStripLeft(view, session)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(16).Grow(1).Ellipsis()
+				if s.latencyShown {
+					s.latency = ui.Slot(c).Size(s.latencyBadge.width+12, 16).MarginSides(0, 8, 0, 0).Shrink(0)
+				}
+				chordText := m.Desktop.StripCaptured
+				colour := pal.muted
+				if view.released {
+					chordText, colour = m.Desktop.StripReleased, pal.accent
+				}
+				chordText = fmt.Sprintf(chordText, desktopEscapeChord)
+				ui.Text(c, chordText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(colour).LineHeight(16).
+					Width(canvas.TextWidthWeight(chordText, metrics.FontSizeS, gfx.WeightMedium) + 2).Shrink(0)
+			})
+		})
+	})
 }
 
 // paintDesktopCaptureNote is the corner note a chromeless session shows while it

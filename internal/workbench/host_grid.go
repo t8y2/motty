@@ -136,9 +136,8 @@ func (state *State) clickHostView(id gfx.ID) bool {
 }
 
 // paintHostViewToggle draws the view buttons and the host-sort mode toggle from
-// x, centred on the line. The caller is paintHostsHeader, which hands over the
-// line, not a box.
-func (state *State) paintHostViewToggle(canvas *gfx.Canvas, x, center float32, withOrder bool) {
+// the slots the hosts header declared.
+func (state *State) paintHostViewToggle(canvas *gfx.Canvas, withOrder bool) {
 	m := state.messages.Tools
 	buttons := [...]struct {
 		id    gfx.ID
@@ -149,31 +148,17 @@ func (state *State) paintHostViewToggle(canvas *gfx.Canvas, x, center float32, w
 		{hitHostViewList, iconRows2, m.HostViewList, hostViewList},
 		{hitHostViewGrid, iconHome, m.HostViewGrid, hostViewGrid},
 	}
-	var slots [len(buttons)]ui.Box
-	var sort, order ui.Box
-	width := float32(86)
-	if withOrder {
-		width += 32
-	}
-	f := state.hostToggleLayout.Begin(canvas, state.Theme(), gfx.Rect{X: x, Y: center, Width: width})
-	f.Row().Fill().Items(ui.Center).Children(func() {
-		f.Row().Width(54).Gap(2).Children(func() {
-			for index := range buttons {
-				slots[index] = f.Slot().Size(26, 26)
-			}
-		})
-		sort = f.Slot().Size(26, 26).MarginSides(0, 0, 0, 6)
-		if withOrder {
-			order = f.Slot().Size(26, 26).MarginSides(0, 0, 0, 6)
-		}
-	})
-	f.End()
+	slots := state.chrome.hostToggle
 	for index, button := range buttons {
 		style := iconButtonQuiet
 		if state.hostView == button.mode {
 			style = iconButtonActive
 		}
-		state.paintIconButton(canvas, button.id, button.icon, slots[index].Rect(), button.label, false, style, state.pal.workspace)
+		rect := slots.list.Rect()
+		if index == 1 {
+			rect = slots.grid.Rect()
+		}
+		state.paintIconButton(canvas, button.id, button.icon, rect, button.label, false, style, state.pal.workspace)
 	}
 	label := m.HostSort
 	style := iconButtonQuiet
@@ -182,9 +167,9 @@ func (state *State) paintHostViewToggle(canvas *gfx.Canvas, x, center float32, w
 		style = iconButtonActive
 	}
 	disabled := !state.hostSort.enabled && (state.hostOrder != hostOrderManual || len(state.hosts) < 2 || state.typedQuery() != "")
-	state.paintIconButton(canvas, hitHostSort, iconTransfer, sort.Rect(), label, disabled, style, state.pal.workspace)
+	state.paintIconButton(canvas, hitHostSort, iconTransfer, slots.sort.Rect(), label, disabled, style, state.pal.workspace)
 	if withOrder {
-		state.paintHostOrderButton(canvas, order.Rect())
+		state.paintHostOrderButton(canvas, slots.order.Rect())
 	}
 }
 
@@ -223,38 +208,61 @@ type hostGridItem struct {
 	entry int // the index into hostTreeRows
 }
 
-// paintHostGrid draws the cards inside bounds, scrolled by hostsScroll. Only
-// what is on screen is declared: the rows above the window are skipped by their
-// known height and the layout is shifted up by what is left of the first one.
-func (state *State) paintHostGrid(canvas *gfx.Canvas, bounds gfx.Rect) {
-	state.beginHostSortPaint(canvas, bounds)
-	drag := state.ensureHostGridDrag()
-	columns := hostGridColumns(bounds.Width)
+// declareHostGrid declares the cards of the grid view inside the hosts page:
+// only what is on screen, scrolled by hostsScroll, as the list's Tree declares
+// only its visible rows. The slots are kept for the paint that follows.
+func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32) {
 	rows := state.hostTreeRows
-	items := state.hostGridItems[:0]
-	y := bounds.Y - state.hostsScroll
-	bottom := bounds.Y + bounds.Height
-	shift, first := float32(0), true
-	f := state.hostGridLayout.Begin(canvas, state.Theme(), bounds)
-	list := f.Column().FillWidth().Children(func() {
+	bounds := gfx.Rect{X: 18, Y: headerHeight, Width: max(width-36, 0), Height: max(height-headerHeight-18, 0)}
+	content := state.hostListHeight(bounds.Width)
+	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+	if geometry.MaxOffsetY > 0 {
+		// Taking the bar's strip narrows the list; the cards pack to the width they
+		// are really given, so read the height again at the reserved width.
+		content = state.hostListHeight(geometry.Viewport.Width)
+		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+	}
+	canvas := c.Canvas()
+	if state.hostRevealID != 0 {
+		state.hostsScroll = state.sessionLogHostOffset(state.hostRevealID, geometry.Viewport.Width)
+		focus := hitHostList.At(int(state.hostRevealID))
+		if state.hostSort.enabled {
+			focus = hitHostSortHandles.At(int(state.hostRevealID))
+		}
+		canvas.RequestFocus(focus)
+		state.hostRevealID = 0
+		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+	}
+	state.hostsContent, state.hostsScroll = content, geometry.OffsetY
+	viewport := geometry.Viewport
+	// The sort's edge scroll reads the pointer in window coordinates; the last
+	// paint's absolute viewport is what the list view uses for the same check.
+	if state.hostSortAutoScrollFrame(canvas, state.hostsGridViewport, content) {
+		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+		state.hostsScroll = geometry.OffsetY
+		viewport = geometry.Viewport
+	}
+	state.hostGridItems = state.hostGridItems[:0]
+	drag := state.ensureHostGridDrag()
+	columns := hostGridColumns(viewport.Width)
+	y := viewport.Y - state.hostsScroll
+	bottom := viewport.Y + viewport.Height
+	ui.Column(c).Absolute().Left(viewport.X).Top(viewport.Y).Width(viewport.Width).Height(viewport.Height).Clip().Children(func() {
 		for index := 0; index < len(rows) && y < bottom; {
 			if rows[index].Kind == hostTreeGroup {
 				// Its text sits on the same line as a group row's in the list view.
-				if y+hostGridHeader > bounds.Y {
-					if first {
-						shift, first = y-bounds.Y, false
-					}
+				if y+hostGridHeader > viewport.Y {
 					// The header's cell is the drag source and drop target; its name
 					// toggles the group on a click, as the list's group row does.
 					groupIndex := rows[index].GroupIndex
 					group := state.hostGroups[groupIndex]
-					box := f.Slot().Height(hostGridHeader-8).FillWidth().MarginSides(4, 0, 4, 0).Shrink(0)
+					box := ui.Slot(c).Absolute().Left(0).Top(y - viewport.Y + 4).Width(viewport.Width).Height(hostGridHeader - 8)
 					box.HitWith(hitHostGroupOpenList.At(groupIndex), state.hostGroupLabel(group), gfx.HitOptions{
 						Role: gfx.RoleButton, Expanded: group.Expanded, Hint: group.Name,
 					}).Radius(radius.control).Hover(ui.Look{}.Background(state.pal.surfaceSoft)).
 						DragSource(&drag.state).
 						DropTarget(&drag.state, drag.accept, drag.drop)
-					items = append(items, hostGridItem{box, index})
+					state.hostGridItems = append(state.hostGridItems, hostGridItem{box, index})
 				}
 				y += hostGridHeader
 				index++
@@ -264,16 +272,14 @@ func (state *State) paintHostGrid(canvas *gfx.Canvas, bounds gfx.Rect) {
 			for end < len(rows) && end-index < columns && rows[end].Kind == hostTreeHost {
 				end++
 			}
-			if y+hostCardHeight >= bounds.Y {
-				if first {
-					shift, first = y-bounds.Y, false
-				}
+			if y+hostCardHeight >= viewport.Y {
 				// Every row has all its columns, so the last card is no wider than the rest.
-				f.Row().Height(hostCardHeight).Gap(hostCardGap).MarginSides(0, 0, hostCardGap, 0).Shrink(0).Children(func() {
+				row := ui.Row(c).Absolute().Left(0).Top(y - viewport.Y).Width(viewport.Width).Height(hostCardHeight).Gap(hostCardGap)
+				row.Children(func() {
 					for column := 0; column < columns; column++ {
-						card := f.Slot().Grow(1).Basis(0)
+						card := ui.Slot(c).Grow(1).Basis(0)
 						if index+column < end {
-							items = append(items, hostGridItem{card, index + column})
+							state.hostGridItems = append(state.hostGridItems, hostGridItem{card, index + column})
 						}
 					}
 				})
@@ -282,15 +288,17 @@ func (state *State) paintHostGrid(canvas *gfx.Canvas, bounds gfx.Rect) {
 			index = end
 		}
 	})
-	list.MarginSides(shift, 0, 0, 0)
-	f.End()
-	state.hostGridItems = items
+}
 
-	for _, item := range items {
+// paintHostGrid draws the cards the page declared, scrolled by hostsScroll.
+func (state *State) paintHostGrid(canvas *gfx.Canvas, bounds gfx.Rect) {
+	state.beginHostSortPaint(canvas, bounds)
+	rows := state.hostTreeRows
+	for _, item := range state.hostGridItems {
 		if rows[item.entry].Kind == hostTreeGroup {
 			groupIndex := rows[item.entry].GroupIndex
 			state.paintHostGridHeader(canvas, item.box.Rect(), groupIndex, rows[item.entry].Depth)
-			if drag.state.Target() == hitHostGroupOpenList.At(groupIndex) {
+			if state.hostGridDrag.state.Target() == hitHostGroupOpenList.At(groupIndex) {
 				header := item.box.Rect()
 				canvas.Fill(gfx.Rect{X: header.X, Y: header.Y, Width: header.Width, Height: 2}, state.pal.accent)
 			}

@@ -42,9 +42,8 @@ type secretsUI struct {
 	// actions is where Settings lays out its buttons, so painting them keeps no
 	// slice of its own.
 	actions [3]components.ButtonAction
-	// The save box of the password dialog is declared in its page; the checkbox
-	// and help icon are painted into the slots it leaves. The key passphrase
-	// dialog still paints its own with the shared dialog layout.
+	// The save box of the password and passphrase dialogs is declared in their
+	// page; the checkbox and help icon are painted into the slots it leaves.
 	saveBoxDraw               func(*ui.DrawContext)
 	saveBoxID, saveBoxHintID  gfx.ID
 	saveBoxLabel, saveBoxHint string
@@ -520,12 +519,6 @@ func (state *State) secretFieldBody(problem string) float32 {
 	return withError(66, problem)
 }
 
-// paintSaveBox draws the box under a dialog body that offers to save what is
-// typed, where a one-field dialog has always put it.
-func (state *State) paintSaveBox(canvas *gfx.Canvas, body gfx.Rect, id gfx.ID, label string) {
-	state.paintSaveBoxAt(canvas, gfx.Rect{X: body.X, Y: body.Y + 99, Width: body.Width, Height: 20}, id, label, "", gfx.ID{})
-}
-
 // declareSaveBox declares the box that offers to save a secret in the page of a
 // dialog that has one: a checkbox, its label and, where there is a hint, the room
 // its help icon takes. The checkbox keeps its application identity, so the
@@ -573,34 +566,6 @@ func (state *State) paintSaveBoxSlots(d *ui.DrawContext) {
 	}
 	canvas.HitWithOptions(s.saveBoxHintID, help, s.saveBoxHint, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: s.saveBoxHint})
 	paintIcon(canvas, iconHelp, insetRect(help, 0.08), state.pal.muted)
-}
-
-// paintSaveBoxAt draws the box where a dialog of the older form laid it out. A
-// hint becomes a help icon at its right, so a password error can use the line
-// under the field without colliding with the instruction.
-func (state *State) paintSaveBoxAt(canvas *gfx.Canvas, bounds gfx.Rect, id gfx.ID, label, hint string, hintID gfx.ID) {
-	if !state.secrets.canSave || bounds == (gfx.Rect{}) {
-		return
-	}
-	var help ui.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), bounds)
-	f.Row().Fill().PadX(0).Gap(2).Items(ui.Center).Children(func() {
-		// The checkbox slot is 40px wide with the 16px box centered in it. Pull
-		// the slot left so the box starts where the password field border does.
-		f.Checkbox(id, state.secrets.save).Label(label).MarginSides(0, 0, 0, -8)
-		f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).MarginSides(0, 0, 0, -6)
-		if hint != "" {
-			help = f.Slot().Size(16, 16).MarginSides(0, 6, 0, 0).Shrink(0)
-		}
-		// Keep the help icon beside the label; the rest of the row stays empty
-		// instead of pushing it to the far edge.
-		f.Spacer().Grow(1)
-	})
-	f.End()
-	if hint != "" && help.Rect().Width > 0 && help.Rect().Height > 0 {
-		canvas.HitWithOptions(hintID, help.Rect(), hint, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: hint})
-		paintIcon(canvas, iconHelp, insetRect(help.Rect(), 0.08), state.pal.muted)
-	}
 }
 
 // problemLineC declares the one-line error under a dialog's fields, when

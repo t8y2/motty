@@ -524,6 +524,7 @@ type State struct {
 	keysMenu          bool
 	keysAddButton     gfx.Rect
 	hostsBounds       gfx.Rect // the hosts page as last painted; the menus anchor to it
+	hostsGridViewport gfx.Rect // the card grid's absolute viewport as last painted
 	terminalMenu      terminalMenu
 	hostGroupEditor   text.Editor
 	groupActions      hostGroupActions
@@ -543,8 +544,7 @@ type State struct {
 	sessionImport     sessionImportPreview
 	mobaEncoding      mobaEncodingPrompt
 	knownHosts        knownHostsView
-	settingsRow       ui.View
-	partLayout        ui.View // a dialog body, a host card or a group header: one at a time
+	partLayout        ui.View // a host card or a group header painted into a paint-time rectangle
 	// selectedWorkspaceTemplateID is the template the library will apply next.
 	// It is view state only and is not persisted.
 	selectedWorkspaceTemplateID   string
@@ -558,13 +558,16 @@ type State struct {
 	workspaceTemplateDelete       workspaceTemplateDelete
 	workspaceTemplateFocusPending gfx.ID
 	workspaceDraft                workspaceDraft
-	workspaceHeaderLayout         ui.View
-	workspaceHeaderMenu           workspaceHeaderMenuState
-	workspacePaneTools            workspacePaneTools
-	workspaceLayoutDraft          workspaceArrangement
-	workspaceCardRegions          []workspaceCardRegion
-	workspaceCardDrag             workspaceCardDrag
-	workspaceHeaderPanes          [layoutcore.MaxPanes]layoutcore.Pane
+	// workspaceHeaderPlan and workspaceHeaderSlots are what the managed
+	// workspace's header declaration leaves for its painter.
+	workspaceHeaderPlan  workspaceHeaderPlan
+	workspaceHeaderSlots workspaceHeaderPaint
+	workspaceHeaderMenu  workspaceHeaderMenuState
+	workspacePaneTools   workspacePaneTools
+	workspaceLayoutDraft workspaceArrangement
+	workspaceCardRegions []workspaceCardRegion
+	workspaceCardDrag    workspaceCardDrag
+	workspaceHeaderPanes [layoutcore.MaxPanes]layoutcore.Pane
 	// temporaryWorkspaceLayouts marks workspaces opened from the temporary
 	// selector and keeps the column count needed to save their current shape.
 	temporaryWorkspaceLayouts map[layoutcore.WorkspaceID]layoutcore.LayoutSpec
@@ -840,25 +843,18 @@ type State struct {
 	broadcast layoutcore.WorkspaceID
 
 	// wrapped is scratch for text broken into lines while painting.
-	wrapped          [failureLines]string
-	restoredView     ui.View
-	connectionLayout ui.View
+	wrapped [failureLines]string
+	// sessionPage declares the connection, restored and rail bodies painted into
+	// a pane's embedded canvas.
+	sessionBodies sessionPageUI
 	// area: terminal and workspace panes
-	terminalPageLayout ui.View
-	paneChrome         ui.View // an empty split pane and other one-at-a-time chrome
 
 	// area: files panel and transfers
-	filesPopup ui.View
 	// filesRowIcons is scratch for the visible rows of the list.
 	filesRowIcons []ui.Box
 
 	// area: keychain, palette, import and the rest
-	railLayout            ui.View
-	importLayout          ui.View
-	knownHostsTableLayout ui.View
-	hostToggleLayout      ui.View
-	hostGridLayout        ui.View
-	hostGridItems         []hostGridItem
+	hostGridItems []hostGridItem
 	// dev is the development-only component gallery's state; a release build
 	// keeps none of it (see debug.go and debug_release.go).
 	dev devState
@@ -900,10 +896,14 @@ type State struct {
 	keyPassphrase            text.Editor
 	keyPassphraseError       string
 	keyPassphraseDescription string
-	clipboardRequest         remoteClipboardRequest
-	autofillRules            autofillUI
-	credentialForm           credentialUI
-	commandPalette           commandPalette
+	// keyPassphraseField is the slot the passphrase dialog's field is painted
+	// into, and keyPassphraseDraw the painter kept so a repaint allocates none.
+	keyPassphraseField ui.Box
+	keyPassphraseDraw  func(*ui.DrawContext)
+	clipboardRequest   remoteClipboardRequest
+	autofillRules      autofillUI
+	credentialForm     credentialUI
+	commandPalette     commandPalette
 	// sessionLogs is this window's local connection journal; it is off only
 	// when the user disabled metadata capture in the settings.
 	sessionLogs    sessionLogs

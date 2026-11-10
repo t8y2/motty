@@ -56,6 +56,9 @@ type hostCatalogList struct {
 	// the last paint.
 	bounds   gfx.Rect
 	viewport gfx.Rect
+	// rowWidth is the width the Tree gives each row, as the declaration worked
+	// it out from the bar's reserved strip; the row content is laid out to it.
+	rowWidth float32
 	// drawers are reused row painters, one per row the Tree declares in a
 	// paint. They carry their own row index, so the Draw of each row reads the
 	// right row after the whole tree has been declared.
@@ -64,14 +67,20 @@ type hostCatalogList struct {
 }
 
 // hostRowDrawer paints one row of the hosts list: the Draw the Tree keeps for
-// that row until the frame ends.
+// that row until the frame ends. The boxes are the slots the row's content
+// declaration left for the controls painted by hand.
 type hostRowDrawer struct {
-	owner *State
-	index int
-	fn    func(*ui.DrawContext)
+	owner      *State
+	index      int
+	fn         func(*ui.DrawContext)
+	avatar     ui.Box
+	light      ui.Box
+	grip       ui.Box
+	check      ui.Box
+	groupCheck ui.Box
 }
 
-func (d *hostRowDrawer) paint(ctx *ui.DrawContext) { d.owner.paintHostListRow(ctx, d.index) }
+func (d *hostRowDrawer) paint(ctx *ui.DrawContext) { d.owner.paintHostListRow(ctx, d) }
 
 // hostListFns makes the functions the Tree keeps. The Tree itself is declared in
 // the workbench page, in declareHostsWorkspace.
@@ -173,15 +182,18 @@ func (state *State) hostGroupMoveAllowed(source, parent int) bool {
 	return true
 }
 
-// hostListDeclareRow declares what is in row i: a slot the row painter fills.
-// The painter is reused, so a paint allocates no closure per row.
+// hostListDeclareRow declares what is in row i: the row's content is part of
+// the page, and the Draw paints the ground and the controls into the slots its
+// declaration left. The painter is reused, so a paint allocates no closure per
+// row.
 func (state *State) hostListDeclareRow(i int) {
 	c := state.hostList.c
 	if c == nil {
 		return
 	}
 	d := state.hostList.drawer(state, i)
-	ui.Slot(c).Fill().Draw(d.fn)
+	d.avatar, d.light, d.grip, d.check, d.groupCheck = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
+	ui.Slot(c).Fill().Draw(d.fn).Children(func() { state.declareHostListRowContent(c, d) })
 }
 
 // drawer returns a painter for the next row the Tree declares. The index of the
@@ -336,6 +348,9 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 	width, height := state.hostsWorkspaceSize()
 	headerHeight := state.hostHeaderHeight(width, len(state.hostSelections) > 0)
 	list.header = ui.Slot(c).Absolute().Left(0).Right(0).Top(0).Height(headerHeight)
+	list.header.Children(func() {
+		state.declareHostsHeader(c, gfx.Rect{Width: width, Height: headerHeight})
+	})
 	if len(state.hostTreeRows) == 0 {
 		// The page owns the empty state too: the window paints only its icon and
 		// action after the page has laid them out.
@@ -347,7 +362,12 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 			state.declareEmptyPageRegion(c, bounds, m.NoMatches, m.NoMatchesSub, "", state.pal.muted)
 		}
 	}
-	if state.hostView == hostViewGrid || len(state.hostTreeRows) == 0 {
+	if state.hostView == hostViewGrid && len(state.hostTreeRows) > 0 {
+		state.declareHostGrid(c, width, height, headerHeight)
+		list.scrollLive = false
+		return
+	}
+	if len(state.hostTreeRows) == 0 {
 		list.scrollLive = false
 		return
 	}
@@ -357,6 +377,7 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 	content := state.hostListHeight(room.Width)
 	_, geometry := hostListScrollArea(nil, state.Theme(), room, content, state.hostsScroll)
 	right := float32(18) + room.Width - geometry.Viewport.Width
+	list.rowWidth = geometry.Viewport.Width
 	state.applyHostListScroll(c.Canvas(), content)
 	list.tree.RowHeight = hostRowHeight
 	// The rows are not draggable while they are being sorted by hand: the sort

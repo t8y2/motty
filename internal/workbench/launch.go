@@ -13,6 +13,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/update"
 )
 
@@ -184,24 +185,28 @@ func (state *State) launchKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintLaunchDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareLaunchDialog declares the link confirmation as a dialog of the
+// workbench page.
+func (state *State) declareLaunchDialog(c ui.C) {
 	m := state.messages
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitLaunchDismiss, CloseID: hitLaunchClose, InitialFocusID: hitLaunchCancel,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: 3 * 18, // the warning's lines
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, state.launchDescription(), 3*18)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.Tools.LaunchTitle, Description: state.launchDescription(),
+		Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitLaunchDismiss, CloseID: hitLaunchClose, InitialFocusID: hitLaunchCancel,
 	})
-	layout := dialog.Begin(m.Tools.LaunchTitle, state.launchDescription())
-	f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() {
-		f.Paragraph(m.Tools.LaunchWarning, 3).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18)
+	dialog.Body(func() {
+		ui.Column(c).Fill().Children(func() {
+			ui.Paragraph(c, m.Tools.LaunchWarning, 3).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18)
+		})
 	})
-	f.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitLaunchCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitLaunchConnect, Label: m.Tools.LaunchConnect},
-	)
-	dialog.End()
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitLaunchCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitLaunchConnect, Label: m.Tools.LaunchConnect},
+		)
+	})
 }
 
 func (state *State) clickUpdateDialog(id gfx.ID) {

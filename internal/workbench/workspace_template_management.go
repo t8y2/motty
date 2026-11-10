@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 var (
@@ -177,34 +178,37 @@ func (state *State) openWorkspaceTemplateDelete(templateID string) {
 	state.workspaceTemplateFocusPending = gfx.ID{}
 }
 
-func (state *State) paintWorkspaceTemplateDelete(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareWorkspaceTemplateDeleteDialog(c ui.C) {
 	target := &state.workspaceTemplateDelete
 	m := state.messages
 	body := float32(0)
 	if target.error != "" {
 		body = 20
 	}
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitWorkspaceTemplateDeleteClose, CloseID: hitWorkspaceTemplateDeleteClose,
+	description := fmt.Sprintf(m.WorkspaceTemplateDeleteDescriptionFmt, target.name)
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, description, body)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.WorkspaceTemplateDeleteTitle, Description: description,
+		Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitWorkspaceTemplateDeleteClose, CloseID: hitWorkspaceTemplateDeleteClose,
 		InitialFocusID: hitWorkspaceTemplateDeleteCancel,
-		ContentSize:    gfx.Size{Width: 520}, FitBody: true, BodyHeight: body,
 	})
-	layout := dialog.Begin(m.WorkspaceTemplateDeleteTitle, fmt.Sprintf(
-		m.WorkspaceTemplateDeleteDescriptionFmt, target.name))
-	if target.error != "" {
-		f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-		f.Column().Fill().Children(func() {
-			f.Text(target.error).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+	dialog.Body(func() {
+		if target.error == "" {
+			return
+		}
+		ui.Column(c).Fill().Children(func() {
+			ui.Text(c, target.error).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
 				Color(state.pal.danger).LineHeight(20)
 		})
-		f.End()
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitWorkspaceTemplateDeleteCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitWorkspaceTemplateDeleteSubmit, Label: m.WorkspaceTemplateDeleteConfirm, Variant: components.ButtonDestructive},
-	)
-	dialog.End()
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitWorkspaceTemplateDeleteCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitWorkspaceTemplateDeleteSubmit, Label: m.WorkspaceTemplateDeleteConfirm, Variant: components.ButtonDestructive},
+		)
+	})
 }
 
 func (state *State) clickWorkspaceTemplateDelete(id gfx.ID) {

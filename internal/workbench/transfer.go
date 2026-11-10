@@ -76,6 +76,11 @@ type fileTransfer struct {
 	dialogError string
 	// sizeText and doneText are built when the numbers change, not per paint.
 	text transferText
+	// bar is the progress slot of the running dialog, fraction what it is
+	// filled to, and draw the painter kept so a declaration makes no method value.
+	bar      ui.Box
+	fraction float32
+	draw     func(*ui.DrawContext)
 }
 
 type transferText struct {
@@ -532,8 +537,9 @@ func (target *folderTarget) close() {
 	}
 }
 
-func (state *State) paintFileTransferDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareFileTransferDialog(c ui.C) {
 	transfer, m, pal := &state.transfer, state.messages.Tools, state.pal
+	canvas := c.Canvas()
 	session, _ := state.sessionByIDPointer(transfer.sessionID)
 	address := ""
 	if session != nil {
@@ -550,12 +556,12 @@ func (state *State) paintFileTransferDialog(canvas *gfx.Canvas, viewport gfx.Rec
 		bodyHeight = 68
 		description = address
 	}
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitTransferDismiss, CloseID: hitTransferClose, InitialFocusID: hitTransferDecline,
-		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: bodyHeight,
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(canvas, *c.Theme(), viewport, 540, description, bodyHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: 540, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitTransferDismiss, CloseID: hitTransferClose, InitialFocusID: hitTransferDecline,
 	})
-	layout := dialog.Begin(title, description)
 	if transfer.phase == transferRunning {
 		progress := transfer.progress
 		name := progress.Name
@@ -570,40 +576,54 @@ func (state *State) paintFileTransferDialog(canvas *gfx.Canvas, viewport gfx.Rec
 				transfer.text.line = formatBytes(progress.Done)
 			}
 		}
-		// The file's name, the bar and the amount done.
-		var bar ui.Box
-		f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
-		f.Column().Fill().Children(func() {
-			f.Text(name).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().LineHeight(22).MarginSides(4, 0, 0, 0)
-			bar = f.Slot().Height(8).Shrink(0).MarginSides(8, 0, 0, 0)
-			f.Text(transfer.text.line).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(6, 0, 0, 0)
-		})
-		f.End()
-		fraction := float32(0)
+		transfer.fraction = 0
 		if progress.Size > 0 {
-			fraction = float32(float64(progress.Done) / float64(progress.Size))
+			transfer.fraction = float32(float64(progress.Done) / float64(progress.Size))
 		}
-		components.Progress(canvas, state.Theme(), bar.Rect(), fraction)
+		transfer.bar = ui.Box{}
+		dialog.Body(func() {
+			column := ui.Column(c).Fill()
+			column.Children(func() {
+				ui.Text(c, name).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().LineHeight(22).MarginSides(4, 0, 0, 0)
+				transfer.bar = ui.Slot(c).Height(8).Shrink(0).MarginSides(8, 0, 0, 0)
+				ui.Text(c, transfer.text.line).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(6, 0, 0, 0)
+			})
+			if transfer.draw == nil {
+				transfer.draw = state.drawFileTransferProgress
+			}
+			column.DrawOver(transfer.draw)
+		})
+		dialog.Footer(func() {
+			state.dialogActionFooter(c, components.ButtonAction{ID: hitTransferCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary})
+		})
 		canvas.RequestFrameIn(time.Second)
-		dialog.Actions(layout, components.ButtonAction{ID: hitTransferCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary})
-		dialog.End()
 		return
 	}
-	if transfer.dialogError != "" {
-		f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
-		f.Text(transfer.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(20).MarginSides(8, 0, 0, 0)
-		f.End()
-	}
+	dialog.Body(func() {
+		if transfer.dialogError == "" {
+			return
+		}
+		ui.Column(c).Fill().Children(func() {
+			ui.Text(c, transfer.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(20).MarginSides(8, 0, 0, 0)
+		})
+	})
 	decline := components.ButtonAction{ID: hitTransferDecline, Label: m.TransferDecline, Variant: components.ButtonSecondary}
-	switch {
-	case transfer.sending:
-		dialog.Actions(layout, decline, components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFiles})
-	case downloadsDirectory() != "":
-		dialog.Actions(layout, decline,
-			components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFolder, Variant: components.ButtonOutline},
-			components.ButtonAction{ID: hitTransferDownloads, Label: m.TransferToDownloads})
-	default:
-		dialog.Actions(layout, decline, components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFolder})
-	}
-	dialog.End()
+	dialog.Footer(func() {
+		switch {
+		case transfer.sending:
+			state.dialogActionFooter(c, decline, components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFiles})
+		case downloadsDirectory() != "":
+			state.dialogActionFooter(c, decline,
+				components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFolder, Variant: components.ButtonOutline},
+				components.ButtonAction{ID: hitTransferDownloads, Label: m.TransferToDownloads})
+		default:
+			state.dialogActionFooter(c, decline, components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFolder})
+		}
+	})
+}
+
+// drawFileTransferProgress paints the transfer's progress into its slot.
+func (state *State) drawFileTransferProgress(d *ui.DrawContext) {
+	transfer := &state.transfer
+	components.Progress(d.Canvas, *d.Theme, transfer.bar.Rect(), transfer.fraction)
 }

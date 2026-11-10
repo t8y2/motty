@@ -38,7 +38,7 @@ func (state *State) paintTerminalInputNotice(canvas *gfx.Canvas, session *Sessio
 
 var hitInputNotice = tree.ID(inputGuardHits, "notice")
 
-func (state *State) paintTerminalInputConfirm(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareTerminalInputConfirm(c ui.C) {
 	m, ask := state.messages.TerminalInput, state.inputConfirmation
 	title, body, detail, confirm := m.Title, m.Description, ask.detail, m.Replace
 	cancel := m.Cancel
@@ -49,26 +49,28 @@ func (state *State) paintTerminalInputConfirm(canvas *gfx.Canvas, viewport gfx.R
 	if ask.error != "" {
 		body = ask.error
 	}
+	viewport := dialogViewport(c)
 	width := min(float32(560), max(float32(260), viewport.Width-24))
-	lines := max(2, wrappedLines(canvas, body, metrics.FontSizeM, width-64))
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitInputDismiss, CloseID: hitInputClose, InitialFocusID: hitInputCancel,
-		ContentSize: gfx.Size{Width: width}, FitBody: true, BodyHeight: float32(lines)*22 + 52,
+	lines := max(2, wrappedLines(c.Canvas(), body, metrics.FontSizeM, width-64))
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, width, "", float32(lines)*22+52)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Width: width, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitInputDismiss, CloseID: hitInputClose, InitialFocusID: hitInputCancel,
 	})
-	layout := dialog.Begin(title, "")
-	f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Gap(10).Children(func() {
-		f.Paragraph(body, lines).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(22)
-		f.Row().Height(38).PadX(10).Items(ui.Center).Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
-			f.Text(detail).FontSize(metrics.FontSizeM).Color(state.pal.text).Ellipsis().Grow(1)
+	dialog.Body(func() {
+		ui.Column(c).Fill().Gap(10).Children(func() {
+			ui.Paragraph(c, body, lines).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(22)
+			ui.Row(c).Height(38).PadX(10).Items(ui.Center).Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
+				ui.Text(c, detail).FontSize(metrics.FontSizeM).Color(state.pal.text).Ellipsis().Grow(1)
+			})
 		})
 	})
-	f.End()
-	actions := []components.ButtonAction{{ID: hitInputCancel, Label: cancel, Variant: components.ButtonSecondary}}
-	if ask.locale == "" {
-		actions = append(actions, components.ButtonAction{ID: hitInputKeep, Label: m.Keep, Variant: components.ButtonOutline})
-	}
-	actions = append(actions, components.ButtonAction{ID: hitInputReplace, Label: confirm})
-	dialog.Actions(layout, actions...)
-	dialog.End()
+	dialog.Footer(func() {
+		actions := []components.ButtonAction{{ID: hitInputCancel, Label: cancel, Variant: components.ButtonSecondary}}
+		if ask.locale == "" {
+			actions = append(actions, components.ButtonAction{ID: hitInputKeep, Label: m.Keep, Variant: components.ButtonOutline})
+		}
+		actions = append(actions, components.ButtonAction{ID: hitInputReplace, Label: confirm})
+		state.dialogActionFooter(c, actions...)
+	})
 }

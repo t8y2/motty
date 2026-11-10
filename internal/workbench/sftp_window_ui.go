@@ -206,7 +206,6 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	if w.view.bookmarksOpen {
 		w.paintDirectoryPlaces(canvas)
 	}
-	w.owner.paintSFTPFileProperties(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, &w.fileProperties)
 	if w.closeConfirm {
 		components.BeginAlertDialog(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, w.closeDescription(), m.SFTPWindow.CloseTransfers, m.Cancel)
 	}
@@ -302,6 +301,7 @@ func (w *sftpWindow) declareWindow(c ui.C) {
 	if w.view.dialog != sftpDialogNone {
 		w.owner.declareSFTPDialog(c, bounds, w.view)
 	}
+	w.owner.declareSFTPFileProperties(c, gfx.Rect{Width: size.Width, Height: size.Height}, &w.fileProperties)
 }
 
 // declarePaneSide declares one pane as a keyed container of the window page and

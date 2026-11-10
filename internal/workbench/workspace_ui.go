@@ -141,6 +141,7 @@ func (state *State) paintsTerminalPane(session *Session) bool {
 func (state *State) declareWorkspacePanes(c ui.C) {
 	state.refreshWorkspaceViews()
 	frame := state.workspacePixelBounds(state.viewport)
+	state.declareWorkspaceHeader(c, state.viewport)
 	c.Part(terminalWorkspacePart)
 	ui.Stack(c).Absolute().Left(frame.X).Top(frame.Y).Width(frame.Width).Height(frame.Height).Clip().Children(func() {
 		if len(state.panes) == 0 {
@@ -153,8 +154,8 @@ func (state *State) declareWorkspacePanes(c ui.C) {
 			if pane.Bounds.Width <= 0 || pane.Bounds.Height <= 0 {
 				continue // a tab that is not showing
 			}
-			session, ok := state.sessionByIDPointer(pane.SessionID)
 			bounds := pixelBounds(frame, pane.Bounds)
+			session, ok := state.sessionByIDPointer(pane.SessionID)
 			if !ok {
 				// The page owns the empty pane: the active one offers the empty
 				// tab, a background one only its label.

@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/knownhosts"
 )
@@ -49,6 +50,8 @@ type knownHostsView struct {
 	action            knownHostsAction
 	dialogDescription string
 	dialogError       string
+	// checks are the table's checkbox slots, declared in the section's page.
+	checks [knownHostsPageSize]ui.Box
 }
 
 func (state *State) initKnownHosts() {

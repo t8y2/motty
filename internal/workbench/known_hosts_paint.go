@@ -9,6 +9,7 @@ import (
 func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	state.syncKnownHostsVisible()
 	view, messages, pal := &state.knownHosts, state.messages, state.pal
+	view.checks = [knownHostsPageSize]ui.Box{}
 	value := view.search.String()
 	// The search box keeps the least width it works at and the buttons keep their
 	// labels while the row holds both; a narrower card shows their icons alone,
@@ -60,6 +61,7 @@ func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect
 				emptySlot = state.reserveEmptyPageWithColor(c, bounds, emptyTitle, emptyDescription, "", emptyDescriptionColor)
 			} else {
 				content = ui.Slot(c).Grow(1).MarginSides(14, 0, 0, 0)
+				state.declareKnownHostsChecks(c, content)
 			}
 			ui.Divider(c).Background(pal.line)
 			// The footer's columns narrow with the card so the status keeps its room.
@@ -99,6 +101,25 @@ func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect
 	}
 }
 
+// declareKnownHostsChecks declares the checkbox slots of the rows on the table's
+// page: the first column under the header, over the content the table paints.
+func (state *State) declareKnownHostsChecks(c ui.C, content ui.Box) {
+	view := &state.knownHosts
+	start, end := state.knownHostsPageRange()
+	theme := state.Theme()
+	rowHeight, headerHeight := components.TableRowHeight(theme), components.TableHeaderHeight(theme)
+	checkSize := 16 * theme.Metrics.ControlHeight / 32
+	content.Children(func() {
+		ui.Column(c).Fill().PadSides(headerHeight, 0, 0, 0).Children(func() {
+			for offset := range view.visible[start:end] {
+				ui.Row(c).Height(rowHeight).Shrink(0).Items(ui.Center).PadSides(0, 0, 0, 13).Children(func() {
+					view.checks[offset] = ui.Slot(c).Size(checkSize, checkSize)
+				})
+			}
+		})
+	})
+}
+
 func (state *State) paintKnownHostsTable(canvas *gfx.Canvas, bounds gfx.Rect) {
 	view, messages := &state.knownHosts, state.messages
 	columns := [...]components.TableColumn{
@@ -107,20 +128,6 @@ func (state *State) paintKnownHostsTable(canvas *gfx.Canvas, bounds gfx.Rect) {
 	}
 	start, end := state.knownHostsPageRange()
 	theme := state.Theme()
-	rowHeight, headerHeight := components.TableRowHeight(theme), components.TableHeaderHeight(theme)
-	checkSize := 16 * theme.Metrics.ControlHeight / 32
-
-	// The checkbox of each row sits in the table's first column, below its header.
-	var checks [knownHostsPageSize]ui.Box
-	f := state.knownHostsTableLayout.Begin(canvas, state.Theme(), bounds)
-	f.Column().Fill().PadSides(headerHeight, 0, 0, 0).Children(func() {
-		for offset := range view.visible[start:end] {
-			f.Row().Height(rowHeight).Shrink(0).Items(ui.Center).PadSides(0, 0, 0, 13).Children(func() {
-				checks[offset] = f.Slot().Size(checkSize, checkSize)
-			})
-		}
-	})
-	f.End()
 
 	headings := [...]string{
 		"", messages.KnownHostsColumnLine, messages.KnownHostsColumnHosts, messages.KnownHostsColumnFlags,
@@ -132,14 +139,17 @@ func (state *State) paintKnownHostsTable(canvas *gfx.Canvas, bounds gfx.Rect) {
 	for offset, index := range view.visible[start:end] {
 		record := &view.rows[index]
 		table.Row(hitKnownHostRowList.At(index), record.cells[:], record.selected)
-		if box := checks[offset].Rect(); box.Y < bounds.Y+bounds.Height {
+		if box := view.checks[offset].Rect(); box.Y < bounds.Y+bounds.Height {
 			components.BeginCheckbox(canvas, state.Theme(), hitKnownHostCheckList.At(index), gfx.Rect{X: box.X, Y: box.Y}, record.selected).Label(record.selectLabel).Paint()
 		}
 	}
 }
 
-func (state *State) paintKnownHostsDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareKnownHostsDialog(c ui.C) {
 	view, messages := &state.knownHosts, state.messages
+	if view.action == knownHostsActionNone {
+		return
+	}
 	title, confirm := messages.KnownHostsDeleteTitle, messages.KnownHostsDeleteConfirm
 	if view.action == knownHostsActionRetrust {
 		title, confirm = messages.KnownHostsRetrustTitle, messages.KnownHostsRetrustConfirm
@@ -148,23 +158,26 @@ func (state *State) paintKnownHostsDialog(canvas *gfx.Canvas, viewport gfx.Rect)
 	if view.dialogError != "" {
 		body = 72
 	}
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitKnownHostsDialogDismiss, CloseID: hitKnownHostsDialogClose, InitialFocusID: hitKnownHostsDialogCancel,
-		ContentSize: gfx.Size{Width: 570}, FitBody: true, BodyHeight: body,
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 570, view.dialogDescription, body)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: view.dialogDescription,
+		Width: 570, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitKnownHostsDialogDismiss, CloseID: hitKnownHostsDialogClose,
+		InitialFocusID: hitKnownHostsDialogCancel,
 	})
-	layout := dialog.Begin(title, view.dialogDescription)
-	f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Gap(8).Children(func() {
-		f.Text(messages.KnownHostsVerifyWarning).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(24)
-		if view.dialogError != "" {
-			f.Text(view.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(38)
-		}
+	dialog.Body(func() {
+		ui.Column(c).Fill().Gap(8).Children(func() {
+			ui.Text(c, messages.KnownHostsVerifyWarning).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(24)
+			if view.dialogError != "" {
+				ui.Text(c, view.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(38)
+			}
+		})
 	})
-	f.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitKnownHostsDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitKnownHostsDialogConfirm, Label: confirm, Variant: components.ButtonDestructive},
-	)
-	dialog.End()
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitKnownHostsDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitKnownHostsDialogConfirm, Label: confirm, Variant: components.ButtonDestructive},
+		)
+	})
 }
