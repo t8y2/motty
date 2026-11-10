@@ -136,7 +136,9 @@ func TestWorkspacePaneToolsPreserveAvailabilityAndDismissForNewFocus(t *testing.
 	if index < 0 {
 		t.Fatal("split is not reachable from terminal actions")
 	}
-	state.ActivatePane(state.sessions[0].ID)
+	// A launch opens on the first pane, so the focus that dismisses the menu
+	// is a move to any other one.
+	state.ActivatePane(state.sessions[1].ID)
 	paintAt(state, gfx.Size{Width: 960, Height: 600})
 	if state.workspaceHeaderMenu != workspaceHeaderMenuNone {
 		t.Fatal("menu kept actions targeting a previous pane")
