@@ -139,6 +139,7 @@ var EnglishMessages = Messages{
 	WorkspaceDraftEditDescription:         "Change the name, terminals, order, and columns. Missing hosts stay until you explicitly remove them.",
 	WorkspaceDraftName:                    "Template name",
 	WorkspaceDraftNamePlaceholder:         "e.g. Production API cluster",
+	WorkspaceDraftLocalGroup:              "Local terminals",
 	WorkspaceDraftHosts:                   "Available terminals",
 	WorkspaceDraftHostSearch:              "Search this computer or SSH hosts",
 	WorkspaceDraftSelectedFmt:             "%d of 12 selected",

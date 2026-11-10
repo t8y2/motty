@@ -139,6 +139,7 @@ var ChineseMessages = Messages{
 	WorkspaceDraftEditDescription:         "修改名称、终端成员、顺序和列数。缺失的主机在明确移除前会保留。",
 	WorkspaceDraftName:                    "模板名称",
 	WorkspaceDraftNamePlaceholder:         "例如：生产 API 集群",
+	WorkspaceDraftLocalGroup:              "本地终端",
 	WorkspaceDraftHosts:                   "可用终端",
 	WorkspaceDraftHostSearch:              "搜索本机或 SSH 主机",
 	WorkspaceDraftSelectedFmt:             "已选 %d / 12 个",

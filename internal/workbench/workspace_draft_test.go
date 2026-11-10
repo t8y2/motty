@@ -577,3 +577,117 @@ func hostCatalogIDs(hosts []Host) []string {
 	}
 	return ids
 }
+
+// draftGroupedHosts gives the state one local-shell companion and hosts across
+// three groups, in catalog order, so grouping has something to rearrange.
+func draftGroupedHosts(t *testing.T, state *State) {
+	t.Helper()
+	state.hosts = nil
+	specs := []struct {
+		id    uint32
+		cata  string
+		label string
+		group string
+	}{
+		{1, "host_omega", "Omega", "Zeta"},
+		{2, "host_alpha", "Alpha", ""},
+		{3, "host_beta", "Beta", "Servers"},
+		{4, "host_gamma", "Gamma", "Servers"},
+		{5, "host_delta", "Delta", "Network"},
+	}
+	for _, spec := range specs {
+		host := Host{
+			ID: spec.id, CatalogID: spec.cata, Label: spec.label,
+			Address: spec.cata + ".example.com", Port: 22, Group: spec.group,
+		}
+		host.finish()
+		state.hosts = append(state.hosts, host)
+	}
+}
+
+func TestWorkspaceDraftGroupsTheHostList(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	draftGroupedHosts(t, state)
+	state.activeSection = sectionWorkspaces
+	state.Click(hitWorkspaceNew)
+
+	labels := func(rows []workspaceDraftRow) []string {
+		names := make([]string, 0, len(rows))
+		for _, row := range rows {
+			if row.group != nil {
+				names = append(names, row.group.label)
+			}
+		}
+		return names
+	}
+	hostOrder := func(rows []workspaceDraftRow) []string {
+		ids := make([]string, 0, len(rows))
+		for _, row := range rows {
+			if row.group == nil && row.host.ID != localHostID {
+				ids = append(ids, row.host.CatalogID)
+			}
+		}
+		return ids
+	}
+
+	rows := state.workspaceDraftRows()
+	// Local first, then the unnamed bucket, then the named groups by name.
+	if !slices.Equal(labels(rows), []string{
+		state.messages.WorkspaceDraftLocalGroup, state.messages.HostGroupDefault, "Network", "Servers", "Zeta",
+	}) {
+		t.Fatalf("group order = %v", labels(rows))
+	}
+	openHeight := workspaceDraftListHeight(rows)
+	// Within a group the hosts keep the catalog's order, not the group's.
+	wantOrder := []string{"host_alpha", "host_delta", "host_beta", "host_gamma", "host_omega"}
+	if got := hostOrder(rows); !slices.Equal(got, wantOrder) {
+		t.Fatalf("host order within groups = %v, want %v", got, wantOrder)
+	}
+
+	// Folding hides only the folded group's hosts; the header stays and the
+	// height loses exactly the two Servers rows.
+	state.Click(hitWorkspaceDraftGroupList.At(3)) // Servers
+	rows = state.workspaceDraftRows()
+	if got := hostOrder(rows); !slices.Equal(got, []string{"host_alpha", "host_delta", "host_omega"}) {
+		t.Fatalf("folded hosts = %v", got)
+	}
+	if folded := workspaceDraftListHeight(rows); folded != openHeight-2*workspaceDraftHostRowHeight {
+		t.Fatalf("folded height = %v, want %v minus the two Servers rows", folded, openHeight)
+	}
+
+	// Reopening restores the rows.
+	state.Click(hitWorkspaceDraftGroupList.At(3))
+	if got := hostOrder(state.workspaceDraftRows()); !slices.Equal(got, wantOrder) {
+		t.Fatalf("reopened hosts = %v, want %v", got, wantOrder)
+	}
+
+	// A folded group's hidden host still answers by its flat-list index, so a
+	// click keeps selecting it.
+	state.Click(hitWorkspaceDraftGroupList.At(3)) // fold Servers again
+	state.Click(workspaceDraftHostID(2))          // host_beta, hidden inside Servers
+	if !state.workspaceDraft.selected["host_beta"] {
+		t.Fatal("clicking a folded host's index did not select it")
+	}
+
+	// Searching renders every group regardless of the folds.
+	state.workspaceDraft.query.Insert("example")
+	for _, row := range state.workspaceDraftRows() {
+		if row.group != nil && !row.group.expanded {
+			t.Fatalf("search left %q folded", row.group.label)
+		}
+	}
+	if got := hostOrder(state.workspaceDraftRows()); !slices.Equal(got, wantOrder) {
+		t.Fatalf("search order = %v, want %v", got, wantOrder)
+	}
+
+	// The whole dialog still paints with groups and folds in it, and the
+	// header announces itself as an expandable button.
+	state.workspaceDraft.query = text.Editor{}
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	canvas.SetInteraction(gfx.ID{}, gfx.ID{}, hitWorkspaceDraftGroupList.At(0), true)
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	header := panelHit(t, canvas, hitWorkspaceDraftGroupList.At(0))
+	if header.Role != gfx.RoleButton || !header.Expanded || header.Label != state.messages.WorkspaceDraftLocalGroup {
+		t.Fatalf("group header semantics = %+v", header)
+	}
+}
