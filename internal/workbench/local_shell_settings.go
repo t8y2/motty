@@ -216,9 +216,6 @@ func (state *State) paintLocalShellSelect(canvas *gfx.Canvas) {
 	menu, m := &state.localShellMenu, state.messages
 	bounds := menu.bounds
 	if !localShellSettingVisible() || state.modal != modalNone || bounds.Width <= 0 || bounds.Y < windowBarHeight || bounds.Y+bounds.Height > state.viewport.Height {
-		if menu.open {
-			println("LSS-GUARD fired: visible=", localShellSettingVisible(), "modal=", int(state.modal), "bounds=", bounds.X, bounds.Y, bounds.Width, bounds.Height, "viewportH=", state.viewport.Height)
-		}
 		menu.open = false
 		return
 	}
@@ -306,10 +303,8 @@ func (state *State) clickLocalShell(id gfx.ID) bool {
 			state.refreshLocalShells()
 		}
 		menu.open = !menu.open && len(menu.choices) > 0
-		println("LSS-TRIGGER open =", menu.open)
 		return true
 	case hitSettingsLocalShellDismiss:
-		println("LSS-DISMISS")
 		menu.open = false
 		return true
 	}
