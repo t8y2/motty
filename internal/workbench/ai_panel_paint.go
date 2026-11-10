@@ -1130,15 +1130,29 @@ func (state *State) aiThinking(index int) bool {
 	return ai.run != nil && index == len(ai.items)-1 && ai.items[index].kind == aiReasoning
 }
 
+// aiRowFrame is the part of the frame API the conversation rows are declared
+// with. The list is a page Control whose Draw paints into the canvas; naming
+// only the methods the rows use keeps the row painters independent of the
+// concrete frame type.
+type aiRowFrame interface {
+	Column() ui.Box
+	Icon(gfx.Icon) ui.Box
+	Row() ui.Box
+	Slot() ui.Box
+	Spacer() ui.Box
+	Stack() ui.Box
+	Text(string) ui.Box
+}
+
 // aiTextLines declares wrapped lines of body text, one element each.
-func aiTextLines(f *ui.Frame, lines []string, size, lineHeight float32, color gfx.Color) {
+func aiTextLines(f aiRowFrame, lines []string, size, lineHeight float32, color gfx.Color) {
 	for _, line := range lines {
 		f.Text(line).FontSize(size).Weight(gfx.WeightRegular).Color(color).LineHeight(lineHeight)
 	}
 }
 
 // aiMonoLines declares lines in the terminal's font.
-func (state *State) aiMonoLines(f *ui.Frame, lines []string, color gfx.Color) {
+func (state *State) aiMonoLines(f aiRowFrame, lines []string, color gfx.Color) {
 	for _, line := range lines {
 		f.Text(line).FontSize(aiMonoSize).MonoFace(state.terminalFontFace).Color(color)
 	}
@@ -1150,7 +1164,7 @@ func (state *State) aiMonoLines(f *ui.Frame, lines []string, color gfx.Color) {
 // An assistant message is painted by its Markdown view; the box returned is the
 // room that view is painted in, and the copy buttons of its code blocks are
 // declared over it.
-func (state *State) declareAIRow(f *ui.Frame, index int, view *aiRowView, item *aiItem) ui.Box {
+func (state *State) declareAIRow(f aiRowFrame, index int, view *aiRowView, item *aiItem) ui.Box {
 	pal, m := state.pal, state.messages.AIPanel
 	row := f.Column()
 	var body ui.Box
