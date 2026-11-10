@@ -612,7 +612,24 @@ func decodeIdentities(paths []string, messages keyMessages) []identityRecord {
 // connectionTimes are the dial timeout and keep-alive a saved state asks for.
 func connectionTimes(saved savedState) (timeout, keepAlive time.Duration) {
 	return time.Duration(normalizeConnectionTimeoutSeconds(saved.ConnectionTimeoutSeconds)) * time.Second,
-		time.Duration(normalizeConnectionKeepAliveSeconds(saved.ConnectionKeepAliveSeconds)) * time.Second
+		connectionKeepAlive(saved)
+}
+
+// connectionKeepAlive is how often an established connection is probed.
+//
+// A state file that says nothing gets the default interval, not "off": without
+// a probe a half-open connection looks connected until the user types, which is
+// the longest wait there is. "Off" is a separate key because a duration of zero
+// is dropped from the file, and then it could not be told apart from never
+// having chosen.
+func connectionKeepAlive(saved savedState) time.Duration {
+	if saved.ConnectionKeepAliveOff {
+		return 0
+	}
+	if seconds := normalizeConnectionKeepAliveSeconds(saved.ConnectionKeepAliveSeconds); seconds > 0 {
+		return time.Duration(seconds) * time.Second
+	}
+	return defaultConnectionKeepAlive
 }
 
 // catalogFromSaved is the catalog a saved state describes, built the way the

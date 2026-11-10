@@ -18,6 +18,7 @@ import (
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
 	"motty/internal/buildinfo"
+	"motty/internal/linkwatch"
 	"motty/internal/localshell"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -286,6 +287,12 @@ type Options struct {
 	// WatchSystemAppearance calls its argument whenever the system's look changes
 	// and returns what stops that. Nil uses app.WatchSystemAppearance.
 	WatchSystemAppearance func(changed func()) (stop func())
+	// WatchNetworkChanges calls its argument after each change of the machine's
+	// network path — a different set of interface addresses, which is what a
+	// Wi-Fi switch, an unplugged cable and a VPN coming up look like — and
+	// returns what stops that. The report runs on a goroutine. Nil polls the
+	// interfaces every two seconds; tests report changes by hand.
+	WatchNetworkChanges func(report func(linkwatch.Change)) (stop func())
 	// SetNativeAppearance pins the look of what the system draws for the window
 	// (buttons, menus, dialogs, native text editing). Nil uses
 	// app.SetNativeAppearance.
@@ -406,6 +413,11 @@ func (options Options) withDefaults() Options {
 	}
 	if options.WatchSystemAppearance == nil {
 		options.WatchSystemAppearance = app.WatchSystemAppearance
+	}
+	if options.WatchNetworkChanges == nil {
+		options.WatchNetworkChanges = func(report func(linkwatch.Change)) func() {
+			return linkwatch.Watch(linkwatch.DefaultInterval, report)
+		}
 	}
 	if options.SetNativeAppearance == nil {
 		options.SetNativeAppearance = app.SetNativeAppearance
@@ -737,6 +749,7 @@ func (state *State) Wake() {
 		state.connectRestoredSessions()
 		state.openStartupSessions()
 	}
+	state.applyLinkChange()
 	state.advanceReconnects()
 	state.pumpHostTest()
 	state.probeLatency()

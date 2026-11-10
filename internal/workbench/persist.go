@@ -62,9 +62,14 @@ type savedState struct {
 	TerminalCursor             string             `json:"terminal_cursor,omitempty"`
 	ConnectionTimeoutSeconds   int                `json:"connection_timeout_seconds,omitempty"`
 	ConnectionKeepAliveSeconds int                `json:"connection_keepalive_seconds,omitempty"`
-	ConnectionReconnect        string             `json:"connection_reconnect,omitempty"`
-	RestoreConnect             string             `json:"restore_connect,omitempty"`
-	ShareConnections           string             `json:"share_connections,omitempty"`
+	// ConnectionKeepAliveOff records the user's "off" choice. The interval
+	// above cannot: zero is dropped from the file, so it would be
+	// indistinguishable from never having chosen, and a state file that says
+	// nothing gets the default interval.
+	ConnectionKeepAliveOff bool   `json:"connection_keepalive_off,omitempty"`
+	ConnectionReconnect    string `json:"connection_reconnect,omitempty"`
+	RestoreConnect         string `json:"restore_connect,omitempty"`
+	ShareConnections       string `json:"share_connections,omitempty"`
 	// StartupLocal and StartupHosts are what a launch opens: a local terminal,
 	// and the saved hosts to connect, by their catalog ids.
 	StartupLocal bool     `json:"startup_local,omitempty"`
@@ -492,6 +497,7 @@ func (state *State) snapshot() savedState {
 		TerminalCursor:             state.terminalCursorStyle.String(),
 		ConnectionTimeoutSeconds:   int(state.connectionTimeout / time.Second),
 		ConnectionKeepAliveSeconds: int(state.connectionKeepAlive / time.Second),
+		ConnectionKeepAliveOff:     state.connectionKeepAlive == 0,
 		ConnectionReconnect:        state.connectionReconnect.String(),
 		RestoreConnect:             state.restoreConnect.String(),
 		ShareConnections:           state.shareConnections.String(),

@@ -68,6 +68,11 @@ func normalizeConnectionKeepAliveSeconds(value int) int {
 	}
 }
 
+// defaultConnectionKeepAlive is how often a connection is probed when the state
+// file says nothing. A connection whose peer stopped answering is otherwise
+// discovered only by the next keystroke, which can be minutes.
+const defaultConnectionKeepAlive = 30 * time.Second
+
 // textScale is the interface text size: the default, or a step each way. It is
 // saved by name, as the appearance mode is.
 type textScale uint8

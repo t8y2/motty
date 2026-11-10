@@ -605,6 +605,9 @@ type State struct {
 	networkProxy        networkProxyMode
 	lookupSystemProxy   func() systemproxy.Settings
 	stopAppearanceWatch func()
+	stopLinkWatch       func()
+	linkPending         atomic.Bool
+	linkUp              atomic.Bool
 	terminalOption      terminalOptionMode
 	recentConnectSort   bool
 	recentConnections   map[string]time.Time
@@ -955,6 +958,10 @@ func (state *State) Close() {
 	if state.stopAppearanceWatch != nil {
 		state.stopAppearanceWatch()
 	}
+	if state.stopLinkWatch != nil {
+		state.stopLinkWatch()
+		state.stopLinkWatch = nil
+	}
 	state.closeWindowChrome()
 	state.closeAI()
 	state.closeHistory()
@@ -995,27 +1002,29 @@ func (state *State) Close() {
 func New(options Options) *State {
 	messages := i18n.For(i18n.English)
 	state := &State{
-		notes:                 notesUI{noteDraft: &noteDraft{}},
-		options:               options.withDefaults(),
-		windowID:              max(1, options.WindowID),
-		revealResults:         make(chan revealResult, 1),
-		nextSessionID:         1,
-		nextHostID:            1,
-		nextIdentityID:        1,
-		nextForwardID:         1,
-		forwardStarts:         make(chan forwardStartResult, 16),
-		nextProxyID:           1,
-		activeSection:         sectionHosts,
-		language:              i18n.English,
-		messages:              messages,
-		status:                messages.StatusReadyIdle,
-		viewport:              gfx.Size{Width: 1400, Height: 900},
-		terminalFontSize:      termFontSize,
-		terminalScrollback:    scrollbackLines,
-		tabTitleMode:          tabTitleConnection,
-		startupReuse:          true,
-		startupEnabled:        true,
-		hostCatalog:           hostCatalog{systemUser: systemLogin(), connectionTimeout: 10 * time.Second},
+		notes:              notesUI{noteDraft: &noteDraft{}},
+		options:            options.withDefaults(),
+		windowID:           max(1, options.WindowID),
+		revealResults:      make(chan revealResult, 1),
+		nextSessionID:      1,
+		nextHostID:         1,
+		nextIdentityID:     1,
+		nextForwardID:      1,
+		forwardStarts:      make(chan forwardStartResult, 16),
+		nextProxyID:        1,
+		activeSection:      sectionHosts,
+		language:           i18n.English,
+		messages:           messages,
+		status:             messages.StatusReadyIdle,
+		viewport:           gfx.Size{Width: 1400, Height: 900},
+		terminalFontSize:   termFontSize,
+		terminalScrollback: scrollbackLines,
+		tabTitleMode:       tabTitleConnection,
+		startupReuse:       true,
+		startupEnabled:     true,
+		// The defaults a fresh window starts from, before the saved state is
+		// read: the same ones a state file that says nothing gets.
+		hostCatalog:           hostCatalog{systemUser: systemLogin(), connectionTimeout: 10 * time.Second, connectionKeepAlive: defaultConnectionKeepAlive},
 		sftpParallel:          DefaultSFTPParallel,
 		sftpColumns:           defaultSFTPColumnPreferences(),
 		sftpDownloadDirectory: defaultDownloadDirectory(),
@@ -1105,6 +1114,9 @@ func New(options Options) *State {
 	}
 	state.sshSyncStart()
 	state.offerDevelopmentImport()
+	// Last, so a change that arrives while the window is still starting finds
+	// every session it may need to ask about already restored.
+	state.watchNetworkChanges()
 	return state
 }
 
