@@ -891,15 +891,6 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		state.hostGroupMenu = false
 		return handled, true
 	}
-	// The list view is a page of its own: its Tree moves between rows, opens and
-	// closes a group, and lets go of a drag. It runs after the menus above, so
-	// Escape closes an open menu first and cancels a drag only when none is open.
-	if state.activeSection == sectionHosts && state.modal == modalNone && !state.hostSort.enabled &&
-		state.hostView == hostViewList && state.hostList.page != nil {
-		if result, handled := state.hostList.page.Key(event); handled {
-			return result, true
-		}
-	}
 	if state.activeSection != sectionHosts || state.modal != modalNone || event.Repeat {
 		return gfx.EventResult{}, false
 	}

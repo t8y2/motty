@@ -117,6 +117,21 @@ func (state *State) terminalPage() bool {
 	return state.activeSection == sectionTerminal && state.deck.ActiveWorkspace() != 0
 }
 
+// paintsHostsPage reports whether Paint's section switch falls through to the
+// hosts page: no other section card, no terminal pane and no file-manager tab
+// takes the workspace.
+func (state *State) paintsHostsPage() bool {
+	if state.terminalPage() || state.activeSFTPWindow() != nil {
+		return false
+	}
+	switch state.activeSection {
+	case sectionWorkspaces, sectionDashboard, sectionKeys, sectionForwards, sectionProxies,
+		sectionSettings, sectionKnownHosts, sectionNotes, sectionSnippets, sectionSessionLogs, sectionDebug:
+		return false
+	}
+	return true
+}
+
 // Paint renders the application from state using stable hit identities.
 func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	defer state.devEndPaint(canvas, size)
@@ -238,6 +253,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	// header also paints a popup: starting before workspace content keeps its
 	// scroll/focus state.
 	state.beginMenus()
+	state.beginHostsPaint()
 	state.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, state.declareShell)
 	// The page's Boxes end when its frame ends; take the slot's rect before
 	// another DrawOver (the assistant's overlay) begins the page again.
@@ -526,8 +542,15 @@ func (state *State) declareShell(c ui.C) {
 		ui.Row(c).Grow(1).Shrink(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
 			ui.Slot(c).Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
 			state.declareNavigation(c, chrome.shellHeight)
-			chrome.workspaceSlot = ui.Slot(c).Grow(1).MarginSides(0, chrome.shellCardRight, sectionCardMargin, 0).
+			workspace := ui.Slot(c).Grow(1).MarginSides(0, chrome.shellCardRight, sectionCardMargin, 0).
 				Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
+			// The hosts page is part of this page like the panes: its header is a
+			// slot the window paints, and its Tree names, scrolls and routes its
+			// rows here rather than in a page of its own.
+			if state.paintsHostsPage() {
+				workspace.Children(func() { state.declareHostsWorkspace(c) })
+			}
+			chrome.workspaceSlot = workspace
 		})
 	})
 	if chrome.shellFullPage {
@@ -1191,19 +1214,24 @@ func (state *State) navigationItem(c ui.C, id gfx.ID, icon uint8, label string, 
 }
 
 func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
-	list := state.paintHostsHeader(canvas, bounds)
+	headerHeight := state.hostHeaderHeight(bounds.Width, len(state.hostSelections) > 0)
+	state.paintHostsHeader(canvas, gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: headerHeight})
+	list := gfx.Rect{X: bounds.X + 18, Y: bounds.Y + headerHeight, Width: max(bounds.Width-36, 0), Height: max(bounds.Height-headerHeight-18, 0)}
+	state.hostList.bounds = list
 	state.chrome.hostList = list
 
 	state.hostsContent = 0
 	switch {
+	case len(state.hostTreeRows) > 0 && state.hostView == hostViewList:
+		// The page has already painted and declared the Tree; what is left is
+		// the bar beside the rows and the focus a reveal asked for.
+		state.paintHostListTable(canvas, list)
 	case len(state.hostTreeRows) > 0:
-		state.paintHostTable(canvas, list)
+		state.paintHostGridTable(canvas, list)
 	case len(state.hosts) == 0:
 		state.paintEmptyHosts(canvas, bounds)
 	case len(state.visible) == 0:
 		state.paintNoMatches(canvas, bounds)
-	default:
-		state.paintHostTable(canvas, list)
 	}
 	state.hostsBounds = bounds
 }
@@ -1230,20 +1258,24 @@ func (state *State) paintHostMenus(canvas *gfx.Canvas, viewport gfx.Rect) {
 	state.paintHostOrder(canvas, viewport)
 }
 
-// paintHostsHeader is the toolbar, persistent group filters and, while hosts
-// are checked, a separate row of batch actions. Hits are added in the order the
-// controls were painted before the page was declared: Tab follows it. It returns
-// where the list goes under them.
-func (state *State) paintHostsHeader(canvas *gfx.Canvas, bounds gfx.Rect) gfx.Rect {
+// paintHostsHeader paints the toolbar, persistent group filters and, while hosts
+// are checked, a separate row of batch actions. The page declared the header's
+// room; the controls are painted into it. Hits are added in the order the
+// controls were painted: Tab follows it.
+func (state *State) paintHostsHeader(canvas *gfx.Canvas, bounds gfx.Rect) {
 	m, pal := state.messages, state.pal
 	chrome := &state.chrome
 	// The buttons keep their natural width, so the search box gives way to them
 	// rather than the other way round: a label that is wider than expected (a
 	// heavier or wider font) must not slide a button under its neighbour.
 	const (
-		toolbarMargin = float32(18)  // the toolbar row's own margin inside the section card
-		buttonGap     = float32(10)  // the air between the search box and the buttons
-		searchLeast   = float32(140) // the narrowest the search box stays a search box at
+		toolbarMargin      = float32(18)  // the toolbar row's own margin inside the section card
+		buttonGap          = float32(10)  // the air between the search box and the buttons
+		searchLeast        = float32(140) // the narrowest the search box stays a search box at
+		toggleWidth        = float32(56)
+		rowPad             = float32(18)
+		actionGap          = float32(4)
+		groupControlsWidth = float32(56)
 	)
 	// A section squeezed by the assistant panel has no room for the labels: the
 	// buttons keep only their icons, whose tooltips name them, and the search box
@@ -1256,15 +1288,6 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas, bounds gfx.Rect) gfx.Re
 	importWidth, importIcon := toolbarButtonLayout(canvas, m.ImportMenu, iconDownload, iconDownload, condensed)
 	newHostWidth, newHostIcon := toolbarButtonLayout(canvas, m.NewHost, iconPlus, iconPlus, condensed)
 	searchWidth := min(max(bounds.Width*0.41, 330), 485)
-
-	const (
-		rowHeight          = float32(28)
-		toggleWidth        = float32(56)
-		rowGap             = float32(12)
-		rowPad             = float32(18)
-		actionGap          = float32(4)
-		groupControlsWidth = float32(56)
-	)
 	anySelected := len(state.hostSelections) > 0
 	// While something is checked the first label lines up with the list's left
 	// edge, so the button's padding hangs outside it (a negative margin).
@@ -1303,7 +1326,7 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas, bounds gfx.Rect) gfx.Re
 				actions[i].enabled = state.dashboardCanAddHosts()
 			}
 		}
-		used := canvas.TextWidthWeight(state.hostSelectionText, metrics.FontSizeS, gfx.WeightMedium) + 2*rowGap
+		used := canvas.TextWidthWeight(state.hostSelectionText, metrics.FontSizeS, gfx.WeightMedium) + 2*hostHeaderRowGap
 		for _, action := range actions {
 			used += canvas.TextWidthWeight(action.label, metrics.FontSizeS, gfx.WeightSemibold) + 4 + 2*quietPadding + actionGap
 		}
@@ -1327,22 +1350,16 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas, bounds gfx.Rect) gfx.Re
 		viewControlsWidth += 32
 		selectionControlsWidth = 52
 	}
-	headerHeight := float32(hostListTop)
-	if compactHostControls {
-		headerHeight += rowHeight + rowGap
-	}
-	if anySelected {
-		headerHeight += rowHeight + rowGap
-	}
+	headerHeight := state.hostHeaderHeight(bounds.Width, anySelected)
 	if showChips {
-		room := bounds.Width - 2*rowPad - viewControlsWidth - rowGap - selectionControlsWidth
+		room := bounds.Width - 2*rowPad - viewControlsWidth - hostHeaderRowGap - selectionControlsWidth
 		if showGroupControls {
-			room -= groupControlsWidth + rowGap
+			room -= groupControlsWidth + hostHeaderRowGap
 		}
 		state.fitHostChips(canvas, room)
 	}
 
-	var search, connect, importButton, newHost, toggle, list, selectAll, orderButton ui.Box
+	var search, connect, importButton, newHost, toggle, selectAll, orderButton ui.Box
 	var buttons [len(actions)]ui.Box
 	var groupControls [2]ui.Box
 	f := chrome.header.Begin(canvas, state.Theme(), bounds)
@@ -1356,19 +1373,19 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas, bounds gfx.Rect) gfx.Re
 				newHost = f.Slot().Size(newHostWidth, toolbarHeight)
 			})
 			// Filters and view controls stay in place when the selection changes.
-			f.Row().Height(rowHeight).MarginSides(12, 0, 0, 0).PadSides(0, 18, 0, 18).Gap(12).Items(ui.Center).Children(func() {
+			f.Row().Height(hostHeaderRowHeight).MarginSides(12, 0, 0, 0).PadSides(0, 18, 0, 18).Gap(12).Items(ui.Center).Children(func() {
 				if !compactHostControls {
-					selectAll = f.Slot().Size(40, rowHeight).Shrink(0)
+					selectAll = f.Slot().Size(40, hostHeaderRowHeight).Shrink(0)
 				}
 				if showChips {
 					f.Row().Gap(6).Children(func() {
 						chrome.chips = chrome.chips[:0]
-						chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, m.HostFilterAll, state.hostTotalDigits), rowHeight))
+						chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, m.HostFilterAll, state.hostTotalDigits), hostHeaderRowHeight))
 						for _, index := range state.hostChips[:state.hostFilterHidden] {
-							chrome.chips = append(chrome.chips, f.Slot().Size(state.hostChipWidth(canvas, index), rowHeight))
+							chrome.chips = append(chrome.chips, f.Slot().Size(state.hostChipWidth(canvas, index), hostHeaderRowHeight))
 						}
 						if state.hostFilterHidden < len(state.hostChips) {
-							chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, m.HostFilterMore, ""), rowHeight))
+							chrome.chips = append(chrome.chips, f.Slot().Size(state.filterChipWidth(canvas, m.HostFilterMore, ""), hostHeaderRowHeight))
 						}
 					})
 				}
@@ -1380,25 +1397,25 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas, bounds gfx.Rect) gfx.Re
 						}
 					})
 				}
-				toggle = f.Slot().Size(viewControlsWidth, rowHeight).MarginSides(0, 0, 0, 2)
+				toggle = f.Slot().Size(viewControlsWidth, hostHeaderRowHeight).MarginSides(0, 0, 0, 2)
 			})
 			if compactHostControls {
-				f.Row().Height(rowHeight).MarginSides(rowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(8).Items(ui.Center).Children(func() {
-					selectAll = f.Slot().Size(40, rowHeight).Shrink(0)
+				f.Row().Height(hostHeaderRowHeight).MarginSides(hostHeaderRowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(8).Items(ui.Center).Children(func() {
+					selectAll = f.Slot().Size(40, hostHeaderRowHeight).Shrink(0)
 					f.Spacer()
 					f.Text(m.HostCatalog.Order).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Shrink(1)
 					orderButton = f.Slot().Size(26, 26).Shrink(0)
 				})
 			}
 			if anySelected {
-				f.Row().Height(rowHeight).MarginSides(rowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(rowGap).Items(ui.Center).Children(func() {
+				f.Row().Height(hostHeaderRowHeight).MarginSides(hostHeaderRowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(hostHeaderRowGap).Items(ui.Center).Children(func() {
 					actionsLeft := -quietPadding
 					if actionsCondensed {
 						actionsLeft = 0
 					}
 					f.Row().Gap(actionGap).MarginSides(0, 0, 0, actionsLeft).Children(func() {
 						for index := range buttons {
-							buttons[index] = f.Slot().Size(actionWidths[index], rowHeight)
+							buttons[index] = f.Slot().Size(actionWidths[index], hostHeaderRowHeight)
 						}
 					})
 					f.Spacer()
@@ -1406,7 +1423,6 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas, bounds gfx.Rect) gfx.Re
 				})
 			}
 		})
-		list = f.Slot().Grow(1).MarginSides(0, 18, 18, 18)
 	})
 	f.End()
 
@@ -1441,7 +1457,7 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas, bounds gfx.Rect) gfx.Re
 	}
 	if anySelected {
 		for index, action := range actions {
-			theme := state.Theme().WithControlHeight(rowHeight).WithFontSize(metrics.FontSizeS)
+			theme := state.Theme().WithControlHeight(hostHeaderRowHeight).WithFontSize(metrics.FontSizeS)
 			if action.danger {
 				theme.Foreground = theme.Danger
 			}
@@ -1461,7 +1477,6 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas, bounds gfx.Rect) gfx.Re
 			}
 		}
 	}
-	return list.Rect()
 }
 
 // paintImportMenu lists the three ways to bring hosts in under the Import
@@ -1846,20 +1861,6 @@ func (state *State) sessionStatus(session *Session) (string, gfx.Color) {
 	return m.HostStateConnecting, color
 }
 
-func (state *State) paintHostTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
-	if cap(state.groupActions.rows) < len(state.hostGroups) {
-		state.groupActions.rows = make([]gfx.Rect, len(state.hostGroups))
-	} else {
-		state.groupActions.rows = state.groupActions.rows[:len(state.hostGroups)]
-		clear(state.groupActions.rows)
-	}
-	if state.hostView == hostViewGrid {
-		state.paintHostGridTable(canvas, treeBounds)
-		return
-	}
-	state.paintHostListTable(canvas, treeBounds)
-}
-
 // paintHostGridTable draws the card grid inside its scroll area. The cards keep
 // Motty's own scroll position; only the list view is a framework Tree.
 func (state *State) paintHostGridTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
@@ -1898,47 +1899,35 @@ func (state *State) paintHostGridTable(canvas *gfx.Canvas, treeBounds gfx.Rect) 
 	area.EndContent()
 }
 
-// paintHostListTable declares the list view as a framework Tree. The Tree owns
-// the rows' geometry, scrolling and drag and drop; the workbench still paints
-// what is in each row and the toolbar above it, and keeps Viva's scroll area bar
-// beside the rows as the list has always shown it.
+// paintHostListTable paints what the page left for the list view after its
+// declaration: the scroll bar beside the rows and the focus a reveal asked for.
+// The rows themselves are the page's Tree, already painted there.
 func (state *State) paintHostListTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
-	list := state.ensureHostList()
+	list := &state.hostList
+	if !list.area.Valid() {
+		state.hostsContent = state.hostListHeight(treeBounds.Width)
+		return
+	}
 	content := state.hostListHeight(treeBounds.Width)
-	_, geometry := hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll)
-	viewport := geometry.Viewport
-	reveal := state.hostRevealID
-	// An offset another part of the page asked for since the last paint (the
-	// sort drag's edge scroll, or a test) is applied before the Tree lays its
-	// rows out again.
-	if list.scroll != nil && state.hostsScroll != list.scroll.Offset {
-		list.scroll.ScrollTo(state.hostsScroll)
-	}
-	if reveal != 0 {
-		if row := state.hostListRowIndex(reveal); row >= 0 {
-			list.tree.ScrollIntoView(row)
-		}
-		state.hostRevealID = 0
-	}
-	if state.hostSortAutoScrollFrame(canvas, viewport, content) && list.scroll != nil {
-		list.scroll.ScrollTo(state.hostsScroll)
-	}
-	state.beginHostSortPaint(canvas, viewport)
-	canvas.Clip(viewport)
-	list.page.Draw(canvas, viewport, list.view)
-	canvas.Unclip()
-	state.endHostSortPaint()
+	state.hostsContent = content
 	if list.scroll != nil {
 		content = list.scroll.Content
 		state.hostsScroll, state.hostsContent = list.scroll.Offset, content
-	} else {
-		state.hostsContent = content
 	}
-	if reveal != 0 {
-		state.focusHostListRow(canvas, reveal)
+	list.applied = state.hostsScroll
+	viewport := list.area.Rect()
+	list.viewport = viewport
+	if state.hostRevealID != 0 {
+		state.focusHostListRow(canvas, state.hostRevealID)
+		state.hostRevealID = 0
 	}
 	// The bar is the one the list has always painted: it keeps its strip out of
 	// the rows and shows the Tree's offset over the list's content.
+	state.paintHostListBar(canvas, treeBounds, content)
+}
+
+// paintHostListBar paints the bar the list view keeps beside its rows.
+func (state *State) paintHostListBar(canvas *gfx.Canvas, treeBounds gfx.Rect, content float32) {
 	bar := components.BeginScrollArea(canvas, state.Theme(), treeBounds, gfx.Size{Height: content}).
 		Offset(0, state.hostsScroll).
 		ReserveScrollbars().
@@ -1966,10 +1955,8 @@ func (state *State) paintHostListRow(ctx *ui.DrawContext, i int) {
 		state.paintHostGroupTreeRow(canvas, row, content, entry.GroupIndex)
 	case hostTreeHost:
 		host := state.hosts[entry.HostIndex]
-		hovered := false
-		if key, ok := state.hostListHitKey(canvas.Hovered()); ok {
-			hovered = key == state.hostListKey(i)
-		}
+		list := &state.hostList
+		hovered := canvas.Hovered() == list.tree.RowID(i) || canvas.Hovered() == list.tree.DisclosureID(i)
 		state.paintHostTreeRow(canvas, row, content, host, hovered)
 	}
 }
@@ -2010,6 +1997,10 @@ const hostListTop = 102
 const (
 	hostGroupRowHeight = 42
 	hostRowHeight      = 64
+	// The header's rows, shared by its paint and by the page that gives it
+	// room: the filter line and, while hosts are checked, the batch actions.
+	hostHeaderRowHeight = 28
+	hostHeaderRowGap    = 12
 )
 
 // hostListHeight is the height of every row of the hosts list.
@@ -2041,35 +2032,22 @@ func hostListScrollArea(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect, co
 	return area, area.Geometry()
 }
 
-// scrollHosts moves the hosts list with the wheel. The list view gives the
-// wheel to its Tree, which owns the scroll area; the grid keeps the offset the
-// cards are painted at.
+// scrollHosts moves the hosts list with the wheel. The list view's Tree is part
+// of the workbench page, so the page's wheel route has already offered the
+// wheel to the rows; what is left is the strip the bar keeps beside them, which
+// moves the same scroll state. The grid keeps the offset the cards are painted
+// at.
 func (state *State) scrollHosts(event gfx.ScrollEvent) gfx.EventResult {
 	if state.hostView == hostViewList {
 		list := &state.hostList
-		if list.page == nil || !pointInRect(event.X, event.Y, state.chrome.hostList) {
+		if list.scroll == nil || !pointInRect(event.X, event.Y, list.bounds) {
 			return gfx.EventResult{}
 		}
-		result := list.page.Wheel(event)
+		result := list.scroll.Wheel(event)
 		if result.Handled {
-			if list.scroll != nil {
-				state.hostsScroll, state.hostsContent = list.scroll.Offset, list.scroll.Content
-			}
-			return result
+			state.hostsScroll, state.hostsContent = list.scroll.Offset, list.scroll.Content
 		}
-		// A wheel over the strip the bar keeps beside the rows is outside the
-		// Tree's area, so move the Tree's scroll state by the same step.
-		if list.scroll != nil {
-			before := list.scroll.Offset
-			next := min(max(before+event.StepY(24), 0), list.scroll.Max())
-			if next == before {
-				return gfx.EventResult{}
-			}
-			list.scroll.ScrollTo(next)
-			state.hostsScroll = list.scroll.Offset
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
-		return gfx.EventResult{}
+		return result
 	}
 	step := event.StepY(24)
 	before := state.hostsScroll

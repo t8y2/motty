@@ -13,27 +13,49 @@ const hostTreeIndent = float32(22)
 
 // hostCatalogList is the hosts list as a framework Tree: the visible rows of the
 // group hierarchy, with the row heights, geometry, scrolling and drag and drop
-// owned by TreeState. The host cards stay outside it; only the list view uses it.
+// owned by TreeState. It is declared inside the workbench page, like the terminal
+// panes and the docked file panel, so its keys, wheel and ownership are the
+// page's. The host cards stay outside it; only the list view uses it.
 //
 // The functions the Tree keeps are made once here, not in each paint: a method
 // value made in a paint allocates, and the Tree asks Node for every row.
 type hostCatalogList struct {
 	tree    ui.TreeState
-	page    *ui.Page
-	view    func(ui.C)
 	node    func(int) ui.TreeNode
 	label   func(int) string
 	content func(int)
 	key     func(int) int
 	canDrop func(int, int, ui.TreeDrop) bool
+	// sortUnder and sortOver start and end the hand-drawn reorder overlay
+	// around the rows the Tree paints. They are kept, not made in each paint.
+	sortUnder, sortOver func(*ui.DrawContext)
 
-	// c is the paint being declared while the Tree asks content for its rows:
+	// c is the declaration being used while the Tree asks content for its rows:
 	// ui.Tree calls content during the declaration it is part of.
 	c ui.C
-	// scroll is the Tree's scroll area as of the last list paint. It is kept
-	// only to apply an offset another part of the page asked for (the sort
-	// drag's edge scroll) before the Tree lays its rows out again.
-	scroll *ui.ScrollState
+	// header and area are the rooms the page declared: the header painted by
+	// hand, and the Tree that paints the rows. Their rectangles are read after
+	// the page is laid out.
+	header ui.Box
+	area   ui.Box
+	// scroll is the Tree's scroll area as of the last list paint; scrollLive says
+	// that paint declared it, and pendingLive is that answer for the paint being
+	// made, which clears it. They apply an offset another part of the page asked
+	// for (the sort drag's edge scroll, or a test) before the Tree lays its rows
+	// out again, and only while the state is still the list's.
+	scroll      *ui.ScrollState
+	scrollLive  bool
+	pendingLive bool
+	// applied is the offset the last list paint gave the Tree and the window. A
+	// hostsScroll that differs from it is a request from another part of the
+	// page (a reset, the sort drag's edge scroll, a test); one that matches is
+	// just the last paint's value, so a wheel the page handled is not undone.
+	applied float32
+	// bounds is the room the list occupies in the window, including the strip the
+	// scroll bar takes, and viewport the part the rows are painted in, both as of
+	// the last paint.
+	bounds   gfx.Rect
+	viewport gfx.Rect
 	// drawers are reused row painters, one per row the Tree declares in a
 	// paint. They carry their own row index, so the Draw of each row reads the
 	// right row after the whole tree has been declared.
@@ -51,12 +73,11 @@ type hostRowDrawer struct {
 
 func (d *hostRowDrawer) paint(ctx *ui.DrawContext) { d.owner.paintHostListRow(ctx, d.index) }
 
-// ensureHostList makes the list's page and the functions the Tree keeps. The
-// page names its rows in the workbench's own identity tree, under a root of its
-// own, as the dialogs of the window do.
-func (state *State) ensureHostList() *hostCatalogList {
+// hostListFns makes the functions the Tree keeps. The Tree itself is declared in
+// the workbench page, in declareHostsWorkspace.
+func (state *State) hostListFns() *hostCatalogList {
 	list := &state.hostList
-	if list.page != nil {
+	if list.node != nil {
 		return list
 	}
 	list.node = state.hostListNode
@@ -64,12 +85,11 @@ func (state *State) ensureHostList() *hostCatalogList {
 	list.key = state.hostListKey
 	list.canDrop = state.hostListCanDrop
 	list.content = state.hostListDeclareRow
-	list.view = state.declareHostList
+	list.sortUnder, list.sortOver = state.drawHostSortUnder, state.drawHostSortOver
 	list.tree.Node = list.node
 	list.tree.Key = list.key
 	list.tree.CanDrop = list.canDrop
 	list.tree.Indent = hostTreeIndent
-	list.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: "host-list", Theme: &state.theme})
 	return list
 }
 
@@ -179,15 +199,37 @@ func (list *hostCatalogList) drawer(state *State, index int) *hostRowDrawer {
 	return d
 }
 
-// hostListHitKey says which row of the list a hit names, if it is one: the Tree
-// names its rows by hostListKey in the list page, and a control drawn in a row
-// (a checkbox, a button) is named in the workbench's tree instead.
+// hostListHitKey says which row of the list a hit names, if it is one. A row's
+// key reaches the row the Tree declared it for, and the hit must be that row's
+// own identity or its disclosure's: the controls painted inside a row (a
+// checkbox, a button) are named in the workbench's tree instead.
 func (state *State) hostListHitKey(id gfx.ID) (int, bool) {
-	list := &state.hostList
-	if list.page == nil || state.hostView != hostViewList || !list.page.Owns(id) {
+	if state.hostView != hostViewList || id.IsZero() {
 		return 0, false
 	}
-	return id.Name().Index()
+	key, ok := id.Name().Index()
+	if !ok {
+		return 0, false
+	}
+	row, ok := state.hostListRowForKey(key)
+	if !ok {
+		return 0, false
+	}
+	list := &state.hostList
+	if id != list.tree.RowID(row) && id != list.tree.DisclosureID(row) {
+		return 0, false
+	}
+	return key, true
+}
+
+// hostListRowForKey finds the visible row the list names key, if it shows it.
+func (state *State) hostListRowForKey(key int) (int, bool) {
+	for row := range state.hostTreeRows {
+		if state.hostListKey(row) == key {
+			return row, true
+		}
+	}
+	return 0, false
 }
 
 // hostListRowFromHit maps a pointer target back to the visible row it names.
@@ -222,25 +264,15 @@ func (state *State) hostListRowIndex(hostID uint32) int {
 }
 
 // focusHostListRow focuses the row of host, which the paint just declared. The
-// list's rows are named by the Tree, so the target is read from the hits rather
-// than named by the workbench.
+// Tree names the row's identity, so the focus goes to that ID; sorting by hand
+// keeps its grip as the focus instead.
 func (state *State) focusHostListRow(canvas *gfx.Canvas, hostID uint32) {
-	row := state.hostListRowIndex(hostID)
-	if row >= 0 {
-		key := state.hostListKey(row)
-		for _, hit := range canvas.Hits() {
-			if name, ok := state.hostListHitKey(hit.ID); ok && name == key {
-				if state.hostSort.enabled {
-					canvas.RequestFocus(hitHostSortHandles.At(int(hostID)))
-				} else {
-					canvas.RequestFocus(hit.ID)
-				}
-				return
-			}
-		}
-	}
 	if state.hostSort.enabled {
 		canvas.RequestFocus(hitHostSortHandles.At(int(hostID)))
+		return
+	}
+	if row := state.hostListRowIndex(hostID); row >= 0 {
+		canvas.RequestFocus(state.hostList.tree.RowID(row))
 	}
 }
 
@@ -289,11 +321,32 @@ func (state *State) hostListPointer(event gfx.PointerEvent) (gfx.EventResult, bo
 	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-// declareHostList declares the hosts list. The Tree reports what the user did;
-// the changes that rearrange the rows run after the paint that declared them.
-func (state *State) declareHostList(c ui.C) {
-	list := &state.hostList
-	rows := state.hostTreeRows
+// declareHostsWorkspace declares the hosts page inside the workbench page: the
+// header the window paints by hand, and, in the list view, the Tree that paints
+// the rows. Both are placed by the workspace slot's edges, so their geometry is
+// the slot's and not a copy of it.
+func (state *State) declareHostsWorkspace(c ui.C) {
+	list := state.hostListFns()
+	if cap(state.groupActions.rows) < len(state.hostGroups) {
+		state.groupActions.rows = make([]gfx.Rect, len(state.hostGroups))
+	} else {
+		state.groupActions.rows = state.groupActions.rows[:len(state.hostGroups)]
+		clear(state.groupActions.rows)
+	}
+	width, height := state.hostsWorkspaceSize()
+	headerHeight := state.hostHeaderHeight(width, len(state.hostSelections) > 0)
+	list.header = ui.Slot(c).Absolute().Left(0).Right(0).Top(0).Height(headerHeight)
+	if state.hostView == hostViewGrid || len(state.hostTreeRows) == 0 {
+		list.scrollLive = false
+		return
+	}
+	// The bar keeps its strip out of the rows when the content overflows; the
+	// viewport is the rest of the list's room.
+	room := gfx.Rect{Y: headerHeight, Width: max(width-36, 0), Height: max(height-headerHeight-18, 0)}
+	content := state.hostListHeight(room.Width)
+	_, geometry := hostListScrollArea(nil, state.Theme(), room, content, state.hostsScroll)
+	right := float32(18) + room.Width - geometry.Viewport.Width
+	state.applyHostListScroll(c.Canvas(), content)
 	list.tree.RowHeight = hostRowHeight
 	// The rows are not draggable while they are being sorted by hand: the sort
 	// overlay owns the pointer then.
@@ -304,10 +357,84 @@ func (state *State) declareHostList(c ui.C) {
 	}
 	list.next = 0
 	list.c = c
-	area := ui.Tree(c, &list.tree, len(rows), list.label, list.content).Fill()
+	area := ui.Tree(c, &list.tree, len(state.hostTreeRows), list.label, list.content).
+		Absolute().Left(18).Right(right).Top(headerHeight).Bottom(18)
 	list.c = nil
+	// The sort overlay is not a page element: it starts before the rows paint
+	// their handles and ends after them, as the list has always painted it.
+	area.Draw(list.sortUnder).DrawOver(list.sortOver)
+	list.area = area
 	list.scroll = area.ScrollState()
+	list.scrollLive = true
+	state.hostListChanges(c, list)
+}
 
+// drawHostSortUnder starts the reorder overlay in the Tree's room, and
+// drawHostSortOver ends it once the rows have declared their handles.
+func (state *State) drawHostSortUnder(d *ui.DrawContext) {
+	state.beginHostSortPaint(d.Canvas, d.Rect)
+}
+
+func (state *State) drawHostSortOver(*ui.DrawContext) {
+	state.endHostSortPaint()
+}
+
+// beginHostsPaint remembers whether the last paint declared the list's scroll
+// area, so this paint may apply a requested offset to it; a paint that did not
+// declare the list drops the state, and its slot may be another area's now.
+func (state *State) beginHostsPaint() {
+	list := &state.hostList
+	list.pendingLive = list.scrollLive
+	list.scrollLive = false
+}
+
+// hostsWorkspaceSize is the room the workspace slot gives the hosts page: the
+// window less the bar, the docks and the navigation rail, and the card's margins
+// and border. declareShell lays the slot out from the same state; the size here
+// only decides the header's rows and the bar's strip.
+func (state *State) hostsWorkspaceSize() (width, height float32) {
+	width = state.viewport.Width - state.toolbarDockSideReserveFor(true, false) - navigationWidth - state.chrome.shellCardRight - 2*workspaceBorder
+	height = state.viewport.Height - windowBarHeight - state.toolbarDockBottomReserve(false) - sectionCardMargin - 2*workspaceBorder
+	return max(width, 0), max(height, 0)
+}
+
+// hostHeaderHeight is the height of the toolbar, the filters and, while hosts are
+// checked, the batch actions: the rows the header lays out below its top.
+func (state *State) hostHeaderHeight(width float32, anySelected bool) float32 {
+	height := float32(hostListTop)
+	if width < 450 {
+		height += hostHeaderRowHeight + hostHeaderRowGap
+	}
+	if anySelected {
+		height += hostHeaderRowHeight + hostHeaderRowGap
+	}
+	return height
+}
+
+// applyHostListScroll applies an offset another part of the page asked for, and
+// a row to reveal, to the Tree's scroll state before the Tree lays its rows out
+// again. scrollLive says the state is the one the last paint declared.
+func (state *State) applyHostListScroll(canvas *gfx.Canvas, content float32) {
+	list := &state.hostList
+	live := list.pendingLive
+	list.pendingLive = false
+	if live && list.scroll != nil && state.hostsScroll != list.applied {
+		list.scroll.ScrollTo(state.hostsScroll)
+	}
+	if state.hostRevealID != 0 {
+		if row := state.hostListRowIndex(state.hostRevealID); row >= 0 {
+			list.tree.ScrollIntoView(row)
+		}
+	}
+	if live && list.scroll != nil && state.hostSortAutoScrollFrame(canvas, list.viewport, content) {
+		list.scroll.ScrollTo(state.hostsScroll)
+	}
+}
+
+// hostListChanges applies what the user did to the Tree in this declaration: the
+// changes that rearrange the rows run after the paint that declared them.
+func (state *State) hostListChanges(c ui.C, list *hostCatalogList) {
+	rows := state.hostTreeRows
 	if i, ok := list.tree.Toggled(); ok && i >= 0 && i < len(rows) && rows[i].Kind == hostTreeGroup {
 		group := rows[i].GroupIndex
 		c.After(func() { state.toggleHostGroup(group) })

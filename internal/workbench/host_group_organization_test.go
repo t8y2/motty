@@ -165,7 +165,7 @@ func TestHostGroupDragMovesSubtreeAndEscapeCancels(t *testing.T) {
 		t.Fatal("the target group row is not painted")
 	}
 	dragged := dragHostGroup(state, size, source, target)
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: source.ID})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: source.ID})
 	releaseHostGroup(state, size, dragged, source, target)
 	if state.hosts[0].Group != "Team/Prod/EU" {
 		t.Fatal("Escape did not cancel the drag")
@@ -234,5 +234,5 @@ func TestHostGroupDragPaintsTheDropIndicator(t *testing.T) {
 		t.Fatal("a drag over a group did not paint its drop indicator")
 	}
 	// Let the drag go without moving anything, so the test leaves no press behind.
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: source.ID})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: source.ID})
 }

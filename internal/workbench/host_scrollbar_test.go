@@ -158,7 +158,8 @@ func TestTheHostListScrollbarStartsWhenTheContentOverflows(t *testing.T) {
 	state.Paint(&warm, gfx.Size{Width: 1400, Height: 900}) // the real palette and chrome
 
 	var exact gfx.Canvas
-	state.paintHostTable(&exact, bounds)
+	state.hostsContent = state.hostListHeight(bounds.Width)
+	state.paintHostListBar(&exact, bounds, state.hostsContent)
 	if state.hostsContent != bounds.Height {
 		t.Fatalf("content %v, viewport %v", state.hostsContent, bounds.Height)
 	}
@@ -172,7 +173,8 @@ func TestTheHostListScrollbarStartsWhenTheContentOverflows(t *testing.T) {
 	short := bounds
 	short.Height--
 	var over gfx.Canvas
-	state.paintHostTable(&over, short)
+	state.hostsContent = state.hostListHeight(short.Width)
+	state.paintHostListBar(&over, short, state.hostsContent)
 	bar := hostListBar(state, short)
 	if bar.MaxOffsetY <= 0 || bar.VerticalThumb.Height <= 0 {
 		t.Fatalf("content one pixel taller than the window did not scroll: %+v", bar)
