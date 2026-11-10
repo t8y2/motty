@@ -40,10 +40,11 @@ func benchAIConversation(b *testing.B, count int) {
 	withModel(b, state)
 	state.ai.open = true
 	longConversation(state, count)
-	state.ai.scroll.ScrollToStart()
 	var canvas gfx.Canvas
 	state.Paint(&canvas, panelWide)
-	state.ai.scroll.ScrollTo(state.ai.panel.maxScroll / 2)
+	aiListScroll(b, state).ScrollTo(0)
+	state.Paint(&canvas, panelWide)
+	aiListScroll(b, state).ScrollTo(state.ai.panel.maxScroll / 2)
 	paint := func() {
 		canvas.Reset()
 		state.Paint(&canvas, panelWide)
@@ -57,10 +58,10 @@ func benchAIConversation(b *testing.B, count int) {
 	})
 	b.Run("scrolling", func(b *testing.B) {
 		paint()
-		base := state.ai.scroll.Offset()
+		base := aiListScroll(b, state).Offset
 		b.ReportAllocs()
 		for i := 0; b.Loop(); i++ {
-			state.ai.scroll.ScrollTo(base + float32(i%64))
+			aiListScroll(b, state).ScrollTo(base + float32(i%64))
 			paint()
 		}
 	})

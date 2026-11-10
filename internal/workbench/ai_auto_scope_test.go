@@ -203,12 +203,12 @@ func TestApprovalScopeMenuStartsOnTheFirstScopeAndKeepsTheWheel(t *testing.T) {
 		t.Fatalf("the menu focus starts on %q, want the first scope", row.Label)
 	}
 	row := aiMenuRow(t, canvas, state.messages.AIPanel.RiskLow)
-	before := state.ai.scroll.Offset()
+	before := aiListOffset(state)
 	result = windowScrollRoutes(state, gfx.ScrollEvent{X: row.Bounds.X + 4, Y: row.Bounds.Y + 4, DeltaY: 120, Precise: true, Viewport: panelWide, Target: row.ID})
 	if !result.Handled {
 		t.Fatal("wheel over the open menu was not consumed")
 	}
-	if state.ai.scroll.Offset() != before {
+	if aiListOffset(state) != before {
 		t.Error("wheel over the menu scrolled the conversation")
 	}
 }

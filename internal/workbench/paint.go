@@ -516,7 +516,39 @@ func (state *State) windowPage() *ui.Page {
 func (state *State) WindowConfig(base app.Config) app.Config {
 	config := state.windowPage().Config(base)
 	config.Paint = base.Paint
+	// The assistant owns the wheel over its own panel: its lists keep their
+	// offsets in the page, but a modal dialog must still keep them still, which
+	// the page's generic scroll-area routing does not know. Everything else the
+	// event reaches goes on to the page as before.
+	config.OnScroll = state.scrollWindow
 	return config
+}
+
+// scrollWindow gives the wheel to the assistant's panel first, then to the
+// page's other scroll areas and the window's own handlers. A modal dialog owns
+// the wheel over its backdrop: the panel keeps still behind it, as it did when
+// its list was painted by hand and the window's own handler saw the event first.
+func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
+	if state.aiMenuShown() {
+		// An open chip menu is the page's popup and owns the wheel; its own
+		// scroll route (and its backdrop) decide where the event goes.
+		return state.windowPage().Wheel(event)
+	}
+	panel := &state.ai.panel
+	if panel.rect.Width > 0 && pointInRect(event.X, event.Y, panel.rect) && state.aiBackgroundScrollBlocked() {
+		return gfx.EventResult{Handled: true}
+	}
+	if result, handled := state.aiPanelScroll(event); handled {
+		return result
+	}
+	return state.windowPage().Wheel(event)
+}
+
+// aiBackgroundScrollBlocked reports whether a dialog that holds the wheel is
+// open over the assistant.
+func (state *State) aiBackgroundScrollBlocked() bool {
+	return state.modal != modalNone || state.knownHosts.action != knownHostsActionNone ||
+		(state.aiSettingsVisible() && state.ai.cfg.dialog != aiDialogNone)
 }
 
 // declareShell declares the window's shell as a page: the bar over the body,

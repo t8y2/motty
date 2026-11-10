@@ -383,7 +383,6 @@ func TestConversationShowsEveryKindOfRowAndToolStatus(t *testing.T) {
 	withModel(t, state)
 	conversationFixture(state)
 	state.ai.open = true
-	state.ai.scroll.ScrollToStart()
 	// A tall window so that everything is on screen.
 	size := gfx.Size{Width: 1400, Height: 2600}
 	state.Resize(size)
@@ -571,9 +570,9 @@ func TestModelMenuScrollsAProviderWithManyModels(t *testing.T) {
 		t.Fatal("the first model is not painted")
 	}
 	// The wheel over the long list scrolls the menu, not the conversation.
-	before := state.ai.scroll.Offset()
+	before := aiListOffset(state)
 	windowScrollRoutes(state, gfx.ScrollEvent{X: first.Bounds.X + 10, Y: first.Bounds.Y + 10, DeltaY: 96, Precise: true, Viewport: panelWide, Target: first.ID})
-	if state.ai.scroll.Offset() != before {
+	if aiListOffset(state) != before {
 		t.Error("wheel over the model menu scrolled the conversation")
 	}
 	canvas, _ = paintAt(state, panelWide)
@@ -792,8 +791,8 @@ func TestWheelScrollsTheConversationAndFollowingTracksTheEnd(t *testing.T) {
 		state.ai.items = append(state.ai.items, aiItem{kind: aiAssistant, text: "line of an answer that is long enough to be a message number " + string(rune('A'+index%26))})
 	}
 	canvas, _ := paintAt(state, panelWide)
-	if !state.ai.scroll.Following() || state.ai.panel.maxScroll <= 0 || state.ai.scroll.Offset() != state.ai.panel.maxScroll {
-		t.Fatalf("not at the end: following=%v scroll=%v max=%v", state.ai.scroll.Following(), state.ai.scroll.Offset(), state.ai.panel.maxScroll)
+	if !aiListFollows(state) || state.ai.panel.maxScroll <= 0 || aiListOffset(state) != state.ai.panel.maxScroll {
+		t.Fatalf("not at the end: following=%v scroll=%v max=%v", aiListFollows(state), aiListOffset(state), state.ai.panel.maxScroll)
 	}
 	if _, ok := hitByID(canvas, hitAIToEnd); ok {
 		t.Fatal("the jump-to-end button shows at the end")
@@ -802,33 +801,33 @@ func TestWheelScrollsTheConversationAndFollowingTracksTheEnd(t *testing.T) {
 	wheel := func(dy float32) gfx.EventResult {
 		return state.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: dy, Viewport: panelWide, Precise: true})
 	}
-	end := state.ai.scroll.Offset()
-	if result := wheel(-120); !result.Handled || state.ai.scroll.Offset() != end-120 || state.ai.scroll.Following() {
-		t.Fatalf("wheel up: %+v scroll=%v following=%v", result, state.ai.scroll.Offset(), state.ai.scroll.Following())
+	end := aiListOffset(state)
+	if result := wheel(-120); !result.Handled || aiListOffset(state) != end-120 || aiListFollows(state) {
+		t.Fatalf("wheel up: %+v scroll=%v following=%v", result, aiListOffset(state), aiListFollows(state))
 	}
 	canvas, _ = paintAt(state, panelWide)
-	if state.ai.scroll.Offset() != end-120 {
-		t.Fatalf("a paint moved the reader: %v", state.ai.scroll.Offset())
+	if aiListOffset(state) != end-120 {
+		t.Fatalf("a paint moved the reader: %v", aiListOffset(state))
 	}
 	panelHit(t, canvas, hitAIToEnd)
 	// New messages do not drag a reader who scrolled up.
 	state.ai.items = append(state.ai.items, aiItem{kind: aiAssistant, text: "new"})
 	paintAt(state, panelWide)
-	if state.ai.scroll.Offset() != end-120 || state.ai.scroll.Following() {
+	if aiListOffset(state) != end-120 || aiListFollows(state) {
 		t.Fatal("new text moved a reader who scrolled up")
 	}
 	// Wheeling to the end follows again.
 	wheel(10000)
-	if !state.ai.scroll.Following() {
+	if !aiListFollows(state) {
 		t.Fatal("not following at the end")
 	}
 	wheel(-50)
-	if state.ai.scroll.Following() {
+	if aiListFollows(state) {
 		t.Fatal("still following after scrolling up")
 	}
 	state.Click(hitAIToEnd)
 	paintAt(state, panelWide)
-	if !state.ai.scroll.Following() || state.ai.scroll.Offset() != state.ai.panel.maxScroll {
+	if !aiListFollows(state) || aiListOffset(state) != state.ai.panel.maxScroll {
 		t.Fatal("jump to end did not follow")
 	}
 	// A wheel outside the panel is the terminal's, one over its header is swallowed.

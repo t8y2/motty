@@ -438,6 +438,12 @@ func (state *State) aiPanelBeginPaint() {
 	panel := &state.ai.panel
 	panel.rect, panel.list, panel.listing = gfx.Rect{}, gfx.Rect{}, false
 	panel.scrollbar.geometry = components.MessageScrollerGeometry{}
+	panel.messageScroll, panel.historyScroll = nil, nil
+	panel.paintedRows = panel.paintedRows[:0]
+	panel.paintedHistory = panel.paintedHistory[:0]
+	panel.copySlots = panel.copySlots[:0]
+	panel.rowSlots = panel.rowSlots[:0]
+	panel.statusPainted = false
 	if !state.aiPanelVisible() {
 		panel.scrollbar.dragging = false
 		panel.drawerOpen = false
@@ -636,8 +642,8 @@ const aiMenuContextWidth = float32(144)
 
 // paintAIPanelContent paints the parts the declaration left for the last pass,
 // once the page has laid the body out: the title buttons and setup card in their
-// slots and the bottom's field and buttons. The list itself is the page's
-// Control and paints in its own Draw (paintAIList).
+// slots and the bottom's field and buttons. The lists paint their own rows; their
+// chrome is painted over them (paintAIMessageChrome, paintAIHistoryChrome).
 func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
 	s := &panel.pageScratch
@@ -645,38 +651,14 @@ func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	if s.showSetup {
 		components.BeginButton(canvas, state.Theme(), hitAISetup, panel.body.setup.Rect()).Small().Default(s.setupLabel)
 	}
-	// Keep the list's rectangle even when it is the empty state, which paints no
-	// Control: the wheel and the scrollbar read it between paints.
+	// Keep the list slot's rectangle even when it is the empty state, which
+	// declares no List: the wheel and the scrollbar read it between paints.
 	panel.list = panel.body.list.Rect()
 	panel.listing = panel.history
 	// A row that is gone takes the selection that pointed into it, whether the
 	// list paints rows at all: the empty state has no Draw to do it later.
 	panel.textSelect.Clamp(len(ai.items)*int(aiTextPartCount), panel.textLength)
 	state.paintAIBottom(canvas, &panel.body)
-}
-
-// paintAIList is the list Control's Draw: the saved conversations or the
-// conversation, painted with the rows' own layouts inside the control's
-// rectangle. It is the last user of the frame-based row painters; they are not
-// called from anywhere else.
-func (state *State) paintAIList(d *ui.DrawContext) {
-	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
-	// The list slot is wider than the control by the divider's hit strip: the
-	// rows are measured and painted from the slot, so their pixels do not move
-	// when the control keeps clear of the resize handle.
-	list := panel.list
-	if list.Width <= 0 {
-		list = d.Rect
-	}
-	panel.list = list
-	panel.listing = panel.history
-	panel.textFirst, panel.textLast = -1, -1
-	switch {
-	case panel.history:
-		state.paintAIHistory(canvas, list)
-	case len(ai.items) > 0:
-		state.paintAIMessages(canvas, list)
-	}
 }
 
 // paintAIPanelChrome paints what must come over the body's controls: the
@@ -719,16 +701,11 @@ func (state *State) declareAIPanelBody(c ui.C) {
 	if panel.composerDraw == nil {
 		panel.composerDraw = state.paintAIComposerTextarea
 	}
-	if panel.listDraw == nil {
-		panel.listDraw = state.paintAIList
-		// The list's input is the application's own routing, as the terminal's
-		// is: a shortcut, a modal dialog or another panel handler acts before
-		// the conversation list's gestures, and the gestures are reached at the
-		// point the window always reached them. WindowConfig routes the event
-		// to this dispatcher because the control is the page's.
-		panel.listHandlers.Pointer = state.Pointer
-		panel.listHandlers.Key = state.Key
-		panel.listHandlers.Scroll = state.Scroll
+	if panel.messageRow == nil {
+		panel.messageRow = state.declareAIMessageRow
+		panel.historyRow = state.declareAIHistoryRow
+		panel.messageChrome = state.paintAIMessageChrome
+		panel.historyChrome = state.paintAIHistoryChrome
 	}
 
 	panel.body = aiBody{}
@@ -750,15 +727,15 @@ func (state *State) declareAIPanelBody(c ui.C) {
 		}
 		ui.Divider(c).Background(pal.line)
 		// With nothing to show, the list's room is the page's own empty state;
-		// the history and the conversation are one Control the page declares, so
-		// its scroll gestures go to the control's handlers. The control starts at
-		// the divider's hit strip so it does not cross the resize handle; the
-		// strip is list padding, and the list is painted from the slot's whole
-		// rectangle below.
+		// the history and the conversation are page Lists, so their rows, their
+		// wheel and their keys belong to the page.
 		if panel.history || len(state.ai.items) > 0 {
-			inset := panel.resize.handle/2 + 1
-			panel.body.list = ui.Column(c).Grow(1).Children(func() {
-				ui.Control(c, m.ListLabel, &panel.listHandlers).Fill().MarginLeft(inset).Draw(panel.listDraw)
+			panel.body.list = ui.Column(c).Grow(1).Shrink(1).Children(func() {
+				if panel.history {
+					state.declareAIHistory(c)
+				} else {
+					state.declareAIMessages(c)
+				}
 			})
 		} else {
 			panel.body.list = state.declareAIEmpty(c)
@@ -876,62 +853,40 @@ const (
 	aiHistoryRow    = float32(46)
 )
 
-// paintAIHistory lists the saved conversations in place of the messages. Only the
-// rows on screen are declared; the rows above and below are one block each.
-func (state *State) paintAIHistory(canvas *gfx.Canvas, list gfx.Rect) {
+// declareAIHistory lists the saved conversations in place of the messages: a
+// title above a page List of rows, so Viva keeps only the rows on screen, their
+// heights and their offset.
+func (state *State) declareAIHistory(c ui.C) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	m := state.messages.AIPanel
-	var body ui.Box
-	f := state.aiFlex.history.Begin(canvas, state.Theme(), list)
-	f.Column().Fill().Children(func() {
-		f.Column().Height(aiHistoryHeader).Shrink(0).PadSides(8, aiPad, 0, aiPad).Children(func() {
-			f.Text(m.HistoryTitle).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22)
-		})
-		if len(ai.conversations) == 0 {
-			f.Column().Grow(1).PadSides(24, aiPad, 0, aiPad).Children(func() {
-				f.Text(m.HistoryEmpty).FontSize(aiSmallSize).Color(pal.muted).LineHeight(22).TextCenter()
-			})
-		} else {
-			body = f.Slot().Grow(1)
-		}
+	ui.Column(c).Height(aiHistoryHeader).Shrink(0).PadSides(8, aiPad, 0, aiPad).Children(func() {
+		ui.Text(c, m.HistoryTitle).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22)
 	})
-	f.End()
 	if len(ai.conversations) == 0 {
 		panel.maxTop = 0
+		ui.Column(c).Grow(1).PadSides(24, aiPad, 0, aiPad).Children(func() {
+			ui.Text(c, m.HistoryEmpty).FontSize(aiSmallSize).Color(pal.muted).LineHeight(22).TextCenter()
+		})
 		return
 	}
+	list := ui.List(c, &panel.historyList, len(ai.conversations), panel.historyRow).
+		Fill().Label(m.HistoryTitle)
+	list.DrawOver(panel.historyChrome)
+	panel.historyScroll = list.ScrollState()
+}
 
-	area := body.Rect()
-	count := len(ai.conversations)
-	content := float32(count) * aiHistoryRow
-	panel.maxTop = max(content-area.Height, 0)
-	panel.historyTop = min(panel.historyTop, panel.maxTop)
-	first := int(panel.historyTop / aiHistoryRow)
-	last := min(int((panel.historyTop+area.Height)/aiHistoryRow), count-1)
-
-	// The rows are placed by a Scroll of slots, then declared one by one into
-	// them, so a row's hit is followed by its delete button, in the order the
-	// keyboard visits them.
-	panel.rowSlots = panel.rowSlots[:0]
-	f = state.aiFlex.historyRows.Begin(canvas, state.Theme(), area)
-	f.Scroll(panel.historyTop).Fill().PadX(6).Children(func() {
-		f.Column().Height(float32(first) * aiHistoryRow)
-		for index := first; index <= last; index++ {
-			panel.rowSlots = append(panel.rowSlots, f.Slot().Height(aiHistoryRow-2).MarginSides(0, 0, 2, 0))
-		}
-		f.Column().Height(float32(count-1-last) * aiHistoryRow)
-	})
-	f.End()
-
-	scroller := components.BeginMessageScroller(canvas, state.aiScrollbarTheme(), area, content, panel.historyTop).
-		Scrollbar(hitAIHistoryBar, m.HistoryScrollbarLabel, state.aiScrollbarValue(true, panel.historyTop, panel.maxTop))
-	scroller.BeginContent()
-	for offset, slot := range panel.rowSlots {
-		index := first + offset
-		conversation := &ai.conversations[index]
-		openID, deleteID := hitAIHistoryOpen.At(index), hitAIHistoryDelete.At(index)
-		renameID := hitAIHistoryRename.At(index)
-		var background gfx.Color
+// declareAIHistoryRow declares one saved conversation as a List row. The row's
+// own identity is the List's; the open, rename and delete hits stay the panel's
+// because one action dispatcher answers them.
+func (state *State) declareAIHistoryRow(row ui.ListRow) {
+	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
+	m := state.messages.AIPanel
+	index := row.Index
+	conversation := &ai.conversations[index]
+	openID, deleteID := hitAIHistoryOpen.At(index), hitAIHistoryDelete.At(index)
+	renameID := hitAIHistoryRename.At(index)
+	var background gfx.Color
+	if canvas := row.C.Canvas(); canvas != nil {
 		switch {
 		case canvas.Pressed() == openID:
 			background = pal.surfaceHot
@@ -940,23 +895,46 @@ func (state *State) paintAIHistory(canvas *gfx.Canvas, list gfx.Rect) {
 		case conversation.ID == ai.conv:
 			background = pal.accentSoft
 		}
-		var remove, rename ui.Box
-		r := state.aiFlex.row.Begin(canvas, state.Theme(), slot.Rect())
-		r.Row().Fill().PadSides(0, 4, 0, 10).Gap(10).Items(ui.Center).Background(background).Radius(radius.control).
+	}
+	var remove, rename ui.Box
+	row.Element.PadSides(0, 6, 2, 6).Children(func() {
+		ui.Row(row.C).Fill().PadSides(0, 4, 0, 10).Gap(10).Items(ui.Center).Background(background).Radius(radius.control).
 			HitWith(openID, conversation.Title, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.HistoryOpen}).Children(func() {
-			r.Column().Grow(1).Children(func() {
-				r.Text(conversation.Title).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(20).Ellipsis()
+			ui.Column(row.C).Grow(1).Children(func() {
+				ui.Text(row.C, conversation.Title).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(20).Ellipsis()
 				if index < len(panel.historyDates) {
-					r.Text(panel.historyDates[index]).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16)
+					ui.Text(row.C, panel.historyDates[index]).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16)
 				}
 			})
-			rename = r.Slot().Size(aiButton, aiButton)
-			remove = r.Slot().Size(aiButton, aiButton)
+			rename = ui.Slot(row.C).Size(aiButton, aiButton)
+			remove = ui.Slot(row.C).Size(aiButton, aiButton)
 		})
-		r.End()
-		state.paintIconButton(canvas, renameID, iconPencil, rename.Rect(), m.HistoryRename, false, iconButtonQuiet, pal.workspace)
-		state.paintIconButton(canvas, deleteID, iconTrash, remove.Rect(), m.HistoryDelete, false, iconButtonQuiet, pal.workspace)
+	})
+	panel.paintedHistory = append(panel.paintedHistory, aiPaintedHistoryRow{rename: rename, remove: remove})
+}
+
+// paintAIHistoryChrome paints the List's custom scrollbar and the icon buttons
+// of its visible rows, once the page has laid them out.
+func (state *State) paintAIHistoryChrome(d *ui.DrawContext) {
+	canvas, panel := d.Canvas, &state.ai.panel
+	m := state.messages.AIPanel
+	panel.list, panel.listing = d.Rect, true
+	scroll := panel.historyScroll
+	if scroll == nil {
+		return
 	}
+	panel.maxTop, panel.historyTop = scroll.Max(), scroll.Offset
+	first, last := panel.historyList.Visible()
+	for offset, painted := range panel.paintedHistory {
+		index := first + offset
+		if index > last || index >= len(state.ai.conversations) {
+			continue
+		}
+		state.paintIconButton(canvas, hitAIHistoryRename.At(index), iconPencil, painted.rename.Rect(), m.HistoryRename, false, iconButtonQuiet, state.pal.workspace)
+		state.paintIconButton(canvas, hitAIHistoryDelete.At(index), iconTrash, painted.remove.Rect(), m.HistoryDelete, false, iconButtonQuiet, state.pal.workspace)
+	}
+	scroller := components.BeginMessageScroller(canvas, state.aiScrollbarTheme(), d.Rect, scroll.Content, scroll.Offset).
+		Scrollbar(hitAIHistoryBar, m.HistoryScrollbarLabel, state.aiScrollbarValue(true, scroll.Offset, scroll.Max()))
 	panel.scrollbar.geometry = scroller.EndContent()
 }
 
@@ -970,162 +948,246 @@ func intersectRect(a, b gfx.Rect) gfx.Rect {
 	return gfx.Rect{X: left, Y: top, Width: right - left, Height: bottom - top}
 }
 
-// paintAIMessages draws the conversation in a scrolling list. Every message keeps
-// its measured height (aiRowView), so where each one starts is a running sum and a
-// long conversation costs the rows on screen only: those are declared in a flex
-// Scroll between two blocks as tall as the rows above and below them, and flex
-// places them.
-func (state *State) paintAIMessages(canvas *gfx.Canvas, list gfx.Rect) {
+// aiPaintedRow is what one conversation row left for the paint that follows its
+// layout: the slots whose content is drawn rather than declared, and the copy
+// buttons the Markdown view placed.
+type aiPaintedRow struct {
+	index       int
+	view        *aiRowView
+	body        ui.Box
+	hasBody     bool
+	plain       [aiTextPartCount]ui.Box
+	plainSet    [aiTextPartCount]bool
+	copiesStart int
+	copiesLen   int
+}
+
+// aiPaintedHistoryRow is the rename and delete slots of one history row.
+type aiPaintedHistoryRow struct {
+	rename, remove ui.Box
+}
+
+// declareAIMessages declares the conversation as a page List: Viva measures each
+// row as it is declared, estimates the ones below the fold, and keeps only the
+// rows it can show. The panel still owns what a row cannot declare: the status
+// line at the end, the run following its newest row, and where the reader is
+// after the history replaced the conversation.
+func (state *State) declareAIMessages(c ui.C) {
 	ai, panel := &state.ai, &state.ai.panel
 	m := state.messages.AIPanel
-	rowW := list.Width - 2*aiPad
-	cell, cellHeight := canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
-	status, usage := state.aiRunStatusText()
-	statusHeight := float32(0)
-	if status != "" {
-		panel.statusLines = canvas.WrapLines(panel.statusLines[:0], status, aiSmallSize, gfx.WeightRegular, max(rowW-20, 1), 4)
-		panel.usageLines = panel.usageLines[:0]
-		statusHeight = float32(len(panel.statusLines)) * aiSmallLine
-		if usage != "" {
-			panel.usageLines = canvas.WrapLines(panel.usageLines, usage, aiSmallSize, gfx.WeightRegular, max(rowW-20, 1), 8)
-			statusHeight += float32(len(panel.usageLines))*aiSmallLine + 4
+	panel.rowWidth = panel.rect.Width - 2*aiPad
+	panel.statusLabel, panel.statusPainted = "", false
+	if canvas := c.Canvas(); canvas != nil {
+		panel.cell, panel.cellHeight = canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
+		status, usage := state.aiRunStatusText()
+		if status != "" {
+			panel.statusLines = canvas.WrapLines(panel.statusLines[:0], status, aiSmallSize, gfx.WeightRegular, max(panel.rowWidth-20, 1), 4)
+			panel.usageLines = panel.usageLines[:0]
+			if usage != "" {
+				panel.usageLines = canvas.WrapLines(panel.usageLines, usage, aiSmallSize, gfx.WeightRegular, max(panel.rowWidth-20, 1), 8)
+			}
+			panel.statusLabel = status
+			if usage != "" {
+				panel.statusLabel += "\n" + usage
+			}
+		} else {
+			panel.statusLines, panel.usageLines = panel.statusLines[:0], panel.usageLines[:0]
 		}
 	}
-
 	for len(panel.rows) < len(ai.items) {
 		panel.rows = append(panel.rows, aiRowView{})
 	}
 	panel.rows = panel.rows[:len(ai.items)]
-	y := aiGap
-	for index := range ai.items {
-		item, view := &ai.items[index], &panel.rows[index]
-		title := ""
-		switch item.kind {
-		case aiReasoning:
-			title = m.Thinking
-			if state.aiThinking(index) {
-				title = m.ThinkingNow
-			}
-		case aiTool:
-			title = aiToolTitle(m, item.call.Name)
-		}
-		lastAnswer := index == len(state.ai.items)-1 && item.kind == aiAssistant
-		if !view.current(item, rowW, cell, title) || view.actions != lastAnswer {
-			ends := panel.selectionEnds(index)
-			state.aiBuild(canvas, view, item, rowW, cell, cellHeight, title)
-			view.actions = lastAnswer
-			if lastAnswer {
-				view.height += aiAnswerAction
-			}
-			panel.keepSelectionEnds(index, ends)
-		}
-		view.top = y
-		y += view.height + aiGap
-	}
-	// A rebuilt row may be shorter than the text a selection pointed into.
-	panel.textSelect.Clamp(panel.textSurfaces(), panel.textLength)
-	content := y
-	if statusHeight > 0 {
-		content += statusHeight + aiGap
-	}
-	panel.maxScroll = max(content-list.Height, 0)
-	scroll := ai.scroll.Resolve(list.Height, content)
-
-	// The rows that touch the viewport.
-	first, last := -1, -1
-	for index := range panel.rows {
-		view := &panel.rows[index]
-		if view.top+view.height < scroll || view.top > scroll+list.Height {
-			continue
-		}
-		if first < 0 {
-			first = index
-		}
-		last = index
-	}
-	panel.textFirst, panel.textLast = first, last
-
-	// The rows are placed by a Scroll of slots, then declared one by one into them
-	// under the clip of the viewport, so that a row's hits are followed by its
-	// copy buttons, in the order the keyboard visits them.
+	panel.paintedRows = panel.paintedRows[:0]
+	panel.copySlots = panel.copySlots[:0]
 	panel.rowSlots = panel.rowSlots[:0]
-	var statusSlot ui.Box
-	f := state.aiFlex.messages.Begin(canvas, state.Theme(), list)
-	f.Scroll(scroll).Fill().PadX(aiPad).Children(func() {
-		if first < 0 {
-			f.Column().Height(y)
-		} else {
-			f.Column().Height(panel.rows[first].top)
-			for index := first; index <= last; index++ {
-				panel.rowSlots = append(panel.rowSlots, f.Slot().Height(panel.rows[index].height).MarginSides(0, 0, aiGap, 0))
-			}
-			end := &panel.rows[last]
-			f.Column().Height(y - (end.top + end.height + aiGap))
-		}
-		if statusHeight > 0 {
-			statusSlot = f.Slot().Height(statusHeight).MarginSides(0, 0, aiGap, 0)
-		}
-	})
-	f.End()
+	count := len(ai.items)
+	if panel.statusLabel != "" {
+		count++
+	}
+	list := ui.List(c, &panel.messageList, count, panel.messageRow).Fill().Label(m.ListLabel)
+	scroll := list.ScrollState()
+	switch {
+	case panel.scrollToEnd:
+		scroll.ScrollToEnd()
+		list.Follow(true)
+		panel.scrollToEnd, panel.followSuppressed, panel.restoreMessage = false, false, false
+	case panel.restoreMessage:
+		// The history replaced the conversation and the List lost its state; put
+		// the reader back where they were and hold the follow off until they
+		// reach the end themselves.
+		list.Follow(false)
+		scroll.ScrollTo(panel.restoreOffset)
+		panel.restoreMessage, panel.followSuppressed = false, true
+	case panel.followSuppressed || panel.scrollbar.dragging:
+		list.Follow(false)
+	default:
+		list.Follow(true)
+	}
+	list.DrawOver(panel.messageChrome)
+	panel.messageScroll = scroll
+}
 
-	scroller := components.BeginMessageScroller(canvas, state.aiScrollbarTheme(), list, content, scroll).
-		Scrollbar(hitAIMessageBar, m.ScrollbarLabel, state.aiScrollbarValue(false, scroll, panel.maxScroll)).Buttons(gfx.ID{}, "", hitAIToEnd, m.ScrollToEnd)
-	scroller.BeginContent()
-	for offset, slot := range panel.rowSlots {
-		index := first + offset
-		view, item := &panel.rows[index], &ai.items[index]
-		panel.copies = panel.copies[:0]
-		r := state.aiFlex.row.Begin(canvas, state.Theme(), slot.Rect())
-		body := state.declareAIRow(r, index, view, item)
-		r.End()
-		state.paintAIPlainTextSelections(canvas, list, view, index)
+// declareAIMessageRow declares one message into the room the List gave it. Its
+// height is measured by the page from what it declares; only the Markdown body
+// keeps the height its own layout measured, because it is painted into a slot.
+func (state *State) declareAIMessageRow(row ui.ListRow) {
+	if row.Index >= len(state.ai.items) {
+		state.declareAIRunStatusRow(row)
+		return
+	}
+	ai, panel := &state.ai, &state.ai.panel
+	m := state.messages.AIPanel
+	index := row.Index
+	item, view := &ai.items[index], &panel.rows[index]
+	title := ""
+	switch item.kind {
+	case aiReasoning:
+		title = m.Thinking
+		if state.aiThinking(index) {
+			title = m.ThinkingNow
+		}
+	case aiTool:
+		title = aiToolTitle(m, item.call.Name)
+	}
+	lastAnswer := index == len(ai.items)-1 && item.kind == aiAssistant
+	if !view.current(item, panel.rowWidth, panel.cell, title) || view.actions != lastAnswer {
+		ends := panel.selectionEnds(index)
+		state.aiBuild(row.C.Canvas(), view, item, panel.rowWidth, panel.cell, panel.cellHeight, title)
+		view.actions = lastAnswer
+		if lastAnswer {
+			view.height += aiAnswerAction
+		}
+		panel.keepSelectionEnds(index, ends)
+	}
+	topGap := float32(0)
+	if index == 0 {
+		topGap = aiGap
+	}
+	root := row.Element.PadSides(topGap, aiPad, aiGap, aiPad)
+	start := len(panel.copySlots)
+	body := state.declareAIRow(root, aiRowFrame{c: row.C}, index, view, item)
+	painted := aiPaintedRow{index: index, view: view, body: body, hasBody: body != (ui.Box{}),
+		copiesStart: start, copiesLen: len(panel.copySlots) - start}
+	for part := range aiTextPartCount {
+		if view.textSlotSet[part] {
+			painted.plain[part], painted.plainSet[part] = view.textSlots[part], true
+		}
+	}
+	panel.paintedRows = append(panel.paintedRows, painted)
+	panel.rowSlots = append(panel.rowSlots, row.Element)
+}
+
+// declareAIRunStatusRow declares the run's status after the last message, as the
+// conversation's last row so it scrolls with it.
+func (state *State) declareAIRunStatusRow(row ui.ListRow) {
+	panel, pal := &state.ai.panel, state.pal
+	topGap := float32(0)
+	if row.Index == 0 {
+		topGap = aiGap
+	}
+	f := aiRowFrame{c: row.C}
+	var activity ui.Box
+	row.Element.PadSides(topGap, aiPad, aiGap, aiPad).Children(func() {
+		ui.Column(row.C).Fill().Gap(4).HitWith(hitAIRunStatus, panel.statusLabel, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true}).Children(func() {
+			ui.Row(row.C).Gap(8).Children(func() {
+				activity = ui.Slot(row.C).Size(12, 12).Shrink(0).MarginSides(2, 0, 0, 0)
+				ui.Column(row.C).Grow(1).Children(func() {
+					aiTextLines(f, panel.statusLines, aiSmallSize, aiSmallLine, pal.muted)
+				})
+			})
+			if len(panel.usageLines) > 0 {
+				ui.Column(row.C).Children(func() {
+					aiTextLines(f, panel.usageLines, aiSmallSize, aiSmallLine, pal.muted)
+				})
+			}
+		})
+	})
+	panel.statusActivity, panel.statusPainted = activity, true
+}
+
+// paintAIMessageChrome paints what the conversation's List cannot: the
+// plain-text selections over its rows, the Markdown bodies and spinners in their
+// slots, the custom scrollbar and the jump-to-end button.
+func (state *State) paintAIMessageChrome(d *ui.DrawContext) {
+	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
+
+	m := state.messages.AIPanel
+	panel.list, panel.listing = d.Rect, false
+	scroll := panel.messageScroll
+	if scroll != nil {
+		panel.maxScroll = scroll.Max()
+		if scroll.AtEnd() {
+			panel.followSuppressed = false
+		}
+	}
+	panel.textFirst, panel.textLast = panel.messageList.Visible()
+	if len(ai.items) == 0 || panel.textFirst > len(ai.items)-1 {
+		panel.textFirst, panel.textLast = -1, -1
+	} else {
+		panel.textLast = min(panel.textLast, len(ai.items)-1)
+	}
+	for index := range panel.paintedRows {
+		painted := &panel.paintedRows[index]
+		for part := range aiTextPartCount {
+			if painted.plainSet[part] {
+				painted.view.plain[part].canvas = canvas
+				painted.view.plain[part].rect = painted.plain[part].Rect()
+			}
+		}
+	}
+	if !panel.textSelect.Empty() {
+		canvas.Clip(d.Rect)
+		for index := range panel.paintedRows {
+			painted := &panel.paintedRows[index]
+			for part := range aiTextPartCount {
+				if !painted.plainSet[part] {
+					continue
+				}
+				if selected := panel.textSelect.In(aiTextSurface(painted.index, part)); selected.Anchor != selected.Focus {
+					painted.view.plain[part].paintSelection(canvas, selected, withAlpha(state.pal.text, 0.25))
+				}
+			}
+		}
+		canvas.Unclip()
+	}
+	for index := range panel.paintedRows {
+		painted := &panel.paintedRows[index]
 		switch {
-		case item.kind == aiAssistant:
-			state.paintAIAssistant(canvas, body.Rect(), list, view, index)
-		case item.kind == aiReasoning && state.aiThinking(index), item.kind == aiTool && item.status == aiToolRunning:
+		case painted.view.kind == aiAssistant:
+			copies := panel.copySlots[painted.copiesStart : painted.copiesStart+painted.copiesLen]
+			state.paintAIAssistant(canvas, painted.body.Rect(), d.Rect, painted.view, painted.index, copies)
+		case (painted.view.kind == aiReasoning && state.aiThinking(painted.index)) || (painted.view.kind == aiTool && painted.view.status == aiToolRunning):
 			// Still thinking, or the command is running: a spinner in the slot the row left for it.
-			components.PaintSpinner(canvas, state.Theme(), body.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))
+			components.PaintSpinner(canvas, state.Theme(), painted.body.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))
 			canvas.RequestFrameIn(spinnerStep)
 		}
 	}
-	if statusHeight > 0 {
-		label := status
-		if usage != "" {
-			label += "\n" + usage
-		}
-		state.paintAIRunStatus(canvas, statusSlot.Rect(), label)
+	if panel.statusPainted {
+		state.paintAIRunStatusChrome(canvas, panel.statusActivity.Rect())
 	}
-	panel.scrollbar.geometry = scroller.EndContent()
+	if scroll != nil {
+		scroller := components.BeginMessageScroller(canvas, state.aiScrollbarTheme(), d.Rect, scroll.Content, scroll.Offset).
+			Scrollbar(hitAIMessageBar, m.ScrollbarLabel, state.aiScrollbarValue(false, scroll.Offset, scroll.Max())).
+			Buttons(gfx.ID{}, "", hitAIToEnd, m.ScrollToEnd)
+		panel.scrollbar.geometry = scroller.EndContent()
+	}
 }
 
-func (state *State) paintAIRunStatus(canvas *gfx.Canvas, bounds gfx.Rect, label string) {
-	panel, pal := &state.ai.panel, state.pal
-	var activity ui.Box
-	f := state.aiFlex.status.Begin(canvas, state.Theme(), bounds)
-	f.Column().Fill().Gap(4).HitWith(hitAIRunStatus, label, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true}).Children(func() {
-		f.Row().Gap(8).Children(func() {
-			activity = f.Slot().Size(12, 12).Shrink(0).MarginSides(2, 0, 0, 0)
-			f.Column().Grow(1).Children(func() {
-				aiTextLines(f, panel.statusLines, aiSmallSize, aiSmallLine, pal.muted)
-			})
-		})
-		if len(panel.usageLines) > 0 {
-			f.Column().Children(func() {
-				aiTextLines(f, panel.usageLines, aiSmallSize, aiSmallLine, pal.muted)
-			})
-		}
-	})
-	f.End()
+// paintAIRunStatusChrome paints the spinner or icon of the run status into the
+// slot its row declared.
+func (state *State) paintAIRunStatusChrome(canvas *gfx.Canvas, bounds gfx.Rect) {
+	pal := state.pal
 	if state.aiRunActive() {
-		components.PaintSpinner(canvas, state.Theme(), activity.Rect(), components.SpinnerPhase(canvas.Now()/spinnerStep))
+		components.PaintSpinner(canvas, state.Theme(), bounds, components.SpinnerPhase(canvas.Now()/spinnerStep))
 		canvas.RequestFrameIn(spinnerStep)
-	} else {
-		icon := iconCircleCheck
-		if state.ai.lastRun != nil && state.ai.lastRun.phase != aiRunCompleted {
-			icon = iconBot
-		}
-		canvas.DrawIcon(lucideIcons[icon], activity.Rect(), pal.muted)
+		return
 	}
+	icon := iconCircleCheck
+	if state.ai.lastRun != nil && state.ai.lastRun.phase != aiRunCompleted {
+		icon = iconBot
+	}
+	canvas.DrawIcon(lucideIcons[icon], bounds, pal.muted)
 }
 
 // aiThinking reports whether row index is a thought the model is still writing:
@@ -1135,19 +1197,18 @@ func (state *State) aiThinking(index int) bool {
 	return ai.run != nil && index == len(ai.items)-1 && ai.items[index].kind == aiReasoning
 }
 
-// aiRowFrame is the part of the frame API the conversation rows are declared
-// with. The list is a page Control whose Draw paints into the canvas; naming
-// only the methods the rows use keeps the row painters independent of the
-// concrete frame type.
-type aiRowFrame interface {
-	Column() ui.Box
-	Icon(gfx.Icon) ui.Box
-	Row() ui.Box
-	Slot() ui.Box
-	Spacer() ui.Box
-	Stack() ui.Box
-	Text(string) ui.Box
-}
+// aiRowFrame declares the containers and leaves of one conversation row from the
+// page's context. Naming them here keeps the row painters readable and makes a
+// row independent of a hand-painted frame.
+type aiRowFrame struct{ c ui.C }
+
+func (f aiRowFrame) Column() ui.Box            { return ui.Column(f.c) }
+func (f aiRowFrame) Icon(icon gfx.Icon) ui.Box { return ui.Icon(f.c, icon) }
+func (f aiRowFrame) Row() ui.Box               { return ui.Row(f.c) }
+func (f aiRowFrame) Slot() ui.Box              { return ui.Slot(f.c) }
+func (f aiRowFrame) Spacer() ui.Box            { return ui.Spacer(f.c) }
+func (f aiRowFrame) Stack() ui.Box             { return ui.Stack(f.c) }
+func (f aiRowFrame) Text(value string) ui.Box  { return ui.Text(f.c, value) }
 
 // aiTextLines declares wrapped lines of body text, one element each.
 func aiTextLines(f aiRowFrame, lines []string, size, lineHeight float32, color gfx.Color) {
@@ -1163,20 +1224,19 @@ func (state *State) aiMonoLines(f aiRowFrame, lines []string, color gfx.Color) {
 	}
 }
 
-// declareAIRow declares one message across the room the list gave it. Its height
-// is what its parts add up to, which is what aiBuild measured: the list placed the
-// row by that measure, so a row that came out otherwise would overlap the next.
-// An assistant message is painted by its Markdown view; the box returned is the
-// room that view is painted in, and the copy buttons of its code blocks are
-// declared over it.
-func (state *State) declareAIRow(f aiRowFrame, index int, view *aiRowView, item *aiItem) ui.Box {
+// declareAIRow declares one message's contents in the row the List gave it. Its
+// height is what its parts add up to, which is what aiBuild measured; the List
+// measures the declaration itself, so a row that came out otherwise would only
+// disagree with the estimate for frames it was not showing. An assistant message
+// is painted by its Markdown view; the box returned is the room that view is
+// painted in, and the copy buttons of its code blocks are declared over it.
+func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiRowView, item *aiItem) ui.Box {
 	pal, m := state.pal, state.messages.AIPanel
-	row := f.Column()
 	var body ui.Box
 	view.textSlotSet = [aiTextPartCount]bool{}
 	switch item.kind {
 	case aiUser:
-		row.Items(ui.End).Children(func() {
+		root.Items(ui.End).Children(func() {
 			f.Column().MaxWidth(view.width).PadSides(aiUserPadY, aiUserPadX, aiUserPadY, aiUserPadX).Background(pal.accentSoft).Radius(radius.popup).Children(func() {
 				text := f.Column().Children(func() {
 					aiTextLines(f, view.lines, aiBodySize, aiBodyLine, pal.text)
@@ -1196,31 +1256,33 @@ func (state *State) declareAIRow(f aiRowFrame, index int, view *aiRowView, item 
 			})
 		})
 	case aiTargetChange:
-		row.Height(view.height).Items(ui.Center).Children(func() {
-			f.Row().Fill().Gap(10).Items(ui.Center).Children(func() {
+		root.Items(ui.Center).Children(func() {
+			f.Row().Height(view.height).Fill().Gap(10).Items(ui.Center).Children(func() {
 				f.Column().Grow(1).Height(1).Background(pal.line)
 				f.Text(view.detail).FontSize(aiSmallSize).Color(pal.faint).LineHeight(aiSmallLine).MaxWidth(max(view.width-48, 0)).Ellipsis()
 				f.Column().Grow(1).Height(1).Background(pal.line)
 			})
 		})
 	case aiAssistant:
-		row.Height(view.height).Children(func() {
-			f.Stack().Fill().Children(func() {
-				body = f.Slot().Fill()
-				// Each code block's copy button sits in its top right corner; where the
-				// blocks are is the Markdown view's, once it has laid the message out.
-				for _, block := range view.md.Codes() {
-					area := block.Bounds
-					f.Row().Size(area.Width, area.Height).MarginSides(area.Y, 0, 0, area.X).PadSides(3, 4, 0, 0).Children(func() {
-						f.Spacer()
-						panel := &state.ai.panel
-						panel.copies = append(panel.copies, aiCopySlot{slot: f.Slot().Size(22, 22), code: block.Text})
-					})
-				}
+		root.Children(func() {
+			f.Column().Height(view.height).FillWidth().Children(func() {
+				f.Stack().Fill().Children(func() {
+					body = f.Slot().Fill()
+					// Each code block's copy button sits in its top right corner; where the
+					// blocks are is the Markdown view's, once it has laid the message out.
+					for _, block := range view.md.Codes() {
+						area := block.Bounds
+						f.Row().Size(area.Width, area.Height).MarginSides(area.Y, 0, 0, area.X).PadSides(3, 4, 0, 0).Children(func() {
+							f.Spacer()
+							panel := &state.ai.panel
+							panel.copySlots = append(panel.copySlots, aiCopySlot{slot: f.Slot().Size(22, 22), code: block.Text})
+						})
+					}
+				})
 			})
 		})
 	case aiReasoning:
-		row.Children(func() {
+		root.Children(func() {
 			header := f.Row().Height(aiReasonHeader).PadX(4).Gap(6).Items(ui.Center).Radius(radius.item).Children(func() {
 				icon := iconChevronRight
 				if view.expanded {
@@ -1247,8 +1309,10 @@ func (state *State) declareAIRow(f aiRowFrame, index int, view *aiRowView, item 
 			}
 		})
 	case aiNotice:
-		row.PadSides(aiNoticePadY, aiNoticePadX, aiNoticePadY, aiNoticePadX).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
-			aiTextLines(f, view.lines, aiSmallSize, aiSmallLine, pal.danger)
+		root.Children(func() {
+			f.Column().PadSides(aiNoticePadY, aiNoticePadX, aiNoticePadY, aiNoticePadX).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
+				aiTextLines(f, view.lines, aiSmallSize, aiSmallLine, pal.danger)
+			})
 		})
 	case aiTool:
 		border := pal.line
@@ -1256,115 +1320,92 @@ func (state *State) declareAIRow(f aiRowFrame, index int, view *aiRowView, item 
 			border = pal.warning
 		}
 		statusText, statusColor := state.aiStatusText(item.status)
-		row.Border(1, border).PadSides(aiToolPadY-1, aiToolPad-1, aiToolPadY-1, aiToolPad-1).Background(pal.surface).Radius(radius.control).Children(func() {
-			// The name and the risk at the left, the status at the right.
-			f.Row().Height(aiToolHeader).Items(ui.Center).Children(func() {
-				f.Icon(lucideIcons[aiToolIcon(item.call.Name)]).Size(14, 14).Color(pal.muted).MarginSides(0, 8, 0, 0)
-				f.Text(view.title).FontSize(aiSmallSize).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Ellipsis()
-				if item.call.Name == tools.NameTerminalExec || item.call.Name == tools.NameTerminalExecMany {
-					foreground, fill := state.aiRiskColors(item.risk)
-					f.Row().Height(16).PadX(6).Center().Shrink(0).MarginSides(0, 0, 0, 8).Background(fill).Radius(radius.control).Children(func() {
-						f.Text(state.aiRiskText(item.risk)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(14)
-					})
-				}
-				f.Spacer().MinWidth(8)
-				f.Row().Shrink(0).Items(ui.Center).Children(func() {
-					switch item.status {
-					case aiToolDone:
-						f.Icon(lucideIcons[iconCircleCheck]).Size(13, 13).Color(statusColor).MarginSides(0, 4, 0, 0)
-					case aiToolFailed, aiToolDenied:
-						f.Icon(lucideIcons[iconAlert]).Size(13, 13).Color(statusColor).MarginSides(0, 4, 0, 0)
-					default:
-						if item.status == aiToolRunning {
-							// Painted as a spinner once the row is placed.
-							body = f.Slot().Size(13, 13).MarginSides(0, 5, 0, 0)
-						} else {
-							f.Column().Size(7, 7).Background(statusColor).Radius(3.5).MarginSides(0, 5, 0, 0)
+		root.Children(func() {
+			f.Column().Border(1, border).PadSides(aiToolPadY-1, aiToolPad-1, aiToolPadY-1, aiToolPad-1).Background(pal.surface).Radius(radius.control).Children(func() {
+				// The name and the risk at the left, the status at the right.
+				f.Row().Height(aiToolHeader).Items(ui.Center).Children(func() {
+					f.Icon(lucideIcons[aiToolIcon(item.call.Name)]).Size(14, 14).Color(pal.muted).MarginSides(0, 8, 0, 0)
+					f.Text(view.title).FontSize(aiSmallSize).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Ellipsis()
+					if item.call.Name == tools.NameTerminalExec || item.call.Name == tools.NameTerminalExecMany {
+						foreground, fill := state.aiRiskColors(item.risk)
+						f.Row().Height(16).PadX(6).Center().Shrink(0).MarginSides(0, 0, 0, 8).Background(fill).Radius(radius.control).Children(func() {
+							f.Text(state.aiRiskText(item.risk)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(14)
+						})
+					}
+					f.Spacer().MinWidth(8)
+					f.Row().Shrink(0).Items(ui.Center).Children(func() {
+						switch item.status {
+						case aiToolDone:
+							f.Icon(lucideIcons[iconCircleCheck]).Size(13, 13).Color(statusColor).MarginSides(0, 4, 0, 0)
+						case aiToolFailed, aiToolDenied:
+							f.Icon(lucideIcons[iconAlert]).Size(13, 13).Color(statusColor).MarginSides(0, 4, 0, 0)
+						default:
+							if item.status == aiToolRunning {
+								// Painted as a spinner once the row is placed.
+								body = f.Slot().Size(13, 13).MarginSides(0, 5, 0, 0)
+							} else {
+								f.Column().Size(7, 7).Background(statusColor).Radius(3.5).MarginSides(0, 5, 0, 0)
+							}
 						}
-					}
-					f.Text(statusText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(statusColor).LineHeight(aiToolHeader)
-				})
-			})
-			if view.commandLines > 0 {
-				f.Column().Pad(aiBoxPad).MarginSides(0, 0, aiToolAfterCmd, 0).Background(pal.terminal).Radius(radius.item).Children(func() {
-					text := f.Column().Children(func() {
-						state.aiMonoLines(f, view.lines[:view.commandLines], pal.text)
+						f.Text(statusText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(statusColor).LineHeight(aiToolHeader)
 					})
-					view.textSlots[aiTextPrimary] = text
-					view.textSlotSet[aiTextPrimary] = true
-					if index < aiMaxRowHits {
-						text.HitWith(hitAIAnswerText.At(index), view.detail, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
+				})
+				if view.commandLines > 0 {
+					f.Column().Pad(aiBoxPad).MarginSides(0, 0, aiToolAfterCmd, 0).Background(pal.terminal).Radius(radius.item).Children(func() {
+						text := f.Column().Children(func() {
+							state.aiMonoLines(f, view.lines[:view.commandLines], pal.text)
+						})
+						view.textSlots[aiTextPrimary] = text
+						view.textSlotSet[aiTextPrimary] = true
+						if index < aiMaxRowHits {
+							text.HitWith(hitAIAnswerText.At(index), view.detail, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
+						}
+					})
+				}
+				if item.result == "" {
+					return
+				}
+				// One line of the output, or all that is kept of it.
+				label, icon := m.ShowOutput, iconChevronRight
+				if view.expanded {
+					label, icon = m.HideOutput, iconChevronDown
+				}
+				strip := f.Row().Height(aiToolHeader).MarginSides(0, -4, 0, -4).PadX(4).Gap(6).Items(ui.Center).Radius(radius.item).Children(func() {
+					f.Icon(lucideIcons[icon]).Size(12, 12).Color(pal.muted)
+					f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(16).Shrink(0).MarginSides(0, 4, 0, 0)
+					if !view.expanded && view.excerpt != "" {
+						f.Text(view.excerpt).FontSize(metrics.FontSizeS).MonoFace(state.terminalFontFace).Color(pal.faint)
 					}
 				})
-			}
-			if item.result == "" {
-				return
-			}
-			// One line of the output, or all that is kept of it.
-			label, icon := m.ShowOutput, iconChevronRight
-			if view.expanded {
-				label, icon = m.HideOutput, iconChevronDown
-			}
-			strip := f.Row().Height(aiToolHeader).MarginSides(0, -4, 0, -4).PadX(4).Gap(6).Items(ui.Center).Radius(radius.item).Children(func() {
-				f.Icon(lucideIcons[icon]).Size(12, 12).Color(pal.muted)
-				f.Text(label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(16).Shrink(0).MarginSides(0, 4, 0, 0)
-				if !view.expanded && view.excerpt != "" {
-					f.Text(view.excerpt).FontSize(metrics.FontSizeS).MonoFace(state.terminalFontFace).Color(pal.faint)
+				if index < aiMaxRowHits {
+					strip.Hover(ui.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, gfx.HitOptions{
+						Role: gfx.RoleButton, Expanded: view.expanded, Value: statusText, Hint: label,
+					})
+				}
+				if view.expanded {
+					f.Column().Pad(aiBoxPad).MarginSides(0, 0, aiToolAfterOut, 0).Background(pal.terminal).Radius(radius.item).Children(func() {
+						text := f.Column().Children(func() {
+							state.aiMonoLines(f, view.lines[view.commandLines:], pal.muted)
+						})
+						view.textSlots[aiTextOutput] = text
+						view.textSlotSet[aiTextOutput] = true
+						if index < aiMaxRowHits {
+							text.HitWith(hitAIToolOutputText.At(index), view.plain[aiTextOutput].source, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
+						}
+					})
 				}
 			})
-			if index < aiMaxRowHits {
-				strip.Hover(ui.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, gfx.HitOptions{
-					Role: gfx.RoleButton, Expanded: view.expanded, Value: statusText, Hint: label,
-				})
-			}
-			if view.expanded {
-				f.Column().Pad(aiBoxPad).MarginSides(0, 0, aiToolAfterOut, 0).Background(pal.terminal).Radius(radius.item).Children(func() {
-					text := f.Column().Children(func() {
-						state.aiMonoLines(f, view.lines[view.commandLines:], pal.muted)
-					})
-					view.textSlots[aiTextOutput] = text
-					view.textSlotSet[aiTextOutput] = true
-					if index < aiMaxRowHits {
-						text.HitWith(hitAIToolOutputText.At(index), view.plain[aiTextOutput].source, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
-					}
-				})
-			}
 		})
 	}
 	if item.kind == aiAssistant || item.kind == aiReasoning && state.aiThinking(index) || item.kind == aiTool && item.status == aiToolRunning {
 		return body
 	}
-	return row
-}
-
-// paintAIPlainTextSelections records the text geometry flex just produced and
-// paints the selected user or tool block. Selection uses the assistant's color.
-func (state *State) paintAIPlainTextSelections(canvas *gfx.Canvas, list gfx.Rect, view *aiRowView, index int) {
-	panel := &state.ai.panel
-	for part := range aiTextPartCount {
-		if view.textSlotSet[part] {
-			view.plain[part].canvas = canvas
-			view.plain[part].rect = view.textSlots[part].Rect()
-		}
-	}
-	if panel.textSelect.Empty() {
-		return
-	}
-	canvas.Clip(list)
-	defer canvas.Unclip()
-	for part := range aiTextPartCount {
-		if !view.textSlotSet[part] {
-			continue
-		}
-		if selected := panel.textSelect.In(aiTextSurface(index, part)); selected.Anchor != selected.Focus {
-			view.plain[part].paintSelection(canvas, selected, withAlpha(state.pal.text, 0.25))
-		}
-	}
+	return ui.Box{}
 }
 
 // paintAIAssistant paints an assistant message, which is Markdown, in the room
-// flex gave it, then the copy buttons of its code blocks over it.
-func (state *State) paintAIAssistant(canvas *gfx.Canvas, bounds, list gfx.Rect, view *aiRowView, index int) {
+// the row gave it, then the copy buttons of its code blocks over it.
+func (state *State) paintAIAssistant(canvas *gfx.Canvas, bounds, list gfx.Rect, view *aiRowView, index int, copies []aiCopySlot) {
 	pal, m := state.pal, state.messages.AIPanel
 	panel := &state.ai.panel
 	look := components.MarkdownLookFor(state.Theme())
@@ -1396,7 +1437,7 @@ func (state *State) paintAIAssistant(canvas *gfx.Canvas, bounds, list gfx.Rect, 
 		Selection: panel.selectionFor(index),
 	})
 	panel.linkBase += view.md.LinkCount()
-	for _, copy := range panel.copies {
+	for _, copy := range copies {
 		button := copy.slot.Rect()
 		if visible := intersectRect(button, list); visible.Height < button.Height {
 			continue
@@ -1446,16 +1487,9 @@ func (state *State) paintAIAnswerActions(canvas *gfx.Canvas, bounds, list gfx.Re
 	state.paintIconButton(canvas, hitAICopyAnswer, icon, button, m.CopyAnswer, false, iconButtonQuiet, pal.workspace)
 }
 
-// aiCopySlot is where the copy button of a code block goes, once flex has placed it.
+// aiCopySlot is where the copy button of a code block goes, once its row has
+// been laid out.
 type aiCopySlot struct {
 	slot ui.Box
 	code string
-}
-
-// aiFlexViews are the layouts the assistant's panel is declared with.
-type aiFlexViews struct {
-	history, historyRows ui.View
-	messages             ui.View
-	row                  ui.View // one row of the history or of the conversation, declared into its slot
-	status               ui.View
 }

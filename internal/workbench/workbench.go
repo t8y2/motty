@@ -579,7 +579,6 @@ type State struct {
 	iconMotions map[gfx.ID]iconMotionRun
 
 	// area: AI panel
-	aiFlex aiFlexViews // the assistant panel's layouts, see ai_panel_paint.go
 
 	// search is the box beside Connect: typing narrows the host list, and
 	// Connect opens what it holds. visible lists the indexes into hosts that
