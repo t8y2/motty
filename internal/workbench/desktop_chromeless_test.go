@@ -137,19 +137,19 @@ func TestTheTabMenuHoldsTheDesktopControlsOnlyForADesktop(t *testing.T) {
 func TestTheHostEditorOffersThePictureAloneSwitch(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.openHostDialog()
-	clickDialogChoice(t, state, state.messages.Desktop.ProtocolRDP)
+	clickHostChoice(t, state, state.messages.Desktop.ProtocolRDP)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogChromeless); !ok {
 		t.Fatal("a desktop host's editor offers no picture-alone switch")
 	}
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolSSH)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSSH)
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitDialogChromeless); ok {
 		t.Fatal("an SSH host's editor offers the desktop's switch")
 	}
-	clickDialogChoice(t, state, state.messages.Desktop.ProtocolVNC)
+	clickHostChoice(t, state, state.messages.Desktop.ProtocolVNC)
 	state.clickHostProtocol(hitDialogChromeless) // the switch is one of the protocol clicks
 	if host := state.editor.host(0); !host.Chromeless {
 		t.Fatalf("the checked switch builds %+v", host)

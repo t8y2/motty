@@ -43,80 +43,13 @@ var (
 // this is not choosing from a list.
 const maxListedPorts = 12
 
-// The segmented choices of the host form. Each is a page of its own: the form's
-// layout has already placed every control at a rectangle, so a page declares one
-// Choice there and keeps the roving focus the dialog's keys ask it for.
+// The segmented choices of the host form. Each is a Choice of the form's own
+// page, declared at the row its layout reserved.
 var (
 	hostProtocolChoices = [...]hostProtocol{protocolSSH, protocolTelnet, protocolSerial, protocolVNC, protocolRDP}
 	hostFlowChoices     = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
 	hostAlgoChoices     = [...]algoMode{algoDefault, algoCompatible, algoCustom}
 )
-
-// dialogChoice is one segmented choice of a dialog, declared as a page. chosen is
-// the identity of the option the page painted last, kept so the form's tab ring
-// can reach the choice even while its page lies outside the clipped viewport.
-type dialogChoice struct {
-	page   *ui.Page
-	view   func(ui.C)
-	chosen gfx.ID
-}
-
-// dialogChoiceKind names the declaration a dialog choice's page is drawn with.
-type dialogChoiceKind uint8
-
-const (
-	hostProtocolChoice dialogChoiceKind = iota
-	hostFlowChoice
-	hostAlgoChoice
-	hostTransferChoice
-	xyModeChoice
-	xyDirectionChoice
-)
-
-// dialogChoiceView is the page declaration of one choice. It is asked for once,
-// when the page is made: a method value made in every paint allocates.
-func (state *State) dialogChoiceView(kind dialogChoiceKind) func(ui.C) {
-	switch kind {
-	case hostProtocolChoice:
-		return state.declareHostProtocolChoice
-	case hostFlowChoice:
-		return state.declareHostFlowChoice
-	case hostAlgoChoice:
-		return state.declareHostAlgoChoice
-	case hostTransferChoice:
-		return state.declareHostTransferChoice
-	case xyModeChoice:
-		return state.declareXYModeChoice
-	case xyDirectionChoice:
-		return state.declareXYDirectionChoice
-	}
-	return nil
-}
-
-// drawDialogChoice draws a dialog choice's page in bounds, making the page the
-// first time the control paints.
-func (state *State) drawDialogChoice(canvas *gfx.Canvas, bounds gfx.Rect, choice *dialogChoice, root string, kind dialogChoiceKind) {
-	if choice.page == nil {
-		choice.page = ui.NewPage(ui.PageConfig{Root: root, Theme: &state.theme})
-		choice.view = state.dialogChoiceView(kind)
-	}
-	choice.page.Draw(canvas, bounds, choice.view)
-}
-
-// hostDialogChoiceKey gives the form's page choices their arrows before the
-// form's own Tab order and scrolling take the key.
-func (state *State) hostDialogChoiceKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	editor := &state.editor
-	for _, choice := range [...]*ui.Page{editor.protocolChoice.page, editor.flowChoice.page, editor.algoChoice.page, editor.transferChoice.page} {
-		if choice == nil {
-			continue
-		}
-		if result, handled := choice.Key(event); handled {
-			return result, true
-		}
-	}
-	return gfx.EventResult{}, false
-}
 
 // hostProtocolChoiceLabel names one protocol as the form's choice shows it.
 func (state *State) hostProtocolChoiceLabel(protocol hostProtocol) string {
@@ -158,39 +91,38 @@ func (state *State) hostAlgoChoiceLabel(mode algoMode) string {
 	}
 }
 
-// declareHostProtocolChoice is the page of the protocol choice. The choice writes
-// editor.protocol, so applyProtocol is what follows the switch.
-func (state *State) declareHostProtocolChoice(c ui.C) {
+// declareHostProtocolChoice declares the protocol choice in the form's page at
+// the slot the body reserved for it. It writes editor.protocol, so applyProtocol
+// is what follows the switch.
+func (state *State) declareHostProtocolChoice(c ui.C) ui.Box {
 	editor := &state.editor
+	editor.protocolBefore = editor.protocol
 	choice := ui.Choice(c, &editor.protocol, hostProtocolChoices[:], state.hostProtocolChoiceLabel).Fill()
 	if choice.Changed() {
 		editor.applyProtocol(editor.protocolBefore)
 		state.dialogError = ""
 	}
+	return choice
 }
 
-// declareHostFlowChoice is the page of the serial flow-control choice. The click
-// that already wrote editor.flow only has the form's error to clear.
-func (state *State) declareHostFlowChoice(c ui.C) {
-	choice := ui.Choice(c, &state.editor.flow, hostFlowChoices[:], state.hostFlowChoiceLabel).Fill()
+// declareHostFlowChoice declares the serial flow-control choice in the form's
+// page. The click that already wrote editor.flow only has the form's error to
+// clear.
+func (state *State) declareHostFlowChoice(c ui.C) ui.Box {
+	choice := hostFormChoice(c, state.messages.Tools.FieldFlow, hostFormRowHeight, &state.editor.flow, hostFlowChoices[:], state.hostFlowChoiceLabel)
 	if choice.Changed() {
 		state.dialogError = ""
 	}
+	return choice
 }
 
-// declareHostAlgoChoice is the page of the SSH algorithm choice.
-func (state *State) declareHostAlgoChoice(c ui.C) {
-	choice := ui.Choice(c, &state.editor.algoMode, hostAlgoChoices[:], state.hostAlgoChoiceLabel).Fill()
+// declareHostAlgoChoice declares the SSH algorithm choice in the form's page.
+func (state *State) declareHostAlgoChoice(c ui.C) ui.Box {
+	choice := hostFormChoice(c, state.messages.Tools.AlgoField, hostFormRowHeight, &state.editor.algoMode, hostAlgoChoices[:], state.hostAlgoChoiceLabel)
 	if choice.Changed() {
 		state.dialogError = ""
 	}
-}
-
-func (state *State) paintHostProtocolSwitch(canvas *gfx.Canvas, bounds gfx.Rect) {
-	editor := &state.editor
-	editor.protocolBefore = editor.protocol
-	state.drawDialogChoice(canvas, bounds, &editor.protocolChoice, "host-dialog-protocol", hostProtocolChoice)
-	state.rememberHostChoice(canvas, bounds, &editor.protocolChoice, state.hostProtocolChoiceLabel(editor.protocol))
+	return choice
 }
 
 // paintHostEndpointRows draws where the host is: its address and, beside it, the
@@ -262,9 +194,6 @@ func (state *State) paintHostEndpointRows(canvas *gfx.Canvas, x, y, width, rowHe
 		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, tools.FieldDevice, tools.FieldDevicePlaceholder, address.Rect())
 		state.paintPortsTrigger(canvas, picker.Rect())
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, tools.FieldLine, tools.FieldLinePlaceholder, second.Rect())
-		content := components.BeginField(canvas, state.Theme(), third.Rect()).Paint(tools.FieldFlow, "", "")
-		state.drawDialogChoice(canvas, content, &editor.flowChoice, "host-dialog-flow", hostFlowChoice)
-		state.rememberHostChoice(canvas, content, &editor.flowChoice, state.hostFlowChoiceLabel(editor.flow))
 	case protocolTelnet:
 		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
@@ -601,13 +530,14 @@ func (state *State) hostAlgoRowsPage() *ui.Page {
 }
 
 // paintAlgorithmRows draws the SSH algorithm choice and, for a custom one, the
-// list that is allowed, then the one-time code secret.
+// list that is allowed, then the one-time code secret. The choice itself is a
+// control of the form's page; this paints the rows that follow it.
 func (state *State) paintAlgorithmRows(canvas *gfx.Canvas, x, y, width, rowHeight float32) {
 	m, editor := state.messages.Tools, &state.editor
-	// The page's choice may write a new mode while it is declared; the rows this
-	// page laid out are the ones before it, so draw the custom field only when
-	// its row was laid out.
-	customMode := editor.algoMode == algoCustom
+	// The choice may write a new mode while the page's declaration delivered the
+	// click; the rows this frame laid out are the ones before it, so draw the
+	// custom field only when its row was laid out.
+	customMode := editor.form.algoLayout == algoCustom
 	rows := float32(1)
 	if customMode {
 		rows++
@@ -615,9 +545,6 @@ func (state *State) paintAlgorithmRows(canvas *gfx.Canvas, x, y, width, rowHeigh
 	b := &editor.form.algoBody
 	state.hostAlgoRowsPage().Draw(canvas, gfx.Rect{X: x, Y: y, Width: width, Height: (rows+1)*rowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight}, editor.form.algoView)
 
-	content := components.BeginField(canvas, state.Theme(), b.algo.Rect()).Paint(m.AlgoField, "", "")
-	state.drawDialogChoice(canvas, content, &editor.algoChoice, "host-dialog-algorithm", hostAlgoChoice)
-	state.rememberHostChoice(canvas, content, &editor.algoChoice, state.hostAlgoChoiceLabel(editor.algoMode))
 	if customMode {
 		state.paintDialogField(canvas, hitDialogAlgorithms, fieldAlgorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, b.custom.Rect())
 	}
@@ -643,7 +570,7 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 	m, editor, pal := state.messages.Tools, &state.editor, state.pal
 	b := &editor.form.algoBody
 	*b = hostAlgoRowsBody{}
-	customMode := editor.algoMode == algoCustom
+	customMode := editor.form.algoLayout == algoCustom
 	rowHeight := float32(hostFormRowHeight)
 	ui.Column(c).Fill().Children(func() {
 		b.algo = ui.Slot(c).Height(rowHeight)

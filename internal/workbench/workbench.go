@@ -2638,16 +2638,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result := state.hostPickerKey(event); result.Handled {
 		return result
 	}
-	if state.modal == modalNewHost {
-		if result, handled := state.hostDialogChoiceKey(event); handled {
-			return result
-		}
-	}
-	if state.modal == modalXYTransfer {
-		if result, handled := state.xyChoiceKey(event); handled {
-			return result
-		}
-	}
 	if result := state.hostFormKey(event); result.Handled {
 		return result
 	}

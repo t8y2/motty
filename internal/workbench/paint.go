@@ -340,8 +340,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintRemoteClipboardDialog(canvas, viewport)
 	case modalFileTransfer:
 		state.paintFileTransferDialog(canvas, viewport)
-	case modalXYTransfer:
-		state.paintXYDialog(canvas, viewport)
 	case modalOpenLink:
 		state.paintLaunchDialog(canvas, viewport)
 	case modalStateNotice:
@@ -2499,6 +2497,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareForwardDialog(c)
 	case modalNewProxy:
 		state.declareProxyDialog(c)
+	case modalXYTransfer:
+		state.declareXYDialog(c)
 	case modalSnippet:
 		state.declareSnippetDialog(c)
 	case modalVaultUnlock:
@@ -2582,7 +2582,20 @@ func (state *State) hostFormScrollGeometry(body gfx.Rect) components.ScrollAreaG
 	return area.Geometry()
 }
 
-// declareHostFormBody lays out the host form: the protocol switch, the fields,
+// hostFormChoice declares one labelled Choice of a form page: the field title
+// the form's hand-painted fields show above their control, then the Choice. The
+// returned Box is the control, for the caller's Changed handling.
+func hostFormChoice[T comparable](c ui.C, title string, height float32, value *T, choices []T, label func(T) string) ui.Box {
+	theme, metrics := c.Theme(), c.Theme().Metrics
+	var choice ui.Box
+	ui.Column(c).Height(height).Children(func() {
+		ui.Text(c, title).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
+		choice = ui.Choice(c, value, choices, label).Height(metrics.ControlHeight).MarginSides(metrics.GapItem/2, 0, 0, 0)
+	})
+	return choice
+}
+
+// declareHostFormBody lays out the host form: the protocol choice, the fields,
 // and the sections whose controls are painted into the slots by hand. The
 // controls stay painted by hand so their focus order, clip and invalid looks
 // are the ones they already have. The body scrolls in the dialog's own height,
@@ -2595,6 +2608,11 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 	networkHost := editor.protocol != protocolSerial
 	vncHost := editor.protocol == protocolVNC || editor.protocol == protocolRDP
 	rowHeight := float32(hostFormRowHeight)
+	// The rows this frame lays out are the ones before a choice writes its new
+	// value at the end of the declaration; the form paints the protocol and the
+	// algorithm mode they were laid out for.
+	form.layoutProtocol = editor.protocol
+	form.algoLayout = editor.algoMode
 	*b = hostFormBody{}
 	scroll := state.hostFormScrollGeometry(state.hostFormBodyRect(c))
 	if scroll.Viewport != form.geometry.Viewport {
@@ -2649,6 +2667,38 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				// The serial line's error is long: up to two lines.
 				ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
 			}
+			// The choices are declared after the rows they sit in: the frame that
+			// delivers a click lays out what it did before it, the choice writes
+			// its value at the end, and the next frame draws it.
+			if editor.protocol == protocolSerial {
+				// The device and line rows are painted by hand; the flow control
+				// takes the row under them.
+				endpoint := b.endpoint
+				endpoint.Children(func() {
+					ui.Column(c).Fill().Children(func() {
+						ui.Slot(c).Height(2 * rowHeight)
+						b.flow = state.declareHostFlowChoice(c)
+					})
+				})
+			}
+			if ssh {
+				transfer := b.transfer
+				transfer.Children(func() {
+					b.transfer = state.declareHostTransferChoice(c)
+				})
+				if editor.advancedOpen {
+					advanced := b.advanced
+					advanced.Children(func() {
+						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Height(rowHeight).Children(func() {
+							b.algo = state.declareHostAlgoChoice(c)
+						})
+					})
+				}
+			}
+			protocol := b.protocol
+			protocol.Children(func() {
+				b.protocol = state.declareHostProtocolChoice(c)
+			})
 		})
 		content.DrawOver(chrome.hostFormFieldsDraw)
 	})
@@ -2705,13 +2755,16 @@ func (state *State) hostDialogTitle() string {
 func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	editor := &state.editor
 	m := state.messages
-	ssh := editor.protocol == protocolSSH
-	networkHost := editor.protocol != protocolSerial
-	vncHost := editor.protocol == protocolVNC || editor.protocol == protocolRDP
+	// Which sections this frame's body laid out is fixed before the page's
+	// protocol choice writes the protocol a click chose; paint those sections,
+	// as the hand-painted endpoint rows paint the protocol now in effect.
+	protocol := editor.form.layoutProtocol
+	ssh := protocol == protocolSSH
+	networkHost := protocol != protocolSerial
+	vncHost := protocol == protocolVNC || protocol == protocolRDP
 	b := &editor.form.body
 	editor.form.clipped = true
 	defer func() { editor.form.clipped = false }()
-	state.paintHostProtocolSwitch(canvas, b.protocol.Rect())
 	state.paintDialogField(canvas, hitDialogLabel, fieldLabel, m.FieldLabel, m.FieldLabelPlaceholder, b.label.Rect())
 	state.paintHostEndpointRows(canvas, b.endpoint.Rect().X, b.endpoint.Rect().Y, b.endpoint.Rect().Width, hostFormRowHeight)
 	state.paintHostGroupPicker(canvas, b.group.Rect())
@@ -2726,8 +2779,19 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	}
 	if ssh {
 		state.paintHostJumpRow(canvas, b.jump.Rect())
-		state.paintTransferChoice(canvas, b.transfer.Rect())
 		state.paintAdvancedSection(canvas, b.advanced.Rect())
+	}
+	// The choices are the page's controls: keep the option the tab ring reaches
+	// in the form's stops, by the identity its paint reported.
+	state.rememberHostChoice(canvas, b.protocol.Rect(), &editor.form.choiceIDs.protocol, state.hostProtocolChoiceLabel(editor.protocol))
+	if b.flow.Valid() {
+		state.rememberHostChoice(canvas, b.flow.Rect(), &editor.form.choiceIDs.flow, state.hostFlowChoiceLabel(editor.flow))
+	}
+	if b.transfer.Valid() {
+		state.rememberHostChoice(canvas, b.transfer.Rect(), &editor.form.choiceIDs.transfer, state.hostTransferChoiceLabel(editor.transfer))
+	}
+	if b.algo.Valid() {
+		state.rememberHostChoice(canvas, b.algo.Rect(), &editor.form.choiceIDs.algo, state.hostAlgoChoiceLabel(editor.algoMode))
 	}
 	// The picker's backdrop must reach the whole window, not the scrolling body
 	// the form's clip covers.

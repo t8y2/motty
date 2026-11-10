@@ -99,15 +99,11 @@ type hostEditor struct {
 	advancedOpen bool
 
 	protocol hostProtocol
-	// protocolBefore is the protocol the frame was laid out for when the page's
+	// protocolBefore is the protocol the frame was laid out for when the form's
 	// protocol choice is declared: the choice writes the new one, and applyProtocol
 	// needs what the port field was filled from.
 	protocolBefore hostProtocol
-	// The segmented choices of the form are pages of their own, each declaring one
-	// control at the rectangle the form's layout gave it. They keep their roving
-	// focus for the dialog's key handling.
-	protocolChoice, flowChoice, algoChoice, transferChoice dialogChoice
-	flow                                                   serial.Flow
+	flow           serial.Flow
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
 	// console is RDP's own: it asks the server for its console (administrative)
 	// session.

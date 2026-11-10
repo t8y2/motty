@@ -22,6 +22,15 @@ type hostFormScroll struct {
 	count             int
 	// body is the slots the page laid out for the controls painted by hand.
 	body hostFormBody
+	// algoLayout is the algorithm mode this frame's advanced rows were laid out
+	// for, before the page's choice writes the mode a click chose.
+	algoLayout algoMode
+	// layoutProtocol is the protocol this frame's body was laid out for, before
+	// the page's choice writes the protocol a click chose.
+	layoutProtocol hostProtocol
+	// choiceIDs are the last painted option of each page Choice, kept so the
+	// form's tab ring can reach a choice while it lies outside the viewport.
+	choiceIDs hostFormChoiceIDs
 	// vncPage and algoPage declare the sections painted inside the form, each
 	// with its view kept and the slots it laid out.
 	vncPage, algoPage *ui.Page
@@ -30,11 +39,18 @@ type hostFormScroll struct {
 	algoBody          hostAlgoRowsBody
 }
 
-// hostFormBody is where the host form's body put each control it paints by hand.
+// hostFormChoiceIDs is the chosen option hit of each Choice of the host form.
+type hostFormChoiceIDs struct {
+	protocol, flow, algo, transfer gfx.ID
+}
+
+// hostFormBody is where the host form's body put each control: the slots it
+// paints by hand and the Box each page Choice was declared in.
 type hostFormBody struct {
 	protocol, label, endpoint, group, tags                 ui.Box
 	iconField, colorField, transfer, proxy, jump, advanced ui.Box
 	vncRows                                                ui.Box
+	flow, algo                                             ui.Box
 }
 
 type hostFormStop struct {
@@ -74,23 +90,23 @@ func (state *State) rememberHostControl(id gfx.ID, bounds gfx.Rect) {
 	}
 }
 
-// rememberHostChoice keeps a page Choice in the form's tab ring. The page paints
-// its options with identities of its own, so take the hit of the chosen option
-// from the paint; its identity is kept while the page lies outside the clipped
-// viewport, where the paint no longer reports it.
-func (state *State) rememberHostChoice(canvas *gfx.Canvas, bounds gfx.Rect, choice *dialogChoice, label string) {
+// rememberHostChoice keeps a page Choice in the form's tab ring. The choice
+// paints its options with identities of its own, so take the hit of the chosen
+// option from the paint; its identity is kept while the choice lies outside the
+// clipped viewport, where the paint no longer reports it.
+func (state *State) rememberHostChoice(canvas *gfx.Canvas, bounds gfx.Rect, chosen *gfx.ID, label string) {
 	for _, hit := range canvas.Hits() {
 		if hit.Label != label || hit.Role != gfx.RoleRadio {
 			continue
 		}
 		if hit.Bounds.X >= bounds.X && hit.Bounds.Y >= bounds.Y &&
 			hit.Bounds.X < bounds.X+bounds.Width && hit.Bounds.Y < bounds.Y+bounds.Height {
-			choice.chosen = hit.ID
+			*chosen = hit.ID
 			break
 		}
 	}
-	if !choice.chosen.IsZero() {
-		state.rememberHostControl(choice.chosen, bounds)
+	if !chosen.IsZero() {
+		state.rememberHostControl(*chosen, bounds)
 	}
 }
 

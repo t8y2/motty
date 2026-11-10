@@ -409,7 +409,7 @@ func TestTheHostDialogOffersProxyConfigurationOnlyForNetworkHosts(t *testing.T) 
 	if _, ok := hitByID(canvas, hitHostProxyConfigure); !ok {
 		t.Fatal("an SSH host does not offer proxy configuration")
 	}
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolSerial)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSerial)
 	canvas, _ = paintedTexts(state)
 	if _, ok := hitByID(canvas, hitHostProxyConfigure); ok {
 		t.Fatal("a serial host offers proxy configuration")
@@ -815,7 +815,7 @@ func TestSwitchingANewHostToSerialIgnoresItsHiddenProxyDraft(t *testing.T) {
 	state.secrets.declined = true
 	state.secrets.vault.DropKeyForTests()
 
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolSerial)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSerial)
 	state.Click(hitDialogSubmit)
 	added := state.hosts[len(state.hosts)-1]
 	if state.modal != modalNone || state.dialogError != "" || added.Protocol != protocolSerial || added.Proxy != nil {

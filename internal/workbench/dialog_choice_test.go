@@ -4,18 +4,19 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/serial"
 )
 
-// A dialog's segmented choices are pages now: their options carry the page's
-// identities, so the tests find a segment by its label and click it in the event
-// pass, where the Choice reads the press.
+// A dialog's segmented choices are page controls now: their options carry the
+// page's identities, so the tests find a segment by its label and click it in
+// the event pass, where the Choice reads the press.
 
-// dialogChoicePaint is tall enough to lay out every row of the host form,
+// hostChoicePaint is tall enough to lay out every row of the host form,
 // including the Advanced section, without clipping a choice away.
-var dialogChoicePaint = gfx.Size{Width: 1400, Height: 1400}
+var hostChoicePaint = gfx.Size{Width: 1400, Height: 1400}
 
-// dialogChoiceIn finds a dialog Choice's segment by label.
-func dialogChoiceIn(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+// hostChoiceIn finds a dialog Choice's segment by label.
+func hostChoiceIn(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
 	hits := canvas.Hits()
 	for i := len(hits) - 1; i >= 0; i-- {
 		if hit := hits[i]; hit.Label == label && hit.Role == gfx.RoleRadio {
@@ -25,26 +26,32 @@ func dialogChoiceIn(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
 	return gfx.Hit{}, false
 }
 
-// dialogChoiceHit paints the dialog and finds the segment with label.
-func dialogChoiceHit(t testing.TB, state *State, label string) gfx.Hit {
+// hostChoiceHit paints the dialog and finds the segment with label.
+func hostChoiceHit(t testing.TB, state *State, label string) gfx.Hit {
 	t.Helper()
 	var canvas gfx.Canvas
-	state.Paint(&canvas, dialogChoicePaint)
-	if hit, ok := dialogChoiceIn(&canvas, label); ok {
+	state.Paint(&canvas, hostChoicePaint)
+	if hit, ok := hostChoiceIn(&canvas, label); ok {
 		return hit
 	}
 	t.Fatalf("no dialog choice labeled %q", label)
 	return gfx.Hit{}
 }
 
-// clickDialogChoice delivers a click on a dialog Choice segment in the event
+// clickHostChoice delivers a click on a dialog Choice segment in the event
 // pass, where the choice writes its value.
-func clickDialogChoice(t testing.TB, state *State, label string) {
+func clickHostChoice(t testing.TB, state *State, label string) {
 	t.Helper()
-	hit := dialogChoiceHit(t, state, label)
+	hit := hostChoiceHit(t, state, label)
+	activateHostChoice(t, state, hit.ID)
+}
+
+// activateHostChoice paints a press on one segment of a dialog Choice.
+func activateHostChoice(t testing.TB, state *State, id gfx.ID) {
+	t.Helper()
 	var canvas gfx.Canvas
-	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
-	state.Paint(&canvas, dialogChoicePaint)
+	canvas.BeginEventPass(id, gfx.ClickInfo{})
+	state.Paint(&canvas, hostChoicePaint)
 	canvas.EndEventPass()
 }
 
@@ -59,14 +66,14 @@ func TestHostDialogChoosesTheFileProtocol(t *testing.T) {
 		{"SFTP", transferSFTP},
 		{state.messages.Tools.TransferAuto, transferAuto},
 	} {
-		clickDialogChoice(t, state, test.label)
+		clickHostChoice(t, state, test.label)
 		if state.editor.transfer != test.want {
 			t.Fatalf("%q chose %v, want %v", test.label, state.editor.transfer, test.want)
 		}
 	}
 
 	// The choice is what the form saves.
-	clickDialogChoice(t, state, "SCP")
+	clickHostChoice(t, state, "SCP")
 	state.editor.label.Insert("Files")
 	state.editor.address.Insert("files.example.com")
 	state.Click(hitDialogSubmit)
@@ -83,17 +90,66 @@ func TestHostDialogChoicesHaveRovingKeyboardFocus(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
 	m := state.messages.Tools
-	ssh := dialogChoiceHit(t, state, m.ProtocolSSH)
-	telnet := dialogChoiceHit(t, state, m.ProtocolTelnet)
-	result := state.Key(gfx.KeyEvent{Target: ssh.ID, Key: gfx.KeyRight})
+	// The file protocol choice takes the same keys.
+	auto := hostChoiceHit(t, state, m.TransferAuto)
+	sftp := hostChoiceHit(t, state, "SFTP")
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: auto.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != sftp.ID {
+		t.Fatalf("transfer result = %+v", result)
+	}
+	activateHostChoice(t, state, result.Activate)
+	if state.editor.transfer != transferSFTP {
+		t.Fatalf("transfer = %v after the arrow", state.editor.transfer)
+	}
+
+	// The protocol choice roves too, and writes what the form then shows.
+	ssh := hostChoiceHit(t, state, m.ProtocolSSH)
+	telnet := hostChoiceHit(t, state, m.ProtocolTelnet)
+	result = windowKeyRoutes(state, gfx.KeyEvent{Target: ssh.ID, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != telnet.ID || result.Activate != telnet.ID {
 		t.Fatalf("protocol result = %+v", result)
 	}
-	var canvas gfx.Canvas
-	canvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
-	state.Paint(&canvas, dialogChoicePaint)
-	canvas.EndEventPass()
+	activateHostChoice(t, state, result.Activate)
 	if state.editor.protocol != protocolTelnet {
 		t.Fatalf("protocol = %v after the arrow picked the next option", state.editor.protocol)
+	}
+}
+
+func TestHostDialogFlowAndAlgoChoicesChange(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitAddHost)
+	m := state.messages.Tools
+
+	clickHostChoice(t, state, m.ProtocolSerial)
+	clickHostChoice(t, state, m.FlowHardware)
+	if state.editor.flow != serial.FlowHardware {
+		t.Fatalf("flow = %v after the click", state.editor.flow)
+	}
+	hardware := hostChoiceHit(t, state, m.FlowHardware)
+	software := hostChoiceHit(t, state, m.FlowSoftware)
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: hardware.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != software.ID || result.Activate != software.ID {
+		t.Fatalf("flow result = %+v", result)
+	}
+	activateHostChoice(t, state, result.Activate)
+	if state.editor.flow != serial.FlowSoftware {
+		t.Fatalf("flow = %v after the arrow", state.editor.flow)
+	}
+
+	clickHostChoice(t, state, m.ProtocolSSH)
+	state.editor.advancedOpen = true
+	clickHostChoice(t, state, m.AlgoCompatible)
+	if state.editor.algoMode != algoCompatible {
+		t.Fatalf("algorithm = %v after the click", state.editor.algoMode)
+	}
+	compatible := hostChoiceHit(t, state, m.AlgoCompatible)
+	custom := hostChoiceHit(t, state, m.AlgoCustom)
+	result = windowKeyRoutes(state, gfx.KeyEvent{Target: compatible.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != custom.ID || result.Activate != custom.ID {
+		t.Fatalf("algorithm result = %+v", result)
+	}
+	activateHostChoice(t, state, result.Activate)
+	if state.editor.algoMode != algoCustom {
+		t.Fatalf("algorithm = %v after the arrow", state.editor.algoMode)
 	}
 }
