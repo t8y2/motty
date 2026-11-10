@@ -101,6 +101,8 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 	editWidth, editIcon := toolbarButtonLayout(canvas, m.SnippetEdit, 0, iconPencil, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, m.SnippetAdd, iconPlus, iconPlus, condensed)
 
+	canAdd := len(form.list) < maxSnippets
+	hasSelection := len(form.list) > 0
 	view := &state.sectionBodies.snippets
 	draw := view.draw
 	*view = snippetsSectionUI{
@@ -119,13 +121,13 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 				ui.Text(c, m.SnippetsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				ui.Paragraph(c, m.SnippetsPageDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
-			view.remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
-			view.edit = ui.Slot(c).Size(editWidth, toolbarHeight)
-			view.send = ui.Slot(c).Size(sendWidth, toolbarHeight)
-			view.add = ui.Slot(c).Size(addWidth, toolbarHeight)
+			view.remove = state.declareButtonSized(c, hitSnippetRemove, m.SnippetDelete, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
+			view.edit = state.declareButtonSized(c, hitSnippetEdit, m.SnippetEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
+			view.send = state.declareButtonSized(c, hitSnippetSend, m.SnippetSend, sendIcon, false, false, hasSelection, toolbarFont, condensed).Size(sendWidth, toolbarHeight)
+			view.add = state.declareButtonSized(c, hitSnippetAdd, m.SnippetAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
 		})
 		if len(form.list) == 0 {
-			view.empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd)
+			view.empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd, hitSnippetAdd, iconNote, canAdd)
 		} else {
 			if len(form.groups) > 0 {
 				ui.Row(c).Height(toolbarHeight).MarginSides(0, 0, 9, 0).Children(func() {
@@ -150,17 +152,11 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 	m, form := state.messages.Tools, &state.snippets
 	view := &state.sectionBodies.snippets
-	canAdd := len(form.list) < maxSnippets
-	hasSelection := len(form.list) > 0
 
-	state.paintToolbarButton(canvas, hitSnippetRemove, view.remove.Rect().X, view.remove.Rect().Y, view.removeWidth, m.SnippetDelete, view.removeIcon, false, hasSelection, view.condensed)
-	state.paintToolbarButton(canvas, hitSnippetEdit, view.edit.Rect().X, view.edit.Rect().Y, view.editWidth, m.SnippetEdit, view.editIcon, false, hasSelection, view.condensed)
 	form.sendAt = gfx.Point{X: view.send.Rect().X, Y: view.send.Rect().Y + toolbarHeight + 4}
-	state.paintToolbarButton(canvas, hitSnippetSend, view.send.Rect().X, view.send.Rect().Y, view.sendWidth, m.SnippetSend, view.sendIcon, false, hasSelection, view.condensed)
-	state.paintToolbarButton(canvas, hitSnippetAdd, view.add.Rect().X, view.add.Rect().Y, view.addWidth, m.SnippetAdd, view.addIcon, true, canAdd, view.condensed)
 
 	if len(form.list) == 0 {
-		state.drawReservedEmptyPage(canvas, view.empty, iconNote, hitSnippetAdd, m.SnippetAdd, canAdd)
+		state.drawReservedEmptyPage(canvas, view.empty, iconNote)
 		return
 	}
 	// The command column leaves room before its text for the Enter keycap of the

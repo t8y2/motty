@@ -182,7 +182,7 @@ func (s *State) declareDashboardEmpty(c ui.C) {
 	}
 	m := s.messages.Dashboard
 	width, height := s.hostsWorkspaceSize()
-	s.declareEmptyPageRegion(c, gfx.Rect{Width: width, Height: height}, m.Empty, m.EmptyHint, m.Create, s.pal.muted)
+	s.declareEmptyPageRegion(c, gfx.Rect{Width: width, Height: height}, m.Empty, m.EmptyHint, m.Create, s.pal.muted, hitDashboardNew, iconActivity, true)
 }
 
 func (s *State) paintDashboard(c *gfx.Canvas, b gfx.Rect) {
@@ -193,7 +193,7 @@ func (s *State) paintDashboard(c *gfx.Canvas, b gfx.Rect) {
 	p := s.dashboardPanel()
 	theme := s.Theme()
 	if p == nil {
-		s.paintEmptyPage(c, iconActivity, hitDashboardNew, m.Create, true)
+		s.paintEmptyPage(c, iconActivity)
 		return
 	}
 	actionTheme := theme

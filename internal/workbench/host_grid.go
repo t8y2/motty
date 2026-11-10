@@ -161,44 +161,6 @@ func (state *State) clickHostView(id gfx.ID) bool {
 	return true
 }
 
-// paintHostViewToggle draws the view buttons and the host-sort mode toggle from
-// the slots the hosts header declared.
-func (state *State) paintHostViewToggle(canvas *gfx.Canvas, withOrder bool) {
-	m := state.messages.Tools
-	buttons := [...]struct {
-		id    gfx.ID
-		icon  uint8
-		label string
-		mode  hostViewMode
-	}{
-		{hitHostViewList, iconRows2, m.HostViewList, hostViewList},
-		{hitHostViewGrid, iconHome, m.HostViewGrid, hostViewGrid},
-	}
-	slots := state.chrome.hostToggle
-	for index, button := range buttons {
-		style := iconButtonQuiet
-		if state.hostView == button.mode {
-			style = iconButtonActive
-		}
-		rect := slots.list.Rect()
-		if index == 1 {
-			rect = slots.grid.Rect()
-		}
-		state.paintIconButton(canvas, button.id, button.icon, rect, button.label, false, style, state.pal.workspace)
-	}
-	label := m.HostSort
-	style := iconButtonQuiet
-	if state.hostSort.enabled {
-		label = m.HostSortDone
-		style = iconButtonActive
-	}
-	disabled := !state.hostSort.enabled && (state.hostOrder != hostOrderManual || len(state.hosts) < 2 || state.typedQuery() != "")
-	state.paintIconButton(canvas, hitHostSort, iconTransfer, slots.sort.Rect(), label, disabled, style, state.pal.workspace)
-	if withOrder {
-		state.paintHostOrderButton(canvas, slots.order.Rect())
-	}
-}
-
 // hostGridColumns is how many cards fit across width.
 func hostGridColumns(width float32) int {
 	return max(int((width+hostCardGap)/(hostCardMinWidth+hostCardGap)), 1)

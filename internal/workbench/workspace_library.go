@@ -221,7 +221,7 @@ func (state *State) declareWorkspaceLibrary(c ui.C) {
 		if bounds.Width < 520 {
 			ui.Text(c, m.WorkspaceLibraryTitle).FontSize(20).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Ellipsis()
 			ui.Row(c).Gap(8).MarginSides(12, 0, 20, 0).Children(func() {
-				view.create = ui.Slot(c).Size(newWidth, toolbarHeight)
+				view.create = state.declareButtonSized(c, hitWorkspaceNew, m.WorkspaceNew, newIcon, false, false, true, toolbarFont, bounds.Width < 520).Size(newWidth, toolbarHeight)
 			})
 		} else {
 			ui.Row(c).MinHeight(74).Gap(10).MarginSides(0, 0, 14, 0).Items(ui.Start).Children(func() {
@@ -229,11 +229,11 @@ func (state *State) declareWorkspaceLibrary(c ui.C) {
 					ui.Text(c, m.WorkspaceLibraryTitle).FontSize(20).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Ellipsis()
 					ui.Paragraph(c, m.WorkspaceLibraryDescription, 2).FontSize(12).LineHeight(19).Color(pal.muted)
 				})
-				view.create = ui.Slot(c).Size(newWidth, toolbarHeight)
+				view.create = state.declareButtonSized(c, hitWorkspaceNew, m.WorkspaceNew, newIcon, false, false, true, toolbarFont, bounds.Width < 520).Size(newWidth, toolbarHeight)
 			})
 		}
 		if len(state.templates) == 0 {
-			view.empty = state.reserveEmptyPage(c, bounds, m.WorkspaceLibraryEmpty, m.WorkspaceLibraryEmptySub, m.WorkspaceNew)
+			view.empty = state.reserveEmptyPage(c, bounds, m.WorkspaceLibraryEmpty, m.WorkspaceLibraryEmptySub, m.WorkspaceNew, hitWorkspaceNew, iconColumns2, true)
 		} else {
 			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 14, 0)
 		}
@@ -245,15 +245,11 @@ func (state *State) declareWorkspaceLibrary(c ui.C) {
 // paintWorkspaceLibrary paints the workspace library's create button, rows and
 // empty state into the slots its declaration left.
 func (state *State) paintWorkspaceLibrary(canvas *gfx.Canvas) {
-	m := state.messages
 	view := &state.sectionBodies.workspaceLibrary
 	if len(state.templates) == 0 {
-		state.drawReservedEmptyPage(canvas, view.empty, iconColumns2, hitWorkspaceNew, m.WorkspaceNew, true)
+		state.drawReservedEmptyPage(canvas, view.empty, iconColumns2)
 		return
 	}
-
-	state.paintToolbarButton(canvas, hitWorkspaceNew, view.create.Rect().X, view.create.Rect().Y,
-		view.newWidth, m.WorkspaceNew, view.newIcon, false, true, view.condensed)
 
 	state.paintWorkspaceLibraryRows(canvas, view.content.Rect(), state.expandedWorkspaceTemplateIndex())
 }

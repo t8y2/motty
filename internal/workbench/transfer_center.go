@@ -91,7 +91,6 @@ type transferCenter struct {
 	rowKey        func(int) int
 	rowDecl       func(ui.ListRow)
 	bodyDraw      func(*ui.DrawContext)
-	closeDraw     func(*ui.DrawContext)
 	headerLines   []string
 	headerHeight  float32
 	bodyHeight    float32
@@ -148,7 +147,6 @@ func (center *transferCenter) handlers(state *State) {
 	center.listState.Key = center.rowKey
 	center.rowDecl = state.declareTransferCardRow
 	center.bodyDraw = state.paintTransferCenterBody
-	center.closeDraw = state.paintTransferClose
 }
 
 // keyOf names a List row by its transfer's identity.

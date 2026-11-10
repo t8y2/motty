@@ -48,6 +48,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 
+	canAdd := state.sshHostCount() >= 2
 	view := &state.sectionBodies.proxies
 	draw := view.draw
 	*view = proxySectionUI{
@@ -66,13 +67,13 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 				ui.Text(c, messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				ui.Paragraph(c, messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
-			view.remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
-			view.edit = ui.Slot(c).Size(editWidth, toolbarHeight)
-			view.action = ui.Slot(c).Size(actionWidth, toolbarHeight)
-			view.add = ui.Slot(c).Size(addWidth, toolbarHeight)
+			view.remove = state.declareButtonSized(c, hitProxyRemove, messages.ProxyRemove, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
+			view.edit = state.declareButtonSized(c, hitProxyEdit, messages.ProxyEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
+			view.action = state.declareButtonSized(c, hitProxyStartStop, actionLabel, realActionIcon, false, false, hasSelection, toolbarFont, condensed).Size(actionWidth, toolbarHeight)
+			view.add = state.declareButtonSized(c, hitProxyAdd, messages.ProxyAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
 		})
 		if len(state.proxies) == 0 {
-			view.empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd)
+			view.empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd, hitProxyAdd, iconGlobe, canAdd)
 		} else {
 			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
 		}
@@ -91,16 +92,9 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 // into the slots its declaration left.
 func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas) {
 	view, messages := &state.sectionBodies.proxies, state.messages
-	_, hasSelection := state.proxyByID(state.selectedProxyID)
-	canAdd := state.sshHostCount() >= 2
-
-	state.paintToolbarButton(canvas, hitProxyRemove, view.remove.Rect().X, view.remove.Rect().Y, view.removeWidth, messages.ProxyRemove, view.removeIcon, false, hasSelection, view.condensed)
-	state.paintToolbarButton(canvas, hitProxyEdit, view.edit.Rect().X, view.edit.Rect().Y, view.editWidth, messages.ProxyEdit, view.editIcon, false, hasSelection, view.condensed)
-	state.paintToolbarButton(canvas, hitProxyStartStop, view.action.Rect().X, view.action.Rect().Y, view.actionWidth, view.actionLabel, view.actionIcon, false, hasSelection, view.condensed)
-	state.paintToolbarButton(canvas, hitProxyAdd, view.add.Rect().X, view.add.Rect().Y, view.addWidth, messages.ProxyAdd, view.addIcon, true, canAdd, view.condensed)
 
 	if len(state.proxies) == 0 {
-		state.drawReservedEmptyPage(canvas, view.empty, iconGlobe, hitProxyAdd, messages.ProxyAdd, canAdd)
+		state.drawReservedEmptyPage(canvas, view.empty, iconGlobe)
 		return
 	}
 	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 120}, {Width: 0}}

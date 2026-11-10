@@ -80,12 +80,12 @@ func (state *State) declareKnownHostsWorkspace(c ui.C) {
 		ui.Row(c).Height(40).Gap(gap).Items(ui.Center).Children(func() {
 			layout.search = ui.Slot(c).Grow(1).MaxWidth(470).MinWidth(searchLeast).Height(40)
 			ui.Spacer(c)
-			layout.refresh = ui.Slot(c).Size(refreshWidth, toolbarHeight)
-			layout.retrust = ui.Slot(c).Size(retrustWidth, toolbarHeight)
-			layout.remove = ui.Slot(c).Size(deleteWidth, toolbarHeight)
+			layout.refresh = state.declareButtonSized(c, hitKnownHostsRefresh, messages.KnownHostsRefresh, refreshIcon, false, false, true, toolbarFont, condensed).Size(refreshWidth, toolbarHeight)
+			layout.retrust = state.declareButtonSized(c, hitKnownHostsRetrust, messages.KnownHostsRetrust, retrustIcon, false, false, view.selected > 0, toolbarFont, condensed).Size(retrustWidth, toolbarHeight)
+			layout.remove = state.declareButtonSized(c, hitKnownHostsDelete, messages.KnownHostsDelete, deleteIcon, false, false, view.selected > 0, toolbarFont, condensed).Size(deleteWidth, toolbarHeight)
 		})
 		if empty {
-			layout.emptySlot = state.reserveEmptyPageWithColor(c, bounds, emptyTitle, emptyDescription, "", emptyDescriptionColor)
+			layout.emptySlot = state.reserveEmptyPageWithColor(c, bounds, emptyTitle, emptyDescription, "", emptyDescriptionColor, gfx.ID{}, 0, false)
 		} else {
 			layout.content = ui.Slot(c).Grow(1).MarginSides(14, 0, 0, 0)
 			state.declareKnownHostsChecks(c, layout.content)
@@ -113,9 +113,6 @@ func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas) {
 	layout := &state.sectionBodies.knownHosts
 	value := view.search.String()
 
-	state.paintToolbarButton(canvas, hitKnownHostsRefresh, layout.refresh.Rect().X, layout.refresh.Rect().Y, layout.refreshWidth, messages.KnownHostsRefresh, layout.refreshIcon, false, true, layout.condensed)
-	state.paintToolbarButton(canvas, hitKnownHostsRetrust, layout.retrust.Rect().X, layout.retrust.Rect().Y, layout.retrustWidth, messages.KnownHostsRetrust, layout.retrustIcon, false, view.selected > 0, layout.condensed)
-	state.paintToolbarButton(canvas, hitKnownHostsDelete, layout.remove.Rect().X, layout.remove.Rect().Y, layout.deleteWidth, messages.KnownHostsDelete, layout.deleteIcon, false, view.selected > 0, layout.condensed)
 	components.PaintInputGroup(canvas, state.Theme(), layout.search.Rect(), components.InputGroupSnapshot{
 		ID: hitKnownHostsSearch, Label: messages.NavSearch, Value: value, Placeholder: messages.KnownHostsSearchPlaceholder,
 		NativeEditing: canvas.Focused() == hitKnownHostsSearch && value != "",
@@ -123,7 +120,7 @@ func (state *State) paintKnownHostsWorkspace(canvas *gfx.Canvas) {
 	})
 
 	if layout.empty {
-		state.drawReservedEmptyPage(canvas, layout.emptySlot, layout.emptyIcon, gfx.ID{}, "", false)
+		state.drawReservedEmptyPage(canvas, layout.emptySlot, layout.emptyIcon)
 	} else {
 		state.paintKnownHostsTable(canvas, layout.content.Rect())
 	}

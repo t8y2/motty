@@ -86,7 +86,8 @@ func (state *State) declareTransferPopoverBody(c ui.C, width, height float32) {
 	body := ui.Column(c).FillWidth().Height(height)
 	body.Children(func() {
 		// The close control sits in the header's top right, outside the body.
-		ui.Slot(c).Absolute().Right(0).Top(-center.headerHeight-theme.Metrics.GapItem-center.headerMargin-2).Size(24, 24).Draw(center.closeDraw)
+		state.declareIconButton(c, hitTransfersClose, iconClose, m.Close, false, iconButtonQuiet).
+			Absolute().Right(0).Top(-center.headerHeight-theme.Metrics.GapItem-center.headerMargin-2).Size(24, 24)
 		if len(center.batch.targets) > 0 {
 			state.declareTransferBatchBody(c)
 			return
@@ -293,11 +294,6 @@ func (state *State) paintTransferCenterBody(d *ui.DrawContext) {
 	center.geometry = area.EndContent()
 	center.hostBounds = center.body.hostBox.Rect()
 	state.paintTransferHosts(canvas)
-}
-
-// paintTransferClose paints the popover's close control in the header.
-func (state *State) paintTransferClose(d *ui.DrawContext) {
-	state.paintIconButton(d.Canvas, hitTransfersClose, iconClose, d.Rect, state.messages.Transfers.Close, false, iconButtonQuiet, state.pal.surface)
 }
 
 // paintTransferBodyControls paints the body's summary progress and buttons into

@@ -402,7 +402,7 @@ func (w *sftpWindow) declareBookmarkBody(c ui.C) ui.Box {
 	column.Children(func() {
 		ui.Row(c).Height(56).Gap(8).Items(ui.End).Children(func() {
 			body.fields[1] = ui.Slot(c).Grow(1).Height(56)
-			body.browse = ui.Slot(c).Size(32, 32)
+			body.browse = w.owner.declareIconButton(c, hitSFTPBookmarkBrowse, iconFolderOpen, m.BookmarkChooseLocal, false, iconButtonQuiet).Size(32, 32)
 		})
 		body.fields[2] = ui.Slot(c).Height(56)
 		ui.Row(c).Height(56).Gap(8).Items(ui.End).Children(func() {
@@ -453,7 +453,6 @@ func (w *sftpWindow) paintBookmarkBody(d *ui.DrawContext) {
 	}, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.Foreground})
 	w.paintProfileList(canvas, body.list.Rect())
 	w.paintProfileScope(canvas, body.scope.Rect(), b.viewport)
-	w.owner.paintIconButton(canvas, hitSFTPBookmarkBrowse, iconFolderOpen, body.browse.Rect(), m.BookmarkChooseLocal, false, iconButtonQuiet, theme.Background)
 }
 
 // paintBookmarkFooter paints the editor's dialog buttons into the slots the

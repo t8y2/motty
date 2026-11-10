@@ -605,3 +605,60 @@ func TestFieldTextHasTheSameSizeFocusedAndUnfocused(t *testing.T) {
 		t.Fatalf("native editor would start at x=%v, the painted text at %v", hit.TextBounds.X, painted.Bounds.X)
 	}
 }
+
+// TestPageDeclaredControlsKeepTheirHitSemantics guards the controls that are now
+// page elements: a button keeps its role, its accessible name and its hint, and
+// a disabled one stays out of the Tab order they used to share.
+func TestPageDeclaredControlsKeepTheirHitSemantics(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+
+	view, ok := canvasHit(canvas.Hits(), hitHostViewList)
+	if !ok {
+		t.Fatal("the hosts view switch is not a hit")
+	}
+	if view.Role != gfx.RoleButton || view.Label != state.messages.Tools.HostViewList ||
+		view.Hint != state.messages.Tools.HostViewList || !view.Focusable || view.Disabled {
+		t.Errorf("the view switch hit = %+v", view)
+	}
+	if view.Bounds.Width != 26 || view.Bounds.Height != 26 {
+		t.Errorf("the view switch is %vx%v, want 26x26", view.Bounds.Width, view.Bounds.Height)
+	}
+
+	chip, ok := canvasHit(canvas.Hits(), hitHostFilterAll)
+	if !ok {
+		t.Fatal("the All chip is not a hit")
+	}
+	if chip.Role != gfx.RoleButton || chip.Label != state.messages.HostFilterAll || !chip.Selected {
+		t.Errorf("the All chip hit = %+v", chip)
+	}
+	if want := state.filterChipWidth(canvas, state.messages.HostFilterAll, state.hostTotalDigits); chip.Bounds.Width != want {
+		t.Errorf("the All chip is %v wide, its label needs %v", chip.Bounds.Width, want)
+	}
+
+	connect, ok := canvasHit(canvas.Hits(), hitConnect)
+	if !ok || connect.Role != gfx.RoleButton || connect.Label != state.messages.Connect {
+		t.Errorf("the Connect button hit = %+v", connect)
+	}
+
+	state.activeSection = sectionKnownHosts
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	retrust, ok := canvasHit(canvas.Hits(), hitKnownHostsRetrust)
+	if !ok {
+		t.Fatal("the known-hosts Retrust button is not a hit")
+	}
+	if !retrust.Disabled || retrust.Focusable || retrust.Role != gfx.RoleButton {
+		t.Errorf("a disabled Retrust hit = %+v", retrust)
+	}
+
+	state.activeSection = sectionSessionLogs
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	filter, ok := canvasHit(canvas.Hits(), hitSessionLogsTime)
+	if !ok {
+		t.Fatal("the session-log time filter is not a hit")
+	}
+	if filter.Role != gfx.RoleButton || filter.Label != sessionLogFilterLabel(&state.messages.SessionLogs, sessionLogFilterTimeMenu) ||
+		!filter.Focusable || filter.Expanded || !filter.Expandable {
+		t.Errorf("the time filter hit = %+v", filter)
+	}
+}

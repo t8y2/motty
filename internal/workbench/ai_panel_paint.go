@@ -647,7 +647,6 @@ const aiMenuContextWidth = float32(144)
 func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
 	s := &panel.pageScratch
-	state.paintAIHeader(canvas, &panel.body)
 	if s.showSetup {
 		components.BeginButton(canvas, state.Theme(), hitAISetup, panel.body.setup.Rect()).Small().Default(s.setupLabel)
 	}
@@ -714,9 +713,9 @@ func (state *State) declareAIPanelBody(c ui.C) {
 		ui.Row(c).Height(aiTitleRow).PadX(aiPad).Gap(4).Items(ui.Center).Children(func() {
 			ui.Icon(c, lucideIcons[iconBot]).Color(pal.accent).MarginSides(0, 4, 0, 0)
 			ui.Text(c, m.Title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(22).Grow(1)
-			panel.body.newChat = ui.Slot(c).Size(barToolSize, barToolSize)
-			panel.body.history = ui.Slot(c).Size(barToolSize, barToolSize)
-			panel.body.close = ui.Slot(c).Size(barToolSize, barToolSize)
+			panel.body.newChat = state.declareIconButton(c, hitAINew, iconPlus, m.NewConversation, ai.run != nil, iconButtonQuiet).Size(barToolSize, barToolSize)
+			panel.body.history = state.declareIconButton(c, hitAIHistory, iconHistory, m.History, false, historyStyle(panel.history)).Size(barToolSize, barToolSize)
+			panel.body.close = state.declareIconButton(c, hitAIClose, iconClose, m.Close, false, iconButtonQuiet).Size(barToolSize, barToolSize)
 		})
 		// The way to get a model; once there is one, the message box names it.
 		if s.showSetup {
@@ -776,15 +775,6 @@ func (state *State) aiModelText() (string, bool) {
 		return panel.modelText, true
 	}
 	return "", false
-}
-
-// paintAIHeader paints the controls of the title row into their slots.
-func (state *State) paintAIHeader(canvas *gfx.Canvas, body *aiBody) {
-	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
-	m := state.messages.AIPanel
-	state.paintIconButton(canvas, hitAIClose, iconClose, body.close.Rect(), m.Close, false, iconButtonQuiet, pal.workspace)
-	state.paintIconButton(canvas, hitAIHistory, iconHistory, body.history.Rect(), m.History, false, historyStyle(panel.history), pal.workspace)
-	state.paintIconButton(canvas, hitAINew, iconPlus, body.newChat.Rect(), m.NewConversation, ai.run != nil, iconButtonQuiet, pal.workspace)
 }
 
 func historyStyle(open bool) iconButtonStyle {
@@ -896,7 +886,6 @@ func (state *State) declareAIHistoryRow(row ui.ListRow) {
 			background = pal.accentSoft
 		}
 	}
-	var remove, rename ui.Box
 	row.Element.PadSides(0, 6, 2, 6).Children(func() {
 		ui.Row(row.C).Fill().PadSides(0, 4, 0, 10).Gap(10).Items(ui.Center).Background(background).Radius(radius.control).
 			HitWith(openID, conversation.Title, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.HistoryOpen}).Children(func() {
@@ -906,11 +895,10 @@ func (state *State) declareAIHistoryRow(row ui.ListRow) {
 					ui.Text(row.C, panel.historyDates[index]).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(16)
 				}
 			})
-			rename = ui.Slot(row.C).Size(aiButton, aiButton)
-			remove = ui.Slot(row.C).Size(aiButton, aiButton)
+			state.declareIconButton(row.C, renameID, iconPencil, m.HistoryRename, false, iconButtonQuiet).Size(aiButton, aiButton)
+			state.declareIconButton(row.C, deleteID, iconTrash, m.HistoryDelete, false, iconButtonQuiet).Size(aiButton, aiButton)
 		})
 	})
-	panel.paintedHistory = append(panel.paintedHistory, aiPaintedHistoryRow{rename: rename, remove: remove})
 }
 
 // paintAIHistoryChrome paints the List's custom scrollbar and the icon buttons
@@ -924,15 +912,6 @@ func (state *State) paintAIHistoryChrome(d *ui.DrawContext) {
 		return
 	}
 	panel.maxTop, panel.historyTop = scroll.Max(), scroll.Offset
-	first, last := panel.historyList.Visible()
-	for offset, painted := range panel.paintedHistory {
-		index := first + offset
-		if index > last || index >= len(state.ai.conversations) {
-			continue
-		}
-		state.paintIconButton(canvas, hitAIHistoryRename.At(index), iconPencil, painted.rename.Rect(), m.HistoryRename, false, iconButtonQuiet, state.pal.workspace)
-		state.paintIconButton(canvas, hitAIHistoryDelete.At(index), iconTrash, painted.remove.Rect(), m.HistoryDelete, false, iconButtonQuiet, state.pal.workspace)
-	}
 	scroller := components.BeginMessageScroller(canvas, state.aiScrollbarTheme(), d.Rect, scroll.Content, scroll.Offset).
 		Scrollbar(hitAIHistoryBar, m.HistoryScrollbarLabel, state.aiScrollbarValue(true, scroll.Offset, scroll.Max()))
 	panel.scrollbar.geometry = scroller.EndContent()

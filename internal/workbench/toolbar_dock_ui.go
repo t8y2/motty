@@ -177,7 +177,15 @@ func (state *State) declareToolbarDockTop(c ui.C, probe bool) {
 	dock.topArea = area
 	area.Children(func() {
 		for _, tool := range tools {
-			box := ui.Slot(c).Size(barButtonSize, barButtonSize).Shrink(0)
+			var box ui.Box
+			if tool.id == hitToolbarLatency {
+				box = ui.Slot(c).Size(barButtonSize, barButtonSize).Shrink(0)
+			} else {
+				// Titlebar window actions must leave typing focused on the terminal.
+				entry, _ := toolbarDockIdentity(tool.id)
+				box = state.declareIconButtonWithOptions(c, tool.id, tool.icon, tool.hint, tool.disabled, tool.style, 16,
+					gfx.HitOptions{SkipFocus: entry.Group == toolbarWindow}).Size(barButtonSize, barButtonSize).Shrink(0)
+			}
 			dock.topSlots = append(dock.topSlots, toolbarDockSlot{tool, box})
 			if tool.id == hitAIToggle {
 				state.chrome.bar.assistant = box
@@ -206,15 +214,11 @@ func (state *State) paintToolbarDockTop(canvas *gfx.Canvas) {
 			continue
 		}
 		tool, bounds := slot.tool, slot.box.Rect()
-		entry, _ := toolbarDockIdentity(tool.id)
 		if tool.id == hitToolbarLatency {
 			session, ok := state.terminalSideRailSession()
 			if !ok || !state.paintToolbarLatency(canvas, bounds, session) {
 				continue
 			}
-		} else {
-			// Titlebar window actions must leave typing focused on the terminal.
-			state.paintIconButtonWithOptions(canvas, tool.id, tool.icon, bounds, tool.hint, tool.disabled, tool.style, state.pal.shell, 16, gfx.HitOptions{SkipFocus: entry.Group == toolbarWindow})
 		}
 		state.registerToolbarDockTool(canvas, tool, toolbarDockTop, bounds)
 	}

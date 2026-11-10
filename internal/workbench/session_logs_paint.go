@@ -877,7 +877,11 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 		ui.Row(c).Height(36).Gap(8).Items(ui.Center).Children(func() {
 			ui.Text(c, m.Title).FontSize(sessionLogTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).Grow(1).Ellipsis()
 			ui.Text(c, view.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Width(min(inner*0.62, 360)).TextEnd().Ellipsis()
-			layout.moreButton = ui.Slot(c).Size(30, 30)
+			moreStyle := iconButtonQuiet
+			if view.moreMenu {
+				moreStyle = iconButtonActive
+			}
+			layout.moreButton = state.declareIconButton(c, hitSessionLogsMore, iconEllipsis, m.More, false, moreStyle).Size(30, 30)
 		})
 		if !narrow {
 			ui.Text(c, m.Description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).Ellipsis().MarginSides(0, 0, 8, 0)
@@ -886,31 +890,31 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 			layout.search = ui.Slot(c).Size(searchWidth, toolbarHeight)
 			if !separateFilters {
 				ui.Spacer(c)
-				layout.timeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-				layout.statusSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-				layout.protocolSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-				layout.outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-				layout.sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-				layout.favoriteFilterBox = ui.Slot(c).Size(toolbarHeight, toolbarHeight)
+				layout.timeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsTime, sessionLogFilterTimeMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				layout.statusSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsStatus, sessionLogFilterStatusMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				layout.protocolSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsProtocol, sessionLogFilterProtocolMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				layout.outcomeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsOutcome, sessionLogFilterOutcomeMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				layout.sortSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsSort, sessionLogFilterSortMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				layout.favoriteFilterBox = state.declareSessionLogFavoriteFilter(c).Size(toolbarHeight, toolbarHeight)
 			} else {
 				ui.Spacer(c)
-				layout.favoriteFilterBox = ui.Slot(c).Size(toolbarHeight, toolbarHeight)
+				layout.favoriteFilterBox = state.declareSessionLogFavoriteFilter(c).Size(toolbarHeight, toolbarHeight)
 			}
 		})
 		if separateFilters {
 			ui.Row(c).Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-				layout.timeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-				layout.statusSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-				layout.protocolSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+				layout.timeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsTime, sessionLogFilterTimeMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				layout.statusSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsStatus, sessionLogFilterStatusMenu, filterWidth).Size(filterWidth, toolbarHeight)
+				layout.protocolSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsProtocol, sessionLogFilterProtocolMenu, filterWidth).Size(filterWidth, toolbarHeight)
 				if !stackedFilters {
-					layout.outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					layout.sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					layout.outcomeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsOutcome, sessionLogFilterOutcomeMenu, filterWidth).Size(filterWidth, toolbarHeight)
+					layout.sortSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsSort, sessionLogFilterSortMenu, filterWidth).Size(filterWidth, toolbarHeight)
 				}
 			})
 			if stackedFilters {
 				ui.Row(c).Height(38).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-					layout.outcomeSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
-					layout.sortSlot = ui.Slot(c).Size(filterWidth, toolbarHeight)
+					layout.outcomeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsOutcome, sessionLogFilterOutcomeMenu, filterWidth).Size(filterWidth, toolbarHeight)
+					layout.sortSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsSort, sessionLogFilterSortMenu, filterWidth).Size(filterWidth, toolbarHeight)
 				})
 			}
 		}
@@ -920,7 +924,7 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 			if view.emptyDanger {
 				descriptionColor = pal.danger
 			}
-			layout.emptySlot = state.reserveEmptyPageWithColor(c, bounds, view.emptyTitle, view.emptyText, view.emptyAction, descriptionColor)
+			layout.emptySlot = state.reserveEmptyPageWithColor(c, bounds, view.emptyTitle, view.emptyText, view.emptyAction, descriptionColor, hitSessionLogsClearFilters, view.emptyIcon, true)
 		case sideDetail:
 			ui.Row(c).Grow(1).Basis(0).Gap(14).Children(func() {
 				layout.content = ui.Slot(c).Grow(1).Basis(0)
@@ -936,7 +940,11 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 			ui.Text(c, view.statusText).FontSize(metrics.FontSizeS).Color(state.sessionLogStatusColor()).Grow(1).Ellipsis()
 			if view.more {
 				loadMoreWidth, _ := toolbarButtonLayout(canvas, m.LoadMore, iconChevronDown, iconChevronDown, condensed)
-				layout.loadMore = ui.Slot(c).Size(loadMoreWidth, toolbarHeight)
+				label := m.LoadMore
+				if view.loadingMore {
+					label = m.Loading
+				}
+				layout.loadMore = state.declareButtonSized(c, hitSessionLogsLoadMore, label, iconChevronDown, false, false, !view.loadingMore, toolbarFont, condensed).Size(loadMoreWidth, toolbarHeight)
 			}
 		})
 	})
@@ -946,7 +954,7 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 // paintSessionLogsWorkspace paints the session journal's controls, table,
 // details and empty state into the slots its declaration left.
 func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas) {
-	view, m, pal := &state.sessionLogs.view, &state.messages.SessionLogs, state.pal
+	view, m := &state.sessionLogs.view, &state.messages.SessionLogs
 	theme := state.Theme()
 	layout := &state.sectionBodies.sessionLogs
 
@@ -961,23 +969,11 @@ func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas) {
 	view.filterBounds[0], view.filterBounds[1], view.filterBounds[2] = layout.timeSlot.Rect(), layout.statusSlot.Rect(), layout.protocolSlot.Rect()
 	view.filterBounds[3] = layout.outcomeSlot.Rect()
 	view.filterBounds[4] = layout.sortSlot.Rect()
-	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsTime, layout.timeSlot.Rect(), sessionLogFilterTimeMenu)
-	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsStatus, layout.statusSlot.Rect(), sessionLogFilterStatusMenu)
-	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsProtocol, layout.protocolSlot.Rect(), sessionLogFilterProtocolMenu)
-	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsOutcome, layout.outcomeSlot.Rect(), sessionLogFilterOutcomeMenu)
-	state.paintSessionLogFilterTrigger(canvas, hitSessionLogsSort, layout.sortSlot.Rect(), sessionLogFilterSortMenu)
-	state.paintSessionLogFavoriteFilter(canvas, layout.favoriteFilterBox.Rect())
-
 	view.moreBounds = layout.moreButton.Rect()
-	style := iconButtonQuiet
-	if view.moreMenu {
-		style = iconButtonActive
-	}
-	state.paintIconButton(canvas, hitSessionLogsMore, iconEllipsis, layout.moreButton.Rect(), m.More, false, style, pal.surface)
 
 	switch {
 	case layout.empty:
-		state.drawReservedEmptyPage(canvas, layout.emptySlot, view.emptyIcon, hitSessionLogsClearFilters, view.emptyAction, true)
+		state.drawReservedEmptyPage(canvas, layout.emptySlot, view.emptyIcon)
 	case layout.sideDetail:
 		state.paintSessionLogTable(canvas, layout.content.Rect())
 		state.paintSessionLogDetails(canvas, layout.detailSlot.Rect(), false)
@@ -985,13 +981,6 @@ func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas) {
 		state.paintSessionLogDetails(canvas, layout.detailSlot.Rect(), true)
 	default:
 		state.paintSessionLogTable(canvas, layout.content.Rect())
-	}
-	if view.more {
-		label := m.LoadMore
-		if view.loadingMore {
-			label = m.Loading
-		}
-		state.paintToolbarButtonIn(canvas, hitSessionLogsLoadMore, layout.loadMore.Rect(), label, iconChevronDown, false, !view.loadingMore, layout.condensed)
 	}
 	// A focus move an event handler asked for is honored by the next paint: a
 	// click has no return value to carry it, so it waits here for the one place
@@ -1051,12 +1040,10 @@ func (state *State) sessionLogStatusColor() gfx.Color {
 	return state.pal.muted
 }
 
-// paintSessionLogFilterTrigger paints one filter: a small control that shows the
-// chosen value, names itself to the keyboard, and says whether its menu is open.
-func (state *State) paintSessionLogFilterTrigger(canvas *gfx.Canvas, id gfx.ID, bounds gfx.Rect, filter sessionLogFilterMenu) {
-	if bounds.Width <= 0 || bounds.Height <= 0 {
-		return
-	}
+// declareSessionLogFilterTrigger declares one filter in the page: a small
+// control that shows the chosen value, names itself to the keyboard, and says
+// whether its menu is open. The caller sizes it.
+func (state *State) declareSessionLogFilterTrigger(c ui.C, id gfx.ID, filter sessionLogFilterMenu, width float32) ui.Box {
 	view, m, pal := &state.sessionLogs.view, &state.messages.SessionLogs, state.pal
 	open := view.filterMenu == filter
 	active := false
@@ -1073,15 +1060,9 @@ func (state *State) paintSessionLogFilterTrigger(canvas *gfx.Canvas, id gfx.ID, 
 		active = view.query.Sort != sessionlog.SortStartedDesc
 	}
 	foreground := pal.muted
-	fill := gfx.Color{}
 	border := pal.line
-	switch {
-	case open, active:
+	if open || active {
 		foreground, border = pal.text, withAlpha(pal.accent, 0.55)
-	case canvas.Pressed() == id:
-		fill = pal.surfaceHot
-	case canvas.Hovered() == id:
-		foreground = pal.text
 	}
 	label := sessionLogFilterLabel(m, filter)
 	hint := label
@@ -1091,55 +1072,44 @@ func (state *State) paintSessionLogFilterTrigger(canvas *gfx.Canvas, id gfx.ID, 
 	value := state.sessionLogFilterValue(filter)
 	// The chevron is what a trigger past 96 pixels can afford; a narrower one
 	// keeps the value legible and says it opens with its accessible name.
-	chevron := bounds.Width >= 96
-	f := state.chrome.widget.Begin(canvas, state.Theme(), bounds)
-	f.Row().Fill().Center().Radius(radius.control).Border(1, border).Background(fill).
+	chevron := width >= 96
+	trigger := ui.ButtonBase(c, label).Radius(radius.control).Border(1.5, border).
 		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint, Selected: active, Expanded: open, Expandable: true}).
-		Children(func() {
-			f.Icon(lucideIcons[sessionLogFilterIcon(filter)]).Color(foreground).MarginSides(0, 6, 0, 8)
-			f.Text(value).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).Ellipsis()
-			if chevron {
-				f.Spacer()
-				f.Icon(lucideIcons[iconChevronDown]).Color(pal.faint)
-			}
-		})
-	f.End()
-	if canvas.FocusVisible() == id {
-		canvas.RoundedBorder(bounds, radius.control, 1.5, pal.accent, gfx.Color{})
+		Focus(ui.Look{}.Border(pal.accent))
+	if !open && !active {
+		trigger = trigger.Hover(ui.Look{}.Color(pal.text)).Pressed(ui.Look{}.Background(pal.surfaceHot))
 	}
+	trigger.Children(func() {
+		ui.Icon(c, lucideIcons[sessionLogFilterIcon(filter)]).Color(foreground).MarginSides(0, 6, 0, 8)
+		ui.Text(c, value).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).Ellipsis()
+		if chevron {
+			ui.Spacer(c)
+			ui.Icon(c, lucideIcons[iconChevronDown]).Color(pal.faint)
+		}
+	})
+	return trigger
 }
 
-// paintSessionLogFavoriteFilter paints the favorites-only toggle: a star that
-// fills while the filter is on. It is a filter, so it reports whether it is
-// applied rather than whether it has the keyboard.
-func (state *State) paintSessionLogFavoriteFilter(canvas *gfx.Canvas, bounds gfx.Rect) {
-	if bounds.Width <= 0 || bounds.Height <= 0 {
-		return
-	}
+// declareSessionLogFavoriteFilter declares the favorites-only toggle in the
+// page: a star that fills while the filter is on. It is a filter, so it reports
+// whether it is applied rather than whether it has the keyboard.
+func (state *State) declareSessionLogFavoriteFilter(c ui.C) ui.Box {
 	view, m, pal := &state.sessionLogs.view, &state.messages.SessionLogs, state.pal
 	icon := iconStar
 	foreground := pal.muted
-	fill := gfx.Color{}
 	border := pal.line
 	if view.favoriteOnly {
 		icon, foreground, border = iconStarSolid, pal.warning, withAlpha(pal.warning, 0.55)
 	}
-	switch {
-	case canvas.Pressed() == hitSessionLogsFavoriteFilter:
-		fill = pal.surfaceHot
-	case canvas.Hovered() == hitSessionLogsFavoriteFilter:
-		foreground = pal.text
-	}
-	f := state.chrome.widget.Begin(canvas, state.Theme(), bounds)
-	f.Row().Fill().Center().Radius(radius.control).Border(1, border).Background(fill).
+	toggle := ui.ButtonBase(c, m.FilterFavorite).Radius(radius.control).Border(1.5, border).
 		HitWith(hitSessionLogsFavoriteFilter, m.FilterFavorite, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.FilterFavorite, Selected: view.favoriteOnly}).
-		Children(func() {
-			f.Icon(lucideIcons[icon]).Color(foreground)
-		})
-	f.End()
-	if canvas.FocusVisible() == hitSessionLogsFavoriteFilter {
-		canvas.RoundedBorder(bounds, radius.control, 1.5, pal.accent, gfx.Color{})
-	}
+		Focus(ui.Look{}.Border(pal.accent)).
+		Hover(ui.Look{}.Color(pal.text)).
+		Pressed(ui.Look{}.Background(pal.surfaceHot))
+	toggle.Children(func() {
+		ui.Icon(c, lucideIcons[icon]).Color(foreground)
+	})
+	return toggle
 }
 
 // paintSessionLogFilters paints the open filter's popup in the frame's menu

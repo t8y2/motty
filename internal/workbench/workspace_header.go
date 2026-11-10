@@ -117,14 +117,14 @@ func (state *State) declareWorkspaceHeader(c ui.C, size gfx.Size) {
 		return
 	}
 	state.workspaceHeaderPlan = plan
-	pal := state.pal
+	pal, m := state.pal, state.messages
 	var slots workspaceHeaderPaint
 	container := ui.Column(c).Absolute().
 		Left(plan.bounds.X).Top(plan.bounds.Y).Width(plan.bounds.Width).Height(plan.bounds.Height).
 		Background(pal.workspace)
 	container.Children(func() {
 		ui.Row(c).Fill().PadX(10).Gap(6).Items(ui.Center).Children(func() {
-			slots.back = ui.Slot(c).Size(30, 30).Shrink(0)
+			slots.back = state.declareIconButton(c, hitWorkspaceHeaderBack, iconChevronLeft, m.WorkspaceHeaderBack, false, iconButtonQuiet).Size(30, 30).Shrink(0)
 			ui.Column(c).Grow(1).Gap(0).Children(func() {
 				ui.Text(c, plan.title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).
 					Color(pal.text).LineHeight(20).Ellipsis()
@@ -137,10 +137,18 @@ func (state *State) declareWorkspaceHeader(c ui.C, size gfx.Size) {
 				slots.connection = ui.Slot(c).Size(connectionWidth, 22).Shrink(0).MarginSides(0, 8, 0, 0)
 			}
 			if plan.temporary {
-				slots.save = ui.Slot(c).Size(plan.saveWidth, 30).Shrink(0)
+				if plan.compact {
+					slots.save = state.declareIconButton(c, hitWorkspaceHeaderSave, iconFolderPlus, m.WorkspaceSaveMenu, false, iconButtonQuiet).Size(plan.saveWidth, 30).Shrink(0)
+				} else {
+					slots.save = ui.Slot(c).Size(plan.saveWidth, 30).Shrink(0)
+				}
 			}
 			slots.broadcast = ui.Slot(c).Size(plan.broadcastWidth, 30).Shrink(0)
-			slots.layout = ui.Slot(c).Size(plan.layoutWidth, 30).Shrink(0)
+			if plan.compact {
+				slots.layout = state.declareIconButton(c, hitWorkspaceHeaderLayout, iconColumns2, m.WorkspaceHeaderLayout, false, iconButtonQuiet).Size(plan.layoutWidth, 30).Shrink(0)
+			} else {
+				slots.layout = ui.Slot(c).Size(plan.layoutWidth, 30).Shrink(0)
+			}
 		})
 	})
 	state.workspaceHeaderSlots = slots
@@ -155,8 +163,6 @@ func (state *State) paintWorkspaceHeader(canvas *gfx.Canvas, size gfx.Size) (ope
 	bounds, slots := plan.bounds, state.workspaceHeaderSlots
 	background := pal.workspace
 	canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height - 1, Width: bounds.Width, Height: 1}, pal.line)
-	state.paintIconButton(canvas, hitWorkspaceHeaderBack, iconChevronLeft, slots.back.Rect(),
-		m.WorkspaceHeaderBack, false, iconButtonQuiet, background)
 	if !plan.compact {
 		box := slots.connection.Rect()
 		paintLight(canvas, box.X+8, box.Y+box.Height/2, plan.light, plan.color, background)
@@ -164,19 +170,11 @@ func (state *State) paintWorkspaceHeader(canvas *gfx.Canvas, size gfx.Size) (ope
 			gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: plan.color})
 	}
 	state.paintWorkspaceBroadcast(canvas, slots.broadcast.Rect(), plan.broadcastLabel, plan.status, plan.broadcasting)
-	if plan.temporary {
-		if plan.compact {
-			state.paintIconButton(canvas, hitWorkspaceHeaderSave, iconFolderPlus, slots.save.Rect(), m.WorkspaceSaveMenu,
-				false, iconButtonQuiet, background)
-		} else {
-			components.BeginButton(canvas, state.Theme(), hitWorkspaceHeaderSave, slots.save.Rect()).Small().FontSize(workspaceHeaderLabelSize).
-				WithIcon(lucideIcons[iconFolderPlus]).Ghost(m.WorkspaceDraftSave)
-		}
+	if plan.temporary && !plan.compact {
+		components.BeginButton(canvas, state.Theme(), hitWorkspaceHeaderSave, slots.save.Rect()).Small().FontSize(workspaceHeaderLabelSize).
+			WithIcon(lucideIcons[iconFolderPlus]).Ghost(m.WorkspaceDraftSave)
 	}
-	if plan.compact {
-		state.paintIconButton(canvas, hitWorkspaceHeaderLayout, iconColumns2, slots.layout.Rect(), m.WorkspaceHeaderLayout,
-			false, iconButtonQuiet, background)
-	} else {
+	if !plan.compact {
 		components.BeginButton(canvas, state.Theme(), hitWorkspaceHeaderLayout, slots.layout.Rect()).Small().FontSize(workspaceHeaderLabelSize).
 			WithIcon(lucideIcons[iconColumns2]).Ghost(plan.layoutLabel)
 	}

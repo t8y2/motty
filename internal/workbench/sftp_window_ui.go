@@ -371,7 +371,6 @@ func (w *sftpWindow) paintPaneDetails(canvas *gfx.Canvas, s *sftpWindowScratch, 
 	if !local && sudoSFTPAvailable(&w.session, w.view) {
 		components.BeginToggle(canvas, theme, hitSFTPWindowSudoMode, s.sudoMode.Rect(), w.view.sudo).Small().Outline(m.SFTPModeToggle)
 	}
-	w.owner.paintSFTPIconButtons(canvas, s.buttons[:s.buttonCount])
 	for _, button := range s.buttons[:s.buttonCount] {
 		if button.id == sftpWindowMore[side] {
 			w.ui.headerAnchor[side] = button.box.Rect()
@@ -446,8 +445,8 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 	theme, m := w.owner.Theme(), w.owner.messages
 	bounds := s.bounds
 	compact := bounds.Height < 230
-	icon := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
-		s.buttons[s.buttonCount] = sftpIconButton{box: ui.Slot(c).Size(28, 28), id: id, icon: glyph, hint: hint, disabled: disabled, style: iconButtonQuiet}
+	icon := func(id gfx.ID, glyph uint8, hint string, disabled bool, style iconButtonStyle) {
+		s.buttons[s.buttonCount] = sftpIconButton{box: w.owner.declareIconButton(c, id, glyph, hint, disabled, style).Size(28, 28), id: id}
 		s.buttonCount++
 	}
 	ui.Column(c).Fill().Pad(8).Gap(6).Children(func() {
@@ -468,35 +467,36 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 			if treeDisabled {
 				treeHint = m.SFTPWindow.DirectoryTreeNeedsWidth
 			}
-			icon(sftpWindowTreeToggle[sideIndex(local)], iconDirectoryTree, treeHint, treeDisabled)
+			treeStyle := iconButtonQuiet
 			if w.directoryTree[sideIndex(local)].enabled {
-				s.buttons[s.buttonCount-1].style = iconButtonActive
+				treeStyle = iconButtonActive
 			}
+			icon(sftpWindowTreeToggle[sideIndex(local)], iconDirectoryTree, treeHint, treeDisabled, treeStyle)
 			if !local && bounds.Width >= 420 {
-				icon(hitSFTPWindowUpload, iconUpload, m.SFTPWindow.Upload, !w.canTransfer(true))
-				icon(hitSFTPWindowDownload, iconDownload, m.SFTPWindow.Download, !w.canTransfer(false))
+				icon(hitSFTPWindowUpload, iconUpload, m.SFTPWindow.Upload, !w.canTransfer(true), iconButtonQuiet)
+				icon(hitSFTPWindowDownload, iconDownload, m.SFTPWindow.Download, !w.canTransfer(false), iconButtonQuiet)
 			}
 			if local || bounds.Width >= 340 {
-				icon(sftpWindowUp[sideIndex(local)], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()))
-				icon(sftpWindowRefresh[sideIndex(local)], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()))
+				icon(sftpWindowUp[sideIndex(local)], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()), iconButtonQuiet)
+				icon(sftpWindowRefresh[sideIndex(local)], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()), iconButtonQuiet)
 			}
 			if folder.showHidden {
-				icon(sftpWindowHidden[sideIndex(local)], iconEye, m.Tools.FilesHideHidden, false)
-				s.buttons[s.buttonCount-1].style = iconButtonActive
+				icon(sftpWindowHidden[sideIndex(local)], iconEye, m.Tools.FilesHideHidden, false, iconButtonActive)
 			}
 			if local {
-				icon(hitSFTPLocationProfiles, iconSFTPProfiles, m.SFTPWindow.BookmarkTitle, w.browse.pending != nil)
-				icon(hitSFTPProfileQuick, iconChevronDown, m.SFTPWindow.ProfileChoose, w.browse.pending != nil || w.visibleProfileCount() == 0)
+				icon(hitSFTPLocationProfiles, iconSFTPProfiles, m.SFTPWindow.BookmarkTitle, w.browse.pending != nil, iconButtonQuiet)
+				icon(hitSFTPProfileQuick, iconChevronDown, m.SFTPWindow.ProfileChoose, w.browse.pending != nil || w.visibleProfileCount() == 0, iconButtonQuiet)
 				hint := m.SFTPWindow.BrowseSync
 				if w.browse.enabled {
 					hint = w.browseDescription()
 				}
-				icon(hitSFTPBrowseSync, iconSFTPBrowseSync, hint, !w.browse.enabled && (w.navigationBusy() || !w.connected()))
+				browseStyle := iconButtonQuiet
 				if w.browse.enabled {
-					s.buttons[s.buttonCount-1].style = iconButtonActive
+					browseStyle = iconButtonActive
 				}
+				icon(hitSFTPBrowseSync, iconSFTPBrowseSync, hint, !w.browse.enabled && (w.navigationBusy() || !w.connected()), browseStyle)
 			}
-			icon(sftpWindowMore[sideIndex(local)], iconEllipsis, m.Tools.FilesMore, false)
+			icon(sftpWindowMore[sideIndex(local)], iconEllipsis, m.Tools.FilesMore, false, iconButtonQuiet)
 		})
 		ui.Row(c).Height(32).Gap(2).Items(ui.Center).Children(func() {
 			s.address = ui.Slot(c).Height(32).Grow(1)
@@ -504,12 +504,12 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 			if local {
 				listID, starID, listHint = hitSFTPLocalPlaces, hitSFTPLocalStar, m.SFTPWindow.LocalPlaces
 			}
-			icon(listID, iconChevronDown, listHint, false)
+			icon(listID, iconChevronDown, listHint, false, iconButtonQuiet)
 			star, hint := uint8(iconStar), m.SFTPWindow.FavoriteAdd
 			if w.directoryFavorite(local) {
 				star, hint = iconStarSolid, m.SFTPWindow.FavoriteRemove
 			}
-			icon(starID, star, hint, folder.path == "" || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected() || w.session.host.CatalogID == ""))
+			icon(starID, star, hint, folder.path == "" || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected() || w.session.host.CatalogID == ""), iconButtonQuiet)
 		})
 		if folder.filterOpen {
 			s.filter = ui.Slot(c).Height(32).Shrink(0)
@@ -610,10 +610,11 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 					return
 				}
 				for _, action := range w.selectionActions(local) {
-					icon(sftpWindowActions[sideIndex(local)].At(action.index), action.glyph, action.label, w.browse.pending != nil || w.view.busy && !local || !local && !w.connected())
+					style := iconButtonQuiet
 					if sftpWindowActionIDs[action.index] == hitSFTPDelete {
-						s.buttons[s.buttonCount-1].style = iconButtonDanger
+						style = iconButtonDanger
 					}
+					icon(sftpWindowActions[sideIndex(local)].At(action.index), action.glyph, action.label, w.browse.pending != nil || w.view.busy && !local || !local && !w.connected(), style)
 				}
 			})
 			if bounds.Height >= 320 {

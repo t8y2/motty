@@ -605,9 +605,6 @@ func (state *State) paintEmptyContextPanelDetails(canvas *gfx.Canvas) {
 	pal, messages := state.pal, state.messages
 	headerBounds := s.header.Rect()
 	canvas.Fill(gfx.Rect{X: headerBounds.X, Y: headerBounds.Y + headerBounds.Height - 1, Width: headerBounds.Width, Height: 1}, pal.line)
-	state.paintIconButton(canvas, hitSFTPClose, iconClose, s.closeButton.Rect(), messages.TipSFTPClose, false, iconButtonQuiet, pal.workspace)
-	moveIcon, moveHint := state.sftpPanelMoveAction()
-	state.paintIconButton(canvas, hitSFTPPanelSide, moveIcon, s.sideButton.Rect(), moveHint, false, iconButtonQuiet, pal.workspace)
 	if s.session != nil {
 		titleBounds := s.sessionTitle.Rect()
 		canvas.Label(elide(canvas, s.session.Title, metrics.FontSizeS, gfx.WeightRegular, titleBounds.Width), titleBounds, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
@@ -634,8 +631,9 @@ func (state *State) declareEmptyContextSFTP(c ui.C) {
 			s.header = ui.Row(c).FillWidth().Height(infoBarHeight).Shrink(0).MarginSides(0, -sftpPad, 0, -sftpPad).PadX(sftpPad).Background(pal.workspace).Gap(8).Items(ui.Center)
 			s.header.Children(func() {
 				ui.Text(c, messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
-				s.sideButton = ui.Slot(c).Size(sftpHeaderButton, sftpHeaderButton)
-				s.closeButton = ui.Slot(c).Size(sftpHeaderButton, sftpHeaderButton)
+				moveIcon, moveHint := state.sftpPanelMoveAction()
+				s.sideButton = state.declareIconButton(c, hitSFTPPanelSide, moveIcon, moveHint, false, iconButtonQuiet).Size(sftpHeaderButton, sftpHeaderButton)
+				s.closeButton = state.declareIconButton(c, hitSFTPClose, iconClose, messages.TipSFTPClose, false, iconButtonQuiet).Size(sftpHeaderButton, sftpHeaderButton)
 			})
 			if session != nil {
 				// Whose files these would be: the session the panel follows.

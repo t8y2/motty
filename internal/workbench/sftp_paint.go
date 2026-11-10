@@ -77,27 +77,11 @@ type sftpEmptyScratch struct {
 	openButton   ui.Box
 }
 
-// sftpIconButton is an icon button declared into a slot of the page and painted
-// once the page has been laid out.
+// sftpIconButton is an icon button the page declared, kept for the popup
+// anchors painted after the layout.
 type sftpIconButton struct {
-	box      ui.Box
-	id       gfx.ID
-	icon     uint8
-	hint     string
-	disabled bool
-	style    iconButtonStyle
-	behind   gfx.Color
-}
-
-func (state *State) paintSFTPIconButtons(canvas *gfx.Canvas, buttons []sftpIconButton) {
-	for index := range buttons {
-		button := &buttons[index]
-		behind := button.behind
-		if behind.Alpha == 0 {
-			behind = state.pal.workspace
-		}
-		state.paintIconButton(canvas, button.id, button.icon, button.box.Rect(), button.hint, button.disabled, button.style, behind)
-	}
+	box ui.Box
+	id  gfx.ID
 }
 
 // paintSFTPPanelDetails paints what the panel's view lays out but does not
@@ -120,10 +104,6 @@ func (state *State) paintSFTPPanelDetails(canvas *gfx.Canvas) {
 	}
 	headerBounds := s.header.Rect()
 	canvas.Fill(gfx.Rect{X: headerBounds.X, Y: headerBounds.Y + headerBounds.Height - 1, Width: headerBounds.Width, Height: 1}, pal.line)
-	for i := 0; i < s.headerButtonCount; i++ {
-		s.buttons[i].behind = pal.workspace
-	}
-	state.paintSFTPIconButtons(canvas, s.buttons[:s.buttonCount])
 	if folder.headerMenuOpen && state.sftpHeaderMenuAvailable(view) {
 		state.requestSFTPHeaderMenu(s.moreButton.Rect(), folder, view)
 	}
@@ -209,7 +189,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 
 	// icon declares an icon button where it goes; it is painted after Draw.
 	icon := func(side float32, id gfx.ID, glyph uint8, hint string, disabled bool, style iconButtonStyle) {
-		s.buttons[s.buttonCount] = sftpIconButton{box: ui.Slot(c).Size(side, side), id: id, icon: glyph, hint: hint, disabled: disabled, style: style}
+		s.buttons[s.buttonCount] = sftpIconButton{box: state.declareIconButton(c, id, glyph, hint, disabled, style).Size(side, side), id: id}
 		s.buttonCount++
 	}
 	ui.Column(c).Fill().PadSides(0, sftpPad, 6, sftpPad).Background(pal.workspace).Children(func() {

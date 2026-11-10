@@ -41,7 +41,6 @@ func (state *State) declareNewTabPage(c ui.C, bounds gfx.Rect) {
 	chrome := &state.chrome
 	chrome.newTabBadges = chrome.newTabBadges[:0]
 	chrome.newTabShells = ui.Box{}
-	chrome.newTabFooter = false
 	chrome.newTabShown = min(newTabCardWidth, bounds.Width-48) >= 200
 	if !chrome.newTabShown {
 		ui.Column(c).Fill().Background(pal.workspace)
@@ -68,9 +67,8 @@ func (state *State) declareNewTabPage(c ui.C, bounds gfx.Rect) {
 				})
 			})
 			ui.Row(c).Shrink(0).Gap(8).MarginSides(0, 0, newTabFooter-48, 0).Children(func() {
-				chrome.newTabAdd = ui.Slot(c).Size(toolbarButtonWidth(c.Canvas(), m.AddHost, false), 32).Self(ui.Center)
-				chrome.newTabAll = ui.Slot(c).Size(toolbarButtonWidth(c.Canvas(), m.NewTabAllHosts, false), 32).Self(ui.Center)
-				chrome.newTabFooter = true
+				chrome.newTabAdd = state.declareButtonSized(c, hitNewTabHostNew, m.AddHost, 0, false, false, true, 12, false).Size(toolbarButtonWidth(c.Canvas(), m.AddHost, false), 32).Self(ui.Center)
+				chrome.newTabAll = state.declareButtonSized(c, hitPaneChooseHost, m.NewTabAllHosts, 0, false, false, true, 12, false).Size(toolbarButtonWidth(c.Canvas(), m.NewTabAllHosts, false), 32).Self(ui.Center)
 			})
 		})
 	})
@@ -98,11 +96,6 @@ func (state *State) paintNewTabDetails(canvas *gfx.Canvas) {
 			continue
 		}
 		state.paintHostCatalogIcon(canvas, state.hosts[index-1], badge.Rect(), pal.workspace)
-	}
-	if chrome.newTabFooter {
-		m := state.messages
-		state.paintButton(canvas, hitNewTabHostNew, chrome.newTabAdd.Rect(), m.AddHost, 0, false, false, true)
-		state.paintButton(canvas, hitPaneChooseHost, chrome.newTabAll.Rect(), m.NewTabAllHosts, 0, false, false, true)
 	}
 }
 

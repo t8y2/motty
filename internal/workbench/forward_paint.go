@@ -51,6 +51,7 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 	if selected.lastError != "" {
 		detailColor = pal.danger
 	}
+	canAdd := state.sshHostCount() > 0
 	view := &state.sectionBodies.forwards
 	draw := view.draw
 	*view = forwardSectionUI{
@@ -69,13 +70,13 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 				ui.Text(c, messages.ForwardTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				ui.Paragraph(c, messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
-			view.remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
-			view.edit = ui.Slot(c).Size(editWidth, toolbarHeight)
-			view.action = ui.Slot(c).Size(actionWidth, toolbarHeight)
-			view.add = ui.Slot(c).Size(addWidth, toolbarHeight)
+			view.remove = state.declareButtonSized(c, hitForwardRemove, messages.ForwardRemove, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
+			view.edit = state.declareButtonSized(c, hitForwardEdit, messages.ForwardEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
+			view.action = state.declareButtonSized(c, hitForwardStartStop, actionLabel, realActionIcon, false, false, hasSelection, toolbarFont, condensed).Size(actionWidth, toolbarHeight)
+			view.add = state.declareButtonSized(c, hitForwardAdd, messages.ForwardAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
 		})
 		if len(state.forwards) == 0 {
-			view.empty = state.reserveEmptyPage(c, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd)
+			view.empty = state.reserveEmptyPage(c, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd, hitForwardAdd, iconForward, canAdd)
 		} else {
 			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
 		}
@@ -94,16 +95,9 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 // state into the slots its declaration left.
 func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas) {
 	view, messages := &state.sectionBodies.forwards, state.messages
-	_, hasSelection := state.forwardByID(state.selectedForwardID)
-	canAdd := state.sshHostCount() > 0
-
-	state.paintToolbarButton(canvas, hitForwardRemove, view.remove.Rect().X, view.remove.Rect().Y, view.removeWidth, messages.ForwardRemove, view.removeIcon, false, hasSelection, view.condensed)
-	state.paintToolbarButton(canvas, hitForwardEdit, view.edit.Rect().X, view.edit.Rect().Y, view.editWidth, messages.ForwardEdit, view.editIcon, false, hasSelection, view.condensed)
-	state.paintToolbarButton(canvas, hitForwardStartStop, view.action.Rect().X, view.action.Rect().Y, view.actionWidth, view.actionLabel, view.actionIcon, false, hasSelection, view.condensed)
-	state.paintToolbarButton(canvas, hitForwardAdd, view.add.Rect().X, view.add.Rect().Y, view.addWidth, messages.ForwardAdd, view.addIcon, true, canAdd, view.condensed)
 
 	if len(state.forwards) == 0 {
-		state.drawReservedEmptyPage(canvas, view.empty, iconForward, hitForwardAdd, messages.ForwardAdd, canAdd)
+		state.drawReservedEmptyPage(canvas, view.empty, iconForward)
 		return
 	}
 	columns := [...]components.TableColumn{{Width: 180}, {Width: 160}, {Width: 170}, {Width: 210}, {Width: 0}}

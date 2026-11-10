@@ -899,11 +899,6 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, pal.workspace)
 		}
 		components.BeginButtonRow(canvas, state.theme, s.tools.Rect()).Size(components.ButtonSizeXSmall).Paint(s.desktopTools...)
-		captureStyle, captureHint := iconButtonActive, fmt.Sprintf(m.Desktop.TipCapture, desktopEscapeChord)
-		if view.released {
-			captureStyle, captureHint = iconButtonQuiet, fmt.Sprintf(m.Desktop.TipRelease, desktopEscapeChord)
-		}
-		state.paintIconButton(canvas, hitDesktopCapture, iconKeyboard, s.capture.Rect(), captureHint, view.ended, captureStyle, pal.workspace)
 	}
 	// The picture, clipped to its area. The area behind it is the terminal's
 	// ground, so a picture that does not fill the pane sits on a quiet surface.
@@ -981,7 +976,17 @@ func (state *State) declareDesktopPage(c ui.C) {
 				})
 				ui.Row(c).Gap(barToolGap).Shrink(0).Items(ui.Center).Children(func() {
 					s.tools = ui.Slot(c).Size(toolsWidth, 24).Shrink(0)
-					s.capture = ui.Slot(c).Size(barToolSize, barToolSize).Shrink(0)
+					if view.chromeless || view.fullscreen {
+						// These views paint the picture alone; their capture control is
+						// the corner note or the fullscreen bar, not this one.
+						s.capture = ui.Slot(c).Size(barToolSize, barToolSize).Shrink(0)
+					} else {
+						captureStyle, captureHint := iconButtonActive, fmt.Sprintf(m.Desktop.TipCapture, desktopEscapeChord)
+						if view.released {
+							captureStyle, captureHint = iconButtonQuiet, fmt.Sprintf(m.Desktop.TipRelease, desktopEscapeChord)
+						}
+						s.capture = state.declareIconButton(c, hitDesktopCapture, iconKeyboard, captureHint, view.ended, captureStyle).Size(barToolSize, barToolSize).Shrink(0)
+					}
 				})
 			})
 			ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(pal.line)

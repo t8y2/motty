@@ -583,6 +583,8 @@ func (state *State) declareShell(c ui.C) {
 	// them.
 	state.declareDialogs(c)
 	state.declareKnownHostsDialog(c)
+	// The drag overlay is hitless and paints over the page on the drag layer.
+	state.declareTabDragOverlays(c)
 }
 
 // windowBarGeometry lays the bar out once without its contents to find out how
@@ -1081,10 +1083,12 @@ type chromeLayout struct {
 	probePage      *ui.Page
 	probeView      func(ui.C)
 	probeInput     barGeometry
-	// widget lays out one small control at a time (a bar or toolbar button, a chip,
-	// an icon button): each paints what it declared before the next begins, so the
-	// view is shared.
-	widget ui.View
+	// tabDragDropDraw, tabDragGhostDraw and tabDragHintDraw paint the hitless
+	// elements of a tab drag. They are made once, so a warm repaint declares the
+	// overlays without allocating a method value.
+	tabDragDropDraw  func(*ui.DrawContext)
+	tabDragGhostDraw func(*ui.DrawContext)
+	tabDragHintDraw  func(*ui.DrawContext)
 	// passwordSave is the slot the save box of the password dialog was laid out
 	// in.
 	passwordSave ui.Box
@@ -1104,13 +1108,10 @@ type chromeLayout struct {
 	hostFormScrollbarDraw func(*ui.DrawContext)
 	hostFormFieldsDraw    func(*ui.DrawContext)
 	hostDialogFooterDraw  func(*ui.DrawContext)
-	// newTabAdd and newTabAll are the empty tab's footer buttons, painted by
-	// hand once the page has laid them out; newTabShown says the page declared
-	// the empty tab this paint.
-	newTabAdd    ui.Box
-	newTabAll    ui.Box
-	newTabFooter bool
-	newTabShown  bool
+	// newTabAdd and newTabAll are the empty tab's footer buttons.
+	newTabAdd   ui.Box
+	newTabAll   ui.Box
+	newTabShown bool
 	// importButton is where the toolbar's Import button was painted: the menu
 	// it opens hangs under it, right-aligned.
 	importButton gfx.Rect
@@ -1416,10 +1417,10 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 		ui.Column(c).Height(plan.headerHeight).Shrink(0).PadSides(14, 0, 0, 0).Children(func() {
 			ui.Row(c).Height(toolbarHeight).MarginX(toolbarMargin).Items(ui.Center).Children(func() {
 				b.search = ui.Slot(c).Basis(searchWidth).Shrink(1).MinWidth(searchLeast).Height(toolbarHeight).MarginSides(0, buttonGap, 0, 0)
-				b.connect = ui.Slot(c).Size(plan.connectWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
+				b.connect = state.declareButtonSized(c, hitConnect, m.Connect, plan.connectIcon, false, false, state.typedQuery() != "", toolbarFont, plan.condensed).Size(plan.connectWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
 				ui.Spacer(c)
-				b.importButton = ui.Slot(c).Size(plan.importWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
-				b.newHost = ui.Slot(c).Size(plan.newHostWidth, toolbarHeight)
+				b.importButton = state.declareButtonSized(c, hitImportMenu, m.ImportMenu, plan.importIcon, false, false, true, toolbarFont, plan.condensed).Size(plan.importWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
+				b.newHost = state.declareButtonSized(c, hitAddHost, m.NewHost, plan.newHostIcon, true, false, true, toolbarFont, plan.condensed).Size(plan.newHostWidth, toolbarHeight)
 			})
 			// Filters and view controls stay in place when the selection changes.
 			ui.Row(c).Height(hostHeaderRowHeight).MarginSides(12, 0, 0, 0).PadSides(0, 18, 0, 18).Gap(12).Items(ui.Center).Children(func() {
@@ -1429,21 +1430,41 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 				if plan.showChips {
 					ui.Row(c).Gap(6).Children(func() {
 						chrome.chips = chrome.chips[:0]
-						chrome.chips = append(chrome.chips, ui.Slot(c).Size(state.filterChipWidth(c.Canvas(), m.HostFilterAll, state.hostTotalDigits), hostHeaderRowHeight))
+						chrome.chips = append(chrome.chips, state.declareFilterChip(c, filterChip{
+							id: hitHostFilterAll, label: m.HostFilterAll, digits: state.hostTotalDigits, chosen: !state.hostFilterOn,
+						}).Size(state.filterChipWidth(c.Canvas(), m.HostFilterAll, state.hostTotalDigits), hostHeaderRowHeight))
 						for _, index := range state.hostChips[:state.hostFilterHidden] {
-							chrome.chips = append(chrome.chips, ui.Slot(c).Size(state.hostChipWidth(c.Canvas(), index), hostHeaderRowHeight))
+							label, digits, chosen := state.hostChipView(index)
+							var chevron gfx.ID
+							if state.hostChipHasMenu(index) {
+								chevron = hitHostFilterChevronList.At(index)
+							}
+							chrome.chips = append(chrome.chips, state.declareFilterChip(c, filterChip{
+								id: hitHostFilterList.At(index), chevron: chevron, label: label, digits: digits,
+								pinned: state.hostGroups[index].Pinned, chosen: chosen,
+							}).Size(state.hostChipWidth(c.Canvas(), index), hostHeaderRowHeight))
 						}
 						if state.hostFilterHidden < len(state.hostChips) {
-							chrome.chips = append(chrome.chips, ui.Slot(c).Size(state.filterChipWidth(c.Canvas(), m.HostFilterMore, ""), hostHeaderRowHeight))
+							hiddenChosen := false
+							if state.hostFilterOn {
+								for _, index := range state.hostChips[state.hostFilterHidden:] {
+									if _, _, chosen := state.hostChipView(index); chosen {
+										hiddenChosen = true
+									}
+								}
+							}
+							chrome.chips = append(chrome.chips, state.declareFilterChip(c, filterChip{
+								id: hitHostFilterMore, label: m.HostFilterMore, chosen: hiddenChosen,
+							}).Size(state.filterChipWidth(c.Canvas(), m.HostFilterMore, ""), hostHeaderRowHeight))
 						}
 					})
 				}
 				ui.Spacer(c)
 				if plan.showGroupControls {
 					ui.Row(c).Gap(2).Children(func() {
-						for index := range b.groupControls {
-							b.groupControls[index] = ui.Slot(c).Size(26, 26)
-						}
+						expand, collapse := state.hostGroupsExpansionActions()
+						b.groupControls[0] = state.declareIconButton(c, hitHostGroupsExpandAll, iconChevronDown, m.HostGroupActions.ExpandAll, !expand, iconButtonQuiet).Size(26, 26)
+						b.groupControls[1] = state.declareIconButton(c, hitHostGroupsCollapseAll, iconChevronRight, m.HostGroupActions.CollapseAll, !collapse, iconButtonQuiet).Size(26, 26)
 					})
 				}
 				viewControlsWidth := float32(56 + 6 + 26)
@@ -1455,12 +1476,27 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 				b.toggle.Children(func() {
 					ui.Row(c).Fill().Items(ui.Center).Children(func() {
 						ui.Row(c).Width(54).Gap(2).Children(func() {
-							chrome.hostToggle.list = ui.Slot(c).Size(26, 26)
-							chrome.hostToggle.grid = ui.Slot(c).Size(26, 26)
+							listStyle, gridStyle := iconButtonQuiet, iconButtonQuiet
+							if state.hostView == hostViewList {
+								listStyle = iconButtonActive
+							} else {
+								gridStyle = iconButtonActive
+							}
+							chrome.hostToggle.list = state.declareIconButton(c, hitHostViewList, iconRows2, state.messages.Tools.HostViewList, false, listStyle).Size(26, 26)
+							chrome.hostToggle.grid = state.declareIconButton(c, hitHostViewGrid, iconHome, state.messages.Tools.HostViewGrid, false, gridStyle).Size(26, 26)
 						})
-						chrome.hostToggle.sort = ui.Slot(c).Size(26, 26).MarginSides(0, 0, 0, 6)
+						sortLabel, sortStyle := state.messages.Tools.HostSort, iconButtonQuiet
+						if state.hostSort.enabled {
+							sortLabel, sortStyle = state.messages.Tools.HostSortDone, iconButtonActive
+						}
+						sortDisabled := !state.hostSort.enabled && (state.hostOrder != hostOrderManual || len(state.hosts) < 2 || state.typedQuery() != "")
+						chrome.hostToggle.sort = state.declareIconButton(c, hitHostSort, iconTransfer, sortLabel, sortDisabled, sortStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
 						if !plan.compactHostControls {
-							chrome.hostToggle.order = ui.Slot(c).Size(26, 26).MarginSides(0, 0, 0, 6)
+							orderStyle := iconButtonQuiet
+							if state.hostOrder != hostOrderManual {
+								orderStyle = iconButtonActive
+							}
+							chrome.hostToggle.order = state.declareIconButton(c, hitHostOrder, iconSliders, state.messages.HostCatalog.Order, false, orderStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
 						}
 					})
 				})
@@ -1470,7 +1506,11 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 					b.selectAll = ui.Slot(c).Size(40, hostHeaderRowHeight).Shrink(0)
 					ui.Spacer(c)
 					ui.Text(c, m.HostCatalog.Order).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Shrink(1)
-					b.orderButton = ui.Slot(c).Size(26, 26).Shrink(0)
+					orderStyle := iconButtonQuiet
+					if state.hostOrder != hostOrderManual {
+						orderStyle = iconButtonActive
+					}
+					b.orderButton = state.declareIconButton(c, hitHostOrder, iconSliders, m.HostCatalog.Order, false, orderStyle).Size(26, 26).Shrink(0)
 				})
 			}
 			if plan.anySelected {
@@ -1497,7 +1537,7 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 // declaration left. Hits are added in the order the controls were painted: Tab
 // follows it.
 func (state *State) paintHostsHeader(canvas *gfx.Canvas) {
-	m, pal := state.messages, state.pal
+	m := state.messages
 	chrome := &state.chrome
 	plan := chrome.headerPlan
 	b := &chrome.headerBoxes
@@ -1515,21 +1555,14 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas) {
 		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
 	})
 	// Connect needs something to connect to.
-	state.paintToolbarButtonIn(canvas, hitConnect, b.connect.Rect(), m.Connect, plan.connectIcon, false, state.typedQuery() != "", plan.condensed)
-	state.paintToolbarButtonIn(canvas, hitAddHost, b.newHost.Rect(), m.NewHost, plan.newHostIcon, true, true, plan.condensed)
 	chrome.importButton = b.importButton.Rect()
-	state.paintToolbarButtonIn(canvas, hitImportMenu, chrome.importButton, m.ImportMenu, plan.importIcon, false, true, plan.condensed)
 
-	state.paintHostViewToggle(canvas, !plan.compactHostControls)
 	if plan.compactHostControls {
-		state.paintHostOrderButton(canvas, b.orderButton.Rect())
+		state.hostOrderButton = b.orderButton.Rect()
+	} else {
+		state.hostOrderButton = chrome.hostToggle.order.Rect()
 	}
 	state.paintHostScopeCheckbox(canvas, hitHostSelectAll, b.selectAll.Rect(), state.hostScopeSelection.all)
-	if plan.showGroupControls {
-		expand, collapse := state.hostGroupsExpansionActions()
-		state.paintIconButton(canvas, hitHostGroupsExpandAll, iconChevronDown, b.groupControls[0].Rect(), m.HostGroupActions.ExpandAll, !expand, iconButtonQuiet, pal.workspace)
-		state.paintIconButton(canvas, hitHostGroupsCollapseAll, iconChevronRight, b.groupControls[1].Rect(), m.HostGroupActions.CollapseAll, !collapse, iconButtonQuiet, pal.workspace)
-	}
 	if plan.showChips {
 		state.paintHostFilterChips(canvas, chrome.chips)
 	}
@@ -1620,37 +1653,6 @@ func (state *State) fitHostChips(canvas *gfx.Canvas, room float32) {
 	}
 }
 
-// paintHostFilterChips draws the row of group chips laid out by the header: All,
-// then each group with how many hosts it holds, then More when some did not fit.
-func (state *State) paintHostFilterChips(canvas *gfx.Canvas, chips []ui.Box) {
-	m := state.messages
-	state.paintFilterChip(canvas, filterChip{id: hitHostFilterAll, bounds: chips[0].Rect(), label: m.HostFilterAll, digits: state.hostTotalDigits, chosen: !state.hostFilterOn})
-	for position, index := range state.hostChips[:state.hostFilterHidden] {
-		label, digits, chosen := state.hostChipView(index)
-		var chevron gfx.ID
-		if state.hostChipHasMenu(index) {
-			chevron = hitHostFilterChevronList.At(index)
-			if state.chipMenu.open && state.chipMenu.root == state.hostGroups[index].Name {
-				state.chipMenu.anchor = chips[1+position].Rect()
-			}
-		}
-		state.paintFilterChip(canvas, filterChip{id: hitHostFilterList.At(index), chevron: chevron, bounds: chips[1+position].Rect(), label: label, digits: digits, pinned: state.hostGroups[index].Pinned, chosen: chosen})
-		state.openHostGroupActionsOn(canvas, hitHostFilterList.At(index), index)
-	}
-	if state.hostFilterHidden < len(state.hostChips) {
-		hiddenChosen := false
-		if state.hostFilterOn {
-			for _, index := range state.hostChips[state.hostFilterHidden:] {
-				if _, _, chosen := state.hostChipView(index); chosen {
-					hiddenChosen = true
-				}
-			}
-		}
-		state.filterMoreButton = chips[1+state.hostFilterHidden].Rect()
-		state.paintFilterChip(canvas, filterChip{id: hitHostFilterMore, bounds: state.filterMoreButton, label: m.HostFilterMore, chosen: hiddenChosen})
-	}
-}
-
 // filterChipWidth is a chip's width: its label, the count after it and room
 // around both.
 func (state *State) filterChipWidth(canvas *gfx.Canvas, label, digits string) float32 {
@@ -1681,57 +1683,70 @@ const chipPinWidth float32 = 18
 // chipChevronWidth is what a chevron adds to a chip: the gap before it and its glyph.
 const chipChevronWidth = 18
 
-// filterChip is one chip to paint: where it goes, what it shows, the control it
-// answers on, the second target that opens its menu, and the two states it can
-// be in. Named fields keep those two states from being swapped by a caller.
+// filterChip is one chip to declare: what it shows, the control it answers on,
+// the second target that opens its menu, and the two states it can be in. Named
+// fields keep those two states from being swapped by a caller.
 type filterChip struct {
 	id, chevron gfx.ID
-	bounds      gfx.Rect
 	label       string
 	digits      string
 	pinned      bool
 	chosen      bool
 }
 
-// paintFilterChip draws one chip: a pill that is filled while it is the choice.
-// A pinned chip carries an accent star before its name. A chip with a chevron ID
-// has a second target at its end that opens a menu.
-func (state *State) paintFilterChip(canvas *gfx.Canvas, chip filterChip) {
+// declareFilterChip declares one chip in the page that lays the row out: a pill
+// that is filled while it is the choice. A pinned chip carries an accent star
+// before its name. A chip with a chevron ID has a second target at its end that
+// opens a menu.
+func (state *State) declareFilterChip(c ui.C, chip filterChip) ui.Box {
 	pal := state.pal
 	foreground := pal.muted
 	var fill gfx.Color
-	switch {
-	case chip.chosen:
+	if chip.chosen {
 		fill, foreground = pal.surfaceHot, pal.text
-	case canvas.Pressed() == chip.id:
-		fill = pal.surfaceHot
-	case canvas.Hovered() == chip.id:
-		fill, foreground = pal.surfaceSoft, pal.text
 	}
-	f := state.chrome.widget.Begin(canvas, state.Theme(), chip.bounds)
-	f.Row().Fill().PadSides(0, 14, 0, 12).Gap(6).Items(ui.Center).Radius(chip.bounds.Height/2).Background(fill).
-		HitWith(chip.id, chip.label, gfx.HitOptions{Role: gfx.RoleButton, Selected: chip.chosen}).Children(func() {
+	chipBox := ui.ButtonBase(c, chip.label).Radius(999).Shrink(0).PadSides(0, 14, 0, 12).Gap(6).Items(ui.Center).
+		Background(fill).
+		HitWith(chip.id, chip.label, gfx.HitOptions{Role: gfx.RoleButton, Selected: chip.chosen}).
+		Focus(ui.Look{}.Ring(1.5, pal.accent))
+	if !chip.chosen {
+		chipBox = chipBox.Hover(ui.Look{}.Background(pal.surfaceSoft)).
+			Pressed(ui.Look{}.Background(pal.surfaceHot))
+	}
+	chipBox.Children(func() {
 		if chip.pinned {
-			f.Icon(lucideIcons[iconStar]).Size(12, 12).Color(pal.accent).Shrink(0)
+			ui.Icon(c, lucideIcons[iconStar]).Size(12, 12).Color(pal.accent).Shrink(0)
 		}
-		f.Text(chip.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(foreground)
+		ui.Text(c, chip.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(foreground)
 		if chip.digits != "" {
-			f.Text(chip.digits).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint)
+			ui.Text(c, chip.digits).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint)
 		}
 		if !chip.chevron.IsZero() {
 			tint := foreground
-			if canvas.Hovered() == chip.chevron || state.chipMenu.open {
+			if state.chipMenu.open {
 				tint = pal.text
 			}
-			f.Icon(lucideIcons[iconChevronDown]).Size(12, 12).Color(tint).Shrink(0)
+			chevron := ui.Icon(c, lucideIcons[iconChevronDown]).Size(12, 12).Color(tint).Shrink(0)
+			chevron.HitOutset(12, 12, 12, 4).
+				HitWith(chip.chevron, chip.label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: state.chipMenu.open}).
+				Hover(ui.Look{}.Color(pal.text))
 		}
 	})
-	f.End()
-	if !chip.chevron.IsZero() {
-		canvas.HitWithOptions(chip.chevron, gfx.Rect{X: chip.bounds.X + chip.bounds.Width - 28, Y: chip.bounds.Y, Width: 28, Height: chip.bounds.Height}, chip.label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: state.chipMenu.open})
+	return chipBox
+}
+
+// paintHostFilterChips keeps what the chips' boxes say after the page laid them
+// out: the place the open menu hangs under, the More button a menu opens from,
+// and the secondary presses the group rows answer.
+func (state *State) paintHostFilterChips(canvas *gfx.Canvas, chips []ui.Box) {
+	for position, index := range state.hostChips[:state.hostFilterHidden] {
+		if state.hostChipHasMenu(index) && state.chipMenu.open && state.chipMenu.root == state.hostGroups[index].Name {
+			state.chipMenu.anchor = chips[1+position].Rect()
+		}
+		state.openHostGroupActionsOn(canvas, hitHostFilterList.At(index), index)
 	}
-	if canvas.FocusVisible() == chip.id {
-		canvas.RoundedBorder(chip.bounds, chip.bounds.Height/2, 1.5, pal.accent, gfx.Color{})
+	if state.hostFilterHidden < len(state.hostChips) {
+		state.filterMoreButton = chips[1+state.hostFilterHidden].Rect()
 	}
 }
 
@@ -1840,6 +1855,61 @@ func (state *State) paintButton(canvas *gfx.Canvas, id gfx.ID, bounds gfx.Rect, 
 	state.paintButtonSized(canvas, id, bounds, label, icon, primary, danger, enabled, 12, false)
 }
 
+// declareButtonSized declares the workbench's one button in a page at the place
+// the caller's layout gives it; the caller sizes it. It is paintButton at
+// another font size, and with the label left out when iconOnly: the label is
+// then the tooltip and the accessible name. A filled surface with a hairline
+// edge, or the accent when primary; danger keeps that look and turns the label
+// red, so a destructive action is marked without becoming the loudest thing on
+// the page.
+func (state *State) declareButtonSized(c ui.C, id gfx.ID, label string, icon uint8, primary, danger, enabled bool, font float32, iconOnly bool) ui.Box {
+	pal := state.pal
+	background, foreground := pal.surface, pal.text
+	if danger {
+		foreground = pal.danger
+	}
+	switch {
+	case !enabled:
+		foreground = pal.faint
+	case primary:
+		background, foreground = pal.accent, pal.onAccent
+	}
+	border := background
+	if !primary {
+		border = pal.line
+	}
+	// Icon and label are centered together as one group, so the button reads as
+	// balanced at any label width; the label has a little air after it.
+	hint := ""
+	if iconOnly {
+		hint = label
+	}
+	button := ui.ButtonBase(c, label).Radius(radius.control).Shrink(0).
+		Border(1, border.Over(pal.workspace)).
+		Background(background.Over(pal.workspace))
+	if enabled {
+		hover := pal.surfaceHot
+		if primary {
+			hover = pal.accentHot
+		}
+		button = button.Hover(ui.Look{}.Background(hover.Over(pal.workspace)))
+	}
+	button = button.HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Disabled: !enabled, Hint: hint})
+	button.Children(func() {
+		if iconOnly {
+			ui.Icon(c, lucideIcons[icon]).Color(foreground)
+			return
+		}
+		if icon == 0 {
+			ui.Text(c, label).FontSize(font).Weight(gfx.WeightSemibold).Color(foreground)
+			return
+		}
+		ui.Icon(c, lucideIcons[icon]).Color(foreground).MarginSides(0, toolbarIconGap, 0, 0)
+		ui.Text(c, label).FontSize(font).Weight(gfx.WeightSemibold).Color(foreground).MarginSides(0, 4, 0, 0)
+	})
+	return button
+}
+
 // paintButtonSized is paintButton at another font size, and with the label left
 // out when iconOnly: the label is then the tooltip and the accessible name.
 func (state *State) paintButtonSized(canvas *gfx.Canvas, id gfx.ID, bounds gfx.Rect, label string, icon uint8, primary, danger, enabled bool, font float32, iconOnly bool) {
@@ -1869,21 +1939,33 @@ func (state *State) paintButtonSized(canvas *gfx.Canvas, id gfx.ID, bounds gfx.R
 	if iconOnly {
 		hint = label
 	}
-	f := state.chrome.widget.Begin(canvas, state.Theme(), bounds)
-	f.Row().Fill().Center().Radius(radius.control).Border(1, border.Over(pal.workspace)).Background(background.Over(pal.workspace)).
-		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, Disabled: !enabled, Hint: hint}).Children(func() {
-		if iconOnly {
-			f.Icon(lucideIcons[icon]).Color(foreground)
-			return
+	// Icon and label are centered together as one group, so the button reads as
+	// balanced at any label width; the label has a little air after it.
+	if background.Alpha > 0 {
+		canvas.RoundedBorder(bounds, radius.control, 1, border.Over(pal.workspace), background.Over(pal.workspace))
+	}
+	style := gfx.TextStyle{Size: font, Weight: gfx.WeightSemibold, Color: foreground}
+	const glyphSide = float32(16)
+	switch {
+	case iconOnly:
+		rect := gfx.Rect{
+			X: bounds.X + (bounds.Width-glyphSide)/2, Y: bounds.Y + (bounds.Height-glyphSide)/2,
+			Width: glyphSide, Height: glyphSide,
 		}
-		if icon == 0 {
-			f.Text(label).FontSize(font).Weight(gfx.WeightSemibold).Color(foreground)
-			return
-		}
-		f.Icon(lucideIcons[icon]).Color(foreground).MarginSides(0, toolbarIconGap, 0, 0)
-		f.Text(label).FontSize(font).Weight(gfx.WeightSemibold).Color(foreground).MarginSides(0, 4, 0, 0)
-	})
-	f.End()
+		canvas.DrawIcon(lucideIcons[icon], rect, foreground)
+	case icon == 0:
+		line := font + 7
+		canvas.LabelCenter(label, gfx.Rect{X: bounds.X, Y: bounds.Y + (bounds.Height-line)/2, Width: bounds.Width, Height: line}, style)
+	default:
+		textWidth := canvas.TextWidthWeight(label, font, gfx.WeightSemibold)
+		total := glyphSide + toolbarIconGap + textWidth + 4
+		x := bounds.X + (bounds.Width-total)/2
+		rect := gfx.Rect{X: x, Y: bounds.Y + (bounds.Height-glyphSide)/2, Width: glyphSide, Height: glyphSide}
+		canvas.DrawIcon(lucideIcons[icon], rect, foreground)
+		line := font + 7
+		canvas.Label(label, gfx.Rect{X: x + glyphSide + toolbarIconGap, Y: bounds.Y + (bounds.Height-line)/2, Width: textWidth, Height: line}, style)
+	}
+	canvas.HitWithOptions(id, bounds, label, gfx.HitOptions{Role: gfx.RoleButton, Disabled: !enabled, Hint: hint})
 }
 
 // hostStatus is what the table says about a host: the state of its session,
@@ -2321,13 +2403,12 @@ func (state *State) hostBadgeFill(background gfx.Color) gfx.Color {
 // paintEmptyHosts is the first-run screen: no hosts are invented, the user is
 // invited to add one. The page declared the state; this paints its action.
 func (state *State) paintEmptyHosts(canvas *gfx.Canvas) {
-	m := state.messages
-	state.paintEmptyPage(canvas, iconHosts, hitAddHostEmpty, m.NewHost, true)
+	state.paintEmptyPage(canvas, iconHosts)
 }
 
 // paintNoMatches is what the list shows when the search box hides every host.
 func (state *State) paintNoMatches(canvas *gfx.Canvas) {
-	state.paintEmptyPage(canvas, iconSearch, gfx.ID{}, "", true)
+	state.paintEmptyPage(canvas, iconSearch)
 }
 
 // lucideIcons maps the internal icon kinds to compiled Lucide icons
