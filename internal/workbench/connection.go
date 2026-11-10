@@ -720,6 +720,10 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 	}
 	state.describe(session)
 	session.term.find.refreshIfChanged(session.term.screen, state.messages, 0)
+	// A dial was just started; if it is the first live connection, the network
+	// path it is bound to has to be watched from here, before any status wakes
+	// the window.
+	state.syncLinkWatch()
 }
 
 // Wake applies connection changes to the UI state and moves shell output onto
@@ -801,6 +805,9 @@ func (state *State) Wake() {
 	state.syncSFTPWindows()
 	state.aiPumpCLILogin()
 	state.syncRemoteToolsWindows()
+	// Sessions were created, ended, or moved into a retry above: the network
+	// watcher follows the live ones, so idle windows poll nothing.
+	state.syncLinkWatch()
 }
 
 // apply reads one status into a session: its dot, its busy flag, and the next

@@ -22,14 +22,60 @@ type verifier interface {
 	Verify(context.Context) error
 }
 
-// watchNetworkChanges starts the watcher that turns a changed network path into
-// a pending change for Wake, and records how to stop it. Nothing is polled when
-// the watcher is not configured.
-func (state *State) watchNetworkChanges() {
-	if state.options.WatchNetworkChanges == nil {
+// linkWatchNeeded reports whether any open tab still depends on the machine's
+// network path. A tab counts when it is not a shell on this computer and either
+// has a connection that is being made or is up, or is waiting out (or gave up
+// on) a retry: a path change is what revives a retry whose backoff is waiting
+// for the network, and what makes a live transport verify itself.
+//
+// A restored tab that has not been dialed, a local shell, and a tab whose
+// connection ended for good have nothing to watch, so none of them keeps the
+// 2-second poll running on its own.
+func (state *State) linkWatchNeeded() bool {
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.isLocal() {
+			continue
+		}
+		if session.reconnectPending || session.reconnectExhausted {
+			return true
+		}
+		if session.conn == nil {
+			continue
+		}
+		if session.phase == sshconn.PhaseFailed || session.phase == sshconn.PhaseClosed {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// syncLinkWatch starts or stops the network watcher so it runs exactly while
+// some tab still depends on the network path. It runs on the window's thread,
+// where the session list changes; a window with nothing to watch polls nothing.
+func (state *State) syncLinkWatch() {
+	if state.options.WatchNetworkChanges == nil || state.closed {
 		return
 	}
-	state.stopLinkWatch = state.options.WatchNetworkChanges(state.linkChanged)
+	if state.linkWatchNeeded() {
+		if state.stopLinkWatch == nil {
+			state.stopLinkWatch = state.options.WatchNetworkChanges(state.linkChanged)
+		}
+		return
+	}
+	state.stopNetworkWatch()
+}
+
+// stopNetworkWatch ends the watcher, if one is running, and forgets a change
+// that has already been seen: it belonged to tabs that are no longer live, so
+// the next tab that connects must not apply it.
+func (state *State) stopNetworkWatch() {
+	if state.stopLinkWatch != nil {
+		state.stopLinkWatch()
+		state.stopLinkWatch = nil
+	}
+	state.linkPending.Store(false)
 }
 
 // linkChanged is the watcher's report. It runs on the watcher's goroutine, so it

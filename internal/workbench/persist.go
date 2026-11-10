@@ -1287,6 +1287,9 @@ func highestProxyNumber(routes []proxyRecord) uint32 {
 }
 
 func (state *State) restoreSessions(entries []savedSession, active int) []uint32 {
+	// Replacing the tab list can end every live session this window had; the
+	// watcher must not outlive the ones that remain.
+	defer state.syncLinkWatch()
 	clear(state.sessions)
 	state.sessions = state.sessions[:0]
 	state.activeSessionID = 0

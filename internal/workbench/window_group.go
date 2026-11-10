@@ -200,6 +200,9 @@ type tabPayload struct {
 
 // detachWorkspace takes a tab out of this window without ending its sessions.
 func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, bool) {
+	// Sessions may leave this window with the tab; the watcher follows what is
+	// left here.
+	defer state.syncLinkWatch()
 	dto, ok := state.deck.ExportWorkspace(id)
 	if !ok {
 		return nil, false
@@ -287,6 +290,9 @@ func payloadHolds(payload *tabPayload, id uint32) bool {
 // among the tabs, or docked beside a pane. It reports whether it did; on false
 // nothing here changed.
 func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
+	// Live sessions may arrive with the tab; the watcher has to start here even
+	// if no connection status wakes the window afterwards.
+	defer state.syncLinkWatch()
 	if payload == nil || len(payload.sessions) == 0 && len(payload.dto.Panes) == 0 {
 		return false
 	}

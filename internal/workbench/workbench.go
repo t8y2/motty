@@ -973,10 +973,7 @@ func (state *State) Close() {
 	if state.stopAppearanceWatch != nil {
 		state.stopAppearanceWatch()
 	}
-	if state.stopLinkWatch != nil {
-		state.stopLinkWatch()
-		state.stopLinkWatch = nil
-	}
+	state.stopNetworkWatch()
 	state.closeWindowChrome()
 	state.closeAI()
 	state.closeHistory()
@@ -1129,9 +1126,6 @@ func New(options Options) *State {
 	}
 	state.sshSyncStart()
 	state.offerDevelopmentImport()
-	// Last, so a change that arrives while the window is still starting finds
-	// every session it may need to ask about already restored.
-	state.watchNetworkChanges()
 	return state
 }
 
@@ -1866,6 +1860,9 @@ func (state *State) openNewWindow() {
 // closeSession ends a tab: its connection and shell are released and the
 // neighbouring tab, or the host list when it was the last, takes over.
 func (state *State) closeSession(id uint32) {
+	// The tab may be the last live one: after it is gone the watcher has
+	// nothing left to report on.
+	defer state.syncLinkWatch()
 	if workspace, _, ok := state.deck.PaneForSession(layoutcore.SessionID(id)); ok &&
 		state.deck.Locked(workspace) && len(state.deck.Panes(workspace, nil)) == 1 {
 		state.askCloseLockedTab(workspace)
