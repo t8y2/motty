@@ -271,7 +271,8 @@ func TestDevelopmentImportNativeDialog(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		button, found := hitByIDSnapshot(view.Snapshot().Hits, hitDevelopmentImport)
+		// The import action is a page-owned button now; its label is its address.
+		button, found := snapshotButton(view.Snapshot(), state.messages.DevelopmentImportAction)
 		if !found {
 			t.Fatal("no actionable import button")
 		}
@@ -324,7 +325,7 @@ func TestDevelopmentImportLoopbackSSH(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	button, found := hitByIDSnapshot(view.Snapshot().Hits, hitDevelopmentImport)
+	button, found := snapshotButton(view.Snapshot(), state.messages.DevelopmentImportAction)
 	if !found {
 		t.Fatal("import action missing")
 	}
