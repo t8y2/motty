@@ -532,14 +532,15 @@ func (state *State) refreshProxy(route *proxyRecord) {
 	}
 	var labels strings.Builder
 	var targets strings.Builder
+	for index := len(chain) - 1; index >= 0; index-- {
+		hop := chain[index]
+		labels.WriteString(hop.Label)
+		labels.WriteString(" → ")
+		targets.WriteString(hop.target)
+		targets.WriteString(" → ")
+	}
 	labels.WriteString(target.Label)
 	targets.WriteString(target.target)
-	for _, hop := range chain {
-		labels.WriteString(" → ")
-		labels.WriteString(hop.Label)
-		targets.WriteString(" → ")
-		targets.WriteString(hop.target)
-	}
 	status := state.messages.ProxyStopped
 	if !route.Stopped {
 		status = state.messages.ProxyRunning
