@@ -147,14 +147,13 @@ func TestExpandedVerticalTabsCoverTheWorkspaceAndBlockItsPresses(t *testing.T) {
 				t.Fatalf("the pane %+v does not lie under the sidebar %+v", pane.Bounds, sidebar)
 			}
 			blank := gfx.Point{X: sidebar.X + 20, Y: sidebar.Y + sidebar.Height - verticalTabsFooter - 30}
-			blocked := false
-			for _, hit := range canvas.Hits() {
-				if hit.Block && pointInRect(blank.X, blank.Y, hit.Bounds) && hit.Layer == uint16(ui.LayerPaneChrome) {
-					blocked = true
-				}
+			group, ok := hitByID(&canvas, hitVerticalTabs)
+			if !ok || group.Role != gfx.RoleGroup || group.Layer != uint16(ui.LayerPaneChrome) ||
+				!pointInRect(blank.X, blank.Y, group.Bounds) {
+				t.Fatalf("the blank sidebar at %v has no pane-chrome group: %+v", blank, group)
 			}
-			if !blocked {
-				t.Fatalf("the blank sidebar at %v has no blocking surface on the pane-chrome band", blank)
+			if group.Focusable || group.SkipTab {
+				t.Fatalf("the sidebar group is a Tab stop: %+v", group)
 			}
 
 			// Drive the real pointer: the click on the blank surface must leave
@@ -178,6 +177,82 @@ func TestExpandedVerticalTabsCoverTheWorkspaceAndBlockItsPresses(t *testing.T) {
 				t.Fatalf("a press on the blank sidebar reached the workspace: focus %v", focused)
 			}
 		})
+	}
+}
+
+// The sidebar is one accessible group on the pane-chrome band: headless
+// snapshots see its role and name, it never becomes a Tab stop, and a press on
+// its blank surface does not fall through to the workspace beneath.
+func TestVerticalTabsExposeAGroupWithoutATabStop(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.sessions[0].restored = true
+	state.setTabOrientation(tabsVertical)
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	view := verticalTabsWindow(t, state, size)
+	driver := view.Driver()
+
+	snapshot := view.Snapshot()
+	group, ok := hitByIDSnapshot(snapshot.Hits, hitVerticalTabs)
+	if !ok {
+		t.Fatal("the sidebar declares no accessible group")
+	}
+	if group.Role != gfx.RoleGroup || group.Label != state.messages.TrayTitle {
+		t.Fatalf("the sidebar group is role %v named %q", group.Role, group.Label)
+	}
+	if group.Layer != uint16(ui.LayerPaneChrome) {
+		t.Fatalf("the sidebar group is on layer %d, want %d", group.Layer, ui.LayerPaneChrome)
+	}
+	if group.Focusable || group.SkipTab || group.ID.IsZero() {
+		t.Fatalf("the sidebar group is a Tab stop: %+v", group)
+	}
+	// The group is declared first in its overlay, so later controls still win
+	// their own presses at the same band.
+	groupIndex, pinIndex, newIndex := -1, -1, -1
+	for index, hit := range snapshot.Hits {
+		switch hit.ID {
+		case hitVerticalTabs:
+			groupIndex = index
+		case hitVerticalTabsPin:
+			pinIndex = index
+		case hitVerticalTabsNew:
+			newIndex = index
+		}
+	}
+	if pinIndex < 0 || newIndex < 0 || groupIndex < 0 {
+		t.Fatalf("the sidebar painted group %d, pin %d, new %d", groupIndex, pinIndex, newIndex)
+	}
+	if pinIndex <= groupIndex || newIndex <= groupIndex {
+		t.Fatalf("sidebar controls do not win over the group: group %d, pin %d, new %d", groupIndex, pinIndex, newIndex)
+	}
+
+	sidebar := state.verticalTabs.bounds
+	blank := gfx.Point{X: sidebar.X + 20, Y: sidebar.Y + sidebar.Height - verticalTabsFooter - 30}
+	if err := driver.Click(blank.X, blank.Y); err != nil {
+		t.Fatal(err)
+	}
+	focused := view.Snapshot().Focused
+	if focused == hitPaneActivateList.At(0) || focused == terminalTestHit(state, &state.sessions[0]) {
+		t.Fatalf("a press on the blank sidebar reached the workspace: focus %v", focused)
+	}
+	pin, ok := hitByIDSnapshot(view.Snapshot().Hits, hitVerticalTabsPin)
+	if !ok {
+		t.Fatal("the sidebar lost its auto-hide pin")
+	}
+	if err := driver.Click(pin.Bounds.X+pin.Bounds.Width/2, pin.Bounds.Y+pin.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if !state.verticalTabs.autoHide {
+		t.Fatal("a press on the sidebar pin did not reach the button")
+	}
+	for range 80 {
+		if err := driver.Key(gfx.KeyTab, 0); err != nil {
+			t.Fatal(err)
+		}
+		if view.Snapshot().Focused == hitVerticalTabs {
+			t.Fatal("Tab stopped on the sidebar group")
+		}
 	}
 }
 

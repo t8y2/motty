@@ -19,10 +19,6 @@ import (
 
 const (
 	tabDragThreshold = float32(6)
-	// dragOverlayLayer is the layer of the drag feedback still painted by hand
-	// (the workspace card and docked toolbar ghosts). The tab's ghost, drop and
-	// tear-off feedback is a page overlay on ui.LayerDrag instead, under menus.
-	dragOverlayLayer = uint16(700)
 	// dockZone is how far in from a pane's edge a pointer still chooses that edge.
 	dockZone = float32(0.30)
 )
@@ -629,12 +625,56 @@ func (state *State) cancelTabDrag() {
 	state.tabDrag = tabDrag{}
 }
 
-// dialogOrMenuOpen reports whether a dialog or a popup menu owns the pointer, so
-// a tab drag still in flight has to let go of it.
-func (state *State) dialogOrMenuOpen() bool {
-	return state.modal != modalNone || !state.popups.owner.IsZero() ||
+// popupMenuOpen reports whether a popup menu owns the pointer. The workspace
+// layout editor's own popover is not one of these; it hosts card drags and is
+// tracked by workspaceCardDragHostOpen.
+func (state *State) popupMenuOpen() bool {
+	return !state.popups.owner.IsZero() ||
 		state.tabMenu.open || state.terminalMenu.open || state.hostMenu.open ||
 		state.snippetMenu.open || state.localShellPicker.open || state.chipMenu.open
+}
+
+// dialogOrMenuOpen reports whether a dialog or a popup menu owns the pointer, so
+// a drag still in flight has to let go of it.
+func (state *State) dialogOrMenuOpen() bool {
+	return state.modal != modalNone || state.popupMenuOpen()
+}
+
+// reconcileDragHosts lets go of drags whose surface no longer owns the pointer:
+// a tab drag under any dialog or menu (as Escape does), the host grid's page
+// drag, a toolbar drag under a dialog or menu, and a workspace card drag whose
+// editor closed. Nothing is dropped; only the feedback goes away.
+func (state *State) reconcileDragHosts() {
+	menuOpen := state.dialogOrMenuOpen()
+	if menuOpen {
+		if state.tabDrag.active {
+			state.cancelTabDrag()
+		}
+		if state.hostGridDrag.state.Dragging() {
+			state.hostGridDrag.state.Cancel()
+		}
+		if state.toolbarDock.drag.active {
+			state.toolbarDock.drag = toolbarDockDrag{}
+		}
+	}
+	if state.workspaceCardDrag.active && !state.workspaceCardDragHostOpen() {
+		state.workspaceCardDrag = workspaceCardDrag{}
+	}
+}
+
+// workspaceCardDragHostOpen says whether the surface a card drag started in is
+// still the one on show. Runtime cards live in the workspace layout editor,
+// template cards in the workspaces page, draft cards in the draft dialog.
+func (state *State) workspaceCardDragHostOpen() bool {
+	switch state.workspaceCardDrag.region.view {
+	case workspaceCardsRuntime:
+		return state.workspaceHeaderMenu == workspaceHeaderMenuLayout && !state.dialogOrMenuOpen()
+	case workspaceCardsTemplate:
+		return !state.dialogOrMenuOpen()
+	case workspaceCardsDraft:
+		return state.modal == modalWorkspaceDraft && !state.popupMenuOpen()
+	}
+	return false
 }
 
 // declareTabDragOverlays declares the drop mark, the dragged tab and the

@@ -162,17 +162,11 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	// slotRect is not cleared: it is the navigation rail's list rectangle from
 	// the previous paint, and the next declaration of that list needs it for the
 	// page-coordinate geometry an overlay would otherwise have provided.
-	if state.dialogOrMenuOpen() {
-		// A dialog or menu that opened during an earlier event owns the pointer;
-		// the drag has no release left to finish, so let it go as Escape does.
-		// The host grid's page drag is cancelled the same way.
-		if state.tabDrag.active {
-			state.cancelTabDrag()
-		}
-		if state.hostGridDrag.state.Dragging() {
-			state.hostGridDrag.state.Cancel()
-		}
-	}
+	// A dialog or menu that opened during an earlier event owns the pointer; the
+	// drag has no release left to finish, so let it go as Escape does. The host
+	// grid's page drag and the drag overlays below menus are cancelled the same
+	// way.
+	state.reconcileDragHosts()
 	state.devBeginPaint()
 	state.ai.cfg.mcpSelectBounds = gfx.Rect{}
 	state.ai.cfg.agentSelectBounds = gfx.Rect{}
@@ -344,7 +338,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintLocalProxyScrollbar(canvas)
 	}
 	state.paintTerminalMenu(canvas, viewport)
-	state.paintToolbarDockDrag(canvas)
 	state.paintToolbarDockMenu(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
 	state.paintHostMenu(canvas, viewport)
@@ -606,6 +599,8 @@ func (state *State) declareShell(c ui.C) {
 	state.declareKnownHostsDialog(c)
 	// The drag overlay is hitless and paints over the page on the drag layer.
 	state.declareTabDragOverlays(c)
+	state.declareWorkspaceCardDragOverlay(c)
+	state.declareToolbarDockDragOverlay(c)
 }
 
 // windowBarGeometry lays the bar out once without its contents to find out how
@@ -1111,6 +1106,11 @@ type chromeLayout struct {
 	tabDragGhostDraw func(*ui.DrawContext)
 	tabDragHintDraw  func(*ui.DrawContext)
 	tabDragEdgeDraw  func(*ui.DrawContext)
+	// workspaceCardDragDraw and toolbarDockDragDraw paint the hitless elements of
+	// the two remaining drag overlays. They are made once, so a warm repaint
+	// declares the overlay without allocating a method value.
+	workspaceCardDragDraw func(*ui.DrawContext)
+	toolbarDockDragDraw   func(*ui.DrawContext)
 	// passwordSave is the slot the save box of the password dialog was laid out
 	// in.
 	passwordSave ui.Box

@@ -11,6 +11,7 @@ var (
 	hitSettingsTabsVertical         = tree.ID(settingsHits, "tabs-vertical")
 	hitSettingsVerticalTabsAutoHide = tree.ID(settingsHits, "vertical-tabs-auto-hide")
 	hitSettingsVerticalTabsGrouping = tree.ID(settingsHits, "vertical-tabs-grouping")
+	hitVerticalTabs                 = tree.ID(shellHits, "vertical-tabs")
 	hitVerticalTabsBar              = tree.ID(shellHits, "vertical-tabs-scrollbar")
 	hitVerticalTabsPin              = tree.ID(shellHits, "vertical-tabs-pin")
 	hitVerticalTabsNew              = tree.ID(shellHits, "vertical-tabs-new")
@@ -74,8 +75,7 @@ type verticalTabs struct {
 	scroll       float32
 	content      float32
 	// The Draw callbacks are method values kept once, so a warm paint allocates
-	// none. A Block paints the blank surface at the start of the overlay.
-	blockDraw     func(*ui.DrawContext)
+	// none.
 	headerDraw    func(*ui.DrawContext)
 	footerDraw    func(*ui.DrawContext)
 	partsDraw     func(*ui.DrawContext)
@@ -214,11 +214,13 @@ func verticalTabsKeyboardFocused(canvas *gfx.Canvas) bool {
 }
 
 // declareVerticalTabsOverlay declares the sidebar as a page overlay over the
-// workspace. Its blank surface paints Block first, so a press on it stays out of
-// the terminal or file page beneath; the rows and chrome declared after it take
-// their own presses and their own Tab places. The overlay paints on
-// LayerPaneChrome, under every menu and dialog Viva or the window paints. Wheel
-// routing stays the window's own: Block stops presses only (see State.Scroll).
+// workspace. Its first element is a full-bounds group: it is the accessible
+// region of the sidebar and the press target of its blank surface, so a press
+// there stays out of the terminal or file page beneath. The rows and chrome
+// declared after it take their own presses and their own Tab places; the group
+// takes no Tab stop. The overlay paints on LayerPaneChrome, under every menu and
+// dialog Viva or the window paints. Wheel routing stays the window's own: a
+// press target stops presses only (see State.Scroll).
 func (state *State) declareVerticalTabsOverlay(c ui.C) {
 	if state.tabOrientation != tabsVertical {
 		return
@@ -245,7 +247,10 @@ func (state *State) declareVerticalTabsOverlay(c ui.C) {
 	ui.Overlay(c, ui.OverlaySpec{Band: ui.LayerPaneChrome, Bounds: bounds}).
 		Background(state.pal.shell).Clip().Children(func() {
 		ui.Stack(c).Fill().Children(func() {
-			ui.Slot(c).Fill().Draw(view.blockDraw)
+			// The group is declared first, so the rows and chrome after it win
+			// their own presses; SkipFocus keeps the rail out of Tab.
+			ui.Slot(c).Fill().HitWith(hitVerticalTabs, state.messages.TrayTitle,
+				gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
 			state.declareVerticalTabsContent(c, bounds.Width, bounds.Height, gfx.Point{X: bounds.X, Y: bounds.Y}, compact)
 		})
 	})
@@ -320,10 +325,9 @@ func (state *State) declareVerticalTabsContent(c ui.C, width, height float32, or
 // ensureDraws makes the sidebar's Draw method values once. A method value in a
 // paint would allocate one per frame.
 func (view *verticalTabs) ensureDraws(state *State) {
-	if view.blockDraw != nil {
+	if view.headerDraw != nil {
 		return
 	}
-	view.blockDraw = state.drawVerticalTabsBlock
 	view.headerDraw = state.drawVerticalTabsHeader
 	view.footerDraw = state.drawVerticalTabsFooter
 	view.partsDraw = state.drawVerticalTabsParts
@@ -345,11 +349,6 @@ func (state *State) declareVerticalTabsRows(c ui.C, width float32, compact bool)
 		}
 	})
 }
-
-// drawVerticalTabsBlock makes the sidebar's surface swallow presses. Hits
-// declared after it, the rows and buttons, win over it; the wheel is not a press
-// and the window routes it itself.
-func (state *State) drawVerticalTabsBlock(d *ui.DrawContext) { d.Canvas.Block(d.Rect) }
 
 // drawVerticalTabsHeader paints the sidebar's name and the auto-hide pin.
 func (state *State) drawVerticalTabsHeader(d *ui.DrawContext) {
