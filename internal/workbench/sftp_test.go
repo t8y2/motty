@@ -529,7 +529,7 @@ func replaceSFTPText(t testing.TB, state *State, value string) {
 // sftpPageButtonHit finds the page control with this accessible label.
 func sftpPageButtonHit(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
 	for _, hit := range canvas.Hits() {
-		if hit.Label == label && hit.Role == gfx.RoleButton && !hit.Disabled && !hit.Block {
+		if hit.Label == label && hit.Role == gfx.RoleButton {
 			return hit, true
 		}
 	}
@@ -546,6 +546,9 @@ func clickSFTPPageButton(t testing.TB, state *State, label string) {
 	hit, ok := sftpPageButtonHit(&canvas, label)
 	if !ok {
 		t.Fatalf("no files control labeled %q", label)
+	}
+	if hit.Disabled || hit.Block {
+		t.Fatalf("files control %q is not actionable (disabled=%v blocked=%v)", label, hit.Disabled, hit.Block)
 	}
 	var pass gfx.Canvas
 	pass.BeginEventPass(hit.ID, gfx.ClickInfo{})
