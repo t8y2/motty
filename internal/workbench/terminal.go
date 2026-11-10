@@ -115,11 +115,9 @@ type terminal struct {
 	controlDraw func(*ui.DrawContext)
 	handlers    ui.Handlers
 	// controlID and parts are the workbench page's identities, made once so
-	// painting and event routing do not rebuild the page's name. panePart is
-	// the container's Part, kept so a paint does not build the name either.
+	// painting and event routing do not rebuild the page's name.
 	controlID gfx.ID
 	parts     gfx.Scope
-	panePart  string
 	// paintFinding, paintInSplit and paintInactive are the shapes the last
 	// declaration made, which the bar's slots are painted in after the page.
 	paintFinding, paintInSplit, paintInactive bool
@@ -1664,15 +1662,10 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		state.activeSection == sectionTerminal && pointInRect(event.X, event.Y, state.contextRect) {
 		return state.scrollSFTP(session.files, event)
 	}
-	if session, local, ok := state.decodePaneHit(event.Target); ok {
+	if _, local, ok := state.decodePaneHit(event.Target); ok {
 		// The wheel scrolls the pane under the pointer and leaves the active
-		// pane where it is: activation is for a press.
-		_, origin, viewport, embedded := state.paneEventGeometry(session.ID, event.Viewport)
-		if embedded {
-			event.X -= origin.X
-			event.Y -= origin.Y
-			event.Viewport = viewport
-		}
+		// pane where it is: activation is for a press. The bodies are part of the
+		// workbench page now, so the event already has window coordinates.
 		event.Target = local
 		return state.scroll(event)
 	}
@@ -1681,13 +1674,10 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		// has the window's coordinates and identity.
 		return state.scroll(event)
 	}
-	if session := state.terminalSession(event.Target); session != nil {
-		_, origin, viewport, embedded := state.paneEventGeometry(session.ID, event.Viewport)
-		if embedded {
-			event.X -= origin.X
-			event.Y -= origin.Y
-			event.Viewport = viewport
-		}
+	if state.terminalSession(event.Target) != nil {
+		// A remote desktop's picture names the session itself; its coordinates
+		// are the window's too.
+		return state.scroll(event)
 	}
 	return state.scroll(event)
 }

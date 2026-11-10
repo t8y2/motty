@@ -192,7 +192,9 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.measureTerminalCell(canvas)
 	if session := state.fullscreenDesktop(); session != nil {
 		state.beginMenus()
-		state.paintDesktopPage(canvas, size, session)
+		bounds := gfx.Rect{Width: size.Width, Height: size.Height}
+		state.windowPage().Draw(canvas, bounds, state.declareShell)
+		state.paintDesktopDetails(canvas, session, bounds)
 		state.endMenus()
 		state.tooltip.Paint(canvas, state.Theme(), state.windowRect(), components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 		state.fileNotices.paint(canvas, state.Theme(), state.windowRect())
@@ -515,6 +517,12 @@ func (state *State) aiBackgroundScrollBlocked() bool {
 // slot the sections are painted into. The inputs come from chromeLayout, kept by
 // Paint before the page is declared, because the page's view takes no arguments.
 func (state *State) declareShell(c ui.C) {
+	// A fullscreen desktop is the window's one page too: it declares its bars
+	// and picture area in the same page, with no shell around them.
+	if session := state.fullscreenDesktop(); session != nil {
+		state.declareDesktopBody(c, session, gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height})
+		return
+	}
 	chrome, pal := &state.chrome, state.pal
 	root := ui.Column(c).Fill()
 	if !chrome.shellPicture {

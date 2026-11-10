@@ -103,14 +103,6 @@ func pixelBounds(frame gfx.Rect, bounds FractionBounds) gfx.Rect {
 	}
 }
 
-func paneVirtualSize(bounds gfx.Rect) gfx.Size {
-	return gfx.Size{Width: bounds.Width, Height: bounds.Height + windowBarHeight}
-}
-
-func paneEmbedOrigin(bounds gfx.Rect) gfx.Point {
-	return gfx.Point{X: bounds.X, Y: bounds.Y - windowBarHeight}
-}
-
 func (state *State) refreshWorkspaceViews() bool {
 	workspaceID := state.deck.ActiveWorkspace()
 	revision, ok := state.deck.Revision(workspaceID)
@@ -127,9 +119,9 @@ func (state *State) refreshWorkspaceViews() bool {
 }
 
 // paintsTerminalPane reports whether a session is shown by the terminal pane
-// view. The connection, restored and desktop session views keep their own
-// frame/canvas painters for now; only the terminal pane is a component of the
-// workbench page.
+// view: a live terminal that is neither waiting on its connection page nor a
+// remote desktop. Every other visible session pane declares a connection,
+// restored or desktop body in the same workbench page.
 func (state *State) paintsTerminalPane(session *Session) bool {
 	return session.term != nil && !session.restored && !state.showsProgress(session) && session.desk == nil
 }
@@ -140,6 +132,9 @@ func (state *State) paintsTerminalPane(session *Session) bool {
 // the window bar, pane tabs, dividers and the docked SFTP panel stay outside.
 func (state *State) declareWorkspacePanes(c ui.C) {
 	state.refreshWorkspaceViews()
+	for index := range state.sessionBodies {
+		state.sessionBodies[index].declared = false
+	}
 	frame := state.workspacePixelBounds(state.viewport)
 	state.declareWorkspaceHeader(c, state.viewport)
 	c.Part(terminalWorkspacePart)
@@ -162,24 +157,22 @@ func (state *State) declareWorkspacePanes(c ui.C) {
 				state.declareEmptyPane(c, frame, bounds, index, pane.Active)
 				continue
 			}
-			if !state.paintsTerminalPane(session) {
-				continue
-			}
 			// The container itself is the pane's ground: a press here is a press
-			// inside the pane. The terminal control, declared below, paints after
-			// it and wins where it has a hit.
-			part := session.term.panePart
-			if part == "" {
-				part = terminalPageRoot(session.ID)
-				session.term.panePart = part
-			}
+			// inside the pane. What the pane shows is declared below it, in the
+			// same page and under the same stable part name, so focus, keys, text,
+			// wheel and hits all use the page's routing.
+			part := state.panePartFor(session)
 			c.Part(part)
 			ui.Column(c).Absolute().
 				Left(bounds.X-frame.X).Top(bounds.Y-frame.Y).
 				Width(bounds.Width).Height(bounds.Height).
 				HitWith(hitPaneActivateList.At(index), state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true}).
 				Clip().Children(func() {
-				state.declareTerminalPane(c, session, bounds)
+				if state.paintsTerminalPane(session) {
+					state.declareTerminalPane(c, session, bounds)
+					return
+				}
+				state.declareSessionPane(c, session, bounds)
 			})
 		}
 	})
@@ -217,7 +210,6 @@ func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintContextPanel(canvas, size, frame)
 		return
 	}
-	single := len(state.panes) == 1
 	for index := range state.panes {
 		pane := state.panes[index]
 		if pane.Bounds.Width <= 0 || pane.Bounds.Height <= 0 {
@@ -240,22 +232,11 @@ func (state *State) paintWorkspacePanes(canvas *gfx.Canvas, size gfx.Size) {
 			}
 			continue
 		}
-		// Session views that are still frames of their own keep the interim
-		// embedded canvas. The pane's ground reaches them as before.
-		canvas.HitWithOptions(hitPaneActivateList.At(index), bounds, state.messages.LabelNewTab, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true})
-		var mount gfx.Scope
-		if !single {
-			mount = paneMount(session)
-		}
-		state.paneCanvas.BeginEmbedded(canvas, mount)
-		state.paintSessionPage(&state.paneCanvas, paneVirtualSize(bounds), session)
-		state.paneCanvas.EndFrame()
+		// The pane's body is part of the workbench page now; the window paints
+		// only what its declaration left by hand.
 		canvas.Clip(bounds)
-		canvas.Embed(&state.paneCanvas, paneEmbedOrigin(bounds), mount)
+		state.paintSessionPaneDetails(canvas, session, bounds)
 		canvas.Unclip()
-		if pane.Active {
-			canvas.AdoptEmbedded(&state.paneCanvas, mount)
-		}
 	}
 	state.paintPaneDividers(canvas, frame)
 	if !state.workspaceTabbed(state.deck.ActiveWorkspace()) {
@@ -357,17 +338,6 @@ func (state *State) paintEmptyWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	// The page declared the empty tab; only its badges and footer are painted by
 	// hand.
 	state.paintNewTabDetails(canvas)
-}
-
-func (state *State) paintSessionPage(canvas *gfx.Canvas, size gfx.Size, session *Session) {
-	switch {
-	case session.restored:
-		state.paintRestoredSessionPage(canvas, size, session)
-	case state.showsProgress(session):
-		state.paintConnectionPage(canvas, size, session)
-	case session.desk != nil:
-		state.paintDesktopPage(canvas, size, session)
-	}
 }
 
 func (state *State) contextSession() *Session {
@@ -805,10 +775,11 @@ func (state *State) paneGround(hit gfx.ID) (*Session, bool) {
 }
 
 // paneIdentity names an identity a session's page painted as the pane paints it.
-// The terminal pane is part of the workbench page now, so its identities are
-// already the window's. The connection, restored and desktop views still paint
-// into an embedded canvas: side by side their mount is part of the identity,
-// while a workspace of one pane paints the view in place.
+// The terminal pane is part of the workbench page now and its identities are
+// already per session. The connection and restored bodies' hand-painted buttons
+// and the desktop's controls keep their application identities, so side by side
+// each pane mounts them at its own place; a workspace of one pane paints them in
+// place.
 func (state *State) paneIdentity(session *Session, local gfx.ID) gfx.ID {
 	if state.paintsTerminalPane(session) {
 		return local
@@ -826,7 +797,9 @@ func (state *State) activeTerminalFocusHit() gfx.ID {
 		return gfx.ID{}
 	}
 	if session.desk != nil {
-		return state.paneIdentity(session, hitTerminalList.At(int(session.ID)))
+		// The desktop's picture is the session's own place, not one of the
+		// page's mounted button identities.
+		return hitTerminalList.At(int(session.ID))
 	}
 	session.term.pageIdentity(session.ID)
 	return state.paneIdentity(session, session.term.controlID)
@@ -1087,17 +1060,19 @@ func (state *State) paneForSession(sessionID uint32) (Pane, bool) {
 	return Pane{}, false
 }
 
-func (state *State) paneEventGeometry(sessionID uint32, size gfx.Size) (gfx.Rect, gfx.Point, gfx.Size, bool) {
+// paneWindowBounds is where a session's pane sits in the window at size. It is
+// false for a session not in the active workspace, or whose pane the deck cannot
+// place.
+func (state *State) paneWindowBounds(sessionID uint32, size gfx.Size) (gfx.Rect, bool) {
 	workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(sessionID))
 	if !ok || workspaceID != state.deck.ActiveWorkspace() {
-		return gfx.Rect{}, gfx.Point{}, size, false
+		return gfx.Rect{}, false
 	}
 	fraction, _, ok := state.paneFractionBounds(workspaceID, paneID)
 	if !ok {
-		return gfx.Rect{}, gfx.Point{}, size, false
+		return gfx.Rect{}, false
 	}
-	bounds := pixelBounds(state.workspacePixelBoundsFor(workspaceID, size), fraction)
-	return bounds, paneEmbedOrigin(bounds), paneVirtualSize(bounds), true
+	return pixelBounds(state.workspacePixelBoundsFor(workspaceID, size), fraction), true
 }
 
 func (state *State) paneFractionBounds(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID) (FractionBounds, int, bool) {

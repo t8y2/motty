@@ -846,9 +846,10 @@ type State struct {
 
 	// wrapped is scratch for text broken into lines while painting.
 	wrapped [failureLines]string
-	// sessionPage declares the connection, restored and rail bodies painted into
-	// a pane's embedded canvas.
-	sessionBodies sessionPageUI
+	// sessionBodies is the declaration scratch of each session pane, indexed by
+	// pane slot: a split declares every visible pane's connection, restored or
+	// desktop body in the workbench page in one paint.
+	sessionBodies [maxRestoredSessions + 1]sessionPaneUI
 	// area: terminal and workspace panes
 
 	// area: files panel and transfers
@@ -874,7 +875,6 @@ type State struct {
 	// paint saw it; zero before the first.
 	pixelScale            float32
 	cellWidth, cellHeight float32
-	paneCanvas            gfx.Canvas
 	panes                 []Pane
 	paneSplits            []PaneSplit
 	terminalDrop          terminalDrop // the terminal that files being dragged over would be uploaded from
@@ -2351,12 +2351,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 			changed = state.activeSessionID != session.ID
 			state.ActivatePane(session.ID)
 		}
-		_, origin, viewport, embedded := state.paneEventGeometry(session.ID, event.Viewport)
-		if embedded {
-			event.X -= origin.X
-			event.Y -= origin.Y
-			event.Viewport = viewport
-		}
 		event.Target = local
 		result := state.pointer(event)
 		result.Focus = tree.MountID(mount, result.Focus)
@@ -2366,9 +2360,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		}
 		return result
 	}
-	// The terminal pane is part of the workbench page, so its identities and
-	// coordinates are already the window's; the page routes the event to the
-	// control. A press still makes that pane the active one.
+	// The pane bodies are part of the workbench page, so their identities and
+	// coordinates are already the window's; the page routes the event. A press
+	// still makes the pane under it the active one.
 	if session := state.terminalPageSession(event.Target); session != nil {
 		changed := false
 		if event.Kind == gfx.PointerDown {
@@ -2383,12 +2377,19 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if session := state.terminalSession(event.Target); session != nil {
-		_, origin, viewport, embedded := state.paneEventGeometry(session.ID, event.Viewport)
-		if embedded {
-			event.X -= origin.X
-			event.Y -= origin.Y
-			event.Viewport = viewport
+		// A remote desktop's picture names the session itself; pressing it also
+		// makes its pane the active one.
+		changed := false
+		if event.Kind == gfx.PointerDown && state.activeSection == sectionTerminal && state.modal == modalNone {
+			changed = state.activeSessionID != session.ID
+			state.ActivatePane(session.ID)
 		}
+		result := state.pointer(event)
+		result.Repaint = result.Repaint || changed
+		if changed {
+			state.save()
+		}
+		return result
 	}
 	return state.pointer(event)
 }

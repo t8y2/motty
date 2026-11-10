@@ -100,7 +100,7 @@ func (state *State) installTerminalHandlers(session *Session) {
 	// A session can move to another window: its handlers and identity must be
 	// the new window's, naming the session's new number.
 	t.controlDraw = func(d *ui.DrawContext) { state.drawTerminalControl(d, sessionID) }
-	t.controlID, t.parts, t.panePart = gfx.ID{}, 0, terminalPageRoot(sessionID)
+	t.controlID, t.parts = gfx.ID{}, 0
 	t.pageIdentity(sessionID)
 	h := &t.handlers
 	h.Role = gfx.RoleTerminal

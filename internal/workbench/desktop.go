@@ -232,11 +232,25 @@ func desktopLayout(size gfx.Size, chromeless bool) desktopGeometry {
 	}
 }
 
-func (view *desktopView) layout(size gfx.Size) desktopGeometry {
+// desktopGeometryAt places the page in a pane: the same geometry desktopLayout
+// gives a page-sized area, moved to the pane. The pane's top is where the window
+// bar ends, so the page's own windowBarHeight offset is taken back out.
+func desktopGeometryAt(bounds gfx.Rect, chromeless bool) desktopGeometry {
+	geometry := desktopLayout(gfx.Size{Width: bounds.Width, Height: bounds.Height + windowBarHeight}, chromeless)
+	geometry.area.X += bounds.X
+	geometry.area.Y += bounds.Y - windowBarHeight
+	geometry.strip.X += bounds.X
+	geometry.strip.Y += bounds.Y - windowBarHeight
+	return geometry
+}
+
+// layout is desktopGeometryAt for the pane the view is shown in, or the whole
+// window for a fullscreen desktop.
+func (view *desktopView) layout(bounds gfx.Rect) desktopGeometry {
 	if view.fullscreen {
-		return desktopGeometry{area: gfx.Rect{Width: size.Width, Height: size.Height}}
+		return desktopGeometry{area: gfx.Rect{Width: bounds.Width, Height: bounds.Height}}
 	}
-	return desktopLayout(size, view.chromeless)
+	return desktopGeometryAt(bounds, view.chromeless)
 }
 
 // place says where the picture sits in area and at what scale (logical pixels
@@ -287,6 +301,33 @@ func (view *desktopView) remote(area gfx.Rect, x, y float32) (int, int) {
 	rx := int(math.Floor(float64((x - origin.X) / scale)))
 	ry := int(math.Floor(float64((y - origin.Y) / scale)))
 	return min(max(rx, 0), max(view.width-1, 0)), min(max(ry, 0), max(view.height-1, 0))
+}
+
+// desktopBounds is the rectangle the desktop is shown in, in window coordinates:
+// its pane, or the whole window when it is fullscreen.
+func (state *State) desktopBounds(session *Session) gfx.Rect {
+	return state.desktopBoundsAt(session, state.viewport)
+}
+
+func (state *State) desktopBoundsAt(session *Session, size gfx.Size) gfx.Rect {
+	if session.desk != nil && session.desk.fullscreen {
+		return gfx.Rect{Width: size.Width, Height: size.Height}
+	}
+	if bounds, ok := state.paneWindowBounds(session.ID, size); ok {
+		return bounds
+	}
+	return gfx.Rect{Width: size.Width, Height: size.Height}
+}
+
+// desktopGeometry is where the session's desktop puts its bars and picture.
+func (state *State) desktopGeometry(session *Session) desktopGeometry {
+	return session.desk.layout(state.desktopBounds(session))
+}
+
+// desktopGeometryAtSize is desktopGeometry for an event's viewport, which may be
+// newer than the last paint.
+func (state *State) desktopGeometryAtSize(session *Session, size gfx.Size) desktopGeometry {
+	return session.desk.layout(state.desktopBoundsAt(session, size))
 }
 
 // openDesktop starts showing the desktop a connection has brought up.
@@ -703,7 +744,7 @@ func (state *State) desktopPointer(session *Session, event gfx.PointerEvent) gfx
 	if view.ended || event.Kind == gfx.PointerExit {
 		return gfx.EventResult{}
 	}
-	geometry := view.layout(event.Viewport)
+	geometry := state.desktopGeometryAtSize(session, event.Viewport)
 	panned := false
 	if !view.fit {
 		before := view.pointer
@@ -746,7 +787,7 @@ func (state *State) desktopScroll(session *Session, event gfx.ScrollEvent) gfx.E
 	}
 	wheel := desktop.Wheel{X: notches(&view.wheel.X), Y: notches(&view.wheel.Y)}
 	if wheel != (desktop.Wheel{}) {
-		x, y := view.remote(view.layout(event.Viewport).area, event.X, event.Y)
+		x, y := view.remote(state.desktopGeometryAtSize(session, event.Viewport).area, event.X, event.Y)
 		_ = view.session.SendWheel(x, y, wheel, view.buttons)
 	}
 	return gfx.EventResult{Handled: true}
@@ -843,21 +884,23 @@ func (state *State) clickDesktop(id gfx.ID) bool {
 	return true
 }
 
-// paintDesktopPage draws a remote desktop: a bar with its name and state and the
-// scaling and keyboard controls, the picture, and a status line. A chromeless
-// host drops both bars for the picture's sake; the keyboard note then takes a
-// corner of the picture, and the controls live in the tab's menu.
-func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session *Session) {
+// declareDesktopBody declares the bars of a remote desktop in its pane: the
+// title and state over the picture, and the strip that names the escape chord
+// under it. The controls painted by hand go into the slots it leaves.
+func (state *State) declareDesktopBody(c ui.C, session *Session, bounds gfx.Rect) {
+	view, s := session.desk, state.paneBody(session)
+	s.declared = true
 	pal, m := state.pal, state.messages
-	view := session.desk
+	canvas := c.Canvas()
 	view.present()
 	view.pixelScale = canvas.PixelScale()
-	geometry := view.layout(size)
-	view.area = geometry.area
-	state.followDesktop(canvas, view)
-
-	s := &state.sessionBodies
-	s.desktopID = session.ID
+	view.area = view.layout(bounds).area
+	title := session.Title
+	if title == "" {
+		title = session.Address
+	}
+	status, _ := state.sessionStatus(session)
+	showStatus := session.phase != sshconn.PhaseConnected || view.ended
 	s.light, s.tools, s.capture, s.latency = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
 	s.latencyShown = false
 	if !view.chromeless && !view.fullscreen {
@@ -866,27 +909,91 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 		// The controls on the right: the scaling choice, Ctrl+Alt+Del where there is
 		// room, and the keyboard switch.
 		tools = []components.ButtonAction{
-			{ID: hitDesktopFit, Label: m.Desktop.Fit, Variant: components.ButtonGhost},
-			{ID: hitDesktopActual, Label: m.Desktop.Actual, Variant: components.ButtonGhost},
-			{ID: hitDesktopFullscreen, Label: m.Desktop.Fullscreen, Variant: components.ButtonGhost, Disabled: view.ended},
+			{ID: state.paneIdentity(session, hitDesktopFit), Label: m.Desktop.Fit, Variant: components.ButtonGhost},
+			{ID: state.paneIdentity(session, hitDesktopActual), Label: m.Desktop.Actual, Variant: components.ButtonGhost},
+			{ID: state.paneIdentity(session, hitDesktopFullscreen), Label: m.Desktop.Fullscreen, Variant: components.ButtonGhost, Disabled: view.ended},
 		}
 		if view.fit {
 			tools[0].Variant = components.ButtonSecondary
 		} else {
 			tools[1].Variant = components.ButtonSecondary
 		}
-		if size.Width >= 760 {
-			tools = append([]components.ButtonAction{{ID: hitDesktopCtrlAltDel, Label: m.Desktop.CtrlAltDel, Variant: components.ButtonGhost, Disabled: view.ended}}, tools...)
+		if bounds.Width >= 760 {
+			tools = append([]components.ButtonAction{{ID: state.paneIdentity(session, hitDesktopCtrlAltDel), Label: m.Desktop.CtrlAltDel, Variant: components.ButtonGhost, Disabled: view.ended}}, tools...)
 		}
-		s.desktopTools = tools
+		s.desktopTools = append(s.desktopTools[:0], tools...)
 	} else {
 		s.desktopTools = s.desktopTools[:0]
 	}
-	state.desktopPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, state.declareDesktopPage)
+	toolsWidth := float32(0)
+	for _, tool := range s.desktopTools {
+		toolsWidth += canvas.TextWidthWeight(tool.Label, metrics.FontSizeS, gfx.WeightMedium) + 24 + 4
+	}
+	ui.Column(c).Fill().Background(pal.workspace).Children(func() {
+		ui.Stack(c).Height(infoBarHeight).Shrink(0).Background(pal.workspace).Children(func() {
+			ui.Row(c).Fill().PadSides(0, termPadX, 0, termPadX-2).Items(ui.Center).Children(func() {
+				ui.Row(c).Grow(1).Gap(8).MarginSides(0, 10, 0, 0).Items(ui.Center).Children(func() {
+					s.light = ui.Slot(c).Size(16, 16)
+					ui.Text(c, title).FontSize(barTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).
+						Width(canvas.TextWidthWeight(title, barTitleSize, gfx.WeightSemibold)+2).Ellipsis().MarginSides(0, 4, 0, 0)
+					if showStatus {
+						ui.Text(c, status).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).
+							Width(canvas.TextWidthWeight(status, metrics.FontSizeS, gfx.WeightMedium) + 2)
+					}
+				})
+				ui.Row(c).Gap(barToolGap).Shrink(0).Items(ui.Center).Children(func() {
+					s.tools = ui.Slot(c).Size(toolsWidth, 24).Shrink(0)
+					if view.chromeless || view.fullscreen {
+						// These views paint the picture alone; their capture control is
+						// the corner note or the fullscreen bar, not this one.
+						s.capture = ui.Slot(c).Size(barToolSize, barToolSize).Shrink(0)
+					} else {
+						captureStyle, captureHint := iconButtonActive, fmt.Sprintf(m.Desktop.TipCapture, desktopEscapeChord)
+						if view.released {
+							captureStyle, captureHint = iconButtonQuiet, fmt.Sprintf(m.Desktop.TipRelease, desktopEscapeChord)
+						}
+						s.capture = state.declareIconButton(c, state.paneIdentity(session, hitDesktopCapture), iconKeyboard, captureHint, view.ended, captureStyle).Size(barToolSize, barToolSize).Shrink(0)
+					}
+				})
+			})
+			ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(pal.line)
+		})
+		ui.Row(c).Grow(1).Background(state.ground(state.termPal.terminal))
+		ui.Stack(c).Height(desktopStripHeight).Shrink(0).Background(pal.workspace).Children(func() {
+			ui.Row(c).FillWidth().Height(1).Self(ui.Start).Background(pal.line)
+			ui.Row(c).Fill().PadX(termPadX).Items(ui.Center).Children(func() {
+				ui.Text(c, state.desktopStripLeft(view, session)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(16).Grow(1).Ellipsis()
+				if s.latencyShown {
+					s.latency = ui.Slot(c).Size(s.latencyBadge.width+12, 16).MarginSides(0, 8, 0, 0).Shrink(0)
+				}
+				chordText := m.Desktop.StripCaptured
+				colour := pal.muted
+				if view.released {
+					chordText, colour = m.Desktop.StripReleased, pal.accent
+				}
+				chordText = fmt.Sprintf(chordText, desktopEscapeChord)
+				ui.Text(c, chordText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(colour).LineHeight(16).
+					Width(canvas.TextWidthWeight(chordText, metrics.FontSizeS, gfx.WeightMedium) + 2).Shrink(0)
+			})
+		})
+	})
+}
+
+// paintDesktopDetails paints a remote desktop: the picture, the controls the
+// bars declared slots for, and the status line. A chromeless host drops both bars
+// for the picture's sake; the keyboard note then takes a corner of the picture,
+// and the controls live in the tab's menu.
+func (state *State) paintDesktopDetails(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
+	pal, m := state.pal, state.messages
+	view, s := session.desk, state.paneBody(session)
+	geometry := state.desktopGeometry(session)
+	view.pixelScale = canvas.PixelScale()
+	view.area = geometry.area
+	state.followDesktop(canvas, view)
 
 	if !view.chromeless && !view.fullscreen {
 		if s.latencyShown {
-			state.paintDesktopLatency(canvas, s.latency.Rect(), s.latencyBadge)
+			state.paintDesktopLatency(canvas, s.latency.Rect(), s.latencyBadge, state.paneIdentity(session, hitDesktopLatency))
 		}
 
 		if session.busy {
@@ -921,7 +1028,7 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 		state.paintDesktopEnded(canvas, area, session)
 	}
 	if view.chromeless && !view.fullscreen && !view.released && !view.ended {
-		state.paintDesktopCaptureNote(canvas, view, area)
+		state.paintDesktopCaptureNote(canvas, view, session, area)
 	}
 	canvas.Unclip()
 
@@ -935,87 +1042,16 @@ func (state *State) paintDesktopPage(canvas *gfx.Canvas, size gfx.Size, session 
 		view.focusPending = false
 	}
 	if view.fullscreen {
-		state.paintDesktopFullscreenControls(canvas, view, area)
+		state.paintDesktopFullscreenControls(canvas, view, session, area)
 	} else if view.chromeless {
-		state.paintChromelessLatency(canvas, view, area)
+		state.paintChromelessLatency(canvas, view, session, area)
 	}
-}
-
-// declareDesktopPage declares the bars of a remote desktop: the title and state
-// over the picture, and the strip that names the escape chord under it. The
-// controls painted by hand go into the slots it leaves.
-func (state *State) declareDesktopPage(c ui.C) {
-	session, ok := state.sessionByIDPointer(state.sessionBodies.desktopID)
-	if !ok || session.desk == nil {
-		return
-	}
-	view, s := session.desk, &state.sessionBodies
-	pal, m := state.pal, state.messages
-	canvas := c.Canvas()
-	title := session.Title
-	if title == "" {
-		title = session.Address
-	}
-	status, _ := state.sessionStatus(session)
-	showStatus := session.phase != sshconn.PhaseConnected || view.ended
-	toolsWidth := float32(0)
-	for _, tool := range s.desktopTools {
-		toolsWidth += canvas.TextWidthWeight(tool.Label, metrics.FontSizeS, gfx.WeightMedium) + 24 + 4
-	}
-	ui.Column(c).Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
-		ui.Stack(c).Height(infoBarHeight).Shrink(0).Background(pal.workspace).Children(func() {
-			ui.Row(c).Fill().PadSides(0, termPadX, 0, termPadX-2).Items(ui.Center).Children(func() {
-				ui.Row(c).Grow(1).Gap(8).MarginSides(0, 10, 0, 0).Items(ui.Center).Children(func() {
-					s.light = ui.Slot(c).Size(16, 16)
-					ui.Text(c, title).FontSize(barTitleSize).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).
-						Width(canvas.TextWidthWeight(title, barTitleSize, gfx.WeightSemibold)+2).Ellipsis().MarginSides(0, 4, 0, 0)
-					if showStatus {
-						ui.Text(c, status).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).
-							Width(canvas.TextWidthWeight(status, metrics.FontSizeS, gfx.WeightMedium) + 2)
-					}
-				})
-				ui.Row(c).Gap(barToolGap).Shrink(0).Items(ui.Center).Children(func() {
-					s.tools = ui.Slot(c).Size(toolsWidth, 24).Shrink(0)
-					if view.chromeless || view.fullscreen {
-						// These views paint the picture alone; their capture control is
-						// the corner note or the fullscreen bar, not this one.
-						s.capture = ui.Slot(c).Size(barToolSize, barToolSize).Shrink(0)
-					} else {
-						captureStyle, captureHint := iconButtonActive, fmt.Sprintf(m.Desktop.TipCapture, desktopEscapeChord)
-						if view.released {
-							captureStyle, captureHint = iconButtonQuiet, fmt.Sprintf(m.Desktop.TipRelease, desktopEscapeChord)
-						}
-						s.capture = state.declareIconButton(c, hitDesktopCapture, iconKeyboard, captureHint, view.ended, captureStyle).Size(barToolSize, barToolSize).Shrink(0)
-					}
-				})
-			})
-			ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(pal.line)
-		})
-		ui.Row(c).Grow(1).Background(state.ground(state.termPal.terminal))
-		ui.Stack(c).Height(desktopStripHeight).Shrink(0).Background(pal.workspace).Children(func() {
-			ui.Row(c).FillWidth().Height(1).Self(ui.Start).Background(pal.line)
-			ui.Row(c).Fill().PadX(termPadX).Items(ui.Center).Children(func() {
-				ui.Text(c, state.desktopStripLeft(view, session)).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(16).Grow(1).Ellipsis()
-				if s.latencyShown {
-					s.latency = ui.Slot(c).Size(s.latencyBadge.width+12, 16).MarginSides(0, 8, 0, 0).Shrink(0)
-				}
-				chordText := m.Desktop.StripCaptured
-				colour := pal.muted
-				if view.released {
-					chordText, colour = m.Desktop.StripReleased, pal.accent
-				}
-				chordText = fmt.Sprintf(chordText, desktopEscapeChord)
-				ui.Text(c, chordText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(colour).LineHeight(16).
-					Width(canvas.TextWidthWeight(chordText, metrics.FontSizeS, gfx.WeightMedium) + 2).Shrink(0)
-			})
-		})
-	})
 }
 
 // paintDesktopCaptureNote is the corner note a chromeless session shows while it
 // holds the keyboard: the chord that hands it back, as the status line would say.
 // A press of it hands the keyboard back, as the bar's button does.
-func (state *State) paintDesktopCaptureNote(canvas *gfx.Canvas, view *desktopView, area gfx.Rect) {
+func (state *State) paintDesktopCaptureNote(canvas *gfx.Canvas, view *desktopView, session *Session, area gfx.Rect) {
 	pal, m := state.pal, state.messages
 	chord := desktopEscapeChord
 	text := canvas.TextWidthWeight(chord, metrics.FontSizeS, gfx.WeightMedium)
@@ -1028,26 +1064,21 @@ func (state *State) paintDesktopCaptureNote(canvas *gfx.Canvas, view *desktopVie
 	canvas.Label(chord, gfx.Rect{X: pill.X + 8 + 14 + 6, Y: pill.Y, Width: text, Height: 22},
 		gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: pal.text})
 	hint := fmt.Sprintf(m.Desktop.TipCapture, chord)
-	canvas.HitWithOptions(hitDesktopCapture, pill, hint, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint})
+	canvas.HitWithOptions(state.paneIdentity(session, hitDesktopCapture), pill, hint, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint})
 }
 
 // desktopTargetFor is the desktop a session's pane can show pixel for pixel: the
 // picture area of the page it is on, at the display scale last painted.
 func (state *State) desktopTargetFor(session *Session) desktopTarget {
-	size := state.viewport
+	bounds := state.desktopBounds(session)
 	if session.desk != nil && session.desk.fullscreen {
-		return desktopTargetFor(session.desk.layout(size).area, state.pixelScale)
-	}
-	if workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID)); ok {
-		if fraction, _, ok := state.paneFractionBounds(workspaceID, paneID); ok {
-			size = paneVirtualSize(pixelBounds(state.workspacePixelBoundsFor(workspaceID, state.viewport), fraction))
-		}
+		return desktopTargetFor(gfx.Rect{Width: bounds.Width, Height: bounds.Height}, state.pixelScale)
 	}
 	chromeless := session.host.Chromeless
 	if session.desk != nil {
 		chromeless = session.desk.chromeless
 	}
-	return desktopTargetFor(desktopLayout(size, chromeless).area, state.pixelScale)
+	return desktopTargetFor(desktopGeometryAt(bounds, chromeless).area, state.pixelScale)
 }
 
 // setDesktopChromeless turns a session's bars off or on, from its tab's menu: the
@@ -1158,7 +1189,7 @@ func (state *State) paintDesktopEnded(canvas *gfx.Canvas, area gfx.Rect, session
 	}
 	if state.canReconnect(session) {
 		components.BeginButtonRow(canvas, state.theme, gfx.Rect{X: x, Y: y + 78, Width: width, Height: 28}).Paint(
-			components.ButtonAction{ID: hitDesktopReconnect, Label: m.Desktop.Reconnect})
+			components.ButtonAction{ID: state.paneIdentity(session, hitDesktopReconnect), Label: m.Desktop.Reconnect})
 		canvas.Label(m.Desktop.ReconnectHint, gfx.Rect{X: x, Y: y + 112, Width: width, Height: 18}, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.faint})
 	}
 }

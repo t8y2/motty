@@ -12,8 +12,11 @@ import "github.com/vivaui/viva/gfx"
 //	var hitProxyAdd = tree.ID(proxiesHits, "add")
 //	var hitProxyRows = tree.Sub(proxiesHits, tree.Name("rows"))   // hitProxyRows.At(i)
 //
-// An embedded session page is mounted in the pane that paints it with
-// tree.Mount, so the same controls are different identities in different panes.
+// The hand-painted controls of a session pane (a connection page's buttons, a
+// remote desktop's controls) keep the application's identities, and a split
+// mounts them in the pane that paints them with tree.Mount, so the same controls
+// are different identities in different panes. Page-declared elements need no
+// mounting: their part names them.
 var tree gfx.Tree
 
 // Tree is the identity tree of the workbench's controls, for the window that paints
@@ -36,10 +39,9 @@ var (
 	connHits = tree.Sub(shellHits, tree.Name("connection"))
 )
 
-// Where an embedded session page is painted. Every pane paints the same page with
-// the same controls; mounting it in the pane's place makes them that pane's own
-// identities (see Tree.Mount). The docked files panel and the file-manager tab are
-// part of the workbench page now, so their controls keep their own identities.
+// Where the hand-painted controls of a session pane are mounted. The pane's body
+// is part of the workbench page, but its buttons keep the application identities
+// so the central dispatcher can act on them; mounting makes them that pane's own.
 var (
 	panesHits    = tree.Feature("panes")
 	fileTabsHits = tree.Feature("file-tabs")
@@ -56,8 +58,8 @@ func sftpFileTabCloseID(sessionID uint32) gfx.ID {
 	return fileTabCloseList.At(int(sessionID))
 }
 
-// paneMount is the place the page of a session is mounted at when it is painted
-// in one of several panes.
+// paneMount is the place a session pane's hand-painted controls are mounted at
+// when its body is painted in one of several panes.
 func paneMount(session *Session) gfx.Scope {
 	return tree.Sub(panesHits, gfx.Index(int(session.paneSlot)))
 }

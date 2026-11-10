@@ -256,24 +256,34 @@ const (
 	failureInset  = float32(11)
 )
 
-// paintConnectionPage draws only what the connection is doing now. The SSH
-// phases remain in the session model and log, but conditional protocol details
-// are not presented as a fixed user journey.
-// paintPageGround fills the whole pane under a connection or restored page, as a
-// terminal fills its pane: edge to edge, so a split's panes meet with no margin
-// of window color between them, and returns what it filled.
-func paintPageGround(canvas *gfx.Canvas, size gfx.Size, fill gfx.Color) gfx.Rect {
-	frame := gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
-	canvas.Fill(frame, fill)
-	return frame
+// A session pane is part of the workbench page: the connection, restored and
+// desktop bodies are declared in the pane's keyed container, so the page names
+// their controls and the window paints the few parts they leave by hand. The
+// scratch each declaration leaves is kept per pane slot, because a split
+// declares every visible pane's body in one paint.
+
+// paneBody is the declaration scratch of the session's pane.
+func (state *State) paneBody(session *Session) *sessionPaneUI {
+	slot := int(session.paneSlot)
+	if slot < 0 || slot >= len(state.sessionBodies) {
+		slot = 0
+	}
+	return &state.sessionBodies[slot]
 }
 
-// sessionPageRoot names the page the connection, restored and rail bodies are
-// declared in. They are drawn into a pane's embedded canvas, one at a time.
-const sessionPageRoot = "session-page"
+// panePartFor is the part naming the session's pane container. It is cached per
+// pane because a new name is a string built from the session number, and the
+// container is declared on every paint.
+func (state *State) panePartFor(session *Session) string {
+	s := state.paneBody(session)
+	if s.part == "" || s.partSession != session.ID {
+		s.part, s.partSession = terminalPageRoot(session.ID), session.ID
+	}
+	return s.part
+}
 
-// sessionButton is one button of a session page: its identity, label, size and
-// variant, painted into the slot the declaration left.
+// sessionButton is one button of a session pane: its identity as the pane paints
+// it, label, size and variant, painted into the slot the declaration left.
 type sessionButton struct {
 	id      gfx.ID
 	label   string
@@ -281,71 +291,82 @@ type sessionButton struct {
 	variant components.ButtonVariant
 }
 
-// sessionPageUI is the page and slots of the connection and restored bodies
-// painted into a pane.
-type sessionPageUI struct {
-	page      *ui.Page
-	sessionID uint32
+// sessionPaneUI is the declaration scratch of one session's pane body: the boxes
+// the page laid out and the window paints into.
+type sessionPaneUI struct {
+	// part and partSession name the pane's container in the page's identity tree.
+	part        string
+	partSession uint32
+	// declared says the page declared this pane's body in the current paint. A
+	// click delivered during the paint can create a session after the pane loop
+	// ran; its body appears on the repaint, and until then the window must not
+	// paint boxes from an older paint.
+	declared bool
 	// buttons and buttonBoxes are the footer's buttons and their slots, reset
-	// when the page is declared.
+	// when the body is declared.
 	buttons     []sessionButton
 	buttonBoxes []ui.Box
 	// avatar and failing are the connection card's badges; track and dots its
 	// rail; rail, railTarget and railIcon the rail's own layout.
 	avatar, failing, track, dots ui.Box
 	rail, railTarget, railIcon   ui.Box
-	// keysClose and keysConnect are the restored page's key hints.
+	// keysClose and keysConnect are the restored pane's key hints.
 	keysClose, keysConnect ui.Box
 	closeHint, connectHint []string
 	closeKeys, connectKeys [6]string
-	// desktop is the page a remote desktop's bars are declared in, with the slots
-	// its hand-painted controls go in.
-	desktop                        *ui.Page
-	desktopID                      uint32
+	// light, tools, capture and latency are the desktop bars' slots, and
+	// desktopTools the controls they hold.
 	light, tools, capture, latency ui.Box
 	desktopTools                   []components.ButtonAction
 	latencyBadge                   desktopLatencyUI
 	latencyShown                   bool
 }
 
-// sessionPage returns the page these bodies are declared in.
-func (state *State) sessionPage() *ui.Page {
-	s := &state.sessionBodies
-	if s.page == nil {
-		s.page = ui.NewPage(ui.PageConfig{Root: sessionPageRoot, Theme: &state.theme})
+// declareSessionPane declares a session the terminal control does not show: its
+// connection, restored or desktop body, in the pane's container.
+func (state *State) declareSessionPane(c ui.C, session *Session, bounds gfx.Rect) {
+	switch {
+	case session.restored:
+		state.declareRestoredSessionBody(c, session, bounds)
+	case state.showsProgress(session):
+		state.declareConnectionBody(c, session, bounds)
+	case session.desk != nil:
+		state.declareDesktopBody(c, session, bounds)
 	}
-	return s.page
 }
 
-// desktopPage returns the page a remote desktop's bars are declared in.
-func (state *State) desktopPage() *ui.Page {
-	s := &state.sessionBodies
-	if s.desktop == nil {
-		s.desktop = ui.NewPage(ui.PageConfig{Root: "desktop-page", Theme: &state.theme})
+// paintSessionPaneDetails paints what a session pane's declaration left by hand:
+// its badges, buttons, rail and, for a remote desktop, the picture.
+func (state *State) paintSessionPaneDetails(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
+	if !state.paneBody(session).declared {
+		return
 	}
-	return s.desktop
+	switch {
+	case session.restored:
+		state.paintRestoredSessionDetails(canvas, session)
+	case state.showsProgress(session):
+		state.paintConnectionDetails(canvas, session)
+	case session.desk != nil:
+		state.paintDesktopDetails(canvas, session, bounds)
+	}
 }
 
-func (state *State) paintConnectionPage(canvas *gfx.Canvas, size gfx.Size, session *Session) {
+func (state *State) paintConnectionDetails(canvas *gfx.Canvas, session *Session) {
 	pal := state.pal
-	frame := paintPageGround(canvas, size, pal.workspace)
-	s := &state.sessionBodies
-	s.sessionID = session.ID
-	s.avatar, s.failing, s.track, s.dots, s.rail, s.railTarget, s.railIcon = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
-	state.sessionPage().Draw(canvas, frame, state.declareConnectionPage)
+	s := state.paneBody(session)
 
 	step := session.stepOf(connectionDisplayStage(session))
 	if session.failed() {
 		step = stepFailed
 	}
 	state.paintSessionBadge(canvas, session, s.avatar.Rect())
-	state.paintSessionButtons(canvas)
+	state.paintSessionButtons(canvas, session)
 	if step == stepFailed {
 		paintIcon(canvas, iconAlert, s.failing.Rect(), pal.danger)
 	}
 	state.easeRail(canvas, session, step)
 	if step != stepFailed {
-		state.paintConnectionTrack(canvas, step, session.railShown, session.host.System)
+		state.paintConnectionTrack(canvas, session, step, session.railShown, session.host.System)
 	}
 	if step == stepActive && !canvas.ReduceMotion() {
 		paintBouncingDots(canvas, s.dots.Rect(), pal.muted)
@@ -357,17 +378,15 @@ func (state *State) paintConnectionPage(canvas *gfx.Canvas, size gfx.Size, sessi
 	}
 }
 
-// declareConnectionPage declares the connection card and the rail it holds.
+// declareConnectionBody declares the connection card and the rail it holds.
 // The inputs are the session's, and the boxes it leaves are painted after the
 // page is laid out.
-func (state *State) declareConnectionPage(c ui.C) {
-	session, ok := state.sessionByIDPointer(state.sessionBodies.sessionID)
-	if !ok {
-		return
-	}
+func (state *State) declareConnectionBody(c ui.C, session *Session, frame gfx.Rect) {
 	canvas := c.Canvas()
 	pal, m := state.pal, state.messages
-	frame := c.Bounds()
+	s := state.paneBody(session)
+	s.declared = true
+	s.avatar, s.failing, s.track, s.dots, s.rail, s.railTarget, s.railIcon = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
 
 	failed := session.failed()
 	stage := connectionDisplayStage(session)
@@ -449,7 +468,6 @@ func (state *State) declareConnectionPage(c ui.C) {
 	case footerHeight < 64 || session.reconnectPending:
 		size = components.ButtonSizeSmall
 	}
-	s := &state.sessionBodies
 	s.buttonBoxes, s.buttons = s.buttonBoxes[:0], s.buttons[:0]
 	addButton := func(id gfx.ID, label string, variant components.ButtonVariant) {
 		probe := components.BeginButton(canvas, *c.Theme(), gfx.ID{}, gfx.Rect{}).Size(size).SizeToFit(label)
@@ -457,7 +475,7 @@ func (state *State) declareConnectionPage(c ui.C) {
 		s.buttonBoxes = append(s.buttonBoxes, box)
 		s.buttons = append(s.buttons, sessionButton{id: id, label: label, size: size, variant: variant})
 	}
-	ui.Column(c).Fill().Items(ui.Center).Children(func() {
+	ui.Column(c).Fill().Background(pal.workspace).Items(ui.Center).Children(func() {
 		ui.Spacer(c).Grow(0.42)
 		// The card is a stack so its edge is a layer of its own: a border drawn by
 		// the content column would take a pixel from the layout.
@@ -582,14 +600,14 @@ func connectionDisplayStage(session *Session) int {
 	return min(max(session.stage, 0), stageCount-1)
 }
 
-func (state *State) paintConnectionTrack(canvas *gfx.Canvas, step stepState, fill float32, system sshconn.RemoteSystem) {
+func (state *State) paintConnectionTrack(canvas *gfx.Canvas, session *Session, step stepState, fill float32, system sshconn.RemoteSystem) {
 	const endpointSize, ballSize, ring = float32(30), float32(26), float32(18)
 	pal := state.pal
 
 	// The rail runs from the ring's reach at the left to a little short of the
 	// machine it leads to at the right; only the ball on it moves. Its slots were
-	// declared with the connection page.
-	s := &state.sessionBodies
+	// declared with the connection body.
+	s := state.paneBody(session)
 	track, targetBounds, iconBounds := s.rail.Rect(), s.railTarget.Rect(), s.railIcon.Rect()
 
 	tint := pal.accent
@@ -767,31 +785,23 @@ func paintBouncingDots(canvas *gfx.Canvas, box gfx.Rect, color gfx.Color) {
 	}
 }
 
-func (state *State) paintRestoredSessionPage(canvas *gfx.Canvas, size gfx.Size, session *Session) {
-	pal := state.pal
-	area := paintPageGround(canvas, size, pal.workspace)
-	s := &state.sessionBodies
-	s.sessionID = session.ID
-	s.avatar, s.keysClose, s.keysConnect = ui.Box{}, ui.Box{}, ui.Box{}
-	s.closeHint, s.connectHint = nil, nil
-	state.sessionPage().Draw(canvas, area, state.declareRestoredSessionPage)
+func (state *State) paintRestoredSessionDetails(canvas *gfx.Canvas, session *Session) {
+	s := state.paneBody(session)
 	state.paintSessionBadge(canvas, session, s.avatar.Rect())
-	state.paintSessionButtons(canvas)
+	state.paintSessionButtons(canvas, session)
 	state.paintKeyHint(canvas, s.keysClose.Rect(), s.closeHint)
 	state.paintKeyHint(canvas, s.keysConnect.Rect(), s.connectHint)
 }
 
-// declareRestoredSessionPage declares the page of a session that has to be
+// declareRestoredSessionBody declares the body of a session that has to be
 // restored: who it is, what happened, what to do, and the keys that do it.
-func (state *State) declareRestoredSessionPage(c ui.C) {
-	session, ok := state.sessionByIDPointer(state.sessionBodies.sessionID)
-	if !ok {
-		return
-	}
+func (state *State) declareRestoredSessionBody(c ui.C, session *Session, area gfx.Rect) {
 	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
-	area := c.Bounds()
-	s := &state.sessionBodies
+	s := state.paneBody(session)
+	s.declared = true
+	s.avatar, s.keysClose, s.keysConnect = ui.Box{}, ui.Box{}, ui.Box{}
+	s.closeHint, s.connectHint = nil, nil
 
 	// No card: the page is the window's own space, with one column down its
 	// middle (who, what happened, what to do) and the keys that do it.
@@ -821,7 +831,7 @@ func (state *State) declareRestoredSessionPage(c ui.C) {
 		s.buttons = append(s.buttons, sessionButton{id: id, label: label, size: components.ButtonSizeDefault, variant: variant})
 	}
 
-	ui.Column(c).Fill().PadSides(max(24, area.Height*0.34), 0, 0, 0).Items(ui.Center).Children(func() {
+	ui.Column(c).Fill().Background(pal.workspace).PadSides(max(24, area.Height*0.34), 0, 0, 0).Items(ui.Center).Children(func() {
 		ui.Row(c).Gap(16).Items(ui.Center).Children(func() {
 			s.avatar = ui.Slot(c).Size(avatarSize, avatarSize)
 			ui.Column(c).Children(func() {
@@ -848,12 +858,14 @@ func (state *State) declareRestoredSessionPage(c ui.C) {
 	})
 }
 
-// paintSessionButtons paints the footer buttons the session page declared into
+// paintSessionButtons paints the footer buttons the session body declared into
 // their slots, keeping the application's identities for the central dispatcher.
-func (state *State) paintSessionButtons(canvas *gfx.Canvas) {
-	s := &state.sessionBodies
+// A split mounts each pane's identities, so the buttons are that pane's own.
+func (state *State) paintSessionButtons(canvas *gfx.Canvas, session *Session) {
+	s := state.paneBody(session)
 	for index, action := range s.buttons {
-		button := components.BeginButton(canvas, state.Theme(), action.id, s.buttonBoxes[index].Rect()).Size(action.size)
+		id := state.paneIdentity(session, action.id)
+		button := components.BeginButton(canvas, state.Theme(), id, s.buttonBoxes[index].Rect()).Size(action.size)
 		switch action.variant {
 		case components.ButtonGhost:
 			button.Ghost(action.label)
