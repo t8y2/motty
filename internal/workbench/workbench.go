@@ -356,9 +356,13 @@ const (
 	// one layer are not stacked: the earlier one's text lands on the later
 	// one's surface. Drawers paint before the modal pass, so they take a layer
 	// below dialogLayer and never share it with a dialog.
-	drawerLayer  = uint16(500)
-	dialogLayer  = uint16(600)
-	tooltipLayer = uint16(900)
+	drawerLayer = uint16(500)
+	dialogLayer = uint16(600)
+	// hoverCardLayer is a page's pointer preview: above the page's menus, below
+	// the tooltip so the tooltip's text never shares a layer with another
+	// overlay.
+	hoverCardLayer = uint16(800)
+	tooltipLayer   = uint16(900)
 )
 
 const (
@@ -1579,6 +1583,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalSnippet:
 		state.clickSnippetDialog(id)
+		return
+	case modalSnippetDelete:
+		state.clickSnippetDeleteDialog(id)
 		return
 	case modalImportSessions:
 		state.clickImportSessions(id)

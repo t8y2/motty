@@ -490,6 +490,7 @@ const (
 	modalVaultForget
 	modalHighlightRule
 	modalSnippet
+	modalSnippetDelete
 	modalImportSessions
 	modalFontPicker
 	modalOutboundProxy

@@ -187,6 +187,15 @@ func TestRightClickingASnippetRowOpensItsMenu(t *testing.T) {
 	state.Click(hitSnippets)
 	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitSnippetRowList.At(0)})
 	state.Click(hitSnippetMenuDelete)
+	if state.modal != modalSnippetDelete || len(state.snippets.list) != 2 {
+		t.Fatalf("the menu delete opened modal %d with %d snippets", state.modal, len(state.snippets.list))
+	}
+	state.Click(hitSnippetDeleteCancel)
+	if state.modal != modalNone || len(state.snippets.list) != 2 {
+		t.Fatalf("cancel left modal %d with %d snippets", state.modal, len(state.snippets.list))
+	}
+	state.Click(hitSnippetRemove)
+	state.Click(hitSnippetDeleteConfirm)
 	if len(state.snippets.list) != 1 || state.snippets.list[0].Name != "b" {
 		t.Fatalf("snippets after delete: %+v", state.snippets.list)
 	}

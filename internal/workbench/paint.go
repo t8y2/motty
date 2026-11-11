@@ -353,6 +353,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintQueuedSFTPHeaderMenu(canvas)
 	state.paintHostMenus(canvas, viewport)
 	state.endMenus()
+	state.paintSnippetHoverCard(canvas, viewport)
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
@@ -2729,6 +2730,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareXYDialog(c)
 	case modalSnippet:
 		state.declareSnippetDialog(c)
+	case modalSnippetDelete:
+		state.declareSnippetDeleteDialog(c)
 	case modalVaultUnlock:
 		state.declareVaultUnlockDialog(c)
 	case modalVaultForget:
