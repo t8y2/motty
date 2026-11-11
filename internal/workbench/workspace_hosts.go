@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"motty/internal/localshell"
@@ -75,6 +76,24 @@ func (state *State) workspaceHosts() []Host {
 		hosts = append(hosts, state.workspaceLocalShellHost(choice))
 	}
 	return append(hosts, state.hosts...)
+}
+
+// workspaceLaunchCatalog is what template launches resolve references
+// against: the draft's choices, plus every reference the template names that
+// the draft's filter left out. A shell hidden from the pickers, or one that
+// has since become the default, still launches what was saved — the filter
+// shapes what the user picks from, never what a saved template resolves to.
+func (state *State) workspaceLaunchCatalog(hostIDs []string) []Host {
+	catalog := state.workspaceHosts()
+	for _, id := range hostIDs {
+		if slices.ContainsFunc(catalog, func(host Host) bool { return host.CatalogID == id }) {
+			continue
+		}
+		if host, ok := state.workspaceHostByID(id); ok {
+			catalog = append(catalog, host)
+		}
+	}
+	return catalog
 }
 
 func (state *State) workspaceHostByID(id string) (Host, bool) {

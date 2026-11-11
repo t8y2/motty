@@ -320,3 +320,72 @@ func TestWorkspaceLaunchesTheChosenShellAndSavesItsReference(t *testing.T) {
 		t.Fatalf("save references = %v, %v", got, err)
 	}
 }
+
+func TestWorkspaceLaunchCatalogResolvesFilteredShells(t *testing.T) {
+	program, second := workspaceShellPrograms()
+	state := newTestState(t, testOptions(t))
+	withShellChoices(t, state,
+		[]localshell.Choice{{Name: "Alpha", Path: program, Default: true}, {Name: "Beta", Path: second}}, nil)
+	state.localShell = program
+	state.refreshLocalShells()
+	ref := workspaceLocalShellReference(second)
+
+	// Hidden: the draft drops the row, the launch catalog still resolves the
+	// saved shell.
+	state.hideShell(second, true)
+	plan, err := PlanWorkspaceLaunch(state.workspaceLaunchCatalog([]string{ref}), []string{ref}, layoutcore.GridSpec(1))
+	if err != nil || len(plan.Missing) != 0 || len(plan.Hosts) != 1 || plan.Hosts[0].localShell != second {
+		t.Fatalf("hidden shell plan = %+v, error = %v", plan, err)
+	}
+
+	// Made the default: the sentinel covers the row, the pinned shell still
+	// resolves.
+	state.localShell = second
+	plan, err = PlanWorkspaceLaunch(state.workspaceLaunchCatalog([]string{ref}), []string{ref}, layoutcore.GridSpec(1))
+	if err != nil || len(plan.Missing) != 0 || len(plan.Hosts) != 1 || plan.Hosts[0].localShell != second {
+		t.Fatalf("defaulted shell plan = %+v, error = %v", plan, err)
+	}
+
+	// A reference nothing resolves stays missing rather than gaining a pane:
+	// nothing to launch, and the id lands in Missing for the warning.
+	plan, err = PlanWorkspaceLaunch(state.workspaceLaunchCatalog([]string{"host_nope"}), []string{"host_nope"}, layoutcore.GridSpec(1))
+	if len(plan.Missing) != 1 || len(plan.Hosts) != 0 || plan.Missing[0] != "host_nope" {
+		t.Fatalf("unknown id plan = %+v", plan)
+	}
+}
+
+func TestWorkspaceTemplateLaunchesShellsHiddenOrDefaultedAfterSaving(t *testing.T) {
+	skipWithoutUnixShell(t)
+	state := newTestState(t, testOptions(t))
+	closeLocalShells(t, state)
+	withShellChoices(t, state,
+		[]localshell.Choice{{Name: "Alpha", Path: "/bin/sh", Default: true}, {Name: "Beta", Path: "/bin/bash"}}, nil)
+	state.localShell = "/bin/sh"
+
+	// Save a template that pins Beta, then hide it: the library still
+	// launches the saved shell.
+	template := mustWorkspaceTemplate(t, "Shell", []string{workspaceLocalShellReference("/bin/bash")}, 1)
+	state.templates = []WorkspaceTemplate{template}
+	state.selectedWorkspaceTemplateID = template.ID
+	state.hideShell("/bin/bash", true)
+
+	state.applySelectedWorkspaceTemplate()
+	if len(state.sessions) != 1 {
+		t.Fatalf("sessions = %d, want the hidden shell's pane", len(state.sessions))
+	}
+	session := &state.sessions[0]
+	if got := localShellOf(t, session); got != "/bin/bash" || session.Title != "Beta" {
+		t.Fatalf("ran %q titled %q, want hidden Beta /bin/bash", got, session.Title)
+	}
+
+	// Making Beta the default moves the sentinel onto it: the same template
+	// still launches the pinned shell.
+	state.localShell = "/bin/bash"
+	state.applySelectedWorkspaceTemplate()
+	if len(state.sessions) != 2 {
+		t.Fatalf("sessions after second apply = %d", len(state.sessions))
+	}
+	if got := localShellOf(t, &state.sessions[1]); got != "/bin/bash" {
+		t.Fatalf("reopened %q, want the pinned /bin/bash", got)
+	}
+}

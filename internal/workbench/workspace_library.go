@@ -138,7 +138,7 @@ func (state *State) applySelectedWorkspaceTemplate() {
 		return
 	}
 	template := state.templates[index]
-	plan, err := PlanWorkspaceLaunch(state.workspaceHosts(), template.HostIDs, template.Layout)
+	plan, err := PlanWorkspaceLaunch(state.workspaceLaunchCatalog(template.HostIDs), template.HostIDs, template.Layout)
 	if err != nil {
 		detail := state.messages.WorkspaceTemplateApplyFailed
 		if err == ErrWorkspaceLaunchEmpty && len(plan.Missing) > 0 {
