@@ -16,6 +16,79 @@ import (
 	"motty/internal/sftpclient"
 )
 
+func TestSFTPBackgroundMenuCreatesFolderInClickedPane(t *testing.T) {
+	for _, tab := range []bool{false, true} {
+		t.Run(fmt.Sprintf("tab-%t", tab), func(t *testing.T) {
+			state, _, w, _, _ := openSFTPTabFixture(t)
+			emptyDir := t.TempDir()
+			w.navigate(true, emptyDir)
+			waitSFTPTab(t, state, w, func() bool {
+				return w.view.lfolder.path == emptyDir && len(w.view.lfolder.rows) == 0
+			})
+
+			config := w.config()
+			if tab {
+				config = app.Config{
+					Title: "SFTP background menu", Width: 1100, Height: 720, Tree: Tree(),
+					Paint: state.Paint, OnPointer: state.Pointer, OnResize: state.Resize,
+				}
+			}
+			preview, err := headless.Open(config, nil, headless.Options{Scale: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer preview.Close()
+			if err := preview.Rest(); err != nil {
+				t.Fatal(err)
+			}
+
+			actionHit := func(action gfx.ID) (gfx.Hit, bool) {
+				return hitByIDSnapshot(preview.Snapshot().Hits, sftpWindowMenuActions.At(sftpWindowActionIndex(action)))
+			}
+			for side, local := range []bool{true, false} {
+				folder := w.folder(local)
+				if !local {
+					folder.selectRow(0, 0)
+					w.selectionChanged(local)
+				}
+				list := w.ui.list[side]
+				if err := preview.RightClick(list.X+24, list.Y+list.Height-12); err != nil {
+					t.Fatal(err)
+				}
+				if err := preview.Rest(); err != nil {
+					t.Fatal(err)
+				}
+				mkdir, ok := actionHit(hitSFTPNewDirectory)
+				if !ok || mkdir.Disabled {
+					t.Fatalf("local=%t: New Folder is missing or disabled (menu open=%t)", local, w.ui.menuOpen)
+				}
+				if _, ok := actionHit(hitSFTPDelete); ok {
+					t.Fatalf("local=%t: blank-space menu offered Delete", local)
+				}
+				if _, ok := actionHit(hitSFTPUpload); ok != !local {
+					t.Fatalf("local=%t: Upload present=%t", local, ok)
+				}
+				if err := preview.Click(mkdir.Bounds.X+mkdir.Bounds.Width/2, mkdir.Bounds.Y+mkdir.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				if w.view.dialog != sftpDialogCreateDirectory || w.view.local != local {
+					t.Fatalf("local=%t: dialog=%v, active local=%t", local, w.view.dialog, w.view.local)
+				}
+				w.view.dialogEditor.Insert("from-context-menu")
+				w.click(hitSFTPDialogSubmit)
+				waitSFTPTab(t, state, w, func() bool {
+					for _, row := range folder.rows {
+						if row.entry.Name == "from-context-menu" && row.entry.IsDir() {
+							return true
+						}
+					}
+					return false
+				})
+			}
+		})
+	}
+}
+
 func TestSFTPFileTabHeadlessCompactThemesAndNativeInput(t *testing.T) {
 	for _, light := range []bool{false, true} {
 		for _, remoteLeft := range []bool{false, true} {

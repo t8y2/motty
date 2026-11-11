@@ -654,6 +654,17 @@ func (folder *sftpFolder) selectRow(index int, modifiers gfx.Modifiers) {
 	folder.listNeedsSeed = true
 }
 
+func (folder *sftpFolder) clearSelection() {
+	for i := range folder.rows {
+		if folder.rows[i].selected {
+			folder.rows[i].selected = false
+			folder.rows[i].cells[0] = sftpSelectionCell(false)
+		}
+	}
+	folder.selected, folder.anchor = -1, -1
+	folder.listNeedsSeed = true
+}
+
 // prepareSFTPList gives the folder's List the row label and multi-selection it
 // needs, once. Label names a row for typeahead and assistive technology.
 func (folder *sftpFolder) prepareSFTPList() {

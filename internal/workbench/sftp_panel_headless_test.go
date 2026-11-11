@@ -13,6 +13,59 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
+func TestSFTPPanelBackgroundMenuOpensNewFolder(t *testing.T) {
+	for _, local := range []bool{false, true} {
+		t.Run(fmt.Sprintf("local-%t", local), func(t *testing.T) {
+			state, session, _, _ := openTestSFTP(t)
+			view := session.files
+			width := 1400
+			if local {
+				openLocalPane(t, state, session, t.TempDir())
+				width = 800 // Exercise the narrow drawer with an empty directory.
+			} else {
+				view.active().selectRow(0, 0)
+			}
+			preview, err := headless.Open(app.Config{
+				Title: "File panel background", Width: width, Height: 900, Tree: Tree(),
+				Paint: state.Paint, OnPointer: state.Pointer, OnResize: state.Resize,
+			}, nil, headless.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer preview.Close()
+			if err := preview.Rest(); err != nil {
+				t.Fatal(err)
+			}
+			list, ok := hitByIDSnapshot(preview.Snapshot().Hits, hitSFTPListBackground)
+			if !ok {
+				t.Fatal("missing file-list background")
+			}
+			if err := preview.RightClick(list.Bounds.X+24, list.Bounds.Y+list.Bounds.Height-12); err != nil {
+				t.Fatal(err)
+			}
+			if err := preview.Rest(); err != nil {
+				t.Fatal(err)
+			}
+			if !state.sftpMenu.open || selectedSFTPCount(view) != 0 {
+				t.Fatal("right-click did not open the menu for the current directory")
+			}
+			for _, hit := range preview.Snapshot().Hits {
+				if hit.Layer != dialogLayer || hit.ID != hitSFTPNewDirectory || hit.Disabled {
+					continue
+				}
+				if err := preview.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				if view.dialog != sftpDialogCreateDirectory || view.local != local {
+					t.Fatalf("New Folder opened dialog %v with local=%t", view.dialog, view.local)
+				}
+				return
+			}
+			t.Fatal("missing enabled New Folder menu item")
+		})
+	}
+}
+
 func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {
 	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
 		t.Run(fmt.Sprint(scale), func(t *testing.T) {
