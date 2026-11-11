@@ -220,6 +220,7 @@ func proxyRecordKey(fields map[string]json.RawMessage) string {
 // syncedSettings are the scalar settings every device shares.
 var syncedSettings = map[string]bool{
 	"host_order":                   true,
+	"hidden_host_tags":             true,
 	"highlight_builtin":            true,
 	"terminalOption":               true,
 	"terminal_scrollback":          true,

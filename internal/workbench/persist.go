@@ -184,6 +184,7 @@ type savedState struct {
 	Sync                   *savedSync             `json:"sync,omitempty"`
 	HostView               string                 `json:"host_view,omitempty"`
 	HostOrder              string                 `json:"host_order,omitempty"`
+	HiddenHostTags         []string               `json:"hidden_host_tags,omitempty"`
 	HostPrivacy            bool                   `json:"host_privacy,omitempty"`
 	HostPrivacyShowName    bool                   `json:"host_privacy_show_name,omitempty"`
 	HostPrivacyShowAddress bool                   `json:"host_privacy_show_address,omitempty"`
@@ -700,6 +701,7 @@ func (state *State) snapshot() savedState {
 	saved.Sync = state.savedSyncValue()
 	saved.HostView = state.hostView.saved()
 	saved.HostOrder = state.hostOrder.saved()
+	saved.HiddenHostTags = state.hiddenHostTags
 	saved.HostPrivacy = state.hostPrivacy.enabled
 	saved.HostPrivacyShowName = !state.hostPrivacy.maskName
 	saved.HostPrivacyShowAddress = !state.hostPrivacy.maskAddress
@@ -1056,6 +1058,7 @@ func (state *State) restoreLocal(saved savedState) {
 // keeps running.
 func (state *State) restoreShared(saved savedState) {
 	state.hostOrder = hostOrderFromString(saved.HostOrder)
+	state.hiddenHostTags = normalizeHiddenHostTags(saved.HiddenHostTags)
 	if state.hostOrder != hostOrderManual {
 		state.hostSort.enabled = false
 		state.hostSort.grid.Cancel()

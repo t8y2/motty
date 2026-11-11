@@ -26,6 +26,7 @@ const (
 	ruleDeleteAutofill ruleDeleteKind = iota + 1
 	ruleDeleteHighlight
 	ruleDeleteCredential
+	ruleDeleteHostTag
 )
 
 // ruleDelete is the rule the open dialog would delete.
@@ -88,6 +89,8 @@ func (state *State) clickDeleteRuleDialog(id gfx.ID) {
 			}
 		case ruleDeleteCredential:
 			state.deleteCredential(ask.credential)
+		case ruleDeleteHostTag:
+			state.deleteHostTag(ask.name)
 		case ruleDeleteHighlight:
 			if rules := state.highlighting.rules; ask.index < len(rules) && rules[ask.index].Pattern == ask.pattern {
 				state.deleteHighlightRule(ask.index)
@@ -111,6 +114,13 @@ func (state *State) paintDeleteRuleDialog(canvas *gfx.Canvas, viewport gfx.Rect)
 		title, description = c.DeleteTitle, fmt.Sprintf(c.DeleteFmt, ask.name)
 		if ask.uses > 0 {
 			description += " " + fmt.Sprintf(c.DeleteInUseFmt, ask.uses)
+		}
+	}
+	if ask.kind == ruleDeleteHostTag {
+		tags := state.messages.HostTags
+		title, description = tags.DeleteTitle, fmt.Sprintf(tags.DeleteFmt, ask.name)
+		if ask.uses > 0 {
+			description += " " + fmt.Sprintf(tags.DeleteInUseFmt, ask.uses)
 		}
 	}
 	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
