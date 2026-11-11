@@ -245,6 +245,12 @@ func TestTerminalInputLocaleNoticeSteadyPaintHasNoAllocations(t *testing.T) {
 	var canvas gfx.Canvas
 	size := gfx.Size{Width: 1000, Height: 700}
 	state.Paint(&canvas, size)
+	// Windows fills its text and icon caches lazily over the first frames; warm
+	// them before measuring the steady state, as a window in use has long since done.
+	for i := 0; i < 200; i++ {
+		canvas.Reset()
+		state.Paint(&canvas, size)
+	}
 	if got := testing.AllocsPerRun(100, func() { canvas.Reset(); state.Paint(&canvas, size) }); got != 0 {
 		t.Fatalf("steady charset notice paint allocated %v times", got)
 	}
