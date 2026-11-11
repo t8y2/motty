@@ -88,7 +88,15 @@ func (state *State) sftpMenuDismissPointer(event gfx.PointerEvent) (gfx.EventRes
 // sftpMenuPointer opens the file list menu on a secondary press. On the
 // background the menu acts on the current directory.
 func (state *State) sftpMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary {
+	if event.Kind != gfx.PointerDown {
+		return gfx.EventResult{}, false
+	}
+	background := event.Target == hitSFTPListBackground
+	if background && event.Button == gfx.PointerButtonPrimary {
+		// A press on the list background still takes focus out of the path field.
+		return gfx.EventResult{Handled: true, Repaint: true, Blur: true}, true
+	}
+	if event.Button != gfx.PointerButtonSecondary {
 		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
@@ -97,7 +105,6 @@ func (state *State) sftpMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bo
 	}
 	view := session.files
 	folder := view.active()
-	background := event.Target == hitSFTPListBackground
 	index, listRow := folder.listRow(event.Target)
 	if !listRow && !background {
 		if event.Target.Scope() != hitSFTPEntryList {
