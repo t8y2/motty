@@ -1,10 +1,15 @@
+export type ShowcaseContent = {
+  base: { image: string; alt: string };
+  steps: { image: string; title: string; body: string }[];
+};
+
 export type LandingContent = {
   badge: string;
   title: string;
   subtitle: string;
   start: string;
   install: string;
-  heroAlt: string;
+  showcase: ShowcaseContent;
   featuresTitle: string;
   features: { icon: 'terminal' | 'key' | 'folder' | 'network' | 'monitor' | 'bot'; title: string; body: string }[];
   screensTitle: string;
@@ -33,7 +38,39 @@ export const landing: Record<'en' | 'zh', LandingContent> = {
       'Connect, move files, forward ports, remote desktop, ask the assistant — one window. Fast start, quiet at idle, MCP for outside agents.',
     start: 'Get started',
     install: 'Download',
-    heroAlt: 'Motty with a terminal and the assistant panel',
+    showcase: {
+      base: {
+        image: '/showcase-base-dark.webp',
+        alt: 'Motty with the file panel, terminal and assistant open on the staging-web host',
+      },
+      steps: [
+        {
+          image: '/showcase-light.webp',
+          title: 'Light or dark, in one click',
+          body: 'The theme button in the title bar switches the whole window; the session keeps running.',
+        },
+        {
+          image: '/showcase-hosts.webp',
+          title: 'Every host, grouped and tagged',
+          body: 'Production, staging and CI in one list, tagged by environment; type a name to connect.',
+        },
+        {
+          image: '/showcase-files.webp',
+          title: 'Files beside the shell',
+          body: 'SFTP and a terminal on the same session, with a resumable queue and an editor in the panel.',
+        },
+        {
+          image: '/showcase-colors.webp',
+          title: 'More than 200 colour schemes',
+          body: 'Tokyo Night, Dracula, Nord and the rest, with one scheme for dark and one for light.',
+        },
+        {
+          image: '/showcase-light.webp',
+          title: 'An assistant on the same session',
+          body: "It reads this machine's logs and processes, and tool calls go through an approval gate.",
+        },
+      ],
+    },
     featuresTitle: 'Everything for a session',
     features: [
       {
@@ -148,7 +185,39 @@ export const landing: Record<'en' | 'zh', LandingContent> = {
       '连接、传文件、转发端口、远程桌面、叫 AI 帮忙，都在一个界面里。原生渲染，启动即用、空闲不占资源，还能通过 MCP 交给外部 agent。',
     start: '快速开始',
     install: '下载',
-    heroAlt: 'Motty 的终端与 AI 助手面板',
+    showcase: {
+      base: {
+        image: '/showcase-base-dark.webp',
+        alt: 'Motty 打开 staging-web 主机时的文件面板、终端与 AI 助手',
+      },
+      steps: [
+        {
+          image: '/showcase-light.webp',
+          title: '浅色、深色，一键切换',
+          body: '点标题栏的主题按钮，整个窗口一起换；会话不中断。',
+        },
+        {
+          image: '/showcase-hosts.webp',
+          title: '主机按分组和标签排好',
+          body: '生产、预发、CI 各自成组，标签按环境打；搜索框里敲名字直接连。',
+        },
+        {
+          image: '/showcase-files.webp',
+          title: '文件就在终端旁边',
+          body: '同一会话里的 SFTP 和终端，断点续传队列和编辑器都在面板里。',
+        },
+        {
+          image: '/showcase-colors.webp',
+          title: '两百多套配色方案',
+          body: 'Tokyo Night、Dracula、Nord 等精选，深色和浅色各记一套，也能导入自己的配色。',
+        },
+        {
+          image: '/showcase-light.webp',
+          title: '助手就在同一个会话里',
+          body: '它直接读取这台机器的日志和进程，工具调用按风险分级审批。',
+        },
+      ],
+    },
     featuresTitle: '一次会话所需的一切',
     features: [
       {
