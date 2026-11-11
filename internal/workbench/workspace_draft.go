@@ -836,6 +836,7 @@ func (state *State) paintWorkspaceDraftHosts(canvas *gfx.Canvas) {
 			draft.content += 66
 		}
 	}
+	state.revealWorkspaceCommandFields(rows)
 	area := components.BeginScrollArea(canvas, state.Theme(), draft.bounds, gfx.Size{Width: max(0, draft.bounds.Width-10), Height: draft.content}).
 		Offset(0, draft.scroll).ReserveScrollbars().Viewport(hitWorkspaceDraftScroll, m.WorkspaceDraftHosts).
 		VerticalScrollbar(hitWorkspaceDraftScrollbar, m.WorkspaceDraftHosts, "")
@@ -889,13 +890,41 @@ func (state *State) paintWorkspaceDraftHosts(canvas *gfx.Canvas) {
 	area.EndContent()
 }
 
+// revealWorkspaceCommandFields scrolls the expanded command fields of the
+// draft's command host into view: a row near the list's bottom grows by 66px
+// when chosen, and fields that open below the fold are where nobody types.
+func (state *State) revealWorkspaceCommandFields(rows []workspaceDraftRow) {
+	draft := &state.workspaceDraft
+	if draft.commandHost == 0 || draft.bounds.Height <= 0 {
+		return
+	}
+	y := float32(0)
+	for _, row := range rows {
+		height := workspaceDraftHostRowHeight
+		if row.group != nil {
+			height = workspaceDraftGroupRowHeight
+		} else {
+			if row.host.ID != uint32(draft.commandHost) {
+				y += height
+				continue
+			}
+			y += height
+			fieldBottom := y + 58
+			if fieldBottom > draft.scroll+draft.bounds.Height {
+				draft.scroll = min(fieldBottom-draft.bounds.Height, max(0, workspaceDraftListHeight(rows)+66-draft.bounds.Height))
+			}
+			return
+		}
+		y += height
+	}
+}
+
 // workspaceDraftCommandConfigurable is whether the host's row is expanded
 // with its command fields: the selected command host that is the draft's
 // current commandHost.
 func (state *State) workspaceDraftCommandConfigurable(host Host) bool {
 	return state.workspaceDraft.selected[host.CatalogID] && workspaceCommandHost(host) && state.workspaceDraft.commandHost == host.ID
 }
-
 
 // paintWorkspaceDraftGroup paints one collapsible header of the host list: a
 // chevron, a select-the-group checkbox, the group's name, and how many
