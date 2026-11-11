@@ -129,6 +129,13 @@ func (state *State) openLaunch(args []string) {
 		state.openXshellFile(path)
 		return
 	}
+	if paths, ok := markdownLaunchPaths(args); ok {
+		if state.options.Raise != nil {
+			state.options.Raise()
+		}
+		state.openMarkdownFiles(paths)
+		return
+	}
 	text, link := launchText(args)
 	if len(args) == 0 && state.relaunchAction == relaunchNewWindow && state.options.NewWindow != nil {
 		state.openNewWindow()

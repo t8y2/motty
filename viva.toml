@@ -12,6 +12,12 @@ icon = "assets/icon.png"
 # Links the system hands to the program (see docs/decisions/0028 in ../viva).
 url_schemes = ["ssh", "telnet"]
 
+[[app.file_types]]
+name = "Markdown document"
+extensions = ["md", "markdown"]
+mime = "text/markdown"
+uti = "net.daringfireball.markdown"
+
 [build]
 out = "build/dist"
 

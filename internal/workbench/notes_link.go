@@ -201,12 +201,15 @@ func (s *State) noteLinkMessage(err error) string {
 	return err.Error()
 }
 
-// linkNotes links Markdown files as notes: the text stays in the file.
+// linkNotes links Markdown files chosen by the user as notes.
 func (s *State) linkNotes() {
 	if !s.flushNoteDraft() {
 		return
 	}
-	paths, err := s.options.OpenFiles(app.OpenFileOptions{Title: s.noteText("Link Markdown file", "链接 Markdown 文件"), AllowMultiple: true})
+	paths, err := s.options.OpenFiles(app.OpenFileOptions{
+		Title: s.noteText("Link Markdown file", "链接 Markdown 文件"), AllowMultiple: true,
+		Filters: []app.FileFilter{{Name: s.noteText("Markdown", "Markdown"), Pattern: "*.md;*.markdown"}},
+	})
 	if errors.Is(err, app.ErrCanceled) {
 		return
 	}
@@ -214,6 +217,13 @@ func (s *State) linkNotes() {
 		s.notes.error = err.Error()
 		return
 	}
+	s.linkNotePaths(paths)
+}
+
+// linkNotePaths links Markdown files, from either the picker or a path the
+// operating system opened Motty with. The caller must already have flushed the
+// current note draft. The file remains the single source of truth.
+func (s *State) linkNotePaths(paths []string) bool {
 	type fresh struct {
 		note savedNote
 		file linkedFile
@@ -223,10 +233,12 @@ func (s *State) linkNotes() {
 	for _, path := range paths {
 		path = filepath.Clean(path)
 		if !filepath.IsAbs(path) {
-			if path, err = filepath.Abs(path); err != nil {
-				s.notes.error = err.Error()
-				return
+			absolute, absoluteErr := filepath.Abs(path)
+			if absoluteErr != nil {
+				s.notes.error = absoluteErr.Error()
+				return false
 			}
+			path = absolute
 		}
 		if id := s.noteLinkedTo(path); id != "" {
 			if existing == "" {
@@ -237,13 +249,13 @@ func (s *State) linkNotes() {
 		file := readLinkedFile(path)
 		if file.err != nil {
 			s.notes.error = s.noteLinkMessage(file.err)
-			return
+			return false
 		}
 		now := s.options.WallNow().UTC().Format(time.RFC3339Nano)
 		note := savedNote{Revision: noteID(), ID: noteID(), Title: strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), Body: file.body, Folder: s.notes.folder, Created: now, Updated: now, Order: len(s.notes.list) + len(added), Link: &noteLink{Path: path}}
 		if len(mustNoteJSON(recordPayload{Data: mustNoteJSON(note)})) > configstore.MaxPayload {
 			s.notes.error = s.noteText("Linked note exceeds 1 MiB; no files linked.", "链接的笔记超过 1 MiB，未链接任何文件。")
-			return
+			return false
 		}
 		added = append(added, fresh{note, file})
 	}
@@ -260,6 +272,7 @@ func (s *State) linkNotes() {
 	case existing != "":
 		s.selectNote(existing)
 	}
+	return true
 }
 
 // noteLinkedTo is the note already linked to path, or "".
