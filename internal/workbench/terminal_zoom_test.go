@@ -118,8 +118,8 @@ func TestZoomShortcutsAreCustomisableLikeTheOthers(t *testing.T) {
 // platform's text engine does for Consolas.
 type narrowFontEngine struct{ gfx.TextEngine }
 
-func (narrowFontEngine) MonoCell(size float32, _ gfx.MonoFace) (float32, float32) {
-	return size * 0.5, size * 1.2
+func (narrowFontEngine) MonoCell(size float32, _ gfx.MonoFace) gfx.MonoCellMetrics {
+	return gfx.MonoCellMetrics{Advance: size * 0.5, Ascent: size * 0.9, Descent: size * 0.3}
 }
 
 // The terminal's columns come from the font that draws it, as the window's text engine

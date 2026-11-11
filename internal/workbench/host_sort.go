@@ -62,7 +62,7 @@ func (state *State) declareHostSortItem(host Host, bounds, handle gfx.Rect) {
 		lane = 0
 	}
 	order := state.hostIndex(host.ID)
-	state.hostSort.surface.Item(hitHostSortHandles.At(int(host.ID)), host.Label, lane, order, bounds, handle, false)
+	state.hostSort.surface.Item(hitHostSortHandles.At(int(host.ID)), state.hostPrivacySemanticLabel(host), lane, order, bounds, handle, false)
 }
 
 func (state *State) hostSortDragging(id uint32) bool {

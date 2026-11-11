@@ -179,11 +179,15 @@ type savedState struct {
 	Deck       *layoutcore.DeckDTO `json:"deck,omitempty"`
 	// An empty array distinguishes a new snapshot with no managed workspaces
 	// from an older snapshot that never recorded workspace identity.
-	WorkspaceLayouts []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
-	Sync             *savedSync             `json:"sync,omitempty"`
-	HostView         string                 `json:"host_view,omitempty"`
-	HostOrder        string                 `json:"host_order,omitempty"`
-	Background       *savedBackground       `json:"background,omitempty"`
+	WorkspaceLayouts       []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
+	Sync                   *savedSync             `json:"sync,omitempty"`
+	HostView               string                 `json:"host_view,omitempty"`
+	HostOrder              string                 `json:"host_order,omitempty"`
+	HostPrivacy            bool                   `json:"host_privacy,omitempty"`
+	HostPrivacyShowName    bool                   `json:"host_privacy_show_name,omitempty"`
+	HostPrivacyShowAddress bool                   `json:"host_privacy_show_address,omitempty"`
+	HostPrivacyShowUser    bool                   `json:"host_privacy_show_user,omitempty"`
+	Background             *savedBackground       `json:"background,omitempty"`
 	// Provider collections are nil while the assistant's database is unread.
 	AIProviders    *[]savedAIProvider `json:"ai_providers,omitempty"`
 	AICLIProviders *[]savedAIProvider `json:"ai_cli_providers,omitempty"`
@@ -694,6 +698,10 @@ func (state *State) snapshot() savedState {
 	saved.Sync = state.savedSyncValue()
 	saved.HostView = state.hostView.saved()
 	saved.HostOrder = state.hostOrder.saved()
+	saved.HostPrivacy = state.hostPrivacy.enabled
+	saved.HostPrivacyShowName = !state.hostPrivacy.maskName
+	saved.HostPrivacyShowAddress = !state.hostPrivacy.maskAddress
+	saved.HostPrivacyShowUser = !state.hostPrivacy.maskUser
 	saved.Background = state.savedBackgroundValue()
 	if len(state.workspaceTabs) > 0 {
 		deck := state.savedWorkspaceDeck()
@@ -1027,6 +1035,10 @@ func (state *State) restoreLocal(saved savedState) {
 	state.agentHosts = agentHostSet(saved.AgentHosts)
 	state.restoreSync(saved.Sync)
 	state.hostView = hostViewFromString(saved.HostView)
+	state.hostPrivacy.enabled = saved.HostPrivacy
+	state.hostPrivacy.maskName = !saved.HostPrivacyShowName
+	state.hostPrivacy.maskAddress = !saved.HostPrivacyShowAddress
+	state.hostPrivacy.maskUser = !saved.HostPrivacyShowUser
 	if saved.WindowWidth > 0 && saved.WindowHeight > 0 {
 		state.restoreWindowFrame(gfx.Rect{
 			X: float32(saved.WindowX), Y: float32(saved.WindowY),

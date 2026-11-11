@@ -462,6 +462,7 @@ type State struct {
 	verticalTabs           verticalTabs
 	tabMenu                tabMenu
 	hostMenu               hostMenu
+	hostPrivacy            hostPrivacyState
 	localShellPicker       localShellPicker
 	snippetMenu            snippetMenu
 	sftpMenu               sftpMenu

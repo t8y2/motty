@@ -877,6 +877,12 @@ type ToolsMessages struct {
 	HostViewGrid                    string
 	HostSort                        string
 	HostSortDone                    string
+	HostPrivacy                     string
+	HostPrivacyFields               string
+	HostPrivacyName                 string
+	HostPrivacyAddress              string
+	HostPrivacyUser                 string
+	HostPrivacyHiddenHost           string
 	BgGroup                         string
 	BgRow                           string
 	BgRowNone                       string

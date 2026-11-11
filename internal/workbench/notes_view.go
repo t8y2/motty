@@ -221,8 +221,15 @@ func (s *State) commitNoteInline() bool {
 // overlayAnchorRect is where the open menu or popup hangs: under the control
 // that opened it, as this paint declared it, or at the point it was opened at.
 func (v *noteViewState) overlayAnchorRect(c *gfx.Canvas) gfx.Rect {
-	if bounds, ok := c.HitBounds(v.overlayFrom); ok {
+	if bounds, ok := c.HitBounds(v.overlayFrom); ok && bounds.Width > 0 && bounds.Height > 0 {
+		v.overlayAnchor = bounds
 		return bounds
+	}
+	if v.overlayAnchor.Width > 0 && v.overlayAnchor.Height > 0 {
+		return v.overlayAnchor
+	}
+	if v.treeBounds.Width > 0 && v.treeBounds.Height > 0 {
+		return gfx.Rect{X: v.treeBounds.X + v.treeBounds.Width - 32, Y: v.treeBounds.Y + 40, Width: 28, Height: 28}
 	}
 	return v.overlayAnchor
 }
@@ -381,16 +388,22 @@ func (s *State) noteViewClick(id gfx.ID) bool {
 		}
 		if token, ok := id.In(hitNoteRowMore); ok {
 			v.menu = "note"
-			v.menuID = v.tokenNotes[token]
+			noteID := v.tokenNotes[token]
+			v.menuID = noteID
 			v.menuFolder = false
 			v.overlayFrom = id
+			s.selectNote(noteID)
 			return true
 		}
 		if token, ok := id.In(hitNoteFolderMore); ok {
 			v.menu = "folder"
-			v.menuID = v.tokenFolders[token]
+			folder := v.tokenFolders[token]
+			v.menuID = folder
 			v.menuFolder = true
 			v.overlayFrom = id
+			n.folder = folder
+			v.treeFolderSelection = true
+			s.save()
 			return true
 		}
 		if token, ok := id.In(hitNoteRows); ok {
