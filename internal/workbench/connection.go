@@ -348,6 +348,10 @@ type Options struct {
 	// for the platform's own interface font; it reports whether the platform
 	// can follow a family at all. Nil uses the platform's own.
 	SetInterfaceFont func(family string) bool
+	// SetFontThickening draws the window's text with a thicker stroke or with the
+	// font's own outlines; it reports whether the platform has the choice at all.
+	// Nil uses app.SetFontThickening.
+	SetFontThickening func(on bool) bool
 	// MonoFamilies lists the installed fixed-pitch font families. Nil uses
 	// app.MonospaceFamilies.
 	MonoFamilies func() []string
@@ -458,6 +462,9 @@ func (options Options) withDefaults() Options {
 	}
 	if options.SetInterfaceFont == nil {
 		options.SetInterfaceFont = app.SetInterfaceFontFamily
+	}
+	if options.SetFontThickening == nil {
+		options.SetFontThickening = app.SetFontThickening
 	}
 	if options.WallNow == nil {
 		options.WallNow = time.Now

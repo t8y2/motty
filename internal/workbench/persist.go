@@ -57,6 +57,7 @@ type savedState struct {
 	TextScale                  string                  `json:"text_scale,omitempty"` // read only: before the size was kept in pixels
 	InterfaceTextSize          int                     `json:"interface_text_size,omitempty"`
 	InterfaceFont              string                  `json:"interface_font,omitempty"`
+	FontThickening             bool                    `json:"font_thickening,omitempty"`
 	TerminalFontFace           string                  `json:"terminal_font_face,omitempty"`
 	TerminalFontFamily         string                  `json:"terminal_font_family,omitempty"`
 	TerminalFontFallbacks      []string                `json:"terminal_font_fallbacks,omitempty"`
@@ -518,6 +519,7 @@ func (state *State) snapshot() savedState {
 		TerminalFontSize:           int(state.terminalFontSize),
 		InterfaceTextSize:          int(state.interfaceTextSize),
 		InterfaceFont:              state.uiFont.family,
+		FontThickening:             state.fontThickening,
 		TerminalFontFace:           terminalFontFaceString(state.fonts.classic),
 		TerminalFontFamily:         state.fonts.family,
 		TerminalFontFallbacks:      slices.Clone(state.fonts.fallbacks),
@@ -1147,6 +1149,10 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalPad = terminalPadFromString(saved.TerminalPadding)
 	state.terminalGutter = terminalGutterFromString(saved.TerminalGutter)
 	state.terminalLineHeight = lineHeightFromString(saved.TerminalLineHeight)
+	state.fontThickening = saved.FontThickening
+	// The weight is applied where the saved value lands, so a stored choice draws
+	// at once rather than on the next start.
+	state.applyFontThickening()
 	state.notifyOff = saved.TerminalNotifications == "off"
 	state.pasteImageOff = saved.TerminalPasteImage == "off"
 	state.passwordHintOff = saved.TerminalPasswordHint == "off"

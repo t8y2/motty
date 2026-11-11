@@ -232,6 +232,8 @@ var EnglishMessages = Messages{
 	SettingsAppearanceLight:                "Light",
 	SettingsTextSize:                       "Interface text size",
 	SettingsTextSizeDescription:            "The body text size of the window and its pages; headings and captions follow it, and the terminal's font size is set apart.",
+	SettingsThickerText:                    "Thicker text",
+	SettingsThickerTextDescription:         "Draws the glyphs with a thicker stroke, as the system's own text.",
 	SettingsInterfaceFont:                  "Interface font",
 	SettingsInterfaceFontDefault:           "Default",
 	SettingsInterfaceFontUnsupportedFmt:    "“%s” is not in use: this platform cannot change the interface font.",

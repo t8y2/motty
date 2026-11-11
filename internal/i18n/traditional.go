@@ -232,6 +232,8 @@ var TraditionalMessages = Messages{
 	SettingsAppearanceLight:                "淺色",
 	SettingsTextSize:                       "介面文字大小",
 	SettingsTextSizeDescription:            "視窗和設定頁的正文大小，標題與說明按比例跟隨；終端機的字號單獨設定。",
+	SettingsThickerText:                    "字型加粗",
+	SettingsThickerTextDescription:         "以較粗的筆畫繪製字形，與系統文字一致。",
 	SettingsInterfaceFont:                  "介面字型",
 	SettingsInterfaceFontDefault:           "預設",
 	SettingsInterfaceFontUnsupportedFmt:    "「%s」未生效：目前平台不支援更改介面字型。",
