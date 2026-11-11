@@ -1586,6 +1586,11 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result := state.scrollForwardDialog(event); result.Handled {
 		return result
 	}
+	if state.hostGroupMenu {
+		if menu := state.moveGroupTree(); menu != nil {
+			return gfx.EventResult{Handled: true, Repaint: menu.Wheel(event)}
+		}
+	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		p := &state.editor.groupPicker
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
