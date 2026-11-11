@@ -474,7 +474,7 @@ func (state *State) saveNewHostFromDialog(candidate Host, refreshConflict bool) 
 	}
 	if state.hostDialogCandidateIndex(candidate) < 0 {
 		rollback()
-		return &hostConfigCommitError{err: errors.New("the saved host is missing from the refreshed configuration")}
+		return &hostConfigCommitError{err: errors.New(state.messages.HostSaveMissing)}
 	}
 	return nil
 }
