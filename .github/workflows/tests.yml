@@ -157,6 +157,8 @@ jobs:
   # job above: run in sequence the two suites made one job the longest one in
   # the workflow, and neither needs the other's build. It compiles the workbench
   # package again with the dev tag, so it stays cheaper than the release suite.
+  # `make test-dev` runs only the tests the tag adds; repeating the release
+  # suite under the tag was 97% duplicate work.
   dev-tests:
     name: Development components
     needs: changes
@@ -178,7 +180,7 @@ jobs:
           cache-dependency-path: motty/go.sum
       - name: Test development components
         working-directory: motty
-        run: go test -tags dev ./cmd/motty ./internal/workbench -count=1
+        run: make test-dev
 
   # The workbench tests above only run on Linux: they build everywhere, but no
   # job runs them on Windows, so what a Windows clone sees never reaches CI.
