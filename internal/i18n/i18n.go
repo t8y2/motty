@@ -620,6 +620,12 @@ type Messages struct {
 	MenuRenameTerminal     string
 	MenuLockTab            string
 	MenuUnlockTab          string
+
+	MenuOpenSSHBrowser    string
+	MenuCloseSSHBrowser   string
+	SSHBrowserNotFound    string
+	SSHBrowserStartFailed string
+
 	// TabLockedHint is the tab's accessible description while it is protected.
 	TabLockedHint                 string
 	CloseLockedTabTitle           string

@@ -996,6 +996,7 @@ func (state *State) Close() {
 	state.dropExternalEdits(0)
 	for index := range state.sessions {
 		session := &state.sessions[index]
+		session.closeSSHBrowser()
 		state.cancelReconnect(session)
 		state.closeSFTP(session)
 		state.stopRemoteStats(session)
@@ -1916,6 +1917,7 @@ func (state *State) closeSession(id uint32) {
 	defer state.save()
 	defer memoryTrim.request()
 	session := &state.sessions[index]
+	session.closeSSHBrowser()
 	state.leaveLocalProxy(session)
 	// Closing a tab cancels its connection and deletes the Session in this call,
 	// so the terminal PhaseClosed is never observed; the row is finalized here.

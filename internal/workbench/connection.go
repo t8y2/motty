@@ -556,6 +556,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.resetLatency()
 	avoidShare := session.avoidShare || loopbackTunnel(host)
 	session.avoidShare = false
+	session.closeSSHBrowser()
 	state.redialSessionForwards(session.ID)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
@@ -907,6 +908,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 			state.ensureContextSFTP()
 		}
 	case sshconn.PhaseClosed:
+		session.closeSSHBrowser()
 		session.sudoCommands, session.sudoPassword = false, ""
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
@@ -921,6 +923,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		}
 		state.tell(session, toldEnded, status)
 	case sshconn.PhaseFailed:
+		session.closeSSHBrowser()
 		session.sudoCommands, session.sudoPassword = false, ""
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
