@@ -218,6 +218,10 @@ func aiExcerpt(result string) string {
 // aiToolTitle is the localized name of a tool.
 func aiToolTitle(m i18n.AIPanelMessages, name string) string {
 	switch name {
+	case tools.NameNoteQuery:
+		return m.ToolNotesQuery
+	case tools.NameNoteEdit:
+		return m.ToolNotesEdit
 	case tools.NameListSessions:
 		return m.ToolListSessions
 	case tools.NameTerminalRead:

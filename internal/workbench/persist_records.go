@@ -1117,6 +1117,9 @@ func writeEntries(store *configstore.Store, base *configBase, entries []configst
 			local.state = value
 		}
 	}
+	if err := guardNoteGraphChange(store, &change); err != nil {
+		return false, err
+	}
 	written, err := store.Commit(change)
 	if err != nil {
 		return false, err

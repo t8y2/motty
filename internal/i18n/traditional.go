@@ -1185,6 +1185,8 @@ var traditionalAIPanel = AIPanelMessages{
 	ToolSFTPList:         "列出目錄",
 	ToolSFTPRead:         "讀取檔案",
 	ToolSFTPWrite:        "寫入檔案",
+	ToolNotesQuery:       "查詢筆記",
+	ToolNotesEdit:        "編輯筆記",
 	ToolSFTPRemove:       "刪除路徑",
 
 	StatusRunning: "執行中",
