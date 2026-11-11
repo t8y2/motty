@@ -457,6 +457,9 @@ func (state *State) clickSFTP(id gfx.ID) {
 		case hitSFTPHeaderHidden:
 			folder.headerMenuOpen = false
 			state.clickSFTPFilter(view, hitSFTPHiddenToggle)
+		case hitSFTPHeaderFollow:
+			folder.headerMenuOpen = false
+			state.toggleSFTPFollow(session)
 		default:
 			folder.headerMenuOpen = false
 		}

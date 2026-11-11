@@ -269,6 +269,7 @@ var (
 	hitSFTPClose           = tree.ID(sftpHits, "sftp-close")
 	hitSFTPUp              = tree.ID(sftpHits, "sftp-up")
 	hitSFTPRefresh         = tree.ID(sftpHits, "sftp-refresh")
+	hitSFTPFollowToggle    = tree.ID(sftpHits, "sftp-follow-toggle")
 	hitSFTPDownload        = tree.ID(sftpHits, "sftp-download")
 	hitSFTPUpload          = tree.ID(sftpHits, "sftp-upload")
 	hitSFTPUploadDirectory = tree.ID(sftpHits, "sftp-upload-directory")

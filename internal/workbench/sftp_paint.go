@@ -44,9 +44,9 @@ type sftpPanelScratch struct {
 	bounds gfx.Rect
 
 	// headerTools is where orderToolbarTools builds the header's actions.
-	headerTools [8]barTool
+	headerTools [12]barTool
 	// buttons are the icon buttons, in the order they were declared.
-	buttons           [24]sftpIconButton
+	buttons           [32]sftpIconButton
 	buttonCount       int
 	headerButtonCount int
 
@@ -167,8 +167,12 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	}
 
 	headerTools := s.headerTools[:0]
-	addHeader := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
-		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled})
+	addHeader := func(id gfx.ID, glyph uint8, hint string, disabled bool, style ...iconButtonStyle) {
+		toolStyle := iconButtonQuiet
+		if len(style) > 0 {
+			toolStyle = style[0]
+		}
+		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled, style: toolStyle})
 	}
 	if local {
 		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, false)
@@ -182,6 +186,11 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		addHeader(hitSFTPPaneToggle, paneIcon, paneHint, false)
 	}
 	addHeader(hitSFTPRefresh, iconRefresh, messages.SFTPRefresh, view.busy && !local)
+	followStyle := iconButtonQuiet
+	if !state.sftpFollowOff {
+		followStyle = iconButtonActive
+	}
+	addHeader(hitSFTPFollowToggle, iconFollowFolder, messages.Tools.FilesFollow, false, followStyle)
 	moveIcon, moveHint := state.sftpPanelMoveAction()
 	addHeader(hitSFTPPanelSide, moveIcon, moveHint, false)
 	addHeader(hitSFTPClose, iconClose, messages.TipSFTPClose, false)
@@ -201,7 +210,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			ui.Text(c, title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).MarginSides(0, 8, 0, 0)
 			ui.Row(c).Gap(4).Shrink(0).Children(func() {
 				for _, tool := range headerTools {
-					icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, iconButtonQuiet)
+					icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, tool.style)
 				}
 				// Filtering and turning hidden entries on are secondary actions. Keep
 				// the header stable at the narrow default width; once hidden entries are
