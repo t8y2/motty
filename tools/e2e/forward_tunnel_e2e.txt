@@ -1,0 +1,60 @@
+# End to end: a local port forward starts over an SSH connection of its own.
+# No terminal tab exists before or after it, and the row reaches Running, which
+# means the listener bound and the transport authenticated without a tab.
+#
+# The SSH host is the catalog's 127.0.0.1:2222 account, so e2esshd must be
+# running. Its direct-tcpip allowlist covers only its own echo endpoint and the
+# extra loopback endpoints named after the port argument; any TCP service on
+# 127.0.0.1:28080 will do, for example:
+#
+#   python3 -m http.server 28080 --bind 127.0.0.1 &
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .)
+#   /tmp/e2esshd 2222 127.0.0.1:28080 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/forward_tunnel_e2e.txt
+#
+# While the script waits, a request to http://127.0.0.1:18080/ reaches the
+# service on 28080 through direct-tcpip. Nothing about that request touches the
+# SSH terminal.
+resize 1400 900
+settle 400
+click id:shell/import-menu
+settle 600
+openfiles tools/e2e/fixtures/readme_hosts_catalog.json
+click "Import Catalog"
+settle 1500
+click "Port Forwarding"
+settle 900
+expect count role:tab 0
+click "New Forward"
+settle 600
+click id:forwards/forward-dialog-label
+type background-tunnel
+click id:forwards/forward-dialog-host
+settle 300
+type staging
+settle 400
+click "staging-web"
+settle 300
+click id:forwards/forward-dialog-local-port
+key cmd+a
+type 18080
+click id:forwards/forward-dialog-destination
+type 127.0.0.1
+click id:forwards/forward-dialog-destination-port
+key cmd+a
+type 28080
+settle 300
+click "Add Forward"
+settle 1000
+expect count role:tab 0
+click "Start"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "Running" 8000
+expect count role:tab 0
+settle 800
+layout

@@ -442,6 +442,18 @@ func (state *State) replaceHost(index int, previous, updated Host) {
 		forward.HostUser = updated.User
 		forward.HostPort = updated.Port
 	}
+	// A background tunnel follows its host like a tab does: a live transport
+	// stays, and a retry dials where the host now points.
+	for _, tunnel := range state.forwardTunnels {
+		if tunnel.host.ID != updated.ID {
+			continue
+		}
+		tunnel.host = updated
+		tunnel.session.host = updated
+		if tunnel.session.conn == nil {
+			tunnel.session.Address = state.sessionAddress(updated)
+		}
+	}
 	state.rebuildTabOptions()
 	state.refreshForwards()
 	state.refreshProxies()

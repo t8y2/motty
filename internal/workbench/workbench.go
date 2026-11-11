@@ -480,21 +480,24 @@ type State struct {
 	nextForwardStartID     uint64
 	nextProxyID            uint32
 	forwards               []forwardRecord
-	selectedIdentityID     uint32
-	selectedForwardID      uint32
-	selectedProxyID        uint32
-	activeSection          uint8
-	hostFilterOn           bool   // only the group named hostFilter is listed
-	hostFilter             string // a group name; empty is the unnamed bucket
-	hostFilterMenu         bool   // the chips that did not fit, as a menu
-	hostFilterHidden       int    // the first of hostChips whose chip is in that menu
-	hostChips              []int  // the groups that get a chip, as indexes of hostGroups
-	chipMenu               hostChipMenu
-	filterMoreButton       gfx.Rect
-	hostTotalDigits        string
-	groupMenu              groupMenuAnchor // where the Move group picker opens
-	moveGroups             *hostMoveGroupMenu
-	hostSelectionText      string
+	// forwardTunnels are the SSH transports forwards use when no open tab
+	// carries one. They have no terminal and are never saved.
+	forwardTunnels     []*forwardTunnel
+	selectedIdentityID uint32
+	selectedForwardID  uint32
+	selectedProxyID    uint32
+	activeSection      uint8
+	hostFilterOn       bool   // only the group named hostFilter is listed
+	hostFilter         string // a group name; empty is the unnamed bucket
+	hostFilterMenu     bool   // the chips that did not fit, as a menu
+	hostFilterHidden   int    // the first of hostChips whose chip is in that menu
+	hostChips          []int  // the groups that get a chip, as indexes of hostGroups
+	chipMenu           hostChipMenu
+	filterMoreButton   gfx.Rect
+	hostTotalDigits    string
+	groupMenu          groupMenuAnchor // where the Move group picker opens
+	moveGroups         *hostMoveGroupMenu
+	hostSelectionText  string
 	// inputGapNote is the last terminal input gap reported to the log, so a
 	// paint that keeps asking for a surface that cannot exist logs it once.
 	inputGapNote       string
@@ -1013,6 +1016,7 @@ func (state *State) Close() {
 	for index := range state.forwards {
 		state.forwards[index].stop()
 	}
+	state.closeForwardTunnels()
 	memoryTrim.request()
 }
 
