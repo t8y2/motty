@@ -14,6 +14,7 @@ var (
 	hitNoteSideWidth   = tree.ID(notesHits, "side-width")
 	hitNoteSideSplit   = tree.ID(notesHits, "side-split")
 	hitNoteSideOpen    = tree.ID(notesHits, "side-open")
+	hitNoteSideClose   = tree.ID(notesHits, "side-close")
 	hitNoteSideLinked  = tree.ID(notesHits, "side-linked")
 	hitNoteSideExpand  = tree.ID(notesHits, "side-expand-all")
 	hitNoteSideRowOpen = tree.Sub(notesHits, tree.Name("side-row-open"))
@@ -168,29 +169,50 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 	theme := s.Theme()
 	top := b.Inset(gfx.Insets{Left: 8, Right: 8, Top: 8})
 	label := s.noteText("Linked only", "只看关联")
-	labelWidth := c.TextWidth(label, 12)
-	switchW := labelWidth + 6 + aiSwitchWidth
-	labelX := top.X + top.Width - switchW
+	top.Width = max(0, top.Width)
+	closeWidth := min(float32(24), top.Width)
+	closeX := top.X + top.Width - closeWidth
+	switchRight := max(top.X, closeX-8)
+	switchWidth := min(aiSwitchWidth, switchRight-top.X)
+	switchX := switchRight - switchWidth
+	expandWidth := min(float32(28), max(0, switchX-top.X-6))
+	labelWidth := min(c.TextWidth(label, 12), max(0, switchX-top.X-expandWidth-12))
+	labelX := switchX
+	if labelWidth > 0 {
+		labelX -= labelWidth + 6
+	}
+	switchW := switchRight - labelX
+	searchWidth := max(0, labelX-top.X-42)
+	search := gfx.Rect{X: top.X + 34, Y: top.Y, Width: searchWidth, Height: 30}
+	headerExtra := float32(0)
+	if searchWidth < 96 {
+		headerExtra = 36
+		search = gfx.Rect{X: top.X, Y: top.Y + headerExtra, Width: top.Width, Height: 30}
+	}
 	expandIcon, expandLabel := icons.ListX, s.noteText("Collapse all", "收起全部")
 	if s.noteSidebarCanExpandAll() || len(s.notes.folders) == 0 {
 		expandIcon, expandLabel = icons.ListTree, s.noteText("Expand all", "展开全部")
 	}
-	expandButton := components.BeginButton(c, theme, hitNoteSideExpand, gfx.Rect{X: top.X, Y: top.Y + 1, Width: 28, Height: 28}).Height(28).WithIcon(expandIcon).Icon()
+	expandButton := components.BeginButton(c, theme, hitNoteSideExpand, gfx.Rect{X: top.X, Y: top.Y + 1, Width: expandWidth, Height: 28}).Height(28).WithIcon(expandIcon).Icon()
 	if len(s.notes.folders) == 0 || n.query.String() != "" {
 		expandButton = expandButton.Disabled()
 	}
 	expandButton.Ghost(expandLabel)
-	s.noteInputAt(c, hitNoteSearch, gfx.Rect{X: top.X + 34, Y: top.Y, Width: max(1, top.Width-switchW-42), Height: 30}, s.noteText("Search title, body and tags", "搜索标题、正文和标签"), n.query.String())
+	s.noteInputAt(c, hitNoteSearch, search, s.noteText("Search title, body and tags", "搜索标题、正文和标签"), n.query.String())
+	c.Clip(gfx.Rect{X: labelX, Y: top.Y, Width: labelWidth, Height: 30})
 	c.Label(label, gfx.Rect{X: labelX, Y: top.Y, Width: labelWidth, Height: 30}, gfx.TextStyle{Size: 12, Color: s.pal.text})
-	s.aiSwitch(c, hitNoteSideLinked, gfx.Rect{X: top.X + top.Width - aiSwitchWidth, Y: top.Y + (30-aiSwitchHeight)/2, Width: aiSwitchWidth, Height: aiSwitchHeight}, !n.sideAll, false, label)
+	c.Unclip()
+	s.aiSwitch(c, hitNoteSideLinked, gfx.Rect{X: switchX, Y: top.Y + (30-aiSwitchHeight)/2, Width: switchWidth, Height: aiSwitchHeight}, !n.sideAll, false, label)
 	// One native switch hit covers its caption too, without adding a tab stop.
 	hits := c.Hits()
 	if len(hits) > 0 && hits[len(hits)-1].ID == hitNoteSideLinked {
 		hits[len(hits)-1].Bounds = gfx.Rect{X: labelX, Y: top.Y, Width: switchW, Height: 30}
 	}
 
-	components.PaintSeparator(c, theme, gfx.Rect{X: top.X, Y: top.Y + 36, Width: top.Width, Height: 1}, components.SeparatorHorizontal)
-	body := gfx.Rect{X: b.X + 6, Y: top.Y + 43, Width: max(0, b.Width-12), Height: max(0, b.Y+b.Height-top.Y-49)}
+	s.paintIconButton(c, hitNoteSideClose, iconClose, gfx.Rect{X: closeX, Y: top.Y + 3, Width: closeWidth, Height: 24}, s.noteText("Close notes sidebar", "关闭笔记侧栏"), false, iconButtonQuiet, s.pal.workspace)
+
+	components.PaintSeparator(c, theme, gfx.Rect{X: top.X, Y: top.Y + headerExtra + 36, Width: top.Width, Height: 1}, components.SeparatorHorizontal)
+	body := gfx.Rect{X: b.X + 6, Y: top.Y + headerExtra + 43, Width: max(0, b.Width-12), Height: max(0, b.Y+b.Height-top.Y-headerExtra-49)}
 	n.listBounds = body
 	type entry struct {
 		note     savedNote
@@ -316,6 +338,12 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 	n.view.listArea.EndContent()
 }
 func (s *State) clickNoteSidebar(id gfx.ID) bool {
+	if id == hitNoteSideClose {
+		if s.notes.panel {
+			s.clickNotes(hitNotesPanel)
+		}
+		return true
+	}
 	n := &s.noteSidebarState().content
 	if id == hitNoteSideExpand {
 		if n.query.String() == "" {
@@ -493,7 +521,7 @@ func (s *State) noteSidebarKey(e gfx.KeyEvent) gfx.EventResult {
 		_, disclosure := e.Target.In(hitNoteDisclosures)
 		_, copyCode := e.Target.In(hitNoteCodeCopies)
 		_, rowOpen := e.Target.In(hitNoteSideRowOpen)
-		if copyCode || row || rowOpen || folder || disclosure || e.Target == hitNoteSideExpand || e.Target == hitNoteSideLinked || e.Target == hitNoteSideOpen || e.Target == hitNoteLoadImages {
+		if e.Target == hitNoteSideClose || copyCode || row || rowOpen || folder || disclosure || e.Target == hitNoteSideExpand || e.Target == hitNoteSideLinked || e.Target == hitNoteSideOpen || e.Target == hitNoteLoadImages {
 			s.clickNoteSidebar(e.Target)
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
