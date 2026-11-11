@@ -49,9 +49,16 @@ func (state *State) workspaceLocalShellHost(shell localshell.Choice) Host {
 	return host
 }
 
-// workspaceLocalShellHostByRef rebuilds the host a saved reference names
-// without the shell list, so templates render before discovery has run.
+// workspaceLocalShellHostByRef rebuilds the host a saved reference names.
+// A shell this computer still detects keeps its discovered display name; one
+// that is away falls back to the program path's own, so templates render
+// before discovery has run.
 func (state *State) workspaceLocalShellHostByRef(shell string) Host {
+	for _, choice := range state.localShellMenu.choices {
+		if strings.EqualFold(choice.Path, shell) {
+			return state.workspaceLocalShellHost(choice)
+		}
+	}
 	name := filepath.Base(shell)
 	if distro, wsl := localshell.WSLDistro(shell); wsl {
 		name = localshell.WSLName(distro)
