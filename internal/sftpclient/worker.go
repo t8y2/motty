@@ -2556,7 +2556,17 @@ func createDirectory(client Remote, remotePath string) error {
 	if !ok {
 		return fmt.Errorf("sftp: create directory is not supported by the remote")
 	}
-	return creator.Mkdir(remotePath)
+	err := creator.Mkdir(remotePath)
+	if err != nil {
+		if linker, ok := client.(remoteLinker); ok {
+			if _, statErr := linker.Lstat(remotePath); statErr == nil {
+				return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+			}
+		} else if _, statErr := client.ReadDir(remotePath); statErr == nil {
+			return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+		}
+	}
+	return err
 }
 
 func createDirectories(client Remote, remotePath string) error {
@@ -2564,7 +2574,15 @@ func createDirectories(client Remote, remotePath string) error {
 		return errors.New("sftp: create directories requires a remote path")
 	}
 	if creator, ok := client.(interface{ MkdirAll(string) error }); ok {
-		return creator.MkdirAll(remotePath)
+		err := creator.MkdirAll(remotePath)
+		if err != nil {
+			if linker, ok := client.(remoteLinker); ok {
+				if _, statErr := linker.Lstat(remotePath); statErr == nil {
+					return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+				}
+			}
+		}
+		return err
 	}
 	// SCP and minimal backends can still create a tree using their existing
 	// directory primitives. Permission and non-directory errors are never

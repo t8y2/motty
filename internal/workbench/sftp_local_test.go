@@ -199,6 +199,13 @@ func TestLocalNewFolderIsMadeOnThisComputer(t *testing.T) {
 	if onServer {
 		t.Fatal("the folder was made on the server")
 	}
+
+	state.Click(hitSFTPNewDirectory)
+	replaceSFTPDialogText(t, state, "photos")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog == sftpDialogNone || view.dialogError != state.messages.SFTPErrDirectoryExists {
+		t.Fatalf("duplicate local folder allowed or wrong error: dialog=%d error=%q", view.dialog, view.dialogError)
+	}
 }
 
 func TestLocalPaneSteadyPaintDoesNotAllocate(t *testing.T) {

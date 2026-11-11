@@ -1247,8 +1247,8 @@ func TestSFTPWriteErrorsRemainVisible(t *testing.T) {
 	replaceSFTPDialogText(t, state, "docs")
 	state.Click(hitSFTPDialogSubmit)
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.errorText != "" })
-	if view.errorText == "" {
-		t.Fatalf("create error = %q", view.errorText)
+	if !strings.Contains(view.errorText, state.messages.SFTPErrDirectoryExists) {
+		t.Fatalf("create error = %q, want containing %q", view.errorText, state.messages.SFTPErrDirectoryExists)
 	}
 
 	// A removal the server refuses stays visible instead of passing for done.

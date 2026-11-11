@@ -478,11 +478,16 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 		view.dialogError = state.messages.Tools.ExtractErrorFolder
 		return false
 	}
+	if view.lfolder.hasEntry(name) {
+		view.dialogError = state.messages.SFTPErrDirectoryExists
+		return false
+	}
 	target := filepath.Join(view.lfolder.path, name)
 	if err := os.Mkdir(target, 0o755); err != nil {
-		view.dialogError = err.Error()
 		if errors.Is(err, os.ErrExist) {
-			view.dialogError = fmt.Sprintf(state.messages.SFTPErrorFmt, err)
+			view.dialogError = state.messages.SFTPErrDirectoryExists
+		} else {
+			view.dialogError = err.Error()
 		}
 		return false
 	}

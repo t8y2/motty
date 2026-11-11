@@ -959,6 +959,8 @@ var ChineseMessages = Messages{
 	SFTPDirectoryName:           "文件夹名称",
 	SFTPCreateDirectory:         "创建",
 	SFTPErrDirectoryRequired:    "请输入文件夹名称",
+	SFTPErrDirectoryExists:      "该名称已存在",
+	SFTPErrPermissionDenied:     "没有权限操作该文件或目录",
 	SFTPCreatingDirectoryFmt:    "正在创建 %s…",
 	SFTPDirectoryCreatedFmt:     "已创建文件夹 %s",
 	SFTPRenameTitle:             "重命名",
