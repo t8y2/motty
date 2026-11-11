@@ -115,6 +115,21 @@ func TestHostDialogChoicesHaveRovingKeyboardFocus(t *testing.T) {
 	}
 }
 
+// A protocol click writes its value after the rows were laid out, and the same
+// frame paints into them: the rows a protocol has only for itself, such as
+// RDP's console switch, must be painted only when this frame laid them out.
+func TestTheHostDialogPaintsTheConsoleSwitchAfterASwitchFromVNCToRDP(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openHostDialog()
+	clickHostChoice(t, state, state.messages.Desktop.ProtocolVNC)
+	clickHostChoice(t, state, state.messages.Desktop.ProtocolRDP)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, hostChoicePaint)
+	if _, ok := hitByID(&canvas, hitDialogConsole); !ok {
+		t.Fatal("the form switched to RDP without painting its console switch")
+	}
+}
+
 func TestHostDialogFlowAndAlgoChoicesChange(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
