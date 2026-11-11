@@ -1,8 +1,7 @@
 # End to end: files dropped on an RDP picture are pasted in the remote Explorer.
-# Against a real Windows machine (the Viva test VM, see ../viva/tools/testenv):
-# the RDP port is reachable from the developer's machine, and the account is a
-# throwaway local user that may sign in over Remote Desktop. The UI language of
-# the machine decides the labels below; these are the Chinese ones.
+# Against a real Windows machine whose RDP port is reachable from the developer's
+# machine, with a throwaway local user that may sign in over Remote Desktop. The
+# UI language of the machine decides the labels below; these are the Chinese ones.
 #
 # Before: files to copy, and an empty folder the account can write to on the server.
 #
@@ -16,8 +15,9 @@
 # capitals (the file holds no secret):
 #
 #   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
-#   sed -e s/RDP_HOST/172.26.129.233/ -e s/RDP_PORT/20062/ -e s/RDP_USER/mottyrdp/ \
-#       -e "s/RDP_PASSWORD/$PASSWORD/" tools/e2e/rdp_files_e2e.txt > /tmp/rdp-files-run.txt
+#   sed -e "s/RDP_HOST/${RDP_HOST:?}/" -e "s/RDP_PORT/${RDP_PORT:?}/" \
+#       -e "s/RDP_USER/${RDP_USER:?}/" -e "s/RDP_PASSWORD/${RDP_PASSWORD:?}/" \
+#       tools/e2e/rdp_files_e2e.txt > /tmp/rdp-files-run.txt
 #   python3 tools/headless_drive.py "$(mktemp -d)" /tmp/rdp-files-run.txt
 #
 # After: every file of the folder on the server must have the SHA-256 in
