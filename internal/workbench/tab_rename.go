@@ -17,6 +17,10 @@ type tabRename struct {
 	// tab. The name is what the assistant's target list and @ mentions show.
 	session uint32
 	editor  text.Editor
+	// field is the slot the dialog's field is painted into, and draw the painter
+	// kept so a repaint declares no closure.
+	field ui.Box
+	draw  func(*ui.DrawContext)
 }
 
 // hitPaneRename renames the terminal that has the keyboard, from the command
@@ -26,6 +30,7 @@ var hitPaneRename = tree.ID(shellHits, "pane-rename")
 // openTerminalRename asks for a new name for one terminal of a split tab.
 func (state *State) openTerminalRename(session *Session) {
 	state.tabRename = tabRename{session: session.ID}
+	state.tabRename.draw = state.drawTabRenameField
 	state.tabRename.editor.Insert(session.Title)
 	state.tabRename.editor.SetSelection(text.Range{End: state.tabRename.editor.RuneCount()})
 	state.dialogError = ""
@@ -46,6 +51,7 @@ func (state *State) openTabRename(workspace layoutcore.WorkspaceID) {
 		return
 	}
 	state.tabRename = tabRename{workspace: workspace}
+	state.tabRename.draw = state.drawTabRenameField
 	state.tabRename.editor.Insert(state.tabLabel(state.workspaceTabs[index]))
 	state.tabRename.editor.SetSelection(text.Range{End: state.tabRename.editor.RuneCount()})
 	state.dialogError = ""
@@ -99,38 +105,55 @@ func (state *State) tabRenameKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-func (state *State) paintTabRenameDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareTabRenameDialog(c ui.C) {
 	messages := state.messages
 	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitTabRenameClose, InitialFocusID: hitTabRenameField,
-		ContentSize: gfx.Size{Width: 460}, FitBody: true, BodyHeight: 62,
-	})
-	title, placeholder := messages.RenameTabTitle, messages.RenameTabPlaceholder
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, "", 62)
+	title := messages.RenameTabTitle
 	if state.tabRename.session != 0 {
-		title, placeholder = messages.RenameTerminalTitle, messages.RenameTerminalPlaceholder
+		title = messages.RenameTerminalTitle
 	}
-	layout := dialog.Begin(title, "")
-	var slot ui.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() { slot = f.Slot().Height(62) })
-	f.End()
-	field := components.BeginField(canvas, state.Theme(), slot.Rect())
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Width: 460, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitTabRenameClose, InitialFocusID: hitTabRenameField,
+	})
+	dialog.Body(func() {
+		column := ui.Column(c).Fill()
+		column.Children(func() {
+			state.tabRename.field = ui.Slot(c).Height(62)
+		})
+		if state.tabRename.draw == nil {
+			state.tabRename.draw = state.drawTabRenameField
+		}
+		column.DrawOver(state.tabRename.draw)
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitTabRenameCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitTabRenameSubmit, Label: messages.RenameTabSubmit},
+		)
+	})
+}
+
+// drawTabRenameField paints the rename dialog's field into the slot the body
+// laid out.
+func (state *State) drawTabRenameField(d *ui.DrawContext) {
+	messages := state.messages
+	placeholder := messages.RenameTabPlaceholder
+	if state.tabRename.session != 0 {
+		placeholder = messages.RenameTerminalPlaceholder
+	}
+	field := components.BeginField(d.Canvas, *d.Theme, state.tabRename.field.Rect())
 	if state.dialogError != "" {
 		field = field.Invalid()
 	}
 	content := field.Paint(messages.RenameTabField, "", state.dialogError)
 	value := state.tabRename.editor.String()
-	focused := canvas.Focused() == hitTabRenameField
+	focused := d.Canvas.Focused() == hitTabRenameField
 	content.Height = 32
-	components.PaintInput(canvas, state.Theme(), content, components.InputSnapshot{
+	components.PaintInput(d.Canvas, *d.Theme, content, components.InputSnapshot{
 		ID: hitTabRenameField, Label: messages.RenameTabField, Value: value,
 		Placeholder: placeholder, Focused: focused, PlatformEditing: focused && value != "",
 	})
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitTabRenameCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitTabRenameSubmit, Label: messages.RenameTabSubmit},
-	)
-	dialog.End()
 }

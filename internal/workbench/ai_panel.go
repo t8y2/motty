@@ -296,7 +296,37 @@ type aiPanel struct {
 	// history shows the saved conversations in place of the messages.
 	history      bool
 	historyDates []string
-	historyTop   float32
+
+	// The conversation and the saved-conversation history are page Lists: Viva
+	// measures and places their rows, keeps which are on screen and owns their
+	// scroll offsets. The panel keeps the scratch a paint needs, and the policy
+	// the lists cannot express: following the conversation's end, and the offset
+	// a reader comes back to after the history replaced the conversation.
+	messageList ui.ListState
+	historyList ui.ListState
+	// messageScroll and historyScroll are the Lists' scroll states of the paint
+	// in progress. They are only valid in the paint that declared them.
+	messageScroll, historyScroll *ui.ScrollState
+	// messageRow, historyRow, messageChrome and historyChrome are kept so a paint
+	// makes no closures: the Lists declare their rows with them.
+	messageRow, historyRow       func(ui.ListRow)
+	messageChrome, historyChrome func(*ui.DrawContext)
+	// scrollToEnd asks the next conversation paint to jump to the end; the
+	// reader's place is kept across a visit to the history by restoreMessage and
+	// restoreOffset. followSuppressed holds the conversation where the reader
+	// left it after a scrollbar drag, until they reach its end again.
+	scrollToEnd                bool
+	restoreMessage             bool
+	restoreOffset              float32
+	followSuppressed           bool
+	rowWidth, cell, cellHeight float32
+	paintedRows                []aiPaintedRow
+	paintedHistory             []aiPaintedHistoryRow
+	copySlots                  []aiCopySlot
+	statusLabel                string
+	statusActivity             ui.Box
+	statusPainted              bool
+	historyTop                 float32
 
 	// focusBack asks the next paint to put the keyboard back in the terminal
 	// after the panel closed from inside itself, which a trapped drawer used to
@@ -322,11 +352,10 @@ type aiPanel struct {
 	chipRows int
 
 	copyTargets [aiMaxCopyBlocks]string
-	// rowSlots and copies are where flex put the rows on screen and, in the row
-	// being painted, the copy buttons of its code blocks. They are only valid
-	// during the paint that filled them and are emptied at the start of the next.
+	// rowSlots are the row elements of the last paint, in the order the List
+	// declared them. They are only valid during the paint that filled them and
+	// are emptied at the start of the next.
 	rowSlots  []ui.Box
-	copies    []aiCopySlot
 	copyCount int
 	copied    string // the code last copied, so its button shows it
 	copiedAt  time.Duration
@@ -370,8 +399,10 @@ type aiPanel struct {
 	dragStart float32 // and how tall the box was
 	boxHeight float32 // how tall it was painted
 
-	// The model chip and its menu: modelMenu is whether the ui.Menu is open.
+	// The model chip and its menu: modelMenu is whether the ui.Menu is open,
+	// menusShown whether the last paint declared one of the chip menus.
 	modelMenu   bool
+	menusShown  bool
 	approvalLay aiApprovalLayout
 
 	// mode is how the workbench page placed the panel in its last paint, and
@@ -385,13 +416,9 @@ type aiPanel struct {
 	// contentDraw and overDraw paint the parts the page's declaration left for
 	// the last pass, kept so a paint makes no method values. composerDraw paints
 	// the native textarea into the box the page reserved, and is kept for the
-	// same reason. The message and history list is the page's Control: listDraw
-	// paints its rows and listHandlers takes the gestures over them, both kept
-	// here so a paint declares no closures.
+	// same reason.
 	contentDraw, overDraw func(*ui.DrawContext)
 	composerDraw          func(*ui.DrawContext)
-	listDraw              func(*ui.DrawContext)
-	listHandlers          ui.Handlers
 	body                  aiBody
 	pageScratch           aiPanelPageScratch
 
@@ -532,6 +559,12 @@ func (state *State) setAIPanelOpen(open bool) {
 	}
 	ai.open = open
 	if !open {
+		if ai.panel.messageScroll != nil {
+			// The panel's List stops being declared, so the page drops its offset;
+			// remember where the reader was for the next open.
+			ai.panel.restoreOffset = ai.panel.messageScroll.Offset
+			ai.panel.restoreMessage = !ai.panel.messageScroll.AtEnd()
+		}
 		ai.panel.targetOpen = false
 		ai.panel.history = false
 		ai.panel.modelMenu = false
@@ -591,10 +624,32 @@ func (state *State) aiPanelReset() {
 	panel := &state.ai.panel
 	clear(panel.rows)
 	panel.rows = panel.rows[:0]
+	panel.messageList = ui.ListState{}
+	panel.scrollToEnd = true
+	panel.followSuppressed, panel.restoreMessage = false, false
 	panel.history = false
 	panel.copied = ""
 	panel.scrollbar.dragging = false
 	panel.clearAITextSelection()
+}
+
+// aiPanelResetMessages forgets the heights measured for the conversation shown
+// and asks the next paint to put the reader at its end.
+func (state *State) aiPanelResetMessages() {
+	panel := &state.ai.panel
+	panel.messageList = ui.ListState{}
+	state.aiMessagesToEnd()
+}
+
+// aiMessagesToEnd puts the conversation at its newest row, and makes it follow
+// the rows that arrive after it.
+func (state *State) aiMessagesToEnd() {
+	panel := &state.ai.panel
+	panel.scrollToEnd = true
+	panel.followSuppressed, panel.restoreMessage = false, false
+	if panel.messageScroll != nil {
+		panel.messageScroll.ScrollToEnd()
+	}
 }
 
 func (state *State) aiPanelClick(id gfx.ID) bool {
@@ -670,7 +725,7 @@ func (state *State) aiPanelClick(id gfx.ID) bool {
 	case id == hitAIDecline:
 		state.aiAnswerApproval(false)
 	case id == hitAIToEnd:
-		ai.scroll.ScrollToEnd()
+		state.aiMessagesToEnd()
 	case id.Scope() == hitAIExamples:
 		_, _, examples := state.aiEmptyTexts()
 		index, _ := id.In(hitAIExamples)
@@ -732,9 +787,15 @@ func (state *State) newAIConversationFromPanel() {
 }
 
 // toggleAIHistory shows the saved conversations in place of the messages, or
-// the messages again.
+// the messages again. The conversation's List is not declared while its history
+// is, so the page drops its scroll state; the panel remembers where the reader
+// was and puts them back when the conversation returns.
 func (state *State) toggleAIHistory() {
 	panel := &state.ai.panel
+	if !panel.history && panel.messageScroll != nil {
+		panel.restoreOffset = panel.messageScroll.Offset
+		panel.restoreMessage = !panel.messageScroll.AtEnd()
+	}
 	panel.history = !panel.history
 	panel.clearAITextSelection()
 	if panel.history {
@@ -770,6 +831,7 @@ func (state *State) aiPanelLoadHistory() {
 	ai := &state.ai
 	panel := &ai.panel
 	panel.historyTop = 0
+	panel.historyList = ui.ListState{}
 	st, err := state.aiStore()
 	if err != nil || st == nil {
 		ai.conversations, panel.historyDates = nil, panel.historyDates[:0]
@@ -847,19 +909,9 @@ func aiTextTarget(id gfx.ID) (row int, part aiTextPart, ok bool) {
 	}
 }
 
-// aiReleaseMessageScroll disengages the live edge without moving the reader.
-// Restoring the offset with AutoScroll temporarily off prevents ScrollTo from
-// immediately taking hold of the edge again.
-func aiReleaseMessageScroll(scroll *components.MessageScrollState) {
-	offset, autoScroll := scroll.Offset(), scroll.AutoScroll
-	scroll.AutoScroll = false
-	scroll.ScrollToStart()
-	scroll.ScrollTo(offset)
-	scroll.AutoScroll = autoScroll
-}
-
 // aiPanelScrollbarPointer drags the active message or history thumb and pages
-// when its track is pressed. Painting owns the geometry; the panel owns the offset.
+// when its track is pressed. Painting owns the geometry; the page owns the
+// offset.
 func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
 	bar := &panel.scrollbar
@@ -890,7 +942,9 @@ func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventRe
 			return result, true
 		}
 		if !history {
-			aiReleaseMessageScroll(&state.ai.scroll)
+			// A held thumb holds the conversation where it is: streaming must not
+			// drag it to the end under the reader's hand.
+			panel.followSuppressed = true
 		}
 		bar.dragging = true
 		bar.history = history
@@ -932,39 +986,30 @@ func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventRe
 // text hit is a focusable group outside the Tab order; links and copy buttons
 // are declared after it and still win the press.
 func (state *State) aiPanelPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	// The panel and its menus are part of the workbench page now: its controls
-	// and the open menu's backdrop are the page's, so it reads their presses
-	// first. The identities this file paints by hand are outside the page, so a
-	// press on them falls through to the gestures below.
-	page := state.chrome.windowPage
+	// The panel and its menus are part of the workbench page now: WindowConfig
+	// gives its controls and the open menu's backdrop their presses first. The
+	// identities this file paints by hand are outside the page, so a press on
+	// them falls through to the gestures below.
 	if state.aiMenuShown() {
-		// An open chip menu owns the pointer over the whole window: over it, the
-		// page's menu acts; anywhere else the press goes nowhere.
-		if page != nil && inAIPanel(event.Target) {
-			if result, ok := page.Pointer(event); ok {
-				return result, true
-			}
+		if windowPageOwns(event.Target) {
+			// The page's menu rows take their choice in the click's event pass.
+			return gfx.EventResult{}, true
 		}
+		// An open chip menu owns the pointer over the rest of the window.
 		return gfx.EventResult{Handled: true}, true
-	}
-	if page != nil && inAIPanel(event.Target) {
-		if result, ok := page.Pointer(event); ok {
-			return result, true
-		}
 	}
 	return state.aiPanelPointerGesture(event)
 }
 
 // aiPanelPointerGesture is what the panel does with a pointer event after the
 // page has had it: the scrollbar, a text selection, the mentions, the examples
-// and a drag of an edge. The list Control's Pointer handler is this function, so
-// a press the page routes to the control and one that falls through to the
-// hand-painted list identities act the same way.
+// and a drag of an edge. A press on a List row that the page gives to its rows
+// and one that falls through to the panel's painted identities act the same way.
 func (state *State) aiPanelPointerGesture(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
 	if state.aiMenuShown() {
-		// Called from the page for a press on the list control while a chip menu
-		// is open: the menu owns the window and the press goes nowhere.
+		// Called by the page for a press while a chip menu is open: the menu owns
+		// the window and the press goes nowhere.
 		return gfx.EventResult{Handled: true}, true
 	}
 	if result, handled := state.aiPanelScrollbarPointer(event); handled {
@@ -1028,13 +1073,6 @@ func (state *State) aiPanelPointerGesture(event gfx.PointerEvent) (gfx.EventResu
 	return gfx.EventResult{Handled: true}, true
 }
 
-// aiPanelListPointer is the list Control's Pointer: the same gestures a press
-// that falls through to the hand-painted rows gets.
-func (state *State) aiPanelListPointer(event gfx.PointerEvent) gfx.EventResult {
-	result, _ := state.aiPanelPointerGesture(event)
-	return result
-}
-
 // aiDrag follows the pointer while the panel's left edge or the message box's top
 // edge is being dragged.
 func (state *State) aiDrag(event gfx.PointerEvent) gfx.EventResult {
@@ -1053,30 +1091,20 @@ func (state *State) aiDrag(event gfx.PointerEvent) gfx.EventResult {
 // aiPanelScroll scrolls the message list, or the history list. A wheel over the
 // rest of the panel is swallowed: it must not scroll the terminal behind it.
 func (state *State) aiPanelScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
-	// The chip menus are the workbench page's popups: an open one owns the wheel
-	// over the whole window, scrolling its own list where the pointer is over it
-	// and going nowhere otherwise.
-	page := state.chrome.windowPage
+	// The chip menus are the workbench page's popups: WindowConfig offers the
+	// wheel to the page first, and an open menu owns the wheel over the whole
+	// window, scrolling its own list where the pointer is over it and going
+	// nowhere otherwise.
 	if state.aiMenuShown() {
-		if page != nil && inAIPanel(event.Target) {
-			if result := page.Wheel(event); result.Handled || result.Repaint {
-				return result, true
-			}
-		}
 		return gfx.EventResult{Handled: true}, true
-	}
-	if page != nil && inAIPanel(event.Target) {
-		if result := page.Wheel(event); result.Handled || result.Repaint {
-			return result, true
-		}
 	}
 	return state.aiPanelScrollGesture(event)
 }
 
-// aiPanelScrollGesture is the wheel's work after the page has had it: the
-// composer's own scroll, the conversation or history list, and swallowing a
-// wheel over the rest of the panel so the terminal behind it stays still. The
-// list Control's Scroll handler is this function.
+// aiPanelScrollGesture is the wheel's work before the page's other scroll
+// areas: the composer's own scroll, the conversation or history list, and
+// swallowing a wheel over the rest of the panel so the terminal behind it stays
+// still.
 func (state *State) aiPanelScrollGesture(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	panel := &state.ai.panel
 	if state.aiMenuShown() {
@@ -1097,25 +1125,31 @@ func (state *State) aiPanelScrollGesture(event gfx.ScrollEvent) (gfx.EventResult
 	return state.aiPanelScrollBy(event.StepY(24)), true
 }
 
-// aiPanelListScroll is the list Control's Scroll: the same scrolling a wheel
-// that falls through to the hand-painted list gets.
-func (state *State) aiPanelListScroll(event gfx.ScrollEvent) gfx.EventResult {
-	result, _ := state.aiPanelScrollGesture(event)
-	return result
+// aiActiveScroll is the scroll state of the list the panel is showing, or nil
+// before its first paint.
+func (state *State) aiActiveScroll() (scroll *ui.ScrollState, history bool) {
+	panel := &state.ai.panel
+	if panel.listing {
+		return panel.historyScroll, true
+	}
+	return panel.messageScroll, false
 }
 
 // aiPanelScrollTo moves the active list to an absolute offset.
 func (state *State) aiPanelScrollTo(offset float32) gfx.EventResult {
-	ai := &state.ai
-	panel := &ai.panel
-	if panel.listing {
-		before := panel.historyTop
-		panel.historyTop = min(max(offset, 0), panel.maxTop)
-		return gfx.EventResult{Handled: true, Repaint: panel.historyTop != before}
+	panel := &state.ai.panel
+	scroll, history := state.aiActiveScroll()
+	if scroll == nil {
+		return gfx.EventResult{Handled: true}
 	}
-	before := ai.scroll.Offset()
-	ai.scroll.ScrollTo(offset)
-	return gfx.EventResult{Handled: true, Repaint: ai.scroll.Offset() != before}
+	before := scroll.Offset
+	scroll.ScrollTo(min(max(offset, 0), scroll.Max()))
+	if history {
+		panel.historyTop = scroll.Offset
+	} else if scroll.AtEnd() {
+		panel.followSuppressed = false
+	}
+	return gfx.EventResult{Handled: true, Repaint: scroll.Offset != before}
 }
 
 // aiPanelScrollbarKey gives the focused slider the same keyboard and
@@ -1126,10 +1160,11 @@ func (state *State) aiPanelScrollbarKey(event gfx.KeyEvent) (gfx.EventResult, bo
 	if (!history && event.Target != hitAIMessageBar) || history != panel.listing {
 		return gfx.EventResult{}, false
 	}
-	offset, maximum := state.ai.scroll.Offset(), panel.maxScroll
-	if history {
-		offset, maximum = panel.historyTop, panel.maxTop
+	scroll, _ := state.aiActiveScroll()
+	if scroll == nil {
+		return gfx.EventResult{}, false
 	}
+	offset, maximum := scroll.Offset, scroll.Max()
 	area := components.BeginScrollArea(nil, state.Theme(), panel.list, gfx.Size{Width: panel.list.Width, Height: panel.list.Height + maximum}).Offset(0, offset)
 	_, next, ok := area.ScrollForKey(0, offset, event.Key, 24)
 	if !ok {
@@ -1141,50 +1176,41 @@ func (state *State) aiPanelScrollbarKey(event gfx.KeyEvent) (gfx.EventResult, bo
 // aiPanelScrollBy moves the list by step pixels. Reaching the end of the
 // conversation makes it follow new messages again; leaving it stops that.
 func (state *State) aiPanelScrollBy(step float32) gfx.EventResult {
-	ai := &state.ai
-	panel := &ai.panel
-	if panel.listing {
-		before := panel.historyTop
-		panel.historyTop = min(max(before+step, 0), panel.maxTop)
-		return gfx.EventResult{Handled: true, Repaint: panel.historyTop != before}
+	panel := &state.ai.panel
+	scroll, history := state.aiActiveScroll()
+	if scroll == nil {
+		return gfx.EventResult{Handled: true}
 	}
-	before := ai.scroll.Offset()
-	ai.scroll.ScrollBy(step)
-	return gfx.EventResult{Handled: true, Repaint: ai.scroll.Offset() != before}
+	before := scroll.Offset
+	scroll.ScrollTo(min(max(before+step, 0), scroll.Max()))
+	if history {
+		panel.historyTop = scroll.Offset
+	} else if scroll.AtEnd() {
+		panel.followSuppressed = false
+	}
+	return gfx.EventResult{Handled: true, Repaint: scroll.Offset != before}
 }
 
 func (state *State) aiPanelKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || event.Target == hitAIToggle {
 		return gfx.EventResult{}, false
 	}
-	page := state.chrome.windowPage
-	// The chip menus are the workbench page's popups: their rows carry the page's
-	// identities, so it routes their keys before the panel's own.
+	// WindowConfig gives the page's controls and shortcuts their keys first; the
+	// chip menus are the page's popups, so their rows take keys there too. The
+	// identities this file declares by hand are outside the page, so their keys
+	// fall through to the handling below.
 	if state.aiMenuShown() {
-		if page != nil && inAIPanel(event.Target) {
-			if result, handled := page.Key(event); handled {
-				return result, true
-			}
-		}
 		return state.aiPanelKeyGesture(event)
 	}
 	if !inAIPanel(event.Target) {
 		return gfx.EventResult{}, false
 	}
-	// The page's controls and shortcuts take their keys before the panel's own
-	// handling. The identities this file declares by hand are outside the page,
-	// so those still fall through to the code below.
-	if page != nil {
-		if result, handled := page.Key(event); handled {
-			return result, true
-		}
-	}
 	return state.aiPanelKeyGesture(event)
 }
 
-// aiPanelKeyGesture is the panel's key handling after the page has had the key.
-// The list Control's Key handler is this function: a key the control is given
-// when it has the focus acts like one aimed at the hand-painted rows.
+// aiPanelKeyGesture is the panel's key handling for an event the page leaves to
+// the window. A key the page gives to one of its List rows acts like one aimed
+// at the panel's painted identities.
 func (state *State) aiPanelKeyGesture(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || event.Target == hitAIToggle {
 		return gfx.EventResult{}, false
@@ -1299,14 +1325,6 @@ func (state *State) aiPanelKeyGesture(event gfx.KeyEvent) (gfx.EventResult, bool
 	return gfx.EventResult{}, false
 }
 
-// aiPanelListKey is the list Control's Key: the same handling a key aimed at the
-// hand-painted rows gets, including the scrollbar's arrows, the page keys and
-// Escape over selected text.
-func (state *State) aiPanelListKey(event gfx.KeyEvent) gfx.EventResult {
-	result, _ := state.aiPanelKeyGesture(event)
-	return result
-}
-
 // aiPanelEnter is Enter in the message box. With a question waiting for an
 // answer and nothing typed, it answers yes (when the word is in, if one was
 // asked for); otherwise it sends.
@@ -1376,13 +1394,6 @@ func (state *State) AIPanelInput(context app.TextInputContext) *app.TextInput {
 		return nil
 	}
 	panel := &state.ai.panel
-	// A field declared by the workbench page would take the platform's editor
-	// first; the composer itself is painted by hand and served below.
-	if page := state.chrome.windowPage; page != nil {
-		if input := page.TextInput(context); input != nil {
-			return input
-		}
-	}
 	panel.input.Editor = nil
 	panel.input.State = app.TextStateOf(&state.ai.input)
 	if panel.input.OnEvent == nil {

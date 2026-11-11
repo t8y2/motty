@@ -30,8 +30,7 @@ var (
 	hitXYDismiss = tree.ID(transferXyHits, "xy-dismiss")
 )
 
-// The dialog's two segmented choices. Each is a page of its own, declaring one
-// Choice at the rectangle the dialog's body laid out.
+// The dialog's two segmented choices, declared in the dialog's body page.
 var (
 	xyModeChoices      = [...]xymodem.Mode{xymodem.XMODEM, xymodem.XMODEM1K, xymodem.YMODEM}
 	xyDirectionChoices = [...]bool{true, false}
@@ -41,9 +40,6 @@ var (
 type xySetup struct {
 	mode    xymodem.Mode
 	sending bool
-	// modeChoice and directionChoice are the dialog's segmented controls, each
-	// declared as a page so the dialog's keys can rove them.
-	modeChoice, directionChoice dialogChoice
 }
 
 // xyModeChoiceLabel names one transfer mode as the dialog shows it.
@@ -66,28 +62,36 @@ func (state *State) xyDirectionChoiceLabel(sending bool) string {
 	return state.messages.Tools.XYReceive
 }
 
-// xyChoiceKey gives the dialog's page choices their arrows before the rest of
-// the window takes the key.
-func (state *State) xyChoiceKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	for _, choice := range [...]*ui.Page{state.xy.modeChoice.page, state.xy.directionChoice.page} {
-		if choice == nil {
-			continue
-		}
-		if result, handled := choice.Key(event); handled {
-			return result, true
-		}
-	}
-	return gfx.EventResult{}, false
-}
+// xyDialogBodyHeight is the dialog's body: two labelled choices, one under the
+// other.
+const xyDialogBodyHeight = 138
 
-// declareXYModeChoice is the page of the transfer mode choice.
-func (state *State) declareXYModeChoice(c ui.C) {
-	ui.Choice(c, &state.xy.mode, xyModeChoices[:], state.xyModeChoiceLabel).Fill()
-}
-
-// declareXYDirectionChoice is the page of the send/receive choice.
-func (state *State) declareXYDirectionChoice(c ui.C) {
-	ui.Choice(c, &state.xy.sending, xyDirectionChoices[:], state.xyDirectionChoiceLabel).Fill()
+// declareXYDialog declares the setup dialog in the workbench page, whose
+// choices take the window's keys and pointer as any other page control does.
+func (state *State) declareXYDialog(c ui.C) {
+	m := state.messages.Tools
+	viewport := dialogViewport(c)
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: 540}, FitBody: true,
+	}).Layout(m.XYDescription)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.XYTitle, Description: m.XYDescription, Width: 540,
+		Height: layout.Content.Height + xyDialogBodyHeight,
+		Layer:  dialogLayer, Scope: dialogScope,
+		DismissID: hitXYDismiss, CloseID: hitXYClose, InitialFocusID: hitXYStart,
+	})
+	dialog.Body(func() {
+		ui.Column(c).Fill().PadSides(4, 4, 0, 4).Gap(8).Children(func() {
+			hostFormChoice(c, m.XYProtocol, 62, &state.xy.mode, xyModeChoices[:], state.xyModeChoiceLabel)
+			hostFormChoice(c, m.XYDirection, 62, &state.xy.sending, xyDirectionChoices[:], state.xyDirectionChoiceLabel)
+		})
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitXYCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitXYStart, Label: m.XYStart},
+		)
+	})
 }
 
 // openXYSetup opens the dialog for the session.
@@ -197,33 +201,4 @@ func (state *State) openSendFiles(paths []string) (files []zmodem.SendFile, open
 		files = append(files, zmodem.SendFile{Name: filepath.Base(path), Size: info.Size(), ModTime: info.ModTime(), Mode: uint32(info.Mode().Perm()), Source: file})
 	}
 	return files, opened, ""
-}
-
-func (state *State) paintXYDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages.Tools, state.Theme()
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitXYDismiss, CloseID: hitXYClose, InitialFocusID: hitXYStart,
-		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: 138, // two labelled choices
-	})
-	layout := dialog.Begin(m.XYTitle, m.XYDescription)
-	// Two labelled choices, one under the other.
-	var protocol, direction ui.Box
-	f := state.partLayout.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(4, 4, 0, 4).Gap(8).Children(func() {
-		protocol = f.Slot().Height(62).Shrink(0)
-		direction = f.Slot().Height(62).Shrink(0)
-	})
-	f.End()
-	content := components.BeginField(canvas, theme, protocol.Rect()).Paint(m.XYProtocol, "", "")
-	content.Height = 32
-	state.drawDialogChoice(canvas, content, &state.xy.modeChoice, "xy-dialog-mode", xyModeChoice)
-	content = components.BeginField(canvas, theme, direction.Rect()).Paint(m.XYDirection, "", "")
-	content.Height = 32
-	state.drawDialogChoice(canvas, content, &state.xy.directionChoice, "xy-dialog-direction", xyDirectionChoice)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitXYCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitXYStart, Label: m.XYStart},
-	)
-	dialog.End()
 }

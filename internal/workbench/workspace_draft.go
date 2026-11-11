@@ -37,9 +37,8 @@ type workspaceDraft struct {
 	previewScroll  float32
 	previewBounds  gfx.Rect
 	previewContent float32
-	// modePage declares the temporary/fixed switch, and modeView caches its view.
-	modePage *ui.Page
-	modeView func(ui.C)
+	// nameField is the page's handle on the same editor the dialog reads.
+	nameField ui.Field
 }
 
 func (draft *workspaceDraft) reset() {
@@ -52,6 +51,7 @@ func (state *State) openWorkspaceDraft(mode workspaceDraftMode) {
 		selected: make(map[string]bool, maxWorkspaceTemplateHosts),
 		layout:   layoutcore.GridSpec(1),
 	}
+	state.workspaceDraft.nameField.Bind(&state.workspaceDraft.name)
 	state.modal = modalWorkspaceDraft
 }
 
@@ -77,6 +77,7 @@ func (state *State) openWorkspaceDraftEdit(templateID string) {
 		draft.selected[id] = true
 	}
 	state.workspaceDraft = draft
+	state.workspaceDraft.nameField.Bind(&state.workspaceDraft.name)
 	state.selectedWorkspaceTemplateID = template.ID
 	state.workspaceLibraryExpanded = true
 	state.modal = modalWorkspaceDraft
@@ -392,49 +393,24 @@ func (state *State) workspaceDraftModeName(mode workspaceDraftMode) string {
 	return state.messages.WorkspaceDraftTemporary
 }
 
-// workspaceDraftModeRoot names the draft's temporary/fixed switch in the Tree.
-const workspaceDraftModeRoot = "workspace-draft-mode"
-
 // workspaceDraftModeChoices are the two modes the switch offers; the edit mode
 // has no switch and shows its fields instead.
 var workspaceDraftModeChoices = [...]workspaceDraftMode{workspaceDraftTemporary, workspaceDraftFixed}
 
-// drawWorkspaceDraftMode paints the temporary/fixed switch in its slot. It is a
-// page Choice, so its arrows move between the options.
-func (state *State) drawWorkspaceDraftMode(canvas *gfx.Canvas, bounds gfx.Rect) {
-	draft := &state.workspaceDraft
-	if draft.modePage == nil {
-		draft.modePage = ui.NewPage(ui.PageConfig{Root: workspaceDraftModeRoot, Theme: &state.theme})
-		draft.modeView = state.declareWorkspaceDraftMode
+// declareWorkspaceDraft declares the draft dialog in the window page. The
+// mode switch and the name field are page controls; the preview, the search
+// field and the host list keep their hand-painted components in the body slot
+// where their exact geometry is the dialog's own.
+func (state *State) declareWorkspaceDraft(c ui.C) {
+	if state.modal != modalWorkspaceDraft {
+		return
 	}
-	draft.modePage.Draw(canvas, bounds, draft.modeView)
-}
-
-func (state *State) declareWorkspaceDraftMode(c ui.C) {
-	draft := &state.workspaceDraft
-	choice := ui.Choice(c, &draft.mode, workspaceDraftModeChoices[:], state.workspaceDraftModeName).Fill()
-	// Any press on the switch clears the error, including a press on the mode
-	// that is already chosen.
-	if _, clicked := choice.ChosenIndex(); clicked {
-		draft.error = ""
-	}
-}
-
-func (state *State) paintWorkspaceDraft(canvas *gfx.Canvas, viewport gfx.Rect) {
-	state.paintWorkspaceDraftDialog(canvas, viewport)
-}
-
-func (state *State) paintWorkspaceDraftDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	draft, m, theme := &state.workspaceDraft, state.messages, state.Theme()
-	// The mode switch is a page Choice, which writes the new mode during this
-	// paint. The dialog was laid out from the mode at the start of the paint, so
-	// the rest of the paint reads that same mode; the next paint shows the new
-	// one.
+	draft, m := &state.workspaceDraft, state.messages
+	// The mode switch writes the new mode during this paint. The dialog was
+	// laid out from the mode at the start of the paint, so the rest of the paint
+	// reads that same mode; the next paint shows the new one.
 	mode := draft.mode
 	title, submit := m.WorkspaceDraftTitleTemporary, m.WorkspaceDraftLaunch
-	// The mode switch is a page Choice now, so its segment identities are the
-	// page's and not known here; the temporary draft opens without an initial
-	// focus and the dialog's trap settles it on the first press.
 	var initial gfx.ID
 	description := m.WorkspaceDraftDescription
 	if mode == workspaceDraftFixed {
@@ -443,55 +419,86 @@ func (state *State) paintWorkspaceDraftDialog(canvas *gfx.Canvas, viewport gfx.R
 		title, submit, initial = m.WorkspaceDraftTitleEdit, m.WorkspaceDraftSaveChanges, hitWorkspaceDraftName
 		description = m.WorkspaceDraftEditDescription
 	}
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitWorkspaceDraftDismiss, CloseID: hitWorkspaceDraftCancel,
-		InitialFocusID: initial, ContentSize: gfx.Size{Width: 860}, FitBody: true,
-		BodyHeight: min(440, max(0, viewport.Height-236)),
+	const width float32 = 860
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	bodyHeight := min(440, max(0, viewport.Height-236))
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: width, Height: layout.Content.Height + bodyHeight,
+		Layer: dialogLayer, Scope: dialogScope,
+		DismissID: hitWorkspaceDraftDismiss, CloseID: hitWorkspaceDraftCancel, InitialFocusID: initial,
 	})
-	layout := dialog.Begin(title, description)
-	body := layout.Body
-	y := body.Y
-	if mode != workspaceDraftEdit {
-		state.drawWorkspaceDraftMode(canvas, gfx.Rect{X: body.X, Y: body.Y, Width: min(300, body.Width), Height: 32})
-		y += 44
-	}
-	if mode == workspaceDraftFixed || mode == workspaceDraftEdit {
-		field := components.BeginField(canvas, theme, gfx.Rect{X: body.X, Y: y, Width: body.Width, Height: 60}).For(hitWorkspaceDraftName)
-		control := field.Paint(m.WorkspaceDraftName, "", "")
-		components.PaintInput(canvas, theme, control, components.InputSnapshot{
-			ID: hitWorkspaceDraftName, Label: m.WorkspaceDraftName,
-			Value: draft.name.String(), Placeholder: m.WorkspaceDraftNamePlaceholder,
-			Focused:         canvas.Focused() == hitWorkspaceDraftName,
-			PlatformEditing: canvas.Focused() == hitWorkspaceDraftName && draft.name.String() != "",
+	bodyWidth := width - 2*(c.Theme().Metrics.PadSurface+c.Theme().Metrics.GapItem)
+	dialog.Body(func() {
+		ui.Column(c).Fill().Children(func() {
+			if mode != workspaceDraftEdit {
+				ui.Row(c).Height(32).Width(min(300, bodyWidth)).MarginSides(0, 0, 12, 0).Children(func() {
+					choice := ui.Choice(c, &draft.mode, workspaceDraftModeChoices[:], state.workspaceDraftModeName).Fill()
+					// Any press on the switch clears the error, including a press
+					// on the mode that is already chosen.
+					if _, clicked := choice.ChosenIndex(); clicked {
+						draft.error = ""
+					}
+				})
+			}
+			if mode == workspaceDraftFixed || mode == workspaceDraftEdit {
+				theme := c.Theme()
+				metrics := theme.Metrics
+				gap := metrics.GapItem / 2
+				ui.Column(c).Height(60).MarginSides(0, 0, 8, 0).Children(func() {
+					ui.Text(c, m.WorkspaceDraftName).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
+						Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
+					ui.TextFieldID(c, hitWorkspaceDraftName, &draft.nameField, m.WorkspaceDraftName, m.WorkspaceDraftNamePlaceholder).
+						Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
+				})
+			}
+			ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
+				state.drawWorkspaceDraftRest(d.Canvas, d.Rect)
+			})
 		})
-		y += 68
+	})
+	dialog.Footer(func() {
+		if ui.Button(c, m.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickWorkspaceDraft(hitWorkspaceDraftCancel) })
+		}
+		if ui.Button(c, submit).Shrink(0).Clicked() {
+			c.After(func() { state.clickWorkspaceDraft(hitWorkspaceDraftSubmit) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.clickWorkspaceDraft(hitWorkspaceDraftDismiss)
 	}
+}
 
-	// The preview sits beside the host list when there is room; compact dialogs
-	// keep one short layout strip above the list and never cover the footer.
-	hostWidth := body.Width
-	wide := body.Width >= 620
+// drawWorkspaceDraftRest paints the part of the draft below its fields: the
+// layout preview, the host search and the host list, with the hint on the
+// body's last line. bounds is the room the page gave the slot.
+func (state *State) drawWorkspaceDraftRest(canvas *gfx.Canvas, bounds gfx.Rect) {
+	draft, m := &state.workspaceDraft, state.messages
+	wide := bounds.Width >= 620
+	hostWidth := bounds.Width
+	y := bounds.Y
 	if wide {
-		hostWidth = body.Width * .48
-		state.paintWorkspaceDraftLayout(canvas, gfx.Rect{X: body.X + hostWidth + 24, Y: y, Width: max(0, body.Width-hostWidth-24), Height: max(0, body.Y+body.Height-y-32)}, false)
+		hostWidth = bounds.Width * .48
+		state.paintWorkspaceDraftLayout(canvas, gfx.Rect{X: bounds.X + hostWidth + 24, Y: y, Width: max(0, bounds.Width-hostWidth-24), Height: max(0, bounds.Y+bounds.Height-y-32)}, false)
 	} else {
-		state.paintWorkspaceDraftLayout(canvas, gfx.Rect{X: body.X, Y: y, Width: body.Width, Height: 184}, true)
+		state.paintWorkspaceDraftLayout(canvas, gfx.Rect{X: bounds.X, Y: y, Width: bounds.Width, Height: 184}, true)
 		y += 196
 	}
-	components.PaintInputGroup(canvas, theme, gfx.Rect{X: body.X, Y: y, Width: hostWidth, Height: 34}, components.InputGroupSnapshot{
+	components.PaintInputGroup(canvas, state.Theme(), gfx.Rect{X: bounds.X, Y: y, Width: hostWidth, Height: 34}, components.InputGroupSnapshot{
 		ID: hitWorkspaceDraftSearch, Label: m.WorkspaceDraftHostSearch,
 		Value: draft.query.String(), Placeholder: m.WorkspaceDraftHostSearch,
 		NativeEditing: canvas.Focused() == hitWorkspaceDraftSearch && draft.query.String() != "",
 		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: icons.Search},
 	})
 	y += 46
-	draft.bounds = gfx.Rect{X: body.X, Y: y, Width: hostWidth, Height: max(0, body.Y+body.Height-y-32)}
+	draft.bounds = gfx.Rect{X: bounds.X, Y: y, Width: hostWidth, Height: max(0, bounds.Y+bounds.Height-y-32)}
 	state.paintWorkspaceDraftHosts(canvas)
 	hint, color := m.WorkspaceDraftLimit, state.pal.muted
-	if mode == workspaceDraftTemporary {
+	if draft.mode == workspaceDraftTemporary {
 		hint = m.WorkspaceDraftTemporaryHint
-	} else if mode == workspaceDraftEdit {
-		hint = m.WorkspaceDraftFixedHint
 	} else {
 		hint = m.WorkspaceDraftFixedHint
 	}
@@ -501,12 +508,7 @@ func (state *State) paintWorkspaceDraftDialog(canvas *gfx.Canvas, viewport gfx.R
 	if draft.error != "" {
 		hint, color = draft.error, state.pal.danger
 	}
-	monitorLabel(canvas, elide(canvas, hint, 12, gfx.WeightRegular, body.Width), gfx.Rect{X: body.X, Y: body.Y + body.Height - 22, Width: body.Width, Height: 22}, 12, color, gfx.WeightRegular)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitWorkspaceDraftCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitWorkspaceDraftSubmit, Label: submit},
-	)
-	dialog.End()
+	monitorLabel(canvas, elide(canvas, hint, 12, gfx.WeightRegular, bounds.Width), gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height - 22, Width: bounds.Width, Height: 22}, 12, color, gfx.WeightRegular)
 }
 
 func (state *State) paintWorkspaceDraftLayout(canvas *gfx.Canvas, bounds gfx.Rect, compact bool) {
@@ -625,7 +627,6 @@ func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalWorkspaceDraft || event.Release {
 		return gfx.EventResult{}
 	}
-	draft := &state.workspaceDraft
 	if event.Key == gfx.KeyEscape {
 		if state.workspaceDraft.mode == workspaceDraftEdit {
 			state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(state.workspaceDraft.editID)
@@ -642,12 +643,6 @@ func (state *State) workspaceDraftKey(event gfx.KeyEvent) gfx.EventResult {
 		}
 		state.submitWorkspaceDraft()
 		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if draft.modePage != nil {
-		// The temporary/fixed switch is a page Choice: its arrows are the page's.
-		if result, handled := draft.modePage.Key(event); handled {
-			return result
-		}
 	}
 	if event.Target == hitWorkspaceDraftScroll {
 		area := components.BeginScrollArea(nil, state.Theme(), state.workspaceDraft.bounds, gfx.Size{Width: state.workspaceDraft.bounds.Width, Height: state.workspaceDraft.content}).Offset(0, state.workspaceDraft.scroll)

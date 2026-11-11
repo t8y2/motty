@@ -129,7 +129,8 @@ func (world *settingsWorld) paint() (*gfx.Canvas, []string) {
 func (world *settingsWorld) typeInto(t *testing.T, hit gfx.ID, value string) {
 	t.Helper()
 	world.paint()
-	if input := world.state.AIProviderFormInput(app.TextInputContext{ID: hit}); input != nil {
+	config := world.state.WindowConfig(app.Config{})
+	if input := config.TextInput(app.TextInputContext{ID: hit}); input != nil {
 		input.Editor.Insert(value)
 		return
 	}
@@ -870,7 +871,7 @@ func TestAIBehaviourChoiceMovesWithArrowKeys(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	current := settingsChoiceHit(t, state, state.messages.AISettings.RiskLow)
-	result := state.Key(gfx.KeyEvent{Target: current.ID, Key: gfx.KeyRight})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: current.ID, Key: gfx.KeyRight})
 	if !result.Handled || !result.FocusVisible || result.Focus.IsZero() || result.Activate != result.Focus {
 		t.Fatalf("Right in the risk choice = %+v", result)
 	}

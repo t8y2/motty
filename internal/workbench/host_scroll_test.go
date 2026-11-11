@@ -25,11 +25,11 @@ func TestAHostListLongerThanTheWindowScrollsToItsLastHost(t *testing.T) {
 	size := gfx.Size{Width: 1400, Height: 900}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	last := hitHostList.At(int(state.hosts[len(state.hosts)-1].ID))
-	if _, ok := hitByID(&canvas, last); ok {
+	lastID := state.hosts[len(state.hosts)-1].ID
+	if _, ok := hostListHostHit(&canvas, state, lastID); ok {
 		t.Fatal("the last of forty hosts is reachable without scrolling")
 	}
-	if _, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID))); !ok {
+	if _, ok := hostListHostHit(&canvas, state, state.hosts[0].ID); !ok {
 		t.Fatal("the first host is not reachable")
 	}
 	for step := 0; step < 200; step++ {
@@ -37,14 +37,14 @@ func TestAHostListLongerThanTheWindowScrollsToItsLastHost(t *testing.T) {
 		canvas = gfx.Canvas{}
 		state.Paint(&canvas, size)
 	}
-	hit, ok := hitByID(&canvas, last)
+	hit, ok := hostListHostHit(&canvas, state, lastID)
 	if !ok {
 		t.Fatalf("the last host is not reachable after scrolling to the end (scroll %v of %v)", state.hostsScroll, state.hostsContent)
 	}
 	if hit.Bounds.Y < state.hostsBounds.Y+100 || hit.Bounds.Y+hit.Bounds.Height > size.Height {
 		t.Fatalf("the last host is drawn at %+v, outside the list", hit.Bounds)
 	}
-	if _, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID))); ok {
+	if _, ok := hostListHostHit(&canvas, state, state.hosts[0].ID); ok {
 		t.Fatal("the first host is still reachable at the end of the list")
 	}
 	// Back to the top.

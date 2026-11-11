@@ -47,8 +47,8 @@ func TestAIPanelPageReadsItsTitleControls(t *testing.T) {
 
 	// The page is consulted before the panel's own key handling and leaves a
 	// key aimed at the hand-painted composer to it.
-	if result, handled := page.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIInput}); handled || result.Handled {
-		t.Fatalf("the page took a key aimed at the composer: %+v %v", result, handled)
+	if result := state.WindowConfig(app.Config{}).OnKey(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIInput}); result.Handled {
+		t.Fatalf("the page took a key aimed at the composer: %+v", result)
 	}
 }
 
@@ -118,11 +118,11 @@ func TestAIComposerPageControlsTakeRealPointerClicks(t *testing.T) {
 // the application's window does.
 func openAIPanelView(t testing.TB, state *State) *headless.Session {
 	t.Helper()
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnResize: state.Resize,
 		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll,
 		TextInput: state.AIPanelInput,
-	}, nil, headless.Options{})
+	}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,8 +181,8 @@ func TestAIPanelEventPassGoesThroughTheWorkbenchPage(t *testing.T) {
 	// The approval scope menu is a popup of the workbench page: the page owns its
 	// rows, and choosing one moves the scope.
 	clickHit(find(hitAIAutoScope))
-	if !page.Overlay() {
-		t.Fatal("the chip menu is not a popup of the workbench page")
+	if !state.aiMenuShown() {
+		t.Fatal("the chip menu was not declared as an open popup")
 	}
 	row, found := gfx.Hit{}, false
 	for _, hit := range view.Snapshot().Hits {
@@ -194,8 +194,8 @@ func TestAIPanelEventPassGoesThroughTheWorkbenchPage(t *testing.T) {
 	if !found {
 		t.Fatalf("no scope row %q in the page's menu", state.aiScopeName(risk.High))
 	}
-	if !page.Owns(row.ID) {
-		t.Fatalf("the workbench page does not own the menu row %v", row.ID)
+	if row.ID.IsZero() || !tree.Within(row.ID.Scope(), tree.Feature(shellPageRoot)) {
+		t.Fatalf("the menu row %v is not named by the workbench page", row.ID)
 	}
 	clickHit(row)
 	if state.aiAutoUpTo() != risk.High {
@@ -231,7 +231,7 @@ func TestAIPanelEventPassGoesThroughTheWorkbenchPage(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	before := state.ai.scroll.Offset()
+	before := aiListScroll(t, state).Offset
 	if state.ai.panel.maxScroll <= 0 {
 		t.Fatalf("the messages are not scrollable: max %v", state.ai.panel.maxScroll)
 	}
@@ -242,8 +242,8 @@ func TestAIPanelEventPassGoesThroughTheWorkbenchPage(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	if state.ai.scroll.Offset() >= before {
-		t.Fatalf("the wheel did not move the list: %v -> %v", before, state.ai.scroll.Offset())
+	if aiListScroll(t, state).Offset >= before {
+		t.Fatalf("the wheel did not move the list: %v -> %v", before, aiListScroll(t, state).Offset)
 	}
 }
 
@@ -261,7 +261,11 @@ func TestAIListControlTakesRealRowAndListEvents(t *testing.T) {
 		state.ai.items = append(state.ai.items, aiItem{kind: aiAssistant, text: "another answer below the fold"})
 	}
 	state.ai.open = true
-	state.ai.scroll.ScrollToStart()
+	// Paint once with the conversation, put the reader at its top, then paint
+	// the frame the headless window will start from.
+	paintAt(state, panelWide)
+	aiListScroll(t, state).ScrollTo(0)
+	paintAt(state, panelWide)
 	view := openAIPanelView(t, state)
 	defer view.Close()
 	if err := view.Rest(); err != nil {
@@ -327,37 +331,46 @@ func TestAIListControlTakesRealRowAndListEvents(t *testing.T) {
 	// The list is a page Control: a press on its ground focuses it, and a page
 	// key then reaches its Key handler and scrolls the conversation.
 	snapshot := view.Snapshot()
-	control := gfx.Hit{}
+	listbox := gfx.Hit{}
 	for _, hit := range snapshot.Hits {
-		if hit.Label == state.messages.AIPanel.ListLabel && hit.Role == gfx.RoleGroup {
-			control = hit
+		if hit.Label == state.messages.AIPanel.ListLabel && hit.Role == gfx.RoleListBox {
+			listbox = hit
 			break
 		}
 	}
-	if control.ID.IsZero() {
-		t.Fatal("the list control is not painted")
+	if !listbox.Container {
+		t.Fatal("the conversation List is not painted")
+	}
+	// The List's own row is the option around a message. A press on a point of
+	// the row that its contents do not cover focuses the row, and a page key
+	// then moves and reveals the next rows.
+	option := gfx.Hit{}
+	for _, hit := range snapshot.Hits {
+		if hit.Role == gfx.RoleOption && pointInRect(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2, listbox.Bounds) {
+			option = hit
+			break
+		}
+	}
+	if option.ID.IsZero() {
+		t.Fatal("the conversation List declares no row")
 	}
 	x, y, found := float32(0), float32(0), false
-	for py := control.Bounds.Y + 2; py < control.Bounds.Y+control.Bounds.Height && !found; py += 6 {
-		for px := control.Bounds.X + 2; px < control.Bounds.X+control.Bounds.Width; px += 6 {
+	for py := option.Bounds.Y + 2; py < option.Bounds.Y+option.Bounds.Height && !found; py += 4 {
+		for px := option.Bounds.X + 2; px < option.Bounds.X+option.Bounds.Width; px += 4 {
 			top := gfx.ID{}
 			for _, hit := range snapshot.Hits {
 				if pointInRect(px, py, hit.Bounds) {
 					top = hit.ID
 				}
 			}
-			if top == control.ID {
+			if top == option.ID {
 				x, y, found = px, py, true
 				break
 			}
 		}
 	}
 	if !found {
-		t.Fatal("no point of the list control is uncovered by a row hit")
-	}
-	state.ai.scroll.ScrollToStart()
-	if err := view.Rest(); err != nil {
-		t.Fatal(err)
+		t.Fatal("no point of a List row is uncovered by the row's contents")
 	}
 	if err := view.Click(x, y); err != nil {
 		t.Fatal(err)
@@ -365,18 +378,18 @@ func TestAIListControlTakesRealRowAndListEvents(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	if got := view.Snapshot().Focused; got != control.ID {
-		t.Fatalf("a press on the list ground focused %v, want the control %v", got, control.ID)
+	if got := view.Snapshot().Focused; got != option.ID {
+		t.Fatalf("a press on a List row focused %v, want the row %v", got, option.ID)
 	}
-	before := state.ai.scroll.Offset()
+	before := aiListScroll(t, state).Offset
 	if err := view.Keys("pagedown"); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	if state.ai.scroll.Offset() <= before {
-		t.Fatalf("PageDown on the list control did not scroll: %v -> %v", before, state.ai.scroll.Offset())
+	if aiListScroll(t, state).Offset <= before {
+		t.Fatalf("PageDown on the List row did not scroll: %v -> %v", before, aiListScroll(t, state).Offset)
 	}
 
 	// The composer and the model menu still take their events through the page.

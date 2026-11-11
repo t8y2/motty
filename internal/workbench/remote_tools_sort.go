@@ -44,6 +44,9 @@ func (view *remoteToolsView) tableSort() components.TableSortState {
 }
 
 func (state *State) clickRemoteTableSort(id gfx.ID) bool {
+	if !state.remoteToolsVisible() {
+		return false
+	}
 	view := &state.remote
 	for column := 0; column < remoteColumnCounts[view.tab]; column++ {
 		if id != remoteTableHeaderID(view.tab, column) {

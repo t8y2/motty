@@ -100,53 +100,68 @@ func (state *State) installTerminalHandlers(session *Session) {
 	// A session can move to another window: its handlers and identity must be
 	// the new window's, naming the session's new number.
 	t.controlDraw = func(d *ui.DrawContext) { state.drawTerminalControl(d, sessionID) }
-	t.controlID, t.parts, t.panePart = gfx.ID{}, 0, terminalPageRoot(sessionID)
+	t.controlID, t.parts = gfx.ID{}, 0
 	t.pageIdentity(sessionID)
 	h := &t.handlers
 	h.Role = gfx.RoleTerminal
-	h.Key = func(event gfx.KeyEvent) gfx.EventResult {
-		current, ok := state.sessionByIDPointer(sessionID)
-		if !ok || current.term == nil {
-			return gfx.EventResult{}
-		}
-		return state.terminalKey(current, event)
-	}
-	h.Pointer = func(event gfx.PointerEvent) gfx.EventResult {
-		current, ok := state.sessionByIDPointer(sessionID)
-		if !ok || current.term == nil {
-			return gfx.EventResult{}
-		}
-		if part, ok := event.Target.In(t.parts); ok {
-			if part == terminalPartScrollbar {
-				return state.terminalScrollbarPointer(current, event)
-			}
-			return gfx.EventResult{}
-		}
-		if current.desk != nil {
-			return state.desktopPointer(current, event)
-		}
-		return state.terminalPointer(current, event)
-	}
-	h.Scroll = func(event gfx.ScrollEvent) gfx.EventResult {
-		current, ok := state.sessionByIDPointer(sessionID)
-		if !ok || current.term == nil {
-			return gfx.EventResult{}
-		}
-		if current.desk != nil {
-			return state.desktopScroll(current, event)
-		}
-		return state.terminalScroll(current, event)
-	}
+	// The terminal's input is the application's own routing: a key the
+	// application acts on (a shortcut, the completion list, the key that
+	// activates a pane) is handled before the terminal encodes it, and the
+	// terminal's encoding is the last step. Declaring the window's handlers as
+	// the control's keeps that order now that the page routes the control: the
+	// page offers the event to this dispatcher, which reaches the terminal at the
+	// same point the workbench always did.
+	h.Key = state.Key
+	h.Pointer = state.Pointer
+	h.Scroll = state.Scroll
 	h.Text = func(context app.TextInputContext) *app.TextInput {
 		current, ok := state.sessionByIDPointer(sessionID)
 		if !ok || current.term == nil {
 			return nil
 		}
-		if current.desk != nil {
-			return state.desktopTextInput(current)
-		}
-		return state.terminalTextInputFor(current)
+		return state.terminalControlText(current, context)
 	}
+}
+
+// terminalControlPointer is the terminal control's own pointer handling, after
+// the window's pointer routing has made this pane the active one: a part of the
+// control, a remote desktop, or the terminal grid.
+func (state *State) terminalControlPointer(session *Session, event gfx.PointerEvent) gfx.EventResult {
+	if session.term == nil {
+		return gfx.EventResult{}
+	}
+	if part, ok := event.Target.In(session.term.parts); ok {
+		if part == terminalPartScrollbar {
+			return state.terminalScrollbarPointer(session, event)
+		}
+		return gfx.EventResult{}
+	}
+	if session.desk != nil {
+		return state.desktopPointer(session, event)
+	}
+	return state.terminalPointer(session, event)
+}
+
+// terminalControlScroll is terminalControlPointer for the wheel.
+func (state *State) terminalControlScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
+	if session.term == nil {
+		return gfx.EventResult{}
+	}
+	if session.desk != nil {
+		return state.desktopScroll(session, event)
+	}
+	return state.terminalScroll(session, event)
+}
+
+// terminalControlText is terminalControlPointer for the platform's text service.
+func (state *State) terminalControlText(session *Session, context app.TextInputContext) *app.TextInput {
+	if session.term == nil {
+		return nil
+	}
+	if session.desk != nil {
+		return state.desktopTextInput(session)
+	}
+	return state.terminalTextInputFor(session)
 }
 
 // terminalPageSession finds the session whose terminal control or control part
@@ -194,74 +209,39 @@ func (state *State) terminalSessionWithoutTerm(target gfx.ID) *Session {
 	return nil
 }
 
-// terminalPageKey routes a key the terminal control owns through the workbench
-// page, or straight to the control's handlers when the page has not declared it
-// yet (a unit test that drives the session without a frame).
+// terminalPageKey routes a key the terminal control owns to the terminal's own
+// encoding. The window's handlers reach this point in their established order;
+// the page's control routing calls the same application chain, so a key acts
+// here once either way.
 func (state *State) terminalPageKey(session *Session, event gfx.KeyEvent) (gfx.EventResult, bool) {
-	t := session.term
-	if t == nil {
+	if session.term == nil {
 		return gfx.EventResult{}, false
 	}
-	if page := state.chrome.windowPage; page != nil {
-		if result, ok := page.Key(event); ok {
-			return result, true
-		}
-	}
-	if t.handlers.Key != nil {
-		return t.handlers.Key(event), true
-	}
-	return gfx.EventResult{}, false
+	return state.terminalKey(session, event), true
 }
 
 // terminalPagePointer is terminalPageKey for the pointer.
 func (state *State) terminalPagePointer(session *Session, event gfx.PointerEvent) (gfx.EventResult, bool) {
-	t := session.term
-	if t == nil {
+	if session.term == nil {
 		return gfx.EventResult{}, false
 	}
-	if page := state.chrome.windowPage; page != nil {
-		if result, ok := page.Pointer(event); ok {
-			return result, true
-		}
-	}
-	if t.handlers.Pointer != nil {
-		return t.handlers.Pointer(event), true
-	}
-	return gfx.EventResult{}, false
+	return state.terminalControlPointer(session, event), true
 }
 
 // terminalPageScroll is terminalPageKey for the wheel.
 func (state *State) terminalPageScroll(session *Session, event gfx.ScrollEvent) gfx.EventResult {
-	t := session.term
-	if t == nil {
+	if session.term == nil {
 		return gfx.EventResult{}
 	}
-	if page := state.chrome.windowPage; page != nil {
-		if result := page.Wheel(event); result.Handled || result.Repaint {
-			return result
-		}
-	}
-	if t.handlers.Scroll != nil {
-		return t.handlers.Scroll(event)
-	}
-	return gfx.EventResult{}
+	return state.terminalControlScroll(session, event)
 }
 
 // terminalPageText is terminalPageKey for the platform's text service.
 func (state *State) terminalPageText(session *Session, context app.TextInputContext) *app.TextInput {
-	t := session.term
-	if t == nil {
+	if session.term == nil {
 		return nil
 	}
-	if page := state.chrome.windowPage; page != nil {
-		if input := page.TextInput(context); input != nil {
-			return input
-		}
-	}
-	if t.handlers.Text != nil {
-		return t.handlers.Text(context)
-	}
-	return nil
+	return state.terminalControlText(session, context)
 }
 
 // declareTerminalPane is the pane view: the bar, the find bar and the terminal

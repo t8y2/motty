@@ -547,6 +547,9 @@ func clickSFTPPageButton(t testing.TB, state *State, label string) {
 	if !ok {
 		t.Fatalf("no files control labeled %q", label)
 	}
+	if hit.Disabled || hit.Block {
+		t.Fatalf("files control %q is not actionable (disabled=%v blocked=%v)", label, hit.Disabled, hit.Block)
+	}
 	var pass gfx.Canvas
 	pass.BeginEventPass(hit.ID, gfx.ClickInfo{})
 	state.Paint(&pass, size)
@@ -645,6 +648,9 @@ func TestSFTPRemoteTextEditorOpensAndSavesAtomically(t *testing.T) {
 	}
 
 	replaceSFTPText(t, state, "saved remotely\n中文\n")
+	if !sftpEditorDirty(view) {
+		t.Fatal("typing did not make the editor dirty")
+	}
 	clickSFTPPageButton(t, state, state.messages.SFTPEditSave)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return !view.busy && !sftpEditorDirty(view) && view.status == state.messages.SFTPEditSaved

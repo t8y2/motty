@@ -62,7 +62,7 @@ func TestWorkspaceDraftFitsAtTheMinimumWindow(t *testing.T) {
 		if list.Height < 56 {
 			t.Fatalf("%s: host list cannot display a full row: %+v", language, list)
 		}
-		submit := panelHit(t, canvas, hitWorkspaceDraftSubmit).Bounds
+		submit := pageHitByLabel(t, canvas, state.messages.WorkspaceDraftSave).Bounds
 		if list.Y+list.Height >= submit.Y {
 			t.Fatalf("host list covers footer: %+v, submit %+v", list, submit)
 		}

@@ -24,7 +24,9 @@ const (
 	verticalTabHeight  = float32(34)
 	verticalTabsHeader = float32(40)
 	verticalTabsFooter = float32(42)
-	verticalTabsLayer  = uint16(200)
+	// verticalTabsNavInset is the room the sidebar list keeps from each side of
+	// the navigation rail when it is declared inside it.
+	verticalTabsNavInset = float32(9)
 )
 
 type tabOrientation uint8
@@ -49,33 +51,38 @@ func tabOrientationFromString(value string) tabOrientation {
 }
 
 type verticalTabs struct {
-	autoHide    bool
-	grouping    bool
-	grouped     verticalTabGrouping
-	over        bool
-	barDrag     bool
-	barGrab     float32
+	autoHide bool
+	grouping bool
+	grouped  verticalTabGrouping
+	over     bool
+	barDrag  bool
+	barGrab  float32
+	// barGeometry and bounds are what the last paint laid out: the scrollbar the
+	// pointer drags, and the sidebar the wheel and the file tab's rail test.
 	barGeometry components.ScrollAreaGeometry
 	bounds      gfx.Rect
-	slot        ui.Box
-	// slotRect is where the shell's page placed that slot in the last paint.
-	// The Box itself is only valid until the page is next painted, and the
-	// assistant's overlay paints the page again before the tabs do.
+	// slot is the navigation rail's list declaration, kept so Paint can read its
+	// settled rectangle for the next paint's page-coordinate geometry. slotRect is
+	// that rectangle from the previous paint.
+	slot     ui.Box
 	slotRect gfx.Rect
-	// page declares the plain tab list, with pageView its declaration kept so a
-	// paint makes no new method value; pageWidth and pageCompact are what the
-	// cached view reads for the paint in progress. The grouped list has a page of
-	// its own (see vertical_tab_groups.go).
-	page        *ui.Page
-	pageView    func(ui.C)
-	pageWidth   float32
-	pageCompact bool
-	tabs        []barTab
+	// pageCompact, pageTerminal and pageSideRail are what the declared rows and
+	// chrome read for the paint in progress; a Draw callback takes no arguments.
+	// scroll and content are the list's offset and extent.
+	pageCompact  bool
+	pageTerminal bool
+	pageSideRail bool
+	scroll       float32
+	content      float32
+	// The Draw callbacks are method values kept once, so a warm paint allocates
+	// none.
+	headerDraw    func(*ui.DrawContext)
+	footerDraw    func(*ui.DrawContext)
+	partsDraw     func(*ui.DrawContext)
+	scrollbarDraw func(*ui.DrawContext)
+	separatorDraw func(*ui.DrawContext)
+	tabs          []barTab
 }
-
-// verticalTabsPageRoot names the sidebar tab list's page in the window's Tree.
-// The grouped and flat lists share it: grouping only changes the rows declared.
-const verticalTabsPageRoot = "vertical-tabs-page"
 
 func (state *State) setTabOrientation(orientation tabOrientation) bool {
 	if state.tabOrientation == orientation {
@@ -92,6 +99,7 @@ func (state *State) applyTabOrientation() {
 	state.tabStrip = tabStrip{vertical: state.tabOrientation == tabsVertical}
 	state.chrome.geometry.valid = false
 	state.verticalTabs.over, state.verticalTabs.barDrag = false, false
+	state.windowBarScroll = windowBarScroll{}
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
 }
@@ -205,56 +213,79 @@ func verticalTabsKeyboardFocused(canvas *gfx.Canvas) bool {
 	return focus.Scope() == hitTabList || focus.Scope() == hitVerticalTabGroups || focus == hitVerticalTabsPin || focus == hitVerticalTabsNew
 }
 
-func (state *State) paintVerticalTabs(canvas *gfx.Canvas, size gfx.Size) {
+// declareVerticalTabsOverlay declares the sidebar as a page overlay over the
+// workspace. Its first element is a full-bounds group: it is the accessible
+// region of the sidebar and the press target of its blank surface, so a press
+// there stays out of the terminal or file page beneath. The rows and chrome
+// declared after it take their own presses and their own Tab places; the group
+// takes no Tab stop. The overlay paints on LayerPaneChrome, under every menu and
+// dialog Viva or the window paints. Wheel routing stays the window's own: a
+// press target stops presses only (see State.Scroll).
+func (state *State) declareVerticalTabsOverlay(c ui.C) {
 	if state.tabOrientation != tabsVertical {
-		state.verticalTabs.bounds = gfx.Rect{}
 		return
 	}
-	view, pal, m := &state.verticalTabs, state.pal, state.messages
 	terminal := state.terminalPage()
 	fileManager := state.activeSFTPWindow() != nil
-	sideRail := terminal || fileManager
-	var bounds gfx.Rect
-	compact := false
-	if sideRail {
-		width := state.verticalTabsReserve(size)
-		compact = view.autoHide && !view.over && !state.tabMenu.open && !state.tabDrag.pressed && !verticalTabsKeyboardFocused(canvas)
-		if view.autoHide && !compact {
-			width = min(verticalTabsWidth, size.Width*0.6)
-		}
-		bounds = gfx.Rect{Y: windowBarHeight, Width: width, Height: max(size.Height-windowBarHeight, 0)}
-		canvas.PushLayer(verticalTabsLayer)
-		defer canvas.PopLayer()
-	} else if len(state.workspaceTabs) > 0 {
-		bounds = view.slotRect
+	if !terminal && !fileManager {
+		return
 	}
-	if bounds.Width <= 0 || bounds.Height <= 0 {
+	view := &state.verticalTabs
+	size := gfx.Size{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	width := state.verticalTabsReserve(size)
+	compact := view.autoHide && !view.over && !state.tabMenu.open && !state.tabDrag.pressed && !verticalTabsKeyboardFocused(c.Canvas())
+	if view.autoHide && !compact {
+		width = min(verticalTabsWidth, size.Width*0.6)
+	}
+	if width <= 0 {
 		view.bounds = gfx.Rect{}
 		return
 	}
-	view.bounds = bounds
-	canvas.Clip(bounds)
-	defer canvas.Unclip()
-	canvas.Fill(bounds, pal.shell)
-	canvas.HitWithOptions(hitVerticalTabs, bounds, m.TrayTitle, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
-	if sideRail {
-		canvas.Fill(gfx.Rect{X: bounds.X + bounds.Width - 1, Y: bounds.Y, Width: 1, Height: bounds.Height}, pal.line)
-	} else {
-		canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, pal.line)
+	bounds := gfx.Rect{Y: windowBarHeight, Width: width, Height: max(size.Height-windowBarHeight, 0)}
+	view.bounds, view.pageTerminal, view.pageSideRail = bounds, terminal, true
+	view.ensureDraws(state)
+	ui.Overlay(c, ui.OverlaySpec{Band: ui.LayerPaneChrome, Bounds: bounds}).
+		Background(state.pal.shell).Clip().Children(func() {
+		ui.Stack(c).Fill().Children(func() {
+			// The group is declared first, so the rows and chrome after it win
+			// their own presses; SkipFocus keeps the rail out of Tab.
+			ui.Slot(c).Fill().HitWith(hitVerticalTabs, state.messages.TrayTitle,
+				gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
+			state.declareVerticalTabsContent(c, bounds.Width, bounds.Height, gfx.Point{X: bounds.X, Y: bounds.Y}, compact)
+		})
+	})
+}
+
+// declareVerticalTabsNav declares the sidebar in the navigation rail, where it
+// needs no overlay: the section page is painted after the rail and starts to its
+// right, so nothing covers it and no press can slip through to the workspace.
+// The rows are still page elements, and their page-coordinate geometry is read
+// back from the previous paint's slot.
+func (state *State) declareVerticalTabsNav(c ui.C) {
+	view := &state.verticalTabs
+	width := navigationWidth - 2*verticalTabsNavInset
+	bounds := view.slotRect
+	if bounds.Width <= 0 {
+		bounds = gfx.Rect{X: verticalTabsNavInset, Width: width}
 	}
-	if !compact {
-		canvas.Label(m.TrayTitle, gfx.Rect{X: bounds.X + 8, Y: bounds.Y, Width: max(bounds.Width-48, 0), Height: verticalTabsHeader}, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted, Weight: gfx.WeightSemibold})
+	view.bounds, view.pageTerminal, view.pageSideRail = bounds, false, false
+	view.ensureDraws(state)
+	view.slot = ui.Column(c).Grow(1).Basis(0).MarginSides(8, 9, 8, 9).Clip().Background(state.pal.shell)
+	view.slot.Children(func() {
+		state.declareVerticalTabsContent(c, width, bounds.Height, gfx.Point{X: bounds.X, Y: bounds.Y}, false)
+	})
+}
+
+// declareVerticalTabsContent declares the header, the scrolling row list and the
+// footer inside c, whose content box is width wide. origin is that box's page
+// origin, which the scroll strip keeps for wheel and drag routing; the rows
+// themselves are laid out by the page.
+func (state *State) declareVerticalTabsContent(c ui.C, width, height float32, origin gfx.Point, compact bool) {
+	view := &state.verticalTabs
+	list := gfx.Rect{
+		X: origin.X + 6, Y: origin.Y + verticalTabsHeader,
+		Width: max(width-14, 0), Height: max(height-verticalTabsHeader-verticalTabsFooter, 0),
 	}
-	if terminal {
-		hint, icon := m.VerticalTabsAutoHide, uint8(iconChevronLeft)
-		if view.autoHide {
-			hint, icon = m.VerticalTabsPin, iconColumns2
-		}
-		state.paintIconButton(canvas, hitVerticalTabsPin, icon, gfx.Rect{X: bounds.X + bounds.Width - 36, Y: bounds.Y + 6, Width: 28, Height: 28}, hint, false, iconButtonQuiet, pal.shell)
-	}
-	// The right inset is 2px wider than the left one: the hover scrollbar lives
-	// in that gutter, so the rows end just before it instead of under it.
-	list := gfx.Rect{X: bounds.X + 6, Y: bounds.Y + verticalTabsHeader, Width: max(bounds.Width-14, 0), Height: max(bounds.Height-verticalTabsHeader-verticalTabsFooter, 0)}
 	active := state.deck.ActiveWorkspace()
 	pitch := verticalTabHeight + barGap
 	rows := state.workspaceTabs
@@ -263,52 +294,134 @@ func (state *State) paintVerticalTabs(canvas *gfx.Canvas, size gfx.Size) {
 		rows = view.grouped.layout
 	}
 	content := max(float32(len(rows))*pitch-barGap, 0)
-	scroll := state.tabStrip.layout(list, content+barGap, rows, pitch, verticalTabHeight, active)
-	// The bar floats in the shell margin beside the rows instead of over them:
-	// it appears while the pointer is over the sidebar (or a drag is in
-	// progress), hands the tabs the width the always-on bar used to take, and
-	// never covers a row's border or its close button.
-	barBounds := gfx.Rect{X: list.X, Y: list.Y, Width: max(bounds.Width-7, 0), Height: list.Height}
-	area := components.BeginScrollArea(canvas, state.Theme(), barBounds, gfx.Size{Width: barBounds.Width, Height: content}).
-		Offset(0, scroll).
-		VerticalScrollbar(hitVerticalTabsBar, m.VerticalTabsScrollbar, "").
-		HoverScrollbars(view.over || view.barDrag)
-	geometry := area.BeginContent()
-	view.barGeometry = geometry
+	// The navigation rail list is declared before the page has laid it out, so
+	// its height comes from the previous paint. A first paint after the rail
+	// changed has none: give the strip the window's height, which cannot hide a
+	// row this paint. The settled rectangle is read back in the separator draw.
+	extent := list
+	if extent.Height <= 0 {
+		extent.Height = max(c.Bounds().Height, 0)
+	}
+	scroll := state.tabStrip.layout(extent, content+barGap, rows, pitch, verticalTabHeight, active)
+	view.pageCompact = compact
+	view.scroll, view.content = scroll, content
 	view.tabs = view.tabs[:0]
-	view.pageWidth, view.pageCompact = list.Width, compact
-	if view.page == nil {
-		view.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: verticalTabsPageRoot, Theme: &state.theme})
-		view.pageView = state.declareVerticalTabsRows
-	}
-	view.page.Draw(canvas, geometry.Content, view.pageView)
-	state.paintWorkspaceTabParts(canvas, list, view.tabs)
-	if view.grouping {
-		state.paintVerticalTabGroupIcons(canvas)
-	}
-	area.EndContent()
-	button := gfx.Rect{X: bounds.X + 6, Y: bounds.Y + bounds.Height - verticalTabsFooter + 6, Width: max(bounds.Width-12, 0), Height: 30}
-	if compact {
-		state.paintIconButton(canvas, hitVerticalTabsNew, iconPlus, button, m.LabelNewTab, false, iconButtonQuiet, pal.shell)
-	} else {
-		components.BeginButton(canvas, state.Theme(), hitVerticalTabsNew, button).Secondary(m.LabelNewTab)
-	}
+	ui.Column(c).Fill().Clip().Children(func() {
+		ui.Slot(c).Height(verticalTabsHeader).Shrink(0).Draw(view.headerDraw)
+		ui.Column(c).Grow(1).Basis(0).Shrink(1).MarginSides(0, 8, 0, 6).Clip().Children(func() {
+			ui.Column(c).Absolute().Left(0).Top(-scroll).Width(list.Width).Children(func() {
+				state.declareVerticalTabsRows(c, list.Width, compact)
+			})
+		})
+		ui.Slot(c).Height(verticalTabsFooter).Shrink(0).Draw(view.footerDraw)
+		// Painted after the rows, at the page rectangle they occupy: the row
+		// details the window draws, the hover scrollbar and the rail's line.
+		ui.Slot(c).Absolute().Left(6).Right(8).Top(verticalTabsHeader).Bottom(verticalTabsFooter).Draw(view.partsDraw)
+		ui.Slot(c).Absolute().Left(6).Right(1).Top(verticalTabsHeader).Bottom(verticalTabsFooter).Draw(view.scrollbarDraw)
+		ui.Slot(c).Absolute().Inset(0).Draw(view.separatorDraw)
+	})
 }
 
-// declareVerticalTabsRows declares the sidebar's tab rows in the page. The width
-// and compact state are what paintVerticalTabs put on the view; a cached page
-// view takes no arguments.
-func (state *State) declareVerticalTabsRows(c ui.C) {
+// ensureDraws makes the sidebar's Draw method values once. A method value in a
+// paint would allocate one per frame.
+func (view *verticalTabs) ensureDraws(state *State) {
+	if view.headerDraw != nil {
+		return
+	}
+	view.headerDraw = state.drawVerticalTabsHeader
+	view.footerDraw = state.drawVerticalTabsFooter
+	view.partsDraw = state.drawVerticalTabsParts
+	view.scrollbarDraw = state.drawVerticalTabsScrollbar
+	view.separatorDraw = state.drawVerticalTabsSeparator
+}
+
+// declareVerticalTabsRows declares the sidebar's tab rows in the page. width and
+// compact are the list's this paint.
+func (state *State) declareVerticalTabsRows(c ui.C, width float32, compact bool) {
 	view := &state.verticalTabs
 	ui.Column(c).Fill().Children(func() {
 		if view.grouping {
-			state.declareGroupedVerticalTabs(c)
+			state.declareGroupedVerticalTabs(c, width, compact)
 			return
 		}
 		for index, workspace := range state.workspaceTabs {
-			view.tabs = append(view.tabs, state.declareWorkspaceTab(c, workspace, view.pageWidth, verticalTabHeight, 0, true, view.pageCompact, index+1))
+			view.tabs = append(view.tabs, state.declareWorkspaceTab(c, workspace, width, verticalTabHeight, 0, true, compact, index+1))
 		}
 	})
+}
+
+// drawVerticalTabsHeader paints the sidebar's name and the auto-hide pin.
+func (state *State) drawVerticalTabsHeader(d *ui.DrawContext) {
+	view, pal, m := &state.verticalTabs, state.pal, state.messages
+	bounds := d.Rect
+	if !view.pageCompact {
+		d.Canvas.Label(m.TrayTitle, gfx.Rect{X: bounds.X + 8, Y: bounds.Y, Width: max(bounds.Width-48, 0), Height: verticalTabsHeader},
+			gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted, Weight: gfx.WeightSemibold})
+	}
+	if view.pageTerminal {
+		hint, icon := m.VerticalTabsAutoHide, uint8(iconChevronLeft)
+		if view.autoHide {
+			hint, icon = m.VerticalTabsPin, iconColumns2
+		}
+		state.paintIconButton(d.Canvas, hitVerticalTabsPin, icon,
+			gfx.Rect{X: bounds.X + bounds.Width - 36, Y: bounds.Y + 6, Width: 28, Height: 28}, hint, false, iconButtonQuiet, pal.shell)
+	}
+}
+
+// drawVerticalTabsFooter paints the sidebar's new-tab button.
+func (state *State) drawVerticalTabsFooter(d *ui.DrawContext) {
+	view, m := &state.verticalTabs, state.messages
+	bounds := d.Rect
+	button := gfx.Rect{X: bounds.X + 6, Y: bounds.Y + 6, Width: max(bounds.Width-12, 0), Height: 30}
+	if view.pageCompact {
+		state.paintIconButton(d.Canvas, hitVerticalTabsNew, iconPlus, button, m.LabelNewTab, false, iconButtonQuiet, state.pal.shell)
+		return
+	}
+	components.BeginButton(d.Canvas, state.Theme(), hitVerticalTabsNew, button).Secondary(m.LabelNewTab)
+}
+
+// drawVerticalTabsParts paints what follows the rows: the path under a tab's
+// name, its host badge and light, and a group header's host badge.
+func (state *State) drawVerticalTabsParts(d *ui.DrawContext) {
+	view := &state.verticalTabs
+	state.paintWorkspaceTabParts(d.Canvas, d.Rect, view.tabs)
+	if view.grouping {
+		state.paintVerticalTabGroupIcons(d.Canvas)
+	}
+}
+
+// drawVerticalTabsScrollbar paints the hover scrollbar over the row list. The
+// window keeps the offset and routes the wheel; this only paints and names the
+// bar the pointer drags.
+func (state *State) drawVerticalTabsScrollbar(d *ui.DrawContext) {
+	view, m := &state.verticalTabs, state.messages
+	area := components.BeginScrollArea(d.Canvas, state.Theme(), d.Rect, gfx.Size{Width: d.Rect.Width, Height: view.content}).
+		Offset(0, view.scroll).
+		VerticalScrollbar(hitVerticalTabsBar, m.VerticalTabsScrollbar, "").
+		HoverScrollbars(view.over || view.barDrag)
+	view.barGeometry = area.EndContent()
+}
+
+// drawVerticalTabsSeparator paints the line that parts the sidebar from the rest
+// of the window: the window's right edge for the rail over the workspace, the
+// navigation rail's top for the list declared in it.
+func (state *State) drawVerticalTabsSeparator(d *ui.DrawContext) {
+	view, pal := &state.verticalTabs, state.pal
+	bounds := d.Rect
+	if !view.pageSideRail {
+		// The rail list is laid out now; the declaration had only the previous
+		// paint's rectangle. Keep the page-coordinate geometry current for the
+		// wheel and the drag, without moving the rows this paint already placed.
+		view.bounds = bounds
+		list := gfx.Rect{X: bounds.X + 6, Y: bounds.Y + verticalTabsHeader, Width: max(bounds.Width-14, 0), Height: max(bounds.Height-verticalTabsHeader-verticalTabsFooter, 0)}
+		state.tabStrip.area, state.tabStrip.origin = list, list.Y
+		state.tabStrip.max = max(view.content-list.Height, 0)
+	}
+	if view.pageSideRail {
+		d.Canvas.Fill(gfx.Rect{X: bounds.X + bounds.Width - 1, Y: bounds.Y, Width: 1, Height: bounds.Height}, pal.line)
+		return
+	}
+	d.Canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, pal.line)
 }
 
 func (state *State) paintWorkspaceTabParts(canvas *gfx.Canvas, strip gfx.Rect, tabs []barTab) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -142,7 +143,6 @@ func (state *State) paintWorkspaceCards(canvas *gfx.Canvas, content, viewport gf
 		state.workspaceCardRegions = append(state.workspaceCardRegions, region)
 		state.paintWorkspaceHostCard(canvas, region, items[index], len(items))
 	}
-	state.paintWorkspaceCardDrag(canvas, view, template)
 }
 
 func (state *State) workspaceCardText(item workspaceArrangementItem) (Host, string, string, string, bool) {
@@ -207,20 +207,39 @@ func (state *State) paintWorkspaceHostCard(canvas *gfx.Canvas, region workspaceC
 	}
 }
 
-func (state *State) paintWorkspaceCardDrag(canvas *gfx.Canvas, view workspaceCardView, template string) {
-	drag := &state.workspaceCardDrag
-	if !drag.active || drag.region.view != view || drag.region.template != template {
+// declareWorkspaceCardDragOverlay declares the card ghost as a hitless element
+// of a page overlay on ui.LayerDrag: over the page and its chrome, below every
+// menu, dialog and popover. A card drag that lives in a dialog is visible from
+// inside it; a dialog or menu opening over a drag cancels the drag instead (see
+// State.reconcileDragHosts and the paint guard in Paint).
+func (state *State) declareWorkspaceCardDragOverlay(c ui.C) {
+	if !state.workspaceCardDrag.active {
 		return
 	}
+	chrome := &state.chrome
+	if chrome.workspaceCardDragDraw == nil {
+		chrome.workspaceCardDragDraw = state.drawWorkspaceCardDrag
+	}
+	ui.Overlay(c, ui.OverlaySpec{Band: ui.LayerDrag, Bounds: state.windowRect()}).Children(func() {
+		ui.Slot(c).Absolute().Inset(0).Draw(chrome.workspaceCardDragDraw)
+	})
+}
+
+// drawWorkspaceCardDrag paints the card under the pointer, offset from it as the
+// hand-painted ghost always was.
+func (state *State) drawWorkspaceCardDrag(d *ui.DrawContext) {
+	drag := &state.workspaceCardDrag
+	if !drag.active {
+		return
+	}
+	canvas := d.Canvas
 	box := gfx.Rect{X: drag.at.X + 12, Y: drag.at.Y + 12, Width: min(176, drag.region.bounds.Width), Height: 32}
-	canvas.PushLayer(tabDragLayer)
 	canvas.RoundedBorder(box, radius.control, 1, state.pal.accent, state.pal.surface)
 	label := fmt.Sprintf("%d", drag.region.index+1)
 	if items := state.workspaceItemsForRegion(drag.region); drag.region.index < len(items) {
 		_, label, _, _, _ = state.workspaceCardText(items[drag.region.index])
 	}
 	monitorLabel(canvas, elide(canvas, label, 12, gfx.WeightMedium, max(0, box.Width-16)), box.Inset(gfx.All(8)), 12, state.pal.text, gfx.WeightMedium)
-	canvas.PopLayer()
 }
 
 func (state *State) workspaceItemsForRegion(region workspaceCardRegion) []workspaceArrangementItem {

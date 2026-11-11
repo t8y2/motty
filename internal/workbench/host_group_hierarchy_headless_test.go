@@ -62,6 +62,14 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 						h := hit(id)
 						must(view.Click(h.Bounds.X+h.Bounds.Width/2, h.Bounds.Y+h.Bounds.Height/2))
 					}
+					clickLabel := func(label string) {
+						t.Helper()
+						h, ok := hitByLabelSnapshot(view.Snapshot().Hits, label)
+						if !ok {
+							t.Fatalf("missing button %q", label)
+						}
+						must(view.Click(h.Bounds.X+h.Bounds.Width/2, h.Bounds.Y+h.Bounds.Height/2))
+					}
 					shot := func(name string) {
 						t.Helper()
 						must(view.Rest())
@@ -71,11 +79,19 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 						}
 					}
 					group := func(path string) gfx.Hit {
-						id := hitHostGroupRowList.At(state.hostGroupIndex(path))
+						hits := view.Snapshot().Hits
 						if mode == hostViewGrid {
-							id = hitHostGroupOpenList.At(state.hostGroupIndex(path))
+							h, ok := hitByIDSnapshot(hits, hitHostGroupOpenList.At(state.hostGroupIndex(path)))
+							if !ok {
+								t.Fatalf("view %d missing group %q", mode, path)
+							}
+							return h
 						}
-						return hit(id)
+						h, ok := hostListGroupHitIn(hits, state, state.hostGroupIndex(path))
+						if !ok {
+							t.Fatalf("view %d missing group %q", mode, path)
+						}
+						return h
 					}
 					right := func(path string) {
 						t.Helper()
@@ -104,7 +120,7 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 					}
 					shot("parent-picker")
 					click(hitGroupParentItems.At(state.hostGroupIndex("Team2")))
-					click(hitMoveGroupSubmit)
+					clickLabel(state.messages.MoveGroupSubmit)
 					if state.hosts[0].Group != "Team2/上海生产/EU" {
 						t.Fatal("native parent selection failed", state.dialogError)
 					}
@@ -113,12 +129,12 @@ func TestHostGroupHierarchyNativeMenusAndDialogs(t *testing.T) {
 					if state.editor.value(fieldGroup) != "Team2/上海生产" {
 						t.Fatal("native new host omitted clicked group")
 					}
-					click(hitDialogCancel)
+					clickLabel(state.messages.Cancel)
 					right("Team2/上海生产")
 					click(hitGroupDelete)
 					shot("delete")
 					click(hitGroupDeleteUngroup)
-					click(hitMoveGroupSubmit)
+					clickLabel(state.messages.HostGroupActions.Delete)
 					if state.hosts[0].Group != "" || len(state.hosts) != 3 {
 						t.Fatal("native deletion lost a host or destination")
 					}

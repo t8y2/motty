@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
@@ -173,6 +174,17 @@ func dashboardActionWidths(c *gfx.Canvas, theme gfx.Theme, newLabel string, newI
 		max(dashboardActionLeast, measure.WithIcon(toggleIcon).SizeToFit(toggleLabel).BoundsWidth())
 }
 
+// declareDashboardEmpty declares the dashboard's first-run state in the
+// workbench page: with no panel there is nothing else to paint there.
+func (s *State) declareDashboardEmpty(c ui.C) {
+	if s.activeSection != sectionDashboard || s.dashboardPanel() != nil {
+		return
+	}
+	m := s.messages.Dashboard
+	width, height := s.hostsWorkspaceSize()
+	s.declareEmptyPageRegion(c, gfx.Rect{Width: width, Height: height}, m.Empty, m.EmptyHint, m.Create, s.pal.muted, hitDashboardNew, iconActivity, true)
+}
+
 func (s *State) paintDashboard(c *gfx.Canvas, b gfx.Rect) {
 	d, m := &s.dashboard, s.messages.Dashboard
 	pal := s.pal
@@ -181,7 +193,7 @@ func (s *State) paintDashboard(c *gfx.Canvas, b gfx.Rect) {
 	p := s.dashboardPanel()
 	theme := s.Theme()
 	if p == nil {
-		s.drawEmptyPage(c, b, m.Empty, m.EmptyHint, m.Create, pal.muted, iconActivity, hitDashboardNew, m.Create, true)
+		s.paintEmptyPage(c, iconActivity)
 		return
 	}
 	actionTheme := theme

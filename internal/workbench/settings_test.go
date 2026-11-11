@@ -194,7 +194,7 @@ func TestSettingsChoiceAndSearchTakeInputThroughTheWorkbenchPage(t *testing.T) {
 		t.Fatal("the language row painted no Chinese segment")
 	}
 	scope := tree.Sub(tree.Feature(shellPageRoot), tree.Name(settingsWorkspacePart))
-	if !page.Owns(choice.ID) || !tree.Within(choice.ID.Scope(), scope) {
+	if !windowPageOwns(choice.ID) || !tree.Within(choice.ID.Scope(), scope) {
 		t.Fatalf("the choice %d is not inside the workbench page's settings container", choice.ID)
 	}
 	canvas.BeginEventPass(choice.ID, gfx.ClickInfo{})
@@ -366,6 +366,30 @@ func TestSettingsChoicesApplyDirectlyToTheWorkbenchAndTerminal(t *testing.T) {
 	}
 }
 
+// Turning the probe off is a choice, and a state file cannot record it as a
+// duration of zero: that value is dropped, so it would read as never having
+// chosen, which now means on.
+func TestTurningKeepAliveOffSurvivesRestart(t *testing.T) {
+	options := freshOptions(t)
+	first := newTestState(t, options)
+	first.Click(hitSettings)
+	first.selectSettingsCategory(settingsConnection)
+	clickSettingsChoiceInRow(t, first, first.messages.SettingsConnectionKeepAlive, first.settingsKeepAliveLabel(0))
+	first.save()
+
+	saved, report, err := loadState(first.options.StatePath)
+	if err != nil || report.outcome != loadOK {
+		t.Fatalf("load saved settings: outcome=%d err=%v", report.outcome, err)
+	}
+	if !saved.ConnectionKeepAliveOff || connectionKeepAlive(saved) != 0 {
+		t.Fatalf("saved keepalive = %+v, want the off choice", saved.ConnectionKeepAliveOff)
+	}
+	second := newTestState(t, options)
+	if second.connectionKeepAlive != 0 {
+		t.Fatalf("restored keepalive = %v, want off", second.connectionKeepAlive)
+	}
+}
+
 func TestSettingsChoicesAndWorkspaceSurviveRestart(t *testing.T) {
 	options := freshOptions(t)
 	first := newTestState(t, options)
@@ -390,7 +414,7 @@ func TestSettingsChoicesAndWorkspaceSurviveRestart(t *testing.T) {
 	if err != nil || report.outcome != loadOK {
 		t.Fatalf("load saved settings: outcome=%d err=%v", report.outcome, err)
 	}
-	if saved.NetworkProxy != "system" || saved.TerminalOption != "meta" || saved.TerminalFontSize != 15 || saved.TerminalFontFace != "classic" || saved.TerminalScrollback != 10000 || saved.ConnectionTimeoutSeconds != 5 || saved.ConnectionKeepAliveSeconds != 30 || saved.ConnectionReconnect != "three" || saved.TerminalClipboard != "block" || saved.Workspace != "settings" {
+	if saved.NetworkProxy != "system" || saved.TerminalOption != "meta" || saved.TerminalFontSize != 15 || saved.TerminalFontFace != "classic" || saved.TerminalScrollback != 10000 || saved.ConnectionTimeoutSeconds != 5 || connectionKeepAlive(saved) != 30*time.Second || saved.ConnectionReconnect != "three" || saved.TerminalClipboard != "block" || saved.Workspace != "settings" {
 		t.Fatalf("saved settings=%+v", saved)
 	}
 
@@ -467,7 +491,7 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 		if !ok {
 			t.Fatalf("%q: no choice labeled %q", rowLabel, toLabel)
 		}
-		result := state.Key(gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
+		result := windowKeyRoutes(state, gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
 		if !result.Handled || result.Focus != to.ID || result.Activate != to.ID {
 			t.Fatalf("%q: from=%v to=%v result=%+v", rowLabel, from.ID, to.ID, result)
 		}

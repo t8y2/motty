@@ -1,8 +1,6 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -60,19 +58,13 @@ func (state *State) hostTransferChoiceLabel(mode transferMode) string {
 	}
 }
 
-// paintTransferChoice draws the file protocol choice of the host dialog.
-func (state *State) paintTransferChoice(canvas *gfx.Canvas, bounds gfx.Rect) {
-	m, editor := state.messages.Tools, &state.editor
-	content := components.BeginField(canvas, state.Theme(), bounds).Paint(m.TransferField, "", "")
-	state.drawDialogChoice(canvas, content, &editor.transferChoice, "host-dialog-transfer", hostTransferChoice)
-	state.rememberHostChoice(canvas, content, &editor.transferChoice, state.hostTransferChoiceLabel(editor.transfer))
-}
-
-// declareHostTransferChoice is the page of the file protocol choice. The click
-// already wrote editor.transfer; only the form's error has to go.
-func (state *State) declareHostTransferChoice(c ui.C) {
-	choice := ui.Choice(c, &state.editor.transfer, hostTransferChoices[:], state.hostTransferChoiceLabel).Fill()
+// declareHostTransferChoice declares the file protocol choice in the form's page
+// at the slot the body reserved for it. The click already wrote editor.transfer;
+// only the form's error has to go.
+func (state *State) declareHostTransferChoice(c ui.C) ui.Box {
+	choice := hostFormChoice(c, state.messages.Tools.TransferField, hostFormRowHeight, &state.editor.transfer, hostTransferChoices[:], state.hostTransferChoiceLabel)
 	if choice.Changed() {
 		state.dialogError = ""
 	}
+	return choice
 }

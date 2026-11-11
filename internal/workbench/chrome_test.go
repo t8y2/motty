@@ -10,9 +10,42 @@ import (
 	"motty/internal/sshconn"
 )
 
+// windowKeyRoutes and its pointer and wheel peers deliver an event the way the
+// window's Config does: the page's own elements first, then the application's
+// handlers.
+func windowKeyRoutes(state *State, event gfx.KeyEvent) gfx.EventResult {
+	return state.WindowConfig(app.Config{OnKey: state.Key}).OnKey(event)
+}
+
+func windowPointerRoutes(state *State, event gfx.PointerEvent) gfx.EventResult {
+	return state.WindowConfig(app.Config{OnPointer: state.Pointer}).OnPointer(event)
+}
+
+func windowScrollRoutes(state *State, event gfx.ScrollEvent) gfx.EventResult {
+	return state.WindowConfig(app.Config{OnScroll: state.Scroll}).OnScroll(event)
+}
+
 func hitByID(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// hitByLabel finds the first painted button with label: a page-owned dialog
+// button is named by its place, not by an application identity. The first
+// match is the dialog's, because the page declares dialogs before the section
+// body is painted; a section can carry a button with the same label.
+func hitByLabel(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	return hitByLabelSnapshot(canvas.Hits(), label)
+}
+
+// hitByLabelSnapshot is hitByLabel over a snapshot's hits.
+func hitByLabelSnapshot(hits []gfx.Hit, label string) (gfx.Hit, bool) {
+	for _, hit := range hits {
+		if hit.Label == label && hit.Role == gfx.RoleButton {
 			return hit, true
 		}
 	}
@@ -446,17 +479,24 @@ func TestDialogButtonsFitTheirLabelsAndSitAtTheRightEdge(t *testing.T) {
 	cases := []struct {
 		name   string
 		open   func(*State, *fakeConn)
-		layout []gfx.ID
+		layout func(*State) []string
 	}{
-		{"new host", func(state *State, _ *fakeConn) { state.Click(hitAddHost) }, []gfx.ID{hitDialogCancel, hitDialogSubmit}},
+		{"new host", func(state *State, _ *fakeConn) { state.Click(hitAddHost) }, func(state *State) []string {
+			return []string{state.messages.Cancel, state.messages.AddHost}
+		}},
 		{"host key", func(state *State, fake *fakeConn) {
 			fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseHostKeyPrompt; s.HostKey = testHostKey })
 			state.Wake()
-		}, []gfx.ID{hitHostKeyReject, hitHostKeyOnce, hitHostKeyTrust}},
+		}, func(state *State) []string {
+			m := state.messages
+			return []string{m.HostKeyReject, m.HostKeyOnce, m.HostKeyTrust}
+		}},
 		{"password", func(state *State, fake *fakeConn) {
 			fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhasePasswordPrompt; s.Attempt = 1 })
 			state.Wake()
-		}, []gfx.ID{hitPasswordCancel, hitPasswordSubmit}},
+		}, func(state *State) []string {
+			return []string{state.messages.Cancel, state.messages.Connect}
+		}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -466,13 +506,14 @@ func TestDialogButtonsFitTheirLabelsAndSitAtTheRightEdge(t *testing.T) {
 			test.open(state, fake)
 			canvas, _ := paintedTexts(state)
 			theme := state.Theme()
+			layout := test.layout(state)
 
 			var previousRight float32
 			var last gfx.Hit
-			for index, id := range test.layout {
-				hit, ok := hitByID(canvas, id)
+			for index, label := range layout {
+				hit, ok := hitByLabel(canvas, label)
 				if !ok {
-					t.Fatalf("button %d is not painted", id)
+					t.Fatalf("button %q is not painted", label)
 				}
 				fit := components.BeginButton(canvas, theme, gfx.ID{}, hit.Bounds).SizeToFit(hit.Label).BoundsWidth()
 				if math.Abs(float64(hit.Bounds.Width-fit)) > 0.5 {
@@ -544,9 +585,13 @@ func TestFieldTextHasTheSameSizeFocusedAndUnfocused(t *testing.T) {
 			hit = candidate
 		}
 	}
+	// The field's value is painted at the native editor's text bounds. Another
+	// control may show the same text (the host list can hold a host of the same
+	// name), so pick the paint inside the field, not the last match.
 	var painted gfx.Text
 	for _, candidate := range canvas.Texts() {
-		if candidate.Value == "Production" {
+		if candidate.Value == "Production" && candidate.Bounds.Y == hit.TextBounds.Y &&
+			candidate.Bounds.X >= hit.TextBounds.X && candidate.Bounds.X < hit.TextBounds.X+hit.TextBounds.Width {
 			painted = candidate
 		}
 	}
@@ -558,5 +603,62 @@ func TestFieldTextHasTheSameSizeFocusedAndUnfocused(t *testing.T) {
 	}
 	if hit.TextBounds.X != painted.Bounds.X {
 		t.Fatalf("native editor would start at x=%v, the painted text at %v", hit.TextBounds.X, painted.Bounds.X)
+	}
+}
+
+// TestPageDeclaredControlsKeepTheirHitSemantics guards the controls that are now
+// page elements: a button keeps its role, its accessible name and its hint, and
+// a disabled one stays out of the Tab order they used to share.
+func TestPageDeclaredControlsKeepTheirHitSemantics(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
+
+	view, ok := canvasHit(canvas.Hits(), hitHostViewList)
+	if !ok {
+		t.Fatal("the hosts view switch is not a hit")
+	}
+	if view.Role != gfx.RoleButton || view.Label != state.messages.Tools.HostViewList ||
+		view.Hint != state.messages.Tools.HostViewList || !view.Focusable || view.Disabled {
+		t.Errorf("the view switch hit = %+v", view)
+	}
+	if view.Bounds.Width != 26 || view.Bounds.Height != 26 {
+		t.Errorf("the view switch is %vx%v, want 26x26", view.Bounds.Width, view.Bounds.Height)
+	}
+
+	chip, ok := canvasHit(canvas.Hits(), hitHostFilterAll)
+	if !ok {
+		t.Fatal("the All chip is not a hit")
+	}
+	if chip.Role != gfx.RoleButton || chip.Label != state.messages.HostFilterAll || !chip.Selected {
+		t.Errorf("the All chip hit = %+v", chip)
+	}
+	if want := state.filterChipWidth(canvas, state.messages.HostFilterAll, state.hostTotalDigits); chip.Bounds.Width != want {
+		t.Errorf("the All chip is %v wide, its label needs %v", chip.Bounds.Width, want)
+	}
+
+	connect, ok := canvasHit(canvas.Hits(), hitConnect)
+	if !ok || connect.Role != gfx.RoleButton || connect.Label != state.messages.Connect {
+		t.Errorf("the Connect button hit = %+v", connect)
+	}
+
+	state.activeSection = sectionKnownHosts
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	retrust, ok := canvasHit(canvas.Hits(), hitKnownHostsRetrust)
+	if !ok {
+		t.Fatal("the known-hosts Retrust button is not a hit")
+	}
+	if !retrust.Disabled || retrust.Focusable || retrust.Role != gfx.RoleButton {
+		t.Errorf("a disabled Retrust hit = %+v", retrust)
+	}
+
+	state.activeSection = sectionSessionLogs
+	canvas, _ = paintAt(state, gfx.Size{Width: 1400, Height: 900})
+	filter, ok := canvasHit(canvas.Hits(), hitSessionLogsTime)
+	if !ok {
+		t.Fatal("the session-log time filter is not a hit")
+	}
+	if filter.Role != gfx.RoleButton || filter.Label != sessionLogFilterLabel(&state.messages.SessionLogs, sessionLogFilterTimeMenu) ||
+		!filter.Focusable || filter.Expanded || !filter.Expandable {
+		t.Errorf("the time filter hit = %+v", filter)
 	}
 }

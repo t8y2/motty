@@ -5,7 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
 )
 
@@ -246,5 +249,89 @@ func TestTheHostFormOffersNoChoiceWhileNothingIsSaved(t *testing.T) {
 	state.editor.auth = authPrivateKey
 	if state.hostOffersCredential() {
 		t.Fatal("a host that signs in with a key was offered a password")
+	}
+}
+
+// drawDialogPage draws a dialog declaration in a page of its own, as the
+// window's page declares it, for tests of the page's event pass.
+func drawDialogPage(t *testing.T, state *State, view func(ui.C)) (*ui.Page, *gfx.Canvas) {
+	t.Helper()
+	page := ui.NewPage(ui.PageConfig{Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: view})
+	state.chrome.windowPage = page
+	canvas := &gfx.Canvas{}
+	page.Draw(canvas, gfx.Rect{Width: 1400, Height: 900}, view)
+	return page, canvas
+}
+
+// snapshotButton finds the painted button a label names in a headless snapshot,
+// for a dialog whose buttons the page names by place.
+func snapshotButton(snapshot app.Snapshot, label string) (gfx.Hit, bool) {
+	for _, hit := range snapshot.Hits {
+		if hit.Label == label && hit.Role == gfx.RoleButton && !hit.Block {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// pageHitByLabel finds the hit a page painted with label.
+func pageHitByLabel(t *testing.T, canvas *gfx.Canvas, label string) gfx.Hit {
+	t.Helper()
+	var fallback gfx.Hit
+	for _, hit := range canvas.Hits() {
+		if hit.Label != label || hit.ID.IsZero() {
+			continue
+		}
+		if hit.Role == gfx.RoleButton {
+			return hit
+		}
+		if fallback.ID.IsZero() {
+			fallback = hit
+		}
+	}
+	if !fallback.ID.IsZero() {
+		return fallback
+	}
+	t.Fatalf("no painted control named %q", label)
+	return gfx.Hit{}
+}
+
+// clickPageHit delivers an event pass on a page hit, repaints the page and runs
+// the window's click dispatch for the target, as state.Paint's AfterPaint does.
+func clickPageHit(t *testing.T, state *State, page *ui.Page, canvas *gfx.Canvas, view func(ui.C), hit gfx.Hit) {
+	t.Helper()
+	canvas.Reset()
+	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
+	page.Draw(canvas, gfx.Rect{Width: 1400, Height: 900}, view)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+}
+
+// TestCredentialDialogPageServesItsFieldsAndSaves drives the shared-password
+// dialog through the workbench page: the fields are the page's editors and the
+// Save button is a page control read in the event pass.
+func TestCredentialDialogPageServesItsFieldsAndSaves(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openCredentialDialog("")
+	view := func(c ui.C) { state.declareCredentialDialog(c) }
+	page, canvas := drawDialogPage(t, state, view)
+	config := page.Config(app.Config{})
+	name := config.TextInput(app.TextInputContext{ID: hitCredentialName})
+	if name == nil || name.Editor != &state.credentialForm.name {
+		t.Fatalf("the page does not serve the name field: %+v", name)
+	}
+	password := config.TextInput(app.TextInputContext{ID: hitCredentialPassword})
+	if password == nil || password.Editor != &state.credentialForm.password {
+		t.Fatalf("the page does not serve the password field: %+v", password)
+	}
+	name.Editor.Insert("Page password")
+	password.Editor.Insert("s3cret")
+	save := pageHitByLabel(t, canvas, state.messages.Credentials.Save)
+	clickPageHit(t, state, page, canvas, view, save)
+	if state.modal != modalNone {
+		t.Fatalf("Save left the dialog open: %q", state.credentialForm.dialogError)
+	}
+	if len(state.credentials) != 1 || state.credentials[0].Name != "Page password" {
+		t.Fatalf("credentials after the page save = %+v", state.credentials)
 	}
 }

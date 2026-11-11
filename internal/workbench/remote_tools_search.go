@@ -5,15 +5,14 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 var (
 	hitRemoteSearch      = tree.ID(remoteToolsHits, "search")
-	hitRemoteSearchClear = tree.ID(remoteToolsHits, "search-clear")
 	hitRemoteSearchScope = tree.ID(remoteToolsHits, "search-scope")
 )
 
@@ -23,6 +22,10 @@ type remoteSearch struct {
 	editor text.Editor
 	input  app.TextInput
 	ready  bool
+	// field and fieldBound are the page field the tools window declares over the
+	// editor; the main window edits the same editor through RemoteToolsInput.
+	field      ui.Field
+	fieldBound bool
 }
 
 func (search *remoteSearch) queryEditor() *text.Editor {
@@ -114,34 +117,13 @@ func (state *State) remoteSearchKey(event gfx.KeyEvent) gfx.EventResult {
 		return gfx.EventResult{}
 	}
 	search := &state.remote.searches[state.remote.tab]
-	if event.Target != hitRemoteSearch && search.queryEditor().String() == "" {
+	if search.queryEditor().String() == "" {
+		// No query to clear: Escape belongs to the dialog's dismissal.
 		return gfx.EventResult{}
 	}
 	if _, composing := search.queryEditor().Composition(); composing && event.Target == hitRemoteSearch {
 		return gfx.EventResult{Handled: true}
 	}
-	result := gfx.EventResult{Handled: true, Repaint: true}
-	if state.remote.searches[state.remote.tab].editor.String() != "" {
-		state.clearRemoteSearch()
-	} else {
-		result.Focus, result.FocusVisible = hitRemoteRefresh, true
-	}
-	return result
-}
-
-func (state *State) paintRemoteSearch(canvas *gfx.Canvas, bounds gfx.Rect) {
-	query := state.remote.searches[state.remote.tab].queryEditor().String()
-	clearSlot := components.InputGroupSlot{}
-	if query != "" {
-		clearSlot = components.InputGroupSlot{Kind: components.InputGroupSlotButton, ID: hitRemoteSearchClear,
-			Icon: lucideIcons[iconClose], Label: state.messages.Tools.RemoteSearchClear, ButtonSize: components.InputGroupButtonIconXS}
-	}
-	components.PaintInputGroup(canvas, state.Theme(), gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 32}, components.InputGroupSnapshot{
-		ID: hitRemoteSearch, Label: state.messages.Tools.RemoteSearch, Value: query,
-		Placeholder: state.messages.Tools.RemoteSearchPlaceholder, NativeEditing: canvas.Focused() == hitRemoteSearch && query != "",
-		InlineStart: components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]}, InlineEnd: clearSlot,
-	})
-	summary := gfx.Rect{X: bounds.X, Y: bounds.Y + 36, Width: bounds.Width, Height: 20}
-	canvas.Label(elide(canvas, state.remote.searchSummary, metrics.FontSizeS, gfx.WeightRegular, summary.Width), summary, gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
-	canvas.HitWithOptions(hitRemoteSearchScope, summary, state.remote.searchSummary, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: state.remote.searchSummary})
+	state.clearRemoteSearch()
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitRemoteSearch, FocusVisible: true}
 }

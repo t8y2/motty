@@ -32,54 +32,26 @@ const (
 	newTabFooter    = float32(56)
 )
 
-// newTabPageRoot names the page's controls in the window's Tree.
-const newTabPageRoot = "new-tab"
-
-// paintNewTabPage fills an empty pane with the places a connection can go. It
-// shows as many hosts as the pane's height holds; the rest are one click away
-// under All hosts.
-func (state *State) paintNewTabPage(canvas *gfx.Canvas, bounds gfx.Rect) {
+// declareNewTabPage declares the empty pane's places a connection can go, in the
+// page at the pane's room. It shows as many hosts as the pane's height holds; the
+// rest are one click away under All hosts. The badges and footer buttons are
+// painted after the page, into the slots it leaves.
+func (state *State) declareNewTabPage(c ui.C, bounds gfx.Rect) {
 	pal := state.pal
-	if min(newTabCardWidth, bounds.Width-48) < 200 {
-		canvas.Fill(bounds, pal.workspace)
-		return
-	}
 	chrome := &state.chrome
 	chrome.newTabBadges = chrome.newTabBadges[:0]
 	chrome.newTabShells = ui.Box{}
-	chrome.newTabFooter = false
-	if chrome.newTabPage == nil {
-		chrome.newTabPage = ui.NewPage(ui.PageConfig{Root: newTabPageRoot, Theme: &state.theme})
-		chrome.newTabView = state.declareNewTabPage
+	chrome.newTabShown = min(newTabCardWidth, bounds.Width-48) >= 200
+	if !chrome.newTabShown {
+		ui.Column(c).Fill().Background(pal.workspace)
+		return
 	}
-	chrome.newTabPage.Draw(canvas, bounds, chrome.newTabView)
-
-	local := localHost(state.messages.LocalTerminalTitle)
-	for index, badge := range chrome.newTabBadges {
-		if index == 0 {
-			paintSystemBadge(canvas, local.System, badge.Rect(), pal)
-			continue
-		}
-		state.paintHostCatalogIcon(canvas, state.hosts[index-1], badge.Rect(), pal.workspace)
-	}
-	if chrome.newTabFooter {
-		m := state.messages
-		state.paintButton(canvas, hitNewTabHostNew, chrome.newTabAdd.Rect(), m.AddHost, 0, false, false, true)
-		state.paintButton(canvas, hitPaneChooseHost, chrome.newTabAll.Rect(), m.NewTabAllHosts, 0, false, false, true)
-	}
-}
-
-// declareNewTabPage declares the page: the block sits a little above the middle,
-// and never closer than 16 to the top.
-func (state *State) declareNewTabPage(c ui.C) {
-	pal, m := state.pal, state.messages
-	bounds := c.Bounds()
+	m := state.messages
 	width := min(newTabCardWidth, bounds.Width-48)
 	room := int((bounds.Height - newTabTitle - newTabFooter - 48) / newTabRowHeight)
 	rows := min(max(room, 1), newTabMaxHosts+1)
 	hosts := min(rows-1, len(state.hosts))
 	local := localHost(m.LocalTerminalTitle)
-	chrome := &state.chrome
 
 	ui.Column(c).Fill().PadSides(16, 0, 0, 0).Items(ui.Center).Justify(ui.Center).Background(pal.workspace).Children(func() {
 		ui.Column(c).Width(width).Shrink(0).MarginSides(0, 0, 48, 0).Children(func() {
@@ -95,9 +67,8 @@ func (state *State) declareNewTabPage(c ui.C) {
 				})
 			})
 			ui.Row(c).Shrink(0).Gap(8).MarginSides(0, 0, newTabFooter-48, 0).Children(func() {
-				chrome.newTabAdd = ui.Slot(c).Size(toolbarButtonWidth(c.Canvas(), m.AddHost, false), 32).Self(ui.Center)
-				chrome.newTabAll = ui.Slot(c).Size(toolbarButtonWidth(c.Canvas(), m.NewTabAllHosts, false), 32).Self(ui.Center)
-				chrome.newTabFooter = true
+				chrome.newTabAdd = state.declareButtonSized(c, hitNewTabHostNew, m.AddHost, 0, false, false, true, 12, false).Size(toolbarButtonWidth(c.Canvas(), m.AddHost, false), 32).Self(ui.Center)
+				chrome.newTabAll = state.declareButtonSized(c, hitPaneChooseHost, m.NewTabAllHosts, 0, false, false, true, 12, false).Size(toolbarButtonWidth(c.Canvas(), m.NewTabAllHosts, false), 32).Self(ui.Center)
 			})
 		})
 	})
@@ -108,6 +79,23 @@ func (state *State) declareNewTabPage(c ui.C) {
 		if canvas.Clicked(hitPaneChooseHost) {
 			state.chooseHostSection()
 		}
+	}
+}
+
+// paintNewTabDetails paints what the empty pane's declaration leaves to the
+// window: the system and host badges of its rows, and its footer buttons.
+func (state *State) paintNewTabDetails(canvas *gfx.Canvas) {
+	chrome, pal := &state.chrome, state.pal
+	if !chrome.newTabShown {
+		return
+	}
+	local := localHost(state.messages.LocalTerminalTitle)
+	for index, badge := range chrome.newTabBadges {
+		if index == 0 {
+			paintSystemBadge(canvas, local.System, badge.Rect(), pal)
+			continue
+		}
+		state.paintHostCatalogIcon(canvas, state.hosts[index-1], badge.Rect(), pal.workspace)
 	}
 }
 

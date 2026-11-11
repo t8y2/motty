@@ -47,6 +47,25 @@ func workspaceEditorClick(t *testing.T, view *headless.Session, id gfx.ID) {
 	}
 }
 
+// workspaceEditorClickLabel clicks the painted button a dialog names, which is
+// the page's control when the dialog is declared in the window page.
+func workspaceEditorClickLabel(t *testing.T, view *headless.Session, label string) {
+	t.Helper()
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Label != label || hit.Role != gfx.RoleButton || hit.Block || hit.Disabled {
+			continue
+		}
+		if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Wait(200 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	t.Fatalf("no painted button named %q", label)
+}
+
 func workspaceEditorDrag(t *testing.T, view *headless.Session, from, to gfx.ID) {
 	t.Helper()
 	source, ok := hitByIDSnapshot(view.Snapshot().Hits, from)
@@ -164,7 +183,7 @@ func TestWorkspaceRestoredTemporaryHeaderSaveThroughWindow(t *testing.T) {
 	if err := view.Type("Reopened workspace"); err != nil {
 		t.Fatal(err)
 	}
-	workspaceEditorClick(t, view, hitWorkspaceSaveSubmit)
+	workspaceEditorClickLabel(t, view, state.messages.WorkspaceDraftSave)
 	if len(state.templates) != 1 || state.templates[0].Name != "Reopened workspace" || !isGrid(state.templates[0].Layout, 2) {
 		t.Fatalf("saved restored workspace = %+v", state.templates)
 	}
@@ -190,7 +209,7 @@ func TestWorkspaceDraftDragPreservesItsOrderOnSaveAndLaunch(t *testing.T) {
 	if !slices.Equal(state.workspaceDraftSelectedCatalogIDs(), want) {
 		t.Fatal("draft drag did not reorder the selected hosts")
 	}
-	workspaceEditorClick(t, view, hitWorkspaceDraftSubmit)
+	workspaceEditorClickLabel(t, view, state.messages.WorkspaceDraftSave)
 	if len(state.templates) != 1 || !slices.Equal(state.templates[0].HostIDs, want) {
 		t.Fatalf("saved order = %+v", state.templates)
 	}
@@ -212,7 +231,7 @@ func TestWorkspaceLocalTerminalDragSaveAndOpenThroughWindow(t *testing.T) {
 	workspaceEditorClick(t, view, hitWorkspaceDraftHostList.At(0))
 	workspaceEditorClick(t, view, workspaceDraftHostID(0))
 	workspaceEditorDrag(t, view, hitWorkspaceDraftCards.At(0), hitWorkspaceDraftCards.At(1))
-	workspaceEditorClick(t, view, hitWorkspaceDraftSubmit)
+	workspaceEditorClickLabel(t, view, state.messages.WorkspaceDraftSave)
 	want := []string{state.hosts[0].CatalogID, workspaceLocalTerminalRef}
 	if len(state.templates) != 1 || !slices.Equal(state.templates[0].HostIDs, want) {
 		t.Fatalf("mixed template order = %+v", state.templates)

@@ -5,6 +5,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
 )
 
@@ -187,27 +188,48 @@ func (state *State) remoteContainerOverviewBody(container remotetools.Container)
 	return remoteDetailRows(rows)
 }
 
-func (state *State) paintRemoteContainerDetails(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareRemoteContainerDetailsDialog declares the open container details as a
+// dialog of the page. Its body stays a painted slot: the environment table's
+// text selection is the application's.
+func (state *State) declareRemoteContainerDetailsDialog(c ui.C) {
 	details := &state.remote.containerDetails
 	if !details.open {
 		return
 	}
 	m := state.messages.Tools
+	viewport := c.Bounds()
 	contentWidth := min(float32(940), max(viewport.Width-32, 360))
 	bodyHeight := min(float32(620), max(viewport.Height-132, 320))
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer + 2, Scope: dialogScope,
-		DismissID: hitRemoteContainerDetailsDismiss, CloseID: hitRemoteContainerDetailsClose,
-		InitialFocusID: hitRemoteContainerDetailsClose,
-		ContentSize:    gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), gfx.Rect{Width: viewport.Width, Height: viewport.Height}, components.DialogOptions{
+		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
 		ButtonSize: components.ButtonSizeSmall,
+	}).Layout(details.container.Name)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.RemoteContainerDetailsTitle, Description: details.container.Name, Width: contentWidth,
+		Height: layout.Content.Height, Layer: dialogLayer + 2, Scope: dialogScope,
+		DismissID: hitRemoteContainerDetailsDismiss, CloseID: hitRemoteContainerDetailsClose,
 	})
-	layout := dialog.Begin(m.RemoteContainerDetailsTitle, details.container.Name)
-	state.paintRemoteContainerDetailsBody(canvas, layout.Body, details.container)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitRemoteContainerDetailsClose, Label: m.RemoteClose, Variant: components.ButtonSecondary},
-	)
-	dialog.End()
+	dialog.Body(func() {
+		ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
+			state.paintRemoteContainerDetailsBody(d.Canvas, d.Rect, details.container)
+		})
+	})
+	if canvas := c.Canvas(); canvas != nil {
+		switch {
+		case canvas.Clicked(hitRemoteContainerDetailsOverview):
+			c.After(func() { state.selectRemoteContainerDetailTab(hitRemoteContainerDetailsOverview) })
+		case canvas.Clicked(hitRemoteContainerDetailsEnvironment):
+			c.After(func() { state.selectRemoteContainerDetailTab(hitRemoteContainerDetailsEnvironment) })
+		}
+	}
+	dialog.Footer(func() {
+		if dialogButton(c, m.RemoteClose, components.ButtonSecondary, false).Small().Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.closeRemoteContainerDetails() })
+		}
+	})
+	if dialog.Dismissed() {
+		c.After(func() { state.closeRemoteContainerDetails() })
+	}
 }
 
 func (state *State) paintRemoteContainerDetailsBody(canvas *gfx.Canvas, bounds gfx.Rect, container remotetools.Container) {

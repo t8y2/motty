@@ -78,10 +78,6 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 		state.toggleHostSelection(hostID)
 		return true
 	}
-	if id.Scope() == hitHostGroupRowList {
-		state.toggleHostGroup(item(id))
-		return true
-	}
 	if id.Scope() == hitHostGroupOpenList {
 		state.toggleHostGroup(item(id))
 		return true
@@ -846,10 +842,6 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			state.hostSort.enabled = false
 			return handled, true
 		}
-	}
-	if state.groupActions.drag.pressed && event.Key == gfx.KeyEscape {
-		state.groupActions.drag = hostGroupDrag{}
-		return handled, true
 	}
 	if state.groupActions.open && event.Key == gfx.KeyEscape {
 		state.groupActions.open = false

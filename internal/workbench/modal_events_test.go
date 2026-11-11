@@ -18,7 +18,7 @@ func modalEventDriver(t *testing.T, state *State) *app.Driver {
 // modalEventDriverSize is modalEventDriver for a window of a chosen size.
 func modalEventDriverSize(t *testing.T, state *State, width, height int) *app.Driver {
 	t.Helper()
-	driver, err := app.NewDriver(app.Config{
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
 		Title: "modal events", Width: width, Height: height, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
 		TextInput: func(c app.TextInputContext) *app.TextInput {
@@ -27,7 +27,7 @@ func modalEventDriverSize(t *testing.T, state *State, width, height int) *app.Dr
 			}
 			return nil
 		},
-	}, nil)
+	}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +87,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 			state.Click(hitAIToggle)
 			clickAIPanelPage(t, state, hitAIHistory)
 			var closeID gfx.ID
+			closeLabel := ""
 			switch name {
 			case "ai-rename":
 				state.Click(hitAIHistoryRename.At(0))
@@ -99,7 +100,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 				closeID = hitForwardDialogClose
 			case "proxy":
 				state.openProxyDialog()
-				closeID = hitProxyDialogCancel
+				closeID = hitProxyDialogClose
 			case "form":
 				state.openForm(formDialog{title: "Test form", submit: "Save"}, formField{label: "Name"})
 				closeID = hitFormCancel
@@ -111,7 +112,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 					closeID = hitAISetFormClose
 				} else {
 					state.Click(hitAISetClearHistory)
-					closeID = hitAISetConfirmCancel
+					closeLabel = state.messages.Cancel
 				}
 			case "known-hosts":
 				writeKnownHostsFixture(t, state.options.KnownHostsPath)
@@ -148,7 +149,7 @@ func TestDialogsBlockBackgroundScroll(t *testing.T) {
 			}
 			var clicked bool
 			for _, hit := range driver.Snapshot().Hits {
-				if hit.ID == closeID && !hit.IsLabel {
+				if (!closeID.IsZero() && hit.ID == closeID && !hit.IsLabel) || (closeLabel != "" && hit.Label == closeLabel && hit.Role == gfx.RoleButton) {
 					if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
 						t.Fatal(err)
 					}

@@ -79,7 +79,7 @@ func TestSFTPPathEnterNavigatesRelativeAndAbsoluteRemoteDirectories(t *testing.T
 			t.Fatal("mounted path input has no editor")
 		}
 		*editor = *text.NewEditor(step.input)
-		result := state.Key(gfx.KeyEvent{Target: contextID(hitSFTPPath), Key: gfx.KeyEnter})
+		result := windowKeyRoutes(state, gfx.KeyEvent{Target: contextID(hitSFTPPath), Key: gfx.KeyEnter})
 		if !result.Handled {
 			t.Fatal("Enter was not handled")
 		}
@@ -121,19 +121,19 @@ func TestSFTPPathLocalNavigationAndErrorsLeaveTheCurrentFolderIntact(t *testing.
 		{dir, dir},
 	} {
 		*state.EditorFor(hitSFTPPath) = *text.NewEditor(step.input)
-		state.Key(gfx.KeyEvent{Target: contextID(hitSFTPPath), Key: gfx.KeyEnter})
+		windowKeyRoutes(state, gfx.KeyEvent{Target: contextID(hitSFTPPath), Key: gfx.KeyEnter})
 		if view.lfolder.path != step.want || state.EditorFor(hitSFTPPath).String() != step.want {
 			t.Fatalf("local path = %q after %q, want %q", view.lfolder.path, step.input, step.want)
 		}
 	}
 	for _, invalid := range []string{"missing-folder", "report.txt", ""} {
 		*state.EditorFor(hitSFTPPath) = *text.NewEditor(invalid)
-		state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
+		windowKeyRoutes(state, gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 		if view.lfolder.path != dir || view.errorText != "" || state.EditorFor(hitSFTPPath).String() != invalid || len(state.fileNotices.items) == 0 {
 			t.Fatalf("invalid %q: path = %q, error = %q", invalid, view.lfolder.path, view.errorText)
 		}
 	}
-	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEscape})
+	windowKeyRoutes(state, gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEscape})
 	if state.EditorFor(hitSFTPPath).String() != dir || session.files == nil {
 		t.Fatal("Escape did not reset the path while keeping the panel open")
 	}
@@ -146,7 +146,7 @@ func TestSFTPPathStyleSelectorSupportsKeyboardAndSearch(t *testing.T) {
 	row := state.messages.Tools.FilesPathStyle
 	from := settingsChoiceHitInRow(t, state, row, state.settingsPathLabel(false))
 	to := settingsChoiceHitInRow(t, state, row, state.settingsPathLabel(true))
-	result := state.Key(gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != to.ID || result.Activate != to.ID {
 		t.Fatalf("right arrow = %+v", result)
 	}
@@ -161,7 +161,7 @@ func TestSFTPPathStyleSelectorSupportsKeyboardAndSearch(t *testing.T) {
 	if !state.sftpPathInput {
 		t.Fatal("selecting Input field twice changed the style")
 	}
-	result = state.Key(gfx.KeyEvent{Target: to.ID, Key: gfx.KeyLeft})
+	result = windowKeyRoutes(state, gfx.KeyEvent{Target: to.ID, Key: gfx.KeyLeft})
 	if !result.Handled || result.Activate != from.ID {
 		t.Fatalf("left arrow = %+v", result)
 	}
@@ -205,7 +205,7 @@ func TestSFTPPathRemoteFailureUsesAGlobalToastWithTheRequestedPath(t *testing.T)
 			view.remember("/home/test/missing", nil)
 			for attempt := 0; attempt < 2; attempt++ {
 				*state.EditorFor(hitSFTPPath) = *text.NewEditor("missing")
-				state.Key(gfx.KeyEvent{Target: contextID(hitSFTPPath), Key: gfx.KeyEnter})
+				windowKeyRoutes(state, gfx.KeyEvent{Target: contextID(hitSFTPPath), Key: gfx.KeyEnter})
 				waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy })
 			}
 			if view.path != "/home/test" || view.errorText != "" || state.EditorFor(hitSFTPPath).String() != "missing" || view.pathRequest != "" {
@@ -244,7 +244,7 @@ func TestSFTPPathMissingLocalDirectoryShowsItsPathInTheGlobalToast(t *testing.T)
 	dir := localFixture(t)
 	view := openLocalPane(t, state, session, dir)
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("不存在的目录")
-	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
+	windowKeyRoutes(state, gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	want := fmt.Sprintf(state.messages.Tools.FilesPathNotFoundFmt, filepath.Join(dir, "不存在的目录"))
 	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].detail != want || view.errorText != "" || view.lfolder.path != dir {
 		t.Fatalf("local path failure: notices=%+v, path=%q, inline error=%q", state.fileNotices.items, view.lfolder.path, view.errorText)
@@ -262,10 +262,10 @@ func TestSFTPPathDoesNotNavigateOnRepeatsModifiersOrIMEConfirmation(t *testing.T
 		{Target: hitSFTPPath, Key: gfx.KeyEnter, Repeat: true},
 		{Target: hitSFTPPath, Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift},
 	} {
-		state.Key(event)
+		windowKeyRoutes(state, event)
 	}
 	editor.SetMarkedText("目录", text.Range{Start: 0, End: 2})
-	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
+	windowKeyRoutes(state, gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	if view.busy || view.path != "/home/test" || remote.readCount("/home/test/docs") != before {
 		t.Fatal("an uncommitted input started navigation")
 	}
@@ -303,7 +303,7 @@ func TestSFTPPathShortcutOpensTemporaryEditorWithoutChangingPreference(t *testin
 		t.Fatalf("remote temporary draft=%q editing=%v", state.EditorFor(hitSFTPPath).String(), view.sftpFolder.pathEditing)
 	}
 	state.tooltip.Dismiss()
-	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEscape})
+	windowKeyRoutes(state, gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEscape})
 	if view.sftpFolder.pathEditing || state.EditorFor(hitSFTPPath) != nil || view.sftpFolder.pathInput().String() != view.path {
 		t.Fatalf("Escape left editing=%v value=%q", view.sftpFolder.pathEditing, view.sftpFolder.pathInput().String())
 	}
@@ -363,7 +363,7 @@ func TestSFTPPathTemporaryEditorExitsOnSuccessAndKeepsFailedDraft(t *testing.T) 
 	view := session.files
 	state.startSFTPPathEditing(view)
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("docs")
-	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
+	windowKeyRoutes(state, gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
 	if view.sftpFolder.pathEditing || state.EditorFor(hitSFTPPath) != nil {
 		t.Fatal("successful remote navigation kept temporary editing open")
@@ -374,7 +374,7 @@ func TestSFTPPathTemporaryEditorExitsOnSuccessAndKeepsFailedDraft(t *testing.T) 
 	view.worker = sftpclient.NewWorker(func() (sftpclient.Remote, error) { return pathErrorRemote{remote, os.ErrNotExist}, nil }, nil)
 	state.startSFTPPathEditing(view)
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("/home/test/missing")
-	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
+	windowKeyRoutes(state, gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy })
 	if !view.sftpFolder.pathEditing || state.EditorFor(hitSFTPPath).String() != "/home/test/missing" || view.path != "/home/test/docs" {
 		t.Fatalf("failed remote path editing=%v draft=%q path=%q", view.sftpFolder.pathEditing, state.EditorFor(hitSFTPPath).String(), view.path)
@@ -384,13 +384,13 @@ func TestSFTPPathTemporaryEditorExitsOnSuccessAndKeepsFailedDraft(t *testing.T) 
 	openLocalPane(t, state, session, dir)
 	state.startSFTPPathEditing(view)
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("photos")
-	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
+	windowKeyRoutes(state, gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	if view.lfolder.pathEditing || view.lfolder.path != filepath.Join(dir, "photos") {
 		t.Fatalf("successful local path editing=%v path=%q", view.lfolder.pathEditing, view.lfolder.path)
 	}
 	state.startSFTPPathEditing(view)
 	*state.EditorFor(hitSFTPPath) = *text.NewEditor("missing")
-	state.Key(gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
+	windowKeyRoutes(state, gfx.KeyEvent{Target: hitSFTPPath, Key: gfx.KeyEnter})
 	if !view.lfolder.pathEditing || state.EditorFor(hitSFTPPath).String() != "missing" || view.lfolder.path != filepath.Join(dir, "photos") {
 		t.Fatalf("failed local path editing=%v draft=%q path=%q", view.lfolder.pathEditing, state.EditorFor(hitSFTPPath).String(), view.lfolder.path)
 	}

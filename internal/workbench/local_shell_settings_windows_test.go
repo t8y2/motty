@@ -98,9 +98,30 @@ func TestLocalShellDropdownKeyboardDismissAndRefresh(t *testing.T) {
 	}
 	state.Click(hitSettingsLocalShell)
 	paintShellSettings(state)
-	result = state.Key(gfx.KeyEvent{Target: hitSettingsLocalShellItems.At(0), Key: gfx.KeyTab})
-	if !result.ContinueTraversal || state.localShellMenu.open {
-		t.Fatal("Tab did not dismiss the dropdown")
+	// Make PowerShell the default first, then close the eye on CMD: a hidden
+	// shell cannot become the default, so its row goes inert.
+	state.Click(hitSettingsLocalShellItems.At(1))
+	if state.localShell != choices[1].Path || state.localShellMenu.open {
+		t.Fatal("choosing PowerShell did not save and close")
+	}
+	state.Click(hitSettingsLocalShell)
+	paintShellSettings(state)
+	state.Click(hitSettingsShellEyes.At(0))
+	paintShellSettings(state)
+	if !state.shellHidden(choices[0]) {
+		t.Fatal("the eye did not hide CMD")
+	}
+	state.Click(hitSettingsLocalShellItems.At(0))
+	if state.localShell == choices[0].Path || !state.localShellMenu.open {
+		t.Fatal("a hidden shell became the default or closed the dropdown")
+	}
+	state.Click(hitSettingsShellEyes.At(0))
+	if state.shellHidden(choices[0]) {
+		t.Fatal("the eye did not show CMD again")
+	}
+	state.Click(hitSettingsLocalShellDismiss)
+	if state.localShellMenu.open {
+		t.Fatal("the dismiss did not close the dropdown")
 	}
 	paintShellSettings(state)
 	result = state.Key(gfx.KeyEvent{Target: hitSettingsLocalShell, Text: "w"})

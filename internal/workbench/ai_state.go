@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/attach"
@@ -167,10 +166,7 @@ type aiState struct {
 	confirm     text.Editor // the word a critical action asks to be typed
 	run         *aiRun
 	approvals   []*aiApproval
-	// scroll is the conversation's scroll policy: it keeps the newest row in view
-	// while the reader is at the end and leaves a reader who scrolled up alone.
-	scroll components.MessageScrollState
-	notice string // why the last send did nothing
+	notice      string // why the last send did nothing
 
 	// lastUsage is the token accounting of the finished run, totalUsage the
 	// running sum over this conversation while the window is open. The
@@ -220,8 +216,7 @@ func (state *State) initAI() {
 	state.ai.inbox = &aiInbox{}
 	state.ai.backend = &aiBackend{state: state}
 	state.ai.settings = defaultAISettings()
-	state.ai.scroll = components.MessageScrollState{AutoScroll: true}
-	state.ai.scroll.ScrollToEnd()
+	state.ai.panel.scrollToEnd = true
 }
 
 func (state *State) closeAI() {
@@ -815,7 +810,7 @@ func (state *State) aiSend() bool {
 		state.aiAppendQuestion(question, targetKey, state.aiConversationTargetLabel(target, extras...))
 		ai.items[len(ai.items)-1].attachments = refs
 	}
-	ai.scroll.ScrollToEnd()
+	state.aiMessagesToEnd()
 
 	config := agent.Config{
 		Provider:          state.aiProvider(provider),
@@ -995,7 +990,7 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 			}
 		}
 		ai.approvals = append(ai.approvals, &aiApproval{request: request, escalation: true})
-		ai.scroll.ScrollToEnd()
+		state.aiMessagesToEnd()
 	case agent.EventDone:
 		if llm.StopsAtLimit(event.StopReason) {
 			// Half an answer must not look like the whole of it.
@@ -1195,7 +1190,7 @@ func (state *State) aiNewConversation() {
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
 	ai.lastRun = nil
 	ai.pendingRun = nil
-	ai.scroll.ScrollToEnd()
+	state.aiPanelResetMessages()
 	ai.panel.clearAITextSelection()
 }
 
@@ -1225,7 +1220,7 @@ func (state *State) aiOpenConversation(id int64) {
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
 	ai.lastRun = nil
 	ai.pendingRun = nil
-	ai.scroll.ScrollToEnd()
+	state.aiPanelResetMessages()
 	ai.panel.clearAITextSelection()
 	for _, row := range stored {
 		var metadata storedTools

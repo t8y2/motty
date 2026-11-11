@@ -165,7 +165,7 @@ func TestAIProbeDialogChoicesMoveWithArrowKeys(t *testing.T) {
 	state := world.state
 	state.Click(hitAISetModelProbeAll)
 	current := settingsChoiceHit(t, state, "4")
-	result := state.Key(gfx.KeyEvent{Target: current.ID, Key: gfx.KeyRight})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: current.ID, Key: gfx.KeyRight})
 	if !result.Handled || !result.FocusVisible || result.Focus.IsZero() || result.Activate != result.Focus {
 		t.Fatalf("Right in the concurrency choice = %+v", result)
 	}

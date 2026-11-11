@@ -116,7 +116,7 @@ func TestSFTPColumnOrderAppliesToSidebarAndDetachedWindow(t *testing.T) {
 
 	w := &sftpWindow{owner: state, session: *session, view: session.files}
 	canvas = gfx.Canvas{}
-	w.paintPane(&canvas, gfx.Rect{Width: 600, Height: 500}, false)
+	w.paint(&canvas, gfx.Size{Width: 600, Height: 500})
 	sizeHeader, sizeOK = hitByID(&canvas, sftpWindowSortHits[1].At(int(sftpColumnSize)))
 	modifiedHeader, modifiedOK = hitByID(&canvas, sftpWindowSortHits[1].At(int(sftpColumnModified)))
 	if !sizeOK || !modifiedOK || modifiedHeader.Bounds.X >= sizeHeader.Bounds.X {
@@ -226,7 +226,9 @@ func TestSFTPWindowColumnVisibilityMatchesSidebarSettings(t *testing.T) {
 
 	paint := func() (*gfx.Canvas, map[string]bool) {
 		var canvas gfx.Canvas
-		w.paintPane(&canvas, gfx.Rect{Width: 600, Height: 500}, false)
+		// Wide enough for both split panes to show the full modified time; the
+		// columns being checked are the window's, not the compact pane's.
+		w.paint(&canvas, gfx.Size{Width: 1200, Height: 500})
 		texts := make(map[string]bool)
 		for _, text := range canvas.Texts() {
 			texts[text.Value] = true

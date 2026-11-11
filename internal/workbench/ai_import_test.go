@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
 )
@@ -231,9 +232,10 @@ func TestAISettingsImportPreviewListsEveryCandidateAndWritesNothingWhenEmpty(t *
 	} else if scroll := state.aiImportListScroll(); scroll == nil || scroll.Max() <= 0 {
 		t.Fatal("the preview list does not scroll when it is taller than its viewport")
 	} else {
-		// The terminal's scroll dispatcher hands the wheel to the import page
-		// while the preview is open; this is that route.
-		state.aiImportWheel(gfx.ScrollEvent{X: hit.Bounds.X + 20, Y: hit.Bounds.Y + 20, DeltaY: 120, Precise: true})
+		// WindowConfig's wheel route scrolls the page's candidate list, as the
+		// terminal's scroll dispatcher does for the window.
+		config := state.WindowConfig(app.Config{OnScroll: state.Scroll})
+		config.OnScroll(gfx.ScrollEvent{X: hit.Bounds.X + 20, Y: hit.Bounds.Y + 20, DeltaY: 120, Precise: true})
 		if scroll.Offset == 0 {
 			t.Fatal("the wheel over the preview list did not scroll it")
 		}
@@ -259,7 +261,7 @@ func TestAISettingsImportPreviewListsEveryCandidateAndWritesNothingWhenEmpty(t *
 		t.Fatalf("selection after clearing = %d", got)
 	}
 	canvas, _ = world.paint()
-	if hit, ok := hitByID(canvas, hitAISetImportApply); !ok || !hit.Disabled {
+	if hit, ok := hitByLabel(canvas, state.messages.AISettings.ImportApply); !ok || !hit.Disabled {
 		t.Fatalf("Import with an empty selection = %+v, ok=%v", hit, ok)
 	}
 	world.state.Click(hitAISetImportApply)
@@ -628,7 +630,7 @@ func TestAISettingsImportReportsAProviderSavedWithoutItsKey(t *testing.T) {
 // controls are wired after the list moved into the import page: a real press on
 // a candidate's checkbox toggles the selection, and the page's wheel route moves
 // the list. The terminal's dispatcher hands that route the wheel while the
-// preview is open (aiImportWheel, see State.Scroll).
+// preview is open (see State.Scroll).
 func TestAISettingsImportPreviewTakesRealPointerAndWheel(t *testing.T) {
 	var candidates []aiproviderimport.Candidate
 	for index := 0; index < 14; index++ {
@@ -650,10 +652,10 @@ func TestAISettingsImportPreviewTakesRealPointerAndWheel(t *testing.T) {
 	state := world.state
 	importOpen(t, world)
 	importPreview(t, world, 0)
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnResize: state.Resize,
 		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll,
-	}, nil, headless.Options{})
+	}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -699,5 +701,34 @@ func TestAISettingsImportPreviewTakesRealPointerAndWheel(t *testing.T) {
 	}
 	if got := state.aiImportSelectedCount(); got != before-1 {
 		t.Fatalf("scrolling changed the selection: %d selected, want %d", got, before-1)
+	}
+}
+
+// TestAIImportDialogReadsItsButtonsInThePage draws the source step of the
+// provider import as the window page declares it and presses Preview and Apply
+// in the event pass, the route the runtime takes.
+func TestAIImportDialogReadsItsButtonsInThePage(t *testing.T) {
+	candidates := []aiproviderimport.Candidate{
+		importCandidate("Page import", store.KindAnthropic, "https://relay.example.com", "", "m2", "m1"),
+	}
+	world := newSettingsWorldWith(t, newLister(), func(options *Options) {
+		options.AIProviderScan = func() []aiproviderimport.SourceInfo {
+			return []aiproviderimport.SourceInfo{importSource(aiproviderimport.ToolCCSwitch, "/tmp/cc-switch.db", candidates...)}
+		}
+	})
+	state := world.state
+	importOpen(t, world)
+	view := func(c ui.C) { state.declareAIDialogs(c) }
+	page, canvas := drawDialogPage(t, state, view)
+	preview := pageHitByLabel(t, canvas, state.messages.AISettings.ImportPreview)
+	clickPageHit(t, state, page, canvas, view, preview)
+	if state.ai.cfg.importStep != aiImportPreview {
+		t.Fatalf("step after the page's Preview = %d", state.ai.cfg.importStep)
+	}
+	page, canvas = drawDialogPage(t, state, view)
+	apply := pageHitByLabel(t, canvas, state.messages.AISettings.ImportApply)
+	clickPageHit(t, state, page, canvas, view, apply)
+	if len(state.ai.providers) != 1 || state.ai.cfg.importStep != aiImportDone {
+		t.Fatalf("the page's Apply wrote %d providers, step %d", len(state.ai.providers), state.ai.cfg.importStep)
 	}
 }

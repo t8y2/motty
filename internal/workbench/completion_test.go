@@ -88,6 +88,27 @@ func TestCompletionListInsertsOnlyTheSuffix(t *testing.T) {
 	}
 }
 
+// The window's Config routes a terminal key through the application's own key
+// order before the terminal encodes it, so the completion list still takes
+// Enter. Declaring the terminal control with the terminal's encoder instead
+// would send the key to the shell and execute the line.
+func TestWindowConfigKeepsCompletionBeforeTheTerminal(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.type_("git s")
+	w.state.openCompletions()
+	// Paint once so the page has declared the terminal control Config routes.
+	var canvas gfx.Canvas
+	w.state.Paint(&canvas, gfx.Size{Width: 1200, Height: 700})
+	before := w.shell.typed()
+	windowKeyRoutes(w.state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: terminalHit(w.state, 0)})
+	if got := w.shell.typed(); got != before+"tage" {
+		t.Fatalf("typed %q, want %q", got, before+"tage")
+	}
+	if strings.ContainsAny(w.shell.typed(), "\r\n") {
+		t.Fatal("the key reached the shell instead of the completion list")
+	}
+}
+
 func TestCompletionKeysCloseOrMoveWithoutTyping(t *testing.T) {
 	w := newCompletionWorld(t)
 	w.type_("git s")

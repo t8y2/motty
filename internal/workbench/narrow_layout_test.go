@@ -13,8 +13,7 @@ func TestKnownHostsToolbarStaysInsideANarrowWindow(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitKnownHosts)
 	var canvas gfx.Canvas
-	canvas.SetTree(Tree())
-	state.paintKnownHostsWorkspace(&canvas, gfx.Rect{X: 220, Y: 40, Width: 420, Height: 380})
+	state.Paint(&canvas, gfx.Size{Width: 640, Height: 500})
 	hit, _ := hitByID(&canvas, hitKnownHostsDelete)
 	if hit.Bounds.X+hit.Bounds.Width > 640 {
 		t.Fatalf("Delete ends at %v, outside the 640 wide window", hit.Bounds.X+hit.Bounds.Width)

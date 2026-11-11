@@ -130,11 +130,13 @@ func (w *sftpWindow) startBrowser() {
 
 func (w *sftpWindow) config() app.Config {
 	base := app.Config{Title: w.owner.messages.SFTPWindow.Title + " — " + w.session.Title + " · " + w.session.Address, Icon: AppIcon(), Width: 1200, Height: 800, MinWidth: sftpWindowMinWidth, MinHeight: sftpWindowMinHeight, Tree: Tree(), Paint: w.paint, OnWake: w.wake, OnPointer: w.pointer, OnKey: w.key, OnShortcut: w.shortcut, OnScroll: w.scroll, OnFileDrop: w.fileDrop, TextInput: w.textInput, OnCloseRequest: w.requestClose, OnClosed: w.onClosed}
-	// The window's page routes its own chrome; the panes and the connecting
-	// state are pages painted into it, and the window's Paint also paints the
-	// toolbar controls, dialogs and transfer queue the page only lays out.
+	// The window's page routes its chrome, its panes' Lists and its connecting
+	// state. The window keeps Paint (it also paints the toolbar controls, dialogs
+	// and transfer queue the page only lays out) and OnScroll (a wheel notch moves
+	// whole rows, and the window hands the offset to each List).
 	config := w.windowPage().Config(base)
 	config.Paint = base.Paint
+	config.OnScroll = base.OnScroll
 	return config
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/linkwatch"
 	"motty/internal/localshell"
 )
 
@@ -36,6 +37,11 @@ func newTestState(t testing.TB, options Options) *State {
 	}
 	if options.WatchSystemAppearance == nil {
 		options.WatchSystemAppearance = func(func()) func() { return func() {} }
+	}
+	if options.WatchNetworkChanges == nil {
+		// A test never polls the machine's interfaces: the path a test walks is
+		// the one it reports by hand.
+		options.WatchNetworkChanges = func(func(linkwatch.Change)) func() { return func() {} }
 	}
 	if options.SetInterfaceFont == nil {
 		// Nor may a test change the process's interface font, or read the fonts of

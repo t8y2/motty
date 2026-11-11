@@ -123,27 +123,29 @@ func clipboardPreview(text string) string {
 	return strconv.QuoteToGraphic(text)
 }
 
-func (state *State) paintRemoteClipboardDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareRemoteClipboardDialog(c ui.C) {
 	messages, palette := state.messages, state.pal
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitClipboardDismiss, CloseID: hitClipboardClose, InitialFocusID: hitClipboardCancel,
-		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: 66, // the preview box
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, state.clipboardRequest.description, 66) // the preview box
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: messages.ClipboardRequestTitle, Description: state.clipboardRequest.description,
+		Width: 560, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitClipboardDismiss, CloseID: hitClipboardClose, InitialFocusID: hitClipboardCancel,
 	})
-	layout := dialog.Begin(messages.ClipboardRequestTitle, state.clipboardRequest.description)
-	// The text the program wants to copy, in a box of its own.
-	f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() {
-		f.Row().Height(58).Shrink(0).Items(ui.Center).PadX(11).MarginSides(8, 0, 0, 0).
-			Border(1, palette.line).Background(palette.surface).Radius(radius.control).Children(func() {
-			f.Text(state.clipboardRequest.preview).FontSize(metrics.FontSizeS).Color(palette.text)
+	dialog.Body(func() {
+		// The text the program wants to copy, in a box of its own.
+		ui.Column(c).Fill().Children(func() {
+			ui.Row(c).Height(58).Shrink(0).Items(ui.Center).PadX(11).MarginSides(8, 0, 0, 0).
+				Border(1, palette.line).Background(palette.surface).Radius(radius.control).Children(func() {
+				ui.Text(c, state.clipboardRequest.preview).FontSize(metrics.FontSizeS).Color(palette.text)
+			})
 		})
 	})
-	f.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitClipboardCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitClipboardAlways, Label: messages.ClipboardAlwaysAllow, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitClipboardAllow, Label: messages.ClipboardAllowOnce},
-	)
-	dialog.End()
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitClipboardCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitClipboardAlways, Label: messages.ClipboardAlwaysAllow, Variant: components.ButtonOutline},
+			components.ButtonAction{ID: hitClipboardAllow, Label: messages.ClipboardAllowOnce},
+		)
+	})
 }

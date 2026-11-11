@@ -60,10 +60,6 @@ const (
 	sftpDialogBrowseCreateDirectory
 )
 
-// sftpDialogBodyRoot names the page a file dialog's body is declared in. One
-// body page serves every kind of dialog, since only one is open at a time.
-const sftpDialogBodyRoot = "sftp-dialog-body"
-
 // sftpDialogShowsField reports whether the dialog edits a field: a folder, a
 // name, a destination, an octal mode or a link.
 func sftpDialogShowsField(kind sftpDialogKind) bool {
@@ -168,11 +164,19 @@ type sftpView struct {
 	dialog             sftpDialogKind
 	dialogEditor       text.Editor
 	dialogEditor2      text.Editor
-	// dialogPage declares the dialog's body; dialogView is its declaration,
-	// made once for the view. The boxes are where that body laid out the parts
-	// painted by hand: the one or two fields and the permission grid.
-	dialogPage            *ui.Page
-	dialogView            func(ui.C)
+	// dialogFieldLabel is the field title the open dialog's body declared; the
+	// window paints the field under it after the body, inside the dialog's focus
+	// scope. dialogDraw is that paint, kept once so a repaint makes no closure.
+	// The footer's labels and draw are kept the same way: the dialog can stand
+	// beside an application modal, so it does not share the window's footer
+	// scratch. The boxes are where that body laid out the parts painted by hand:
+	// the one or two fields and the permission grid.
+	dialogFieldLabel      string
+	dialogDraw            func(*ui.DrawContext)
+	dialogCancelLabel     string
+	dialogSubmitLabel     string
+	dialogSubmitVariant   components.ButtonVariant
+	dialogFooterDraw      func(*ui.DrawContext)
 	dialogFirst           ui.Box
 	dialogSecond          ui.Box
 	dialogChmod           [9]ui.Box
@@ -1949,16 +1953,10 @@ func (state *State) scrollSFTP(view *sftpView, event gfx.ScrollEvent) gfx.EventR
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	folder := view.active()
-	// The List owns the offset and is part of the workbench page now, so the
-	// page finds it under the pointer with the event's own coordinates. One over
-	// the panel's other chrome still scrolls the List, as it did before the List
-	// existed.
-	if page := state.chrome.windowPage; page != nil {
-		if result := page.Wheel(event); result.Handled || result.Repaint {
-			state.syncSFTPListOffset(folder)
-			return result
-		}
-	}
+	// The List owns the offset and is part of the workbench page: WindowConfig's
+	// wheel routing finds it under the pointer with the event's own coordinates.
+	// One over the panel's other chrome still scrolls the List, as it did before
+	// the List existed.
 	if scroll := folder.listScroll; scroll != nil && len(folder.shownRows()) > folder.visibleRows {
 		result := scroll.Wheel(event)
 		state.syncSFTPListOffset(folder)
@@ -2028,9 +2026,6 @@ func (state *State) fitSFTP(size gfx.Size) {
 
 func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if result, handled := state.sftpListActivateKey(event); handled {
-		return result, true
-	}
-	if result, handled := state.contextPanelKey(event); handled {
 		return result, true
 	}
 	if result, handled := state.sftpPlacesKey(event); handled {

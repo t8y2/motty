@@ -30,10 +30,15 @@ type toolbarSettingsUI struct {
 	scrollDrag   bool
 	thumbOffset  float32
 	handleLabels []string
-	// sizePage declares the terminal toolbar's size switch, and sizeView caches
-	// its view.
-	sizePage *ui.Page
-	sizeView func(ui.C)
+	// body and footer declare the dialog's parts, and current is the C they
+	// declare with. They are made once, when the editor opens, so a paint does
+	// not allocate them again; current is only read while the page declares.
+	body, footer          func()
+	current               ui.C
+	listDraw              func(*ui.DrawContext)
+	footerDraw            func(*ui.DrawContext)
+	bodyWidth, listHeight float32
+	controlsHeight        float32
 }
 
 func (state *State) toolbarGroupName(group toolbarGroup) string {
@@ -79,9 +84,14 @@ func (state *State) paintToolbarSettingsRows(page *settingsPage) {
 }
 
 func (state *State) openToolbarSettings(group toolbarGroup) {
-	state.toolbarEditor = toolbarSettingsUI{group: group, handleLabels: make([]string, len(toolbarCatalog[group]))}
+	editor := &state.toolbarEditor
+	*editor = toolbarSettingsUI{group: group, handleLabels: make([]string, len(toolbarCatalog[group]))}
+	editor.body = func() { state.declareToolbarSettingsBody(editor.current) }
+	editor.footer = func() { state.declareToolbarSettingsFooter(editor.current) }
+	editor.listDraw = state.drawToolbarSettingsList
+	editor.footerDraw = state.drawToolbarSettingsFooter
 	for i, spec := range toolbarCatalog[group] {
-		state.toolbarEditor.handleLabels[i] = fmt.Sprintf(state.messages.Toolbars.DragFmt, state.toolbarLabel(spec.id))
+		editor.handleLabels[i] = fmt.Sprintf(state.messages.Toolbars.DragFmt, state.toolbarLabel(spec.id))
 	}
 	state.modal = modalToolbarSettings
 }
@@ -222,12 +232,7 @@ func (state *State) toolbarSettingsKey(event gfx.KeyEvent) gfx.EventResult {
 	if state.modal != modalToolbarSettings {
 		return gfx.EventResult{}
 	}
-	if state.toolbarEditor.sizePage != nil {
-		// The size switch is a page Choice: its arrows are the page's.
-		if result, handled := state.toolbarEditor.sizePage.Key(event); handled {
-			return result
-		}
-	}
+	// The size switch is a page Choice: WindowConfig routes its arrows.
 	move, result := state.toolbarEditor.list.Key(event)
 	if result.Handled {
 		state.moveToolbarEntry(move)
@@ -250,9 +255,6 @@ func (state *State) toolbarSettingsScroll(event gfx.ScrollEvent) gfx.EventResult
 	return gfx.EventResult{Handled: true, Repaint: before != editor.scroll}
 }
 
-// toolbarSizeRoot names the terminal toolbar's size switch in the window's Tree.
-const toolbarSizeRoot = "toolbar-size"
-
 // toolbarSizeChoices are the three sizes the switch offers.
 var toolbarSizeChoices = [...]terminalToolbarSize{terminalToolbarSmall, terminalToolbarMedium, terminalToolbarLarge}
 
@@ -266,47 +268,87 @@ func (state *State) toolbarSizeLabel(size terminalToolbarSize) string {
 	return state.messages.SettingsToolbarSizeSmall
 }
 
-// drawToolbarSize paints the terminal toolbar's size switch in its slot. It is a
-// page Choice, so its arrows move between the options.
-func (state *State) drawToolbarSize(canvas *gfx.Canvas, bounds gfx.Rect) {
-	editor := &state.toolbarEditor
-	if editor.sizePage == nil {
-		editor.sizePage = ui.NewPage(ui.PageConfig{Root: toolbarSizeRoot, Theme: &state.theme})
-		editor.sizeView = state.declareToolbarSize
-	}
-	editor.sizePage.Draw(canvas, bounds, editor.sizeView)
-}
-
-func (state *State) declareToolbarSize(c ui.C) {
-	if ui.Choice(c, &state.terminalToolbarSize, toolbarSizeChoices[:], state.toolbarSizeLabel).Fill().Changed() {
+// declareToolbarSize declares the terminal toolbar's size switch in the dialog
+// body. It is a page Choice, so its arrows move between the options.
+func (state *State) declareToolbarSize(c ui.C, bodyWidth float32) {
+	theme := c.Theme()
+	labelWidth := min(200, bodyWidth/2)
+	ui.Text(c, state.messages.SettingsToolbarSize).Width(labelWidth).FontSize(theme.Metrics.FontSizeM).Color(theme.MutedForeground).Ellipsis()
+	if ui.Choice(c, &state.terminalToolbarSize, toolbarSizeChoices[:], state.toolbarSizeLabel).Grow(1).Height(32).Changed() {
 		state.applyTerminalToolbarSize()
 	}
 }
 
-func (state *State) paintToolbarSettings(canvas *gfx.Canvas, viewport gfx.Rect) {
-	editor, m, theme := &state.toolbarEditor, state.messages.Toolbars, state.Theme()
+// declareToolbarSettings declares the toolbar editor as a dialog of the
+// workbench page: the size switch is a page Choice and the reorder list is
+// painted into the room the page leaves for it.
+func (state *State) declareToolbarSettings(c ui.C) {
+	if state.modal != modalToolbarSettings {
+		return
+	}
+	editor, m := &state.toolbarEditor, state.messages.Toolbars
 	entries := state.toolbars.entries(editor.group)
-	height := float32(len(entries))*48 - 4
-	controlsHeight := float32(0)
+	editor.listHeight = float32(len(entries))*48 - 4
+	editor.controlsHeight = 0
 	if editor.group == toolbarTerminal {
-		controlsHeight = 48
+		editor.controlsHeight = 48
 	}
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitToolbarSettingsDismiss, CloseID: hitToolbarSettingsClose,
-		ContentSize: gfx.Size{Width: 560}, FitBody: true, BodyHeight: min(height+controlsHeight, max(viewport.Height-250, 96)),
+	viewport := dialogViewport(c)
+	bodyHeight := min(editor.listHeight+editor.controlsHeight, max(viewport.Height-250, 96))
+	theme := *c.Theme()
+	surfaceHeight := dialogContentHeight(c.Canvas(), theme, viewport, 560, m.Hint, bodyHeight)
+	layout := dialogContentRect(c.Canvas(), theme, viewport, 560, m.Hint, bodyHeight)
+	editor.bodyWidth = layout.Body.Width
+	editor.current = c
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: state.toolbarGroupName(editor.group), Description: m.Hint,
+		Width: 560, Height: surfaceHeight, Layer: dialogLayer, Scope: dialogScope,
+		DismissID: hitToolbarSettingsDismiss, CloseID: hitToolbarSettingsClose,
 	})
-	layout := dialog.Begin(state.toolbarGroupName(editor.group), m.Hint)
-	body := layout.Body
+	dialog.Body(editor.body)
+	dialog.Footer(editor.footer)
+}
+
+// declareToolbarSettingsBody declares the dialog's body: the terminal size
+// switch over the room the reorder list is painted into.
+func (state *State) declareToolbarSettingsBody(c ui.C) {
+	editor := &state.toolbarEditor
 	if editor.group == toolbarTerminal {
-		label := gfx.Rect{X: body.X, Y: body.Y, Width: min(200, body.Width/2), Height: 32}
-		canvas.Label(canvas.FitLine(state.messages.SettingsToolbarSize, theme.Metrics.FontSizeM, gfx.WeightRegular, label.Width), label, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.MutedForeground})
-		state.drawToolbarSize(canvas, gfx.Rect{
-			X: label.X + label.Width + 12, Y: body.Y, Width: max(body.Width-label.Width-12, 0), Height: 32,
+		ui.Row(c).Height(editor.controlsHeight).Shrink(0).Gap(12).Items(ui.Center).Children(func() {
+			state.declareToolbarSize(c, editor.bodyWidth)
 		})
-		body.Y += controlsHeight
-		body.Height = max(body.Height-controlsHeight, 0)
 	}
-	area := components.BeginScrollArea(canvas, theme, body, gfx.Size{Width: body.Width, Height: height}).Offset(0, editor.scroll).VerticalScrollbar(hitToolbarScroll, "", "")
+	ui.Slot(c).Grow(1).DrawOver(editor.listDraw)
+}
+
+// declareToolbarSettingsFooter declares the footer the actions are painted into.
+func (state *State) declareToolbarSettingsFooter(c ui.C) {
+	ui.Slot(c).Fill().DrawOver(state.toolbarEditor.footerDraw)
+}
+
+// drawToolbarSettingsList paints the reorder list the dialog body leaves room
+// for: its rows, dock positions and switches, and its scroll bar.
+func (state *State) drawToolbarSettingsList(d *ui.DrawContext) {
+	state.paintToolbarSettingsList(d.Canvas, d.Rect, state.toolbarEditor.listHeight)
+}
+
+// drawToolbarSettingsFooter paints the dialog's actions into the footer slot.
+func (state *State) drawToolbarSettingsFooter(d *ui.DrawContext) {
+	m := state.messages.Toolbars
+	components.BeginButtonRow(d.Canvas, *d.Theme, d.Rect).Size(components.ButtonSizeDefault).Paint(
+		components.ButtonAction{ID: hitToolbarEnableAll, Label: m.EnableAll, Variant: components.ButtonOutline},
+		components.ButtonAction{ID: hitToolbarDisableAll, Label: m.DisableAll, Variant: components.ButtonOutline},
+		components.ButtonAction{ID: hitToolbarReset, Label: m.Reset, Variant: components.ButtonOutline},
+		components.ButtonAction{ID: hitToolbarSettingsClose, Label: m.Close, Variant: components.ButtonSecondary},
+	)
+}
+
+// paintToolbarSettingsList paints the reorder list the dialog body leaves room
+// for: its rows, dock positions and switches, and its scroll bar.
+func (state *State) paintToolbarSettingsList(canvas *gfx.Canvas, body gfx.Rect, contentHeight float32) {
+	editor, theme := &state.toolbarEditor, state.Theme()
+	entries := state.toolbars.entries(editor.group)
+	area := components.BeginScrollArea(canvas, theme, body, gfx.Size{Width: body.Width, Height: contentHeight}).Offset(0, editor.scroll).VerticalScrollbar(hitToolbarScroll, "", "")
 	geometry := area.BeginContent()
 	editor.geometry, editor.scroll = geometry, geometry.OffsetY
 	bounds := geometry.Content
@@ -345,11 +387,4 @@ func (state *State) paintToolbarSettings(canvas *gfx.Canvas, viewport gfx.Rect) 
 	}
 	list.End()
 	area.EndContent()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitToolbarEnableAll, Label: m.EnableAll, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitToolbarDisableAll, Label: m.DisableAll, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitToolbarReset, Label: m.Reset, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitToolbarSettingsClose, Label: m.Close, Variant: components.ButtonSecondary},
-	)
-	dialog.End()
 }

@@ -7,11 +7,11 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
 )
 
 var (
-	hitRemoteProcessMenuDismiss     = tree.ID(remoteToolsHits, "remote-process-menu-dismiss")
 	hitRemoteProcessMenuView        = tree.ID(remoteToolsHits, "remote-process-menu-view")
 	hitRemoteProcessMenuCopyPID     = tree.ID(remoteToolsHits, "remote-process-menu-copy-pid")
 	hitRemoteProcessMenuCopyUser    = tree.ID(remoteToolsHits, "remote-process-menu-copy-user")
@@ -52,12 +52,6 @@ type remoteProcessDetails struct {
 	text               remoteDetailText
 }
 
-type remoteProcessMenu struct {
-	open bool
-	key  string
-	at   gfx.Point
-}
-
 func (state *State) remoteProcessByKey(key string) (remotetools.Process, bool) {
 	for _, process := range state.remote.procs {
 		if remotetools.ProcessKey(process) == key {
@@ -68,7 +62,6 @@ func (state *State) remoteProcessByKey(key string) (remotetools.Process, bool) {
 }
 
 func (state *State) openRemoteProcessDetails(process remotetools.Process) {
-	state.remote.processMenu = remoteProcessMenu{}
 	state.cancelRemoteProcessEnvironment()
 	state.cancelRemoteProcessCommand()
 	state.remote.processDetailsSerial++
@@ -114,49 +107,52 @@ func (state *State) selectRemoteProcessDetailTab(tab gfx.ID) {
 	}
 }
 
-// openRemoteProcessMenuOn runs while a process row is painted. A secondary
-// press selects the row and opens the same fixed action menu in the main window
-// and in a native remote-tools window.
-func (state *State) openRemoteProcessMenuOn(canvas *gfx.Canvas, id gfx.ID, index int) {
-	event, ok := canvas.PointerOn(id)
-	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary ||
-		!state.remoteToolsVisible() || state.remote.processDetails.open {
-		return
+// declareRemoteProcessMenuItems declares the process context menu: the row the
+// table last selected, and the same actions the process buttons offer. The
+// tools window and the workbench modal share it; each supplies how an action is
+// run and how it is deferred past the paint.
+func (state *State) declareRemoteProcessMenuItems(menu *ui.MenuItems, after func(func()), act func(gfx.ID)) {
+	m := state.messages.Tools
+	process, found := state.selectedProcess()
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
+	blocked := !found || state.remoteProcessActionsBlocked(process)
+	run := func(fn func()) {
+		if after != nil {
+			after(fn)
+			return
+		}
+		fn()
 	}
-	if index < 0 || index >= len(state.remote.rows) {
-		return
+	if menu.Item(m.RemoteProcessDetails).Icon(icon(iconInfo)).Disabled(!found).Clicked() && found {
+		run(func() { state.openRemoteProcessDetails(process) })
 	}
-	row := &state.remote.rows[index]
-	state.remote.selected = row.key
-	state.remote.processMenu = remoteProcessMenu{
-		open: true, key: row.key, at: gfx.Point{X: event.X, Y: event.Y},
+	if menu.Item(m.RemoteProcessCopyPID).Icon(icon(iconCopy)).Disabled(!found).Clicked() && found {
+		run(func() { state.copyRemoteProcessValue(fmt.Sprint(process.PID)) })
 	}
-	canvas.Consume()
-}
-
-func (state *State) clickRemoteProcessDetails(id gfx.ID) bool {
-	details := &state.remote.processDetails
-	if !details.open {
-		return false
+	if menu.Item(m.RemoteProcessCopyUser).Icon(icon(iconCopy)).
+		Disabled(!found || process.User == "" || process.User == "—").Clicked() && found {
+		run(func() { state.copyRemoteProcessValue(process.User) })
 	}
-	switch id {
-	case hitRemoteProcessDetailsDismiss, hitRemoteProcessDetailsClose:
-		state.closeRemoteProcessDetails()
-		return true
-	case hitRemoteProcessDetailsCommand, hitRemoteProcessDetailsEnv:
-		state.selectRemoteProcessDetailTab(id)
-		return true
-	case hitRemoteTerminate, hitRemoteKill,
-		hitRemoteNiceLower, hitRemoteNiceNormal, hitRemoteNiceHigher:
-		state.closeRemoteProcessDetails()
-		state.clickRemoteTools(id)
-		return true
-	default:
-		// Keep the detail dialog modal even for direct API calls. The window and
-		// canvas overlay already intercept pointer hits, but consuming every
-		// action here prevents stale hit IDs from reaching the obscured tools
-		// page during the paint that first opened the dialog.
-		return true
+	if menu.Item(m.RemoteProcessCopyCommand).Icon(icon(iconCopy)).
+		Disabled(!found || process.Command == "").Clicked() && found {
+		run(func() { state.copyRemoteProcessValue(process.Command) })
+	}
+	menu.Separator()
+	if menu.Item(m.RemoteTerminate).Icon(icon(iconStop)).Disabled(blocked).Clicked() && found {
+		run(func() { act(hitRemoteTerminate) })
+	}
+	if menu.Item(m.RemoteForceKill).Icon(icon(iconTrash)).Destructive().Disabled(blocked).Clicked() && found {
+		run(func() { act(hitRemoteKill) })
+	}
+	menu.Separator()
+	if menu.Item(m.RemoteReniceLower).Icon(icon(iconSliders)).Disabled(blocked).Clicked() && found {
+		run(func() { act(hitRemoteNiceLower) })
+	}
+	if menu.Item(m.RemoteReniceNormal).Icon(icon(iconSliders)).Disabled(blocked).Clicked() && found {
+		run(func() { act(hitRemoteNiceNormal) })
+	}
+	if menu.Item(m.RemoteReniceHigher).Icon(icon(iconArrowUp)).Disabled(blocked).Clicked() && found {
+		run(func() { act(hitRemoteNiceHigher) })
 	}
 }
 
@@ -173,48 +169,6 @@ func (state *State) remoteProcessDetailTab() gfx.ID {
 		return hitRemoteProcessDetailsEnv
 	}
 	return hitRemoteProcessDetailsCommand
-}
-
-func (state *State) processMenuProcess() (remotetools.Process, bool) {
-	if !state.remote.processMenu.open {
-		return remotetools.Process{}, false
-	}
-	return state.remoteProcessByKey(state.remote.processMenu.key)
-}
-
-func (state *State) clickRemoteProcessMenu(id gfx.ID) bool {
-	menu := &state.remote.processMenu
-	if !menu.open {
-		return false
-	}
-	process, found := state.processMenuProcess()
-	menu.open = false
-	if !found {
-		return true
-	}
-	switch id {
-	case hitRemoteProcessMenuDismiss:
-		return true
-	case hitRemoteProcessMenuView:
-		state.openRemoteProcessDetails(process)
-	case hitRemoteProcessMenuCopyPID:
-		state.copyRemoteProcessValue(fmt.Sprint(process.PID))
-	case hitRemoteProcessMenuCopyUser:
-		state.copyRemoteProcessValue(process.User)
-	case hitRemoteProcessMenuCopyCommand:
-		state.copyRemoteProcessValue(process.Command)
-	case hitRemoteProcessMenuTerminate:
-		state.clickRemoteTools(hitRemoteTerminate)
-	case hitRemoteProcessMenuKill:
-		state.clickRemoteTools(hitRemoteKill)
-	case hitRemoteProcessMenuNiceLower:
-		state.clickRemoteTools(hitRemoteNiceLower)
-	case hitRemoteProcessMenuNiceNormal:
-		state.clickRemoteTools(hitRemoteNiceNormal)
-	case hitRemoteProcessMenuNiceHigher:
-		state.clickRemoteTools(hitRemoteNiceHigher)
-	}
-	return true
 }
 
 func (state *State) copyRemoteProcessValue(value string) {
@@ -236,29 +190,6 @@ func (state *State) copyRemoteProcessValue(value string) {
 	}
 	view.failed = false
 	view.status = state.messages.StatusClipboardCopied
-}
-
-func (state *State) paintRemoteProcessMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
-	menu := &state.remote.processMenu
-	if !menu.open {
-		return
-	}
-	process, found := state.processMenuProcess()
-	if !found {
-		*menu = remoteProcessMenu{}
-		return
-	}
-	rows := state.remoteProcessMenuRows(process)
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	width = min(width, 480)
-	bounds := state.popupAt(canvas, viewport, menu.at, width, height, 6)
-	popup := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer + 1, Scope: dialogScope, DismissID: hitRemoteProcessMenuDismiss,
-		Viewport: viewport, Scroll: state.menuScrollFor(hitRemoteProcessMenuDismiss), RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(popup.Bounds())
-	rows.paint(&popup, nil)
-	popup.End()
 }
 
 func (state *State) remoteProcessMenuRows(process remotetools.Process) menuRows {
@@ -286,38 +217,69 @@ func (state *State) remoteProcessActionsBlocked(process remotetools.Process) boo
 		process.PID <= 1 || process.StartIdentity == ""
 }
 
-func (state *State) paintRemoteProcessDetails(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareRemoteProcessDetailsDialog declares the open process details as a
+// dialog of the page. Its body stays a painted slot: the environment table's
+// text selection is the application's. act runs an action after the detail
+// dialog has closed, as the tools window and the workbench modal each do.
+func (state *State) declareRemoteProcessDetailsDialog(c ui.C, act func(gfx.ID)) {
 	details := &state.remote.processDetails
 	if !details.open {
 		return
 	}
 	m := state.messages.Tools
-	contentWidth := min(float32(980), max(viewport.Width-32, 360))
-	bodyHeight := min(float32(620), max(viewport.Height-132, 320))
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer + 2, Scope: dialogScope,
-		DismissID: hitRemoteProcessDetailsDismiss, CloseID: hitRemoteProcessDetailsClose,
-		InitialFocusID: hitRemoteProcessDetailsClose,
-		ContentSize:    gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
-		ButtonSize: components.ButtonSizeSmall,
-	})
 	process := details.process
 	description := shortCommand(process.Command)
 	if description == "" {
 		description = fmt.Sprintf("PID %d", process.PID)
 	}
-	layout := dialog.Begin(m.RemoteProcessDetailsTitle, description)
-	state.paintRemoteProcessDetailsBody(canvas, layout.Body, process, details.collectedAt)
-	actionsBlocked := state.remoteProcessActionsBlocked(process)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitRemoteTerminate, Label: m.RemoteTerminate, Variant: components.ButtonOutline, Disabled: actionsBlocked},
-		components.ButtonAction{ID: hitRemoteKill, Label: m.RemoteForceKill, Variant: components.ButtonDestructive, Disabled: actionsBlocked},
-		components.ButtonAction{ID: hitRemoteNiceLower, Label: m.RemoteReniceLower, Variant: components.ButtonOutline, Disabled: actionsBlocked},
-		components.ButtonAction{ID: hitRemoteNiceNormal, Label: m.RemoteReniceNormal, Variant: components.ButtonOutline, Disabled: actionsBlocked},
-		components.ButtonAction{ID: hitRemoteNiceHigher, Label: m.RemoteReniceHigher, Variant: components.ButtonOutline, Disabled: actionsBlocked},
-		components.ButtonAction{ID: hitRemoteProcessDetailsClose, Label: m.RemoteClose, Variant: components.ButtonSecondary},
-	)
-	dialog.End()
+	viewport := c.Bounds()
+	contentWidth := min(float32(980), max(viewport.Width-32, 360))
+	bodyHeight := min(float32(620), max(viewport.Height-132, 320))
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), gfx.Rect{Width: viewport.Width, Height: viewport.Height}, components.DialogOptions{
+		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: bodyHeight,
+		ButtonSize: components.ButtonSizeSmall,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.RemoteProcessDetailsTitle, Description: description, Width: contentWidth,
+		Height: layout.Content.Height, Layer: dialogLayer + 2, Scope: dialogScope,
+		DismissID: hitRemoteProcessDetailsDismiss, CloseID: hitRemoteProcessDetailsClose,
+	})
+	dialog.Body(func() {
+		ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
+			state.paintRemoteProcessDetailsBody(d.Canvas, d.Rect, process, details.collectedAt)
+		})
+	})
+	if canvas := c.Canvas(); canvas != nil {
+		switch {
+		case canvas.Clicked(hitRemoteProcessDetailsCommand):
+			c.After(func() { state.selectRemoteProcessDetailTab(hitRemoteProcessDetailsCommand) })
+		case canvas.Clicked(hitRemoteProcessDetailsEnv):
+			c.After(func() { state.selectRemoteProcessDetailTab(hitRemoteProcessDetailsEnv) })
+		}
+	}
+	blocked := state.remoteProcessActionsBlocked(process)
+	dialog.Footer(func() {
+		action := func(id gfx.ID, label string, variant components.ButtonVariant) {
+			button := dialogButton(c, label, variant, blocked).Small().Shrink(0)
+			if button.Clicked() {
+				c.After(func() {
+					state.closeRemoteProcessDetails()
+					act(id)
+				})
+			}
+		}
+		action(hitRemoteTerminate, m.RemoteTerminate, components.ButtonOutline)
+		action(hitRemoteKill, m.RemoteForceKill, components.ButtonDestructive)
+		action(hitRemoteNiceLower, m.RemoteReniceLower, components.ButtonOutline)
+		action(hitRemoteNiceNormal, m.RemoteReniceNormal, components.ButtonOutline)
+		action(hitRemoteNiceHigher, m.RemoteReniceHigher, components.ButtonOutline)
+		if dialogButton(c, m.RemoteClose, components.ButtonSecondary, false).Small().Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.closeRemoteProcessDetails() })
+		}
+	})
+	if dialog.Dismissed() {
+		c.After(func() { state.closeRemoteProcessDetails() })
+	}
 }
 
 type processDetailPair struct {
@@ -478,26 +440,7 @@ func (state *State) remoteProcessDetailsKey(event gfx.KeyEvent) (gfx.EventResult
 			state.closeRemoteProcessDetails()
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		if (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
-			switch event.Target {
-			case hitRemoteProcessDetailsClose:
-				state.closeRemoteProcessDetails()
-				return gfx.EventResult{Handled: true, Repaint: true}, true
-			case hitRemoteTerminate, hitRemoteKill,
-				hitRemoteNiceLower, hitRemoteNiceNormal, hitRemoteNiceHigher:
-				if state.remoteProcessActionsBlocked(details.process) {
-					return gfx.EventResult{Handled: true}, true
-				}
-				state.closeRemoteProcessDetails()
-				state.clickRemoteTools(event.Target)
-				return gfx.EventResult{Handled: true, Repaint: true}, true
-			}
-		}
 		return gfx.EventResult{Handled: true}, true
-	}
-	if state.remote.processMenu.open && event.Key == gfx.KeyEscape && !event.Repeat {
-		state.remote.processMenu = remoteProcessMenu{}
-		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false
 }
@@ -516,42 +459,4 @@ func (state *State) remoteProcessDetailsScrollPointer(event gfx.PointerEvent) (g
 		return gfx.EventResult{}, false
 	}
 	return state.remoteDetailScrollPointer(event, &details.text, hitRemoteProcessDetailsScroll)
-}
-
-func (state *State) remoteProcessMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if !state.remoteToolsVisible() || !state.remote.processMenu.open ||
-		event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary ||
-		event.Target != hitRemoteProcessMenuDismiss {
-		return gfx.EventResult{}, false
-	}
-	state.remote.processMenu = remoteProcessMenu{}
-	return gfx.EventResult{Handled: true, Repaint: true}, true
-}
-
-func (w *remoteToolsWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
-	if w.closed {
-		return gfx.EventResult{Handled: true}
-	}
-	if w.ui.modal == modalSudoSFTP {
-		return gfx.EventResult{}
-	}
-	if result, handled := w.ui.remoteProcessMenuPointer(event); handled {
-		return result
-	}
-	if result, handled := w.ui.remoteProcessDetailsTextPointer(event); handled {
-		return result
-	}
-	if result, handled := w.ui.remoteContainerDetailsTextPointer(event); handled {
-		return result
-	}
-	if result, handled := w.ui.remoteContainerDetailsScrollPointer(event); handled {
-		return result
-	}
-	if result, handled := w.ui.remoteProcessScrollPointer(event); handled {
-		return result
-	}
-	if result, handled := w.ui.menuPointer(event); handled {
-		return result
-	}
-	return gfx.EventResult{}
 }

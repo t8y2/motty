@@ -131,36 +131,38 @@ func (state *State) paintShortcutSettings(page *settingsPage) {
 	})
 }
 
-func (state *State) paintShortcutCaptureDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareShortcutCaptureDialog(c ui.C) {
 	messages := state.messages
 	// The name of the action, and under it the reason a key was refused.
 	body := float32(34)
 	if state.shortcutError != "" {
 		body = 88
 	}
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitShortcutCaptureDismiss, CloseID: hitShortcutCaptureClose,
-		ContentSize: gfx.Size{Width: 480}, FitBody: true, BodyHeight: body,
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, messages.ShortcutsCaptureDescription, body)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: messages.ShortcutsCaptureTitle, Description: messages.ShortcutsCaptureDescription,
+		Width: 480, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitShortcutCaptureDismiss, CloseID: hitShortcutCaptureClose,
 	})
-	layout := dialog.Begin(messages.ShortcutsCaptureTitle, messages.ShortcutsCaptureDescription)
-	f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().PadX(4).Children(func() {
-		f.Text(state.shortcutActionLabel(state.shortcutCapture)).FontSize(metrics.FontSizeM).Bold().Color(state.pal.text).LineHeight(24).MarginSides(8, 0, 0, 0)
-		if state.shortcutError != "" {
-			f.Text(state.shortcutError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(40).MarginSides(14, 0, 0, 0)
+	dialog.Body(func() {
+		ui.Column(c).Fill().PadX(4).Children(func() {
+			ui.Text(c, state.shortcutActionLabel(state.shortcutCapture)).FontSize(metrics.FontSizeM).Bold().Color(state.pal.text).LineHeight(24).MarginSides(8, 0, 0, 0)
+			if state.shortcutError != "" {
+				ui.Text(c, state.shortcutError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(40).MarginSides(14, 0, 0, 0)
+			}
+		})
+	})
+	dialog.Footer(func() {
+		var actions [3]components.ButtonAction
+		actions[0] = components.ButtonAction{ID: hitShortcutCaptureReset, Label: messages.ShortcutsReset, Variant: components.ButtonOutline}
+		count := 1
+		if state.shortcuts.chords.Chord(state.shortcutCapture).Valid() {
+			actions[count] = components.ButtonAction{ID: hitShortcutCaptureDelete, Label: messages.ShortcutsDelete, Variant: components.ButtonOutline}
+			count++
 		}
-	})
-	f.End()
-	var actions [3]components.ButtonAction
-	actions[0] = components.ButtonAction{ID: hitShortcutCaptureReset, Label: messages.ShortcutsReset, Variant: components.ButtonOutline}
-	count := 1
-	if state.shortcuts.chords.Chord(state.shortcutCapture).Valid() {
-		actions[count] = components.ButtonAction{ID: hitShortcutCaptureDelete, Label: messages.ShortcutsDelete, Variant: components.ButtonOutline}
+		actions[count] = components.ButtonAction{ID: hitShortcutCaptureCancel, Label: messages.Cancel, Variant: components.ButtonSecondary}
 		count++
-	}
-	actions[count] = components.ButtonAction{ID: hitShortcutCaptureCancel, Label: messages.Cancel, Variant: components.ButtonSecondary}
-	count++
-	dialog.Actions(layout, actions[:count]...)
-	dialog.End()
+		state.dialogActionFooter(c, actions[:count]...)
+	})
 }

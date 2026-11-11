@@ -406,15 +406,10 @@ func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResu
 		return gfx.EventResult{}, false
 	}
 	palette := &state.commandPalette
-	// The page declares the palette's controls, its sort switch and the dialog's
-	// own backdrop and close button; it reads their presses first. The identities
-	// this file names by hand (the rows, the scrollbar) are outside the page, so
-	// those presses fall through to the gestures below.
-	if page := state.chrome.windowPage; palettePageOwns(page, event.Target) {
-		if result, ok := page.Pointer(event); ok {
-			return result, true
-		}
-	}
+	// WindowConfig gives the page's controls, the sort switch and the dialog's
+	// own backdrop and close button their presses first. The identities this file
+	// names by hand (the rows, the scrollbar) are outside the page, so those
+	// presses reach the gestures below.
 	// A press on the scrollbar takes the pointer for the drag: until it is
 	// released the rows under it must not take the hover, or the highlight
 	// stays on whichever row the drag started over.
@@ -456,13 +451,10 @@ func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResu
 }
 
 // palettePageOwns reports whether target is declared by the workbench page:
-// its own elements, or the body of the palette's Dialog, which ui.Dialog gives
-// the application's dialog scope rather than the page root.
-func palettePageOwns(page *ui.Page, target gfx.ID) bool {
-	if page == nil || target.IsZero() {
-		return false
-	}
-	return page.Owns(target) || tree.Within(target.Scope(), dialogScope.Scope())
+// one of its own elements, or the body of the palette's Dialog, which ui.Dialog
+// names in the application's dialog scope rather than the page root.
+func palettePageOwns(target gfx.ID) bool {
+	return windowPageOwns(target) || tree.Within(target.Scope(), dialogScope.Scope())
 }
 
 func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
@@ -475,29 +467,20 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		state.closeCommandPalette()
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	// The controls the workbench page declares take their own keys: the sort
-	// switch's arrows are the page's roving, and the rest of its keys are the
-	// page's. Enter or Space puts the keyboard back in the search field so typing
-	// filters the list.
-	page := state.chrome.windowPage
+	// WindowConfig gives the controls the workbench page declares their own keys:
+	// the sort switch's arrows are the page's roving, and the rest of its keys
+	// are the page's. Enter or Space puts the keyboard back in the search field
+	// so typing filters the list.
 	if palette.connect {
-		if palettePageOwns(page, event.Target) {
+		if palettePageOwns(event.Target) {
 			if event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace {
 				return gfx.EventResult{Handled: true, Focus: hitCommandPaletteSearch}, true
-			}
-			if result, handled := page.Key(event); handled {
-				return result, true
 			}
 		}
 	}
 	if palette.snippets {
-		// The send target is a page Choice in the body: its arrows are the page's.
-		// The other keys of the form stay the palette's.
-		if palettePageOwns(page, event.Target) {
-			if result, handled := page.Key(event); handled {
-				return result, true
-			}
-		}
+		// The send target is a page Choice in the body: its arrows are the
+		// page's. The other keys of the form stay the palette's.
 		if event.Target == hitSnippetSendInput {
 			if event.Key == gfx.KeyEnter && !event.Repeat {
 				state.submitSend()
@@ -546,7 +529,7 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		case gfx.KeyRight:
 			if row >= 0 && row < len(palette.visible) {
 				entry := palette.entries[palette.visible[row]]
-				if entry.target == hitConnectPickLocal && localShellSettingVisible() && len(state.localShellMenu.choices) > 1 {
+				if entry.target == hitConnectPickLocal && localShellSettingVisible() && state.visibleShellCount() > 1 {
 					return toggleShells(true)
 				}
 			}

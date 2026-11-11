@@ -57,39 +57,50 @@ var (
 )
 
 type sftpWindowUI struct {
-	// root names this window's pages in the identity tree: every window is a
+	// root names this window's page in the identity tree: every window is a
 	// page of its own, and no two windows may name their controls alike.
-	root        string
-	windowPage  *ui.Page
-	windowView  func(ui.C)
-	connectPage *ui.Page
-	connectView func(ui.C)
-	panePages   [2]*ui.Page
-	paneView    func(ui.C)
-	scratch     sftpWindowScratch
-	connect     sftpWindowConnectScratch
-	size        gfx.Size
+	root       string
+	windowPage *ui.Page
+	// bookmarkBodyDraw and bookmarkFooterDraw paint the bookmark editor's
+	// hand-painted controls into the slots its dialog declares. They are made
+	// once so a warm repaint allocates nothing.
+	bookmarkBodyDraw   func(*ui.DrawContext)
+	bookmarkFooterDraw func(*ui.DrawContext)
+	// panes keeps what each pane's declaration leaves for the details painted
+	// after the page: the panes are keyed containers of the window page now, not
+	// pages of their own. body and queue are the rectangles the page laid out
+	// for the split and the transfer queue.
+	panes   [2]sftpWindowScratch
+	body    gfx.Rect
+	queue   gfx.Rect
+	connect sftpWindowConnectScratch
+	size    gfx.Size
 	// bounds is the rectangle the view occupies in its canvas: the whole window
 	// for a native one, the tab's rectangle when hosted in the main window.
-	bounds              gfx.Rect
-	list                [2]gfx.Rect
-	offset              [2]float32
-	offsetSynced        [2]float32
-	typeahead           [2]components.MenuTypeahead
-	bars                [2]components.ScrollAreaGeometry
-	barDrag             int // 1: local, 2: remote, 3: queue; zero when idle
-	barGrab             float32
-	treeBarDrag         int // 1: local tree, 2: remote tree; zero when idle
-	treeBarGrab         float32
-	fraction            float32
-	split               components.Resizable
-	splitting           bool
-	tooltip             components.HoverTooltip
-	menuOpen            bool
-	menuAt              gfx.Point
-	queueBounds         gfx.Rect
-	queueOffset         float32
-	queueBar            components.ScrollAreaGeometry
+	bounds       gfx.Rect
+	list         [2]gfx.Rect
+	offset       [2]float32
+	offsetSynced [2]float32
+	typeahead    [2]components.MenuTypeahead
+	bars         [2]components.ScrollAreaGeometry
+	barDrag      int // 1: local, 2: remote, 3: queue; zero when idle
+	barGrab      float32
+	treeBarDrag  int // 1: local tree, 2: remote tree; zero when idle
+	treeBarGrab  float32
+	fraction     float32
+	split        components.Resizable
+	splitting    bool
+	tooltip      components.HoverTooltip
+	menuOpen     bool
+	menuAt       gfx.Point
+	queueBounds  gfx.Rect
+	queueOffset  float32
+	queueBar     components.ScrollAreaGeometry
+	// The queue's cards are page elements now; these are the entries drawn and
+	// the scratch their hand-painted parts go into.
+	queueItems          int
+	queueVisible        []*transferEntry
+	queueCards          []transferCard
 	sort                [2]sftpWindowSort
 	menuScroll          components.MenuScroll
 	headerAnchor        [2]gfx.Rect
@@ -110,13 +121,12 @@ type sftpWindowUI struct {
 	tabQueue gfx.Rect
 }
 
-// sftpWindowScratch is the room the window's page and each pane's page leave for
-// what is painted by hand after they have been laid out.
+// sftpWindowScratch is the room one pane's declaration leaves for what is
+// painted by hand after the page has been laid out. Every pane keeps its own, so
+// the details painted after the page read the slots of the side they belong to.
 type sftpWindowScratch struct {
-	body, queue ui.Box
-	// bounds is the pane's rectangle as the surrounding page sees it. A pane
-	// page is drawn in its own rectangle; a pane declared in the workbench page
-	// is not, so both read the size from here.
+	// bounds is the pane's rectangle as the page sees it: a pane declared in a
+	// page is not drawn in a page of its own, so it reads its size from here.
 	bounds      gfx.Rect
 	local       bool
 	address     ui.Box
@@ -141,13 +151,11 @@ func (w *sftpWindow) pageRoot() string {
 	return w.ui.root
 }
 
-// windowPage is the page that declares the window's own chrome. Config takes it
-// as the standalone window's page; a pane and the connecting state are pages of
-// their own, drawn into part of this window.
+// windowPage is the page that declares the window's own chrome, its connecting
+// state and its two panes. Config takes it as the standalone window's page.
 func (w *sftpWindow) windowPage() *ui.Page {
 	if w.ui.windowPage == nil {
 		w.ui.windowPage = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot(), Theme: &w.owner.theme, View: w.declareWindow})
-		w.ui.windowView = w.declareWindow
 	}
 	return w.ui.windowPage
 }
@@ -168,24 +176,29 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	w.ui.bounds = gfx.Rect{Width: size.Width, Height: size.Height}
 	theme, m := w.owner.Theme(), w.owner.messages
 	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, theme.Background)
-	if w.view.worker == nil {
-		w.paintConnecting(canvas, size)
+	// The event pass a connecting control delivers may start the browser while
+	// the page declares; this paint still shows what it declared.
+	connecting := w.view.worker == nil
+	// The page declares the panes and keeps their slots here; the details painted
+	// after it read the side they belong to.
+	w.ui.panes = [2]sftpWindowScratch{}
+	w.ui.body, w.ui.queue = gfx.Rect{}, gfx.Rect{}
+	w.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.declareWindow)
+	if connecting {
+		w.paintConnectingDetails(canvas)
 		return
 	}
-	w.ui.scratch = sftpWindowScratch{}
-	w.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.ui.windowView)
-	body := w.ui.scratch.body.Rect()
-	var queue gfx.Rect
-	if w.queueCount() > 0 {
-		queue = w.ui.scratch.queue.Rect()
-	}
-	w.ui.split = components.BeginResizable(canvas, theme, hitSFTPWindowSplit, body, w.ui.fraction).LimitsPx(220, 220)
-	panels := w.ui.split.Paint(m.SFTPWindow.Title)
+	w.ui.split = components.BeginResizable(canvas, theme, hitSFTPWindowSplit, w.ui.body, w.ui.fraction).LimitsPx(220, 220)
+	w.ui.split.Paint(m.SFTPWindow.Title)
 	firstLocal := w.owner.sftpWindowOrder == sftpLocalLeft
-	w.paintPane(canvas, panels.First, firstLocal)
-	w.paintPane(canvas, panels.Second, !firstLocal)
+	if s := &w.ui.panes[sideIndex(firstLocal)]; s.list.Valid() {
+		w.paintPaneDetails(canvas, s, firstLocal)
+	}
+	if s := &w.ui.panes[sideIndex(!firstLocal)]; s.list.Valid() {
+		w.paintPaneDetails(canvas, s, !firstLocal)
+	}
 	if w.queueCount() > 0 {
-		w.paintQueue(canvas, queue)
+		w.paintQueueDetails(canvas, w.ui.queue)
 	} else {
 		w.ui.queueBounds = gfx.Rect{}
 		w.ui.queueOffset = 0
@@ -193,10 +206,6 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	if w.view.bookmarksOpen {
 		w.paintDirectoryPlaces(canvas)
 	}
-	if w.view.dialog != sftpDialogNone {
-		w.owner.paintSFTPDialog(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.view)
-	}
-	w.owner.paintSFTPFileProperties(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, &w.fileProperties)
 	if w.closeConfirm {
 		components.BeginAlertDialog(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, w.closeDescription(), m.SFTPWindow.CloseTransfers, m.Cancel)
 	}
@@ -219,9 +228,6 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 			// whole window.
 			w.paintHeaderMenu(canvas, side, gfx.Rect{Width: size.Width, Height: size.Height}, &w.ui.headerScroll)
 		}
-	}
-	if w.bookmark.open {
-		w.paintBookmarkDialog(canvas, gfx.Rect{Width: size.Width, Height: size.Height})
 	}
 	if w.ui.profileQuickOpen && !w.bookmark.open {
 		w.paintProfileQuickMenu(canvas)
@@ -252,18 +258,64 @@ func sftpQueueHeight(size gfx.Size) float32 {
 	return min(244, max(108, size.Height*.28))
 }
 
-// declareWindow declares the window's own chrome: the status line, and the room
-// the panes and the transfer queue take.
+// bookmarkDraws makes the handlers that paint the bookmark editor's fields,
+// buttons and lists, once.
+func (w *sftpWindow) bookmarkDraws() {
+	if w.ui.bookmarkBodyDraw == nil {
+		w.ui.bookmarkBodyDraw = w.paintBookmarkBody
+		w.ui.bookmarkFooterDraw = w.paintBookmarkFooter
+	}
+}
+
+// declareWindow declares the window's own chrome: the connecting state while
+// there is no browser, else the two panes, the transfer queue and the status
+// line. The panes are keyed containers of this page, laid out at the split's
+// panel rectangles exactly as the main-window tab lays them out.
 func (w *sftpWindow) declareWindow(c ui.C) {
-	s := &w.ui.scratch
+	if w.view.worker == nil {
+		w.ui.connect = sftpWindowConnectScratch{}
+		w.declareConnecting(c)
+		return
+	}
 	size := w.ui.size
-	ui.Column(c).Fill().Pad(sftpWindowPad).Gap(sftpWindowGap).Children(func() {
-		s.body = ui.Slot(c).Grow(1)
-		if w.queueCount() > 0 {
-			s.queue = ui.Slot(c).Height(sftpQueueHeight(size)).Shrink(0)
-		}
-		w.declareStatusLine(c)
+	bounds := gfx.Rect{Width: size.Width, Height: size.Height}
+	queue := w.queueCount() > 0
+	body, queueRect, status := sftpTabPaneRects(bounds, queue)
+	w.ui.body, w.ui.queue = body, queueRect
+	w.ui.split = components.BeginResizable(nil, w.owner.Theme(), hitSFTPWindowSplit, body, w.ui.fraction).LimitsPx(220, 220)
+	panels := w.ui.split.Paint("")
+	firstLocal := w.owner.sftpWindowOrder == sftpLocalLeft
+	ui.Column(c).Fill().Children(func() {
+		w.declarePaneSide(c, panels.First, firstLocal)
+		w.declarePaneSide(c, panels.Second, !firstLocal)
+		ui.Column(c).Absolute().
+			Left(status.X).Top(status.Y).Width(status.Width).Height(status.Height).
+			Children(func() { w.declareStatusLine(c) })
 	})
+	if queue {
+		w.declareQueue(c, queueRect, gfx.Rect{})
+	}
+	if w.bookmark.open {
+		w.declareBookmarkDialog(c, gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height})
+	}
+	if w.view.dialog != sftpDialogNone {
+		w.owner.declareSFTPDialog(c, bounds, w.view)
+	}
+	w.owner.declareSFTPFileProperties(c, gfx.Rect{Width: size.Width, Height: size.Height}, &w.fileProperties)
+}
+
+// declarePaneSide declares one pane as a keyed container of the window page and
+// keeps the room its declaration leaves for the details the page does not paint.
+func (w *sftpWindow) declarePaneSide(c ui.C, bounds gfx.Rect, local bool) {
+	if bounds.Width <= 0 || bounds.Height <= 0 {
+		return
+	}
+	side := sideIndex(local)
+	s := &w.ui.panes[side]
+	*s = sftpWindowScratch{local: local, bounds: bounds}
+	ui.Column(c.KeyInt(side)).Absolute().
+		Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).
+		Children(func() { w.declarePane(c, s) })
 }
 
 // declareStatusLine declares what the window says under the panes: the roots a
@@ -308,21 +360,6 @@ func (w *sftpWindow) canTransfer(local bool) bool {
 	return w.selection(local).count > 0
 }
 
-func (w *sftpWindow) paintPane(canvas *gfx.Canvas, bounds gfx.Rect, local bool) {
-	side := sideIndex(local)
-	if w.ui.panePages[side] == nil {
-		name := "remote"
-		if local {
-			name = "local"
-		}
-		w.ui.panePages[side] = ui.NewPage(ui.PageConfig{Tree: &tree, Root: w.pageRoot() + "-" + name, Theme: &w.owner.theme})
-		w.ui.paneView = w.declarePane
-	}
-	w.ui.scratch = sftpWindowScratch{local: local, bounds: bounds}
-	w.ui.panePages[side].Draw(canvas, bounds, w.ui.paneView)
-	w.paintPaneDetails(canvas, &w.ui.scratch, local)
-}
-
 // paintPaneDetails paints what a pane's view lays out but does not paint itself:
 // the icon buttons, the path and filter, the directory tree, the list's scroll
 // bar and the empty message. It runs after the view's elements, with the room the
@@ -334,7 +371,6 @@ func (w *sftpWindow) paintPaneDetails(canvas *gfx.Canvas, s *sftpWindowScratch, 
 	if !local && sudoSFTPAvailable(&w.session, w.view) {
 		components.BeginToggle(canvas, theme, hitSFTPWindowSudoMode, s.sudoMode.Rect(), w.view.sudo).Small().Outline(m.SFTPModeToggle)
 	}
-	w.owner.paintSFTPIconButtons(canvas, s.buttons[:s.buttonCount])
 	for _, button := range s.buttons[:s.buttonCount] {
 		if button.id == sftpWindowMore[side] {
 			w.ui.headerAnchor[side] = button.box.Rect()
@@ -400,16 +436,17 @@ func (w *sftpWindow) paintPaneDetails(canvas *gfx.Canvas, s *sftpWindowScratch, 
 }
 
 // declarePane declares one side of the window: its title and actions, the path,
-// the filter, the column headers and the room the list takes.
-func (w *sftpWindow) declarePane(c ui.C) {
-	s := &w.ui.scratch
+// the filter, the column headers and the room the list takes. Its slots go into
+// the side's own scratch, so the details painted after the page read the right
+// side even when the panes swap places.
+func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 	local := s.local
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
 	bounds := s.bounds
 	compact := bounds.Height < 230
-	icon := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
-		s.buttons[s.buttonCount] = sftpIconButton{box: ui.Slot(c).Size(28, 28), id: id, icon: glyph, hint: hint, disabled: disabled, style: iconButtonQuiet}
+	icon := func(id gfx.ID, glyph uint8, hint string, disabled bool, style iconButtonStyle) {
+		s.buttons[s.buttonCount] = sftpIconButton{box: w.owner.declareIconButton(c, id, glyph, hint, disabled, style).Size(28, 28), id: id}
 		s.buttonCount++
 	}
 	ui.Column(c).Fill().Pad(8).Gap(6).Children(func() {
@@ -430,35 +467,36 @@ func (w *sftpWindow) declarePane(c ui.C) {
 			if treeDisabled {
 				treeHint = m.SFTPWindow.DirectoryTreeNeedsWidth
 			}
-			icon(sftpWindowTreeToggle[sideIndex(local)], iconDirectoryTree, treeHint, treeDisabled)
+			treeStyle := iconButtonQuiet
 			if w.directoryTree[sideIndex(local)].enabled {
-				s.buttons[s.buttonCount-1].style = iconButtonActive
+				treeStyle = iconButtonActive
 			}
+			icon(sftpWindowTreeToggle[sideIndex(local)], iconDirectoryTree, treeHint, treeDisabled, treeStyle)
 			if !local && bounds.Width >= 420 {
-				icon(hitSFTPWindowUpload, iconUpload, m.SFTPWindow.Upload, !w.canTransfer(true))
-				icon(hitSFTPWindowDownload, iconDownload, m.SFTPWindow.Download, !w.canTransfer(false))
+				icon(hitSFTPWindowUpload, iconUpload, m.SFTPWindow.Upload, !w.canTransfer(true), iconButtonQuiet)
+				icon(hitSFTPWindowDownload, iconDownload, m.SFTPWindow.Download, !w.canTransfer(false), iconButtonQuiet)
 			}
 			if local || bounds.Width >= 340 {
-				icon(sftpWindowUp[sideIndex(local)], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()))
-				icon(sftpWindowRefresh[sideIndex(local)], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()))
+				icon(sftpWindowUp[sideIndex(local)], iconArrowUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()), iconButtonQuiet)
+				icon(sftpWindowRefresh[sideIndex(local)], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()), iconButtonQuiet)
 			}
 			if folder.showHidden {
-				icon(sftpWindowHidden[sideIndex(local)], iconEye, m.Tools.FilesHideHidden, false)
-				s.buttons[s.buttonCount-1].style = iconButtonActive
+				icon(sftpWindowHidden[sideIndex(local)], iconEye, m.Tools.FilesHideHidden, false, iconButtonActive)
 			}
 			if local {
-				icon(hitSFTPLocationProfiles, iconSFTPProfiles, m.SFTPWindow.BookmarkTitle, w.browse.pending != nil)
-				icon(hitSFTPProfileQuick, iconChevronDown, m.SFTPWindow.ProfileChoose, w.browse.pending != nil || w.visibleProfileCount() == 0)
+				icon(hitSFTPLocationProfiles, iconSFTPProfiles, m.SFTPWindow.BookmarkTitle, w.browse.pending != nil, iconButtonQuiet)
+				icon(hitSFTPProfileQuick, iconChevronDown, m.SFTPWindow.ProfileChoose, w.browse.pending != nil || w.visibleProfileCount() == 0, iconButtonQuiet)
 				hint := m.SFTPWindow.BrowseSync
 				if w.browse.enabled {
 					hint = w.browseDescription()
 				}
-				icon(hitSFTPBrowseSync, iconSFTPBrowseSync, hint, !w.browse.enabled && (w.navigationBusy() || !w.connected()))
+				browseStyle := iconButtonQuiet
 				if w.browse.enabled {
-					s.buttons[s.buttonCount-1].style = iconButtonActive
+					browseStyle = iconButtonActive
 				}
+				icon(hitSFTPBrowseSync, iconSFTPBrowseSync, hint, !w.browse.enabled && (w.navigationBusy() || !w.connected()), browseStyle)
 			}
-			icon(sftpWindowMore[sideIndex(local)], iconEllipsis, m.Tools.FilesMore, false)
+			icon(sftpWindowMore[sideIndex(local)], iconEllipsis, m.Tools.FilesMore, false, iconButtonQuiet)
 		})
 		ui.Row(c).Height(32).Gap(2).Items(ui.Center).Children(func() {
 			s.address = ui.Slot(c).Height(32).Grow(1)
@@ -466,12 +504,12 @@ func (w *sftpWindow) declarePane(c ui.C) {
 			if local {
 				listID, starID, listHint = hitSFTPLocalPlaces, hitSFTPLocalStar, m.SFTPWindow.LocalPlaces
 			}
-			icon(listID, iconChevronDown, listHint, false)
+			icon(listID, iconChevronDown, listHint, false, iconButtonQuiet)
 			star, hint := uint8(iconStar), m.SFTPWindow.FavoriteAdd
 			if w.directoryFavorite(local) {
 				star, hint = iconStarSolid, m.SFTPWindow.FavoriteRemove
 			}
-			icon(starID, star, hint, folder.path == "" || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected() || w.session.host.CatalogID == ""))
+			icon(starID, star, hint, folder.path == "" || local && w.pendingLocal != "" || !local && (w.view.busy || !w.connected() || w.session.host.CatalogID == ""), iconButtonQuiet)
 		})
 		if folder.filterOpen {
 			s.filter = ui.Slot(c).Height(32).Shrink(0)
@@ -537,6 +575,13 @@ func (w *sftpWindow) declarePane(c ui.C) {
 					folder.takeSFTPListChoice()
 					w.selectionChanged(local)
 				}
+				// Enter on a row opens it. The window page's List owns the
+				// key now, so the submit is where the window learns of it; the
+				// window's own key handler still takes Enter first only when
+				// the List has not been painted yet.
+				if row, submitted := folder.list.Submitted(); submitted && !w.listBlocked() {
+					w.openEntry(local, row)
+				}
 			})
 		})
 		selection := w.selection(local)
@@ -565,10 +610,11 @@ func (w *sftpWindow) declarePane(c ui.C) {
 					return
 				}
 				for _, action := range w.selectionActions(local) {
-					icon(sftpWindowActions[sideIndex(local)].At(action.index), action.glyph, action.label, w.browse.pending != nil || w.view.busy && !local || !local && !w.connected())
+					style := iconButtonQuiet
 					if sftpWindowActionIDs[action.index] == hitSFTPDelete {
-						s.buttons[s.buttonCount-1].style = iconButtonDanger
+						style = iconButtonDanger
 					}
+					icon(sftpWindowActions[sideIndex(local)].At(action.index), action.glyph, action.label, w.browse.pending != nil || w.view.busy && !local || !local && !w.connected(), style)
 				}
 			})
 			if bounds.Height >= 320 {
@@ -655,31 +701,58 @@ func (w *sftpWindow) queueCount() int {
 	return count
 }
 
-func (w *sftpWindow) paintQueue(canvas *gfx.Canvas, bounds gfx.Rect) {
-	theme, m := w.owner.Theme(), w.owner.messages
-	canvas.Label(m.SFTPTransferQueue, gfx.Rect{X: bounds.X + 4, Y: bounds.Y, Width: bounds.Width - 8, Height: 20}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightSemibold, Color: theme.Foreground})
+// declareQueue declares the transfer queue's cards in the window page. The
+// queue is scrolled by the window's own offset, so only the cards on screen are
+// declared.
+func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
+	state := w.owner
 	w.ui.queueBounds = gfx.Rect{X: bounds.X, Y: bounds.Y + 24, Width: bounds.Width, Height: max(bounds.Height-24, 0)}
-	area := components.BeginScrollArea(canvas, theme, w.ui.queueBounds, gfx.Size{Height: float32(w.queueCount()) * transferCardHeight}).Offset(0, w.ui.queueOffset).VerticalScrollbar(hitSFTPWindowQueueBar, m.SFTPTransferQueue, "")
-	w.ui.queueBar = area.BeginContent()
-	w.ui.queueOffset = w.ui.queueBar.OffsetY
-	row := 0
+	w.ui.queueVisible = w.ui.queueVisible[:0]
 	for pass := 0; pass < 2; pass++ {
-		for i := len(w.owner.transfers.entries) - 1; i >= 0; i-- {
-			e := &w.owner.transfers.entries[i]
+		for i := len(state.transfers.entries) - 1; i >= 0; i-- {
+			e := &state.transfers.entries[i]
 			if e.owner != w.view || e.removed || (pass == 0) != transferActive(e.snapshot) {
 				continue
 			}
-			box := gfx.Rect{X: bounds.X, Y: w.ui.queueBounds.Y + float32(row)*transferCardHeight - w.ui.queueOffset, Width: bounds.Width - 12, Height: transferCardHeight - 8}
-			index := row
-			row++
-			if box.Y+box.Height < w.ui.queueBounds.Y || box.Y > w.ui.queueBounds.Y+w.ui.queueBounds.Height {
-				continue
-			}
-			canvas.HitWithOptions(sftpWindowQueueRows.At(index), box, e.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: e.paths})
-			w.owner.paintTransferCard(canvas, box, e)
+			w.ui.queueVisible = append(w.ui.queueVisible, e)
 		}
 	}
-	area.EndContent()
+	w.ui.queueItems = len(w.ui.queueVisible)
+	if cap(w.ui.queueCards) < w.ui.queueItems {
+		w.ui.queueCards = make([]transferCard, w.ui.queueItems)
+	} else {
+		w.ui.queueCards = w.ui.queueCards[:w.ui.queueItems]
+		for index := range w.ui.queueCards {
+			w.ui.queueCards[index] = transferCard{}
+		}
+	}
+	maxOffset := max(float32(w.ui.queueItems)*transferCardHeight-w.ui.queueBounds.Height, 0)
+	w.ui.queueOffset = min(max(w.ui.queueOffset, 0), maxOffset)
+	row := 0
+	for _, e := range w.ui.queueVisible {
+		box := gfx.Rect{X: bounds.X, Y: w.ui.queueBounds.Y + float32(row)*transferCardHeight - w.ui.queueOffset, Width: bounds.Width - 12, Height: transferCardHeight - 8}
+		index := row
+		row++
+		if box.Y+box.Height < w.ui.queueBounds.Y || box.Y > w.ui.queueBounds.Y+w.ui.queueBounds.Height {
+			continue
+		}
+		card := &w.ui.queueCards[index]
+		*card = transferCard{entry: e}
+		container := ui.Column(c.KeyInt(e.id)).Absolute().
+			Left(box.X - origin.X).Top(box.Y - origin.Y).Width(box.Width).Height(box.Height)
+		container.HitWith(sftpWindowQueueRows.At(index), e.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: e.paths})
+		state.declareTransferCard(c, container, e, card)
+	}
+}
+
+// paintQueueDetails paints the queue's header, scrollbar and the hand-painted
+// parts of its cards. The cards themselves are the page's.
+func (w *sftpWindow) paintQueueDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
+	theme, m := w.owner.Theme(), w.owner.messages
+	canvas.Label(m.SFTPTransferQueue, gfx.Rect{X: bounds.X + 4, Y: bounds.Y, Width: bounds.Width - 8, Height: 20}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightSemibold, Color: theme.Foreground})
+	area := components.BeginScrollArea(canvas, theme, w.ui.queueBounds, gfx.Size{Height: float32(w.ui.queueItems) * transferCardHeight}).Offset(0, w.ui.queueOffset).VerticalScrollbar(hitSFTPWindowQueueBar, m.SFTPTransferQueue, "")
+	w.owner.paintTransferCardsFor(canvas, theme, w.ui.queueCards)
+	w.ui.queueBar = area.EndContent()
 }
 
 func (w *sftpWindow) paintMenu(canvas *gfx.Canvas) {

@@ -281,6 +281,7 @@ type Messages struct {
 	VerticalTabsPin                        string
 	VerticalTabsAutoHide                   string
 	VerticalTabsScrollbar                  string
+	TabStripScrollbar                      string
 	SettingsNetworkProxy                   string
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string
@@ -301,6 +302,8 @@ type Messages struct {
 	SettingsLocalShellDescription          string
 	SettingsLocalShellEmpty                string
 	LocalShellDefault                      string
+	ShellEyeHide                           string
+	ShellEyeShow                           string
 	LocalShellChoose                       string
 	SettingsTerminalFontSize               string
 	SettingsTerminalFontSizeDescription    string

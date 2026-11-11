@@ -134,7 +134,7 @@ func TestToolbarDockSizesKeepMixedActionsReachableAcrossScales(t *testing.T) {
 			}
 			large := dualChoiceHit(t, view, state.messages.SettingsToolbarSizeLarge)
 			medium := dualChoiceHit(t, view, state.messages.SettingsToolbarSizeMedium)
-			result := state.Key(gfx.KeyEvent{Target: large.ID, Key: gfx.KeyLeft})
+			result := windowKeyRoutes(state, gfx.KeyEvent{Target: large.ID, Key: gfx.KeyLeft})
 			if !result.Handled || result.Focus != medium.ID || result.Activate != medium.ID {
 				t.Fatalf("size keyboard navigation failed: %+v", result)
 			}
@@ -947,7 +947,7 @@ func TestToolbarDockVerticalTabsSideAndBottom(t *testing.T) {
 	toolbarDockShot(t, view, "08-vertical-side-bottom")
 	// Horizontal bottom controls use Left/Right; vertical side controls retain
 	// Up/Down. Home/End also reveal tools when the corresponding strip scrolls.
-	result := state.Key(gfx.KeyEvent{Target: hitConnExport, Key: gfx.KeyRight})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: hitConnExport, Key: gfx.KeyRight})
 	if result.Focus != hitWindowSettings || !result.Handled {
 		t.Fatalf("bottom keyboard = %+v", result)
 	}
@@ -1117,7 +1117,7 @@ func TestToolbarDockBottomLeftAndRightGroups(t *testing.T) {
 	}
 	toolbarDockShot(t, view, "13-bottom-left-right")
 	// Move across the middle between the groups with the keyboard.
-	result := state.Key(gfx.KeyEvent{Target: hitConnExport, Key: gfx.KeyRight})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: hitConnExport, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != hitWindowSettings {
 		t.Fatalf("bottom group keyboard traversal: %+v", result)
 	}

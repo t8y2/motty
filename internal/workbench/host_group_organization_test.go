@@ -154,51 +154,85 @@ func TestHostGroupPinAndManualOrderStayWithinSiblingTreesAndPersist(t *testing.T
 
 func TestHostGroupDragMovesSubtreeAndEscapeCancels(t *testing.T) {
 	state := nestedHostGroupState(t)
-	canvas, _ := paintedTexts(state)
-	source, _ := hitByID(canvas, hitHostGroupRowList.At(state.hostGroupIndex("Team/Prod")))
-	target, _ := hitByID(canvas, hitHostGroupRowList.At(state.hostGroupIndex("Team2")))
-	down := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: source.ID, X: source.Bounds.X + 40, Y: source.Bounds.Y + 20}
-	move := gfx.PointerEvent{Kind: gfx.PointerMove, Target: target.ID, X: target.Bounds.X + 40, Y: target.Bounds.Y + 20}
-	up := move
-	up.Kind, up.Button = gfx.PointerUp, gfx.PointerButtonPrimary
-	pointer(state, down)
-	pointer(state, move)
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
-	pointer(state, up)
+	size := gfx.Size{Width: 1400, Height: 900}
+	canvas, _ := paintAt(state, size)
+	source, ok := hostListGroupHit(canvas, state, state.hostGroupIndex("Team/Prod"))
+	if !ok {
+		t.Fatal("the source group row is not painted")
+	}
+	target, ok := hostListGroupHit(canvas, state, state.hostGroupIndex("Team2"))
+	if !ok {
+		t.Fatal("the target group row is not painted")
+	}
+	dragged := dragHostGroup(state, size, source, target)
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: source.ID})
+	releaseHostGroup(state, size, dragged, source, target)
 	if state.hosts[0].Group != "Team/Prod/EU" {
 		t.Fatal("Escape did not cancel the drag")
 	}
-	pointer(state, down)
-	pointer(state, move)
-	pointer(state, up)
+	dragged = dragHostGroup(state, size, source, target)
+	releaseHostGroup(state, size, dragged, source, target)
 	if state.hosts[0].Group != "Team2/Prod/EU" {
 		t.Fatal("drag did not move the entire group subtree")
 	}
 }
 
-func TestHostGroupDragCannotTargetClippedRows(t *testing.T) {
-	state := manyHostsState(t, 40)
-	for index := range state.hosts {
-		state.hosts[index].Group = "Team2"
+func TestHostGroupDragRejectsSelfDescendantAndNameCollision(t *testing.T) {
+	state := nestedHostGroupState(t)
+	state.hostGroups = append(state.hostGroups, hostGroup{Name: "Team2/Prod", Expanded: true, Explicit: true})
+	state.refreshHostGroups()
+	size := gfx.Size{Width: 1400, Height: 900}
+	canvas, _ := paintAt(state, size)
+	source, ok := hostListGroupHit(canvas, state, state.hostGroupIndex("Team/Prod"))
+	if !ok {
+		t.Fatal("the source group row is not painted")
 	}
-	state.hosts[0].Group = "Team/Dev"
-	state.hostDataChanged()
-	state.hostView = hostViewList
-	size := gfx.Size{Width: 900, Height: 600}
-	paintAt(state, size)
-	group := state.hostGroupIndex("Team/Dev")
-	row := state.groupActions.rows[group]
-	// Scroll the measured row above the clip; dev builds have a taller sidebar.
-	state.hostsScroll = row.Y + row.Height - state.chrome.hostList.Y + 1
-	paintAt(state, size)
-	row = state.groupActions.rows[group]
-	x, y := row.X+row.Width/2, row.Y+row.Height/2
-	if row.Width <= 0 || row.Height <= 0 || !pointInRect(x, y, row) || pointInRect(x, y, state.chrome.hostList) {
-		t.Fatalf("fixture target is not clipped: row=%+v viewport=%+v scroll=%v", row, state.chrome.hostList, state.hostsScroll)
+	for _, targetPath := range []string{"Team/Prod", "Team/Prod/EU", "Team2"} {
+		target, ok := hostListGroupHit(canvas, state, state.hostGroupIndex(targetPath))
+		if !ok {
+			t.Fatalf("target group %q is not painted", targetPath)
+		}
+		dragged := dragHostGroup(state, size, source, target)
+		releaseHostGroup(state, size, dragged, source, target)
+		if state.hosts[0].Group != "Team/Prod/EU" || state.hostGroupIndex("Team2/Prod") < 0 {
+			t.Fatalf("drop on %q was accepted: hosts=%+v groups=%+v", targetPath, state.hosts, state.hostGroups)
+		}
 	}
-	state.groupActions.drag = hostGroupDrag{pressed: true, active: true, path: "Team2"}
-	state.trackHostGroupDrop(x, y)
-	if state.groupActions.drag.valid {
-		t.Fatal("drag accepted a group hidden behind the toolbar")
+}
+
+func TestHostGroupDragPaintsTheDropIndicator(t *testing.T) {
+	state := nestedHostGroupState(t)
+	size := gfx.Size{Width: 1400, Height: 900}
+	canvas, _ := paintAt(state, size)
+	source, ok := hostListGroupHit(canvas, state, state.hostGroupIndex("Team/Prod"))
+	if !ok {
+		t.Fatal("the source group row is not painted")
 	}
+	target, ok := hostListGroupHit(canvas, state, state.hostGroupIndex("Team2"))
+	if !ok {
+		t.Fatal("the target group row is not painted")
+	}
+	dragged := dragHostGroup(state, size, source, target)
+	primary := state.Theme().Primary
+	found := false
+	for _, triangle := range dragged.Triangles() {
+		if triangle.Color != primary {
+			continue
+		}
+		inside := true
+		for _, point := range triangle.Points {
+			if point.X < target.Bounds.X-2 || point.X > target.Bounds.X+target.Bounds.Width+2 ||
+				point.Y < target.Bounds.Y-2 || point.Y > target.Bounds.Y+target.Bounds.Height+2 {
+				inside = false
+			}
+		}
+		if inside {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("a drag over a group did not paint its drop indicator")
+	}
+	// Let the drag go without moving anything, so the test leaves no press behind.
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: source.ID})
 }

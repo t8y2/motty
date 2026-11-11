@@ -178,7 +178,7 @@ func TestConnectionColorTintsTabsButKeepsFileHeaderNeutral(t *testing.T) {
 		if grid {
 			state.paintHostCard(&canvas, bounds, host)
 		} else {
-			state.paintHostTreeRow(&canvas, bounds, bounds, host, hitHostList.At(int(host.ID)))
+			state.paintHostTreeRow(&canvas, bounds, bounds, host, false)
 		}
 		found := false
 		for _, rectangle := range canvas.Rectangles() {
@@ -270,7 +270,7 @@ func TestColoredHostsKeepSelectionAndBadgeContrast(t *testing.T) {
 
 			var canvas gfx.Canvas
 			row := gfx.Rect{Width: 900, Height: hostRowHeight}
-			state.paintHostTreeRow(&canvas, row, row, host, hitHostList.At(int(host.ID)))
+			state.paintHostTreeRow(&canvas, row, row, host, false)
 			want, hover := tintHostSurface(state.pal.surfaceHot, host.Color, .10), tintHostSurface(state.pal.surfaceSoft, host.Color, .10)
 			selected := false
 			for _, rect := range canvas.Rectangles() {

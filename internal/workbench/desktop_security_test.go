@@ -211,20 +211,24 @@ func TestVNCSecurityToolbarKeepsControlsAccessibleAndOrdered(t *testing.T) {
 	state, session, remote, _, _ := followState(t, 1, false, gfx.Size{Width: 1400, Height: 900})
 	session.host.Protocol = protocolVNC
 	session.desk.session = &securityDesktop{Session: remote, info: desktop.Info{Security: "RA2", ProtocolEncrypted: true}}
-	var canvas gfx.Canvas
+	driver := desktopDriver(t, state)
 	for _, width := range []float32{639, 640, 800} {
-		size := gfx.Size{Width: width, Height: 480}
-		canvas.Reset()
-		state.paintDesktopPage(&canvas, size, session)
-		if _, visible := hitByID(&canvas, hitDesktopSecurity); visible != (width >= 640) {
+		if err := driver.Resize(int(width), 480); err != nil {
+			t.Fatal(err)
+		}
+		if err := repaintDesktopDriver(driver, state); err != nil {
+			t.Fatal(err)
+		}
+		snapshot := driver.Snapshot()
+		if _, visible := hitByIDInSnapshot(snapshot, hitDesktopSecurity); visible != (width >= 640) {
 			t.Fatalf("security toolbar control visibility at %.0fpx = %v", width, visible)
 		}
-		if _, visible := hitByID(&canvas, hitDesktopSecurityStatus); !visible {
+		if _, visible := hitByIDInSnapshot(snapshot, hitDesktopSecurityStatus); !visible {
 			t.Fatalf("security status entry is unavailable at %.0fpx", width)
 		}
 		previous := float32(-1)
 		for _, id := range []gfx.ID{hitDesktopCtrlAltDel, hitDesktopFit, hitDesktopActual, hitDesktopFullscreen, hitDesktopSecurity} {
-			hit, ok := hitByID(&canvas, id)
+			hit, ok := hitByIDInSnapshot(snapshot, id)
 			if !ok {
 				if id != hitDesktopCtrlAltDel && id != hitDesktopSecurity {
 					t.Fatalf("toolbar control %v is unavailable at %.0fpx", id, width)

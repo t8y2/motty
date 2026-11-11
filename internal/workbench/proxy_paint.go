@@ -8,9 +8,24 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
+// proxySectionUI is what the proxies page's declaration leaves for its paint.
+type proxySectionUI struct {
+	content, remove, edit, action, add, empty     ui.Box
+	removeWidth, editWidth, actionWidth, addWidth float32
+	removeIcon, editIcon, actionIcon, addIcon     uint8
+	actionLabel                                   string
+	condensed                                     bool
+	// draw is the page hook that paints into these slots. It is kept so a paint
+	// does not build a closure for the hook.
+	draw func(*ui.DrawContext)
+}
+
+// declareProxiesWorkspace declares the proxies page in the workbench page: its
+// header, its open/empty body and its footer. The buttons, the table and the
+// empty state's icon are painted into the slots it leaves.
+func (state *State) declareProxiesWorkspace(c ui.C) {
+	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
-	canAdd := state.sshHostCount() >= 2
 	selected, hasSelection := state.proxyByID(state.selectedProxyID)
 	actionLabel := messages.ProxyStart
 	actionIcon := uint8(iconPlay)
@@ -24,6 +39,7 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 		titleLeast = float32(220)
 		gap        = float32(10)
 	)
+	bounds := state.catalogSectionBounds()
 	labeled := toolbarButtonWidth(canvas, messages.ProxyRemove, false) + gap + toolbarButtonWidth(canvas, messages.ProxyEdit, false) +
 		gap + toolbarButtonWidth(canvas, actionLabel, false) + gap + toolbarButtonWidth(canvas, messages.ProxyAdd, true) + gap + titleLeast
 	condensed := labeled > bounds.Width-36
@@ -32,47 +48,59 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 
-	var content, remove, edit, action, add, empty ui.Box
-	state.drawSectionBody(canvas, bounds, func(c ui.C) {
-		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
-			ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
-				ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-					ui.Text(c, messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-					ui.Paragraph(c, messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
-				})
-				remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
-				edit = ui.Slot(c).Size(editWidth, toolbarHeight)
-				action = ui.Slot(c).Size(actionWidth, toolbarHeight)
-				add = ui.Slot(c).Size(addWidth, toolbarHeight)
+	canAdd := state.sshHostCount() >= 2
+	view := &state.sectionBodies.proxies
+	draw := view.draw
+	*view = proxySectionUI{
+		removeWidth: removeWidth, editWidth: editWidth, actionWidth: actionWidth, addWidth: addWidth,
+		removeIcon: removeIcon, editIcon: editIcon, actionIcon: realActionIcon, addIcon: addIcon,
+		actionLabel: actionLabel, condensed: condensed,
+	}
+	if draw == nil {
+		draw = func(d *ui.DrawContext) { state.paintProxiesWorkspace(d.Canvas) }
+	}
+	view.draw = draw
+	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
+	body.Children(func() {
+		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
+			ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
+				ui.Text(c, messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+				ui.Paragraph(c, messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
-			if len(state.proxies) == 0 {
-				empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd)
-			} else {
-				content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+			view.remove = state.declareButtonSized(c, hitProxyRemove, messages.ProxyRemove, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
+			view.edit = state.declareButtonSized(c, hitProxyEdit, messages.ProxyEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
+			view.action = state.declareButtonSized(c, hitProxyStartStop, actionLabel, realActionIcon, false, false, hasSelection, toolbarFont, condensed).Size(actionWidth, toolbarHeight)
+			view.add = state.declareButtonSized(c, hitProxyAdd, messages.ProxyAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
+		})
+		if len(state.proxies) == 0 {
+			view.empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd, hitProxyAdd, iconGlobe, canAdd)
+		} else {
+			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+		}
+		ui.Divider(c).Background(pal.line)
+		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
+			ui.Text(c, state.proxyCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
+			if hasSelection {
+				ui.Text(c, state.proxyLabel(selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
 			}
-			ui.Divider(c).Background(pal.line)
-			ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
-				ui.Text(c, state.proxyCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
-				if hasSelection {
-					ui.Text(c, state.proxyLabel(selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
-				}
-			})
 		})
 	})
+	body.Clip().DrawOver(view.draw)
+}
 
-	state.paintToolbarButton(canvas, hitProxyRemove, remove.Rect().X, remove.Rect().Y, removeWidth, messages.ProxyRemove, removeIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitProxyEdit, edit.Rect().X, edit.Rect().Y, editWidth, messages.ProxyEdit, editIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitProxyStartStop, action.Rect().X, action.Rect().Y, actionWidth, actionLabel, realActionIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitProxyAdd, add.Rect().X, add.Rect().Y, addWidth, messages.ProxyAdd, addIcon, true, canAdd, condensed)
+// paintProxiesWorkspace paints the proxies page's buttons, table and empty state
+// into the slots its declaration left.
+func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas) {
+	view, messages := &state.sectionBodies.proxies, state.messages
 
 	if len(state.proxies) == 0 {
-		state.drawReservedEmptyPage(canvas, empty, iconGlobe, hitProxyAdd, messages.ProxyAdd, canAdd)
+		state.drawReservedEmptyPage(canvas, view.empty, iconGlobe)
 		return
 	}
 	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 120}, {Width: 0}}
 	headings := [...]string{messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnStatus, messages.ProxyColumnRoute}
 	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), content.Rect(), columns[:])
+	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
 	table.Header(headings[:])
 	for _, route := range state.proxies {
 		if table.RowAt(hitProxyRowList, int(route.ID), route.cells[:], route.ID == state.selectedProxyID) && state.modal == modalNone {
@@ -81,54 +109,33 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	}
 }
 
-func (state *State) paintProxyDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	messages, theme := state.messages, state.Theme()
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, CloseID: hitProxyDialogClose,
-		InitialFocusID: hitProxyDialogTarget, ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: withError(state.proxyDialogBodyHeight(), state.proxyDialogError),
-	})
+// declareProxyDialog declares the route editor as a dialog of the workbench
+// page.
+func (state *State) declareProxyDialog(c ui.C) {
+	messages := state.messages
 	dialogTitle := messages.ProxyDialogTitle
 	submitLabel := messages.ProxyCreate
 	if state.proxyEditor.editing {
 		dialogTitle = messages.ProxyEditDialogTitle
 		submitLabel = messages.ProxyRouteSave
 	}
-	layout := dialog.Begin(dialogTitle, "")
-	viaShell := state.proxyEditor.viaShell
-	state.proxyDialogPage().Draw(canvas, layout.Body, state.proxyEditor.dialogView)
-	body := &state.proxyEditor.dialogBody
-	state.paintProxyHostField(canvas, body.target.Rect(), true)
-	state.paintProxyHostField(canvas, body.jump.Rect(), false)
-	state.paintDialogCheckbox(canvas, hitProxyDialogViaShell, messages.ProxyFieldViaShell, viaShell, body.via)
-	state.paintHelpIcon(canvas, hitProxyDialogViaHelp, messages.ProxyViaShellHelp, body.viaHelp.Rect())
-	if viaShell {
-		content := components.BeginField(canvas, theme, body.relay.Rect()).Paint(messages.ProxyFieldRelay, "", "")
-		value := state.proxyEditor.relay.String()
-		focused := canvas.Focused() == hitProxyDialogRelay
-		components.PaintInput(canvas, theme, content, components.InputSnapshot{
-			ID: hitProxyDialogRelay, Label: messages.ProxyFieldRelay, Value: value, Placeholder: messages.ProxyRelayPlaceholder,
-			Focused: focused, PlatformEditing: focused && value != "",
-		})
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitProxyDialogCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitProxyDialogSubmit, Label: submitLabel},
-	)
-	dialog.End()
-}
-
-// proxyDialogBodyRoot names the page the route dialog's body is declared in.
-const proxyDialogBodyRoot = "proxy-dialog-body"
-
-// proxyDialogPage makes the page the route dialog's body is declared in.
-func (state *State) proxyDialogPage() *ui.Page {
-	editor := &state.proxyEditor
-	if editor.dialogPage == nil {
-		editor.dialogPage = ui.NewPage(ui.PageConfig{Root: proxyDialogBodyRoot, Theme: &state.theme})
-		editor.dialogView = state.declareProxyDialogBody
-	}
-	return editor.dialogPage
+	bodyHeight := withError(state.proxyDialogBodyHeight(), state.proxyDialogError)
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 500, "", bodyHeight)
+	// No scrim dismiss: a press beside the form must not discard its input.
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: dialogTitle, Width: 500, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitProxyDialogClose, InitialFocusID: hitProxyDialogTarget,
+	})
+	dialog.Body(func() { state.declareProxyDialogBody(c) })
+	dialog.Footer(func() {
+		if dialogButton(c, messages.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickProxyDialog(hitProxyDialogCancel) })
+		}
+		if dialogButton(c, submitLabel, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickProxyDialog(hitProxyDialogSubmit) })
+		}
+	})
 }
 
 // declareProxyDialogBody lays out the route dialog: the target and jump hosts,
@@ -139,7 +146,8 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 	b := &editor.dialogBody
 	*b = proxyDialogBody{}
 	const rowHeight = 64
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
+	column.Children(func() {
 		b.target = ui.Slot(c).Height(rowHeight)
 		b.jump = ui.Slot(c).Height(rowHeight)
 		b.via, b.viaHelp = state.declareDialogCheckboxHelpC(c, messages.ProxyFieldViaShell, 4, 6)
@@ -151,6 +159,27 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 			ui.Text(c, state.proxyDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
 		}
 	})
+	column.DrawOver(func(d *ui.DrawContext) { state.paintProxyDialogFields(d.Canvas) })
+}
+
+// paintProxyDialogFields paints the route editor's controls into the slots the
+// body laid out.
+func (state *State) paintProxyDialogFields(canvas *gfx.Canvas) {
+	messages, theme := state.messages, state.Theme()
+	b := &state.proxyEditor.dialogBody
+	state.paintProxyHostField(canvas, b.target.Rect(), true)
+	state.paintProxyHostField(canvas, b.jump.Rect(), false)
+	state.paintDialogCheckbox(canvas, hitProxyDialogViaShell, messages.ProxyFieldViaShell, state.proxyEditor.viaShell, b.via)
+	state.paintHelpIcon(canvas, hitProxyDialogViaHelp, messages.ProxyViaShellHelp, b.viaHelp.Rect())
+	if state.proxyEditor.viaShell {
+		content := components.BeginField(canvas, theme, b.relay.Rect()).Paint(messages.ProxyFieldRelay, "", "")
+		value := state.proxyEditor.relay.String()
+		focused := canvas.Focused() == hitProxyDialogRelay
+		components.PaintInput(canvas, theme, content, components.InputSnapshot{
+			ID: hitProxyDialogRelay, Label: messages.ProxyFieldRelay, Value: value, Placeholder: messages.ProxyRelayPlaceholder,
+			Focused: focused, PlatformEditing: focused && value != "",
+		})
+	}
 }
 
 // proxyDialogBodyHeight is the height of the dialog's fields: the two hosts, the

@@ -44,24 +44,24 @@ func TestAIMessageScrollbarDragsAndPages(t *testing.T) {
 	}
 
 	// Grab the middle of the thumb: the press itself must not move the content.
-	atEnd := state.ai.scroll.Offset()
+	atEnd := aiListScroll(t, state).Offset
 	grab := geometry.Thumb.Y + geometry.Thumb.Height/2
 	result := aiBarPointer(state, hitAIMessageBar, gfx.PointerDown, gfx.PointerButtonPrimary, grab, false)
 	if !result.Handled || result.Focus != hitAIMessageBar || !state.ai.panel.scrollbar.dragging {
 		t.Fatalf("thumb press = %+v dragging=%v", result, state.ai.panel.scrollbar.dragging)
 	}
-	if state.ai.scroll.Offset() != atEnd {
-		t.Fatalf("pressing the thumb jumped from %v to %v", atEnd, state.ai.scroll.Offset())
+	if aiListScroll(t, state).Offset != atEnd {
+		t.Fatalf("pressing the thumb jumped from %v to %v", atEnd, aiListScroll(t, state).Offset)
 	}
 
 	// A hovered move is not part of the captured drag.
 	result = aiBarPointer(state, hitAIMessageBar, gfx.PointerMove, gfx.PointerButtonPrimary, grab, false)
-	if result.Handled || state.ai.scroll.Offset() != atEnd {
-		t.Fatalf("uncaptured move = %+v offset=%v", result, state.ai.scroll.Offset())
+	if result.Handled || aiListScroll(t, state).Offset != atEnd {
+		t.Fatalf("uncaptured move = %+v offset=%v", result, aiListScroll(t, state).Offset)
 	}
 	result = aiBarPointer(state, hitAIMessageBar, gfx.PointerMove, gfx.PointerButtonPrimary, geometry.Track.Y, true)
-	if !result.Handled || !result.Repaint || state.ai.scroll.Offset() != 0 {
-		t.Fatalf("drag to start = %+v offset=%v", result, state.ai.scroll.Offset())
+	if !result.Handled || !result.Repaint || aiListScroll(t, state).Offset != 0 {
+		t.Fatalf("drag to start = %+v offset=%v", result, aiListScroll(t, state).Offset)
 	}
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerUp, gfx.PointerButtonPrimary, geometry.Track.Y, true)
 	if state.ai.panel.scrollbar.dragging {
@@ -73,29 +73,29 @@ func TestAIMessageScrollbarDragsAndPages(t *testing.T) {
 	// Dragging back to the bottom restores following new messages.
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerDown, gfx.PointerButtonPrimary, geometry.Thumb.Y+1, false)
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerMove, gfx.PointerButtonPrimary, geometry.Track.Y+geometry.Track.Height, true)
-	if state.ai.scroll.Offset() != geometry.MaxOffset || !state.ai.scroll.Following() {
-		t.Fatalf("drag to end: offset=%v max=%v following=%v", state.ai.scroll.Offset(), geometry.MaxOffset, state.ai.scroll.Following())
+	if aiListScroll(t, state).Offset != geometry.MaxOffset || !aiListFollows(state) {
+		t.Fatalf("drag to end: offset=%v max=%v following=%v", aiListScroll(t, state).Offset, geometry.MaxOffset, aiListFollows(state))
 	}
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerUp, gfx.PointerButtonPrimary, geometry.Track.Y+geometry.Track.Height, true)
 	paintAt(state, panelWide)
 	geometry = state.ai.panel.scrollbar.geometry
 
 	// A press above the thumb pages up; one below it pages back down.
-	before := state.ai.scroll.Offset()
+	before := aiListScroll(t, state).Offset
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerDown, gfx.PointerButtonPrimary, geometry.Track.Y, false)
 	page := state.ai.panel.list.Height * 0.9
-	if want := max(before-page, 0); !aiScrollEqual(state.ai.scroll.Offset(), want) {
-		t.Fatalf("track above: offset=%v want=%v", state.ai.scroll.Offset(), want)
+	if want := max(before-page, 0); !aiScrollEqual(aiListScroll(t, state).Offset, want) {
+		t.Fatalf("track above: offset=%v want=%v", aiListScroll(t, state).Offset, want)
 	}
 	if state.ai.panel.scrollbar.dragging {
 		t.Fatal("track paging started a thumb drag")
 	}
 	paintAt(state, panelWide)
 	geometry = state.ai.panel.scrollbar.geometry
-	before = state.ai.scroll.Offset()
+	before = aiListScroll(t, state).Offset
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerDown, gfx.PointerButtonPrimary, geometry.Track.Y+geometry.Track.Height-1, false)
-	if want := min(before+page, geometry.MaxOffset); !aiScrollEqual(state.ai.scroll.Offset(), want) {
-		t.Fatalf("track below: offset=%v want=%v", state.ai.scroll.Offset(), want)
+	if want := min(before+page, geometry.MaxOffset); !aiScrollEqual(aiListScroll(t, state).Offset, want) {
+		t.Fatalf("track below: offset=%v want=%v", aiListScroll(t, state).Offset, want)
 	}
 
 	result = aiBarPointer(state, hitAIMessageBar, gfx.PointerDown, gfx.PointerButtonSecondary, geometry.Thumb.Y+1, false)
@@ -115,20 +115,20 @@ func TestAIScrollbarKeyboardAndAccessibleValue(t *testing.T) {
 	key := func(k gfx.Key) gfx.EventResult {
 		return state.Key(gfx.KeyEvent{Key: k, Target: hitAIMessageBar})
 	}
-	if result := key(gfx.KeyHome); !result.Handled || state.ai.scroll.Offset() != 0 {
-		t.Fatalf("Home = %+v offset=%v", result, state.ai.scroll.Offset())
+	if result := key(gfx.KeyHome); !result.Handled || aiListScroll(t, state).Offset != 0 {
+		t.Fatalf("Home = %+v offset=%v", result, aiListScroll(t, state).Offset)
 	}
-	if result := key(gfx.KeyDown); !result.Handled || state.ai.scroll.Offset() != 24 {
-		t.Fatalf("Down = %+v offset=%v", result, state.ai.scroll.Offset())
+	if result := key(gfx.KeyDown); !result.Handled || aiListScroll(t, state).Offset != 24 {
+		t.Fatalf("Down = %+v offset=%v", result, aiListScroll(t, state).Offset)
 	}
-	if result := key(gfx.KeyPageDown); !result.Handled || !aiScrollEqual(state.ai.scroll.Offset(), 24+state.ai.panel.list.Height*0.9) {
-		t.Fatalf("PageDown = %+v offset=%v", result, state.ai.scroll.Offset())
+	if result := key(gfx.KeyPageDown); !result.Handled || !aiScrollEqual(aiListScroll(t, state).Offset, 24+state.ai.panel.list.Height*0.9) {
+		t.Fatalf("PageDown = %+v offset=%v", result, aiListScroll(t, state).Offset)
 	}
-	if result := key(gfx.KeyEnd); !result.Handled || state.ai.scroll.Offset() != state.ai.panel.maxScroll {
-		t.Fatalf("End = %+v offset=%v", result, state.ai.scroll.Offset())
+	if result := key(gfx.KeyEnd); !result.Handled || aiListScroll(t, state).Offset != state.ai.panel.maxScroll {
+		t.Fatalf("End = %+v offset=%v", result, aiListScroll(t, state).Offset)
 	}
-	if result := key(gfx.KeyUp); !result.Handled || state.ai.scroll.Offset() != state.ai.panel.maxScroll-24 {
-		t.Fatalf("Up = %+v offset=%v", result, state.ai.scroll.Offset())
+	if result := key(gfx.KeyUp); !result.Handled || aiListScroll(t, state).Offset != state.ai.panel.maxScroll-24 {
+		t.Fatalf("Up = %+v offset=%v", result, aiListScroll(t, state).Offset)
 	}
 	key(gfx.KeyHome)
 	canvas, _ := paintAt(state, panelWide)
@@ -152,10 +152,10 @@ func TestAIScrollbarZeroTravelAndStreamingReleaseKeepOffset(t *testing.T) {
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerDown, gfx.PointerButtonPrimary, y, false)
 	longConversation(state, 20)
 	paintAt(state, panelWide) // auto-follow grows the extent while the pointer stays still
-	before := state.ai.scroll.Offset()
+	before := aiListScroll(t, state).Offset
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerUp, gfx.PointerButtonPrimary, y, true)
-	if state.ai.scroll.Offset() != before || state.ai.scroll.Following() || state.ai.panel.scrollbar.dragging {
-		t.Fatalf("stationary release: before=%v after=%v following=%v dragging=%v", before, state.ai.scroll.Offset(), state.ai.scroll.Following(), state.ai.panel.scrollbar.dragging)
+	if aiListScroll(t, state).Offset != before || aiListFollows(state) || state.ai.panel.scrollbar.dragging {
+		t.Fatalf("stationary release: before=%v after=%v following=%v dragging=%v", before, aiListScroll(t, state).Offset, aiListFollows(state), state.ai.panel.scrollbar.dragging)
 	}
 }
 
@@ -165,19 +165,19 @@ func TestAIScrollbarStreamingDoesNotJumpOnFirstMove(t *testing.T) {
 	geometry := state.ai.panel.scrollbar.geometry
 	y := geometry.Thumb.Y + geometry.Thumb.Height/2
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerDown, gfx.PointerButtonPrimary, y, false)
-	if state.ai.scroll.Following() {
+	if aiListFollows(state) {
 		t.Fatal("starting a thumb drag kept the live edge")
 	}
-	before := state.ai.scroll.Offset()
+	before := aiListScroll(t, state).Offset
 	longConversation(state, 20)
 	paintAt(state, panelWide)
-	if state.ai.scroll.Offset() != before {
-		t.Fatalf("streaming moved a held thumb from %v to %v", before, state.ai.scroll.Offset())
+	if aiListScroll(t, state).Offset != before {
+		t.Fatalf("streaming moved a held thumb from %v to %v", before, aiListScroll(t, state).Offset)
 	}
 	result := aiBarPointer(state, hitAIMessageBar, gfx.PointerMove, gfx.PointerButtonPrimary, y+1, true)
-	delta := state.ai.scroll.Offset() - before
-	if !result.Handled || delta < 0 || delta > 100 || state.ai.scroll.Following() {
-		t.Fatalf("first move after streaming = %+v before=%v after=%v delta=%v following=%v", result, before, state.ai.scroll.Offset(), delta, state.ai.scroll.Following())
+	delta := aiListScroll(t, state).Offset - before
+	if !result.Handled || delta < 0 || delta > 100 || aiListFollows(state) {
+		t.Fatalf("first move after streaming = %+v before=%v after=%v delta=%v following=%v", result, before, aiListScroll(t, state).Offset, delta, aiListFollows(state))
 	}
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerUp, gfx.PointerButtonPrimary, y+1, true)
 }
@@ -187,15 +187,21 @@ func TestClosingAIPanelCancelsScrollbarDrag(t *testing.T) {
 	paintAt(state, panelWide)
 	geometry := state.ai.panel.scrollbar.geometry
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerDown, gfx.PointerButtonPrimary, geometry.Thumb.Y+1, false)
-	before := state.ai.scroll.Offset()
+	aiListScroll(t, state).ScrollTo(state.ai.panel.maxScroll - 100)
+	paintAt(state, panelWide)
+	before := aiListScroll(t, state).Offset
 	state.setAIPanelOpen(false)
 	paintAt(state, panelWide)
 	if state.ai.panel.scrollbar.dragging {
 		t.Fatal("closing the panel left the scrollbar dragging")
 	}
 	aiBarPointer(state, hitAIMessageBar, gfx.PointerMove, gfx.PointerButtonPrimary, geometry.Track.Y, true)
-	if state.ai.scroll.Offset() != before {
-		t.Fatalf("a cancelled drag moved the hidden conversation from %v to %v", before, state.ai.scroll.Offset())
+	// Reopening the panel puts the reader back where they were; the cancelled
+	// drag did not move the hidden conversation.
+	state.setAIPanelOpen(true)
+	paintAt(state, panelWide)
+	if got := aiListScroll(t, state).Offset; got != before {
+		t.Fatalf("a cancelled drag moved the hidden conversation from %v to %v", before, got)
 	}
 }
 

@@ -169,11 +169,11 @@ func TestSchemeDrawerOverlaysThePage(t *testing.T) {
 	if state.settingsContent != height {
 		t.Errorf("the drawer grew the page from %v to %v", height, state.settingsContent)
 	}
-	if _, ok := hitByID(&open, hitSchemeDrawerClose); !ok {
-		t.Error("the open drawer has no close control")
-	}
 	if _, ok := hitByID(&open, hitSchemeSearch); !ok {
 		t.Error("the open drawer has no search box")
+	}
+	if _, ok := drawerCloseHit(&open); !ok {
+		t.Error("the open drawer has no close control")
 	}
 	if state.scheme.body.Width <= 0 || state.scheme.body.Height <= 0 {
 		t.Errorf("the drawer body is empty: %+v", state.scheme.body)
@@ -195,14 +195,31 @@ func TestSchemeDrawerOverlaysThePage(t *testing.T) {
 		}
 	}
 
-	state.Click(hitSchemeDrawerClose)
+	// The drawer's own close control dismisses it in the paint's event pass, as a
+	// press beside it does: the page reads the click the drawer's Dialog reports.
+	closeHit, ok := drawerCloseHit(&filtered)
+	if !ok {
+		t.Fatal("the drawer lost its close control")
+	}
+	clickSettingsChoiceHit(t, state, closeHit)
 	if state.schemeBrowserOpen {
 		t.Error("the close control did not close the drawer")
 	}
 }
 
-// drawerHit finds a control of the scheme drawer: the settings page behind it
-// names its quick picks with the same card ids, so the body says which is which.
+// drawerCloseHit finds the Drawer's own close button, which the component names.
+func drawerCloseHit(canvas *gfx.Canvas) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Label == "Close drawer" {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// drawerHit finds a card of the drawer by id and reports whether it lies in the
+// drawer body: the wheel test scrolls the drawer, not the settings page behind
+// it.
 func drawerHit(snapshot app.Snapshot, body gfx.Rect, id gfx.ID) (gfx.Hit, bool) {
 	for _, hit := range snapshot.Hits {
 		if hit.ID == id && hit.Bounds.X >= body.X && hit.Bounds.X < body.X+body.Width &&
@@ -213,33 +230,43 @@ func drawerHit(snapshot app.Snapshot, body gfx.Rect, id gfx.ID) (gfx.Hit, bool) 
 	return gfx.Hit{}, false
 }
 
-// The drawer body is a page: clicking its search field gives the platform its
-// editor, typing filters the collection, and a card is chosen by a real press.
+// The drawer is a Drawer of the settings page: its browse control opens it in a
+// real event pass, clicking its search field gives the platform its editor,
+// typing filters the collection, and a card is chosen by a real press.
 func TestSchemeDrawerPageTakesPointerAndTyping(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.activeSection = sectionSettings
 	state.selectSettingsCategory(settingsTerminal)
-	state.Click(hitSchemeBrowseAll)
-	if !state.schemeBrowserOpen {
-		t.Fatal("the browse control did not open the drawer")
-	}
-	view, err := headless.Open(app.Config{
+	// The scheme section is at the bottom of the terminal category; scroll to it
+	// the way someone looking for it would, before the window paints.
+	var folded gfx.Canvas
+	state.Paint(&folded, gfx.Size{Width: 1400, Height: 900})
+	state.settingsScroll = max(state.settingsContent-900, 0)
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "schemes", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-		TextInput: func(context app.TextInputContext) *app.TextInput {
-			editor := state.EditorFor(context.ID)
-			if editor == nil {
-				return nil
-			}
-			return &app.TextInput{Editor: editor}
-		},
-	}, nil, headless.Options{})
+	}), nil, headless.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer view.Close()
 	if err := view.Wait(50 * time.Millisecond); err != nil {
 		t.Fatal(err)
+	}
+	// Press the folded section's browse control in a real event pass.
+	browse, ok := hitByIDInSnapshot(view.Snapshot(), hitSchemeBrowseAll)
+	if !ok {
+		t.Fatalf("the folded section has no browse control (section %d category %d)",
+			state.activeSection, state.settingsCategory)
+	}
+	if err := view.Click(browse.Bounds.X+browse.Bounds.Width/2, browse.Bounds.Y+browse.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(50 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if !state.schemeBrowserOpen {
+		t.Fatal("the browse control did not open the drawer")
 	}
 
 	// The wheel over the drawer scrolls its page and leaves the settings page
@@ -249,7 +276,7 @@ func TestSchemeDrawerPageTakesPointerAndTyping(t *testing.T) {
 	if !ok {
 		t.Fatal("the built-in Solarized Dark card is missing")
 	}
-	before, ok := drawerHit(view.Snapshot(), body, schemeHit(scrollIndex))
+	before, ok := drawerHit(view.Snapshot(), body, schemeDrawerHit(scrollIndex))
 	if !ok {
 		t.Fatal("the drawer's built-in cards have no hits")
 	}
@@ -263,7 +290,7 @@ func TestSchemeDrawerPageTakesPointerAndTyping(t *testing.T) {
 	if state.settingsScroll != settingsScroll {
 		t.Fatalf("the wheel moved the settings page from %v to %v behind the drawer", settingsScroll, state.settingsScroll)
 	}
-	after, ok := drawerHit(view.Snapshot(), body, schemeHit(scrollIndex))
+	after, ok := drawerHit(view.Snapshot(), body, schemeDrawerHit(scrollIndex))
 	if !ok || after.Bounds.Y >= before.Bounds.Y {
 		t.Fatalf("the drawer page did not scroll to reveal content below: %v -> %v (present %t)", before.Bounds.Y, after.Bounds.Y, ok)
 	}
@@ -303,7 +330,7 @@ func TestSchemeDrawerPageTakesPointerAndTyping(t *testing.T) {
 	var card gfx.Hit
 	found := false
 	for _, hit := range snapshot.Hits {
-		if hit.ID == schemeHit(index) && hit.Bounds.X >= state.scheme.body.X && hit.Bounds.X < state.scheme.body.X+state.scheme.body.Width &&
+		if hit.ID == schemeDrawerHit(index) && hit.Bounds.X >= state.scheme.body.X && hit.Bounds.X < state.scheme.body.X+state.scheme.body.Width &&
 			hit.Bounds.Y >= state.scheme.body.Y && hit.Bounds.Y < state.scheme.body.Y+state.scheme.body.Height {
 			card, found = hit, true
 			break

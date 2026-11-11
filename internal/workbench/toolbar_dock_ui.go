@@ -177,7 +177,15 @@ func (state *State) declareToolbarDockTop(c ui.C, probe bool) {
 	dock.topArea = area
 	area.Children(func() {
 		for _, tool := range tools {
-			box := ui.Slot(c).Size(barButtonSize, barButtonSize).Shrink(0)
+			var box ui.Box
+			if tool.id == hitToolbarLatency {
+				box = ui.Slot(c).Size(barButtonSize, barButtonSize).Shrink(0)
+			} else {
+				// Titlebar window actions must leave typing focused on the terminal.
+				entry, _ := toolbarDockIdentity(tool.id)
+				box = state.declareIconButtonWithOptions(c, tool.id, tool.icon, tool.hint, tool.disabled, tool.style, 16,
+					gfx.HitOptions{SkipFocus: entry.Group == toolbarWindow}).Size(barButtonSize, barButtonSize).Shrink(0)
+			}
 			dock.topSlots = append(dock.topSlots, toolbarDockSlot{tool, box})
 			if tool.id == hitAIToggle {
 				state.chrome.bar.assistant = box
@@ -206,15 +214,11 @@ func (state *State) paintToolbarDockTop(canvas *gfx.Canvas) {
 			continue
 		}
 		tool, bounds := slot.tool, slot.box.Rect()
-		entry, _ := toolbarDockIdentity(tool.id)
 		if tool.id == hitToolbarLatency {
 			session, ok := state.terminalSideRailSession()
 			if !ok || !state.paintToolbarLatency(canvas, bounds, session) {
 				continue
 			}
-		} else {
-			// Titlebar window actions must leave typing focused on the terminal.
-			state.paintIconButtonWithOptions(canvas, tool.id, tool.icon, bounds, tool.hint, tool.disabled, tool.style, state.pal.shell, 16, gfx.HitOptions{SkipFocus: entry.Group == toolbarWindow})
 		}
 		state.registerToolbarDockTool(canvas, tool, toolbarDockTop, bounds)
 	}
@@ -874,13 +878,32 @@ func (state *State) toolbarDockKey(event gfx.KeyEvent) gfx.EventResult {
 	return gfx.EventResult{}
 }
 
-func (state *State) paintToolbarDockDrag(canvas *gfx.Canvas) {
+// declareToolbarDockDragOverlay declares the docked toolbar's drag feedback as
+// hitless elements of a page overlay on ui.LayerDrag: over the page and its
+// chrome, below every menu, dialog and popover. A dialog or menu opening over
+// the drag cancels it (see State.reconcileDragHosts and the paint guard in
+// Paint), so no ghost outlives the drag.
+func (state *State) declareToolbarDockDragOverlay(c ui.C) {
+	if !state.toolbarDock.drag.active {
+		return
+	}
+	chrome := &state.chrome
+	if chrome.toolbarDockDragDraw == nil {
+		chrome.toolbarDockDragDraw = state.drawToolbarDockDrag
+	}
+	ui.Overlay(c, ui.OverlaySpec{Band: ui.LayerDrag, Bounds: state.windowRect()}).Children(func() {
+		ui.Slot(c).Absolute().Inset(0).Draw(chrome.toolbarDockDragDraw)
+	})
+}
+
+// drawToolbarDockDrag paints the candidate drop zones, the insertion marker and
+// the dragged tool under the pointer.
+func (state *State) drawToolbarDockDrag(d *ui.DrawContext) {
 	drag := &state.toolbarDock.drag
 	if !drag.active {
 		return
 	}
-	canvas.PushLayer(tabDragLayer + 1)
-	defer canvas.PopLayer()
+	canvas := d.Canvas
 	for _, bounds := range state.toolbarDockDropZones() {
 		canvas.Rounded(bounds.Inset(gfx.All(1)), 4, withAlpha(state.pal.accent, 0.06))
 	}

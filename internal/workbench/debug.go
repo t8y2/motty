@@ -45,15 +45,11 @@ var (
 	hitDebugScrollX = tree.ID(debugHits, "scroll-x")
 )
 
-// devState is the gallery's own state: the page and the editor it shows. The
-// text, its undo history and its caret live in editor; code holds only what a
-// steady paint would otherwise rebuild. A release build keeps none of it.
+// devState is the gallery's own state: the editor it shows. The text, its undo
+// history and its caret live in editor; code holds only what a steady paint
+// would otherwise rebuild. A release build keeps none of it.
 type devState struct {
-	// page declares the gallery's heading and the area its editor fills. view
-	// and area are kept from the paint that made the page, so a steady paint
-	// rebuilds neither.
-	page    *ui.Page
-	view    func(ui.C)
+	// area is the room the gallery's page left for the editor.
 	area    ui.Box
 	editor  text.Editor
 	code    components.CodeEditor
@@ -131,12 +127,19 @@ func (state *State) devShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
-// devPaintPage paints the gallery and reports whether it was the page on show.
+// devPaintPage paints what the gallery's declaration leaves to the window, and
+// reports whether the gallery was the page on show.
 func (state *State) devPaintPage(canvas *gfx.Canvas, bounds gfx.Rect) bool {
 	if state.activeSection != sectionDebug {
 		return false
 	}
-	state.paintDebugWorkspace(canvas, bounds)
+	theme := state.Theme()
+	editor := state.devEditor()
+	box := state.dev.area.Rect()
+	if box.Width <= 0 || box.Height <= 0 {
+		return true
+	}
+	state.paintDebugEditor(canvas, theme, box, editor)
 	return true
 }
 

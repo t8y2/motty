@@ -7,6 +7,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/update"
 )
 
@@ -52,6 +53,10 @@ type updateNotes struct {
 	bar      components.MessageScrollerGeometry
 	dragging bool
 	grab     float32
+	// box is the notes slot of the page dialog, and draw the painter kept so the
+	// declaration makes no method value.
+	box  ui.Box
+	draw func(*ui.DrawContext)
 }
 
 // updateNotesStyle is the type the notes are laid out and painted in: the
@@ -107,9 +112,10 @@ func (state *State) measureNotes(canvas *gfx.Canvas, width float32) {
 	notes.contentHeight = height
 }
 
-func (state *State) paintUpdateDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareUpdateDialog(c ui.C) {
 	m := state.messages.Tools
 	notes := &state.update.notes
+	canvas := c.Canvas()
 	install := state.canInstallUpdate()
 	why := state.whyNoInstall()
 	primary := components.ButtonAction{ID: hitUpdateDownload, Label: m.GeneralUpdateDownload}
@@ -125,6 +131,7 @@ func (state *State) paintUpdateDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	// The body is as tall as what it holds, up to the cap, so a short note does
 	// not leave a gap above the buttons. The dialog narrows with the window, and
 	// the notes are laid out in the width it ends up with.
+	viewport := dialogViewport(c)
 	contentWidth := min(float32(560), viewport.Width-32)
 	bodyWidth := contentWidth - 2*(metrics.PadSurface+metrics.GapItem)
 	viewWidth := bodyWidth - updateNotesPadX - updateNotesPadRight
@@ -136,24 +143,52 @@ func (state *State) paintUpdateDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 		whyLines := min(wrappedLines(canvas, why, metrics.FontSizeS, bodyWidth), updateWhyLines)
 		whyHeight = 12 + float32(whyLines)*updateNotesLine
 	}
-
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitUpdateDismiss, CloseID: hitUpdateClose, InitialFocusID: primary.ID,
-		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true, BodyHeight: boxHeight + whyHeight,
+	height := dialogContentHeight(canvas, *c.Theme(), viewport, contentWidth, description, boxHeight+whyHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: fmt.Sprintf(m.UpdateDialogTitleFmt, state.update.release.Version), Description: description,
+		Width: contentWidth, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitUpdateDismiss, CloseID: hitUpdateClose, InitialFocusID: primary.ID,
 	})
-	layout := dialog.Begin(fmt.Sprintf(m.UpdateDialogTitleFmt, state.update.release.Version), description)
+	notes.box = ui.Box{}
+	dialog.Body(func() {
+		column := ui.Column(c).Fill()
+		column.Children(func() {
+			notes.box = ui.Slot(c).Height(boxHeight).Shrink(0)
+			if why != "" {
+				ui.Paragraph(c, why, updateWhyLines).FontSize(metrics.FontSizeS).Color(state.pal.text).
+					LineHeight(updateNotesLine).MarginSides(12, 0, 0, 0)
+			}
+		})
+		if notes.draw == nil {
+			notes.draw = state.drawUpdateNotes
+		}
+		column.DrawOver(notes.draw)
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitUpdateSkip, Label: m.UpdateSkip, Variant: components.ButtonOutline},
+			components.ButtonAction{ID: hitUpdateLater, Label: m.UpdateLater, Variant: components.ButtonSecondary},
+			primary,
+		)
+	})
+}
 
-	box := gfx.Rect{X: layout.Body.X, Y: layout.Body.Y, Width: layout.Body.Width, Height: boxHeight}
+// drawUpdateNotes paints the release notes into the box the dialog's body
+// declared: the border, the scrollbar and the Markdown.
+func (state *State) drawUpdateNotes(d *ui.DrawContext) {
+	canvas := d.Canvas
+	m := state.messages.Tools
+	notes := &state.update.notes
+	box := notes.box.Rect()
 	canvas.RoundedBorder(box, radius.control, 1, state.pal.line, state.pal.surface)
 	view := gfx.Rect{X: box.X + updateNotesPadX, Y: box.Y + updateNotesPadY, Width: box.Width - updateNotesPadX - updateNotesPadRight, Height: notes.viewHeight}
 	if notes.scrolls {
 		canvas.HitWithOptions(hitUpdateNotes, view, m.UpdateNotesLabel, gfx.HitOptions{Role: gfx.RoleGroup})
 	}
-	scroller := components.BeginMessageScroller(canvas, state.Theme(), view, notes.contentHeight, notes.scroll).
+	scroller := components.BeginMessageScroller(canvas, *d.Theme, view, notes.contentHeight, notes.scroll).
 		Scrollbar(hitUpdateNotesScrollbar, m.UpdateNotesLabel, "")
 	geometry := scroller.BeginContent()
-	look := components.MarkdownLookFor(state.Theme())
+	look := components.MarkdownLookFor(*d.Theme)
 	look.Text, look.Muted = state.pal.muted, state.pal.faint
 	look.Line, look.CodeFill, look.InlineCodeFill = state.pal.line, state.pal.terminal, state.pal.surfaceSoft
 	blue := state.pal.ansi[4] // the accent is nearly white; a link has to stand out from the text
@@ -173,18 +208,6 @@ func (state *State) paintUpdateDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
 	geometry = scroller.EndContent()
 	notes.scroll, notes.max = geometry.Offset, geometry.MaxOffset
 	notes.bar = geometry
-
-	if why != "" {
-		f := state.partLayout.Begin(canvas, state.Theme(), gfx.Rect{X: box.X, Y: box.Y + box.Height + 12, Width: box.Width, Height: whyHeight - 12})
-		f.Paragraph(why, updateWhyLines).FontSize(metrics.FontSizeS).Color(state.pal.text).LineHeight(updateNotesLine)
-		f.End()
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitUpdateSkip, Label: m.UpdateSkip, Variant: components.ButtonOutline},
-		components.ButtonAction{ID: hitUpdateLater, Label: m.UpdateLater, Variant: components.ButtonSecondary},
-		primary,
-	)
-	dialog.End()
 }
 
 // scrollUpdateNotes is the wheel over the update dialog: the notes move, and

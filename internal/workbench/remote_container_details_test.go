@@ -15,7 +15,7 @@ func openContainerDetailsForTest(t *testing.T) (*State, *remoteServer) {
 	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
 	selectRemoteToolsRow(state, 0)
-	state.Click(hitRemoteContainerDetails)
+	clickRemoteToolsAction(t, state, hitRemoteContainerDetails)
 	if !state.remote.containerDetails.open || state.remote.containerDetails.container.Name != "web" {
 		t.Fatalf("container details did not open: %+v", state.remote.containerDetails)
 	}
@@ -36,7 +36,7 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 		}
 	}
 
-	state.Click(hitRemoteContainerDetailsEnvironment)
+	clickRemoteToolsDetailTab(t, state, hitRemoteContainerDetailsEnvironment)
 	waitFor(t, state, func() bool { return !state.remote.containerDetails.loading })
 	if server.ran("docker inspect --format '{{json .Config.Env}}'") != 1 ||
 		state.remote.containerDetails.failed || len(state.remote.containerDetails.environment) != 3 {
@@ -104,7 +104,7 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 func TestContainerDetailsReportsEnvironmentFailureAndClosesWithEscape(t *testing.T) {
 	state, server := openContainerDetailsForTest(t)
 	server.failures["docker inspect --format '{{json .Config.Env}}'"] = errors.New("exit status 1")
-	state.Click(hitRemoteContainerDetailsEnvironment)
+	clickRemoteToolsDetailTab(t, state, hitRemoteContainerDetailsEnvironment)
 	waitFor(t, state, func() bool { return !state.remote.containerDetails.loading })
 	if !state.remote.containerDetails.failed ||
 		!strings.Contains(state.remote.containerDetails.status, "denied by the test") {
@@ -119,13 +119,13 @@ func TestContainerDetailsReportsEnvironmentFailureAndClosesWithEscape(t *testing
 func TestContainerEnvironmentCanRetryAfterFailure(t *testing.T) {
 	state, server := openContainerDetailsForTest(t)
 	server.failures["docker inspect --format '{{json .Config.Env}}'"] = errors.New("exit status 1")
-	state.Click(hitRemoteContainerDetailsEnvironment)
+	clickRemoteToolsDetailTab(t, state, hitRemoteContainerDetailsEnvironment)
 	waitFor(t, state, func() bool { return !state.remote.containerDetails.loading })
 	if !state.remote.containerDetails.failed {
 		t.Fatal("first container environment read did not fail")
 	}
 	delete(server.failures, "docker inspect --format '{{json .Config.Env}}'")
-	state.Click(hitRemoteContainerDetailsEnvironment)
+	clickRemoteToolsDetailTab(t, state, hitRemoteContainerDetailsEnvironment)
 	waitFor(t, state, func() bool {
 		return !state.remote.containerDetails.loading && !state.remote.containerDetails.failed
 	})

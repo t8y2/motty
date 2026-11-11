@@ -13,7 +13,7 @@ import (
 func sftpPathFocusDriver(t *testing.T, state *State) *app.Driver {
 	t.Helper()
 	var fallback app.TextInput
-	driver, err := app.NewDriver(app.Config{
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
 		Title: "SFTP path focus", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
 		OnScroll: state.Scroll, OnResize: state.Resize, OnWake: state.Wake,
@@ -30,7 +30,7 @@ func sftpPathFocusDriver(t *testing.T, state *State) *app.Driver {
 			}
 			return nil
 		},
-	}, nil)
+	}), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

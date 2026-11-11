@@ -22,7 +22,7 @@ func desktopDriver(t *testing.T, state *State) *app.Driver {
 	var invalidator app.Invalidator
 	state.options.Invalidate = invalidator.Invalidate
 	canvas := &gfx.Canvas{}
-	driver, err := app.NewDriver(app.Config{
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
 		Title: "Remote desktop", Width: 1400, Height: 900,
 		Invalidator: &invalidator,
 		WindowMode:  app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight,
@@ -32,7 +32,7 @@ func desktopDriver(t *testing.T, state *State) *app.Driver {
 		TextInput: func(context app.TextInputContext) *app.TextInput {
 			return state.TerminalInput(context)
 		},
-	}, canvas)
+	}), canvas)
 	if err != nil {
 		t.Fatal(err)
 	}

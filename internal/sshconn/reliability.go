@@ -154,6 +154,66 @@ func (conn *Conn) closedError(waitErr error) error {
 	return fmt.Errorf("%w: %w", ErrDisconnected, waitErr)
 }
 
+// verifyTimeout bounds how long Verify waits for the server's answer when the
+// caller set no deadline of its own. It is shorter than a keepalive interval,
+// because the caller is asking after a known event rather than on a schedule.
+const verifyTimeout = 3 * time.Second
+
+// Verify asks the server whether this connection still works, and records a
+// disconnect when it does not.
+//
+// A changed network path calls this: the keepalive ticker may be a full
+// interval away, and the answer is needed now. The request is the one keepalive
+// sends, so it waits behind a probe already in flight (ErrPingPending) instead
+// of queueing a second one. A failure ends the connection the way a keepalive
+// timeout does — ErrDisconnected wrapping the cause — which is what starts a
+// reconnect; a success changes nothing.
+func (conn *Conn) Verify(ctx context.Context) error {
+	owner := conn
+	if conn.owner != nil {
+		owner = conn.owner
+	}
+	owner.mu.Lock()
+	client := owner.client
+	phase := owner.status.Phase
+	owner.mu.Unlock()
+	if client == nil || phase != PhaseConnected {
+		return errors.New("sshconn: not connected")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, verifyTimeout)
+		defer cancel()
+	}
+	if !owner.pingPending.CompareAndSwap(false, true) {
+		return ErrPingPending
+	}
+	replied := make(chan error, 1)
+	go func() {
+		_, _, err := client.SendRequest(keepAliveRequest, true, nil)
+		owner.pingPending.Store(false)
+		replied <- err
+	}()
+	var err error
+	select {
+	case err = <-replied:
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
+	if err == nil {
+		return nil
+	}
+	// One reason per transport, and no close when the connection was already
+	// ending for another one: recordDisconnect answers false in both cases.
+	if owner.recordDisconnect(fmt.Errorf("%w: link changed: %w", ErrDisconnected, err)) {
+		_ = client.Close()
+	}
+	return err
+}
+
 // ErrPingPending is returned by Ping while an earlier request has not been
 // answered yet. Global requests are sent one at a time, so a new probe would
 // only queue behind the old one, waiting on a reply that may never come and

@@ -335,6 +335,13 @@ func (state *State) declareSFTPTab(c ui.C) {
 		}
 		state.declareSFTPTabContent(c, w, bounds)
 	})
+	if w.bookmark.open && w.view.worker != nil {
+		w.declareBookmarkDialog(c, bounds)
+	}
+	if w.view.worker != nil && w.view.dialog != sftpDialogNone {
+		state.declareSFTPDialog(c, bounds, w.view)
+	}
+	state.declareSFTPFileProperties(c, bounds, &w.fileProperties)
 }
 
 // declareSFTPTabContent declares the window's body, transfer queue and status
@@ -344,9 +351,8 @@ func (state *State) declareSFTPTabContent(c ui.C, w *sftpWindow, bounds gfx.Rect
 	body, queueRect, status := sftpTabPaneRects(bounds, queue)
 	state.declareSFTPTabPanes(c, w, bounds, body)
 	if queue {
-		// The queue's rows are painted by the window after the page has drawn;
-		// the rect is what the window keeps of the declaration.
 		w.ui.tabQueue = queueRect
+		w.declareQueue(c, queueRect, bounds)
 	}
 	state.declareSFTPTabStatus(c, w, bounds, status)
 }
@@ -380,9 +386,7 @@ func (state *State) declareSFTPTabPane(c ui.C, w *sftpWindow, bounds, rect gfx.R
 		Width(rect.Width).Height(rect.Height)
 	s := &w.ui.tabPanes[sideIndex(local)]
 	*s = sftpWindowScratch{local: local, bounds: rect}
-	w.ui.scratch = *s
-	pane.Children(func() { w.declarePane(c) })
-	*s = w.ui.scratch
+	pane.Children(func() { w.declarePane(c, s) })
 }
 
 // declareSFTPTabStatus declares the line under the panes, as the window's view
@@ -420,10 +424,14 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 	w.ui.split = components.BeginResizable(canvas, state.Theme(), hitSFTPWindowSplit, w.ui.tabBody, w.ui.fraction).LimitsPx(220, 220)
 	w.ui.split.Paint(m.SFTPWindow.Title)
 	firstLocal := state.sftpWindowOrder == sftpLocalLeft
-	w.paintPaneDetails(canvas, &w.ui.tabPanes[sideIndex(firstLocal)], firstLocal)
-	w.paintPaneDetails(canvas, &w.ui.tabPanes[sideIndex(!firstLocal)], !firstLocal)
+	if s := &w.ui.tabPanes[sideIndex(firstLocal)]; s.list.Valid() {
+		w.paintPaneDetails(canvas, s, firstLocal)
+	}
+	if s := &w.ui.tabPanes[sideIndex(!firstLocal)]; s.list.Valid() {
+		w.paintPaneDetails(canvas, s, !firstLocal)
+	}
 	if w.ui.tabQueue.Width > 0 {
-		w.paintQueue(canvas, w.ui.tabQueue)
+		w.paintQueueDetails(canvas, w.ui.tabQueue)
 	} else {
 		w.ui.queueBounds = gfx.Rect{}
 		w.ui.queueOffset = 0
@@ -431,10 +439,6 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 	if w.view.bookmarksOpen {
 		w.paintDirectoryPlaces(canvas)
 	}
-	if w.view.dialog != sftpDialogNone {
-		state.paintSFTPDialog(canvas, bounds, w.view)
-	}
-	state.paintSFTPFileProperties(canvas, bounds, &w.fileProperties)
 	if w.closeConfirm {
 		components.BeginAlertDialog(canvas, state.Theme(), bounds, components.AlertDialogOptions{Layer: dialogLayer + 1, Scope: dialogScope, ActionID: hitSFTPWindowCloseConfirm, CancelID: hitSFTPWindowCloseCancel, InitialFocusID: hitSFTPWindowCloseCancel, ActionVariant: components.ButtonDestructive}).Paint(m.SFTPWindow.CloseTitle, w.closeDescription(), m.SFTPWindow.CloseTransfers, m.Cancel)
 	}
@@ -452,9 +456,6 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 		// the whole window; its anchor is already a window rectangle.
 		state.requestSFTPWindowHeaderMenu(w, side, w.ui.headerAnchor[side])
 	}
-	if w.bookmark.open {
-		w.paintBookmarkDialog(canvas, bounds)
-	}
 	if w.ui.profileQuickOpen && !w.bookmark.open {
 		w.paintProfileQuickMenu(canvas)
 	}
@@ -471,22 +472,13 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 }
 
 // SFTPTabInput resolves text fields painted by the file manager hosted in a
-// main-window tab. Its hand-painted fields keep the window's own identities; a
-// field the page declared is resolved by the page.
+// main-window tab. Its hand-painted fields keep the window's own identities.
 func (state *State) SFTPTabInput(context app.TextInputContext) *app.TextInput {
 	w := state.activeSFTPWindow()
 	if w == nil || context.ID.IsZero() {
 		return nil
 	}
-	if tree.Within(context.ID.Scope(), sftpWindowHits) {
-		return w.textInput(context)
-	}
-	if state.fileTabOwns(context.ID) {
-		if page := state.chrome.windowPage; page != nil {
-			return page.TextInput(context)
-		}
-	}
-	return nil
+	return w.textInput(context)
 }
 
 func (state *State) sftpTabPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
@@ -505,15 +497,6 @@ func (state *State) sftpTabPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 	if !owns && !state.fileTabHit(event.Target) && !pointInRect(event.X, event.Y, state.fileManagerRect) {
 		return gfx.EventResult{}, false
 	}
-	if owns {
-		// The page completes a press on what it declared (a List's rows, a
-		// button); the window still gets the press when it declines.
-		if page := state.chrome.windowPage; page != nil {
-			if result, ok := page.Pointer(event); ok && result.Handled {
-				return result, true
-			}
-		}
-	}
 	// The window's own behavior: rows and the drag they arm, scroll bars, the
 	// split handle, popups and dialogs. Coordinates are already the window's.
 	return w.pointer(event), true
@@ -524,22 +507,8 @@ func (state *State) sftpTabKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if w == nil || !state.fileTabHit(event.Target) {
 		return gfx.EventResult{}, false
 	}
-	// The window opens the row Enter names before the List submits it.
-	if !event.Repeat && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !w.listBlocked() {
-		if _, _, ok := w.rowTarget(event.Target); ok {
-			return w.key(event), true
-		}
-	}
-	if state.fileTabOwns(event.Target) {
-		// The tab's Lists and other page controls take their keys through the
-		// workbench page: its arrows, Home and End, and Enter for a row.
-		if page := state.chrome.windowPage; page != nil {
-			if result, handled := page.Key(event); handled {
-				w.syncListChoice()
-				return result, true
-			}
-		}
-	}
+	// A key over the file tab's hand-painted chrome is the file window's; the
+	// page's Lists have already had their own keys.
 	return w.key(event), true
 }
 

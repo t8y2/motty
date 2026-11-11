@@ -14,7 +14,6 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 )
 
@@ -337,13 +336,7 @@ func (state *State) paintBackground(canvas *gfx.Canvas, size gfx.Size) bool {
 		return false
 	}
 	// The picture fills what lies under the window bar.
-	var under ui.Box
-	f := state.paneChrome.Begin(canvas, state.Theme(), gfx.Rect{Width: size.Width, Height: size.Height})
-	f.Column().Fill().PadSides(windowBarHeight, 0, 0, 0).Children(func() {
-		under = f.Slot().Fill()
-	})
-	f.End()
-	area := under.Rect()
+	area := gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
 	if area.Width <= 0 || area.Height <= 0 {
 		return false
 	}

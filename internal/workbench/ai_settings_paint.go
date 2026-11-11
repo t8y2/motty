@@ -699,75 +699,148 @@ func (page *settingsPage) mcpAccessWarning(message string) {
 	})
 }
 
-// paintAIDialogs paints the section's open dialog above everything else.
-func (state *State) paintAIDialogs(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareAIDialogs declares the assistant's open dialog in the window page.
+// The section's controls keep their identities and visuals; the dialog shell,
+// its fields, its choices and its buttons are the page's.
+func (state *State) declareAIDialogs(c ui.C) {
 	if !state.aiSettingsVisible() {
 		return
 	}
-	switch state.ai.cfg.dialog {
-	case aiDialogCLILogin:
-		state.paintAICLILogin(canvas, viewport)
-	case aiDialogProvider:
-		state.paintAIProviderForm(canvas, viewport)
-	case aiDialogDelete:
-		provider, _ := state.aiProviderByID(state.ai.cfg.deleteID)
-		state.paintAIConfirm(canvas, viewport, state.messages.AISettings.DeleteTitle,
-			fmt.Sprintf(state.messages.AISettings.DeleteBodyFmt, provider.Name), state.messages.AISettings.DeleteConfirm)
-	case aiDialogClear:
-		m := state.messages.AISettings
-		state.paintAIConfirm(canvas, viewport, m.ClearTitle, m.ClearBody, m.ClearConfirm)
-	case aiDialogMCPAllowAll:
-		m := state.messages.AISettings
-		body := m.MCPAllowAllBody
-		if state.ai.cfg.notice != "" {
-			body += "\n\n" + state.ai.cfg.notice
-		}
-		state.paintAIConfirm(canvas, viewport, m.MCPAllowAllTitle, body, m.MCPAllowAllConfirm)
-	case aiDialogAgentAllowAll:
-		m := state.messages.AISettings
-		body := m.AgentAllowAllBody
-		if state.ai.cfg.notice != "" {
-			body += "\n\n" + state.ai.cfg.notice
-		}
-		state.paintAIConfirm(canvas, viewport, m.MCPAllowAllTitle, body, m.MCPAllowAllConfirm)
-	case aiDialogImport:
-		state.paintAIImport(canvas, viewport)
-	case aiDialogProbe:
-		state.paintAIProbeDialog(canvas, viewport)
-	case aiDialogModelReasoning:
-		state.paintAIModelReasoningDialog(canvas, viewport)
-	}
-}
-
-func (state *State) paintAIConfirm(canvas *gfx.Canvas, viewport gfx.Rect, title, body, action string) {
-	dialog := components.BeginAlertDialog(canvas, state.Theme(), viewport, components.AlertDialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		ActionID: hitAISetConfirmAction, CancelID: hitAISetConfirmCancel,
-		ContentSize: gfx.Size{Width: 480}, ActionVariant: components.ButtonDestructive,
-		InitialFocusID: hitAISetConfirmCancel,
-	})
-	dialog.Begin(title, body, action, state.messages.Cancel)
-	dialog.End()
-}
-
-func (state *State) paintAIProbeDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages.AISettings, state.Theme()
 	cfg := &state.ai.cfg
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitAISetFormClose, InitialFocusID: hitAISetProbeStart,
-		ContentSize: gfx.Size{Width: 460}, FitBody: true, BodyHeight: 140,
-	})
-	layout := dialog.Begin(m.ProbeDialogTitle, m.ProbeDialogDesc)
-	if cfg.probePage == nil {
-		cfg.probePage = ui.NewPage(ui.PageConfig{Root: aiProbeBodyRoot, Theme: &state.theme})
+	switch cfg.dialog {
+	case aiDialogCLILogin:
+		state.declareAICLILogin(c)
+	case aiDialogProvider:
+		state.declareAIProviderFormDialog(c)
+	case aiDialogDelete, aiDialogClear, aiDialogMCPAllowAll, aiDialogAgentAllowAll:
+		title, body, action := state.aiConfirmTexts()
+		state.declareAIConfirm(c, title, body, action)
+	case aiDialogImport:
+		state.declareAIImport(c)
+	case aiDialogProbe:
+		state.declareAIProbe(c)
+	case aiDialogModelReasoning:
+		state.declareAIReasoning(c)
 	}
-	cfg.probePage.Draw(canvas, layout.Body, state.declareAIProbeBody)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitAISetFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitAISetProbeStart, Label: m.ProbeStartAction},
-	)
-	dialog.End()
+}
+
+// aiConfirmTexts is the title, body and confirming action of the open
+// destructive confirmation.
+func (state *State) aiConfirmTexts() (title, body, action string) {
+	m, cfg := state.messages.AISettings, &state.ai.cfg
+	switch cfg.dialog {
+	case aiDialogDelete:
+		provider, _ := state.aiProviderByID(cfg.deleteID)
+		return m.DeleteTitle, fmt.Sprintf(m.DeleteBodyFmt, provider.Name), m.DeleteConfirm
+	case aiDialogClear:
+		return m.ClearTitle, m.ClearBody, m.ClearConfirm
+	case aiDialogMCPAllowAll:
+		body := m.MCPAllowAllBody
+		if cfg.notice != "" {
+			body += "\n\n" + cfg.notice
+		}
+		return m.MCPAllowAllTitle, body, m.MCPAllowAllConfirm
+	case aiDialogAgentAllowAll:
+		body := m.AgentAllowAllBody
+		if cfg.notice != "" {
+			body += "\n\n" + cfg.notice
+		}
+		return m.MCPAllowAllTitle, body, m.MCPAllowAllConfirm
+	}
+	return "", "", ""
+}
+
+// declareAIConfirm declares a destructive confirmation in the window page. The
+// alert recipe has no ui.Dialog counterpart, so the confirm keeps its wording,
+// its cancel emphasis and its destructive action on the dialog's footer.
+func (state *State) declareAIConfirm(c ui.C, title, body, action string) {
+	const width float32 = 480
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(body)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: body, Width: width, Height: layout.Content.Height,
+		Layer: dialogLayer, Scope: dialogScope, NoClose: true,
+		CloseID: hitAISetConfirmCancel,
+	})
+	dialog.Footer(func() {
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.aiDialogClick(hitAISetConfirmCancel) })
+		}
+		if ui.Button(c, action).Destructive().Shrink(0).Clicked() {
+			c.After(func() { state.aiDialogClick(hitAISetConfirmAction) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.aiDialogClick(hitAISetConfirmCancel)
+	}
+}
+
+// declareAIProbe declares the model-probe dialog in the window page; its two
+// choices are page controls.
+func (state *State) declareAIProbe(c ui.C) {
+	m := state.messages.AISettings
+	const width float32 = 460
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(m.ProbeDialogDesc)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.ProbeDialogTitle, Description: m.ProbeDialogDesc, Width: width,
+		Height: layout.Content.Height + 140, Layer: dialogLayer, Scope: dialogScope,
+		CloseID: hitAISetFormClose,
+	})
+	dialog.Body(func() { state.declareAIProbeBody(c) })
+	dialog.Footer(func() {
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.aiDialogClick(hitAISetFormCancel) })
+		}
+		if ui.Button(c, m.ProbeStartAction).Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.aiDialogClick(hitAISetProbeStart) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.aiCloseDialog()
+	}
+}
+
+// declareAIReasoning declares the model-reasoning dialog in the window page;
+// its mode and preset choices are page controls.
+func (state *State) declareAIReasoning(c ui.C) {
+	m, cfg := state.messages.AISettings, &state.ai.cfg
+	modeHeight := float32(84)
+	presetHeight := float32(0)
+	if cfg.reasoningMode == 1 {
+		presetHeight = 84
+	}
+	bodyHeight := modeHeight + 4
+	if presetHeight > 0 {
+		bodyHeight += presetHeight + 10
+	}
+	const width float32 = 520
+	description := fmt.Sprintf("%s (%s)", m.ModelReasoningDesc, cfg.reasoningModelName)
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.ModelReasoningTitle, Description: description, Width: width,
+		Height: layout.Content.Height + bodyHeight, Layer: dialogLayer, Scope: dialogScope,
+		CloseID: hitAISetFormClose,
+	})
+	dialog.Body(func() { state.declareAIReasoningBody(c) })
+	dialog.Footer(func() {
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.aiDialogClick(hitAISetReasoningCancel) })
+		}
+		if ui.Button(c, m.ModelReasoningSave).Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.aiDialogClick(hitAISetReasoningSave) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.aiCloseDialog()
+	}
 }
 
 // declareAIProbeBody declares the probe dialog's two choices. The concurrency
@@ -791,38 +864,6 @@ func (state *State) declareAIProbeBody(c ui.C) {
 			}
 		})
 	})
-}
-
-func (state *State) paintAIModelReasoningDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages.AISettings, state.Theme()
-	cfg := &state.ai.cfg
-
-	modeHeight := float32(84)
-	presetHeight := float32(0)
-	if cfg.reasoningMode == 1 {
-		presetHeight = 84
-	}
-	bodyHeight := modeHeight + 4
-	if presetHeight > 0 {
-		bodyHeight += presetHeight + 10
-	}
-
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitAISetFormClose, InitialFocusID: hitAISetReasoningSave,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: bodyHeight,
-	})
-	desc := fmt.Sprintf("%s (%s)", m.ModelReasoningDesc, cfg.reasoningModelName)
-	layout := dialog.Begin(m.ModelReasoningTitle, desc)
-	if cfg.reasoningPage == nil {
-		cfg.reasoningPage = ui.NewPage(ui.PageConfig{Root: aiReasoningBodyRoot, Theme: &state.theme})
-	}
-	cfg.reasoningPage.Draw(canvas, layout.Body, state.declareAIReasoningBody)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitAISetReasoningCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitAISetReasoningSave, Label: m.ModelReasoningSave},
-	)
-	dialog.End()
 }
 
 // declareAIReasoningBody declares the reasoning dialog: the mode, and the effort

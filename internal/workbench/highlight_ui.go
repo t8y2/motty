@@ -64,13 +64,9 @@ type highlightUI struct {
 	slot          highlight.Slot
 	dialogError   string
 
-	// page declares the dialog's body: the pattern slot, the two checkbox rows
-	// and the color choices. It is made on the dialog's first paint and kept.
-	page *ui.Page
-	view func(ui.C)
-	// field, regexRow and caseRow are the slots the body laid out; the field
-	// and the checkboxes are painted into them after the page, by the controls
-	// that own their editing and focus.
+	// field, regexRow and caseRow are the slots the dialog body laid out; the
+	// field and the checkboxes are painted into them after the body, by the
+	// controls that own their editing and focus.
 	field, regexRow, caseRow ui.Box
 }
 
@@ -273,52 +269,38 @@ func (state *State) slotColor(slot highlight.Slot) gfx.Color {
 	return gfx.RGB(ansi[0], ansi[1], ansi[2])
 }
 
-func (state *State) paintHighlightDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages.Tools, state.Theme()
+// declareHighlightDialog declares the rule editor as a dialog of the workbench
+// page.
+func (state *State) declareHighlightDialog(c ui.C) {
+	m := state.messages.Tools
 	form := &state.highlighting
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, "", withError(198, form.dialogError)) // the pattern, two boxes and the colors
 	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		CloseID: hitHighlightClose, InitialFocusID: hitHighlightPattern,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: withError(198, form.dialogError), // the pattern, two boxes and the colors
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.HighlightDialogTitle, Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitHighlightClose, InitialFocusID: hitHighlightPattern,
 	})
-	layout := dialog.Begin(m.HighlightDialogTitle, "")
-	page := state.highlightDialogPage()
-	page.Draw(canvas, layout.Body, form.view)
-	content := components.BeginField(canvas, theme, form.field.Rect()).Paint(m.HighlightPattern, "", "")
-	value := form.pattern.String()
-	focused := canvas.Focused() == hitHighlightPattern
-	components.PaintInput(canvas, theme, content, components.InputSnapshot{
-		ID: hitHighlightPattern, Label: m.HighlightPattern, Value: value, Placeholder: m.HighlightPatternPlaceholder,
-		Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
+	dialog.Body(func() { state.declareHighlightDialogBody(c) })
+	dialog.Footer(func() {
+		if dialogButton(c, state.messages.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickHighlightDialog(hitHighlightCancel) })
+		}
+		if dialogButton(c, m.HighlightSave, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickHighlightDialog(hitHighlightSubmit) })
+		}
 	})
-	state.paintDialogCheckbox(canvas, hitHighlightRegex, m.HighlightRegex, form.regex, form.regexRow)
-	state.paintDialogCheckbox(canvas, hitHighlightCase, m.HighlightCase, form.folded, form.caseRow)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitHighlightCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitHighlightSubmit, Label: m.HighlightSave},
-	)
-	dialog.End()
-}
-
-// highlightDialogPage makes the page the rule dialog's body is declared in.
-func (state *State) highlightDialogPage() *ui.Page {
-	form := &state.highlighting
-	if form.page == nil {
-		form.page = ui.NewPage(ui.PageConfig{Root: "highlight-rule", Theme: &state.theme})
-		form.view = state.declareHighlightDialogBody
-	}
-	return form.page
 }
 
 // declareHighlightDialogBody lays out the rule dialog: the pattern field, the
 // two checkboxes, the colors and the error. The pattern, the checkboxes and
-// their hit regions are painted into the slots after the page, so their focus
+// their hit regions are painted into the slots after the body, so their focus
 // order and invalid look stay the ones the controls already have.
 func (state *State) declareHighlightDialogBody(c ui.C) {
 	form, m, pal := &state.highlighting, state.messages.Tools, state.pal
 	slots := highlight.Slots()
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
+	column.Children(func() {
 		form.field = ui.Slot(c).Height(62)
 		form.regexRow = state.declareDialogCheckboxC(c, m.HighlightRegex, 11, 0)
 		form.caseRow = state.declareDialogCheckboxC(c, m.HighlightCase, 12, 0)
@@ -343,6 +325,18 @@ func (state *State) declareHighlightDialogBody(c ui.C) {
 		if form.dialogError != "" {
 			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
 		}
+	})
+	column.DrawOver(func(d *ui.DrawContext) {
+		canvas, theme := d.Canvas, *d.Theme
+		content := components.BeginField(canvas, theme, form.field.Rect()).Paint(m.HighlightPattern, "", "")
+		value := form.pattern.String()
+		focused := canvas.Focused() == hitHighlightPattern
+		components.PaintInput(canvas, theme, content, components.InputSnapshot{
+			ID: hitHighlightPattern, Label: m.HighlightPattern, Value: value, Placeholder: m.HighlightPatternPlaceholder,
+			Focused: focused, PlatformEditing: focused && value != "", Invalid: form.dialogError != "",
+		})
+		state.paintDialogCheckbox(canvas, hitHighlightRegex, m.HighlightRegex, form.regex, form.regexRow)
+		state.paintDialogCheckbox(canvas, hitHighlightCase, m.HighlightCase, form.folded, form.caseRow)
 	})
 }
 

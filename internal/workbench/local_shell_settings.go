@@ -16,6 +16,7 @@ var (
 	hitSettingsLocalShell        = tree.ID(settingsHits, "settings-local-shell")
 	hitSettingsLocalShellDismiss = tree.ID(settingsHits, "settings-local-shell-dismiss")
 	hitSettingsLocalShellItems   = tree.Sub(settingsHits, tree.Name("settings-local-shell-item"))
+	hitSettingsShellEyes         = tree.Sub(settingsHits, tree.Name("settings-shell-eye"))
 )
 
 type localShellSelect struct {
@@ -141,6 +142,65 @@ func (state *State) localShellSelected() int {
 	return -1
 }
 
+// cleanShellPaths keeps the saved hidden shells in order, without empties or
+// duplicates. Nothing is dropped against what this computer detects: a shell
+// that is away may come back.
+func cleanShellPaths(paths []string) []string {
+	kept := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if path != "" && !slices.ContainsFunc(kept, func(kept string) bool { return strings.EqualFold(kept, path) }) {
+			kept = append(kept, path)
+		}
+	}
+	return kept
+}
+
+// shellHidden is whether the pickers leave this shell out. The default shell
+// always stays: it is the Local Terminal entry itself, and hiding it would
+// leave a computer with one shell nothing to open.
+func (state *State) shellHidden(choice localshell.Choice) bool {
+	if choice.Path == "" {
+		return false
+	}
+	if index := state.localShellSelected(); index >= 0 && strings.EqualFold(state.localShellMenu.choices[index].Path, choice.Path) {
+		return false
+	}
+	return slices.ContainsFunc(state.hiddenShells, func(path string) bool { return strings.EqualFold(path, choice.Path) })
+}
+
+// visibleShellCount is how many shells the pickers would offer.
+func (state *State) visibleShellCount() int {
+	count := 0
+	for _, choice := range state.localShellMenu.choices {
+		if !state.shellHidden(choice) {
+			count++
+		}
+	}
+	return count
+}
+
+// hideShell records a shell among the hidden ones and saves. Showing it again
+// takes the entry back out. The default shell refuses: it is the Local
+// Terminal entry itself.
+func (state *State) hideShell(shell string, hidden bool) {
+	if shell == "" {
+		return
+	}
+	if index := state.localShellSelected(); index >= 0 && strings.EqualFold(state.localShellMenu.choices[index].Path, shell) {
+		return
+	}
+	kept := cleanShellPaths(state.hiddenShells)
+	if hidden {
+		if !slices.ContainsFunc(kept, func(kept string) bool { return strings.EqualFold(kept, shell) }) {
+			kept = append(kept, shell)
+		}
+	} else {
+		kept = slices.DeleteFunc(kept, func(kept string) bool { return strings.EqualFold(kept, shell) })
+	}
+	state.hiddenShells = kept
+	state.save()
+}
+
 func (state *State) paintLocalShellSetting(page *settingsPage) {
 	if !localShellSettingVisible() {
 		return
@@ -148,7 +208,9 @@ func (state *State) paintLocalShellSetting(page *settingsPage) {
 	page.add(settingsControl{kind: controlLocalShellSelect, slot: page.rowFrame(state.messages.SettingsLocalShell, state.messages.SettingsLocalShellDescription)})
 }
 
-// Paint the select in the menu pass, outside the settings page's clip.
+// Paint the select in the menu pass, outside the settings page's clip. The
+// trigger stays the settings' select; the list is a menu surface of the app's,
+// so every row can carry the eye that hides or shows it.
 func (state *State) paintLocalShellSelect(canvas *gfx.Canvas) {
 	state.adoptWSLDistros()
 	menu, m := &state.localShellMenu, state.messages
@@ -167,31 +229,66 @@ func (state *State) paintLocalShellSelect(canvas *gfx.Canvas) {
 			value = localshell.WSLName(distro) // chosen, but not listed yet
 		}
 	}
-	below := max(state.viewport.Height-8-bounds.Y-bounds.Height-4, 0)
-	above := max(bounds.Y-windowBarHeight-8, 0)
-	height := min(float32(8+len(menu.choices)*32), max(above, below))
-	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: bounds.Width, Height: height}
-	if below < height {
-		content.Y = bounds.Y - height - 4
-	}
-	opening := menu.open && state.popups.owner != hitSettingsLocalShellDismiss
-	scroll := state.selectScroll(menu.open, hitSettingsLocalShellDismiss)
-	if opening && selected >= 0 {
-		scroll.Offset = max(0, min(float32(selected)*32, float32(len(menu.choices)*32)+8-height))
-		canvas.SetInitialFocus(hitSettingsLocalShellItems.At(selected))
-	}
 	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
 		TriggerID: hitSettingsLocalShell, Label: m.SettingsLocalShell, Value: value, Hint: hint,
-		Disabled: len(menu.choices) == 0, Open: menu.open, Content: content, Layer: popupLayer,
-		Scope: hitSettingsLocalShellDismiss, DismissID: hitSettingsLocalShellDismiss, Viewport: state.windowRect(), Scroll: scroll,
+		Disabled: len(menu.choices) == 0, Layer: popupLayer,
+		Scope: hitSettingsLocalShellDismiss, DismissID: hitSettingsLocalShellDismiss, Viewport: state.windowRect(),
 	})
 	defer control.End()
-	if menu.open {
-		state.menuPlaced(control.ContentBounds())
-		for index, choice := range menu.choices {
-			control.AddItem(components.SelectItem{ID: hitSettingsLocalShellItems.At(index), Label: choice.Name, Selected: index == selected})
-		}
+	if !menu.open {
+		return
 	}
+
+	var rows menuRows
+	for index, choice := range menu.choices {
+		rows.add(components.ContextMenuItem{
+			ID: hitSettingsLocalShellItems.At(index), Label: choice.Name, Icon: lucideIcons[iconTerminal],
+			Kind: components.ContextMenuRadio, Selected: index == selected,
+			// A hidden shell cannot become the default: the row is inert and
+			// only its eye answers.
+			Disabled:      state.shellHidden(choice),
+			TrailingWidth: 30,
+		})
+	}
+	if len(menu.choices) == 0 {
+		rows.add(components.ContextMenuItem{ID: hitSettingsLocalShellItems.At(0), Label: m.SettingsLocalShellEmpty, Icon: lucideIcons[iconTerminal], Disabled: true})
+	}
+	width, height := rows.size(canvas, state.contextMenuTheme())
+	bounds2 := state.popupAt(canvas, state.windowRect(), gfx.Point{X: bounds.X, Y: bounds.Y + bounds.Height + 4}, width, height, 4)
+	list := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds2, components.ContextMenuOptions{
+		Layer: popupLayer, Scope: hitSettingsLocalShellDismiss, DismissID: hitSettingsLocalShellDismiss,
+		Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitSettingsLocalShellDismiss), RowHeight: contextMenuRow,
+	})
+	state.menuPlaced(list.Bounds())
+	rows.paint(&list, func(item components.ContextMenuItem, slot gfx.Rect) {
+		if index, ok := item.ID.In(hitSettingsLocalShellItems); ok {
+			state.paintShellEye(canvas, hitSettingsShellEyes.At(index), slot)
+			return
+		}
+	})
+	list.End()
+}
+
+// paintShellEye paints the trailing eye of a shell row: open where the pickers
+// offer the shell, closed and red where they leave it out. A press toggles it;
+// the default shell has none, since it is the Local Terminal entry itself.
+func (state *State) paintShellEye(canvas *gfx.Canvas, id gfx.ID, slot gfx.Rect) {
+	index, ok := id.In(hitSettingsShellEyes)
+	if !ok || index < 0 || index >= len(state.localShellMenu.choices) {
+		return
+	}
+	if index == state.localShellSelected() {
+		return
+	}
+	hidden := state.shellHidden(state.localShellMenu.choices[index])
+	kind, style := iconEye, iconButtonQuiet
+	hint := state.messages.ShellEyeHide
+	if hidden {
+		kind, style = iconEyeOff, iconButtonDanger
+		hint = state.messages.ShellEyeShow
+	}
+	state.paintIconButton(canvas, id, kind, gfx.Rect{X: slot.X + (slot.Width-24)/2, Y: slot.Y + (slot.Height-22)/2, Width: 24, Height: 22},
+		hint, false, style, state.pal.surface)
 }
 
 func (state *State) clickLocalShell(id gfx.ID) bool {
@@ -211,11 +308,19 @@ func (state *State) clickLocalShell(id gfx.ID) bool {
 		menu.open = false
 		return true
 	}
+	if index, ok := id.In(hitSettingsShellEyes); ok && index >= 0 && index < len(menu.choices) {
+		choice := menu.choices[index]
+		state.hideShell(choice.Path, !state.shellHidden(choice))
+		return true
+	}
 	index, ok := id.In(hitSettingsLocalShellItems)
 	if !ok || index < 0 || index >= len(menu.choices) {
 		return false
 	}
 	program := menu.choices[index].Path
+	if state.shellHidden(menu.choices[index]) {
+		return true // a hidden shell stays hidden: it cannot become the default
+	}
 	menu.open = false
 	if state.localShell != program {
 		state.localShell = program

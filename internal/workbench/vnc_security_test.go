@@ -18,7 +18,7 @@ import (
 func TestVNCAuthOnlyConsentIsExplicitSavedAndProtocolSpecific(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.openHostDialog()
-	clickDialogChoice(t, state, state.messages.Desktop.ProtocolVNC)
+	clickHostChoice(t, state, state.messages.Desktop.ProtocolVNC)
 	if state.editor.host(0).VNCAuthOnly {
 		t.Fatal("authentication-only encryption enabled by default")
 	}
@@ -44,13 +44,18 @@ func TestVNCAuthOnlyConsentIsExplicitSavedAndProtocolSpecific(t *testing.T) {
 	if !state.editor.host(0).VNCAuthOnly {
 		t.Fatal("editing/copying a VNC host lost its explicit permission")
 	}
-	clickDialogChoice(t, state, state.messages.Desktop.ProtocolRDP)
+	clickHostChoice(t, state, state.messages.Desktop.ProtocolRDP)
 	if state.editor.host(0).VNCAuthOnly || state.editor.host(0).transport().VNCAuthOnly {
 		t.Fatal("VNC encryption permission propagated to RDP")
 	}
 	canvas, _ = paintedTexts(state)
 	if _, ok := hitByID(canvas, hitDialogVNCAuthOnly); ok {
 		t.Fatal("RDP exposes a VNC-only setting")
+	}
+	clickHostChoice(t, state, state.messages.Desktop.ProtocolVNC)
+	canvas, _ = paintedTexts(state)
+	if _, ok := hitByID(canvas, hitDialogVNCAuthOnly); !ok {
+		t.Fatal("returning to VNC lost its permission control")
 	}
 	if sameSavedHost(savedHost{}, savedHost{savedTransport: savedTransport{VNCAuthOnly: true}}) {
 		t.Fatal("incremental persistence ignored encryption permission change")

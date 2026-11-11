@@ -196,7 +196,7 @@ func TestLocalStartSettingChoosesAndPersists(t *testing.T) {
 	}
 	from := settingsChoiceHit(t, state, state.settingsLocalStartLabel(localStartRemember))
 	to := settingsChoiceHit(t, state, state.settingsLocalStartLabel(localStartHome))
-	next := state.Key(gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
+	next := windowKeyRoutes(state, gfx.KeyEvent{Target: from.ID, Key: gfx.KeyRight})
 	if !next.Handled || next.Focus != to.ID || next.Activate != to.ID {
 		t.Fatalf("arrow key on the choice = %+v", next)
 	}

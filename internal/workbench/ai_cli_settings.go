@@ -29,85 +29,90 @@ func (state *State) aiDiscoverCLIPath() {
 	cfg.cliPath.SetSelection(text.Range{Start: 0, End: cfg.cliPath.RuneCount()})
 }
 
-// ensureAIFormPage makes the page the provider form is declared in. Its fields
-// are bound once to the editors the application reads, so typing reaches them
-// with the platform's editing, input methods and clipboard.
-func (state *State) ensureAIFormPage() *ui.Page {
-	cfg := &state.ai.cfg
-	if cfg.formPage != nil {
-		return cfg.formPage
+// bindAIFormFields points the provider form's page handles at the editors the
+// application reads. The editors keep their addresses across the config's life,
+// so this runs once; a closed form clears their text, not the handles.
+func (cfg *aiSettingsUI) bindAIFormFields() {
+	if cfg.formBound {
+		return
 	}
-	cfg.formPage = ui.NewPage(ui.PageConfig{Root: aiFormRoot, Theme: &state.theme})
+	cfg.formBound = true
 	cfg.formName.Bind(&cfg.name)
 	cfg.formCLIPath.Bind(&cfg.cliPath)
 	cfg.formBaseURL.Bind(&cfg.baseURL)
 	cfg.formModelsURL.Bind(&cfg.modelsURL)
 	cfg.formAPIKey.Bind(&cfg.apiKey)
-	return cfg.formPage
 }
 
-// paintAIProviderForm paints the provider dialog. The form inside it is one
-// page, whatever kind of provider it is adding or editing.
-func (state *State) paintAIProviderForm(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages.AISettings, state.Theme()
+func (state *State) aiProviderFormGeometry() (title, description, submit string, height float32) {
+	m := state.messages.AISettings
 	cfg := &state.ai.cfg
 	cli := store.IsCLIKind(cfg.kind)
-	title, submit := m.FormAddTitle, m.FormAdd
-	description := m.FormDescription
-	height := float32(0)
-	hint := ""
+	title, submit = m.FormAddTitle, m.FormAdd
+	description = m.FormDescription
 	if cli {
-		description, height = m.CLIFormDescription, 182
+		description = m.CLIFormDescription
+		height = 182
 		if cfg.editID != "" {
 			title, submit, height = m.FormEditTitle, m.FormSave, 122
 			title += " (" + aiPresets[aiPresetOf(store.Provider{Kind: cfg.kind})].label + ")"
 		}
 		if cfg.cliAutoPath != "" && cfg.cliPath.String() == cfg.cliAutoPath {
-			hint = m.CLIPathDetected
+			height += 28
 		} else if cfg.cliPathMissing && strings.TrimSpace(cfg.cliPath.String()) == "" {
-			hint = m.CLIPathNotFound
-		}
-		if hint != "" {
 			height += 28
 		}
-	} else {
-		presetHeight := float32(60) // a new provider can start from a preset
-		if cfg.editID != "" {
-			title, submit, presetHeight = m.FormEditTitle, m.FormSave, 0
-		}
-		keyHeight := float32(60) // a saved key adds a line saying so under the field
-		if cfg.hadKey {
-			keyHeight = 78
-		}
-		authHeight := float32(0) // only Anthropic has a choice of credential header
-		if cfg.kind == store.KindAnthropic {
-			authHeight = 60
-		}
-		formatHeight := float32(0) // only an OpenAI-compatible provider has a choice of protocol; the route under it adds a line and a gap
-		if cfg.kind == store.KindOpenAI {
-			formatHeight = 84
-		}
-		height = 2 + presetHeight + 4*60 + authHeight + formatHeight + keyHeight + 4
+		return title, description, submit, height
 	}
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, CloseID: hitAISetFormClose,
-		InitialFocusID: hitAISetFormName, ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: withError(height, cfg.formErr),
+	presetHeight := float32(60) // a new provider can start from a preset
+	if cfg.editID != "" {
+		title, submit, presetHeight = m.FormEditTitle, m.FormSave, 0
+	}
+	keyHeight := float32(60) // a saved key adds a line saying so under the field
+	if cfg.hadKey {
+		keyHeight = 78
+	}
+	authHeight := float32(0) // only Anthropic has a choice of credential header
+	if cfg.kind == store.KindAnthropic {
+		authHeight = 60
+	}
+	formatHeight := float32(0) // only an OpenAI-compatible provider has a choice of protocol; the route under it adds a line and a gap
+	if cfg.kind == store.KindOpenAI {
+		formatHeight = 84
+	}
+	height = 2 + presetHeight + 4*60 + authHeight + formatHeight + keyHeight + 4
+	return title, description, submit, height
+}
+
+func (state *State) declareAIProviderFormDialog(c ui.C) {
+	if !state.aiSettingsVisible() || state.ai.cfg.dialog != aiDialogProvider {
+		return
+	}
+	cfg := &state.ai.cfg
+	cfg.bindAIFormFields()
+	title, description, submit, bodyHeight := state.aiProviderFormGeometry()
+	const width float32 = 500
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: width,
+		Height: layout.Content.Height + withError(bodyHeight, cfg.formErr), Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitAISetFormClose, InitialFocusID: hitAISetFormName,
 	})
-	layout := dialog.Begin(title, description)
-	page := state.ensureAIFormPage()
-	page.Draw(canvas, layout.Body, state.declareAIProviderForm)
-	// An open preset list lies over the fields under it, so it is painted after
-	// the page; closed, the list paints itself in its place and Tab reaches it
-	// before the fields.
-	if cfg.presetOpen && cfg.editID == "" {
-		state.paintAIPresetField(canvas, cfg.formPreset.Rect())
+	dialog.Body(func() { state.declareAIProviderForm(c) })
+	dialog.Footer(func() {
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.aiDialogClick(hitAISetFormCancel) })
+		}
+		if ui.Button(c, submit).Shrink(0).Clicked() {
+			c.After(func() { state.aiDialogClick(hitAISetFormSubmit) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.aiCloseDialog()
 	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitAISetFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitAISetFormSubmit, Label: submit},
-	)
-	dialog.End()
 }
 
 // declareAIProviderForm declares the provider form: the preset a new provider
@@ -120,9 +125,9 @@ func (state *State) declareAIProviderForm(c ui.C) {
 	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
 		if cfg.editID == "" {
 			cfg.formPreset = ui.Slot(c).Height(60)
-			if !cfg.presetOpen {
-				cfg.formPreset.Draw(func(d *ui.DrawContext) { state.paintAIPresetField(d.Canvas, d.Rect) })
-			}
+			// The preset list is a Select on the page; its open list paints on a
+			// higher layer, over the fields under it.
+			cfg.formPreset.Draw(func(d *ui.DrawContext) { state.paintAIPresetField(d.Canvas, d.Rect) })
 		}
 		state.aiFormField(c, hitAISetFormName, &cfg.formName, m.FormName, m.FormNamePH, "", 60, aiFormFocusName)
 		if cli {

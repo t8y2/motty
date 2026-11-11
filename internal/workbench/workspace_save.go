@@ -27,6 +27,8 @@ type workspaceSave struct {
 	layout    layoutcore.LayoutSpec
 	name      text.Editor
 	error     string
+	// nameField is the page's handle on the same editor the dialog reads.
+	nameField ui.Field
 }
 
 func (state *State) openWorkspaceSave(workspace layoutcore.WorkspaceID) {
@@ -39,6 +41,7 @@ func (state *State) openWorkspaceSave(workspace layoutcore.WorkspaceID) {
 		return
 	}
 	state.workspaceSave = workspaceSave{workspace: workspace, layout: layout}
+	state.workspaceSave.nameField.Bind(&state.workspaceSave.name)
 	state.workspaceSave.name.Insert(state.tabLabel(state.workspaceTabs[index]))
 	state.workspaceSave.name.SetSelection(text.Range{End: state.workspaceSave.name.RuneCount()})
 	state.modal = modalWorkspaceSave
@@ -159,45 +162,61 @@ func (state *State) workspaceSaveHostCatalogIDs(workspace layoutcore.WorkspaceID
 	return hostIDs, nil
 }
 
-func (state *State) paintWorkspaceSaveDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareWorkspaceSave declares the save-as-template dialog in the window
+// page: the name field and its buttons are page controls, so the page reads
+// their clicks, the field serves the platform editor and the close/backdrop
+// report the dismissal.
+func (state *State) declareWorkspaceSave(c ui.C) {
+	if state.modal != modalWorkspaceSave {
+		return
+	}
 	messages := state.messages
 	save := &state.workspaceSave
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitWorkspaceSaveDismiss, CloseID: hitWorkspaceSaveClose, InitialFocusID: hitWorkspaceSaveName,
-		ContentSize: gfx.Size{Width: 500}, FitBody: true, BodyHeight: 92,
-	})
 	description := ""
 	if index, ok := state.workspaceTab(save.workspace); ok {
 		description = fmt.Sprintf(messages.WorkspaceSaveDescriptionFmt, state.tabLabel(state.workspaceTabs[index]),
 			len(state.deck.Panes(save.workspace, nil)))
 	}
-	layout := dialog.Begin(messages.WorkspaceSaveTitle, description)
-	var field ui.Box
-	f := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() { field = f.Slot().Height(62) })
-	f.End()
-	beginField := components.BeginField(canvas, state.Theme(), field.Rect())
-	if save.error != "" {
-		beginField = beginField.Invalid()
-	}
-	content := beginField.Paint(messages.WorkspaceDraftName, "", save.error)
-	value := save.name.String()
-	focused := canvas.Focused() == hitWorkspaceSaveName
-	content.Height = 32
-	components.PaintInput(canvas, state.Theme(), content, components.InputSnapshot{
-		ID: hitWorkspaceSaveName, Label: messages.WorkspaceDraftName, Value: value,
-		Placeholder: messages.WorkspaceDraftNamePlaceholder, Focused: focused, PlatformEditing: focused && value != "",
+	const width float32 = 500
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: messages.WorkspaceSaveTitle, Description: description,
+		Width: width, Height: layout.Content.Height + 92, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitWorkspaceSaveDismiss, CloseID: hitWorkspaceSaveClose,
+		InitialFocusID: hitWorkspaceSaveName,
 	})
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitWorkspaceSaveCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitWorkspaceSaveSubmit, Label: messages.WorkspaceDraftSave},
-	)
-	dialog.End()
+	dialog.Body(func() {
+		theme, metrics := c.Theme(), c.Theme().Metrics
+		gap := metrics.GapItem / 2
+		ui.Column(c).Fill().Children(func() {
+			ui.Column(c).Height(62).Children(func() {
+				ui.Text(c, messages.WorkspaceDraftName).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).
+					Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis()
+				ui.TextFieldID(c, hitWorkspaceSaveName, &save.nameField, messages.WorkspaceDraftName, messages.WorkspaceDraftNamePlaceholder).
+					Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
+				if save.error != "" {
+					ui.Text(c, save.error).FontSize(metrics.FontSizeM).Color(theme.Danger).
+						LineHeight(metrics.FontSizeM+7).MarginSides(gap, 0, 0, 0)
+				}
+			})
+		})
+	})
+	dialog.Footer(func() {
+		if ui.Button(c, messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickWorkspaceSave(hitWorkspaceSaveCancel) })
+		}
+		if ui.Button(c, messages.WorkspaceDraftSave).Shrink(0).Clicked() {
+			c.After(func() { state.clickWorkspaceSave(hitWorkspaceSaveSubmit) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.closeModal()
+	}
 }
 
-// workspaceSaveKey keeps the save dialog's keyboard behavior local to it:
-// Escape closes, and Enter submits from either the name field or the button.
 func (state *State) workspaceSaveKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalWorkspaceSave {
 		return gfx.EventResult{}, false

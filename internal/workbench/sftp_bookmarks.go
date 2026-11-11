@@ -49,7 +49,8 @@ type sftpBookmarkEditor struct {
 	focusName                          bool
 	original                           sftpBookmark
 	fields                             [3]text.Editor // name, local directory, remote directory
-	layout                             ui.View
+	body                               sftpBookmarkBody
+	viewport                           gfx.Rect
 	errorText                          string
 	list                               gfx.Rect
 	area                               components.ScrollAreaGeometry
@@ -58,6 +59,24 @@ type sftpBookmarkEditor struct {
 	scopeOpen, focusScope, focusOption bool
 	scopeMenu                          components.MenuScroll
 	scopeBounds                        gfx.Rect
+}
+
+// sftpBookmarkBody is what the editor's page leaves for the controls painted by
+// hand once it has been laid out.
+type sftpBookmarkBody struct {
+	fields                              [3]ui.Box
+	browse, list, scope, add            ui.Box
+	save, remove, sync, cancel, proceed ui.Box
+}
+
+// pageButtonSlot reserves the room a button takes in a page.
+func pageButtonSlot(c ui.C, label string, small bool) ui.Box {
+	button := components.BeginButton(c.Canvas(), *c.Theme(), gfx.ID{}, gfx.Rect{})
+	if small {
+		button = button.Small()
+	}
+	button = button.SizeToFit(label)
+	return ui.Slot(c).Width(button.BoundsWidth()).Height(button.BoundsHeight())
 }
 
 func cleanBookmarkName(name string) string {
@@ -328,7 +347,11 @@ func (w *sftpWindow) openProfileDraft() {
 	w.openPairedBookmark(sftpBookmark{local: local, path: path.Clean(remote), sync: b.sync})
 }
 
-func (w *sftpWindow) paintBookmarkDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareBookmarkDialog declares the saved profile editor as a dialog of the
+// page that hosts the window: the standalone window's page, or the workbench
+// page's file tab. Its fields and buttons keep the application's identities and
+// are painted into the slots the dialog leaves.
+func (w *sftpWindow) declareBookmarkDialog(c ui.C, viewport gfx.Rect) {
 	b, theme, m := &w.bookmark, w.owner.Theme(), w.owner.messages.SFTPWindow
 	bodyHeight := min(float32(400), max(float32(292), viewport.Height-208))
 	if b.errorText != "" {
@@ -338,49 +361,88 @@ func (w *sftpWindow) paintBookmarkDialog(canvas *gfx.Canvas, viewport gfx.Rect) 
 	if w.activeLocal {
 		focus = hitSFTPBookmarkFields.At(1)
 	}
-	// No scrim dismiss: a press beside the form must not discard its input.
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{Layer: dialogLayer, Scope: hitSFTPBookmarkScope, CloseID: hitSFTPBookmarkCancel, InitialFocusID: focus, ContentSize: gfx.Size{Width: 760}, FitBody: true, BodyHeight: bodyHeight})
-	layout := dialog.Begin(m.BookmarkTitle, m.BookmarkDescription)
-	var fields [3]ui.Box
-	var browse, list, scope, add, save, remove, sync ui.Box
-	f := b.layout.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().Gap(8).Children(func() {
-		f.Row().Height(56).Gap(8).Items(ui.End).Children(func() {
-			fields[1] = f.Slot().Grow(1).Height(56)
-			browse = f.Slot().Size(32, 32)
+	if b.focusName {
+		focus, b.focusName = hitSFTPBookmarkFields.At(0), false
+	}
+	if b.focusScope {
+		focus, b.focusScope = hitSFTPProfileScope, false
+	}
+	// The surface is as tall as the body the editor asks for; components.Dialog
+	// computes the header and footer it adds around it.
+	geometry := components.BeginDialog(c.Canvas(), theme, viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: 760}, FitBody: true, BodyHeight: bodyHeight,
+	}).Layout(m.BookmarkDescription)
+	w.bookmarkDraws()
+	b.viewport, b.body = viewport, sftpBookmarkBody{}
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.BookmarkTitle, Description: m.BookmarkDescription, Width: 760, Height: geometry.Content.Height,
+		Layer: dialogLayer, Scope: hitSFTPBookmarkScope, CloseID: hitSFTPBookmarkCancel, InitialFocusID: focus,
+	})
+	dialog.Body(func() {
+		column := w.declareBookmarkBody(c)
+		column.DrawOver(w.ui.bookmarkBodyDraw)
+	})
+	dialog.Footer(func() {
+		row := ui.Row(c).Fill().Gap((*c.Theme()).Metrics.GapItem).Justify(ui.End).Items(ui.Center)
+		row.Children(func() {
+			w.bookmark.body.cancel = pageButtonSlot(c, w.owner.messages.Cancel, false)
+			w.bookmark.body.proceed = pageButtonSlot(c, m.ProfileOpen, false)
 		})
-		fields[2] = f.Slot().Height(56)
-		f.Row().Height(56).Gap(8).Items(ui.End).Children(func() {
-			fields[0] = f.Slot().Grow(1).Height(56)
+		row.DrawOver(w.ui.bookmarkFooterDraw)
+	})
+}
+
+// declareBookmarkBody declares the editor's fields, the actions beside them and
+// the room the profile list takes.
+func (w *sftpWindow) declareBookmarkBody(c ui.C) ui.Box {
+	b, theme, m := &w.bookmark, *c.Theme(), w.owner.messages.SFTPWindow
+	canvas := c.Canvas()
+	body := &b.body
+	column := ui.Column(c).Fill().Gap(8)
+	column.Children(func() {
+		ui.Row(c).Height(56).Gap(8).Items(ui.End).Children(func() {
+			body.fields[1] = ui.Slot(c).Grow(1).Height(56)
+			body.browse = w.owner.declareIconButton(c, hitSFTPBookmarkBrowse, iconFolderOpen, m.BookmarkChooseLocal, false, iconButtonQuiet).Size(32, 32)
+		})
+		body.fields[2] = ui.Slot(c).Height(56)
+		ui.Row(c).Height(56).Gap(8).Items(ui.End).Children(func() {
+			body.fields[0] = ui.Slot(c).Grow(1).Height(56)
 			scopeWidth := max(canvas.TextWidth(m.ProfileSite, theme.Metrics.FontSizeM), canvas.TextWidth(m.ProfileShared, theme.Metrics.FontSizeM)) + 36
-			scope = f.Slot().Width(max(132, scopeWidth)).Height(56)
-			add = f.Slot().Width(max(56, canvas.TextWidth(m.ProfileNew, theme.Metrics.FontSizeM)+24)).Height(32)
-			save = f.Slot().Width(max(56, canvas.TextWidth(m.BookmarkSave, theme.Metrics.FontSizeM)+24)).Height(32)
-			remove = f.Slot().Width(max(56, canvas.TextWidth(m.ProfileDelete, theme.Metrics.FontSizeM)+24)).Height(32)
+			body.scope = ui.Slot(c).Width(max(132, scopeWidth)).Height(56)
+			body.add = ui.Slot(c).Width(max(56, canvas.TextWidth(m.ProfileNew, theme.Metrics.FontSizeM)+24)).Height(32)
+			body.save = ui.Slot(c).Width(max(56, canvas.TextWidth(m.BookmarkSave, theme.Metrics.FontSizeM)+24)).Height(32)
+			body.remove = ui.Slot(c).Width(max(56, canvas.TextWidth(m.ProfileDelete, theme.Metrics.FontSizeM)+24)).Height(32)
 		})
-		sync = f.Slot().Height(32)
-		list = f.Slot().Grow(1)
+		body.sync = ui.Slot(c).Height(32)
+		body.list = ui.Slot(c).Grow(1)
 		if b.errorText != "" {
-			f.Text(b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24)
+			ui.Text(c, b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24)
 		}
 	})
-	f.End()
-	components.BeginButton(canvas, theme, hitSFTPProfileNew, add.Rect()).Small().Outline(m.ProfileNew)
+	return column
+}
+
+// paintBookmarkBody paints the editor's fields, buttons and lists into the slots
+// its dialog left.
+func (w *sftpWindow) paintBookmarkBody(d *ui.DrawContext) {
+	canvas, b, theme, m := d.Canvas, &w.bookmark, *d.Theme, w.owner.messages.SFTPWindow
+	body := &b.body
+	components.BeginButton(canvas, theme, hitSFTPProfileNew, body.add.Rect()).Small().Outline(m.ProfileNew)
 	saveTheme := theme
 	saveTheme.Primary, saveTheme.PrimaryForeground = gfx.RGB(24, 24, 27), gfx.RGB(250, 250, 250)
-	components.BeginButton(canvas, saveTheme, hitSFTPBookmarkSave, save.Rect()).Small().Default(m.BookmarkSave)
-	deleteButton := components.BeginButton(canvas, theme, hitSFTPProfileDelete, remove.Rect()).Small()
+	components.BeginButton(canvas, saveTheme, hitSFTPBookmarkSave, body.save.Rect()).Small().Default(m.BookmarkSave)
+	deleteButton := components.BeginButton(canvas, theme, hitSFTPProfileDelete, body.remove.Rect()).Small()
 	if !b.editing {
 		deleteButton = deleteButton.Disabled()
 	}
 	deleteButton.Destructive(m.ProfileDelete)
 	for i, label := range [3]string{m.BookmarkName, m.BookmarkLocal, m.BookmarkRemote} {
 		id := hitSFTPBookmarkFields.At(i)
-		input := components.BeginField(canvas, theme, fields[i].Rect()).For(id).Paint(label, "", "")
+		input := components.BeginField(canvas, theme, body.fields[i].Rect()).For(id).Paint(label, "", "")
 		value, focused := b.fields[i].String(), canvas.Focused() == id
 		components.PaintInput(canvas, theme, input, components.InputSnapshot{ID: id, Label: label, Value: value, Focused: focused, PlatformEditing: focused && value != ""})
 	}
-	syncBounds := sync.Rect()
+	syncBounds := body.sync.Rect()
 	checkboxSide := components.CheckboxExtent(theme)
 	components.BeginCheckbox(canvas, theme, hitSFTPBookmarkSync, gfx.Rect{
 		X: syncBounds.X + 4,
@@ -389,19 +451,16 @@ func (w *sftpWindow) paintBookmarkDialog(canvas *gfx.Canvas, viewport gfx.Rect) 
 	canvas.Label(m.ProfileSync, gfx.Rect{
 		X: syncBounds.X + 32, Y: syncBounds.Y, Width: max(0, syncBounds.Width-32), Height: syncBounds.Height,
 	}, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.Foreground})
-	w.paintProfileList(canvas, list.Rect())
-	w.paintProfileScope(canvas, scope.Rect(), viewport)
-	if b.focusName {
-		canvas.RequestFocus(hitSFTPBookmarkFields.At(0))
-		b.focusName = false
-	}
-	w.owner.paintIconButton(canvas, hitSFTPBookmarkBrowse, iconFolderOpen, browse.Rect(), m.BookmarkChooseLocal, false, iconButtonQuiet, theme.Background)
-	if b.focusScope {
-		canvas.RequestFocus(hitSFTPProfileScope)
-		b.focusScope = false
-	}
-	dialog.Actions(layout, components.ButtonAction{ID: hitSFTPBookmarkCancel, Label: w.owner.messages.Cancel, Variant: components.ButtonSecondary}, components.ButtonAction{ID: hitSFTPProfileOpen, Label: m.ProfileOpen})
-	dialog.End()
+	w.paintProfileList(canvas, body.list.Rect())
+	w.paintProfileScope(canvas, body.scope.Rect(), b.viewport)
+}
+
+// paintBookmarkFooter paints the editor's dialog buttons into the slots the
+// footer left.
+func (w *sftpWindow) paintBookmarkFooter(d *ui.DrawContext) {
+	canvas, b, theme := d.Canvas, &w.bookmark, *d.Theme
+	components.BeginButton(canvas, theme, hitSFTPBookmarkCancel, b.body.cancel.Rect()).Secondary(w.owner.messages.Cancel)
+	components.BeginButton(canvas, theme, hitSFTPProfileOpen, b.body.proceed.Rect()).Default(w.owner.messages.SFTPWindow.ProfileOpen)
 }
 
 func (w *sftpWindow) paintProfileScope(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {

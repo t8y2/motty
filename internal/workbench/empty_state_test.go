@@ -212,3 +212,106 @@ func TestEmptyStateActionTakesARealPress(t *testing.T) {
 		t.Fatalf("pressing the empty-state action opened modal %d, want the New Host dialog", state.modal)
 	}
 }
+
+// The catalog sections declare their empty state in the workbench page now; its
+// action is still a hit the window delivers, and pressing it runs the section's
+// create workflow.
+func TestCatalogEmptyStateActionsTakeRealPresses(t *testing.T) {
+	tests := []struct {
+		name    string
+		section uint8
+		action  gfx.ID
+		prepare func(*State)
+		check   func(*State) error
+	}{
+		{
+			name: "forwards", section: sectionForwards, action: hitForwardAdd,
+			prepare: func(state *State) {
+				state.hosts = []Host{{ID: 1, Label: "web", Address: "web.example", Port: 22}}
+			},
+			check: func(state *State) error {
+				if state.modal != modalNewForward {
+					return fmt.Errorf("modal = %d, want the forward dialog", state.modal)
+				}
+				return nil
+			},
+		},
+		{
+			name: "proxies", section: sectionProxies, action: hitProxyAdd,
+			prepare: func(state *State) {
+				state.hosts = []Host{
+					{ID: 1, Label: "jump", Address: "jump.example", Port: 22},
+					{ID: 2, Label: "target", Address: "target.example", Port: 22},
+				}
+			},
+			check: func(state *State) error {
+				if state.modal != modalNewProxy {
+					return fmt.Errorf("modal = %d, want the proxy dialog", state.modal)
+				}
+				return nil
+			},
+		},
+		{
+			name: "keys", section: sectionKeys, action: hitKeysAdd,
+			prepare: func(*State) {},
+			check: func(state *State) error {
+				if !state.keysMenu {
+					return fmt.Errorf("keys menu is closed")
+				}
+				return nil
+			},
+		},
+		{
+			name: "snippets", section: sectionSnippets, action: hitSnippetAdd,
+			prepare: func(*State) {},
+			check: func(state *State) error {
+				if state.modal != modalSnippet {
+					return fmt.Errorf("modal = %d, want the snippet dialog", state.modal)
+				}
+				return nil
+			},
+		},
+		{
+			name: "workspace library", section: sectionWorkspaces, action: hitWorkspaceNew,
+			prepare: func(*State) {},
+			check: func(state *State) error {
+				if state.modal != modalWorkspaceDraft {
+					return fmt.Errorf("modal = %d, want the workspace draft", state.modal)
+				}
+				return nil
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			test.prepare(state)
+			state.activeSection = test.section
+			view, err := headless.Open(app.Config{
+				Title: test.name, Width: 1400, Height: 900, Tree: Tree(),
+				Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+			}, nil, headless.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if err := view.Wait(50 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+			action, ok := hitByIDInSnapshot(view.Snapshot(), test.action)
+			if !ok {
+				t.Fatalf("%s painted no empty-state action", test.name)
+			}
+			if err := view.Click(action.Bounds.X+action.Bounds.Width/2, action.Bounds.Y+action.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			if err := view.Wait(50 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+			if err := test.check(state); err != nil {
+				t.Fatalf("%s: %v", test.name, err)
+			}
+		})
+	}
+}

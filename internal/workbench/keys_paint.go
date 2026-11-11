@@ -6,8 +6,24 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-func (state *State) paintKeysWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
+// keysSectionUI is what the keychain page's declaration leaves for its paint.
+type keysSectionUI struct {
+	content, empty, addButton, removeButton, passphraseButton, copyButton ui.Box
+	copyWidth, passphraseWidth, removeWidth, addWidth                     float32
+	copyIcon, passphraseIcon, removeIcon, addIcon                         uint8
+	condensed                                                             bool
+	// draw is the page hook that paints into these slots. It is kept so a paint
+	// does not build a closure for the hook.
+	draw func(*ui.DrawContext)
+}
+
+// declareKeysWorkspace declares the keychain page in the workbench page: its
+// header, its open/empty body and its footer. The buttons, the table and the
+// empty state's icon are painted into the slots it leaves.
+func (state *State) declareKeysWorkspace(c ui.C) {
+	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
+	bounds := state.catalogSectionBounds()
 	// The title keeps a readable column beside the buttons; a card too narrow for
 	// both shows the buttons as their icons, whose tooltips name them.
 	const (
@@ -34,50 +50,60 @@ func (state *State) paintKeysWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 	}
 	selectedEncrypted := hasSelection && selected.Encrypted
 	canCopy := hasSelection && selected.Error == ""
-
-	var content, addButton, removeButton, passphraseButton, copyButton, empty ui.Box
-	state.drawSectionBody(canvas, bounds, func(c ui.C) {
-		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
-			ui.Row(c).Children(func() {
-				ui.Column(c).Grow(1).PadSides(3, 0, 0, 0).Children(func() {
-					ui.Text(c, messages.KeyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Width(min(bounds.Width*0.45, titleRoom)).Ellipsis()
-					ui.Paragraph(c, messages.KeyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(22).Width(min(bounds.Width*0.62, titleRoom))
-				})
-				copyButton = ui.Slot(c).Size(copyWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
-				passphraseButton = ui.Slot(c).Size(passphraseWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
-				removeButton = ui.Slot(c).Size(removeWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
-				addButton = ui.Slot(c).Size(addWidth, toolbarHeight).Shrink(0)
+	view := &state.sectionBodies.keys
+	draw := view.draw
+	*view = keysSectionUI{
+		copyWidth: copyWidth, passphraseWidth: passphraseWidth, removeWidth: removeWidth, addWidth: addWidth,
+		copyIcon: copyIcon, passphraseIcon: passphraseIcon, removeIcon: removeIcon, addIcon: addIcon,
+		condensed: condensed,
+	}
+	if draw == nil {
+		draw = func(d *ui.DrawContext) { state.paintKeysWorkspace(d.Canvas) }
+	}
+	view.draw = draw
+	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
+	body.Children(func() {
+		ui.Row(c).Children(func() {
+			ui.Column(c).Grow(1).PadSides(3, 0, 0, 0).Children(func() {
+				ui.Text(c, messages.KeyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(28).Width(min(bounds.Width*0.45, titleRoom)).Ellipsis()
+				ui.Paragraph(c, messages.KeyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(22).Width(min(bounds.Width*0.62, titleRoom))
 			})
-			if len(state.identities) == 0 {
-				empty = state.reserveEmptyPage(c, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd)
-			} else {
-				content = ui.Slot(c).Grow(1).MarginSides(17, 0, 9, 0)
+			view.copyButton = state.declareButtonSized(c, hitKeysCopyPublic, messages.KeyCopyPublic, copyIcon, false, false, canCopy, toolbarFont, condensed).Size(copyWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
+			view.passphraseButton = state.declareButtonSized(c, hitKeysPassphrase, messages.KeySavePassphrase, passphraseIcon, false, false, selectedEncrypted, toolbarFont, condensed).Size(passphraseWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
+			view.removeButton = state.declareButtonSized(c, hitKeysRemove, messages.KeyRemove, removeIcon, false, false, state.selectedIdentityID != 0, toolbarFont, condensed).Size(removeWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
+			view.addButton = state.declareButtonSized(c, hitKeysAdd, messages.KeyAdd, addIcon, true, false, true, toolbarFont, condensed).Size(addWidth, toolbarHeight).Shrink(0)
+		})
+		if len(state.identities) == 0 {
+			view.empty = state.reserveEmptyPage(c, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd, hitKeysAdd, iconKey, true)
+		} else {
+			view.content = ui.Slot(c).Grow(1).MarginSides(17, 0, 9, 0)
+		}
+		ui.Divider(c).Background(pal.line)
+		ui.Row(c).Height(50).PadSides(8, 0, 0, 0).Gap(4).Items(ui.Start).Children(func() {
+			ui.Text(c, state.identityCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(22).Width(120).Shrink(0)
+			if statusValue != "" {
+				ui.Text(c, statusValue).FontSize(metrics.FontSizeS).Color(statusColor).LineHeight(22).Grow(1)
 			}
-			ui.Divider(c).Background(pal.line)
-			ui.Row(c).Height(50).PadSides(8, 0, 0, 0).Gap(4).Items(ui.Start).Children(func() {
-				ui.Text(c, state.identityCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(22).Width(120).Shrink(0)
-				if statusValue != "" {
-					ui.Text(c, statusValue).FontSize(metrics.FontSizeS).Color(statusColor).LineHeight(22).Grow(1)
-				}
-			})
 		})
 	})
+	body.Clip().DrawOver(view.draw)
+}
 
-	state.keysAddButton = addButton.Rect()
-	state.paintToolbarButton(canvas, hitKeysCopyPublic, copyButton.Rect().X, copyButton.Rect().Y, copyWidth, messages.KeyCopyPublic, copyIcon, false, canCopy, condensed)
-	state.paintToolbarButton(canvas, hitKeysPassphrase, passphraseButton.Rect().X, passphraseButton.Rect().Y, passphraseWidth, messages.KeySavePassphrase, passphraseIcon, false, selectedEncrypted, condensed)
-	state.paintToolbarButton(canvas, hitKeysRemove, removeButton.Rect().X, removeButton.Rect().Y, removeWidth, messages.KeyRemove, removeIcon, false, state.selectedIdentityID != 0, condensed)
-	state.paintToolbarButton(canvas, hitKeysAdd, addButton.Rect().X, addButton.Rect().Y, addWidth, messages.KeyAdd, addIcon, true, true, condensed)
+// paintKeysWorkspace paints the keychain page's buttons, table and empty state
+// into the slots its declaration left.
+func (state *State) paintKeysWorkspace(canvas *gfx.Canvas) {
+	view, messages := &state.sectionBodies.keys, state.messages
+	state.keysAddButton = view.addButton.Rect()
 
 	if len(state.identities) == 0 {
-		state.drawReservedEmptyPage(canvas, empty, iconKey, hitKeysAdd, messages.KeyAdd, true)
+		state.drawReservedEmptyPage(canvas, view.empty, iconKey)
 		state.paintKeysMenu(canvas)
 		return
 	}
 	columns := [...]components.TableColumn{{Width: 210}, {Width: 170}, {Width: 145}, {Width: 0}}
 	headings := [...]string{messages.KeyColumnName, messages.KeyColumnType, messages.KeyColumnProtection, messages.KeyColumnFingerprint}
 	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), content.Rect(), columns[:])
+	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
 	table.Header(headings[:])
 	for _, identity := range state.identities {
 		if table.RowAt(hitKeyRowList, int(identity.ID), identity.cells[:], identity.ID == state.selectedIdentityID) && state.modal == modalNone {

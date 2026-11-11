@@ -60,10 +60,7 @@ type proxyEditor struct {
 	// fromHostForm remembers that the host form opened this route dialog, so
 	// closing it returns to the form instead of to the page.
 	fromHostForm bool
-	// dialogPage declares the dialog's body, dialogView caches its view, and
-	// dialogBody is where the body laid out the controls painted by hand.
-	dialogPage *ui.Page
-	dialogView func(ui.C)
+	// dialogBody is where the dialog body laid out the controls painted by hand.
 	dialogBody proxyDialogBody
 }
 
@@ -255,12 +252,6 @@ func (state *State) proxyDialogKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		return gfx.EventResult{}, false
 	}
 	editor := &state.proxyEditor
-	if editor.dialogPage != nil {
-		// The body page's controls, if any, take the key before the picker.
-		if result, handled := editor.dialogPage.Key(event); handled {
-			return result, true
-		}
-	}
 	var result gfx.EventResult
 	switch {
 	case event.Target == hitProxyDialogTarget || event.Target == hitProxyTargetTrigger:
@@ -315,12 +306,6 @@ func isProxyPickerTarget(id gfx.ID) bool {
 // press anywhere else without discarding the dialog.
 func (state *State) proxyPickerPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	editor := &state.proxyEditor
-	if editor.dialogPage != nil {
-		// The dialog's body page gets the pointer before the picker's own paths.
-		if result, handled := editor.dialogPage.Pointer(event); handled {
-			return result, true
-		}
-	}
 	if !editor.targetSelect.Open && !editor.jumpSelect.Open {
 		return gfx.EventResult{}, false
 	}
@@ -547,14 +532,15 @@ func (state *State) refreshProxy(route *proxyRecord) {
 	}
 	var labels strings.Builder
 	var targets strings.Builder
+	for index := len(chain) - 1; index >= 0; index-- {
+		hop := chain[index]
+		labels.WriteString(hop.Label)
+		labels.WriteString(" → ")
+		targets.WriteString(hop.target)
+		targets.WriteString(" → ")
+	}
 	labels.WriteString(target.Label)
 	targets.WriteString(target.target)
-	for _, hop := range chain {
-		labels.WriteString(" → ")
-		labels.WriteString(hop.Label)
-		targets.WriteString(" → ")
-		targets.WriteString(hop.target)
-	}
 	status := state.messages.ProxyStopped
 	if !route.Stopped {
 		status = state.messages.ProxyRunning

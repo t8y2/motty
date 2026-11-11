@@ -44,80 +44,13 @@ var (
 // this is not choosing from a list.
 const maxListedPorts = 12
 
-// The segmented choices of the host form. Each is a page of its own: the form's
-// layout has already placed every control at a rectangle, so a page declares one
-// Choice there and keeps the roving focus the dialog's keys ask it for.
+// The segmented choices of the host form. Each is a Choice of the form's own
+// page, declared at the row its layout reserved.
 var (
 	hostProtocolChoices = [...]hostProtocol{protocolSSH, protocolTelnet, protocolSerial, protocolVNC, protocolRDP}
 	hostFlowChoices     = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
 	hostAlgoChoices     = [...]algoMode{algoDefault, algoCompatible, algoCustom}
 )
-
-// dialogChoice is one segmented choice of a dialog, declared as a page. chosen is
-// the identity of the option the page painted last, kept so the form's tab ring
-// can reach the choice even while its page lies outside the clipped viewport.
-type dialogChoice struct {
-	page   *ui.Page
-	view   func(ui.C)
-	chosen gfx.ID
-}
-
-// dialogChoiceKind names the declaration a dialog choice's page is drawn with.
-type dialogChoiceKind uint8
-
-const (
-	hostProtocolChoice dialogChoiceKind = iota
-	hostFlowChoice
-	hostAlgoChoice
-	hostTransferChoice
-	xyModeChoice
-	xyDirectionChoice
-)
-
-// dialogChoiceView is the page declaration of one choice. It is asked for once,
-// when the page is made: a method value made in every paint allocates.
-func (state *State) dialogChoiceView(kind dialogChoiceKind) func(ui.C) {
-	switch kind {
-	case hostProtocolChoice:
-		return state.declareHostProtocolChoice
-	case hostFlowChoice:
-		return state.declareHostFlowChoice
-	case hostAlgoChoice:
-		return state.declareHostAlgoChoice
-	case hostTransferChoice:
-		return state.declareHostTransferChoice
-	case xyModeChoice:
-		return state.declareXYModeChoice
-	case xyDirectionChoice:
-		return state.declareXYDirectionChoice
-	}
-	return nil
-}
-
-// drawDialogChoice draws a dialog choice's page in bounds, making the page the
-// first time the control paints.
-func (state *State) drawDialogChoice(canvas *gfx.Canvas, bounds gfx.Rect, choice *dialogChoice, root string, kind dialogChoiceKind) {
-	if choice.page == nil {
-		choice.page = ui.NewPage(ui.PageConfig{Root: root, Theme: &state.theme})
-		choice.view = state.dialogChoiceView(kind)
-	}
-	choice.page.Draw(canvas, bounds, choice.view)
-}
-
-// hostDialogChoiceKey gives the form's page choices their arrows before the
-// form's own Tab order and scrolling take the key.
-func (state *State) hostDialogChoiceKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	editor := &state.editor
-	for _, choice := range [...]*ui.Page{editor.protocolChoice.page, editor.flowChoice.page, editor.algoChoice.page, editor.transferChoice.page} {
-		if choice == nil {
-			continue
-		}
-		if result, handled := choice.Key(event); handled {
-			return result, true
-		}
-	}
-	return gfx.EventResult{}, false
-}
 
 // hostProtocolChoiceLabel names one protocol as the form's choice shows it.
 func (state *State) hostProtocolChoiceLabel(protocol hostProtocol) string {
@@ -159,113 +92,141 @@ func (state *State) hostAlgoChoiceLabel(mode algoMode) string {
 	}
 }
 
-// declareHostProtocolChoice is the page of the protocol choice. The choice writes
-// editor.protocol, so applyProtocol is what follows the switch.
-func (state *State) declareHostProtocolChoice(c ui.C) {
+// declareHostProtocolChoice declares the protocol choice in the form's page at
+// the slot the body reserved for it. It writes editor.protocol, so applyProtocol
+// is what follows the switch.
+func (state *State) declareHostProtocolChoice(c ui.C) ui.Box {
 	editor := &state.editor
+	editor.protocolBefore = editor.protocol
 	choice := ui.Choice(c, &editor.protocol, hostProtocolChoices[:], state.hostProtocolChoiceLabel).Fill()
 	if choice.Changed() {
 		editor.applyProtocol(editor.protocolBefore)
 		state.dialogError = ""
 	}
+	return choice
 }
 
-// declareHostFlowChoice is the page of the serial flow-control choice. The click
-// that already wrote editor.flow only has the form's error to clear.
-func (state *State) declareHostFlowChoice(c ui.C) {
-	choice := ui.Choice(c, &state.editor.flow, hostFlowChoices[:], state.hostFlowChoiceLabel).Fill()
+// declareHostFlowChoice declares the serial flow-control choice in the form's
+// page. The click that already wrote editor.flow only has the form's error to
+// clear.
+func (state *State) declareHostFlowChoice(c ui.C) ui.Box {
+	choice := hostFormChoice(c, state.messages.Tools.FieldFlow, hostFormRowHeight, &state.editor.flow, hostFlowChoices[:], state.hostFlowChoiceLabel)
 	if choice.Changed() {
 		state.dialogError = ""
 	}
+	return choice
 }
 
-// declareHostAlgoChoice is the page of the SSH algorithm choice.
-func (state *State) declareHostAlgoChoice(c ui.C) {
-	choice := ui.Choice(c, &state.editor.algoMode, hostAlgoChoices[:], state.hostAlgoChoiceLabel).Fill()
+// declareHostAlgoChoice declares the SSH algorithm choice in the form's page.
+func (state *State) declareHostAlgoChoice(c ui.C) ui.Box {
+	choice := hostFormChoice(c, state.messages.Tools.AlgoField, hostFormRowHeight, &state.editor.algoMode, hostAlgoChoices[:], state.hostAlgoChoiceLabel)
 	if choice.Changed() {
 		state.dialogError = ""
 	}
+	return choice
 }
 
-func (state *State) paintHostProtocolSwitch(canvas *gfx.Canvas, bounds gfx.Rect) {
+// declareHostEndpointSlots lays the endpoint block out in the form's page: the
+// address and the port, and the credentials under them, by the protocol. The
+// painter fills the slots this leaves with the dialog's fields.
+func (state *State) declareHostEndpointSlots(c ui.C, parent ui.Box, rowHeight float32) {
 	editor := &state.editor
-	editor.protocolBefore = editor.protocol
-	state.drawDialogChoice(canvas, bounds, &editor.protocolChoice, "host-dialog-protocol", hostProtocolChoice)
-	state.rememberHostChoice(canvas, bounds, &editor.protocolChoice, state.hostProtocolChoiceLabel(editor.protocol))
+	slots := &editor.form.body.endpointSlots
+	*slots = hostEndpointSlots{}
+	parent.Children(func() {
+		switch editor.protocol {
+		case protocolSerial:
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				slots.picker = ui.Slot(c).WidthPercent(30)
+			})
+			// The flow control is a three-way choice: it takes the row under
+			// the line settings rather than sharing one with them, where its
+			// labels would be cut.
+			slots.second = ui.Slot(c).Height(rowHeight)
+			slots.third = ui.Slot(c).Height(rowHeight)
+		case protocolTelnet:
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
+			})
+		case protocolVNC:
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
+			})
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.second = ui.Slot(c).Grow(1)
+				slots.password = ui.Slot(c).Grow(1)
+			})
+		case protocolSSH:
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
+			})
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.second = ui.Slot(c).Grow(1)
+				slots.authentication = ui.Slot(c).Grow(1)
+				if editor.auth == authPrivateKey {
+					slots.identity = ui.Slot(c).Grow(1)
+				} else if editor.auth != authAgent {
+					slots.password = ui.Slot(c).Grow(1)
+				}
+			})
+			if state.hostAsksKeyPassphrase() {
+				slots.passphrase = ui.Slot(c).Height(rowHeight)
+			}
+		default:
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.address = ui.Slot(c).Grow(1)
+				slots.third = ui.Slot(c).Width(hostPortWidth).Shrink(0)
+			})
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.second = ui.Slot(c).Grow(1)
+				slots.password = ui.Slot(c).Grow(1)
+			})
+		}
+	})
+	// A role this protocol has no row for aliases one it does, so a protocol
+	// change can paint the new protocol in the frame's event pass.
+	if !slots.picker.Valid() {
+		slots.picker = slots.address
+	}
+	if !slots.second.Valid() {
+		slots.second = slots.address
+	}
+	if !slots.authentication.Valid() {
+		slots.authentication = slots.second
+	}
+	if !slots.password.Valid() {
+		slots.password = slots.second
+	}
+	if !slots.identity.Valid() {
+		slots.identity = slots.second
+	}
+	if !slots.passphrase.Valid() {
+		slots.passphrase = slots.third
+	}
 }
 
 // paintHostEndpointRows draws where the host is: its address and, beside it, the
 // port it is reached on, and on the row below the credentials the protocol takes.
 // A serial port takes the device, its line and, on its own row, the flow
 // control; a Telnet host has no credentials in the form, so it takes one row.
-func (state *State) paintHostEndpointRows(canvas *gfx.Canvas, x, y, width, rowHeight float32) {
+// The slots were declared with the form's page; the switch reads the protocol now
+// in effect, as the event pass of a protocol click still paints it.
+func (state *State) paintHostEndpointRows(canvas *gfx.Canvas) {
 	m, tools := state.messages, state.messages.Tools
 	editor := &state.editor
-	var address, picker, second, password, third, authentication, identity, passphrase ui.Box
-	f := state.partLayout.Begin(canvas, state.Theme(), gfx.Rect{X: x, Y: y, Width: width, Height: float32(state.hostEndpointRows()) * rowHeight})
-	f.Column().Fill().Children(func() {
-		switch editor.protocol {
-		case protocolSerial:
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				address = f.Slot().Grow(1)
-				picker = f.Slot().WidthPercent(30)
-			})
-			// The flow control is a three-way choice: it takes the row under
-			// the line settings rather than sharing one with them, where its
-			// labels would be cut.
-			second = f.Slot().Height(rowHeight)
-			third = f.Slot().Height(rowHeight)
-		case protocolTelnet:
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				address = f.Slot().Grow(1)
-				third = f.Slot().Width(hostPortWidth).Shrink(0)
-			})
-		case protocolVNC:
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				address = f.Slot().Grow(1)
-				third = f.Slot().Width(hostPortWidth).Shrink(0)
-			})
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				second = f.Slot().Grow(1)
-				password = f.Slot().Grow(1)
-			})
-		case protocolSSH:
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				address = f.Slot().Grow(1)
-				third = f.Slot().Width(hostPortWidth).Shrink(0)
-			})
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				second = f.Slot().Grow(1)
-				authentication = f.Slot().Grow(1)
-				if editor.auth == authPrivateKey {
-					identity = f.Slot().Grow(1)
-				} else if editor.auth != authAgent {
-					password = f.Slot().Grow(1)
-				}
-			})
-			if state.hostAsksKeyPassphrase() {
-				passphrase = f.Slot().Height(rowHeight)
-			}
-		default:
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				address = f.Slot().Grow(1)
-				third = f.Slot().Width(hostPortWidth).Shrink(0)
-			})
-			f.Row().Height(rowHeight).Gap(8).Children(func() {
-				second = f.Slot().Grow(1)
-				password = f.Slot().Grow(1)
-			})
-		}
-	})
-	f.End()
+	slots := &editor.form.body.endpointSlots
+	address, picker, second := slots.address, slots.picker, slots.second
+	password, third := slots.password, slots.third
+	authentication, identity, passphrase := slots.authentication, slots.identity, slots.passphrase
 	switch editor.protocol {
 	case protocolSerial:
 		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, tools.FieldDevice, tools.FieldDevicePlaceholder, address.Rect())
 		state.paintPortsTrigger(canvas, picker.Rect())
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, tools.FieldLine, tools.FieldLinePlaceholder, second.Rect())
-		content := components.BeginField(canvas, state.Theme(), third.Rect()).Paint(tools.FieldFlow, "", "")
-		state.drawDialogChoice(canvas, content, &editor.flowChoice, "host-dialog-flow", hostFlowChoice)
-		state.rememberHostChoice(canvas, content, &editor.flowChoice, state.hostFlowChoiceLabel(editor.flow))
 	case protocolTelnet:
 		state.paintDialogField(canvas, hitDialogAddress, fieldAddress, m.FieldAddress, m.FieldAddressPlaceholder, address.Rect())
 		state.paintDialogField(canvas, hitDialogPort, fieldPort, m.FieldPort, "", third.Rect())
@@ -539,38 +500,41 @@ func (state *State) hostDialogExtra() float32 {
 // left with too little width for its own placeholder.
 const otpButtonsRow = 38
 
-// paintAdvancedSection draws the row that opens or closes an SSH host's
-// less-used settings and, while open, the settings under it.
-func (state *State) paintAdvancedSection(canvas *gfx.Canvas, bounds gfx.Rect) {
+// declareHostAdvancedHeader declares the row that opens or closes an SSH host's
+// less-used settings, and the chevron it paints, in the form's page.
+func (state *State) declareHostAdvancedHeader(c ui.C) (header, icon ui.Box) {
 	pal, open := state.pal, state.editor.advancedOpen
 	label := state.messages.Tools.AdvancedOptions
+	header = ui.Row(c).FillWidth().MarginTop(advancedHeaderGap).Height(32).PadSides(0, 0, 0, 2).Gap(8).Items(ui.Center).
+		Radius(radius.control).Hover(ui.Look{}.Background(pal.surfaceSoft)).
+		HitWith(hitDialogAdvanced, label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: open})
+	header.Children(func() {
+		icon = ui.Slot(c).Size(16, 16)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(20)
+	})
+	return header, icon
+}
+
+// paintAdvancedSection draws the row that opens or closes an SSH host's
+// less-used settings and, while open, the settings under it.
+func (state *State) paintAdvancedSection(canvas *gfx.Canvas) {
+	pal, open := state.pal, state.editor.advancedOpen
+	header := state.editor.form.body.advancedHeader
+	icon := state.editor.form.body.advancedHeaderIcon
+	state.rememberHostControl(hitDialogAdvanced, header.Rect())
 	chevron := iconChevronRight
 	if open {
 		chevron = iconChevronDown
 	}
-	var icon ui.Box
-	header := gfx.Rect{X: bounds.X, Y: bounds.Y + advancedHeaderGap, Width: bounds.Width, Height: 32}
-	state.rememberHostControl(hitDialogAdvanced, header)
-	f := state.partLayout.Begin(canvas, state.Theme(), header)
-	f.Row().Fill().PadSides(0, 0, 0, 2).Gap(8).Items(ui.Center).
-		Radius(radius.control).Hover(ui.Look{}.Background(pal.surfaceSoft)).
-		HitWith(hitDialogAdvanced, label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: open}).
-		Children(func() {
-			icon = f.Slot().Size(16, 16)
-			f.Text(label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(20)
-		})
-	f.End()
 	paintIcon(canvas, uint8(chevron), icon.Rect(), pal.muted)
 	if open {
-		state.paintAlgorithmRows(canvas, bounds.X, bounds.Y+advancedHeaderHeight, bounds.Width, hostFormRowHeight)
+		state.paintAlgorithmRows(canvas)
 	}
 }
 
-// hostVNCRowsRoot and hostAlgoRowsRoot name the pages the desktop switches and
-// the SSH algorithm rows are declared in.
+// The desktop switches and the SSH algorithm rows are slots of the host form's
+// own page.
 const (
-	hostVNCRowsRoot  = "host-vnc-rows"
-	hostAlgoRowsRoot = "host-algo-rows"
 	// The widths of the one-time code row's buttons.
 	algoRemoveWidth, algoScanWidth, algoPasteWidth = 84, 132, 96
 )
@@ -587,42 +551,17 @@ type hostAlgoRowsBody struct {
 	agentAccess, agentHelp                        ui.Box
 }
 
-func (state *State) hostVNCRowsPage() *ui.Page {
-	form := &state.editor.form
-	if form.vncPage == nil {
-		form.vncPage = ui.NewPage(ui.PageConfig{Root: hostVNCRowsRoot, Theme: &state.theme})
-		form.vncView = state.declareHostVNCRows
-	}
-	return form.vncPage
-}
-
-func (state *State) hostAlgoRowsPage() *ui.Page {
-	form := &state.editor.form
-	if form.algoPage == nil {
-		form.algoPage = ui.NewPage(ui.PageConfig{Root: hostAlgoRowsRoot, Theme: &state.theme})
-		form.algoView = state.declareHostAlgoRows
-	}
-	return form.algoPage
-}
-
 // paintAlgorithmRows draws the SSH algorithm choice and, for a custom one, the
-// list that is allowed, then the one-time code secret.
-func (state *State) paintAlgorithmRows(canvas *gfx.Canvas, x, y, width, rowHeight float32) {
+// list that is allowed, then the one-time code secret. The rows were declared
+// with the host form's page; this paints into the slots it left.
+func (state *State) paintAlgorithmRows(canvas *gfx.Canvas) {
 	m, editor := state.messages.Tools, &state.editor
-	// The page's choice may write a new mode while it is declared; the rows this
-	// page laid out are the ones before it, so draw the custom field only when
-	// its row was laid out.
-	customMode := editor.algoMode == algoCustom
-	rows := float32(1)
-	if customMode {
-		rows++
-	}
-	b := &editor.form.algoBody
-	state.hostAlgoRowsPage().Draw(canvas, gfx.Rect{X: x, Y: y, Width: width, Height: (rows+1)*rowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight}, editor.form.algoView)
+	// The choice may write a new mode while the page's declaration delivered the
+	// click; the rows this frame laid out are the ones before it, so draw the
+	// custom field only when its row was laid out.
+	customMode := editor.form.algoLayout == algoCustom
 
-	content := components.BeginField(canvas, state.Theme(), b.algo.Rect()).Paint(m.AlgoField, "", "")
-	state.drawDialogChoice(canvas, content, &editor.algoChoice, "host-dialog-algorithm", hostAlgoChoice)
-	state.rememberHostChoice(canvas, content, &editor.algoChoice, state.hostAlgoChoiceLabel(editor.algoMode))
+	b := &editor.form.algoBody
 	if customMode {
 		state.paintDialogField(canvas, hitDialogAlgorithms, fieldAlgorithms, m.AlgoCustomField, m.AlgoCustomPlaceholder, b.custom.Rect())
 	}
@@ -648,9 +587,9 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 	m, editor, pal := state.messages.Tools, &state.editor, state.pal
 	b := &editor.form.algoBody
 	*b = hostAlgoRowsBody{}
-	customMode := editor.algoMode == algoCustom
+	customMode := editor.form.algoLayout == algoCustom
 	rowHeight := float32(hostFormRowHeight)
-	ui.Column(c).Fill().Children(func() {
+	ui.Column(c).FillWidth().Children(func() {
 		b.algo = ui.Slot(c).Height(rowHeight)
 		if customMode {
 			b.custom = ui.Slot(c).Height(rowHeight)
@@ -726,20 +665,21 @@ func (state *State) desktopRowsHeight() float32 {
 	return height
 }
 
-// paintVNCRows declares the switches of a VNC or RDP host and paints them in
-// bounds' place: connecting through SSH, sharing the clipboard, showing the
-// picture without the bars around it and, for RDP, asking Windows for its
+// paintVNCRows paints the switches of a VNC or RDP host in the slots the host
+// form's page laid out: connecting through SSH, sharing the clipboard, showing
+// the picture without the bars around it and, for RDP, asking Windows for its
 // console (administrative) session.
-func (state *State) paintVNCRows(canvas *gfx.Canvas, bounds gfx.Rect) {
+func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
-	state.hostVNCRowsPage().Draw(canvas, bounds, editor.form.vncView)
 	state.paintDialogCheckbox(canvas, hitDialogViaSSH, m.ViaSSH, editor.viaSSH, b.tunnel)
 	state.paintDialogCheckbox(canvas, hitDialogClipboard, m.ShareClipboard, editor.clipboard, b.clipboard)
 	state.paintDialogCheckbox(canvas, hitDialogChromeless, m.HideBars, editor.chromeless, b.chromeless)
-	if editor.protocol == protocolRDP {
+	// A protocol choice takes effect during this frame's event pass; paint the
+	// switches that were declared before that choice changed the protocol.
+	if editor.form.layoutProtocol == protocolRDP {
 		state.paintDialogCheckbox(canvas, hitDialogConsole, m.ConsoleSession, editor.console, b.console)
-	} else if editor.protocol == protocolVNC {
+	} else if editor.form.layoutProtocol == protocolVNC {
 		state.paintDialogCheckbox(canvas, hitDialogVNCAuthOnly, m.AllowVNCAuthOnly, editor.vncAuthOnly, b.authOnly)
 	}
 }

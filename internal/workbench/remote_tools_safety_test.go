@@ -20,7 +20,7 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 	server.mu.Lock()
 	server.failures["processes"] = errors.New("listing failed")
 	server.mu.Unlock()
-	state.Click(hitRemoteRefresh)
+	clickRemoteToolsAction(t, state, hitRemoteRefresh)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if len(state.remote.rows) != 3 || state.remote.selected != selected || !state.remote.stale || state.remote.collectedAt != stamp || stamp.IsZero() {
 		t.Fatalf("lost successful snapshot: %+v", state.remote)
@@ -32,14 +32,17 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 		}
 	}
 	for _, id := range []gfx.ID{hitRemoteKill, hitRemoteTerminate, hitRemoteNiceLower} {
-		state.Click(id)
+		state.clickRemoteTools(id)
 		if state.modal != modalRemoteTools || server.ran("kill") != 0 || server.ran("renice") != 0 {
 			t.Fatal("direct dispatch bypassed stale-state guard")
 		}
 	}
-	state.Click(hitRemoteRowList.At(0))
+	clickRemoteToolsRow(t, state, 0)
 	canvas := &gfx.Canvas{}
-	driver, err := app.NewDriver(app.Config{Title: "stale processes", Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer}, canvas)
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
+		Title: "stale processes", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer,
+	}), canvas)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +50,7 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 	if hit, ok := hitByID(canvas, hitRemoteSnapshotStatus); !ok || !strings.Contains(hit.Label, stamp.Format("15:04:05")) {
 		t.Fatalf("native stale status is missing timestamp: %q found=%v", state.remote.snapshotStatus, ok)
 	}
-	kill, ok := hitByID(canvas, hitRemoteKill)
+	kill, ok := hitByLabelRoleLast(canvas, state.messages.Tools.RemoteForceKill, gfx.RoleButton)
 	if !ok || !kill.Disabled {
 		t.Fatal("native stale signal button is not disabled")
 	}
@@ -63,7 +66,7 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 	server.mu.Lock()
 	delete(server.failures, "processes")
 	server.mu.Unlock()
-	state.Click(hitRemoteRefresh)
+	clickRemoteToolsAction(t, state, hitRemoteRefresh)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if state.remote.stale || state.remote.failed || !state.remote.collectedAt.After(stamp) {
 		t.Fatal("successful refresh did not restore freshness")
@@ -86,7 +89,7 @@ func TestRemoteProcessConfirmationCannotEscapeCapturedScope(t *testing.T) {
 		t.Run(change, func(t *testing.T) {
 			state, server, _ := openRemoteToolsDialog(t)
 			selectRemoteToolsRow(state, 0)
-			state.Click(hitRemoteKill)
+			clickRemoteToolsAction(t, state, hitRemoteKill)
 			if state.modal != modalForm {
 				t.Fatal("missing process confirmation")
 			}
@@ -137,7 +140,7 @@ func TestRemoteIdentityUnavailableKeepsSearchButDisablesProcessActions(t *testin
 			}
 		}
 	}
-	state.Click(hitRemoteKill)
+	state.clickRemoteTools(hitRemoteKill)
 	if state.modal != modalRemoteTools || state.remote.status != state.messages.Tools.RemoteProcessUnverifiable {
 		t.Fatal("unsupported identity did not explain read-only state")
 	}
@@ -184,7 +187,7 @@ func TestRemoteInitialFailureHasNoSuccessfulTimestamp(t *testing.T) {
 func TestRemotePIDReuseBetweenConfirmationAndExecutionNeverSignals(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	selectRemoteToolsRow(state, 0)
-	state.Click(hitRemoteKill)
+	clickRemoteToolsAction(t, state, hitRemoteKill)
 	if state.modal != modalForm {
 		t.Fatal("no confirmation")
 	}
@@ -196,7 +199,7 @@ func TestRemotePIDReuseBetweenConfirmationAndExecutionNeverSignals(t *testing.T)
 	if server.ran("kill") != 0 || !state.remote.stale || state.remote.selected != "" || state.remote.status != state.messages.Tools.RemoteProcessChanged {
 		t.Fatal("confirmation signaled a reused PID or left it actionable")
 	}
-	state.Click(hitRemoteRefresh)
+	clickRemoteToolsAction(t, state, hitRemoteRefresh)
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	if state.remote.stale || state.remote.selected != "" {
 		t.Fatal("refresh silently selected a replacement")

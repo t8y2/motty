@@ -149,7 +149,7 @@ func TestApprovalScopeMenuKeysChooseAndClose(t *testing.T) {
 	paintAt(state, panelWide)
 	// Down on the closed chip opens its menu; the page menu then takes the
 	// keyboard, so the next Down goes into its rows.
-	state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIAutoScope})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIAutoScope})
 	if !state.ai.panel.autoMenu {
 		t.Fatal("Down on the chip did not open the menu")
 	}
@@ -157,7 +157,7 @@ func TestApprovalScopeMenuKeysChooseAndClose(t *testing.T) {
 
 	// Down from the chip goes to the first scope; the page menu's keyboard
 	// routing is what moves the focus between its rows.
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIAutoScope})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIAutoScope})
 	if result.Focus.IsZero() {
 		t.Fatal("Down from the chip did not enter the menu")
 	}
@@ -166,7 +166,7 @@ func TestApprovalScopeMenuKeysChooseAndClose(t *testing.T) {
 	if !ok || first.Label != state.messages.AIPanel.RiskLow {
 		t.Fatalf("Down focused %q, want the first scope", first.Label)
 	}
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: result.Focus})
+	result = windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: result.Focus})
 	canvas, _ = paintAt(state, panelWide)
 	second, ok := hitByID(canvas, result.Focus)
 	if !ok || second.Label != state.messages.AIPanel.RiskMedium {
@@ -185,8 +185,8 @@ func TestApprovalScopeMenuKeysChooseAndClose(t *testing.T) {
 	// Escape is the runtime's dismiss click on the menu's escape target.
 	state.Click(hitAIAutoScope)
 	canvas, _ = paintAt(state, panelWide)
-	result = state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIAutoScope})
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: result.Focus})
+	result = windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIAutoScope})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: result.Focus})
 	clickMenuItemByID(t, state, canvas.EscapeTarget())
 	if state.ai.panel.autoMenu {
 		t.Fatal("Escape left the menu open")
@@ -198,17 +198,17 @@ func TestApprovalScopeMenuStartsOnTheFirstScopeAndKeepsTheWheel(t *testing.T) {
 	paintAt(state, panelWide)
 	state.Click(hitAIAutoScope)
 	canvas, _ := paintAt(state, panelWide)
-	result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIAutoScope})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIAutoScope})
 	if row, ok := hitByID(canvas, result.Focus); !ok || row.Label != state.messages.AIPanel.RiskLow {
 		t.Fatalf("the menu focus starts on %q, want the first scope", row.Label)
 	}
 	row := aiMenuRow(t, canvas, state.messages.AIPanel.RiskLow)
-	before := state.ai.scroll.Offset()
-	result = state.Scroll(gfx.ScrollEvent{X: row.Bounds.X + 4, Y: row.Bounds.Y + 4, DeltaY: 120, Precise: true, Viewport: panelWide, Target: row.ID})
+	before := aiListOffset(state)
+	result = windowScrollRoutes(state, gfx.ScrollEvent{X: row.Bounds.X + 4, Y: row.Bounds.Y + 4, DeltaY: 120, Precise: true, Viewport: panelWide, Target: row.ID})
 	if !result.Handled {
 		t.Fatal("wheel over the open menu was not consumed")
 	}
-	if state.ai.scroll.Offset() != before {
+	if aiListOffset(state) != before {
 		t.Error("wheel over the menu scrolled the conversation")
 	}
 }

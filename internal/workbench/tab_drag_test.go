@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -91,7 +92,7 @@ func TestDraggingATabAlongTheStripMovesIt(t *testing.T) {
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	found := false
 	for _, rectangle := range canvas.Rectangles() {
-		if rectangle.Layer == tabDragLayer && rectangle.Bounds.Width == 2 {
+		if rectangle.Layer == uint16(ui.LayerDrag) && rectangle.Bounds.Width == 2 {
 			found = true
 		}
 	}
@@ -176,7 +177,7 @@ func TestDraggingATabOntoAPaneEdgeDocksItThere(t *testing.T) {
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	highlighted := false
 	for _, rectangle := range canvas.Rectangles() {
-		if rectangle.Layer == tabDragLayer && rectangle.Bounds == drop.zone && rectangle.Color.Alpha < 1 {
+		if rectangle.Layer == uint16(ui.LayerDrag) && rectangle.Bounds == drop.zone && rectangle.Color.Alpha < 1 {
 			highlighted = true
 		}
 	}
@@ -290,5 +291,99 @@ func TestDraggingAPaneBarToTheTabsPullsItOutAsATab(t *testing.T) {
 	}
 	if _, ok := state.sessionByIDPointer(uint32(moved)); !ok {
 		t.Fatal("the session was lost")
+	}
+}
+
+// hitIDs is the set of identities the canvas registered, for comparing a paint
+// with a drag overlay against one without it.
+func hitIDs(hits []gfx.Hit) map[gfx.ID]int {
+	ids := make(map[gfx.ID]int, len(hits))
+	for _, hit := range hits {
+		ids[hit.ID]++
+	}
+	return ids
+}
+
+// TestTabDragOverlaysAreHitlessPageElementsOnTheDragLayer guards the ghost and
+// the tear-off hint: they paint on the drag layer over the page and add no hit,
+// so the tab and the content under the pointer keep reacting.
+func TestTabDragOverlaysAreHitlessPageElementsOnTheDragLayer(t *testing.T) {
+	state, ids := threeTabs(t)
+	var baseline gfx.Canvas
+	state.Paint(&baseline, gfx.Size{Width: 1400, Height: 900})
+	before := hitIDs(baseline.Hits())
+
+	target := hitTabList.At(int(ids[0]))
+	from := tabCenter(state, ids[0])
+	press(state, target, from)
+	last := tabCenter(state, ids[2])
+	last.X += state.tabStrip.tabWidth / 2
+	dragTo(state, target, last)
+	var dragged gfx.Canvas
+	state.Paint(&dragged, gfx.Size{Width: 1400, Height: 900})
+	if state.tabDrag.title == "" {
+		t.Fatal("the drag has no ghost title")
+	}
+	ghost := false
+	for _, text := range dragged.Texts() {
+		if text.Value == state.tabDrag.title && text.Layer == uint16(ui.LayerDrag) {
+			ghost = true
+		}
+	}
+	if !ghost {
+		t.Fatalf("no ghost %q on the drag layer", state.tabDrag.title)
+	}
+	after := hitIDs(dragged.Hits())
+	if len(before) != len(after) {
+		t.Fatalf("the overlay changed the hit list: %d -> %d", len(before), len(after))
+	}
+	for id, count := range after {
+		if before[id] != count {
+			t.Fatalf("the overlay added or moved the hit %v: %d -> %d", id, before[id], count)
+		}
+	}
+
+	// A tab dragged out of every window shows the ghost and the hint at the
+	// nearest edge, both on the drag layer and neither a hit.
+	state.tabDrag = tabDrag{
+		active: true, outside: true, title: "Dragged", at: gfx.Point{X: 700, Y: 300},
+	}
+	var tearOff gfx.Canvas
+	state.Paint(&tearOff, gfx.Size{Width: 1400, Height: 900})
+	viewport := state.windowRect()
+	width := state.tabPreview.width
+	if width <= 0 {
+		t.Fatal("the ghost has no width")
+	}
+	want := state.popupAt(&tearOff, viewport, gfx.Point{X: 700 - width/2, Y: 300 - barTabHeight/2}, width, barTabHeight, 0)
+	var ghostTitle, hint gfx.Text
+	for _, text := range tearOff.Texts() {
+		switch {
+		case text.Value == "Dragged" && text.Layer == uint16(ui.LayerDrag):
+			ghostTitle = text
+		case text.Value == state.messages.TabTearOffHint && text.Layer == uint16(ui.LayerDrag):
+			hint = text
+		}
+	}
+	if ghostTitle.Value == "" || hint.Value == "" {
+		t.Fatalf("tear-off texts: ghost %q hint %q", ghostTitle.Value, hint.Value)
+	}
+	hintCenter := hint.Bounds.X + hint.Bounds.Width/2
+	if hintCenter < want.X || hintCenter > want.X+want.Width {
+		t.Errorf("the hint at %+v lies outside the ghost at %+v", hint.Bounds, want)
+	}
+	if ghostTitle.Bounds.X < want.X || ghostTitle.Bounds.X+ghostTitle.Bounds.Width > want.X+want.Width {
+		t.Errorf("the ghost title at %+v lies outside the ghost at %+v", ghostTitle.Bounds, want)
+	}
+	if hint.Bounds.Y < ghostTitle.Bounds.Y+ghostTitle.Bounds.Height {
+		t.Errorf("the hint at %+v is not under the ghost title at %+v", hint.Bounds, ghostTitle.Bounds)
+	}
+	for _, hit := range tearOff.Hits() {
+		if hit.Bounds == want {
+			t.Errorf("the ghost registered the hit %v", hit.ID)
+		}
+		if hit.Bounds.X == hint.Bounds.X && hit.Bounds.Width == hint.Bounds.Width && hit.Bounds.Y == hint.Bounds.Y {
+			t.Errorf("the hint registered the hit %v", hit.ID)
+		}
 	}
 }

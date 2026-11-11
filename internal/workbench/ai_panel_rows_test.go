@@ -9,11 +9,11 @@ import (
 	"motty/internal/ai/risk"
 )
 
-// The list places a message by the height measured for it, and declares it with
-// the sizes the measure was made of. When the two disagree a message is drawn over
-// the next one or leaves a hole: whatever a message holds, open or closed, at any
-// width, the declared message must be exactly as tall as it was measured.
-func TestMessageIsDeclaredAsTallAsItWasMeasured(t *testing.T) {
+// The List measures a row from what the row declares. Every kind of message must
+// declare exactly the height its own layout measured, or the List's estimate for
+// the rows it has not shown disagrees with them and the conversation jumps. A
+// wrapped long line is included: its height is its line count, not one line.
+func TestMessageRowIsMeasuredAtItsBuiltHeight(t *testing.T) {
 	state, _ := panelState(t, nil)
 	long := "a longer sentence that has to wrap over several lines in the narrow column of the assistant, 中文也可以。"
 	items := []aiItem{
@@ -26,21 +26,30 @@ func TestMessageIsDeclaredAsTallAsItWasMeasured(t *testing.T) {
 		{kind: aiTool, call: llm.ToolCall{ID: "3", Name: "terminal_exec", Arguments: `{"command":"ls"}`}, status: aiToolDone, risk: risk.Low, result: "one\ntwo\nthree\n" + long},
 		{kind: aiTool, call: llm.ToolCall{ID: "4", Name: "terminal_read"}, status: aiToolDone, result: "output only"},
 	}
-	var canvas gfx.Canvas
-	var view ui.View
-	cell, cellHeight := canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
+	var builtCanvas gfx.Canvas
+	cell, cellHeight := builtCanvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
 	for _, width := range []float32{352, 160} {
 		for _, open := range []bool{false, true} {
 			for index := range items {
-				item := &items[index]
+				item := items[index]
 				row := aiRowView{expanded: open}
-				state.aiBuild(&canvas, &row, item, width, cell, cellHeight, "title")
-				canvas.Reset()
-				f := view.Begin(&canvas, state.Theme(), gfx.Rect{Width: width, Height: 4000})
-				declared := state.declareAIRow(f, 0, &row, item)
-				f.End()
-				if got := declared.Rect().Height; got != row.height {
-					t.Errorf("kind %d item %d open=%v width %v: declared %v tall, measured %v", item.kind, index, open, width, got, row.height)
+				state.aiBuild(&builtCanvas, &row, &item, width, cell, cellHeight, "title")
+				state.ai.panel.copySlots = state.ai.panel.copySlots[:0]
+
+				var list ui.ListState
+				canvas := new(gfx.Canvas)
+				canvas.SetTree(&tree)
+				page := ui.NewPage(ui.PageConfig{Tree: &tree, Root: shellPageRoot, Theme: &state.theme})
+				page.Draw(canvas, gfx.Rect{Width: width, Height: 4000}, func(c ui.C) {
+					ui.List(c, &list, 1, func(lrow ui.ListRow) {
+						root := lrow.Element.PadSides(aiGap, aiPad, aiGap, aiPad)
+						state.declareAIRow(root, aiRowFrame{c: lrow.C}, 0, &row, &item)
+					}).Fill()
+				})
+				// The row keeps the gap above the conversation and below every row.
+				want := row.height + 2*aiGap
+				if got := list.RowHeightAt(0); got != want {
+					t.Errorf("kind %d item %d open=%v width %v: List measured %v, built %v", item.kind, index, open, width, got, want)
 				}
 			}
 		}

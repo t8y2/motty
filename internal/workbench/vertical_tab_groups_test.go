@@ -486,19 +486,19 @@ func TestVerticalTabGroupingKeysWalkTheRowsAsATree(t *testing.T) {
 	}
 }
 
-// The grouped list is declared in the sidebar's normal tab page: its header's
-// click is read in the paint's event pass, and the rows keep the identities the
-// window's drag and keyboard paths address.
+// The grouped list is declared by the window's page: its header's click is read
+// in the paint's event pass, and the rows keep the identities the window's drag
+// and keyboard paths address.
 func TestVerticalTabGroupHeaderClickIsReadInTheEventPass(t *testing.T) {
 	state := restoredGroupedTabs(t, groupingEntries()...)
 	size := gfx.Size{Width: 1200, Height: 760}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	if state.verticalTabs.page == nil {
-		t.Fatal("the grouped list painted without the sidebar's tab page")
-	}
 	group := state.verticalTabs.grouped.groups[0]
 	id := group.id()
+	if _, ok := hitByID(&canvas, id); !ok {
+		t.Fatal("the grouped list painted without its header")
+	}
 	// A click outside the event pass no longer collapses: the central dispatcher
 	// leaves the header to the event pass.
 	state.Click(id)

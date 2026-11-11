@@ -76,10 +76,28 @@ type transferCenter struct {
 	// bytes they announced, summed the way the summary bar draws them. They
 	// are kept beside fraction because a fraction cannot be added up across
 	// windows, and the icon the desktop shows belongs to all of them.
-	done, total   int64
-	fraction      float32
-	view          ui.View
-	row           ui.View
+	done, total int64
+	fraction    float32
+	// The cards are a List of the popover's page: visible is the entries the
+	// filter shows in order, cards the room each row's hand-painted parts take,
+	// and listState the List's own scroll. bodyDraw paints what the page only
+	// lays out.
+	visible       []*transferEntry
+	cards         []transferCard
+	listState     ui.ListState
+	listBox       ui.Box
+	body          transferBody
+	batchBody     transferBatchBody
+	rowKey        func(int) int
+	rowDecl       func(ui.ListRow)
+	bodyDraw      func(*ui.DrawContext)
+	headerLines   []string
+	headerHeight  float32
+	bodyHeight    float32
+	headerMargin  float32
+	listWidth     float32
+	anchor        gfx.Rect
+	scrollSynced  float32
 	surface, list gfx.Rect
 	geometry      components.ScrollAreaGeometry
 	scroll        float32
@@ -97,6 +115,46 @@ type transferCenter struct {
 	visibleActive, visibleEnded int
 	retryCount, conflictCount   int
 	batch                       transferBatch
+}
+
+// transferBody is what the popover body's declaration leaves for the controls
+// painted by hand once it is laid out.
+type transferBody struct {
+	summaryBar                                                 ui.Box
+	filter                                                     [4]ui.Box
+	hostBox                                                    ui.Box
+	cancelAll, clear, retryFailed, skip, replace, resume, list ui.Box
+}
+
+// transferCard is what one List row's declaration leaves for its progress bar
+// and buttons.
+type transferCard struct {
+	entry                                            *transferEntry
+	bar, pause, cancel, retry, replace, resume, skip ui.Box
+	statusColor                                      gfx.Color
+}
+
+// transferBatchBody is what the batch confirmation's declaration leaves for its
+// buttons.
+type transferBatchBody struct{ cancel, confirm ui.Box }
+
+// handlers makes the page handlers the transfer center uses, once.
+func (center *transferCenter) handlers(state *State) {
+	if center.rowKey != nil {
+		return
+	}
+	center.rowKey = center.keyOf
+	center.listState.Key = center.rowKey
+	center.rowDecl = state.declareTransferCardRow
+	center.bodyDraw = state.paintTransferCenterBody
+}
+
+// keyOf names a List row by its transfer's identity.
+func (center *transferCenter) keyOf(index int) int {
+	if index < 0 || index >= len(center.visible) {
+		return 0
+	}
+	return center.visible[index].id
 }
 
 func transferActive(snapshot sftpclient.TransferSnapshot) bool {

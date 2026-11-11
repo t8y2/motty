@@ -135,41 +135,47 @@ func ownerPropertyValue(name string, id uint32) string {
 	return fmt.Sprintf("%s (%d)", name, id)
 }
 
-func (state *State) paintFileProperties(canvas *gfx.Canvas, viewport gfx.Rect) {
-	state.paintSFTPFileProperties(canvas, viewport, &state.fileProperties)
+// declareFileProperties declares the properties dialog of the main window's
+// docked file panel.
+func (state *State) declareFileProperties(c ui.C) {
+	state.declareSFTPFileProperties(c, dialogViewport(c), &state.fileProperties)
 }
 
-func (state *State) paintSFTPFileProperties(canvas *gfx.Canvas, viewport gfx.Rect, properties *sftpFileProperties) {
+// declareSFTPFileProperties declares a file listing's properties dialog in the
+// page of the window that owns it. viewport is the room the owning surface
+// gives the dialog, as the paint path measured it.
+func (state *State) declareSFTPFileProperties(c ui.C, viewport gfx.Rect, properties *sftpFileProperties) {
 	if properties == nil || !properties.open {
 		return
 	}
 	m := state.messages.SFTPWindow
 	rows := state.sftpFilePropertiesRows(properties)
 	contentWidth := min(float32(640), viewport.Width-32)
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitFilePropertiesDismiss, CloseID: hitFilePropertiesClose, InitialFocusID: hitFilePropertiesClose,
-		ContentSize: gfx.Size{Width: contentWidth}, FitBody: true,
-		BodyHeight: float32(len(rows)) * filePropertiesRowHeight,
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, contentWidth, properties.entry.Name,
+		float32(len(rows))*filePropertiesRowHeight)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.PropertiesTitle, Description: properties.entry.Name,
+		Width: contentWidth, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitFilePropertiesDismiss, CloseID: hitFilePropertiesClose, InitialFocusID: hitFilePropertiesClose,
 	})
-	layout := dialog.Begin(m.PropertiesTitle, properties.entry.Name)
-	f := state.settingsRow.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		for index, row := range rows {
-			if index > 0 {
-				f.Slot().Height(1).Background(state.pal.line)
+	dialog.Body(func() {
+		ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+			for index, row := range rows {
+				if index > 0 {
+					ui.Slot(c).Height(1).Background(state.pal.line)
+				}
+				ui.Row(c).Height(filePropertiesRowHeight-1).PadSides(10, 8, 10, 8).Gap(16).Items(ui.Center).Children(func() {
+					ui.Text(c, row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).
+						LineHeight(20).Width(92).Shrink(0).Ellipsis()
+					ui.Text(c, row.value).FontSize(metrics.FontSizeM).Color(state.pal.text).
+						LineHeight(20).Grow(1).Ellipsis()
+				})
 			}
-			f.Row().Height(filePropertiesRowHeight-1).PadSides(10, 8, 10, 8).Gap(16).Items(ui.Center).Children(func() {
-				f.Text(row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).
-					LineHeight(20).Width(92).Shrink(0).Ellipsis()
-				f.Text(row.value).FontSize(metrics.FontSizeM).Color(state.pal.text).
-					LineHeight(20).Grow(1).Ellipsis()
-			})
-		}
+		})
 	})
-	f.End()
-	dialog.Actions(layout, components.ButtonAction{ID: hitFilePropertiesClose, Label: state.messages.LabelWindowClose, Variant: components.ButtonSecondary})
-	dialog.End()
+	dialog.Footer(func() {
+		state.dialogActionFooter(c, components.ButtonAction{ID: hitFilePropertiesClose, Label: state.messages.LabelWindowClose, Variant: components.ButtonSecondary})
+	})
 }
 
 func (state *State) clickFileProperties(id gfx.ID) {

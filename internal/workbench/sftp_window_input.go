@@ -63,23 +63,6 @@ func (w *sftpWindow) rowTarget(id gfx.ID) (bool, int, bool) {
 	return false, 0, false
 }
 
-// listPointerTarget reports a pointer target the window handles itself even
-// though a pane page named it: a row, a list frame, or a scrollbar.
-func (w *sftpWindow) listPointerTarget(id gfx.ID) bool {
-	if _, _, ok := w.rowTarget(id); ok {
-		return true
-	}
-	if id == hitSFTPWindowQueueBar {
-		return true
-	}
-	for side := range 2 {
-		if id == sftpWindowBar[side] || id == sftpWindowList[side] {
-			return true
-		}
-	}
-	return false
-}
-
 // rowID is the identity of row index on a side: the List's, once it has
 // declared its rows, else the scope the rows had before it did.
 func (w *sftpWindow) rowID(side, index int) gfx.ID {
@@ -96,26 +79,10 @@ func (w *sftpWindow) listBlocked() bool {
 		w.view.dialog != sftpDialogNone || w.ui.menuOpen || w.view.bookmarksOpen || w.headerMenuOpen()
 }
 
-// syncListChoice mirrors a choice the List made on the keyboard into the model
-// the actions and the status line read, and keeps the offset fields current.
-func (w *sftpWindow) syncListChoice() {
-	for side := range 2 {
-		folder := w.folder(side == 0)
-		if folder.list.Changed() {
-			folder.takeSFTPListChoice()
-			w.selectionChanged(side == 0)
-		}
-		if scroll := folder.listScroll; scroll != nil {
-			w.ui.offset[side], w.ui.offsetSynced[side] = scroll.Offset, scroll.Offset
-			folder.scrollOffset = scroll.Offset
-			folder.first = max(0, int(scroll.Offset/sftpRowHeight))
-		}
-	}
-}
-
-// listTypeahead moves to the row whose name begins with the letters typed: the
-// same session a Menu uses, fed from the window's OnShortcut because the pane
-// pages are painted rather than run as the window's page.
+// listTypeahead moves to the row whose name begins with the letters typed. The
+// window page's List has its own typeahead and sees the key first; this remains
+// for the window's own shortcut route, which is reached when a pane's List has
+// not been painted yet.
 func (w *sftpWindow) listTypeahead(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	text := event.Text
 	if text == "" && event.Key == gfx.KeySpace {
@@ -209,52 +176,10 @@ func (w *sftpWindow) dropTarget(x, y float32, fromLocal bool) (local bool, targe
 	return
 }
 
-// pagePointer gives the window's panes the pointer events they own: the
-// connecting page, then each pane. The window's own chrome is the page the
-// window's Config routes.
-func (w *sftpWindow) pagePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if w.ui.connectPage != nil {
-		if result, ok := w.ui.connectPage.Pointer(event); ok {
-			return result, true
-		}
-	}
-	for _, page := range w.ui.panePages {
-		if page != nil {
-			if result, ok := page.Pointer(event); ok {
-				return result, true
-			}
-		}
-	}
-	return gfx.EventResult{}, false
-}
-
-// pageKey is pagePointer for the keyboard.
-func (w *sftpWindow) pageKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if w.ui.connectPage != nil {
-		if result, ok := w.ui.connectPage.Key(event); ok {
-			return result, true
-		}
-	}
-	for _, page := range w.ui.panePages {
-		if page != nil {
-			if result, ok := page.Key(event); ok {
-				return result, true
-			}
-		}
-	}
-	return gfx.EventResult{}, false
-}
-
+// pointer sends a pointer event to the window's hand-painted chrome: the split,
+// the scroll bars, the row drags and drops, and the popups. The panes' Lists are
+// part of the window page now, so their clicks complete there first.
 func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
-	if result, ok := w.pagePointer(event); ok {
-		// A pane page owns its List rows and the frame around them, but the
-		// window applies presses on them: the selection a drag carries and the
-		// context menu predate the List, and the List's click pass cannot run
-		// for an embedded page.
-		if result.Handled || !w.listPointerTarget(event.Target) {
-			return result
-		}
-	}
 	if w.view.worker == nil {
 		return gfx.EventResult{}
 	}
@@ -710,10 +635,6 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			w.openEntry(local, index)
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-	}
-	if result, ok := w.pageKey(event); ok {
-		w.syncListChoice()
-		return result
 	}
 	handled := gfx.EventResult{Handled: true, Repaint: true}
 	if w.view.worker == nil {

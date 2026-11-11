@@ -162,8 +162,10 @@ func TestSFTPWindowLoadingCanCancelAuthenticationAndRespectsReducedMotion(t *tes
 				if _, animated := canvas.NextFrame(); animated == reduced {
 					t.Fatal("connection animation did not respect reduced motion")
 				}
-				if _, ok := sftpPageButtonHit(&canvas, state.messages.ConnClose); !ok {
+				if hit, ok := sftpPageButtonHit(&canvas, state.messages.ConnClose); !ok {
 					t.Fatal("loading window cannot cancel its handshake")
+				} else if !tree.Within(hit.ID.Scope(), tree.Feature(w.pageRoot())) {
+					t.Fatal("the connecting control is not declared by the window's page")
 				}
 			}
 			conn.set(func(s *sshconn.Status) { s.Phase = sshconn.PhasePasswordPrompt; s.Attempt = 1 })
@@ -179,6 +181,36 @@ func TestSFTPWindowLoadingCanCancelAuthenticationAndRespectsReducedMotion(t *tes
 				t.Fatal("closing loading left authentication or its connection alive")
 			}
 		})
+	}
+}
+
+func TestSFTPWindowConnectingEscapeUsesItsOwnKeyRoute(t *testing.T) {
+	state, original, _, _, _ := dualSFTPFixture(t, 1)
+	target := original.session.host
+	target.ID += 1000
+	conn := &fakeConn{}
+	conn.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseConnecting })
+	state.options.Dial = func(sshconn.Config) Connection { return conn }
+	state.openHostSFTPWindow(target)
+	var w *sftpWindow
+	for _, candidate := range state.sftpWindows {
+		if candidate.session.HostID == target.ID {
+			w = candidate
+		}
+	}
+	if w == nil || w.window == nil || w.view.worker != nil {
+		t.Fatal("no connecting window")
+	}
+	// The connecting state is declared by the window's page; a key it does not
+	// own still reaches the window, which closes its handshake.
+	if result := w.key(gfx.KeyEvent{Key: gfx.KeyEscape}); !result.Handled {
+		t.Fatal("Escape did not reach the window while connecting")
+	}
+	conn.mu.Lock()
+	canceled := conn.canceled
+	conn.mu.Unlock()
+	if !w.closed || canceled != 1 {
+		t.Fatalf("connecting window did not close its handshake: closed=%t canceled=%d", w.closed, canceled)
 	}
 }
 

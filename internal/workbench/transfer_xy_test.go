@@ -36,18 +36,18 @@ func startXY(t *testing.T, state *State, session *Session, mode xymodem.Mode, se
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, label := range []string{"XMODEM", "XMODEM-1K", "YMODEM", m.XYSend, m.XYReceive} {
-		if _, ok := dialogChoiceIn(&canvas, label); !ok {
+		if _, ok := hostChoiceIn(&canvas, label); !ok {
 			t.Fatalf("setup choice %q is not painted", label)
 		}
 	}
 	if _, ok := hitByID(&canvas, hitXYStart); !ok {
 		t.Fatal("the start button is not painted")
 	}
-	clickDialogChoice(t, state, []string{"XMODEM", "XMODEM-1K", "YMODEM"}[mode])
+	clickHostChoice(t, state, []string{"XMODEM", "XMODEM-1K", "YMODEM"}[mode])
 	if sending {
-		clickDialogChoice(t, state, m.XYSend)
+		clickHostChoice(t, state, m.XYSend)
 	} else {
-		clickDialogChoice(t, state, m.XYReceive)
+		clickHostChoice(t, state, m.XYReceive)
 	}
 	state.Click(hitXYStart)
 }
@@ -163,30 +163,24 @@ func TestXYSetupChoicesHaveRovingKeyboardFocus(t *testing.T) {
 	state.openXYSetup(session)
 	m := state.messages.Tools
 
-	xmodem := dialogChoiceHit(t, state, "XMODEM")
-	xmodem1k := dialogChoiceHit(t, state, "XMODEM-1K")
-	result := state.Key(gfx.KeyEvent{Target: xmodem.ID, Key: gfx.KeyRight})
+	xmodem := hostChoiceHit(t, state, "XMODEM")
+	xmodem1k := hostChoiceHit(t, state, "XMODEM-1K")
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: xmodem.ID, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != xmodem1k.ID || result.Activate != xmodem1k.ID {
 		t.Fatalf("mode result = %+v", result)
 	}
-	var canvas gfx.Canvas
-	canvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
-	state.Paint(&canvas, dialogChoicePaint)
-	canvas.EndEventPass()
+	activateHostChoice(t, state, result.Activate)
 	if state.xy.mode != xymodem.XMODEM1K {
 		t.Fatalf("mode = %v after the arrow picked the next option", state.xy.mode)
 	}
 
-	send := dialogChoiceHit(t, state, m.XYSend)
-	receive := dialogChoiceHit(t, state, m.XYReceive)
-	result = state.Key(gfx.KeyEvent{Target: send.ID, Key: gfx.KeyRight})
+	send := hostChoiceHit(t, state, m.XYSend)
+	receive := hostChoiceHit(t, state, m.XYReceive)
+	result = windowKeyRoutes(state, gfx.KeyEvent{Target: send.ID, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != receive.ID || result.Activate != receive.ID {
 		t.Fatalf("direction result = %+v", result)
 	}
-	canvas = gfx.Canvas{}
-	canvas.BeginEventPass(result.Activate, gfx.ClickInfo{})
-	state.Paint(&canvas, dialogChoicePaint)
-	canvas.EndEventPass()
+	activateHostChoice(t, state, result.Activate)
 	if state.xy.sending {
 		t.Fatal("the direction did not switch to receiving")
 	}

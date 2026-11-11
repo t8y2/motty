@@ -4,6 +4,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 )
@@ -21,6 +22,8 @@ type sudoSFTPDialog struct {
 	sessionID   uint32
 	window      *sftpWindow
 	password    text.Editor
+	field       ui.Field
+	bound       bool
 	commands    bool
 	dashboard   bool
 	returnTools bool
@@ -181,32 +184,49 @@ func (state *State) clickSudoSFTP(id gfx.ID) {
 	}
 }
 
-func (state *State) paintSudoSFTP(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m, theme := state.messages, state.Theme()
+// declareSudoSFTPDialog declares the open sudo password dialog as a dialog of
+// the workbench page. Its field and buttons are page controls; the editor they
+// bind is the one submit reads.
+func (state *State) declareSudoSFTPDialog(c ui.C) {
+	if state.modal != modalSudoSFTP {
+		return
+	}
+	dialogState, m := &state.sudoSFTP, state.messages
 	title, hint := m.SFTPSudoEnable, m.SFTPSudoHint
-	if state.sudoSFTP.commands {
+	if dialogState.commands {
 		title, hint = m.SudoCommandsEnable, m.SudoCommandsHint
-		if state.sudoSFTP.dashboard {
+		if dialogState.dashboard {
 			title, hint = m.DashboardSudoEnable, m.DashboardSudoHint
 		}
 	}
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
+	if !dialogState.bound {
+		dialogState.field.Bind(&dialogState.password)
+		dialogState.bound = true
+	}
+	viewport := dialogViewport(c)
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: state.secretFieldBody(""),
+	}).Layout(hint)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: hint, Width: 540, Height: layout.Content.Height,
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitSudoSFTPDismiss, CloseID: hitSudoSFTPCancel, InitialFocusID: hitSudoSFTPPassword,
-		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: state.secretFieldBody(""),
 	})
-	layout := dialog.Begin(title, hint)
-	field := components.BeginField(canvas, theme, state.layoutSecretField(canvas, layout.Body, ""))
-	content := field.Paint(m.SFTPSudoPassword, "", "")
-	value := state.sudoSFTP.password.String()
-	focused := canvas.Focused() == hitSudoSFTPPassword
-	state.paintSecretInput(canvas, content, components.InputSnapshot{
-		ID: hitSudoSFTPPassword, Label: m.SFTPSudoPassword, Value: value, Secure: true,
-		Focused: focused, PlatformEditing: focused && value != "",
+	dialog.Body(func() {
+		ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+			ui.TextFieldID(c, hitSudoSFTPPassword, &dialogState.field, m.SFTPSudoPassword, "").
+				Height(62).FillWidth().Secure().AutoFocus()
+		})
 	})
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitSudoSFTPCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitSudoSFTPEnable, Label: title},
-	)
-	dialog.End()
+	dialog.Footer(func() {
+		if ui.Button(c, m.Cancel).Secondary().Small().Shrink(0).Clicked() {
+			c.After(func() { state.clickSudoSFTP(hitSudoSFTPCancel) })
+		}
+		if ui.Button(c, title).Small().Shrink(0).Clicked() {
+			c.After(func() { state.submitSudoSFTP() })
+		}
+	})
+	if dialog.Dismissed() {
+		c.After(func() { state.clickSudoSFTP(hitSudoSFTPCancel) })
+	}
 }

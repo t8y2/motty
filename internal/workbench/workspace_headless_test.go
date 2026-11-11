@@ -83,7 +83,7 @@ func TestHeadlessWorkspaceLaunchAndExplicitBroadcastFlow(t *testing.T) {
 	click(hitWorkspaceNew)
 	click(workspaceDraftHostID(1))
 	click(workspaceDraftHostID(0))
-	click(hitWorkspaceDraftSubmit)
+	workspaceEditorClickLabel(t, view, state.messages.WorkspaceDraftLaunch)
 
 	workspaceID := state.deck.ActiveWorkspace()
 	if workspaceID == 0 || state.activeSection != sectionTerminal || len(world.conns) != 2 {

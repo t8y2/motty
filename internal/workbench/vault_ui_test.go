@@ -413,7 +413,7 @@ func TestVaultDialogsAnswerRealPointerEvents(t *testing.T) {
 	}
 	driver := modalEventDriver(t, state)
 	typeInto(state, hitVaultUnlockField, "master password")
-	clickPaintedHit(t, driver, hitVaultUnlockSubmit)
+	clickPaintedLabel(t, driver, state.messages.VaultUnlockButton)
 	if state.modal != modalNone || len(second.passwords) != 1 || second.passwords[0] != "hunter2" {
 		t.Fatalf("modal %d, sent %v: the page's submit did not unlock", state.modal, second.passwords)
 	}

@@ -742,23 +742,6 @@ func (m *fileWindowManager) clickTab(id gfx.ID) bool {
 	return id.Scope() == hitDocumentTabList || id.Scope() == hitDocumentTabCloseList
 }
 
-// pagePointerClaim reports the pointer an application's callback must leave to
-// the page it hosts: the page's own target after its handlers have had it, or
-// anything under an open overlay. Config routes the page's controls and falls
-// back here, as a host that called Page.Pointer itself would have stopped.
-func pagePointerClaim(page *ui.Page, event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if page == nil {
-		return gfx.EventResult{}, false
-	}
-	if page.Owns(event.Target) {
-		return gfx.EventResult{}, true
-	}
-	if page.Overlay() {
-		return gfx.EventResult{Handled: true}, true
-	}
-	return gfx.EventResult{}, false
-}
-
 func (m *fileWindowManager) textInput(context app.TextInputContext) *app.TextInput {
 	if d := m.activeDocument(); d != nil {
 		return d.textInput(context)
@@ -768,12 +751,6 @@ func (m *fileWindowManager) textInput(context app.TextInputContext) *app.TextInp
 
 func (m *fileWindowManager) pointer(event gfx.PointerEvent) gfx.EventResult {
 	hoverChanged := m.trackTabPointer(event)
-	if result, claimed := pagePointerClaim(m.page, event); claimed {
-		if hoverChanged {
-			result.Repaint = true
-		}
-		return result
-	}
 	if result, handled := m.tabScrollbarPointer(event); handled {
 		if hoverChanged {
 			result.Repaint = true

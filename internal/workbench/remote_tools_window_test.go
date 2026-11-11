@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 	"motty/internal/i18n"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -97,7 +98,7 @@ func TestRemoteNativeWindowSudoPromptUsesCapturedSession(t *testing.T) {
 		}
 		window := state.remoteWindows[0]
 		host.until(t, func() bool { return !window.ui.remote.loading })
-		window.click(hitRemoteSudo)
+		window.act(hitRemoteSudo)
 		if window.ui.modal != modalSudoSFTP || state.modal != modalNone || session.sudoCommands {
 			t.Fatal("native window did not request its own authorization")
 		}
@@ -109,13 +110,13 @@ func TestRemoteNativeWindowSudoPromptUsesCapturedSession(t *testing.T) {
 		if input := host.windows[0].config.TextInput(app.TextInputContext{ID: hitSudoSFTPPassword}); input == nil || input.Editor != &window.ui.sudoSFTP.password {
 			t.Fatal("native password field cannot receive text input")
 		}
-		window.click(hitSudoSFTPCancel)
+		window.act(hitSudoSFTPCancel)
 		if window.ui.modal != modalRemoteTools || session.sudoCommands {
 			t.Fatal("canceling native authorization changed the source")
 		}
-		window.click(hitRemoteSudo)
+		window.act(hitRemoteSudo)
 		window.ui.sudoSFTP.password.Insert("native-secret")
-		window.click(hitSudoSFTPEnable)
+		window.act(hitSudoSFTPEnable)
 		host.until(t, func() bool { return !window.ui.remote.loading })
 		if !session.sudoCommands || session.sudoPassword != "native-secret" || !window.session.sudoCommands {
 			t.Fatal("native authorization did not synchronize with captured source")
@@ -126,11 +127,11 @@ func TestRemoteNativeWindowSudoPromptUsesCapturedSession(t *testing.T) {
 		if password != "native-secret" || calls == 0 {
 			t.Fatalf("native sudo runner: password=%q calls=%d", password, calls)
 		}
-		window.click(hitRemoteSudo)
+		window.act(hitRemoteSudo)
 		if session.sudoCommands || session.sudoPassword != "" || window.session.sudoCommands || window.session.sudoPassword != "" {
 			t.Fatal("native window did not discard sudo authorization")
 		}
-		window.click(hitRemoteSudo)
+		window.act(hitRemoteSudo)
 		window.ui.sudoSFTP.password.Insert("pending-secret")
 		window.close()
 		if window.ui.sudoSFTP.password.String() != "" || session.sudoPassword != "" {
@@ -188,31 +189,37 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		if len(host.windows) != 2 || state.modal != modalNone {
 			t.Fatal("different session did not get an independent non-modal window")
 		}
+		if state.remoteWindows[0].pageRoot() == state.remoteWindows[1].pageRoot() {
+			t.Fatal("two tools windows share one page root")
+		}
 		// Destructive confirmation belongs to the utility, while the main
 		// window can still accept ordinary terminal input in its other tab.
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		selectRemoteToolsWindowRow(w, 0)
-		w.click(hitRemoteKill)
+		w.act(hitRemoteKill)
 		if w.ui.modal != modalForm || state.modal != modalNone {
 			t.Fatal("confirmation escaped into the workbench")
 		}
 		if result := key(state, len(state.sessions)-1, gfx.KeyEvent{Text: "echo free\r"}); !result.Handled {
 			t.Fatal("main terminal was blocked by native confirmation")
 		}
-		w.click(hitFormSubmit)
+		w.act(hitFormSubmit)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		if server.ran("kill -KILL 2211") != 1 || otherServer.ran("kill") != 0 {
 			t.Fatal("confirmation operated on the selected main tab instead of the captured server")
 		}
 		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabImages)
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		w.click(hitRemotePull)
+		w.act(hitRemotePull)
 		input := host.windows[0].config.TextInput(app.TextInputContext{ID: hitFormFieldList.At(0)})
 		if input == nil || input.Editor == nil {
 			t.Fatal("native image form has no platform text input")
 		}
 		input.Editor.Insert("alpine:latest")
-		w.key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitFormFieldList.At(0)})
+		var formCanvas gfx.Canvas
+		formSize := gfx.Size{Width: 1100, Height: 780}
+		w.paint(&formCanvas, formSize)
+		clickPageControl(t, w, &formCanvas, w.owner.messages.Tools.RemotePull, gfx.RoleButton, formSize)
 		shell.mu.Lock()
 		actual := string(shell.input)
 		shell.mu.Unlock()
@@ -233,7 +240,7 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		selectRemoteToolsWindowRow(w, 0)
 		w.ui.remote.auto.enabled = true
 		w.ui.remote.auto.restart()
-		w.click(hitRemoteLogs)
+		w.act(hitRemoteLogs)
 		if !strings.Contains(shell.typed(), "docker logs") || strings.Contains(peerShell.typed(), "docker logs") ||
 			!w.ui.remote.auto.enabled || w.ui.modal != modalRemoteTools {
 			t.Fatal("tool command was broadcast into another pane or disabled the tool surface")
@@ -338,7 +345,7 @@ func TestRemoteNativeWindowContainerShellUsesItsOriginalConnection(t *testing.T)
 		selectRemoteToolsWindowRow(w, 0)
 		w.ui.remote.auto.enabled = true
 		w.ui.remote.auto.restart()
-		w.click(hitRemoteShell)
+		w.act(hitRemoteShell)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		if w.ui.remote.failed || len(world.conns) != 1 || len(world.shared) != 1 || len(state.sessions) != 2 ||
 			state.modal != modalNone || w.closed || !w.ui.remote.auto.enabled || w.ui.modal != modalRemoteTools {
@@ -382,7 +389,7 @@ func TestRemoteNativeWindowFollowsItsSessionBetweenWorkbenchWindows(t *testing.T
 		}
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		selectRemoteToolsWindowRow(w, 0)
-		w.click(hitRemoteNiceLower)
+		w.act(hitRemoteNiceLower)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		if server.ran("renice 10 -p 2211") != 1 {
 			t.Fatal("moved source lost its tool actions")
@@ -445,10 +452,25 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 				w.ui.remote.processScroll = 0
 				var canvas gfx.Canvas
 				w.paint(&canvas, size)
-				for _, id := range []gfx.ID{hitRemoteClose, hitRemoteRefresh, hitRemoteKill, hitRemoteNiceHigher, hitRemoteProcessScroll} {
-					hit, ok := hitByID(&canvas, id)
+				for _, control := range []struct {
+					label string
+					id    gfx.ID
+				}{
+					{state.messages.Tools.RemoteClose, gfx.ID{}},
+					{state.messages.Tools.RemoteRefresh, gfx.ID{}},
+					{state.messages.Tools.RemoteForceKill, gfx.ID{}},
+					{state.messages.Tools.RemoteReniceHigher, gfx.ID{}},
+					{"", hitRemoteProcessScroll},
+				} {
+					var hit gfx.Hit
+					var ok bool
+					if control.id.IsZero() {
+						hit, ok = hitByLabelRole(&canvas, control.label, gfx.RoleButton)
+					} else {
+						hit, ok = hitByID(&canvas, control.id)
+					}
 					if !ok || hit.Bounds.X < 0 || hit.Bounds.Y < 0 || hit.Bounds.X+hit.Bounds.Width > size.Width+.01 || hit.Bounds.Y+hit.Bounds.Height > size.Height+.01 {
-						t.Fatalf("language %v viewport %+v: control %v is unreachable: %+v", language, size, id, hit)
+						t.Fatalf("language %v viewport %+v: control %q is unreachable: %+v", language, size, control.label, hit)
 					}
 				}
 				if _, ok := hitByID(&canvas, hitRemoteNext); ok {
@@ -482,4 +504,170 @@ func clickRemoteTabChoice(t *testing.T, w *remoteToolsWindow, label string) {
 	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
 	w.paint(&canvas, size)
 	canvas.EndEventPass()
+}
+
+// hitByLabel finds a page control by its accessible label and role.
+func hitByLabelRole(canvas *gfx.Canvas, label string, role gfx.Role) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Label == label && hit.Role == role && !hit.Block {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// hitByLabelPrefix finds a page control whose accessible label starts with
+// prefix: the auto-refresh control names itself with its current interval.
+func hitByLabelPrefix(canvas *gfx.Canvas, prefix string, role gfx.Role) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if strings.HasPrefix(hit.Label, prefix) && hit.Role == role && !hit.Block {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// hitByLabelAny finds a page hit by label whatever its role.
+func hitByLabelAny(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Label == label && !hit.Block {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// hitByLabelRoleLast finds the last page control with label and role: a dialog
+// button painted over the page's own.
+func hitByLabelRoleLast(canvas *gfx.Canvas, label string, role gfx.Role) (gfx.Hit, bool) {
+	for i := len(canvas.Hits()) - 1; i >= 0; i-- {
+		hit := canvas.Hits()[i]
+		if hit.Label == label && hit.Role == role && !hit.Block {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// dualLabelHit finds a page control by label in the last frame of a native
+// window.
+func dualLabelHit(t *testing.T, view *headless.Session, label string, role gfx.Role) gfx.Hit {
+	t.Helper()
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Label == label && hit.Role == role && !hit.Block {
+			return hit
+		}
+	}
+	for _, hit := range view.Snapshot().Hits {
+		if strings.HasPrefix(hit.Label, label) && hit.Role == role && !hit.Block {
+			return hit
+		}
+	}
+	t.Fatalf("missing %v %q", role, label)
+	return gfx.Hit{}
+}
+
+// clickPageControl delivers a click on a page control in the event pass and
+// runs its deferred action, as the window runtime does.
+func clickPageControl(t *testing.T, w *remoteToolsWindow, canvas *gfx.Canvas, label string, role gfx.Role, size gfx.Size) {
+	t.Helper()
+	hit, ok := hitByLabelRoleLast(canvas, label, role)
+	if !ok {
+		t.Fatalf("no page control labeled %q", label)
+	}
+	canvas.BeginEventPass(hit.ID, gfx.ClickInfo{})
+	w.paint(canvas, size)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+}
+
+// pointerPageControl delivers a pointer event to the page's control handlers.
+func pointerPageControl(w *remoteToolsWindow, event gfx.PointerEvent) {
+	w.config().OnPointer(event)
+}
+
+func TestRemoteNativeWindowDialogsArePageControls(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		server := &remoteServer{containers: containerFixture}
+		fake.mu.Lock()
+		fake.runCommand = server.run
+		fake.mu.Unlock()
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		session.conn = &sudoRunnerTestConn{fakeConn: fake, run: server.run}
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+
+		size := gfx.Size{Width: 1100, Height: 780}
+		var canvas gfx.Canvas
+		w.paint(&canvas, size)
+		table, ok := hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabProcesses, gfx.RoleGroup)
+		if !ok {
+			t.Fatal("the process table is not a page control")
+		}
+		bounds := w.ui.remote.tableBodyBounds
+		x, y := bounds.X+bounds.Width/2, bounds.Y+w.ui.remote.tableRowHeight/2
+		pointerPageControl(w, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, X: x, Y: y, Target: table.ID, Viewport: size})
+		pointerPageControl(w, gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, X: x, Y: y, Target: table.ID, Viewport: size})
+		if !w.ui.remote.processDetails.open {
+			t.Fatal("the table control's press did not open the process details dialog")
+		}
+		canvas.Reset()
+		w.paint(&canvas, size)
+		if !remoteCanvasHasText(&canvas, w.ui.remote.processDetails.process.Command) {
+			t.Fatal("the process details body is not painted in its dialog slot")
+		}
+		closeHit, ok := hitByLabelRoleLast(&canvas, w.ui.messages.Tools.RemoteClose, gfx.RoleButton)
+		if !ok {
+			t.Fatal("the process details dialog has no page Close button")
+		}
+		if canvas.FocusRequest() != closeHit.ID {
+			t.Fatalf("the process details dialog did not request focus on its page Close button: %v", canvas.FocusRequest())
+		}
+		clickPageControl(t, w, &canvas, w.ui.messages.Tools.RemoteClose, gfx.RoleButton, size)
+		if w.ui.remote.processDetails.open {
+			t.Fatal("the dialog's page Close button did not close it")
+		}
+
+		clickRemoteTabChoice(t, w, w.ui.messages.Tools.RemoteTabContainers)
+		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteContainers })
+		canvas.Reset()
+		w.paint(&canvas, size)
+		table, ok = hitByLabelRole(&canvas, w.ui.messages.Tools.RemoteTabContainers, gfx.RoleGroup)
+		if !ok {
+			t.Fatal("the container table is not a page control")
+		}
+		bounds = w.ui.remote.tableBodyBounds
+		pointerPageControl(w, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
+			X: bounds.X + bounds.Width/2, Y: bounds.Y + w.ui.remote.tableRowHeight/2, Target: table.ID, Viewport: size})
+		clickPageControl(t, w, &canvas, w.ui.messages.Tools.RemoteContainerDetails, gfx.RoleButton, size)
+		if !w.ui.remote.containerDetails.open {
+			t.Fatal("the container details page button did not open its dialog")
+		}
+		canvas.Reset()
+		w.paint(&canvas, size)
+		if !remoteCanvasHasText(&canvas, w.ui.remote.containerDetails.container.Name) {
+			t.Fatal("the container details body is not painted in its dialog slot")
+		}
+		clickPageControl(t, w, &canvas, w.ui.messages.Tools.RemoteClose, gfx.RoleButton, size)
+		if w.ui.remote.containerDetails.open {
+			t.Fatal("the container details dialog's page Close button did not close it")
+		}
+
+		w.act(hitRemoteSudo)
+		if w.ui.modal != modalSudoSFTP {
+			t.Fatal("sudo did not open its dialog")
+		}
+		canvas.Reset()
+		w.paint(&canvas, size)
+		if _, ok := hitByID(&canvas, hitSudoSFTPPassword); !ok {
+			t.Fatal("the sudo dialog's page field is not painted")
+		}
+		clickPageControl(t, w, &canvas, w.ui.messages.Cancel, gfx.RoleButton, size)
+		if w.ui.modal != modalRemoteTools {
+			t.Fatal("the sudo dialog's page Cancel button did not return to the tools")
+		}
+	})
 }

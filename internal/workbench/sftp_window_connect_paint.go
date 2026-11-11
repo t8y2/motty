@@ -11,19 +11,10 @@ import (
 
 // The native window owns its loading state, including retry and cancellation.
 // Reuse the terminal connection ring and its reduced-motion behavior.
-func (w *sftpWindow) paintConnecting(canvas *gfx.Canvas, size gfx.Size) {
-	state := w.owner
-	if w.ui.connectPage == nil {
-		w.ui.connectPage = ui.NewPage(ui.PageConfig{Root: w.pageRoot() + "-connect", Theme: &state.theme})
-		w.ui.connectView = w.declareConnecting
-	}
-	w.ui.connect = sftpWindowConnectScratch{}
-	w.ui.connectPage.Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, w.ui.connectView)
-	w.paintConnectingDetails(canvas)
-}
 
 // paintConnectingDetails paints the ring around the badge the connecting view
-// declared. A page that declares the view itself calls it after its own paint.
+// declared. The window's page declares the view, so the window calls it after
+// the page has painted.
 func (w *sftpWindow) paintConnectingDetails(canvas *gfx.Canvas) {
 	state, s := w.owner, &w.session
 	pal := state.pal

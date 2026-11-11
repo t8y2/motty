@@ -222,6 +222,7 @@ var syncedSettings = map[string]bool{
 	"terminal_scrollback":          true,
 	"connection_timeout_seconds":   true,
 	"connection_keepalive_seconds": true,
+	"connection_keepalive_off":     true,
 	"connection_reconnect":         true,
 	"terminal_clipboard":           true,
 	"terminal_cursor_steady":       true,

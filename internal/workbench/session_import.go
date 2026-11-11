@@ -8,6 +8,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/sessionimport"
 	"motty/internal/sshconfig"
 	"motty/internal/vault"
@@ -256,26 +257,163 @@ func (state *State) clickMobaEncoding(id gfx.ID) {
 	}
 }
 
-func (state *State) paintMobaEncoding(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareImportSessions declares the client chooser in the window page: one
+// large outline button per client, the guide link at the footer's left and
+// Cancel at its right.
+func (state *State) declareImportSessions(c ui.C) {
+	if state.modal != modalImportSessions {
+		return
+	}
 	m := state.messages.Tools
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitMobaEncodingCancel, CloseID: hitMobaEncodingClose, InitialFocusID: hitMobaChooseUTF8,
-		ContentSize: gfx.Size{Width: 520}, FitBody: true, BodyHeight: 52,
+	theme := *c.Theme()
+	choices := [...]struct {
+		id    gfx.ID
+		label string
+	}{
+		{hitImportPuTTY, "PuTTY"},
+		{hitImportXshell, "Xshell"},
+		{hitImportMobaXterm, "MobaXterm"},
+		{hitImportWindTerm, "WindTerm"},
+		{hitImportElecterm, "Electerm"},
+		{hitImportNetcatty, "Netcatty"},
+	}
+	const columns = 2
+	rowHeight := components.BeginButton(nil, theme, gfx.ID{}, gfx.Rect{}).Large().BoundsHeight()
+	gap := theme.Metrics.GapItem
+	rows := (len(choices) + columns - 1) / columns
+	bodyHeight := float32(rows)*rowHeight + float32(rows-1)*gap
+	const width float32 = 480
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), theme, viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(m.ImportChooserBody)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.ImportChooserTitle, Description: m.ImportChooserBody,
+		Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitImportSessionsDismiss, CloseID: hitImportSessionsClose,
 	})
-	layout := dialog.Begin(m.ImportEncodingTitle, m.ImportEncodingBody)
-	content := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-	content.Column().Fill().Gap(6).Children(func() {
-		content.Text(fmt.Sprintf(m.ImportEncodingSampleUTF8Fmt, state.mobaEncoding.utf8)).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Ellipsis()
-		content.Text(fmt.Sprintf(m.ImportEncodingSampleGBFmt, state.mobaEncoding.gb)).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Ellipsis()
+	dialog.Body(func() {
+		cellWidth := (layout.Body.Width - gap*(columns-1)) / columns
+		ui.Column(c).Fill().Gap(gap).Children(func() {
+			for row := 0; row < rows; row++ {
+				ui.Row(c).Height(rowHeight).Gap(gap).Children(func() {
+					for column := 0; column < columns; column++ {
+						index := row*columns + column
+						if index >= len(choices) {
+							ui.Spacer(c).Grow(1)
+							continue
+						}
+						choice := choices[index]
+						button := ui.Button(c, choice.label).Large().Outline().Width(cellWidth).Shrink(0)
+						if index == 0 {
+							button = button.AutoFocus()
+						}
+						if button.Clicked() {
+							c.After(func() { state.clickImportSessions(choice.id) })
+						}
+					}
+				})
+			}
+		})
 	})
-	content.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitMobaEncodingCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitMobaChooseUTF8, Label: "UTF-8", Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitMobaChooseGB18030, Label: "GB18030"},
-	)
-	dialog.End()
+	dialog.Footer(func() {
+		if ui.Button(c, m.ImportGuide).Link().Icon(icons.BookOpen).Shrink(0).Clicked() {
+			c.After(func() { state.clickImportSessions(hitImportGuide) })
+		}
+		ui.Spacer(c).Grow(1)
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickImportSessions(hitImportSessionsCancel) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.closeModal()
+	}
+}
+
+// declareMobaEncoding declares the MobaXterm encoding question in the window
+// page: the two sample lines and the three answers.
+func (state *State) declareMobaEncoding(c ui.C) {
+	if state.modal != modalMobaEncoding {
+		return
+	}
+	m := state.messages.Tools
+	const width float32 = 520
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(m.ImportEncodingBody)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.ImportEncodingTitle, Description: m.ImportEncodingBody,
+		Width: width, Height: layout.Content.Height + 52, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitMobaEncodingCancel, CloseID: hitMobaEncodingClose,
+	})
+	dialog.Body(func() {
+		ui.Column(c).Fill().Gap(6).Children(func() {
+			ui.Text(c, fmt.Sprintf(m.ImportEncodingSampleUTF8Fmt, state.mobaEncoding.utf8)).
+				FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Ellipsis()
+			ui.Text(c, fmt.Sprintf(m.ImportEncodingSampleGBFmt, state.mobaEncoding.gb)).
+				FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Ellipsis()
+		})
+	})
+	dialog.Footer(func() {
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickMobaEncoding(hitMobaEncodingCancel) })
+		}
+		if ui.Button(c, "UTF-8").Secondary().Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.clickMobaEncoding(hitMobaChooseUTF8) })
+		}
+		if ui.Button(c, "GB18030").Shrink(0).Clicked() {
+			c.After(func() { state.clickMobaEncoding(hitMobaChooseGB18030) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.clickMobaEncoding(hitMobaEncodingCancel)
+	}
+}
+
+// declareSessionImportPreview declares the password preview in the window
+// page: its error line and the three ways out.
+func (state *State) declareSessionImportPreview(c ui.C) {
+	if state.modal != modalSessionImportPreview {
+		return
+	}
+	m := state.messages.Tools
+	bodyHeight := float32(0)
+	if state.dialogError != "" {
+		bodyHeight = 24
+	}
+	const width float32 = 550
+	description := fmt.Sprintf(m.ImportPasswordPreviewBodyFmt, len(state.sessionImport.plan.hosts), len(state.sessionImport.passwords), state.sessionImport.eligible)
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout(description)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.ImportPasswordPreviewTitle, Description: description,
+		Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitImportPreviewCancel, CloseID: hitImportPreviewClose,
+	})
+	dialog.Body(func() {
+		ui.Column(c).Fill().Children(func() {
+			if state.dialogError != "" {
+				ui.Text(c, state.dialogError).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(24)
+			}
+		})
+	})
+	dialog.Footer(func() {
+		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickSessionImportPreview(hitImportPreviewCancel) })
+		}
+		if ui.Button(c, m.ImportConnectionsOnly).Secondary().Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.clickSessionImportPreview(hitImportConnectionsOnly) })
+		}
+		if ui.Button(c, m.ImportSavePasswords).Shrink(0).Clicked() {
+			c.After(func() { state.clickSessionImportPreview(hitImportSavePasswords) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.clickSessionImportPreview(hitImportPreviewCancel)
+	}
 }
 
 func (state *State) sessionImportPasswords(result sessionimport.Result, plan hostImportPlan) ([]sessionImportPassword, int) {
@@ -389,36 +527,6 @@ func (state *State) clickSessionImportPreview(id gfx.ID) {
 	}
 }
 
-func (state *State) paintSessionImportPreview(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m := state.messages.Tools
-	bodyHeight := float32(0)
-	if state.dialogError != "" {
-		bodyHeight = 24
-	}
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitImportPreviewCancel, CloseID: hitImportPreviewClose, InitialFocusID: hitImportConnectionsOnly,
-		ContentSize: gfx.Size{Width: 550}, FitBody: true, BodyHeight: bodyHeight,
-	})
-	layout := dialog.Begin(m.ImportPasswordPreviewTitle,
-		fmt.Sprintf(m.ImportPasswordPreviewBodyFmt, len(state.sessionImport.plan.hosts), len(state.sessionImport.passwords), state.sessionImport.eligible))
-	if state.dialogError != "" {
-		content := state.chrome.dialog.Begin(canvas, state.Theme(), layout.Body)
-		content.Column().Fill().Children(func() {
-			content.Text(state.dialogError).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(24)
-		})
-		content.End()
-	}
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitImportPreviewCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitImportConnectionsOnly, Label: m.ImportConnectionsOnly, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitImportSavePasswords, Label: m.ImportSavePasswords},
-	)
-	dialog.End()
-}
-
-// sessionImportPlan turns sessions into new hosts, leaving out one whose address,
-// user and port a saved host (or an earlier session) already has.
 func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPlan {
 	builder := newHostImportBuilder(state, sshconfig.Result{})
 	for _, entry := range result.Entries {
@@ -448,53 +556,6 @@ func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPla
 	return builder.plan
 }
 
-func (state *State) paintImportSessionsDialog(canvas *gfx.Canvas, viewport gfx.Rect) {
-	m := state.messages.Tools
-	theme := state.Theme()
-	choices := [...]struct {
-		id    gfx.ID
-		label string
-	}{
-		{hitImportPuTTY, "PuTTY"},
-		{hitImportXshell, "Xshell"},
-		{hitImportMobaXterm, "MobaXterm"},
-		{hitImportWindTerm, "WindTerm"},
-		{hitImportElecterm, "Electerm"},
-		{hitImportNetcatty, "Netcatty"},
-	}
-	const columns = 2
-	rowHeight := components.BeginButton(nil, theme, gfx.ID{}, gfx.Rect{}).Large().BoundsHeight()
-	gap := theme.Metrics.GapItem
-	rows := float32((len(choices) + columns - 1) / columns)
-
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitImportSessionsDismiss, CloseID: hitImportSessionsClose, InitialFocusID: hitImportPuTTY,
-		ContentSize: gfx.Size{Width: 480}, FitBody: true,
-		BodyHeight: rows*rowHeight + (rows-1)*gap,
-	})
-	layout := dialog.Begin(m.ImportChooserTitle, m.ImportChooserBody)
-	cellWidth := (layout.Body.Width - gap*(columns-1)) / columns
-	for index, choice := range choices {
-		cell := gfx.Rect{
-			X:     layout.Body.X + float32(index%columns)*(cellWidth+gap),
-			Y:     layout.Body.Y + float32(index/columns)*(rowHeight+gap),
-			Width: cellWidth,
-		}
-		components.BeginButton(canvas, theme, choice.id, cell).Large().Outline(choice.label)
-	}
-	// Where each client keeps what this dialog reads is told in the docs, which
-	// the link opens; it sits at the footer's left, across from Cancel.
-	components.BeginButton(canvas, theme, hitImportGuide, gfx.Rect{X: layout.Footer.X, Y: layout.Footer.Y}).
-		WithIcon(icons.BookOpen).SizeToFit(m.ImportGuide).Link(m.ImportGuide)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitImportSessionsCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-	)
-	dialog.End()
-}
-
-// planStreamImport turns a Telnet or serial session into a host, unless the
-// saved hosts or an earlier session already have that destination.
 func (state *State) planStreamImport(plan *hostImportPlan, usedIDs map[string]struct{}, entry sessionimport.Entry) {
 	host := Host{
 		ID: plan.nextHostID, Label: entry.Name, Group: entry.Group,

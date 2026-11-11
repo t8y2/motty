@@ -8,27 +8,36 @@ import (
 	"motty/internal/sshconn"
 )
 
-func TestDesktopRTTDoesNotScheduleIdlePolling(t *testing.T) {
+// fullscreenDesktopState is a state whose one page is a fullscreen desktop: the
+// paint path the window uses, with no shell around the picture.
+func fullscreenDesktopState(t testing.TB, session Session) *State {
 	state := newTestState(t, testOptions(t))
 	state.terminalShowLatency = true
+	state.activeSection = sectionTerminal
+	state.sessions = append(state.sessions, session)
+	state.activeSessionID = session.ID
+	state.winChrome.fullscreen = true
+	state.winChrome.fullscreenSession = session.ID
+	return state
+}
+
+func TestDesktopRTTDoesNotScheduleIdlePolling(t *testing.T) {
 	source := &measuredDesktop{followingDesktop: newFollowingDesktop(1920, 1080, false), sampled: time.Now(), rtt: 73 * time.Millisecond}
 	view := newDesktopView(source, false)
 	defer view.close()
 	view.fullscreen = true
-	session := &Session{ID: 1, Address: "desktop.example", desk: view, phase: sshconn.PhaseConnected}
-	var canvas gfx.Canvas
 	size := gfx.Size{Width: 1920, Height: 1080}
-	state.paintDesktopPage(&canvas, size, session)
+	state := fullscreenDesktopState(t, Session{ID: 1, Address: "desktop.example", desk: view, phase: sshconn.PhaseConnected})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
 	canvas.Reset()
-	state.paintDesktopPage(&canvas, size, session)
+	state.Paint(&canvas, size)
 	if delay, scheduled := canvas.NextFrame(); scheduled {
 		t.Fatalf("idle RDP RTT scheduled a frame after %v", delay)
 	}
 }
 
 func BenchmarkPaintDesktopFullscreen(b *testing.B) {
-	state := newTestState(b, testOptions(b))
-	state.terminalShowLatency = true
 	source := &measuredDesktop{
 		followingDesktop: newFollowingDesktop(1920, 1080, false),
 		rtt:              73 * time.Millisecond,
@@ -37,12 +46,12 @@ func BenchmarkPaintDesktopFullscreen(b *testing.B) {
 	view := newDesktopView(source, false)
 	defer view.close()
 	view.fullscreen = true
-	session := &Session{ID: 1, Address: "desktop.example", desk: view, phase: sshconn.PhaseConnected}
-	var canvas gfx.Canvas
 	size := gfx.Size{Width: 1920, Height: 1080}
+	state := fullscreenDesktopState(b, Session{ID: 1, Address: "desktop.example", desk: view, phase: sshconn.PhaseConnected})
+	var canvas gfx.Canvas
 	b.ReportAllocs()
 	for b.Loop() {
 		canvas.Reset()
-		state.paintDesktopPage(&canvas, size, session)
+		state.Paint(&canvas, size)
 	}
 }

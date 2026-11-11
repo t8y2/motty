@@ -24,11 +24,8 @@ func TestCLILoginNativeInputAndFormRendering(t *testing.T) {
 	var invalidator app.Invalidator
 	s.options.Invalidate = invalidator.Invalidate
 	var field app.TextInput
-	view, err := headless.Open(app.Config{Title: "Motty CLI settings", Width: 1280, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: s.Wake, Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(c app.TextInputContext) *app.TextInput {
+	config := app.Config{Title: "Motty CLI settings", Width: 1280, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: s.Wake, Paint: s.Paint, OnPointer: s.Pointer, OnKey: s.Key, OnShortcut: s.Shortcut, OnScroll: s.Scroll, OnResize: s.Resize, TextInput: func(c app.TextInputContext) *app.TextInput {
 		if input := s.TerminalInput(c); input != nil {
-			return input
-		}
-		if input := s.AIProviderFormInput(c); input != nil {
 			return input
 		}
 		if editor := s.EditorFor(c.ID); editor != nil {
@@ -36,7 +33,8 @@ func TestCLILoginNativeInputAndFormRendering(t *testing.T) {
 			return &field
 		}
 		return nil
-	}}, nil, headless.Options{Scale: 1})
+	}}
+	view, err := headless.Open(s.WindowConfig(config), nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,6 +50,18 @@ func TestCLILoginNativeInputAndFormRendering(t *testing.T) {
 			}
 		}
 		t.Fatal("missing clickable control", id)
+	}
+	clickLabel := func(label string) {
+		t.Helper()
+		for _, h := range view.Snapshot().Hits {
+			if h.Label == label && h.Role == gfx.RoleButton && !h.Block && !h.Disabled {
+				if err := view.Click(h.Bounds.X+h.Bounds.Width/2, h.Bounds.Y+h.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+		t.Fatal("missing clickable control", label)
 	}
 	clickID(hitAISetProviderAdd)
 	for i, p := range aiPresets {
@@ -83,7 +93,7 @@ func TestCLILoginNativeInputAndFormRendering(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	clickID(hitAISetFormSubmit)
+	clickLabel(s.messages.AISettings.FormAdd)
 	s.cancelAIFetch()
 	if len(s.ai.providers) != 1 {
 		t.Fatal("native form did not save")

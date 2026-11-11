@@ -207,7 +207,7 @@ func TestOutboundProxyCarriesTelnetToo(t *testing.T) {
 func TestHostDialogAddsATelnetHostAndTheSameAddressForSSHIsAnotherHost(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolTelnet)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolTelnet)
 	if state.editor.value(fieldPort) != "23" {
 		t.Fatalf("port = %q", state.editor.value(fieldPort))
 	}
@@ -223,7 +223,7 @@ func TestHostDialogAddsATelnetHostAndTheSameAddressForSSHIsAnotherHost(t *testin
 	}
 	// The same destination under the same name again is a duplicate.
 	state.Click(hitAddHost)
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolTelnet)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolTelnet)
 	typeInto(state, hitDialogLabel, "Prod telnet")
 	typeInto(state, hitDialogAddress, "prod.example.com")
 	state.Click(hitDialogSubmit)
@@ -235,7 +235,7 @@ func TestHostDialogAddsATelnetHostAndTheSameAddressForSSHIsAnotherHost(t *testin
 func TestHostDialogAddsASerialHostWithItsLineAndFlow(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolSerial)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSerial)
 	if state.editor.value(fieldPort) != "115200 8N1" {
 		t.Fatalf("line = %q", state.editor.value(fieldPort))
 	}
@@ -244,7 +244,7 @@ func TestHostDialogAddsASerialHostWithItsLineAndFlow(t *testing.T) {
 	typeInto(state, hitDialogAddress, "/dev/ttyUSB0")
 	state.editor.port.SetSelection(text.Range{Start: 0, End: len("115200 8N1")})
 	typeInto(state, hitDialogPort, "9600 7E2")
-	clickDialogChoice(t, state, state.messages.Tools.FlowHardware)
+	clickHostChoice(t, state, state.messages.Tools.FlowHardware)
 	state.Click(hitDialogSubmit)
 	if state.modal == modalNewHost {
 		t.Fatalf("dialog stayed open: %q", state.dialogError)
@@ -260,7 +260,7 @@ func TestHostDialogAddsASerialHostWithItsLineAndFlow(t *testing.T) {
 
 	// A line that is not one is refused with the way to write it.
 	state.Click(hitAddHost)
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolSerial)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSerial)
 	typeInto(state, hitDialogLabel, "Bad")
 	state.editor.address = text.Editor{}
 	typeInto(state, hitDialogAddress, "/dev/ttyUSB1")
@@ -275,14 +275,14 @@ func TestHostDialogAddsASerialHostWithItsLineAndFlow(t *testing.T) {
 func TestSwitchingProtocolKeepsWhatTheUserTypedAndChangesWhatTheyDidNot(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolTelnet)
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolSSH)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolTelnet)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSSH)
 	if state.editor.value(fieldPort) != "22" {
 		t.Fatalf("port went to %q", state.editor.value(fieldPort))
 	}
 	state.editor.port.SetSelection(text.Range{Start: 0, End: 2})
 	typeInto(state, hitDialogPort, "2222")
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolTelnet)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolTelnet)
 	if state.editor.value(fieldPort) != "2222" {
 		t.Fatalf("a port the user typed was replaced by %q", state.editor.value(fieldPort))
 	}
@@ -301,9 +301,9 @@ func TestHostDialogPaintsEachProtocolWithItsOwnFields(t *testing.T) {
 		{state.messages.Tools.ProtocolTelnet, []gfx.ID{hitDialogPort}, "", []gfx.ID{hitDialogUser}},
 		{state.messages.Tools.ProtocolSerial, []gfx.ID{hitDialogPort, hitDialogPortsTrigger}, state.messages.Tools.FlowNone, []gfx.ID{hitDialogUser}},
 	} {
-		clickDialogChoice(t, state, test.protocol)
+		clickHostChoice(t, state, test.protocol)
 		var canvas gfx.Canvas
-		state.Paint(&canvas, dialogChoicePaint)
+		state.Paint(&canvas, hostChoicePaint)
 		for _, id := range test.want {
 			if _, ok := hitByID(&canvas, id); !ok {
 				t.Errorf("protocol %q: hit %d is not painted", test.protocol, id)
@@ -315,10 +315,10 @@ func TestHostDialogPaintsEachProtocolWithItsOwnFields(t *testing.T) {
 			}
 		}
 		if test.wantFlow == "" {
-			if _, ok := dialogChoiceIn(&canvas, state.messages.Tools.FlowNone); ok {
+			if _, ok := hostChoiceIn(&canvas, state.messages.Tools.FlowNone); ok {
 				t.Errorf("protocol %q: the flow choice is painted", test.protocol)
 			}
-		} else if _, ok := dialogChoiceIn(&canvas, test.wantFlow); !ok {
+		} else if _, ok := hostChoiceIn(&canvas, test.wantFlow); !ok {
 			t.Errorf("protocol %q: the flow choice is not painted", test.protocol)
 		}
 	}
@@ -438,7 +438,7 @@ func TestImportedTelnetAndSerialSessionsBecomeHostsOnce(t *testing.T) {
 func TestPortsPickerClosesOnAnOutsidePressWithoutClosingTheDialog(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)
-	clickDialogChoice(t, state, state.messages.Tools.ProtocolSerial)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSerial)
 	state.Click(hitDialogPortsTrigger)
 	if !state.editor.portsOpen {
 		t.Fatal("the ports picker did not open")

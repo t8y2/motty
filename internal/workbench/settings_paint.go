@@ -165,6 +165,11 @@ func (state *State) declareSettingsWorkspace(c ui.C) {
 		})
 	})
 	view.declared = page
+	// The complete color collection is a Drawer of this same page, over the
+	// quick picks; it takes the page's pointer, keyboard and wheel while open.
+	if state.settingsCategory == settingsTerminal && !searching && state.modal == modalNone && state.schemeBrowserOpen {
+		state.declareSchemeDrawer(c)
+	}
 }
 
 // paintSettingsDetails paints what the settings declared into its slots once the

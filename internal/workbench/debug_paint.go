@@ -13,32 +13,13 @@ import (
 // text is Go, so the editor gets the same rules a .go file window would.
 const debugLanguage = "go"
 
-// paintDebugWorkspace is the editor gallery: the page's heading, then the code
-// editor filling the rest of the workspace.
-func (state *State) paintDebugWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
-	theme := state.Theme()
-	editor := state.devEditor()
-	page := state.debugWorkspacePage()
-	page.Draw(canvas, bounds, state.dev.view)
-	box := state.dev.area.Rect()
-	if box.Width <= 0 || box.Height <= 0 {
+// devDeclareWorkspace declares the gallery's heading and the area its editor
+// fills in the workbench page. The editor is painted into that area after the
+// page, by devPaintPage.
+func (state *State) devDeclareWorkspace(c ui.C) {
+	if state.activeSection != sectionDebug {
 		return
 	}
-	state.paintDebugEditor(canvas, theme, box, editor)
-}
-
-// debugWorkspacePage makes the page the gallery is declared in.
-func (state *State) debugWorkspacePage() *ui.Page {
-	if state.dev.page == nil {
-		state.dev.page = ui.NewPage(ui.PageConfig{Root: "debug-gallery", Theme: &state.theme})
-		state.dev.view = state.declareDebugWorkspace
-	}
-	return state.dev.page
-}
-
-// declareDebugWorkspace declares the gallery: its heading and the area the code
-// editor fills.
-func (state *State) declareDebugWorkspace(c ui.C) {
 	pal, messages := state.pal, state.messages
 	ui.Column(c).Fill().PadSides(12, 18, 12, 18).Children(func() {
 		ui.Column(c).MarginSides(4, 0, 13, 0).Gap(3).Children(func() {

@@ -269,7 +269,13 @@ func (state *State) clickDevelopmentImport(id gfx.ID) {
 	}
 }
 
-func (state *State) paintDevelopmentImport(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareDevelopmentImport declares the development-profile import in the
+// window page: the explanation, the password choice and the error are page
+// controls, and the dialog's two actions are page buttons.
+func (state *State) declareDevelopmentImport(c ui.C) {
+	if state.modal != modalDevelopmentImport {
+		return
+	}
 	m, view := state.messages, &state.developmentImport
 	body := fmt.Sprintf(m.DevelopmentImportBodyFmt, view.hosts)
 	skip := m.DevelopmentImportEmpty
@@ -278,6 +284,7 @@ func (state *State) paintDevelopmentImport(canvas *gfx.Canvas, viewport gfx.Rect
 	}
 	const width float32 = 600
 	bodyWidth := width - 2*(metrics.PadSurface+metrics.GapItem)
+	canvas := c.Canvas()
 	lines := wrappedLines(canvas, body, metrics.FontSizeM, bodyWidth)
 	errorText := ""
 	errorLines := 0
@@ -285,16 +292,17 @@ func (state *State) paintDevelopmentImport(canvas *gfx.Canvas, viewport gfx.Rect
 		errorText = fmt.Sprintf(m.DevelopmentImportFailedFmt, view.err)
 		errorLines = wrappedLines(canvas, errorText, metrics.FontSizeM, bodyWidth)
 	}
-	height := float32(lines+errorLines)*stateNoticeLine + 40
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitDevelopmentClose, CloseID: hitDevelopmentClose,
-		InitialFocusID: hitDevelopmentImport, ContentSize: gfx.Size{Width: width}, FitBody: true, BodyHeight: height,
+	bodyHeight := float32(lines+errorLines)*stateNoticeLine + 40
+	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
+	layout := components.BeginDialog(canvas, *c.Theme(), viewport, components.DialogOptions{
+		ContentSize: gfx.Size{Width: width}, FitBody: true,
+	}).Layout("")
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.DevelopmentImportTitle, Width: width, Height: layout.Content.Height + bodyHeight,
+		Layer: dialogLayer, Scope: dialogScope,
+		DismissID: hitDevelopmentClose, CloseID: hitDevelopmentClose,
 	})
-	layout := dialog.Begin(m.DevelopmentImportTitle, "")
-	if view.body == nil {
-		view.body = ui.NewPage(ui.PageConfig{Tree: &tree, Root: "development-import", Theme: &state.theme})
-	}
-	view.body.Draw(canvas, layout.Body, func(c ui.C) {
+	dialog.Body(func() {
 		ui.Column(c).Fill().Children(func() {
 			ui.Paragraph(c, body, lines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
 			ui.Checkbox(c, &view.passwords, m.DevelopmentImportPasswords).Color(state.pal.text)
@@ -303,9 +311,16 @@ func (state *State) paintDevelopmentImport(canvas *gfx.Canvas, viewport gfx.Rect
 			}
 		})
 	})
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitDevelopmentEmpty, Label: skip, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitDevelopmentImport, Label: m.DevelopmentImportAction},
-	)
-	dialog.End()
+	dialog.Footer(func() {
+		// The primary action takes the keyboard as the dialog opens, as it did.
+		if ui.Button(c, skip).Secondary().Shrink(0).Clicked() {
+			c.After(func() { state.clickDevelopmentImport(hitDevelopmentEmpty) })
+		}
+		if ui.Button(c, m.DevelopmentImportAction).Shrink(0).AutoFocus().Clicked() {
+			c.After(func() { state.clickDevelopmentImport(hitDevelopmentImport) })
+		}
+	})
+	if dialog.Dismissed() {
+		state.closeModal()
+	}
 }

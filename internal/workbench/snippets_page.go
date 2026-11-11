@@ -67,13 +67,26 @@ func (state *State) clickSnippetsPage(id gfx.ID) bool {
 	return true
 }
 
-// paintSnippetsWorkspace is the Snippets page: the commands kept to send to a
-// terminal, with the shortcut of each, and the way to add, edit and remove them.
-func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
+// snippetsSectionUI is what the snippets page's declaration leaves for its
+// paint.
+type snippetsSectionUI struct {
+	content, filter, remove, edit, send, add, empty ui.Box
+	removeWidth, sendWidth, editWidth, addWidth     float32
+	removeIcon, sendIcon, editIcon, addIcon         uint8
+	condensed                                       bool
+	// draw is the page hook that paints into these slots. It is kept so a paint
+	// does not build a closure for the hook.
+	draw func(*ui.DrawContext)
+}
+
+// declareSnippetsWorkspace declares the snippets page in the workbench page: its
+// header, its open/empty body and its footer. The buttons, the table, the group
+// filter and the empty state's icon are painted into the slots it leaves.
+func (state *State) declareSnippetsWorkspace(c ui.C) {
+	canvas := c.Canvas()
 	pal, m := state.pal, state.messages.Tools
 	form := &state.snippets
-	canAdd := len(form.list) < maxSnippets
-	hasSelection := len(form.list) > 0
+	bounds := state.catalogSectionBounds()
 	// The title keeps a readable column beside the buttons; a card too narrow for
 	// them shows the buttons as their icons, whose tooltips name them.
 	const (
@@ -88,47 +101,62 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	editWidth, editIcon := toolbarButtonLayout(canvas, m.SnippetEdit, 0, iconPencil, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, m.SnippetAdd, iconPlus, iconPlus, condensed)
 
-	var content, filter, remove, edit, send, add, empty ui.Box
-	state.drawSectionBody(canvas, bounds, func(c ui.C) {
-		ui.Column(c).Fill().PadSides(12, 18, 0, 18).Children(func() {
-			ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
-				ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-					ui.Text(c, m.SnippetsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-					ui.Paragraph(c, m.SnippetsPageDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+	canAdd := len(form.list) < maxSnippets
+	hasSelection := len(form.list) > 0
+	view := &state.sectionBodies.snippets
+	draw := view.draw
+	*view = snippetsSectionUI{
+		removeWidth: removeWidth, sendWidth: sendWidth, editWidth: editWidth, addWidth: addWidth,
+		removeIcon: removeIcon, sendIcon: sendIcon, editIcon: editIcon, addIcon: addIcon,
+		condensed: condensed,
+	}
+	if draw == nil {
+		draw = func(d *ui.DrawContext) { state.paintSnippetsWorkspace(d.Canvas) }
+	}
+	view.draw = draw
+	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
+	body.Children(func() {
+		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
+			ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
+				ui.Text(c, m.SnippetsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+				ui.Paragraph(c, m.SnippetsPageDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
+			})
+			view.remove = state.declareButtonSized(c, hitSnippetRemove, m.SnippetDelete, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
+			view.edit = state.declareButtonSized(c, hitSnippetEdit, m.SnippetEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
+			view.send = state.declareButtonSized(c, hitSnippetSend, m.SnippetSend, sendIcon, false, false, hasSelection, toolbarFont, condensed).Size(sendWidth, toolbarHeight)
+			view.add = state.declareButtonSized(c, hitSnippetAdd, m.SnippetAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
+		})
+		if len(form.list) == 0 {
+			view.empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd, hitSnippetAdd, iconNote, canAdd)
+		} else {
+			if len(form.groups) > 0 {
+				ui.Row(c).Height(toolbarHeight).MarginSides(0, 0, 9, 0).Children(func() {
+					view.filter = ui.Slot(c).Size(220, toolbarHeight)
 				})
-				remove = ui.Slot(c).Size(removeWidth, toolbarHeight)
-				edit = ui.Slot(c).Size(editWidth, toolbarHeight)
-				send = ui.Slot(c).Size(sendWidth, toolbarHeight)
-				add = ui.Slot(c).Size(addWidth, toolbarHeight)
-			})
-			if len(form.list) == 0 {
-				empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd)
-			} else {
-				if len(form.groups) > 0 {
-					ui.Row(c).Height(toolbarHeight).MarginSides(0, 0, 9, 0).Children(func() {
-						filter = ui.Slot(c).Size(220, toolbarHeight)
-					})
-				}
-				content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
 			}
-			ui.Divider(c).Background(pal.line)
-			ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
-				ui.Text(c, form.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
-				if hasSelection {
-					ui.Text(c, form.list[form.selected].Name).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1).Ellipsis()
-				}
-			})
+			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+		}
+		ui.Divider(c).Background(pal.line)
+		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
+			ui.Text(c, form.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
+			if len(form.list) > 0 {
+				ui.Text(c, form.list[form.selected].Name).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1).Ellipsis()
+			}
 		})
 	})
+	body.Clip().DrawOver(view.draw)
+}
 
-	state.paintToolbarButton(canvas, hitSnippetRemove, remove.Rect().X, remove.Rect().Y, removeWidth, m.SnippetDelete, removeIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitSnippetEdit, edit.Rect().X, edit.Rect().Y, editWidth, m.SnippetEdit, editIcon, false, hasSelection, condensed)
-	form.sendAt = gfx.Point{X: send.Rect().X, Y: send.Rect().Y + toolbarHeight + 4}
-	state.paintToolbarButton(canvas, hitSnippetSend, send.Rect().X, send.Rect().Y, sendWidth, m.SnippetSend, sendIcon, false, hasSelection, condensed)
-	state.paintToolbarButton(canvas, hitSnippetAdd, add.Rect().X, add.Rect().Y, addWidth, m.SnippetAdd, addIcon, true, canAdd, condensed)
+// paintSnippetsWorkspace paints the snippets page's buttons, table, group filter
+// and empty state into the slots its declaration left.
+func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
+	m, form := state.messages.Tools, &state.snippets
+	view := &state.sectionBodies.snippets
+
+	form.sendAt = gfx.Point{X: view.send.Rect().X, Y: view.send.Rect().Y + toolbarHeight + 4}
 
 	if len(form.list) == 0 {
-		state.drawReservedEmptyPage(canvas, empty, iconNote, hitSnippetAdd, m.SnippetAdd, canAdd)
+		state.drawReservedEmptyPage(canvas, view.empty, iconNote)
 		return
 	}
 	// The command column leaves room before its text for the Enter keycap of the
@@ -156,11 +184,11 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 		}
 	}
 	components.FitSortableTableHeadings(canvas, state.Theme(), columns[:], headers[:])
-	table := components.BeginTable(canvas, state.Theme(), content.Rect(), columns[:])
+	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
 	table.SortableHeader(headers[:])
 	var grid components.ReorderGrid
 	if manualOrder {
-		grid = components.BeginReorderGrid(canvas, theme, content.Rect(), &form.grid)
+		grid = components.BeginReorderGrid(canvas, theme, view.content.Rect(), &form.grid)
 		for index := range form.list {
 			grid.Order(hitSnippetHandles.At(index), 0, index, false)
 		}
@@ -188,7 +216,7 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) 
 	if manualOrder {
 		grid.End()
 	}
-	if len(form.groups) > 0 {
-		state.paintSnippetFilter(canvas, filter.Rect())
+	if view.filter.Valid() {
+		state.paintSnippetFilter(canvas, view.filter.Rect())
 	}
 }

@@ -14,7 +14,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -232,18 +231,9 @@ type aiSettingsUI struct {
 	reasoningMode       int // 0: Auto, 1: Enabled, 2: Disabled
 	reasoningPreset     int // 0: 3档(low,medium,high), 1: 6档(minimal..max), 2: 2档(default,high)
 
-	// The probe and reasoning dialogs' choices are declared in pages of their
-	// own: a dialog painted outside the settings page has no page context for
-	// them otherwise. Each is made once and reused while the window lives.
-	probePage     *ui.Page
-	reasoningPage *ui.Page
-
-	// The provider form is one page: its fields, choices and the preset its
-	// placement starts from are declared in it, so a click and the arrow keys
-	// reach them the way they reach a control on the settings page.
-	formPage *ui.Page
 	// The form's fields share the editors the application reads. They are bound
-	// once, when the page is made.
+	// once, by the page that declares them.
+	formBound     bool
 	formName      ui.Field
 	formCLIPath   ui.Field
 	formBaseURL   ui.Field
@@ -581,40 +571,7 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		cfg.mcpSelectOpen = false
 		return gfx.EventResult{Focus: aiAgentClientID(cfg.agentClient), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
-	// The choices of the dialogs painted outside the settings page are declared
-	// in pages of their own; those pages own their arrow keys.
-	switch cfg.dialog {
-	case aiDialogProbe:
-		if cfg.probePage != nil {
-			if result, handled := cfg.probePage.Key(event); handled {
-				return result, true
-			}
-		}
-	case aiDialogModelReasoning:
-		if cfg.reasoningPage != nil {
-			if result, handled := cfg.reasoningPage.Key(event); handled {
-				return result, true
-			}
-		}
-	case aiDialogProvider:
-		if cfg.formPage != nil {
-			if result, handled := cfg.formPage.Key(event); handled {
-				return result, true
-			}
-		}
-	}
 	return gfx.EventResult{}, false
-}
-
-// AIProviderFormInput is the platform's text input for a field of the open
-// provider form: the page that declares the form owns its editors, under the
-// identities the window's own routing names.
-func (state *State) AIProviderFormInput(context app.TextInputContext) *app.TextInput {
-	cfg := &state.ai.cfg
-	if !state.aiSettingsVisible() || cfg.dialog != aiDialogProvider || cfg.formPage == nil {
-		return nil
-	}
-	return cfg.formPage.TextInput(context)
 }
 
 func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {

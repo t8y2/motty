@@ -614,7 +614,7 @@ func TestSharedTerminalToolbarKeyboardNavigationReachesOverflow(t *testing.T) {
 
 	target := term.railIDs[0]
 	for target != lastID {
-		result := state.Key(gfx.KeyEvent{Target: target, Key: gfx.KeyDown})
+		result := windowKeyRoutes(state, gfx.KeyEvent{Target: target, Key: gfx.KeyDown})
 		if !result.Handled || result.Focus.IsZero() || result.Focus == target {
 			t.Fatalf("Down from %v returned %+v", target, result)
 		}
@@ -791,7 +791,7 @@ func TestTerminalToolbarSettingsApplyImmediatelyAndNavigate(t *testing.T) {
 
 	left := settingsChoiceHit(t, state, state.messages.SettingsToolbarPositionLeft)
 	right := settingsChoiceHit(t, state, state.messages.SettingsToolbarPositionRight)
-	result := state.Key(gfx.KeyEvent{Target: left.ID, Key: gfx.KeyRight})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: left.ID, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != right.ID || result.Activate != right.ID {
 		t.Fatalf("position keyboard result=%+v", result)
 	}

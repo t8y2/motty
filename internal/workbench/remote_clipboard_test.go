@@ -7,6 +7,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 func newClipboardState(t testing.TB, options Options) (*State, *Session) {
@@ -123,7 +124,9 @@ func TestOSC52ConfirmationDialogPaintsWithoutSchedulingWork(t *testing.T) {
 	state.terminalClipboard = terminalClipboardAsk
 	session.term.screen.Write([]byte("\x1b]52;c;cHJldmlldw==\x07"))
 	var canvas gfx.Canvas
-	state.paintRemoteClipboardDialog(&canvas, gfx.Rect{Width: 900, Height: 600})
+	canvas.SetTree(&tree)
+	page := ui.NewPage(ui.PageConfig{Tree: &tree, Root: "clipboard-test", Theme: &state.theme})
+	page.Draw(&canvas, gfx.Rect{Width: 900, Height: 600}, state.declareRemoteClipboardDialog)
 	for _, id := range []gfx.ID{hitClipboardAllow, hitClipboardAlways} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Fatalf("confirmation dialog did not paint %v", id)

@@ -68,6 +68,11 @@ func normalizeConnectionKeepAliveSeconds(value int) int {
 	}
 }
 
+// defaultConnectionKeepAlive is how often a connection is probed when the state
+// file says nothing. A connection whose peer stopped answering is otherwise
+// discovered only by the next keystroke, which can be minutes.
+const defaultConnectionKeepAlive = 30 * time.Second
+
 // textScale is the interface text size: the default, or a step each way. It is
 // saved by name, as the appearance mode is.
 type textScale uint8
@@ -281,14 +286,10 @@ func (state *State) openSettings() {
 func (state *State) scrollSettings(event gfx.ScrollEvent) gfx.EventResult {
 	step := event.StepY(24)
 	if state.schemeBrowserOpen {
-		if pointInRect(event.X, event.Y, state.scheme.body) {
-			if state.scheme.page != nil {
-				result := state.scheme.page.Wheel(event)
-				result.Handled = true
-				return result
-			}
-			return gfx.EventResult{Handled: true}
-		}
+		// The drawer is part of the workbench page: WindowConfig gives a wheel
+		// over its body to the page's drawer area, and a wheel anywhere else
+		// while the drawer is open scrolls nothing, as a modal panel keeps the
+		// rest of the page still.
 		return gfx.EventResult{Handled: true}
 	}
 	view := &state.settings

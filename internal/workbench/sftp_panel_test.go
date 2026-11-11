@@ -36,7 +36,7 @@ func TestSFTPPanelSettingsPersistAndDoNotMoveExistingWorkspace(t *testing.T) {
 	state.Click(hitSettingsPanelAutoOpen)
 	left := settingsChoiceHitInRow(t, state, state.messages.Tools.FilesPanelPosition, state.settingsSFTPPanelPositionLabel(layoutcore.ContextLeft))
 	right := settingsChoiceHitInRow(t, state, state.messages.Tools.FilesPanelPosition, state.settingsSFTPPanelPositionLabel(layoutcore.ContextRight))
-	result := state.Key(gfx.KeyEvent{Target: left.ID, Key: gfx.KeyRight})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Target: left.ID, Key: gfx.KeyRight})
 	if !result.Handled || result.Focus != right.ID || result.Activate != right.ID {
 		t.Fatal("panel position does not support arrow-key selection")
 	}
@@ -81,7 +81,7 @@ func TestSFTPPanelSettingsPersistAndDoNotMoveExistingWorkspace(t *testing.T) {
 	}
 	state.Click(hitSFTPClose)
 	state.Click(hitSettings)
-	state.Key(gfx.KeyEvent{Target: hitSettingsSearch, Key: gfx.KeyEscape})
+	windowKeyRoutes(state, gfx.KeyEvent{Target: hitSettingsSearch, Key: gfx.KeyEscape})
 	state.selectSettingsCategory(settingsFiles)
 	state.Click(hitSettingsPanelAutoOpen)
 	clickSettingsChoice(t, state, state.settingsSFTPPanelPositionLabel(layoutcore.ContextLeft))

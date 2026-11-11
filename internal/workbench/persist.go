@@ -48,6 +48,7 @@ type savedState struct {
 	NetworkProxy               string             `json:"network_proxy,omitempty"`
 	TerminalOption             string             `json:"terminalOption,omitempty"`
 	LocalShell                 string             `json:"local_shell,omitempty"`
+	HiddenShells               []string           `json:"hidden_shells,omitempty"`
 	LocalStart                 string             `json:"local_start,omitempty"`
 	LastLocalDirectory         string             `json:"last_local_directory,omitempty"`
 	SSHAgent                   string             `json:"ssh_agent,omitempty"`
@@ -62,9 +63,14 @@ type savedState struct {
 	TerminalCursor             string             `json:"terminal_cursor,omitempty"`
 	ConnectionTimeoutSeconds   int                `json:"connection_timeout_seconds,omitempty"`
 	ConnectionKeepAliveSeconds int                `json:"connection_keepalive_seconds,omitempty"`
-	ConnectionReconnect        string             `json:"connection_reconnect,omitempty"`
-	RestoreConnect             string             `json:"restore_connect,omitempty"`
-	ShareConnections           string             `json:"share_connections,omitempty"`
+	// ConnectionKeepAliveOff records the user's "off" choice. The interval
+	// above cannot: zero is dropped from the file, so it would be
+	// indistinguishable from never having chosen, and a state file that says
+	// nothing gets the default interval.
+	ConnectionKeepAliveOff bool   `json:"connection_keepalive_off,omitempty"`
+	ConnectionReconnect    string `json:"connection_reconnect,omitempty"`
+	RestoreConnect         string `json:"restore_connect,omitempty"`
+	ShareConnections       string `json:"share_connections,omitempty"`
 	// StartupLocal and StartupHosts are what a launch opens: a local terminal,
 	// and the saved hosts to connect, by their catalog ids.
 	StartupLocal bool     `json:"startup_local,omitempty"`
@@ -476,6 +482,7 @@ func (state *State) snapshot() savedState {
 		NetworkProxy:               state.networkProxy.String(),
 		TerminalOption:             state.terminalOption.String(),
 		LocalShell:                 state.localShell,
+		HiddenShells:               slices.Clone(state.hiddenShells),
 		LocalStart:                 state.localStart.String(),
 		LastLocalDirectory:         state.lastLocalDirectory,
 		RecentConnectSort:          state.recentConnectSort,
@@ -492,6 +499,7 @@ func (state *State) snapshot() savedState {
 		TerminalCursor:             state.terminalCursorStyle.String(),
 		ConnectionTimeoutSeconds:   int(state.connectionTimeout / time.Second),
 		ConnectionKeepAliveSeconds: int(state.connectionKeepAlive / time.Second),
+		ConnectionKeepAliveOff:     state.connectionKeepAlive == 0,
 		ConnectionReconnect:        state.connectionReconnect.String(),
 		RestoreConnect:             state.restoreConnect.String(),
 		ShareConnections:           state.shareConnections.String(),
@@ -942,6 +950,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
 	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
 	state.localShell = saved.LocalShell
+	state.hiddenShells = cleanShellPaths(saved.HiddenShells)
 	state.recentConnectSort = saved.RecentConnectSort
 	state.recentConnections = maps.Clone(saved.RecentConnections)
 	state.sessionLogsOff = saved.SessionLogsOff
@@ -1278,6 +1287,9 @@ func highestProxyNumber(routes []proxyRecord) uint32 {
 }
 
 func (state *State) restoreSessions(entries []savedSession, active int) []uint32 {
+	// Replacing the tab list can end every live session this window had; the
+	// watcher must not outlive the ones that remain.
+	defer state.syncLinkWatch()
 	clear(state.sessions)
 	state.sessions = state.sessions[:0]
 	state.activeSessionID = 0

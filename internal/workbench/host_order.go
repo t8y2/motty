@@ -159,12 +159,3 @@ func (state *State) paintHostOrder(canvas *gfx.Canvas, viewport gfx.Rect) {
 	rows.paint(&menu, nil)
 	menu.End()
 }
-
-func (state *State) paintHostOrderButton(canvas *gfx.Canvas, bounds gfx.Rect) {
-	state.hostOrderButton = bounds
-	style := iconButtonQuiet
-	if state.hostOrder != hostOrderManual {
-		style = iconButtonActive
-	}
-	state.paintIconButton(canvas, hitHostOrder, iconSliders, bounds, state.messages.HostCatalog.Order, false, style, state.pal.workspace)
-}

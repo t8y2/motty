@@ -17,11 +17,11 @@ import (
 
 func TestProcessDetailsKeepsTwoColumnMetadataAndSelectableEnvironment(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteRowList.At(0))
+	clickRemoteToolsRow(t, state, 0)
 	if state.remote.processDetails.environmentLoaded || state.remote.processDetails.loading {
 		t.Fatal("command tab read environment variables eagerly")
 	}
-	state.Click(hitRemoteProcessDetailsEnv)
+	clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsEnv)
 	waitFor(t, state, func() bool { return !state.remote.processDetails.loading })
 	if state.remote.processDetails.failed || len(state.remote.processDetails.environment) != 3 {
 		t.Fatalf("environment=%+v status=%q", state.remote.processDetails.environment, state.remote.processDetails.status)
@@ -92,8 +92,8 @@ func TestProcessEnvironmentReportsEmptyFailureAndUnsupportedStates(t *testing.T)
 	t.Run("empty", func(t *testing.T) {
 		state, server, _ := openRemoteToolsDialog(t)
 		server.environment = "\x00"
-		state.Click(hitRemoteRowList.At(0))
-		state.Click(hitRemoteProcessDetailsEnv)
+		clickRemoteToolsRow(t, state, 0)
+		clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsEnv)
 		waitFor(t, state, func() bool { return !state.remote.processDetails.loading })
 		var canvas gfx.Canvas
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
@@ -108,8 +108,8 @@ func TestProcessEnvironmentReportsEmptyFailureAndUnsupportedStates(t *testing.T)
 	t.Run("failure", func(t *testing.T) {
 		state, server, _ := openRemoteToolsDialog(t)
 		server.failures["environment"] = errors.New("exit status 1")
-		state.Click(hitRemoteRowList.At(0))
-		state.Click(hitRemoteProcessDetailsEnv)
+		clickRemoteToolsRow(t, state, 0)
+		clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsEnv)
 		waitFor(t, state, func() bool { return !state.remote.processDetails.loading })
 		var canvas gfx.Canvas
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
@@ -127,8 +127,8 @@ func TestProcessEnvironmentReportsEmptyFailureAndUnsupportedStates(t *testing.T)
 		state, server, _ := openRemoteToolsDialog(t)
 		server.failures["environment"] = errors.New("exit status 1")
 		server.environmentFailure = "motty-env-before 12345678-1234-1234-1234-123456789abc 221101\n"
-		state.Click(hitRemoteRowList.At(0))
-		state.Click(hitRemoteProcessDetailsEnv)
+		clickRemoteToolsRow(t, state, 0)
+		clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsEnv)
 		waitFor(t, state, func() bool { return !state.remote.processDetails.loading })
 		if state.remote.processDetails.status != state.messages.Tools.RemoteProcessChanged ||
 			strings.Contains(state.remote.processDetails.status, "motty-env-before") {
@@ -143,8 +143,8 @@ func TestProcessEnvironmentReportsEmptyFailureAndUnsupportedStates(t *testing.T)
 			t.Fatal("remote session is missing")
 		}
 		session.host.System = sshconn.SystemWindows
-		state.Click(hitRemoteRowList.At(0))
-		state.Click(hitRemoteProcessDetailsEnv)
+		clickRemoteToolsRow(t, state, 0)
+		clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsEnv)
 		waitFor(t, state, func() bool { return !state.remote.processDetails.loading })
 		if !state.remote.processDetails.failed ||
 			state.remote.processDetails.status != state.messages.Tools.RemoteProcessEnvironmentUnsupported {
@@ -246,7 +246,7 @@ func TestEnvironmentTableCopiesDelimitedValuesAsLosslessTSV(t *testing.T) {
 
 func TestProcessDetailsSupportsSelectingAndCopyingText(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteRowList.At(0))
+	clickRemoteToolsRow(t, state, 0)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	textHit, found := hitByID(&canvas, hitRemoteProcessDetailsText)
@@ -292,7 +292,7 @@ func TestProcessDetailsLoadsTheCompleteCommandAndSupportsKeyboardSelection(t *te
 	fullCommand := "/usr/bin/python3 /srv/application.py --config \"" +
 		strings.Repeat("nested/", 180) + "config.yml\" --serve"
 	server.processCommand = fullCommand
-	state.Click(hitRemoteRowList.At(0))
+	clickRemoteToolsRow(t, state, 0)
 	waitFor(t, state, func() bool { return state.remote.processDetails.commandLoaded })
 	if server.ran("# motty-process-command\n") != 1 ||
 		state.remote.processDetails.commandValue != fullCommand ||
@@ -317,7 +317,7 @@ func TestProcessDetailsLoadsTheCompleteCommandAndSupportsKeyboardSelection(t *te
 func TestProcessCommandFailureShowsSummaryAndCanRetry(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	server.failures["command"] = errors.New("exit status 1")
-	state.Click(hitRemoteRowList.At(0))
+	clickRemoteToolsRow(t, state, 0)
 	waitFor(t, state, func() bool {
 		return state.remote.processDetails.commandLoaded && !state.remote.processDetails.commandLoading
 	})
@@ -331,7 +331,7 @@ func TestProcessCommandFailureShowsSummaryAndCanRetry(t *testing.T) {
 		t.Fatal("command summary was not disclosed in the dialog")
 	}
 	delete(server.failures, "command")
-	state.Click(hitRemoteProcessDetailsCommand)
+	clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsCommand)
 	waitFor(t, state, func() bool {
 		return state.remote.processDetails.commandLoaded &&
 			!state.remote.processDetails.commandLoading &&
@@ -346,14 +346,14 @@ func TestProcessCommandFailureShowsSummaryAndCanRetry(t *testing.T) {
 func TestProcessEnvironmentCanRetryAfterFailure(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
 	server.failures["environment"] = errors.New("exit status 1")
-	state.Click(hitRemoteRowList.At(0))
-	state.Click(hitRemoteProcessDetailsEnv)
+	clickRemoteToolsRow(t, state, 0)
+	clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsEnv)
 	waitFor(t, state, func() bool { return !state.remote.processDetails.loading })
 	if !state.remote.processDetails.failed {
 		t.Fatal("first environment read did not fail")
 	}
 	delete(server.failures, "environment")
-	state.Click(hitRemoteProcessDetailsEnv)
+	clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsEnv)
 	waitFor(t, state, func() bool {
 		return !state.remote.processDetails.loading && !state.remote.processDetails.failed
 	})
@@ -396,8 +396,8 @@ func TestRemoteDetailTextRelayoutsWhenAsynchronousSourceChanges(t *testing.T) {
 
 func TestRemoteProcessEnvironmentScrollsIndependently(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteRowList.At(0))
-	state.Click(hitRemoteProcessDetailsEnv)
+	clickRemoteToolsRow(t, state, 0)
+	clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsEnv)
 	waitFor(t, state, func() bool { return !state.remote.processDetails.loading })
 	state.remote.processDetails.environment = make([]remotetools.ProcessEnvironmentVariable, 80)
 	for index := range state.remote.processDetails.environment {
@@ -432,8 +432,8 @@ func TestRemoteProcessEnvironmentScrollsIndependently(t *testing.T) {
 
 func TestCommandTabDoesNotScrollTheHiddenEnvironmentTable(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
-	state.Click(hitRemoteRowList.At(0))
-	state.Click(hitRemoteProcessDetailsEnv)
+	clickRemoteToolsRow(t, state, 0)
+	clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsEnv)
 	waitFor(t, state, func() bool { return !state.remote.processDetails.loading })
 	state.remote.processDetails.environment = make([]remotetools.ProcessEnvironmentVariable, 80)
 	for index := range state.remote.processDetails.environment {
@@ -446,7 +446,7 @@ func TestCommandTabDoesNotScrollTheHiddenEnvironmentTable(t *testing.T) {
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	bounds := state.remote.processDetails.text.bounds
 	before := state.remote.processDetails.text.scroll
-	state.Click(hitRemoteProcessDetailsCommand)
+	clickRemoteToolsDetailTab(t, state, hitRemoteProcessDetailsCommand)
 	result := state.Scroll(gfx.ScrollEvent{
 		X: bounds.X + bounds.Width/2, Y: bounds.Y + min(bounds.Height/2, 40),
 		DeltaY: 20, Precise: true, Viewport: gfx.Size{Width: 1400, Height: 900},
@@ -463,7 +463,7 @@ func TestReopeningToolsDiscardsEnvironmentFromThePreviousSurface(t *testing.T) {
 	if !ok {
 		t.Fatal("remote session is missing")
 	}
-	state.Click(hitRemoteRowList.At(0))
+	clickRemoteToolsRow(t, state, 0)
 	oldDetails := state.remote.processDetails
 	environmentCancelled, commandCancelled := false, false
 	state.remote.processDetails.environmentCancel = func() { environmentCancelled = true }
@@ -477,7 +477,7 @@ func TestReopeningToolsDiscardsEnvironmentFromThePreviousSurface(t *testing.T) {
 
 	state.openRemoteToolsTab(session, remoteProcesses, false)
 	waitFor(t, state, func() bool { return !state.remote.loading })
-	state.Click(hitRemoteRowList.At(0))
+	clickRemoteToolsRow(t, state, 0)
 	current := state.remote.processDetails
 	if !current.open || current.serial == oldDetails.serial {
 		t.Fatalf("reopened details reused generation %d", current.serial)
