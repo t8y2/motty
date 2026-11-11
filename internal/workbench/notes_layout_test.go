@@ -234,3 +234,65 @@ func TestNotesTerminalScopeSwitchPreservesDocument(t *testing.T) {
 		t.Fatal("scope switch changed selection")
 	}
 }
+
+func TestUnselectedMoreMenuFallbackAndLayer(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	s.Click(hitNoteAdd)
+	// Deselect note to test unselected more menu positioning
+	s.notes.selected = ""
+	s.notes.view.menu = "note"
+	s.notes.view.menuID = s.notes.list[0].ID
+	s.notes.view.overlayFrom = hitNoteRowMore.At(0)
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
+
+	found := false
+	for _, text := range c.Texts() {
+		if text.Value == "Rename" {
+			found = true
+			if text.Bounds.X < 200 {
+				t.Fatalf("Rename menu rendered at X=%.1f, overlapping workbench!", text.Bounds.X)
+			}
+			if text.Layer != dialogLayer {
+				t.Fatalf("Rename menu layer = %d, want dialogLayer (%d)", text.Layer, dialogLayer)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Rename menu item not found in canvas texts")
+	}
+
+	// Test folder more menu click selects folder and anchors properly
+	s.Click(hitNoteDismiss)
+	s.Click(hitNoteFolderAdd)
+	s.EditorFor(hitNoteInline).Insert("Folder")
+	s.Key(gfx.KeyEvent{Target: hitNoteInline, Key: gfx.KeyEnter})
+	if len(s.notes.folders) == 0 {
+		t.Fatal("folder was not created")
+	}
+	folderID := s.notes.folders[0].ID
+	s.notes.folder = ""
+	s.notes.view.treeFolderSelection = false
+	s.Click(hitNoteFolderMore.At(0))
+	if !s.notes.view.treeFolderSelection || s.notes.folder != folderID {
+		t.Fatalf("clicking folder more button did not select folder: folder=%q, treeFolder=%v", s.notes.folder, s.notes.view.treeFolderSelection)
+	}
+	c.Reset()
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
+	found = false
+	for _, text := range c.Texts() {
+		if text.Value == "Delete folder" {
+			found = true
+			if text.Bounds.X < 200 {
+				t.Fatalf("folder Delete menu rendered at X=%.1f, overlapping workbench!", text.Bounds.X)
+			}
+			if text.Layer != dialogLayer {
+				t.Fatalf("folder menu layer = %d, want dialogLayer (%d)", text.Layer, dialogLayer)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Delete folder menu item not found in canvas texts")
+	}
+}

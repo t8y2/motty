@@ -69,6 +69,7 @@ func (s *State) paintNoteTree(c *gfx.Canvas, b gfx.Rect) {
 	n, v := &s.notes, &s.notes.view
 	theme := s.Theme()
 	n.listBounds = b
+	v.treeBounds = b
 	x, y := b.X+8, b.Y+8
 	expandIcon := icons.ListX
 	if s.noteCanExpandAll() {
@@ -220,7 +221,8 @@ func (s *State) paintNoteTree(c *gfx.Canvas, b gfx.Rect) {
 		c.Clip(content)
 		c.Label(e.label, content, gfx.TextStyle{Size: 13, Color: s.pal.text})
 		c.Unclip()
-		if c.Hovered() == id || c.Hovered() == more || selected {
+		menuOpen := (v.menu == "note" && !e.folder && v.menuID == e.id) || (v.menu == "folder" && e.folder && v.menuID == e.id)
+		if c.Hovered() == id || c.Hovered() == more || selected || menuOpen {
 			s.noteButton(c, more, gfx.Rect{X: row.Bounds.X + row.Bounds.Width - 30, Y: row.Bounds.Y + 1, Width: 28, Height: 28}, s.noteText("More actions", "更多操作"), icons.Ellipsis)
 		}
 		if event, ok := c.PointerOn(id); ok && event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonSecondary {

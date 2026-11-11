@@ -51,7 +51,7 @@ func (s *State) paintNoteOverlays(c *gfx.Canvas, b gfx.Rect) {
 			add(hitNoteDelete, s.noteText("Delete note", "删除笔记"))
 		}
 		anchor := v.overlayAnchorRect(c)
-		menu := components.BeginContextMenu(c, theme, gfx.Rect{X: anchor.X, Y: anchor.Y + anchor.Height, Width: 210, Height: float32(len(actions))*32 + 8}, components.ContextMenuOptions{Layer: popupLayer + 2, Scope: hitNoteDismiss, DismissID: hitNoteDismiss, Viewport: viewport, Scroll: s.menuScrollFor(hitNoteDismiss)})
+		menu := components.BeginContextMenu(c, theme, gfx.Rect{X: anchor.X, Y: anchor.Y + anchor.Height, Width: 210, Height: float32(len(actions))*32 + 8}, components.ContextMenuOptions{Layer: dialogLayer, Scope: hitNoteDismiss, DismissID: hitNoteDismiss, Viewport: viewport, Scroll: s.menuScrollFor(hitNoteDismiss)})
 		s.menuPlaced(menu.Bounds())
 		for _, a := range actions {
 			menu.AddItem(a)
