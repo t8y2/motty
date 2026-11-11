@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"fmt"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -9,11 +11,11 @@ import (
 
 // forwardSectionUI is what the forwards page's declaration leaves for its paint.
 type forwardSectionUI struct {
-	content, remove, edit, action, add, empty     ui.Box
-	removeWidth, editWidth, actionWidth, addWidth float32
-	removeIcon, editIcon, actionIcon, addIcon     uint8
-	actionLabel                                   string
-	condensed                                     bool
+	search, content, remove, edit, action, add, empty ui.Box
+	removeWidth, editWidth, actionWidth, addWidth     float32
+	removeIcon, editIcon, actionIcon, addIcon         uint8
+	actionLabel                                       string
+	condensed, noMatches                              bool
 	// draw is the page hook that paints into these slots. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
@@ -25,7 +27,17 @@ type forwardSectionUI struct {
 func (state *State) declareForwardsWorkspace(c ui.C) {
 	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
-	selected, hasSelection := state.forwardByID(state.selectedForwardID)
+	list := &state.forwardList
+	list.beginRows()
+	for i := range state.forwards {
+		rule := &state.forwards[i]
+		list.addRow(rule.ID, rule.cells[:], rule.HostAddress, rule.selectLabel)
+	}
+	list.finishRows()
+	selectedID, hasSelection := list.selection(state.selectedForwardID)
+	selected, exists := state.forwardByID(selectedID)
+	hasSelection = hasSelection && exists
+	canRemove := hasSelection || len(list.checked) > 0
 	actionLabel := messages.ForwardStart
 	actionIcon := uint8(iconPlay)
 	running := selected.runner != nil || selected.pending || selected.starting
@@ -70,20 +82,32 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 				ui.Text(c, messages.ForwardTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				ui.Paragraph(c, messages.ForwardDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
-			view.remove = state.declareButtonSized(c, hitForwardRemove, messages.ForwardRemove, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
+			view.remove = state.declareButtonSized(c, hitForwardRemove, messages.ForwardRemove, removeIcon, false, false, canRemove, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
 			view.edit = state.declareButtonSized(c, hitForwardEdit, messages.ForwardEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
 			view.action = state.declareButtonSized(c, hitForwardStartStop, actionLabel, realActionIcon, false, false, hasSelection, toolbarFont, condensed).Size(actionWidth, toolbarHeight)
 			view.add = state.declareButtonSized(c, hitForwardAdd, messages.ForwardAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
 		})
-		if len(state.forwards) == 0 {
+		if len(state.forwards) > 0 {
+			view.search = ui.Slot(c).Height(36).MaxWidth(470).MarginSides(0, 0, 9, 0)
+		}
+		view.noMatches = len(state.forwards) > 0 && len(list.rows) == 0
+		if view.noMatches {
+			view.empty = state.reserveEmptyPage(c, bounds, messages.KnownHostsNoMatches, "", "", gfx.ID{}, iconSearch, false)
+		} else if len(state.forwards) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd, hitForwardAdd, iconForward, canAdd)
 		} else {
 			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
-			ui.Text(c, state.forwardCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(124)
-			if hasSelection && selected.detail != "" {
+			count := state.forwardCountText
+			if list.query != "" {
+				count = fmt.Sprintf(messages.KnownHostsFilteredCountFmt, len(list.rows), len(state.forwards))
+			}
+			ui.Text(c, count).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(124)
+			if len(list.checked) > 0 {
+				ui.Text(c, fmt.Sprintf(messages.KnownHostsSelectedFmt, len(list.checked))).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
+			} else if hasSelection && selected.detail != "" {
 				ui.Text(c, selected.detail).FontSize(metrics.FontSizeS).Color(detailColor).Grow(1)
 			}
 		})
@@ -96,27 +120,22 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas) {
 	view, messages := &state.sectionBodies.forwards, state.messages
 
+	list := &state.forwardList
+	if view.search.Valid() {
+		state.paintNetworkRuleSearch(canvas, view.search.Rect(), list, forwardListIDs.search, messages.ForwardSearch)
+	}
+	if view.noMatches {
+		state.drawReservedEmptyPage(canvas, view.empty, iconSearch)
+		return
+	}
 	if len(state.forwards) == 0 {
 		state.drawReservedEmptyPage(canvas, view.empty, iconForward)
 		return
 	}
-	columns := [...]components.TableColumn{{Width: 180}, {Width: 160}, {Width: 170}, {Width: 210}, {Width: 0}}
-	headings := [...]string{
-		messages.ForwardColumnName,
-		messages.ForwardColumnHost,
-		messages.ForwardColumnListener,
-		messages.ForwardColumnDestination,
-		messages.ForwardColumnStatus,
-	}
-	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
-	table.Header(headings[:])
-	for index := range state.forwards {
-		forward := &state.forwards[index]
-		if table.RowAt(hitForwardRowList, int(forward.ID), forward.cells[:], forward.ID == state.selectedForwardID) && state.modal == modalNone {
-			state.selectForward(forward.ID)
-		}
-	}
+	columns := [...]components.TableColumn{{}, {Width: 180}, {Width: 160}, {Width: 170}, {Width: 210}, {}}
+	headings := [...]string{"", messages.ForwardColumnName, messages.ForwardColumnHost, messages.ForwardColumnListener, messages.ForwardColumnDestination, messages.ForwardColumnStatus}
+	selected, _ := list.selection(state.selectedForwardID)
+	state.paintNetworkRuleTable(canvas, view.content.Rect(), list, forwardListIDs, messages.ForwardTitle, columns[:], headings[:], selected)
 }
 
 // declareForwardDialog declares the forward editor as a dialog of the workbench

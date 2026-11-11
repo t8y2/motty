@@ -10,11 +10,11 @@ import (
 
 // proxySectionUI is what the proxies page's declaration leaves for its paint.
 type proxySectionUI struct {
-	content, remove, edit, action, add, empty     ui.Box
-	removeWidth, editWidth, actionWidth, addWidth float32
-	removeIcon, editIcon, actionIcon, addIcon     uint8
-	actionLabel                                   string
-	condensed                                     bool
+	search, content, remove, edit, action, add, empty ui.Box
+	removeWidth, editWidth, actionWidth, addWidth     float32
+	removeIcon, editIcon, actionIcon, addIcon         uint8
+	actionLabel                                       string
+	condensed, noMatches                              bool
 	// draw is the page hook that paints into these slots. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
@@ -26,7 +26,17 @@ type proxySectionUI struct {
 func (state *State) declareProxiesWorkspace(c ui.C) {
 	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
-	selected, hasSelection := state.proxyByID(state.selectedProxyID)
+	list := &state.proxyList
+	list.beginRows()
+	for i := range state.proxies {
+		rule := &state.proxies[i]
+		list.addRow(rule.ID, rule.cells[:], rule.label, rule.selectLabel)
+	}
+	list.finishRows()
+	selectedID, hasSelection := list.selection(state.selectedProxyID)
+	selected, exists := state.proxyByID(selectedID)
+	hasSelection = hasSelection && exists
+	canRemove := hasSelection || len(list.checked) > 0
 	actionLabel := messages.ProxyStart
 	actionIcon := uint8(iconPlay)
 	if hasSelection && !selected.Stopped {
@@ -67,20 +77,32 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 				ui.Text(c, messages.ProxyTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
 				ui.Paragraph(c, messages.ProxyDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 			})
-			view.remove = state.declareButtonSized(c, hitProxyRemove, messages.ProxyRemove, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
+			view.remove = state.declareButtonSized(c, hitProxyRemove, messages.ProxyRemove, removeIcon, false, false, canRemove, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
 			view.edit = state.declareButtonSized(c, hitProxyEdit, messages.ProxyEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
 			view.action = state.declareButtonSized(c, hitProxyStartStop, actionLabel, realActionIcon, false, false, hasSelection, toolbarFont, condensed).Size(actionWidth, toolbarHeight)
 			view.add = state.declareButtonSized(c, hitProxyAdd, messages.ProxyAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
 		})
-		if len(state.proxies) == 0 {
+		if len(state.proxies) > 0 {
+			view.search = ui.Slot(c).Height(36).MaxWidth(470).MarginSides(0, 0, 9, 0)
+		}
+		view.noMatches = len(state.proxies) > 0 && len(list.rows) == 0
+		if view.noMatches {
+			view.empty = state.reserveEmptyPage(c, bounds, messages.KnownHostsNoMatches, "", "", gfx.ID{}, iconSearch, false)
+		} else if len(state.proxies) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd, hitProxyAdd, iconGlobe, canAdd)
 		} else {
 			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
-			ui.Text(c, state.proxyCountText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
-			if hasSelection {
+			count := state.proxyCountText
+			if list.query != "" {
+				count = fmt.Sprintf(messages.KnownHostsFilteredCountFmt, len(list.rows), len(state.proxies))
+			}
+			ui.Text(c, count).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
+			if len(list.checked) > 0 {
+				ui.Text(c, fmt.Sprintf(messages.KnownHostsSelectedFmt, len(list.checked))).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis()
+			} else if hasSelection {
 				ui.Text(c, state.proxyLabel(selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
 			}
 		})
@@ -93,20 +115,22 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas) {
 	view, messages := &state.sectionBodies.proxies, state.messages
 
+	list := &state.proxyList
+	if view.search.Valid() {
+		state.paintNetworkRuleSearch(canvas, view.search.Rect(), list, proxyListIDs.search, messages.ProxySearch)
+	}
+	if view.noMatches {
+		state.drawReservedEmptyPage(canvas, view.empty, iconSearch)
+		return
+	}
 	if len(state.proxies) == 0 {
 		state.drawReservedEmptyPage(canvas, view.empty, iconGlobe)
 		return
 	}
-	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 120}, {Width: 0}}
-	headings := [...]string{messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnStatus, messages.ProxyColumnRoute}
-	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
-	table.Header(headings[:])
-	for _, route := range state.proxies {
-		if table.RowAt(hitProxyRowList, int(route.ID), route.cells[:], route.ID == state.selectedProxyID) && state.modal == modalNone {
-			state.selectProxy(route.ID)
-		}
-	}
+	columns := [...]components.TableColumn{{}, {Width: 210}, {Width: 210}, {Width: 120}, {}}
+	headings := [...]string{"", messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnStatus, messages.ProxyColumnRoute}
+	selected, _ := list.selection(state.selectedProxyID)
+	state.paintNetworkRuleTable(canvas, view.content.Rect(), list, proxyListIDs, messages.ProxyTitle, columns[:], headings[:], selected)
 }
 
 // declareProxyDialog declares the route editor as a dialog of the workbench

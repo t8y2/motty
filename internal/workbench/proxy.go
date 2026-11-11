@@ -28,9 +28,10 @@ type proxyRecord struct {
 	ViaShell bool
 	// Relay is the relay program of a ViaShell route, with the tokens of a proxy
 	// command; empty means defaultRelayCommand.
-	Relay string
-	label string
-	cells [4]string
+	Relay       string
+	label       string
+	selectLabel string
+	cells       [4]string
 }
 
 // defaultRelayCommand connects its standard input and output to the target.
@@ -201,13 +202,6 @@ func (state *State) proxyRouteForTarget(targetID uint32) (proxyRecord, bool) {
 		}
 	}
 	return proxyRecord{}, false
-}
-
-func (state *State) openEditProxy() {
-	if state.selectedProxyID == 0 {
-		return
-	}
-	state.openEditProxyID(state.selectedProxyID)
 }
 
 func (state *State) openEditProxyID(id uint32) {
@@ -446,15 +440,28 @@ func (state *State) clickProxies(id gfx.ID) {
 	if state.activeSection != sectionProxies || state.modal != modalNone {
 		return
 	}
+	list, ids := &state.proxyList, proxyListIDs
+	selected, hasSelection := list.selection(state.selectedProxyID)
 	switch {
+	case id == ids.all:
+		list.toggleAll()
+	case id.Scope() == ids.checks:
+		list.toggle(uint32(item(id)))
+	case id.Scope() == ids.rows:
+		state.selectNetworkRule(list, uint32(item(id)))
 	case id == hitProxyAdd:
 		state.openProxyDialog()
-	case id == hitProxyEdit:
-		state.openEditProxy()
-	case id == hitProxyStartStop:
+	case id == hitProxyEdit && hasSelection:
+		state.openEditProxyID(selected)
+	case id == hitProxyStartStop && hasSelection:
+		state.selectedProxyID = selected
 		state.toggleSelectedProxy()
 	case id == hitProxyRemove:
-		state.removeSelectedProxy()
+		if len(list.checked) > 0 {
+			state.askRemoveNetworkRules(list)
+		} else if hasSelection {
+			state.removeSelectedProxy()
+		}
 	}
 }
 
@@ -521,12 +528,14 @@ func (state *State) refreshProxy(route *proxyRecord) {
 	jump, jumpOK := state.hostByID(route.JumpID)
 	if !targetOK || !jumpOK {
 		route.label = ""
+		route.selectLabel = state.messages.ProxyTitle
 		route.cells = [4]string{}
 		return
 	}
 	chain, valid := state.proxyChain(target, false)
 	if !valid || len(chain) == 0 {
 		route.label = ""
+		route.selectLabel = state.messages.ProxyTitle
 		route.cells = [4]string{}
 		return
 	}
@@ -550,6 +559,7 @@ func (state *State) refreshProxy(route *proxyRecord) {
 	if route.ViaShell {
 		jumpCell += " · " + state.messages.ProxyViaShellTag
 	}
+	route.selectLabel = fmt.Sprintf(state.messages.NetworkRulesSelectFmt, target.Label)
 	route.cells = [4]string{target.Label, jumpCell, status, targets.String()}
 }
 
