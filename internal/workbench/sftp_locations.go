@@ -336,7 +336,7 @@ func (w sftpPlaceBrowser) paintDirectoryPlaces(canvas *gfx.Canvas, viewport gfx.
 			case localPlaceMovies:
 				label, glyph = m.LocalMovies, uint8(iconFilm)
 			case localPlaceApplications:
-				label, glyph = m.LocalApplications, uint8(iconGrid2x2)
+				label, glyph = m.LocalApplications, uint8(iconHome)
 			}
 			menu.AddItem(components.ContextMenuItem{ID: sftpLocalPlaces.At(index), Label: label, Hint: place.path, Icon: lucideIcons[glyph], Disabled: w.navigationBusy()})
 		}

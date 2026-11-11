@@ -1541,7 +1541,7 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 								gridStyle = iconButtonActive
 							}
 							chrome.hostToggle.list = state.declareIconButton(c, hitHostViewList, iconRows2, state.messages.Tools.HostViewList, false, listStyle).Size(26, 26)
-							chrome.hostToggle.grid = state.declareIconButton(c, hitHostViewGrid, iconGrid2x2, state.messages.Tools.HostViewGrid, false, gridStyle).Size(26, 26)
+							chrome.hostToggle.grid = state.declareIconButton(c, hitHostViewGrid, iconHome, state.messages.Tools.HostViewGrid, false, gridStyle).Size(26, 26)
 						})
 						sortLabel, sortStyle := state.messages.Tools.HostSort, iconButtonQuiet
 						if state.hostSort.enabled {
@@ -2519,7 +2519,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconSun:      icons.Sun,
 	iconMoon:     icons.Moon,
 	iconClose:    icons.X,
-	iconHome:     icons.Home,
+	iconHome:     icons.Grid2x2,
 	iconCheck:    icons.Check,
 	iconPause:    icons.Pause,
 

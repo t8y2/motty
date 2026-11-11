@@ -14,8 +14,7 @@
 // The serial glyph was drawn for the host icon set in the Lucide style.
 // The session-log glyph is Lucide's file-clock, pinned from lucide-static v0.469.0
 // (https://raw.githubusercontent.com/lucide-icons/lucide/0.469.0/icons/file-clock.svg).
-// The home glyph is Lucide's home from the same release. Both are ISC licensed
-// like the other Lucide icons above.
+// It is ISC licensed like the other Lucide icons above.
 
 package icons
 
@@ -3502,28 +3501,6 @@ var History = gfx.Icon{
 		gfx.MoveTo(12.0, 7.0),
 		gfx.LineTo(12.0, 12.0),
 		gfx.LineTo(16.0, 14.0),
-	},
-}
-
-// home is a compiled vector icon.
-var Home = gfx.Icon{
-	ViewBox: 24.0,
-	Stroke:  2.0,
-	Cap:     gfx.CapRound,
-	Join:    gfx.JoinRound,
-	Commands: []gfx.PathCommand{
-		gfx.MoveTo(3.0, 9.0),
-		gfx.LineTo(12.0, 2.0),
-		gfx.LineTo(21.0, 9.0),
-		gfx.LineTo(21.0, 20.0),
-		gfx.CubicTo(21.0, 21.1046, 20.1046, 22.0, 19.0, 22.0),
-		gfx.LineTo(5.0, 22.0),
-		gfx.CubicTo(3.89543, 22.0, 3.0, 21.1046, 3.0, 20.0),
-		gfx.ClosePath(),
-		gfx.MoveTo(9.0, 22.0),
-		gfx.LineTo(9.0, 12.0),
-		gfx.LineTo(15.0, 12.0),
-		gfx.LineTo(15.0, 22.0),
 	},
 }
 
