@@ -27,6 +27,9 @@ type savedNoteView struct {
 	Panel     bool     `json:"panel,omitempty"`
 	Selected  string   `json:"selected,omitempty"`
 	Folder    string   `json:"folder,omitempty"`
+	// WindowMode is the mode a note window opens in: the one last chosen in a
+	// note window, which is its own choice, not the library's.
+	WindowMode noteMode `json:"window_mode,omitempty"`
 }
 
 type savedNote struct {
