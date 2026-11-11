@@ -63,13 +63,15 @@ func (s *State) loadNoteImages() {
 	s.loadNoteImagesContent(&s.notes, false)
 }
 func (s *State) loadNoteImagesContent(n *notesUI, side bool) {
+	workspaceID := s.deck.ActiveWorkspace()
+	sidebar := s.noteSidebars[workspaceID]
 	s.loadNoteImagesTarget(n, func(owner *State) *notesUI {
 		if side {
-			if owner.notes.sidebar == nil {
+			if sidebar == nil || owner.noteSidebars[workspaceID] != sidebar {
 				return nil
 			}
-			owner.syncNoteSidebar()
-			return &owner.notes.sidebar.content
+			owner.syncNoteSidebarContent(&sidebar.content)
+			return &sidebar.content
 		}
 		return &owner.notes
 	}, s.options.Invalidate)

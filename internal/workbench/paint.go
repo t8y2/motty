@@ -185,6 +185,10 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.ai.cfg.agentSelectOpen = false
 	}
 	state.aiPanelBeginPaint()
+	if state.noteSidebarFocusBack && state.activeSection == sectionTerminal {
+		state.noteSidebarFocusBack = false
+		canvas.RequestFocus(state.activeTerminalFocusHit())
+	}
 	// A panel closed from inside itself returns the keyboard to the terminal it
 	// covered. The request is made once: a later click decides focus again.
 	if state.ai.panel.focusBack && !state.aiPanelVisible() {

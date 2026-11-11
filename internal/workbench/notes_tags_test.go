@@ -46,7 +46,7 @@ func TestNotesTagsUseLibraryAndCurrentDraft(t *testing.T) {
 		t.Fatal("chip did not remove the bound tag")
 	}
 	s.activeSection = sectionTerminal
-	s.notes.panel = true
+	s.noteSidebarState().open = true
 	if !slices.Equal(s.notes.draft.Tags, []string{"shared"}) {
 		t.Fatal("entry points do not share tag edits")
 	}

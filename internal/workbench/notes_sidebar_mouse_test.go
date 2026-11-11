@@ -41,7 +41,7 @@ func TestNotesSidebarNativeMouseActivatesAssociationSwitch(t *testing.T) {
 	if err := driver.Click(close.Bounds.X+close.Bounds.Width/2, close.Bounds.Y+close.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
-	if s.notes.panel {
+	if s.notesPanelOpen() {
 		t.Fatal("native close click did not hide sidebar")
 	}
 }

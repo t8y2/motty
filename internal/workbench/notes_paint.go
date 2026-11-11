@@ -12,7 +12,7 @@ import (
 )
 
 func (s *State) paintNotesPanel(c *gfx.Canvas, size gfx.Size) {
-	if !s.notes.panel {
+	if !s.notesPanelOpen() {
 		return
 	}
 	frame := s.workspacePixelBounds(size)

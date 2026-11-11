@@ -441,7 +441,7 @@ func (s *State) savedNotesView() savedNoteView {
 		}
 	}
 	slices.Sort(expanded)
-	return savedNoteView{Panel: s.notes.panel, Selected: s.notes.selected, Folder: s.notes.folder, Mode: v.mode, WindowMode: v.windowMode, Width: v.width, Collapsed: v.collapsed, Expanded: expanded}
+	return savedNoteView{Selected: s.notes.selected, Folder: s.notes.folder, Mode: v.mode, WindowMode: v.windowMode, Width: v.width, Collapsed: v.collapsed, Expanded: expanded}
 }
 func (s *State) restoreNotesView(saved savedNoteView) {
 	v := &s.notes.view

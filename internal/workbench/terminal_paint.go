@@ -91,7 +91,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	}
 	tools := toolList[:0]
 	notesStyle := iconButtonQuiet
-	if state.notes.panel {
+	if state.notesPanelOpen() {
 		notesStyle = iconButtonActive
 	}
 	tools = append(tools, barTool{id: hitNotesPanel, icon: iconNotebook, hint: state.noteText("Notes", "笔记"), style: notesStyle})

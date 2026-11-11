@@ -3,11 +3,13 @@ package workbench
 import (
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"motty/internal/workbench/icons"
+	layoutcore "motty/internal/workspace"
 )
 
 var (
@@ -22,6 +24,11 @@ var (
 
 // The browser owns its presentation state; it never selects an editing draft.
 type noteSidebar struct {
+	open                         bool
+	inputVersion                 uint64
+	observedQuery                string
+	queryChanged                 time.Duration
+	queryDirty                   bool
 	content                      notesUI
 	width, fraction              float32
 	lastQuery                    string
@@ -30,14 +37,27 @@ type noteSidebar struct {
 }
 
 func (s *State) noteSidebarVisible() bool {
-	return s.noteTarget == nil && s.modal == modalNone && s.activeSection == sectionTerminal && s.notes.panel
+	return s.noteTarget == nil && s.modal == modalNone && s.activeSection == sectionTerminal && s.notesPanelOpen()
 }
 func (s *State) noteSidebarState() *noteSidebar {
-	if s.notes.sidebar == nil {
-		s.notes.sidebar = &noteSidebar{width: 400, fraction: .5, content: notesUI{noteDraft: &noteDraft{}}}
-		s.notes.sidebar.content.view.expanded = map[string]bool{}
+	return s.noteSidebarFor(s.deck.ActiveWorkspace())
+}
+
+func (s *State) noteSidebarFor(id layoutcore.WorkspaceID) *noteSidebar {
+	if s.noteSidebars == nil {
+		s.noteSidebars = make(map[layoutcore.WorkspaceID]*noteSidebar)
 	}
-	return s.notes.sidebar
+	if s.noteSidebars[id] == nil {
+		s.noteSidebars[id] = &noteSidebar{width: 400, fraction: .5, content: notesUI{noteDraft: &noteDraft{}}}
+		s.noteSidebars[id].content.view.expanded = map[string]bool{}
+	}
+	return s.noteSidebars[id]
+}
+
+func (s *State) notesPanelOpen() bool { return s.notesPanelOpenFor(s.deck.ActiveWorkspace()) }
+func (s *State) notesPanelOpenFor(id layoutcore.WorkspaceID) bool {
+	v := s.noteSidebars[id]
+	return v != nil && v.open
 }
 func (s *State) notePreviewState() *notesUI {
 	if s.noteTarget != nil {
@@ -49,6 +69,7 @@ func (s *State) notePreviewState() *notesUI {
 	return &s.notes
 }
 func (v *noteSidebar) stopCapture() {
+	v.inputVersion++
 	v.widthDragging, v.splitDragging = false, false
 	v.content.view.scrollDrag, v.content.view.previewDragging = false, false
 	v.content.view.previewSelect.EndDrag()
@@ -64,7 +85,9 @@ func (s *State) noteBrowserNote(note savedNote) savedNote {
 }
 
 func (s *State) syncNoteSidebar() {
-	n := &s.noteSidebarState().content
+	s.syncNoteSidebarContent(&s.noteSidebarState().content)
+}
+func (s *State) syncNoteSidebarContent(n *notesUI) {
 	if n.selected == "" {
 		return
 	}
@@ -339,11 +362,28 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 }
 func (s *State) clickNoteSidebar(id gfx.ID) bool {
 	if id == hitNoteSideClose {
-		if s.notes.panel {
+		if s.notesPanelOpen() {
 			s.clickNotes(hitNotesPanel)
 		}
 		return true
 	}
+	defer func() {
+		if id == hitNoteSideExpand || id == hitNoteSideLinked {
+			s.save()
+			return
+		}
+		if _, ok := id.In(hitNoteDisclosures); ok {
+			s.save()
+			return
+		}
+		if _, ok := id.In(hitNoteFolderRows); ok {
+			s.save()
+			return
+		}
+		if _, ok := id.In(hitNoteRows); ok {
+			s.save()
+		}
+	}()
 	n := &s.noteSidebarState().content
 	if id == hitNoteSideExpand {
 		if n.query.String() == "" {
@@ -437,7 +477,7 @@ func (s *State) noteSidebarPointer(e gfx.PointerEvent) gfx.EventResult {
 		if e.Kind == gfx.PointerMove || e.Kind == gfx.PointerDown || e.Kind == gfx.PointerUp {
 			if v.widthDragging {
 				v.width = (1 - s.noteSideWidthResizable(nil).FractionAt(e.X)) * max(1, v.resizeBounds.Width-1)
-				s.fitTerminals()
+				s.fitWorkspaceTerminals(s.deck.ActiveWorkspace())
 			}
 			if v.splitDragging {
 				v.fraction = s.noteSideSplitResizable(nil).FractionAt(e.Y)
@@ -445,6 +485,7 @@ func (s *State) noteSidebarPointer(e gfx.PointerEvent) gfx.EventResult {
 		}
 		if e.Kind == gfx.PointerUp || e.Kind == gfx.PointerExit {
 			v.stopCapture()
+			s.save()
 		}
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
@@ -501,13 +542,15 @@ func (s *State) noteSidebarKey(e gfx.KeyEvent) gfx.EventResult {
 	if e.Target == hitNoteSideWidth {
 		if ratio, ok := s.noteSideWidthResizable(nil).FractionForKey(e.Key); ok {
 			v.width = (1 - ratio) * max(1, v.resizeBounds.Width-1)
-			s.fitTerminals()
+			s.fitWorkspaceTerminals(s.deck.ActiveWorkspace())
+			s.save()
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
 	if e.Target == hitNoteSideSplit {
 		if ratio, ok := s.noteSideSplitResizable(nil).FractionForKey(e.Key); ok {
 			v.fraction = ratio
+			s.save()
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 	}
