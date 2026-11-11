@@ -9,6 +9,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 
+	"motty/internal/configstore"
 	"motty/internal/keyidentity"
 	"motty/internal/sshconn"
 	"motty/internal/vault"
@@ -348,34 +349,70 @@ func (state *State) submitHostDialog() {
 	}
 	changes := append(passwordChanges, proxyChanges...)
 	changes = append(changes, passphraseChanges...)
-	if len(changes) > 0 {
+	if state.hostDialogMode == hostDialogEdit {
+		if len(changes) > 0 {
+			vaultFile := state.secrets.vault
+			if vaultFile == nil {
+				state.dialogError = state.messages.Tools.ProxyErrorNoVault
+				return
+			}
+			if err := vaultFile.Apply(changes); err != nil {
+				if errors.Is(err, vault.ErrNeedsConversion) && len(proxyChanges) > 0 {
+					state.dialogError = state.messages.Tools.ProxyPasswordLocked
+				} else {
+					state.dialogError = state.hostPasswordSaveError(err)
+				}
+				return
+			}
+		}
+		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
+		state.editor.proxyPassword = ""
+		// Editing may open or close the host's existing entry to agents.
+		state.setAgentAccess(candidate, state.editor.agentAccess)
+		state.updateHostFromEditor(candidate, *previous, proxyNote)
+		return
+	}
+	// A copy or a new host is closed to agents unless the switch was turned on in
+	// this very dialog.
+	commit := func() error {
+		return state.saveNewHostFromDialog(candidate, true)
+	}
+	var commitErr error
+	if len(changes) == 0 {
+		commitErr = commit()
+	} else {
 		vaultFile := state.secrets.vault
 		if vaultFile == nil {
 			state.dialogError = state.messages.Tools.ProxyErrorNoVault
 			return
 		}
-		if err := vaultFile.Apply(changes); err != nil {
-			if errors.Is(err, vault.ErrNeedsConversion) && len(proxyChanges) > 0 {
-				state.dialogError = state.messages.Tools.ProxyPasswordLocked
-			} else {
-				state.dialogError = state.hostPasswordSaveError(err)
+		// ApplyWithCommit holds the vault lock while writing the configuration.
+		// A conflict must be reloaded only after that call releases the lock, or
+		// host repairs may try to read the vault recursively.
+		commit = func() error {
+			return state.saveNewHostFromDialog(candidate, false)
+		}
+		commitErr = vaultFile.ApplyWithCommit(changes, commit)
+		if commitErr != nil && errors.Is(commitErr, configstore.ErrConflict) {
+			if refreshErr := state.refreshShared(); refreshErr != nil {
+				commitErr = errors.Join(commitErr, fmt.Errorf("reload configuration after conflict: %w", refreshErr))
 			}
-			return
 		}
 	}
-	state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
-	state.editor.proxyPassword = ""
-	// A copy or a new host is closed to agents unless the switch was turned on in
-	// this very dialog.
-	state.setAgentAccess(candidate, state.editor.agentAccess)
-	if state.hostDialogMode == hostDialogEdit {
-		state.updateHostFromEditor(candidate, *previous, proxyNote)
+	if commitErr != nil {
+		var saveErr *hostConfigCommitError
+		if errors.As(commitErr, &saveErr) {
+			state.dialogError = fmt.Sprintf(state.messages.HostSaveFailedFmt, commitErr)
+		} else if errors.Is(commitErr, vault.ErrNeedsConversion) && len(proxyChanges) > 0 {
+			state.dialogError = state.messages.Tools.ProxyPasswordLocked
+		} else {
+			state.dialogError = state.hostPasswordSaveError(commitErr)
+		}
 		return
 	}
 	host := candidate
-	state.nextHostID++
-	state.hosts = append(state.hosts, host)
-	state.selectedHostID = host.ID
+	state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
+	state.editor.proxyPassword = ""
 	state.cancelHostTest()
 	state.dialogError = ""
 	if state.hostDialogMode == hostDialogCopy {
@@ -388,8 +425,73 @@ func (state *State) submitHostDialog() {
 	}
 	state.appendStatusNote(proxyNote)
 	state.hostDataChanged()
-	state.save()
 	state.restoreAfterHostDialog()
+}
+
+type hostConfigCommitError struct {
+	err error
+}
+
+func (err *hostConfigCommitError) Error() string { return err.err.Error() }
+func (err *hostConfigCommitError) Unwrap() error { return err.err }
+
+// saveNewHostFromDialog stages a new host, writes it, and removes the staged
+// UI state again if the store refuses it. The caller only closes the dialog
+// after this returns nil, so the list cannot claim a host that will disappear
+// at restart.
+func (state *State) saveNewHostFromDialog(candidate Host, refreshConflict bool) error {
+	previousNextHostID, previousSelection := state.nextHostID, state.selectedHostID
+	previousAgentAccess, hadAgentAccess := state.agentHosts[candidate.CatalogID]
+	agentAccess := state.editor.agentAccess
+	state.setAgentAccess(candidate, agentAccess)
+	state.nextHostID++
+	state.hosts = append(state.hosts, candidate)
+	state.selectedHostID = candidate.ID
+	rollback := func() {
+		index := state.hostDialogCandidateIndex(candidate)
+		if index >= 0 {
+			state.hosts = append(state.hosts[:index], state.hosts[index+1:]...)
+			if state.nextHostID == previousNextHostID+1 {
+				state.nextHostID = previousNextHostID
+			}
+			if hadAgentAccess {
+				state.agentHosts[candidate.CatalogID] = previousAgentAccess
+			} else {
+				delete(state.agentHosts, candidate.CatalogID)
+			}
+		}
+		// A conflict refresh may already have replaced this window with what
+		// reached the store first. Its host records and agent permissions are the
+		// newer values, but the staged selection still has to be repaired.
+		if state.selectedHostID == candidate.ID {
+			state.selectedHostID = previousSelection
+		}
+		if _, ok := state.hostByID(state.selectedHostID); state.selectedHostID != 0 && !ok {
+			state.selectedHostID = 0
+		}
+	}
+	save := state.saveWithResult
+	if !refreshConflict {
+		save = state.saveWithResultWithoutRefresh
+	}
+	if err := save(); err != nil {
+		rollback()
+		return &hostConfigCommitError{err: err}
+	}
+	if state.hostDialogCandidateIndex(candidate) < 0 {
+		rollback()
+		return &hostConfigCommitError{err: errors.New(state.messages.HostSaveMissing)}
+	}
+	return nil
+}
+
+func (state *State) hostDialogCandidateIndex(candidate Host) int {
+	for index, host := range state.hosts {
+		if host.ID == candidate.ID && host.CatalogID == candidate.CatalogID && sameHost(host, candidate) {
+			return index
+		}
+	}
+	return -1
 }
 
 func (state *State) updateHostFromEditor(updated Host, previous Host, notes ...string) {

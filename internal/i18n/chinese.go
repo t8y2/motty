@@ -684,6 +684,8 @@ var ChineseMessages = Messages{
 	StatusOpened:       "已打开工作区 · ",
 	StatusReused:       "复用会话 · ",
 	StatusHostAdded:    "已添加主机 · ",
+	HostSaveFailedFmt:  "无法保存主机：%v。主机未添加。",
+	HostSaveMissing:    "保存后的主机在刷新后的配置中丢失了",
 	StatusEditCanceled: "已取消新建主机",
 
 	KnownHostsTitle:                 "已知主机",
