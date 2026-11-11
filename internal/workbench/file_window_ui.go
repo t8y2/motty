@@ -907,7 +907,10 @@ func (d *fileDocument) scroll(event gfx.ScrollEvent) gfx.EventResult {
 
 func (d *fileDocument) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if d.owner.noteExit != nil {
-		return gfx.EventResult{Handled: true, Repaint: true}
+		if isNoteExitHit(event.Target) {
+			return gfx.EventResult{}
+		}
+		return gfx.EventResult{Handled: true}
 	}
 	if d.note != nil {
 		return d.noteWindowPointer(event)
