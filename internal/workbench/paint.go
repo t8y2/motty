@@ -1205,7 +1205,7 @@ type hostsHeaderBoxes struct {
 
 // hostToggleBoxes are the slots of the hosts header's view and sort controls.
 type hostToggleBoxes struct {
-	list, grid, sort, order ui.Box
+	list, grid, sort, privacy, order ui.Box
 }
 
 // declareNavigation declares the sidebar: the name of the application over the
@@ -1318,6 +1318,9 @@ func (state *State) paintHostMenus(canvas *gfx.Canvas, viewport gfx.Rect) {
 	if state.importMenu {
 		state.paintImportMenu(canvas, viewport)
 	}
+	if state.hostPrivacy.menu {
+		state.paintHostPrivacyMenu(canvas, viewport)
+	}
 	state.paintHostOrder(canvas, viewport)
 }
 
@@ -1398,7 +1401,7 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, bounds gfx.Rect) hostsHe
 	plan.showChips = state.hasHostFilter()
 	plan.showGroupControls = plan.showChips && !state.hostFilterOn
 	plan.compactHostControls = bounds.Width < 450
-	viewControlsWidth := toggleWidth + 6 + 26
+	viewControlsWidth := toggleWidth + 6 + 26 + 6 + 26
 	selectionControlsWidth := float32(0)
 	if !plan.compactHostControls {
 		viewControlsWidth += 32
@@ -1488,7 +1491,7 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 						b.groupControls[1] = state.declareIconButton(c, hitHostGroupsCollapseAll, iconChevronRight, m.HostGroupActions.CollapseAll, !collapse, iconButtonQuiet).Size(26, 26)
 					})
 				}
-				viewControlsWidth := float32(56 + 6 + 26)
+				viewControlsWidth := float32(56 + 6 + 26 + 6 + 26)
 				if !plan.compactHostControls {
 					viewControlsWidth += 32
 				}
@@ -1512,6 +1515,11 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 						}
 						sortDisabled := !state.hostSort.enabled && (state.hostOrder != hostOrderManual || len(state.hosts) < 2 || state.typedQuery() != "")
 						chrome.hostToggle.sort = state.declareIconButton(c, hitHostSort, iconTransfer, sortLabel, sortDisabled, sortStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
+						privacyIcon, privacyStyle := uint8(iconEye), iconButtonQuiet
+						if state.hostPrivacy.enabled {
+							privacyIcon, privacyStyle = iconEyeOff, iconButtonActive
+						}
+						chrome.hostToggle.privacy = state.declareIconButton(c, hitHostPrivacy, privacyIcon, state.messages.Tools.HostPrivacy, false, privacyStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
 						if !plan.compactHostControls {
 							orderStyle := iconButtonQuiet
 							if state.hostOrder != hostOrderManual {
@@ -1583,6 +1591,7 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas) {
 	} else {
 		state.hostOrderButton = chrome.hostToggle.order.Rect()
 	}
+	state.hostPrivacy.button = chrome.hostToggle.privacy.Rect()
 	state.paintHostScopeCheckbox(canvas, hitHostSelectAll, b.selectAll.Rect(), state.hostScopeSelection.all)
 	if plan.showChips {
 		state.paintHostFilterChips(canvas, chrome.chips)
@@ -2164,15 +2173,24 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 				}
 				d.avatar = ui.Slot(c).Size(36, 36).MarginSides(0, 10, 0, 0)
 				ui.Column(c).Width(nameWidth).Shrink(0).Gap(2).Children(func() {
-					ui.Text(c, host.Label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis()
-					ui.Text(c, state.hostSubtitle(host)).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(19).Ellipsis()
+					if state.hostPrivacy.enabled {
+						d.name = ui.Slot(c).Height(22)
+						d.subtitle = ui.Slot(c).Height(19)
+					} else {
+						ui.Text(c, host.Label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis()
+						ui.Text(c, state.hostSubtitle(host)).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(19).Ellipsis()
+					}
 				})
 			})
 			ui.Row(c).Width(tagsStart - addressStart).Shrink(0).Children(func() {
 				if addressWidth < 60 { // a sliver of an address says less than nothing
 					return
 				}
-				ui.Text(c, host.target).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(22).Width(addressWidth).Shrink(0).Ellipsis()
+				if state.hostPrivacy.enabled {
+					d.address = ui.Slot(c).Height(22).Width(addressWidth).Shrink(0)
+				} else {
+					ui.Text(c, host.target).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(22).Width(addressWidth).Shrink(0).Ellipsis()
+				}
 			})
 			if tagCount > 0 {
 				ui.Row(c).Width(tagsRoom).Shrink(0).Gap(5).Items(ui.Center).Children(func() {
@@ -2348,10 +2366,27 @@ func (state *State) paintHostTreeRowControls(canvas *gfx.Canvas, row gfx.Rect, h
 		side := components.CheckboxExtent(state.Theme())
 		box := d.check.Rect()
 		bounds := gfx.Rect{X: box.X + (box.Width-side)/2, Y: box.Y + (box.Height-side)/2, Width: side, Height: side}
-		components.BeginCheckbox(canvas, state.Theme(), hitHostCheckList.At(int(host.ID)), bounds, state.hostSelected(host.ID)).Label(host.Label).Paint()
+		components.BeginCheckbox(canvas, state.Theme(), hitHostCheckList.At(int(host.ID)), bounds, state.hostSelected(host.ID)).Label(state.hostPrivacySemanticLabel(host)).Paint()
 	}
 	if state.hostSort.enabled && d.grip.Valid() {
 		state.declareHostSortItem(host, row, d.grip.Rect())
+	}
+	if state.hostPrivacy.enabled {
+		name := d.name.Rect()
+		if state.hostPrivacy.nameHidden() {
+			state.paintHostPrivacyMask(canvas, name, host.Label, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: state.pal.text})
+		} else {
+			paintHostGridLine(canvas, host.Label, name, 22, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: state.pal.text})
+		}
+		subtitle := d.subtitle.Rect()
+		if state.hostPrivacy.userHidden() && state.hostPrivacySubtitleIsUser(host) {
+			state.paintHostPrivacyMask(canvas, subtitle, state.hostSubtitle(host), gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
+		} else {
+			paintHostGridLine(canvas, state.hostSubtitle(host), subtitle, 19, gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
+		}
+		if d.address.Valid() {
+			state.paintHostPrivacyTarget(canvas, d.address.Rect(), host, 22, gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.text})
+		}
 	}
 	state.paintHostCatalogIcon(canvas, host, d.avatar.Rect(), background)
 	_, dot := state.hostStatus(host)

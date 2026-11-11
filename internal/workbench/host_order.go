@@ -116,6 +116,7 @@ func (state *State) clickHostOrder(id gfx.ID) bool {
 	}
 	if id == hitHostOrder {
 		state.hostOrderMenu = !state.hostOrderMenu
+		state.hostPrivacy.menu = false
 		state.hostMenu.open, state.groupActions.open = false, false
 		state.hostFilterMenu, state.hostGroupMenu, state.importMenu = false, false, false
 		state.chipMenu.open = false

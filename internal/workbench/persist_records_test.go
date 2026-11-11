@@ -29,7 +29,9 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// The generation of default chords this computer's table was reconciled
 		// against: which defaults a build ships is not another device's business.
 		"shortcut_defaults_generation": true,
-		"host_view":                    true, "background": true, "snippet_shortcuts": true,
+		"host_view":                    true, "host_privacy": true, "host_privacy_show_name": true,
+		"host_privacy_show_address": true, "host_privacy_show_user": true,
+		"background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,
 		"tab_numbers":            true,

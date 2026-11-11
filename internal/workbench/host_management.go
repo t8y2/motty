@@ -24,6 +24,9 @@ const (
 )
 
 func (state *State) clickHostManagement(id gfx.ID) bool {
+	if state.clickHostPrivacy(id) {
+		return true
+	}
 	if state.importMenu {
 		// A choice closes the menu and then runs as if it had been clicked
 		// directly; any other press only dismisses it.
@@ -114,6 +117,7 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 		state.hostGroupMenu = len(state.hostActionIDs) > 0
 	case hitImportMenu:
 		state.importMenu = true
+		state.hostPrivacy.menu = false
 	case hitExportHosts:
 		state.exportHostCatalog()
 	case hitImportHostCatalog:
@@ -878,6 +882,10 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	}
 	if state.importMenu && event.Key == gfx.KeyEscape {
 		state.importMenu = false
+		return handled, true
+	}
+	if state.hostPrivacy.menu && event.Key == gfx.KeyEscape {
+		state.hostPrivacy.menu = false
 		return handled, true
 	}
 	if result, ok := state.hostChipMenuKey(event); ok {
