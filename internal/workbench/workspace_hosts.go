@@ -64,13 +64,15 @@ func (state *State) workspaceHosts() []Host {
 	}
 	// The default terminal is the row the sentinel already stands for, so it is
 	// not offered twice, like the new-tab picker keeps a lone shell unlisted.
+	// A shell hidden from the pickers is left out here too.
 	defaultIndex := state.localShellSelected()
 	hosts := make([]Host, 0, len(state.hosts)+len(state.localShellMenu.choices)+1)
 	hosts = append(hosts, state.workspaceLocalHost())
 	for index, choice := range state.localShellMenu.choices {
-		if choice.Path != "" && index != defaultIndex {
-			hosts = append(hosts, state.workspaceLocalShellHost(choice))
+		if choice.Path == "" || index == defaultIndex || state.shellHidden(choice) {
+			continue
 		}
+		hosts = append(hosts, state.workspaceLocalShellHost(choice))
 	}
 	return append(hosts, state.hosts...)
 }
