@@ -30,6 +30,8 @@ SIDE_CATALOGS = [
 
 # Applied in order after OpenCC, so a longer phrase must come before its parts.
 TERMS = [
+    ("髮送", "發送"),
+    ("回車執行", "按 Enter 執行"),
     ("賬號", "帳號"),
     ("賬戶", "帳戶"),
     ("用戶名", "使用者名稱"),

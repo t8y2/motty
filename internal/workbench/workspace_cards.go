@@ -156,6 +156,9 @@ func (state *State) workspaceCardText(item workspaceArrangementItem) (Host, stri
 		detail := strings.Trim(strings.Join([]string{host.Group, host.Tags}, " · "), " ·")
 		if host.ID == localHostID {
 			detail = state.messages.WorkspaceLocalTerminalHint
+			if shell, ok := workspaceLocalShellRef(host.CatalogID); ok {
+				detail = shell
+			}
 		}
 		return host, host.Label, state.sessionAddress(host), detail, true
 	}

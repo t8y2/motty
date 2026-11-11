@@ -139,6 +139,7 @@ var TraditionalMessages = Messages{
 	WorkspaceDraftEditDescription:         "修改名稱、終端機成員、順序和列數。缺失的主機在明確移除前會保留。",
 	WorkspaceDraftName:                    "範本名稱",
 	WorkspaceDraftNamePlaceholder:         "例如：生產 API 叢集",
+	WorkspaceDraftLocalGroup:              "本機終端機",
 	WorkspaceDraftHosts:                   "可用終端機",
 	WorkspaceDraftHostSearch:              "搜尋本機或 SSH 主機",
 	WorkspaceDraftSelectedFmt:             "已選 %d / 12 個",

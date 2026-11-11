@@ -163,6 +163,7 @@ type Messages struct {
 	WorkspaceDraftEditDescription         string
 	WorkspaceDraftName                    string
 	WorkspaceDraftNamePlaceholder         string
+	WorkspaceDraftLocalGroup              string
 	WorkspaceDraftHosts                   string
 	WorkspaceDraftHostSearch              string
 	WorkspaceDraftSelectedFmt             string
