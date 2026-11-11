@@ -2693,6 +2693,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareRemoteClipboardDialog(c)
 	case modalFileTransfer:
 		state.declareFileTransferDialog(c)
+	case modalRemoveNetworkRules:
+		state.declareNetworkRuleRemoval(c)
 	case modalDeleteHost:
 		state.declareDeleteHostDialog(c)
 	case modalMoveHostGroup:

@@ -481,6 +481,8 @@ type State struct {
 	nextProxyID            uint32
 	forwards               []forwardRecord
 	selectedIdentityID     uint32
+	forwardList, proxyList networkRuleList
+	networkRuleRemoval     networkRuleRemoval
 	selectedForwardID      uint32
 	selectedProxyID        uint32
 	activeSection          uint8
@@ -1248,6 +1250,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	}
 	switch state.modal {
 	case modalNone:
+		if list, ids := state.activeNetworkRuleList(); list != nil && hit == ids.search {
+			return &list.search
+		}
 		if editor := state.sftpEditor(hit); editor != nil {
 			return editor
 		}
@@ -1509,6 +1514,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	switch state.modal {
 	case modalNewHost:
 		state.clickHostDialog(id)
+		return
+	case modalRemoveNetworkRules:
+		state.clickNetworkRemove(id)
 		return
 	case modalDeleteHost:
 		state.clickDeleteHostDialog(id)
@@ -2239,6 +2247,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.dashboardPointer(event); handled {
 		return result
 	}
+	if result, handled := state.networkRuleListPointer(event); handled {
+		return result
+	}
 	if result, handled := state.sessionLogsPointer(event); handled {
 		return result
 	}
@@ -2756,6 +2767,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.historyKey(event); handled {
+		return result
+	}
+	if result, handled := state.networkRuleListKey(event); handled {
 		return result
 	}
 	if result, handled := state.knownHostsKey(event); handled {

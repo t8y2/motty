@@ -869,6 +869,13 @@ type Messages struct {
 	ForwardColumnStatus           string
 	ForwardEmpty                  string
 	ForwardEmptySub               string
+	ProxySearch                   string
+	ForwardSearch                 string
+	NetworkRulesSelectAll         string
+	NetworkRulesSelectFmt         string
+	ProxyRemoveSelectionFmt       string
+	ForwardRemoveSelectionFmt     string
+	NetworkRulesRemovedFmt        string
 	ForwardCountFmt               string
 	ForwardStopped                string
 	ForwardStoppedError           string

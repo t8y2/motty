@@ -39,6 +39,7 @@ type forwardRecord struct {
 	startID       uint64
 	lastError     string
 	detail        string
+	selectLabel   string
 	cells         [5]string
 }
 
@@ -123,6 +124,7 @@ func (forward *forwardRecord) refresh(messages i18n.Messages, hostAvailable bool
 	case forward.lastError != "":
 		status = messages.ForwardStoppedError
 	}
+	forward.selectLabel = fmt.Sprintf(messages.NetworkRulesSelectFmt, forward.Label)
 	forward.cells = [5]string{forward.Label, forward.HostLabel, forward.displayListener(messages), forward.displayDestination(messages), status}
 }
 
@@ -349,13 +351,6 @@ func (state *State) openForwardDialog() {
 	state.modal = modalNewForward
 }
 
-func (state *State) openEditForward() {
-	if state.selectedForwardID == 0 {
-		return
-	}
-	state.openEditForwardID(state.selectedForwardID)
-}
-
 func (state *State) openEditForwardID(id uint32) {
 	forward, ok := state.forwardByID(id)
 	if !ok {
@@ -532,20 +527,32 @@ func (state *State) clickForwards(id gfx.ID) {
 	if state.activeSection != sectionForwards || state.modal != modalNone {
 		return
 	}
+	list, ids := &state.forwardList, forwardListIDs
+	selected, hasSelection := list.selection(state.selectedForwardID)
 	switch {
+	case id == ids.all:
+		list.toggleAll()
+	case id.Scope() == ids.checks:
+		list.toggle(uint32(item(id)))
+	case id.Scope() == ids.rows:
+		state.selectNetworkRule(list, uint32(item(id)))
 	case id == hitForwardAdd:
 		state.openForwardDialog()
-	case id == hitForwardEdit:
-		state.openEditForward()
+	case id == hitForwardEdit && hasSelection:
+		state.openEditForwardID(selected)
 	case id == hitForwardRemove:
-		state.removeSelectedForward()
-	case id == hitForwardStartStop:
+		if len(list.checked) > 0 {
+			state.askRemoveNetworkRules(list)
+		} else if hasSelection {
+			state.removeSelectedForward()
+		}
+	case id == hitForwardStartStop && hasSelection:
+		state.selectedForwardID = selected
 		state.toggleSelectedForward()
 	}
 }
 
-// selectForward makes a forward the selected one. The table calls it from the
-// paint that delivers the click on its row.
+// selectForward selects a single forward.
 func (state *State) selectForward(id uint32) {
 	if _, ok := state.forwardByID(id); ok {
 		state.selectedForwardID = id

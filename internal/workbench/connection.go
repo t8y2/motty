@@ -520,6 +520,7 @@ const (
 	modalWorkspaceTemplateDelete
 	modalLocalProxy
 	modalCredential
+	modalRemoveNetworkRules
 )
 
 // tone colors a session's headline.
@@ -1266,6 +1267,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalDeleteRule {
 		state.ruleDelete = ruleDelete{}
+	}
+	if state.modal == modalRemoveNetworkRules {
+		state.networkRuleRemoval = networkRuleRemoval{}
 	}
 	if state.modal == modalCredential {
 		state.credentialForm = credentialUI{} // the password does not stay in the form

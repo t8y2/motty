@@ -1698,6 +1698,9 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 }
 
 func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
+	if list, _ := state.activeNetworkRuleList(); list != nil && state.modal == modalNone {
+		return list.wheel(event)
+	}
 	if state.activeSection == sectionSettings && state.modal == modalNone {
 		return state.scrollSettings(event)
 	}
