@@ -1045,6 +1045,8 @@ type Messages struct {
 	SFTPErrMoveInside           string
 	SFTPMovingFmt               string
 	SFTPMovedFmt                string
+	SFTPMovingCountFmt          string
+	SFTPMovedCountFmt           string
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
 	SFTPDeleteSelectionTitle    string

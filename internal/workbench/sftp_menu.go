@@ -177,13 +177,17 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 			rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownloadHere, Label: messages.Tools.DownloadHere, Icon: icon(iconFileDown), Disabled: busy})
 		}
 	}
-	if one && !local {
-		if !selected.IsDir() {
+	if !local && count > 0 {
+		if one && !selected.IsDir() {
 			rows.add(components.ContextMenuItem{ID: hitSFTPMenuEdit, Label: messages.Tools.ExtEditButton, Icon: icon(iconExternal), Disabled: busy})
 		}
 		rows.separate()
-		rows.add(components.ContextMenuItem{ID: hitSFTPMenuRename, Label: messages.SFTPRename, Icon: icon(iconPencil), Disabled: busy})
+		if one {
+			rows.add(components.ContextMenuItem{ID: hitSFTPMenuRename, Label: messages.SFTPRename, Icon: icon(iconPencil), Disabled: busy})
+		}
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuMove, Label: messages.SFTPMove, Icon: icon(iconFolderOpen), Disabled: busy})
+	}
+	if one && !local {
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuChmod, Label: messages.SFTPPermissions, Icon: icon(iconLock), Disabled: busy})
 		if _, archive := state.selectedArchive(session, view); archive {
 			rows.add(components.ContextMenuItem{ID: hitSFTPMenuExtract, Label: messages.Tools.Extract, Icon: icon(iconArchive), Disabled: busy})
