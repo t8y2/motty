@@ -499,8 +499,8 @@ func (state *State) paintAIModels(page *settingsPage) {
 				}
 			}
 
-			filterWidth := float32(260)
-			sortWidth := float32(220)
+			filterWidth := settingsChoiceWidth(page, aiModelFilterChoices[:], filterName)
+			sortWidth := settingsChoiceWidth(page, aiModelSortChoices[:], sortName)
 			page.rowOf(46).PadX(18).Gap(10).Children(func() {
 				ui.Row(c).Grow(1).Gap(12).Items(ui.Center).Children(func() {
 					choice := ui.Choice(page.c, &cfg.modelFilter, aiModelFilterChoices[:], filterName).Width(filterWidth)
