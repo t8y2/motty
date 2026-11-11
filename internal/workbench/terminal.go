@@ -121,6 +121,8 @@ type terminal struct {
 	// paintFinding, paintInSplit and paintInactive are the shapes the last
 	// declaration made, which the bar's slots are painted in after the page.
 	paintFinding, paintInSplit, paintInactive bool
+	paintCommandNoticeShown                   bool
+	paintCommandNotice                        ui.Box
 	paintNoticeShown                          bool
 	paintBarBackground                        gfx.Color
 	paintGeometry                             terminalGeometry
@@ -399,6 +401,7 @@ func (state *State) configureTerminal(session *Session) {
 }
 
 func (t *terminal) resetFolderSync() {
+	t.login = loginCommand{}
 	t.inputGuard = terminalInputGuard{}
 	t.suggestionPending = nil
 	t.folderToken = rand.Text()
@@ -479,6 +482,7 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
+	t.pauseInitialization()
 	if drain && t.takeOutput != nil {
 		t.takeOutput()
 		if t.shell == nil {
@@ -540,6 +544,7 @@ func (t *terminal) sendAssistant(p []byte) bool {
 // sendSecret writes an autofill answer to the shell. It is not typed input, so
 // it is neither recorded nor mistaken for the user's own keys.
 func (t *terminal) sendSecret(p []byte) bool {
+	t.pauseInitialization()
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
@@ -764,9 +769,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	t.screen.SetReply(func(reply []byte) {
 		t.sendProtocol(reply)
 	})
-	if session.host.isSSH() && session.containerCommand == "" && session.host.LoginCommand != "" {
-		t.login.arm(session.host.LoginCommand)
-	}
+	t.armInitialization(session)
 	state.describe(session)
 }
 
@@ -914,6 +917,7 @@ func (state *State) shellEnded(session *Session) {
 	err := t.shell.Err()
 	t.shell.Close()
 	t.shell = nil
+	t.login = loginCommand{}
 	t.finishExec(endShell)
 	t.releasePromptWait()
 	t.recording.stop()
@@ -1036,6 +1040,9 @@ func (state *State) terminalChromeForSession(sessionID uint32) (terminalChrome, 
 		chrome.top = infoBarHeight
 	}
 	if state.terminalInputNoticeVisibleInWorkspace(session) && (inSplit || !finding) {
+		chrome.top += inputNoticeHeight
+	}
+	if state.workspaceCommandNoticeInWorkspace(session) && (inSplit || !finding) {
 		chrome.top += inputNoticeHeight
 	}
 	return chrome, true
@@ -1316,6 +1323,9 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 		return app.TextState{}
 	}
 	t := session.term
+	if event.Kind == app.TextInsert || event.Kind == app.TextPaste || (event.Kind == app.TextSetMarked && event.Text != "") {
+		t.pauseInitialization()
+	}
 	redraw := false
 	switch event.Kind {
 	case app.TextInsert:

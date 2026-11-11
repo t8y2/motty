@@ -555,6 +555,7 @@ type State struct {
 	workspaceTemplateMoreBounds   []gfx.Rect
 	workspaceTemplateMenu         workspaceTemplateMenu
 	workspaceTemplateDelete       workspaceTemplateDelete
+	workspaceCommandEdit          workspaceCommandInline
 	workspaceTemplateFocusPending gfx.ID
 	workspaceDraft                workspaceDraft
 	// workspaceHeaderPlan and workspaceHeaderSlots are what the managed
@@ -1221,6 +1222,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	if state.noteExit != nil {
 		return nil
 	}
+	if hit == hitWorkspaceInlineField && state.workspaceCommandEdit.template != "" && state.modal == modalNone && state.activeSection == sectionWorkspaces {
+		return &state.workspaceCommandEdit.editor
+	}
 	if editor := state.noteEditor(hit); editor != nil {
 		return editor
 	}
@@ -1387,6 +1391,13 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 			return &state.history.search
 		}
 	case modalWorkspaceDraft:
+		if index, ok := hit.In(hitWorkspaceCommandField); ok {
+			for _, host := range state.workspaceHosts() {
+				if int(host.ID) == index && workspaceCommandHost(host) && state.workspaceDraft.selected[host.CatalogID] {
+					return state.workspaceDraft.commandEditor(host.CatalogID)
+				}
+			}
+		}
 		switch hit {
 		case hitWorkspaceDraftName:
 			return &state.workspaceDraft.name
@@ -1440,6 +1451,12 @@ func (state *State) Click(id gfx.ID) {
 // not make on the control itself, such as a command palette entry standing for a
 // sidebar row: that row's icon stays still, because the row was not chosen.
 func (state *State) click(id gfx.ID, feedback bool) {
+	if state.clickWorkspaceInline(id) {
+		return
+	}
+	if !workspaceInlineOwns(id) {
+		state.workspaceCommandEdit = workspaceCommandInline{}
+	}
 	if feedback {
 		state.pressIconMotion(id)
 	}
@@ -1625,6 +1642,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	}
 	if state.clickHostOrder(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
 		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+		return
+	}
+	if state.clickWorkspaceCommand(id) {
 		return
 	}
 	if state.clickTerminalFind(id) {
@@ -2182,6 +2202,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	defer state.afterEvent(&outcome)
+	if event.Kind == gfx.PointerDown && !workspaceInlineOwns(event.Target) {
+		state.workspaceCommandEdit = workspaceCommandInline{}
+	}
 	if result := state.notesPointer(event); result.Handled {
 		return result
 	}
@@ -2585,6 +2608,9 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 }
 
 func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
+	if result, handled := state.workspaceInlineKey(event); handled {
+		return result
+	}
 	if result := state.notesKey(event); result.Handled {
 		return result
 	}

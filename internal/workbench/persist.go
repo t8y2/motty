@@ -293,7 +293,8 @@ type savedProxy struct {
 }
 
 type savedSession struct {
-	Label string `json:"label,omitempty"`
+	WorkspaceCommand WorkspaceCommand `json:"workspace_command,omitzero"`
+	Label            string           `json:"label,omitempty"`
 	// Mention is the session's unique @ name; absent in older files and then
 	// derived from Label when the session is restored.
 	Mention   string `json:"mention,omitempty"`
@@ -567,7 +568,7 @@ func (state *State) snapshot() savedState {
 		HostCatalogVersion:         hostCatalogSchemaVersion,
 		Hosts:                      make([]savedHost, 0, len(state.hosts)),
 		HostGroups:                 make([]savedHostGroup, 0, len(state.hostGroups)),
-		WorkspaceTemplates:         slices.Clone(state.templates),
+		WorkspaceTemplates:         cloneWorkspaceTemplates(state.templates),
 		IdentityFiles:              make([]string, 0, len(state.identities)),
 		Forwards:                   make([]savedForward, 0, len(state.forwards)),
 		Proxies:                    make([]savedProxy, 0, len(state.proxies)),
@@ -681,7 +682,8 @@ func (state *State) snapshot() savedState {
 			Label: session.Title, Mention: session.Mention, Address: session.host.Address, User: session.host.User,
 			Port: session.host.Port, System: session.host.System.String(), SavedHost: session.HostID != 0,
 			CatalogID: session.savedCatalogID(), RemoteDirectory: session.startDirectory,
-			savedTransport: session.host.transport(),
+			WorkspaceCommand: session.workspaceCommand,
+			savedTransport:   session.host.transport(),
 		})
 		if session.ID == state.activeSessionID {
 			saved.ActiveSession = len(saved.Sessions)
@@ -1317,6 +1319,9 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 			host:    host, phase: sshconn.PhaseClosed, restored: true, paneSlot: state.claimPaneSlot(),
 		})
 		session := &state.sessions[len(state.sessions)-1]
+		if workspaceCommandHost(host) {
+			session.workspaceCommand = entry.WorkspaceCommand.normalized()
+		}
 		if session.Mention == "" {
 			session.Mention = state.uniqueMentionName(session.Title, session.ID)
 		}

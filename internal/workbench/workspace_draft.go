@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -23,6 +24,8 @@ const (
 )
 
 type workspaceDraft struct {
+	commandHost    uint32
+	commandEditors map[string]*text.Editor
 	mode           workspaceDraftMode
 	editID         string
 	name, query    text.Editor
@@ -75,6 +78,9 @@ func (state *State) openWorkspaceDraftEdit(templateID string) {
 	draft.name.SetSelection(text.Range{End: draft.name.RuneCount()})
 	for _, id := range template.HostIDs {
 		draft.selected[id] = true
+		if command := template.Commands[id].Command; command != "" {
+			draft.commandEditor(id).Insert(command)
+		}
 	}
 	state.workspaceDraft = draft
 	state.workspaceDraft.nameField.Bind(&state.workspaceDraft.name)
@@ -86,6 +92,14 @@ func (state *State) openWorkspaceDraftEdit(templateID string) {
 func (state *State) clickWorkspaceDraft(id gfx.ID) {
 	draft := &state.workspaceDraft
 	switch {
+	case id.Scope() == hitWorkspaceCommandEdit:
+		if index, ok := id.In(hitWorkspaceCommandEdit); ok {
+			if draft.commandHost == uint32(index) {
+				draft.commandHost = 0
+			} else {
+				draft.commandHost = uint32(index)
+			}
+		}
 	case id == hitWorkspaceDraftDismiss || id == hitWorkspaceDraftCancel:
 		if draft.mode == workspaceDraftEdit {
 			state.workspaceTemplateFocusPending = state.workspaceTemplateLauncherFocus(draft.editID)
@@ -108,6 +122,9 @@ func (state *State) clickWorkspaceDraft(id gfx.ID) {
 			return
 		}
 		draft.selected[host.CatalogID] = !selected
+		if selected {
+			delete(draft.commandEditors, host.CatalogID)
+		}
 		if draft.mode == workspaceDraftEdit {
 			if selected {
 				draft.order = slices.DeleteFunc(draft.order, func(id string) bool {
@@ -141,13 +158,18 @@ func (state *State) submitWorkspaceDraft() {
 		draft.error = state.messages.WorkspaceDraftHostsRequired
 		return
 	}
+	commands, valid := state.workspaceDraftCommands()
+	if !valid {
+		draft.error = state.messages.WorkspaceCommandInvalid
+		return
+	}
 	name := strings.TrimSpace(draft.name.String())
 	if draft.mode == workspaceDraftFixed && name == "" {
 		draft.error = state.messages.WorkspaceDraftNameRequired
 		return
 	}
 	if draft.mode == workspaceDraftEdit {
-		state.submitWorkspaceDraftEdit(name, hostIDs)
+		state.submitWorkspaceDraftEdit(name, hostIDs, commands)
 		return
 	}
 
@@ -156,6 +178,7 @@ func (state *State) submitWorkspaceDraft() {
 		draft.error = state.messages.WorkspaceDraftHostsRequired
 		return
 	}
+	plan.Commands = commands
 	plan = orderedWorkspaceLaunch(plan, hostIDs)
 	if draft.mode == workspaceDraftTemporary {
 		title := state.messages.WorkspaceDraftTemporaryName
@@ -181,6 +204,7 @@ func (state *State) submitWorkspaceDraft() {
 		draft.error = state.messages.WorkspaceDraftNameRequired
 		return
 	}
+	template.Commands = commands
 	previousSelected := state.selectedWorkspaceTemplateID
 	previousExpanded := state.workspaceLibraryExpanded
 	state.templates = append(state.templates, template)
@@ -200,7 +224,7 @@ func (state *State) submitWorkspaceDraft() {
 	)
 }
 
-func (state *State) submitWorkspaceDraftEdit(name string, hostIDs []string) {
+func (state *State) submitWorkspaceDraftEdit(name string, hostIDs []string, commands map[string]WorkspaceCommand) {
 	draft := &state.workspaceDraft
 	index := slices.IndexFunc(state.templates, func(template WorkspaceTemplate) bool {
 		return template.ID == draft.editID
@@ -211,6 +235,7 @@ func (state *State) submitWorkspaceDraftEdit(name string, hostIDs []string) {
 	}
 	template := WorkspaceTemplate{
 		ID: draft.editID, Name: name, HostIDs: slices.Clone(hostIDs), Layout: draft.layout,
+		Commands: commands,
 	}
 	if err := template.validate(); err != nil {
 		draft.error = state.workspaceSaveTemplateError(err)
@@ -302,6 +327,7 @@ func (state *State) workspaceDraftRemoveItem(index int) {
 	id := draft.order[index]
 	draft.order = slices.Delete(draft.order, index, index+1)
 	delete(draft.selected, id)
+	delete(draft.commandEditors, id)
 	if draft.layout.Kind == layoutcore.LayoutCustom {
 		state.workspaceDraftCountChanged()
 	}
@@ -323,6 +349,7 @@ func cloneWorkspaceTemplates(templates []WorkspaceTemplate) []WorkspaceTemplate 
 	cloned := slices.Clone(templates)
 	for index := range cloned {
 		cloned[index].HostIDs = slices.Clone(cloned[index].HostIDs)
+		cloned[index].Commands = maps.Clone(cloned[index].Commands)
 	}
 	return cloned
 }
@@ -566,20 +593,41 @@ func (state *State) paintWorkspaceDraftHosts(canvas *gfx.Canvas) {
 	draft, m := &state.workspaceDraft, state.messages
 	hosts := state.workspaceDraftHosts()
 	const rowHeight = float32(60)
-	draft.content = float32(len(hosts)) * rowHeight
+	draft.content = 0
+	for _, host := range hosts {
+		draft.content += rowHeight
+		if draft.selected[host.CatalogID] && workspaceCommandHost(host) && draft.commandHost == host.ID {
+			draft.content += 66
+		}
+	}
 	area := components.BeginScrollArea(canvas, state.Theme(), draft.bounds, gfx.Size{Width: max(0, draft.bounds.Width-10), Height: draft.content}).
 		Offset(0, draft.scroll).ReserveScrollbars().Viewport(hitWorkspaceDraftScroll, m.WorkspaceDraftHosts).
 		VerticalScrollbar(hitWorkspaceDraftScrollbar, m.WorkspaceDraftHosts, "")
 	geometry := area.BeginContent()
 	draft.scroll = geometry.OffsetY
 	count := state.workspaceDraftSelectionCount()
+	y := geometry.Content.Y
 	for index, host := range hosts {
-		box := gfx.Rect{X: geometry.Content.X, Y: geometry.Content.Y + float32(index)*rowHeight, Width: max(0, draft.bounds.Width-10), Height: 56}
+		height := rowHeight
+		configurable := draft.selected[host.CatalogID] && workspaceCommandHost(host) && draft.commandHost == host.ID
+		if configurable {
+			height += 66
+		}
+		box := gfx.Rect{X: geometry.Content.X, Y: y, Width: max(0, draft.bounds.Width-10), Height: height - 4}
+		y += height
 		if box.Y+box.Height < geometry.Viewport.Y || box.Y > geometry.Viewport.Y+geometry.Viewport.Height {
 			continue
 		}
 		selected := draft.selected[host.CatalogID]
-		state.paintWorkspaceDraftHost(canvas, host, box, hitWorkspaceDraftHostList.At(index), selected, !selected && count >= maxWorkspaceTemplateHosts)
+		header := box
+		header.Height = 56
+		state.paintWorkspaceDraftHost(canvas, host, header, hitWorkspaceDraftHostList.At(index), selected, !selected && count >= maxWorkspaceTemplateHosts)
+		if selected && workspaceCommandHost(host) {
+			components.BeginButton(canvas, state.Theme(), hitWorkspaceCommandEdit.At(int(host.ID)), gfx.Rect{X: header.X + header.Width - 128, Y: header.Y + 16, Width: 90, Height: 26}).XSmall().Outline(m.WorkspaceCommandField)
+		}
+		if configurable {
+			state.paintWorkspaceCommandFields(canvas, host, gfx.Rect{X: box.X + 8, Y: box.Y + 60, Width: max(0, box.Width-16), Height: 58})
+		}
 	}
 	if len(hosts) == 0 {
 		components.Empty(canvas, state.Theme(), geometry.Viewport, components.EmptyData{Title: m.WorkspaceDraftNoHosts})
@@ -608,6 +656,9 @@ func (state *State) paintWorkspaceDraftHost(canvas *gfx.Canvas, host Host, bound
 		color = pal.faint
 	}
 	width := max(0, bounds.Width-86)
+	if selected && workspaceCommandHost(host) {
+		width = max(0, width-100)
+	}
 	monitorLabel(canvas, elide(canvas, host.Label, 13, gfx.WeightSemibold, width), gfx.Rect{X: bounds.X + 46, Y: bounds.Y + 7, Width: width, Height: 22}, 13, color, gfx.WeightSemibold)
 	detail := state.sessionAddress(host)
 	if host.ID == localHostID {

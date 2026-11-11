@@ -76,6 +76,9 @@ func (state *State) launchWorkspaceWithIdentity(
 			state.rollbackWorkspaceLaunch(workspaceID, sessionIDs, previousWorkspace, previousSessionID, previousSection, previousNextSessionID, previousBroadcast, previousPauseSave)
 			return 0, nil, layoutcore.ErrPaneFull
 		}
+		if workspaceCommandHost(host) {
+			session.workspaceCommand = plan.Commands[workspaceHostReference(host)].normalized()
+		}
 		sessionIDs = append(sessionIDs, session.ID)
 	}
 

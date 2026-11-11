@@ -151,6 +151,13 @@ type Messages struct {
 	WorkspaceDraftTitleFixed              string
 	WorkspaceDraftTitleEdit               string
 	WorkspaceDraftDescription             string
+	WorkspaceCommandField                 string
+	WorkspaceCommandOrderHint             string
+	WorkspaceCommandSave                  string
+	WorkspaceCommandPending               string
+	WorkspaceCommandRun                   string
+	WorkspaceCommandCancel                string
+	WorkspaceCommandInvalid               string
 	WorkspaceDraftEditDescription         string
 	WorkspaceDraftName                    string
 	WorkspaceDraftNamePlaceholder         string

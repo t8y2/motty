@@ -70,6 +70,15 @@ func (state *State) submitWorkspaceSave() {
 		save.error = state.workspaceSaveTemplateError(err)
 		return
 	}
+	template.Commands = make(map[string]WorkspaceCommand)
+	for _, pane := range state.deck.Panes(save.workspace, nil) {
+		if session, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && workspaceCommandHost(session.host) && session.workspaceCommand.Command != "" {
+			template.Commands[workspaceHostReference(session.host)] = session.workspaceCommand
+		}
+	}
+	if len(template.Commands) == 0 {
+		template.Commands = nil
+	}
 	previousTemplates := state.templates
 	previousSelected := state.selectedWorkspaceTemplateID
 	previousExpanded := state.workspaceLibraryExpanded
