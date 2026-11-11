@@ -77,6 +77,9 @@ type hostRowDrawer struct {
 	light      ui.Box
 	grip       ui.Box
 	check      ui.Box
+	name       ui.Box
+	subtitle   ui.Box
+	address    ui.Box
 	groupCheck ui.Box
 }
 
@@ -136,7 +139,7 @@ func (state *State) hostListLabel(i int) string {
 	if entry.Kind == hostTreeGroup {
 		return state.hostGroupLabel(state.hostGroups[entry.GroupIndex])
 	}
-	return state.hosts[entry.HostIndex].Label
+	return state.hostPrivacySemanticLabel(state.hosts[entry.HostIndex])
 }
 
 // hostListCanDrop is the Tree's acceptance of a drop: a group goes into another
@@ -192,7 +195,7 @@ func (state *State) hostListDeclareRow(i int) {
 		return
 	}
 	d := state.hostList.drawer(state, i)
-	d.avatar, d.light, d.grip, d.check, d.groupCheck = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
+	d.avatar, d.light, d.grip, d.check, d.name, d.subtitle, d.address, d.groupCheck = ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}, ui.Box{}
 	ui.Slot(c).Fill().Draw(d.fn).Children(func() { state.declareHostListRowContent(c, d) })
 }
 

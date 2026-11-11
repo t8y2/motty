@@ -361,7 +361,7 @@ func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) 
 	canvas.RoundedBorder(card, radius.surface, edgeWidth, edge, background)
 	paintHostColorMark(canvas, card, host.Color)
 	if !state.hostSort.enabled {
-		canvas.HitWithOptions(id, card, host.Label, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
+		canvas.HitWithOptions(id, card, state.hostPrivacySemanticLabel(host), gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
 		state.hostRowEvents(canvas, id, host)
 	}
 	if canvas.FocusVisible() == id {
@@ -386,16 +386,28 @@ func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) 
 	tagCount := 0
 	var tagList [maxHostTags]string
 	subtitleWidth := min(canvas.TextWidth(subtitle, metrics.FontSizeS)+1, textWidth)
+	if state.hostPrivacy.enabled {
+		subtitleWidth = state.hostPrivacyConnectionWidth(canvas, host, textWidth)
+	}
 	if room := textWidth - subtitleWidth - 8; room >= 40 {
 		tagCount = state.fitHostTags(canvas, host, room, &tagList)
 	}
 	// The title and the connection line are 22 and 1+19 tall, centered as the
 	// column was in the card's row.
 	columnTop := card.Y + (card.Height-42)/2
-	paintHostGridLine(canvas, host.Label, gfx.Rect{X: textX, Y: columnTop, Width: textWidth, Height: 22},
-		22, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: pal.text})
-	paintHostGridLine(canvas, subtitle, gfx.Rect{X: textX, Y: columnTop + 23, Width: subtitleWidth, Height: 19},
-		19, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
+	nameBounds := gfx.Rect{X: textX, Y: columnTop, Width: textWidth, Height: 22}
+	connectionBounds := gfx.Rect{X: textX, Y: columnTop + 23, Width: subtitleWidth, Height: 19}
+	if state.hostPrivacy.enabled {
+		if state.hostPrivacy.nameHidden() {
+			state.paintHostPrivacyMask(canvas, nameBounds, host.Label, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: pal.text})
+		} else {
+			paintHostGridLine(canvas, host.Label, nameBounds, 22, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: pal.text})
+		}
+		state.paintHostPrivacyConnection(canvas, connectionBounds, host)
+	} else {
+		paintHostGridLine(canvas, host.Label, nameBounds, 22, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: pal.text})
+		paintHostGridLine(canvas, subtitle, connectionBounds, 19, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
+	}
 	if tagCount > 0 {
 		pillX := textX + subtitleWidth + 8
 		pillY := columnTop + 23 + (19-18)/2
@@ -414,7 +426,7 @@ func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) 
 		side := components.CheckboxExtent(state.Theme())
 		bounds := gfx.Rect{X: check.X + (check.Width-side)/2, Y: check.Y + (check.Height-side)/2, Width: side, Height: side}
 		components.BeginCheckbox(canvas, state.Theme(), hitHostCheckList.At(int(host.ID)), bounds, state.hostSelected(host.ID)).
-			Label(host.Label).Paint()
+			Label(state.hostPrivacySemanticLabel(host)).Paint()
 	}
 	state.paintHostCatalogIcon(canvas, host, avatar, badgeBackground)
 	if kind != lightIdle {
