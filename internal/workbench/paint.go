@@ -3407,11 +3407,20 @@ func (state *State) declareHostKeyDialog(c ui.C) {
 	if session == nil {
 		return
 	}
-	bodyHeight := float32(3*30 - 8) // three rows of address, type and fingerprint
+	changed := session.hostKey.Changed
+	title, trustLabel := m.HostKeyTitle, m.HostKeyTrust
+	if changed {
+		title, trustLabel = m.HostKeyChangedTitle, m.HostKeyUpdateAndContinue
+	}
+	saved := 0
+	if changed {
+		saved = len(session.hostKey.Known)
+	}
+	bodyHeight := float32((3+saved)*30 - 8) // address, type, fingerprint and the saved ones
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 540, state.hostKeyDescription, bodyHeight)
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: m.HostKeyTitle, Description: state.hostKeyDescription,
+		Title: title, Description: state.hostKeyDescription,
 		Width: 540, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitHostKeyDismiss, CloseID: hitHostKeyClose, InitialFocusID: hitHostKeyReject,
 	})
@@ -3420,7 +3429,7 @@ func (state *State) declareHostKeyDialog(c ui.C) {
 		actions := [...]components.ButtonAction{
 			{ID: hitHostKeyReject, Label: m.HostKeyReject, Variant: components.ButtonSecondary},
 			{ID: hitHostKeyOnce, Label: m.HostKeyOnce, Variant: components.ButtonOutline},
-			{ID: hitHostKeyTrust, Label: m.HostKeyTrust},
+			{ID: hitHostKeyTrust, Label: trustLabel},
 			{ID: hitHostKeyForget, Label: m.HostKeyForget, Variant: components.ButtonOutline},
 		}
 		count := 3
@@ -3438,15 +3447,23 @@ func (state *State) declareHostKeyBody(c ui.C) {
 		return
 	}
 	m, pal := state.messages, state.pal
-	rows := [...]struct{ label, value string }{
+	type keyRow struct{ label, value string }
+	rows := []keyRow{
 		{m.FieldAddress, session.hostKey.Address},
 		{m.HostKeyType, session.hostKey.Type},
 		{m.HostKeyFingerprint, session.hostKey.Fingerprint},
 	}
+	labelWidth := float32(90)
+	if session.hostKey.Changed {
+		labelWidth = 110
+		for _, fingerprint := range session.hostKey.Known {
+			rows = append(rows, keyRow{m.HostKeySavedFingerprint, fingerprint})
+		}
+	}
 	ui.Column(c).Fill().Gap(8).Children(func() {
 		for _, row := range rows {
 			ui.Row(c).Height(22).Gap(6).Children(func() {
-				ui.Text(c, row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).Width(90).Shrink(0)
+				ui.Text(c, row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).Width(labelWidth).Shrink(0)
 				ui.Text(c, row.value).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(pal.text).LineHeight(22)
 			})
 		}

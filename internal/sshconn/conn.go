@@ -30,7 +30,8 @@ type Phase uint8
 const (
 	// PhaseConnecting covers the TCP dial and the key exchange.
 	PhaseConnecting Phase = iota
-	// PhaseHostKeyPrompt waits for the user to trust or reject an unknown key.
+	// PhaseHostKeyPrompt waits for the user to accept or reject a new or
+	// changed host key.
 	PhaseHostKeyPrompt
 	// PhaseAuthenticating covers key and agent attempts, no input needed.
 	PhaseAuthenticating
@@ -67,8 +68,12 @@ type HostKeyInfo struct {
 	Type string
 	// Fingerprint is the SHA256 fingerprint in the form OpenSSH prints.
 	Fingerprint string
-	// Known lists the fingerprints on file for this address when the key
-	// changed; it is empty for a first connection.
+	// Changed says the address has a trusted key of this type and the server
+	// presented a different one.
+	Changed bool
+	// Known lists the fingerprints on file for this address whose key type
+	// matches the presented key when Changed is set; it is empty for a first
+	// connection.
 	Known []string
 	// File is the known-hosts file that holds (or will hold) the entry.
 	File string

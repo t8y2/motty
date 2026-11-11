@@ -721,6 +721,10 @@ type Messages struct {
 	HostKeyDescriptionFmt          string
 	HostKeyType                    string
 	HostKeyFingerprint             string
+	HostKeyChangedTitle            string
+	HostKeyChangedDescriptionFmt   string
+	HostKeySavedFingerprint        string
+	HostKeyUpdateAndContinue       string
 	HostKeyTrust                   string
 	HostKeyOnce                    string
 	HostKeyReject                  string
