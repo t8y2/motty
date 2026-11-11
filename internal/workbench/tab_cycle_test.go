@@ -5,6 +5,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	layoutcore "motty/internal/workspace"
 )
 
 // tabIndex is where the active tab stands on the tab bar.
@@ -80,6 +81,37 @@ func TestControlTabDoesNothingBehindADialogOrWithOneTab(t *testing.T) {
 	single, _, _, _ := liveSession(t)
 	if single.cycleWorkspace(1) {
 		t.Fatal("a lone tab has nowhere to go")
+	}
+}
+
+// A program that asks for key releases (the kitty keyboard protocol, which
+// terminal UIs such as coding agents enable) makes Motty see the end of every
+// press. A release keeps the identity of the press it ends, so after a tab
+// switch it still names the terminal of the tab that was left. Ending a press
+// is not aiming the keyboard there, so the tab the shortcut chose stays in
+// front, and the keyboard stays with it.
+func TestAKeyReleaseDoesNotPullTheTabBack(t *testing.T) {
+	state, _ := threeTabs(t)
+	if got := tabIndex(state); got != 2 {
+		t.Fatalf("the last connection is not in front: tab %d", got)
+	}
+	state.Key(gfx.KeyEvent{Key: gfx.KeyTab, Modifiers: gfx.ModifierControl})
+	if got := tabIndex(state); got != 0 {
+		t.Fatalf("Control+Tab did not leave the last tab: tab %d", got)
+	}
+	left := state.sessions[2].ID
+	if workspace, _, ok := state.deck.PaneForSession(layoutcore.SessionID(left)); !ok || workspace == state.deck.ActiveWorkspace() {
+		t.Fatal("the test needs the terminal of the left tab in another tab")
+	}
+	release := state.Key(gfx.KeyEvent{Key: gfx.KeyControlLeft, Target: terminalTestHitByID(state, left), Release: true})
+	if !release.Handled {
+		t.Fatal("the release of Control was not handled")
+	}
+	if got := tabIndex(state); got != 0 {
+		t.Fatalf("releasing Control moved the front tab back to %d", got)
+	}
+	if state.activeSessionID != state.sessions[0].ID {
+		t.Fatalf("the keyboard followed the release to session %d", state.activeSessionID)
 	}
 }
 

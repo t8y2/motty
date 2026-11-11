@@ -2606,14 +2606,23 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	var mount gfx.Scope
+	// Only a press aims the keyboard at a pane. A release carries the identity of
+	// the press it ends, so after a tab switch it still names the terminal the
+	// press began on; activating that one would pull the user back to the tab
+	// they just left. The release still routes to that terminal: the program
+	// that asked for releases must see the end of a press it already saw.
 	if session, local, ok := state.decodePaneHit(event.Target); ok {
-		state.ActivatePane(session.ID)
+		if !event.Release {
+			state.ActivatePane(session.ID)
+		}
 		mount, _ = tree.MountOf(event.Target.Scope())
 		event.Target = local
 	} else if session := state.terminalPageSession(event.Target); session != nil {
 		// A terminal pane is part of the workbench page; its identity and focus
 		// are already the window's. A key there makes that pane the active one.
-		state.ActivatePane(session.ID)
+		if !event.Release {
+			state.ActivatePane(session.ID)
+		}
 	} else if event.Target.IsZero() && state.sftpHeaderMenuOwns(state.popups.owner) {
 		// Opening an embedded menu can temporarily leave its focus trap empty.
 		// Its first keyboard-selected row still belongs to the file panel, and the
