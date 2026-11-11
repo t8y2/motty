@@ -684,6 +684,7 @@ var EnglishMessages = Messages{
 	StatusOpened:       "Opened workspace · ",
 	StatusReused:       "Reused session · ",
 	StatusHostAdded:    "Host added · ",
+	HostSaveFailedFmt:  "Could not save the host: %v. The host was not added.",
 	StatusEditCanceled: "New host canceled",
 
 	KnownHostsTitle:                 "Known Hosts",

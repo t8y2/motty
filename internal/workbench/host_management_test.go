@@ -1,13 +1,17 @@
 package workbench
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"motty/internal/configstore"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -102,6 +106,152 @@ func TestNewHostPasswordIsSecureAndSavedInTheVault(t *testing.T) {
 	}
 	if value, found, err := state.secrets.vault.Get(hostSecretName(state.hosts[len(state.hosts)-1].CatalogID, hostPasswordPart)); err != nil || !found || value != "correct horse" {
 		t.Fatalf("saved password = %q found=%v err=%v", value, found, err)
+	}
+}
+
+func TestHostConfigurationFailureKeepsTheDialogAndRollsBackItsSecrets(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	previousSelection := state.hosts[1].ID
+	state.selectedHostID = previousSelection
+	fillNewHost(state, "Edge", "edge.example.com", "ops", "correct horse")
+	beforeSecrets, err := state.secrets.vault.Names()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A configuration that may not be written covers the same refusal path as a
+	// database that rejects the commit.
+	state.saveBlocked = true
+
+	state.Click(hitDialogSubmit)
+
+	if state.modal != modalNewHost {
+		t.Fatalf("the failed add closed its dialog: modal=%d", state.modal)
+	}
+	if len(state.hosts) != len(sampleHosts) {
+		t.Fatalf("the failed add remained in the host list: %d hosts", len(state.hosts))
+	}
+	if state.selectedHostID != previousSelection {
+		t.Fatalf("the failed add changed the selected host: %d, want %d", state.selectedHostID, previousSelection)
+	}
+	if !strings.HasPrefix(state.dialogError, strings.SplitN(state.messages.HostSaveFailedFmt, "%v", 2)[0]) {
+		t.Fatalf("failure was not shown in the dialog: %q", state.dialogError)
+	}
+	if state.editor.password.String() != "correct horse" {
+		t.Fatal("the failed add discarded the password the user still needs to retry")
+	}
+	afterSecrets, err := state.secrets.vault.Names()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(afterSecrets, beforeSecrets) {
+		t.Fatalf("failed host save left a secret behind: before=%v after=%v", beforeSecrets, afterSecrets)
+	}
+	if strings.HasPrefix(state.status, state.messages.StatusHostAdded) {
+		t.Fatalf("the failed add reported success: %q", state.status)
+	}
+}
+
+func TestPasswordHostConflictReloadsAfterTheVaultLockIsReleased(t *testing.T) {
+	options := testOptions(t)
+	first := newTestState(t, options)
+	second := newTestState(t, options)
+
+	fillNewHost(first, "Concurrent", "concurrent.example.com", "ops", "")
+	first.Click(hitDialogSubmit)
+	if first.modal != modalNone {
+		t.Fatalf("the first window did not save its host: %q", first.dialogError)
+	}
+
+	fillNewHost(second, "Pending", "pending.example.com", "ops", "correct horse")
+	beforeSecrets, err := second.secrets.vault.Names()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second.Click(hitDialogSubmit)
+
+	if second.modal != modalNewHost {
+		t.Fatalf("the conflicted add closed its dialog: modal=%d error=%q", second.modal, second.dialogError)
+	}
+	if !slices.ContainsFunc(second.hosts, func(host Host) bool {
+		return host.Label == "Concurrent" && host.Address == "concurrent.example.com"
+	}) {
+		t.Fatal("the conflicted window did not reload the host saved by the other window")
+	}
+	if slices.ContainsFunc(second.hosts, func(host Host) bool {
+		return host.Label == "Pending" && host.Address == "pending.example.com"
+	}) {
+		t.Fatal("the conflicted host remained in the in-memory list")
+	}
+	if second.editor.password.String() != "correct horse" {
+		t.Fatal("the conflicted add discarded its pending password")
+	}
+	afterSecrets, err := second.secrets.vault.Names()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(afterSecrets, beforeSecrets) {
+		t.Fatalf("the conflicted add left a secret behind: before=%v after=%v", beforeSecrets, afterSecrets)
+	}
+}
+
+func TestAddedHostSurvivesRestart(t *testing.T) {
+	options := testOptions(t)
+	state := newTestState(t, options)
+	fillNewHost(state, "Edge", "edge.example.com", "ops", "correct horse")
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("the host dialog did not close: %q", state.dialogError)
+	}
+	state.Close()
+
+	again := newTestState(t, options)
+	found := false
+	for _, host := range again.hosts {
+		if host.Label == "Edge" && host.Address == "edge.example.com" && host.User == "ops" {
+			if value, ok, err := again.secrets.vault.Get(hostSecretName(host.CatalogID, hostPasswordPart)); err != nil || !ok || value != "correct horse" {
+				t.Fatalf("saved password = %q found=%v err=%v", value, ok, err)
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("the added host was not present after reopening the configuration")
+	}
+}
+
+func TestAddedHostSurvivesRestartFromThePreviousInstalledFormat(t *testing.T) {
+	options := testOptions(t)
+	if err := os.Remove(options.StatePath); err != nil {
+		t.Fatal(err)
+	}
+	entries, local, _, err := splitState(savedState{Hosts: sampleHosts}, newConfigBase(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := configstore.Open(options.StatePath, configFormat-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Commit(configstore.Change{Put: entries, Local: map[string][]byte{localKey: local}})
+	closeErr := store.Close()
+	if err := errors.Join(err, closeErr); err != nil {
+		t.Fatal(err)
+	}
+
+	state := newTestState(t, options)
+	fillNewHost(state, "Installed", "installed.example.com", "ops", "")
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("the host dialog did not close: %q", state.dialogError)
+	}
+	state.Close()
+
+	again := newTestState(t, options)
+	if !slices.ContainsFunc(again.hosts, func(host Host) bool {
+		return host.Label == "Installed" && host.Address == "installed.example.com" && host.User == "ops"
+	}) {
+		t.Fatal("the host added after opening the previous installed format was not present after restart")
 	}
 }
 

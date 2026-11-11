@@ -684,6 +684,7 @@ var TraditionalMessages = Messages{
 	StatusOpened:       "已開啟工作區 · ",
 	StatusReused:       "重複使用工作階段 · ",
 	StatusHostAdded:    "已新增主機 · ",
+	HostSaveFailedFmt:  "無法儲存主機：%v。主機未新增。",
 	StatusEditCanceled: "已取消新增主機",
 
 	KnownHostsTitle:                 "已知主機",

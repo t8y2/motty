@@ -743,6 +743,7 @@ type Messages struct {
 	StatusOpened       string // prefix: session title follows
 	StatusReused       string // prefix: session title follows
 	StatusHostAdded    string
+	HostSaveFailedFmt  string
 	StatusEditCanceled string
 
 	// OpenSSH known_hosts management.

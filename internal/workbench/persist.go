@@ -734,6 +734,17 @@ func (state *State) saveWithResult() error {
 // file stays as it is and the notice comes back on each change. flushSync is
 // false for a caller that schedules the sync itself.
 func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
+	return state.saveWithResultModeRecovery(flushSync, true)
+}
+
+// saveWithResultWithoutRefresh is for a save made while another store holds a
+// lock that must not be re-entered. A conflict is returned to the caller, which
+// can reload shared state after releasing that lock.
+func (state *State) saveWithResultWithoutRefresh() (saveErr error) {
+	return state.saveWithResultModeRecovery(false, false)
+}
+
+func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict bool) (saveErr error) {
 	defer func() {
 		message := state.noteSaveFailure()
 		unsaved := state.hasUnsavedNotes()
@@ -767,7 +778,7 @@ func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
 	}()
 	previous := state.status
 	err := state.persistSnapshot(flushSync)
-	if err == nil || !errors.Is(err, configstore.ErrConflict) || state.saveRetrying {
+	if err == nil || !errors.Is(err, configstore.ErrConflict) || state.saveRetrying || !refreshConflict {
 		return err
 	}
 	// Another window changed what this save was built on. Its shared records win,
