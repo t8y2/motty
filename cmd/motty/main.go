@@ -114,7 +114,7 @@ func main() {
 		// macOS hands registered document types to the running program. Windows
 		// and Linux start a second process whose path is carried here as an
 		// argument by single-instance handoff.
-		application.OnOpenFile(func(path string) { windows.launch([]string{path}) })
+		registerOpenFile(application, func(path string) { windows.launch([]string{path}) })
 		if background {
 			// Started at login: the first window opens hidden, so the icon can
 			// go up first and closing it still leaves the application running.
