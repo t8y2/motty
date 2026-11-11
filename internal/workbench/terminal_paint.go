@@ -203,20 +203,14 @@ func (state *State) paintWorkspaceSideRail(canvas *gfx.Canvas, size gfx.Size) {
 
 // paintTerminalSideRail draws the vertical tool rail. The latency readout is
 // an ordinary layout entry now, so it scrolls and moves with the actions.
-func (state *State) paintTerminalSideRail(canvas *gfx.Canvas, bounds gfx.Rect, session *Session, tools []barTool, background, border gfx.Color, left bool) {
+func (state *State) paintTerminalSideRail(canvas *gfx.Canvas, bounds gfx.Rect, session *Session, tools []barTool, background gfx.Color) {
 	if bounds.Width <= 0 || bounds.Height <= 0 || session.term == nil {
 		return
 	}
-	fullBounds := bounds
 	session.term.railBounds = bounds
-	canvas.Fill(fullBounds, background)
+	canvas.Fill(bounds, background)
 	viewport := gfx.Rect{X: bounds.X + 4, Y: bounds.Y + 4, Width: max(bounds.Width-8, 0), Height: max(bounds.Height-8, 0)}
 	state.paintTerminalRailTools(canvas, session, viewport, tools, background)
-	x := bounds.X
-	if left {
-		x += bounds.Width - 1
-	}
-	canvas.Fill(gfx.Rect{X: x, Y: fullBounds.Y, Width: 1, Height: fullBounds.Height}, border)
 }
 
 func (state *State) paintTerminalRailTools(canvas *gfx.Canvas, session *Session, viewport gfx.Rect, tools []barTool, background gfx.Color) {
