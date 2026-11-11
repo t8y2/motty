@@ -164,6 +164,16 @@ type AISettingsMessages struct {
 	ModelPrev        string
 	ModelNext        string
 
+	// Model filtering and sorting
+	ModelFilterAll       string
+	ModelFilterAvailable string
+	ModelFilterFailed    string
+	ModelFilterEnabled   string
+	ModelSortDefault     string
+	ModelSortLatencyAsc  string
+	ModelSortLatencyDesc string
+	ModelSortNameAsc     string
+
 	// Probing.
 	ModelsProbeAll    string
 	ModelsProbeCancel string

@@ -65,6 +65,14 @@ var (
 	hitAISetModelAdd          = tree.ID(aiSettingsHits, "ai-set-model-add")
 	hitAISetModelPrev         = tree.ID(aiSettingsHits, "ai-set-model-prev")
 	hitAISetModelNext         = tree.ID(aiSettingsHits, "ai-set-model-next")
+	hitAISetFilterAll         = tree.ID(aiSettingsHits, "ai-set-filter-all")
+	hitAISetFilterAvailable   = tree.ID(aiSettingsHits, "ai-set-filter-avail")
+	hitAISetFilterFailed      = tree.ID(aiSettingsHits, "ai-set-filter-failed")
+	hitAISetFilterEnabled     = tree.ID(aiSettingsHits, "ai-set-filter-enabled")
+	hitAISetSortDefault       = tree.ID(aiSettingsHits, "ai-set-sort-default")
+	hitAISetSortLatencyAsc    = tree.ID(aiSettingsHits, "ai-set-sort-latency-asc")
+	hitAISetSortLatencyDesc   = tree.ID(aiSettingsHits, "ai-set-sort-latency-desc")
+	hitAISetSortNameAsc       = tree.ID(aiSettingsHits, "ai-set-sort-name-asc")
 	hitAISetRedact            = tree.ID(aiSettingsHits, "ai-set-redact")
 	hitAISetHistory           = tree.ID(aiSettingsHits, "ai-set-history")
 	hitAISetClearHistory      = tree.ID(aiSettingsHits, "ai-set-clear-history")
@@ -118,6 +126,26 @@ const (
 	aiDialogAgentAllowAll
 	aiDialogProbe
 	aiDialogModelReasoning
+)
+
+// aiModelFilter specifies the filtering condition for models of a provider.
+type aiModelFilter uint8
+
+const (
+	aiModelFilterAll aiModelFilter = iota
+	aiModelFilterAvailable
+	aiModelFilterFailed
+	aiModelFilterEnabled
+)
+
+// aiModelSort specifies the sort order for models of a provider.
+type aiModelSort uint8
+
+const (
+	aiModelSortDefault aiModelSort = iota
+	aiModelSortLatencyAsc
+	aiModelSortLatencyDesc
+	aiModelSortNameAsc
 )
 
 // aiCopyState is what the "copy client configuration" button last did.
@@ -177,9 +205,11 @@ type aiSettingsUI struct {
 	// deleteID is the provider the delete question is about.
 	deleteID string
 
-	selected   string // provider whose models are listed
-	page       int    // page of that provider's models
-	modelInput text.Editor
+	selected    string // provider whose models are listed
+	page        int    // page of that provider's models
+	modelFilter aiModelFilter
+	modelSort   aiModelSort
+	modelInput  text.Editor
 
 	probeResults    map[string]map[string]probe.Result
 	probeCancel     context.CancelFunc
@@ -326,6 +356,30 @@ func (state *State) aiSettingsClick(id gfx.ID) bool {
 	case id == hitAISetModelNext:
 		cfg.page++
 		state.aiClampModelPage()
+	case id == hitAISetFilterAll:
+		cfg.modelFilter, cfg.page = aiModelFilterAll, 0
+		state.aiSettingsChanged()
+	case id == hitAISetFilterAvailable:
+		cfg.modelFilter, cfg.page = aiModelFilterAvailable, 0
+		state.aiSettingsChanged()
+	case id == hitAISetFilterFailed:
+		cfg.modelFilter, cfg.page = aiModelFilterFailed, 0
+		state.aiSettingsChanged()
+	case id == hitAISetFilterEnabled:
+		cfg.modelFilter, cfg.page = aiModelFilterEnabled, 0
+		state.aiSettingsChanged()
+	case id == hitAISetSortDefault:
+		cfg.modelSort, cfg.page = aiModelSortDefault, 0
+		state.aiSettingsChanged()
+	case id == hitAISetSortLatencyAsc:
+		cfg.modelSort, cfg.page = aiModelSortLatencyAsc, 0
+		state.aiSettingsChanged()
+	case id == hitAISetSortLatencyDesc:
+		cfg.modelSort, cfg.page = aiModelSortLatencyDesc, 0
+		state.aiSettingsChanged()
+	case id == hitAISetSortNameAsc:
+		cfg.modelSort, cfg.page = aiModelSortNameAsc, 0
+		state.aiSettingsChanged()
 	case id.Scope() == hitAISetModelUse:
 		index, _ := id.In(hitAISetModelUse)
 		state.aiUseModel(index)
@@ -653,6 +707,7 @@ func (state *State) aiSelectProvider(index int) {
 		cfg.selected, cfg.page, cfg.modelErr = state.ai.providers[index].ID, 0, ""
 		cfg.fetched, cfg.fetchErr = false, ""
 		cfg.modelInput = text.Editor{}
+		cfg.modelFilter, cfg.modelSort = aiModelFilterAll, aiModelSortDefault
 	}
 }
 
@@ -894,13 +949,133 @@ func (state *State) aiModelsOf(providerID string) (total, enabled int) {
 	return total, enabled
 }
 
-func (state *State) aiFilteredModels(providerID string) []store.Model {
-	var filtered []store.Model
+// aiModelCounts reports the total, available, failed and enabled model counts.
+func (state *State) aiModelCounts(providerID string) (total, available, failed, enabled int) {
 	for _, model := range state.ai.models {
 		if model.ProviderID == providerID && probe.IsChatOrReasoningModel(model.Name) {
-			filtered = append(filtered, model)
+			total++
+			if model.Enabled {
+				enabled++
+			}
+			if res, ok := state.aiGetProbeResult(providerID, model.Name); ok {
+				if res.Status == probe.StatusSuccess {
+					available++
+				} else if res.Status == probe.StatusFailed {
+					failed++
+				}
+			}
 		}
 	}
+	return total, available, failed, enabled
+}
+
+// aiAllChatModels returns all chat/reasoning models of a provider, ignoring UI filters.
+func (state *State) aiAllChatModels(providerID string) []store.Model {
+	var list []store.Model
+	for _, model := range state.ai.models {
+		if model.ProviderID == providerID && probe.IsChatOrReasoningModel(model.Name) {
+			list = append(list, model)
+		}
+	}
+	return list
+}
+
+func (state *State) aiFilteredModels(providerID string) []store.Model {
+	cfg := &state.ai.cfg
+
+	var base []store.Model
+	for _, model := range state.ai.models {
+		if model.ProviderID == providerID && probe.IsChatOrReasoningModel(model.Name) {
+			base = append(base, model)
+		}
+	}
+	if len(base) == 0 {
+		return nil
+	}
+
+	// 1. Filter by probe or enabled status
+	var filtered []store.Model
+	switch cfg.modelFilter {
+	case aiModelFilterAvailable:
+		for _, m := range base {
+			if res, ok := state.aiGetProbeResult(providerID, m.Name); ok && res.Status == probe.StatusSuccess {
+				filtered = append(filtered, m)
+			}
+		}
+	case aiModelFilterFailed:
+		for _, m := range base {
+			if res, ok := state.aiGetProbeResult(providerID, m.Name); ok && res.Status == probe.StatusFailed {
+				filtered = append(filtered, m)
+			}
+		}
+	case aiModelFilterEnabled:
+		for _, m := range base {
+			if m.Enabled {
+				filtered = append(filtered, m)
+			}
+		}
+	default:
+		filtered = append([]store.Model(nil), base...)
+	}
+
+	// 2. Sort
+	switch cfg.modelSort {
+	case aiModelSortLatencyAsc:
+		sort.SliceStable(filtered, func(i, j int) bool {
+			resI, hasI := state.aiGetProbeResult(providerID, filtered[i].Name)
+			resJ, hasJ := state.aiGetProbeResult(providerID, filtered[j].Name)
+			succI := hasI && resI.Status == probe.StatusSuccess
+			succJ := hasJ && resJ.Status == probe.StatusSuccess
+
+			if succI != succJ {
+				return succI
+			}
+			if succI && succJ {
+				if resI.Latency != resJ.Latency {
+					return resI.Latency < resJ.Latency
+				}
+			}
+			return strings.ToLower(filtered[i].Name) < strings.ToLower(filtered[j].Name)
+		})
+	case aiModelSortLatencyDesc:
+		sort.SliceStable(filtered, func(i, j int) bool {
+			resI, hasI := state.aiGetProbeResult(providerID, filtered[i].Name)
+			resJ, hasJ := state.aiGetProbeResult(providerID, filtered[j].Name)
+			succI := hasI && resI.Status == probe.StatusSuccess
+			succJ := hasJ && resJ.Status == probe.StatusSuccess
+
+			if succI != succJ {
+				return succI
+			}
+			if succI && succJ {
+				if resI.Latency != resJ.Latency {
+					return resI.Latency > resJ.Latency
+				}
+			}
+			return strings.ToLower(filtered[i].Name) < strings.ToLower(filtered[j].Name)
+		})
+	case aiModelSortNameAsc:
+		sort.SliceStable(filtered, func(i, j int) bool {
+			return strings.ToLower(filtered[i].Name) < strings.ToLower(filtered[j].Name)
+		})
+	default:
+		// aiModelSortDefault preserves original order
+	}
+
+	// 3. Pin Default Model to top if present in filtered results
+	defIdx := -1
+	for idx, m := range filtered {
+		if state.aiIsDefault(providerID, m.Name) {
+			defIdx = idx
+			break
+		}
+	}
+	if defIdx > 0 {
+		defModel := filtered[defIdx]
+		copy(filtered[1:defIdx+1], filtered[0:defIdx])
+		filtered[0] = defModel
+	}
+
 	return filtered
 }
 
@@ -1338,7 +1513,7 @@ func (state *State) aiProbeAllModels() {
 	if !ready {
 		return
 	}
-	models := state.aiFilteredModels(provider.ID)
+	models := state.aiAllChatModels(provider.ID)
 	if len(models) == 0 {
 		return
 	}
@@ -1404,6 +1579,17 @@ func (state *State) aiProbeAllModels() {
 				s.ai.cfg.probeCancel = nil
 				s.ai.cfg.probingProvider = ""
 			}
+			var succCount int
+			for _, m := range models {
+				if res, ok := s.aiGetProbeResult(provider.ID, m.Name); ok && res.Status == probe.StatusSuccess {
+					succCount++
+				}
+			}
+			if succCount > 0 && s.ai.cfg.modelSort == aiModelSortDefault {
+				s.ai.cfg.modelSort = aiModelSortLatencyAsc
+				s.ai.cfg.page = 0
+			}
+			s.aiClampModelPage()
 			s.aiSettingsChanged()
 		})
 	}()

@@ -1399,6 +1399,15 @@ var chineseAISettings = AISettingsMessages{
 	ModelPrev:        "上一页",
 	ModelNext:        "下一页",
 
+	ModelFilterAll:       "全部",
+	ModelFilterAvailable: "可用",
+	ModelFilterFailed:    "失败",
+	ModelFilterEnabled:   "已启用",
+	ModelSortDefault:     "默认",
+	ModelSortLatencyAsc:  "最快",
+	ModelSortLatencyDesc: "最慢",
+	ModelSortNameAsc:     "名称",
+
 	ModelsProbeAll:    "探测全部",
 	ModelsProbeCancel: "取消探测",
 	ProbeDialogTitle:  "探测全部模型",
