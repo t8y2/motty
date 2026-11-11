@@ -757,9 +757,6 @@ func (w *sftpWindow) paintQueueDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 
 func (w *sftpWindow) paintMenu(canvas *gfx.Canvas) {
 	rows := w.owner.sftpMenuRows(&w.session, w.view)
-	if selectedSFTPCount(w.view) == 0 {
-		rows = menuRows{}
-	}
 	for i := range rows.entries[:rows.count] {
 		entry := &rows.entries[i]
 		if entry.separator {

@@ -351,8 +351,10 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 				folder := w.folder(side == 0)
 				for i := range folder.rows {
 					folder.rows[i].selected = false
+					folder.rows[i].cells[0] = sftpSelectionCell(false)
 				}
-				folder.selected = -1
+				folder.selected, folder.anchor = -1, -1
+				folder.listNeedsSeed = true
 				w.selectionChanged(side == 0)
 				w.ui.menuOpen, w.ui.menuAt = true, gfx.Point{X: event.X, Y: event.Y}
 				return handled

@@ -165,16 +165,18 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 		}
 		rows.separate()
 	}
-	switch {
-	case view.localOnly:
-		rows.add(components.ContextMenuItem{ID: hitSFTPMenuInsertPath, Label: messages.SFTPInsertPath, Icon: icon(iconTerminal), Disabled: session.term == nil || session.term.shell == nil})
-	case local:
-		rows.add(components.ContextMenuItem{ID: hitSFTPMenuSend, Label: messages.Tools.SendToServer,
-			Description: view.path, Value: view.path, Hint: view.path, Icon: icon(iconUpload), Disabled: view.path == ""})
-	default:
-		rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownload, Label: messages.SFTPDownload, Icon: icon(iconDownload), Disabled: busy})
-		if view.lfolder.path != "" {
-			rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownloadHere, Label: messages.Tools.DownloadHere, Icon: icon(iconFileDown), Disabled: busy})
+	if count > 0 {
+		switch {
+		case view.localOnly:
+			rows.add(components.ContextMenuItem{ID: hitSFTPMenuInsertPath, Label: messages.SFTPInsertPath, Icon: icon(iconTerminal), Disabled: session.term == nil || session.term.shell == nil})
+		case local:
+			rows.add(components.ContextMenuItem{ID: hitSFTPMenuSend, Label: messages.Tools.SendToServer,
+				Description: view.path, Value: view.path, Hint: view.path, Icon: icon(iconUpload), Disabled: view.path == ""})
+		default:
+			rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownload, Label: messages.SFTPDownload, Icon: icon(iconDownload), Disabled: busy})
+			if view.lfolder.path != "" {
+				rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownloadHere, Label: messages.Tools.DownloadHere, Icon: icon(iconFileDown), Disabled: busy})
+			}
 		}
 	}
 	if one && !local {
