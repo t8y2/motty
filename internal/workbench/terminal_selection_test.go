@@ -185,9 +185,10 @@ func TestTerminalChangesClearASelection(t *testing.T) {
 		name   string
 		change func(*State, *terminal)
 	}{
-		{"output", func(_ *State, terminal *terminal) { terminal.write([]byte("new")) }},
 		{"input", func(_ *State, terminal *terminal) { terminal.shell = &fakeShell{}; terminal.send([]byte("x")) }},
 		{"resize", func(state *State, _ *terminal) { state.Resize(gfx.Size{Width: 400, Height: 300}) }},
+		{"alternate screen", func(_ *State, terminal *terminal) { terminal.write([]byte("\x1b[?1049h")) }},
+		{"reset", func(_ *State, terminal *terminal) { terminal.write([]byte("\x1bc")) }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -202,6 +203,74 @@ func TestTerminalChangesClearASelection(t *testing.T) {
 				t.Fatal("selection survived the terminal change")
 			}
 		})
+	}
+}
+
+func TestOutputKeepsTheSelectionOnItsText(t *testing.T) {
+	_, session, _ := selectionState()
+	session.term.write([]byte("alpha beta\r\ngamma\r\n"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 1, Column: 4}),
+	)
+	// Output arrives and scrolls the screen: the selection stays on its text
+	// instead of being erased with the rows that moved.
+	session.term.write([]byte("delta\r\nepsilon\r\nzeta\r\neta\r\ntheta\r\n"))
+	if !session.term.selection.selected {
+		t.Fatal("output cleared the selection")
+	}
+	if got := selectedText(session); got != "alpha beta\ngamma" {
+		t.Fatalf("selection copied %q after output", got)
+	}
+}
+
+func TestOutputDoesNotBreakASelectionDrag(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.write([]byte("alpha beta\r\ngamma delta\r\n"))
+	hit := terminalTestHit(state, session)
+	startX, startY := cellPoint(geometry, 0, 2, state.cellWidth, state.cellHeight)
+	endX, endY := cellPoint(geometry, 0, 8, state.cellWidth, state.cellHeight)
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit,
+		X: startX, Y: startY, Viewport: state.viewport,
+	})
+	// The shell speaks while the button is still held; the drag must go on.
+	session.term.write([]byte("one\r\ntwo\r\n"))
+	if !session.term.selection.dragging {
+		t.Fatal("output ended the drag")
+	}
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true,
+		X: endX, Y: endY, Viewport: state.viewport,
+	})
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true,
+		X: endX, Y: endY, Viewport: state.viewport,
+	})
+	if got := selectedText(session); got != "pha bet" {
+		t.Fatalf("drag selected %q across output", got)
+	}
+}
+
+func TestOutputTrimsASelectionTheScrollbackDropped(t *testing.T) {
+	_, session, _ := selectionState()
+	session.term.screen.SetScrollbackLimit(2)
+	session.term.write([]byte("keep\r\ndrop\r\nmore\r\n"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 1, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 2, Column: 3}),
+	)
+	for _, line := range []string{"x", "y", "z", "w", "v"} {
+		session.term.write([]byte(line + "\r\n"))
+	}
+	if !session.term.selection.selected || selectedText(session) != "more" {
+		t.Fatalf("selection after the start was trimmed = %+v, text %q",
+			session.term.selection, selectedText(session))
+	}
+	// The last line it covered has now left the scrollback too.
+	session.term.write([]byte("u\r\n"))
+	if session.term.selection.selected {
+		t.Fatalf("selection outlived its text: %+v", session.term.selection)
 	}
 }
 

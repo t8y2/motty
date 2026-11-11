@@ -314,6 +314,7 @@ func (state *State) clickTerminalMenu(id gfx.ID) bool {
 		session.term.clearScreen(state.messages)
 	case hitTerminalMenuClear:
 		session.term.screen.ClearScrollback()
+		session.term.selection.trim(session.term.screen)
 	case hitTerminalMenuSave:
 		state.saveTerminalOutput(session)
 	case hitTerminalMenuSearch:

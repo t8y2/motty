@@ -443,6 +443,7 @@ func (state *State) applyTerminalScrollback() {
 	for index := range state.sessions {
 		if terminal := state.sessions[index].term; terminal != nil {
 			terminal.screen.SetScrollbackLimit(state.terminalScrollback)
+			terminal.selection.trim(terminal.screen)
 			terminal.find.refreshIfChanged(terminal.screen, state.messages, 0)
 		}
 	}

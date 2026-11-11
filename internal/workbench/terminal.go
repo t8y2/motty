@@ -454,21 +454,39 @@ func (t *terminal) clearScreen(messages i18n.Messages) {
 }
 
 func (t *terminal) write(p []byte) {
-	t.selection.clear()
 	t.prediction.reset()
-	t.screen.Write(p)
+	t.writeScreen(p)
 }
 
 // writeRemote commits the shell's output. Unlike write it then lets the
 // prediction compare the screen with what was typed, so an echo of it confirms
 // the overlay instead of dropping it.
 func (t *terminal) writeRemote(p []byte, now time.Duration) {
-	t.selection.clear()
-	t.screen.Write(p)
+	t.writeScreen(p)
 	t.prediction.reconcile(t.screen, now)
 	if t.inputGuard.active && cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) {
 		t.inputGuard.start()
 	}
+}
+
+// writeScreen parses output and keeps the selection where the user put it, as
+// terminals do: output is text arriving, not an edit, so a selection stays on
+// its text and lets scrolling push it up instead of being erased. It is only
+// dropped when the buffer stops holding the lines it points at.
+func (t *terminal) writeScreen(p []byte) {
+	generation := t.screen.BufferGeneration()
+	t.screen.Write(p)
+	t.reconcileSelection(generation)
+}
+
+// reconcileSelection drops a selection whose buffer is gone and trims one
+// whose oldest lines the scrollback has dropped.
+func (t *terminal) reconcileSelection(generation uint64) {
+	if t.screen.BufferGeneration() != generation {
+		t.selection.clear()
+		return
+	}
+	t.selection.trim(t.screen)
 }
 
 // send writes input to the shell. Typing returns the view to the live screen.
