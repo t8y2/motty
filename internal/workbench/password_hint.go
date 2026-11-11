@@ -7,11 +7,12 @@ import (
 	"github.com/vivaui/viva/gfx"
 )
 
-// Password prompt assist: when sudo asks for the account's password, the saved
-// one is offered as dim text after the prompt, and Enter sends it. Nothing is
-// sent without that Enter, and anything else the user types takes the offer
-// back. su is left out: its prompt is bare and asks for root's password, which
-// is not the one saved for the host.
+// Password prompt assist for sudo: when sudo asks for the account's password,
+// the saved one is offered as dim text after the prompt, and Enter sends it.
+// Nothing is sent without that Enter, and anything else the user types takes the
+// offer back. su is handled by the password offer in autofill_picker.go: its
+// prompt is bare and asks for root's password, which is not the one saved for
+// the host, so the user chooses from the saved passwords there.
 //
 // Ownership: the prompt comes from the emulator's screen and the password from
 // the vault, both application state. The text is drawn by the same ghost path
@@ -28,6 +29,9 @@ func (state *State) setPasswordHint(on bool) bool {
 		return false
 	}
 	state.passwordHintOff = !on
+	if !on {
+		state.closeAutofillPick()
+	}
 	return true
 }
 

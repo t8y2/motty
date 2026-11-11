@@ -33,7 +33,6 @@ var autofillHits = tree.Feature("autofill-rules")
 var (
 	hitSettingsAutofillAdd  = tree.ID(autofillHits, "settings-autofill-add")
 	hitSettingsAutofillSudo = tree.ID(autofillHits, "settings-autofill-sudo")
-	hitSettingsAutofillSu   = tree.ID(autofillHits, "settings-autofill-su")
 	hitAutofillName         = tree.ID(autofillHits, "autofill-name")
 	hitAutofillPattern      = tree.ID(autofillHits, "autofill-pattern")
 	hitAutofillFixed        = tree.ID(autofillHits, "autofill-fixed")
@@ -77,7 +76,11 @@ type autofillUI struct {
 	enterRow            ui.Box
 	sendChoices         [3]ui.Box
 
-	ask autofillAsk
+	ask  autofillAsk
+	pick autofillPick
+	// scanRules is the user's rules plus the built-in prompt assist, rebuilt on
+	// each idle scan without allocating.
+	scanRules []*autofill.Rule
 }
 
 // autofillSendKinds are the ways a rule may answer, in the order the dialog
@@ -124,10 +127,24 @@ func (state *State) scanAutofill(session *Session) {
 	}
 	line := screen.RowText(cursor.Y)
 	host := session.host
-	rule := t.autofill.Scan(line, state.autofillRules.rules, func(rule *autofill.Rule) bool {
+	rules := state.autofillRules.rules
+	if state.passwordAssistOn() {
+		state.autofillRules.scanRules = append(state.autofillRules.scanRules[:0], rules...)
+		state.autofillRules.scanRules = append(state.autofillRules.scanRules, passwordAssistRule)
+		rules = state.autofillRules.scanRules
+	}
+	rule := t.autofill.Scan(line, rules, func(rule *autofill.Rule) bool {
 		return rule.AppliesTo(host.Label, host.Group)
 	})
 	if rule == nil {
+		return
+	}
+	if rule == passwordAssistRule {
+		if state.modal != modalNone {
+			t.autofill.Retry(state.now()) // the offer waits for the dialog in the way
+			return
+		}
+		state.openPasswordPick(session, line)
 		return
 	}
 	if t.autofill.Allowed(rule.ID) {
@@ -148,19 +165,35 @@ func (state *State) scanAutofill(session *Session) {
 // requestAutofillFrames asks for the one frame that looks at a prompt once the
 // output has paused. A terminal that is quiet asks for nothing.
 func (state *State) requestAutofillFrames(canvas *gfx.Canvas) {
-	if !state.autofillRules.armed {
+	if !state.autofillRules.armed && !state.passwordAssistOn() {
 		return
 	}
 	now := state.now()
 	for index := range state.sessions {
-		t := state.sessions[index].term
+		session := &state.sessions[index]
+		t := session.term
 		if t == nil {
+			continue
+		}
+		// The built-in offer asks for the pause frame only while there are
+		// shared passwords to offer: ordinary terminals keep asking for none.
+		if !state.autofillRules.armed && !state.passwordAssistWantsFrame(session) {
 			continue
 		}
 		if wait, pending := t.autofill.Pending(now); pending && wait > 0 {
 			canvas.RequestFrameIn(wait)
 		}
 	}
+}
+
+// passwordAssistWantsFrame reports whether the pause frame is worth asking for:
+// something saved could be offered. It reads no screen text and makes no vault
+// lookup, so an idle paint never pays for the offer; without a shared password
+// there is nothing the frame could show, and the host's own password is already
+// covered by the sudo hint.
+func (state *State) passwordAssistWantsFrame(session *Session) bool {
+	t := session.term
+	return t != nil && t.shell != nil && !t.ended && len(state.credentials) > 0
 }
 
 func (state *State) clickAutofillConfirm(id gfx.ID) {
@@ -307,15 +340,6 @@ func (state *State) openAutofillSudoPreset() {
 	form.name.Insert(state.messages.Autofill.PresetSudoName)
 	form.pattern.Insert(sudoPromptPattern)
 	form.send = autofill.SendPassword
-}
-
-// openAutofillSuPreset opens the rule dialog filled in for su's prompt.
-func (state *State) openAutofillSuPreset() {
-	state.openAutofillDialog(nil)
-	form := &state.autofillRules
-	form.name.Insert(state.messages.Autofill.PresetSuName)
-	form.pattern.Insert(suPromptPattern)
-	form.send = autofill.SendText
 }
 
 func (state *State) clickAutofillDialog(id gfx.ID) {
@@ -656,7 +680,6 @@ func (state *State) paintAutofillSettings(page *settingsPage) {
 		full := len(rules) >= autofill.MaxRules
 		page.actionRow(m.Row, m.RowDescription, full,
 			components.ButtonAction{ID: hitSettingsAutofillSudo, Label: m.PresetSudo, Variant: components.ButtonOutline},
-			components.ButtonAction{ID: hitSettingsAutofillSu, Label: m.PresetSu, Variant: components.ButtonOutline},
 			components.ButtonAction{ID: hitSettingsAutofillAdd, Label: m.Add, Variant: components.ButtonOutline})
 	})
 }

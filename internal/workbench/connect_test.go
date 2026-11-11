@@ -398,13 +398,14 @@ func TestSearchFieldDeclaresTheGeometryOfItsOwnText(t *testing.T) {
 	typeSearch(state, "prod")
 	canvas, _ := paintedTexts(state)
 	hit, _ := hitByID(canvas, hitSearch)
+	text := hitText(canvas, &hit)
 	var painted gfx.Text
-	for _, text := range canvas.Texts() {
-		if text.Value == "prod" {
-			painted = text
+	for _, candidate := range canvas.Texts() {
+		if candidate.Value == "prod" {
+			painted = candidate
 		}
 	}
-	if hit.TextSize != metrics.FontSizeM || painted.Value == "" && hit.TextBounds.Width == 0 {
+	if text.Size != metrics.FontSizeM || painted.Value == "" && text.Bounds.Width == 0 {
 		t.Fatalf("hit %+v painted %+v", hit, painted)
 	}
 	// The magnifier is drawn, and the native editor starts to its right rather
@@ -422,8 +423,8 @@ func TestSearchFieldDeclaresTheGeometryOfItsOwnText(t *testing.T) {
 	if magnifierRight == 0 {
 		t.Fatal("no magnifier was drawn in the search box")
 	}
-	if hit.TextBounds.X <= magnifierRight {
-		t.Fatalf("native text starts at %v, magnifier reaches %v: they overlap", hit.TextBounds.X, magnifierRight)
+	if text.Bounds.X <= magnifierRight {
+		t.Fatalf("native text starts at %v, magnifier reaches %v: they overlap", text.Bounds.X, magnifierRight)
 	}
 }
 

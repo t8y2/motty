@@ -81,6 +81,8 @@ type ToolsMessages struct {
 	SnippetSortAction         string
 	SnippetSortAscending      string
 	SnippetSortDescending     string
+	SnippetExpand             string
+	SnippetCollapse           string
 	SnippetMoveUp             string
 	SnippetMoveDown           string
 	StatusSnippetRemovedFmt   string
@@ -89,6 +91,9 @@ type ToolsMessages struct {
 	SnippetSend               string
 	SnippetSendCurrent        string
 	SnippetDelete             string
+	SnippetDeleteTitle        string
+	SnippetDeleteBodyFmt      string
+	SnippetDeleteConfirm      string
 	SnippetDialogAddTitle     string
 	SnippetDialogEditTitle    string
 	SnippetName               string

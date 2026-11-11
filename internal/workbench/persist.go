@@ -146,6 +146,7 @@ type savedState struct {
 	Credentials             []savedCredential   `json:"credentials,omitempty"`
 	CommandHistory          bool                `json:"command_history,omitempty"`
 	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
+	NoteSidebars            *savedNoteSidebars  `json:"note_sidebars,omitempty"`
 	NoteView                savedNoteView       `json:"notes_view,omitempty"`
 	Notes                   []savedNote         `json:"notes,omitempty"`
 	NoteFolders             []savedNoteFolder   `json:"note_folders,omitempty"`
@@ -183,6 +184,7 @@ type savedState struct {
 	Sync                   *savedSync             `json:"sync,omitempty"`
 	HostView               string                 `json:"host_view,omitempty"`
 	HostOrder              string                 `json:"host_order,omitempty"`
+	HiddenHostTags         []string               `json:"hidden_host_tags,omitempty"`
 	HostPrivacy            bool                   `json:"host_privacy,omitempty"`
 	HostPrivacyShowName    bool                   `json:"host_privacy_show_name,omitempty"`
 	HostPrivacyShowAddress bool                   `json:"host_privacy_show_address,omitempty"`
@@ -598,6 +600,7 @@ func (state *State) snapshot() savedState {
 	saved.Autofill = state.savedAutofillRules()
 	saved.Credentials = state.savedCredentials()
 	saved.NoteView = state.savedNotesView()
+	saved.NoteSidebars = state.savedNoteSidebars()
 	saved.Notes = append([]savedNote(nil), state.notes.list...)
 	saved.NoteFolders = append([]savedNoteFolder(nil), state.notes.folders...)
 	for index, entry := range state.snippets.list {
@@ -698,6 +701,7 @@ func (state *State) snapshot() savedState {
 	saved.Sync = state.savedSyncValue()
 	saved.HostView = state.hostView.saved()
 	saved.HostOrder = state.hostOrder.saved()
+	saved.HiddenHostTags = state.hiddenHostTags
 	saved.HostPrivacy = state.hostPrivacy.enabled
 	saved.HostPrivacyShowName = !state.hostPrivacy.maskName
 	saved.HostPrivacyShowAddress = !state.hostPrivacy.maskAddress
@@ -734,6 +738,17 @@ func (state *State) saveWithResult() error {
 // file stays as it is and the notice comes back on each change. flushSync is
 // false for a caller that schedules the sync itself.
 func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
+	return state.saveWithResultModeRecovery(flushSync, true)
+}
+
+// saveWithResultWithoutRefresh is for a save made while another store holds a
+// lock that must not be re-entered. A conflict is returned to the caller, which
+// can reload shared state after releasing that lock.
+func (state *State) saveWithResultWithoutRefresh() (saveErr error) {
+	return state.saveWithResultModeRecovery(false, false)
+}
+
+func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict bool) (saveErr error) {
 	defer func() {
 		message := state.noteSaveFailure()
 		unsaved := state.hasUnsavedNotes()
@@ -767,7 +782,7 @@ func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
 	}()
 	previous := state.status
 	err := state.persistSnapshot(flushSync)
-	if err == nil || !errors.Is(err, configstore.ErrConflict) || state.saveRetrying {
+	if err == nil || !errors.Is(err, configstore.ErrConflict) || state.saveRetrying || !refreshConflict {
 		return err
 	}
 	// Another window changed what this save was built on. Its shared records win,
@@ -886,6 +901,7 @@ func (state *State) restore(saved savedState) {
 	state.restoreWorkspaceLayouts(saved.WorkspaceLayouts)
 	state.rebuildTabOptions()
 	state.restoreWorkspace(saved.Workspace)
+	state.restoreNoteSidebars(saved.NoteSidebars, saved.NoteView.Panel)
 	if state.mergedHosts || staleDefaults {
 		// What was folded into another host is still in the store, and so is the
 		// generation this table was reconciled against: record both so the next
@@ -945,7 +961,6 @@ func (state *State) reloadSettings() error {
 // restoreLocal applies what belongs to this computer: the language and look, the
 // fonts, what it does at start, the keys it has, the cloud account, the picture.
 func (state *State) restoreLocal(saved savedState) {
-	state.notes.panel = saved.NoteView.Panel
 	state.restoreNotesView(saved.NoteView)
 	state.notes.selected = saved.NoteView.Selected
 	state.notes.folder = saved.NoteView.Folder
@@ -1054,6 +1069,7 @@ func (state *State) restoreLocal(saved savedState) {
 // keeps running.
 func (state *State) restoreShared(saved savedState) {
 	state.hostOrder = hostOrderFromString(saved.HostOrder)
+	state.hiddenHostTags = normalizeHiddenHostTags(saved.HiddenHostTags)
 	if state.hostOrder != hostOrderManual {
 		state.hostSort.enabled = false
 		state.hostSort.grid.Cancel()

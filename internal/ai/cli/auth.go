@@ -75,6 +75,12 @@ func LoginCommand(kind, path string, device bool) (AuthCommand, error) {
 		}
 		args = append(args, "--device-auth")
 	}
+	if kind == store.KindPiCLI {
+		// Pi's `auth login` requires a provider on the command line, and its own
+		// interface is where a provider is chosen. Starting Pi opens that UI, so
+		// the embedded terminal can run /login.
+		args = nil
+	}
 	return AuthCommand{Program: c.program, Args: append(c.args, args...)}, nil
 }
 
@@ -92,6 +98,10 @@ func CheckAuth(parent context.Context, kind, path string) (AuthState, error) {
 		c.args = append(c.args, "login", "status")
 	case store.KindOpenCodeCLI:
 		// An auth-list entry is not proof that the selected provider is usable.
+		return AuthUnknown, nil
+	case store.KindPiCLI:
+		// Pi checks credentials for a named provider, and this provider entry
+		// selects only "default", so there is no account state to report.
 		return AuthUnknown, nil
 	default:
 		return AuthUnknown, errors.New("cli: unsupported_provider")

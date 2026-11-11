@@ -585,24 +585,25 @@ func TestFieldTextHasTheSameSizeFocusedAndUnfocused(t *testing.T) {
 			hit = candidate
 		}
 	}
+	text := hitText(canvas, &hit)
 	// The field's value is painted at the native editor's text bounds. Another
 	// control may show the same text (the host list can hold a host of the same
 	// name), so pick the paint inside the field, not the last match.
 	var painted gfx.Text
 	for _, candidate := range canvas.Texts() {
-		if candidate.Value == "Production" && candidate.Bounds.Y == hit.TextBounds.Y &&
-			candidate.Bounds.X >= hit.TextBounds.X && candidate.Bounds.X < hit.TextBounds.X+hit.TextBounds.Width {
+		if candidate.Value == "Production" && candidate.Bounds.Y == text.Bounds.Y &&
+			candidate.Bounds.X >= text.Bounds.X && candidate.Bounds.X < text.Bounds.X+text.Bounds.Width {
 			painted = candidate
 		}
 	}
 	if hit.ID.IsZero() || painted.Value == "" {
 		t.Fatalf("hit=%+v painted=%+v", hit, painted)
 	}
-	if painted.Style.Size != metrics.FontSizeM || hit.TextSize != painted.Style.Size {
-		t.Fatalf("painted size %v, declared to the native editor %v, want both %v", painted.Style.Size, hit.TextSize, metrics.FontSizeM)
+	if painted.Style.Size != metrics.FontSizeM || text.Size != painted.Style.Size {
+		t.Fatalf("painted size %v, declared to the native editor %v, want both %v", painted.Style.Size, text.Size, metrics.FontSizeM)
 	}
-	if hit.TextBounds.X != painted.Bounds.X {
-		t.Fatalf("native editor would start at x=%v, the painted text at %v", hit.TextBounds.X, painted.Bounds.X)
+	if text.Bounds.X != painted.Bounds.X {
+		t.Fatalf("native editor would start at x=%v, the painted text at %v", text.Bounds.X, painted.Bounds.X)
 	}
 }
 

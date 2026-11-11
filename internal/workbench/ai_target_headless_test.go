@@ -56,17 +56,29 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 					t.Fatalf("missing %v", id)
 					return gfx.Hit{}
 				}
+				findText := func(id gfx.ID) gfx.HitText {
+					t.Helper()
+					snapshot := view.Snapshot()
+					for index, hit := range snapshot.Hits {
+						if hit.ID == id {
+							text, _ := snapshot.HitTextAt(index)
+							return text
+						}
+					}
+					t.Fatalf("missing text for %v", id)
+					return gfx.HitText{}
+				}
 				click := func(id gfx.ID) {
 					t.Helper()
 					hit := find(id)
 					must(view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2))
 				}
 				must(view.Rest())
-				trigger, editor := find(hitAITarget), find(hitAIInput)
-				if trigger.Bounds.Y+trigger.Bounds.Height > editor.TextBounds.Y || trigger.Bounds.Width > 200 {
+				trigger, editorText := find(hitAITarget), findText(hitAIInput)
+				if trigger.Bounds.Y+trigger.Bounds.Height > editorText.Bounds.Y || trigger.Bounds.Width > 200 {
 					t.Fatal("selector overlaps text or is too large")
 				}
-				if editor.TextBounds.Y+editor.TextBounds.Height >= find(hitAISend).Bounds.Y {
+				if editorText.Bounds.Y+editorText.Bounds.Height >= find(hitAISend).Bounds.Y {
 					t.Fatal("text overlaps bottom controls")
 				}
 				if dir := os.Getenv("MOTTY_AI_TARGET_SCREENSHOTS"); dir != "" && size == panelWide && scale == 1.25 {
@@ -133,9 +145,9 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 				must(view.Driver().SelectText(0, state.ai.input.RuneCount()))
 				must(view.Type("中文输入候选位置"))
 				must(view.Rest())
-				editor = find(hitAIInput)
-				caret, ok := editor.Placement.CaretBounds()
-				if !ok || caret.Y < editor.TextBounds.Y {
+				editorText = findText(hitAIInput)
+				caret, ok := editorText.Placement.CaretBounds()
+				if !ok || caret.Y < editorText.Bounds.Y {
 					t.Fatal("native candidate anchor overlaps the selector")
 				}
 			})

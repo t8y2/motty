@@ -56,6 +56,9 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 		if m.activeDocument() != d || len(m.order) != 2 || s.noteSidebarState().content.selected != "second" {
 			t.Fatal("row open must activate the existing window without changing the preview")
 		}
+		// The window opens in source; this test reads the preview, so choose it
+		// the way a user would.
+		d.click(hitNoteModes.At(1))
 		var c gfx.Canvas
 		m.paint(&c, gfx.Size{Width: 800, Height: 600})
 		if d.note.content.body.String() != mainBody {
@@ -109,6 +112,50 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 		m.closeActiveTab()
 		if len(m.order) != 2 || m.documents["file"] != file || s.notes.selected != "note" {
 			t.Fatal("closing note changed other documents")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNoteWindowOpensInSourceAndRemembersChosenMode(t *testing.T) {
+	host := &documentTestHost{}
+	app.UseApplicationRunner(func(start func(app.Host) error) error { return start(host) })
+	t.Cleanup(func() { host.Quit(); app.UseApplicationRunner(nil) })
+	if err := app.RunApplication(func(application *app.Application) error {
+		s := newTestState(t, testOptions(t))
+		s.options.OpenContentWindow = application.OpenContentWindow
+		s.notes.list = []savedNote{{ID: "note", Title: "Note", Body: "# title"}}
+		s.selectNote("note")
+		libraryMode := s.notes.view.mode
+		s.openNoteWindow("note")
+		d := s.fileWindows.activeDocument()
+		if d == nil || d.note == nil {
+			t.Fatal("note window did not open")
+		}
+		if got := d.note.content.view.mode; got != noteSource {
+			t.Fatalf("first note window opened in %q, want source", got)
+		}
+		d.click(hitNoteModes.At(1))
+		if got := d.note.content.view.mode; got != notePreview {
+			t.Fatalf("mode button left the window in %q, want preview", got)
+		}
+		if got := s.savedNotesView().WindowMode; got != notePreview {
+			t.Fatalf("window mode was not remembered: %q", got)
+		}
+		if s.notes.view.mode != libraryMode {
+			t.Fatal("a note window's mode changed the library's mode")
+		}
+		s.fileWindows.closeActiveTab()
+		s.openNoteWindow("note")
+		if got := s.fileWindows.activeDocument().note.content.view.mode; got != notePreview {
+			t.Fatalf("reopened note window used %q, want the remembered preview", got)
+		}
+		restored := newTestState(t, testOptions(t))
+		restored.restoreLocal(s.snapshot())
+		if got := restored.noteWindowMode(); got != notePreview {
+			t.Fatalf("restored state opens note windows in %q, want preview", got)
 		}
 		return nil
 	}); err != nil {

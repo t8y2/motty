@@ -431,6 +431,10 @@ func TestSnippetsAreAddedEditedSentAndKept(t *testing.T) {
 		t.Fatalf("restored snippets = %+v", restarted.snippets.list)
 	}
 	state.Click(hitSnippetRemove)
+	if state.modal != modalSnippetDelete {
+		t.Fatalf("deleting a snippet opened modal %d, want a confirmation", state.modal)
+	}
+	state.Click(hitSnippetDeleteConfirm)
 	if len(state.snippets.list) != 0 {
 		t.Fatalf("snippets after delete = %+v", state.snippets.list)
 	}

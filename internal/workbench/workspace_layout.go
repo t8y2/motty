@@ -296,6 +296,14 @@ func (state *State) activateTab(index int) bool {
 
 func (state *State) syncActiveSession() {
 	workspaceID := state.deck.ActiveWorkspace()
+	if state.noteSidebarWorkspace != workspaceID {
+		if v := state.noteSidebars[state.noteSidebarWorkspace]; v != nil {
+			v.stopCapture()
+			state.noteSidebarFocusBack = v.open
+			v.content.query.Unmark()
+		}
+		state.noteSidebarWorkspace = workspaceID
+	}
 	paneID := state.deck.ActivePane(workspaceID)
 	state.syncCachedWorkspacePane(workspaceID, paneID)
 	pane, ok := state.deck.Pane(workspaceID, paneID)

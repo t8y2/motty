@@ -10,8 +10,8 @@ settings file.
 
 ### Local CLI providers
 
-Choose **Claude Code CLI**, **Codex CLI**, or **OpenCode CLI** to use an already
-installed local agent. Leave the executable path empty to discover its command,
+Choose **Claude Code CLI**, **Codex CLI**, **OpenCode CLI**, or **Pi CLI** to use
+an already installed local agent. Leave the executable path empty to discover its command,
 or enter the path to the executable (spaces are supported; shell commands and
 extra arguments are not). Executable paths are local to each computer and are
 not copied by configuration sync. Other provider settings and models still sync.
@@ -46,16 +46,20 @@ Sign in opens a dedicated **sensitive local terminal**, not an SSH session:
 | Claude Code | `claude auth login` | Official browser authorization and CLI code fallback. |
 | Codex | `codex login` | Official browser authorization; **Device code** is an explicit alternative. |
 | OpenCode | `opencode auth login` | Choose the provider, then its supported browser/key/other method. |
+| Pi | `pi` | Opens Pi's own interface; run `/login` to choose a provider and its browser/key flow. |
 
 Complete the CLI prompts, close the login terminal, and manually retry your
 question. Authentication is rechecked where the CLI supplies reliable status;
-OpenCode and custom/environment-key configurations may remain **unknown**.
+OpenCode, Pi and custom/environment-key configurations may remain **unknown**.
 Unknown does not block sending a request. A provider/model permission or network
 error is not automatically treated as a signed-out account.
 
 The terminal's output and input never enter AI context, conversation history,
-recordings, or sync. Motty does not read, copy, or manage the CLI's credential
-files; the official CLI may save credentials during your login. Cancel/Escape,
+recordings, or sync. Motty does not import CLI credentials into its vault or
+change the CLI's own configuration; the official CLI may save credentials during
+your login. Pi has no switch for a separate MCP file, so a request runs from a
+private agent directory that links the existing login and provider definitions
+for its duration and is removed afterwards. Cancel/Escape,
 a 15-minute timeout, provider removal, or window close stops the owned login
 process without logging you out or closing your browser. Original AI requests
 and terminal actions are never automatically resumed after login.
@@ -65,7 +69,10 @@ and terminal actions are never automatically resumed after login.
 Each AI send uses a private working directory and a short-lived, authenticated
 MCP endpoint scoped to its window and mode. It does not enable external MCP.
 CLI shell/file/browser/subagent execution channels are disabled: terminal and
-SFTP operations still go through Motty's normal approval gate. Unsupported
+SFTP operations still go through Motty's normal approval gate. Pi runs with its
+built-in tools, third-party extensions, skills, context files and user-level MCP servers
+disabled, and its private agent directory lists Motty's endpoint as the only
+server. Unsupported
 isolation controls cause a clear failure rather than a weaker fallback. Installed
 CLI executables remain trusted software, not hostile programs sandboxed by Motty.
 

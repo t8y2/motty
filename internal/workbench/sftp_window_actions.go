@@ -72,7 +72,6 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 			add(hitSFTPEditExternal, iconExternal, m.Tools.ExtEditButton)
 		}
 		add(hitSFTPRename, iconPencil, m.SFTPRename)
-		add(hitSFTPMove, iconFolderOpen, m.SFTPMove)
 		add(hitSFTPChmod, iconLock, m.SFTPPermissions)
 		if !entry.IsDir() && archiveKindOf(entry.Name) != archiveNone && w.session.host.System != sshconn.SystemWindows {
 			add(hitSFTPExtract, iconArchive, m.Tools.Extract)
@@ -82,6 +81,7 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 		}
 	}
 	if count > 0 {
+		add(hitSFTPMove, iconFolderOpen, m.SFTPMove)
 		add(hitSFTPDelete, iconTrash, m.SFTPDelete)
 	}
 	return actions

@@ -34,4 +34,14 @@ func TestNotesSidebarNativeMouseActivatesAssociationSwitch(t *testing.T) {
 	if s.noteSidebarState().content.sideAll {
 		t.Fatal("caption click did not toggle association filter back")
 	}
+	close, ok := hitByID(&c, hitNoteSideClose)
+	if !ok {
+		t.Fatal("close button missing")
+	}
+	if err := driver.Click(close.Bounds.X+close.Bounds.Width/2, close.Bounds.Y+close.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if s.notesPanelOpen() {
+		t.Fatal("native close click did not hide sidebar")
+	}
 }

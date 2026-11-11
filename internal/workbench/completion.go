@@ -582,6 +582,7 @@ func (state *State) openCompletions() {
 	if !ok || !state.completionEligible(session) {
 		return
 	}
+	state.closeAutofillPick()
 	state.openCompletionList(session)
 }
 

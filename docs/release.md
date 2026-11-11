@@ -320,7 +320,8 @@ repair with the system package manager. Missing Polkit, unregistered system inst
 Snap, Flatpak, and all-users Windows installations use the manual update path.
 An unregistered writable Windows copy with a writable `motty-data` marker selects
 the signed portable ZIP. The updater extracts and checks its executable before
-the helper replaces only `motty.exe`; the data folder and vault key are untouched.
+the helper replaces `motty.exe` and the `conpty` runtime folder; the data folder,
+vault key and every other file are untouched.
 Scoop's version directories remain externally managed and use `scoop update motty`.
 
 The replacement is made by a helper that outlives the app and waits for the
@@ -360,8 +361,10 @@ notarized and stapled separately, because the system judges the image itself
 when it is opened.
 
 The Windows `.zip` is the portable copy, made by `tools/portablezip` from the same
-signed program the installer carries: `motty.exe` beside a `motty-data` folder, which
-is what switches Motty to keeping its data next to itself (`internal/datadir`).
+signed program the installer carries: `motty.exe` beside the `conpty` runtime
+folder and a `motty-data` folder, which is what switches Motty to keeping its data
+next to itself (`internal/datadir`). The `conpty` folder is the Windows local
+terminal's ConPTY pair; the installer carries the same tree.
 Self-managed copies can update in place using this signed ZIP, without overwriting
 their data. Scoop-managed copies must use `scoop update motty`; read-only or otherwise
 unsupported copies still go to the download page.

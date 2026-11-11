@@ -53,6 +53,10 @@ func TestMCPClientConfigurationSchemas(t *testing.T) {
 			if tc.client == aiMCPOpenCode && (config["enabled"] != true || config["oauth"] != false) {
 				t.Fatal("OpenCode must use static authorization")
 			}
+			// Pi's default exposure hides MCP tools behind codemode scripts.
+			if tc.client == aiMCPPi && (config["exposure"] != "direct" || config["timeout"] != float64(900)) {
+				t.Fatalf("Pi tools are not declared directly: %+v", config)
+			}
 		})
 	}
 	if got := aiMCPConfig(aiMCPCodeBuddy, endpoint, token); got != `codebuddy mcp add --scope local --transport http --header "Authorization: Bearer test_secret-123" -- motty http://127.0.0.1:49845/mcp` {

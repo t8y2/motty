@@ -666,7 +666,10 @@ func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	state.paintDialogCheckbox(canvas, hitDialogViaSSH, m.ViaSSH, editor.viaSSH, b.tunnel)
 	state.paintDialogCheckbox(canvas, hitDialogClipboard, m.ShareClipboard, editor.clipboard, b.clipboard)
 	state.paintDialogCheckbox(canvas, hitDialogChromeless, m.HideBars, editor.chromeless, b.chromeless)
-	if editor.protocol == protocolRDP {
+	// The rows this frame laid out are the ones before a protocol click wrote
+	// its new value at the end of the declaration: painting the console row
+	// needs the RDP rows on the page, not just RDP in effect.
+	if editor.form.layoutProtocol == protocolRDP {
 		state.paintDialogCheckbox(canvas, hitDialogConsole, m.ConsoleSession, editor.console, b.console)
 	}
 }

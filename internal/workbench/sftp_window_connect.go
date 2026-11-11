@@ -149,6 +149,11 @@ func (state *State) connectionSessions() func(func(*Session) bool) {
 				return
 			}
 		}
+		for _, tunnel := range state.forwardTunnels {
+			if !yield(&tunnel.session) {
+				return
+			}
+		}
 		for _, w := range state.sftpWindows {
 			if w.ownsConnection && !w.closed {
 				if !yield(&w.session) {

@@ -381,7 +381,7 @@ that connection.
 
 ### What was exercised
 
-On a real **Windows 11 Pro** machine (the Viva test VM, test binary run ON it against
+On a real **Windows 11 Pro** machine (test binary run ON it against
 localhost:3389 with a throwaway local user): NLA off and NLA on; TLS 1.2 handshake,
 certificate pinned, logon, the "other user is signed in" question answered by a
 click, the profile build, the desktop (non-uniform, 1000+ colours), the Start menu

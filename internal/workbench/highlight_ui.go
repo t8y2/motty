@@ -431,6 +431,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	}
 	clear(state.snippets.list)
 	state.snippets.list = state.snippets.list[:0]
+	state.snippets.resetSnippetPreview()
 	slices.SortStableFunc(saved.Snippets, func(left, right savedSnippet) int {
 		switch {
 		case left.Order < right.Order:

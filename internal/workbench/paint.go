@@ -185,6 +185,10 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.ai.cfg.agentSelectOpen = false
 	}
 	state.aiPanelBeginPaint()
+	if state.noteSidebarFocusBack && state.activeSection == sectionTerminal {
+		state.noteSidebarFocusBack = false
+		canvas.RequestFocus(state.activeTerminalFocusHit())
+	}
 	// A panel closed from inside itself returns the keyboard to the terminal it
 	// covered. The request is made once: a later click decides focus again.
 	if state.ai.panel.focusBack && !state.aiPanelVisible() {
@@ -349,6 +353,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintQueuedSFTPHeaderMenu(canvas)
 	state.paintHostMenus(canvas, viewport)
 	state.endMenus()
+	state.paintSnippetHoverCard(canvas, viewport)
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
@@ -1796,7 +1801,7 @@ func (state *State) paintHostFilterMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	menu.End()
 }
 
-func (state *State) paintHostGroupMenu(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
+func (state *State) paintFlatHostGroupMenu(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
 	// The ungrouped bucket is in the list with an empty name; "No group" already
 	// says it, so it is not offered a second time as a blank row.
 	named := 0
@@ -1824,7 +1829,7 @@ func (state *State) paintHostGroupMenu(canvas *gfx.Canvas, bounds, viewport gfx.
 		if group.Name == "" {
 			continue
 		}
-		menu.AddItem(components.DropdownMenuItem{ID: hitHostGroupItemList.At(index), Label: group.Name})
+		menu.AddItem(components.DropdownMenuItem{ID: hitHostGroupItemList.At(index), Label: group.Name, Value: group.Name})
 	}
 	menu.AddSeparator()
 	menu.AddItem(components.DropdownMenuItem{ID: hitHostGroupNew, Label: state.messages.MoveGroupNew})
@@ -2725,6 +2730,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareXYDialog(c)
 	case modalSnippet:
 		state.declareSnippetDialog(c)
+	case modalSnippetDelete:
+		state.declareSnippetDeleteDialog(c)
 	case modalVaultUnlock:
 		state.declareVaultUnlockDialog(c)
 	case modalVaultForget:

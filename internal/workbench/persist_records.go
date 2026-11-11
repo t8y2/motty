@@ -100,6 +100,7 @@ const (
 // development builds. Workspace identity travels with its deck; all other
 // settings remain shared in local state.
 type savedWorkspace struct {
+	NoteSidebars     *savedNoteSidebars     `json:"note_sidebars,omitempty"`
 	Workspace        string                 `json:"workspace,omitempty"`
 	Sessions         []savedSession         `json:"sessions,omitempty"`
 	ActiveSession    int                    `json:"active_session,omitempty"`
@@ -113,6 +114,7 @@ func clearSavedWorkspace(saved *savedState) {
 	saved.ActiveSession = 0
 	saved.Deck = nil
 	saved.WorkspaceLayouts = nil
+	saved.NoteSidebars = nil
 }
 
 func applySavedWorkspace(saved *savedState, raw json.RawMessage) error {
@@ -141,6 +143,7 @@ func applySavedWorkspace(saved *savedState, raw json.RawMessage) error {
 	saved.ActiveSession = workspace.ActiveSession
 	saved.Deck = workspace.Deck
 	saved.WorkspaceLayouts = workspace.WorkspaceLayouts
+	saved.NoteSidebars = workspace.NoteSidebars
 	return nil
 }
 
@@ -217,6 +220,7 @@ func proxyRecordKey(fields map[string]json.RawMessage) string {
 // syncedSettings are the scalar settings every device shares.
 var syncedSettings = map[string]bool{
 	"host_order":                   true,
+	"hidden_host_tags":             true,
 	"highlight_builtin":            true,
 	"terminalOption":               true,
 	"terminal_scrollback":          true,
@@ -267,7 +271,7 @@ var stateVersionFields = map[string]bool{"version": true, "host_catalog_version"
 // live in that window's own local value rather than in this device's document,
 // so two windows of one process never write each other's tabs.
 var windowStateFields = map[string]bool{
-	"sessions": true, "active_session": true, "deck": true,
+	"sessions": true, "active_session": true, "deck": true, "note_sidebars": true,
 	"workspace": true, "workspace_layouts": true,
 	"window_x": true, "window_y": true, "window_width": true, "window_height": true,
 }
@@ -888,7 +892,7 @@ type localWrite struct {
 
 func isWorkspaceField(name string) bool {
 	switch name {
-	case "workspace", "sessions", "active_session", "deck", "workspace_layouts":
+	case "workspace", "sessions", "active_session", "deck", "workspace_layouts", "note_sidebars":
 		return true
 	default:
 		return false

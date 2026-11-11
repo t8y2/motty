@@ -286,7 +286,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		}
 		s.listSlot = ui.List(c, &folder.list, len(rows), func(row ui.ListRow) {
 			state.declareSFTPListRow(row, folder, view, searching, s.sizeWidth, s.modifiedWidth, rowWidth)
-		}).Grow(1)
+		}).Grow(1).HitWith(hitSFTPListBackground, messages.SFTPFiles, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
 		folder.seedSFTPListCurrent()
 		if folder.list.Changed() {
 			folder.takeSFTPListChoice()
@@ -328,13 +328,13 @@ func (state *State) declareSFTPPanel(c ui.C) {
 							add(hitSFTPEditExternal, iconExternal, messages.Tools.ExtEditButton, false)
 						}
 						add(hitSFTPRename, iconPencil, messages.SFTPRename, false)
-						add(hitSFTPMove, iconFolderOpen, messages.SFTPMove, false)
 						add(hitSFTPChmod, iconLock, messages.SFTPPermissions, false)
 						if _, archive := state.selectedArchive(session, view); archive {
 							add(hitSFTPExtract, iconArchive, messages.Tools.Extract, false)
 						}
 					}
 					if !local {
+						add(hitSFTPMove, iconFolderOpen, messages.SFTPMove, false)
 						add(hitSFTPDelete, iconTrash, messages.SFTPDelete, true)
 					}
 				})

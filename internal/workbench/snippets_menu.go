@@ -124,7 +124,7 @@ func (state *State) clickSnippetMenu(id gfx.ID) bool {
 	case hitSnippetMenuDown:
 		state.moveSnippet(index, 1)
 	case hitSnippetMenuDelete:
-		state.deleteSnippet(index)
+		state.openSnippetDelete(index)
 	}
 	return true
 }

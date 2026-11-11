@@ -41,8 +41,8 @@ func startBackend(config Config) (backend, error) {
 		return backend{}, fmt.Errorf("localshell: output pipe: %w", err)
 	}
 	size := windows.Coord{X: int16(max(config.Cols, 1)), Y: int16(max(config.Rows, 1))}
-	var console windows.Handle
-	if err := windows.CreatePseudoConsole(size, inRead, outWrite, 0, &console); err != nil {
+	console, consoleBackend, err := createPseudoConsole(size, inRead, outWrite)
+	if err != nil {
 		for _, handle := range []windows.Handle{inRead, inWrite, outRead, outWrite} {
 			windows.CloseHandle(handle)
 		}
@@ -54,14 +54,14 @@ func startBackend(config Config) (backend, error) {
 
 	attributes, err := windows.NewProcThreadAttributeList(1)
 	if err != nil {
-		windows.ClosePseudoConsole(console)
+		consoleBackend.close(console)
 		windows.CloseHandle(inWrite)
 		windows.CloseHandle(outRead)
 		return backend{}, err
 	}
 	fail := func(err error) (backend, error) {
 		attributes.Delete()
-		windows.ClosePseudoConsole(console)
+		consoleBackend.close(console)
 		windows.CloseHandle(inWrite)
 		windows.CloseHandle(outRead)
 		return backend{}, err
@@ -132,7 +132,7 @@ func startBackend(config Config) (backend, error) {
 		// prevent queued resizes from using its handle while it closes.
 		consoleClosed = true
 		consoleMu.Unlock()
-		windows.ClosePseudoConsole(console)
+		consoleBackend.close(console)
 	}
 	return backend{
 		io: &consoleIO{output: output, input: input, closeConsole: closeConsole},
@@ -140,7 +140,7 @@ func startBackend(config Config) (backend, error) {
 			consoleMu.Lock()
 			defer consoleMu.Unlock()
 			if !consoleClosed {
-				_ = windows.ResizePseudoConsole(console, windows.Coord{X: int16(cols), Y: int16(rows)})
+				_ = consoleBackend.resize(console, windows.Coord{X: int16(cols), Y: int16(rows)})
 			}
 		},
 		wait: func() (int, error) {
