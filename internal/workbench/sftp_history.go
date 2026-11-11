@@ -127,6 +127,7 @@ func (history *sftpHistory) touch(directory string) {
 
 // Called only after acceptance guards, before replacing the outgoing rows.
 func (folder *sftpFolder) acceptNavigation(directory string, nav sftpNavigation) (sftpPlace, bool) {
+	folder.stopSizeCalculation()
 	h := &folder.history
 	if folder.path == "" && len(h.entries) > 0 && h.entries[h.cursor].path == directory && nav.kind == sftpNavigationPassive {
 		folder.navigation = sftpNavigation{}

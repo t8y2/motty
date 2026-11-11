@@ -5,7 +5,7 @@ import (
 	"motty/internal/sshconn"
 )
 
-var sftpWindowActionIDs = [...]gfx.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPMove, hitSFTPChmod, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties}
+var sftpWindowActionIDs = [...]gfx.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPMove, hitSFTPChmod, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties, hitSFTPCalculateDirectorySize}
 
 func sftpWindowActionIndex(id gfx.ID) int {
 	for i, action := range sftpWindowActionIDs {
@@ -91,9 +91,17 @@ func (w *sftpWindow) fileAction(local bool, id gfx.ID) {
 	defer w.invalidate()
 	w.selectionChanged(local)
 	w.activeLocal, w.view.local = local, local
+	if id == hitSFTPCalculateDirectorySize {
+		w.owner.calculateSFTPDirectorySize(w.view)
+		return
+	}
 	if id == hitSFTPProperties {
 		if properties, ok := captureSFTPProperties(w.folder(local), local); ok {
+			w.fileProperties.close()
 			w.fileProperties = properties
+			if canCalculateSFTPFolderSize(w.view) {
+				w.owner.calculateSFTPFolderSize(w.view, &w.fileProperties)
+			}
 		}
 		return
 	}

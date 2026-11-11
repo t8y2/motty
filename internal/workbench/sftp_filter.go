@@ -205,7 +205,7 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, a
 	}
 	dismiss := hitSFTPHeaderMenuDismiss
 	const menuWidth = float32(280)
-	rows := 8 + len(folder.history.recent)
+	rows := 9 + len(folder.history.recent)
 	if label, _ := state.sftpEditorItem(view, folder); label != "" {
 		rows++
 	}
@@ -233,6 +233,10 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, a
 		menu.AddItem(components.DropdownMenuItem{ID: hitSFTPHeaderEditor, Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
 	}
 	menu.AddSeparator()
+	menu.AddItem(components.DropdownMenuItem{
+		ID: hitSFTPCalculateDirectorySize, Label: state.messages.SFTPWindow.CalculateDirectorySize, Icon: lucideIcons[iconInfo],
+		Disabled: folder.path == "" || !view.local && view.openFiles == nil,
+	})
 	for _, entry := range state.sftpColumns.entries {
 		if !entry.Enabled {
 			continue

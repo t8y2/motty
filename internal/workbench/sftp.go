@@ -122,6 +122,7 @@ type sftpFolder struct {
 	search      *sftpSearch
 	searchShown bool
 	reveal      sftpReveal
+	cancelSize  context.CancelFunc
 }
 
 type sftpView struct {
@@ -295,11 +296,16 @@ func (state *State) closeSFTP(session *Session) {
 	if session.files == nil {
 		return
 	}
+	if state.modal == modalFileProperties && session.ID == state.activeSessionID {
+		state.clickFileProperties(hitFilePropertiesClose)
+	}
 	session.files.localSeq++
 	session.files.remoteSeq++
 	session.files.navigation, session.files.lfolder.navigation = sftpNavigation{}, sftpNavigation{}
 	stopSFTPSearch(&session.files.sftpFolder)
 	stopSFTPSearch(&session.files.lfolder)
+	session.files.sftpFolder.stopSizeCalculation()
+	session.files.lfolder.stopSizeCalculation()
 	if session.files.cancelExtract != nil {
 		session.files.cancelExtract()
 	}
@@ -419,7 +425,14 @@ func (state *State) clickSFTP(id gfx.ID) {
 		return
 	}
 	if id == hitSFTPProperties {
-		state.openSFTPProperties(view.active(), view.local)
+		if state.openSFTPProperties(view.active(), view.local) && canCalculateSFTPFolderSize(view) {
+			state.calculateSFTPFolderSize(view, &state.fileProperties)
+		}
+		return
+	}
+	if id == hitSFTPCalculateDirectorySize {
+		view.active().headerMenuOpen = false
+		state.calculateSFTPDirectorySize(view)
 		return
 	}
 	folder := view.active()
