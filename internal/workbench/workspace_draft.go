@@ -46,9 +46,6 @@ type workspaceDraft struct {
 	// collapsed holds the host list's folded groups; a missing entry means
 	// the group is expanded. Searching renders every group regardless.
 	collapsed map[string]bool
-	// modePage declares the temporary/fixed switch, and modeView caches its view.
-	modePage *ui.Page
-	modeView func(ui.C)
 }
 
 func (draft *workspaceDraft) reset() {
