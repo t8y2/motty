@@ -1,23 +1,23 @@
 module motty
 
-go 1.26.0
+go 1.26.11
 
 require (
 	aead.dev/minisign v0.3.0
+	github.com/Microsoft/go-winio v0.6.4
 	github.com/creack/pty v1.1.24
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/pkg/sftp v1.13.11
 	github.com/vivaui/viva v0.0.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.47.0
-	golang.org/x/sys v0.49.0
-	golang.org/x/text v0.43.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/text v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
 )
 
 require (
-	github.com/Microsoft/go-winio v0.6.4 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
