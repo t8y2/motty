@@ -111,6 +111,10 @@ func main() {
 		}
 		// macOS hands links to the running program; elsewhere they are arguments.
 		application.OnOpenURL(func(url string) { windows.launch([]string{url}) })
+		// macOS hands registered document types to the running program. Windows
+		// and Linux start a second process whose path is carried here as an
+		// argument by single-instance handoff.
+		application.OnOpenFile(func(path string) { windows.launch([]string{path}) })
 		if background {
 			// Started at login: the first window opens hidden, so the icon can
 			// go up first and closing it still leaves the application running.
