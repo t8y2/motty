@@ -98,6 +98,14 @@ func TestParsersDeduplicateFinalSnapshotsAndClassifyErrors(t *testing.T) {
 		{"claude-code-cli", []string{`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}}`, `{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}`, `{"type":"result","subtype":"success","result":"hello","usage":{"input_tokens":3,"output_tokens":2}}`}, "hello"},
 		{"codex-cli", []string{`{"type":"item.completed","item":{"type":"agent_message","text":"hello"}}`, `{"type":"turn.completed","usage":{"input_tokens":3,"output_tokens":2}}`}, "hello"},
 		{"opencode-cli", []string{`{"type":"text","part":{"text":"hello"}}`, `{"type":"step_finish","part":{"reason":"stop","tokens":{"input":3,"output":2}}}`}, "hello"},
+		{"pi-cli", []string{
+			`{"type":"session","version":3,"id":"s"}`,
+			`{"type":"message_start","message":{"role":"assistant","content":[]}}`,
+			`{"type":"message_update","usage":{"input":3,"output":1},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"hel"}}`,
+			`{"type":"message_update","usage":{"input":3,"output":2},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"lo"}}`,
+			`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]},"usage":{"input":3,"output":2}}`,
+			`{"type":"agent_settled","aborted":false}`,
+		}, "hello"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.kind, func(t *testing.T) {
@@ -141,11 +149,12 @@ func TestClaudeInformationalEventHasItsOwnFieldTypes(t *testing.T) {
 	}
 }
 func TestBuildersNeverPutTokenInArguments(t *testing.T) {
-	for _, kind := range []string{"claude-code-cli", "codex-cli", "opencode-cli"} {
+	for _, kind := range []string{"claude-code-cli", "codex-cli", "opencode-cli", "pi-cli"} {
 		t.Run(kind, func(t *testing.T) {
+			t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 			dir := t.TempDir()
 			req := llm.Request{Model: "default", Tools: []llm.ToolSpec{{Name: "list_sessions", Schema: []byte(`{"type":"object"}`)}}}
-			cmd, err := buildCommand(kind, command{program: "agent"}, req, dir, "http://127.0.0.1:1234/mcp", "PRIVATE_TOKEN_123456789012345678901234", []string{"foreign.server"})
+			cmd, err := buildCommand(kind, command{program: "agent"}, req, dir, "http://127.0.0.1:1234/mcp", "PRIVATE_TOKEN_123456789012345678901234", []string{"foreign.server"}, "motty_session")
 			if err != nil {
 				t.Fatal(err)
 			}

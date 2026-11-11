@@ -750,3 +750,25 @@ func TestShutdownRacingServeLeavesNothingListening(t *testing.T) {
 		}
 	}
 }
+
+// A tool without a schema must still advertise an object: strict clients reject
+// the whole list when inputSchema is null.
+func TestToolsListAlwaysSendsAnObjectSchema(t *testing.T) {
+	for _, schema := range []json.RawMessage{nil, json.RawMessage(``), json.RawMessage(`null`)} {
+		raw, err := buildToolsListFor([]tools.Spec{{Name: "bare", Schema: schema}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var list struct {
+			Tools []struct {
+				InputSchema map[string]any `json:"inputSchema"`
+			} `json:"tools"`
+		}
+		if err := json.Unmarshal(raw, &list); err != nil || len(list.Tools) != 1 {
+			t.Fatalf("%s: %s %v", raw, list, err)
+		}
+		if list.Tools[0].InputSchema["type"] != "object" {
+			t.Fatalf("schema %q became %s", schema, raw)
+		}
+	}
+}
