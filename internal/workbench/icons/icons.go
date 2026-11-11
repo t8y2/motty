@@ -7161,6 +7161,51 @@ var Moon = gfx.Icon{
 	},
 }
 
+// network is a compiled vector icon.
+var Network = gfx.Icon{
+	ViewBox: 24.0,
+	Stroke:  2.0,
+	Cap:     gfx.CapRound,
+	Join:    gfx.JoinRound,
+	Commands: []gfx.PathCommand{
+		gfx.MoveTo(21.0, 16.0),
+		gfx.CubicTo(21.5523, 16.0, 22.0, 16.4477, 22.0, 17.0),
+		gfx.LineTo(22.0, 21.0),
+		gfx.CubicTo(22.0, 21.5523, 21.5523, 22.0, 21.0, 22.0),
+		gfx.LineTo(17.0, 22.0),
+		gfx.CubicTo(16.4477, 22.0, 16.0, 21.5523, 16.0, 21.0),
+		gfx.LineTo(16.0, 17.0),
+		gfx.CubicTo(16.0, 16.4477, 16.4477, 16.0, 17.0, 16.0),
+		gfx.ClosePath(),
+		gfx.MoveTo(7.0, 16.0),
+		gfx.CubicTo(7.55228, 16.0, 8.0, 16.4477, 8.0, 17.0),
+		gfx.LineTo(8.0, 21.0),
+		gfx.CubicTo(8.0, 21.5523, 7.55228, 22.0, 7.0, 22.0),
+		gfx.LineTo(3.0, 22.0),
+		gfx.CubicTo(2.44772, 22.0, 2.0, 21.5523, 2.0, 21.0),
+		gfx.LineTo(2.0, 17.0),
+		gfx.CubicTo(2.0, 16.4477, 2.44772, 16.0, 3.0, 16.0),
+		gfx.ClosePath(),
+		gfx.MoveTo(14.0, 2.0),
+		gfx.CubicTo(14.5523, 2.0, 15.0, 2.44772, 15.0, 3.0),
+		gfx.LineTo(15.0, 7.0),
+		gfx.CubicTo(15.0, 7.55228, 14.5523, 8.0, 14.0, 8.0),
+		gfx.LineTo(10.0, 8.0),
+		gfx.CubicTo(9.44771, 8.0, 9.0, 7.55228, 9.0, 7.0),
+		gfx.LineTo(9.0, 3.0),
+		gfx.CubicTo(9.0, 2.44772, 9.44771, 2.0, 10.0, 2.0),
+		gfx.ClosePath(),
+		gfx.MoveTo(5.0, 16.0),
+		gfx.LineTo(5.0, 13.0),
+		gfx.CubicTo(5.0, 12.4477, 5.44772, 12.0, 6.0, 12.0),
+		gfx.LineTo(18.0, 12.0),
+		gfx.CubicTo(18.5523, 12.0, 19.0, 12.4477, 19.0, 13.0),
+		gfx.LineTo(19.0, 16.0),
+		gfx.MoveTo(12.0, 12.0),
+		gfx.LineTo(12.0, 8.0),
+	},
+}
+
 // nixos is a compiled vector icon.
 var Nixos = gfx.Icon{
 	ViewBox: 24.0,
