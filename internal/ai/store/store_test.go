@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"motty/internal/ai/llm"
 )
 
 func openTemp(t testing.TB) (*Store, string) {
@@ -256,7 +258,9 @@ func TestConversationsRoundTrip(t *testing.T) {
 	}
 	tj := []byte(`[{"id":"1","name":"run","args":{"a":"\u0000"}}]`)
 	time.Sleep(time.Millisecond)
-	m, err := s.AppendMessage(c1.ID, StoredMessage{Role: "assistant", Text: "héllo", Reasoning: "think", ToolJSON: tj})
+	m, err := s.AppendMessage(c1.ID, StoredMessage{Role: "assistant", Text: "héllo", Reasoning: "think", ToolJSON: tj,
+		Provider: "magpie", Model: "deepseek-flash",
+		Usage: llm.Usage{InputTokens: 1200, OutputTokens: 84, CacheReadTokens: 900, CacheWriteTokens: 30}})
 	if err != nil || m.ID == 0 {
 		t.Fatal(m, err)
 	}
@@ -265,6 +269,13 @@ func TestConversationsRoundTrip(t *testing.T) {
 	if len(msgs) != 2 || msgs[0].Text != "héllo" || msgs[0].Reasoning != "think" ||
 		!bytes.Equal(msgs[0].ToolJSON, tj) || msgs[1].ToolJSON != nil || !msgs[0].Created.Equal(m.Created) {
 		t.Fatalf("%+v", msgs)
+	}
+	if want := (llm.Usage{InputTokens: 1200, OutputTokens: 84, CacheReadTokens: 900, CacheWriteTokens: 30}); msgs[0].Usage != want ||
+		msgs[0].Provider != "magpie" || msgs[0].Model != "deepseek-flash" {
+		t.Fatalf("usage did not survive the round trip: %+v", msgs[0])
+	}
+	if msgs[1].Usage != (llm.Usage{}) || msgs[1].Provider != "" {
+		t.Fatalf("a message with no cost came back with one: %+v", msgs[1])
 	}
 	list, _ = s.Conversations("", 0)
 	if list[0].ID != c1.ID || !list[0].Updated.After(c1.Updated) || list[0].SessionLabel != "host-a" {

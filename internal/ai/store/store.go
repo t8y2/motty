@@ -32,6 +32,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
+
+	"motty/internal/ai/llm"
 )
 
 // Sentinel errors.
@@ -76,7 +78,7 @@ func (e *LimitError) Error() string {
 // Is makes errors.Is(err, ErrTooLarge) true.
 func (e *LimitError) Is(target error) bool { return target == ErrTooLarge }
 
-const schemaVersion = 8
+const schemaVersion = 9
 
 var migrations = [...]string{
 	// version 1
@@ -147,6 +149,15 @@ var migrations = [...]string{
 	`ALTER TABLE models ADD COLUMN reasoning_enabled INTEGER NOT NULL DEFAULT 0;
 	ALTER TABLE models ADD COLUMN reasoning_levels TEXT NOT NULL DEFAULT '';
 	ALTER TABLE models ADD COLUMN reasoning_default TEXT NOT NULL DEFAULT '';`,
+	// version 9: what the answer cost, on the message that spent it, so a
+	// reopened conversation still shows its usage. Rows saved before this keep
+	// zeros, which the panel reads as "not reported".
+	`ALTER TABLE messages ADD COLUMN provider TEXT NOT NULL DEFAULT '';
+	ALTER TABLE messages ADD COLUMN model TEXT NOT NULL DEFAULT '';
+	ALTER TABLE messages ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE messages ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE messages ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE messages ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0;`,
 }
 
 const sqliteMagic = "SQLite format 3\x00"
@@ -256,14 +267,18 @@ func (s *Store) init() error {
 	}
 	var err error
 	if s.stAppend, err = s.db.PrepareContext(ctx,
-		`INSERT INTO messages(conversation_id, role, text, reasoning, tool_json, created) VALUES(?,?,?,?,?,?)`); err != nil {
+		`INSERT INTO messages(conversation_id, role, text, reasoning, tool_json, created,
+			provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`); err != nil {
 		return fmt.Errorf("ai store: prepare: %w", err)
 	}
 	if s.stBump, err = s.db.PrepareContext(ctx, `UPDATE conversations SET updated=? WHERE id=?`); err != nil {
 		return fmt.Errorf("ai store: prepare: %w", err)
 	}
 	if s.stMsgs, err = s.db.PrepareContext(ctx,
-		`SELECT id, role, text, reasoning, tool_json, created FROM messages WHERE conversation_id=? ORDER BY id`); err != nil {
+		`SELECT id, role, text, reasoning, tool_json, created,
+			provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens
+			FROM messages WHERE conversation_id=? ORDER BY id`); err != nil {
 		return fmt.Errorf("ai store: prepare: %w", err)
 	}
 	return nil
@@ -761,7 +776,9 @@ type Conversation struct {
 }
 
 // StoredMessage is one persisted message. ToolJSON is opaque and stored
-// verbatim.
+// verbatim. Provider, Model and Usage are what the request that wrote the
+// message cost, and are zero on messages that cost nothing and on messages
+// saved before schema 9.
 type StoredMessage struct {
 	ID        int64
 	Role      string
@@ -769,6 +786,9 @@ type StoredMessage struct {
 	Reasoning string
 	ToolJSON  []byte
 	Created   time.Time
+	Provider  string
+	Model     string
+	Usage     llm.Usage
 }
 
 func checkTitle(t string) error {
@@ -883,13 +903,32 @@ func (s *Store) Messages(conversationID int64) ([]StoredMessage, error) {
 	for rows.Next() {
 		var m StoredMessage
 		var cr int64
-		if err := rows.Scan(&m.ID, &m.Role, &m.Text, &m.Reasoning, &m.ToolJSON, &cr); err != nil {
+		if err := rows.Scan(&m.ID, &m.Role, &m.Text, &m.Reasoning, &m.ToolJSON, &cr,
+			&m.Provider, &m.Model, &m.Usage.InputTokens, &m.Usage.OutputTokens,
+			&m.Usage.CacheReadTokens, &m.Usage.CacheWriteTokens); err != nil {
 			return nil, wrapDB(err)
 		}
 		m.Created = toTime(cr)
 		out = append(out, m)
 	}
 	return out, wrapDB(rows.Err())
+}
+
+// PriceLastMessage records what the request that wrote a conversation's last
+// message cost, on that message: a request that resolved without an answer of
+// its own has no answer row to carry its spend.
+func (s *Store) PriceLastMessage(conversationID int64, provider, model string, usage llm.Usage) error {
+	res, err := s.db.Exec(`UPDATE messages
+		SET provider=?, model=?, input_tokens=?, output_tokens=?, cache_read_tokens=?, cache_write_tokens=?
+		WHERE id=(SELECT MAX(id) FROM messages WHERE conversation_id=?)`,
+		provider, model, usage.InputTokens, usage.OutputTokens, usage.CacheReadTokens, usage.CacheWriteTokens, conversationID)
+	if err != nil {
+		return wrapDB(err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // AppendMessage adds a message and bumps the conversation's Updated time. The
@@ -916,7 +955,9 @@ func (s *Store) AppendMessage(conversationID int64, m StoredMessage) (StoredMess
 		if m.ToolJSON != nil {
 			tj = m.ToolJSON
 		}
-		res, err = tx.Stmt(s.stAppend).Exec(conversationID, m.Role, m.Text, m.Reasoning, tj, now)
+		res, err = tx.Stmt(s.stAppend).Exec(conversationID, m.Role, m.Text, m.Reasoning, tj, now,
+			m.Provider, m.Model, m.Usage.InputTokens, m.Usage.OutputTokens,
+			m.Usage.CacheReadTokens, m.Usage.CacheWriteTokens)
 		if err != nil {
 			return wrapDB(err)
 		}

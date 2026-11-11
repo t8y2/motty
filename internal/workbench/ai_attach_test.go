@@ -536,7 +536,7 @@ func TestAHistoryWriteFailureDoesNotAppendLaterMessages(t *testing.T) {
 	state.aiPersist([]llm.Message{
 		{Role: llm.RoleUser, Text: strings.Repeat("x", store.MaxTextBytes+1)},
 		{Role: llm.RoleAssistant, Text: "must not be stored"},
-	}, gate.SessionInfo{}, nil, "", nil)
+	}, gate.SessionInfo{}, nil, "", nil, aiSpend{})
 	if !strings.Contains(state.ai.notice, strings.TrimSuffix(state.messages.AIPanel.HistorySaveFailedFmt, "%s")) {
 		t.Fatalf("notice = %q", state.ai.notice)
 	}
