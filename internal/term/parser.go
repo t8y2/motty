@@ -61,6 +61,9 @@ func (t *Terminal) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	// Everything written from this buffer arrived together, so it shares one
+	// stamped time; see clockNow.
+	t.clockValid = false
 	for i := 0; i < len(p); {
 		if t.state == stGround && t.utf8n == 0 && t.charsets[t.gl] == charsetASCII {
 			// The run check stays ahead of the scan: behind it, the scan's

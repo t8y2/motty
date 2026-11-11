@@ -8,7 +8,9 @@ import (
 )
 
 // terminalGutter is what the strip at the left of the terminal shows for each
-// line: its number, the time it was written, both, or nothing.
+// line: its number, the time its current content was written, both, or nothing.
+// A program that repaints a line in place (top, a progress bar) moves that
+// line's time forward with every write.
 //
 // The gutter takes its width from the terminal's columns. The grid, the pty size
 // the remote is told, selection, links, find and mouse coordinates all start at

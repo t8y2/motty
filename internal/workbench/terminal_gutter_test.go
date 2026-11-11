@@ -52,6 +52,36 @@ func TestGutterShowsNumbersAndTimesAndHidesOnTheAlternateScreen(t *testing.T) {
 	}
 }
 
+// A program that repaints a row in place (top, a progress bar) moves that
+// row's time forward; the gutter must not keep showing when the row first
+// appeared.
+func TestGutterFollowsRepaintedLines(t *testing.T) {
+	state, session, _ := selectionState()
+	state.viewport.Width = 600
+	stamp := time.Date(2026, 1, 2, 3, 4, 5, 0, time.Local).Unix()
+	state.wallClock = func() int64 { return stamp }
+	state.setTerminalGutter(gutterTime)
+	geometry := state.layoutForSession(session.ID)
+	session.term.write([]byte("alpha"))
+
+	var canvas gfx.Canvas
+	state.paintGrid(&canvas, session, geometry)
+	first := time.Unix(stamp, 0).Format("15:04:05")
+	if !anyContains(gutterTexts(&canvas), first) {
+		t.Fatalf("gutter = %q, want %s", gutterTexts(&canvas), first)
+	}
+
+	stamp += 60
+	canvas.Reset()
+	session.term.write([]byte("\x1b[HALPHA"))
+	state.paintGrid(&canvas, session, geometry)
+	second := time.Unix(stamp, 0).Format("15:04:05")
+	texts := gutterTexts(&canvas)
+	if !anyContains(texts, second) || anyContains(texts, first) {
+		t.Fatalf("gutter after repaint = %q, want %s and not %s", texts, second, first)
+	}
+}
+
 func TestGutterTakesColumnsAndCopyLeavesItOut(t *testing.T) {
 	state, session, _ := selectionState()
 	state.viewport.Width = 600

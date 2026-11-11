@@ -29,6 +29,59 @@ func TestLinesKeepTheirWriteTimeIntoScrollback(t *testing.T) {
 	}
 }
 
+// A full-screen program on the main screen (top does not use the alternate
+// screen) repaints its rows in place. The time must follow the content, not the
+// row's first appearance.
+func TestRewritingALineMovesItsWriteTime(t *testing.T) {
+	screen := New(10, 3, 10)
+	now := int64(100)
+	screen.SetClock(func() int64 { return now })
+	screen.Write([]byte("one\r\ntwo\r\n"))
+
+	now = 200
+	screen.Write([]byte("\x1b[HONE"))
+	if got := screen.Row(0).Written; got != 200 {
+		t.Fatalf("rewritten row written = %d, want 200", got)
+	}
+	if got := screen.Row(1).Written; got != 100 {
+		t.Fatalf("untouched row written = %d, want 100", got)
+	}
+}
+
+func TestErasingALineMovesItsWriteTime(t *testing.T) {
+	screen := New(10, 3, 10)
+	now := int64(100)
+	screen.SetClock(func() int64 { return now })
+	screen.Write([]byte("one\r\n"))
+
+	now = 200
+	screen.Write([]byte("\x1b[H\x1b[K"))
+	if got := screen.Row(0).Written; got != 200 {
+		t.Fatalf("erased row written = %d, want 200", got)
+	}
+}
+
+func TestErasingAnUnwrittenLineLeavesItUnstamped(t *testing.T) {
+	screen := New(10, 3, 10)
+	screen.SetClock(func() int64 { return 200 })
+	screen.Write([]byte("\x1b[H\x1b[2J"))
+	if got := screen.Row(0).Written; got != 0 {
+		t.Fatalf("unwritten row written = %d, want 0", got)
+	}
+}
+
+// The clock is asked once per Write, not once per line or character: the write
+// paths stamp every run of text they print.
+func TestClockIsAskedOncePerWrite(t *testing.T) {
+	screen := New(20, 4, 10)
+	calls := 0
+	screen.SetClock(func() int64 { calls++; return 100 })
+	screen.Write([]byte("one\r\ntwo\r\nthree\x1b[H\x1b[K"))
+	if calls != 1 {
+		t.Fatalf("clock calls = %d for one write, want 1", calls)
+	}
+}
+
 func TestLineNumbersSurviveDroppedHistory(t *testing.T) {
 	screen := New(10, 3, 2)
 	for range 20 {
