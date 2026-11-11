@@ -332,10 +332,10 @@ func (state *State) paintRailLabelCenter(canvas *gfx.Canvas, text string, bounds
 	available := max(bounds.Width-4, 0)
 	if compact {
 		size = 10
-		// The titlebar slot is narrower than a rail's; one step down keeps the
-		// number readable there instead of eliding "42ms" to "42…".
-		if size > 9 && canvas.TextWidthWeight(text, size, gfx.WeightMedium) > available {
-			size = 9
+		// When the slot is narrow, step down the font size to keep the number
+		// readable instead of eliding it.
+		for size > 8 && canvas.TextWidthWeight(text, size, gfx.WeightMedium) > available {
+			size--
 		}
 	}
 	fitted := elide(canvas, text, size, gfx.WeightMedium, available)
