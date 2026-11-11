@@ -62,9 +62,15 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 			state.dialogError = ""
 			state.modal = modalMoveHostGroup
 		case id.Scope() == hitHostGroupItemList:
-			group := state.hostGroups[uint32(item(id))].Name
-			state.hostGroupMenu = false
-			state.applyHostGroup(group)
+			if menu := state.moveGroupTree(); menu != nil {
+				if group, chosen := menu.Choose(item(id)); chosen {
+					state.hostGroupMenu = false
+					state.applyHostGroup(group)
+				}
+			} else if index := item(id); index >= 0 && index < len(state.hostGroups) {
+				state.hostGroupMenu = false
+				state.applyHostGroup(state.hostGroups[index].Name)
+			}
 		default:
 			state.hostGroupMenu = false
 		}
@@ -114,7 +120,7 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 	case hitMoveHostGroup:
 		state.captureHostActionIDs()
 		state.groupMenu.menu = false
-		state.hostGroupMenu = len(state.hostActionIDs) > 0
+		state.openMoveHostGroupMenu()
 	case hitImportMenu:
 		state.importMenu = true
 		state.hostPrivacy.menu = false
@@ -893,10 +899,6 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	}
 	if state.hostFilterMenu && event.Key == gfx.KeyEscape {
 		state.hostFilterMenu = false
-		return handled, true
-	}
-	if state.hostGroupMenu && event.Key == gfx.KeyEscape {
-		state.hostGroupMenu = false
 		return handled, true
 	}
 	if state.activeSection != sectionHosts || state.modal != modalNone || event.Repeat {
