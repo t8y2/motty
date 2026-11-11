@@ -103,8 +103,9 @@ race:
 # each other, so it gets the parallel jobs.
 race-workbench:
 	@test -n "$(SHARD)" -a -n "$(SHARDS)" || { echo "usage: make race-workbench SHARD=<i> SHARDS=<n>"; exit 2; }
-	@pattern=$$(go run ./tools/testslice -race -n $(SHARDS) -i $(SHARD) $(RACE_WORKBENCH)) && \
-		go test -race -p 1 -count=1 $(RACE_WORKBENCH) -run "$$pattern"
+	@go run ./tools/testslice -race -n $(SHARDS) -i $(SHARD) -max-pattern 120000 $(RACE_WORKBENCH) | while IFS= read -r pattern; do \
+		go test -race -p 1 -count=1 $(RACE_WORKBENCH) -run "$$pattern" || exit 1; \
+	done
 
 race-heavy:
 	go test -race -p 1 -count=1 $(RACE_HEAVY)
