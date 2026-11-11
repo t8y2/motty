@@ -91,11 +91,12 @@ func (s *State) layoutNoteHostPicker(width float32, query string) ([]noteHostPic
 			}
 		}
 	}
+	collator := s.hostNameCollator()
 	slices.SortFunc(paths, func(a, b string) int {
 		if a == b {
 			return 0
 		}
-		if orderedHostGroupLess(a, b, groups) {
+		if orderedHostGroupLess(collator, a, b, groups) {
 			return -1
 		}
 		return 1

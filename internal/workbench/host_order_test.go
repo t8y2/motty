@@ -51,7 +51,7 @@ func TestHostDisplayOrderNameIsDeterministicAndPreservesManual(t *testing.T) {
 	original := slices.Clone(state.hosts)
 	state.Click(hitHostCheckList.At(2))
 	chooseDisplayOrder(state, "name")
-	want := []string{"host_a", "host_b", "host_c", "host_d", "host_e", "host_f", "host_z"}
+	want := []string{"host_c", "host_a", "host_b", "host_d", "host_e", "host_f", "host_z"}
 	if got := displayHostIDs(state); !slices.Equal(got, want) {
 		t.Fatalf("name order = %v, want %v", got, want)
 	}
@@ -112,7 +112,7 @@ func TestHostDisplayOrderWorksWithSearchAndGroupFilter(t *testing.T) {
 	chooseDisplayOrder(state, "name")
 	typeSearch(state, "alpha")
 	state.setHostFilter(true, "Servers")
-	if got := displayHostIDs(state); !slices.Equal(got, []string{"host_a", "host_b", "host_c"}) {
+	if got := displayHostIDs(state); !slices.Equal(got, []string{"host_c", "host_a", "host_b"}) {
 		t.Fatalf("filtered order = %v", got)
 	}
 	state.Click(bulkAllHit())

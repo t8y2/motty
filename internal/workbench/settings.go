@@ -345,6 +345,9 @@ func (state *State) applyLanguage() {
 	state.rebuildTransferCenter()
 	state.status = state.messages.StatusReadyIdle
 	state.refreshHostSelection()
+	// The order is read in the new language, and an unchanged host set and
+	// query keep syncVisible from resorting it.
+	state.sortVisibleHosts()
 	state.refreshHostGroups()
 	state.refreshIdentityCount()
 	state.refreshIdentityCells()
