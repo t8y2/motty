@@ -5,6 +5,11 @@ This product includes software developed by the gopher-rdp contributors
 (internal/rdpcore), used under the MIT License. Its license and a list of
 changes are in internal/rdpcore/LICENSE and internal/rdpcore/NOTICE.md.
 
+The Windows local terminal ships Microsoft's ConPTY binaries from the
+Microsoft.Windows.Console.ConPTY package (Copyright Microsoft Corporation, MIT
+License). Their license, version, hashes and origin are in
+internal/localshell/conpty/LICENSE.txt and internal/localshell/conpty/NOTICE.md.
+
 Interface icons include works from Lucide, Simple Icons, SVG Logos, Skill Icons,
 Devicon, selfh.st/icons, Material Icon Theme and LobeHub Icons. Their licenses
 and trademark notes are in internal/workbench/icons/NOTICE.
