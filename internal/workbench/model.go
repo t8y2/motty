@@ -58,6 +58,10 @@ type Host struct {
 	// tunnel marks the ephemeral host of a .xsh bastion tunnel opened on this
 	// computer. It is never saved, so only that launch gets the relaxed policy.
 	tunnel bool
+	// linkPassword is the password a link carried in its userinfo. It answers
+	// that one connection and is cleared when it is used; it has no saved
+	// field, so it never reaches the state file.
+	linkPassword string
 	// Transfer is the file protocol of the host's file panel.
 	Transfer transferMode
 	// Proxy overrides the global outbound proxy for this host. Nil inherits the

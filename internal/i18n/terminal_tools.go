@@ -541,6 +541,9 @@ type ToolsMessages struct {
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string
+	LaunchFilesDescriptionFmt       string // user@host:port
+	LaunchPasswordWarning           string
+	LaunchFTPUnsupported            string
 	LaunchConnect                   string
 	LaunchXshellFailedFmt           string // base name, error
 	LaunchXshellEmptyFmt            string // base name

@@ -10,7 +10,7 @@ executable = "motty"
 package = "./cmd/motty"
 icon = "assets/icon.png"
 # Links the system hands to the program (see docs/decisions/0028 in ../viva).
-url_schemes = ["ssh", "telnet"]
+url_schemes = ["ssh", "telnet", "sftp", "xshell", "xftp"]
 
 [[app.file_types]]
 name = "Markdown document"
