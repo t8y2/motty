@@ -848,7 +848,7 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 			break
 		}
 	}
-	if state.autofillRules.armed {
+	if state.autofillRules.armed || state.passwordAssistOn() {
 		state.scanAutofill(session)
 	}
 	switch {
@@ -898,7 +898,7 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 		t.markAIBlock(t.exec == nil)
 	}
 	t.recorder.Output(state.now())
-	if state.autofillRules.armed {
+	if state.autofillRules.armed || state.passwordAssistOn() {
 		t.autofill.Output(state.now())
 	}
 	state.notePasswordPrompt(session)
@@ -911,6 +911,9 @@ func (state *State) shellEnded(session *Session) {
 	session.outputAlert.commandRunning = false
 	if state.completion.list.active && state.completion.list.sessionID == session.ID {
 		state.closeCompletionList()
+	}
+	if len(state.autofillRules.pick.candidates) > 0 && state.autofillRules.pick.sessionID == session.ID {
+		state.closeAutofillPick()
 	}
 	t := session.term
 	state.goLive(session) // whatever it said, and that it ended, is the terminal's to show
@@ -1323,6 +1326,14 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 		return app.TextState{}
 	}
 	t := session.term
+	// Text the user supplies, typed or pasted, takes the password offer back:
+	// Enter after it must submit what the user supplied, not the highlighted
+	// saved password.
+	if len(state.autofillRules.pick.candidates) > 0 && state.autofillRules.pick.sessionID == sessionID &&
+		(event.Kind == app.TextInsert || event.Kind == app.TextPaste ||
+			(event.Kind == app.TextSetMarked && event.Text != "")) {
+		state.closeAutofillPick()
+	}
 	if event.Kind == app.TextInsert || event.Kind == app.TextPaste || (event.Kind == app.TextSetMarked && event.Text != "") {
 		t.pauseInitialization()
 	}
@@ -1585,6 +1596,11 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if result := state.scrollForwardDialog(event); result.Handled {
 		return result
+	}
+	if state.hostGroupMenu {
+		if menu := state.moveGroupTree(); menu != nil {
+			return gfx.EventResult{Handled: true, Repaint: menu.Wheel(event)}
+		}
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		p := &state.editor.groupPicker

@@ -117,6 +117,8 @@ func TestNoteWindowBottomLayoutModesAndPopovers(t *testing.T) {
 	s := newTestState(t, testOptions(t))
 	s.notes.list = []savedNote{{ID: "a", Title: "A", Body: "# header\n![image](https://example.com/a.png)", Tags: []string{"tag"}}}
 	d := noteEditingWindow(t, s, "a")
+	// A window opens in source; this test covers the preview's layout.
+	d.clickNoteWindow(hitNoteModes.At(1))
 	var c gfx.Canvas
 	paint := func(w float32) { c.Reset(); d.paint(&c, gfx.Size{Width: w, Height: 600}) }
 	paint(900)

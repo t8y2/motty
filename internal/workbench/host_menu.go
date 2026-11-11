@@ -156,7 +156,7 @@ func (state *State) clickHostMenu(id gfx.ID) bool {
 		// The picker replaces this menu in place: it opens where the menu did,
 		// not under the action row the host list may not even be showing.
 		state.groupMenu = groupMenuAnchor{point: state.hostMenu.at, menu: true}
-		state.hostGroupMenu = len(state.hostActionIDs) > 0
+		state.openMoveHostGroupMenu()
 	case hitHostMenuDelete:
 		state.captureHostMenuActionIDs(host.ID)
 		state.openDeleteCapturedHosts()

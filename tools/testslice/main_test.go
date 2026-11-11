@@ -73,6 +73,43 @@ func TestRunPatternSelectsOnlyItsShard(t *testing.T) {
 	}
 }
 
+// Chunking keeps each go test command line short without dropping or
+// duplicating a name; a shard must still cover its tests exactly once.
+func TestRunPatternsChunksWithoutChangingTheSelection(t *testing.T) {
+	names := make([]string, 0, 300)
+	for i := 0; i < 300; i++ {
+		names = append(names, "TestSomeLongName"+strconv.Itoa(i))
+	}
+	const max = 600
+	patterns := runPatterns(names, max)
+	if len(patterns) < 2 {
+		t.Fatalf("max pattern %d produced %d pattern(s): %v", max, len(patterns), patterns)
+	}
+	counts := make(map[string]int, len(names))
+	for _, pattern := range patterns {
+		if len(pattern) > max {
+			t.Errorf("pattern of %d bytes exceeds max %d: %q", len(pattern), max, pattern)
+		}
+		re := regexp.MustCompile(pattern)
+		for _, name := range names {
+			if re.MatchString(name) {
+				counts[name]++
+			}
+		}
+	}
+	for _, name := range names {
+		if counts[name] != 1 {
+			t.Fatalf("%s is matched by %d patterns, want 1", name, counts[name])
+		}
+	}
+	if got := runPatterns(nil, max); len(got) != 1 || got[0] != "^$" {
+		t.Fatalf("empty shard patterns = %v, want [^$]", got)
+	}
+	if got := runPatterns(names[:3], 0); len(got) != 1 {
+		t.Fatalf("unlimited patterns = %v, want one", got)
+	}
+}
+
 // Package status lines sit between the names in go test -list output.
 func TestParseNamesKeepsOnlyNames(t *testing.T) {
 	out := []byte("TestAlpha\nTestBravo\nok  \tmotty/internal/x\t0.021s\nFuzzCharlie\n?   \tmotty/internal/y\t[no test files]\nTestAlpha\n")

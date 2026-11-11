@@ -654,6 +654,17 @@ func (folder *sftpFolder) selectRow(index int, modifiers gfx.Modifiers) {
 	folder.listNeedsSeed = true
 }
 
+func (folder *sftpFolder) clearSelection() {
+	for i := range folder.rows {
+		if folder.rows[i].selected {
+			folder.rows[i].selected = false
+			folder.rows[i].cells[0] = sftpSelectionCell(false)
+		}
+	}
+	folder.selected, folder.anchor = -1, -1
+	folder.listNeedsSeed = true
+}
+
 // prepareSFTPList gives the folder's List the row label and multi-selection it
 // needs, once. Label names a row for typeahead and assistive technology.
 func (folder *sftpFolder) prepareSFTPList() {
@@ -1395,7 +1406,7 @@ func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	view.dialogEntries = nil
 	view.dialogError = ""
 	if dialog != sftpDialogCreateDirectory {
-		if dialog == sftpDialogDelete {
+		if dialog == sftpDialogDelete || dialog == sftpDialogMove {
 			for _, row := range selectedSFTPRows(view) {
 				view.dialogEntries = append(view.dialogEntries, row.entry)
 			}
@@ -1603,12 +1614,22 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 			view.dialogError = state.messages.SFTPErrMoveSame
 			return
 		}
-		source := path.Join(view.path, view.dialogEntry.Name)
-		if view.dialogEntry.IsDir() && !view.dialogEntry.IsLink() &&
-			(path.Clean(folder) == path.Clean(source) || strings.HasPrefix(path.Clean(folder), path.Clean(source)+"/")) {
-			view.dialogError = state.messages.SFTPErrMoveInside
-			return
+		sources := make([]string, 0, len(view.dialogEntries))
+		for _, entry := range view.dialogEntries {
+			source := path.Join(view.path, entry.Name)
+			if entry.IsDir() && !entry.IsLink() && (folder == source || strings.HasPrefix(folder, source+"/")) {
+				view.dialogError = state.messages.SFTPErrMoveInside
+				return
+			}
+			sources = append(sources, source)
 		}
+		if len(sources) > 1 {
+			queued = view.worker.MoveSelection(sources, folder)
+			operation = sftpclient.OperationMoveSelection
+			status = fmt.Sprintf(state.messages.SFTPMovingCountFmt, len(sources))
+			break
+		}
+		source := path.Join(view.path, view.dialogEntry.Name)
 		destination := path.Join(folder, view.dialogEntry.Name)
 		queued = view.worker.Rename(source, destination)
 		operation = sftpclient.OperationRename
@@ -1767,6 +1788,19 @@ func (state *State) pumpSFTP(session *Session) {
 				continue
 			}
 			view.busy = false
+			if result.Operation == sftpclient.OperationMoveSelection {
+				if result.Err != nil {
+					detail := fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+					if errors.Is(result.Err, sftpclient.ErrCanceled) {
+						detail = state.messages.SFTPCanceled
+					}
+					state.fileOpenNotice(view.detached, state.messages.SFTPMoveTitle, detail, components.ToastError)
+				}
+				view.forgetListings()
+				view.refreshStatus = fmt.Sprintf(state.messages.SFTPMovedCountFmt, result.Files, result.Destination)
+				state.listSFTP(view, view.path)
+				continue
+			}
 			if result.Operation == sftpclient.OperationRename && result.Err != nil {
 				view.moveAfterRename = false
 			}

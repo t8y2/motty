@@ -244,6 +244,11 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 				state.terminalMenu.open = false
 				if err := state.options.SetClipboardText(terminal.selection.text(terminal.screen)); err != nil {
 					state.status = err.Error()
+				} else {
+					// The Windows Terminal convention: the copy consumes the
+					// selection, so the next right-click pastes. A failed copy
+					// keeps it, and the status line says why.
+					terminal.selection.clear()
 				}
 				return gfx.EventResult{Handled: true, Repaint: true}
 			}

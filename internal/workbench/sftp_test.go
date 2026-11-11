@@ -32,6 +32,7 @@ type workbenchSFTPRemote struct {
 	readDelay    time.Duration     // how long a listing takes
 	linkDelay    time.Duration     // how long resolving one link takes
 	links        map[string]string // symbolic links: path to target
+	renameErrAt  map[string]error  // refuses a particular rename source
 	removeErr    error             // refuses every removal while set
 	removeErrAt  map[string]error  // refuses a particular path
 	unreadable   map[string]bool   // folders whose listing is refused
@@ -293,6 +294,9 @@ func (remote *workbenchSFTPRemote) Mkdir(remotePath string) error {
 func (remote *workbenchSFTPRemote) Rename(oldPath, newPath string) error {
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if err := remote.renameErrAt[oldPath]; err != nil {
+		return err
+	}
 	entry, ok := remote.removeEntryLocked(path.Dir(oldPath), path.Base(oldPath))
 	if !ok {
 		return os.ErrNotExist

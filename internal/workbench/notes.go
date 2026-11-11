@@ -27,6 +27,9 @@ type savedNoteView struct {
 	Panel     bool     `json:"panel,omitempty"`
 	Selected  string   `json:"selected,omitempty"`
 	Folder    string   `json:"folder,omitempty"`
+	// WindowMode is the mode a note window opens in: the one last chosen in a
+	// note window, which is its own choice, not the library's.
+	WindowMode noteMode `json:"window_mode,omitempty"`
 }
 
 type savedNote struct {
@@ -85,7 +88,6 @@ type notesUI struct {
 	windowView bool
 	viewport   gfx.Rect
 	selection  noteEditorSelection
-	sidebar    *noteSidebar
 
 	groupJobs []*noteGroupJob
 
@@ -97,7 +99,6 @@ type notesUI struct {
 	folders                                 []savedNoteFolder
 	selected, folder                        string
 	query                                   text.Editor
-	panel                                   bool
 	sideAll                                 bool
 	error                                   string
 	code                                    components.CodeEditor
@@ -197,7 +198,7 @@ func (s *State) noteViewEditor(n *notesUI, id gfx.ID, activate bool) *text.Edito
 	if n.view.menu != "" {
 		return nil
 	}
-	if !n.windowView && (s.modal != modalNone || (s.activeSection != sectionNotes && !(n.panel && s.activeSection == sectionTerminal))) {
+	if !n.windowView && (s.modal != modalNone || (s.activeSection != sectionNotes && !(s.notesPanelOpen() && s.activeSection == sectionTerminal))) {
 		return nil
 	}
 	switch id {
@@ -446,11 +447,12 @@ func (s *State) selectNoteWithoutSave(id string) {
 
 }
 func (s *State) autosaveNotes(c *gfx.Canvas) {
+	s.autosaveNoteSidebars(c)
 	if len(s.notes.groupJobs) > 0 && !s.noteComposing() {
 		c.AfterPaint(func() { s.save() })
 	}
 
-	if s.notes.hostRefreshNeeded && (s.activeSection == sectionNotes || s.activeSection == sectionTerminal && s.notes.panel) {
+	if s.notes.hostRefreshNeeded && (s.activeSection == sectionNotes || s.activeSection == sectionTerminal && s.notesPanelOpen()) {
 		c.AfterPaint(func() { s.refreshNoteHosts() })
 	}
 	if !s.noteComposing() && (len(s.notes.hostUpdates) > 0 || s.notes.hostScanAgain && !s.notes.hostScanRunning) {
@@ -488,21 +490,22 @@ func (s *State) clickNotes(id gfx.ID) bool {
 		return true
 	}
 	if id == hitNotesPanel {
-		n.panel = !n.panel
-		if n.panel {
-			s.noteSidebarState()
+		v := s.noteSidebarState()
+		v.open = !v.open
+		if v.open {
 			s.refreshNoteHosts()
-		} else if n.sidebar != nil {
-			n.sidebar.stopCapture()
+		} else {
+			v.stopCapture()
 		}
-		s.fitTerminals()
+		s.fitWorkspaceTerminals(s.deck.ActiveWorkspace())
+		s.save()
 		return true
 	}
 	if s.noteSidebarVisible() {
 		return s.clickNoteSidebar(id)
 	}
 
-	if s.modal != modalNone || (s.activeSection != sectionNotes && !(n.panel && s.activeSection == sectionTerminal)) {
+	if s.modal != modalNone || (s.activeSection != sectionNotes && !(s.notesPanelOpen() && s.activeSection == sectionTerminal)) {
 		return false
 	}
 	if n.confirm != "" {

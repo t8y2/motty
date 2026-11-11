@@ -814,6 +814,44 @@ func TestToolbarDockLatencyReadoutReachesEveryZone(t *testing.T) {
 	}
 }
 
+func TestToolbarDockTopLatencyHighRTTCompleteDisplay(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	state.terminalShowLatency = true
+	state.activeSection = sectionTerminal
+	size := gfx.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+	state.moveToolbarDockTool(hitToolbarLatency, toolbarDockTop, gfx.ID{})
+
+	for _, ms := range []int64{288, 1250} {
+		atomic.StoreInt64(&session.rttMs, ms)
+		atomic.StoreInt32(&session.rttAvailable, 1)
+
+		var canvas gfx.Canvas
+		state.Paint(&canvas, size)
+		hit, ok := hitByID(&canvas, hitToolbarLatency)
+		if !ok {
+			t.Fatalf("latency %dms did not paint the readout", ms)
+		}
+		if hit.Bounds.Width <= barButtonSize {
+			t.Fatalf("latency %dms badge width %.1f was not widened beyond barButtonSize (%.1f)", ms, hit.Bounds.Width, barButtonSize)
+		}
+		wantText := fmt.Sprintf("%dms", ms)
+		found := false
+		var values []string
+		for _, text := range canvas.Texts() {
+			values = append(values, text.Value)
+			if text.Value == wantText {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("latency %dms was not displayed completely, texts = %q, want %q", ms, values, wantText)
+		}
+	}
+}
+
 func TestToolbarLatencySwitchSharesTheSetting(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	if state.terminalShowLatency {

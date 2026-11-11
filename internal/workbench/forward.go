@@ -482,6 +482,7 @@ func (state *State) submitForwardDialog() {
 				continue
 			}
 			f := &state.forwards[index]
+			tunnelID := f.sessionID
 			f.stop()
 			localPort, _ := state.forwardEditor.port(forwardFieldLocalPort)
 			f.Label = state.forwardEditor.value(forwardFieldLabel)
@@ -501,6 +502,7 @@ func (state *State) submitForwardDialog() {
 				f.DestinationPort = 0
 			}
 			f.refresh(state.messages, state.forwardHostAvailable(*f))
+			state.releaseForwardTunnel(tunnelID)
 			state.status = state.messages.ForwardUpdated + f.Label
 			state.closeForwardDialog()
 			state.save()
@@ -561,6 +563,7 @@ func (state *State) removeSelectedForward() {
 		removed := state.forwards[index]
 		state.forwards[index].stop()
 		state.forwards = slices.Delete(state.forwards, index, index+1)
+		state.releaseForwardTunnel(removed.sessionID)
 		state.selectedForwardID = 0
 		if len(state.forwards) > 0 {
 			state.selectedForwardID = state.forwards[min(index, len(state.forwards)-1)].ID
@@ -578,9 +581,11 @@ func (state *State) toggleSelectedForward() {
 		return
 	}
 	if forward.runner != nil || forward.pending || forward.starting {
+		tunnelID := forward.sessionID
 		forward.stop()
 		forward.lastError = ""
 		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
+		state.releaseForwardTunnel(tunnelID)
 		state.status = state.messages.ForwardStoppedStatus + forward.Label
 		return
 	}
@@ -595,13 +600,25 @@ func (state *State) toggleSelectedForward() {
 		state.startForward(forward, session)
 		return
 	}
+	if tunnel := state.connectedForwardTunnel(host); tunnel != nil {
+		state.startForward(forward, &tunnel.session)
+		return
+	}
+	// No tab carries a connection to this host: dial one for the forwards alone,
+	// so a tunnel never costs a terminal window.
+	tunnel := state.forwardTunnelForHost(host)
+	fresh := tunnel == nil
+	if fresh {
+		tunnel = state.newForwardTunnel(host)
+	}
 	forward.pending = true
 	forward.lastError = ""
+	forward.sessionID = tunnel.id
 	forward.refresh(state.messages, true)
-	session := state.openHostSession(host)
-	forward.sessionID = session.ID
-	state.activeSection = sectionForwards
 	state.status = fmt.Sprintf(state.messages.ForwardConnectingFmt, host.Label)
+	if fresh {
+		state.dialForwardTunnel(tunnel)
+	}
 	state.save()
 }
 
@@ -620,9 +637,11 @@ func (state *State) startForward(forward *forwardRecord, session *Session) {
 		Notify:        state.options.Invalidate,
 	})
 	if err != nil {
+		tunnelID := forward.sessionID
 		forward.sessionID = 0
 		forward.lastError = err.Error()
 		forward.refresh(state.messages, true)
+		state.releaseForwardTunnel(tunnelID)
 		state.status = fmt.Sprintf(state.messages.ForwardStartFailedFmt, err)
 		return
 	}
@@ -721,6 +740,13 @@ func (state *State) releaseWaitingForwards() {
 		if !forward.pending || forward.sessionID == 0 {
 			continue
 		}
+		// A tunnel owns the wait for its own connection, retries included; only
+		// a tunnel that is already gone leaves the forward to stop here.
+		if tunnel := state.forwardTunnelByID(forward.sessionID); tunnel != nil {
+			if !tunnel.closed {
+				continue
+			}
+		}
 		session, ok := state.sessionByIDPointer(forward.sessionID)
 		if ok && (session.reconnectPending || session.phase != sshconn.PhaseClosed && session.phase != sshconn.PhaseFailed) {
 			continue
@@ -761,9 +787,11 @@ func (state *State) pumpForwardStarts() {
 			forward.starting = false
 			forward.startID = 0
 			if result.err != nil {
+				tunnelID := forward.sessionID
 				forward.sessionID = 0
 				forward.lastError = result.err.Error()
 				forward.refresh(state.messages, true)
+				state.releaseForwardTunnel(tunnelID)
 				state.status = fmt.Sprintf(state.messages.ForwardStartFailedFmt, result.err)
 				continue
 			}

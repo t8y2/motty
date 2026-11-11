@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/localshell"
 	"motty/internal/workbench/icons"
 	layoutcore "motty/internal/workspace"
 )
@@ -42,6 +43,9 @@ type workspaceDraft struct {
 	previewContent float32
 	// nameField is the page's handle on the same editor the dialog reads.
 	nameField ui.Field
+	// collapsed holds the host list's folded groups; a missing entry means
+	// the group is expanded. Searching renders every group regardless.
+	collapsed map[string]bool
 }
 
 func (draft *workspaceDraft) reset() {
@@ -136,6 +140,14 @@ func (state *State) clickWorkspaceDraft(id gfx.ID) {
 		}
 		state.workspaceDraftCountChanged()
 		draft.error = ""
+	case id.Scope() == hitWorkspaceDraftGroupList:
+		if index, ok := id.In(hitWorkspaceDraftGroupList); ok {
+			state.toggleWorkspaceDraftGroup(index)
+		}
+	case id.Scope() == hitWorkspaceDraftGroupCheckList:
+		if index, ok := id.In(hitWorkspaceDraftGroupCheckList); ok {
+			state.toggleWorkspaceDraftGroupCheck(index)
+		}
 	case id.Scope() == hitWorkspaceDraftRemoveItem:
 		index, ok := id.In(hitWorkspaceDraftRemoveItem)
 		if ok {
@@ -391,6 +403,12 @@ func (state *State) workspaceDraftHosts() []Host {
 		search := host.Label + " " + host.Address + " " + host.User + " " + host.Group + " " + host.Tags
 		if host.ID == localHostID {
 			search += " " + state.messages.LocalTerminal
+			if shell, ok := workspaceLocalShellRef(host.CatalogID); ok {
+				search += " " + shell
+				if _, wsl := localshell.WSLDistro(shell); wsl {
+					search += " wsl"
+				}
+			}
 		}
 		if query != "" && !strings.Contains(strings.ToLower(search), query) {
 			continue
@@ -406,6 +424,220 @@ func (state *State) workspaceDraftVisibleHost(index int, ok bool) *Host {
 		return nil
 	}
 	return &hosts[index]
+}
+
+// The host list's rows: a group header takes 42px, a host 60px, the heights
+// paintWorkspaceDraftHosts lays out and every scroll path repeats.
+const (
+	workspaceDraftHostRowHeight  = float32(60)
+	workspaceDraftGroupRowHeight = float32(42)
+	// workspaceDraftHostIndent is how far a host row sits in from its group's
+	// header, the one tree step the list has.
+	workspaceDraftHostIndent = float32(16)
+)
+
+// The local rows and the hosts without a group fold under keys no group can
+// carry: a name is normalized to non-empty, and the zero byte ends a key just
+// as it ends the snippet picker's ungrouped one.
+const (
+	workspaceDraftLocalGroupKey = "\x00local"
+	workspaceDraftHostsGroupKey = "\x00hosts"
+)
+
+// workspaceDraftGroup is one collapsible section of the host list. Expanded is
+// what the rows were built with, so searching — which renders every group —
+// still shows the chevron as open. Members are the group's terminals as the
+// list currently shows them, folds included, so the header's checkbox can
+// select or clear the whole group at once.
+type workspaceDraftGroup struct {
+	key      string
+	label    string
+	count    int
+	selected int
+	expanded bool
+	members  []workspaceDraftRow
+}
+
+// workspaceDraftRow is one painted row of the host list: a group header, or a
+// host with the index it keeps in the flat host list. Clicks are keyed by that
+// index, so folding changes only what is painted, never what a click selects.
+type workspaceDraftRow struct {
+	group     *workspaceDraftGroup
+	host      Host
+	hostIndex int
+}
+
+// workspaceDraftRows lays the host list out in groups: the local terminals
+// first, then the hosts without a group, then the named groups in alphabetical
+// order, each keeping the list's own order within it. A folded group renders
+// only its header, unless the search box has something in it, which expands
+// every group like the pickers do.
+func (state *State) workspaceDraftRows() []workspaceDraftRow {
+	hosts := state.workspaceDraftHosts()
+	searching := strings.TrimSpace(state.workspaceDraft.query.String()) != ""
+	collapsed := state.workspaceDraft.collapsed
+
+	type bucket struct {
+		group workspaceDraftGroup
+		hosts []workspaceDraftRow
+	}
+	var local bucket
+	local.group = workspaceDraftGroup{key: workspaceDraftLocalGroupKey, expanded: true}
+	var ungrouped bucket
+	ungrouped.group = workspaceDraftGroup{key: workspaceDraftHostsGroupKey, expanded: true}
+	var names []string
+	buckets := make(map[string]*bucket)
+
+	for index, host := range hosts {
+		row := workspaceDraftRow{host: host, hostIndex: index}
+		switch {
+		case host.ID == localHostID:
+			local.hosts = append(local.hosts, row)
+		default:
+			name := strings.TrimSpace(host.Group)
+			if name == "" {
+				ungrouped.hosts = append(ungrouped.hosts, row)
+				continue
+			}
+			if _, seen := buckets[name]; !seen {
+				names = append(names, name)
+				buckets[name] = &bucket{group: workspaceDraftGroup{key: name, expanded: true}}
+			}
+			buckets[name].hosts = append(buckets[name].hosts, row)
+		}
+	}
+
+	groups := []*bucket{&local, &ungrouped}
+	slices.SortFunc(names, func(a, b string) int {
+		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+	})
+	for _, name := range names {
+		groups = append(groups, buckets[name])
+	}
+
+	rows := make([]workspaceDraftRow, 0, len(hosts)+len(groups))
+	for _, bucket := range groups {
+		if len(bucket.hosts) == 0 {
+			continue
+		}
+		bucket.group.count = len(bucket.hosts)
+		bucket.group.members = bucket.hosts
+		for _, row := range bucket.hosts {
+			if state.workspaceDraft.selected[row.host.CatalogID] {
+				bucket.group.selected++
+			}
+		}
+		bucket.group.expanded = searching || !collapsed[bucket.group.key]
+		switch bucket.group.key {
+		case workspaceDraftLocalGroupKey:
+			bucket.group.label = state.messages.WorkspaceDraftLocalGroup
+		case workspaceDraftHostsGroupKey:
+			bucket.group.label = state.messages.HostGroupDefault
+		default:
+			bucket.group.label = bucket.group.key
+		}
+		rows = append(rows, workspaceDraftRow{group: &bucket.group})
+		if bucket.group.expanded {
+			rows = append(rows, bucket.hosts...)
+		}
+	}
+	return rows
+}
+
+// workspaceDraftListHeight is the content height the rows paint into.
+func workspaceDraftListHeight(rows []workspaceDraftRow) float32 {
+	height := float32(0)
+	for _, row := range rows {
+		if row.group != nil {
+			height += workspaceDraftGroupRowHeight
+		} else {
+			height += workspaceDraftHostRowHeight
+		}
+	}
+	return height
+}
+
+// toggleWorkspaceDraftGroup folds or opens the group the header click names.
+func (state *State) toggleWorkspaceDraftGroup(index int) {
+	seen := 0
+	for _, row := range state.workspaceDraftRows() {
+		if row.group == nil {
+			continue
+		}
+		if seen == index {
+			if state.workspaceDraft.collapsed == nil {
+				state.workspaceDraft.collapsed = make(map[string]bool)
+			}
+			state.workspaceDraft.collapsed[row.group.key] = !state.workspaceDraft.collapsed[row.group.key]
+			// The list may have shrunk: keep the scroll inside what is left.
+			if content := workspaceDraftListHeight(state.workspaceDraftRows()); state.workspaceDraft.bounds.Height > 0 {
+				state.workspaceDraft.scroll = min(state.workspaceDraft.scroll, max(0, content-state.workspaceDraft.bounds.Height))
+			}
+			return
+		}
+		seen++
+	}
+}
+
+// toggleWorkspaceDraftGroupCheck is the group header's checkbox: it selects
+// every terminal the group shows, or clears them when all are already
+// selected. A folded group still answers, so whole groups can be picked
+// without opening them first.
+func (state *State) toggleWorkspaceDraftGroupCheck(index int) {
+	seen := 0
+	for _, row := range state.workspaceDraftRows() {
+		if row.group == nil {
+			continue
+		}
+		if seen == index {
+			state.toggleWorkspaceDraftGroupMembers(row.group.members)
+			return
+		}
+		seen++
+	}
+}
+
+// toggleWorkspaceDraftGroupMembers applies one group checkbox: everything on
+// when any member is missing, nothing when all are on. Selection keeps to the
+// twelve-pane limit and says so when a group does not fit.
+func (state *State) toggleWorkspaceDraftGroupMembers(members []workspaceDraftRow) {
+	draft := &state.workspaceDraft
+	full := true
+	for _, row := range members {
+		if !draft.selected[row.host.CatalogID] {
+			full = false
+			break
+		}
+	}
+	draft.error = ""
+	if full {
+		for _, row := range members {
+			if draft.selected[row.host.CatalogID] {
+				delete(draft.selected, row.host.CatalogID)
+				if draft.mode == workspaceDraftEdit {
+					draft.order = slices.DeleteFunc(draft.order, func(id string) bool {
+						return id == row.host.CatalogID
+					})
+				}
+			}
+		}
+	} else {
+		for _, row := range members {
+			id := row.host.CatalogID
+			if draft.selected[id] {
+				continue
+			}
+			if state.workspaceDraftSelectionCount() >= maxWorkspaceTemplateHosts {
+				draft.error = state.messages.WorkspaceDraftLimit
+				break
+			}
+			draft.selected[id] = true
+			if draft.mode == workspaceDraftEdit {
+				draft.order = append(draft.order, id)
+			}
+		}
+	}
+	state.workspaceDraftCountChanged()
 }
 
 func (state *State) workspaceDraftModeLabel() string {
@@ -591,15 +823,20 @@ func (state *State) paintWorkspaceDraftRemoveButtons(canvas *gfx.Canvas, content
 
 func (state *State) paintWorkspaceDraftHosts(canvas *gfx.Canvas) {
 	draft, m := &state.workspaceDraft, state.messages
-	hosts := state.workspaceDraftHosts()
-	const rowHeight = float32(60)
+	state.adoptWSLDistros() // the distributions join the list when wsl.exe answers
+	rows := state.workspaceDraftRows()
 	draft.content = 0
-	for _, host := range hosts {
-		draft.content += rowHeight
-		if draft.selected[host.CatalogID] && workspaceCommandHost(host) && draft.commandHost == host.ID {
+	for _, row := range rows {
+		if row.group != nil {
+			draft.content += workspaceDraftGroupRowHeight
+			continue
+		}
+		draft.content += workspaceDraftHostRowHeight
+		if state.workspaceDraftCommandConfigurable(row.host) {
 			draft.content += 66
 		}
 	}
+	state.revealWorkspaceCommandFields(rows)
 	area := components.BeginScrollArea(canvas, state.Theme(), draft.bounds, gfx.Size{Width: max(0, draft.bounds.Width-10), Height: draft.content}).
 		Offset(0, draft.scroll).ReserveScrollbars().Viewport(hitWorkspaceDraftScroll, m.WorkspaceDraftHosts).
 		VerticalScrollbar(hitWorkspaceDraftScrollbar, m.WorkspaceDraftHosts, "")
@@ -607,32 +844,126 @@ func (state *State) paintWorkspaceDraftHosts(canvas *gfx.Canvas) {
 	draft.scroll = geometry.OffsetY
 	count := state.workspaceDraftSelectionCount()
 	y := geometry.Content.Y
-	for index, host := range hosts {
-		height := rowHeight
-		configurable := draft.selected[host.CatalogID] && workspaceCommandHost(host) && draft.commandHost == host.ID
-		if configurable {
+	groupOrdinal := 0
+	for _, row := range rows {
+		height := workspaceDraftHostRowHeight
+		configurable := false
+		if row.group != nil {
+			height = workspaceDraftGroupRowHeight
+		} else if state.workspaceDraftCommandConfigurable(row.host) {
+			configurable = true
 			height += 66
 		}
 		box := gfx.Rect{X: geometry.Content.X, Y: y, Width: max(0, draft.bounds.Width-10), Height: height - 4}
+		if row.group == nil {
+			// A host sits under its group's header, one step in, so the list
+			// reads like the sidebar's tree.
+			box.X += workspaceDraftHostIndent
+			box.Width = max(0, box.Width-workspaceDraftHostIndent)
+		}
 		y += height
 		if box.Y+box.Height < geometry.Viewport.Y || box.Y > geometry.Viewport.Y+geometry.Viewport.Height {
+			if row.group != nil {
+				groupOrdinal++
+			}
 			continue
 		}
-		selected := draft.selected[host.CatalogID]
+		if row.group != nil {
+			state.paintWorkspaceDraftGroup(canvas, *row.group, box, hitWorkspaceDraftGroupList.At(groupOrdinal), hitWorkspaceDraftGroupCheckList.At(groupOrdinal))
+			groupOrdinal++
+			continue
+		}
 		header := box
 		header.Height = 56
-		state.paintWorkspaceDraftHost(canvas, host, header, hitWorkspaceDraftHostList.At(index), selected, !selected && count >= maxWorkspaceTemplateHosts)
-		if selected && workspaceCommandHost(host) {
-			components.BeginButton(canvas, state.Theme(), hitWorkspaceCommandEdit.At(int(host.ID)), gfx.Rect{X: header.X + header.Width - 128, Y: header.Y + 16, Width: 90, Height: 26}).XSmall().Outline(m.WorkspaceCommandField)
+		selected := draft.selected[row.host.CatalogID]
+		state.paintWorkspaceDraftHost(canvas, row.host, header, hitWorkspaceDraftHostList.At(row.hostIndex), selected, !selected && count >= maxWorkspaceTemplateHosts)
+		if selected && workspaceCommandHost(row.host) {
+			components.BeginButton(canvas, state.Theme(), hitWorkspaceCommandEdit.At(int(row.host.ID)), gfx.Rect{X: header.X + header.Width - 128, Y: header.Y + 16, Width: 90, Height: 26}).XSmall().Outline(m.WorkspaceCommandField)
 		}
 		if configurable {
-			state.paintWorkspaceCommandFields(canvas, host, gfx.Rect{X: box.X + 8, Y: box.Y + 60, Width: max(0, box.Width-16), Height: 58})
+			state.paintWorkspaceCommandFields(canvas, row.host, gfx.Rect{X: box.X + 8, Y: box.Y + 60, Width: max(0, box.Width-16), Height: 58})
 		}
 	}
-	if len(hosts) == 0 {
+	if len(rows) == 0 {
 		components.Empty(canvas, state.Theme(), geometry.Viewport, components.EmptyData{Title: m.WorkspaceDraftNoHosts})
 	}
 	area.EndContent()
+}
+
+// revealWorkspaceCommandFields scrolls the expanded command fields of the
+// draft's command host into view: a row near the list's bottom grows by 66px
+// when chosen, and fields that open below the fold are where nobody types.
+func (state *State) revealWorkspaceCommandFields(rows []workspaceDraftRow) {
+	draft := &state.workspaceDraft
+	if draft.commandHost == 0 || draft.bounds.Height <= 0 {
+		return
+	}
+	y := float32(0)
+	for _, row := range rows {
+		height := workspaceDraftHostRowHeight
+		if row.group != nil {
+			height = workspaceDraftGroupRowHeight
+		} else {
+			if row.host.ID != uint32(draft.commandHost) {
+				y += height
+				continue
+			}
+			y += height
+			fieldBottom := y + 58
+			if fieldBottom > draft.scroll+draft.bounds.Height {
+				draft.scroll = min(fieldBottom-draft.bounds.Height, max(0, workspaceDraftListHeight(rows)+66-draft.bounds.Height))
+			}
+			return
+		}
+		y += height
+	}
+}
+
+// workspaceDraftCommandConfigurable is whether the host's row is expanded
+// with its command fields: the selected command host that is the draft's
+// current commandHost.
+func (state *State) workspaceDraftCommandConfigurable(host Host) bool {
+	return state.workspaceDraft.selected[host.CatalogID] && workspaceCommandHost(host) && state.workspaceDraft.commandHost == host.ID
+}
+
+// paintWorkspaceDraftGroup paints one collapsible header of the host list: a
+// chevron, a select-the-group checkbox, the group's name, and how many
+// terminals it holds.
+func (state *State) paintWorkspaceDraftGroup(canvas *gfx.Canvas, group workspaceDraftGroup, bounds gfx.Rect, id, checkID gfx.ID) {
+	pal, theme := state.pal, state.Theme()
+	background := pal.surface
+	if canvas.Hovered() == id {
+		background = pal.surfaceSoft
+	}
+	canvas.Rounded(bounds, radius.control, background)
+	canvas.HitWithOptions(id, bounds, group.label, gfx.HitOptions{Role: gfx.RoleButton, Expanded: group.expanded})
+	// Labels draw from the top of their rect, so every element of the header
+	// centers on the row's own middle line, like the sidebar's headers do.
+	center := bounds.Y + bounds.Height/2
+	chevron := iconChevronRight
+	if group.expanded {
+		chevron = iconChevronDown
+	}
+	paintIcon(canvas, uint8(chevron), gfx.Rect{X: bounds.X + 10, Y: center - 8, Width: 16, Height: 16}, pal.muted)
+	slot := gfx.Rect{X: bounds.X + 30, Y: center - 14, Width: 36, Height: 28}
+	side := components.CheckboxExtent(theme)
+	checkbox := components.BeginCheckbox(canvas, theme, checkID, gfx.Rect{
+		X: slot.X + (slot.Width-side)/2, Y: center - side/2, Width: side, Height: side,
+	}, group.count > 0 && group.selected == group.count).Label(group.label).HitBounds(slot)
+	if group.selected > 0 && group.selected < group.count {
+		checkbox = checkbox.Indeterminate()
+	}
+	checkbox.Paint()
+	x := bounds.X + 70
+	right := bounds.X + bounds.Width - 8
+	count := fmt.Sprintf("(%d)", group.count)
+	countWidth := canvas.TextWidth(count, 12)
+	// The count follows the name, like the sidebar's group headers, and a long
+	// name gives way to it. The name is measured at the weight it is drawn at,
+	// the one elide budgets against.
+	labelWidth := min(canvas.TextWidthWeight(group.label, 13, gfx.WeightSemibold), max(0, right-x-countWidth-6))
+	monitorLabel(canvas, elide(canvas, group.label, 13, gfx.WeightSemibold, labelWidth), gfx.Rect{X: x, Y: center - 11, Width: labelWidth, Height: 22}, 13, pal.text, gfx.WeightSemibold)
+	monitorLabel(canvas, count, gfx.Rect{X: x + labelWidth + 6, Y: center - 11, Width: countWidth + 4, Height: 22}, 12, pal.faint, gfx.WeightRegular)
 }
 
 func (state *State) paintWorkspaceDraftHost(canvas *gfx.Canvas, host Host, bounds gfx.Rect, id gfx.ID, selected, disabled bool) {
@@ -663,6 +994,9 @@ func (state *State) paintWorkspaceDraftHost(canvas *gfx.Canvas, host Host, bound
 	detail := state.sessionAddress(host)
 	if host.ID == localHostID {
 		detail = state.messages.WorkspaceLocalTerminalHint
+		if shell, ok := workspaceLocalShellRef(host.CatalogID); ok {
+			detail = shell
+		}
 	}
 	monitorLabel(canvas, elide(canvas, detail, 12, gfx.WeightRegular, width), gfx.Rect{X: bounds.X + 46, Y: bounds.Y + 29, Width: width, Height: 20}, 12, pal.muted.Mix(pal.text, .08*amount), gfx.WeightRegular)
 	side := components.CheckboxExtent(theme)

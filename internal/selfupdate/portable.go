@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 func extractPortable(archive, dest string) error {
@@ -17,19 +18,22 @@ func extractPortable(archive, dest string) error {
 		return err
 	}
 	defer reader.Close()
-	if len(reader.File) != 2 {
-		return errors.New("selfupdate: the portable package has unexpected contents")
-	}
 	program, note := false, false
 	for _, entry := range reader.File {
 		if !entry.Mode().IsRegular() {
 			return errors.New("selfupdate: the portable package contains a non-file")
 		}
-		switch entry.Name {
-		case "motty.exe":
+		switch {
+		case entry.Name == "motty.exe":
 			program = entry.UncompressedSize64 > 0
-		case "motty-data/README.txt":
+		case entry.Name == "motty-data/README.txt":
 			note = true
+		case strings.HasPrefix(entry.Name, "conpty/"):
+			// Native terminal files the program loads at runtime. Their paths
+			// are checked by ExtractZip; an empty one is a broken build.
+			if entry.UncompressedSize64 == 0 {
+				return fmt.Errorf("selfupdate: the portable package has an empty %s", entry.Name)
+			}
 		default:
 			return fmt.Errorf("selfupdate: unexpected portable package entry %q", entry.Name)
 		}

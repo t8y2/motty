@@ -348,11 +348,7 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 			if event.Target == id && event.Button == gfx.PointerButtonSecondary {
 				w.cancelDrag()
 				w.activeLocal, w.view.local = side == 0, side == 0
-				folder := w.folder(side == 0)
-				for i := range folder.rows {
-					folder.rows[i].selected = false
-				}
-				folder.selected = -1
+				w.folder(side == 0).clearSelection()
 				w.selectionChanged(side == 0)
 				w.ui.menuOpen, w.ui.menuAt = true, gfx.Point{X: event.X, Y: event.Y}
 				return handled

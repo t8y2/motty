@@ -540,7 +540,13 @@ func buildToolsListFor(specs []tools.Spec) (json.RawMessage, error) {
 		if sp.Kind == tools.Read {
 			a.DestructiveHint = &no
 		}
-		list = append(list, entry{sp.Name, sp.Description, sp.Schema, a})
+		// inputSchema is required to be a JSON Schema object. A missing schema
+		// serialized as null, which strict clients reject for the whole list.
+		schema := sp.Schema
+		if len(schema) == 0 || string(schema) == "null" {
+			schema = json.RawMessage(`{"type":"object"}`)
+		}
+		list = append(list, entry{sp.Name, sp.Description, schema, a})
 	}
 	return json.Marshal(struct {
 		Tools []entry `json:"tools"`

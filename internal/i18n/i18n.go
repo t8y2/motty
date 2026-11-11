@@ -90,6 +90,8 @@ type Messages struct {
 	Autofill AutofillMessages
 	// Credentials holds the saved passwords' texts; see credentials.go.
 	Credentials CredentialMessages
+	// HostTags holds the host tag manager's texts; see host_tags.go.
+	HostTags HostTagMessages
 	// History holds the command history's texts; see history.go.
 	History HistoryMessages
 	// SessionLogs holds the local session-log page's texts; see session_logs.go.
@@ -161,6 +163,7 @@ type Messages struct {
 	WorkspaceDraftEditDescription         string
 	WorkspaceDraftName                    string
 	WorkspaceDraftNamePlaceholder         string
+	WorkspaceDraftLocalGroup              string
 	WorkspaceDraftHosts                   string
 	WorkspaceDraftHostSearch              string
 	WorkspaceDraftSelectedFmt             string
@@ -743,6 +746,8 @@ type Messages struct {
 	StatusOpened       string // prefix: session title follows
 	StatusReused       string // prefix: session title follows
 	StatusHostAdded    string
+	HostSaveFailedFmt  string
+	HostSaveMissing    string
 	StatusEditCanceled string
 
 	// OpenSSH known_hosts management.
@@ -1047,6 +1052,8 @@ type Messages struct {
 	SFTPErrMoveInside           string
 	SFTPMovingFmt               string
 	SFTPMovedFmt                string
+	SFTPMovingCountFmt          string
+	SFTPMovedCountFmt           string
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
 	SFTPDeleteSelectionTitle    string
@@ -1161,6 +1168,7 @@ func For(language Language) Messages {
 		messages.Toolbars = chineseToolbars
 		messages.Autofill = chineseAutofill
 		messages.Credentials = chineseCredentials
+		messages.HostTags = chineseHostTags
 		messages.History = chineseHistory
 		messages.Completion = chineseCompletion
 		messages.SSHSync = chineseSSHSync
@@ -1173,6 +1181,7 @@ func For(language Language) Messages {
 		messages.Toolbars = traditionalToolbars
 		messages.Autofill = traditionalAutofill
 		messages.Credentials = traditionalCredentials
+		messages.HostTags = traditionalHostTags
 		messages.History = traditionalHistory
 		messages.Completion = traditionalCompletion
 		messages.SSHSync = traditionalSSHSync
@@ -1185,6 +1194,7 @@ func For(language Language) Messages {
 		messages.Toolbars = englishToolbars
 		messages.Autofill = englishAutofill
 		messages.Credentials = englishCredentials
+		messages.HostTags = englishHostTags
 		messages.History = englishHistory
 		messages.Completion = englishCompletion
 		messages.SSHSync = englishSSHSync

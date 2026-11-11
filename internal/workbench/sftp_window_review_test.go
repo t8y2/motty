@@ -15,6 +15,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/sftpclient"
 )
 
@@ -423,5 +424,69 @@ func TestSFTPWindowGlobalHistoryRemovalRepaintsNativeQueue(t *testing.T) {
 	view.Driver().Pump()
 	if w.queueCount() != 0 || w.ui.queueBounds.Width != 0 {
 		t.Fatal("global removal left a stale native queue")
+	}
+}
+
+func TestSFTPWindowMovesSelectionThroughContextMenu(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		fail bool
+	}{
+		{name: "file and folder"},
+		{name: "partial failure", fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state, w, remote, host, _ := dualSFTPFixture(t, 1)
+			preview := host.windows[0].view
+			const target = "/home/test/target"
+			if err := remote.Mkdir(target); err != nil {
+				t.Fatal(err)
+			}
+			if tc.fail {
+				remote.mu.Lock()
+				remote.renameErrAt = map[string]error{"/home/test/docs": os.ErrPermission}
+				remote.mu.Unlock()
+			}
+			w.refresh(false)
+			dualWait(t, state, w, preview, func() bool { return !w.view.busy && len(w.view.rows) == 3 })
+			w.view.sftpFolder.selectRow(sftpRowIndex(t, w.view, "docs"), 0)
+			w.view.sftpFolder.selectRow(sftpRowIndex(t, w.view, "notes.txt"), keymap.Primary)
+			w.selectionChanged(false)
+			w.invalidate()
+			if err := preview.RightClickLabel("notes.txt"); err != nil {
+				t.Fatal(err)
+			}
+			dualClickID(t, preview, sftpWindowMenuActions.At(sftpWindowActionIndex(hitSFTPMove)))
+			if w.view.dialog != sftpDialogMove || len(w.view.dialogEntries) != 2 {
+				t.Fatal("Move to did not capture both selected entries")
+			}
+
+			app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(&w.view.dialogEditor)
+			w.view.dialogEditor.Insert("docs")
+			w.click(hitSFTPDialogSubmit)
+			if w.view.dialog != sftpDialogMove || w.view.dialogError != state.messages.SFTPErrMoveInside {
+				t.Fatal("Move to allowed the selected folder as the destination")
+			}
+			app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(&w.view.dialogEditor)
+			w.view.dialogEditor.Insert("target")
+			w.click(hitSFTPDialogSubmit)
+			dualWait(t, state, w, preview, func() bool {
+				return !w.view.busy && sftpRowIndexOrNegative(w.view, "notes.txt") < 0
+			})
+
+			if got := remoteText(remote, target+"/notes.txt"); got != "hello world" {
+				t.Fatalf("moved file has content %q", got)
+			}
+			if remains := sftpRowIndexOrNegative(w.view, "docs") >= 0; remains != tc.fail {
+				t.Fatalf("source listing contains docs: %v, want %v", remains, tc.fail)
+			}
+			if tc.fail {
+				if len(w.notices.items) != 1 || !strings.Contains(w.notices.items[0].detail, "/home/test/docs") {
+					t.Fatalf("notice did not identify the failed folder: %+v", w.notices.items)
+				}
+			} else if entry, err := remote.Stat(target + "/docs"); err != nil || !entry.IsDir() {
+				t.Fatalf("selected folder was not moved: %v, %v", entry, err)
+			}
+		})
 	}
 }

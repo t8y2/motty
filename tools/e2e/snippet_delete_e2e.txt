@@ -1,0 +1,21 @@
+click "Snippets"
+click "Add snippet"
+waitfor "Add a snippet" 3000
+type Delete me
+key tab
+type echo delete-me-701
+click "Save"
+settle 600
+click "Delete"
+expect text "Delete snippet?" within 1000
+expect text "Delete me" within 1000
+click id:snippets/snippet-delete-cancel
+settle 400
+expect no-text "Delete snippet?"
+expect text "Delete me"
+click "Delete"
+expect text "Delete snippet?" within 1000
+click id:snippets/snippet-delete-confirm
+settle 300
+expect text "No snippets"
+texts

@@ -85,10 +85,18 @@ func (state *State) sftpMenuDismissPointer(event gfx.PointerEvent) (gfx.EventRes
 	return gfx.EventResult{}, false
 }
 
-// sftpMenuPointer opens the menu on a secondary press on a row of the file list,
-// selecting that row first unless it is already part of the selection.
+// sftpMenuPointer opens the file list menu on a secondary press. On the
+// background the menu acts on the current directory.
 func (state *State) sftpMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary {
+	if event.Kind != gfx.PointerDown {
+		return gfx.EventResult{}, false
+	}
+	background := event.Target == hitSFTPListBackground
+	if background && event.Button == gfx.PointerButtonPrimary {
+		// A press on the list background still takes focus out of the path field.
+		return gfx.EventResult{Handled: true, Repaint: true, Blur: true}, true
+	}
+	if event.Button != gfx.PointerButtonSecondary {
 		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
@@ -98,22 +106,28 @@ func (state *State) sftpMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bo
 	view := session.files
 	folder := view.active()
 	index, listRow := folder.listRow(event.Target)
-	if !listRow {
+	if !listRow && !background {
 		if event.Target.Scope() != hitSFTPEntryList {
 			return gfx.EventResult{}, false
 		}
 		index = folder.first + item(event.Target)
 	}
-	if view.dialog != sftpDialogNone || index >= len(folder.shownRows()) || view.busy && !view.local {
+	if view.dialog != sftpDialogNone || !background && index >= len(folder.shownRows()) || view.busy && !view.local {
 		return gfx.EventResult{Handled: true}, true
 	}
 	if folder.searching() {
+		if background {
+			return gfx.EventResult{}, false
+		}
 		// The actions in the menu are the folder's; a result is not in it.
 		folder.search.selectRow(index)
 		folder.listNeedsSeed = true
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if !folder.rows[index].selected {
+	if background {
+		folder.clearSelection()
+		view.setItemCountStatus(state.messages.SFTPItemsFmt, 0)
+	} else if !folder.rows[index].selected {
 		folder.selectRow(index, 0)
 		view.setItemCountStatus(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
 	}
@@ -165,25 +179,31 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 		}
 		rows.separate()
 	}
-	switch {
-	case view.localOnly:
-		rows.add(components.ContextMenuItem{ID: hitSFTPMenuInsertPath, Label: messages.SFTPInsertPath, Icon: icon(iconTerminal), Disabled: session.term == nil || session.term.shell == nil})
-	case local:
-		rows.add(components.ContextMenuItem{ID: hitSFTPMenuSend, Label: messages.Tools.SendToServer,
-			Description: view.path, Value: view.path, Hint: view.path, Icon: icon(iconUpload), Disabled: view.path == ""})
-	default:
-		rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownload, Label: messages.SFTPDownload, Icon: icon(iconDownload), Disabled: busy})
-		if view.lfolder.path != "" {
-			rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownloadHere, Label: messages.Tools.DownloadHere, Icon: icon(iconFileDown), Disabled: busy})
+	if count > 0 {
+		switch {
+		case view.localOnly:
+			rows.add(components.ContextMenuItem{ID: hitSFTPMenuInsertPath, Label: messages.SFTPInsertPath, Icon: icon(iconTerminal), Disabled: session.term == nil || session.term.shell == nil})
+		case local:
+			rows.add(components.ContextMenuItem{ID: hitSFTPMenuSend, Label: messages.Tools.SendToServer,
+				Description: view.path, Value: view.path, Hint: view.path, Icon: icon(iconUpload), Disabled: view.path == ""})
+		default:
+			rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownload, Label: messages.SFTPDownload, Icon: icon(iconDownload), Disabled: busy})
+			if view.lfolder.path != "" {
+				rows.add(components.ContextMenuItem{ID: hitSFTPMenuDownloadHere, Label: messages.Tools.DownloadHere, Icon: icon(iconFileDown), Disabled: busy})
+			}
 		}
 	}
-	if one && !local {
-		if !selected.IsDir() {
+	if !local && count > 0 {
+		if one && !selected.IsDir() {
 			rows.add(components.ContextMenuItem{ID: hitSFTPMenuEdit, Label: messages.Tools.ExtEditButton, Icon: icon(iconExternal), Disabled: busy})
 		}
 		rows.separate()
-		rows.add(components.ContextMenuItem{ID: hitSFTPMenuRename, Label: messages.SFTPRename, Icon: icon(iconPencil), Disabled: busy})
+		if one {
+			rows.add(components.ContextMenuItem{ID: hitSFTPMenuRename, Label: messages.SFTPRename, Icon: icon(iconPencil), Disabled: busy})
+		}
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuMove, Label: messages.SFTPMove, Icon: icon(iconFolderOpen), Disabled: busy})
+	}
+	if one && !local {
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuChmod, Label: messages.SFTPPermissions, Icon: icon(iconLock), Disabled: busy})
 		if _, archive := state.selectedArchive(session, view); archive {
 			rows.add(components.ContextMenuItem{ID: hitSFTPMenuExtract, Label: messages.Tools.Extract, Icon: icon(iconArchive), Disabled: busy})

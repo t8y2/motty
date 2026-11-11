@@ -490,6 +490,7 @@ const (
 	modalVaultForget
 	modalHighlightRule
 	modalSnippet
+	modalSnippetDelete
 	modalImportSessions
 	modalFontPicker
 	modalOutboundProxy
@@ -786,6 +787,7 @@ func (state *State) Wake() {
 		}
 	}
 	state.refreshOutputAlerts(nil)
+	state.pumpForwardTunnels()
 	state.pumpForwards()
 	state.pumpTransfer()
 	defer state.syncShortcutCapture()
@@ -1309,6 +1311,9 @@ func (state *State) promptSession() *Session {
 		if state.sessions[index].ID == state.modalSession {
 			return &state.sessions[index]
 		}
+	}
+	if tunnel := state.forwardTunnelByID(state.modalSession); tunnel != nil && !tunnel.closed {
+		return &tunnel.session
 	}
 	if w := state.sftpWindows[state.modalSession]; w != nil && w.ownsConnection && !w.closed {
 		return &w.session

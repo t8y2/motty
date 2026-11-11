@@ -12,11 +12,12 @@ import (
 )
 
 func (s *State) paintNotesPanel(c *gfx.Canvas, size gfx.Size) {
-	if !s.notes.panel {
+	if !s.notesPanelOpen() {
 		return
 	}
 	frame := s.workspacePixelBounds(size)
-	b := gfx.Rect{X: frame.X + frame.Width, Y: frame.Y, Width: s.notesPanelWidth(size), Height: frame.Height}
+	base := s.baseWorkspacePixelBounds(size)
+	b := gfx.Rect{X: frame.X + frame.Width, Y: base.Y, Width: s.notesPanelWidth(size), Height: base.Height}
 	s.paintNoteSidebar(c, b)
 }
 func (s *State) noteButton(c *gfx.Canvas, id gfx.ID, b gfx.Rect, label string, icon gfx.Icon) {

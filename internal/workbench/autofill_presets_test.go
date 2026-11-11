@@ -38,39 +38,18 @@ func TestThePresetPatternsAreTheirPromptsAndNothingElse(t *testing.T) {
 	}
 }
 
-func TestThePresetsFillTheRuleDialogForTheUserToSave(t *testing.T) {
+func TestTheSudoPresetFillsTheRuleDialogForTheUserToSave(t *testing.T) {
 	w := liveAutofillSession(t)
 	state := w.state
 	state.Click(hitSettings)
 
-	state.Click(hitSettingsAutofillSu)
-	if state.modal != modalAutofillRule || state.autofillRules.send != autofill.SendText ||
-		state.autofillRules.pattern.String() != suPromptPattern {
-		t.Fatalf("su preset: modal %d, send %v, pattern %q", state.modal, state.autofillRules.send, state.autofillRules.pattern.String())
-	}
-	typeInto(state, hitAutofillFixed, "root-secret")
-	state.Click(hitAutofillSubmit)
-	if state.modal != modalNone || len(state.autofillRules.rules) != 1 || state.autofillRules.rules[0].Enabled {
-		t.Fatalf("the su rule was not saved, off: modal %d, rules %+v", state.modal, state.autofillRules.rules)
-	}
-
-	// Turned on, it answers su's prompt once the user allows it.
-	state.Click(hitAutofillToggleList.At(0))
-	w.output("Password: ")
-	if state.modal != modalAutofillConfirm {
-		t.Fatalf("su's prompt did not ask: modal %d", state.modal)
-	}
-	state.Click(hitAutofillAllow)
-	if got := w.shell.typed(); got != "root-secret\r" {
-		t.Fatalf("typed %q", got)
-	}
-
 	state.Click(hitSettingsAutofillSudo)
-	if state.autofillRules.send != autofill.SendPassword || state.autofillRules.pattern.String() != sudoPromptPattern {
-		t.Fatalf("sudo preset: send %v, pattern %q", state.autofillRules.send, state.autofillRules.pattern.String())
+	if state.modal != modalAutofillRule || state.autofillRules.send != autofill.SendPassword ||
+		state.autofillRules.pattern.String() != sudoPromptPattern {
+		t.Fatalf("sudo preset: modal %d, send %v, pattern %q", state.modal, state.autofillRules.send, state.autofillRules.pattern.String())
 	}
 	state.Click(hitAutofillSubmit)
-	if len(state.autofillRules.rules) != 2 || state.autofillRules.rules[1].Send != autofill.SendPassword {
-		t.Fatalf("the sudo rule was not saved: %+v", state.autofillRules.rules)
+	if state.modal != modalNone || len(state.autofillRules.rules) != 1 || state.autofillRules.rules[0].Send != autofill.SendPassword {
+		t.Fatalf("the sudo rule was not saved: modal %d, rules %+v", state.modal, state.autofillRules.rules)
 	}
 }
