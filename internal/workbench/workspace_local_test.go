@@ -316,7 +316,7 @@ func TestWorkspaceLaunchesTheChosenShellAndSavesItsReference(t *testing.T) {
 	}
 	finishWorkspaceConnection(t, state, world.conns[0])
 	got, err := state.workspaceSaveHostCatalogIDs(state.deck.ActiveWorkspace())
-	if err != nil || !slices.Equal(got, []string{remote.host.CatalogID, workspaceLocalShellReference("/bin/bash")}) {
+	if err != nil || !slices.Equal(got, []string{workspaceLocalShellReference("/bin/bash"), remote.host.CatalogID}) {
 		t.Fatalf("save references = %v, %v", got, err)
 	}
 }
