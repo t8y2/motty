@@ -121,3 +121,16 @@ func TestScope(t *testing.T) {
 		t.Fatal("empty scope is every host")
 	}
 }
+
+// The saved state names the answer kinds; an unknown name must not come back as
+// a different kind.
+func TestSendNamesRoundTrip(t *testing.T) {
+	for _, send := range []Send{SendPassword, SendOTP, SendText} {
+		if got := SendFromString(send.String()); got != send {
+			t.Fatalf("%v round-tripped to %v", send, got)
+		}
+	}
+	if SendFromString("") != 0 || SendFromString("nonsense") != 0 {
+		t.Fatal("an unknown answer name became a kind")
+	}
+}

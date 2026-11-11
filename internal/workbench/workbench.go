@@ -1483,6 +1483,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	}
 	defer state.runLaunches()
 	defer state.sshSyncCheck()
+	if state.clickAutofillPick(id) {
+		return
+	}
 	if state.clickCompletion(id) {
 		return
 	}
@@ -2641,6 +2644,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.terminalInputKey(event); handled {
+		return result
+	}
+	if result, handled := state.autofillPickKey(event); handled {
 		return result
 	}
 	if result, handled := state.completionKey(event); handled {

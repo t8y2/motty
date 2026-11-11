@@ -80,6 +80,7 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 		state.paintWorkspaceCommandNotice(canvas, session, t.paintCommandNotice.Rect())
 	}
 	state.paintCompletionList(canvas, session, t.paintGeometry)
+	state.paintAutofillPick(canvas, session, t.paintGeometry)
 	if t.paintNoticeShown {
 		state.paintTerminalInputNotice(canvas, session, t.paintNotice.Rect())
 	}

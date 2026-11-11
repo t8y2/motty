@@ -170,8 +170,6 @@ func (state *State) clickTerminalTools(id gfx.ID) bool {
 		state.openAutofillDialog(nil)
 	case id == hitSettingsAutofillSudo:
 		state.openAutofillSudoPreset()
-	case id == hitSettingsAutofillSu:
-		state.openAutofillSuPreset()
 	case id.Scope() == hitAutofillToggleList:
 		state.toggleAutofillRule(item(id))
 	case id.Scope() == hitAutofillEditList:
