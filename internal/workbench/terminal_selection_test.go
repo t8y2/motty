@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -418,9 +419,35 @@ func TestRightClickCopiesSelectionInsteadOfPasting(t *testing.T) {
 	if copied != "hello" || len(shell.input) != 0 || state.terminalMenu.open {
 		t.Fatalf("selected right click: copied=%q input=%q menu=%v", copied, shell.input, state.terminalMenu.open)
 	}
+	if session.term.selection.selected {
+		t.Fatal("the copy left the selection behind, so the next right click would copy again instead of pasting")
+	}
 	click(gfx.ModifierShift)
 	if !state.terminalMenu.open || len(shell.input) != 0 {
-		t.Fatal("Shift+right click with a selection did not open the menu")
+		t.Fatal("Shift+right click did not open the menu")
+	}
+}
+
+func TestRightClickCopyKeepsTheSelectionWhenTheClipboardFails(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("hello world"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 4}),
+	)
+	state.options.SetClipboardText = func(string) error { return errors.New("clipboard busy") }
+	state.options.ClipboardText = func() (string, error) { return "paste", nil }
+	state.terminalRightClickPaste = true
+	x, y := cellPoint(geometry, 0, 8, state.cellWidth, state.cellHeight)
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary,
+		Target: terminalTestHit(state, session), X: x, Y: y, Viewport: state.viewport})
+	if !session.term.selection.selected || state.status != "clipboard busy" {
+		t.Fatalf("failed copy: selected=%v status=%q", session.term.selection.selected, state.status)
+	}
+	if len(shell.input) != 0 || state.terminalMenu.open {
+		t.Fatalf("failed copy pasted or opened the menu: input=%q menu=%v", shell.input, state.terminalMenu.open)
 	}
 }
 
