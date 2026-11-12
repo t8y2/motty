@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"motty/internal/ai/gate"
@@ -24,6 +25,12 @@ import (
 // command is interrupted. The call's own timeout still bounds the transfer.
 const rzszStartWait = 20 * time.Second
 
+// rzszProgressEvery is how often a running transfer tells the MCP client how
+// many bytes have moved. The remote screen stays on "rz waiting to receive"
+// until the end, and a client that hears nothing times the call out, so the
+// two cases look the same unless the byte count is reported on its own.
+const rzszProgressEvery = 400 * time.Millisecond
+
 // rzszJob is one armed transfer. It is completed exactly once, on the window
 // thread, including when the shell disappears or the caller gives up.
 type rzszJob struct {
@@ -38,6 +45,12 @@ type rzszJob struct {
 	armed     time.Duration
 	reason    error
 	done      chan rzszResult
+
+	// snap is the newest progress. The window thread stores it and the call
+	// that is waiting on done reads it.
+	mu   sync.Mutex
+	snap gate.RZSZSnapshot
+	have bool
 }
 
 type rzszResult struct {
@@ -47,6 +60,8 @@ type rzszResult struct {
 
 var _ gate.RZSZMover = (*aiBackend)(nil)
 var _ gate.RZSZMover = hubBackend{}
+var _ gate.RZSZObserver = (*aiBackend)(nil)
+var _ gate.RZSZObserver = hubBackend{}
 
 func (b *aiBackend) TransferRZSZ(ctx context.Context, req tools.RZSZRequest) (gate.RZSZStatus, error) {
 	job, err := aiCall(b.state, ctx, func() (*rzszJob, error) {
@@ -61,14 +76,117 @@ func (b *aiBackend) TransferRZSZ(ctx context.Context, req tools.RZSZRequest) (ga
 	}
 	timer := time.NewTimer(execTimeout(req.TimeoutSeconds))
 	defer timer.Stop()
-	select {
-	case res := <-job.done:
-		return res.status, res.err
-	case <-timer.C:
-		return b.state.abortRZSZWait(job, errors.New("rz/sz timed out"))
-	case <-ctx.Done():
-		return b.state.abortRZSZWait(job, ctx.Err())
+	ticker := time.NewTicker(rzszProgressEvery)
+	defer ticker.Stop()
+	var sent float64
+	reported := false
+	publish := func() { publishRZSZProgress(ctx, job, &sent, &reported) }
+	publish()
+	for {
+		select {
+		case res := <-job.done:
+			publish()
+			return res.status, res.err
+		case <-timer.C:
+			return b.state.abortRZSZWait(job, errors.New("rz/sz timed out"))
+		case <-ctx.Done():
+			return b.state.abortRZSZWait(job, ctx.Err())
+		case <-ticker.C:
+			publish()
+		}
 	}
+}
+
+func (b *aiBackend) RZSZStatus(ctx context.Context, sessionID string) (gate.RZSZSnapshot, bool, error) {
+	type found struct {
+		snap   gate.RZSZSnapshot
+		active bool
+	}
+	got, err := aiCall(b.state, ctx, func() (found, error) {
+		session, err := b.session(sessionID)
+		if err != nil {
+			return found{}, err
+		}
+		if session.rzsz == nil {
+			return found{}, nil
+		}
+		snap, ok := session.rzsz.load()
+		return found{snap, ok}, nil
+	})
+	return got.snap, got.active, err
+}
+
+func (b hubBackend) RZSZStatus(ctx context.Context, session string) (gate.RZSZSnapshot, bool, error) {
+	backend, local, err := b.target(ctx, session)
+	if err != nil {
+		return gate.RZSZSnapshot{}, false, err
+	}
+	return backend.RZSZStatus(ctx, local)
+}
+
+func (job *rzszJob) store(snap gate.RZSZSnapshot) {
+	job.mu.Lock()
+	job.snap, job.have = snap, true
+	job.mu.Unlock()
+}
+
+func (job *rzszJob) load() (gate.RZSZSnapshot, bool) {
+	job.mu.Lock()
+	defer job.mu.Unlock()
+	return job.snap, job.have
+}
+
+// publishRZSZProgress tells the MCP client the newest byte count. A repeat of
+// the same count is skipped: a progress notification has to move forward.
+func publishRZSZProgress(ctx context.Context, job *rzszJob, sent *float64, reported *bool) {
+	snap, ok := job.load()
+	if !ok {
+		return
+	}
+	progress := float64(snap.BytesDone)
+	if *reported && progress <= *sent {
+		return
+	}
+	*reported, *sent = true, progress
+	report := gate.ProgressReport{Progress: progress, Message: gate.FormatRZSZSnapshot(snap)}
+	if snap.BytesTotal >= 0 {
+		report.HasTotal, report.Total = true, float64(snap.BytesTotal)
+	}
+	gate.ReportProgress(ctx, report)
+}
+
+// noteRZSZ copies the engine's progress onto the armed call. Window thread.
+func (state *State) noteRZSZ(session *Session) {
+	job := session.rzsz
+	if job == nil {
+		return
+	}
+	job.store(rzszSnapshot(session, job))
+}
+
+func rzszSnapshot(session *Session, job *rzszJob) gate.RZSZSnapshot {
+	snap := gate.RZSZSnapshot{
+		Direction:  "download",
+		Phase:      gate.RZSZPhaseWaiting,
+		Name:       job.remote,
+		BytesTotal: -1,
+	}
+	if job.upload {
+		snap.Direction = "upload"
+		snap.BytesTotal = job.bytes
+	}
+	if session != nil && session.transfer.phase != transferNone {
+		progress := session.transfer.progress
+		snap.Phase = gate.RZSZPhaseTransferring
+		snap.BytesDone = progress.Done
+		if progress.Name != "" {
+			snap.Name = progress.Name
+		}
+		if progress.Size >= 0 {
+			snap.BytesTotal = progress.Size
+		}
+	}
+	return snap
 }
 
 func (b hubBackend) TransferRZSZ(ctx context.Context, req tools.RZSZRequest) (gate.RZSZStatus, error) {
@@ -151,6 +269,7 @@ func (state *State) prepareRZSZ(session *Session, req tools.RZSZRequest) (string
 		job.engine = zmodem.NewSender([]zmodem.SendFile{{
 			Name: name, Size: info.Size(), ModTime: info.ModTime(), Mode: uint32(info.Mode().Perm()), Source: file,
 		}}, zmodem.SendOptions{})
+		job.store(rzszSnapshot(session, job))
 		command, err := rzszShellCommand(true, req.Remote, req.Overwrite)
 		if err != nil {
 			state.releaseRZSZ(nil, job)
@@ -166,6 +285,7 @@ func (state *State) prepareRZSZ(session *Session, req tools.RZSZRequest) (string
 	job.remote = name
 	job.folder = &folderTarget{dir: dir}
 	job.engine = zmodem.NewReceiver(&rzszDownload{dir: dir, name: name, overwrite: req.Overwrite})
+	job.store(rzszSnapshot(session, job))
 	command, err := rzszShellCommand(false, req.Remote, false)
 	if err != nil {
 		job.engine.Close()

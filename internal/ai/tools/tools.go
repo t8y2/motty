@@ -106,6 +106,7 @@ const (
 	// is not the host SFTP talks to; rz and sz ride that shell.
 	NameRZSZUpload   = "rzsz_upload"
 	NameRZSZDownload = "rzsz_download"
+	NameRZSZStatus   = "rzsz_status"
 
 	// NameRequestAgentMode is the one tool Ask mode offers. It runs nothing:
 	// the application asks the user to switch to Agent and retry.
@@ -342,7 +343,7 @@ func isJobTool(name string) bool {
 // isRZSZ reports the terminal ZMODEM tools. They need the visible shell, so a
 // headless server, which has no terminal, does not offer them.
 func isRZSZ(name string) bool {
-	return name == NameRZSZUpload || name == NameRZSZDownload
+	return name == NameRZSZUpload || name == NameRZSZDownload || name == NameRZSZStatus
 }
 
 // Lookup finds a tool by name.

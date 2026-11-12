@@ -21,9 +21,10 @@ func init() {
 		Spec{
 			Name: NameRZSZUpload,
 			Kind: Write,
-			Description: "Upload one local file by running rz in this visible terminal and sending it with ZMODEM. " +
-				"Use it when this shell was reached through a jump host and SFTP is not this shell. The remote needs rz. " +
-				"The file keeps its name in the working directory, or in remote_dir. An existing file is skipped unless overwrite is true.",
+			Description: "Upload one local file with rz and ZMODEM when SFTP is not this shell. The remote needs rz. " +
+				"The file keeps its name; an existing file is skipped unless overwrite is true. " +
+				"Reports how many bytes have moved. A client timeout is not a failure: call rzsz_status. " +
+				"The screen stays at rz waiting to receive until the end either way.",
 			Schema: json.RawMessage(`{"type":"object","properties":{` + rzszSession +
 				`,"local_path":{"type":"string","minLength":1,"maxLength":4096,"description":"Absolute path of the file on the computer running Motty."}` +
 				`,"remote_dir":{"type":"string","maxLength":4096,"description":"Remote directory to enter before rz. Empty uses the shell's working directory."}` +
@@ -32,13 +33,22 @@ func init() {
 		Spec{
 			Name: NameRZSZDownload,
 			Kind: Write,
-			Description: "Download one remote file by running sz in this visible terminal and receiving it with ZMODEM into local_dir. " +
-				"Use it when this shell was reached through a jump host and SFTP is not this shell. The remote needs sz. " +
-				"The file keeps its remote name. An existing local file fails unless overwrite is true.",
+			Description: "Download one remote file with sz and ZMODEM into local_dir when SFTP is not this shell. The remote needs sz. " +
+				"The file keeps its name; an existing local file fails unless overwrite is true. " +
+				"Reports how many bytes have moved. A client timeout is not a failure: call rzsz_status. " +
+				"The screen stays at rz waiting to receive until the end either way.",
 			Schema: json.RawMessage(`{"type":"object","properties":{` + rzszSession +
 				`,"remote_path":{"type":"string","minLength":1,"maxLength":4096,"description":"File path as the remote shell sees it."}` +
 				`,"local_dir":{"type":"string","minLength":1,"maxLength":4096,"description":"Absolute directory on the computer running Motty."}` +
 				`,` + rzszReplace + `,` + rzszTimeout + `},"required":["local_dir","remote_path"],"additionalProperties":false}`),
+		},
+		Spec{
+			Name: NameRZSZStatus,
+			Kind: Read,
+			Description: "Read the rz/sz transfer on this terminal. phase waiting and bytes_done 0 means the remote has not accepted the file. " +
+				"phase transferring means bytes are moving, even while the screen still says rz waiting to receive. " +
+				"Do not start another transfer. active is false when none is running. bytes_total is -1 until the size is known.",
+			Schema: json.RawMessage(`{"type":"object","properties":{` + rzszSession + `},"additionalProperties":false}`),
 		},
 	)
 }
@@ -173,4 +183,21 @@ func (args RZSZUploadArgs) Request() RZSZRequest {
 // Request is the backend form of a download. LocalPath is the directory.
 func (args RZSZDownloadArgs) Request() RZSZRequest {
 	return RZSZRequest{Session: args.Session, LocalPath: args.LocalDir, Remote: args.RemotePath, Overwrite: args.Overwrite, TimeoutSeconds: args.TimeoutSeconds}
+}
+
+// RZSZStatusArgs selects the terminal whose rz/sz transfer to read.
+type RZSZStatusArgs struct {
+	Session string `json:"session,omitempty"`
+}
+
+// DecodeRZSZStatus validates a status call. An empty object reads the active session.
+func DecodeRZSZStatus(raw []byte) (RZSZStatusArgs, error) {
+	var w struct {
+		Session *string `json:"session"`
+	}
+	if err := decode(raw, &w); err != nil {
+		return RZSZStatusArgs{}, err
+	}
+	session, err := session(w.Session)
+	return RZSZStatusArgs{Session: session}, err
 }

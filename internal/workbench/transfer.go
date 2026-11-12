@@ -182,6 +182,7 @@ func (state *State) afterTransferFeed(session *Session) {
 		session.term.shell.Write(out)
 	}
 	transfer.progress = engine.Progress()
+	state.noteRZSZ(session)
 	if engine.Finished() && transfer.phase == transferRunning {
 		transfer.phase, transfer.closedAt = transferClosing, state.now()
 		state.releaseTransferModal(session)

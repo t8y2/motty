@@ -20,4 +20,11 @@ func TestRZSZDecoders(t *testing.T) {
 	if _, err := DecodeRZSZDownload([]byte(`{"remote_path":"/tmp/a","local_dir":"D:\\box","extra":1}`)); err == nil {
 		t.Fatal("an unknown field was accepted")
 	}
+	status, err := DecodeRZSZStatus([]byte(`{"session":"w1:2"}`))
+	if err != nil || status.Session != "w1:2" {
+		t.Fatalf("%+v %v", status, err)
+	}
+	if _, err := DecodeRZSZStatus([]byte(`{"session":"ok","extra":1}`)); err == nil {
+		t.Fatal("an unknown field was accepted")
+	}
 }
