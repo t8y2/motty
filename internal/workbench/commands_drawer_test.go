@@ -297,8 +297,8 @@ func TestCommandSortMenuPicksAnOrder(t *testing.T) {
 }
 
 // Both dropdowns the bar opens are painted above it with every row intact. A
-// fixed height that ignores the heading and the divider clips the last action,
-// which is the easiest way for these menus to look broken.
+// fixed height that ignores the heading row and the divider clips the last
+// action, which is the easiest way for these menus to look broken.
 func TestCommandMenusKeepTheirLastRowAboveTheBar(t *testing.T) {
 	tests := []struct {
 		name string

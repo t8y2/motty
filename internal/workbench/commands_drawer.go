@@ -327,25 +327,33 @@ func (state *State) commandsMenuBounds(canvas *gfx.Canvas, bar, anchor gfx.Rect,
 	return bounds
 }
 
-// commandsMenuHeight counts the rows, the heading and the divider, plus the
-// surface's own padding. Leaving any of them out clips the menu's last row.
-func commandsMenuHeight(rows int, heading, divider bool) float32 {
+// commandsMenuHeight counts the rows and the divider, plus the surface's own
+// padding. The heading is a plain (disabled) row like every other row, so it is
+// one of rows; leaving any of them out clips the menu's last row.
+func commandsMenuHeight(rows int, divider bool) float32 {
 	const rowHeight = float32(32) // the dropdown component's standard row
 	height := float32(rows)*rowHeight + 2*components.DropdownMenuPadding
-	if heading {
-		height += components.DropdownMenuLabelHeight
-	}
 	if divider {
 		height += components.DropdownMenuSeparatorHeight
 	}
 	return height
 }
 
+// commandsMenuHeading is a muted, non-interactive first row. It uses AddItem,
+// not AddLabel: a dropdown label is smaller and indented, which would make the
+// menu's type uneven and its rows start at two different left edges.
+func commandsMenuHeading(label string) components.DropdownMenuItem {
+	return components.DropdownMenuItem{Label: label, Disabled: true}
+}
+
 // paintCommandsFilterMenu draws the group-filter dropdown: a heading, a checkbox
 // per group (and one for ungrouped), then Show all / Hide all. It is the project's
-// standard dropdown menu, opened upwards from the bar's left-hand button.
+// standard dropdown menu, opened upwards from the bar's left-hand button. Every
+// label starts at the same x and uses the same size; only the check marks sit on
+// the right.
 func (state *State) paintCommandsFilterMenu(canvas *gfx.Canvas, bar gfx.Rect, anchor gfx.Rect) {
 	m := state.messages.Tools
+	heading := commandsMenuHeading(m.CommandsFilter)
 	groups, hasUngrouped := state.commandGroups()
 	choices := make([]components.DropdownMenuItem, 0, len(groups)+1)
 	if hasUngrouped {
@@ -366,21 +374,23 @@ func (state *State) paintCommandsFilterMenu(canvas *gfx.Canvas, bar gfx.Rect, an
 		actions = []components.DropdownMenuItem{{Label: m.CommandsNoGroups, Disabled: true}}
 	} else {
 		actions = []components.DropdownMenuItem{
-			{ID: hitCommandsGroupAll, Label: m.CommandsShowAll, Icon: lucideIcons[iconCheck]},
-			{ID: hitCommandsGroupNone, Label: m.CommandsHideAll, Icon: lucideIcons[iconEyeOff]},
+			{ID: hitCommandsGroupAll, Label: m.CommandsShowAll},
+			{ID: hitCommandsGroupNone, Label: m.CommandsHideAll},
 		}
 	}
-	items := append(append([]components.DropdownMenuItem{}, choices...), actions...)
+	items := make([]components.DropdownMenuItem, 0, 1+len(choices)+len(actions))
+	items = append(items, heading)
+	items = append(items, choices...)
+	items = append(items, actions...)
 	width := state.commandsMenuWidth(canvas, items, 190)
-	height := commandsMenuHeight(len(items), true, !empty)
+	height := commandsMenuHeight(len(items), !empty)
 	menu := components.BeginDropdownMenu(canvas, state.Theme(), state.commandsMenuBounds(canvas, bar, anchor, width, height), components.DropdownMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitCommandsFilterDismiss,
 		Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitCommandsFilterDismiss),
 		Side: components.OverlayTop,
 	})
 	state.menuPlaced(menu.Bounds())
-	// Inset the heading so it lines up with the labels beside the checkboxes.
-	menu.AddLabel(m.CommandsFilter, true)
+	menu.AddItem(heading)
 	for _, choice := range choices {
 		menu.AddItem(choice)
 	}
@@ -398,7 +408,7 @@ func (state *State) paintCommandsFilterMenu(canvas *gfx.Canvas, bar gfx.Rect, an
 // the order button. Picking an order closes it, since the bar behind already
 // shows the result.
 func (state *State) paintCommandsSortMenu(canvas *gfx.Canvas, bar gfx.Rect, anchor gfx.Rect) {
-	items := make([]components.DropdownMenuItem, 0, len(settingsCommandsSortChoices))
+	items := []components.DropdownMenuItem{commandsMenuHeading(state.messages.Tools.CommandsSortRow)}
 	for i, order := range settingsCommandsSortChoices {
 		current := state.commands.sort == order
 		items = append(items, components.DropdownMenuItem{
@@ -407,14 +417,13 @@ func (state *State) paintCommandsSortMenu(canvas *gfx.Canvas, bar gfx.Rect, anch
 		})
 	}
 	width := state.commandsMenuWidth(canvas, items, 180)
-	height := commandsMenuHeight(len(items), true, false)
+	height := commandsMenuHeight(len(items), false)
 	menu := components.BeginDropdownMenu(canvas, state.Theme(), state.commandsMenuBounds(canvas, bar, anchor, width, height), components.DropdownMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitCommandsSortDismiss,
 		Viewport: state.windowRect(), Scroll: state.menuScrollFor(hitCommandsSortDismiss),
 		Side: components.OverlayTop,
 	})
 	state.menuPlaced(menu.Bounds())
-	menu.AddLabel(state.messages.Tools.CommandsSortRow, true)
 	for _, item := range items {
 		menu.AddItem(item)
 	}
