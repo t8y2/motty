@@ -66,6 +66,7 @@ func TestSameSavedHostNoticesEveryField(t *testing.T) {
 			Proxy:      &savedOutboundProxy{Kind: "socks5", Address: "proxy.example.com:1080", User: "pu", Bypass: "localhost"},
 			Algorithms: "compatible", AlgorithmList: "a,b", Authentication: "key", Identity: "SHA256:abc",
 			ForwardX11: true, AgentForward: true, NoHistory: true, Transfer: "sftp", ViaSSH: true, Clipboard: true,
+			IdleKeepAliveSeconds: 300, IdleInput: "custom", IdleInputCustom: `\x00`,
 		},
 	}
 	if !sameSavedHost(base, cloneSavedHost(base)) {
@@ -105,6 +106,8 @@ func TestSameSavedHostNoticesEveryField(t *testing.T) {
 		switch last.Kind() {
 		case reflect.String:
 			last.SetString(last.String() + "-other")
+		case reflect.Int:
+			last.SetInt(last.Int() + 1)
 		case reflect.Uint16:
 			last.SetUint(last.Uint() + 1)
 		case reflect.Bool:

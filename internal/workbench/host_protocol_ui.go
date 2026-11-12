@@ -422,6 +422,7 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 	case id == hitDialogPortsTrigger:
 		editor.ports = serial.Ports()
 		editor.portsOpen = !editor.portsOpen
+	case state.clickHostIdleKeepAlive(id):
 	case id == hitDialogPortsDismiss:
 		editor.portsOpen = false
 	case id.Scope() == hitDialogPortsItemList:
@@ -533,18 +534,47 @@ const advancedHeaderHeight = 48
 // it: 8px each, around its 32px.
 const advancedHeaderGap = 8
 
-// advancedSectionHeight is the room of an SSH host's Advanced section: its row
-// alone while closed, and open the algorithm choice (a third row for a custom
-// list), the one-time code secret with its buttons, and the switches.
-func (state *State) advancedSectionHeight() float32 {
-	if !state.editor.advancedOpen {
-		return advancedHeaderHeight
+// sshAdvancedRowsHeight is the room of the SSH-only part of an open Advanced
+// section: the algorithm choice (a third row for a custom list), the one-time
+// code secret with its buttons, and the switches.
+func (state *State) sshAdvancedRowsHeight() float32 {
+	if state.editor.protocol != protocolSSH {
+		return 0
 	}
 	rows := float32(1)
 	if state.editor.algoMode == algoCustom {
 		rows++
 	}
-	return advancedHeaderHeight + rows*hostFormRowHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight
+	return rows*hostFormRowHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight
+}
+
+// idleAdvancedRowsHeight is the room of the idle keepalive rows: a heading, the
+// interval, the custom interval and unit when chosen, and the send content with
+// its custom field when the probe is on.
+func (state *State) idleAdvancedRowsHeight() float32 {
+	if !idleKeepAliveProtocol(state.editor.protocol) {
+		return 0
+	}
+	height := float32(groupHeadingHeight + hostFormRowHeight)
+	if state.editor.idleKeepAlive == idleKeepAliveCustom {
+		height += hostFormRowHeight
+	}
+	if state.editor.idleKeepAlive != idleKeepAliveOff {
+		height += hostFormRowHeight
+		if state.editor.idleInputValue() == idleInputCustom {
+			height += hostFormRowHeight
+		}
+	}
+	return height + 16
+}
+
+// advancedSectionHeight is the room of a terminal host's Advanced section: its
+// row alone while closed, and open the protocol's rows plus the idle keepalive.
+func (state *State) advancedSectionHeight() float32 {
+	if !state.editor.advancedOpen {
+		return advancedHeaderHeight
+	}
+	return advancedHeaderHeight + state.sshAdvancedRowsHeight() + state.idleAdvancedRowsHeight()
 }
 
 // hostDialogExtra is the height the protocol-specific rows add to the host dialog.
@@ -552,7 +582,7 @@ func (state *State) hostDialogExtra() float32 {
 	if state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP {
 		return state.desktopRowsHeight()
 	}
-	if state.editor.protocol != protocolSSH {
+	if !idleKeepAliveProtocol(state.editor.protocol) {
 		return 0
 	}
 	return state.advancedSectionHeight()
@@ -591,7 +621,12 @@ func (state *State) paintAdvancedSection(canvas *gfx.Canvas) {
 	}
 	paintIcon(canvas, uint8(chevron), icon.Rect(), pal.muted)
 	if open {
-		state.paintAlgorithmRows(canvas)
+		if state.editor.form.layoutProtocol == protocolSSH {
+			state.paintAlgorithmRows(canvas)
+		}
+		if idleKeepAliveProtocol(state.editor.form.layoutProtocol) {
+			state.paintHostIdleKeepAliveRows(canvas)
+		}
 	}
 }
 
@@ -679,6 +714,7 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 		b.interactive = state.declareDialogCheckboxC(c, m.InteractiveOnly, 12, 0)
 		heading(m.AdvancedAgents)
 		b.agentAccess, b.agentHelp = state.declareDialogCheckboxHelpC(c, m.AgentAccess, 4, 0)
+		state.declareHostIdleKeepAliveRows(c)
 	})
 }
 

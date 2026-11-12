@@ -221,6 +221,9 @@ type terminal struct {
 	// records sees releases, so the end of that press is dropped with its
 	// repeats: the program never got the press itself.
 	acceptedKey acceptedKey
+	// idleLastInput is when this shell last received input from any source. The
+	// idle keepalive measures its quiet interval from here.
+	idleLastInput time.Duration
 
 	// exec is the command the assistant is waiting on in this terminal.
 	exec *aiExec
@@ -676,7 +679,26 @@ func (t *terminal) sendSecret(p []byte) bool {
 	return accepted
 }
 
+// noteInput restarts this shell's quiet interval. Any input counts, whether the
+// user typed it, an autofill answer wrote it, or a command did.
+func (t *terminal) noteInput() {
+	if t.clock != nil {
+		t.idleLastInput = t.clock()
+	}
+}
+
+// sendIdleKeepAlive writes the probe into the shell without going through the
+// typed-input path: it is neither history nor the user's line, so the recorder,
+// autofill and completion never see it.
+func (t *terminal) sendIdleKeepAlive(p []byte) bool {
+	if t.shell == nil || len(p) == 0 {
+		return false
+	}
+	return t.writeShellInput(p)
+}
+
 func (t *terminal) noteShellInput(p []byte) {
+	t.noteInput()
 	t.passwordHint = ""
 	if bytes.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		t.inputLine = false // Enter, Tab, an arrow or Ctrl-R: the line is no longer what was typed
@@ -712,6 +734,7 @@ func (t *terminal) sendProtocol(p []byte) bool {
 	}
 	accepted := t.writeShellInput(p)
 	if accepted {
+		t.noteInput()
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
 	}
 	return accepted
@@ -866,6 +889,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	}
 	t.shell = shell
 	t.shellOpened = state.now()
+	t.idleLastInput = t.shellOpened
 	t.noShellTold = false
 	// A connection that drops takes the running program's teardown with it, so
 	// the modes it had armed on this screen (the alternate screen, mouse

@@ -373,6 +373,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
+	state.requestIdleKeepAliveFrames(canvas)
 	state.paintLocalProxyFocus(canvas)
 	state.paintTransferProgressCard(canvas)
 	// Last, so a tooltip is never covered by what it describes.
@@ -2910,6 +2911,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 	form := &editor.form
 	b := &editor.form.body
 	ssh := editor.protocol == protocolSSH
+	terminalHost := idleKeepAliveProtocol(editor.protocol)
 	networkHost := editor.protocol != protocolSerial
 	vncHost := editor.protocol == protocolVNC || editor.protocol == protocolRDP
 	rowHeight := float32(hostFormRowHeight)
@@ -2970,19 +2972,27 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 			}
 			if ssh {
 				b.jump = state.declareHostJumpRow(c)
+			}
+			if terminalHost {
 				b.advanced = ui.Slot(c).Height(state.advancedSectionHeight())
 				advanced := b.advanced
 				advanced.Children(func() {
 					b.advancedHeader, b.advancedHeaderIcon = state.declareHostAdvancedHeader(c)
 					if editor.advancedOpen {
-						// The rows and the choice are declared as the same overlay:
-						// the choice keeps its press for after the rows laid out.
-						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
-							state.declareHostAlgoRows(c)
-						})
-						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Height(rowHeight).Children(func() {
-							b.algo = state.declareHostAlgoChoice(c)
-						})
+						if ssh {
+							// The rows and the choice are declared as the same overlay:
+							// the choice keeps its press for after the rows laid out.
+							ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
+								state.declareHostAlgoRows(c)
+							})
+							ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Height(rowHeight).Children(func() {
+								b.algo = state.declareHostAlgoChoice(c)
+							})
+						} else {
+							ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
+								state.declareHostIdleKeepAliveRows(c)
+							})
+						}
 					}
 				})
 			}
@@ -3098,8 +3108,10 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if vncHost {
 		state.paintVNCRows(canvas)
 	}
-	if ssh {
-		state.paintHostJumpRow(canvas)
+	if idleKeepAliveProtocol(protocol) {
+		if ssh {
+			state.paintHostJumpRow(canvas)
+		}
 		state.paintAdvancedSection(canvas)
 	}
 	// The choices are the page's controls: keep the option the tab ring reaches
