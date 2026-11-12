@@ -364,7 +364,7 @@ type ToolsMessages struct {
 	TransferDecline           string
 	TransferChooseFiles       string
 	TransferChooseFolder      string
-	TransferToDownloads       string
+	TransferToFolderFmt       string
 
 	// The file panel.
 	CatFiles                        string

@@ -145,6 +145,45 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 	}
 }
 
+func TestTransferCenterClipsCardActionsToList(t *testing.T) {
+	state := transferPreviewState(t)
+	// Give each of the four cards manually painted controls.
+	for index := range state.transfers.entries {
+		entry := &state.transfers.entries[index]
+		entry.snapshot.State = sftpclient.TransferRunning
+		entry.owner = &sftpView{}
+		state.describeTransfer(entry)
+	}
+	state.describeTransferSummary()
+
+	view, err := headless.Open(app.Config{
+		Title: "Motty", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+	}, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	last := hitTransfersCancel.At(1)
+	if hit, ok := findSnapshotHit(view.Snapshot(), last); ok {
+		t.Fatalf("offscreen Cancel button has a hit region: %+v", hit.Bounds)
+	}
+	if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(16 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	hit, ok := findSnapshotHit(view.Snapshot(), last)
+	list := state.transfers.list
+	if !ok || hit.Bounds.Y < list.Y || hit.Bounds.Y+hit.Bounds.Height > list.Y+list.Height {
+		t.Fatalf("Cancel button did not scroll into the list viewport: %+v, list %+v", hit.Bounds, list)
+	}
+}
+
 func TestTransferCenterNativeRevealUsesVivaWithoutOpeningTheFile(t *testing.T) {
 	state := transferPreviewState(t)
 	entry := &state.transfers.entries[0]

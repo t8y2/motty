@@ -36,19 +36,37 @@ type target struct {
 // button embeds; -pw is PuTTY's spelling of the same thing. Anything else,
 // including other ssh options, is rejected rather than guessed at: connecting
 // somewhere the user did not mean is worse than saying no.
-func parseTarget(input string) (target, string, error) {
+//
+// named reports whether the text said which protocol to speak: an SSH or SFTP
+// link, or the ssh command. A bare address does not, and may then name a saved
+// host of another protocol at that endpoint.
+func parseTarget(input string) (parsed target, password string, named bool, err error) {
 	fields := strings.Fields(input)
 	urlForm := false
 	switch {
-	case len(fields) == 1 && len(fields[0]) > len("ssh://") && strings.EqualFold(fields[0][:len("ssh://")], "ssh://"):
+	case len(fields) == 1 && hasScheme(fields[0], "ssh://"):
 		fields[0] = strings.TrimSuffix(fields[0][len("ssh://"):], "/")
-		urlForm = true
-	case len(fields) == 1 && len(fields[0]) > len("sftp://") && strings.EqualFold(fields[0][:len("sftp://")], "sftp://"):
+		urlForm, named = true, true
+	case len(fields) == 1 && hasScheme(fields[0], "sftp://"):
 		fields[0] = strings.TrimSuffix(fields[0][len("sftp://"):], "/")
-		urlForm = true
+		urlForm, named = true, true
 	case len(fields) > 0 && fields[0] == "ssh":
 		fields = fields[1:]
+		named = true
 	}
+	parsed, password, err = parseTargetFields(fields, urlForm, defaultPort)
+	return parsed, password, named, err
+}
+
+// hasScheme reports whether text starts with scheme and has a payload after it.
+func hasScheme(text, scheme string) bool {
+	return len(text) > len(scheme) && strings.EqualFold(text[:len(scheme)], scheme)
+}
+
+// parseTargetFields is the body of parseTarget: the option words already split
+// off, whether URL userinfo rules apply, and the port a target without one
+// defaults to.
+func parseTargetFields(fields []string, urlForm bool, portDefault uint16) (target, string, error) {
 	var destination, port, login, optionPassword string
 	for index := 0; index < len(fields); index++ {
 		field := fields[index]
@@ -90,7 +108,7 @@ func parseTarget(input string) (target, string, error) {
 		return target{}, "", errBadTarget
 	}
 
-	result := target{port: defaultPort}
+	result := target{port: portDefault}
 	password := optionPassword
 	if at := strings.LastIndex(destination, "@"); at >= 0 {
 		user := destination[:at]
@@ -214,7 +232,7 @@ func validHost(host string) bool {
 }
 
 // connection is a destination read from what the user typed or a link asked
-// for, with how to reach it: ssh by default, or telnet when the text says so.
+// for, with how to reach it: ssh by default, or what the text named.
 type connection struct {
 	target
 	protocol hostProtocol
@@ -224,14 +242,23 @@ type connection struct {
 	// files opens the file window instead of a terminal: an Xftp or sftp://
 	// link.
 	files bool
+	// viaSSH is set by the rdp+ssh:// and vnc+ssh:// forms: the desktop is
+	// reached through an SSH connection, as the host form's switch does.
+	viaSSH bool
+	// explicitProtocol says the text named the protocol (ssh://, sftp://, the
+	// ssh command, telnet, or a desktop scheme). A target typed without one
+	// may name a saved host of another protocol at the same endpoint.
+	explicitProtocol bool
 }
 
-// parseConnection is parseTarget that also understands Telnet and the links a
-// bastion's "open with Xshell / Xftp" buttons emit:
+// parseConnection is parseTarget that also understands Telnet, remote desktops
+// and the links a bastion's "open with Xshell / Xftp" buttons emit:
 //
 //	telnet host
 //	telnet host 2323
 //	telnet://host:2323/
+//	rdp://user@host:3389/      vnc://host:5900/
+//	rdp+ssh://user@host/       vnc+ssh://host/
 //	xshell://ssh://user:password@host:22
 //	xftp://sftp://user:password@host:22
 func parseConnection(input string) (connection, error) {
@@ -258,15 +285,23 @@ func parseConnection(input string) (connection, error) {
 		}
 	case len(fields) > 0 && fields[0] == "telnet":
 		return connection{}, errBadTarget // the word alone, or with too many arguments
+	case len(fields) == 1 && hasScheme(fields[0], "rdp+ssh://"):
+		return parseDesktopTarget(fields[0][len("rdp+ssh://"):], protocolRDP, true)
+	case len(fields) == 1 && hasScheme(fields[0], "vnc+ssh://"):
+		return parseDesktopTarget(fields[0][len("vnc+ssh://"):], protocolVNC, true)
+	case len(fields) == 1 && hasScheme(fields[0], "rdp://"):
+		return parseDesktopTarget(fields[0][len("rdp://"):], protocolRDP, false)
+	case len(fields) == 1 && hasScheme(fields[0], "vnc://"):
+		return parseDesktopTarget(fields[0][len("vnc://"):], protocolVNC, false)
 	default:
-		parsed, password, err := parseTarget(strings.Join(fields, " "))
-		return connection{target: parsed, password: password, files: files}, err
+		parsed, password, named, err := parseTarget(strings.Join(fields, " "))
+		return connection{target: parsed, password: password, files: files, explicitProtocol: named}, err
 	}
 	host, port, err := splitHostPort(rest)
 	if err != nil || !validHost(host) {
 		return connection{}, errBadTarget
 	}
-	result := connection{target: target{host: host, port: defaultTelnetPort}, protocol: protocolTelnet}
+	result := connection{target: target{host: host, port: defaultTelnetPort}, protocol: protocolTelnet, explicitProtocol: true}
 	if port != "" {
 		value, err := strconv.Atoi(port)
 		if err != nil || value < 1 || value > 65535 {
@@ -275,4 +310,17 @@ func parseConnection(input string) (connection, error) {
 		result.port = uint16(value)
 	}
 	return result, nil
+}
+
+// parseDesktopTarget reads the payload of a remote desktop link, whose scheme
+// named the protocol and whose port defaults to that protocol's own.
+func parseDesktopTarget(payload string, protocol hostProtocol, viaSSH bool) (connection, error) {
+	parsed, password, err := parseTargetFields([]string{strings.TrimSuffix(payload, "/")}, true, Host{Protocol: protocol}.defaultPort())
+	if err != nil {
+		return connection{}, err
+	}
+	return connection{
+		target: parsed, protocol: protocol, password: password,
+		viaSSH: viaSSH, explicitProtocol: true,
+	}, nil
 }

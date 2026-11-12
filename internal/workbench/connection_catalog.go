@@ -158,6 +158,20 @@ func (catalog *hostCatalog) identityForFingerprint(fingerprint string) (identity
 }
 
 func (catalog *hostCatalog) authenticationFor(host Host) sshconn.Authentication {
+	if host.Auth == authAutomatic && host.SSHOptions != nil {
+		options := host.SSHOptions
+		authentication := sshconn.Authentication{Methods: sshconn.AuthAll, Agent: true}
+		if len(options.IdentityFiles) > 0 {
+			authentication.IdentityFiles = options.IdentityFiles
+		}
+		if options.IdentitiesOnly != nil {
+			authentication.IdentitiesOnly = *options.IdentitiesOnly
+		}
+		if !authentication.IdentitiesOnly {
+			authentication.AdditionalIdentityFiles = catalog.identityPaths()
+		}
+		return authentication
+	}
 	switch host.Auth {
 	case authPassword:
 		return sshconn.Authentication{
@@ -367,9 +381,7 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 	}
 	targetEndpoint := sshconn.Endpoint{Host: host.Address, Port: host.Port, User: catalog.login(host)}
 	config.Authentication[targetEndpoint] = catalog.authenticationFor(host)
-	if catalog.connectionKeepAlive > 0 {
-		config.KeepAlive = sshconn.KeepAliveConfig{Interval: catalog.connectionKeepAlive, Timeout: 10 * time.Second}
-	}
+	config.KeepAlive = catalog.keepAliveFor(host)
 	chain, valid := catalog.proxyChainFor(host)
 	config.Algorithms = catalog.algorithmsFor(host, chain)
 	disableKeepAliveForTunnel(host, &config)
@@ -378,6 +390,7 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 	} else if len(chain) > 0 {
 		config.ProxyJumps = make([]sshconn.Endpoint, len(chain))
 		config.Authentication = make(map[sshconn.Endpoint]sshconn.Authentication, len(chain)+1)
+		config.EndpointKeepAlive = make(map[sshconn.Endpoint]sshconn.KeepAliveConfig, len(chain))
 		config.Authentication[targetEndpoint] = catalog.authenticationFor(host)
 		var path strings.Builder
 		for source := len(chain) - 1; source >= 0; source-- {
@@ -385,6 +398,7 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 			endpoint := sshconn.Endpoint{Host: jump.Address, Port: jump.Port, User: catalog.login(jump)}
 			config.ProxyJumps[len(chain)-1-source] = endpoint
 			config.Authentication[endpoint] = catalog.authenticationFor(jump)
+			config.EndpointKeepAlive[endpoint] = catalog.keepAliveFor(jump)
 			if path.Len() > 0 {
 				path.WriteString(" → ")
 			}
@@ -394,6 +408,30 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 		catalog.addRelays(&config, &route, host, chain)
 	}
 	return config, route, valid
+}
+
+func (catalog *hostCatalog) keepAliveFor(host Host) sshconn.KeepAliveConfig {
+	options := host.SSHOptions
+	if options != nil && (options.ServerAliveInterval != nil || options.ServerAliveCountMax != nil) {
+		config := sshconn.KeepAliveConfig{}
+		if options.ServerAliveInterval != nil {
+			config.Interval = time.Duration(*options.ServerAliveInterval) * time.Second
+		} else {
+			config.Interval = catalog.connectionKeepAlive
+		}
+		if config.Interval > 0 {
+			count := 3
+			if options.ServerAliveCountMax != nil {
+				count = *options.ServerAliveCountMax
+			}
+			config.CountMax = &count
+		}
+		return config
+	}
+	if catalog.connectionKeepAlive > 0 {
+		return sshconn.KeepAliveConfig{Interval: catalog.connectionKeepAlive, Timeout: 10 * time.Second}
+	}
+	return sshconn.KeepAliveConfig{}
 }
 
 // addRelays sets how the hops that are reached through a jump host's shell leave

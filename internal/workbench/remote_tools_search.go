@@ -36,6 +36,13 @@ func (search *remoteSearch) queryEditor() *text.Editor {
 	return &search.editor
 }
 
+// selectQuery selects the whole query, so the Find shortcut's next typed rune
+// or paste replaces it instead of appending to it.
+func (search *remoteSearch) selectQuery() {
+	editor := search.queryEditor()
+	editor.SetSelection(text.Range{Start: 0, End: editor.RuneCount()})
+}
+
 // RemoteToolsInput exposes native editing without putting user queries in any
 // remote command. Each tab owns its draft independently.
 func (state *State) RemoteToolsInput(context app.TextInputContext) *app.TextInput {
@@ -109,6 +116,7 @@ func (state *State) remoteSearchShortcut(event gfx.KeyEvent) gfx.EventResult {
 	if chord.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 && event.Target == hitRemoteSearch {
 		return gfx.EventResult{}
 	}
+	state.remote.searches[state.remote.tab].selectQuery()
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitRemoteSearch, FocusVisible: true}
 }
 

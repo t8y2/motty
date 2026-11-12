@@ -82,6 +82,7 @@ var (
 	hitDialogPassword          = tree.ID(shellHits, "dialog-password")
 	hitDialogPassphrase        = tree.ID(shellHits, "dialog-passphrase")
 	hitDialogGroup             = tree.ID(shellHits, "dialog-group")
+	hitDialogEncoding          = tree.ID(shellHits, "dialog-encoding")
 	hitDialogPort              = tree.ID(shellHits, "dialog-port")
 	hitDialogTags              = tree.ID(shellHits, "dialog-tags")
 	hitDialogIcon              = tree.ID(shellHits, "dialog-icon")
@@ -273,6 +274,7 @@ var (
 	hitSFTPClose           = tree.ID(sftpHits, "sftp-close")
 	hitSFTPUp              = tree.ID(sftpHits, "sftp-up")
 	hitSFTPRefresh         = tree.ID(sftpHits, "sftp-refresh")
+	hitSFTPFollowToggle    = tree.ID(sftpHits, "sftp-follow-toggle")
 	hitSFTPDownload        = tree.ID(sftpHits, "sftp-download")
 	hitSFTPUpload          = tree.ID(sftpHits, "sftp-upload")
 	hitSFTPUploadDirectory = tree.ID(sftpHits, "sftp-upload-directory")
@@ -558,6 +560,7 @@ type State struct {
 	hostsBounds       gfx.Rect // the hosts page as last painted; the menus anchor to it
 	hostsGridViewport gfx.Rect // the card grid's absolute viewport as last painted
 	terminalMenu      terminalMenu
+	ghostMenu         ghostMenu
 	hostGroupEditor   text.Editor
 	groupActions      hostGroupActions
 	tabRename         tabRename
@@ -796,6 +799,7 @@ type State struct {
 	contextRect              gfx.Rect
 	contextPanelScope        gfx.Scope
 	contextPanelMode         contextPanelMode
+	contextPanelDocked       bool
 	contextDrawer            components.Drawer
 	contextDrawerDescription string
 	contextDrawerOpen        bool
@@ -1024,7 +1028,9 @@ func (state *State) Close() {
 	state.dropExternalEdits(0)
 	for index := range state.sessions {
 		session := &state.sessions[index]
+		session.closeSSHBrowser()
 		state.cancelReconnect(session)
+		state.closeCompletionPath(session)
 		state.closeSFTP(session)
 		state.stopRemoteStats(session)
 		if session.term != nil && session.term.shell != nil {
@@ -1105,6 +1111,11 @@ func New(options Options) *State {
 	state.initSecrets()
 
 	state.starting = true
+	// A fresh window's completion is the automatic list: the menu opens as the
+	// user types, and the inline suggestion is a choice in Settings. Capturing
+	// it here makes it part of the defaults, so a computer that changed nothing
+	// writes no record for it.
+	state.history.inlineOff = true
 	state.forwardRows.records, state.keysRows.records, state.proxyRows.records = &state.forwards, &state.identities, &state.proxies
 	state.configDefaults = defaultsOf(state.snapshot())
 	config, saved, configBase, report, err := openConfig(state.options.StatePath, state.windowID)
@@ -1311,6 +1322,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		}
 		if hit == hitDialogGroup {
 			return &state.hostGroupPicker().control.Query
+		}
+		if hit == hitDialogEncoding {
+			return &state.hostEncodingPicker().control.Query
 		}
 		if isDialogField(hit) {
 			if state.editor.colorPicker.open {
@@ -1532,6 +1546,13 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickCompletion(id) {
 		return
 	}
+	// The badge beside an inline suggestion is a part of the terminal control;
+	// its press is handled there, and this is the path an assistive press or a
+	// keyboard activation takes to the same menu.
+	if session := state.terminalPageSession(id); session != nil && session.term != nil && id == session.term.parts.At(terminalPartGhostHint) {
+		state.openGhostMenu(session)
+		return
+	}
 	if session, local, ok := state.decodePaneHit(id); ok {
 		if state.activeSessionID != session.ID && state.ActivatePane(session.ID) {
 			state.save()
@@ -1702,7 +1723,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	}
 	if state.clickHostOrder(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
-		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickWorkspaceCommand(id) {
@@ -1841,6 +1862,12 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.openHistoryActive()
 	case id == hitSettingsHistoryToggle:
 		state.toggleHistory()
+	case id == hitSettingsCompletionHint:
+		state.history.acceptHintOff = !state.history.acceptHintOff
+		if state.history.acceptHintOff {
+			state.ghostMenu.open = false
+		}
+		state.save()
 	case id == hitCompletionUpdate:
 		state.updateCompletions()
 	case id == hitSettingsHistoryClear:
@@ -1961,6 +1988,7 @@ func (state *State) closeSession(id uint32) {
 	defer state.save()
 	defer memoryTrim.request()
 	session := &state.sessions[index]
+	session.closeSSHBrowser()
 	state.leaveLocalProxy(session)
 	if session.transfer.phase != transferNone || session.rzsz != nil {
 		state.abandonTransfer(session)
@@ -1977,6 +2005,7 @@ func (state *State) closeSession(id uint32) {
 	session.term.abandonShell()
 	state.dropExternalEdits(session.ID)
 	state.closeSFTPTabForSource(session.ID)
+	state.closeCompletionPath(session)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
 	if session.conn != nil {
@@ -2115,6 +2144,9 @@ func (state *State) clickHostDialog(id gfx.ID) {
 	if state.clickHostGroupPicker(id) {
 		return
 	}
+	if state.clickHostEncodingPicker(id) {
+		return
+	}
 	if state.clickHostTags(id) {
 		return
 	}
@@ -2233,18 +2265,42 @@ func (state *State) connectTyped() {
 // host it spells out, or else a temporary one. A link's password rides on the
 // copy for this connection only.
 func (state *State) connectParsed(parsed connection) {
+	open := func(host Host) {
+		chosen := host
+		chosen.linkPassword = parsed.password
+		state.selectedHostID = chosen.ID
+		state.openParsedHost(chosen, parsed.files)
+	}
 	// Typing out a saved host in full is opening that host.
 	for _, host := range state.hosts {
 		if host.Protocol == parsed.protocol && strings.EqualFold(host.Address, parsed.host) && host.Port == parsed.port &&
 			(parsed.user == "" || parsed.user == host.User) {
-			chosen := host
-			chosen.linkPassword = parsed.password
-			state.selectedHostID = chosen.ID
-			state.openParsedHost(chosen, parsed.files)
+			open(host)
 			return
 		}
 	}
-	adhoc := Host{Label: parsed.host, Address: parsed.host, User: parsed.user, Port: parsed.port, Protocol: parsed.protocol, linkPassword: parsed.password}
+	// A target typed without naming its protocol also opens a saved host of
+	// another protocol at that endpoint: the search box's bare address already
+	// does, and a remote desktop's card prints its address without "ssh://".
+	if !parsed.explicitProtocol {
+		for _, host := range state.hosts {
+			if strings.EqualFold(host.Address, parsed.host) && host.Port == parsed.port &&
+				(parsed.user == "" || parsed.user == host.User) {
+				open(host)
+				return
+			}
+		}
+	}
+	if parsed.protocol == protocolRDP && parsed.user == "" {
+		// A saved RDP host carries its own account, but a typed target has to
+		// name it: the server never asks for the Windows login itself.
+		state.showActionWarning(state.messages.Connect, state.messages.Desktop.ErrRDPUser)
+		return
+	}
+	adhoc := Host{
+		Label: parsed.host, Address: parsed.host, User: parsed.user, Port: parsed.port,
+		Protocol: parsed.protocol, ViaSSH: parsed.viaSSH, linkPassword: parsed.password,
+	}
 	adhoc.finish()
 	adhoc.Label = adhoc.target
 	state.openParsedHost(adhoc, parsed.files)
@@ -2323,12 +2379,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.sessionLogsPointer(event); handled {
 		return result
 	}
-	if state.trackCatalogList(event) {
-		defer func() { outcome.Repaint = true }()
-	}
-	if result, handled := state.snippetsPointer(event); handled {
-		return result
-	}
 	if state.modal == modalFileProperties {
 		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
 			return gfx.EventResult{}
@@ -2377,6 +2427,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.terminalMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.ghostMenuPointer(event); handled {
+		return result
+	}
 	if result, handled := state.tabMenuPointer(event); handled {
 		return result
 	}
@@ -2389,6 +2442,7 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.hostMenuPointer(event); handled {
 		return result
 	}
+	state.hostPressPointer(event)
 	if result, handled := state.hostSortPointer(event); handled {
 		return result
 	}
@@ -2563,6 +2617,15 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		if result := state.editor.groupPicker.control.Pointer(event); result.Handled {
+			return result
+		}
+	}
+	if state.modal == modalNewHost && state.editor.encodingPicker.control.Open {
+		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isHostEncodingPickerTarget(event.Target) {
+			state.editor.encodingPicker.control.Open = false
+			return gfx.EventResult{Handled: true, Repaint: true}
+		}
+		if result := state.editor.encodingPicker.control.Pointer(event); result.Handled {
 			return result
 		}
 	}
@@ -2787,6 +2850,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.hostGroupPickerKey(event); handled {
 		return result
 	}
+	if result, handled := state.hostEncodingPickerKey(event); handled {
+		return result
+	}
 	if result, handled := state.proxyDialogKey(event); handled {
 		return result
 	}
@@ -2810,9 +2876,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 			state.takeProxyTableSelection()
 			return result
 		}
-	}
-	if result, handled := state.snippetsListKey(event); handled {
-		return result
 	}
 	if result, handled := state.snippetGroupKey(event); handled {
 		return result
@@ -2848,6 +2911,10 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if state.terminalMenu.open && event.Key == gfx.KeyEscape {
 		state.terminalMenu.open = false
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.ghostMenu.open && event.Key == gfx.KeyEscape {
+		state.ghostMenu.open = false
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.workspaceTemplateMenuKey(event); handled {

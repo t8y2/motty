@@ -23,7 +23,6 @@ var hostGridHits = tree.Feature("host-grid")
 var (
 	hitHostViewList = tree.ID(hostGridHits, "host-view-list")
 	hitHostViewGrid = tree.ID(hostGridHits, "host-view-grid")
-	hitHostSort     = tree.ID(hostGridHits, "host-sort")
 )
 
 const (
@@ -131,10 +130,6 @@ func (mode hostViewMode) saved() string {
 }
 
 func (state *State) clickHostView(id gfx.ID) bool {
-	if id == hitHostSort {
-		state.toggleHostSort()
-		return true
-	}
 	var mode hostViewMode
 	switch id {
 	case hitHostViewList:
@@ -407,11 +402,23 @@ func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) 
 	textWidth := max(check.X-12-textX, 0)
 	tagCount := 0
 	var tagList [maxHostTags]string
-	subtitleWidth := min(canvas.TextWidth(subtitle, metrics.FontSizeS)+1, textWidth)
-	if state.hostPrivacy.enabled {
-		subtitleWidth = state.hostPrivacyConnectionWidth(canvas, host, textWidth)
+	protocolLabel := state.hostProtocolTagLabel(host.Protocol)
+	protocolWidth := canvas.TextWidthWeight(protocolLabel, metrics.FontSizeS, gfx.WeightMedium) + 15
+	subtitleLimit := textWidth
+	if protocolWidth+8 <= textWidth {
+		// Reserve the protocol tag first: the connection line gives way to it
+		// rather than hiding the tag on a long account and destination.
+		subtitleLimit = textWidth - protocolWidth - 8
 	}
-	if room := textWidth - subtitleWidth - 8; room >= 40 {
+	subtitleWidth := min(canvas.TextWidth(subtitle, metrics.FontSizeS)+1, subtitleLimit)
+	if state.hostPrivacy.enabled {
+		subtitleWidth = state.hostPrivacyConnectionWidth(canvas, host, subtitleLimit)
+	}
+	room := textWidth - subtitleWidth - 8
+	showProtocol := room >= protocolWidth
+	if showProtocol {
+		tagCount = state.fitHostTags(canvas, host, max(room-protocolWidth-5, 0), &tagList)
+	} else if room >= 40 {
 		tagCount = state.fitHostTags(canvas, host, room, &tagList)
 	}
 	// The title and the connection line are 22 and 1+19 tall, centered as the
@@ -430,9 +437,14 @@ func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) 
 		paintHostGridLine(canvas, host.Label, nameBounds, 22, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: pal.text})
 		paintHostGridLine(canvas, subtitle, connectionBounds, 19, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
 	}
-	if tagCount > 0 {
+	if showProtocol || tagCount > 0 {
 		pillX := textX + subtitleWidth + 8
 		pillY := columnTop + 23 + (19-18)/2
+		if showProtocol {
+			pill := gfx.Rect{X: pillX, Y: pillY, Width: protocolWidth, Height: 18}
+			paintHostProtocolTag(canvas, pill, protocolLabel, hostProtocolTagColor(pal, host.Protocol))
+			pillX += pill.Width + 5
+		}
 		for _, tag := range tagList[:tagCount] {
 			width := canvas.TextWidthWeight(tag, metrics.FontSizeS, gfx.WeightMedium)
 			pill := gfx.Rect{X: pillX, Y: pillY, Width: width + 15, Height: 18}

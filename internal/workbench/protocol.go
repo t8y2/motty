@@ -11,8 +11,10 @@ import (
 	"sync"
 	"time"
 
+	"motty/internal/charset"
 	"motty/internal/serial"
 	"motty/internal/sftpclient"
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 	"motty/internal/telnet"
 )
@@ -94,8 +96,11 @@ func (session *Session) canBrowseFiles() bool {
 // without any of them describes an SSH host as before.
 type savedTransport struct {
 	Protocol string `json:"protocol,omitempty"` // "telnet", "serial", "vnc" or "rdp"
-	Line     string `json:"line,omitempty"`     // serial: "115200 8N1"
-	Flow     string `json:"flow,omitempty"`     // serial: "rtscts" or "xonxoff"
+	// Encoding is the charset of the remote shell's byte stream. Empty (or
+	// "UTF-8") is the default; any other value names a charset.Encodings entry.
+	Encoding string `json:"encoding,omitempty"`
+	Line     string `json:"line,omitempty"` // serial: "115200 8N1"
+	Flow     string `json:"flow,omitempty"` // serial: "rtscts" or "xonxoff"
 	// Proxy is nil when this host inherits the global outbound proxy. An entry
 	// whose kind is "direct" explicitly bypasses it.
 	Proxy *savedOutboundProxy `json:"proxy,omitempty"`
@@ -106,8 +111,9 @@ type savedTransport struct {
 	// Authentication is "password", "key" or "agent" when an SSH host does
 	// not use the automatic authentication order. Identity optionally selects
 	// one imported key fingerprint for the key policy.
-	Authentication string `json:"authentication,omitempty"`
-	Identity       string `json:"identity,omitempty"`
+	Authentication string                       `json:"authentication,omitempty"`
+	Identity       string                       `json:"identity,omitempty"`
+	SSHOptions     *sshconfig.ConnectionOptions `json:"ssh_options,omitempty"`
 	// Credential is the id of the saved password an SSH, VNC or RDP host takes
 	// its password from (see credentials.go).
 	Credential string `json:"credential,omitempty"`
@@ -130,18 +136,26 @@ type savedTransport struct {
 	// ViaSSH and Clipboard are a remote desktop host's (VNC or RDP): reached
 	// through an SSH connection to the same machine, and sharing the clipboard
 	// with the remote desktop. Console is an RDP host's: connect to the server's
-	// console session instead of a new one, as mstsc /admin does. Chromeless is
-	// a desktop host's: its page shows the picture without the bars around it.
+	// console session instead of a new one, as mstsc /admin does.
+	// StandardSecurity is an RDP host's too: use Standard RDP Security alone,
+	// with no TLS or NLA. Chromeless is a desktop host's: its page shows the
+	// picture without the bars around it.
 	// The password is never here: it is asked for, and kept in the vault only if
 	// the user says so.
-	ViaSSH     bool `json:"via_ssh,omitempty"`
-	Clipboard  bool `json:"clipboard,omitempty"`
-	Console    bool `json:"console,omitempty"`
-	Chromeless bool `json:"chromeless,omitempty"`
+	ViaSSH           bool `json:"via_ssh,omitempty"`
+	Clipboard        bool `json:"clipboard,omitempty"`
+	Console          bool `json:"console,omitempty"`
+	StandardSecurity bool `json:"standard_security,omitempty"`
+	Chromeless       bool `json:"chromeless,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
 	transport := savedTransport{Proxy: savedHostProxy(host.Proxy), Credential: host.Credential}
+	// UTF-8 is the empty value, so a host that never chose a charset keeps its
+	// old record byte-for-byte.
+	if host.Encoding != "" && host.Encoding != charset.UTF8 {
+		transport.Encoding = host.Encoding
+	}
 	switch host.Protocol {
 	case protocolTelnet:
 		transport.Protocol = "telnet"
@@ -152,6 +166,7 @@ func (host Host) transport() savedTransport {
 	case protocolRDP:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
 		transport.Console = host.Console
+		transport.StandardSecurity = host.StandardSecurity
 		return transport
 	case protocolSerial:
 		transport.Proxy, transport.Protocol, transport.Line = nil, "serial", host.Line.String()
@@ -166,6 +181,7 @@ func (host Host) transport() savedTransport {
 	mode, list := host.savedAlgo()
 	transport.Algorithms, transport.AlgorithmList = mode, list
 	transport.Authentication, transport.Identity = host.Auth.saved(), host.Identity
+	transport.SSHOptions = host.SSHOptions.Clone()
 	transport.ForwardX11, transport.AgentForward, transport.NoHistory, transport.Transfer = host.ForwardX11, host.AgentForward, host.NoHistory, host.savedTransfer()
 	transport.InteractiveOnly = host.InteractiveOnly
 	transport.LoginCommand = host.LoginCommand
@@ -178,9 +194,23 @@ func (host Host) transport() savedTransport {
 func (host *Host) applyTransport(transport savedTransport) bool {
 	host.Proxy = restoredHostProxy(transport.Proxy)
 	host.Credential = strings.TrimSpace(transport.Credential)
+	// An unknown charset is a damaged record: drop it rather than opening a
+	// session that would show replacement characters.
+	encoding, ok := charset.Normalize(strings.TrimSpace(transport.Encoding))
+	if !ok {
+		return false
+	}
+	if encoding == charset.UTF8 {
+		encoding = "" // keep the zero value as the UTF-8 default
+	}
+	host.Encoding = encoding
 	switch transport.Protocol {
 	case "", "ssh":
 		host.Protocol = protocolSSH
+		if !transport.SSHOptions.Valid() {
+			return false
+		}
+		host.SSHOptions = transport.SSHOptions.Clone()
 		var ok bool
 		if host.Auth, ok = parseHostAuth(transport.Authentication); !ok {
 			return false
@@ -202,6 +232,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 	case "rdp":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
+		host.StandardSecurity = transport.StandardSecurity
 	case "serial":
 		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone

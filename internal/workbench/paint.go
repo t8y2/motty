@@ -108,6 +108,7 @@ const (
 	iconSave
 	iconProcess
 	iconDirectoryTree
+	iconFollowFolder
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -350,6 +351,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintLocalProxyScrollbar(canvas)
 	}
 	state.paintTerminalMenu(canvas, viewport)
+	state.paintGhostMenu(canvas, viewport)
 	state.paintToolbarDockMenu(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
 	state.paintHostMenu(canvas, viewport)
@@ -482,6 +484,7 @@ func (state *State) windowPage() *ui.Page {
 	if chrome.windowPage == nil {
 		chrome.windowPage = ui.NewPage(ui.PageConfig{
 			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareShell,
+			ScrollbarSize: catalogBarGutter,
 		})
 	}
 	return chrome.windowPage
@@ -1354,6 +1357,7 @@ func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 			state.paintNoMatches(canvas)
 		}
 	}
+	state.paintHostSortDrag(canvas, list)
 	state.hostsBounds = bounds
 }
 
@@ -1550,9 +1554,6 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 					})
 				}
 				viewControlsWidth := float32(56 + 6 + 26 + 6 + 26)
-				if !plan.compactHostControls {
-					viewControlsWidth += 32
-				}
 				b.toggle = ui.Slot(c).Size(viewControlsWidth, hostHeaderRowHeight).MarginSides(0, 0, 0, 2)
 				chrome.hostToggle = hostToggleBoxes{}
 				b.toggle.Children(func() {
@@ -1567,24 +1568,18 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 							chrome.hostToggle.list = state.declareIconButton(c, hitHostViewList, iconRows2, state.messages.Tools.HostViewList, false, listStyle).Size(26, 26)
 							chrome.hostToggle.grid = state.declareIconButton(c, hitHostViewGrid, iconHome, state.messages.Tools.HostViewGrid, false, gridStyle).Size(26, 26)
 						})
-						sortLabel, sortStyle := state.messages.Tools.HostSort, iconButtonQuiet
-						if state.hostSort.enabled {
-							sortLabel, sortStyle = state.messages.Tools.HostSortDone, iconButtonActive
-						}
-						sortDisabled := !state.hostSort.enabled && (state.hostOrder != hostOrderManual || len(state.hosts) < 2 || state.typedQuery() != "")
-						chrome.hostToggle.sort = state.declareIconButton(c, hitHostSort, iconTransfer, sortLabel, sortDisabled, sortStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
 						privacyIcon, privacyStyle := uint8(iconEye), iconButtonQuiet
 						if state.hostPrivacy.enabled {
 							privacyIcon, privacyStyle = iconEyeOff, iconButtonActive
 						}
 						chrome.hostToggle.privacy = state.declareIconButton(c, hitHostPrivacy, privacyIcon, state.messages.Tools.HostPrivacy, false, privacyStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
-						if !plan.compactHostControls {
-							orderStyle := iconButtonQuiet
-							if state.hostOrder != hostOrderManual {
-								orderStyle = iconButtonActive
-							}
-							chrome.hostToggle.order = state.declareIconButton(c, hitHostOrder, iconSliders, state.messages.HostCatalog.Order, false, orderStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
+						orderStyle := iconButtonQuiet
+						if state.hostOrder != hostOrderManual {
+							orderStyle = iconButtonActive
 						}
+						// The far-right control is the display-order menu, wearing the
+						// manual-sort mark; manual moves are made by dragging a host.
+						chrome.hostToggle.order = state.declareIconButton(c, hitHostOrder, iconTransfer, state.messages.HostCatalog.Order, false, orderStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
 					})
 				})
 			})
@@ -1592,12 +1587,6 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 				ui.Row(c).Height(hostHeaderRowHeight).MarginSides(hostHeaderRowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(8).Items(ui.Center).Children(func() {
 					b.selectAll = ui.Slot(c).Size(40, hostHeaderRowHeight).Shrink(0)
 					ui.Spacer(c)
-					ui.Text(c, m.HostCatalog.Order).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Shrink(1)
-					orderStyle := iconButtonQuiet
-					if state.hostOrder != hostOrderManual {
-						orderStyle = iconButtonActive
-					}
-					b.orderButton = state.declareIconButton(c, hitHostOrder, iconSliders, m.HostCatalog.Order, false, orderStyle).Size(26, 26).Shrink(0)
 				})
 			}
 			if plan.anySelected {
@@ -1644,11 +1633,7 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas) {
 	// Connect needs something to connect to.
 	chrome.importButton = b.importButton.Rect()
 
-	if plan.compactHostControls {
-		state.hostOrderButton = b.orderButton.Rect()
-	} else {
-		state.hostOrderButton = chrome.hostToggle.order.Rect()
-	}
+	state.hostOrderButton = chrome.hostToggle.order.Rect()
 	state.hostPrivacy.button = chrome.hostToggle.privacy.Rect()
 	state.paintHostScopeCheckbox(canvas, hitHostSelectAll, b.selectAll.Rect(), state.hostScopeSelection.all)
 	if plan.showChips {
@@ -2209,9 +2194,14 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 	tagsWidth := min(rowWidth*0.18, statusStart-tagsStart-8)
 	status, _ := state.hostStatus(host)
 	checkMargin := 46 - 10 - components.CheckboxExtent(state.Theme())
+	protocolLabel := state.hostProtocolTagLabel(host.Protocol)
+	protocolWidth := canvas.TextWidthWeight(protocolLabel, metrics.FontSizeS, gfx.WeightMedium) + 14
+	showProtocol := tagsWidth >= protocolWidth
 	tagCount, tagsRoom := 0, tagsWidth
 	var tagList [maxHostTags]string
-	if tagsWidth >= 60 {
+	if showProtocol {
+		tagCount = state.fitHostTags(canvas, host, max(tagsWidth-protocolWidth-5, 0), &tagList)
+	} else if tagsWidth >= 60 {
 		tagCount = state.fitHostTags(canvas, host, tagsWidth, &tagList)
 	}
 	ui.Stack(c).Width(rowWidth).Height(hostRowHeight).Children(func() {
@@ -2247,8 +2237,14 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 					ui.Text(c, host.target).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(22).Width(addressWidth).Shrink(0).Ellipsis()
 				}
 			})
-			if tagCount > 0 {
+			if showProtocol || tagCount > 0 {
 				ui.Row(c).Width(tagsRoom).Shrink(0).Gap(5).Items(ui.Center).Children(func() {
+					if showProtocol {
+						color := hostProtocolTagColor(pal, host.Protocol)
+						ui.Row(c).Height(24).PadX(7).Items(ui.Center).Radius(12).Background(withAlpha(color, 0.14)).Children(func() {
+							ui.Text(c, protocolLabel).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color)
+						})
+					}
 					for _, tag := range tagList[:tagCount] {
 						ui.Row(c).Height(24).PadX(7).Items(ui.Center).Radius(12).Background(pal.surface).Children(func() {
 							ui.Text(c, tag).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted)
@@ -2463,8 +2459,8 @@ func (state *State) fitHostTags(canvas *gfx.Canvas, host Host, width float32, sh
 	count, used := 0, float32(0)
 	for remaining := host.Tags; remaining != "" && count < len(shown); {
 		tag, tail, found := strings.Cut(remaining, ", ")
-		pill := min(canvas.TextWidthWeight(tag, metrics.FontSizeS, gfx.WeightMedium)+14, width)
-		if pill <= 0 || used+pill > width {
+		pill := canvas.TextWidthWeight(tag, metrics.FontSizeS, gfx.WeightMedium) + 14
+		if used+pill > width {
 			break
 		}
 		shown[count] = tag
@@ -2620,6 +2616,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconSFTPProfiles:   icons.SftpProfiles,
 	iconFileClock:      icons.FileClock,
 	iconClock:          icons.Clock3,
+	iconFollowFolder:   icons.LocateFixed,
 }
 
 func paintIcon(canvas *gfx.Canvas, kind uint8, bounds gfx.Rect, foreground gfx.Color) {
@@ -2939,6 +2936,9 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				if ssh {
 					b.transfer = ui.Slot(c).Grow(1)
 				}
+				if state.hostShowsEncoding() {
+					b.encoding = ui.Slot(c).Grow(1)
+				}
 			})
 			if networkHost {
 				// The proxy is its own row: sharing the icon row clipped both the
@@ -3064,6 +3064,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	state.paintHostEndpointRows(canvas)
 	state.paintHostGroupPicker(canvas, b.group.Rect())
 	state.paintHostTags(canvas, b.tags.Rect())
+	if b.encoding.Valid() {
+		state.paintHostEncodingPicker(canvas, b.encoding.Rect())
+	}
 	state.paintHostIconChoice(canvas, b.iconField.Rect())
 	state.paintHostColorChoice(canvas, b.colorField.Rect())
 	if networkHost {

@@ -16,6 +16,7 @@ import (
 	"github.com/vivaui/viva/text"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
+	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -82,6 +83,8 @@ type sftpBookmark struct {
 // clickSFTPExtra handles the presses this file adds to the panel.
 func (state *State) clickSFTPExtra(session *Session, view *sftpView, id gfx.ID) bool {
 	switch {
+	case id == hitSFTPFollowToggle:
+		state.toggleSFTPFollow(session)
 	case id == hitSFTPPaneToggle:
 		state.toggleSFTPPane(view)
 	case id == hitSFTPDownloadHere && !view.busy:
@@ -276,6 +279,29 @@ func firstLines(s string, n int) string {
 
 // ---- following the terminal's folder ----
 
+func (state *State) toggleSFTPFollow(session *Session) {
+	state.sftpFollowOff = !state.sftpFollowOff
+	state.save()
+	if state.sftpFollowOff {
+		return
+	}
+	if session == nil {
+		session = state.chrome.sftpPanel.session
+	}
+	if session == nil {
+		session, _ = state.sessionByIDPointer(state.activeSessionID)
+	}
+	if session != nil && session.term != nil {
+		if cwd, ok := session.term.screen.WorkingDirectory(); ok {
+			state.terminalDirectory(session.ID, cwd)
+			state.followTerminalDirectory(session)
+		} else if session.term.reportedDirectory != (term.Cwd{}) {
+			state.terminalDirectory(session.ID, session.term.reportedDirectory)
+			state.followTerminalDirectory(session)
+		}
+	}
+}
+
 // followSetupCommand is what a shell is given to report its folder at every
 // prompt. It is for bash and zsh, which between them are most shells.
 const followSetupCommand = `if [ -n "$ZSH_VERSION" ]; then precmd() { printf '\e]7;file://%s%s\a' "$HOST" "$PWD"; }; else PROMPT_COMMAND='printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'; fi`
@@ -424,8 +450,8 @@ func (state *State) clickFilesSettings(id gfx.ID) bool {
 		state.applySFTPSettings()
 		state.save()
 	case hitSettingsFollowToggle:
-		state.sftpFollowOff = !state.sftpFollowOff
-		state.save()
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		state.toggleSFTPFollow(session)
 	case hitSettingsTerminalFollowToggle:
 		state.sftpTerminalFollow = !state.sftpTerminalFollow
 		state.save()

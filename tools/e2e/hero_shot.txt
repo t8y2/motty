@@ -29,7 +29,7 @@
 # The host is saved as staging-web instead of connected ad hoc, because the tab
 # title is the host's label; the files panel is opened with its toolbar button and
 # the assistant with its window-bar button. The host's icon is set to Ubuntu in the
-# dialog rather than left on "自动 (按系统)": the loopback fixture's banner names no
+# dialog rather than left on 自动: the loopback fixture's banner names no
 # system, so auto would draw the generic server badge in the tab and the host card.
 #
 # The host dialog is filled by geometry because its fields have no distinct labels,

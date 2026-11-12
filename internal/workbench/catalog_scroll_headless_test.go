@@ -92,13 +92,70 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 		state.snippets.expanded = 1 // the first row's command is open.
 		state.activeSection = sectionSnippets
 		view := openCatalogWindow(t, state)
-		rowHeight := components.TableRowHeight(state.Theme())
-		if state.snippets.scroll.content <= float32(count)*rowHeight {
-			t.Fatalf("expanded detail did not add height to the list: %v <= %v",
-				state.snippets.scroll.content, float32(count)*rowHeight)
+		scroll := state.sectionBodies.snippets.rows.ScrollState()
+		if scroll == nil {
+			t.Fatal("the snippets page has no scroll area")
 		}
-		assertCatalogListScrolls(t, state, view, &state.snippets.scroll,
-			hitSnippetRowList.At(0), hitSnippetRowList.At(count-1), hitSnippetScrollThumb, state.messages.Tools.SnippetColumnCommand)
+		rowHeight := components.TableRowHeight(state.Theme())
+		if scroll.Content <= float32(count)*rowHeight {
+			t.Fatalf("expanded detail did not add height to the list: %v <= %v",
+				scroll.Content, float32(count)*rowHeight)
+		}
+		first, ok := findSnapshotHit(view.Snapshot(), hitSnippetRowList.At(0))
+		if !ok {
+			t.Fatal("the first row is not painted")
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitSnippetRowList.At(count-1)); ok {
+			t.Fatal("the list fits every row without scrolling")
+		}
+		at := gfx.Point{X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2}
+		if err := view.Move(at.X, at.Y); err != nil {
+			t.Fatal(err)
+		}
+		bar, ok := findSnapshotLabel(view.Snapshot(), "Vertical scrollbar")
+		if !ok {
+			t.Fatal("a list taller than its viewport has no scrollbar under the pointer")
+		}
+		if bar.Bounds.Width != catalogBarGutter {
+			t.Fatalf("scrollbar width = %v, want %v", bar.Bounds.Width, catalogBarGutter)
+		}
+		headerAboveRows(t, view.Snapshot(), state.messages.Tools.SnippetColumnCommand, bar.Bounds)
+
+		if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: 10000, Precise: true}); err != nil {
+			t.Fatal(err)
+		}
+		if offset := state.sectionBodies.snippets.rows.ScrollState().Offset; offset <= 0 {
+			t.Fatalf("wheel left the list at offset %v", offset)
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitSnippetRowList.At(count-1)); !ok {
+			t.Fatal("the last row is still unreachable at the end of the list")
+		}
+		if _, ok := findSnapshotHit(view.Snapshot(), hitSnippetRowList.At(0)); ok {
+			t.Fatal("the first row is still painted at the end of the list")
+		}
+		if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: -10000, Precise: true}); err != nil {
+			t.Fatal(err)
+		}
+		if offset := state.sectionBodies.snippets.rows.ScrollState().Offset; offset != 0 {
+			t.Fatalf("scrolling back left the list at %v", offset)
+		}
+
+		bar, ok = findSnapshotLabel(view.Snapshot(), "Vertical scrollbar")
+		if !ok {
+			t.Fatal("the scrollbar disappeared before the drag")
+		}
+		if err := view.Driver().Press(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2, gfx.PointerButtonPrimary); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Driver().Move(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2+40); err != nil {
+			t.Fatal(err)
+		}
+		if offset := state.sectionBodies.snippets.rows.ScrollState().Offset; offset == 0 {
+			t.Fatal("dragging the bar did not move the list")
+		}
+		if err := view.Driver().Release(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2+40, gfx.PointerButtonPrimary); err != nil {
+			t.Fatal(err)
+		}
 	})
 }
 
@@ -220,70 +277,15 @@ func assertTableScrolls(t *testing.T, state *State, view *headless.Session, tabl
 	}
 }
 
-// assertCatalogListScrolls is the same behavior for the snippets page, whose
-// variable-height rows keep their application-painted scroll state.
-func assertCatalogListScrolls(t *testing.T, state *State, view *headless.Session, list *catalogList, firstRow, lastRow, thumb gfx.ID, heading string) {
-	t.Helper()
-	bounds := list.bounds
-	if bounds.Width <= 0 || bounds.Height <= 0 {
-		t.Fatalf("catalog list has no body: %+v", bounds)
+// findSnapshotLabel finds the front-most control with an accessibility label.
+func findSnapshotLabel(snapshot app.Snapshot, label string) (gfx.Hit, bool) {
+	for index := len(snapshot.Hits) - 1; index >= 0; index-- {
+		hit := snapshot.Hits[index]
+		if hit.Label == label && !hit.IsLabel && !hit.Backdrop && !hit.ID.IsZero() {
+			return hit, true
+		}
 	}
-	if list.content <= bounds.Height {
-		t.Fatalf("list content %v fits its body %v", list.content, bounds.Height)
-	}
-	first, ok := findSnapshotHit(view.Snapshot(), firstRow)
-	if !ok {
-		t.Fatal("the first row is not painted")
-	}
-	if _, ok := findSnapshotHit(view.Snapshot(), lastRow); ok {
-		t.Fatal("the list fits every row without scrolling")
-	}
-	at := gfx.Point{X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2}
-	if err := view.Move(at.X, at.Y); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := findSnapshotHit(view.Snapshot(), thumb); !ok {
-		t.Fatal("a list taller than its body has no scrollbar under the pointer")
-	}
-	headerAboveRows(t, view.Snapshot(), heading, bounds)
-
-	if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: 10000, Precise: true}); err != nil {
-		t.Fatal(err)
-	}
-	if list.scroll <= 0 {
-		t.Fatalf("wheel left the list at offset %v", list.scroll)
-	}
-	if _, ok := findSnapshotHit(view.Snapshot(), lastRow); !ok {
-		t.Fatal("the last row is still unreachable at the end of the list")
-	}
-	if _, ok := findSnapshotHit(view.Snapshot(), firstRow); ok {
-		t.Fatal("the first row is still painted at the end of the list")
-	}
-	_ = first
-	if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: -10000, Precise: true}); err != nil {
-		t.Fatal(err)
-	}
-	if list.scroll != 0 {
-		t.Fatalf("scrolling back left the list at %v", list.scroll)
-	}
-
-	bar, ok := findSnapshotHit(view.Snapshot(), thumb)
-	if !ok {
-		t.Fatal("the scrollbar disappeared before the drag")
-	}
-	if err := view.Driver().Click(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2); err != nil {
-		t.Fatal(err)
-	}
-	if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
-		t.Fatal(err)
-	}
-	maximum := list.area(state.Theme()).Geometry().MaxOffsetY
-	if maximum <= 0 || list.scroll != maximum {
-		t.Fatalf("End left the list at %v of %v", list.scroll, maximum)
-	}
-	if _, ok := findSnapshotHit(view.Snapshot(), lastRow); !ok {
-		t.Fatal("End did not reveal the last row")
-	}
+	return gfx.Hit{}, false
 }
 
 // headerAboveRows checks the column headings do not scroll with the rows: they

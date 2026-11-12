@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/vivaui/viva/app"
@@ -158,12 +159,57 @@ func (state *State) activeTerminalFind() (*Session, bool) {
 	return session, ok && state.activeSection == sectionTerminal && state.modal == modalNone && session.term != nil
 }
 
+// terminalFindQuery returns the terminal's selection as a find query, or ""
+// when it is not one that can be searched. Search matches within a line, so a
+// selection crossing a hard line break finds nothing and is left out, as
+// Windows Terminal leaves out a multi-line selection. The result is bounded by
+// the field's own limit, so a whole selected file costs no more than a selected
+// word.
+func terminalFindQuery(selected string) string {
+	if strings.ContainsAny(selected, "\r\n") {
+		return ""
+	}
+	var query strings.Builder
+	query.Grow(min(len(selected), terminalFindMaxQuery*4))
+	kept := 0
+	for _, value := range selected {
+		if kept == terminalFindMaxQuery {
+			break
+		}
+		query.WriteRune(value)
+		kept++
+	}
+	return strings.TrimRight(query.String(), " \t")
+}
+
+// setQuery replaces the field's text through the same restricted edit a paste
+// takes, so terminalFindRune and terminalFindMaxQuery bound it either way.
+func (find *terminalFind) setQuery(value string) {
+	find.editor.SetSelection(text.Range{Start: 0, End: find.editor.RuneCount()})
+	find.editor.Insert(value)
+}
+
+// selectQuery selects the whole field, so the next typed rune or paste
+// replaces the query instead of appending to it.
+func (find *terminalFind) selectQuery() {
+	find.editor.SetSelection(text.Range{Start: 0, End: find.editor.RuneCount()})
+}
+
 // openTerminalFind opens the search bar of a pane. The bar takes a strip above
 // the grid, as a macOS terminal does, and leaves the shared rail its width, so
-// only the row count changes and only the columns stay put.
+// only the row count changes and only the columns stay put. A terminal
+// selection fills the field when it is one line, and the field's text is
+// selected in either case, so pasting a new query replaces what is there.
 func (state *State) openTerminalFind(session *Session) gfx.EventResult {
 	find := &session.term.find
+	opening := !find.open
 	find.open = true
+	if opening && session.term.selection.selected {
+		if query := terminalFindQuery(session.term.selection.text(session.term.screen)); query != "" {
+			find.setQuery(query)
+		}
+	}
+	find.selectQuery()
 	find.refresh(session.term.screen, state.messages, true)
 	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTerminalFindField, FocusVisible: true}

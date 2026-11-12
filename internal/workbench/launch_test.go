@@ -28,6 +28,10 @@ func TestLaunchTextReadsWhatPeopleTypeAtACommandLine(t *testing.T) {
 		{[]string{"xshell://ssh://bob@host:2222"}, "xshell://ssh://bob@host:2222", true},
 		{[]string{"sftp://bob@host:2222"}, "sftp://bob@host:2222", true},
 		{[]string{"TELNET://switch"}, "TELNET://switch", true},
+		{[]string{"rdp://alice@win.example"}, "rdp://alice@win.example", true},
+		{[]string{"rdp+ssh://alice@win.example"}, "rdp+ssh://alice@win.example", true},
+		{[]string{"vnc://desk.example"}, "vnc://desk.example", true},
+		{[]string{"vnc+ssh://desk.example"}, "vnc+ssh://desk.example", true},
 		{[]string{"--background"}, "", false},
 		{nil, "", false},
 	} {

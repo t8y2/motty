@@ -47,6 +47,7 @@ func hostEntryWithOrd(t testing.TB, id, label string, ord int64) configstore.Ent
 func cloneSavedHost(host savedHost) savedHost {
 	clone := host
 	clone.Tags = slices.Clone(host.Tags)
+	clone.SSHOptions = host.SSHOptions.Clone()
 	if host.Proxy != nil {
 		proxy := *host.Proxy
 		clone.Proxy = &proxy
@@ -113,7 +114,7 @@ func TestSameSavedHostNoticesEveryField(t *testing.T) {
 			reflect.Copy(changed, last)
 			last.Set(changed)
 		case reflect.Ptr:
-			last.Set(reflect.ValueOf(&savedOutboundProxy{Kind: "other"}))
+			last.Set(reflect.New(last.Type().Elem()))
 		default:
 			t.Fatalf("%s: unsupported field kind %s", leaf.name, last.Kind())
 		}

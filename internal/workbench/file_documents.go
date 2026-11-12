@@ -766,7 +766,7 @@ func (d *fileDocument) openComparisonWindow() error {
 func (d *fileDocument) comparisonConfig() app.Config {
 	return app.Config{
 		Title: fmt.Sprintf(d.owner.messages.FileWindow.CompareWindowTitle, d.name),
-		Icon:  AppIcon(), Width: 1120, Height: 720, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, Tree: Tree(),
+		Icon:  AppIcon(), Width: 1120, Height: 720, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, ClearColor: windowClearColor(d.owner.Theme().Background), Tree: Tree(),
 		Paint: d.paintComparison, TextInput: d.comparisonTextInput, OnPointer: d.comparisonPointer,
 		OnKey: d.comparisonKey, OnShortcut: d.comparisonShortcut, OnScroll: d.comparisonScroll,
 		OnCloseRequest: d.requestComparisonClose, OnClosed: d.onComparisonClosed,
@@ -1135,7 +1135,7 @@ func saveLocalDocument(location string, data []byte, revision sftpclient.Revisio
 // Paint stays the document's, which paints the editor and its overlays after
 // the page lays them out.
 func (d *fileDocument) config() app.Config {
-	base := app.Config{Title: d.name + " — " + d.source, Icon: AppIcon(), Width: 1000, Height: 760, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, Tree: Tree(), Paint: d.paint, TextInput: d.textInput, OnPointer: d.pointer, OnKey: d.key, OnShortcut: d.shortcut, OnScroll: d.scroll, OnCloseRequest: d.requestClose, OnClosed: d.onClosed}
+	base := app.Config{Title: d.name + " — " + d.source, Icon: AppIcon(), Width: 1000, Height: 760, MinWidth: fileWindowMinWidth, MinHeight: fileWindowMinHeight, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, ClearColor: windowClearColor(d.owner.Theme().Background), Tree: Tree(), Paint: d.paint, TextInput: d.textInput, OnPointer: d.pointer, OnKey: d.key, OnShortcut: d.shortcut, OnScroll: d.scroll, OnCloseRequest: d.requestClose, OnClosed: d.onClosed}
 	config := d.documentPage().Config(base)
 	config.Paint = base.Paint
 	return config

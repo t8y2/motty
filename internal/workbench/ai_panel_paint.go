@@ -49,6 +49,8 @@ func aiPanelScope() gfx.Scope {
 // its body, so the body's view reads the values instead of measuring them again.
 type aiPanelPageScratch struct {
 	boxHeight, setupWidth    float32
+	composerBarHeight        float32
+	wrapComposerOptions      bool
 	showSetup                bool
 	setupLabel, setupSummary string
 }
@@ -218,6 +220,10 @@ func aiExcerpt(result string) string {
 // aiToolTitle is the localized name of a tool.
 func aiToolTitle(m i18n.AIPanelMessages, name string) string {
 	switch name {
+	case tools.NameNoteQuery:
+		return m.ToolNotesQuery
+	case tools.NameNoteEdit:
+		return m.ToolNotesEdit
 	case tools.NameListSessions:
 		return m.ToolListSessions
 	case tools.NameTerminalRead:
@@ -439,6 +445,7 @@ func (state *State) aiPanelBeginPaint() {
 	panel.rect, panel.list, panel.listing = gfx.Rect{}, gfx.Rect{}, false
 	panel.scrollbar.geometry = components.MessageScrollerGeometry{}
 	panel.messageScroll, panel.historyScroll = nil, nil
+	panel.approvalLay.bounds, panel.approvalLay.scroll = gfx.Rect{}, nil
 	panel.paintedRows = panel.paintedRows[:0]
 	panel.paintedHistory = panel.paintedHistory[:0]
 	panel.copySlots = panel.copySlots[:0]
@@ -484,9 +491,8 @@ func (state *State) declareAIPanel(c ui.C) {
 	}
 	panel.declared = true
 	size := gfx.Size{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	if panel.contentDraw == nil {
-		panel.contentDraw = state.paintAIPanelContent
-		panel.overDraw = state.paintAIPanelChrome
+	if panel.overDraw == nil {
+		panel.overDraw = state.paintAIPanelOver
 	}
 	c.Part(aiPanelPart)
 	ui.Stack(c).Absolute().Inset(0).Children(func() {
@@ -583,21 +589,40 @@ func (state *State) paintAIPanel(canvas *gfx.Canvas, size gfx.Size) {
 		// composer explicitly so typing reaches the assistant. The runtime applies
 		// one request once, so later frames leave the focus the user chose alone.
 		canvas.RequestFocus(hitAIInput)
+	case aiPanelDocked:
+		state.paintAIDockEdge(canvas)
+		state.paintAIResize(canvas)
+		state.paintAIDrop(canvas)
 	default:
 		state.paintAIResize(canvas)
 		state.paintAIDrop(canvas)
 	}
 }
 
-// paintAIResize paints the panel's resize edge: only hover, press and focus show
-// it, since the cards already carry their own border.
+// paintAIDockEdge draws the docked column's boundary beside the window frame's
+// side rail. The frame takes the panel's workspace surface, so without the line
+// the panel and the empty rail below its tools read as one column. The pane
+// divider draws the same line on the panel's other side, and a panel that ends
+// at the window's own edge keeps the window's edge.
+func (state *State) paintAIDockEdge(canvas *gfx.Canvas) {
+	if state.toolbarDockSideReserveFor(false, true) > 0 {
+		state.paintPanelSideEdge(canvas, state.ai.panel.rect, false)
+	}
+}
+
+// paintAIResize paints the panel's resize edge. Its resting 1px line is the
+// boundary between the docked column and the panes, as the files panel's
+// divider is; the section card keeps its own border instead, so only the handle
+// that shows hover, press and focus is painted there.
 func (state *State) paintAIResize(canvas *gfx.Canvas) {
 	panel := &state.ai.panel
 	if panel.resize.window.Width <= 0 {
 		return
 	}
 	theme := state.Theme()
-	theme.Border = gfx.Color{}
+	if panel.mode != aiPanelDocked {
+		theme.Border = gfx.Color{}
+	}
 	components.BeginResizable(canvas, theme, hitAIDivider, panel.resize.window, panel.resize.ratio).
 		Limits(0, 1).HandleSize(panel.resize.handle).Paint(state.messages.AIPanel.ResizePanel)
 }
@@ -641,9 +666,9 @@ func aiMenuWidth(text float32) float32 { return min(max(text+56, 140), 320) }
 const aiMenuContextWidth = float32(144)
 
 // paintAIPanelContent paints the parts the declaration left for the last pass,
-// once the page has laid the body out: the title buttons and setup card in their
-// slots and the bottom's field and buttons. The lists paint their own rows; their
-// chrome is painted over them (paintAIMessageChrome, paintAIHistoryChrome).
+// once the page has laid the body out: the setup card's button and the bottom's
+// field and buttons. The lists paint their own rows; their chrome is painted
+// over them (paintAIMessageChrome, paintAIHistoryChrome).
 func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
 	s := &panel.pageScratch
@@ -658,6 +683,16 @@ func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	// list paints rows at all: the empty state has no Draw to do it later.
 	panel.textSelect.Clamp(len(ai.items)*int(aiTextPartCount), panel.textLength)
 	state.paintAIBottom(canvas, &panel.body)
+}
+
+// paintAIPanelOver paints the hand-painted controls and then the chrome that
+// must sit over them. Both belong on the page's DrawOver, after its children:
+// the pinned question is declared inside a card whose own background is a
+// child, so a control painted from Draw is under that background — only its
+// label survives, and the button reads as bare text on the card.
+func (state *State) paintAIPanelOver(d *ui.DrawContext) {
+	state.paintAIPanelContent(d)
+	state.paintAIPanelChrome(d)
 }
 
 // paintAIPanelChrome paints what must come over the body's controls: the
@@ -708,7 +743,7 @@ func (state *State) declareAIPanelBody(c ui.C) {
 	}
 
 	panel.body = aiBody{}
-	ui.Column(c).Fill().Draw(panel.contentDraw).DrawOver(panel.overDraw).Children(func() {
+	ui.Column(c).Fill().DrawOver(panel.overDraw).Children(func() {
 		// The title row: the name, a new conversation, the history, and the way out.
 		ui.Row(c).Height(aiTitleRow).PadX(aiPad).Gap(4).Items(ui.Center).Children(func() {
 			ui.Icon(c, lucideIcons[iconBot]).Color(pal.accent).MarginSides(0, 4, 0, 0)
@@ -738,6 +773,9 @@ func (state *State) declareAIPanelBody(c ui.C) {
 			})
 		} else {
 			panel.body.list = state.declareAIEmpty(c)
+			if len(ai.approvals) > 0 {
+				panel.body.list.Shrink(1)
+			}
 		}
 		state.declareAIBottom(c, &panel.body, s.boxHeight)
 	})
@@ -760,17 +798,17 @@ func (state *State) declareAIPanelBody(c ui.C) {
 // aiModelText is the line naming the model that answers, and whether there is one.
 func (state *State) aiModelText() (string, bool) {
 	ai, panel := &state.ai, &state.ai.panel
-	if ai.settings.defaultModel == "" {
+	if ai.modelName == "" {
 		return "", false
 	}
 	for index := range ai.providers {
 		provider := &ai.providers[index]
-		if provider.ID != ai.settings.defaultProvider || !provider.Enabled {
+		if provider.ID != ai.modelProvider || !provider.Enabled {
 			continue
 		}
-		if panel.modelName != provider.Name || panel.modelID != ai.settings.defaultModel {
-			panel.modelName, panel.modelID = provider.Name, ai.settings.defaultModel
-			panel.modelText = provider.Name + " · " + ai.settings.defaultModel
+		if panel.modelName != provider.Name || panel.modelID != ai.modelName {
+			panel.modelName, panel.modelID = provider.Name, ai.modelName
+			panel.modelText = provider.Name + " · " + ai.modelName
 		}
 		return panel.modelText, true
 	}

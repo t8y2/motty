@@ -119,29 +119,24 @@ func TestHostDisplayOrderWorksWithSearchAndGroupFilter(t *testing.T) {
 	requireBulkSelection(t, state, 2, 3, 4)
 }
 
-func TestHostDisplayOrderAutomaticDisablesManualMoves(t *testing.T) {
+func TestHostDisplayOrderHoldSwitchesToManual(t *testing.T) {
 	state := displayOrderState(t)
-	state.Click(hitHostSort)
-	if !state.hostSort.enabled {
-		t.Fatal("manual reorder did not start")
-	}
 	chooseDisplayOrder(state, "ip")
-	if state.hostSort.enabled {
-		t.Fatal("automatic order did not cancel manual reorder")
+	if state.hostOrder != hostOrderIP {
+		t.Fatal("automatic order did not apply")
 	}
-	state.Click(hitHostSort)
-	if state.hostSort.enabled {
-		t.Fatal("manual reorder started under automatic display order")
+	beginHostSortCase(t, state)
+	if state.hostOrder != hostOrderManual || !state.hostSort.enabled {
+		t.Fatalf("holding a host under %v order did not switch to manual sorting", hostOrderIP)
 	}
+	state.endHostSort()
+	// The automatic order still refuses a reorder move that reaches it stale.
+	chooseDisplayOrder(state, "ip")
 	before := slices.Clone(state.hosts)
 	move := components.ReorderGridMove{ID: hitHostSortHandles.At(1), Target: hitHostSortHandles.At(2), From: 0, To: 1}
 	state.applyHostSortMove(move)
 	if !reflect.DeepEqual(state.hosts, before) {
 		t.Fatal("stale reorder gesture rewrote an automatically ordered catalog")
-	}
-	canvas, _ := paintedTexts(state)
-	if hit, ok := hitByID(canvas, hitHostSort); !ok || !hit.Disabled {
-		t.Fatal("manual reorder button is not disabled under automatic order")
 	}
 }
 

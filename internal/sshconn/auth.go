@@ -1,6 +1,7 @@
 package sshconn
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -42,23 +43,24 @@ func (conn *Conn) authMethods(authentication Authentication) []ssh.AuthMethod {
 // of an untrusted endpoint.
 func (conn *Conn) publicKeySigners(authentication Authentication) ([]ssh.Signer, error) {
 	conn.method("publickey")
-	signers, skipped, err := conn.loadIdentities(authentication)
-	if err != nil {
-		return nil, err
-	}
-	if len(skipped) > 0 {
-		conn.update(func(status *Status) { status.Skipped = append(status.Skipped, skipped...) })
-	}
+	var agents []ssh.Signer
 	if authentication.Agent {
 		agentSigners, err := conn.agentSigners()
 		switch {
 		case err == nil:
-			signers = append(agentSigners, signers...)
+			agents = agentSigners
 		case conn.config.AgentAddress != "":
 			// The user pointed at this agent; saying nothing would leave a
 			// failed login with no hint that the agent was never reached.
 			conn.update(func(status *Status) { status.Skipped = append(status.Skipped, fmt.Sprintf("ssh-agent (%v)", err)) })
 		}
+	}
+	signers, skipped, err := conn.loadIdentities(authentication, agents)
+	if err != nil {
+		return nil, err
+	}
+	if len(skipped) > 0 {
+		conn.update(func(status *Status) { status.Skipped = append(status.Skipped, skipped...) })
 	}
 	return signers, nil
 }
@@ -148,7 +150,7 @@ func (conn *Conn) askPassword(question string) (string, error) {
 // passphrases one at a time. A declined key is skipped without canceling the
 // connection, so agent and password authentication can still proceed. A key
 // that is present but unusable is skipped too, with the reason in skipped.
-func (conn *Conn) loadIdentities(authentication Authentication) (signers []ssh.Signer, skipped []string, err error) {
+func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Signer) (signers []ssh.Signer, skipped []string, err error) {
 	paths := authentication.IdentityFiles
 	if paths == nil {
 		home, err := os.UserHomeDir()
@@ -159,8 +161,36 @@ func (conn *Conn) loadIdentities(authentication Authentication) (signers []ssh.S
 			paths = append(paths, filepath.Join(home, ".ssh", name))
 		}
 	}
-	paths = append(paths, authentication.AdditionalIdentityFiles...)
+	paths = append(append([]string(nil), paths...), authentication.AdditionalIdentityFiles...)
+	usedAgents := make([]bool, len(agents))
+	var preferred []ssh.Signer
 	for _, path := range paths {
+		if path == "none" {
+			continue
+		}
+		var public ssh.PublicKey
+		if len(agents) > 0 {
+			public = conn.identityPublicKey(path)
+		}
+		matched := false
+		for index, signer := range agents {
+			if public != nil && bytes.Equal(public.Marshal(), signer.PublicKey().Marshal()) {
+				certified := signer
+				var certErr error
+				if !IsStoredKey(path) {
+					certified, certErr = certificateSigner(path, signer)
+				}
+				if certErr != nil {
+					skipped = append(skipped, certErr.Error())
+				} else if !usedAgents[index] {
+					preferred = append(preferred, certified)
+				}
+				usedAgents[index], matched = true, true
+			}
+		}
+		if matched {
+			continue
+		}
 		signer, err := conn.loadKey(path, nil)
 		if err != nil {
 			var passphrase *ssh.PassphraseMissingError
@@ -196,7 +226,29 @@ func (conn *Conn) loadIdentities(authentication Authentication) (signers []ssh.S
 		}
 		signers = append(signers, certified)
 	}
+	if !authentication.IdentitiesOnly {
+		unmatched := make([]ssh.Signer, 0, len(agents))
+		for index, signer := range agents {
+			if !usedAgents[index] {
+				unmatched = append(unmatched, signer)
+			}
+		}
+		signers = append(unmatched, signers...)
+	}
+	signers = append(preferred, signers...)
 	return signers, skipped, nil
+}
+
+func (conn *Conn) identityPublicKey(path string) ssh.PublicKey {
+	if !IsStoredKey(path) {
+		public, _ := keyidentity.PublicKey(path)
+		return public
+	}
+	signer, err := conn.loadKey(path, nil)
+	if err == nil {
+		return signer.PublicKey()
+	}
+	return nil
 }
 
 // loadKey reads one entry of an identity list: a file, or a key the application

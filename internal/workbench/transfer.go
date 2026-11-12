@@ -339,7 +339,7 @@ func (state *State) startTransfer(session *Session, engine zmodem.Engine) {
 	state.releaseTransferModal(session)
 	held := transfer.held
 	transfer.held = nil
-	engine.Feed(held)
+	engine.Feed(newestTransferStart(held, transfer.sending))
 	state.afterTransferFeed(session)
 }
 
@@ -386,6 +386,27 @@ func (state *State) runningTransferByHit(id gfx.ID) *Session {
 	return found
 }
 
+// newestTransferStart keeps only the newest copy of the request that began the
+// transfer, dropping the copies that piled up while the user was deciding.
+// The other end repeats its request every few seconds until it is answered, and
+// every copy but the last has already timed out on its side: answering them all
+// tells it the same thing more than once, which a receiver takes for more files
+// and a sender takes for readiness to send again, and the transfer loses step
+// and waits out the other end's timeout. A request that was cut by the reading
+// boundary may be the only copy, so nothing is dropped unless a whole second
+// one has arrived.
+func newestTransferStart(held []byte, sending bool) []byte {
+	signature := zmodemSignatureSend // the other end runs sz: it asks to send
+	if sending {
+		signature = zmodemSignatureReceive // the other end runs rz: it is ready
+	}
+	newest := bytes.LastIndex(held, signature)
+	if newest <= 0 || bytes.Index(held[:newest], signature) < 0 {
+		return held
+	}
+	return held[newest:]
+}
+
 func (state *State) clickTransfer(id gfx.ID) {
 	if state.modal != modalFileTransfer {
 		return
@@ -414,7 +435,13 @@ func (state *State) chooseFolderToReceive(session *Session, downloads bool) {
 	m := state.messages.Tools
 	dir := ""
 	if downloads {
-		dir = downloadsDirectory()
+		dir = state.downloadFolder()
+		if dir != "" {
+			if err := prepareDownloadDirectory(dir); err != nil {
+				session.transfer.dialogError = fmt.Sprintf(m.FilesDownloadDirectoryUnavailableFmt, dir)
+				return
+			}
+		}
 	} else {
 		chosen, err := state.options.OpenDirectory(app.OpenDirectoryOptions{Title: m.TransferChooseFolderTitle})
 		if errors.Is(err, app.ErrCanceled) || err == nil && chosen == "" {
@@ -516,6 +543,43 @@ func downloadsDirectory() string {
 		return ""
 	}
 	return dir
+}
+
+// downloadFolder is the folder a download is saved in when the user does not
+// pick one: the default download folder from the settings, else the system
+// Downloads folder. Empty means neither is available.
+func (state *State) downloadFolder() string {
+	if directory := state.sftpDownloadDirectory; validSFTPDownloadDirectory(directory) {
+		return filepath.Clean(directory)
+	}
+	return downloadsDirectory()
+}
+
+// downloadFolderLabel names that folder in the offer's button: its last path
+// element, or the whole path when it has none.
+func downloadFolderLabel(directory string) string {
+	name := filepath.Base(directory)
+	if name == "." || name == string(filepath.Separator) {
+		return directory
+	}
+	return name
+}
+
+// prepareDownloadDirectory makes directory ready to receive files: it is
+// created when missing, and must be a folder afterwards. The settings picker
+// only offers folders that exist, but one can be deleted after it was chosen.
+func prepareDownloadDirectory(directory string) error {
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		return err
+	}
+	info, err := os.Stat(directory)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return os.ErrInvalid
+	}
+	return nil
 }
 
 // folderTarget writes received files into one folder, never over a file that is
@@ -642,15 +706,16 @@ func (state *State) declareFileTransferDialog(c ui.C) {
 			ui.Text(c, transfer.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(20).MarginSides(8, 0, 0, 0)
 		})
 	})
+	saveFolder := state.downloadFolder()
 	decline := components.ButtonAction{ID: hitTransferDecline, Label: m.TransferDecline, Variant: components.ButtonSecondary}
 	dialog.Footer(func() {
 		switch {
 		case transfer.sending:
 			state.dialogActionFooter(c, decline, components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFiles})
-		case downloadsDirectory() != "":
+		case saveFolder != "":
 			state.dialogActionFooter(c, decline,
 				components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFolder, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitTransferDownloads, Label: m.TransferToDownloads})
+				components.ButtonAction{ID: hitTransferDownloads, Label: fmt.Sprintf(m.TransferToFolderFmt, elideMiddleRunes(downloadFolderLabel(saveFolder), 24))})
 		default:
 			state.dialogActionFooter(c, decline, components.ButtonAction{ID: hitTransferChoose, Label: m.TransferChooseFolder})
 		}

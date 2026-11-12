@@ -189,6 +189,10 @@ WindTerm、Electerm、Netcatty 导入。TOTP/HOTP 种子可以存入保险库并
 进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里。
 Electerm 和 Netcatty 的明文 SSH 密码可在明确确认后导入；重新导入只补齐缺失密码。
 
+OpenSSH 配置导入和同步会保留每台主机的 `ServerAliveInterval`、
+`ServerAliveCountMax`、`IdentitiesOnly` 和指定的身份文件。显式设置间隔为 0
+会关闭该主机的保活；限制身份时仍可使用 SSH agent 中匹配的密钥，但不会尝试其他 agent 密钥。
+
 ### 文件不用另开应用
 
 SFTP 支持多选、递归上传/下载、受限传输队列、续传、取消/重试、重命名、删除、
@@ -246,6 +250,12 @@ agent 通过 stdio 启动它，它只使用你对 agent 开放的主机，没有
 WebDAV 和 S3 默认要求远程地址使用 HTTPS。使用局域网 HTTP 服务时，可以在配置
 表单底部勾选“允许不安全的远程 HTTP”。HTTP 连接不加密，认证信息可能被窃听；
 备份文件仍在本机加密后上传。此选择仅保存在本机。
+
+WebDAV 下载支持 AList/OpenList 的“302 重定向”策略，最多跟随 5 次重定向；
+跨站后不再携带 WebDAV 凭据、Cookie 或来源地址，也不允许从 HTTPS 降级到 HTTP。
+上传和连接测试仍拒绝跨主机重定向。同步使用 WebDAV 文件自身的 ETag 保护并发更新，
+不使用云盘下载地址的 ETag；重定向未提供 ETag 时，会在下载前后查询 WebDAV 文件属性。
+服务器无法提供版本标识时，请将其 WebDAV 策略改为“本机代理（native proxy）”。
 
 ## 从源码构建
 

@@ -95,6 +95,13 @@ func TestRemoteSearchNativeFocusTypingAndEscape(t *testing.T) {
 	if len(state.remote.rows) != 1 || state.remote.rows[0].cells[0] != "3000" {
 		t.Fatal("native text input did not filter process rows")
 	}
+	if err := driver.Chord(find.Modifiers, string(find.Char)); err != nil {
+		t.Fatal(err)
+	}
+	editor := state.remote.searches[state.remote.tab].queryEditor()
+	if selected := editor.Selection(); selected.Start != 0 || selected.End != editor.RuneCount() || selected.End == 0 {
+		t.Fatalf("Find re-fire selection = %+v, want all of %q", selected, editor.String())
+	}
 	if err := driver.Key(gfx.KeyEscape, 0); err != nil {
 		t.Fatal(err)
 	}

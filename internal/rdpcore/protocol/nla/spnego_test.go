@@ -75,14 +75,14 @@ func TestDecodeNegTokenResp(t *testing.T) {
 	// Wrap in context tag [1]
 	wrapped := asn1WrapExplicit(0xa1, innerBytes)
 
-	state, token, err := decodeNegTokenResp(wrapped)
+	res, err := decodeNegTokenResp(wrapped)
 	if err != nil {
 		t.Fatalf("decode error: %v", err)
 	}
-	if state != 1 {
-		t.Errorf("negState = %d, want 1", state)
+	if res.negState != 1 {
+		t.Errorf("negState = %d, want 1", res.negState)
 	}
-	if string(token) != string(ntlmChallenge) {
+	if string(res.responseToken) != string(ntlmChallenge) {
 		t.Errorf("responseToken mismatch")
 	}
 }
@@ -91,7 +91,7 @@ func TestDecodeNegTokenRespDirect(t *testing.T) {
 	// Test decoding without the [1] wrapper (just SEQUENCE)
 	ntlmChallenge := []byte("test challenge")
 	resp := negTokenResp{
-		NegState:      0, // accept-completed
+		NegState:      1, // accept-incomplete
 		ResponseToken: ntlmChallenge,
 	}
 
@@ -100,15 +100,34 @@ func TestDecodeNegTokenRespDirect(t *testing.T) {
 		t.Fatalf("marshal error: %v", err)
 	}
 
-	state, token, err := decodeNegTokenResp(data)
+	res, err := decodeNegTokenResp(data)
 	if err != nil {
 		t.Fatalf("decode error: %v", err)
 	}
-	if state != 0 {
-		t.Errorf("negState = %d, want 0", state)
+	if res.negState != 1 {
+		t.Errorf("negState = %d, want 1", res.negState)
 	}
-	if string(token) != string(ntlmChallenge) {
+	if string(res.responseToken) != string(ntlmChallenge) {
 		t.Errorf("responseToken mismatch")
+	}
+}
+
+func TestDecodeNegTokenRespAbsentState(t *testing.T) {
+	// An initiator's message omits negState; it must not decode as
+	// accept-completed (0), because WinPR uses the difference to decide whether
+	// the acceptor has to sign the mechanism list.
+	mic := []byte("0123456789abcdef")
+	data := encodeNegTokenResp([]byte("NTLMSSP\x00\x03\x00\x00\x00"), mic)
+
+	res, err := decodeNegTokenResp(data)
+	if err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if res.negState != negStateAbsent {
+		t.Errorf("negState = %d, want %d", res.negState, negStateAbsent)
+	}
+	if string(res.mechListMIC) != string(mic) {
+		t.Errorf("mechListMIC mismatch")
 	}
 }
 

@@ -60,6 +60,7 @@ func (state *State) terminalMenuPointer(event gfx.PointerEvent) (gfx.EventResult
 }
 
 func (state *State) openTerminalMenu(session *Session) {
+	state.ghostMenu.open = false
 	state.terminalMenu = terminalMenu{open: true, session: session.ID, at: state.terminalMenu.pointer, pointer: state.terminalMenu.pointer}
 }
 

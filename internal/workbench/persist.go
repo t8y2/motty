@@ -146,10 +146,15 @@ type savedState struct {
 	Credentials             []savedCredential   `json:"credentials,omitempty"`
 	CommandHistory          bool                `json:"command_history,omitempty"`
 	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
-	NoteSidebars            *savedNoteSidebars  `json:"note_sidebars,omitempty"`
-	NoteView                savedNoteView       `json:"notes_view,omitempty"`
-	Notes                   []savedNote         `json:"notes,omitempty"`
-	NoteFolders             []savedNoteFolder   `json:"note_folders,omitempty"`
+	CommandAcceptHintOff    bool                `json:"command_accept_hint_off,omitempty"`
+	// CommandCompletionMode is the completion mode as one value: "off", "list"
+	// (automatic) or "inline". It is absent in a file written before the modes
+	// were named; the two booleans are then read instead.
+	CommandCompletionMode string             `json:"command_completion_mode,omitempty"`
+	NoteSidebars          *savedNoteSidebars `json:"note_sidebars,omitempty"`
+	NoteView              savedNoteView      `json:"notes_view,omitempty"`
+	Notes                 []savedNote        `json:"notes,omitempty"`
+	NoteFolders           []savedNoteFolder  `json:"note_folders,omitempty"`
 	// SessionLogsOff stops the local session journal. Unset means capture is on;
 	// it belongs to this computer and is never synced.
 	SessionLogsOff          bool                  `json:"session_logs_off,omitempty"`
@@ -543,6 +548,8 @@ func (state *State) snapshot() savedState {
 		TerminalCloseConfirm:       notifyString(state.closeConfirmOff),
 		CommandHistory:             state.history.on,
 		CommandSuggestOff:          state.history.suggestOff,
+		CommandCompletionMode:      state.completionMode().persistName(),
+		CommandAcceptHintOff:       state.history.acceptHintOff,
 		SessionLogsOff:             state.sessionLogsOff,
 		SessionLogsView:            state.snapshotSessionLogsView(),
 		CommandInlineSuggestOff:    state.history.inlineOff,
@@ -1117,8 +1124,21 @@ func (state *State) restoreShared(saved savedState) {
 	state.passwordHintOff = saved.TerminalPasswordHint == "off"
 	state.closeConfirmOff = saved.TerminalCloseConfirm == "off"
 	state.history.on = saved.CommandHistory
-	state.history.suggestOff = saved.CommandSuggestOff
-	state.history.inlineOff = saved.CommandInlineSuggestOff
+	state.history.acceptHintOff = saved.CommandAcceptHintOff
+	switch saved.CommandCompletionMode {
+	case "off":
+		state.history.suggestOff, state.history.inlineOff = true, true
+	case "list":
+		state.history.suggestOff, state.history.inlineOff = false, true
+	case "inline":
+		state.history.suggestOff, state.history.inlineOff = false, false
+	default:
+		// A file from before the three modes had names: Off and the
+		// shortcut-only list keep their meaning, and the old third mode (list
+		// plus inline text) becomes the automatic list, its closest successor.
+		state.history.suggestOff = saved.CommandSuggestOff
+		state.history.inlineOff = true
+	}
 	state.restoreSFTPSettings(saved)
 	state.proxy = decodeOutboundProxy(saved.OutboundProxy)
 	state.restoreTerminalTools(saved)

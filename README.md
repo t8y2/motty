@@ -226,6 +226,11 @@ in a portable copy).
 Electerm and Netcatty imports can save readable SSH passwords with explicit
 consent; re-import only fills missing passwords.
 
+OpenSSH config import and sync retain per-host `ServerAliveInterval`,
+`ServerAliveCountMax`, `IdentitiesOnly` and configured identity files. An explicit
+zero interval disables keepalive for that host; restricted identities still use
+matching keys from the SSH agent, without offering unrelated agent keys.
+
 ### Files
 
 SFTP browsing with multi-select, recursive upload/download, a bounded transfer
@@ -334,6 +339,14 @@ service over HTTP, check **Allow insecure remote HTTP** at the bottom of its
 configuration form. The connection is unencrypted and authentication details may
 be intercepted; the backup file is still encrypted before upload. This choice
 stays on this computer.
+
+WebDAV downloads support AList/OpenList's **302 redirect** policy. At most five
+redirects are followed; another origin receives no WebDAV credentials, cookies
+or referrer, and HTTPS downloads never redirect to HTTP. Uploads and connection
+checks still refuse cross-host redirects. The WebDAV file's ETag, not the cloud
+drive's, protects concurrent updates; when it is absent from the redirect,
+WebDAV properties are checked before and after downloading. If the server cannot
+provide that version, select **native proxy** in its WebDAV policy instead.
 
 ## Build from source
 

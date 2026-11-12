@@ -64,11 +64,9 @@ func (b *aiBackend) Sessions(ctx context.Context) ([]gate.SessionInfo, error) {
 			if session.term == nil {
 				continue
 			}
-			out = append(out, gate.SessionInfo{
-				ID: sessionHandle(session.ID), Title: session.Title, Address: session.Address,
-				Active: session.ID == b.state.activeSessionID,
-				Ready:  session.term.shell != nil && session.term.live,
-			})
+			info := b.state.aiSessionInfo(session)
+			info.Active = session.ID == b.state.activeSessionID
+			out = append(out, info)
 		}
 		return out, nil
 	})

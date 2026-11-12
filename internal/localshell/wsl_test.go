@@ -78,6 +78,28 @@ func TestWSLPathsAreTranslatedBothWays(t *testing.T) {
 	}
 }
 
+func TestWSLWindowsPathsRoundTripTheLinuxSide(t *testing.T) {
+	for _, test := range []struct {
+		linux, distro, windows string
+		ok                     bool
+	}{
+		{linux: "/home/me", distro: "Ubuntu", windows: `\\wsl.localhost\Ubuntu\home\me`, ok: true},
+		{linux: "/", distro: "Ubuntu", windows: `\\wsl.localhost\Ubuntu\`, ok: true},
+		{linux: "/home/me/a b", distro: "Ubuntu", windows: `\\wsl.localhost\Ubuntu\home\me\a b`, ok: true},
+		{linux: "/mnt/c/Users/me", distro: "Ubuntu", windows: `C:\Users\me`, ok: true},
+		{linux: "/mnt/c", distro: "Ubuntu", windows: `C:\`, ok: true},
+		{linux: "/mnt/data", distro: "Ubuntu", windows: `\\wsl.localhost\Ubuntu\mnt\data`, ok: true}, // not a drive letter
+		{linux: "relative", distro: "Ubuntu", ok: false},
+		{linux: "/home/me\\x", distro: "Ubuntu", ok: false},
+		{linux: "/home/me", distro: "", ok: false},
+	} {
+		got, ok := WSLWindowsPath(test.linux, test.distro)
+		if got != test.windows || ok != test.ok {
+			t.Errorf("WSLWindowsPath(%q, %q) = %q, %v; want %q, %v", test.linux, test.distro, got, ok, test.windows, test.ok)
+		}
+	}
+}
+
 func TestWSLStartDirectoryIsOnlyAWayTheDistributionCanReach(t *testing.T) {
 	for dir, want := range map[string]string{
 		`\\wsl.localhost\Ubuntu\home\me`: "/home/me",

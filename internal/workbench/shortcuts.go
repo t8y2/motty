@@ -40,6 +40,8 @@ const (
 	shortcutHistory
 	shortcutClearScreen
 	shortcutCompletion
+	shortcutSnippetPicker
+	shortcutAcceptSuggestion
 	shortcutActionCount
 )
 
@@ -50,6 +52,10 @@ const (
 type shortcutMap struct {
 	chords keymap.Table[shortcutAction]
 	labels [shortcutActionCount]string
+	// acceptKeys is the Keyboard shortcuts page's keys text for the
+	// accept-suggestion row, rebuilt with the labels so that painting it
+	// allocates nothing.
+	acceptKeys string
 }
 
 func newShortcutMap() shortcutMap {
@@ -89,6 +95,11 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutHistory, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'h'})
 	shortcuts.chords.Set(shortcutClearScreen, keymap.Chord{Modifiers: primary, Char: 'k'})
 	shortcuts.chords.Set(shortcutCompletion, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'j'})
+	shortcuts.chords.Set(shortcutSnippetPicker, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'g'})
+	// The inline suggestion's key: the right arrow at the end of a line, as the
+	// shell itself leaves it. It is a binding of its own because the badge beside
+	// the suggestion names it and the user can choose another one there.
+	shortcuts.chords.Set(shortcutAcceptSuggestion, keymap.Chord{Key: gfx.KeyRight})
 	shortcuts.refreshLabels()
 	return shortcuts
 }
@@ -137,6 +148,23 @@ func (shortcuts *shortcutMap) refreshLabels() {
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
 		shortcuts.labels[action] = labelFor(action, shortcuts.chords.Chord(action))
 	}
+	shortcuts.refreshAcceptKeys()
+}
+
+// refreshAcceptKeys rebuilds the accept row's keys: the bound key, End while the
+// default arrow keeps its alias, or a dash when the user removed the binding.
+func (shortcuts *shortcutMap) refreshAcceptKeys() {
+	chord := shortcuts.chords.Chord(shortcutAcceptSuggestion)
+	if !chord.Valid() {
+		shortcuts.acceptKeys = "—"
+		return
+	}
+	var scratch [5]string
+	label := strings.Join(chord.Keycaps(scratch[:0]), "")
+	if chord == (keymap.Chord{Key: gfx.KeyRight}) {
+		label += " / End"
+	}
+	shortcuts.acceptKeys = label
 }
 
 // chordLabel is how a chord reads in a list: its keys, or a dash for an action
@@ -165,6 +193,20 @@ func validForSnippet(chord keymap.Chord) bool {
 	return chord.Valid() && printable && chord.Key == gfx.KeyUnknown &&
 		chord.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) != 0 &&
 		chord.Modifiers&(gfx.ModifierMeta|gfx.ModifierShift|gfx.ModifierAlt) != 0
+}
+
+// validForAcceptSuggestion is Valid with the rule the terminal's key path adds:
+// plain text arrives through the platform's text service rather than as a key,
+// so a bare character (Shift included) could never reach the suggestion. Named
+// keys do, and so does a character with Control, Alt or Command.
+func validForAcceptSuggestion(chord keymap.Chord) bool {
+	if !chord.Valid() {
+		return false
+	}
+	if chord.Key != gfx.KeyUnknown {
+		return true
+	}
+	return chord.Modifiers&(gfx.ModifierControl|gfx.ModifierAlt|gfx.ModifierMeta) != 0
 }
 
 // clipboardAliases are the classic clipboard chords every terminal and text
@@ -230,6 +272,9 @@ func (shortcuts *shortcutMap) bind(action shortcutAction, chord keymap.Chord) (s
 		return shortcutNone, false
 	}
 	shortcuts.labels[action] = labelFor(action, chord)
+	if action == shortcutAcceptSuggestion {
+		shortcuts.refreshAcceptKeys()
+	}
 	return shortcutNone, true
 }
 
@@ -240,6 +285,9 @@ func (shortcuts *shortcutMap) unbind(action shortcutAction) bool {
 		return false
 	}
 	shortcuts.labels[action] = labelFor(action, keymap.Chord{})
+	if action == shortcutAcceptSuggestion {
+		shortcuts.acceptKeys = "—"
+	}
 	return true
 }
 
@@ -295,6 +343,10 @@ func (action shortcutAction) String() string {
 		return "clear_screen"
 	case shortcutCompletion:
 		return "command_completion"
+	case shortcutSnippetPicker:
+		return "snippet_picker"
+	case shortcutAcceptSuggestion:
+		return "accept_suggestion"
 	default:
 		return ""
 	}
@@ -339,6 +391,13 @@ func (state *State) Shortcut(event gfx.KeyEvent) (outcome gfx.EventResult) {
 
 // shortcut shares contextual routing between printable and named bindings.
 func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventResult {
+	// The accept-suggestion key is terminal input, not an application action:
+	// the terminal's own key path matches it against a live suggestion, and
+	// every other context keeps the key. Returning unhandled here leaves text
+	// inputs, notes popups, dialogs and remote desktops exactly as they were.
+	if chord == state.shortcuts.chords.Chord(shortcutAcceptSuggestion) {
+		return gfx.EventResult{}
+	}
 	if state.notesVisible() && (state.notes.view.menu != "" || state.notes.view.popup != "" || state.notes.view.drawer || state.notes.confirm != "") {
 		action := state.shortcuts.actionFor(chord)
 		if action == shortcutCopy || action == shortcutPaste || action == shortcutNone {
@@ -485,6 +544,10 @@ func (state *State) captureShortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.
 	if event.Repeat {
 		return gfx.EventResult{Handled: true}
 	}
+	if state.shortcutCapture == shortcutAcceptSuggestion && !validForAcceptSuggestion(chord) {
+		state.shortcutError = state.messages.ShortcutsAcceptInvalid
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
 	if owner := state.snippetNamed(chord); owner != "" {
 		state.shortcutError = fmt.Sprintf(state.messages.ShortcutsConflictFmt, owner)
 		return gfx.EventResult{Handled: true, Repaint: true}
@@ -586,6 +649,9 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 	switch action {
 	case shortcutCommandPalette:
 		state.openCommandPalette()
+		result.Focus = hitCommandPaletteSearch
+	case shortcutSnippetPicker:
+		state.openSnippetPicker()
 		result.Focus = hitCommandPaletteSearch
 	case shortcutNewWindow:
 		state.openNewWindow()

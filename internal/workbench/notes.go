@@ -15,7 +15,6 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
 	"github.com/vivaui/viva/text"
-	"motty/internal/configstore"
 	"motty/internal/i18n"
 )
 
@@ -54,7 +53,10 @@ type savedNote struct {
 
 // noteLink is where a linked note's text is stored.
 type noteLink struct {
-	Path string `json:"path"`
+	// WriteBase is the disk body fingerprint before a committed library edit.
+	// It preserves pending text across restarts if the later file write fails.
+	WriteBase string `json:"write_base,omitempty"`
+	Path      string `json:"path"`
 	// Tree is the linked folder this note's file belongs to, or empty for a file
 	// linked on its own. The folder's own link follows its files.
 	Tree string `json:"tree,omitempty"`
@@ -293,16 +295,9 @@ func (s *State) flushNoteBuffer(id string, buffer *noteDraft) bool {
 	if next.Title == n.draft.Title && next.Body == n.draft.Body && slices.Equal(next.Tags, n.draft.Tags) {
 		return true
 	}
-	if next.Body != n.draft.Body {
-		h := noteRevision(n.draft)
-		next.Revision = noteID()
-		if !slices.Contains(next.Ancestors, h) {
-			next.Ancestors = append(slices.Clone(next.Ancestors), h)
-		}
-	}
-	next.Updated = s.options.WallNow().UTC().Format(time.RFC3339Nano)
-	raw := mustNoteJSON(recordPayload{Data: mustNoteJSON(next)})
-	if len(raw) > configstore.MaxPayload {
+	var err error
+	next, err = prepareNoteUpdate(n.draft, next, s.options.WallNow())
+	if err != nil {
 		buffer.problem = s.noteText("Note exceeds the 1 MiB record limit; draft retained.", "笔记超过 1 MiB 记录上限，草稿已保留。")
 		return false
 	}

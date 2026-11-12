@@ -195,6 +195,27 @@ func TestSFTPDefaultDownloadDirectoryUsesTheSystemDownloadsPlace(t *testing.T) {
 	}
 }
 
+func TestSFTPLocalSideOpensInTheConfiguredDownloadFolder(t *testing.T) {
+	state, source, _, _ := openTestSFTP(t)
+	destination := t.TempDir()
+	state.sftpDownloadDirectory = destination
+	if got := state.localSideStart(); got != destination {
+		t.Fatalf("local side opens in %q, want the configured download folder %q", got, destination)
+	}
+	if window := state.newSFTPWindow(source); window.initialLocal != destination {
+		t.Fatalf("transfer window local side opens in %q, want %q", window.initialLocal, destination)
+	}
+
+	// A configured folder that is not on disk is not browsed: the default
+	// stands in until a download creates it. Ask-every-time has none either.
+	for _, configured := range []string{"", filepath.Join(t.TempDir(), "not-created")} {
+		state.sftpDownloadDirectory = configured
+		if got, want := state.localSideStart(), localDefaultStart(); got != want {
+			t.Fatalf("local side opens in %q for configured %q, want %q", got, configured, want)
+		}
+	}
+}
+
 func TestSFTPDefaultDownloadDirectorySkipsThePicker(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	destination := t.TempDir()

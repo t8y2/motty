@@ -45,6 +45,26 @@ func writeIdentity(t testing.TB, passphrase string) (string, ssh.Signer) {
 	return path, signer
 }
 
+func TestPublicIdentityNeedsNoPrivateKeyOrPassphrase(t *testing.T) {
+	path, signer := writeIdentity(t, "locked")
+	public, err := PublicKey(path)
+	if err != nil || ssh.FingerprintSHA256(public) != ssh.FingerprintSHA256(signer.PublicKey()) {
+		t.Fatalf("encrypted identity public key = %v, %v", public, err)
+	}
+	if err := os.WriteFile(path+".pub", ssh.MarshalAuthorizedKey(signer.PublicKey()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []string{path, path + ".pub"} {
+		public, err := PublicKey(candidate)
+		if err != nil || ssh.FingerprintSHA256(public) != ssh.FingerprintSHA256(signer.PublicKey()) {
+			t.Fatalf("public-only identity = %v, %v", public, err)
+		}
+	}
+}
+
 func TestInspectAndLoadPrivateKeys(t *testing.T) {
 	for _, test := range []struct {
 		name       string

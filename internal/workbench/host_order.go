@@ -57,8 +57,7 @@ func (state *State) setHostOrder(mode hostOrderMode) {
 		return
 	}
 	state.hostOrder = mode
-	state.hostSort.enabled = false
-	state.hostSort.grid.Cancel()
+	state.endHostSort()
 	state.hostsScroll = 0
 	state.visible = nil
 	state.refreshHostGroups()

@@ -11,6 +11,7 @@ import (
 	"motty/internal/i18n"
 	"motty/internal/otp"
 	"motty/internal/serial"
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 )
 
@@ -36,10 +37,14 @@ type hostEditor struct {
 	groupPicker   hostGroupPicker
 	tags          text.Editor
 	tagPicker     hostTagPicker
-	icon          hostIcon
-	color         text.Editor
-	colorPicker   hostColorPicker
-	form          hostFormScroll
+	// encoding is the remote charset the host's shells use: empty is UTF-8.
+	// encodingPicker is the searchable field that chooses it.
+	encoding       string
+	encodingPicker hostEncodingPicker
+	icon           hostIcon
+	color          text.Editor
+	colorPicker    hostColorPicker
+	form           hostFormScroll
 	// system is the system the host was last detected to run, whose badge the
 	// automatic icon shows.
 	system sshconn.RemoteSystem
@@ -59,6 +64,7 @@ type hostEditor struct {
 	algoMode     algoMode
 	auth         hostAuth
 	identity     string
+	sshOptions   *sshconfig.ConnectionOptions
 	authOpen     bool
 	identityOpen bool
 	// credential is the saved password the host takes its password from, and
@@ -105,9 +111,9 @@ type hostEditor struct {
 	protocolBefore hostProtocol
 	flow           serial.Flow
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
-	// console is RDP's own: it asks the server for its console (administrative)
-	// session.
-	viaSSH, clipboard, console, chromeless bool
+	// console and standardSecurity are RDP's own: the server's console
+	// (administrative) session, and Standard RDP Security without TLS or NLA.
+	viaSSH, clipboard, console, standardSecurity, chromeless bool
 	// ports are the serial ports found when the picker was last opened.
 	ports     []serial.Port
 	portsOpen bool
@@ -255,6 +261,8 @@ func (editor *hostEditor) load(host Host) {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
+	editor.encodingPicker = hostEncodingPicker{}
+	editor.encoding = host.Encoding
 	editor.icon, editor.iconOpen = hostIconAuto, false
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
@@ -263,6 +271,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode = host.algoMode()
 	editor.auth, editor.identity, editor.credential = host.Auth, host.Identity, host.Credential
+	editor.sshOptions = host.SSHOptions.Clone()
 	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11 = host.ForwardX11
 	editor.agentForward = host.AgentForward
@@ -283,6 +292,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.protocol, editor.flow = host.Protocol, host.Line.Flow
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
+	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
 	editor.portsOpen = false
 	if host.Protocol == protocolSerial {
 		editor.port.Insert(host.Line.String())
@@ -304,6 +314,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		Address:  editor.value(fieldAddress),
 		User:     editor.value(fieldUser),
 		Protocol: editor.protocol,
+		Encoding: editor.encoding,
 	}
 	if editor.protocol == protocolSerial {
 		host.Line, _ = serial.ParseLine(editor.value(fieldPort), editor.flow)
@@ -315,8 +326,10 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	if editor.protocol == protocolRDP {
 		host.Console = editor.console
+		host.StandardSecurity = editor.standardSecurity
 	}
 	if editor.protocol == protocolSSH {
+		host.SSHOptions = editor.sshOptions.Clone()
 		host.Auth, host.Identity = editor.auth, editor.identity
 		if host.Auth != authPrivateKey {
 			host.Identity = ""
@@ -361,12 +374,15 @@ func (editor *hostEditor) reset() {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
+	editor.encodingPicker = hostEncodingPicker{}
+	editor.encoding = ""
 	editor.icon, editor.iconChosen, editor.system, editor.iconOpen = hostIconAuto, false, sshconn.SystemUnknown, false
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode, editor.auth, editor.identity, editor.credential = algoDefault, authAutomatic, "", ""
+	editor.sshOptions = nil
 	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11, editor.agentForward, editor.noHistory, editor.transfer = false, false, false, transferAuto
 	editor.agentAccess = false
@@ -374,7 +390,7 @@ func (editor *hostEditor) reset() {
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
 	editor.protocol, editor.flow, editor.portsOpen = protocolSSH, serial.FlowNone, false
-	editor.viaSSH, editor.clipboard, editor.console, editor.chromeless = false, false, false, false
+	editor.viaSSH, editor.clipboard, editor.console, editor.standardSecurity, editor.chromeless = false, false, false, false, false
 }
 
 // defaultPortText is what the port field holds for a protocol until the user

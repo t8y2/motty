@@ -44,9 +44,9 @@ type sftpPanelScratch struct {
 	bounds gfx.Rect
 
 	// headerTools is where orderToolbarTools builds the header's actions.
-	headerTools [8]barTool
+	headerTools [12]barTool
 	// buttons are the icon buttons, in the order they were declared.
-	buttons           [24]sftpIconButton
+	buttons           [32]sftpIconButton
 	buttonCount       int
 	headerButtonCount int
 
@@ -121,7 +121,7 @@ func (state *State) paintSFTPPanelDetails(canvas *gfx.Canvas) {
 		places := sftpPlaceBrowser{owner: state, session: session, view: view}
 		places.paintDirectoryPlaces(canvas, state.contextRect)
 	}
-	if view.busy {
+	if view.busy || local && view.localBusy {
 		components.PaintSpinner(canvas, state.Theme(), s.spinnerSlot.Rect(), components.SpinnerPhase(canvas.Now()/(125*time.Millisecond)))
 		canvas.RequestFrame()
 	}
@@ -167,11 +167,15 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	}
 
 	headerTools := s.headerTools[:0]
-	addHeader := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
-		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled})
+	addHeader := func(id gfx.ID, glyph uint8, hint string, disabled bool, style ...iconButtonStyle) {
+		toolStyle := iconButtonQuiet
+		if len(style) > 0 {
+			toolStyle = style[0]
+		}
+		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled, style: toolStyle})
 	}
 	if local {
-		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, false)
+		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, view.localBusy)
 	} else {
 		addHeader(hitSFTPUpload, iconUpload, messages.SFTPUpload, view.busy)
 		addHeader(hitSFTPUploadDirectory, iconFolderUp, messages.SFTPUploadDirectory, view.busy)
@@ -181,7 +185,12 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	if !view.localOnly {
 		addHeader(hitSFTPPaneToggle, paneIcon, paneHint, false)
 	}
-	addHeader(hitSFTPRefresh, iconRefresh, messages.SFTPRefresh, view.busy && !local)
+	addHeader(hitSFTPRefresh, iconRefresh, messages.SFTPRefresh, view.busy && !local || local && view.localBusy)
+	followStyle := iconButtonQuiet
+	if !state.sftpFollowOff {
+		followStyle = iconButtonActive
+	}
+	addHeader(hitSFTPFollowToggle, iconFollowFolder, messages.Tools.FilesFollow, false, followStyle)
 	moveIcon, moveHint := state.sftpPanelMoveAction()
 	addHeader(hitSFTPPanelSide, moveIcon, moveHint, false)
 	addHeader(hitSFTPClose, iconClose, messages.TipSFTPClose, false)
@@ -201,7 +210,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			ui.Text(c, title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).MarginSides(0, 8, 0, 0)
 			ui.Row(c).Gap(4).Shrink(0).Children(func() {
 				for _, tool := range headerTools {
-					icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, iconButtonQuiet)
+					icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, tool.style)
 				}
 				// Filtering and turning hidden entries on are secondary actions. Keep
 				// the header stable at the narrow default width; once hidden entries are
@@ -303,12 +312,13 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			ui.Column(c).Shrink(0).Children(func() {
 				ui.Divider(c).Background(pal.line)
 				ui.Row(c).Gap(2).Height(sftpButton).Shrink(0).MarginSides(5, 0, rowBottom, 0).Children(func() {
+					opBusy := view.busy && !local || local && view.localBusy
 					add := func(id gfx.ID, glyph uint8, label string, danger bool) {
 						style := iconButtonQuiet
 						if danger {
 							style = iconButtonDanger
 						}
-						icon(sftpButton, id, glyph, label, view.busy, style)
+						icon(sftpButton, id, glyph, label, opBusy, style)
 					}
 					if one {
 						add(hitSFTPOpenEntry, iconFolderOpen, messages.SFTPOpen, false)
@@ -335,8 +345,8 @@ func (state *State) declareSFTPPanel(c ui.C) {
 					}
 					if !local {
 						add(hitSFTPMove, iconFolderOpen, messages.SFTPMove, false)
-						add(hitSFTPDelete, iconTrash, messages.SFTPDelete, true)
 					}
+					add(hitSFTPDelete, iconTrash, messages.SFTPDelete, true)
 				})
 				if one {
 					ui.Text(c, state.sftpDetailsLine(view, selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(18).Shrink(0).MarginSides(2, 0, 2, 2)
@@ -358,7 +368,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			statusRow = statusRow.Height(28)
 		}
 		statusRow.Children(func() {
-			if view.busy {
+			if view.busy || local && view.localBusy {
 				s.spinnerSlot = ui.Slot(c).Size(16, 16)
 			}
 			if folder.searching() {

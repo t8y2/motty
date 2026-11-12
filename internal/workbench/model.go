@@ -5,6 +5,8 @@ import (
 
 	"motty/internal/serial"
 	"motty/internal/sessionlog"
+	"motty/internal/sshbrowser"
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 )
 
@@ -32,8 +34,9 @@ type Host struct {
 	// Auth limits which credentials an SSH connection offers. Identity is the
 	// fingerprint of a specific imported private key when Auth is authPrivateKey;
 	// an empty value lets that mode try the default and imported keys.
-	Auth     hostAuth
-	Identity string
+	Auth       hostAuth
+	Identity   string
+	SSHOptions *sshconfig.ConnectionOptions
 	// Credential is the id of the saved password (see credentials.go) the host
 	// takes its password from; empty keeps the host's own. An id that no saved
 	// password has is treated as empty.
@@ -55,6 +58,10 @@ type Host struct {
 	// LoginCommand is typed into each new shell of an SSH host once it is ready
 	// for input, as the user would type it. One line, empty for none.
 	LoginCommand string
+	// Encoding is the character set of the remote shell's byte stream. Empty
+	// means UTF-8. A legacy server whose LANG names GB18030, Big5 or Shift_JIS
+	// needs its output decoded and its input encoded with that charset.
+	Encoding string
 	// tunnel marks the ephemeral host of a .xsh bastion tunnel opened on this
 	// computer. It is never saved, so only that launch gets the relaxed policy.
 	tunnel bool
@@ -71,12 +78,15 @@ type Host struct {
 	// through an SSH connection to Address (User is then the SSH account), and
 	// the clipboard is shared with the remote desktop. Console is an RDP host's:
 	// it asks Windows for its console (administrative) session instead of a new
-	// one. Chromeless is a desktop host's too: its page shows the picture alone,
+	// one. StandardSecurity is an RDP host's too: the connection uses Standard
+	// RDP Security alone, with no TLS or NLA, for a server that requires it.
+	// Chromeless is a desktop host's: its page shows the picture alone,
 	// without the bar above it and the status line under it.
-	ViaSSH     bool
-	Clipboard  bool
-	Console    bool
-	Chromeless bool
+	ViaSSH           bool
+	Clipboard        bool
+	Console          bool
+	StandardSecurity bool
+	Chromeless       bool
 
 	// localShell is the shell a local terminal was opened with: a program path,
 	// or a WSL distribution as localshell.WSLShell names it. Empty starts the
@@ -123,15 +133,21 @@ type Session struct {
 	// trusted prompt reported, or the place a split asked for. It is a hint to
 	// the server, which may no longer have that directory.
 	startDirectory string
+	// pathCompletion is this session's directory cache and its own reader for
+	// path completion. A pointer: it holds channels and a once, and the session
+	// value is copied when a tab moves between windows.
+	pathCompletion *pathCompletion
 
 	host     Host // what was dialed, to dial again
 	jumpPath string
 	// proxyRoute is the effective outbound proxy frozen when this connection
 	// was dialed. Editing the host updates host, but not the live transport.
 	proxyRoute   string
+	sshOptions   *sshconfig.ConnectionOptions
 	endpoint     sshconn.Endpoint
 	role         sshconn.EndpointRole
 	conn         Connection
+	browser      *sshbrowser.Browser
 	sudoCommands bool
 	sudoPassword string
 	recordRecent bool // this user dial may update its recent success once

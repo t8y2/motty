@@ -15,28 +15,30 @@ import (
 var hostProtocolUiHits = tree.Feature("host-protocol-ui")
 
 var (
-	hitDialogViaSSH          = tree.ID(hostProtocolUiHits, "dialog-via-ssh")
-	hitDialogClipboard       = tree.ID(hostProtocolUiHits, "dialog-clipboard")
-	hitDialogConsole         = tree.ID(hostProtocolUiHits, "dialog-console")
-	hitDialogChromeless      = tree.ID(hostProtocolUiHits, "dialog-chromeless")
-	hitDialogPortsTrigger    = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
-	hitDialogPortsDismiss    = tree.ID(hostProtocolUiHits, "dialog-ports-dismiss")
-	hitDialogAlgorithms      = tree.ID(hostProtocolUiHits, "dialog-algorithms")
-	hitDialogLoginCommand    = tree.ID(hostProtocolUiHits, "dialog-login-command")
-	hitDialogAdvanced        = tree.ID(hostProtocolUiHits, "dialog-advanced")
-	hitDialogForwardX11      = tree.ID(hostProtocolUiHits, "dialog-forward-x11")
-	hitDialogAgentForward    = tree.ID(hostProtocolUiHits, "dialog-agent-forward")
-	hitDialogInteractiveOnly = tree.ID(hostProtocolUiHits, "dialog-interactive-only")
-	hitDialogNoHistory       = tree.ID(hostProtocolUiHits, "dialog-no-history")
-	hitDialogAgentAccess     = tree.ID(hostProtocolUiHits, "dialog-agent-access")
-	hitDialogAgentAccessHelp = tree.ID(hostProtocolUiHits, "dialog-agent-access-help")
-	hitDialogOTP             = tree.ID(hostProtocolUiHits, "dialog-otp")
-	hitDialogOTPRemove       = tree.ID(hostProtocolUiHits, "dialog-otp-remove")
-	hitDialogOTPScan         = tree.ID(hostProtocolUiHits, "dialog-otp-scan")
-	hitDialogOTPPaste        = tree.ID(hostProtocolUiHits, "dialog-otp-paste")
-	hitDialogPortsItemList   = tree.Sub(hostProtocolUiHits, tree.Name("dialog-ports-item")) // + index of a detected port
-	hitDialogIconDismiss     = tree.ID(hostProtocolUiHits, "dialog-icon-dismiss")
-	hitDialogIconItemList    = tree.Sub(hostProtocolUiHits, tree.Name("dialog-icon-item")) // + a hostIcon
+	hitDialogViaSSH               = tree.ID(hostProtocolUiHits, "dialog-via-ssh")
+	hitDialogClipboard            = tree.ID(hostProtocolUiHits, "dialog-clipboard")
+	hitDialogConsole              = tree.ID(hostProtocolUiHits, "dialog-console")
+	hitDialogStandardSecurity     = tree.ID(hostProtocolUiHits, "dialog-standard-security")
+	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
+	hitDialogChromeless           = tree.ID(hostProtocolUiHits, "dialog-chromeless")
+	hitDialogPortsTrigger         = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
+	hitDialogPortsDismiss         = tree.ID(hostProtocolUiHits, "dialog-ports-dismiss")
+	hitDialogAlgorithms           = tree.ID(hostProtocolUiHits, "dialog-algorithms")
+	hitDialogLoginCommand         = tree.ID(hostProtocolUiHits, "dialog-login-command")
+	hitDialogAdvanced             = tree.ID(hostProtocolUiHits, "dialog-advanced")
+	hitDialogForwardX11           = tree.ID(hostProtocolUiHits, "dialog-forward-x11")
+	hitDialogAgentForward         = tree.ID(hostProtocolUiHits, "dialog-agent-forward")
+	hitDialogInteractiveOnly      = tree.ID(hostProtocolUiHits, "dialog-interactive-only")
+	hitDialogNoHistory            = tree.ID(hostProtocolUiHits, "dialog-no-history")
+	hitDialogAgentAccess          = tree.ID(hostProtocolUiHits, "dialog-agent-access")
+	hitDialogAgentAccessHelp      = tree.ID(hostProtocolUiHits, "dialog-agent-access-help")
+	hitDialogOTP                  = tree.ID(hostProtocolUiHits, "dialog-otp")
+	hitDialogOTPRemove            = tree.ID(hostProtocolUiHits, "dialog-otp-remove")
+	hitDialogOTPScan              = tree.ID(hostProtocolUiHits, "dialog-otp-scan")
+	hitDialogOTPPaste             = tree.ID(hostProtocolUiHits, "dialog-otp-paste")
+	hitDialogPortsItemList        = tree.Sub(hostProtocolUiHits, tree.Name("dialog-ports-item")) // + index of a detected port
+	hitDialogIconDismiss          = tree.ID(hostProtocolUiHits, "dialog-icon-dismiss")
+	hitDialogIconItemList         = tree.Sub(hostProtocolUiHits, tree.Name("dialog-icon-item")) // + a hostIcon
 )
 
 // maxListedPorts bounds the picker: a machine with more serial devices than
@@ -325,6 +327,8 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.chromeless = !editor.chromeless
 	case id == hitDialogConsole:
 		editor.console = !editor.console
+	case id == hitDialogStandardSecurity:
+		editor.standardSecurity = !editor.standardSecurity
 	case id == hitDialogAdvanced:
 		editor.advancedOpen = !editor.advancedOpen
 	case id == hitDialogForwardX11:
@@ -422,6 +426,8 @@ func (state *State) hostPassphraseHint() string {
 }
 
 // Size the body from its rows; short viewports scroll instead of shrinking them.
+// The fixed rows are Label/Color, Group/Tags and the Icon row, which carries the
+// file transfer mode and, on a protocol with a shell, the encoding.
 func (state *State) hostFormHeight() float32 {
 	height := float32(2+44+(3+state.hostEndpointRows())*hostFormRowHeight) + state.hostDialogExtra()
 	if state.editor.protocol != protocolSerial {
@@ -536,7 +542,7 @@ const (
 
 // hostVNCRowsBody is where the desktop switches' body put each checkbox row.
 type hostVNCRowsBody struct {
-	tunnel, clipboard, chromeless, console ui.Box
+	tunnel, clipboard, chromeless, console, standardSecurity, standardSecurityHelp ui.Box
 }
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
@@ -645,8 +651,9 @@ func (state *State) paintOTPRow(canvas *gfx.Canvas, field, scan, paste, remove g
 // vncRowsHeight is the room of the three switches every remote desktop host has.
 const vncRowsHeight = 4 + 20 + (12 + 20) + (12 + 20) + 16
 
-// rdpRowsHeight adds the console session's switch, which only an RDP host has.
-const rdpRowsHeight = vncRowsHeight + (12 + 20)
+// rdpRowsHeight adds the two switches only an RDP host has: the console
+// session and Standard RDP Security.
+const rdpRowsHeight = vncRowsHeight + 2*(12+20)
 
 // desktopRowsHeight is the room paintVNCRows takes for the protocol on screen.
 func (state *State) desktopRowsHeight() float32 {
@@ -659,7 +666,7 @@ func (state *State) desktopRowsHeight() float32 {
 // paintVNCRows paints the switches of a VNC or RDP host in the slots the host
 // form's page laid out: connecting through SSH, sharing the clipboard, showing
 // the picture without the bars around it and, for RDP, asking Windows for its
-// console (administrative) session.
+// console (administrative) session and choosing Standard RDP Security.
 func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
@@ -671,13 +678,17 @@ func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	// needs the RDP rows on the page, not just RDP in effect.
 	if editor.form.layoutProtocol == protocolRDP {
 		state.paintDialogCheckbox(canvas, hitDialogConsole, m.ConsoleSession, editor.console, b.console)
+		state.paintDialogCheckbox(canvas, hitDialogStandardSecurity, m.StandardSecurity, editor.standardSecurity, b.standardSecurity)
+		// After the checkbox, whose words reach to the end of the row, so that
+		// this is the hit on top where the two meet.
+		state.paintHelpIcon(canvas, hitDialogStandardSecurityHelp, m.StandardSecurityNote, b.standardSecurityHelp.Rect())
 	}
 }
 
 // declareHostVNCRows lays out the switches of a VNC or RDP host: connecting
 // through SSH, sharing the clipboard, showing the picture without the bars
 // around it and, for RDP, asking Windows for its console (administrative)
-// session.
+// session and choosing Standard RDP Security.
 func (state *State) declareHostVNCRows(c ui.C) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
@@ -688,6 +699,7 @@ func (state *State) declareHostVNCRows(c ui.C) {
 		b.chromeless = state.declareDialogCheckboxC(c, m.HideBars, 12, 0)
 		if editor.protocol == protocolRDP {
 			b.console = state.declareDialogCheckboxC(c, m.ConsoleSession, 12, 0)
+			b.standardSecurity, b.standardSecurityHelp = state.declareDialogCheckboxHelpC(c, m.StandardSecurity, 12, 0)
 		}
 	})
 }

@@ -173,7 +173,7 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 		canvas.AfterPaint(func() { w.click(id) })
 	}
 	w.ui.size = size
-	w.ui.bounds = gfx.Rect{Width: size.Width, Height: size.Height}
+	w.ui.bounds = w.windowBodyBounds()
 	theme, m := w.owner.Theme(), w.owner.messages
 	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, theme.Background)
 	// The event pass a connecting control delivers may start the browser while
@@ -267,46 +267,64 @@ func (w *sftpWindow) bookmarkDraws() {
 	}
 }
 
-// declareWindow declares the window's own chrome: the connecting state while
-// there is no browser, else the two panes, the transfer queue and the status
-// line. The panes are keyed containers of this page, laid out at the split's
-// panel rectangles exactly as the main-window tab lays them out.
+// windowBodyBounds is the room below the window's titlebar strip: the bar takes
+// TitlebarHeight, and everything the window shows is laid out inside it.
+func (w *sftpWindow) windowBodyBounds() gfx.Rect {
+	size := w.ui.size
+	return gfx.Rect{Y: TitlebarHeight, Width: size.Width, Height: max(size.Height-TitlebarHeight, 0)}
+}
+
+// declareWindow declares the window's own chrome: its titlebar and, under it,
+// the connecting state while there is no browser or else the two panes, the
+// transfer queue and the status line.
 func (w *sftpWindow) declareWindow(c ui.C) {
+	ui.Column(c).Fill().Children(func() {
+		declareWindowTitlebar(c, w.owner.pal, w.owner.messages.SFTPWindow.Title, w.session.Title+" · "+w.session.Address)
+		w.declareWindowBody(c)
+	})
+}
+
+// declareWindowBody declares what the window shows under its bar. The panes are
+// keyed containers of this page, laid out at the split's panel rectangles below
+// the bar exactly as the main-window tab lays them out in its own rectangle.
+func (w *sftpWindow) declareWindowBody(c ui.C) {
 	if w.view.worker == nil {
 		w.ui.connect = sftpWindowConnectScratch{}
 		w.declareConnecting(c)
 		return
 	}
 	size := w.ui.size
-	bounds := gfx.Rect{Width: size.Width, Height: size.Height}
+	bounds := w.windowBodyBounds()
 	queue := w.queueCount() > 0
 	body, queueRect, status := sftpTabPaneRects(bounds, queue)
 	w.ui.body, w.ui.queue = body, queueRect
 	w.ui.split = components.BeginResizable(nil, w.owner.Theme(), hitSFTPWindowSplit, body, w.ui.fraction).LimitsPx(220, 220)
 	panels := w.ui.split.Paint("")
 	firstLocal := w.owner.sftpWindowOrder == sftpLocalLeft
-	ui.Column(c).Fill().Children(func() {
-		w.declarePaneSide(c, panels.First, firstLocal)
-		w.declarePaneSide(c, panels.Second, !firstLocal)
+	ui.Column(c).Grow(1).Shrink(1).Children(func() {
+		w.declarePaneSide(c, bounds, panels.First, firstLocal)
+		w.declarePaneSide(c, bounds, panels.Second, !firstLocal)
 		ui.Column(c).Absolute().
-			Left(status.X).Top(status.Y).Width(status.Width).Height(status.Height).
+			Left(status.X - bounds.X).Top(status.Y - bounds.Y).Width(status.Width).Height(status.Height).
 			Children(func() { w.declareStatusLine(c) })
 	})
 	if queue {
 		w.declareQueue(c, queueRect, gfx.Rect{})
 	}
 	if w.bookmark.open {
-		w.declareBookmarkDialog(c, gfx.Rect{Width: w.ui.size.Width, Height: w.ui.size.Height})
+		w.declareBookmarkDialog(c, gfx.Rect{Width: size.Width, Height: size.Height})
 	}
 	if w.view.dialog != sftpDialogNone {
-		w.owner.declareSFTPDialog(c, bounds, w.view)
+		w.owner.declareSFTPDialog(c, gfx.Rect{Width: size.Width, Height: size.Height}, w.view)
 	}
 	w.owner.declareSFTPFileProperties(c, gfx.Rect{Width: size.Width, Height: size.Height}, &w.fileProperties)
 }
 
 // declarePaneSide declares one pane as a keyed container of the window page and
 // keeps the room its declaration leaves for the details the page does not paint.
-func (w *sftpWindow) declarePaneSide(c ui.C, bounds gfx.Rect, local bool) {
+// origin is the container's top-left corner in the window's coordinates: the
+// pane is laid out at the split's rectangle but declared inside it.
+func (w *sftpWindow) declarePaneSide(c ui.C, origin, bounds gfx.Rect, local bool) {
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
@@ -314,7 +332,7 @@ func (w *sftpWindow) declarePaneSide(c ui.C, bounds gfx.Rect, local bool) {
 	s := &w.ui.panes[side]
 	*s = sftpWindowScratch{local: local, bounds: bounds}
 	ui.Column(c.KeyInt(side)).Absolute().
-		Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).
+		Left(bounds.X - origin.X).Top(bounds.Y - origin.Y).Width(bounds.Width).Height(bounds.Height).
 		Children(func() { w.declarePane(c, s) })
 }
 
@@ -614,7 +632,7 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 					if sftpWindowActionIDs[action.index] == hitSFTPDelete {
 						style = iconButtonDanger
 					}
-					icon(sftpWindowActions[sideIndex(local)].At(action.index), action.glyph, action.label, w.browse.pending != nil || w.view.busy && !local || !local && !w.connected(), style)
+					icon(sftpWindowActions[sideIndex(local)].At(action.index), action.glyph, action.label, w.browse.pending != nil || w.view.busy && !local || local && w.view.localBusy || !local && !w.connected(), style)
 				}
 			})
 			if bounds.Height >= 320 {
@@ -774,7 +792,7 @@ func (w *sftpWindow) paintMenu(canvas *gfx.Canvas) {
 		if index := sftpWindowActionIndex(action); index >= 0 {
 			item.ID = sftpWindowMenuActions.At(index)
 			if action != hitSFTPProperties {
-				item.Disabled = w.browse.pending != nil || w.pendingLocal != "" || !w.activeLocal && (!w.connected() || w.view.busy)
+				item.Disabled = w.browse.pending != nil || w.pendingLocal != "" || w.activeLocal && w.view.localBusy || !w.activeLocal && (!w.connected() || w.view.busy)
 			}
 		}
 	}

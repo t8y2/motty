@@ -115,6 +115,9 @@ type Change struct {
 	// Expected guards replacements and deletions against concurrent edits.
 	// A nil payload requires that the record is absent or deleted.
 	Expected map[Key][]byte
+	// ExpectedKinds guards the complete live membership and payloads of a kind,
+	// including records inserted after a caller checked an empty collection.
+	ExpectedKinds map[string][]Entry
 	// Local sets values of this device; an empty value removes the key.
 	Local      map[string][]byte
 	LocalPatch map[string]JSONChange
@@ -633,6 +636,42 @@ func (s *Store) Commit(change Change) (written int, err error) {
 		}
 		if !sameJSON(payload, expected) {
 			return 0, fmt.Errorf("%s %s: %w", key.Kind, key.ID, ErrConflict)
+		}
+	}
+	for kind, expected := range change.ExpectedKinds {
+		rows, e := tx.QueryContext(ctx, `SELECT id,payload FROM records WHERE kind=? AND deleted=0`, kind)
+		if e != nil {
+			return 0, e
+		}
+		want := make(map[string][]byte, len(expected))
+		for _, entry := range expected {
+			if entry.Kind != kind {
+				rows.Close()
+				return 0, errors.New("expected kind mismatch")
+			}
+			want[entry.ID] = entry.Payload
+		}
+		matches := true
+		for rows.Next() {
+			var id string
+			var payload []byte
+			if e = rows.Scan(&id, &payload); e != nil {
+				rows.Close()
+				return 0, e
+			}
+			v, ok := want[id]
+			if !ok || !sameJSON(v, payload) {
+				matches = false
+			}
+			delete(want, id)
+		}
+		e = rows.Err()
+		rows.Close()
+		if e != nil {
+			return 0, e
+		}
+		if !matches || len(want) > 0 {
+			return 0, fmt.Errorf("%s collection: %w", kind, ErrConflict)
 		}
 	}
 	now := s.now()

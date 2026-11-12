@@ -131,6 +131,116 @@ func TestTerminalFindInputIsBoundedSingleLineAndCloseRestoresTerminalFocus(t *te
 	}
 }
 
+func TestOpeningTerminalFindTakesTheSelectionAndSelectsTheQuery(t *testing.T) {
+	state, session, _ := selectionState()
+	session.term.write([]byte("alpha beta gamma\r\n"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 6}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 9}),
+	)
+	state.openTerminalFind(session)
+	find := &session.term.find
+	if find.editor.String() != "beta" {
+		t.Fatalf("query = %q, want the selected text", find.editor.String())
+	}
+	if !find.open || len(find.matches) != 1 || find.matches[0].Start.Column != 6 {
+		t.Fatalf("open=%t matches=%+v", find.open, find.matches)
+	}
+	if selected := find.editor.Selection(); selected.Start != 0 || selected.End != find.editor.RuneCount() {
+		t.Fatalf("query selection = %+v, want all %d runes", selected, find.editor.RuneCount())
+	}
+}
+
+func TestReopeningTerminalFindSelectsItsRetainedQuery(t *testing.T) {
+	state, session, _ := selectionState()
+	state.openTerminalFind(session)
+	find := &session.term.find
+	find.setQuery("needle")
+	if selected := find.editor.Selection(); selected.Start != selected.End {
+		t.Fatalf("typing a query left %+v selected", selected)
+	}
+	state.closeTerminalFind(session)
+	state.openTerminalFind(session)
+	if find.editor.String() != "needle" {
+		t.Fatalf("reopening replaced the query with %q", find.editor.String())
+	}
+	if selected := find.editor.Selection(); selected.Start != 0 || selected.End != find.editor.RuneCount() {
+		t.Fatalf("reopened selection = %+v, want all %d runes", selected, find.editor.RuneCount())
+	}
+}
+
+func TestTerminalFindLeavesAMultiLineSelectionAlone(t *testing.T) {
+	state, session, _ := selectionState()
+	session.term.write([]byte("first line\r\nsecond line\r\n"))
+	state.openTerminalFind(session)
+	find := &session.term.find
+	find.setQuery("old")
+	state.closeTerminalFind(session)
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 1, Column: 5}),
+	)
+	state.openTerminalFind(session)
+	if find.editor.String() != "old" {
+		t.Fatalf("query = %q: a selection across a line break is not searchable and must not replace the query", find.editor.String())
+	}
+}
+
+func TestTerminalFindKeepsAWholeSelectionWithinTheField(t *testing.T) {
+	state := &State{
+		viewport: gfx.Size{Width: 400, Height: 200}, cellWidth: 8, cellHeight: 16,
+		activeSection: sectionTerminal, pal: &darkPalette, shortcuts: defaultShortcuts(),
+	}
+	live := newTerminal(400, 5)
+	live.live = true
+	state.sessions = []Session{{ID: 1, Address: "test", term: live}}
+	state.activeSessionID = 1
+	session := &state.sessions[0]
+	session.term.write([]byte(strings.Repeat("x", 1200)))
+	// The line soft-wraps, so the selection joins the rows without a line
+	// break and is exactly what a search of that line would need.
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 2, Column: 399}),
+	)
+	state.openTerminalFind(session)
+	if got := session.term.find.editor.String(); got != strings.Repeat("x", terminalFindMaxQuery) {
+		t.Fatalf("query = %d runes, want the field's %d", len([]rune(got)), terminalFindMaxQuery)
+	}
+}
+
+func TestTerminalFindNativeFieldMirrorsTheSelectedQuery(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	session.term.write([]byte("alpha beta\r\n"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 6}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 9}),
+	)
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
+		Title: "terminal find", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnKey: state.Key, OnShortcut: state.Shortcut, OnPointer: state.Pointer,
+		TextInput: func(context app.TextInputContext) *app.TextInput {
+			if input := state.TerminalFindInput(context); input != nil {
+				return input
+			}
+			return state.TerminalInput(context)
+		},
+	}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer driver.Close()
+	find := state.shortcuts.chords.Chord(shortcutFind)
+	if err := driver.Chord(find.Modifiers, string(find.Char)); err != nil {
+		t.Fatal(err)
+	}
+	editor := driver.Snapshot().Editor
+	if editor == nil || editor.Value != "beta" || editor.Selection != [2]int{0, len("beta")} {
+		t.Fatalf("native editor = %+v, want the selected query all selected", editor)
+	}
+}
+
 func TestTerminalFindPaintsAccessibleControlsAndDistinctHighlights(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	shell.say("needle and needle\r\n")

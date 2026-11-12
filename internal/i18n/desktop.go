@@ -26,6 +26,8 @@ type DesktopMessages struct {
 	ShareClipboard            string
 	HideBars                  string
 	ConsoleSession            string
+	StandardSecurity          string
+	StandardSecurityNote      string
 	VNCPlaintext              string
 	TipCapture                string
 	TipRelease                string

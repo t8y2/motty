@@ -88,7 +88,7 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 			table := ui.Table(c, &state.forwardTable, ui.TableSpec{
 				Rows: hitForwardRowList, Columns: state.forwardColumns[:], Headers: state.forwardHeadings[:], Source: &state.forwardRows,
 				Scrollbar: hitForwardScrollThumb, ScrollbarLabel: messages.ForwardListScroll,
-				ScrollbarSize: catalogBarGutter, ScrollbarGutter: catalogBarGutter,
+				ScrollbarGutter: catalogBarGutter,
 			}).Grow(1).Shrink(1)
 			if row, ok := table.RowClicked(); ok && state.modal == modalNone && row >= 0 && row < len(state.forwards) {
 				state.forwardTable.Select(row)

@@ -154,6 +154,7 @@ type sftpView struct {
 	followUpPath        string // a follow-up that arrived before those rows were ready
 	followUpEntries     []sftpclient.Entry
 	busy                bool
+	localBusy           bool // a local deletion is walking the disk; the server side stays usable
 	approximate         bool // the listing came from `ls` over SCP
 	operation           sftpclient.Operation
 	status              string
@@ -457,6 +458,9 @@ func (state *State) clickSFTP(id gfx.ID) {
 		case hitSFTPHeaderHidden:
 			folder.headerMenuOpen = false
 			state.clickSFTPFilter(view, hitSFTPHiddenToggle)
+		case hitSFTPHeaderFollow:
+			folder.headerMenuOpen = false
+			state.toggleSFTPFollow(session)
 		default:
 			folder.headerMenuOpen = false
 		}
@@ -1285,26 +1289,7 @@ func (state *State) ensureSFTPDownloadDirectory(view *sftpView) (string, bool) {
 	if directory == "" {
 		return "", false
 	}
-	if !validSFTPDownloadDirectory(directory) {
-		state.fileOpenNotice(
-			view.detached,
-			state.messages.Tools.FilesDownloadDirectory,
-			fmt.Sprintf(state.messages.Tools.FilesDownloadDirectoryUnavailableFmt, directory),
-			components.ToastWarning,
-		)
-		return "", false
-	}
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		state.fileOpenNotice(
-			view.detached,
-			state.messages.Tools.FilesDownloadDirectory,
-			fmt.Sprintf(state.messages.Tools.FilesDownloadDirectoryUnavailableFmt, directory),
-			components.ToastWarning,
-		)
-		return "", false
-	}
-	info, err := os.Stat(directory)
-	if err != nil || !info.IsDir() {
+	if !validSFTPDownloadDirectory(directory) || prepareDownloadDirectory(directory) != nil {
 		state.fileOpenNotice(
 			view.detached,
 			state.messages.Tools.FilesDownloadDirectory,
@@ -1636,6 +1621,10 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		status = fmt.Sprintf(state.messages.SFTPMovingFmt, view.dialogEntry.Name)
 		view.moveAfterRename = queued
 	case sftpDialogDelete:
+		if view.local {
+			state.submitLocalDelete(view)
+			return
+		}
 		if len(view.dialogEntries) > 1 {
 			view.deleteRemaining = slices.Clone(view.dialogEntries)
 			view.deleteCompleted = 0

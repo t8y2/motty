@@ -60,6 +60,9 @@ type historyUI struct {
 	// inlineOff keeps the list and hides the inline suggestion.
 	suggestOff bool
 	inlineOff  bool
+	// acceptHintOff hides the badge that names the key accepting the inline
+	// suggestion; the key itself keeps working.
+	acceptHintOff bool
 	// ghost is the candidates of each host for those suggestions, newest first.
 	ghost map[string][]cmdhistory.Entry
 

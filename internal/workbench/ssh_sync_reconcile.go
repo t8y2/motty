@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"motty/internal/i18n"
+	"motty/internal/keyidentity"
 	"motty/internal/sshconfig"
 )
 
@@ -116,12 +117,14 @@ func (state *State) finishSSHSync(out sshSyncOutcome, manual bool) {
 }
 
 type sshHostPull struct {
-	id       string
-	label    string
-	address  *string
-	user     *string
-	port     *uint16
-	conflict bool
+	options        *sshconfig.ConnectionOptions
+	optionsChanged bool
+	id             string
+	label          string
+	address        *string
+	user           *string
+	port           *uint16
+	conflict       bool
 }
 
 type sshJumpPull struct {
@@ -429,6 +432,10 @@ func (r *sshReconciler) mergeHost(host Host, link *sshSyncLink, fileHost sshconf
 	}
 	base := &link.Base
 	pull := sshHostPull{id: host.CatalogID, label: host.Label}
+	options := importedSSHOptions(fileHost.Options)
+	if !host.SSHOptions.Equal(options) {
+		pull.options, pull.optionsChanged = options, true
+	}
 	edit := sshconfig.Edit{Alias: link.Alias}
 	hereAddress, hereUser, herePort := host.Address, host.User, port22(host.Port)
 	thereAddress, thereUser, therePort := fileHost.HostName, fileHost.User, port22(fileHost.Port)
@@ -471,7 +478,7 @@ func (r *sshReconciler) mergeHost(host Host, link *sshSyncLink, fileHost sshconf
 	case sshToHere:
 		pull.port = &therePort
 	}
-	if pull.address != nil || pull.user != nil || pull.port != nil {
+	if pull.address != nil || pull.user != nil || pull.port != nil || pull.optionsChanged {
 		r.pulls = append(r.pulls, pull)
 	}
 	if edit.HostName != nil || edit.User != nil || edit.Port != nil {
@@ -772,6 +779,9 @@ func (r *sshReconciler) applyPull(pull sshHostPull) {
 	}
 	previous := state.hosts[index]
 	updated := previous
+	if pull.optionsChanged {
+		updated.SSHOptions = pull.options
+	}
 	if pull.address != nil {
 		updated.Address = *pull.address
 	}
@@ -820,7 +830,7 @@ func (r *sshReconciler) addHost(host Host) Host {
 }
 
 func (r *sshReconciler) importHost(fileHost sshconfig.Host) {
-	host := Host{Label: fileHost.Alias, Address: fileHost.HostName, User: fileHost.User, Port: port22(fileHost.Port)}
+	host := Host{Label: fileHost.Alias, Address: fileHost.HostName, User: fileHost.User, Port: port22(fileHost.Port), SSHOptions: importedSSHOptions(fileHost.Options)}
 	if r.state.hostIndexByEndpoint(host) >= 0 {
 		r.warn(r.m.WarnEndpointFmt, fileHost.Alias)
 		return
@@ -906,6 +916,9 @@ func (r *sshReconciler) offerIdentities() {
 		}
 		record := inspectIdentity(state.nextIdentityID, path, state.keyMessages())
 		if record.Error != "" {
+			if _, err := keyidentity.PublicKey(path); err == nil {
+				continue
+			}
 			r.warn(state.messages.SSHConfigWarningIdentityFmt, filepath.Base(path), record.Error)
 			continue
 		}

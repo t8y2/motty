@@ -53,9 +53,9 @@ type Client struct {
 
 const defaultMaxBytes = 64 << 20
 
-// New checks the configuration. A nil http client uses one that does not follow
-// redirects to another host, so the password is not handed to a server the user
-// did not name. The caller controls the request deadline through its context.
+// New checks the configuration. Downloads may follow redirects to another origin
+// without credentials; other requests stay on the configured host. The caller
+// controls the request deadline through its context.
 func New(config Config, client *http.Client) (*Client, error) {
 	base, err := url.Parse(strings.TrimSpace(config.URL))
 	if err != nil || base.Host == "" || base.User != nil {
@@ -151,7 +151,14 @@ func (client *Client) Prepare(ctx context.Context) error {
 
 // Get downloads the file. The returned tag identifies this version of it.
 func (client *Client) Get(ctx context.Context) (data []byte, tag string, err error) {
-	response, err := client.do(ctx, http.MethodGet, client.address(strings.Split(client.config.Path, "/")...), nil, nil)
+	response, tag, err := client.download(ctx, "")
+	metadataTag := ""
+	if errors.Is(err, errDownloadVersion) {
+		metadataTag, err = client.fileETag(ctx)
+		if err == nil {
+			response, tag, err = client.download(ctx, metadataTag)
+		}
+	}
 	if err != nil {
 		return nil, "", err
 	}
@@ -170,7 +177,16 @@ func (client *Client) Get(ctx context.Context) (data []byte, tag string, err err
 	if int64(len(data)) > limit {
 		return nil, "", ErrTooLarge
 	}
-	return data, response.Header.Get("ETag"), nil
+	if metadataTag != "" {
+		after, err := client.fileETag(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		if after != metadataTag || tag != metadataTag {
+			return nil, "", ErrChanged
+		}
+	}
+	return data, tag, nil
 }
 
 // Put uploads the file, making the folders above it first. The upload only

@@ -140,10 +140,19 @@ func TestSFTPWindowToolbarAndNativeFileActions(t *testing.T) {
 	}
 	var canvas gfx.Canvas
 	w.paint(&canvas, w.ui.size)
+	// The window's own titlebar names the connection; nothing below it may repeat
+	// that name.
+	named := 0
 	for _, text := range canvas.Texts() {
 		if text.Value == w.session.Title+" · "+w.session.Address {
-			t.Fatal("duplicate connection title is still rendered")
+			named++
+			if text.Bounds.Y < 0 || text.Bounds.Y+text.Bounds.Height > TitlebarHeight {
+				t.Fatalf("connection title painted outside the titlebar: %+v", text.Bounds)
+			}
 		}
+	}
+	if named != 1 {
+		t.Fatalf("connection title painted %d times, want once in the titlebar", named)
 	}
 	selectRemote := func(name string) {
 		for i := range w.view.rows {

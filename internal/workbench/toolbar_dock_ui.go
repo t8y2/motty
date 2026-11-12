@@ -255,6 +255,9 @@ func (state *State) paintToolbarDockTop(canvas *gfx.Canvas) {
 				continue
 			}
 		}
+		if tool.disabled {
+			canvas.Block(bounds)
+		}
 		state.registerToolbarDockTool(canvas, tool, toolbarDockTop, bounds)
 	}
 }
@@ -612,7 +615,8 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 		// strip below, so it takes the frame's surface rather than a color of its
 		// own: on a full-page pane that is the workspace it borders. No divider is
 		// drawn beside it: the frame and the pane are one surface, and the tools
-		// read as a column of that surface.
+		// read as a column of that surface. A docked panel that takes the same
+		// workspace draws its own line against the rail instead.
 		background := state.windowFrameColor()
 		if terminalVisible && primary {
 			state.setTerminalRailTools(session, append(top, bottom...))
@@ -788,7 +792,15 @@ func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 	case gfx.PointerDown:
 		*drag = toolbarDockDrag{}
 		for _, hit := range dock.hits[:dock.count] {
-			if event.Target != hit.tool.id {
+			matches := event.Target == hit.tool.id
+			// A disabled tool is skipped by the hit-tester, so its presses fall
+			// through with no target of their own; a press that does carry one —
+			// an open menu's dismiss layer, one of its rows — belongs to that
+			// control even when the disabled tool's bounds lie under it.
+			if !matches && hit.tool.disabled && event.Target.IsZero() && pointInRect(event.X, event.Y, hit.bounds) {
+				matches = true
+			}
+			if !matches {
 				continue
 			}
 			if event.Button == gfx.PointerButtonSecondary {
@@ -797,6 +809,9 @@ func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 			}
 			if event.Button == gfx.PointerButtonPrimary {
 				*drag = toolbarDockDrag{pressed: true, tool: hit.tool, start: gfx.Point{X: event.X, Y: event.Y}}
+				if hit.tool.disabled {
+					return gfx.EventResult{Handled: true}
+				}
 			}
 			break
 		}
@@ -828,6 +843,9 @@ func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		if !finished.active {
+			if finished.tool.disabled {
+				return gfx.EventResult{Handled: true}
+			}
 			return gfx.EventResult{}
 		}
 		// Keep the source identity available while resolving the final insertion.

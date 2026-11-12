@@ -197,6 +197,84 @@ func TestTheFolderTheShellReportsMovesThePanelUnlessTurnedOff(t *testing.T) {
 	}
 }
 
+func TestSFTPPanelFollowToggleButtonTogglesTerminalFollow(t *testing.T) {
+	state, session, fake, _ := openTestSFTP(t)
+	view := session.files
+	shell := fake.shell(t)
+
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+
+	// Verify the button is painted and initially active (follow is on by default)
+	if _, ok := hitByID(&canvas, hitSFTPFollowToggle); !ok {
+		t.Fatal("hitSFTPFollowToggle button was not painted in panel header")
+	}
+	var found *barTool
+	for i := range state.chrome.sftpPanel.headerTools {
+		tool := &state.chrome.sftpPanel.headerTools[i]
+		if tool.id == hitSFTPFollowToggle {
+			found = tool
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("hitSFTPFollowToggle tool was not found in panel headerTools")
+	}
+	if found.style != iconButtonActive {
+		t.Fatalf("expected button style iconButtonActive, got %v", found.style)
+	}
+
+	// Follow terminal folder initially works
+	shell.say("\x1b]7;file://box/home/test/docs\x07")
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
+
+	// Click button to turn follow off
+	state.Click(hitSFTPFollowToggle)
+	if !state.sftpFollowOff {
+		t.Fatal("sftpFollowOff should be true after clicking follow toggle button")
+	}
+
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for i := range state.chrome.sftpPanel.headerTools {
+		tool := &state.chrome.sftpPanel.headerTools[i]
+		if tool.id == hitSFTPFollowToggle {
+			if tool.style != iconButtonQuiet {
+				t.Fatalf("expected button style iconButtonQuiet when off, got %v", tool.style)
+			}
+			break
+		}
+	}
+
+	// Move panel back manually to /home/test
+	state.openSFTPDirectory(view, "/home/test")
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test" })
+
+	// Shell reports docs, but following is off so panel stays at /home/test
+	shell.say("\x1b]7;file://box/home/test/docs\x1b\\")
+	state.Wake()
+	time.Sleep(30 * time.Millisecond)
+	state.Wake()
+	if view.path != "/home/test" {
+		t.Fatalf("panel should not follow when off, but got: %s", view.path)
+	}
+
+	// Click follow toggle button again to turn follow on
+	state.Click(hitSFTPFollowToggle)
+	if state.sftpFollowOff {
+		t.Fatal("sftpFollowOff should be false after clicking follow toggle button again")
+	}
+
+	// Panel should immediately follow the terminal's working directory (/home/test/docs)
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
+
+	// Test More menu toggle
+	state.Click(hitSFTPHeaderMore)
+	state.Click(hitSFTPHeaderFollow)
+	if !state.sftpFollowOff {
+		t.Fatal("sftpFollowOff should be true after clicking hitSFTPHeaderFollow")
+	}
+}
+
 func TestFilesSettingsApplyToTheWorkerAndAreSaved(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	state.Click(hitSettings)

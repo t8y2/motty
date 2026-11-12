@@ -78,7 +78,7 @@ func (state *State) newSFTPWindow(source *Session) *sftpWindow {
 	w.view.selected, w.view.lfolder.selected = -1, -1
 	w.session = Session{ID: source.ID, HostID: source.HostID, Title: source.Title, Address: source.Address, host: source.host, conn: source.conn, phase: source.phase, files: w.view}
 	w.ui.fraction = .5
-	w.initialLocal = localStart()
+	w.initialLocal = state.localSideStart()
 	if source.files != nil {
 		w.initialRemote = source.files.path
 		if source.files.lfolder.path != "" {
@@ -129,7 +129,7 @@ func (w *sftpWindow) startBrowser() {
 }
 
 func (w *sftpWindow) config() app.Config {
-	base := app.Config{Title: w.owner.messages.SFTPWindow.Title + " — " + w.session.Title + " · " + w.session.Address, Icon: AppIcon(), Width: 1200, Height: 800, MinWidth: sftpWindowMinWidth, MinHeight: sftpWindowMinHeight, Tree: Tree(), Paint: w.paint, OnWake: w.wake, OnPointer: w.pointer, OnKey: w.key, OnShortcut: w.shortcut, OnScroll: w.scroll, OnFileDrop: w.fileDrop, TextInput: w.textInput, OnCloseRequest: w.requestClose, OnClosed: w.onClosed}
+	base := app.Config{Title: w.owner.messages.SFTPWindow.Title + " — " + w.session.Title + " · " + w.session.Address, Icon: AppIcon(), Width: 1200, Height: 800, MinWidth: sftpWindowMinWidth, MinHeight: sftpWindowMinHeight, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight, ClearColor: windowClearColor(w.pal.workspace), Tree: Tree(), Paint: w.paint, OnWake: w.wake, OnPointer: w.pointer, OnKey: w.key, OnShortcut: w.shortcut, OnScroll: w.scroll, OnFileDrop: w.fileDrop, TextInput: w.textInput, OnCloseRequest: w.requestClose, OnClosed: w.onClosed}
 	// The window's page routes its chrome, its panes' Lists and its connecting
 	// state. The window keeps Paint (it also paints the toolbar controls, dialogs
 	// and transfer queue the page only lays out) and OnScroll (a wheel notch moves
