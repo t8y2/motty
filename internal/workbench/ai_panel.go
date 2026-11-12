@@ -943,8 +943,13 @@ func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventRe
 		}
 		if !history {
 			// A held thumb holds the conversation where it is: streaming must not
-			// drag it to the end under the reader's hand.
+			// drag it to the end under the reader's hand. The List reads whether it
+			// follows when it is declared, before the Follow(false) of that paint
+			// reaches it, so stop following on the state now.
 			panel.followSuppressed = true
+			if scroll, _ := state.aiActiveScroll(); scroll != nil {
+				scroll.Follow(false)
+			}
 		}
 		bar.dragging = true
 		bar.history = history
