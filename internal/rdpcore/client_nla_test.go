@@ -187,15 +187,13 @@ func TestCredSSPFallbackDoesNotRetryCredentials(t *testing.T) {
 						if err != nil || len(auth.NegoTokens) != 1 {
 							return errors.New("missing Authenticate message")
 						}
-						if raw && len(auth.PubKeyAuth) == 0 {
-							return errors.New("raw NTLM did not seal its public-key binding")
-						}
-						if !raw && len(auth.PubKeyAuth) != 0 {
-							// Sending the binding with the Authenticate makes a
-							// WinPR-family server answer with its own token in a
-							// TSRequest that repeats those bytes; the client then
-							// fails verifying them as the server's binding.
-							return errors.New("client sealed its binding before the SPNEGO exchange completed")
+						if len(auth.PubKeyAuth) == 0 {
+							// The challenge carries no request-mic, so this
+							// Authenticate is the client's last SPNEGO token and
+							// MS-CSSP 3.2.5 puts the binding in the same
+							// TSRequest. Windows answers a split with a TLS
+							// internal_error instead of an error code.
+							return errors.New("client did not seal its binding with the last token")
 						}
 						attempts.Add(1)
 						if test.authError == closeAfterAuth {

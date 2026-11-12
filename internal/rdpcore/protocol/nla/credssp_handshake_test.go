@@ -274,28 +274,29 @@ func serveCredSSPHandshake(conn *tls.Conn, certificate tls.Certificate, raw, req
 			return errors.New("raw NTLM did not seal its binding at sequence zero")
 		}
 	} else {
-		// The token exchange is not over when the client sends its Authenticate:
-		// the binding belongs in a later TSRequest, after the acceptor's final
-		// token. FreeRDP 3.x answers an early binding with its own token in a
-		// TSRequest that still carries the client's pubKeyAuth bytes, which a
-		// client that does not track this leg mistakes for the server's binding.
-		if len(auth.PubKeyAuth) != 0 {
-			return errors.New("client sent its binding before the SPNEGO exchange completed")
+		// The client signs the mechanism list on every SPNEGO path: Windows 11
+		// 24H2 and Server 2025 require it before they accept the public-key
+		// binding, even though their challenge does not ask for it.
+		if len(mechanismMIC) == 0 {
+			return errors.New("client sent no SPNEGO mechanism-list MIC")
 		}
-		switch {
-		case requestMIC && len(mechanismMIC) == 0:
-			return errors.New("server requested a mechListMIC and got none")
-		case !requestMIC && len(mechanismMIC) != 0:
-			return errors.New("client sent an unrequested mechListMIC")
-		case requestMIC:
-			expected := seal.mechListMIC(mechanisms)
-			if !hmac.Equal(expected[:], mechanismMIC) {
-				return errors.New("SPNEGO mechanism-list MIC is invalid")
+		expected := seal.mechListMIC(mechanisms)
+		if !hmac.Equal(expected[:], mechanismMIC) {
+			return errors.New("SPNEGO mechanism-list MIC is invalid")
+		}
+		// The MIC exchange counts as a signed message on both peers, so the
+		// first sealed application message uses sequence one.
+		seal.seqNumClient = 1
+		seal.seqNumServer = 1
+		if requestMIC {
+			// The acceptor's final token comes first; the binding follows.
+			if len(auth.PubKeyAuth) != 0 {
+				return errors.New("client sent its binding before the SPNEGO exchange completed")
 			}
-			// The MIC exchange counts as a signed message on both peers, so
-			// the first sealed application message uses sequence one.
-			seal.seqNumClient = 1
-			seal.seqNumServer = 1
+		} else if len(auth.PubKeyAuth) == 0 {
+			// MS-CSSP 3.2.5: the client's last SPNEGO token and pubKeyAuth
+			// travel in the same TSRequest when no further round is needed.
+			return errors.New("client did not bind its last SPNEGO token to pubKeyAuth")
 		}
 	}
 	// Turn the client-side sealing helper into the server peer.
@@ -303,13 +304,9 @@ func serveCredSSPHandshake(conn *tls.Conn, certificate tls.Certificate, raw, req
 	seal.clientSealKey, seal.serverSealKey = seal.serverSealKey, seal.clientSealKey
 	seal.clientSeal, seal.serverSeal = seal.serverSeal, seal.clientSeal
 
-	if !raw {
-		var serverMIC []byte
-		if requestMIC {
-			sig := seal.mechListMIC(mechanisms)
-			serverMIC = sig[:]
-		}
-		if err := sendTSRequest(conn, &tsRequest{Version: peerVersion, NegoTokens: []negoToken{{Data: testFinalToken(spnegoAcceptCompleted, serverMIC)}}}); err != nil {
+	if !raw && requestMIC {
+		sig := seal.mechListMIC(mechanisms)
+		if err := sendTSRequest(conn, &tsRequest{Version: peerVersion, NegoTokens: []negoToken{{Data: testFinalToken(spnegoAcceptCompleted, sig[:])}}}); err != nil {
 			return err
 		}
 		auth, err = readTSRequest(conn)

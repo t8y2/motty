@@ -261,28 +261,30 @@ func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 		copy(binding, subjectPubKey)
 	}
 
+	// A MIC exchange adds a round trip before the binding may be sent: the
+	// acceptor answers the Authenticate token with its own NegTokenResp first
+	// (WinPR, and therefore GNOME Remote Desktop on Ubuntu 24.04 and later,
+	// always asks for the MIC because NTLM is never its preferred mechanism).
+	spnegoRound := !rawNTLM && requestMIC
+
 	authToken := authMsg
 	if !rawNTLM {
-		// The SPNEGO exchange is not finished by the Authenticate token alone:
-		// an acceptor that signs the mechanism list answers with its own
-		// NegTokenResp before it reads the client's public-key binding (WinPR,
-		// and therefore GNOME Remote Desktop on Ubuntu 24.04 and later, always
-		// asks for the MIC because NTLM is never its preferred mechanism).
-		var mechListMICSig []byte
-		if requestMIC {
-			sig := seal.mechListMIC(mechTypeList)
-			log.LogAttrs(ctx, slog.LevelDebug, "mechListMIC computed", util.Bytes("mic", sig[:]), slog.Int("mechTypeListLen", len(mechTypeList)))
-			// A mechListMIC exchange counts as a signed message on both peers:
-			// WinPR's Negotiate layer adds one to every later
-			// EncryptMessage/DecryptMessage sequence (negotiate.c, "if
-			// (context->mic) MessageSeqNo++"), and Windows' SSPI advances its
-			// own counters. The RC4 handles stay at their start (MS-SPNG
-			// 3.2.5.1), which mechListMIC leaves untouched.
-			seal.seqNumClient = 1
-			seal.seqNumServer = 1
-			mechListMICSig = sig[:]
-		}
-		authToken = encodeNegTokenResp(authMsg, mechListMICSig)
+		// The client signs the mechanism list it offered on every SPNEGO path,
+		// even when the acceptor did not ask for it. Windows 11 24H2 and Server
+		// 2025 verify the list against this MIC before they accept the
+		// public-key binding and tear the TLS session down with internal_error
+		// when it is missing; older servers accept it unrequested.
+		sig := seal.mechListMIC(mechTypeList)
+		log.LogAttrs(ctx, slog.LevelDebug, "mechListMIC computed", util.Bytes("mic", sig[:]), slog.Int("mechTypeListLen", len(mechTypeList)))
+		// A mechListMIC exchange counts as a signed message on both peers:
+		// WinPR's Negotiate layer adds one to every later
+		// EncryptMessage/DecryptMessage sequence (negotiate.c, "if
+		// (context->mic) MessageSeqNo++"), and Windows' SSPI advances its
+		// own counters. The RC4 handles stay at their start (MS-SPNG
+		// 3.2.5.1), which mechListMIC leaves untouched.
+		seal.seqNumClient = 1
+		seal.seqNumServer = 1
+		authToken = encodeNegTokenResp(authMsg, sig[:])
 	}
 	log.LogAttrs(ctx, slog.LevelDebug, "NTLM Authenticate built", slog.Int("authBytes", len(authMsg)), slog.Int("tokenBytes", len(authToken)))
 
@@ -296,19 +298,23 @@ func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 		// message on the SPNEGO path.
 		req2.ClientNonce = clientNonce
 	}
-	if rawNTLM {
-		// Raw NTLM has no mechanism list and no negotiation leg: the server
-		// reads the binding from the same TSRequest as the Authenticate.
+	if !spnegoRound {
+		// MS-CSSP 3.2.5: the TSRequest that carries the client's last SPNEGO
+		// token or NTLM message MUST carry pubKeyAuth as well. A peer that
+		// expects it there — Windows, raw NTLM servers — answers a bare
+		// Authenticate by tearing down TLS with an internal_error, which is
+		// reported to the user as a possibly wrong password.
 		req2.PubKeyAuth = seal.seal(binding)
 	}
-	log.LogAttrs(ctx, slog.LevelDebug, "sending NTLM Authenticate", slog.Bool("withPubKeyAuth", rawNTLM))
+	log.LogAttrs(ctx, slog.LevelDebug, "sending NTLM Authenticate",
+		slog.Bool("withPubKeyAuth", !spnegoRound), slog.Bool("spnegoRound", spnegoRound))
 	// A partial write can already count as a logon attempt at the server.
 	credentialsSent = true
 	if err := sendTSRequest(tlsConn, req2); err != nil {
 		return fmt.Errorf("credssp: sending authenticate: %w", err)
 	}
 
-	if !rawNTLM {
+	if spnegoRound {
 		// Step 3b: accept the acceptor's final SPNEGO token. The TSRequest
 		// carrying it can repeat fields of the message it answers — FreeRDP 3.x
 		// returns the client's own pubKeyAuth bytes in this reply — so only the

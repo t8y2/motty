@@ -252,13 +252,18 @@ without NLA if the server allows it; standard RDP Security (RC4 without TLS) is
 refused. NLA starts with SPNEGO; if token negotiation fails before credentials
 are sent, it reconnects once using raw NTLM tokens for older WinPR servers such
 as GNOME Remote Desktop on Ubuntu 22.04. Both paths keep certificate checks,
-NTLMv2 MIC/channel binding and CredSSP public-key verification. When the server
-asks for a SPNEGO mechListMIC, the client signs the mechanism list it offered,
-verifies the server's MIC, and sends its public-key binding in a later
-TSRequest; that is what libfreerdp 3.x (GNOME Remote Desktop on Ubuntu 24.04 and
-later) requires, and sending both in one message makes it echo the client's own
-binding back. The MIC exchange counts as a signed message, so both directions
-seal the binding at sequence one, not zero. After sending an Authenticate
+NTLMv2 MIC/channel binding and CredSSP public-key verification. The client
+always signs the SPNEGO mechanism list it offered; Windows 11 24H2 and Server
+2025 reject the public-key binding when that MIC is absent, even though their
+challenge does not request it. The MIC exchange counts as a signed message, so
+both directions seal the binding at sequence one, not zero. When the server asks
+for the MIC, the client verifies the acceptor's MIC and sends its public-key
+binding in a later TSRequest; that is what libfreerdp 3.x (GNOME Remote Desktop
+on Ubuntu 24.04 and later) requires, and sending both in one message makes it
+echo the client's own binding back. When it does not ask, the Authenticate token
+is the client's last SPNEGO token, and MS-CSSP 3.2.5 requires the binding in
+that same TSRequest; Windows tears the TLS session down with an internal_error
+when the two are split. After sending an Authenticate
 message, failures stop automatic retries and TLS-only fallback.
 Bitmap updates (RLE, Planar, NSCodec, drawing orders) and the RDPGFX
 pipeline (ClearCodec, progressive RemoteFX, uncompressed; H.264 is not offered),
