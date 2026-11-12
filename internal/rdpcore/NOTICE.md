@@ -36,9 +36,12 @@ Changed:
   `Options.Security` is `SecurityStandard`; the default refuses a server that
   offers nothing else.
 * A wrong password stops after one attempt (`%w` instead of `%v` kept
-  `nla.ErrCredentialsFatal` visible; a server that drops the connection after the
-  credentials were sent counts as a refusal). Upstream made 14 logon attempts for
-  one wrong password, which locks an account out.
+  `nla.ErrCredentialsFatal` visible). A server that drops the connection after the
+  credentials were sent is still not retried, but it is reported as an unproven
+  outcome (`nla.ErrClosedAfterCredentials`) instead of a refusal, and the saved
+  password is kept: Windows Server 2012 and other old CredSSP peers close on
+  handshake mismatches as well. Upstream made 14 logon attempts for one wrong
+  password, which locks an account out.
 * CredSSP can reconnect once with raw NTLM tokens when SPNEGO negotiation fails
   before credentials are sent, for older WinPR servers. Raw NTLM keeps TLS,
   NTLMv2 MIC/channel binding and public-key verification, but does not consume
