@@ -2228,18 +2228,42 @@ func (state *State) connectTyped() {
 // host it spells out, or else a temporary one. A link's password rides on the
 // copy for this connection only.
 func (state *State) connectParsed(parsed connection) {
+	open := func(host Host) {
+		chosen := host
+		chosen.linkPassword = parsed.password
+		state.selectedHostID = chosen.ID
+		state.openParsedHost(chosen, parsed.files)
+	}
 	// Typing out a saved host in full is opening that host.
 	for _, host := range state.hosts {
 		if host.Protocol == parsed.protocol && strings.EqualFold(host.Address, parsed.host) && host.Port == parsed.port &&
 			(parsed.user == "" || parsed.user == host.User) {
-			chosen := host
-			chosen.linkPassword = parsed.password
-			state.selectedHostID = chosen.ID
-			state.openParsedHost(chosen, parsed.files)
+			open(host)
 			return
 		}
 	}
-	adhoc := Host{Label: parsed.host, Address: parsed.host, User: parsed.user, Port: parsed.port, Protocol: parsed.protocol, linkPassword: parsed.password}
+	// A target typed without naming its protocol also opens a saved host of
+	// another protocol at that endpoint: the search box's bare address already
+	// does, and a remote desktop's card prints its address without "ssh://".
+	if !parsed.explicitProtocol {
+		for _, host := range state.hosts {
+			if strings.EqualFold(host.Address, parsed.host) && host.Port == parsed.port &&
+				(parsed.user == "" || parsed.user == host.User) {
+				open(host)
+				return
+			}
+		}
+	}
+	if parsed.protocol == protocolRDP && parsed.user == "" {
+		// A saved RDP host carries its own account, but a typed target has to
+		// name it: the server never asks for the Windows login itself.
+		state.showActionWarning(state.messages.Connect, state.messages.Desktop.ErrRDPUser)
+		return
+	}
+	adhoc := Host{
+		Label: parsed.host, Address: parsed.host, User: parsed.user, Port: parsed.port,
+		Protocol: parsed.protocol, ViaSSH: parsed.viaSSH, linkPassword: parsed.password,
+	}
 	adhoc.finish()
 	adhoc.Label = adhoc.target
 	state.openParsedHost(adhoc, parsed.files)

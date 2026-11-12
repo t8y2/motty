@@ -162,3 +162,89 @@ func TestRDPConsoleSessionIsAnRDPOnlySwitch(t *testing.T) {
 		t.Fatalf("restored = %+v", restored)
 	}
 }
+
+// Typing a saved host's address and port in the search box opens that host,
+// even when it is a remote desktop: its card prints the address without an
+// ssh:// scheme, and a typed endpoint used to become an SSH connection to the
+// desktop port.
+func TestTypingASavedRemoteDesktopEndpointOpensThatHost(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	state.options.Invalidate = func() {}
+	state.connectionReconnect = reconnectOff
+	opened := make(chan desktopRequest, 1)
+	state.dialDesktop = func(_ context.Context, request desktopRequest) (desktop.Session, error) {
+		opened <- request
+		return nil, errors.New("no server in a unit test")
+	}
+	host := addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP})
+	state.search.Insert("win.example.com:3389")
+	state.connectTyped()
+	waitUntil(t, state, "the desktop opener", func() bool { return len(opened) == 1 })
+	request := <-opened
+	if request.Host.ID != host.ID || request.Host.Protocol != protocolRDP || request.Host.User != "alice" {
+		t.Fatalf("typed endpoint opened %+v, want the saved RDP host %+v", request.Host, host)
+	}
+	if len(world.configs) != 0 {
+		t.Fatalf("typed endpoint dialed SSH: %+v", world.configs)
+	}
+}
+
+// A target that says ssh:// means SSH even when a saved remote desktop sits at
+// the same address and port.
+func TestTypingAnSSHLinkNeverOpensASavedRemoteDesktop(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	state.options.Invalidate = func() {}
+	state.connectionReconnect = reconnectOff
+	opened := make(chan desktopRequest, 1)
+	state.dialDesktop = func(_ context.Context, request desktopRequest) (desktop.Session, error) {
+		opened <- request
+		return nil, errors.New("unexpected desktop")
+	}
+	addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP})
+	state.search.Insert("ssh://win.example.com:3389")
+	state.connectTyped()
+	waitUntil(t, state, "the SSH dial", func() bool { return len(world.configs) == 1 })
+	if config := world.configs[0]; config.Host != "win.example.com" || config.Port != 3389 {
+		t.Fatalf("dialed %+v", config)
+	}
+	if len(opened) != 0 {
+		t.Fatal("an ssh:// link opened the saved RDP host")
+	}
+}
+
+// A desktop link names the server, not the Windows account: without one the
+// command says what is missing instead of opening a logon that cannot succeed.
+func TestTypingARemoteDesktopLinkWithoutAnAccountAsksForOne(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	state.options.Invalidate = func() {}
+	before := len(state.sessions)
+	state.search.Insert("rdp://win.example.com")
+	state.connectTyped()
+	if len(state.sessions) != before || len(world.configs) != 0 {
+		t.Fatalf("an RDP link without an account opened %d sessions and dialed %d connections", len(state.sessions)-before, len(world.configs))
+	}
+}
+
+// A desktop link that names only the server opens the saved host there: the
+// host carries the Windows account the link leaves out.
+func TestTypingARemoteDesktopLinkOpensTheSavedHostThere(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.options.Invalidate = func() {}
+	state.connectionReconnect = reconnectOff
+	opened := make(chan desktopRequest, 1)
+	state.dialDesktop = func(_ context.Context, request desktopRequest) (desktop.Session, error) {
+		opened <- request
+		return nil, errors.New("no server in a unit test")
+	}
+	host := addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP})
+	state.search.Insert("rdp://win.example.com")
+	state.connectTyped()
+	waitUntil(t, state, "the desktop opener", func() bool { return len(opened) == 1 })
+	if request := <-opened; request.Host.ID != host.ID || request.Host.User != "alice" {
+		t.Fatalf("opened %+v, want the saved RDP host %+v", request.Host, host)
+	}
+}

@@ -84,7 +84,9 @@ func launchText(args []string) (text string, link bool) {
 	text = strings.Join(words, " ")
 	lower := strings.ToLower(text)
 	link = strings.HasPrefix(lower, "ssh://") || strings.HasPrefix(lower, "telnet://") ||
-		strings.HasPrefix(lower, "sftp://") || strings.HasPrefix(lower, "xshell://") ||
+		strings.HasPrefix(lower, "sftp://") || strings.HasPrefix(lower, "rdp://") ||
+		strings.HasPrefix(lower, "vnc://") || strings.HasPrefix(lower, "rdp+ssh://") ||
+		strings.HasPrefix(lower, "vnc+ssh://") || strings.HasPrefix(lower, "xshell://") ||
 		strings.HasPrefix(lower, "xftp://")
 	return text, link
 }

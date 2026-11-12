@@ -38,7 +38,7 @@ func TestParseTargetReadsTheWaysPeopleWriteAHost(t *testing.T) {
 		"fe80::1%en0":                  {"", "fe80::1%en0", 22},
 		"deploy@[fe80::1%en0]:2222":    {"deploy", "fe80::1%en0", 2222},
 	} {
-		got, _, err := parseTarget(input)
+		got, _, _, err := parseTarget(input)
 		if input == "deploy@host:22 ssh" { // two destinations
 			if err == nil {
 				t.Errorf("%q: two destinations were accepted: %+v", input, got)
@@ -59,7 +59,7 @@ func TestParseTargetRejectsWhatItWouldHaveToGuess(t *testing.T) {
 		"[::1", "[::1]x", "[]:22", "fe80::1%", "fe80::1%en0:22",
 		"example.com%zone", "ssh://host/path", "ssh://host?x=1", "ssh://", "ssh:// host", "ssh://host#frag", "ssh -l", "ssh -l user",
 	} {
-		if got, _, err := parseTarget(input); err == nil {
+		if got, _, _, err := parseTarget(input); err == nil {
 			t.Errorf("parseTarget(%q) = %+v, want an error", input, got)
 		}
 	}
@@ -67,13 +67,15 @@ func TestParseTargetRejectsWhatItWouldHaveToGuess(t *testing.T) {
 
 func TestParseConnectionReadsTelnetToo(t *testing.T) {
 	for input, want := range map[string]connection{
-		"telnet host":             {target: target{"", "host", 23}, protocol: protocolTelnet},
-		"telnet host 2323":        {target: target{"", "host", 2323}, protocol: protocolTelnet},
-		"telnet://host/":          {target: target{"", "host", 23}, protocol: protocolTelnet},
-		"telnet://host:2323":      {target: target{"", "host", 2323}, protocol: protocolTelnet},
-		"TELNET://[::1]:9":        {target: target{"", "::1", 9}, protocol: protocolTelnet},
-		"ssh deploy@host":         {target: target{"deploy", "host", 22}, protocol: protocolSSH},
-		"ssh://deploy@host:2200/": {target: target{"deploy", "host", 2200}, protocol: protocolSSH},
+		"telnet host":             {target: target{"", "host", 23}, protocol: protocolTelnet, explicitProtocol: true},
+		"telnet host 2323":        {target: target{"", "host", 2323}, protocol: protocolTelnet, explicitProtocol: true},
+		"telnet://host/":          {target: target{"", "host", 23}, protocol: protocolTelnet, explicitProtocol: true},
+		"telnet://host:2323":      {target: target{"", "host", 2323}, protocol: protocolTelnet, explicitProtocol: true},
+		"TELNET://[::1]:9":        {target: target{"", "::1", 9}, protocol: protocolTelnet, explicitProtocol: true},
+		"ssh deploy@host":         {target: target{"deploy", "host", 22}, protocol: protocolSSH, explicitProtocol: true},
+		"ssh://deploy@host:2200/": {target: target{"deploy", "host", 2200}, protocol: protocolSSH, explicitProtocol: true},
+		// A bare address says where, not how.
+		"deploy@host:2200": {target: target{"deploy", "host", 2200}, protocol: protocolSSH},
 	} {
 		got, err := parseConnection(input)
 		if err != nil || got != want {
@@ -81,6 +83,33 @@ func TestParseConnectionReadsTelnetToo(t *testing.T) {
 		}
 	}
 	for _, input := range []string{"telnet", "telnet host 0", "telnet host x", "telnet host 1 2", "telnet://", "telnet://bad host", "telnet://host/path"} {
+		if got, err := parseConnection(input); err == nil {
+			t.Errorf("parseConnection(%q) = %+v, want an error", input, got)
+		}
+	}
+}
+
+func TestParseConnectionReadsRemoteDesktopLinks(t *testing.T) {
+	for input, want := range map[string]connection{
+		"rdp://alice@win.example/":        {target: target{"alice", "win.example", defaultRDPPort}, protocol: protocolRDP, explicitProtocol: true},
+		"rdp://win.example:3390":          {target: target{"", "win.example", 3390}, protocol: protocolRDP, explicitProtocol: true},
+		"RDP://alice@[::1]:3389":          {target: target{"alice", "::1", defaultRDPPort}, protocol: protocolRDP, explicitProtocol: true},
+		"vnc://desk.example":              {target: target{"", "desk.example", defaultVNCPort}, protocol: protocolVNC, explicitProtocol: true},
+		"vnc://ops@desk.example:5902/":    {target: target{"ops", "desk.example", 5902}, protocol: protocolVNC, explicitProtocol: true},
+		"rdp+ssh://alice@win.example":     {target: target{"alice", "win.example", defaultRDPPort}, protocol: protocolRDP, viaSSH: true, explicitProtocol: true},
+		"vnc+ssh://ops@desk.example:5901": {target: target{"ops", "desk.example", 5901}, protocol: protocolVNC, viaSSH: true, explicitProtocol: true},
+		// A desktop link may carry the password in its userinfo, as an SSH link does.
+		"rdp://alice:p%20w@win.example": {target: target{"alice", "win.example", defaultRDPPort}, protocol: protocolRDP, password: "p w", explicitProtocol: true},
+	} {
+		got, err := parseConnection(input)
+		if err != nil || got != want {
+			t.Errorf("parseConnection(%q) = %+v, %v; want %+v", input, got, err, want)
+		}
+	}
+	for _, input := range []string{
+		"rdp://", "rdp:///", "vnc://", "vnc:///", "rdp+ssh://", "vnc+ssh:///",
+		"rdp://bad host", "rdp://user@", "rdp://host:0", "rdp://host:65536", "rdp://host/path",
+	} {
 		if got, err := parseConnection(input); err == nil {
 			t.Errorf("parseConnection(%q) = %+v, want an error", input, got)
 		}
@@ -102,13 +131,13 @@ func TestParseTargetReadsAPasswordOnlyFromAURL(t *testing.T) {
 		// Typed forms keep their old meaning: the colon is part of the login.
 		{"bob:pw@host", target{"bob:pw", "host", 22}, ""},
 	} {
-		got, password, err := parseTarget(test.input)
+		got, password, _, err := parseTarget(test.input)
 		if err != nil || got != test.want || password != test.password {
 			t.Errorf("parseTarget(%q) = %+v, %q, %v; want %+v, %q", test.input, got, password, err, test.want, test.password)
 		}
 	}
 	for _, input := range []string{"ssh://:pw@host", "ssh://bob:%zz@host", "ssh://bob:" + strings.Repeat("x", 5000) + "@host"} {
-		if got, _, err := parseTarget(input); err == nil {
+		if got, _, _, err := parseTarget(input); err == nil {
 			t.Errorf("parseTarget(%q) = %+v, want an error", input, got)
 		}
 	}
@@ -116,19 +145,19 @@ func TestParseTargetReadsAPasswordOnlyFromAURL(t *testing.T) {
 
 func TestParseConnectionReadsBastionClientLinks(t *testing.T) {
 	for input, want := range map[string]connection{
-		"xshell://ssh://bob:pw@host:2222":  {target{"bob", "host", 2222}, protocolSSH, "pw", false},
-		"xshell://ssh//bob:pw@host:2222":   {target{"bob", "host", 2222}, protocolSSH, "pw", false},
-		"xshell://ssh:bob:pw@host:2222":    {target{"bob", "host", 2222}, protocolSSH, "pw", false},
-		"xshell://bob:pw@host:2222":        {target{"bob", "host", 2222}, protocolSSH, "pw", false},
-		"XSHELL://ssh://bob:pw@host:2222/": {target{"bob", "host", 2222}, protocolSSH, "pw", false},
-		"xshell://bob@host":                {target{"bob", "host", 22}, protocolSSH, "", false},
-		"xshell://sftp://bob:pw@host:2222": {target{"bob", "host", 2222}, protocolSSH, "pw", true},
-		"sftp://bob:pw@host:2222":          {target{"bob", "host", 2222}, protocolSSH, "pw", true},
-		"xftp://sftp://bob:pw@host:2222":   {target{"bob", "host", 2222}, protocolSSH, "pw", true},
-		"xftp://sftp:bob:pw@host:2222":     {target{"bob", "host", 2222}, protocolSSH, "pw", true},
-		"xftp://bob:pw@host:2222":          {target{"bob", "host", 2222}, protocolSSH, "pw", true},
-		"xshell://host.example.com:2222":   {target{"", "host.example.com", 2222}, protocolSSH, "", false},
-		"xshell://ssh.example.com":         {target{"", "ssh.example.com", 22}, protocolSSH, "", false},
+		"xshell://ssh://bob:pw@host:2222":  {target: target{"bob", "host", 2222}, protocol: protocolSSH, password: "pw", explicitProtocol: true},
+		"xshell://ssh//bob:pw@host:2222":   {target: target{"bob", "host", 2222}, protocol: protocolSSH, password: "pw", explicitProtocol: true},
+		"xshell://ssh:bob:pw@host:2222":    {target: target{"bob", "host", 2222}, protocol: protocolSSH, password: "pw", explicitProtocol: true},
+		"xshell://bob:pw@host:2222":        {target: target{"bob", "host", 2222}, protocol: protocolSSH, password: "pw", explicitProtocol: true},
+		"XSHELL://ssh://bob:pw@host:2222/": {target: target{"bob", "host", 2222}, protocol: protocolSSH, password: "pw", explicitProtocol: true},
+		"xshell://bob@host":                {target: target{"bob", "host", 22}, protocol: protocolSSH, explicitProtocol: true},
+		"xshell://sftp://bob:pw@host:2222": {target: target{"bob", "host", 2222}, protocol: protocolSSH, password: "pw", files: true, explicitProtocol: true},
+		"sftp://bob:pw@host:2222":          {target: target{"bob", "host", 2222}, protocol: protocolSSH, password: "pw", files: true, explicitProtocol: true},
+		"xftp://sftp://bob:pw@host:2222":   {target: target{"bob", "host", 2222}, protocol: protocolSSH, password: "pw", files: true, explicitProtocol: true},
+		"xftp://sftp:bob:pw@host:2222":     {target: target{"bob", "host", 2222}, protocol: protocolSSH, password: "pw", files: true, explicitProtocol: true},
+		"xftp://bob:pw@host:2222":          {target: target{"bob", "host", 2222}, protocol: protocolSSH, password: "pw", files: true, explicitProtocol: true},
+		"xshell://host.example.com:2222":   {target: target{"", "host.example.com", 2222}, protocol: protocolSSH, explicitProtocol: true},
+		"xshell://ssh.example.com":         {target: target{"", "ssh.example.com", 22}, protocol: protocolSSH, explicitProtocol: true},
 	} {
 		got, err := parseConnection(input)
 		if err != nil || got != want {

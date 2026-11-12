@@ -124,6 +124,16 @@ type Session interface {
   Enter; the reconnect policy of Settings applies (the session reports
   `sshconn.ErrDisconnected`).
 
+A remote desktop is normally added as a host (the New Host form's RDP or VNC
+protocol). It can also be typed in the host list's search box:
+`rdp://user@host:port`, `vnc://user@host:port`, and the `+ssh` forms
+`rdp+ssh://user@host` and `vnc+ssh://host` for a server reached through SSH.
+Ports default to 3389 and 5900. An RDP target needs its Windows account
+(`rdp://alice@host`), because the server never asks for the login itself; a VNC
+target may leave it out. An address typed without a scheme opens the saved host
+at that address and port whatever its protocol; with no host saved there it is
+an SSH target, as before.
+
 To add a backend: implement `Session`, add a protocol to the host model
 (`protocol.go`: `protocolRDP`, saved transport, default port) and the editor,
 and return it from `openDesktopSession`. The host editor's VNC rows
