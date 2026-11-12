@@ -445,6 +445,7 @@ func (state *State) aiPanelBeginPaint() {
 	panel.rect, panel.list, panel.listing = gfx.Rect{}, gfx.Rect{}, false
 	panel.scrollbar.geometry = components.MessageScrollerGeometry{}
 	panel.messageScroll, panel.historyScroll = nil, nil
+	panel.approvalLay.bounds, panel.approvalLay.scroll = gfx.Rect{}, nil
 	panel.paintedRows = panel.paintedRows[:0]
 	panel.paintedHistory = panel.paintedHistory[:0]
 	panel.copySlots = panel.copySlots[:0]
@@ -772,6 +773,9 @@ func (state *State) declareAIPanelBody(c ui.C) {
 			})
 		} else {
 			panel.body.list = state.declareAIEmpty(c)
+			if len(ai.approvals) > 0 {
+				panel.body.list.Shrink(1)
+			}
 		}
 		state.declareAIBottom(c, &panel.body, s.boxHeight)
 	})

@@ -27,12 +27,15 @@ const (
 	aiMentionRow     = float32(28)
 )
 
-// aiApprovalLayout is the part of the pinned question that is measured before it
-// is declared, for the width of the panel: the command wrapped in the terminal's
-// font, whose line count sets the height of the box it is painted in.
+// aiApprovalLayout keeps the wrapped command and the scroll area for the
+// question at the front of the approval queue.
 type aiApprovalLayout struct {
 	summary  []string
 	summaryH float32
+	request  *aiApproval
+	key      int
+	bounds   gfx.Rect
+	scroll   *ui.ScrollState
 }
 
 // aiBody holds where the panel's hand-painted parts went once its layout was
@@ -42,6 +45,7 @@ type aiApprovalLayout struct {
 type aiBody struct {
 	close, history, newChat                  ui.Box
 	setup, list                              ui.Box
+	approvalDetails                          ui.Box
 	confirm, decline, approve                ui.Box
 	box, modelChip, scopeChip, reasoningChip ui.Box
 }
@@ -119,8 +123,16 @@ func aiByteOffset(value string, n int) int {
 // buttons and Send are ordinary page elements painted over it.
 func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
-	ui.Column(c).Children(func() {
-		ui.Column(c).PadSides(7, aiPad, 0, aiPad).Gap(8).Children(func() {
+	bottom := ui.Column(c)
+	if len(ai.approvals) > 0 {
+		bottom.Shrink(1)
+	}
+	bottom.Children(func() {
+		aboveComposer := ui.Column(c).PadSides(7, aiPad, 0, aiPad).Gap(8)
+		if len(ai.approvals) > 0 {
+			aboveComposer.Shrink(1)
+		}
+		aboveComposer.Children(func() {
 			if text := state.aiNoticeText(); text != "" {
 				ui.Column(c).PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
 					ui.Paragraph(c, text, 6).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
@@ -295,6 +307,10 @@ func (state *State) aiNoticeText() string {
 // terminal's font, which sets the height of the box it is painted in.
 func (state *State) aiLayoutApprovalSummary(canvas *gfx.Canvas, approval *aiApproval, width float32) {
 	layout := &state.ai.panel.approvalLay
+	if layout.request != approval {
+		layout.request = approval
+		layout.key++
+	}
 	cell, cellHeight := canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
 	layout.summary, _ = aiMonoWrap(layout.summary[:0], approval.request.Summary, max(int((width-2*aiApprovalPad-12)/cell), 8), aiMaxSummary)
 	layout.summaryH = aiBlockHeight(len(layout.summary), cellHeight, aiBoxPad)
@@ -316,7 +332,7 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 		title = m.EscalationTitle
 	}
 
-	ui.Column(c).PadSides(0, aiApprovalPad-1, aiApprovalPad-1, aiApprovalPad-1).Background(pal.surface).Border(1, withAlpha(foreground, 0.7)).Radius(radius.popup).Children(func() {
+	ui.Column(c).Shrink(1).PadSides(0, aiApprovalPad-1, aiApprovalPad-1, aiApprovalPad-1).Background(pal.surface).Border(1, withAlpha(foreground, 0.7)).Radius(radius.popup).Children(func() {
 		ui.Row(c).Height(aiApprovalPad + 24).Items(ui.Start).Children(func() {
 			ui.Text(c, title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(20).Grow(1).MarginSides(8, 0, 0, 0)
 			if !approval.escalation {
@@ -325,33 +341,10 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 				})
 			}
 		})
-		ui.Column(c).Height(panel.approvalLay.summaryH).MarginSides(0, 0, 8, 0).Pad(aiBoxPad).Background(pal.terminal).Radius(radius.item).Children(func() {
-			for _, line := range panel.approvalLay.summary {
-				ui.Text(c, line).FontSize(aiMonoSize).MonoFace(state.terminalFontFace).Color(pal.text)
-			}
+		// Let long details scroll while the confirmation field and actions stay in view.
+		body.approvalDetails = ui.Scroll(c.KeyInt(panel.approvalLay.key)).MaxHeight(panel.rect.Height).Scrollbars().Children(func() {
+			state.declareAIApprovalDetails(c, approval)
 		})
-		if request.SessionLabel != "" {
-			ui.Text(c, m.Target+": "+request.SessionLabel).MaxLines(0).FontSize(aiSmallSize).Color(pal.text).LineHeight(aiSmallLine).MarginSides(0, 0, 8, 0)
-		}
-		if len(assessment.Reasons) > 0 {
-			ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
-				for index, reason := range assessment.Reasons {
-					if index == aiMaxReasons {
-						break
-					}
-					ui.Row(c).Items(ui.Start).Children(func() {
-						ui.Text(c, "•").FontSize(aiApprovalSize).Color(pal.muted).LineHeight(aiApprovalLine).Width(12)
-						ui.Paragraph(c, reason, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine).Grow(1)
-					})
-				}
-			})
-		}
-		if assessment.Safer != "" {
-			ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
-				ui.Text(c, m.ApprovalSafer).FontSize(aiApprovalSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiApprovalLine)
-				ui.Paragraph(c, assessment.Safer, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine)
-			})
-		}
 		if request.NeedsText {
 			if panel.confirmFor != approval || panel.confirmFormat != m.ConfirmFmt {
 				panel.confirmFor, panel.confirmFormat = approval, m.ConfirmFmt
@@ -369,7 +362,7 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 					panel.moreCount, panel.moreFormat = more, m.ApprovalMoreFmt
 					panel.moreText = fmt.Sprintf(m.ApprovalMoreFmt, more)
 				}
-				ui.Text(c, panel.moreText).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
+				ui.Text(c, panel.moreText).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Grow(1)
 			} else {
 				ui.Spacer(c)
 			}
@@ -377,6 +370,39 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 			body.approve = ui.Slot(c).Size(92, aiButtonHeight)
 		})
 	})
+}
+
+func (state *State) declareAIApprovalDetails(c ui.C, approval *aiApproval) {
+	panel, pal, m := &state.ai.panel, state.pal, state.messages.AIPanel
+	request := &approval.request
+	assessment := &request.Assessment
+	ui.Column(c).Height(panel.approvalLay.summaryH).MarginSides(0, 0, 8, 0).Pad(aiBoxPad).Background(pal.terminal).Radius(radius.item).Children(func() {
+		for _, line := range panel.approvalLay.summary {
+			ui.Text(c, line).FontSize(aiMonoSize).MonoFace(state.terminalFontFace).Color(pal.text)
+		}
+	})
+	if request.SessionLabel != "" {
+		ui.Text(c, m.Target+": "+request.SessionLabel).MaxLines(0).FontSize(aiSmallSize).Color(pal.text).LineHeight(aiSmallLine).MarginSides(0, 0, 8, 0)
+	}
+	if len(assessment.Reasons) > 0 {
+		ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
+			for index, reason := range assessment.Reasons {
+				if index == aiMaxReasons {
+					break
+				}
+				ui.Row(c).Items(ui.Start).Children(func() {
+					ui.Text(c, "•").FontSize(aiApprovalSize).Color(pal.muted).LineHeight(aiApprovalLine).Width(12)
+					ui.Paragraph(c, reason, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine).Grow(1)
+				})
+			}
+		})
+	}
+	if assessment.Safer != "" {
+		ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
+			ui.Text(c, m.ApprovalSafer).FontSize(aiApprovalSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiApprovalLine)
+			ui.Paragraph(c, assessment.Safer, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine)
+		})
+	}
 }
 
 // paintAIBottom paints into the slots of the bottom the parts that are not page
@@ -389,6 +415,8 @@ func (state *State) paintAIBottom(canvas *gfx.Canvas, body *aiBody) {
 	theme := state.Theme()
 
 	if len(ai.approvals) > 0 {
+		panel.approvalLay.bounds = body.approvalDetails.Rect()
+		panel.approvalLay.scroll = body.approvalDetails.ScrollState()
 		approval := ai.approvals[0]
 		request := &approval.request
 		allowed := true
