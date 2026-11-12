@@ -194,6 +194,11 @@ type terminal struct {
 	// closes on the first typed byte instead of offering a stale line.
 	completionInput   func()
 	suggestionPending *suggestionEcho
+	// acceptedKey is a press the terminal took for a prompt-level overlay (a
+	// suggestion, the password hint). A program that asked for win32 input
+	// records sees releases, so the end of that press is dropped with its
+	// repeats: the program never got the press itself.
+	acceptedKey acceptedKey
 
 	// exec is the command the assistant is waiting on in this terminal.
 	exec *aiExec
@@ -1489,6 +1494,29 @@ func displayCells(value string) int {
 	return cells
 }
 
+// acceptedKey is a key press the terminal took for a prompt-level overlay. The
+// program that asked for win32 input records sees presses and releases, so the
+// release of a press it never got is dropped, along with its repeats.
+type acceptedKey struct {
+	set  bool
+	key  gfx.Key
+	text string
+}
+
+// noteAcceptedKey remembers a press the terminal consumed when the program will
+// also be sent its release.
+func (t *terminal) noteAcceptedKey(event gfx.KeyEvent) {
+	if t.screen.Modes().Win32Input && !event.Release && !event.Repeat {
+		t.acceptedKey = acceptedKey{set: true, key: event.Key, text: event.Text}
+	}
+}
+
+// holds reports whether event ends the press the terminal consumed, or repeats
+// it: it is that key's release or a repeat, with the same text.
+func (a acceptedKey) holds(event gfx.KeyEvent) bool {
+	return a.set && (event.Release || event.Repeat) && event.Key == a.key && event.Text == a.text
+}
+
 // terminalKey encodes keys left unclaimed by the application shortcut routes.
 // Unclaimed Command chords are forwarded after kitty keyboard negotiation;
 // macOS Command line edits keep their existing behavior.
@@ -1498,11 +1526,19 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 	if t.preedit.Composing && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !t.screen.Modes().AltScreen {
 		return handled
 	}
+	if t.acceptedKey.holds(event) {
+		if event.Release {
+			t.acceptedKey = acceptedKey{}
+		}
+		return handled
+	}
 	if event.Modifiers&gfx.ModifierMeta != 0 && !event.Key.IsModifier() {
 		// A Command chord the user bound to accepting a suggestion is checked
 		// before the platform's line edits, which would rewrite it. The program
-		// keeps its keys where it negotiated its own keyboard protocol.
-		if t.screen.KeyboardFlags() == 0 && !t.screen.Modes().Win32Input && state.ghostKey(session, event) {
+		// keeps its keys only where it negotiated a keyboard protocol of its
+		// own; win32 input records are how a local console shell receives keys.
+		if t.screen.KeyboardFlags() == 0 && state.ghostKey(session, event) {
+			t.noteAcceptedKey(event)
 			return handled
 		}
 		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && keymap.Primary == gfx.ModifierMeta {
@@ -1546,7 +1582,8 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		}
 	}
 	modes := t.screen.Modes()
-	if t.screen.KeyboardFlags() == 0 && !modes.Win32Input && (state.passwordHintKey(session, event) || state.ghostKey(session, event)) {
+	if t.screen.KeyboardFlags() == 0 && (state.passwordHintKey(session, event) || state.ghostKey(session, event)) {
+		t.noteAcceptedKey(event)
 		return handled
 	}
 	var bytes []byte
