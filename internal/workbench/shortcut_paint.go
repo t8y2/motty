@@ -59,6 +59,8 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.ShortcutClearScreen
 	case shortcutCompletion:
 		return messages.Completion.Open
+	case shortcutSnippetPicker:
+		return messages.Tools.SnippetsTitle
 	default:
 		return ""
 	}
