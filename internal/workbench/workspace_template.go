@@ -51,7 +51,11 @@ type WorkspaceTemplate struct {
 	ID       string                      `json:"id"`
 	Name     string                      `json:"name"`
 	HostIDs  []string                    `json:"host_ids"`
-	Layout   layoutcore.LayoutSpec       `json:"layout"`
+	// Layout is left out when it is zero. A record from before layouts existed
+	// holds only Columns, and the save that projects such a record re-encodes
+	// it; a zero kind has no name to write and would otherwise fail every save
+	// for as long as that record is stored.
+	Layout layoutcore.LayoutSpec `json:"layout,omitzero"`
 	// Columns is read from files written before layouts existed, which stored
 	// only a grid width. normalizeWorkspaceTemplate folds it into Layout.
 	Columns uint8 `json:"columns,omitempty"`
