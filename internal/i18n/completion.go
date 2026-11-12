@@ -17,6 +17,13 @@ type CompletionMessages struct {
 	KeysClose             string
 	KeysShell             string
 	KeysShellDescription  string
+	// The accept-suggestion badge, its setting and its menu.
+	AcceptHintAction      string
+	AcceptHintBadge       string
+	AcceptHintRow         string
+	AcceptHintDescription string
+	AcceptHintCustom      string
+	AcceptHintTurnOff     string
 	Group                 string
 	CatalogRow            string
 	CatalogDescriptionFmt string

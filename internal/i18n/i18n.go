@@ -424,6 +424,7 @@ type Messages struct {
 	ShortcutsCaptureDescription          string
 	ShortcutsConflictFmt                 string
 	ShortcutsInvalid                     string
+	ShortcutsAcceptInvalid               string
 	ShortcutsTabNumberInvalid            string
 	ShortcutCommandPalette               string
 	ShortcutFind                         string

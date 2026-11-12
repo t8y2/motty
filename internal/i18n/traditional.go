@@ -388,6 +388,7 @@ var TraditionalMessages = Messages{
 	ShortcutsCaptureDescription:            "按下單鍵或任意修飾鍵組合，支援字母、數字、標點、空格、導航鍵和 F1–F12。按 Esc 取消，點選「刪除快速鍵」移除繫結。已繫結的按鍵優先觸發快速鍵。",
 	ShortcutsConflictFmt:                   "該快速鍵已分配給「%s」。",
 	ShortcutsInvalid:                       "請按一個字母、數字、標點、空格、導航鍵或功能鍵，可搭配任意修飾鍵。",
+	ShortcutsAcceptInvalid:                 "請使用具名按鍵，或帶 Control、Command、Alt 的字母；一般字元會輸入到終端機，而不是接受建議。",
 	ShortcutsTabNumberInvalid:              "請按 1 到 9 的數字，可搭配任意修飾鍵。",
 	ShortcutCommandPalette:                 "開啟指令面板",
 	ShortcutFind:                           "查詢終端機歷史",
@@ -2764,6 +2765,13 @@ var traditionalCompletion = CompletionMessages{
 	KeysClose:             "關閉自動完成清單",
 	KeysShell:             "Shell 自動完成",
 	KeysShellDescription:  "關閉清單並將 Tab 交給 shell。",
+
+	AcceptHintAction:      "接受補全的按鍵",
+	AcceptHintBadge:       "變更接受補全建議的按鍵",
+	AcceptHintRow:         "補全按鍵提示",
+	AcceptHintDescription: "在灰色行內建議旁顯示接受它的按鍵。可點按鈕改用其他按鍵；關閉後不顯示提示。",
+	AcceptHintCustom:      "自訂…",
+	AcceptHintTurnOff:     "關閉此提示",
 }
 
 var traditionalActionFeedback = ActionFeedbackMessages{

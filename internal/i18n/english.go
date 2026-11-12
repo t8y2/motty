@@ -388,6 +388,7 @@ var EnglishMessages = Messages{
 	ShortcutsCaptureDescription:            "Press a key with any modifiers or none: letters, digits, punctuation, Space, navigation keys or F1–F12. Esc cancels; Delete shortcut removes the binding. Bound keys take priority over terminal input.",
 	ShortcutsConflictFmt:                   "That shortcut is already assigned to %s.",
 	ShortcutsInvalid:                       "Press a letter, digit, punctuation, Space, navigation or function key, with any optional modifiers.",
+	ShortcutsAcceptInvalid:                 "Use a named key, or a letter with Control, Command or Alt. A plain character is typed into the shell instead of accepting the suggestion.",
 	ShortcutsTabNumberInvalid:              "Press a digit from 1 to 9, with any optional modifiers.",
 	ShortcutCommandPalette:                 "Open command palette",
 	ShortcutFind:                           "Find terminal history",
@@ -2764,4 +2765,11 @@ var englishCompletion = CompletionMessages{
 	KeysClose:             "Close completions",
 	KeysShell:             "Shell completion",
 	KeysShellDescription:  "Close the list and send Tab to the shell.",
+
+	AcceptHintAction:      "Accept suggestion key",
+	AcceptHintBadge:       "Change the key that accepts the suggestion",
+	AcceptHintRow:         "Suggestion key hint",
+	AcceptHintDescription: "Show which key accepts the gray inline suggestion beside it. Choose another key from the badge, or turn this off to hide it.",
+	AcceptHintCustom:      "Custom…",
+	AcceptHintTurnOff:     "Turn off this hint",
 }

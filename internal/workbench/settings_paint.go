@@ -372,6 +372,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			completion := state.completionMode()
 			settingsChoiceRow(page, messages.History.SuggestRow, messages.History.SuggestDescription, &completion, settingsCompletionChoices[:], state.settingsCompletionLabel,
 				func() { state.setCompletionMode(completion); state.save() }, nil)
+			page.toggleRow(messages.Completion.AcceptHintRow, messages.Completion.AcceptHintDescription, !state.history.acceptHintOff, hitSettingsCompletionHint)
 			page.toggleRow(messages.History.SettingsRow, messages.History.SettingsDescription, state.history.on, hitSettingsHistoryToggle)
 			page.actionRow(messages.History.ClearRow, messages.History.ClearDescription, false,
 				components.ButtonAction{ID: hitSettingsHistoryClear, Label: messages.History.Clear, Variant: components.ButtonOutline})

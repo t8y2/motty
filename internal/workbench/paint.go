@@ -350,6 +350,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintLocalProxyScrollbar(canvas)
 	}
 	state.paintTerminalMenu(canvas, viewport)
+	state.paintGhostMenu(canvas, viewport)
 	state.paintToolbarDockMenu(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
 	state.paintHostMenu(canvas, viewport)

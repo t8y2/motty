@@ -556,6 +556,7 @@ type State struct {
 	hostsBounds       gfx.Rect // the hosts page as last painted; the menus anchor to it
 	hostsGridViewport gfx.Rect // the card grid's absolute viewport as last painted
 	terminalMenu      terminalMenu
+	ghostMenu         ghostMenu
 	hostGroupEditor   text.Editor
 	groupActions      hostGroupActions
 	tabRename         tabRename
@@ -1534,6 +1535,13 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickCompletion(id) {
 		return
 	}
+	// The badge beside an inline suggestion is a part of the terminal control;
+	// its press is handled there, and this is the path an assistive press or a
+	// keyboard activation takes to the same menu.
+	if session := state.terminalPageSession(id); session != nil && session.term != nil && id == session.term.parts.At(terminalPartGhostHint) {
+		state.openGhostMenu(session)
+		return
+	}
 	if session, local, ok := state.decodePaneHit(id); ok {
 		if state.activeSessionID != session.ID && state.ActivatePane(session.ID) {
 			state.save()
@@ -1701,7 +1709,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	}
 	if state.clickHostOrder(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
-		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickWorkspaceCommand(id) {
@@ -1840,6 +1848,12 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.openHistoryActive()
 	case id == hitSettingsHistoryToggle:
 		state.toggleHistory()
+	case id == hitSettingsCompletionHint:
+		state.history.acceptHintOff = !state.history.acceptHintOff
+		if state.history.acceptHintOff {
+			state.ghostMenu.open = false
+		}
+		state.save()
 	case id == hitCompletionUpdate:
 		state.updateCompletions()
 	case id == hitSettingsHistoryClear:
@@ -2392,6 +2406,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.terminalMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.ghostMenuPointer(event); handled {
+		return result
+	}
 	if result, handled := state.tabMenuPointer(event); handled {
 		return result
 	}
@@ -2860,6 +2877,10 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if state.terminalMenu.open && event.Key == gfx.KeyEscape {
 		state.terminalMenu.open = false
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.ghostMenu.open && event.Key == gfx.KeyEscape {
+		state.ghostMenu.open = false
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.workspaceTemplateMenuKey(event); handled {

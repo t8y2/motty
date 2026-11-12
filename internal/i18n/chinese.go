@@ -388,6 +388,7 @@ var ChineseMessages = Messages{
 	ShortcutsCaptureDescription:            "按下单键或任意修饰键组合，支持字母、数字、标点、空格、导航键和 F1–F12。按 Esc 取消，点击「删除快捷键」移除绑定。已绑定的按键优先触发快捷键。",
 	ShortcutsConflictFmt:                   "该快捷键已分配给“%s”。",
 	ShortcutsInvalid:                       "请按一个字母、数字、标点、空格、导航键或功能键，可搭配任意修饰键。",
+	ShortcutsAcceptInvalid:                 "请使用命名键，或带 Control、Command、Alt 的字母；普通字符会输入到终端，而不是接受建议。",
 	ShortcutsTabNumberInvalid:              "请按 1 到 9 的数字，可搭配任意修饰键。",
 	ShortcutCommandPalette:                 "打开命令面板",
 	ShortcutFind:                           "查找终端历史",
@@ -2764,4 +2765,11 @@ var chineseCompletion = CompletionMessages{
 	KeysClose:             "关闭补全列表",
 	KeysShell:             "Shell 补全",
 	KeysShellDescription:  "关闭列表并将 Tab 交给 shell。",
+
+	AcceptHintAction:      "接受补全的按键",
+	AcceptHintBadge:       "更改接受补全建议的按键",
+	AcceptHintRow:         "补全按键提示",
+	AcceptHintDescription: "在灰色行内建议旁显示接受它的按键。可点按钮改用其他键；关闭后不显示提示。",
+	AcceptHintCustom:      "自定义…",
+	AcceptHintTurnOff:     "关闭此提示",
 }

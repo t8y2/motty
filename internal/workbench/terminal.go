@@ -118,6 +118,11 @@ type terminal struct {
 	// painting and event routing do not rebuild the page's name.
 	controlID gfx.ID
 	parts     gfx.Scope
+	// hintChord and hintLabel are the accept-suggestion badge's text, rebuilt
+	// only when the binding changes so the paint path joins no strings.
+	hintChord keymap.Chord
+	hintLabel string
+	hintRect  gfx.Rect
 	// paintFinding, paintInSplit and paintInactive are the shapes the last
 	// declaration made, which the bar's slots are painted in after the page.
 	paintFinding, paintInSplit, paintInactive bool
@@ -1419,6 +1424,12 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		return handled
 	}
 	if event.Modifiers&gfx.ModifierMeta != 0 && !event.Key.IsModifier() {
+		// A Command chord the user bound to accepting a suggestion is checked
+		// before the platform's line edits, which would rewrite it. The program
+		// keeps its keys where it negotiated its own keyboard protocol.
+		if t.screen.KeyboardFlags() == 0 && !t.screen.Modes().Win32Input && state.ghostKey(session, event) {
+			return handled
+		}
 		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && keymap.Primary == gfx.ModifierMeta {
 			event.Key, event.Modifiers, event.Text, event.Typed = gfx.KeyUnknown, gfx.ModifierControl, letter, ""
 		} else if t.screen.KeyboardFlags() == 0 || state.shortcutBound(event) {

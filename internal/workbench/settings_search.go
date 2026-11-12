@@ -182,6 +182,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	group(settingsTerminal, m.Completion.Group, m.Completion.Group, "")
 	row(settingsTerminal, m.Completion.CatalogRow, "")
 	row(settingsTerminal, state.messages.History.SuggestRow, state.messages.History.SuggestDescription)
+	row(settingsTerminal, m.Completion.AcceptHintRow, m.Completion.AcceptHintDescription)
 	row(settingsTerminal, state.messages.History.SettingsRow, state.messages.History.SettingsDescription)
 	row(settingsTerminal, state.messages.History.ClearRow, state.messages.History.ClearDescription)
 	row(settingsTerminal, m.SettingsLocalStart, m.SettingsLocalStartDescription)
