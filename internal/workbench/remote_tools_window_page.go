@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -95,17 +94,7 @@ func (w *remoteToolsWindow) declareWindow(c ui.C) {
 }
 
 func (w *remoteToolsWindow) declareTitlebar(c ui.C) {
-	m, pal := w.ui.messages.Tools, w.ui.pal
-	leading, trailing := app.TitlebarInsets()
-	const gap = float32(14)
-	ui.Row(c).Height(TitlebarHeight).PadSides(0, trailing+remoteToolsContentPad, 0, leading+remoteToolsContentPad).
-		Items(ui.Center).MovesWindow().Children(func() {
-		ui.Text(c, m.RemoteTitle).FontSize(w.ui.Theme().Metrics.FontSizeS).Weight(gfx.WeightMedium).
-			Color(pal.text).Shrink(0)
-		connection := w.session.Title + " · " + w.session.Address
-		ui.Text(c, connection).FontSize(w.ui.Theme().Metrics.FontSizeS).Color(pal.muted).
-			MarginLeft(gap).Ellipsis().Grow(1)
-	})
+	declareWindowTitlebar(c, w.ui.pal, w.ui.messages.Tools.RemoteTitle, w.session.Title+" · "+w.session.Address)
 }
 
 // declareToolbar declares the tab choice, the refresh controls and the sudo

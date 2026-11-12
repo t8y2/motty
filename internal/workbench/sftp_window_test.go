@@ -330,6 +330,9 @@ func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 			state, w, _, host, _ := dualSFTPFixture(t, scale)
 			state.setLanguage(i18n.Chinese)
 			view := host.windows[0].view
+			if config := host.windows[0].config; config.WindowMode != app.WindowCustomTitlebar || config.TitlebarHeight != TitlebarHeight {
+				t.Fatalf("transfer window lost its custom titlebar: %+v", config)
+			}
 			for _, light := range []bool{false, true} {
 				if light {
 					state.setAppearance(appearanceLight)
@@ -340,7 +343,8 @@ func TestSFTPWindowLayoutAndEntryAtDisplayScales(t *testing.T) {
 					}
 					view.Rest()
 					for _, bounds := range w.ui.list {
-						if bounds.Width < 150 || bounds.Height < 60 || bounds.X < 0 || bounds.Y < 0 || bounds.X+bounds.Width > size.Width || bounds.Y+bounds.Height > size.Height {
+						// The panes sit under the window's own titlebar, never over it.
+						if bounds.Width < 150 || bounds.Height < 60 || bounds.X < 0 || bounds.Y < TitlebarHeight || bounds.X+bounds.Width > size.Width || bounds.Y+bounds.Height > size.Height {
 							t.Fatal("pane escaped viewport", scale, size, bounds)
 						}
 					}
@@ -428,7 +432,9 @@ func TestSFTPWindowMultiSelectQueueScrollAndSystemDrop(t *testing.T) {
 	external := filepath.Join(t.TempDir(), "external.txt")
 	os.WriteFile(external, []byte("external drop"), 0600)
 	target := dualHit(t, view, dualRow(t, w, false, "docs"))
-	if accepted, err := view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: target.X + 25, Y: target.Y + 10, Paths: []string{external}}); err != nil || !accepted {
+	// The row can be clipped by the bottom of a short list, so aim at the middle
+	// of what is actually visible rather than a fixed depth from its top.
+	if accepted, err := view.Drop(gfx.FileDropEvent{Phase: gfx.FileDropDrop, X: target.X + 25, Y: target.Y + target.Height/2, Paths: []string{external}}); err != nil || !accepted {
 		t.Fatal("native system drop refused", err)
 	}
 	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 22 && !sftpTransfersActive(w.view.transfers) })

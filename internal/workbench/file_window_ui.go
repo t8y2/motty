@@ -154,44 +154,47 @@ func (d *fileDocument) declareEditWindow(c ui.C) {
 	bounds := c.Bounds()
 	shared := d.owner.fileWindows.painting
 	d.ui.encodingBox, d.ui.saveBox = ui.Box{}, ui.Box{}
-	ui.Column(c).Fill().Pad(12).Gap(8).Children(func() {
-		if shared {
-			d.owner.fileWindows.declareTabsSection(c, bounds.Width)
-			ui.Divider(c).Background(theme.Border)
-		}
-		if d.problem != "" {
-			ui.Paragraph(c, d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
-		}
-		d.ui.contentBox = ui.Slot(c).Grow(1).MinHeight(64)
-		ui.Row(c).Height(32).Gap(8).Items(ui.Center).Children(func() {
-			if d.image == nil {
-				d.ui.encodingBox = ui.Slot(c).Width(min(220, bounds.Width*.4)).Height(32)
+	ui.Column(c).Fill().Children(func() {
+		declareWindowTitlebar(c, d.owner.pal, d.name, d.source)
+		ui.Column(c).Grow(1).Shrink(1).Pad(12).Gap(8).Children(func() {
+			if shared {
+				d.owner.fileWindows.declareTabsSection(c, bounds.Width)
+				ui.Divider(c).Background(theme.Border)
 			}
-			status := d.footerStatus()
-			ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
-				HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
-			if d.image != nil {
-				d.pageButton(c, "fit", hitDocumentFit, m.Fit).Small().Outline()
-				d.pageButton(c, "actual", hitDocumentActual, m.Actual).Small().Outline()
-				d.pageButton(c, "zoom-out", hitDocumentZoomOut, "−").Small().Outline()
-				d.pageButton(c, "zoom-in", hitDocumentZoomIn, "+").Small().Outline()
+			if d.problem != "" {
+				ui.Paragraph(c, d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
 			}
-			if d.image == nil && d.ready {
-				wrap := d.owner.messages.CodeEditor.WrapOn
-				if d.edit.noWrap {
-					wrap = d.owner.messages.CodeEditor.WrapOff
+			d.ui.contentBox = ui.Slot(c).Grow(1).MinHeight(64)
+			ui.Row(c).Height(32).Gap(8).Items(ui.Center).Children(func() {
+				if d.image == nil {
+					d.ui.encodingBox = ui.Slot(c).Width(min(220, bounds.Width*.4)).Height(32)
 				}
-				d.pageButton(c, "wrap", hitDocumentWrap, wrap).Small().Outline()
-			}
-			d.pageButton(c, "reload", hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy || d.comparison.active)
-			if d.image == nil {
-				disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
-				if d.local {
-					d.pageButton(c, "save", hitDocumentSave, m.Save).Small().Disabled(disabled)
-				} else {
-					d.ui.saveBox = ui.Slot(c).Width(112).Height(32)
+				status := d.footerStatus()
+				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
+					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
+				if d.image != nil {
+					d.pageButton(c, "fit", hitDocumentFit, m.Fit).Small().Outline()
+					d.pageButton(c, "actual", hitDocumentActual, m.Actual).Small().Outline()
+					d.pageButton(c, "zoom-out", hitDocumentZoomOut, "−").Small().Outline()
+					d.pageButton(c, "zoom-in", hitDocumentZoomIn, "+").Small().Outline()
 				}
-			}
+				if d.image == nil && d.ready {
+					wrap := d.owner.messages.CodeEditor.WrapOn
+					if d.edit.noWrap {
+						wrap = d.owner.messages.CodeEditor.WrapOff
+					}
+					d.pageButton(c, "wrap", hitDocumentWrap, wrap).Small().Outline()
+				}
+				d.pageButton(c, "reload", hitDocumentReload, m.Reload).Small().Outline().Disabled(d.busy || d.comparison.active)
+				if d.image == nil {
+					disabled := d.busy || !d.ready || !d.dirty() || d.comparison.active
+					if d.local {
+						d.pageButton(c, "save", hitDocumentSave, m.Save).Small().Disabled(disabled)
+					} else {
+						d.ui.saveBox = ui.Slot(c).Width(112).Height(32)
+					}
+				}
+			})
 		})
 	})
 }
@@ -290,31 +293,34 @@ func (d *fileDocument) declareComparisonWindow(c ui.C) {
 	theme, m := *c.Theme(), d.owner.messages.FileWindow
 	uiState.contentBox = ui.Box{}
 	uiState.compare = comparisonBody{}
-	ui.Column(c).Fill().Pad(12).Gap(8).Children(func() {
-		ui.Text(c, d.name).FontSize(18).Bold().Color(theme.Foreground).Ellipsis().LineHeight(32).
-			HitWith(hitDocumentLocation, d.name, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: d.source + " · " + d.location})
-		if d.problem != "" {
-			ui.Paragraph(c, d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
-		}
-		ui.Row(c).Height(28).Gap(10).Items(ui.Center).Children(func() {
-			ui.Text(c, m.ServerVersion).Grow(1).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(theme.MutedForeground).Ellipsis()
-			ui.Text(c, fmt.Sprintf(m.CompareAddedRemoved, d.comparison.result.Stats.Added, d.comparison.result.Stats.Removed)).
-				FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis()
-			ui.Text(c, m.LocalVersion).Grow(1).TextEnd().FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(theme.MutedForeground).Ellipsis()
-		})
-		if d.comparison.result.Stats.Coarse {
-			ui.Text(c, m.CompareCoarse).FontSize(theme.Metrics.FontSizeS).Color(d.owner.pal.warning).Ellipsis()
-		}
-		uiState.contentBox = ui.Slot(c).Grow(1).MinHeight(64)
-		ui.Row(c).Height(32).Gap(8).Items(ui.Center).Children(func() {
-			status := d.comparisonStatus()
-			ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
-				HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
-			if d.comparison.conflict {
-				uiState.compare.retry = pageButtonSlot(c, m.CompareRetry, true)
+	ui.Column(c).Fill().Children(func() {
+		declareWindowTitlebar(c, d.owner.pal, m.CompareSave, d.name)
+		ui.Column(c).Grow(1).Shrink(1).Pad(12).Gap(8).Children(func() {
+			ui.Text(c, d.name).FontSize(18).Bold().Color(theme.Foreground).Ellipsis().LineHeight(32).
+				HitWith(hitDocumentLocation, d.name, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: d.source + " · " + d.location})
+			if d.problem != "" {
+				ui.Paragraph(c, d.problem, 4).FontSize(theme.Metrics.FontSizeS).Color(theme.Danger).LineHeight(18)
 			}
-			uiState.compare.returnToEdit = pageButtonSlot(c, m.ReturnToEdit, true)
-			uiState.compare.upload = pageButtonSlot(c, m.Save, true)
+			ui.Row(c).Height(28).Gap(10).Items(ui.Center).Children(func() {
+				ui.Text(c, m.ServerVersion).Grow(1).FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(theme.MutedForeground).Ellipsis()
+				ui.Text(c, fmt.Sprintf(m.CompareAddedRemoved, d.comparison.result.Stats.Added, d.comparison.result.Stats.Removed)).
+					FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis()
+				ui.Text(c, m.LocalVersion).Grow(1).TextEnd().FontSize(theme.Metrics.FontSizeS).Weight(gfx.WeightMedium).Color(theme.MutedForeground).Ellipsis()
+			})
+			if d.comparison.result.Stats.Coarse {
+				ui.Text(c, m.CompareCoarse).FontSize(theme.Metrics.FontSizeS).Color(d.owner.pal.warning).Ellipsis()
+			}
+			uiState.contentBox = ui.Slot(c).Grow(1).MinHeight(64)
+			ui.Row(c).Height(32).Gap(8).Items(ui.Center).Children(func() {
+				status := d.comparisonStatus()
+				ui.Text(c, status).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().LineHeight(22).Grow(1).
+					HitWith(hitDocumentStatus, status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: status})
+				if d.comparison.conflict {
+					uiState.compare.retry = pageButtonSlot(c, m.CompareRetry, true)
+				}
+				uiState.compare.returnToEdit = pageButtonSlot(c, m.ReturnToEdit, true)
+				uiState.compare.upload = pageButtonSlot(c, m.Save, true)
+			})
 		})
 	})
 }
