@@ -793,7 +793,11 @@ func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 		*drag = toolbarDockDrag{}
 		for _, hit := range dock.hits[:dock.count] {
 			matches := event.Target == hit.tool.id
-			if !matches && hit.tool.disabled && event.Target.Scope() != dialogHits && pointInRect(event.X, event.Y, hit.bounds) {
+			// A disabled tool is skipped by the hit-tester, so its presses fall
+			// through with no target of their own; a press that does carry one —
+			// an open menu's dismiss layer, one of its rows — belongs to that
+			// control even when the disabled tool's bounds lie under it.
+			if !matches && hit.tool.disabled && event.Target.IsZero() && pointInRect(event.X, event.Y, hit.bounds) {
 				matches = true
 			}
 			if !matches {

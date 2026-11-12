@@ -1423,9 +1423,7 @@ func TestToolbarDockTopDisabledToolWindowAndInteraction(t *testing.T) {
 	if !ok {
 		t.Fatal("not painted")
 	}
-	t.Logf("hit bounds: %+v, disabled: %v", hit.Bounds, hit.Disabled)
 	pressKind := view.Driver().PressAt(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2)
-	t.Logf("pressKind: %v (PressMove=%v, PressClient=%v, PressControl=%v)", pressKind, app.PressMove, app.PressClient, app.PressControl)
 	if pressKind == app.PressMove {
 		t.Fatal("top disabled tool should not move the window")
 	}
@@ -1485,5 +1483,41 @@ func TestToolbarDockTopDisabledToolWindowAndInteraction(t *testing.T) {
 	}
 	if zone := state.toolbarDockZoneFor(toolbarTerminal, "export-recording"); zone != toolbarDockTop {
 		t.Fatalf("click changed zone = %s", zone)
+	}
+}
+
+// A press that carries a target of its own — an open menu's dismiss layer, one
+// of its rows — must reach that control even where a disabled dock tool's
+// bounds lie under it. The dock used to match such presses by position alone,
+// so the menu never saw them and could not be dismissed from over the tool.
+func TestToolbarDockDisabledToolYieldsToTargetedPresses(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	size := gfx.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	hit, ok := hitByID(&canvas, hitTerminalRecordingExport)
+	if !ok || !hit.Disabled {
+		t.Fatal("export-recording should be painted disabled")
+	}
+	point := gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
+
+	state.tabMenu.open = true
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary,
+		Target: hitTabMenuDismiss, X: point.X, Y: point.Y, Viewport: size,
+	})
+	if !result.Handled {
+		t.Fatal("the press should be handled by the menu it names")
+	}
+	if state.toolbarDock.menu {
+		t.Fatal("press on an open menu's dismiss layer opened the dock menu")
+	}
+	if state.toolbarDock.drag.pressed {
+		t.Fatal("press on an open menu's dismiss layer armed a dock drag")
+	}
+	if state.tabMenu.open {
+		t.Fatal("the open tab menu was not dismissed")
 	}
 }
