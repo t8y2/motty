@@ -1227,9 +1227,12 @@ func (state *State) showNextPrompt() {
 		state.modalSession = state.clipboardRequest.sessionID
 		return
 	}
-	if state.transfer.phase == transferOffered {
+	for index := range state.sessions {
+		if state.sessions[index].transfer.phase != transferOffered {
+			continue
+		}
 		state.modal = modalFileTransfer
-		state.modalSession = state.transfer.sessionID
+		state.modalSession = state.sessions[index].ID
 		return
 	}
 	if state.update.offer {

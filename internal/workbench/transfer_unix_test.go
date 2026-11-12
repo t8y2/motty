@@ -35,7 +35,7 @@ func TestReceivingFromARealSzThroughALocalShell(t *testing.T) {
 	session.term.send([]byte(szPath + " --binary --quiet " + file + "\n"))
 	waitUntil(t, state, "the offer", func() bool { return state.modal == modalFileTransfer })
 	state.Click(hitTransferChoose)
-	waitUntil(t, state, "the end", func() bool { return state.transfer.phase == transferNone })
+	waitUntil(t, state, "the end", func() bool { return session.transfer.phase == transferNone })
 	got, err := os.ReadFile(filepath.Join(dest, "from-sz.bin"))
 	if err != nil || !bytes.Equal(got, payload) {
 		t.Fatalf("received %d bytes, %v; screen %q", len(got), err, screenText(state, 0))
@@ -64,7 +64,7 @@ func TestSendingToARealRzThroughALocalShell(t *testing.T) {
 	session.term.send([]byte("cd " + dest + " && " + rzPath + " --binary --quiet --overwrite\n"))
 	waitUntil(t, state, "the offer", func() bool { return state.modal == modalFileTransfer })
 	state.Click(hitTransferChoose)
-	waitUntil(t, state, "the end", func() bool { return state.transfer.phase == transferNone })
+	waitUntil(t, state, "the end", func() bool { return session.transfer.phase == transferNone })
 	// rz writes the file as it finishes; give the shell a moment to come back.
 	waitUntil(t, state, "the file", func() bool {
 		got, _ := os.ReadFile(filepath.Join(dest, "to-rz.bin"))

@@ -115,7 +115,7 @@ func (state *State) beginRZSZ(session *Session, req tools.RZSZRequest) (*rzszJob
 	if term.exec != nil {
 		return nil, errExecBusy
 	}
-	if state.transfer.phase != transferNone || state.rzsz != nil {
+	if session.transfer.phase != transferNone || session.rzsz != nil {
 		return nil, errors.New("a file transfer is already running")
 	}
 	command, job, err := state.prepareRZSZ(session, req)
@@ -123,10 +123,10 @@ func (state *State) beginRZSZ(session *Session, req tools.RZSZRequest) (*rzszJob
 		return nil, err
 	}
 	job.armed = state.now()
-	state.rzsz = job
+	session.rzsz = job
 	if !term.sendAssistant([]byte(command + "\n")) {
-		state.rzsz = nil
-		state.releaseRZSZ(job)
+		session.rzsz = nil
+		state.releaseRZSZ(session, job)
 		return nil, errExecRefuse
 	}
 	return job, nil
@@ -153,7 +153,7 @@ func (state *State) prepareRZSZ(session *Session, req tools.RZSZRequest) (string
 		}}, zmodem.SendOptions{})
 		command, err := rzszShellCommand(true, req.Remote, req.Overwrite)
 		if err != nil {
-			state.releaseRZSZ(job)
+			state.releaseRZSZ(nil, job)
 			return "", nil, err
 		}
 		return command, job, nil
@@ -271,88 +271,88 @@ func toolsPath(remote string) error {
 // startArmedRZSZ takes a ZMODEM offer that belongs to the armed call. It
 // reports whether the offer was consumed.
 func (state *State) startArmedRZSZ(session *Session, peerSends bool) bool {
-	job := state.rzsz
+	job := session.rzsz
 	if job == nil || job.sessionID != session.ID {
 		return false
 	}
 	if job.upload == peerSends {
 		job.reason = errors.New("the remote ZMODEM offer did not match rz/sz")
 		state.declineTransfer(session)
+		state.showNextPrompt()
 		return true
 	}
-	state.transfer.sources = job.sources
-	state.transfer.target = job.folder
+	session.transfer.sources = job.sources
+	session.transfer.target = job.folder
 	job.sources = nil
-	state.modal, state.modalSession = modalFileTransfer, session.ID
 	state.startTransfer(session, job.engine)
 	return true
 }
 
 func (state *State) abortRZSZ(job *rzszJob, reason error) {
-	if state.rzsz != job {
+	session, ok := state.sessionByIDPointer(job.sessionID)
+	if !ok || session.rzsz != job {
 		return
 	}
 	job.reason = reason
-	session, ok := state.sessionByIDPointer(job.sessionID)
-	if state.transfer.phase != transferNone && state.transfer.sessionID == job.sessionID && state.transfer.engine != nil {
-		state.transfer.engine.Cancel()
-		if ok {
-			state.afterTransferFeed(session)
-		}
+	if session.transfer.phase != transferNone && session.transfer.engine != nil {
+		session.transfer.engine.Cancel()
+		state.afterTransferFeed(session)
 	}
-	if state.rzsz != job {
+	if session.rzsz != job {
 		return
 	}
-	if ok && session.term != nil {
+	if session.term != nil {
 		session.term.sendProtocol([]byte{3})
 		if session.term.shell != nil {
 			session.term.shell.Write([]byte("\x18\x18\x18\x18\x18\x18\x18\x18\b\b\b\b\b\b\b\b\b\b"))
 		}
 	}
-	if state.transfer.phase != transferNone && state.transfer.sessionID == job.sessionID {
+	if session.transfer.phase != transferNone {
 		state.endTransfer(session)
 		return
 	}
-	state.finishRZSZ()
+	state.finishRZSZ(session)
 }
 
 // watchRZSZ interrupts a command that never entered ZMODEM, and finishes a
 // call whose shell has gone.
 func (state *State) watchRZSZ() {
-	job := state.rzsz
-	if job == nil || state.transfer.phase != transferNone {
-		return
-	}
-	session, ok := state.sessionByIDPointer(job.sessionID)
-	if !ok || session.term == nil || session.term.shell == nil {
-		job.reason = errors.New("the shell ended before rz/sz started")
-		state.finishRZSZ()
-		return
-	}
-	if now := state.now(); now > 0 && now-job.armed >= rzszStartWait {
-		job.reason = errors.New("rz/sz did not start; the shell may not be at a prompt, or rz and sz are not installed")
-		session.term.sendProtocol([]byte{3})
-		state.finishRZSZ()
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		job := session.rzsz
+		if job == nil || session.transfer.phase != transferNone {
+			continue
+		}
+		if session.term == nil || session.term.shell == nil {
+			job.reason = errors.New("the shell ended before rz/sz started")
+			state.finishRZSZ(session)
+			continue
+		}
+		if now := state.now(); now > 0 && now-job.armed >= rzszStartWait {
+			job.reason = errors.New("rz/sz did not start; the shell may not be at a prompt, or rz and sz are not installed")
+			session.term.sendProtocol([]byte{3})
+			state.finishRZSZ(session)
+		}
 	}
 }
 
-func (state *State) finishRZSZ() {
-	job := state.rzsz
+func (state *State) finishRZSZ(session *Session) {
+	if session == nil {
+		return
+	}
+	job := session.rzsz
 	if job == nil {
 		return
 	}
-	if state.transfer.sessionID != 0 && state.transfer.sessionID != job.sessionID {
-		return
-	}
-	state.rzsz = nil
-	state.releaseRZSZ(job)
+	session.rzsz = nil
+	state.releaseRZSZ(session, job)
 	err := job.reason
 	files := 0
-	if state.transfer.engine != nil && state.transfer.sessionID == job.sessionID {
+	if session.transfer.engine != nil {
 		if err == nil {
-			err = state.transfer.engine.Err()
+			err = session.transfer.engine.Err()
 		}
-		files = state.transfer.engine.Progress().Files
+		files = session.transfer.engine.Progress().Files
 	}
 	if err == nil && files < 1 {
 		err = errors.New("rz/sz finished without transferring the file")
@@ -374,12 +374,16 @@ func (state *State) finishRZSZ() {
 	}
 }
 
-func (state *State) releaseRZSZ(job *rzszJob) {
+func (state *State) releaseRZSZ(session *Session, job *rzszJob) {
 	for _, file := range job.sources {
 		file.Close()
 	}
 	job.sources = nil
-	if state.transfer.engine != job.engine && job.engine != nil {
+	var engine zmodem.Engine
+	if session != nil {
+		engine = session.transfer.engine
+	}
+	if engine != job.engine && job.engine != nil {
 		job.engine.Close()
 	}
 }

@@ -215,6 +215,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.windowPage().Draw(canvas, bounds, state.declareShell)
 		state.paintDesktopDetails(canvas, session, bounds)
 		state.endMenus()
+		state.paintTransferProgressCard(canvas)
 		state.tooltip.Paint(canvas, state.Theme(), state.windowRect(), components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 		state.fileNotices.paint(canvas, state.Theme(), state.windowRect())
 		return
@@ -365,6 +366,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
 	state.paintLocalProxyFocus(canvas)
+	state.paintTransferProgressCard(canvas)
 	// Last, so a tooltip is never covered by what it describes.
 	if _, formatting := canvas.Hovered().In(hitNoteFormats); !formatting {
 		state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
