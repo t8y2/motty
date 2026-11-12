@@ -89,7 +89,7 @@ func TestTheHostListRoomIsTheWorkspaceSlot(t *testing.T) {
 		if got := state.hostList.bounds; got != wantList {
 			t.Fatalf("%v: list room %v, want %v", size, got, wantList)
 		}
-		_, geometry := hostListScrollArea(nil, state.Theme(), wantList, state.hostsContent, state.hostsScroll)
+		_, geometry := hostListScrollArea(nil, state.Theme(), wantList, state.hostsContent, state.hostsScroll, false)
 		if got := state.hostList.area.Rect(); got != geometry.Viewport {
 			t.Fatalf("%v: tree room %v, bar viewport %v", size, got, geometry.Viewport)
 		}

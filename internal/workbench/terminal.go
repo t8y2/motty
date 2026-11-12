@@ -1736,21 +1736,6 @@ func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.activeSection == sectionSessionLogs && state.modal == modalNone {
 		return state.scrollSessionLogs(event)
 	}
-	if state.activeSection == sectionForwards && state.modal == modalNone {
-		if result := state.scrollForwards(event); result.Handled {
-			return result
-		}
-	}
-	if state.activeSection == sectionKeys && state.modal == modalNone {
-		if result := state.scrollKeys(event); result.Handled {
-			return result
-		}
-	}
-	if state.activeSection == sectionProxies && state.modal == modalNone {
-		if result := state.scrollProxies(event); result.Handled {
-			return result
-		}
-	}
 	if state.activeSection == sectionSnippets && state.modal == modalNone {
 		if result := state.scrollSnippets(event); result.Handled {
 			return result

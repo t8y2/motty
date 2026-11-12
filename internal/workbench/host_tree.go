@@ -51,6 +51,10 @@ type hostCatalogList struct {
 	// page (a reset, the sort drag's edge scroll, a test); one that matches is
 	// just the last paint's value, so a wheel the page handled is not undone.
 	applied float32
+	// over says the pointer is on the list, which reveals its bar. The bar keeps
+	// its reserved strip either way, so the rows never move under it.
+	over    bool
+	barDrag scrollBarDrag
 	// bounds is the room the list occupies in the window, including the strip the
 	// scroll bar takes, and viewport the part the rows are painted in, both as of
 	// the last paint.
@@ -291,6 +295,37 @@ func (state *State) focusHostListRow(canvas *gfx.Canvas, hostID uint32) {
 	}
 }
 
+// hostListBarRevealed reports whether the hosts list's bar is shown: while the
+// pointer is on the list or a press drags the bar.
+func (state *State) hostListBarRevealed() bool {
+	return state.hostList.over || state.hostList.barDrag.dragging
+}
+
+// hostListBarPointer drags the hosts list's scrollbar.
+func (state *State) hostListBarPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	list := &state.hostList
+	if state.modal != modalNone || !state.paintsHostsPage() {
+		return gfx.EventResult{}, false
+	}
+	_, geometry := hostListScrollArea(nil, state.Theme(), list.bounds, state.hostsContent, state.hostsScroll, state.hostListBarRevealed())
+	return list.barDrag.pointer(event, geometry, hitHostListBar, gfx.ID{}, &state.hostsScroll)
+}
+
+// trackHostListBar records whether the pointer is over the hosts list, which
+// reveals its bar. A dialog owns the pointer while it is open, so the bar hides.
+func (state *State) trackHostListBar(event gfx.PointerEvent) bool {
+	list := &state.hostList
+	if event.Captured || state.modal != modalNone || !state.paintsHostsPage() {
+		changed := list.over
+		list.over = false
+		return changed
+	}
+	over := event.Kind != gfx.PointerExit && pointInRect(event.X, event.Y, list.bounds)
+	changed := list.over != over
+	list.over = over
+	return changed
+}
+
 // hostListPointer opens the group actions or the host menu on a secondary press
 // on a row of the list, and connects the host on a double click. The Tree names
 // its rows itself, so the row is read from the pointer's target instead of a
@@ -378,7 +413,7 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 	// viewport is the rest of the list's room.
 	room := gfx.Rect{Y: headerHeight, Width: max(width-36, 0), Height: max(height-headerHeight-18, 0)}
 	content := state.hostListHeight(room.Width)
-	_, geometry := hostListScrollArea(nil, state.Theme(), room, content, state.hostsScroll)
+	_, geometry := hostListScrollArea(nil, state.Theme(), room, content, state.hostsScroll, state.hostListBarRevealed())
 	right := float32(18) + room.Width - geometry.Viewport.Width
 	list.rowWidth = geometry.Viewport.Width
 	state.applyHostListScroll(c.Canvas(), content)

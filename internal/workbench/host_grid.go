@@ -209,12 +209,12 @@ func (state *State) hostGridHeight(width float32) float32 {
 func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32) {
 	bounds := gfx.Rect{X: 18, Y: headerHeight, Width: max(width-36, 0), Height: max(height-headerHeight-18, 0)}
 	content := state.hostListHeight(bounds.Width)
-	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll, state.hostListBarRevealed())
 	if geometry.MaxOffsetY > 0 {
 		// Taking the bar's strip narrows the list; the cards pack to the width they
 		// are really given, so read the height again at the reserved width.
 		content = state.hostListHeight(geometry.Viewport.Width)
-		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll, state.hostListBarRevealed())
 	}
 	canvas := c.Canvas()
 	if state.hostRevealID != 0 {
@@ -225,14 +225,14 @@ func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32)
 		}
 		canvas.RequestFocus(focus)
 		state.hostRevealID = 0
-		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll, state.hostListBarRevealed())
 	}
 	state.hostsContent, state.hostsScroll = content, geometry.OffsetY
 	viewport := geometry.Viewport
 	// The sort's edge scroll reads the pointer in window coordinates; the last
 	// paint's absolute viewport is what the list view uses for the same check.
 	if state.hostSortAutoScrollFrame(canvas, state.hostsGridViewport, content) {
-		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll, state.hostListBarRevealed())
 		state.hostsScroll = geometry.OffsetY
 		viewport = geometry.Viewport
 	}

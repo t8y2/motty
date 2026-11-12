@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
+	"github.com/vivaui/viva/ui"
 )
 
 // The catalog pages whose tables can outgrow their card all scroll through the
@@ -31,8 +32,14 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 		state.activeSection = sectionForwards
 		state.selectedForwardID = 1
 		view := openCatalogWindow(t, state)
-		assertCatalogListScrolls(t, state, view, &state.forwardList,
-			hitForwardRowList.At(1), hitForwardRowList.At(count), hitForwardScrollThumb, state.messages.ForwardColumnStatus)
+		assertTableScrolls(t, state, view, &state.forwardTable, count,
+			hitForwardRowList.At(0), hitForwardRowList.At(count-1), hitForwardScrollThumb,
+			state.messages.ForwardListScroll, state.messages.ForwardColumnStatus,
+			func(state *State) {
+				if state.selectedForwardID != state.forwards[count-1].ID {
+					t.Fatalf("keyboard selection did not reach the last forward: %d", state.selectedForwardID)
+				}
+			})
 	})
 
 	t.Run("keychain", func(t *testing.T) {
@@ -45,8 +52,14 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 		state.activeSection = sectionKeys
 		state.selectedIdentityID = 1
 		view := openCatalogWindow(t, state)
-		assertCatalogListScrolls(t, state, view, &state.keysList,
-			hitKeyRowList.At(1), hitKeyRowList.At(count), hitKeysScrollThumb, state.messages.KeyColumnFingerprint)
+		assertTableScrolls(t, state, view, &state.keysTable, count,
+			hitKeyRowList.At(0), hitKeyRowList.At(count-1), hitKeysScrollThumb,
+			state.messages.KeyListScroll, state.messages.KeyColumnFingerprint,
+			func(state *State) {
+				if state.selectedIdentityID != state.identities[count-1].ID {
+					t.Fatalf("keyboard selection did not reach the last key: %d", state.selectedIdentityID)
+				}
+			})
 	})
 
 	t.Run("jump routes", func(t *testing.T) {
@@ -58,8 +71,14 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 		state.activeSection = sectionProxies
 		state.selectedProxyID = 1
 		view := openCatalogWindow(t, state)
-		assertCatalogListScrolls(t, state, view, &state.proxyList,
-			hitProxyRowList.At(1), hitProxyRowList.At(count), hitProxyScrollThumb, state.messages.ProxyColumnRoute)
+		assertTableScrolls(t, state, view, &state.proxyTable, count,
+			hitProxyRowList.At(0), hitProxyRowList.At(count-1), hitProxyScrollThumb,
+			state.messages.ProxyListScroll, state.messages.ProxyColumnRoute,
+			func(state *State) {
+				if state.selectedProxyID != state.proxies[count-1].ID {
+					t.Fatalf("keyboard selection did not reach the last route: %d", state.selectedProxyID)
+				}
+			})
 	})
 
 	t.Run("snippets", func(t *testing.T) {
@@ -87,10 +106,11 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 // small enough that more than one page of catalog rows overflows it.
 func openCatalogWindow(t *testing.T, state *State) *headless.Session {
 	t.Helper()
-	view, err := headless.Open(app.Config{
+	config := state.WindowConfig(app.Config{
 		Title: "Motty", Width: 1200, Height: 800, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-	}, nil, headless.Options{Scale: 1})
+	})
+	view, err := headless.Open(config, nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,39 +121,41 @@ func openCatalogWindow(t *testing.T, state *State) *headless.Session {
 	return view
 }
 
-// assertCatalogListScrolls holds one catalog table to the behavior every one of
-// them shares, whatever the page is called.
-func assertCatalogListScrolls(t *testing.T, state *State, view *headless.Session, list *catalogList, firstRow, lastRow, thumb gfx.ID, heading string) {
+// assertTableScrolls holds one catalog table to the behavior the built-in table
+// scroll shares, whatever the page is called.
+func assertTableScrolls(t *testing.T, state *State, view *headless.Session, table *ui.TableState, count int, firstRow, lastRow, barID gfx.ID, barLabel, heading string, selectedLast func(*State)) {
 	t.Helper()
-	bounds := list.bounds
-	if bounds.Width <= 0 || bounds.Height <= 0 {
-		t.Fatalf("catalog list has no body: %+v", bounds)
-	}
-	if list.content <= bounds.Height {
-		t.Fatalf("list content %v fits its body %v", list.content, bounds.Height)
-	}
-	if _, ok := findSnapshotHit(view.Snapshot(), firstRow); !ok {
+	first, ok := findSnapshotHit(view.Snapshot(), firstRow)
+	if !ok {
 		t.Fatal("the first row is not painted")
 	}
 	if _, ok := findSnapshotHit(view.Snapshot(), lastRow); ok {
 		t.Fatal("the list fits every row without scrolling")
 	}
-	// The bar is the hover style: it appears under the pointer, not at rest.
-	at := gfx.Point{X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2}
+	if _, ok := findSnapshotHit(view.Snapshot(), barID); ok {
+		t.Fatal("the scrollbar is painted before the pointer reaches the table")
+	}
+
+	// The bar is the hover style: it appears under the pointer, outside the rows.
+	at := gfx.Point{X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2}
 	if err := view.Move(at.X, at.Y); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := findSnapshotHit(view.Snapshot(), thumb); !ok {
+	bar, ok := findSnapshotHit(view.Snapshot(), barID)
+	if !ok {
 		t.Fatal("a list taller than its body has no scrollbar under the pointer")
 	}
-	headerAboveRows(t, view.Snapshot(), heading, bounds)
+	if bar.Bounds.Width != catalogBarGutter {
+		t.Fatalf("scrollbar width = %v, want %v", bar.Bounds.Width, catalogBarGutter)
+	}
+	headerAboveRows(t, view.Snapshot(), heading, bar.Bounds)
 
 	// The wheel moves the rows, not the page around them.
 	if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: 10000, Precise: true}); err != nil {
 		t.Fatal(err)
 	}
-	if list.scroll <= 0 {
-		t.Fatalf("wheel left the list at offset %v", list.scroll)
+	if table.Scroll.Offset <= 0 {
+		t.Fatalf("wheel left the table at offset %v", table.Scroll.Offset)
 	}
 	if _, ok := findSnapshotHit(view.Snapshot(), lastRow); !ok {
 		t.Fatal("the last row is still unreachable at the end of the list")
@@ -144,29 +166,31 @@ func assertCatalogListScrolls(t *testing.T, state *State, view *headless.Session
 	if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: -10000, Precise: true}); err != nil {
 		t.Fatal(err)
 	}
-	if list.scroll != 0 {
-		t.Fatalf("scrolling back left the list at %v", list.scroll)
+	if table.Scroll.Offset != 0 {
+		t.Fatalf("scrolling back left the table at %v", table.Scroll.Offset)
 	}
-	headerAboveRows(t, view.Snapshot(), heading, bounds)
 
-	// A press on the bar focuses the list, and the keyboard reaches its end.
-	bar, ok := findSnapshotHit(view.Snapshot(), thumb)
+	// The keyboard moves the selection to the last row and reveals it.
+	first, ok = findSnapshotHit(view.Snapshot(), firstRow)
 	if !ok {
-		t.Fatal("the scrollbar disappeared before the drag")
+		t.Fatal("the first row lost its hit")
 	}
-	if err := view.Driver().Click(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2); err != nil {
+	if err := view.Driver().Click(first.Bounds.X+first.Bounds.Width/2, first.Bounds.Y+first.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
 		t.Fatal(err)
 	}
-	maximum := list.area(state.Theme()).Geometry().MaxOffsetY
-	if maximum <= 0 || list.scroll != maximum {
-		t.Fatalf("End left the list at %v of %v", list.scroll, maximum)
+	if table.Selected() != count-1 {
+		t.Fatalf("End selected row %d of %d", table.Selected(), count)
+	}
+	if maximum := table.Scroll.Max(); table.Scroll.Offset != maximum {
+		t.Fatalf("End left the table at %v of %v", table.Scroll.Offset, maximum)
 	}
 	if _, ok := findSnapshotHit(view.Snapshot(), lastRow); !ok {
 		t.Fatal("End did not reveal the last row")
 	}
+	selectedLast(state)
 
 	// While the bar is held, the row under the pointer neither highlights nor
 	// takes a click: the press owns the pointer wherever it moves.
@@ -174,7 +198,7 @@ func assertCatalogListScrolls(t *testing.T, state *State, view *headless.Session
 	if !ok {
 		t.Fatal("the last row lost its hit before the drag")
 	}
-	bar, ok = findSnapshotHit(view.Snapshot(), thumb)
+	bar, ok = findSnapshotHit(view.Snapshot(), barID)
 	if !ok {
 		t.Fatal("the scrollbar disappeared before the drag")
 	}
@@ -193,6 +217,72 @@ func assertCatalogListScrolls(t *testing.T, state *State, view *headless.Session
 	}
 	if _, ok := findSnapshotHit(view.Snapshot(), lastRow); !ok {
 		t.Fatal("rows did not become interactive again after the bar was released")
+	}
+}
+
+// assertCatalogListScrolls is the same behavior for the snippets page, whose
+// variable-height rows keep their application-painted scroll state.
+func assertCatalogListScrolls(t *testing.T, state *State, view *headless.Session, list *catalogList, firstRow, lastRow, thumb gfx.ID, heading string) {
+	t.Helper()
+	bounds := list.bounds
+	if bounds.Width <= 0 || bounds.Height <= 0 {
+		t.Fatalf("catalog list has no body: %+v", bounds)
+	}
+	if list.content <= bounds.Height {
+		t.Fatalf("list content %v fits its body %v", list.content, bounds.Height)
+	}
+	first, ok := findSnapshotHit(view.Snapshot(), firstRow)
+	if !ok {
+		t.Fatal("the first row is not painted")
+	}
+	if _, ok := findSnapshotHit(view.Snapshot(), lastRow); ok {
+		t.Fatal("the list fits every row without scrolling")
+	}
+	at := gfx.Point{X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2}
+	if err := view.Move(at.X, at.Y); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := findSnapshotHit(view.Snapshot(), thumb); !ok {
+		t.Fatal("a list taller than its body has no scrollbar under the pointer")
+	}
+	headerAboveRows(t, view.Snapshot(), heading, bounds)
+
+	if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: 10000, Precise: true}); err != nil {
+		t.Fatal(err)
+	}
+	if list.scroll <= 0 {
+		t.Fatalf("wheel left the list at offset %v", list.scroll)
+	}
+	if _, ok := findSnapshotHit(view.Snapshot(), lastRow); !ok {
+		t.Fatal("the last row is still unreachable at the end of the list")
+	}
+	if _, ok := findSnapshotHit(view.Snapshot(), firstRow); ok {
+		t.Fatal("the first row is still painted at the end of the list")
+	}
+	_ = first
+	if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: -10000, Precise: true}); err != nil {
+		t.Fatal(err)
+	}
+	if list.scroll != 0 {
+		t.Fatalf("scrolling back left the list at %v", list.scroll)
+	}
+
+	bar, ok := findSnapshotHit(view.Snapshot(), thumb)
+	if !ok {
+		t.Fatal("the scrollbar disappeared before the drag")
+	}
+	if err := view.Driver().Click(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
+		t.Fatal(err)
+	}
+	maximum := list.area(state.Theme()).Geometry().MaxOffsetY
+	if maximum <= 0 || list.scroll != maximum {
+		t.Fatalf("End left the list at %v of %v", list.scroll, maximum)
+	}
+	if _, ok := findSnapshotHit(view.Snapshot(), lastRow); !ok {
+		t.Fatal("End did not reveal the last row")
 	}
 }
 

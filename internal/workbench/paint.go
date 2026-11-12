@@ -2103,7 +2103,7 @@ func (state *State) sessionStatus(session *Session) (string, gfx.Color) {
 func (state *State) paintHostGridTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
 	// The cards were declared at this scroll position; the bar is Viva's scroll
 	// area, and it paints nothing at all while the content fits.
-	area, geometry := hostListScrollArea(canvas, state.Theme(), treeBounds, state.hostsContent, state.hostsScroll)
+	area, geometry := hostListScrollArea(canvas, state.Theme(), treeBounds, state.hostsContent, state.hostsScroll, state.hostListBarRevealed())
 	state.hostsGridViewport = geometry.Viewport
 	area.EndContent()
 }
@@ -2137,10 +2137,7 @@ func (state *State) paintHostListTable(canvas *gfx.Canvas, treeBounds gfx.Rect) 
 
 // paintHostListBar paints the bar the list view keeps beside its rows.
 func (state *State) paintHostListBar(canvas *gfx.Canvas, treeBounds gfx.Rect, content float32) {
-	bar := components.BeginScrollArea(canvas, state.Theme(), treeBounds, gfx.Size{Height: content}).
-		Offset(0, state.hostsScroll).
-		ReserveScrollbars().
-		VerticalScrollbar(gfx.ID{}, "", "")
+	bar, _ := hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll, state.hostListBarRevealed())
 	bar.EndContent()
 }
 
@@ -2343,15 +2340,22 @@ func (state *State) hostListHeight(width float32) float32 {
 // hostListScrollArea is how the hosts list scrolls: Viva's scroll area owns the
 // bar, keeping its strip out of the rows and painting the thumb from the list's
 // content height. Nothing is painted while the content fits.
-func hostListScrollArea(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect, content, offset float32) (components.ScrollArea, components.ScrollAreaGeometry) {
+func hostListScrollArea(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect, content, offset float32, revealed bool) (components.ScrollArea, components.ScrollAreaGeometry) {
 	// Width zero says the list has no horizontal extent of its own: it is laid out
-	// to geometry.Viewport.Width, so no horizontal bar is ever due.
+	// to geometry.Viewport.Width, so no horizontal bar is ever due. The bar is
+	// hover-revealed but keeps its reserved strip, so revealing it never moves a
+	// row.
 	area := components.BeginScrollArea(canvas, theme, bounds, gfx.Size{Height: content}).
 		Offset(0, offset).
+		ScrollbarSize(hostListBarWidth).
 		ReserveScrollbars().
-		VerticalScrollbar(gfx.ID{}, "", "")
+		HoverScrollbars(revealed).
+		VerticalScrollbar(hitHostListBar, "", "")
 	return area, area.Geometry()
 }
+
+// hostListBarWidth is the hosts list scroll bar's strip and thickness.
+const hostListBarWidth = float32(10)
 
 // scrollHosts moves the hosts list with the wheel. The list view's Tree is part
 // of the workbench page, so the page's wheel route has already offered the

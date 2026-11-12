@@ -14,6 +14,50 @@ import (
 	"motty/internal/vault"
 )
 
+// keyTableSource reads the keychain page's table cells when the table asks for
+// them, one visible cell at a time.
+type keyTableSource struct {
+	records *[]identityRecord
+}
+
+func (source *keyTableSource) Len() int {
+	if source == nil || source.records == nil {
+		return 0
+	}
+	return len(*source.records)
+}
+
+func (source *keyTableSource) Cell(row, column int) string {
+	if source == nil || source.records == nil {
+		return ""
+	}
+	records := *source.records
+	if row < 0 || row >= len(records) || column < 0 || column >= len(records[row].cells) {
+		return ""
+	}
+	return records[row].cells[column]
+}
+
+// syncKeyTable makes the table show the key the application selected.
+func (state *State) syncKeyTable() {
+	row := -1
+	for index := range state.identities {
+		if state.identities[index].ID == state.selectedIdentityID {
+			row = index
+			break
+		}
+	}
+	state.keysTable.Select(row)
+}
+
+// takeKeyTableSelection adopts the row a key moved the table to.
+func (state *State) takeKeyTableSelection() {
+	row := state.keysTable.Selected()
+	if row >= 0 && row < len(state.identities) {
+		state.selectIdentity(state.identities[row].ID)
+	}
+}
+
 type identityRecord struct {
 	ID          uint32
 	Path        string
@@ -144,30 +188,6 @@ func (state *State) keysKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false
-}
-
-// scrollKeys moves the key list with the wheel.
-func (state *State) scrollKeys(event gfx.ScrollEvent) gfx.EventResult {
-	if state.activeSection != sectionKeys || state.modal != modalNone {
-		return gfx.EventResult{}
-	}
-	return state.keysList.wheel(event, state.Theme())
-}
-
-// keysPointer drags the key list's scrollbar.
-func (state *State) keysPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if state.activeSection != sectionKeys || state.modal != modalNone {
-		return gfx.EventResult{}, false
-	}
-	return state.keysList.pointer(event, state.Theme(), hitKeysScrollThumb, hitKeysScroll)
-}
-
-// keysListKey scrolls the focused key list with the keyboard.
-func (state *State) keysListKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if state.activeSection != sectionKeys || state.modal != modalNone {
-		return gfx.EventResult{}, false
-	}
-	return state.keysList.key(event, state.Theme(), hitKeysScroll)
 }
 
 // selectIdentity makes a key the selected one. The table calls it from the paint

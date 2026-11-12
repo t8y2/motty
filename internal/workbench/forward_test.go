@@ -1158,7 +1158,7 @@ func TestForwardPagePaintsRowsDialogAndHostOptions(t *testing.T) {
 	if !contains(texts, state.messages.ForwardTitle) || !contains(texts, "Web") || !contains(texts, "web.internal") {
 		t.Fatalf("forward page texts = %v", texts)
 	}
-	if !hasHit(canvas, hitForwardRowList.At(int(state.forwards[0].ID))) || !hasHit(canvas, hitForwardStartStop) || !hasHit(canvas, hitForwardRemove) {
+	if !hasHit(canvas, hitForwardRowList.At(0)) || !hasHit(canvas, hitForwardStartStop) || !hasHit(canvas, hitForwardRemove) {
 		t.Fatalf("forward page hits = %+v", canvas.Hits())
 	}
 

@@ -12,6 +12,50 @@ import (
 	"motty/internal/sshconn"
 )
 
+// proxyTableSource reads the jump route page's table cells when the table asks
+// for them, one visible cell at a time.
+type proxyTableSource struct {
+	records *[]proxyRecord
+}
+
+func (source *proxyTableSource) Len() int {
+	if source == nil || source.records == nil {
+		return 0
+	}
+	return len(*source.records)
+}
+
+func (source *proxyTableSource) Cell(row, column int) string {
+	if source == nil || source.records == nil {
+		return ""
+	}
+	records := *source.records
+	if row < 0 || row >= len(records) || column < 0 || column >= len(records[row].cells) {
+		return ""
+	}
+	return records[row].cells[column]
+}
+
+// syncProxyTable makes the table show the route the application selected.
+func (state *State) syncProxyTable() {
+	row := -1
+	for index := range state.proxies {
+		if state.proxies[index].ID == state.selectedProxyID {
+			row = index
+			break
+		}
+	}
+	state.proxyTable.Select(row)
+}
+
+// takeProxyTableSelection adopts the row a key moved the table to.
+func (state *State) takeProxyTableSelection() {
+	row := state.proxyTable.Selected()
+	if row >= 0 && row < len(state.proxies) {
+		state.selectProxy(state.proxies[row].ID)
+	}
+}
+
 type proxyRecord struct {
 	ID       uint32
 	TargetID uint32
@@ -465,30 +509,6 @@ func (state *State) selectProxy(id uint32) {
 		state.selectedProxyID = id
 		state.status = state.messages.ProxySelected + state.proxyLabel(route)
 	}
-}
-
-// scrollProxies moves the route list with the wheel.
-func (state *State) scrollProxies(event gfx.ScrollEvent) gfx.EventResult {
-	if state.activeSection != sectionProxies || state.modal != modalNone {
-		return gfx.EventResult{}
-	}
-	return state.proxyList.wheel(event, state.Theme())
-}
-
-// proxiesPointer drags the route list's scrollbar.
-func (state *State) proxiesPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if state.activeSection != sectionProxies || state.modal != modalNone {
-		return gfx.EventResult{}, false
-	}
-	return state.proxyList.pointer(event, state.Theme(), hitProxyScrollThumb, hitProxyScroll)
-}
-
-// proxiesListKey scrolls the focused route list with the keyboard.
-func (state *State) proxiesListKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if state.activeSection != sectionProxies || state.modal != modalNone {
-		return gfx.EventResult{}, false
-	}
-	return state.proxyList.key(event, state.Theme(), hitProxyScroll)
 }
 
 func (state *State) removeSelectedProxy() {
