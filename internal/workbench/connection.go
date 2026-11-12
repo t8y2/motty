@@ -559,6 +559,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.avoidShare = false
 	session.closeSSHBrowser()
 	state.redialSessionForwards(session.ID)
+	state.closeCompletionPath(session)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
 	session.sudoCommands, session.sudoPassword = false, ""
@@ -772,6 +773,7 @@ func (state *State) Wake() {
 		state.pumpRemoteStats(session)
 		state.pumpDesktop(session)
 		state.pump(session)
+		state.pumpCompletionPath(session)
 		state.runLoginCommand(session)
 		// A session-local charset notice changes the available character grid.
 		// Resize after parsing output, never reentrantly from an OSC callback.
@@ -915,6 +917,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
+		state.closeCompletionPath(session)
 		state.closeSFTP(session)
 		state.closeDisconnectedShell(session)
 		if status.Err != nil && !session.disconnected {
@@ -930,6 +933,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
+		state.closeCompletionPath(session)
 		state.closeSFTP(session)
 		session.tone = toneFail
 		state.tell(session, toldEnded, status)

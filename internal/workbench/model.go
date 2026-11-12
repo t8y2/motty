@@ -130,6 +130,10 @@ type Session struct {
 	// trusted prompt reported, or the place a split asked for. It is a hint to
 	// the server, which may no longer have that directory.
 	startDirectory string
+	// pathCompletion is this session's directory cache and its own reader for
+	// path completion. A pointer: it holds channels and a once, and the session
+	// value is copied when a tab moves between windows.
+	pathCompletion *pathCompletion
 
 	host     Host // what was dialed, to dial again
 	jumpPath string

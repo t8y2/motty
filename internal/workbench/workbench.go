@@ -1029,6 +1029,7 @@ func (state *State) Close() {
 		session := &state.sessions[index]
 		session.closeSSHBrowser()
 		state.cancelReconnect(session)
+		state.closeCompletionPath(session)
 		state.closeSFTP(session)
 		state.stopRemoteStats(session)
 		if session.term != nil && session.term.shell != nil {
@@ -1109,6 +1110,11 @@ func New(options Options) *State {
 	state.initSecrets()
 
 	state.starting = true
+	// A fresh window's completion is the automatic list: the menu opens as the
+	// user types, and the inline suggestion is a choice in Settings. Capturing
+	// it here makes it part of the defaults, so a computer that changed nothing
+	// writes no record for it.
+	state.history.inlineOff = true
 	state.forwardRows.records, state.keysRows.records, state.proxyRows.records = &state.forwards, &state.identities, &state.proxies
 	state.configDefaults = defaultsOf(state.snapshot())
 	config, saved, configBase, report, err := openConfig(state.options.StatePath, state.windowID)
@@ -1992,6 +1998,7 @@ func (state *State) closeSession(id uint32) {
 	session.term.abandonShell()
 	state.dropExternalEdits(session.ID)
 	state.closeSFTPTabForSource(session.ID)
+	state.closeCompletionPath(session)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
 	if session.conn != nil {

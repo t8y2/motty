@@ -41,14 +41,14 @@ func TestInlineSettingDisablesGhostButKeepsManualCompletion(t *testing.T) {
 	if !w.state.completion.list.active || len(w.state.completion.list.candidates) == 0 {
 		t.Fatal("disabling inline suggestions also disabled the manual completion list")
 	}
-	// Off turns off both modes.
+	// Off stops the automatic menu and the ghost, not the shortcut.
 	w.state.setCompletionMode(completionOff)
 	if w.state.completion.list.active {
 		t.Fatal("turning command completion off left the list open")
 	}
 	w.state.openCompletions()
-	if w.state.completion.list.active {
-		t.Fatal("command completion is disabled but the list reopened")
+	if !w.state.completion.list.active || len(w.state.completion.list.candidates) == 0 {
+		t.Fatal("the shortcut no longer opens the list under Off")
 	}
 }
 
@@ -67,7 +67,7 @@ func TestCompletionControlsAndKeysHaveSeparateSettingsHomes(t *testing.T) {
 				if !ok || !canvasHasText(&canvas, label) {
 					t.Fatalf("completion mode %q is not offered", label)
 				}
-				if want := label == state.settingsCompletionLabel(completionBoth); hit.Selected != want {
+				if want := label == state.settingsCompletionLabel(completionList); hit.Selected != want {
 					t.Errorf("mode %q selected=%v, want %v by default", label, hit.Selected, want)
 				}
 			}
@@ -104,8 +104,8 @@ func TestCompletionModeIsChosenAndPersistsInSettings(t *testing.T) {
 		suggestOff, inlineOff bool
 	}{
 		{completionList, false, true},
-		{completionOff, true, false},
-		{completionBoth, false, false},
+		{completionOff, true, true},
+		{completionInline, false, false},
 	}
 	for _, c := range cases {
 		clickSettingsChoiceInRow(t, state, state.messages.History.SuggestRow, state.settingsCompletionLabel(c.mode))
@@ -119,14 +119,34 @@ func TestCompletionModeIsChosenAndPersistsInSettings(t *testing.T) {
 	}
 }
 
+func TestCompletionModeRoundTripsThroughTheSettingsFile(t *testing.T) {
+	for _, mode := range settingsCompletionChoices {
+		state := newTestState(t, testOptions(t))
+		state.setCompletionMode(mode)
+		saved := state.snapshot()
+		if saved.CommandCompletionMode != mode.persistName() {
+			t.Fatalf("mode %v saved as %q", mode, saved.CommandCompletionMode)
+		}
+		other := newTestState(t, testOptions(t))
+		other.restoreShared(saved)
+		if other.completionMode() != mode {
+			t.Fatalf("mode %v read back as %v", mode, other.completionMode())
+		}
+	}
+}
+
 func TestEarlierCompletionPreferencesKeepTheirMeaning(t *testing.T) {
 	for _, c := range []struct {
 		record string
 		want   completionMode
 	}{
-		{`{}`, completionBoth},
+		// The old third mode had the list and inline text; the automatic list
+		// is its successor. Inline-only is new and named explicitly.
+		{`{}`, completionList},
 		{`{"command_suggest_off":true}`, completionOff},
 		{`{"command_inline_suggest_off":true}`, completionList},
+		{`{"command_completion_mode":"inline"}`, completionInline},
+		{`{"command_completion_mode":"list"}`, completionList},
 	} {
 		var saved savedState
 		if err := json.Unmarshal([]byte(c.record), &saved); err != nil {

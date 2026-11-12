@@ -2606,7 +2606,7 @@ var englishHistory = HistoryMessages{
 	EmptyOff:    "Command history is off. Turn on Remember commands in Settings > Terminal.",
 
 	SuggestRow:          "Command completions",
-	SuggestDescription:  "Off, only the list you open by shortcut, or the list plus gray inline suggestions. Works without remembering commands.",
+	SuggestDescription:  "Shortcut leaves the list to the shortcut key; List opens it as you type; Inline only shows gray suggestions. Works without remembering commands.",
 	SettingsRow:         "Remember commands",
 	SettingsDescription: "Stores echoed command lines locally, outside backups. Secret detection is heuristic: echoed secrets can still be saved. Disable learning for sensitive sessions.",
 	ClearRow:            "Command history",
@@ -2748,6 +2748,7 @@ var englishCompletion = CompletionMessages{
 	CheckedFmt:             "%s · checked %s",
 	NoDataDir:              "This build has no data directory for a downloaded catalog.",
 	PrefixRow:              "common prefix",
+	Loading:                "Loading paths…",
 	TimeJustNow:            "just now",
 	TimeMinutesFmt:         "%dm ago",
 	TimeHoursFmt:           "%dh ago",
@@ -2757,9 +2758,9 @@ var englishCompletion = CompletionMessages{
 
 	Title:                 "Completions",
 	Open:                  "Open command completions",
-	ModeOff:               "Off",
+	ModeOff:               "Shortcut",
 	ModeList:              "List",
-	ModeBoth:              "List + inline",
+	ModeInline:            "Inline",
 	KeysGroup:             "Command completion keys",
 	KeysAccept:            "Accept inline suggestion",
 	KeysAcceptWord:        "Accept next word",

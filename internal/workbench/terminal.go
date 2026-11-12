@@ -191,8 +191,10 @@ type terminal struct {
 	// catalog is public data and works with learning off.
 	completionFeed func() bool
 	// completionInput runs after the shell accepted input, so an open list
-	// closes on the first typed byte instead of offering a stale line.
-	completionInput   func()
+	// closes on the first typed byte instead of offering a stale line. An
+	// automatic path list follows the line instead, and closes only on the keys
+	// that end it.
+	completionInput   func([]byte)
 	suggestionPending *suggestionEcho
 	// acceptedKey is a press the terminal took for a prompt-level overlay (a
 	// suggestion, the password hint). A program that asked for win32 input
@@ -594,7 +596,7 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 		}
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
 		if t.completionInput != nil {
-			t.completionInput()
+			t.completionInput(p)
 		}
 	}
 	return accepted
@@ -959,8 +961,8 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 	if !finished && len(t.rx) == 0 {
 		state.reconcileSuggestionEcho(session)
 	}
-	if !finished && len(t.rx) == 0 && state.completion.list.active && state.completion.list.sessionID == session.ID {
-		state.completionRefresh(session)
+	if !finished && len(t.rx) == 0 {
+		state.completionAfterOutput(session)
 	}
 	if finished {
 		state.shellEnded(session)
@@ -1006,6 +1008,7 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 // shellEnded tells the screen the session is over and lets the connection go.
 func (state *State) shellEnded(session *Session) {
 	session.outputAlert.commandRunning = false
+	state.closeCompletionPath(session)
 	if state.completion.list.active && state.completion.list.sessionID == session.ID {
 		state.closeCompletionList()
 	}

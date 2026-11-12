@@ -12,6 +12,9 @@ import (
 func ghostWorld(t *testing.T, commands ...string) *historyWorld {
 	t.Helper()
 	h := newHistoryWorld(t, true)
+	// Inline suggestions are the subject here; the automatic list has its own
+	// tests.
+	h.state.history.suggestOff, h.state.history.inlineOff = false, false
 	store := h.state.historyStore()
 	key := historyKey(&h.state.sessions[0])
 	base := time.Now()
@@ -99,7 +102,7 @@ func TestNothingIsSuggestedWhereTheHistoryDoesNotApply(t *testing.T) {
 	if rest, ok := h.ghost(); ok {
 		t.Fatalf("suggestions are off but %q is offered", rest)
 	}
-	h.state.setCompletionMode(completionBoth)
+	h.state.setCompletionMode(completionInline)
 	h.state.history.on = false
 	if rest, ok := h.ghost(); ok {
 		t.Fatalf("the history is off but %q is offered", rest)

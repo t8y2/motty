@@ -157,7 +157,10 @@ type Result struct {
 	// Background marks the result of Prefetch: a listing the caller asked for in
 	// advance. It is the caller's to cache, not to show as the outcome of an
 	// action, and its failure is not worth reporting.
-	Background  bool
+	Background bool
+	// NamesOnly marks a listing made by ListNames: owner names and link targets
+	// were not resolved.
+	NamesOnly   bool
 	Operation   Operation
 	TransferID  uint64
 	Path        string
@@ -204,6 +207,7 @@ type request struct {
 	data        []byte
 	id          uint64
 	background  bool // a listing nobody is waiting on: its Result says so
+	namesOnly   bool // a listing for path completion: names and the directory bit
 	operation   Operation
 	remote      string
 	local       string
@@ -354,6 +358,14 @@ var liveWorkers = leaks.New("sftp workers")
 
 func (worker *Worker) List(remotePath string) bool {
 	return worker.ListWithID(remotePath, 0)
+}
+
+// ListNames asks for a directory listing for path completion: names and the
+// directory bit only. Owner names and symbolic-link targets are not resolved,
+// so the listing costs one round trip however many links the directory holds.
+// Its Result says NamesOnly.
+func (worker *Worker) ListNames(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationList, remote: remotePath, namesOnly: true})
 }
 
 func (worker *Worker) ListWithID(remotePath string, id uint64) bool {
@@ -1031,9 +1043,14 @@ func (worker *Worker) execute(next request) Result {
 	}
 	switch next.operation {
 	case OperationList:
-		result.Path, result.Entries, result.Err = worker.list(client, next.remote, generation)
+		result.NamesOnly = next.namesOnly
+		if next.namesOnly {
+			result.Path, result.Entries, result.Err = worker.listNames(client, next.remote, generation)
+		} else {
+			result.Path, result.Entries, result.Err = worker.list(client, next.remote, generation)
+		}
 		result.Approximate = IsSCP(client)
-		if result.Err == nil && hasLinks(result.Entries) {
+		if result.Err == nil && !next.namesOnly && hasLinks(result.Entries) {
 			if _, ok := client.(remoteLinks); ok {
 				result.LinksPending = true
 				result.links = &linkJob{
@@ -1143,6 +1160,41 @@ func (worker *Worker) list(client Remote, remotePath string, generation uint64) 
 	}
 	entries := entriesFrom(infos)
 	worker.describeOwners(client, entries)
+	return remotePath, entries, nil
+}
+
+// maxNameEntries bounds a names-only listing. Completion holds a bounded set of
+// rows, and a directory past this is not worth the memory.
+const maxNameEntries = 2048
+
+// listNames is list for path completion. It reads the directory once and keeps
+// only what a candidate row needs: a name and whether it is a folder. A
+// symbolic link is not followed, so it is offered as a name without a trailing
+// slash; opening it after typing the slash still works.
+func (worker *Worker) listNames(client Remote, remotePath string, generation uint64) (string, []Entry, error) {
+	if remotePath == "" {
+		resolved, err := client.Getwd()
+		if err != nil {
+			return "", nil, err
+		}
+		remotePath = resolved
+	}
+	infos, err := client.ReadDir(remotePath)
+	if err != nil {
+		return remotePath, nil, err
+	}
+	if worker.canceled(generation) {
+		return remotePath, nil, ErrCanceled
+	}
+	entries := entriesFrom(infos)
+	if len(entries) > maxNameEntries {
+		entries = entries[:maxNameEntries]
+	}
+	for index := range entries {
+		entries[index].UID, entries[index].GID, entries[index].HasOwner = 0, 0, false
+		entries[index].Owner, entries[index].Group = "", ""
+		entries[index].LinkTarget, entries[index].LinkDir, entries[index].LinkBroken = "", false, false
+	}
 	return remotePath, entries, nil
 }
 
