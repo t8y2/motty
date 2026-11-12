@@ -17,7 +17,10 @@ import (
 )
 
 // zrqinit is what sz prints first: "rz\r" and a ZRQINIT hex header.
-const zrqinit = "rz\r**\x18B00000000000000\r\x8a\x11"
+const (
+	zrqinitHeader = "**\x18B00000000000000\r\x8a\x11"
+	zrqinit       = "rz\r" + zrqinitHeader
+)
 
 type memWriter struct{ bytes.Buffer }
 
@@ -210,6 +213,82 @@ func TestSendingFilesWhenTheOtherEndIsReadyToReceive(t *testing.T) {
 	if !strings.Contains(screenText(state, 0), "Sent 1 files") {
 		t.Fatalf("screen = %q", screenText(state, 0))
 	}
+}
+
+// A receiver repeats its ZRINIT every few seconds until it is answered, so a
+// file chosen after a while leaves several copies waiting. Only the newest one
+// is still being asked; answering each would send the file header twice, and a
+// receiver takes the second for a second file.
+func TestARepeatedSendOfferIsAnsweredOnce(t *testing.T) {
+	state, _, shell := transferState(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "up.bin")
+	payload := []byte("one file, once")
+	os.WriteFile(path, payload, 0o644)
+	state.options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{path}, nil }
+
+	target := &collect{}
+	remote := zmodem.NewReceiver(target)
+	shell.onWrite = func(p []byte) { remote.Feed(p); shell.say(string(remote.TakeOutput(nil))) }
+	remote.Feed([]byte(zrqinit))
+	ready := append([]byte(nil), remote.TakeOutput(nil)...)
+	if len(ready) == 0 {
+		t.Fatal("the receiver did not ask for the file")
+	}
+	// The user decides slowly enough that the request is repeated.
+	shell.say("waiting\r\n" + string(ready) + string(ready))
+	waitUntil(t, state, "the offer", func() bool { return state.modal == modalFileTransfer })
+
+	var sent bytes.Buffer
+	shell.onWrite = func(p []byte) {
+		sent.Write(p)
+		remote.Feed(p)
+		shell.say(string(remote.TakeOutput(nil)))
+	}
+	state.Click(hitTransferChoose)
+	if got := countFileHeaders(sent.Bytes()); got != 1 {
+		t.Fatalf("the receiver was told about %d files: %q", got, sent.Bytes())
+	}
+	waitUntil(t, state, "the end", func() bool { return state.transfer.phase == transferNone })
+	if got := target.files["up.bin"]; got == nil || !bytes.Equal(got.Bytes(), payload) {
+		t.Fatalf("the receiver got %v", got)
+	}
+}
+
+// The same from the other side: sz repeats its ZRQINIT while the user decides,
+// and answering each copy makes the sender offer the file again, which lands as
+// a duplicate download.
+func TestARepeatedReceiveOfferIsAnsweredOnce(t *testing.T) {
+	state, _, shell := transferState(t)
+	dir := t.TempDir()
+	state.options.OpenDirectory = func(app.OpenDirectoryOptions) (string, error) { return dir, nil }
+	payload := []byte("one file, once")
+	sender := zmodem.NewSender([]zmodem.SendFile{
+		{Name: "down.bin", Size: int64(len(payload)), Source: bytes.NewReader(payload), Mode: 0o644},
+	}, zmodem.SendOptions{})
+	shell.onWrite = func(p []byte) { sender.Feed(p); shell.say(string(sender.TakeOutput(nil))) }
+	shell.say("rz\r" + zrqinitHeader + zrqinitHeader)
+	waitUntil(t, state, "the offer", func() bool { return state.modal == modalFileTransfer })
+
+	var sent bytes.Buffer
+	shell.onWrite = func(p []byte) {
+		sent.Write(p)
+		sender.Feed(p)
+		shell.say(string(sender.TakeOutput(nil)))
+	}
+	state.Click(hitTransferChoose)
+	if got := bytes.Count(sent.Bytes(), []byte("**\x18B01")); got != 1 {
+		t.Fatalf("the sender was answered %d times: %q", got, sent.Bytes())
+	}
+	waitUntil(t, state, "the end", func() bool { return state.transfer.phase == transferNone })
+	if got, err := os.ReadFile(filepath.Join(dir, "down.bin")); err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("down.bin = %q, %v", got, err)
+	}
+}
+
+// countFileHeaders counts ZFILE headers, the frame that offers one file.
+func countFileHeaders(data []byte) int {
+	return bytes.Count(data, []byte{'*', 0x18, 'A', 4}) + bytes.Count(data, []byte{'*', 0x18, 'C', 4})
 }
 
 func TestCancellingARunningTransferEndsItAndRemovesTheUnfinishedFile(t *testing.T) {
