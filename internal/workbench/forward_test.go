@@ -58,11 +58,11 @@ func TestForwardDialogValidatesConfiguration(t *testing.T) {
 			want: func(state *State) string { return state.messages.ErrForwardNameTaken },
 		},
 		{
-			name: "local port duplicate",
+			name: "local port duplicate saves",
 			prepare: func(state *State) {
 				state.forwards = append(state.forwards, forwardRecord{Label: "Other", LocalPort: 8080})
 			},
-			want: func(state *State) string { return state.messages.ErrForwardLocalTaken },
+			want: func(*State) string { return "" },
 		},
 	}
 
@@ -488,40 +488,139 @@ func activateChoice(t testing.TB, state *State, id gfx.ID) {
 	canvas.EndEventPass()
 }
 
-func TestRemoteForwardDuplicatePortsAreScopedToSSHHost(t *testing.T) {
-	tests := []struct {
-		name     string
-		existing forwardRecord
-		want     func(*State) string
-	}{
-		{
-			name:     "same remote host",
-			existing: forwardRecord{Label: "Other", Mode: portforward.ModeRemote, HostAddress: sampleHosts[0].Address, HostUser: sampleHosts[0].User, HostPort: sampleHosts[0].Port, LocalPort: 8080},
-			want:     func(state *State) string { return state.messages.ErrForwardRemoteTaken },
-		},
-		{
-			name:     "different remote host",
-			existing: forwardRecord{Label: "Other", Mode: portforward.ModeRemote, HostAddress: sampleHosts[1].Address, HostUser: sampleHosts[1].User, HostPort: sampleHosts[1].Port, LocalPort: 8080},
-			want:     func(*State) string { return "" },
-		},
-		{
-			name:     "local listener",
-			existing: forwardRecord{Label: "Other", Mode: portforward.ModeLocal, LocalPort: 8080},
-			want:     func(*State) string { return "" },
-		},
+// A local port can be saved on several forwards, but only one of them listens
+// at a time: the forward whose start comes second reports the taken port, and it
+// runs once the first one stops.
+func TestForwardsSharingALocalPortRunOneAtATime(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	port := freePort(t)
+	addForwardRule(t, state, "Dev", port, "dev.internal", 8080)
+	addForwardRule(t, state, "Test", port, "test.internal", 9090)
+
+	// Neither forward has a tab to borrow a connection from, so both wait on the
+	// one tunnel their host dials.
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardStartStop)
+	state.selectedForwardID = state.forwards[1].ID
+	state.Click(hitForwardStartStop)
+	if len(world.conns) != 1 || len(state.forwardTunnels) != 1 {
+		t.Fatalf("two waiting forwards dialed conns=%d tunnels=%d", len(world.conns), len(state.forwardTunnels))
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			state := newTestState(t, testOptions(t))
-			openForwardEditor(t, state)
-			clickSettingsChoice(t, state, state.messages.ForwardModeRemote)
-			replaceForwardField(state, hitForwardDialogLabel, "Remote")
-			replaceForwardField(state, hitForwardDialogDestination, "127.0.0.1")
-			state.forwards = append(state.forwards, test.existing)
-			if got, want := state.forwardEditor.validate(state), test.want(state); got != want {
-				t.Fatalf("validation = %q, want %q", got, want)
-			}
-		})
+	world.conns[0].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+
+	first, second := &state.forwards[0], &state.forwards[1]
+	if first.runner == nil {
+		t.Fatalf("the first forward did not start: %+v", *first)
+	}
+	if second.runner != nil || second.pending || second.lastError != state.messages.ErrForwardLocalTaken || second.cells[4] != state.messages.ForwardStoppedError {
+		t.Fatalf("the second forward after the tunnel connected = %+v", *second)
+	}
+	if !strings.Contains(state.status, state.messages.ErrForwardLocalTaken) {
+		t.Fatalf("status = %q", state.status)
+	}
+
+	// The port serves the other forward once its first holder stops.
+	state.selectedForwardID = first.ID
+	state.Click(hitForwardStartStop)
+	state.selectedForwardID = second.ID
+	state.Click(hitForwardStartStop)
+	if !second.pending || second.sessionID == 0 || len(state.forwardTunnels) != 1 || len(world.conns) != 2 {
+		t.Fatalf("restarted forward = %+v tunnels=%d conns=%d", *second, len(state.forwardTunnels), len(world.conns))
+	}
+	world.conns[1].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if second.runner == nil || second.lastError != "" || first.runner != nil {
+		t.Fatalf("the second forward on its own start = %+v first=%+v", *second, *first)
+	}
+	if got := second.runner.Status().ListenAddress; got != second.listenAddress() {
+		t.Fatalf("restarted listener = %q, want %q", got, second.listenAddress())
+	}
+}
+
+// A forward whose port a running forward already holds is refused before
+// anything is dialed for it.
+func TestStartingAForwardOnATakenPortDoesNotDial(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	port := freePort(t)
+	addForwardRule(t, state, "Dev", port, "dev.internal", 8080)
+	addForwardRuleOnHost(t, state, "Staging Copy", port, "test.internal", 9090, "stag")
+
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardStartStop)
+	if state.forwards[0].runner == nil {
+		t.Fatal("the first forward did not start")
+	}
+	state.selectedForwardID = state.forwards[1].ID
+	state.Click(hitForwardStartStop)
+	second := &state.forwards[1]
+	if second.runner != nil || second.lastError != state.messages.ErrForwardLocalTaken || second.cells[4] != state.messages.ForwardStoppedError {
+		t.Fatalf("refused start = %+v", *second)
+	}
+	if len(world.conns) != 1 || len(state.forwardTunnels) != 0 {
+		t.Fatalf("the refused start dialed conns=%d tunnels=%d", len(world.conns), len(state.forwardTunnels))
+	}
+}
+
+// A remote port can be saved on several forwards of one SSH host; the second
+// one to start is told the host already uses the port, and it runs once the
+// first one stops.
+func TestRemoteForwardsSharingAPortOnOneHostRunOneAtATime(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	fake.listen = net.Listen
+	targetA := forwardEchoServer(t)
+	targetB := forwardEchoServer(t)
+	remotePort := freePort(t)
+	addRemoteForwardRule(t, state, "Remote A", remotePort, "127.0.0.1", uint16(targetA.Addr().(*net.TCPAddr).Port))
+	addRemoteForwardRule(t, state, "Remote B", remotePort, "127.0.0.1", uint16(targetB.Addr().(*net.TCPAddr).Port))
+
+	state.selectedForwardID = state.forwards[0].ID
+	state.Click(hitForwardStartStop)
+	first := &state.forwards[0]
+	waitForward(t, state, func() bool { return first.runner != nil })
+
+	state.selectedForwardID = state.forwards[1].ID
+	state.Click(hitForwardStartStop)
+	second := &state.forwards[1]
+	if second.runner != nil || second.starting || second.lastError != state.messages.ErrForwardRemoteTaken || second.cells[4] != state.messages.ForwardStoppedError {
+		t.Fatalf("conflicting remote start = %+v", *second)
+	}
+	if !strings.Contains(state.status, state.messages.ErrForwardRemoteTaken) {
+		t.Fatalf("status = %q", state.status)
+	}
+
+	// A remote listener closes in the background: the port is free once a dial to
+	// it stops succeeding.
+	state.selectedForwardID = first.ID
+	state.Click(hitForwardStartStop)
+	address := fmt.Sprintf("127.0.0.1:%d", remotePort)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		connection, err := net.DialTimeout("tcp", address, 20*time.Millisecond)
+		if err != nil {
+			break
+		}
+		connection.Close()
+		if time.Now().After(deadline) {
+			t.Fatal("the first remote listener stayed open after stopping")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	state.selectedForwardID = second.ID
+	state.Click(hitForwardStartStop)
+	waitForward(t, state, func() bool { return second.runner != nil })
+	if second.lastError != "" || first.runner != nil {
+		t.Fatalf("the second remote forward on its own start = %+v first=%+v", *second, *first)
 	}
 }
 
@@ -1187,6 +1286,29 @@ func openForwardEditor(t testing.TB, state *State) {
 func addForwardRule(t testing.TB, state *State, label string, localPort uint16, destination string, destinationPort uint16) {
 	t.Helper()
 	openForwardEditor(t, state)
+	replaceForwardField(state, hitForwardDialogLabel, label)
+	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
+	replaceForwardField(state, hitForwardDialogDestination, destination)
+	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogDestinationPort}); !result.Handled {
+		t.Fatal("Enter did not submit the forward dialog")
+	}
+	if state.modal != modalNone || state.forwardDialogError != "" {
+		t.Fatalf("forward submit modal=%d error=%q", state.modal, state.forwardDialogError)
+	}
+}
+
+// addForwardRuleOnHost saves a local forward the way addForwardRule does, but on
+// the host the given filter narrows the picker to.
+func addForwardRuleOnHost(t testing.TB, state *State, label string, localPort uint16, destination string, destinationPort uint16, hostFilter string) {
+	t.Helper()
+	openForwardEditor(t, state)
+	state.Click(hitForwardDialogHost)
+	state.forwardEditor.hostSelect.Query.Insert(hostFilter)
+	if choices := state.forwardEditor.hostSelect.Choices(); len(choices) != 1 {
+		t.Fatalf("host filter %q left %d choices", hostFilter, len(choices))
+	}
+	state.Click(hitForwardHostItemList.At(0))
 	replaceForwardField(state, hitForwardDialogLabel, label)
 	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
 	replaceForwardField(state, hitForwardDialogDestination, destination)
