@@ -877,14 +877,16 @@ type State struct {
 	noteWatches    map[string]*app.DirectoryWatch
 	noteWatchNames []string
 	// noteTreeWatches follows each linked folder, noteScans reads them.
-	noteTreeWatches map[string]*app.DirectoryWatch
-	noteScans       map[string]*noteFolderScanState
-	noteExit        *noteExitRequest
-	noteTarget      *notesUI
-	snippets        snippetsUI
-	snippetSend     snippetSender
-	history         historyUI
-	completion      completionUI
+	noteTreeWatches  map[string]*app.DirectoryWatch
+	noteScans        map[string]*noteFolderScanState
+	noteExit         *noteExitRequest
+	noteTarget       *notesUI
+	snippets         snippetsUI
+	snippetSend      snippetSender
+	snippetPrompt    snippetPromptState
+	snippetVarValues map[string]map[string]string
+	history          historyUI
+	completion       completionUI
 	// broadcast is the tab whose panes type together, or zero.
 	broadcast layoutcore.WorkspaceID
 
@@ -1431,6 +1433,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		case hitSnippetGroup:
 			return &state.snippets.groupPicker.Query
 		}
+	case modalSnippetVariables:
+		if idx, ok := hit.In(hitSnippetVarList); ok && idx >= 0 && idx < len(state.snippetPrompt.editors) {
+			return &state.snippetPrompt.editors[idx]
+		}
 	case modalCommandPalette:
 		if hit == hitCommandPaletteSearch {
 			return &state.commandPalette.search
@@ -1635,6 +1641,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalSnippetDelete:
 		state.clickSnippetDeleteDialog(id)
+		return
+	case modalSnippetVariables:
+		state.clickSnippetVariablesDialog(id)
 		return
 	case modalImportSessions:
 		state.clickImportSessions(id)
@@ -3071,6 +3080,10 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		// submitSnippet refuses while either field is composing: that Enter
 		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalSnippetVariables && event.Key == gfx.KeyEnter && event.Target.Scope() == hitSnippetVarList && !event.Repeat {
+		state.submitSnippetVariables()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalKeyPassphrase && event.Key == gfx.KeyEnter && event.Target == hitKeyPassphraseField && !event.Repeat {
