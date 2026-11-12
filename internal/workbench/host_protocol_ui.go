@@ -422,8 +422,9 @@ func (state *State) hostPassphraseHint() string {
 }
 
 // Size the body from its rows; short viewports scroll instead of shrinking them.
+// The fixed rows are Label/Color, Group/Tags, Encoding and Icon/Transfer.
 func (state *State) hostFormHeight() float32 {
-	height := float32(2+44+(3+state.hostEndpointRows())*hostFormRowHeight) + state.hostDialogExtra()
+	height := float32(2+44+(4+state.hostEndpointRows())*hostFormRowHeight) + state.hostDialogExtra()
 	if state.editor.protocol != protocolSerial {
 		height += hostFormRowHeight
 	}

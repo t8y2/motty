@@ -15,6 +15,7 @@ import (
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
+	"motty/internal/charset"
 	"motty/internal/cmdhistory"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
@@ -60,6 +61,11 @@ type terminal struct {
 	screen *term.Terminal
 	shell  Shell
 	rx     []byte // scratch for draining output
+	// encoding is the remote charset of this shell; empty is UTF-8. decoder
+	// streams its bytes to UTF-8, keeping a partial multibyte character until
+	// the next read completes it. It is nil for a UTF-8 shell.
+	encoding string
+	decoder  *charset.Decoder
 	// pumpBudget is the window-thread time a Wake may spend parsing this
 	// terminal's output; see pumpBudget.
 	pumpBudget time.Duration
@@ -453,6 +459,40 @@ func (t *terminal) clearScreen(messages i18n.Messages) {
 	}
 }
 
+// setEncoding chooses the charset of the shell's byte stream. It is called once
+// the shell is attached, before its first output is drained. A UTF-8 (or empty)
+// encoding needs no decoder at all.
+func (t *terminal) setEncoding(encoding string) {
+	if encoding == t.encoding && (encoding == "" || t.decoder != nil) {
+		return
+	}
+	t.encoding = encoding
+	if encoding == "" || encoding == charset.UTF8 {
+		t.decoder = nil
+		return
+	}
+	t.decoder = charset.NewDecoder(encoding)
+}
+
+// decodeRemote converts one slice of the shell's output to UTF-8. A partial
+// multibyte character at the end is held by the decoder for the next slice.
+// The returned buffer is independent of the caller's Drain buffer.
+func (t *terminal) decodeRemote(p []byte) []byte {
+	if t.decoder == nil || len(p) == 0 {
+		return p
+	}
+	return t.decoder.Append(nil, p)
+}
+
+// flushRemoteDecoder emits the last, incomplete character of a stream that has
+// ended. It is called once when the shell closes; see closeDisconnectedShell.
+func (t *terminal) flushRemoteDecoder() []byte {
+	if t.decoder == nil {
+		return nil
+	}
+	return t.decoder.Flush(nil)
+}
+
 func (t *terminal) write(p []byte) {
 	t.prediction.reset()
 	t.writeScreen(p)
@@ -487,6 +527,16 @@ func (t *terminal) reconcileSelection(generation uint64) {
 		return
 	}
 	t.selection.trim(t.screen)
+}
+
+// writeShellInput sends text to the remote shell in its own charset. Terminal
+// control sequences are ASCII and survive unchanged; a UTF-8 shell is a plain
+// write. zmodem and other binary protocols call shell.Write directly instead.
+func (t *terminal) writeShellInput(p []byte) bool {
+	if t.encoding == "" || t.encoding == charset.UTF8 {
+		return t.shell.Write(p)
+	}
+	return t.shell.Write(charset.EncodeInput(p, t.encoding))
 }
 
 // send writes input to the shell. Typing returns the view to the live screen.
@@ -525,7 +575,7 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 			t.onCommand(command)
 		}
 	}
-	accepted := t.shell.Write(p)
+	accepted := t.writeShellInput(p)
 	if accepted {
 		t.inputSent = true
 		t.noteShellInput(p)
@@ -551,7 +601,7 @@ func (t *terminal) sendAssistant(p []byte) bool {
 	}
 	t.selection.clear()
 	t.screen.ScrollToBottom()
-	accepted := t.shell.Write(p)
+	accepted := t.writeShellInput(p)
 	t.inputSent = t.inputSent || accepted
 	if accepted {
 		t.noteShellInput(p)
@@ -566,7 +616,7 @@ func (t *terminal) sendSecret(p []byte) bool {
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
-	accepted := t.shell.Write(p)
+	accepted := t.writeShellInput(p)
 	t.inputSent = t.inputSent || accepted
 	if accepted {
 		t.noteShellInput(p)
@@ -608,7 +658,7 @@ func (t *terminal) sendProtocol(p []byte) bool {
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
-	accepted := t.shell.Write(p)
+	accepted := t.writeShellInput(p)
 	if accepted {
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
 	}
@@ -657,6 +707,12 @@ func (state *State) openShell(session *Session) {
 	}
 	if session.host.AgentForward && session.host.isSSH() {
 		config.AgentForward = true
+	}
+	// A host with an explicit remote charset keeps the server's own locale:
+	// forcing LANG to UTF-8 would make the server emit UTF-8 that the client
+	// then decodes as, say, GB18030.
+	if session.host.Encoding != "" && session.host.Encoding != charset.UTF8 {
+		config.SkipUTF8Locale = true
 	}
 	if opener, ok := session.conn.(slowShellOpener); !ok || !opener.opensShellSlowly() {
 		shell, err := session.conn.OpenShell(config)
@@ -749,6 +805,12 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	}
 	if session.isLocal() {
 		state.rememberRecentConnection(session)
+	}
+	// A new shell is a new byte stream: choose its charset and drop any partial
+	// character a previous shell left in the decoder.
+	t.setEncoding(session.host.Encoding)
+	if t.decoder != nil {
+		t.decoder.Reset()
 	}
 	t.shell = shell
 	t.shellOpened = state.now()
@@ -908,6 +970,13 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 	if len(data) == 0 {
 		return
 	}
+	// The transfer scanner needs the raw bytes (a zmodem stream is binary). Text
+	// consumers below — the background-output watchers, the recording and the
+	// screen — all want one UTF-8 view of the remote output.
+	data = t.decodeRemote(data)
+	if len(data) == 0 {
+		return
+	}
 	state.receiveBackgroundOutput(session)
 	t.recording.append(state.now(), terminalRecordingOutput, data)
 	t.writeRemote(data, state.now())
@@ -934,6 +1003,12 @@ func (state *State) shellEnded(session *Session) {
 		state.closeAutofillPick()
 	}
 	t := session.term
+	// A stream can end with a partial multibyte character still held by the
+	// decoder. Flush it to the screen before the session-local closing lines.
+	if tail := t.flushRemoteDecoder(); len(tail) > 0 {
+		t.recording.append(state.now(), terminalRecordingOutput, tail)
+		t.writeScreen(tail)
+	}
 	state.goLive(session) // whatever it said, and that it ended, is the terminal's to show
 	err := t.shell.Err()
 	t.shell.Close()
@@ -1622,6 +1697,10 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		p := &state.editor.groupPicker
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
+	}
+	if state.modal == modalNewHost && state.editor.encodingPicker.control.Open {
+		p := &state.editor.encodingPicker
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
 	if state.modal == modalToolbarSettings {
