@@ -55,17 +55,48 @@ func (state *State) aiPrepareBottom(canvas *gfx.Canvas, width float32) (boxHeigh
 	theme := state.Theme()
 	lineHeight := theme.Metrics.FontSizeM + 7
 	boxWidth := width + 2*aiPad - 2*aiComposerMargin
+	s := &panel.pageScratch
+	s.composerBarHeight = aiComposerBar
+	s.wrapComposerOptions = state.aiComposerRowMinWidth(canvas) > boxWidth
+	if s.wrapComposerOptions {
+		s.composerBarHeight += aiSendSize + 4
+	}
 	rows := max(panel.inputLayout.RowCount(canvas, theme, ai.input.String(), boxWidth, false), 2) // two rows to begin with
 	state.aiSyncMentions()
 	state.aiLayoutChips(canvas, width)
 	if len(ai.approvals) > 0 {
 		state.aiLayoutApprovalSummary(canvas, ai.approvals[0], width)
 	}
-	height := float32(min(rows, aiAutoRows))*lineHeight + 8 + aiComposerBar + aiComposerTarget
+	height := float32(min(rows, aiAutoRows))*lineHeight + 8 + s.composerBarHeight + aiComposerTarget
 	if limit := panel.rect.Height * 0.6; limit > height {
 		height = min(max(height, ai.composerHeight), limit)
 	}
 	return height
+}
+
+// aiComposerRowMinWidth accounts for the chips' minimum sizes, fixed buttons,
+// padding and gaps. Extra options move above the action row when it cannot fit.
+func (state *State) aiComposerRowMinWidth(canvas *gfx.Canvas) float32 {
+	ai, m := &state.ai, state.messages.AIPanel
+	_, hasModel := state.aiModelText()
+	_, _, hasReasoning := state.aiCurrentModelReasoning()
+	if !hasModel || !hasReasoning && ai.mode == agent.ModeAsk {
+		return 0
+	}
+	mode := m.ModeAsk
+	if ai.mode != agent.ModeAsk {
+		mode = m.ModeAgent
+	}
+	width := float32(24+3*5+20) + 2*aiSendSize + canvas.TextWidthWeight(mode, metrics.FontSizeS, gfx.WeightMedium)
+	width += 56 + 5 // model chip
+	if hasReasoning {
+		width += 50 + 5
+	}
+	if ai.mode == agent.ModeAgent {
+		width += aiSendSize + 5 // upload
+		width += 52 + 5 + canvas.TextWidthWeight(state.aiScopeName(state.aiAutoUpTo()), metrics.FontSizeS, gfx.WeightMedium)
+	}
+	return width
 }
 
 // aiByteOffset is the byte offset of the n-th character of value.
@@ -123,21 +154,33 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 
 // declareAIComposerRow declares the row along the bottom of the message box:
 // the mode, the model and the other chips at the left, attach, upload and Send
-// at the right.
+// at the right. Extra options sit above it when the panel is narrow.
 func (state *State) declareAIComposerRow(c ui.C, body *aiBody) {
 	ai := &state.ai
 	running := ai.run != nil
 	_, hasModel := state.aiModelText()
 	disabled := !running && (!state.aiCanSend() || !hasModel)
 	_, _, hasReasoning := state.aiCurrentModelReasoning()
-	ui.Row(c).Height(aiSendSize+8).PadSides(0, 12, 6, 12).Gap(5).Items(ui.Center).Children(func() {
-		state.declareAIModePill(c)
-		if hasModel {
-			body.modelChip = state.declareAIModelChip(c)
+	wrap := ai.panel.pageScratch.wrapComposerOptions
+	if wrap {
+		ui.Row(c).Height(aiSendSize+4).PadSides(0, 12, 8, 12).Gap(5).Items(ui.Center).Children(func() {
 			if hasReasoning {
 				body.reasoningChip = state.declareAIReasoningChip(c)
 			}
 			if ai.mode == agent.ModeAgent {
+				body.scopeChip = state.declareAIAutoScopeChip(c, running || len(ai.approvals) > 0)
+			}
+			ui.Spacer(c)
+		})
+	}
+	ui.Row(c).Height(aiSendSize+8).PadSides(0, 12, 6, 12).Gap(5).Items(ui.Center).Children(func() {
+		state.declareAIModePill(c)
+		if hasModel {
+			body.modelChip = state.declareAIModelChip(c)
+			if hasReasoning && !wrap {
+				body.reasoningChip = state.declareAIReasoningChip(c)
+			}
+			if ai.mode == agent.ModeAgent && !wrap {
 				body.scopeChip = state.declareAIAutoScopeChip(c, running || len(ai.approvals) > 0)
 			}
 		}
@@ -203,7 +246,7 @@ func (state *State) paintAIComposerTextarea(d *ui.DrawContext) {
 	snapshot := components.TextareaSnapshot{
 		ID: hitAIInput, Label: m.InputLabel, Value: value, Placeholder: placeholder,
 		Focused: focused, HideEditorText: true, ShowCaret: selection.Start == selection.End,
-		Layout: &panel.inputLayout, InsetTop: aiComposerTarget, InsetBottom: aiComposerBar - 8,
+		Layout: &panel.inputLayout, InsetTop: aiComposerTarget, InsetBottom: panel.pageScratch.composerBarHeight - 8,
 		SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End),
 		Caret: aiByteOffset(value, ai.input.Caret()),
 	}
