@@ -34,6 +34,7 @@ export type DownloadContent = {
   title: string;
   description: string;
   platformLabels: Record<Platform, string>;
+  requirement: string;
   sourceNote: string;
   sourceLabel: string;
   install: string;
@@ -83,6 +84,7 @@ export const download: Record<'en' | 'zh', DownloadContent> = {
     description:
       'Packages for macOS, Windows and Linux, served from Cloudflare R2. GitHub Releases stays the source of record.',
     platformLabels: { macos: 'macOS', windows: 'Windows', linux: 'Linux' },
+    requirement: 'Windows packages need Windows 10 or Windows Server 2016 or later.',
     sourceNote: 'The release, its notes and its checksums live on',
     sourceLabel: 'GitHub Releases',
     install: 'Installation notes',
@@ -91,6 +93,7 @@ export const download: Record<'en' | 'zh', DownloadContent> = {
     title: '下载 Motty',
     description: 'macOS、Windows 和 Linux 安装包，由 Cloudflare R2 提供下载。GitHub Releases 仍是源头。',
     platformLabels: { macos: 'macOS', windows: 'Windows', linux: 'Linux' },
+    requirement: 'Windows 安装包需要 Windows 10 或 Windows Server 2016 及更高版本。',
     sourceNote: '版本本身、更新说明和校验文件都在',
     sourceLabel: 'GitHub Releases',
     install: '安装说明',

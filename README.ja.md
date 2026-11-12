@@ -98,6 +98,8 @@ Motty はデスクトップの SSH クライアントです。ターミナル、
 | Windows (amd64, arm64) | `.exe` インストーラー、ポータブル版 `.zip`（データは `motty.exe` の隣の `motty-data` に保存） |
 | Linux (amd64, arm64) | `.deb`、`.tar.gz` |
 
+Windows 版は Windows 10 または Windows Server 2016 以降が必要です。
+
 macOS のビルドは、リリースに認証情報がある場合に署名と公証が行われます。
 Windows のビルドは、証明書が設定されている場合に署名されます。Linux のパッケージは
 署名されていません。AUR と `.AppImage` はまだ提供していません。

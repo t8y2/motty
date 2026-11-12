@@ -97,6 +97,8 @@ Download the package for your platform from the
 | Windows (amd64, arm64) | `.exe` installer, portable `.zip` (data kept in `motty-data` beside `motty.exe`) |
 | Linux (amd64, arm64) | `.deb`, `.tar.gz` |
 
+Windows packages require Windows 10 or Windows Server 2016 or later.
+
 macOS builds are signed and notarized when the release has the credentials.
 Windows builds are signed when a certificate is configured. Linux packages are
 not signed. AUR and `.AppImage` are not available yet.

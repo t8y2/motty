@@ -91,6 +91,8 @@ RDP 目前做不到什么，发布说明也会写清楚哪些平台在真实硬�
 | Windows（amd64、arm64） | 安装程序、便携版 zip（数据保存在 `motty.exe` 旁的 `motty-data`） |
 | Linux（amd64、arm64） | `.deb`、`.tar.gz` |
 
+Windows 安装包需要 Windows 10 或 Windows Server 2016 及更高版本。
+
 macOS 包在发布带证书时签名并公证，Windows 包在配置证书时签名；Linux 包不签名。
 AUR 和 `.AppImage` 暂不提供。
 
