@@ -49,6 +49,8 @@ func aiPanelScope() gfx.Scope {
 // its body, so the body's view reads the values instead of measuring them again.
 type aiPanelPageScratch struct {
 	boxHeight, setupWidth    float32
+	composerBarHeight        float32
+	wrapComposerOptions      bool
 	showSetup                bool
 	setupLabel, setupSummary string
 }
