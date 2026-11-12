@@ -643,6 +643,22 @@ func TestProxyBatchComboboxDetailSearch(t *testing.T) {
 	if state.proxyBatch.jumpOpen {
 		t.Fatalf("combobox should close after selection")
 	}
+
+	// 3. 验证选中后输入框绘制了选中的主机名以及 IP 地址 (Detail)
+	canvas.Reset()
+	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
+	foundLabel, foundDetail := false, false
+	for _, text := range canvas.Texts() {
+		if text.Value == jump2.Label {
+			foundLabel = true
+		}
+		if text.Value == jump2.Address {
+			foundDetail = true
+		}
+	}
+	if !foundLabel || !foundDetail {
+		t.Fatalf("expected selected jump host label and detail to be painted: foundLabel=%v, foundDetail=%v", foundLabel, foundDetail)
+	}
 }
 
 func TestProxyBatchComboboxInputClickAndHover(t *testing.T) {

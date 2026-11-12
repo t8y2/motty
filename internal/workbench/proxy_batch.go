@@ -419,10 +419,6 @@ func (state *State) paintProxyBatchJumpSelect(canvas *gfx.Canvas, bounds gfx.Rec
 	}
 
 	queryStr := dialog.jumpQuery.String()
-	displayVal := selectedLabel
-	if dialog.jumpOpen && queryStr != "" {
-		displayVal = queryStr
-	}
 
 	if dialog.jumpOpen && dialog.jumpFocusInput {
 		canvas.RequestFocus(hitProxyBatchJumpInput)
@@ -433,7 +429,7 @@ func (state *State) paintProxyBatchJumpSelect(canvas *gfx.Canvas, bounds gfx.Rec
 		InputID:         hitProxyBatchJumpInput,
 		TriggerID:       hitProxyBatchJumpTrigger,
 		Label:           messages.ProxyFieldJump,
-		Value:           displayVal,
+		Value:           selectedLabel,
 		Detail:          selectedDetail,
 		Query:           queryStr,
 		Placeholder:     messages.HostPickerSearch,
