@@ -205,96 +205,132 @@ func verifyTestAuthenticate(auth, negotiate, challenge []byte, certificate tls.C
 	return exported, nil
 }
 
+// serveCredSSPHandshake is the server peer for the token-format tests. The
+// client must advertise clientVersion in every TSRequest; peerVersion, the
+// version the server reports, selects the public-key binding format.
+func serveCredSSPHandshake(conn *tls.Conn, certificate tls.Certificate, raw bool, clientVersion, peerVersion int) error {
+	first, err := readTSRequest(conn)
+	if err != nil || len(first.NegoTokens) != 1 || len(first.AuthInfo) != 0 {
+		return errors.New("missing initial negotiate token or premature credentials")
+	}
+	if first.Version != clientVersion {
+		return fmt.Errorf("first TSRequest version = %d, want the client's own %d", first.Version, clientVersion)
+	}
+	negotiate, mechanisms, err := testNegotiateToken(first.NegoTokens[0].Data, raw)
+	if err != nil {
+		return err
+	}
+	challenge := credSSPTestChallenge()
+	if err := sendTSRequest(conn, &tsRequest{Version: peerVersion, NegoTokens: []negoToken{{Data: testChallengeToken(challenge, raw)}}}); err != nil {
+		return err
+	}
+	auth, err := readTSRequest(conn)
+	if err != nil || len(auth.NegoTokens) != 1 {
+		return errors.New("missing Authenticate token")
+	}
+	// A version lowered to the server's here is what Windows 7 answers with a
+	// TLS internal_error instead of its public-key echo.
+	if auth.Version != clientVersion {
+		return fmt.Errorf("Authenticate TSRequest version = %d, want the client's own %d", auth.Version, clientVersion)
+	}
+	message, mechanismMIC, err := testAuthenticateToken(auth.NegoTokens[0].Data, raw)
+	if err != nil {
+		return err
+	}
+	key, err := verifyTestAuthenticate(message, negotiate, challenge, certificate)
+	if err != nil {
+		return err
+	}
+	seal := newNTLMSeal(key, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if raw {
+		if len(mechanismMIC) != 0 || len(auth.PubKeyAuth) < 16 || binary.LittleEndian.Uint32(auth.PubKeyAuth[12:16]) != 0 {
+			return errors.New("raw NTLM consumed a SPNEGO MIC sequence number")
+		}
+	} else {
+		expected := seal.makeSignature(mechanisms)
+		if !hmac.Equal(expected[:], mechanismMIC) {
+			return errors.New("SPNEGO mechanism-list MIC was lost")
+		}
+		seal.seqNumServer++
+		seal.resetCipherState(key)
+	}
+	// Turn the client-side sealing helper into the server peer.
+	seal.clientSignKey, seal.serverSignKey = seal.serverSignKey, seal.clientSignKey
+	seal.clientSeal, seal.serverSeal = seal.serverSeal, seal.clientSeal
+	publicKey, err := extractSubjectPublicKey(certificate.Leaf.RawSubjectPublicKeyInfo)
+	if err != nil {
+		return err
+	}
+	clientBinding := publicKey
+	serverBinding := bytes.Clone(publicKey)
+	serverBinding[0]++
+	if peerVersion >= 5 {
+		if len(auth.ClientNonce) != 32 {
+			return errors.New("missing CredSSP nonce")
+		}
+		clientHash := sha256.Sum256(append(append([]byte("CredSSP Client-To-Server Binding Hash\x00"), auth.ClientNonce...), publicKey...))
+		serverHash := sha256.Sum256(append(append([]byte("CredSSP Server-To-Client Binding Hash\x00"), auth.ClientNonce...), publicKey...))
+		clientBinding, serverBinding = clientHash[:], serverHash[:]
+	}
+	plain, err := seal.unseal(auth.PubKeyAuth)
+	if err != nil || !bytes.Equal(plain, clientBinding) {
+		return fmt.Errorf("invalid client public-key binding: %v", err)
+	}
+	if err := sendTSRequest(conn, &tsRequest{Version: peerVersion, PubKeyAuth: seal.seal(serverBinding)}); err != nil {
+		return err
+	}
+	last, err := readTSRequest(conn)
+	if err != nil {
+		return err
+	}
+	if last.Version != clientVersion {
+		return fmt.Errorf("credentials TSRequest version = %d, want the client's own %d", last.Version, clientVersion)
+	}
+	plain, err = seal.unseal(last.AuthInfo)
+	if err != nil {
+		return err
+	}
+	var credentials tsCredentials
+	if _, err := asn1.Unmarshal(plain, &credentials); err != nil || credentials.CredType != 1 {
+		return errors.New("invalid sealed credentials")
+	}
+	var password tsPasswordCreds
+	if _, err := asn1.Unmarshal(credentials.Credentials, &password); err != nil || !bytes.Equal(password.Password, encodeUTF16LE("Password")) || !bytes.Equal(password.UserName, encodeUTF16LE("User")) || !bytes.Equal(password.DomainName, encodeUTF16LE("Domain")) {
+		return errors.New("wrong sealed credential values")
+	}
+	return nil
+}
+
 func TestCredSSPHandshakeTokenFormats(t *testing.T) {
 	for _, raw := range []bool{false, true} {
 		for _, version := range []int{3, 6} {
 			t.Run(fmt.Sprintf("raw=%t/version=%d", raw, version), func(t *testing.T) {
 				err := runCredSSPHandshake(t, raw, version, func(conn *tls.Conn, certificate tls.Certificate) error {
-					first, err := readTSRequest(conn)
-					if err != nil || len(first.NegoTokens) != 1 || len(first.AuthInfo) != 0 {
-						return errors.New("missing initial negotiate token or premature credentials")
-					}
-					negotiate, mechanisms, err := testNegotiateToken(first.NegoTokens[0].Data, raw)
-					if err != nil {
-						return err
-					}
-					challenge := credSSPTestChallenge()
-					if err := sendTSRequest(conn, &tsRequest{Version: version, NegoTokens: []negoToken{{Data: testChallengeToken(challenge, raw)}}}); err != nil {
-						return err
-					}
-					auth, err := readTSRequest(conn)
-					if err != nil || len(auth.NegoTokens) != 1 {
-						return errors.New("missing Authenticate token")
-					}
-					message, mechanismMIC, err := testAuthenticateToken(auth.NegoTokens[0].Data, raw)
-					if err != nil {
-						return err
-					}
-					key, err := verifyTestAuthenticate(message, negotiate, challenge, certificate)
-					if err != nil {
-						return err
-					}
-					seal := newNTLMSeal(key, slog.New(slog.NewTextHandler(io.Discard, nil)))
-					if raw {
-						if len(mechanismMIC) != 0 || len(auth.PubKeyAuth) < 16 || binary.LittleEndian.Uint32(auth.PubKeyAuth[12:16]) != 0 {
-							return errors.New("raw NTLM consumed a SPNEGO MIC sequence number")
-						}
-					} else {
-						expected := seal.makeSignature(mechanisms)
-						if !hmac.Equal(expected[:], mechanismMIC) {
-							return errors.New("SPNEGO mechanism-list MIC was lost")
-						}
-						seal.seqNumServer++
-						seal.resetCipherState(key)
-					}
-					// Turn the client-side sealing helper into the server peer.
-					seal.clientSignKey, seal.serverSignKey = seal.serverSignKey, seal.clientSignKey
-					seal.clientSeal, seal.serverSeal = seal.serverSeal, seal.clientSeal
-					publicKey, err := extractSubjectPublicKey(certificate.Leaf.RawSubjectPublicKeyInfo)
-					if err != nil {
-						return err
-					}
-					clientBinding := publicKey
-					serverBinding := bytes.Clone(publicKey)
-					serverBinding[0]++
-					if version >= 5 {
-						if len(auth.ClientNonce) != 32 {
-							return errors.New("missing CredSSP nonce")
-						}
-						clientHash := sha256.Sum256(append(append([]byte("CredSSP Client-To-Server Binding Hash\x00"), auth.ClientNonce...), publicKey...))
-						serverHash := sha256.Sum256(append(append([]byte("CredSSP Server-To-Client Binding Hash\x00"), auth.ClientNonce...), publicKey...))
-						clientBinding, serverBinding = clientHash[:], serverHash[:]
-					}
-					plain, err := seal.unseal(auth.PubKeyAuth)
-					if err != nil || !bytes.Equal(plain, clientBinding) {
-						return fmt.Errorf("invalid client public-key binding: %v", err)
-					}
-					if err := sendTSRequest(conn, &tsRequest{Version: version, PubKeyAuth: seal.seal(serverBinding)}); err != nil {
-						return err
-					}
-					last, err := readTSRequest(conn)
-					if err != nil {
-						return err
-					}
-					plain, err = seal.unseal(last.AuthInfo)
-					if err != nil {
-						return err
-					}
-					var credentials tsCredentials
-					if _, err := asn1.Unmarshal(plain, &credentials); err != nil || credentials.CredType != 1 {
-						return errors.New("invalid sealed credentials")
-					}
-					var password tsPasswordCreds
-					if _, err := asn1.Unmarshal(credentials.Credentials, &password); err != nil || !bytes.Equal(password.Password, encodeUTF16LE("Password")) || !bytes.Equal(password.UserName, encodeUTF16LE("User")) || !bytes.Equal(password.DomainName, encodeUTF16LE("Domain")) {
-						return errors.New("wrong sealed credential values")
-					}
-					return nil
+					return serveCredSSPHandshake(conn, certificate, raw, version, version)
 				})
 				if err != nil {
 					t.Fatal(err)
 				}
 			})
 		}
+	}
+}
+
+// A server that supports an older CredSSP version (patched Windows 7 and
+// Server 2008 R2 report 5, unpatched ones 2) still expects the version the
+// client advertised in its first TSRequest. Answering with the server's lower
+// version made those servers tear down TLS with internal_error right after the
+// Authenticate message; only the public-key binding follows the lower version.
+func TestClientVersionStaysWhenPeerSupportsOlderCredSSP(t *testing.T) {
+	for _, peerVersion := range []int{2, 3, 5} {
+		t.Run(fmt.Sprintf("peer=%d", peerVersion), func(t *testing.T) {
+			err := runCredSSPHandshake(t, false, MaxCredSSPVersion, func(conn *tls.Conn, certificate tls.Certificate) error {
+				return serveCredSSPHandshake(conn, certificate, false, MaxCredSSPVersion, peerVersion)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

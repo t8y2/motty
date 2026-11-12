@@ -43,6 +43,11 @@ Changed:
   SPNEGO mechanism-list MIC sequence numbers. Failures after an Authenticate
   write stop probing and TLS-only fallback; protocol errors remain distinct
   from credential refusals so the UI does not discard a saved password for them.
+* CredSSP keeps the client's own supported version in every TSRequest and uses
+  the server's lower version only to pick the public-key binding. Echoing the
+  server's version back made every target older than Windows 10 abort the TLS
+  session (internal_error) right after the Authenticate message; patched
+  Windows 7 and Server 2008 R2 report version 5 and expect the client's own.
 * Extended scancodes (`0xE0xx`) set the extended flag. `ReadRectBGRA` and
   `SetOutputSuppressed` were added. The receive loop recovers from a panic in a
   decoder and ends the connection.

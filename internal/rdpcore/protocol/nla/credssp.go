@@ -198,7 +198,13 @@ func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 		}
 	}
 
-	// Negotiate CredSSP version: use minimum of client and server versions (MS-CSSP 3.1.5)
+	// The version field of a TSRequest states the version its sender supports
+	// (MS-CSSP 2.2.1), so every message keeps advertiseVersion. The server's
+	// version only selects the public-key binding below: Windows peers reject a
+	// client that lowers the version it advertised in the first TSRequest, and
+	// answer with a bare TLS internal_error after the Authenticate message.
+	// Patched Windows 7/Server 2008 R2 report 5 and unpatched ones 2, so echoing
+	// the server's version here broke every pre-Windows 10 target.
 	negotiatedVersion := advertiseVersion
 	if resp1.Version > 0 && resp1.Version < negotiatedVersion {
 		negotiatedVersion = resp1.Version
@@ -261,7 +267,7 @@ func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 	}
 
 	req2 := &tsRequest{
-		Version:    negotiatedVersion,
+		Version:    advertiseVersion,
 		NegoTokens: []negoToken{{Data: authToken}},
 		PubKeyAuth: pubKeyAuth,
 	}
@@ -346,7 +352,7 @@ func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 	authInfo := seal.seal(credsBytes)
 
 	req3 := &tsRequest{
-		Version:  negotiatedVersion,
+		Version:  advertiseVersion,
 		AuthInfo: authInfo,
 	}
 	log.LogAttrs(ctx, slog.LevelDebug, "sending sealed credentials", slog.Int("authInfoBytes", len(authInfo)))
