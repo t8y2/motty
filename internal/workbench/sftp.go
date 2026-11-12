@@ -1285,26 +1285,7 @@ func (state *State) ensureSFTPDownloadDirectory(view *sftpView) (string, bool) {
 	if directory == "" {
 		return "", false
 	}
-	if !validSFTPDownloadDirectory(directory) {
-		state.fileOpenNotice(
-			view.detached,
-			state.messages.Tools.FilesDownloadDirectory,
-			fmt.Sprintf(state.messages.Tools.FilesDownloadDirectoryUnavailableFmt, directory),
-			components.ToastWarning,
-		)
-		return "", false
-	}
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		state.fileOpenNotice(
-			view.detached,
-			state.messages.Tools.FilesDownloadDirectory,
-			fmt.Sprintf(state.messages.Tools.FilesDownloadDirectoryUnavailableFmt, directory),
-			components.ToastWarning,
-		)
-		return "", false
-	}
-	info, err := os.Stat(directory)
-	if err != nil || !info.IsDir() {
+	if !validSFTPDownloadDirectory(directory) || prepareDownloadDirectory(directory) != nil {
 		state.fileOpenNotice(
 			view.detached,
 			state.messages.Tools.FilesDownloadDirectory,

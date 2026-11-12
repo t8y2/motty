@@ -1893,7 +1893,7 @@ var englishTools = ToolsMessages{
 	TransferDecline:           "Decline",
 	TransferChooseFiles:       "Choose files",
 	TransferChooseFolder:      "Choose folder",
-	TransferToDownloads:       "Save to Downloads",
+	TransferToFolderFmt:       "Save to “%s”",
 
 	CatFiles:                      "Files",
 	FilesParallel:                 "Parallel transfers",

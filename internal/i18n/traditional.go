@@ -1893,7 +1893,7 @@ var traditionalTools = ToolsMessages{
 	TransferDecline:           "拒絕",
 	TransferChooseFiles:       "選擇檔案",
 	TransferChooseFolder:      "選擇資料夾",
-	TransferToDownloads:       "儲存到「下載」",
+	TransferToFolderFmt:       "儲存到「%s」",
 
 	CatFiles:                      "檔案",
 	FilesParallel:                 "並行傳輸數",

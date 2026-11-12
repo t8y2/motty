@@ -78,7 +78,7 @@ func (state *State) newSFTPWindow(source *Session) *sftpWindow {
 	w.view.selected, w.view.lfolder.selected = -1, -1
 	w.session = Session{ID: source.ID, HostID: source.HostID, Title: source.Title, Address: source.Address, host: source.host, conn: source.conn, phase: source.phase, files: w.view}
 	w.ui.fraction = .5
-	w.initialLocal = localStart()
+	w.initialLocal = state.localSideStart()
 	if source.files != nil {
 		w.initialRemote = source.files.path
 		if source.files.lfolder.path != "" {

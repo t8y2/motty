@@ -33,6 +33,16 @@ func openLocalPane(t *testing.T, state *State, session *Session, dir string) *sf
 	return view
 }
 
+func TestLocalPaneOpensInTheConfiguredDownloadFolder(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	destination := t.TempDir()
+	state.sftpDownloadDirectory = destination
+	state.Click(hitSFTPPaneToggle)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return view.local && view.lfolder.path == destination
+	})
+}
+
 func TestLocalPaneListsThisComputerFoldersFirstAndKeepsTheServersListing(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	dir := localFixture(t)

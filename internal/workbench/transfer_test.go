@@ -108,6 +108,33 @@ func TestAnIncomingTransferIsOfferedAndNothingIsSavedUntilTheUserChooses(t *test
 	_ = session
 }
 
+func TestAnIncomingTransferQuickSaveUsesTheConfiguredDownloadFolder(t *testing.T) {
+	state, _, shell := transferState(t)
+	destination := filepath.Join(t.TempDir(), "ssh-inbox")
+	state.sftpDownloadDirectory = destination
+	payload := "into the setting"
+	sender := zmodem.NewSender([]zmodem.SendFile{
+		{Name: "from-server.txt", Size: int64(len(payload)), Source: strings.NewReader(payload), Mode: 0o644},
+	}, zmodem.SendOptions{})
+	shell.onWrite = func(p []byte) {
+		sender.Feed(p)
+		shell.say(string(sender.TakeOutput(nil)))
+	}
+	shell.say(zrqinit)
+	waitUntil(t, state, "the offer", func() bool { return state.modal == modalFileTransfer })
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if _, ok := hitByID(&canvas, hitTransferDownloads); !ok {
+		t.Fatal("the offer has no way to save into the configured download folder")
+	}
+	state.Click(hitTransferDownloads)
+	waitUntil(t, state, "the transfer to end", func() bool { return state.transfer.phase == transferNone })
+	got, err := os.ReadFile(filepath.Join(destination, "from-server.txt"))
+	if err != nil || string(got) != payload {
+		t.Fatalf("received file = %q, %v", got, err)
+	}
+}
+
 func TestAReceivedFileNeverReplacesAnExistingOne(t *testing.T) {
 	state, _, shell := transferState(t)
 	dir := t.TempDir()

@@ -1893,7 +1893,7 @@ var chineseTools = ToolsMessages{
 	TransferDecline:           "拒绝",
 	TransferChooseFiles:       "选择文件",
 	TransferChooseFolder:      "选择文件夹",
-	TransferToDownloads:       "保存到“下载”",
+	TransferToFolderFmt:       "保存到“%s”",
 
 	CatFiles:                      "文件",
 	FilesParallel:                 "并行传输数",

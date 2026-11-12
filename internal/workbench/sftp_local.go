@@ -34,8 +34,22 @@ const maxLocalEntries = 20000
 // pays tens of milliseconds in stat calls, sorting and row preparation.
 const localListingInlineEntries = 512
 
-// localStart is where the local side opens: Downloads if there is one, else home.
-func localStart() string {
+// localSideStart is where the local side opens: the download folder the
+// settings name, when it is set and on disk, so the folder holding received
+// files is the one on show. Without a usable setting it is the system Downloads
+// folder, then home.
+func (state *State) localSideStart() string {
+	if directory := state.sftpDownloadDirectory; validSFTPDownloadDirectory(directory) {
+		if info, err := os.Stat(directory); err == nil && info.IsDir() {
+			return filepath.Clean(directory)
+		}
+	}
+	return localDefaultStart()
+}
+
+// localDefaultStart is where a local side opens when no configured download
+// folder applies: Downloads if there is one, else home.
+func localDefaultStart() string {
 	if dir := downloadsDirectory(); dir != "" {
 		return dir
 	}
@@ -53,7 +67,7 @@ func localHome() string {
 	if home, err := os.UserHomeDir(); err == nil {
 		return home
 	}
-	return localStart()
+	return localDefaultStart()
 }
 
 // localPanelStart is the folder a local terminal's panel opens in: the one its
@@ -96,7 +110,7 @@ func (state *State) toggleSFTPPane(view *sftpView) {
 		}
 	}
 	if dir == "" {
-		dir = localStart()
+		dir = state.localSideStart()
 	}
 	state.listLocal(view, dir)
 }
