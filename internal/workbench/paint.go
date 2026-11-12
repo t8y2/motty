@@ -522,6 +522,31 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 		// The move picker and its backdrop own the wheel over the host list.
 		return state.Scroll(event)
 	}
+	// 模态弹窗中的浮动下拉选择框拥有最顶层视觉层级，滚轮事件必须优先处理，
+	// 避免穿透并触发底层页面或弹窗内的 ui.Scroll 列表。
+	if state.modal == modalProxyBatchAssociate && state.proxyBatch.jumpOpen {
+		if result := state.scrollProxyBatchDialog(event); result.Handled {
+			return result
+		}
+	}
+	if state.modal == modalNewProxy && (state.proxyEditor.targetSelect.Open || state.proxyEditor.jumpSelect.Open) {
+		if result := state.scrollProxyDialog(event); result.Handled {
+			return result
+		}
+	}
+	if state.modal == modalNewForward && state.forwardEditor.hostSelect.Open {
+		if result := state.scrollForwardDialog(event); result.Handled {
+			return result
+		}
+	}
+	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
+		p := &state.editor.groupPicker
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
+	}
+	if state.modal == modalNewHost && state.editor.tagPicker.control.Open {
+		p := &state.editor.tagPicker
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
+	}
 	if state.aiMenuShown() {
 		// An open chip menu is the page's popup and owns the wheel; its own
 		// scroll route (and its backdrop) decide where the event goes.
@@ -2803,6 +2828,12 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareForwardDialog(c)
 	case modalNewProxy:
 		state.declareProxyDialog(c)
+	case modalProxyBatchAssociate:
+		state.declareProxyBatchDialog(c)
+	case modalProxyDeleteConfirm:
+		state.declareProxyDeleteConfirmDialog(c)
+	case modalProxyBatchDeleteConfirm:
+		state.declareProxyBatchDeleteConfirmDialog(c)
 	case modalXYTransfer:
 		state.declareXYDialog(c)
 	case modalSnippet:
