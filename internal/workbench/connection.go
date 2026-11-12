@@ -620,6 +620,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		return
 	}
 	config, valid := state.sshConfigFor(session, host)
+	session.sshOptions = host.SSHOptions.Clone()
 	if valid && state.shareConnections == shareConnectionsOn && !avoidShare {
 		if shared, _ := state.shareFrom(session, host); shared != nil {
 			session.conn, session.shared = shared, true
@@ -673,7 +674,7 @@ func (state *State) shareFrom(session *Session, host Host) (Connection, *Session
 		// The saved host may have been edited since this transport was opened.
 		// Compare its dialed account/address, not the next connection's settings.
 		if other.ID == session.ID || other.conn == nil || other.Address != address ||
-			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute {
+			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute || !other.sshOptions.Equal(session.sshOptions) {
 			continue
 		}
 		lender, ok := other.conn.(sharer)

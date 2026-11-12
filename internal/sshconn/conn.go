@@ -100,7 +100,8 @@ type Authentication struct {
 	// default identities when IdentityFiles is nil.
 	AdditionalIdentityFiles []string
 	// Agent controls whether the running ssh-agent is offered.
-	Agent bool
+	Agent          bool
+	IdentitiesOnly bool
 }
 
 // StoredKeyPrefix starts the name of a private key that is not a file but is
@@ -199,7 +200,8 @@ type KeepAliveConfig struct {
 	// keepalive; zero disables it.
 	Interval time.Duration
 	// Timeout bounds each probe response. It must be positive when Interval is.
-	Timeout time.Duration
+	Timeout  time.Duration
+	CountMax *int
 }
 
 // Config describes one connection attempt.
@@ -249,7 +251,8 @@ type Config struct {
 	// hosts. Zero disables the timeout.
 	DialTimeout time.Duration
 	// KeepAlive optionally detects an unresponsive established connection.
-	KeepAlive KeepAliveConfig
+	KeepAlive         KeepAliveConfig
+	EndpointKeepAlive map[Endpoint]KeepAliveConfig
 	// InteractiveOnly keeps the connection to the interactive session alone:
 	// the client asks for the pty and the shell, and for nothing else. A
 	// gateway that permits only an interactive login ends the whole connection
@@ -540,6 +543,11 @@ func (conn *Conn) run() {
 	}
 	if conn.ctx.Err() != nil && !errors.Is(err, ErrHostKeyChanged) {
 		err = ErrCanceled
+		conn.mu.Lock()
+		if conn.disconnectErr != nil {
+			err = conn.disconnectErr
+		}
+		conn.mu.Unlock()
 	}
 	conn.update(func(status *Status) {
 		status.Phase = PhaseFailed
@@ -706,6 +714,12 @@ func (conn *Conn) beginEndpoint(endpoint Endpoint, role EndpointRole) {
 }
 
 func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys) (*ssh.Client, string, error) {
+	keepAlive := conn.keepAliveFor(endpoint)
+	var monitored *aliveSocket
+	if keepAlive.Interval > 0 && keepAlive.CountMax != nil {
+		monitored = &aliveSocket{Conn: socket, received: make(chan struct{}, 1)}
+		socket = monitored
+	}
 	address := endpoint.address()
 	wanted := conn.config.Algorithms[address]
 	authentication := conn.authentication(endpoint)
@@ -737,7 +751,11 @@ func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys)
 	if negotiated, ok := negotiatedFrom(sshConn); ok {
 		conn.update(func(status *Status) { status.Negotiated = negotiated })
 	}
-	return ssh.NewClient(sshConn, channels, requests), string(sshConn.ServerVersion()), nil
+	client := ssh.NewClient(sshConn, channels, requests)
+	if monitored != nil {
+		conn.startCountKeepAlive(client, monitored, keepAlive)
+	}
+	return client, string(sshConn.ServerVersion()), nil
 }
 
 func (conn *Conn) authentication(endpoint Endpoint) Authentication {

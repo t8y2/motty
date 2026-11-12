@@ -226,6 +226,11 @@ in a portable copy).
 Electerm and Netcatty imports can save readable SSH passwords with explicit
 consent; re-import only fills missing passwords.
 
+OpenSSH config import and sync retain per-host `ServerAliveInterval`,
+`ServerAliveCountMax`, `IdentitiesOnly` and configured identity files. An explicit
+zero interval disables keepalive for that host; restricted identities still use
+matching keys from the SSH agent, without offering unrelated agent keys.
+
 ### Files
 
 SFTP browsing with multi-select, recursive upload/download, a bounded transfer

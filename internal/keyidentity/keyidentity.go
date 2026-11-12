@@ -54,6 +54,27 @@ func Inspect(path string) (Info, error) {
 	return info, nil
 }
 
+func PublicKey(path string) (ssh.PublicKey, error) {
+	for _, candidate := range []string{path + ".pub", path} {
+		absolute, data, _, err := read(candidate)
+		if err != nil {
+			continue
+		}
+		public, _, _, _, err := ssh.ParseAuthorizedKey(data)
+		if err == nil {
+			return public, nil
+		}
+		if candidate == path {
+			info, err := InspectData(absolute, data)
+			if err == nil && info.PublicKey != "" {
+				public, _, _, _, err := ssh.ParseAuthorizedKey([]byte(info.PublicKey))
+				return public, err
+			}
+		}
+	}
+	return nil, fmt.Errorf("no readable public identity for %s", path)
+}
+
 // InspectData is Inspect for a key whose bytes are already in hand, such as one
 // kept in the vault. name stands where the path would: it becomes Path and,
 // as its last element, Name.

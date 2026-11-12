@@ -11,6 +11,7 @@ import (
 	"motty/internal/i18n"
 	"motty/internal/otp"
 	"motty/internal/serial"
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 )
 
@@ -59,6 +60,7 @@ type hostEditor struct {
 	algoMode     algoMode
 	auth         hostAuth
 	identity     string
+	sshOptions   *sshconfig.ConnectionOptions
 	authOpen     bool
 	identityOpen bool
 	// credential is the saved password the host takes its password from, and
@@ -263,6 +265,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode = host.algoMode()
 	editor.auth, editor.identity, editor.credential = host.Auth, host.Identity, host.Credential
+	editor.sshOptions = host.SSHOptions.Clone()
 	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11 = host.ForwardX11
 	editor.agentForward = host.AgentForward
@@ -317,6 +320,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.Console = editor.console
 	}
 	if editor.protocol == protocolSSH {
+		host.SSHOptions = editor.sshOptions.Clone()
 		host.Auth, host.Identity = editor.auth, editor.identity
 		if host.Auth != authPrivateKey {
 			host.Identity = ""
@@ -367,6 +371,7 @@ func (editor *hostEditor) reset() {
 	editor.loginCommand = text.Editor{}
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode, editor.auth, editor.identity, editor.credential = algoDefault, authAutomatic, "", ""
+	editor.sshOptions = nil
 	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11, editor.agentForward, editor.noHistory, editor.transfer = false, false, false, transferAuto
 	editor.agentAccess = false

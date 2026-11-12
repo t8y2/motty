@@ -189,6 +189,10 @@ WindTerm、Electerm、Netcatty 导入。TOTP/HOTP 种子可以存入保险库并
 进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里。
 Electerm 和 Netcatty 的明文 SSH 密码可在明确确认后导入；重新导入只补齐缺失密码。
 
+OpenSSH 配置导入和同步会保留每台主机的 `ServerAliveInterval`、
+`ServerAliveCountMax`、`IdentitiesOnly` 和指定的身份文件。显式设置间隔为 0
+会关闭该主机的保活；限制身份时仍可使用 SSH agent 中匹配的密钥，但不会尝试其他 agent 密钥。
+
 ### 文件不用另开应用
 
 SFTP 支持多选、递归上传/下载、受限传输队列、续传、取消/重试、重命名、删除、

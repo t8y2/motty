@@ -6,6 +6,7 @@ import (
 	"motty/internal/serial"
 	"motty/internal/sessionlog"
 	"motty/internal/sshbrowser"
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 )
 
@@ -33,8 +34,9 @@ type Host struct {
 	// Auth limits which credentials an SSH connection offers. Identity is the
 	// fingerprint of a specific imported private key when Auth is authPrivateKey;
 	// an empty value lets that mode try the default and imported keys.
-	Auth     hostAuth
-	Identity string
+	Auth       hostAuth
+	Identity   string
+	SSHOptions *sshconfig.ConnectionOptions
 	// Credential is the id of the saved password (see credentials.go) the host
 	// takes its password from; empty keeps the host's own. An id that no saved
 	// password has is treated as empty.
@@ -130,6 +132,7 @@ type Session struct {
 	// proxyRoute is the effective outbound proxy frozen when this connection
 	// was dialed. Editing the host updates host, but not the live transport.
 	proxyRoute   string
+	sshOptions   *sshconfig.ConnectionOptions
 	endpoint     sshconn.Endpoint
 	role         sshconn.EndpointRole
 	conn         Connection

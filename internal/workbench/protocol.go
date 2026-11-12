@@ -13,6 +13,7 @@ import (
 
 	"motty/internal/serial"
 	"motty/internal/sftpclient"
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 	"motty/internal/telnet"
 )
@@ -106,8 +107,9 @@ type savedTransport struct {
 	// Authentication is "password", "key" or "agent" when an SSH host does
 	// not use the automatic authentication order. Identity optionally selects
 	// one imported key fingerprint for the key policy.
-	Authentication string `json:"authentication,omitempty"`
-	Identity       string `json:"identity,omitempty"`
+	Authentication string                       `json:"authentication,omitempty"`
+	Identity       string                       `json:"identity,omitempty"`
+	SSHOptions     *sshconfig.ConnectionOptions `json:"ssh_options,omitempty"`
 	// Credential is the id of the saved password an SSH, VNC or RDP host takes
 	// its password from (see credentials.go).
 	Credential string `json:"credential,omitempty"`
@@ -166,6 +168,7 @@ func (host Host) transport() savedTransport {
 	mode, list := host.savedAlgo()
 	transport.Algorithms, transport.AlgorithmList = mode, list
 	transport.Authentication, transport.Identity = host.Auth.saved(), host.Identity
+	transport.SSHOptions = host.SSHOptions.Clone()
 	transport.ForwardX11, transport.AgentForward, transport.NoHistory, transport.Transfer = host.ForwardX11, host.AgentForward, host.NoHistory, host.savedTransfer()
 	transport.InteractiveOnly = host.InteractiveOnly
 	transport.LoginCommand = host.LoginCommand
@@ -181,6 +184,10 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 	switch transport.Protocol {
 	case "", "ssh":
 		host.Protocol = protocolSSH
+		if !transport.SSHOptions.Valid() {
+			return false
+		}
+		host.SSHOptions = transport.SSHOptions.Clone()
 		var ok bool
 		if host.Auth, ok = parseHostAuth(transport.Authentication); !ok {
 			return false

@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"motty/internal/i18n"
+	"motty/internal/keyidentity"
 	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 )
@@ -116,7 +117,15 @@ func (builder *hostImportBuilder) build(sources []sshconfig.Host) hostImportPlan
 		builder.addSourceHost(source)
 	}
 	for _, source := range sources {
-		builder.addIdentity(source.IdentityFile)
+		if source.Options != nil {
+			for _, path := range source.Options.IdentityFiles {
+				if path != "none" {
+					builder.addIdentity(path)
+				}
+			}
+		} else {
+			builder.addIdentity(source.IdentityFile)
+		}
 	}
 	for _, source := range sources {
 		if len(source.ProxyJump) != 0 {
@@ -141,9 +150,24 @@ func (builder *hostImportBuilder) addSourceHost(source sshconfig.Host) {
 		builder.plan.duplicateHosts++
 		return
 	}
+	builder.plan.hosts[len(builder.plan.hosts)-1].SSHOptions = importedSSHOptions(source.Options)
 	if source.ProxyCommand != "" {
 		builder.addProxyCommand(source)
 	}
+}
+
+func importedSSHOptions(source *sshconfig.ConnectionOptions) *sshconfig.ConnectionOptions {
+	options := source.Clone()
+	if options != nil {
+		for index, path := range options.IdentityFiles {
+			if path != "none" {
+				if absolute, err := filepath.Abs(path); err == nil {
+					options.IdentityFiles[index] = absolute
+				}
+			}
+		}
+	}
+	return options
 }
 
 // addProxyCommand gives the host just added the source's ProxyCommand as its
@@ -179,6 +203,9 @@ func (builder *hostImportBuilder) addIdentity(path string) {
 	}
 	record := inspectIdentity(builder.plan.nextIdentityID, absolute, builder.state.keyMessages())
 	if record.Error != "" {
+		if _, err := keyidentity.PublicKey(absolute); err == nil {
+			return
+		}
 		builder.warn(fmt.Sprintf(builder.state.messages.SSHConfigWarningIdentityFmt, filepath.Base(path), record.Error))
 		return
 	}
