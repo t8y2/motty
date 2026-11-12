@@ -123,6 +123,7 @@ type savedState struct {
 	SFTPDirectoryTree       bool                `json:"sftp_directory_tree,omitempty"`
 	SFTPPanelSide           string              `json:"sftp_panel_side,omitempty"`
 	SFTPPanelWidth          float32             `json:"sftp_panel_width,omitempty"`
+	BrowserPanelWidth       float32             `json:"browser_panel_width,omitempty"`
 	SFTPWindowOrder         string              `json:"sftp_window_order,omitempty"`
 	SFTPOpenMode            string              `json:"sftp_open_mode,omitempty"`
 	SFTPColumns             string              `json:"sftp_columns,omitempty"`
@@ -555,6 +556,7 @@ func (state *State) snapshot() savedState {
 		SFTPDirectoryTree:          state.sftpDirectoryTree,
 		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
 		SFTPPanelWidth:             state.sftpPanelWidth,
+		BrowserPanelWidth:          state.browserPanelWidth,
 		SFTPWindowOrder:            state.sftpWindowOrder.String(),
 		SFTPOpenMode:               state.sftpOpenMode.String(),
 		SFTPColumns:                state.sftpColumns.String(),
@@ -1045,6 +1047,9 @@ func (state *State) restoreLocal(saved savedState) {
 	}
 	if saved.SFTPPanelWidth >= layoutcore.MinContextWidth && saved.SFTPPanelWidth <= layoutcore.MaxContextWidth {
 		state.sftpPanelWidth = saved.SFTPPanelWidth
+	}
+	if saved.BrowserPanelWidth >= layoutcore.MinContextWidth && saved.BrowserPanelWidth <= layoutcore.MaxBrowserContextWidth {
+		state.browserPanelWidth = saved.BrowserPanelWidth
 	}
 	state.restoreIdentities(saved.IdentityFiles)
 	state.agentHosts = agentHostSet(saved.AgentHosts)

@@ -20,7 +20,7 @@ func sftpPanelSideString(side layoutcore.ContextSide) string {
 // A cold application restore deliberately starts from the configured defaults.
 func (state *State) initializeSFTPPanel(id layoutcore.WorkspaceID, restoring bool) {
 	context, ok := state.deck.Context(id)
-	if !ok || context.Kind != layoutcore.ContextNone && (!restoring || context.Kind != layoutcore.ContextSFTP) {
+	if !ok || context.Kind != layoutcore.ContextNone && (!restoring || context.Kind != layoutcore.ContextSFTP && context.Kind != layoutcore.ContextBrowser) {
 		return
 	}
 	pane, _ := state.deck.Pane(id, state.deck.ActivePane(id))
@@ -28,6 +28,9 @@ func (state *State) initializeSFTPPanel(id layoutcore.WorkspaceID, restoring boo
 	capable = capable && session.canBrowseFiles()
 	if !capable && context.Kind == layoutcore.ContextNone {
 		return // an empty tab can initialize when a file-capable host is bound
+	}
+	if context.Kind == layoutcore.ContextBrowser {
+		context.Width = state.sftpPanelWidth
 	}
 	context.Kind, context.Open, context.Side = layoutcore.ContextSFTP, capable && state.sftpPanelAutoOpen, state.sftpPanelSide
 	if !restoring {
@@ -75,8 +78,8 @@ func (state *State) toggleSFTPPanelSide() {
 func (state *State) sftpPanelResizable(canvas *gfx.Canvas, size gfx.Size, context layoutcore.ContextState) components.Resizable {
 	base := state.baseWorkspacePixelBounds(size)
 	width := state.contextPanelWidth(base, context)
-	minimum := state.contextPanelExtent(base, layoutcore.MinContextWidth)
-	maximum := state.contextPanelExtent(base, layoutcore.MaxContextWidth)
+	minimum := state.contextPanelExtent(base, context.Kind, layoutcore.MinContextWidth)
+	maximum := state.contextPanelExtent(base, context.Kind, layoutcore.MaxContextWidthFor(context.Kind))
 	base.Width -= state.aiReserve(state.deck.ActiveWorkspace(), size)
 	base.Width -= state.independentMonitorReserve(state.deck.ActiveWorkspace(), size)
 	if context.MonitorLeft {

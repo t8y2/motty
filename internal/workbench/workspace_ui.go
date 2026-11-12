@@ -84,14 +84,21 @@ func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, 
 	return bounds
 }
 
-func (state *State) contextPanelExtent(workspace gfx.Rect, preferred float32) float32 {
-	maximum := min(layoutcore.MaxContextWidth, workspace.Width*0.45)
+func (state *State) contextPanelExtent(workspace gfx.Rect, kind layoutcore.ContextKind, preferred float32) float32 {
+	maximum := contextPanelMaximum(workspace, kind)
 	minimum := min(layoutcore.MinContextWidth, maximum)
 	return min(max(preferred, minimum), maximum)
 }
 
+func contextPanelMaximum(workspace gfx.Rect, kind layoutcore.ContextKind) float32 {
+	if kind == layoutcore.ContextBrowser {
+		return min(layoutcore.MaxBrowserContextWidth, workspace.Width*2/3)
+	}
+	return min(layoutcore.MaxContextWidth, workspace.Width*0.45)
+}
+
 func (state *State) contextPanelWidth(workspace gfx.Rect, context layoutcore.ContextState) float32 {
-	return state.contextPanelExtent(workspace, context.Width)
+	return state.contextPanelExtent(workspace, context.Kind, context.Width)
 }
 
 func pixelBounds(frame gfx.Rect, bounds FractionBounds) gfx.Rect {
@@ -558,7 +565,32 @@ func (state *State) paintContextPanel(canvas *gfx.Canvas, size gfx.Size, workspa
 	if !ok || !context.Open || state.monitorDrawer(size) {
 		return
 	}
-	if context.Kind != layoutcore.ContextSFTP {
+	if context.Kind != layoutcore.ContextSFTP && context.Kind != layoutcore.ContextBrowser {
+		return
+	}
+	session := state.contextSession()
+	if context.Kind == layoutcore.ContextBrowser {
+		if session == nil || session.browser == nil || !session.browser.open {
+			return
+		}
+		if size.Width < contextDrawerAt {
+			drawer := components.BeginDrawer(canvas, state.Theme(), state.baseWorkspacePixelBounds(size), components.DrawerOptions{
+				Layer: drawerLayer, Scope: dialogScope, DismissID: hitHostBrowserClose, CloseID: hitHostBrowserClose,
+				Side: components.DrawerRight, ContentExtent: min(context.Width, size.Width*0.82),
+				InitialFocusID: hitHostBrowserClose,
+			})
+			layout := drawer.Begin(state.messages.HostBrowser.Title, session.Title)
+			state.paintHostBrowserPanel(canvas, layout.Body, session)
+			drawer.End()
+			return
+		}
+		resizable := state.sftpPanelResizable(canvas, size, context)
+		layout := resizable.Paint(state.messages.HostBrowser.Title)
+		panel := layout.First
+		if context.Side == layoutcore.ContextRight {
+			panel = layout.Second
+		}
+		state.paintHostBrowserPanel(canvas, panel, session)
 		return
 	}
 	if size.Width >= contextDrawerAt {
@@ -727,8 +759,12 @@ func (state *State) dragContextDivider(event gfx.PointerEvent) gfx.EventResult {
 	if width == context.Width {
 		return gfx.EventResult{Handled: true}
 	}
-	context.Width = min(max(width, layoutcore.MinContextWidth), layoutcore.MaxContextWidth)
-	state.sftpPanelWidth = context.Width
+	context.Width = min(max(width, layoutcore.MinContextWidth), layoutcore.MaxContextWidthFor(context.Kind))
+	if context.Kind == layoutcore.ContextBrowser {
+		state.browserPanelWidth = context.Width
+	} else {
+		state.sftpPanelWidth = context.Width
+	}
 	if state.deck.SetContext(workspaceID, context) != nil {
 		return gfx.EventResult{Handled: true}
 	}

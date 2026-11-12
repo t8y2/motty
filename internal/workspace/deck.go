@@ -21,9 +21,12 @@ const (
 	DefaultContextWidth = float32(340)
 	MinContextWidth     = float32(280)
 	MaxContextWidth     = float32(480)
-	DefaultMonitorWidth = float32(320)
-	MinMonitorWidth     = float32(280)
-	MaxMonitorWidth     = float32(640)
+	// A page needs more room than a file list; the workbench further holds it to
+	// two thirds of the terminal area.
+	MaxBrowserContextWidth = float32(4096)
+	DefaultMonitorWidth    = float32(320)
+	MinMonitorWidth        = float32(280)
+	MaxMonitorWidth        = float32(640)
 )
 
 // ContextKind identifies the one shared panel attached to a workspace.
@@ -35,6 +38,7 @@ const (
 	ContextAI
 	ContextMonitor
 	ContextSessionDetails
+	ContextBrowser
 )
 
 // ContextSide is the edge at which a workspace's context panel is docked.
@@ -565,9 +569,17 @@ func normalizeContext(context ContextState) ContextState {
 	return context
 }
 
+// MaxContextWidthFor is the widest a panel of kind may be saved at.
+func MaxContextWidthFor(kind ContextKind) float32 {
+	if kind == ContextBrowser {
+		return MaxBrowserContextWidth
+	}
+	return MaxContextWidth
+}
+
 func validateContext(context ContextState) error {
-	if context.Kind > ContextSessionDetails || context.Side > ContextRight || context.Open && context.Kind == ContextNone ||
-		context.Width != context.Width || context.Width != 0 && (context.Width < MinContextWidth || context.Width > MaxContextWidth) {
+	if context.Kind > ContextBrowser || context.Side > ContextRight || context.Open && context.Kind == ContextNone ||
+		context.Width != context.Width || context.Width != 0 && (context.Width < MinContextWidth || context.Width > MaxContextWidthFor(context.Kind)) {
 		return ErrInvalidLayout
 	}
 	if context.MonitorWidth != context.MonitorWidth || context.MonitorWidth != 0 && (context.MonitorWidth < MinMonitorWidth || context.MonitorWidth > MaxMonitorWidth) {

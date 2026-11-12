@@ -108,6 +108,7 @@ const (
 	iconSave
 	iconProcess
 	iconDirectoryTree
+	iconNetwork
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -2601,6 +2602,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconWrench:         icons.Wrench,
 	iconProcess:        icons.Process,
 	iconDirectoryTree:  icons.PanelLeft,
+	iconNetwork:        icons.Network,
 	iconCloseOthers:    icons.ListX,
 	iconCloseRight:     icons.ArrowRightToLine,
 	iconSparkles:       icons.Sparkles,

@@ -21,6 +21,8 @@ var (
 	hitTabMenuNewWindow     = tree.ID(tabMenuHits, "tab-menu-new-window")
 	hitTabMenuCopyAddress   = tree.ID(tabMenuHits, "tab-menu-copy-address")
 	hitTabMenuCopyName      = tree.ID(tabMenuHits, "tab-menu-copy-name")
+	hitTabMenuBrowserOpen   = tree.ID(tabMenuHits, "tab-menu-open-ssh-browser")
+	hitTabMenuBrowserClose  = tree.ID(tabMenuHits, "tab-menu-close-ssh-browser")
 	hitTabMenuReconnect     = tree.ID(tabMenuHits, "tab-menu-reconnect")
 	hitTabMenuRestart       = tree.ID(tabMenuHits, "tab-menu-restart")
 	hitTabMenuDisconnect    = tree.ID(tabMenuHits, "tab-menu-disconnect")
@@ -176,6 +178,13 @@ func (state *State) paintTabMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: address == ""})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: name == ""})
+	if hasSession && session.canOpenHostBrowser() {
+		if session.browser != nil && session.browser.external != nil && session.browser.external.Running() {
+			rows.add(components.ContextMenuItem{ID: hitTabMenuBrowserClose, Label: messages.HostBrowser.MenuCloseExternal, Icon: icon(iconGlobe)})
+		} else {
+			rows.add(components.ContextMenuItem{ID: hitTabMenuBrowserOpen, Label: messages.HostBrowser.MenuOpen, Icon: icon(iconGlobe)})
+		}
+	}
 	rows.separate()
 	// A remote desktop keeps its scaling and keyboard controls in the page's
 	// bar, which a host may have asked to hide: the menu holds them either way.
@@ -250,6 +259,18 @@ func (state *State) clickTabMenu(id gfx.ID) bool {
 	case hitTabMenuCopyName:
 		if session, ok := state.tabMenuSessionFor(workspace); ok {
 			state.copyConnectionText(session.host.Label)
+		}
+	case hitTabMenuBrowserOpen:
+		if _, ok := state.tabMenuSessionFor(workspace); ok {
+			state.activateWorkspace(workspace)
+			state.toggleHostBrowser()
+		}
+	case hitTabMenuBrowserClose:
+		if session, ok := state.tabMenuSessionFor(workspace); ok {
+			if session.browser != nil && session.browser.external != nil {
+				session.browser.external.Close()
+				session.browser.external = nil
+			}
 		}
 	case hitTabMenuRename:
 		state.beginTabInline(workspace)

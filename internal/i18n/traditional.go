@@ -4,9 +4,21 @@ package i18n
 
 var TraditionalMessages = Messages{
 	ActionFeedback: traditionalActionFeedback,
-	Monitor:        traditionalMonitor,
-	Dashboard:      traditionalDashboard,
-	SessionLogs:    traditionalSessionLogs,
+	HostBrowser: HostBrowserMessages{
+		Title: "瀏覽器", Address: "網頁位址", AddressPlaceholder: "內網服務網址", Close: "關閉瀏覽器",
+		Back: "後退", Forward: "前進", Reload: "重新整理", Go: "存取", OpenExternal: "透過 SSH 在外部瀏覽器中開啟", Retry: "重新連線",
+		Connecting: "正在建立 SSH 專用網路通道…", Disconnected: "SSH 連線已中斷。", Unavailable: "安全瀏覽器通道不可用。",
+		InvalidAddress: "請輸入有效的 HTTP 或 HTTPS 位址，且不要包含帳號或密碼。", Unsupported: "目前平台不支援安全瀏覽器網路通道。",
+		NewTab: "新分頁", CloseTab: "關閉分頁", BlankPage: "在上方輸入網址，透過 SSH 存取主機網路中的服務。",
+		OpenInExternalBrowser: "透過 SSH 開啟外部瀏覽器",
+		BrowserNotFound:       "請安裝 Chrome、Edge 或 Chromium，以透過此 SSH 連線瀏覽網頁。",
+		BrowserStartFailed:    "無法透過此 SSH 連線啟動瀏覽器。",
+		MenuOpen:              "透過 SSH 開啟瀏覽器",
+		MenuCloseExternal:     "關閉外部 SSH 瀏覽器",
+	},
+	Monitor:     traditionalMonitor,
+	Dashboard:   traditionalDashboard,
+	SessionLogs: traditionalSessionLogs,
 	SFTPWindow: SFTPWindowMessages{
 		LocalPlaces: "收藏與快捷位置", DirectoryFavorites: "目錄收藏", CommonFolders: "常用目錄", LocalDrives: "磁碟", FavoriteAdd: "收藏目前目錄", FavoriteRemove: "取消收藏目前目錄", FavoriteLimit: "目錄收藏已達上限，請先移除不再使用的收藏。",
 		LocalHome: "主目錄", LocalDesktop: "桌面", LocalDownloads: "下載", LocalDocuments: "文件", LocalPictures: "圖片", LocalMusic: "音樂", LocalVideos: "影片", LocalMovies: "影片", LocalApplications: "應用程式",

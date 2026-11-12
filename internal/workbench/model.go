@@ -169,6 +169,7 @@ type Session struct {
 	questions []sshconn.Question
 	identity  string
 	files     *sftpView
+	browser   *hostBrowser
 
 	// Idle pane history lives with this session, not its worker.
 	fileHistory [2]sftpSavedHistory
