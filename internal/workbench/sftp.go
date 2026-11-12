@@ -190,6 +190,13 @@ type sftpView struct {
 	clipboard             sftpClipboard
 	scrollDrag            bool
 	scrollGrab            float32
+	// columnDragging and columnDrag are the divider of this panel the pointer
+	// holds; columnFitPending asks the next paint to fit that divider's left
+	// column to its content after a double click.
+	columnDragging   bool
+	columnDrag       int
+	columnFitPending bool
+	columnFitDivider int
 	details               sftpDetails
 	extracting            bool
 	archiveSequence       uint64

@@ -731,6 +731,13 @@ type State struct {
 	sftpWindowOrder        sftpWindowOrder
 	sftpOpenMode           sftpOpenMode
 	sftpColumns            sftpColumnPreferences
+	// sftpColumnSizeWidth and sftpColumnModifiedWidth are the widths the user
+	// dragged the file lists' columns to; zero until a width was chosen, when
+	// the lists keep their width-based defaults. sftpColumnWidthsChosen says a
+	// drag or a double click has replaced those defaults.
+	sftpColumnSizeWidth     float32
+	sftpColumnModifiedWidth float32
+	sftpColumnWidthsChosen  bool
 	sftpFilesSettings      sftpFilesSettingsCache
 	sftpDownloadDirectory  string
 	defaultEditor          ExternalEditor // hands remote folders to this computer's editor

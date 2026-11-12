@@ -1989,6 +1989,7 @@ var chineseTools = ToolsMessages{
 	FilesColumnsReset:                    "恢复默认",
 	FilesColumnsClose:                    "关闭",
 	FilesDownloadDirectory:               "默认下载文件夹",
+	FilesResizeColumn:                    "调整列宽",
 	FilesDownloadAskDescription:          "每次下载前询问保存位置。",
 	FilesDownloadCurrentFmt:              "下载文件将直接保存到 %s。",
 	FilesDownloadChoose:                  "选择文件夹",

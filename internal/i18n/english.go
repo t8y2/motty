@@ -1989,6 +1989,7 @@ var englishTools = ToolsMessages{
 	FilesColumnsReset:                    "Reset",
 	FilesColumnsClose:                    "Close",
 	FilesDownloadDirectory:               "Default download folder",
+	FilesResizeColumn:                    "Resize column",
 	FilesDownloadAskDescription:          "Ask where to save each download.",
 	FilesDownloadCurrentFmt:              "Downloads are saved directly to %s.",
 	FilesDownloadChoose:                  "Choose folder",

@@ -1989,6 +1989,7 @@ var traditionalTools = ToolsMessages{
 	FilesColumnsReset:                    "恢復預設",
 	FilesColumnsClose:                    "關閉",
 	FilesDownloadDirectory:               "預設下載資料夾",
+	FilesResizeColumn:                    "調整欄寬",
 	FilesDownloadAskDescription:          "每次下載前詢問儲存位置。",
 	FilesDownloadCurrentFmt:              "下載檔案將直接儲存到 %s。",
 	FilesDownloadChoose:                  "選擇資料夾",
