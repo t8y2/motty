@@ -184,8 +184,18 @@ func TestCredSSPFallbackDoesNotRetryCredentials(t *testing.T) {
 							return err
 						}
 						auth, err := readNLATestRequest(secured)
-						if err != nil || len(auth.NegoTokens) != 1 || len(auth.PubKeyAuth) == 0 {
+						if err != nil || len(auth.NegoTokens) != 1 {
 							return errors.New("missing Authenticate message")
+						}
+						if raw && len(auth.PubKeyAuth) == 0 {
+							return errors.New("raw NTLM did not seal its public-key binding")
+						}
+						if !raw && len(auth.PubKeyAuth) != 0 {
+							// Sending the binding with the Authenticate makes a
+							// WinPR-family server answer with its own token in a
+							// TSRequest that repeats those bytes; the client then
+							// fails verifying them as the server's binding.
+							return errors.New("client sealed its binding before the SPNEGO exchange completed")
 						}
 						attempts.Add(1)
 						if test.authError == closeAfterAuth {
