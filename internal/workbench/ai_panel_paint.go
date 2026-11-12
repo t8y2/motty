@@ -588,21 +588,40 @@ func (state *State) paintAIPanel(canvas *gfx.Canvas, size gfx.Size) {
 		// composer explicitly so typing reaches the assistant. The runtime applies
 		// one request once, so later frames leave the focus the user chose alone.
 		canvas.RequestFocus(hitAIInput)
+	case aiPanelDocked:
+		state.paintAIDockEdge(canvas)
+		state.paintAIResize(canvas)
+		state.paintAIDrop(canvas)
 	default:
 		state.paintAIResize(canvas)
 		state.paintAIDrop(canvas)
 	}
 }
 
-// paintAIResize paints the panel's resize edge: only hover, press and focus show
-// it, since the cards already carry their own border.
+// paintAIDockEdge draws the docked column's boundary beside the window frame's
+// side rail. The frame takes the panel's workspace surface, so without the line
+// the panel and the empty rail below its tools read as one column. The pane
+// divider draws the same line on the panel's other side, and a panel that ends
+// at the window's own edge keeps the window's edge.
+func (state *State) paintAIDockEdge(canvas *gfx.Canvas) {
+	if state.toolbarDockSideReserveFor(false, true) > 0 {
+		state.paintPanelSideEdge(canvas, state.ai.panel.rect, false)
+	}
+}
+
+// paintAIResize paints the panel's resize edge. Its resting 1px line is the
+// boundary between the docked column and the panes, as the files panel's
+// divider is; the section card keeps its own border instead, so only the handle
+// that shows hover, press and focus is painted there.
 func (state *State) paintAIResize(canvas *gfx.Canvas) {
 	panel := &state.ai.panel
 	if panel.resize.window.Width <= 0 {
 		return
 	}
 	theme := state.Theme()
-	theme.Border = gfx.Color{}
+	if panel.mode != aiPanelDocked {
+		theme.Border = gfx.Color{}
+	}
 	components.BeginResizable(canvas, theme, hitAIDivider, panel.resize.window, panel.resize.ratio).
 		Limits(0, 1).HandleSize(panel.resize.handle).Paint(state.messages.AIPanel.ResizePanel)
 }

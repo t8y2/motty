@@ -388,6 +388,7 @@ func (state *State) declareContextPanel(c ui.C) {
 	state.contextRect = gfx.Rect{}
 	state.contextPanelScope = 0
 	state.contextPanelMode = contextPanelNone
+	state.contextPanelDocked = false
 	state.contextDrawerOpen = false
 	size := state.viewport
 	context, ok := state.deck.Context(state.deck.ActiveWorkspace())
@@ -441,6 +442,7 @@ func (state *State) declareContextPanel(c ui.C) {
 	if context.Side == layoutcore.ContextRight {
 		panel = layout.Second
 	}
+	state.contextPanelDocked = true
 	state.declareContextPanelBody(c, panel, gfx.Point{}, session)
 	state.contextPanelScope = tree.Sub(tree.Feature(shellPageRoot), tree.Name(contextPanelPart))
 	if session != nil && session.files != nil && session.files.dialog != sftpDialogNone {
@@ -500,6 +502,12 @@ func (state *State) declareContextPanelBody(c ui.C, rect gfx.Rect, origin gfx.Po
 // it paints in the page's order and with the panel's clip.
 func (state *State) drawContextPanelBody(d *ui.DrawContext) {
 	state.paintContextPanelBody(d.Canvas)
+	if !state.contextPanelDocked {
+		return
+	}
+	if context, ok := state.deck.Context(state.deck.ActiveWorkspace()); ok {
+		state.paintContextPanelOuterEdge(d.Canvas, state.viewport, state.contextRect, context)
+	}
 }
 
 func (state *State) beginContextDrawer(*ui.DrawContext) {
@@ -521,6 +529,38 @@ func (state *State) paintContextPanelBody(canvas *gfx.Canvas) {
 		state.paintSFTPEditorDetails(canvas)
 	case contextPanelEmpty:
 		state.paintEmptyContextPanelDetails(canvas)
+	}
+}
+
+// paintPanelSideEdge draws a docked panel's 1px boundary on the side where a
+// side rail of the window frame stands. The frame takes the panel's own
+// workspace surface, so without the line the panel and the rail read as one
+// column; the pane divider draws the same line on the panel's other side, and an
+// edge that ends at the window's own boundary keeps the window's edge.
+func (state *State) paintPanelSideEdge(canvas *gfx.Canvas, rect gfx.Rect, left bool) {
+	if canvas == nil || rect.Width <= 0 || rect.Height <= 0 {
+		return
+	}
+	x := rect.X + rect.Width - 1
+	if left {
+		x = rect.X
+	}
+	canvas.Fill(gfx.Rect{X: x, Y: rect.Y, Width: 1, Height: rect.Height}, state.pal.line)
+}
+
+// paintContextPanelOuterEdge draws the docked files panel's outside edge where a
+// side rail stands beside it. The assistant keeps the right edge for itself when
+// it is docked there, and its divider is the panel's line on that side.
+func (state *State) paintContextPanelOuterEdge(canvas *gfx.Canvas, size gfx.Size, rect gfx.Rect, context layoutcore.ContextState) {
+	switch context.Side {
+	case layoutcore.ContextLeft:
+		if state.toolbarDockSideReserveFor(true, true) > 0 {
+			state.paintPanelSideEdge(canvas, rect, true)
+		}
+	case layoutcore.ContextRight:
+		if state.aiReserve(state.deck.ActiveWorkspace(), size) == 0 && state.toolbarDockSideReserveFor(false, true) > 0 {
+			state.paintPanelSideEdge(canvas, rect, false)
+		}
 	}
 }
 

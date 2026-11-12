@@ -612,7 +612,8 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 		// strip below, so it takes the frame's surface rather than a color of its
 		// own: on a full-page pane that is the workspace it borders. No divider is
 		// drawn beside it: the frame and the pane are one surface, and the tools
-		// read as a column of that surface.
+		// read as a column of that surface. A docked panel that takes the same
+		// workspace draws its own line against the rail instead.
 		background := state.windowFrameColor()
 		if terminalVisible && primary {
 			state.setTerminalRailTools(session, append(top, bottom...))

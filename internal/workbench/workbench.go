@@ -796,6 +796,7 @@ type State struct {
 	contextRect              gfx.Rect
 	contextPanelScope        gfx.Scope
 	contextPanelMode         contextPanelMode
+	contextPanelDocked       bool
 	contextDrawer            components.Drawer
 	contextDrawerDescription string
 	contextDrawerOpen        bool
