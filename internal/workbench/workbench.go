@@ -356,9 +356,13 @@ const (
 	// one layer are not stacked: the earlier one's text lands on the later
 	// one's surface. Drawers paint before the modal pass, so they take a layer
 	// below dialogLayer and never share it with a dialog.
-	drawerLayer  = uint16(500)
-	dialogLayer  = uint16(600)
-	tooltipLayer = uint16(900)
+	drawerLayer = uint16(500)
+	dialogLayer = uint16(600)
+	// hoverCardLayer is a page's pointer preview: above the page's menus, below
+	// the tooltip so the tooltip's text never shares a layer with another
+	// overlay.
+	hoverCardLayer = uint16(800)
+	tooltipLayer   = uint16(900)
 )
 
 const (
@@ -1581,6 +1585,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalSnippet:
 		state.clickSnippetDialog(id)
 		return
+	case modalSnippetDelete:
+		state.clickSnippetDeleteDialog(id)
+		return
 	case modalImportSessions:
 		state.clickImportSessions(id)
 		return
@@ -2184,21 +2191,36 @@ func (state *State) connectTyped() {
 }
 
 // connectParsed opens a target that was typed or came from outside: the saved
-// host it spells out, or else a temporary one.
+// host it spells out, or else a temporary one. A link's password rides on the
+// copy for this connection only.
 func (state *State) connectParsed(parsed connection) {
 	// Typing out a saved host in full is opening that host.
 	for _, host := range state.hosts {
 		if host.Protocol == parsed.protocol && strings.EqualFold(host.Address, parsed.host) && host.Port == parsed.port &&
 			(parsed.user == "" || parsed.user == host.User) {
-			state.selectedHostID = host.ID
-			state.openHostSession(host)
+			chosen := host
+			chosen.linkPassword = parsed.password
+			state.selectedHostID = chosen.ID
+			state.openParsedHost(chosen, parsed.files)
 			return
 		}
 	}
-	adhoc := Host{Label: parsed.host, Address: parsed.host, User: parsed.user, Port: parsed.port, Protocol: parsed.protocol}
+	adhoc := Host{Label: parsed.host, Address: parsed.host, User: parsed.user, Port: parsed.port, Protocol: parsed.protocol, linkPassword: parsed.password}
 	adhoc.finish()
 	adhoc.Label = adhoc.target
-	state.openHostSession(adhoc)
+	state.openParsedHost(adhoc, parsed.files)
+}
+
+// openParsedHost opens the terminal a target asked for, or the file window when
+// the request came from an Xftp or sftp link. The user's Files setting decides
+// how a window appears; when files are set to live in the session panel, the
+// link opens the session that owns one.
+func (state *State) openParsedHost(host Host, files bool) {
+	if files && host.isSSH() && state.sftpManagersAvailable() {
+		state.openHostSFTPWindow(host)
+		return
+	}
+	state.openHostSession(host)
 }
 
 // hostForRow maps a host row's hit identity back to its host. The cards and the

@@ -3,20 +3,30 @@ package workbench
 import (
 	layoutcore "motty/internal/workspace"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/localshell"
 )
 
 func TestWorkspaceLocalReferenceCannotCollideWithASavedHost(t *testing.T) {
 	if validCatalogID(workspaceLocalTerminalRef) {
 		t.Fatal("local terminal reference overlaps the catalog ID namespace")
 	}
+	if validCatalogID(workspaceLocalShellReference("/bin/bash")) {
+		t.Fatal("local shell reference overlaps the catalog ID namespace")
+	}
 	if got := workspaceHostReference(localHost("Renamed terminal")); got != workspaceLocalTerminalRef {
 		t.Fatalf("ordinary or restored local terminal reference = %q", got)
+	}
+	shelled := localHost("Renamed terminal")
+	shelled.localShell = "/bin/bash"
+	if got := workspaceHostReference(shelled); got != workspaceLocalShellReference("/bin/bash") {
+		t.Fatalf("shell terminal reference = %q, want %q", got, workspaceLocalShellReference("/bin/bash"))
 	}
 	if _, err := NewWorkspaceTemplate("Duplicate", []string{workspaceLocalTerminalRef, workspaceLocalTerminalRef}, layoutcore.GridSpec(1)); err != ErrWorkspaceTemplateDupID {
 		t.Fatalf("duplicate local reference error = %v", err)
@@ -196,4 +206,186 @@ func waitWorkspaceLocalOutput(t *testing.T, state *State, sessionID uint32, want
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("local terminal did not produce %q", want)
+}
+
+// workspaceShellProgram names a second shell for the computer the test binary
+// runs on, so the template it builds is valid on every platform.
+func workspaceShellPrograms() (string, string) {
+	if runtime.GOOS == "windows" {
+		return `C:\Program Files\PowerShell\7\pwsh.exe`, `C:\Windows\System32\cmd.exe`
+	}
+	return "/usr/bin/zsh", "/bin/bash"
+}
+
+func TestWorkspaceDraftListsEachLocalShellAndKeepsItInTheTemplate(t *testing.T) {
+	program, second := workspaceShellPrograms()
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	withShellChoices(t, state,
+		[]localshell.Choice{{Name: "Alpha", Path: program, Default: true}, {Name: "Beta", Path: second}},
+		localshell.WSLChoices([]string{"Ubuntu"}))
+	state.localShell = program
+	state.openWorkspaceDraft(workspaceDraftFixed)
+	// The draft adopts the distributions as it is painted, like the picker does.
+	waitUntil(t, state, "the WSL shell choices", func() bool {
+		paintedTexts(state)
+		return state.localShellMenu.listing == nil
+	})
+
+	hosts := state.workspaceDraftHosts()
+	if len(hosts) != 3+len(state.hosts) || hosts[0].CatalogID != workspaceLocalTerminalRef {
+		t.Fatalf("draft hosts = %v, want this computer, Beta, WSL: Ubuntu and the saved hosts", hostCatalogIDs(hosts))
+	}
+	beta, wsl := hosts[1], hosts[2]
+	if beta.Label != "Beta" || beta.localShell != second || beta.CatalogID != workspaceLocalShellReference(second) {
+		t.Fatalf("shell row = %+v, want Beta at %q", beta, second)
+	}
+	if wsl.Label != "WSL: Ubuntu" || wsl.localShell != localshell.WSLShell("Ubuntu") {
+		t.Fatalf("WSL row = %+v", wsl)
+	}
+	state.workspaceDraft.query.Insert("wsl")
+	if matches := state.workspaceDraftHosts(); len(matches) != 1 || matches[0].CatalogID != wsl.CatalogID {
+		t.Fatalf("searching wsl = %v", hostCatalogIDs(matches))
+	}
+
+	// Selecting the shells alongside an SSH host saves references that carry
+	// the shells and survive persistence.
+	state.openWorkspaceDraft(workspaceDraftFixed)
+	state.workspaceDraft.name.Insert("Shells")
+	state.Click(hitWorkspaceDraftHostList.At(1))
+	state.Click(hitWorkspaceDraftHostList.At(2))
+	state.Click(hitWorkspaceDraftHostList.At(3))
+	state.Click(hitWorkspaceDraftSubmit)
+	if len(state.templates) != 1 {
+		t.Fatalf("templates = %+v, draft error = %q", state.templates, state.workspaceDraft.error)
+	}
+	template := state.templates[0]
+	want := []string{beta.CatalogID, wsl.CatalogID, state.hosts[0].CatalogID}
+	if !slices.Equal(template.HostIDs, want) {
+		t.Fatalf("template references = %v, want %v", template.HostIDs, want)
+	}
+	path := testConfigPath(t)
+	if err := saveState(path, savedState{WorkspaceTemplates: state.templates}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _, err := loadState(path)
+	if err != nil || len(loaded.WorkspaceTemplates) != 1 || !slices.Equal(loaded.WorkspaceTemplates[0].HostIDs, want) {
+		t.Fatalf("loaded templates = %+v, error = %v", loaded.WorkspaceTemplates, err)
+	}
+
+	// The saved references resolve to hosts that run their own shell, and the
+	// bare local reference is still the default shell.
+	state.openWorkspaceDraftEdit(template.ID)
+	if !state.workspaceDraft.selected[beta.CatalogID] || !state.workspaceDraft.selected[wsl.CatalogID] {
+		t.Fatalf("edit selection lost the shells: %+v", state.workspaceDraft.selected)
+	}
+	plan, err := PlanWorkspaceLaunch(state.workspaceHosts(), template.HostIDs, template.Layout)
+	if err != nil || len(plan.Hosts) != 3 || len(plan.Missing) != 0 {
+		t.Fatalf("plan = %+v, error = %v", plan, err)
+	}
+	if plan.Hosts[0].localShell != second || plan.Hosts[1].localShell != localshell.WSLShell("Ubuntu") || plan.Hosts[2].ID == localHostID {
+		t.Fatalf("planned hosts run %q %q local=%v", plan.Hosts[0].localShell, plan.Hosts[1].localShell, plan.Hosts[2].ID == localHostID)
+	}
+	plan, err = PlanWorkspaceLaunch(state.workspaceHosts(), []string{workspaceLocalTerminalRef}, layoutcore.GridSpec(1))
+	if err != nil || len(plan.Hosts) != 1 || plan.Hosts[0].localShell != "" {
+		t.Fatalf("bare local reference planned %+v, error = %v", plan.Hosts, err)
+	}
+}
+
+func TestWorkspaceLaunchesTheChosenShellAndSavesItsReference(t *testing.T) {
+	skipWithoutUnixShell(t)
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	closeLocalShells(t, state)
+	withShellChoices(t, state,
+		[]localshell.Choice{{Name: "Alpha", Path: "/bin/sh", Default: true}, {Name: "Beta", Path: "/bin/bash"}}, nil)
+	state.localShell = "/bin/sh"
+	state.openWorkspaceDraft(workspaceDraftTemporary)
+	state.Click(hitWorkspaceDraftHostList.At(1)) // Beta, not the default Alpha
+	state.Click(hitWorkspaceDraftHostList.At(2)) // the first saved host
+	state.Click(hitWorkspaceDraftSubmit)
+	if len(state.sessions) != 2 || len(world.conns) != 1 {
+		t.Fatalf("sessions = %d, SSH dials = %d", len(state.sessions), len(world.conns))
+	}
+	local, remote := &state.sessions[0], &state.sessions[1]
+	if !local.isLocal() || remote.isLocal() || local.Title != "Beta" {
+		t.Fatalf("workspace panes = %T %T %q", local.conn, remote.conn, local.Title)
+	}
+	if got := localShellOf(t, local); got != "/bin/bash" {
+		t.Fatalf("the workspace ran %q, want the chosen /bin/bash", got)
+	}
+	finishWorkspaceConnection(t, state, world.conns[0])
+	got, err := state.workspaceSaveHostCatalogIDs(state.deck.ActiveWorkspace())
+	if err != nil || !slices.Equal(got, []string{workspaceLocalShellReference("/bin/bash"), remote.host.CatalogID}) {
+		t.Fatalf("save references = %v, %v", got, err)
+	}
+}
+
+func TestWorkspaceLaunchCatalogResolvesFilteredShells(t *testing.T) {
+	program, second := workspaceShellPrograms()
+	state := newTestState(t, testOptions(t))
+	withShellChoices(t, state,
+		[]localshell.Choice{{Name: "Alpha", Path: program, Default: true}, {Name: "Beta", Path: second}}, nil)
+	state.localShell = program
+	state.refreshLocalShells()
+	ref := workspaceLocalShellReference(second)
+
+	// Hidden: the draft drops the row, the launch catalog still resolves the
+	// saved shell.
+	state.hideShell(second, true)
+	plan, err := PlanWorkspaceLaunch(state.workspaceLaunchCatalog([]string{ref}), []string{ref}, layoutcore.GridSpec(1))
+	if err != nil || len(plan.Missing) != 0 || len(plan.Hosts) != 1 || plan.Hosts[0].localShell != second {
+		t.Fatalf("hidden shell plan = %+v, error = %v", plan, err)
+	}
+
+	// Made the default: the sentinel covers the row, the pinned shell still
+	// resolves.
+	state.localShell = second
+	plan, err = PlanWorkspaceLaunch(state.workspaceLaunchCatalog([]string{ref}), []string{ref}, layoutcore.GridSpec(1))
+	if err != nil || len(plan.Missing) != 0 || len(plan.Hosts) != 1 || plan.Hosts[0].localShell != second {
+		t.Fatalf("defaulted shell plan = %+v, error = %v", plan, err)
+	}
+
+	// A reference nothing resolves stays missing rather than gaining a pane:
+	// nothing to launch, and the id lands in Missing for the warning.
+	plan, err = PlanWorkspaceLaunch(state.workspaceLaunchCatalog([]string{"host_nope"}), []string{"host_nope"}, layoutcore.GridSpec(1))
+	if len(plan.Missing) != 1 || len(plan.Hosts) != 0 || plan.Missing[0] != "host_nope" {
+		t.Fatalf("unknown id plan = %+v", plan)
+	}
+}
+
+func TestWorkspaceTemplateLaunchesShellsHiddenOrDefaultedAfterSaving(t *testing.T) {
+	skipWithoutUnixShell(t)
+	state := newTestState(t, testOptions(t))
+	closeLocalShells(t, state)
+	withShellChoices(t, state,
+		[]localshell.Choice{{Name: "Alpha", Path: "/bin/sh", Default: true}, {Name: "Beta", Path: "/bin/bash"}}, nil)
+	state.localShell = "/bin/sh"
+
+	// Save a template that pins Beta, then hide it: the library still
+	// launches the saved shell.
+	template := mustWorkspaceTemplate(t, "Shell", []string{workspaceLocalShellReference("/bin/bash")}, 1)
+	state.templates = []WorkspaceTemplate{template}
+	state.selectedWorkspaceTemplateID = template.ID
+	state.hideShell("/bin/bash", true)
+
+	state.applySelectedWorkspaceTemplate()
+	if len(state.sessions) != 1 {
+		t.Fatalf("sessions = %d, want the hidden shell's pane", len(state.sessions))
+	}
+	session := &state.sessions[0]
+	if got := localShellOf(t, session); got != "/bin/bash" || session.Title != "Beta" {
+		t.Fatalf("ran %q titled %q, want hidden Beta /bin/bash", got, session.Title)
+	}
+
+	// Making Beta the default moves the sentinel onto it: the same template
+	// still launches the pinned shell.
+	state.localShell = "/bin/bash"
+	state.applySelectedWorkspaceTemplate()
+	if len(state.sessions) != 2 {
+		t.Fatalf("sessions after second apply = %d", len(state.sessions))
+	}
+	if got := localShellOf(t, &state.sessions[1]); got != "/bin/bash" {
+		t.Fatalf("reopened %q, want the pinned /bin/bash", got)
+	}
 }

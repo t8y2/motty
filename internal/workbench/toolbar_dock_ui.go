@@ -476,7 +476,7 @@ func (state *State) paintToolbarDockBottom(canvas *gfx.Canvas, size gfx.Size) {
 	}
 	bounds := state.toolbarDockBottomBounds(size, false)
 	dock.zones[3], dock.zones[6] = toolbarDockBottomZones(bounds)
-	canvas.Fill(bounds, state.pal.shell)
+	canvas.Fill(bounds, state.windowFrameColor())
 	canvas.Fill(gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: 1}, state.pal.line)
 	state.paintToolbarDockBottomGroup(canvas, left, toolbarDockBottom, dock.bottomLeft.Rect())
 	state.paintToolbarDockBottomGroup(canvas, right, toolbarDockBottomRight, dock.bottomRight.Rect())
@@ -530,7 +530,7 @@ func (state *State) paintToolbarDockBottomGroup(canvas *gfx.Canvas, tools []barT
 				continue
 			}
 		} else {
-			state.paintIconButtonSized(canvas, tool.id, tool.icon, rect, tool.hint, tool.disabled, tool.style, state.pal.shell, metrics.iconSize)
+			state.paintIconButtonSized(canvas, tool.id, tool.icon, rect, tool.hint, tool.disabled, tool.style, state.windowFrameColor(), metrics.iconSize)
 		}
 		state.registerToolbarDockTool(canvas, tool, zone, clipped)
 	}
@@ -608,23 +608,20 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 		dock := &state.toolbarDock
 		dock.zones[toolbarDockZoneIndex(topZone)] = gfx.Rect{X: bounds.X, Y: bounds.Y, Width: bounds.Width, Height: bounds.Height / 2}
 		dock.zones[toolbarDockZoneIndex(bottomZone)] = gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height/2, Width: bounds.Width, Height: bounds.Height / 2}
-		background, border := state.pal.shell, state.pal.line
-		if terminalVisible {
-			background, border = state.pal.workspace, state.pal.line
-			if primary {
-				state.setTerminalRailTools(session, append(top, bottom...))
-				if len(bottom) == 0 {
-					state.paintTerminalSideRail(canvas, bounds, session, top, background, border, left)
-					continue
-				}
+		// The rail is part of the window frame, like the bar above it and the
+		// strip below, so it takes the frame's surface rather than a color of its
+		// own: on a full-page pane that is the workspace it borders. No divider is
+		// drawn beside it: the frame and the pane are one surface, and the tools
+		// read as a column of that surface.
+		background := state.windowFrameColor()
+		if terminalVisible && primary {
+			state.setTerminalRailTools(session, append(top, bottom...))
+			if len(bottom) == 0 {
+				state.paintTerminalSideRail(canvas, bounds, session, top, background)
+				continue
 			}
 		}
 		canvas.Fill(bounds, background)
-		x := bounds.X
-		if left {
-			x += bounds.Width - 1
-		}
-		canvas.Fill(gfx.Rect{X: x, Y: bounds.Y, Width: 1, Height: bounds.Height}, border)
 		if terminalVisible && primary {
 			session.term.railBounds = bounds
 		}

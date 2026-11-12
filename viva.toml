@@ -5,12 +5,18 @@
 [app]
 name = "Motty"
 id = "dev.motty.app"
-version = "0.4.0"
+version = "0.4.1"
 executable = "motty"
 package = "./cmd/motty"
 icon = "assets/icon.png"
 # Links the system hands to the program (see docs/decisions/0028 in ../viva).
-url_schemes = ["ssh", "telnet"]
+url_schemes = ["ssh", "telnet", "sftp", "xshell", "xftp"]
+
+[[app.file_types]]
+name = "Markdown document"
+extensions = ["md", "markdown"]
+mime = "text/markdown"
+uti = "net.daringfireball.markdown"
 
 [build]
 out = "build/dist"

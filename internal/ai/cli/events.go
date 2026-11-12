@@ -13,6 +13,9 @@ type parser struct {
 	usage    llm.Usage
 	streamed map[int]bool
 	text     bool
+	// piStreamed marks that the current Pi message already streamed its text,
+	// so the message_end snapshot is not appended a second time.
+	piStreamed bool
 }
 
 func newParser(kind string) *parser { return &parser{kind: kind} }
@@ -35,6 +38,9 @@ func (p *parser) line(line []byte) ([]llm.Event, error) {
 		relevant = header.Type == "item.completed" || header.Type == "turn.completed"
 	case "opencode-cli":
 		relevant = header.Type == "text" || header.Type == "reasoning" || header.Type == "step_finish"
+	case "pi-cli":
+		relevant = header.Type == "message_start" || header.Type == "message_update" ||
+			header.Type == "message_end" || header.Type == "agent_settled"
 	default:
 		return nil, errors.New("cli: unsupported_provider")
 	}
@@ -49,6 +55,9 @@ func (p *parser) line(line []byte) ([]llm.Event, error) {
 		Usage   struct {
 			Input  int `json:"input_tokens"`
 			Output int `json:"output_tokens"`
+			// Pi reports the same counts under its own names.
+			PiInput  int `json:"input"`
+			PiOutput int `json:"output"`
 		} `json:"usage"`
 		Event struct {
 			Type  string `json:"type"`
@@ -68,11 +77,15 @@ func (p *parser) line(line []byte) ([]llm.Event, error) {
 			Text string `json:"text"`
 		} `json:"item"`
 		Message struct {
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
+			Role string `json:"role"`
+			// Content is an array of blocks for assistant messages and a plain
+			// string for user messages, so it is decoded where each kind needs it.
+			Content json.RawMessage `json:"content"`
 		} `json:"message"`
+		Assistant struct {
+			Type  string `json:"type"`
+			Delta string `json:"delta"`
+		} `json:"assistantMessageEvent"`
 		Part struct {
 			Text   string `json:"text"`
 			Reason string `json:"reason"`
@@ -128,7 +141,7 @@ func (p *parser) line(line []byte) ([]llm.Event, error) {
 		case "assistant":
 			// Tool/thinking block starts must not reset text already streamed
 			// in the same message; only skip the matching snapshot blocks.
-			for index, block := range v.Message.Content {
+			for index, block := range messageBlocks(v.Message.Content) {
 				if block.Type == "text" && !p.streamed[index] {
 					add(llm.EventText, block.Text)
 				}
@@ -170,10 +183,56 @@ func (p *parser) line(line []byte) ([]llm.Event, error) {
 				p.done = true
 			}
 		}
+	case "pi-cli":
+		switch v.Type {
+		case "message_start":
+			if v.Message.Role == "assistant" {
+				p.piStreamed = false
+			}
+		case "message_update":
+			switch v.Assistant.Type {
+			case "text_delta":
+				p.piStreamed = true
+				add(llm.EventText, v.Assistant.Delta)
+			case "thinking_delta":
+				add(llm.EventReasoning, v.Assistant.Delta)
+			case "error":
+				return nil, providerError(line)
+			}
+			if v.Usage.PiInput > 0 || v.Usage.PiOutput > 0 {
+				p.usage = llm.Usage{InputTokens: v.Usage.PiInput, OutputTokens: v.Usage.PiOutput}
+			}
+		case "message_end":
+			if v.Message.Role == "assistant" && !p.piStreamed {
+				for _, block := range messageBlocks(v.Message.Content) {
+					if block.Type == "text" {
+						add(llm.EventText, block.Text)
+					}
+				}
+			}
+			if v.Usage.PiInput > 0 || v.Usage.PiOutput > 0 {
+				p.usage = llm.Usage{InputTokens: v.Usage.PiInput, OutputTokens: v.Usage.PiOutput}
+			}
+		case "agent_settled":
+			p.done = true
+		}
 	default:
 		return nil, errors.New("cli: unsupported_provider")
 	}
 	return out, nil
+}
+
+type textBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// messageBlocks reads an assistant message's content array; a user message's
+// string content yields none.
+func messageBlocks(raw json.RawMessage) []textBlock {
+	var blocks []textBlock
+	_ = json.Unmarshal(raw, &blocks)
+	return blocks
 }
 
 func providerError(raw []byte) error {

@@ -134,21 +134,45 @@ func TestConnectionColorTintsTabsButKeepsFileHeaderNeutral(t *testing.T) {
 	var canvas gfx.Canvas
 	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
-	header := state.pal.workspace
-	for _, id := range []gfx.ID{contextID(hitSFTPRefresh), hitSFTPOpen} {
-		hit, ok := hitByID(&canvas, id)
+	// The file header is part of the content surface; the terminal rail beside
+	// it is part of the window frame, like the bar above it. Neither takes the
+	// connection color, and on a full-page pane the frame and the pane share the
+	// workspace surface.
+	frame := state.windowFrameColor()
+	if frame != state.pal.workspace {
+		t.Fatalf("full-page frame is %v, want the workspace surface", frame)
+	}
+	for _, check := range [...]struct {
+		id    gfx.ID
+		under gfx.Color
+	}{
+		{contextID(hitSFTPRefresh), state.pal.workspace},
+		{hitSFTPOpen, frame},
+	} {
+		hit, ok := hitByID(&canvas, check.id)
 		if !ok {
-			t.Fatal("missing header action", id)
+			t.Fatal("missing header action", check.id)
 		}
 		found := false
 		for _, rectangle := range canvas.Rectangles() {
-			if rectangle.Color == header && rectangle.Bounds.X <= hit.Bounds.X && rectangle.Bounds.X+rectangle.Bounds.Width >= hit.Bounds.X+hit.Bounds.Width && rectangle.Bounds.Y <= hit.Bounds.Y && rectangle.Bounds.Y+rectangle.Bounds.Height >= hit.Bounds.Y+hit.Bounds.Height {
+			if rectangle.Color == check.under && rectangle.Bounds.X <= hit.Bounds.X && rectangle.Bounds.X+rectangle.Bounds.Width >= hit.Bounds.X+hit.Bounds.Width && rectangle.Bounds.Y <= hit.Bounds.Y && rectangle.Bounds.Y+rectangle.Bounds.Height >= hit.Bounds.Y+hit.Bounds.Height {
 				found = true
 			}
 		}
 		if !found {
-			t.Fatal("file header and terminal rail must stay neutral", id)
+			t.Fatal("file header and terminal rail must stay neutral", check.id)
 		}
+	}
+	// The bar is transparent over the page root, so the root is what the bar and
+	// the rail share: one surface, not two colors meeting at the window's corner.
+	rootPainted := false
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Bounds == (gfx.Rect{Width: size.Width, Height: size.Height}) && rectangle.Color == frame {
+			rootPainted = true
+		}
+	}
+	if !rootPainted {
+		t.Fatal("the window root under the bar is not the frame surface")
 	}
 	foundTab := false
 	for _, tab := range state.chrome.bar.tabs {

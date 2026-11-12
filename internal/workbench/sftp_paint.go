@@ -328,13 +328,13 @@ func (state *State) declareSFTPPanel(c ui.C) {
 							add(hitSFTPEditExternal, iconExternal, messages.Tools.ExtEditButton, false)
 						}
 						add(hitSFTPRename, iconPencil, messages.SFTPRename, false)
-						add(hitSFTPMove, iconFolderOpen, messages.SFTPMove, false)
 						add(hitSFTPChmod, iconLock, messages.SFTPPermissions, false)
 						if _, archive := state.selectedArchive(session, view); archive {
 							add(hitSFTPExtract, iconArchive, messages.Tools.Extract, false)
 						}
 					}
 					if !local {
+						add(hitSFTPMove, iconFolderOpen, messages.SFTPMove, false)
 						add(hitSFTPDelete, iconTrash, messages.SFTPDelete, true)
 					}
 				})

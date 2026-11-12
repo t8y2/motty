@@ -2,10 +2,13 @@ package workbench
 
 import (
 	"errors"
-	layoutcore "motty/internal/workspace"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
+
+	"motty/internal/localshell"
+	layoutcore "motty/internal/workspace"
 )
 
 func TestNewWorkspaceTemplateValidatesAndStabilizesInput(t *testing.T) {
@@ -153,4 +156,41 @@ func hostIDs(count int) []string {
 		ids[index] = "host_" + strings.Repeat("a", index+1)
 	}
 	return ids
+}
+
+func TestWorkspaceTemplateAcceptsLocalShellReferences(t *testing.T) {
+	program := "/usr/bin/zsh"
+	if runtime.GOOS == "windows" {
+		program = `C:\Program Files\PowerShell\7\pwsh.exe`
+	}
+	shells := []string{
+		workspaceLocalShellReference(program),
+		workspaceLocalShellReference(localshell.WSLShell("Ubuntu-22.04")),
+		workspaceLocalTerminalRef,
+	}
+	template, err := NewWorkspaceTemplate("Shells", shells, layoutcore.GridSpec(3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(template.HostIDs, shells) {
+		t.Fatalf("template references = %v, want the shell references kept", template.HostIDs)
+	}
+	if err := template.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, bad := range []string{
+		workspaceLocalShellRefPrefix,
+		workspaceLocalShellReference("relative/pwsh.exe"),
+		workspaceLocalShellReference(localshell.WSLShell("not a distro")),
+		workspaceLocalShellReference("/bin/sh\x00--evil"),
+	} {
+		if _, err := NewWorkspaceTemplate("Bad", []string{bad}, layoutcore.GridSpec(1)); !errors.Is(err, ErrWorkspaceTemplateHostID) {
+			t.Errorf("%q was accepted as a shell reference: %v", bad, err)
+		}
+	}
+	duplicate := workspaceLocalShellReference(program)
+	if _, err := NewWorkspaceTemplate("Duplicate", []string{duplicate, duplicate}, layoutcore.GridSpec(1)); !errors.Is(err, ErrWorkspaceTemplateDupID) {
+		t.Errorf("duplicate shell reference error = %v", err)
+	}
 }

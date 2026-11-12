@@ -60,14 +60,17 @@ with Shift or Alt, so that terminal keys such as Ctrl+R keep working. It sends
 the snippet to the active terminal while the terminal page is showing, and
 shortcuts are kept per device because the free modifier differs by platform.
 The command field accepts multiple lines; Enter inserts a line break and the Save
-button saves it. On send, each line break becomes Enter in the remote terminal.
+button saves it. In the list a command stays on one line: the chevron at the end
+of its row opens the full command below the row, and resting the pointer on a
+multi-line row for about 0.4 s previews it without expanding anything.
+On send, each line break becomes Enter in the remote terminal.
 Terminals with bracketed paste enabled receive the lines as a paste; otherwise
 earlier lines may execute immediately, even when **Press Enter after sending**
 is off (that option only controls the final Enter).
 
 A snippet does not need a shortcut. On the Snippets page, select it and choose
 **Send to terminal**, double-click its row, or right-click the row for a menu with
-Send, Move up/down, Edit and Delete. In the unfiltered manual view, drag the handle beside a row or use the
+Send, Move up/down, Edit and Delete. Deleting a snippet asks first. In the unfiltered manual view, drag the handle beside a row or use the
 menu's Move actions to save a custom order; the handle also supports keyboard
 reordering. Clicking the same table heading cycles through ascending, descending,
 and your saved manual order. With one terminal open it is sent there; with several

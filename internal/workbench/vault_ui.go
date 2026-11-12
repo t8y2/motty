@@ -178,10 +178,21 @@ const (
 	autofillSent
 )
 
-// autofill answers a question from the vault when it has the answer.
+// autofill answers a question from the vault when it has the answer. A
+// password a link carried answers the first password question of its own
+// connection and is dropped at once, so it is neither saved nor tried again
+// after the server refuses it.
 func (state *State) autofill(session *Session) autofillResult {
 	if session.phase == sshconn.PhasePasswordPrompt && isOTPQuestion(session.questions) {
 		return state.autofillOTP(session)
+	}
+	if session.phase == sshconn.PhasePasswordPrompt && session.attempt == 1 && session.role == sshconn.EndpointTarget &&
+		session.host.linkPassword != "" && isPasswordQuestion(session.questions) {
+		password := session.host.linkPassword
+		session.host.linkPassword = ""
+		session.conn.SubmitPassword(password)
+		session.answered = promptKey(session.phase, session.attempt, session.identity, session.endpoint, session.role)
+		return autofillSent
 	}
 	name, _ := state.promptSecret(session)
 	vaultFile := state.secrets.vault

@@ -7,6 +7,9 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text/collation"
+	textlanguage "golang.org/x/text/language"
+	"motty/internal/i18n"
 )
 
 type hostOrderMode uint8
@@ -63,17 +66,32 @@ func (state *State) setHostOrder(mode hostOrderMode) {
 	state.save()
 }
 
-func compareHostName(left, right Host) int {
-	if order := strings.Compare(strings.ToLower(left.Label), strings.ToLower(right.Label)); order != 0 {
+// hostNameCollator reads names the way the interface's language does, so
+// Chinese sorts by pinyin rather than by code point.
+func (state *State) hostNameCollator() *collation.Collator {
+	switch state.language {
+	case i18n.Chinese:
+		return collation.New(textlanguage.SimplifiedChinese)
+	case i18n.TraditionalChinese:
+		return collation.New(textlanguage.TraditionalChinese)
+	default:
+		return collation.New(textlanguage.English)
+	}
+}
+
+func compareHostName(collator *collation.Collator, left, right Host) int {
+	if order := collator.Compare(left.Label, right.Label); order != 0 {
 		return order
 	}
+	// Labels that collate the same, such as two spellings of one normalized
+	// name, still need one fixed order.
 	if order := strings.Compare(left.Label, right.Label); order != 0 {
 		return order
 	}
 	return strings.Compare(left.CatalogID, right.CatalogID)
 }
 
-func compareHostAddress(left, right Host) int {
+func compareHostAddress(collator *collation.Collator, left, right Host) int {
 	leftAddress, leftError := netip.ParseAddr(strings.Trim(left.Address, "[]"))
 	rightAddress, rightError := netip.ParseAddr(strings.Trim(right.Address, "[]"))
 	switch {
@@ -90,19 +108,20 @@ func compareHostAddress(left, right Host) int {
 			return order
 		}
 	}
-	return compareHostName(left, right)
+	return compareHostName(collator, left, right)
 }
 
 func (state *State) sortVisibleHosts() {
 	if state.hostOrder == hostOrderManual {
 		return
 	}
+	collator := state.hostNameCollator()
 	sort.Slice(state.visible, func(leftIndex, rightIndex int) bool {
 		left, right := state.hosts[state.visible[leftIndex]], state.hosts[state.visible[rightIndex]]
 		if state.hostOrder == hostOrderIP {
-			return compareHostAddress(left, right) < 0
+			return compareHostAddress(collator, left, right) < 0
 		}
-		return compareHostName(left, right) < 0
+		return compareHostName(collator, left, right) < 0
 	})
 }
 

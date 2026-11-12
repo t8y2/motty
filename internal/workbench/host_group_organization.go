@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text/collation"
 )
 
 var (
@@ -124,7 +125,7 @@ func (state *State) reorderHostGroup(path string, step int) {
 }
 
 // The first differing sibling decides the order of two entire subtrees.
-func orderedHostGroupLess(left, right string, groups map[string]hostGroup) bool {
+func orderedHostGroupLess(collator *collation.Collator, left, right string, groups map[string]hostGroup) bool {
 	lpath, rpath := left, right
 	for {
 		l, lrest, lmore := strings.Cut(left, "/")
@@ -153,7 +154,7 @@ func orderedHostGroupLess(left, right string, groups map[string]hostGroup) bool 
 				}
 				return lg.Order < rg.Order
 			}
-			return hostGroupLess(left, right)
+			return hostGroupLess(collator, left, right)
 		}
 		if !lmore || !rmore {
 			return !lmore && rmore

@@ -163,6 +163,7 @@ type Messages struct {
 	WorkspaceDraftEditDescription         string
 	WorkspaceDraftName                    string
 	WorkspaceDraftNamePlaceholder         string
+	WorkspaceDraftLocalGroup              string
 	WorkspaceDraftHosts                   string
 	WorkspaceDraftHostSearch              string
 	WorkspaceDraftSelectedFmt             string
@@ -726,6 +727,10 @@ type Messages struct {
 	HostKeyDescriptionFmt          string
 	HostKeyType                    string
 	HostKeyFingerprint             string
+	HostKeyChangedTitle            string
+	HostKeyChangedDescriptionFmt   string
+	HostKeySavedFingerprint        string
+	HostKeyUpdateAndContinue       string
 	HostKeyTrust                   string
 	HostKeyOnce                    string
 	HostKeyReject                  string
@@ -751,6 +756,8 @@ type Messages struct {
 	StatusOpened       string // prefix: session title follows
 	StatusReused       string // prefix: session title follows
 	StatusHostAdded    string
+	HostSaveFailedFmt  string
+	HostSaveMissing    string
 	StatusEditCanceled string
 
 	// OpenSSH known_hosts management.
@@ -1055,6 +1062,8 @@ type Messages struct {
 	SFTPErrMoveInside           string
 	SFTPMovingFmt               string
 	SFTPMovedFmt                string
+	SFTPMovingCountFmt          string
+	SFTPMovedCountFmt           string
 	SFTPDeleteFileTitle         string
 	SFTPDeleteDirectoryTitle    string
 	SFTPDeleteSelectionTitle    string

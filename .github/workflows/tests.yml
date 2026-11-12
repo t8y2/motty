@@ -17,7 +17,7 @@ permissions:
 # reverse) without any change on the Motty side. Move the pin in the same commit
 # that needs a newer Viva API; do not check out the default branch here.
 env:
-  VIVA_REF: 647c2069cb9eb8da6a557eb49a5e38856b8c39a6
+  VIVA_REF: 3539551303aed5e2707070ae72cc3b14e6a3750a
 
 # A superseded pull-request run is cancelled: the newer push contains everything
 # the older one would have tested, and leaving the older run in place makes the
@@ -157,6 +157,8 @@ jobs:
   # job above: run in sequence the two suites made one job the longest one in
   # the workflow, and neither needs the other's build. It compiles the workbench
   # package again with the dev tag, so it stays cheaper than the release suite.
+  # `make test-dev` runs only the tests the tag adds; repeating the release
+  # suite under the tag was 97% duplicate work.
   dev-tests:
     name: Development components
     needs: changes
@@ -178,7 +180,7 @@ jobs:
           cache-dependency-path: motty/go.sum
       - name: Test development components
         working-directory: motty
-        run: go test -tags dev ./cmd/motty ./internal/workbench -count=1
+        run: make test-dev
 
   # The workbench tests above only run on Linux: they build everywhere, but no
   # job runs them on Windows, so what a Windows clone sees never reaches CI.
@@ -280,9 +282,11 @@ jobs:
           SHARD: ${{ matrix.shard }}
           SHARDS: 5
         run: |
-          pattern=$(go run ./tools/testslice -n "$SHARDS" -i "$SHARD" ./internal/workbench)
-          go test ./internal/workbench -count=1 -timeout 20m -run "$pattern" \
-            -skip 'TestPaintingRemoteStatsAllocatesNothingOnceWarm|TestRemoteProcessActionPaintStateDoesNotAllocate|TestSFTPHistorySteadyPaintBudget|TestWindowOpenedAfterAFinishedClearIsNotPausedOrNotified|TestClearPausesJoinedWindowsAndFlushesEveryOldQueue'
+          go run ./tools/testslice -n "$SHARDS" -i "$SHARD" -max-pattern 12000 ./internal/workbench |
+            while IFS= read -r pattern; do
+              go test ./internal/workbench -count=1 -timeout 20m -run "$pattern" \
+                -skip 'TestPaintingRemoteStatsAllocatesNothingOnceWarm|TestRemoteProcessActionPaintStateDoesNotAllocate|TestSFTPHistorySteadyPaintBudget|TestWindowOpenedAfterAFinishedClearIsNotPausedOrNotified|TestClearPausesJoinedWindowsAndFlushesEveryOldQueue' || exit 1
+            done
 
   # The race detector is the long pole on Linux: it runs one package at a time,
   # and it multiplies the memory the tests hold. CI therefore spreads the

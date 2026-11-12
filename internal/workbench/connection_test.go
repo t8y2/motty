@@ -696,6 +696,37 @@ func TestDismissingThePasswordDialogCancelsTheConnection(t *testing.T) {
 	}
 }
 
+// A changed key is a warning with the old and the presented fingerprint, and
+// its primary action replaces the saved record rather than treating the key as
+// a first connection.
+func TestChangedHostKeyDialogShowsBothFingerprintsAndUpdates(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	changed := sshconn.HostKeyInfo{
+		Address: "prod.example.com:22", Type: "ssh-ed25519", Fingerprint: "SHA256:NEW",
+		Changed: true, Known: []string{"SHA256:OLD"}, File: "/tmp/known_hosts",
+	}
+	fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseHostKeyPrompt; s.HostKey = changed })
+	state.Wake()
+	if state.modal != modalHostKey {
+		t.Fatal("a changed host key did not open the dialog")
+	}
+	_, texts := paintedTexts(state)
+	for _, want := range []string{
+		state.messages.HostKeyChangedTitle, state.messages.HostKeySavedFingerprint,
+		state.messages.HostKeyUpdateAndContinue, "SHA256:OLD", "SHA256:NEW", "prod.example.com:22",
+	} {
+		if !contains(texts, want) {
+			t.Fatalf("the changed-key dialog does not show %q: %q", want, texts)
+		}
+	}
+	state.Click(hitHostKeyTrust)
+	if len(fake.trusted) != 1 || !fake.trusted[0] {
+		t.Fatalf("update and continue sent trusted=%v, want one save", fake.trusted)
+	}
+}
+
 func TestAnsweredPromptIsNotShownAgainButANewAttemptIs(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)

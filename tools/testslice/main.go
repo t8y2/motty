@@ -4,6 +4,11 @@
 //	pattern=$(go run ./tools/testslice -race -n 2 -i 0 ./internal/workbench)
 //	go test -race ./internal/workbench -run "$pattern"
 //
+// A shard whose pattern would not fit a shell's command line is printed as
+// several patterns, one per line, with -max-pattern; run go test once for each.
+// The Windows workbench job uses that: its shard pattern had grown to the
+// 32 KiB command line limit.
+//
 // The shard is chosen by hashing the test name, so it is stable across machines
 // and runs: a test that is added lands in exactly one shard without a list to
 // maintain, and no test is left out as the suite grows.
@@ -32,13 +37,14 @@ const listPattern = `^(Test|Example|Fuzz)`
 
 func main() {
 	var (
-		shards = flag.Int("n", 1, "number of shards")
-		index  = flag.Int("i", 0, "shard to print, from 0")
-		race   = flag.Bool("race", false, "ask go test for the names with -race")
-		tags   = flag.String("tags", "", "build tags to list with, comma separated")
+		shards     = flag.Int("n", 1, "number of shards")
+		index      = flag.Int("i", 0, "shard to print, from 0")
+		race       = flag.Bool("race", false, "ask go test for the names with -race")
+		tags       = flag.String("tags", "", "build tags to list with, comma separated")
+		maxPattern = flag.Int("max-pattern", 0, "split the shard into patterns no longer than this many bytes (0: one pattern)")
 	)
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "usage: testslice [-n shards] [-i shard] [-race] [-tags tags] packages...\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: testslice [-n shards] [-i shard] [-race] [-tags tags] [-max-pattern bytes] packages...\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -57,7 +63,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "testslice: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println(runPattern(shard(names, *shards, *index)))
+	for _, pattern := range runPatterns(shard(names, *shards, *index), *maxPattern) {
+		fmt.Println(pattern)
+	}
 }
 
 // listNames asks go test which tests, examples and fuzz targets the packages
@@ -136,4 +144,37 @@ func runPattern(names []string) string {
 		quoted[i] = regexp.QuoteMeta(name)
 	}
 	return "^(?:" + strings.Join(quoted, "|") + ")$"
+}
+
+// runPatterns turns a shard into one or more -run regular expressions, each no
+// longer than max bytes; max <= 0 keeps one expression. Chunking changes only
+// how many go test invocations the caller starts, never which tests run.
+func runPatterns(names []string, max int) []string {
+	if len(names) == 0 {
+		return []string{"^$"}
+	}
+	if max <= 0 {
+		return []string{runPattern(names)}
+	}
+	const wrapper = len("^(?:)$")
+	var (
+		patterns []string
+		chunk    []string
+		length   = wrapper
+	)
+	for _, name := range names {
+		quoted := len(regexp.QuoteMeta(name))
+		add := quoted
+		if len(chunk) > 0 {
+			add++ // the "|" before it
+		}
+		if len(chunk) > 0 && length+add > max {
+			patterns = append(patterns, runPattern(chunk))
+			chunk, length = chunk[:0], wrapper
+			add = quoted
+		}
+		chunk = append(chunk, name)
+		length += add
+	}
+	return append(patterns, runPattern(chunk))
 }

@@ -177,17 +177,31 @@ func TestHostGridDoesNotReserveAColumnNoHostFills(t *testing.T) {
 	state := manyHostsState(t, 1)
 	state.hostView = hostViewGrid
 	last := float32(0)
-	for width := 640; width <= 1400; width++ {
+	paint := func(width float32) {
+		t.Helper()
 		var canvas gfx.Canvas
-		state.Paint(&canvas, gfx.Size{Width: float32(width), Height: 700})
+		state.Paint(&canvas, gfx.Size{Width: width, Height: 700})
 		card, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID)))
 		if !ok {
-			t.Fatalf("the only host has no card at width %d", width)
+			t.Fatalf("the only host has no card at width %.0f", width)
 		}
 		if card.Bounds.Width+0.01 < last {
-			t.Fatalf("the only host's card shrank from %.2f to %.2f as the window widened to %d", last, card.Bounds.Width, width)
+			t.Fatalf("the only host's card shrank from %.2f to %.2f as the window widened to %.0f", last, card.Bounds.Width, width)
 		}
 		last = card.Bounds.Width
+	}
+	// The card can only shrink where another column starts to fit, so painting
+	// the range ends and each of those widths covers every constant-column run.
+	// A full-window paint at all 761 widths cost seventeen seconds.
+	paint(640)
+	for width := float32(640); width < 1400; {
+		// The viewport width at which the next column would fit if the grid did
+		// not cap its columns at the widest run. The viewport widens with the
+		// window by the same amount, so it is also the window's next step.
+		columns := hostGridColumns(state.hostsGridViewport.Width)
+		next := float32(columns+1)*(hostCardMinWidth+hostCardGap) - hostCardGap
+		width = min(width+max(next-state.hostsGridViewport.Width, 1), 1400)
+		paint(width)
 	}
 }
 

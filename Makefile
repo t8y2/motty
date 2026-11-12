@@ -1,4 +1,4 @@
-.PHONY: dev run head gtk check race race-workbench race-heavy race-rest
+.PHONY: dev run head gtk check test-dev race race-workbench race-heavy race-rest
 
 RACE_PACKAGES = \
 	./cmd/motty \
@@ -55,6 +55,14 @@ RACE_HEAVY = \
 	./internal/term
 RACE_REST = $(filter-out $(RACE_WORKBENCH) $(RACE_HEAVY),$(RACE_PACKAGES))
 
+# The tests only the dev build defines. Running the whole package again under
+# -tags dev to reach them repeated about 3200 release tests for 37 dev ones, so
+# the names are read from the files the tag compiles: a dev test added there
+# joins the run without a list to maintain.
+DEV_TEST_FILES = $(shell grep -rlE '^//go:build.*[[:space:]]dev([[:space:]]|$$)' --include='*_test.go' cmd/motty internal/workbench)
+DEV_TEST_NAMES = $(shell grep -h '^func Test' $(DEV_TEST_FILES) | sed -E 's/^func (Test[A-Za-z0-9_]+).*/\1/')
+DEV_TEST_PATTERN = ^($(shell echo '$(DEV_TEST_NAMES)' | tr ' ' '|'))$$
+
 dev:
 	tools/dev.sh
 
@@ -82,13 +90,20 @@ check:
 	go vet ./...
 	go vet -tags dev ./internal/workbench
 	go test ./... -count=1
-	go test -tags dev ./cmd/motty ./internal/workbench -count=1
+	$(MAKE) test-dev
 	bash -n tools/dev.sh tools/dev_launch.sh tools/macos_dev_signing.sh \
 		tools/macos_dev_signing_integration_test.sh
 	bash tools/dev_launch_test.sh
 	bash tools/macos_dev_signing_test.sh
 	bash tools/dev_script_test.sh
 	$(MAKE) race
+
+# The dev build's own tests, without repeating the release suite: everything
+# else in these packages already ran above, and a second pass under -tags dev
+# buys nothing but build-tag compilation that vet has done.
+test-dev:
+	@test -n '$(DEV_TEST_NAMES)' || { echo "test-dev: no //go:build dev test files found"; exit 2; }
+	go test -tags dev -count=1 -run '$(DEV_TEST_PATTERN)' ./cmd/motty ./internal/workbench
 
 # The detector is slow and multiplies the memory the tests hold, so one package
 # runs at a time (-p 1) and CI spreads the list over parallel jobs instead. A
@@ -103,8 +118,9 @@ race:
 # each other, so it gets the parallel jobs.
 race-workbench:
 	@test -n "$(SHARD)" -a -n "$(SHARDS)" || { echo "usage: make race-workbench SHARD=<i> SHARDS=<n>"; exit 2; }
-	@pattern=$$(go run ./tools/testslice -race -n $(SHARDS) -i $(SHARD) $(RACE_WORKBENCH)) && \
-		go test -race -p 1 -count=1 $(RACE_WORKBENCH) -run "$$pattern"
+	@go run ./tools/testslice -race -n $(SHARDS) -i $(SHARD) -max-pattern 120000 $(RACE_WORKBENCH) | while IFS= read -r pattern; do \
+		go test -race -p 1 -count=1 $(RACE_WORKBENCH) -run "$$pattern" || exit 1; \
+	done
 
 race-heavy:
 	go test -race -p 1 -count=1 $(RACE_HEAVY)

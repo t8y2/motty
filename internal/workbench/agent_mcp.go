@@ -610,6 +610,10 @@ func (b *agentBackend) answerAgentPrompt(conn *sshconn.Conn, host Host, status s
 	switch status.Phase {
 	case sshconn.PhaseHostKeyPrompt:
 		conn.RejectHostKey()
+		if status.HostKey.Changed {
+			return fmt.Errorf("%s: the host key changed (trusted %s, offered %s); confirm the change in the Motty window before agents can use this host",
+				formatEndpoint(status.Endpoint), strings.Join(status.HostKey.Known, ", "), status.HostKey.Fingerprint)
+		}
 		return fmt.Errorf("the host key %s (%s) of %s is not trusted yet; connect to it once from the Motty window to trust it",
 			status.HostKey.Fingerprint, status.HostKey.Type, status.HostKey.Address)
 	case sshconn.PhasePasswordPrompt:

@@ -290,7 +290,7 @@ func TestCommandPaletteArrowKeysFromSearchInput(t *testing.T) {
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	searchHit, ok := hitByID(&canvas, hitCommandPaletteSearch)
-	if !ok || !searchHit.NavigationKeys || searchHit.Placement != nil {
+	if !ok || !searchHit.NavigationKeys || hitText(&canvas, &searchHit).Placement != nil {
 		t.Fatalf("search field hit = %+v, want NavigationKeys=true and Placement=nil", searchHit)
 	}
 

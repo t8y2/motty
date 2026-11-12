@@ -1,6 +1,10 @@
 package workbench
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 func TestParseTargetReadsTheWaysPeopleWriteAHost(t *testing.T) {
 	for input, want := range map[string]target{
@@ -34,7 +38,7 @@ func TestParseTargetReadsTheWaysPeopleWriteAHost(t *testing.T) {
 		"fe80::1%en0":                  {"", "fe80::1%en0", 22},
 		"deploy@[fe80::1%en0]:2222":    {"deploy", "fe80::1%en0", 2222},
 	} {
-		got, err := parseTarget(input)
+		got, _, err := parseTarget(input)
 		if input == "deploy@host:22 ssh" { // two destinations
 			if err == nil {
 				t.Errorf("%q: two destinations were accepted: %+v", input, got)
@@ -50,12 +54,12 @@ func TestParseTargetReadsTheWaysPeopleWriteAHost(t *testing.T) {
 func TestParseTargetRejectsWhatItWouldHaveToGuess(t *testing.T) {
 	for _, input := range []string{
 		"", "   ", "ssh", "@host", "user@", "user@:22", "host:0", "host:65536", "host:abc", "host:-1",
-		"-p", "ssh -p", "ssh -p 99999 host", "ssh -o StrictHostKeyChecking=no host", "ssh -i key host",
+		"-p", "ssh -p", "ssh -p 99999 host", "ssh -o StrictHostKeyChecking=no host", "ssh -i key host", "-pw", "-pw secret",
 		"two words", "host name", "-leading.dash", "bad/host", "bad host:22", "user@host:22:33x",
 		"[::1", "[::1]x", "[]:22", "fe80::1%", "fe80::1%en0:22",
 		"example.com%zone", "ssh://host/path", "ssh://host?x=1", "ssh://", "ssh:// host", "ssh://host#frag", "ssh -l", "ssh -l user",
 	} {
-		if got, err := parseTarget(input); err == nil {
+		if got, _, err := parseTarget(input); err == nil {
 			t.Errorf("parseTarget(%q) = %+v, want an error", input, got)
 		}
 	}
@@ -63,13 +67,13 @@ func TestParseTargetRejectsWhatItWouldHaveToGuess(t *testing.T) {
 
 func TestParseConnectionReadsTelnetToo(t *testing.T) {
 	for input, want := range map[string]connection{
-		"telnet host":             {target{"", "host", 23}, protocolTelnet},
-		"telnet host 2323":        {target{"", "host", 2323}, protocolTelnet},
-		"telnet://host/":          {target{"", "host", 23}, protocolTelnet},
-		"telnet://host:2323":      {target{"", "host", 2323}, protocolTelnet},
-		"TELNET://[::1]:9":        {target{"", "::1", 9}, protocolTelnet},
-		"ssh deploy@host":         {target{"deploy", "host", 22}, protocolSSH},
-		"ssh://deploy@host:2200/": {target{"deploy", "host", 2200}, protocolSSH},
+		"telnet host":             {target: target{"", "host", 23}, protocol: protocolTelnet},
+		"telnet host 2323":        {target: target{"", "host", 2323}, protocol: protocolTelnet},
+		"telnet://host/":          {target: target{"", "host", 23}, protocol: protocolTelnet},
+		"telnet://host:2323":      {target: target{"", "host", 2323}, protocol: protocolTelnet},
+		"TELNET://[::1]:9":        {target: target{"", "::1", 9}, protocol: protocolTelnet},
+		"ssh deploy@host":         {target: target{"deploy", "host", 22}, protocol: protocolSSH},
+		"ssh://deploy@host:2200/": {target: target{"deploy", "host", 2200}, protocol: protocolSSH},
 	} {
 		got, err := parseConnection(input)
 		if err != nil || got != want {
@@ -79,6 +83,77 @@ func TestParseConnectionReadsTelnetToo(t *testing.T) {
 	for _, input := range []string{"telnet", "telnet host 0", "telnet host x", "telnet host 1 2", "telnet://", "telnet://bad host", "telnet://host/path"} {
 		if got, err := parseConnection(input); err == nil {
 			t.Errorf("parseConnection(%q) = %+v, want an error", input, got)
+		}
+	}
+}
+
+func TestParseTargetReadsAPasswordOnlyFromAURL(t *testing.T) {
+	for _, test := range []struct {
+		input    string
+		want     target
+		password string
+	}{
+		{"ssh://bob:s%40cret@host:2222/", target{"bob", "host", 2222}, "s@cret"},
+		{"sftp://bob:pa%20ss@host/", target{"bob", "host", 22}, "pa ss"},
+		{"SSH://bob:pw@[::1]:2200", target{"bob", "::1", 2200}, "pw"},
+		{"ssh://bob@host", target{"bob", "host", 22}, ""},
+		{"ssh://bob:@host", target{"bob", "host", 22}, ""},
+		{"-p 2222 -l bob -pw secret host", target{"bob", "host", 2222}, "secret"},
+		// Typed forms keep their old meaning: the colon is part of the login.
+		{"bob:pw@host", target{"bob:pw", "host", 22}, ""},
+	} {
+		got, password, err := parseTarget(test.input)
+		if err != nil || got != test.want || password != test.password {
+			t.Errorf("parseTarget(%q) = %+v, %q, %v; want %+v, %q", test.input, got, password, err, test.want, test.password)
+		}
+	}
+	for _, input := range []string{"ssh://:pw@host", "ssh://bob:%zz@host", "ssh://bob:" + strings.Repeat("x", 5000) + "@host"} {
+		if got, _, err := parseTarget(input); err == nil {
+			t.Errorf("parseTarget(%q) = %+v, want an error", input, got)
+		}
+	}
+}
+
+func TestParseConnectionReadsBastionClientLinks(t *testing.T) {
+	for input, want := range map[string]connection{
+		"xshell://ssh://bob:pw@host:2222":  {target{"bob", "host", 2222}, protocolSSH, "pw", false},
+		"xshell://ssh//bob:pw@host:2222":   {target{"bob", "host", 2222}, protocolSSH, "pw", false},
+		"xshell://ssh:bob:pw@host:2222":    {target{"bob", "host", 2222}, protocolSSH, "pw", false},
+		"xshell://bob:pw@host:2222":        {target{"bob", "host", 2222}, protocolSSH, "pw", false},
+		"XSHELL://ssh://bob:pw@host:2222/": {target{"bob", "host", 2222}, protocolSSH, "pw", false},
+		"xshell://bob@host":                {target{"bob", "host", 22}, protocolSSH, "", false},
+		"xshell://sftp://bob:pw@host:2222": {target{"bob", "host", 2222}, protocolSSH, "pw", true},
+		"sftp://bob:pw@host:2222":          {target{"bob", "host", 2222}, protocolSSH, "pw", true},
+		"xftp://sftp://bob:pw@host:2222":   {target{"bob", "host", 2222}, protocolSSH, "pw", true},
+		"xftp://sftp:bob:pw@host:2222":     {target{"bob", "host", 2222}, protocolSSH, "pw", true},
+		"xftp://bob:pw@host:2222":          {target{"bob", "host", 2222}, protocolSSH, "pw", true},
+		"xshell://host.example.com:2222":   {target{"", "host.example.com", 2222}, protocolSSH, "", false},
+		"xshell://ssh.example.com":         {target{"", "ssh.example.com", 22}, protocolSSH, "", false},
+	} {
+		got, err := parseConnection(input)
+		if err != nil || got != want {
+			t.Errorf("parseConnection(%q) = %+v, %v; want %+v", input, got, err, want)
+		}
+	}
+	for _, input := range []string{"xftp://ftp://host", "xshell://ftp://host", "xftp://telnet://host"} {
+		if got, err := parseConnection(input); !errors.Is(err, errUnsupportedLink) {
+			t.Errorf("parseConnection(%q) = %+v, %v; want errUnsupportedLink", input, got, err)
+		}
+	}
+}
+
+func TestRedactLaunchTextHidesOnlyThePassword(t *testing.T) {
+	for input, want := range map[string]string{
+		"ssh://bob:secret@host:22":          "ssh://bob:***@host:22",
+		"xshell://ssh://bob:secret@host:22": "xshell://ssh://bob:***@host:22",
+		"xftp://bob:secret@host:22":         "xftp://bob:***@host:22",
+		"ssh://bob@host:22":                 "ssh://bob@host:22",
+		"-p 2222 -l bob -pw secret host":    "-p 2222 -l bob -pw *** host",
+		"bob:secret@host":                   "bob:secret@host",
+		"not a link":                        "not a link",
+	} {
+		if got := redactLaunchText(input); got != want {
+			t.Errorf("redactLaunchText(%q) = %q, want %q", input, got, want)
 		}
 	}
 }

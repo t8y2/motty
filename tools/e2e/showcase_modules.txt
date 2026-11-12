@@ -1,0 +1,35 @@
+# The landing page showcase's module captures (website/public/showcase-hosts.webp
+# and showcase-colors.webp): the host list and the terminal-colour quick picks,
+# both in the light appearance so they follow the theme step. One run, one home:
+# the catalog fixture fills the host list, then Settings shows the quick picks.
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=zh-CN python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/showcase_modules.txt
+#
+# The catalog is the same fixture readme_hosts.txt imports. No connection is made,
+# so no SSH fixture is needed. The theme is switched once, after the import, so
+# both modules are light.
+#
+# Convert with cwebp -q 88 -m 6, then copy the two files to
+# website/public/showcase-hosts.webp and showcase-colors.webp.
+resize 1560 975
+appearance dark
+settle 600
+click id:shell/import-menu
+settle 600
+openfiles tools/e2e/fixtures/readme_hosts_catalog.json
+click "导入目录"
+settle 1500
+click id:host-grid/host-view-list
+settle 900
+click id:shell/theme
+settle 1000
+shot /tmp/showcase-hosts.png
+click id:shell/settings
+settle 900
+click "终端"
+settle 900
+scroll 780 500 0 1500
+settle 900
+shot /tmp/showcase-colors.png
+layout

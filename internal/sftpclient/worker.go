@@ -67,6 +67,7 @@ const (
 	OperationOpenDocument
 	OperationSaveDocument
 	OperationReadDocument
+	OperationMoveSelection
 )
 
 // ExistingPolicy controls what a transfer does when its final destination or
@@ -198,6 +199,7 @@ type linkJob struct {
 }
 
 type request struct {
+	sources     []string
 	listID      uint64
 	data        []byte
 	id          uint64
@@ -409,6 +411,11 @@ func (worker *Worker) CreateDirectories(remotePath string) bool {
 
 func (worker *Worker) Rename(oldPath, newPath string) bool {
 	return worker.enqueue(request{operation: OperationRename, remote: oldPath, destination: newPath})
+}
+
+// MoveSelection moves each source into the destination folder using Rename.
+func (worker *Worker) MoveSelection(sources []string, folder string) bool {
+	return worker.enqueue(request{operation: OperationMoveSelection, sources: slices.Clone(sources), destination: folder})
 }
 
 func (worker *Worker) RemoveFile(remotePath string) bool {
@@ -1048,6 +1055,20 @@ func (worker *Worker) execute(next request) Result {
 		}
 	case OperationRename:
 		result.Err = rename(client, next.remote, next.destination)
+	case OperationMoveSelection:
+		var failures []error
+		for _, source := range next.sources {
+			if worker.canceled(generation) {
+				break
+			}
+			destination := path.Join(next.destination, path.Base(source))
+			if err := rename(client, source, destination); err != nil {
+				failures = append(failures, fmt.Errorf("%s: %w", source, err))
+				continue
+			}
+			result.Files++
+		}
+		result.Err = errors.Join(failures...)
 	case OperationRemoveFile:
 		result.Err = removeFile(client, next.remote)
 	case OperationRemoveDirectory:

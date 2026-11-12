@@ -160,7 +160,9 @@ type Terminal struct {
 	histSpare  *line        // an evicted line to reuse, so a budget-bound history does not allocate per line
 	view       int          // how many lines the view is scrolled back
 	scrolled   uint64       // lines ever pushed into history, kept or dropped
-	clock      func() int64 // stamps lines on first write; nil records nothing
+	clock      func() int64 // stamps lines when they are written; nil records nothing
+	clockAt    int64        // clock() for the current Write, see clockNow
+	clockValid bool
 
 	cx, cy   int
 	pend     bool // a character was written in the last column; wrap on the next
@@ -215,7 +217,10 @@ type Terminal struct {
 	runBuf   []rune // text decoded for the run path, reused across writes
 	nextID   uint64
 	version  uint64
-	reflow   reflow
+	// generation counts the structural changes that make line numbers name
+	// other text; see BufferGeneration.
+	generation uint64
+	reflow     reflow
 
 	parser
 }
@@ -241,6 +246,22 @@ func (t *Terminal) Size() (cols, rows int) { return t.cols, t.rows }
 // Version changes whenever anything visible may have changed: written bytes,
 // resizes and scrolling the view. The owner can skip repainting while it holds.
 func (t *Terminal) Version() uint64 { return t.version }
+
+// BufferGeneration changes when the retained line numbers stop naming the text
+// they named before: a reset, and entering or leaving the alternate screen.
+// Ordinary output, which appends and scrolls, leaves it alone. An owner's
+// selection watches it to know when its points have become meaningless.
+func (t *Terminal) BufferGeneration() uint64 { return t.generation }
+
+// RetainedFrom is the oldest line the retained buffer still holds, for owners
+// that anchor to line numbers: it is where a point at or before it has to
+// start. ok is false when the buffer holds no lines at all.
+func (t *Terminal) RetainedFrom() (line uint64, ok bool) {
+	if t.bufferLineCount() == 0 {
+		return 0, false
+	}
+	return t.lineBase(), true
+}
 
 // Title is the window title the application set with OSC 0 or 2.
 func (t *Terminal) Title() string { return t.title }
@@ -314,6 +335,7 @@ func (t *Terminal) ClearScreen() bool {
 	lines[0].wrapped = false
 	t.clearHistory()
 	t.cy = 0
+	t.generation++
 	t.version++
 	return true
 }
@@ -510,6 +532,7 @@ func (t *Terminal) Reset() {
 	}
 	t.view = 0
 	t.title = ""
+	t.generation++
 	t.resetState()
 }
 
@@ -910,6 +933,12 @@ func (t *Terminal) eraseRange(l *line, a, b int) {
 	t.repairWide(l, a-1)
 	t.repairWide(l, b)
 	l.version++
+	// Erasing is a write too: the line's current (blank) content was produced
+	// now, so it must not keep the time of what it used to hold. A line nothing
+	// has ever been written to stays unstamped.
+	if t.clock != nil && (l.at != 0 || l.used != 0) {
+		l.at = t.clockNow()
+	}
 }
 
 // repairWide blanks the orphan half of a double-width character at x.
@@ -1085,11 +1114,17 @@ func (t *Terminal) AppendRetainedText(dst []byte) []byte {
 	return dst
 }
 
-// SetClock makes the terminal remember when each line is first written: now
-// returns unix seconds and is called once per line, not per character. A nil
-// clock stops recording and costs one nil check per printed run. Lines keep
-// their time when they scroll into the history.
-func (t *Terminal) SetClock(now func() int64) { t.clock = now }
+// SetClock makes the terminal remember when each line is written: now returns
+// unix seconds and is called at most once per Write, not per line or character.
+// A line that is written over takes the time of that write, so a program that
+// repaints the screen in place moves its rows' times forward instead of leaving
+// them at the time each row first appeared. A nil clock stops recording and
+// costs one nil check per printed run. Lines keep their time when they scroll
+// into the history.
+func (t *Terminal) SetClock(now func() int64) {
+	t.clock = now
+	t.clockValid = false
+}
 
 // LineNumber is the 1-based number of view row i among every line the main
 // screen has produced since the terminal started. It keeps counting as the
@@ -1097,9 +1132,22 @@ func (t *Terminal) SetClock(now func() int64) { t.clock = now }
 // screen.
 func (t *Terminal) LineNumber(i int) uint64 { return t.scrolled - uint64(t.view) + uint64(i) + 1 }
 
-// stamp records the first write to l.
+// clockNow is the time stamped on lines written by the current Write. Asking
+// the clock once keeps a burst of lines on the same second and keeps the clock
+// out of the per-character paths, which call stamp for every rune they print.
+func (t *Terminal) clockNow() int64 {
+	if !t.clockValid {
+		t.clockAt, t.clockValid = t.clock(), true
+	}
+	return t.clockAt
+}
+
+// stamp records when the content of l was written. Overwriting a line moves its
+// time forward: a full-screen program on the main screen writes its rows again
+// every refresh, and the gutter must not report the time a row first appeared
+// for content that has since been replaced.
 func (t *Terminal) stamp(l *line) {
-	if t.clock != nil && l.at == 0 {
-		l.at = t.clock()
+	if t.clock != nil {
+		l.at = t.clockNow()
 	}
 }

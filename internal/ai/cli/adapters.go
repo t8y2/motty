@@ -47,6 +47,18 @@ var adapters = map[string]adapter{
 			validate: validateOpenCodePermission,
 		}},
 	},
+	// Pi's built-in read, bash, edit, and write tools run with the permissions of
+	// its own process, and its user-level MCP servers would bypass Motty's gate.
+	// Both are removed; only the built-in MCP extension stays, pointed at Motty's
+	// server by the private agent directory.
+	store.KindPiCLI: {
+		program: "pi",
+		required: []string{"--print", "--mode", "--no-builtin-tools", "--no-extensions", "--extension",
+			"--no-skills", "--no-prompt-templates", "--no-context-files", "--no-approve", "--no-session"},
+		// Printing help builds a session and loads resources, so the same
+		// isolation flags precede it: no installed extension runs from probe.
+		help: []string{"--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-approve", "--offline", "--help"},
+	},
 }
 
 // Check the installed binary's effective feature state, not a version allowlist.
@@ -193,10 +205,9 @@ func foreignMCP(parent context.Context, kind string, c command, dir string) ([]s
 	}
 	return names, nil
 }
-func buildCommand(kind string, c command, req llm.Request, dir, url, token string, foreign []string) (command, error) {
+func buildCommand(kind string, c command, req llm.Request, dir, url, token string, foreign []string, server string) (command, error) {
 	c.args = append([]string{}, c.args...)
 	c.dir = dir
-	server := sessionName()
 	names := make([]string, 0, len(req.Tools))
 	for _, s := range req.Tools {
 		names = append(names, s.Name)
@@ -274,6 +285,26 @@ func buildCommand(kind string, c command, req llm.Request, dir, url, token strin
 		}
 		for _, file := range images {
 			c.args = append(c.args, "--file="+file)
+		}
+	case store.KindPiCLI:
+		agent, err := piAgentDir(dir)
+		if err != nil {
+			return command{}, err
+		}
+		if err = writePiMCP(agent, server, url, token); err != nil {
+			return command{}, err
+		}
+		c.env = append(c.env,
+			"PI_CODING_AGENT_DIR="+agent, "PI_SKIP_VERSION_CHECK=1", "PI_TELEMETRY=0", "PI_OFFLINE=1",
+		)
+		c.args = append(c.args, "--print", "--mode", "json",
+			"--no-extensions", "--extension", "builtin:mcp", "--no-builtin-tools",
+			"--no-skills", "--no-prompt-templates", "--no-context-files", "--no-approve", "--no-session")
+		for _, file := range images {
+			c.args = append(c.args, "@"+file)
+		}
+		if req.Model != "" && req.Model != "default" {
+			c.args = append(c.args, "--model", req.Model)
 		}
 	default:
 		return command{}, errors.New("cli: unsupported_provider")

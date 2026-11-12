@@ -490,6 +490,7 @@ const (
 	modalVaultForget
 	modalHighlightRule
 	modalSnippet
+	modalSnippetDelete
 	modalImportSessions
 	modalFontPicker
 	modalOutboundProxy
@@ -1203,6 +1204,8 @@ func (state *State) showNextPrompt() {
 				state.hostKeyDescription = state.rdpCertificateDescription(session.hostKey)
 			} else if session.hostKey.Type == vncServerKeyType {
 				state.hostKeyDescription = state.vncKeyDescription(session.hostKey)
+			} else if session.hostKey.Changed {
+				state.hostKeyDescription = fmt.Sprintf(state.messages.HostKeyChangedDescriptionFmt, session.hostKey.Address)
 			}
 		case sshconn.PhasePasswordPrompt:
 			state.modal = modalPassword

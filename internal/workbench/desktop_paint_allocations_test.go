@@ -47,6 +47,12 @@ func TestChangedDesktopIdentityPaintDoesNotAllocate(t *testing.T) {
 					if _, ok := hitByID(&canvas, forgetID); !ok {
 						t.Fatal("changed identity does not expose its forget action")
 					}
+					// Windows can populate text and icon caches over several frames.
+					// Measure the steady-state paint after those caches are warm.
+					for range 200 {
+						canvas.Reset()
+						state.Paint(&canvas, size)
+					}
 					if allocations := testing.AllocsPerRun(50, func() {
 						canvas.Reset()
 						state.Paint(&canvas, size)

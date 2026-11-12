@@ -55,10 +55,12 @@ type LoginStart struct {
 }
 
 // launchText turns a command line into the text a connection is parsed from, and
-// says whether it is a link. It understands what ssh and PuTTY users type:
+// says whether it is a link. It understands what ssh, PuTTY and bastion
+// launchers type:
 //
 //	user@host            ssh://user@host:2222/       telnet://host
 //	ssh -p 2222 host     -ssh -P 2222 -l user host
+//	xshell -url ssh://user:password@host:22          sftp://user@host:22
 func launchText(args []string) (text string, link bool) {
 	words := make([]string, 0, len(args))
 	for _, arg := range args {
@@ -67,6 +69,8 @@ func launchText(args []string) (text string, link bool) {
 			continue
 		case "-ssh":
 			continue // PuTTY's protocol switch; ssh is the default
+		case "-url":
+			continue // Xshell's switch; a bastion's external-tool template uses it
 		case "-P":
 			arg = "-p"
 		case "--background":
@@ -79,7 +83,9 @@ func launchText(args []string) (text string, link bool) {
 	}
 	text = strings.Join(words, " ")
 	lower := strings.ToLower(text)
-	link = strings.HasPrefix(lower, "ssh://") || strings.HasPrefix(lower, "telnet://")
+	link = strings.HasPrefix(lower, "ssh://") || strings.HasPrefix(lower, "telnet://") ||
+		strings.HasPrefix(lower, "sftp://") || strings.HasPrefix(lower, "xshell://") ||
+		strings.HasPrefix(lower, "xftp://")
 	return text, link
 }
 
@@ -129,6 +135,13 @@ func (state *State) openLaunch(args []string) {
 		state.openXshellFile(path)
 		return
 	}
+	if paths, ok := markdownLaunchPaths(args); ok {
+		if state.options.Raise != nil {
+			state.options.Raise()
+		}
+		state.openMarkdownFiles(paths)
+		return
+	}
 	text, link := launchText(args)
 	if len(args) == 0 && state.relaunchAction == relaunchNewWindow && state.options.NewWindow != nil {
 		state.openNewWindow()
@@ -146,7 +159,11 @@ func (state *State) openLaunch(args []string) {
 	parsed, err := parseConnection(text)
 	if err != nil {
 		state.activeSection = sectionHosts
-		state.status = fmt.Sprintf(state.messages.ErrBadTargetFmt, text)
+		if errors.Is(err, errUnsupportedLink) {
+			state.status = state.messages.Tools.LaunchFTPUnsupported
+		} else {
+			state.status = fmt.Sprintf(state.messages.ErrBadTargetFmt, redactLaunchText(text))
+		}
 		return
 	}
 	if !link {
@@ -157,12 +174,16 @@ func (state *State) openLaunch(args []string) {
 	state.modal = modalOpenLink
 }
 
-// launchDescription names what the link asks to open.
+// launchDescription names what the link asks to open. It never includes the
+// password the link carries.
 func (state *State) launchDescription() string {
 	target := state.launchTarget
 	where := net.JoinHostPort(target.host, strconv.Itoa(int(target.port)))
 	if target.user != "" {
 		where = target.user + "@" + where
+	}
+	if target.files {
+		return fmt.Sprintf(state.messages.Tools.LaunchFilesDescriptionFmt, where)
 	}
 	return fmt.Sprintf(state.messages.Tools.LaunchDescriptionFmt, protocolName(target.protocol), where)
 }
@@ -170,10 +191,14 @@ func (state *State) launchDescription() string {
 func (state *State) clickLaunchDialog(id gfx.ID) {
 	switch id {
 	case hitLaunchDismiss, hitLaunchClose, hitLaunchCancel:
+		// Drop the link, and with it the password, as soon as it is not needed.
+		state.launchTarget = connection{}
 		state.modal = modalNone
 	case hitLaunchConnect:
+		target := state.launchTarget
+		state.launchTarget = connection{}
 		state.modal = modalNone
-		state.connectParsed(state.launchTarget)
+		state.connectParsed(target)
 	}
 }
 
@@ -190,7 +215,11 @@ func (state *State) launchKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 func (state *State) declareLaunchDialog(c ui.C) {
 	m := state.messages
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, state.launchDescription(), 3*18)
+	lines := 3
+	if state.launchTarget.password != "" {
+		lines += 3 // the link carries a password, and that is worth saying
+	}
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, state.launchDescription(), float32(lines*18))
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.Tools.LaunchTitle, Description: state.launchDescription(),
 		Width: 520, Height: height, Layer: dialogLayer,
@@ -199,6 +228,9 @@ func (state *State) declareLaunchDialog(c ui.C) {
 	dialog.Body(func() {
 		ui.Column(c).Fill().Children(func() {
 			ui.Paragraph(c, m.Tools.LaunchWarning, 3).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18)
+			if state.launchTarget.password != "" {
+				ui.Paragraph(c, m.Tools.LaunchPasswordWarning, 3).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(18)
+			}
 		})
 	})
 	dialog.Footer(func() {
