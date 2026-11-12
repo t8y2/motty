@@ -2207,9 +2207,14 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 	tagsWidth := min(rowWidth*0.18, statusStart-tagsStart-8)
 	status, _ := state.hostStatus(host)
 	checkMargin := 46 - 10 - components.CheckboxExtent(state.Theme())
+	protocolLabel := state.hostProtocolTagLabel(host.Protocol)
+	protocolWidth := canvas.TextWidthWeight(protocolLabel, metrics.FontSizeS, gfx.WeightMedium) + 14
+	showProtocol := tagsWidth >= protocolWidth
 	tagCount, tagsRoom := 0, tagsWidth
 	var tagList [maxHostTags]string
-	if tagsWidth >= 60 {
+	if showProtocol {
+		tagCount = state.fitHostTags(canvas, host, max(tagsWidth-protocolWidth-5, 0), &tagList)
+	} else if tagsWidth >= 60 {
 		tagCount = state.fitHostTags(canvas, host, tagsWidth, &tagList)
 	}
 	ui.Stack(c).Width(rowWidth).Height(hostRowHeight).Children(func() {
@@ -2245,8 +2250,14 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 					ui.Text(c, host.target).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(22).Width(addressWidth).Shrink(0).Ellipsis()
 				}
 			})
-			if tagCount > 0 {
+			if showProtocol || tagCount > 0 {
 				ui.Row(c).Width(tagsRoom).Shrink(0).Gap(5).Items(ui.Center).Children(func() {
+					if showProtocol {
+						color := hostProtocolTagColor(pal, host.Protocol)
+						ui.Row(c).Height(24).PadX(7).Items(ui.Center).Radius(12).Background(withAlpha(color, 0.14)).Children(func() {
+							ui.Text(c, protocolLabel).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color)
+						})
+					}
 					for _, tag := range tagList[:tagCount] {
 						ui.Row(c).Height(24).PadX(7).Items(ui.Center).Radius(12).Background(pal.surface).Children(func() {
 							ui.Text(c, tag).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted)
