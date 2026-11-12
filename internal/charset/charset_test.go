@@ -227,3 +227,34 @@ func TestInertDecoderCopiesBytes(t *testing.T) {
 		}
 	}
 }
+
+// FuzzDecodeSplitMatchesWhole guards the stream property the terminal depends
+// on: the same bytes decode to the same UTF-8 however the transport splits
+// them across reads, whole in one call or in fixed-size chunks plus a tail.
+func FuzzDecodeSplitMatchesWhole(f *testing.F) {
+	f.Add([]byte("hello, terminal\r\n"), 1)
+	f.Add([]byte{0xC4, 0xE3, 0xBA, 0xC3, 0xD6, 0xD0, 0xCE, 0xC4}, 1)             // GBK 你好中文
+	f.Add([]byte{0x82, 0xB1, 0x82, 0xF1, 0x82, 0xC9, 0x82, 0xBF, 0x82, 0xCD}, 2) // Shift_JIS こんにちは
+	f.Add([]byte{0xA4, 0xB3, 0xA4, 0xF3, 0xA4, 0xCB, 0xA4, 0xC1, 0xA4, 0xCF}, 3) // EUC-JP こんにちは
+	f.Add([]byte{0xFF, 0xFE, 0x81, 0x00, 0xB0, 0xA1}, 4)                         // malformed tails
+	f.Add([]byte("plain ascii \x1b[2J\x1b]0;title\x07"), 5)
+	f.Fuzz(func(t *testing.T, data []byte, step int) {
+		if step < 1 {
+			step = 1
+		}
+		for _, name := range Encodings {
+			whole := NewDecoder(name)
+			wholeOut := whole.Flush(whole.Append(nil, data))
+
+			split := NewDecoder(name)
+			var splitOut []byte
+			for start := 0; start < len(data); start += step {
+				splitOut = split.Append(splitOut, data[start:min(start+step, len(data))])
+			}
+			splitOut = split.Flush(splitOut)
+			if string(splitOut) != string(wholeOut) {
+				t.Fatalf("%s: decode split by %d = %q, want %q", name, step, splitOut, wholeOut)
+			}
+		}
+	})
+}
