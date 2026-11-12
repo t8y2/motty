@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
@@ -1267,5 +1268,256 @@ func TestToolbarDockPresenceMatchesThePaintedTerminalTools(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestToolbarDockDisabledToolMenuAndDrag(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session := &state.sessions[0]
+	if len(session.term.recording.events) != 0 {
+		t.Fatal("fixture should start without recording events")
+	}
+	size := gfx.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	hit, ok := hitByID(&canvas, hitTerminalRecordingExport)
+	if !ok {
+		t.Fatal("export-recording is not painted")
+	}
+	if !hit.Disabled {
+		t.Fatal("export-recording should be disabled when there are no recording events")
+	}
+	if initialZone := state.toolbarDockZoneFor(toolbarTerminal, "export-recording"); initialZone != toolbarDockSideTop {
+		t.Fatalf("export-recording initial zone = %s, want side-top", initialZone)
+	}
+
+	// 1. Right-click context menu on disabled export button.
+	// Since the button is disabled, Viva's hit-tester skips it, so Target is 0.
+	point := gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
+	result := state.Pointer(gfx.PointerEvent{
+		Kind:     gfx.PointerDown,
+		Button:   gfx.PointerButtonSecondary,
+		Target:   gfx.ID{},
+		X:        point.X,
+		Y:        point.Y,
+		Viewport: size,
+	})
+	if !result.Handled {
+		t.Fatal("secondary press on disabled tool was not handled")
+	}
+	if !state.toolbarDock.menu || state.toolbarDock.menuTool != hitTerminalRecordingExport {
+		t.Fatalf("right-clicking disabled tool did not open its menu: menu=%v tool=%v", state.toolbarDock.menu, state.toolbarDock.menuTool)
+	}
+	if !state.clickToolbarDockMenu(hitToolbarDockTop) {
+		t.Fatal("clickToolbarDockMenu failed")
+	}
+	if zone := state.toolbarDockZoneFor(toolbarTerminal, "export-recording"); zone != toolbarDockTop {
+		t.Fatalf("moved zone = %s, want %s", zone, toolbarDockTop)
+	}
+
+	// 2. Drag-and-drop on disabled export button from top bar to bottom strip.
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	topHit, ok := hitByID(&canvas, hitTerminalRecordingExport)
+	if !ok || topHit.Bounds.Y >= windowBarHeight {
+		t.Fatalf("export button did not move to top bar: %+v", topHit)
+	}
+	if !topHit.Disabled {
+		t.Fatal("moved export button should still be disabled")
+	}
+
+	start := gfx.Point{X: topHit.Bounds.X + topHit.Bounds.Width/2, Y: topHit.Bounds.Y + topHit.Bounds.Height/2}
+	downResult := state.Pointer(gfx.PointerEvent{
+		Kind:     gfx.PointerDown,
+		Button:   gfx.PointerButtonPrimary,
+		Target:   gfx.ID{},
+		X:        start.X,
+		Y:        start.Y,
+		Viewport: size,
+	})
+	if !downResult.Handled {
+		t.Fatal("primary press on disabled tool was not handled")
+	}
+	if !state.toolbarDock.drag.pressed {
+		t.Fatal("primary press on disabled tool did not set drag.pressed")
+	}
+
+	bottom := state.toolbarDockBottomBounds(size, true)
+	to := gfx.Point{X: bottom.X + bottom.Width/4, Y: bottom.Y + bottom.Height/2}
+	state.Pointer(gfx.PointerEvent{
+		Kind:     gfx.PointerMove,
+		X:        to.X,
+		Y:        to.Y,
+		Viewport: size,
+	})
+	if !state.toolbarDock.drag.active {
+		t.Fatal("dragging disabled tool did not become active")
+	}
+	upResult := state.Pointer(gfx.PointerEvent{
+		Kind:     gfx.PointerUp,
+		Button:   gfx.PointerButtonPrimary,
+		X:        to.X,
+		Y:        to.Y,
+		Viewport: size,
+	})
+	if !upResult.Handled {
+		t.Fatal("drop on bottom strip was not handled")
+	}
+	if zone := state.toolbarDockZoneFor(toolbarTerminal, "export-recording"); zone != toolbarDockBottom {
+		t.Fatalf("dropped zone = %s, want %s", zone, toolbarDockBottom)
+	}
+
+	// 3. Simple click on disabled export button without drag.
+	canvas.Reset()
+	state.Paint(&canvas, size)
+	bottomHit, ok := hitByID(&canvas, hitTerminalRecordingExport)
+	if !ok || bottomHit.Bounds.Y < size.Height-state.terminalToolbarMetrics().railExtent {
+		t.Fatalf("export button not found on bottom strip: %+v", bottomHit)
+	}
+	clickPoint := gfx.Point{X: bottomHit.Bounds.X + bottomHit.Bounds.Width/2, Y: bottomHit.Bounds.Y + bottomHit.Bounds.Height/2}
+	state.Pointer(gfx.PointerEvent{
+		Kind:     gfx.PointerDown,
+		Button:   gfx.PointerButtonPrimary,
+		Target:   gfx.ID{},
+		X:        clickPoint.X,
+		Y:        clickPoint.Y,
+		Viewport: size,
+	})
+	clickUp := state.Pointer(gfx.PointerEvent{
+		Kind:     gfx.PointerUp,
+		Button:   gfx.PointerButtonPrimary,
+		Target:   gfx.ID{},
+		X:        clickPoint.X,
+		Y:        clickPoint.Y,
+		Viewport: size,
+	})
+	if !clickUp.Handled {
+		t.Fatal("click release on disabled tool should be handled")
+	}
+	if state.toolbarDock.drag.active {
+		t.Fatal("click should not activate drag")
+	}
+	if zone := state.toolbarDockZoneFor(toolbarTerminal, "export-recording"); zone != toolbarDockBottom {
+		t.Fatalf("click changed zone to %s", zone)
+	}
+}
+
+func TestToolbarDockTopDisabledToolWindowAndInteraction(t *testing.T) {
+	now := time.Second
+	state, _, _ := liveRecordingSession(t, &now)
+	state.moveToolbarDockTool(hitTerminalRecordingExport, toolbarDockTop, gfx.ID{})
+	var invalidator app.Invalidator
+	state.options.Invalidate = invalidator.Invalidate
+	view, err := headless.Open(app.Config{
+		Width: 1200, Height: 800, WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight,
+		Tree: Tree(), Invalidator: &invalidator, Paint: state.Paint, OnPointer: state.Pointer,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+
+	hit, ok := hitByIDSnapshot(view.Snapshot().Hits, hitTerminalRecordingExport)
+	if !ok {
+		t.Fatal("not painted")
+	}
+	pressKind := view.Driver().PressAt(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2)
+	if pressKind == app.PressMove {
+		t.Fatal("top disabled tool should not move the window")
+	}
+
+	x, y := hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2
+	if err := view.RightClick(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if !state.toolbarDock.menu || state.toolbarDock.menuTool != hitTerminalRecordingExport {
+		t.Fatalf("right click did not open menu at top: menu=%v tool=%v", state.toolbarDock.menu, state.toolbarDock.menuTool)
+	}
+	if err := view.ClickLabel(state.messages.Toolbars.MoveSideTop); err != nil {
+		t.Fatal(err)
+	}
+	if zone := state.toolbarDockZoneFor(toolbarTerminal, "export-recording"); zone != toolbarDockSideTop {
+		t.Fatalf("moved zone = %s, want side-top", zone)
+	}
+
+	// Move back to top and test dragging.
+	state.moveToolbarDockTool(hitTerminalRecordingExport, toolbarDockTop, gfx.ID{})
+	if err := view.Resize(1200, 800); err != nil {
+		t.Fatal(err)
+	}
+	hit, ok = hitByIDSnapshot(view.Snapshot().Hits, hitTerminalRecordingExport)
+	if !ok {
+		t.Fatal("not painted at top")
+	}
+	x, y = hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2
+	if err := view.Press(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Move(1180, 200); err != nil {
+		t.Fatal(err)
+	}
+	if !state.toolbarDock.drag.active {
+		t.Fatal("dragging from top bar did not start")
+	}
+	if err := view.Release(1180, 200); err != nil {
+		t.Fatal(err)
+	}
+	if zone := state.toolbarDockZoneFor(toolbarTerminal, "export-recording"); zone != toolbarDockSideTop {
+		t.Fatalf("dragged from top zone = %s, want side-top", zone)
+	}
+
+	// Test simple click at top bar without moving: should not move window, should not move tool.
+	state.moveToolbarDockTool(hitTerminalRecordingExport, toolbarDockTop, gfx.ID{})
+	if err := view.Resize(1200, 800); err != nil {
+		t.Fatal(err)
+	}
+	hit, ok = hitByIDSnapshot(view.Snapshot().Hits, hitTerminalRecordingExport)
+	if !ok {
+		t.Fatal("not painted at top")
+	}
+	x, y = hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2
+	if err := view.Click(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if zone := state.toolbarDockZoneFor(toolbarTerminal, "export-recording"); zone != toolbarDockTop {
+		t.Fatalf("click changed zone = %s", zone)
+	}
+}
+
+// A press that carries a target of its own — an open menu's dismiss layer, one
+// of its rows — must reach that control even where a disabled dock tool's
+// bounds lie under it. The dock used to match such presses by position alone,
+// so the menu never saw them and could not be dismissed from over the tool.
+func TestToolbarDockDisabledToolYieldsToTargetedPresses(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	size := gfx.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	hit, ok := hitByID(&canvas, hitTerminalRecordingExport)
+	if !ok || !hit.Disabled {
+		t.Fatal("export-recording should be painted disabled")
+	}
+	point := gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
+
+	state.tabMenu.open = true
+	result := state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary,
+		Target: hitTabMenuDismiss, X: point.X, Y: point.Y, Viewport: size,
+	})
+	if !result.Handled {
+		t.Fatal("the press should be handled by the menu it names")
+	}
+	if state.toolbarDock.menu {
+		t.Fatal("press on an open menu's dismiss layer opened the dock menu")
+	}
+	if state.toolbarDock.drag.pressed {
+		t.Fatal("press on an open menu's dismiss layer armed a dock drag")
+	}
+	if state.tabMenu.open {
+		t.Fatal("the open tab menu was not dismissed")
 	}
 }
