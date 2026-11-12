@@ -5,6 +5,7 @@ import (
 
 	"motty/internal/serial"
 	"motty/internal/sessionlog"
+	"motty/internal/sshbrowser"
 	"motty/internal/sshconn"
 )
 
@@ -132,6 +133,7 @@ type Session struct {
 	endpoint     sshconn.Endpoint
 	role         sshconn.EndpointRole
 	conn         Connection
+	browser      *sshbrowser.Browser
 	sudoCommands bool
 	sudoPassword string
 	recordRecent bool // this user dial may update its recent success once

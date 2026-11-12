@@ -17,6 +17,8 @@ var (
 	hitTabMenuCloseOthers   = tree.ID(tabMenuHits, "tab-menu-close-others")
 	hitTabMenuCloseRight    = tree.ID(tabMenuHits, "tab-menu-close-right")
 	hitTabMenuDuplicate     = tree.ID(tabMenuHits, "tab-menu-duplicate")
+	hitTabMenuBrowserOpen   = tree.ID(tabMenuHits, "tab-menu-open-ssh-browser")
+	hitTabMenuBrowserClose  = tree.ID(tabMenuHits, "tab-menu-close-ssh-browser")
 	hitTabMenuEditHost      = tree.ID(tabMenuHits, "tab-menu-edit-host")
 	hitTabMenuNewWindow     = tree.ID(tabMenuHits, "tab-menu-new-window")
 	hitTabMenuCopyAddress   = tree.ID(tabMenuHits, "tab-menu-copy-address")
@@ -176,6 +178,13 @@ func (state *State) paintTabMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: address == ""})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: name == ""})
+	if hasSession && session.canOpenSSHBrowser() {
+		if session.browser != nil && session.browser.Running() {
+			rows.add(components.ContextMenuItem{ID: hitTabMenuBrowserClose, Label: messages.MenuCloseSSHBrowser, Icon: icon(iconGlobe)})
+		} else {
+			rows.add(components.ContextMenuItem{ID: hitTabMenuBrowserOpen, Label: messages.MenuOpenSSHBrowser, Icon: icon(iconGlobe)})
+		}
+	}
 	rows.separate()
 	// A remote desktop keeps its scaling and keyboard controls in the page's
 	// bar, which a host may have asked to hide: the menu holds them either way.
@@ -239,6 +248,14 @@ func (state *State) clickTabMenu(id gfx.ID) bool {
 		return true
 	}
 	switch id {
+	case hitTabMenuBrowserOpen:
+		if session, ok := state.tabMenuSessionFor(workspace); ok {
+			state.openSSHBrowser(session)
+		}
+	case hitTabMenuBrowserClose:
+		if session, ok := state.tabMenuSessionFor(workspace); ok {
+			session.closeSSHBrowser()
+		}
 	case hitTabMenuNewWindow:
 		if frame, ok := state.windowFrameOnScreen(); ok && state.canTearOffTab() {
 			state.tearOffTab(workspace, gfx.Point{X: frame.X + tearOffCascade, Y: frame.Y + tearOffCascade})
