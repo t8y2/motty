@@ -1149,6 +1149,7 @@ var englishAIPanel = AIPanelMessages{
 	SetupSummary: "Add a provider and choose a model to start.",
 
 	ModelChooseFmt: "Model: %s. Choose another",
+	ModelSettings:  "Manage models…",
 	ResizePanel:    "Resize the assistant panel",
 	ResizeComposer: "Resize the message box",
 

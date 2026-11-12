@@ -1149,6 +1149,7 @@ var chineseAIPanel = AIPanelMessages{
 	SetupSummary: "先添加服务商并选择一个模型。",
 
 	ModelChooseFmt: "模型:%s,点击切换",
+	ModelSettings:  "管理模型…",
 	ResizePanel:    "调整助手面板宽度",
 	ResizeComposer: "调整输入框高度",
 

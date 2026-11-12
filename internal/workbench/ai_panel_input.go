@@ -482,11 +482,11 @@ func (state *State) declareAIModelChip(c ui.C) ui.Box {
 	if canvas := c.Canvas(); canvas != nil && (canvas.Pressed() == hitAIModelChip || canvas.Hovered() == hitAIModelChip) || state.ai.panel.modelMenu {
 		fill = pal.surfaceHot
 	}
-	label := state.ai.settings.defaultModel
+	label := state.ai.modelName
 	accessible := fmt.Sprintf(state.messages.AIPanel.ModelChooseFmt, label)
 	return ui.Row(c).Height(aiSendSize-4).PadX(9).Gap(5).Shrink(1).MinWidth(56).Items(ui.Center).Background(fill).Radius((aiSendSize-4)/2).
 		HitWith(hitAIModelChip, accessible, gfx.HitOptions{Role: gfx.RoleButton, Expanded: state.ai.panel.modelMenu}).Children(func() {
-		chipIcon, known := state.aiDefaultProviderIcon()
+		chipIcon, known := state.aiSelectedProviderIcon()
 		if !known {
 			chipIcon = lucideIcons[iconSliders]
 		}
@@ -573,10 +573,10 @@ func (state *State) aiScopeName(level risk.Level) string {
 	return scopes[len(scopes)-1].name
 }
 
-// aiDefaultProviderIcon is the mark of the provider new questions go to.
-func (state *State) aiDefaultProviderIcon() (gfx.Icon, bool) {
+// aiSelectedProviderIcon is the mark of the provider this conversation asks.
+func (state *State) aiSelectedProviderIcon() (gfx.Icon, bool) {
 	for _, provider := range state.ai.providers {
-		if provider.ID == state.ai.settings.defaultProvider {
+		if provider.ID == state.ai.modelProvider {
 			return aiProviderIcon(provider), true
 		}
 	}
@@ -597,8 +597,9 @@ type aiMenuModel struct {
 	current bool
 }
 
-// aiMenuProviders lists the enabled providers that have models, each with them.
-// A model that was fetched but not switched on yet is chosen from here too.
+// aiMenuProviders lists the enabled providers and the models switched on in the
+// settings, each with the conversation's current pick. A configured CLI default
+// with no model row is listed alone, so the chip can still name it.
 func (state *State) aiMenuProviders() []aiMenuProvider {
 	ai := &state.ai
 	var list []aiMenuProvider
@@ -607,10 +608,21 @@ func (state *State) aiMenuProviders() []aiMenuProvider {
 			continue
 		}
 		entry := aiMenuProvider{id: provider.ID, name: provider.Name, icon: aiProviderIcon(provider)}
+		selected := ai.modelProvider == provider.ID && ai.modelName != ""
+		listed := false
 		for _, model := range ai.models {
-			if model.ProviderID == provider.ID && len(entry.models) < aiMenuModels {
-				entry.models = append(entry.models, aiMenuModel{name: model.Name, current: state.aiIsDefault(provider.ID, model.Name)})
+			if model.ProviderID != provider.ID || len(entry.models) >= aiMenuModels {
+				continue
 			}
+			if !model.Enabled && !state.aiIsDefault(provider.ID, model.Name) {
+				continue
+			}
+			current := selected && model.Name == ai.modelName
+			listed = listed || current
+			entry.models = append(entry.models, aiMenuModel{name: model.Name, current: current})
+		}
+		if selected && !listed {
+			entry.models = append(entry.models, aiMenuModel{name: ai.modelName, current: true})
 		}
 		if len(entry.models) > 0 {
 			list = append(list, entry)
@@ -628,6 +640,7 @@ func (state *State) declareAIModelMenu(c ui.C, anchor ui.Box) {
 	if len(providers) == 0 {
 		return
 	}
+	m := state.messages.AIPanel
 	canvas, size := c.Canvas(), c.Theme().Metrics.FontSizeM
 	textWidth := func(value string) float32 {
 		if canvas == nil {
@@ -639,6 +652,7 @@ func (state *State) declareAIModelMenu(c ui.C, anchor ui.Box) {
 	for _, provider := range providers {
 		providersWidth = max(providersWidth, textWidth(provider.name))
 	}
+	providersWidth = max(providersWidth, textWidth(m.ModelSettings))
 	providersWidth += 24 // the mark before each name
 	width := aiMenuWidth(providersWidth)
 	// The menus are dialogs' peers: they must paint over a drawer's content.
@@ -664,7 +678,21 @@ func (state *State) declareAIModelMenu(c ui.C, anchor ui.Box) {
 				}
 			}).Icon(provider.icon)
 		}
+		// The settings page at the providers' level: it is where a model is
+		// switched on or made the default, which is not this menu's to change.
+		if menu.Item(m.ModelSettings).Icon(lucideIcons[iconSettings]).Clicked() {
+			panel.modelMenu = false
+			c.After(state.openAIModelSettings)
+		}
 	})
+}
+
+// openAIModelSettings shows the settings page that switches models on and
+// chooses the default, so the shortcut beside the providers reaches it without
+// closing the assistant first.
+func (state *State) openAIModelSettings() {
+	state.openSettings()
+	state.selectSettingsCategory(settingsAssistant)
 }
 
 // declareAIAutoScopeMenu declares the approval chip's menu, above it: the scopes
@@ -734,8 +762,9 @@ func (state *State) declareAIReasoningMenu(c ui.C, anchor ui.Box) {
 	})
 }
 
-// aiChooseModel makes the n-th model of provider providerIndex the one that
-// answers, switching it on if it was only fetched.
+// aiChooseModel makes the n-th model of provider providerIndex this
+// conversation's model. It changes nothing in the store: the settings' default
+// and enable switches belong to the settings page alone.
 func (state *State) aiChooseModel(providerIndex, n int) {
 	panel := &state.ai.panel
 	panel.modelMenu = false
@@ -747,16 +776,10 @@ func (state *State) aiChooseModel(providerIndex, n int) {
 	if n < 0 || n >= len(provider.models) {
 		return
 	}
-	db, err := state.aiStore()
-	if err == nil {
-		err = db.SetModelEnabled(provider.id, provider.models[n].name, true)
-	}
-	if err == nil {
-		err = db.SetDefaultModel(provider.id, provider.models[n].name)
-	}
-	if err != nil {
-		state.ai.notice = state.aiScrub(err.Error(), "")
+	model := provider.models[n].name
+	if !state.aiModelAvailable(provider.id, model) {
 		return
 	}
-	state.aiWrote()
+	state.ai.modelProvider, state.ai.modelName = provider.id, model
+	state.ai.modelPinned = true
 }

@@ -771,17 +771,17 @@ func (state *State) declareAIPanelBody(c ui.C) {
 // aiModelText is the line naming the model that answers, and whether there is one.
 func (state *State) aiModelText() (string, bool) {
 	ai, panel := &state.ai, &state.ai.panel
-	if ai.settings.defaultModel == "" {
+	if ai.modelName == "" {
 		return "", false
 	}
 	for index := range ai.providers {
 		provider := &ai.providers[index]
-		if provider.ID != ai.settings.defaultProvider || !provider.Enabled {
+		if provider.ID != ai.modelProvider || !provider.Enabled {
 			continue
 		}
-		if panel.modelName != provider.Name || panel.modelID != ai.settings.defaultModel {
-			panel.modelName, panel.modelID = provider.Name, ai.settings.defaultModel
-			panel.modelText = provider.Name + " · " + ai.settings.defaultModel
+		if panel.modelName != provider.Name || panel.modelID != ai.modelName {
+			panel.modelName, panel.modelID = provider.Name, ai.modelName
+			panel.modelText = provider.Name + " · " + ai.modelName
 		}
 		return panel.modelText, true
 	}
