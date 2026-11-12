@@ -23,7 +23,6 @@ var hostGridHits = tree.Feature("host-grid")
 var (
 	hitHostViewList = tree.ID(hostGridHits, "host-view-list")
 	hitHostViewGrid = tree.ID(hostGridHits, "host-view-grid")
-	hitHostSort     = tree.ID(hostGridHits, "host-sort")
 )
 
 const (
@@ -131,10 +130,6 @@ func (mode hostViewMode) saved() string {
 }
 
 func (state *State) clickHostView(id gfx.ID) bool {
-	if id == hitHostSort {
-		state.toggleHostSort()
-		return true
-	}
 	var mode hostViewMode
 	switch id {
 	case hitHostViewList:

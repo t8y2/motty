@@ -1355,6 +1355,7 @@ func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 			state.paintNoMatches(canvas)
 		}
 	}
+	state.paintHostSortDrag(canvas, list)
 	state.hostsBounds = bounds
 }
 
@@ -1551,9 +1552,6 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 					})
 				}
 				viewControlsWidth := float32(56 + 6 + 26 + 6 + 26)
-				if !plan.compactHostControls {
-					viewControlsWidth += 32
-				}
 				b.toggle = ui.Slot(c).Size(viewControlsWidth, hostHeaderRowHeight).MarginSides(0, 0, 0, 2)
 				chrome.hostToggle = hostToggleBoxes{}
 				b.toggle.Children(func() {
@@ -1568,24 +1566,18 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 							chrome.hostToggle.list = state.declareIconButton(c, hitHostViewList, iconRows2, state.messages.Tools.HostViewList, false, listStyle).Size(26, 26)
 							chrome.hostToggle.grid = state.declareIconButton(c, hitHostViewGrid, iconHome, state.messages.Tools.HostViewGrid, false, gridStyle).Size(26, 26)
 						})
-						sortLabel, sortStyle := state.messages.Tools.HostSort, iconButtonQuiet
-						if state.hostSort.enabled {
-							sortLabel, sortStyle = state.messages.Tools.HostSortDone, iconButtonActive
-						}
-						sortDisabled := !state.hostSort.enabled && (state.hostOrder != hostOrderManual || len(state.hosts) < 2 || state.typedQuery() != "")
-						chrome.hostToggle.sort = state.declareIconButton(c, hitHostSort, iconTransfer, sortLabel, sortDisabled, sortStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
 						privacyIcon, privacyStyle := uint8(iconEye), iconButtonQuiet
 						if state.hostPrivacy.enabled {
 							privacyIcon, privacyStyle = iconEyeOff, iconButtonActive
 						}
 						chrome.hostToggle.privacy = state.declareIconButton(c, hitHostPrivacy, privacyIcon, state.messages.Tools.HostPrivacy, false, privacyStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
-						if !plan.compactHostControls {
-							orderStyle := iconButtonQuiet
-							if state.hostOrder != hostOrderManual {
-								orderStyle = iconButtonActive
-							}
-							chrome.hostToggle.order = state.declareIconButton(c, hitHostOrder, iconSliders, state.messages.HostCatalog.Order, false, orderStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
+						orderStyle := iconButtonQuiet
+						if state.hostOrder != hostOrderManual {
+							orderStyle = iconButtonActive
 						}
+						// The far-right control is the display-order menu, wearing the
+						// manual-sort mark; manual moves are made by dragging a host.
+						chrome.hostToggle.order = state.declareIconButton(c, hitHostOrder, iconTransfer, state.messages.HostCatalog.Order, false, orderStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
 					})
 				})
 			})
@@ -1593,12 +1585,6 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 				ui.Row(c).Height(hostHeaderRowHeight).MarginSides(hostHeaderRowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(8).Items(ui.Center).Children(func() {
 					b.selectAll = ui.Slot(c).Size(40, hostHeaderRowHeight).Shrink(0)
 					ui.Spacer(c)
-					ui.Text(c, m.HostCatalog.Order).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Shrink(1)
-					orderStyle := iconButtonQuiet
-					if state.hostOrder != hostOrderManual {
-						orderStyle = iconButtonActive
-					}
-					b.orderButton = state.declareIconButton(c, hitHostOrder, iconSliders, m.HostCatalog.Order, false, orderStyle).Size(26, 26).Shrink(0)
 				})
 			}
 			if plan.anySelected {
@@ -1645,11 +1631,7 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas) {
 	// Connect needs something to connect to.
 	chrome.importButton = b.importButton.Rect()
 
-	if plan.compactHostControls {
-		state.hostOrderButton = b.orderButton.Rect()
-	} else {
-		state.hostOrderButton = chrome.hostToggle.order.Rect()
-	}
+	state.hostOrderButton = chrome.hostToggle.order.Rect()
 	state.hostPrivacy.button = chrome.hostToggle.privacy.Rect()
 	state.paintHostScopeCheckbox(canvas, hitHostSelectAll, b.selectAll.Rect(), state.hostScopeSelection.all)
 	if plan.showChips {

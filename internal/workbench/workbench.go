@@ -2421,6 +2421,7 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.hostMenuPointer(event); handled {
 		return result
 	}
+	state.hostPressPointer(event)
 	if result, handled := state.hostSortPointer(event); handled {
 		return result
 	}
