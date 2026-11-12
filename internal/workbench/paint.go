@@ -109,6 +109,8 @@ const (
 	iconProcess
 	iconDirectoryTree
 	iconFollowFolder
+	// iconArrowUpDown is the command bar's order button.
+	iconArrowUpDown
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -296,6 +298,9 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		// Assistant popovers may intentionally extend to the window edge; paint
 		// the rail first so they can remain above it and nothing is clipped.
 		state.paintAIPanel(canvas, size)
+		// The bottom command drawer sits beneath the panes, in the space the
+		// panes gave up for it.
+		state.paintCommandsDrawer(canvas, size)
 	} else if fileManager {
 		state.paintSFTPTab(canvas, state.fileManagerPixelBounds(size))
 		state.paintAIPanel(canvas, size)
@@ -2597,6 +2602,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconWrench:         icons.Wrench,
 	iconProcess:        icons.Process,
 	iconDirectoryTree:  icons.PanelLeft,
+	iconArrowUpDown:    icons.ArrowUpDown,
 	iconCloseOthers:    icons.ListX,
 	iconCloseRight:     icons.ArrowRightToLine,
 	iconSparkles:       icons.Sparkles,

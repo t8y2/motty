@@ -1689,6 +1689,21 @@ var chineseTools = ToolsMessages{
 	StatusSendNoTarget:        "没有可发送的已连接会话。",
 	StatusSendChooseNone:      "请先选择要发送的会话。",
 
+	// 底部快捷命令。
+	CommandsAdd:         "添加命令",
+	CommandsClose:       "隐藏底部快捷命令（可在快捷命令面板重新勾选显示）",
+	CommandsBarHidden:   "底部快捷命令已隐藏",
+	CommandsBarShow:     "显示底部快捷命令",
+	CommandsFilter:      "按分组筛选",
+	CommandsUngrouped:   "未分组",
+	CommandsShowAll:     "全选",
+	CommandsHideAll:     "全不选",
+	CommandsNoGroups:    "暂无分组",
+	CommandsSortRow:     "命令排序",
+	CommandsSortCreated: "添加顺序",
+	CommandsSortName:    "字母顺序",
+	CommandsSortGroup:   "按分组",
+
 	CatGeneral:    "通用",
 	CatTerminal:   "终端",
 	CatConnection: "连接",
