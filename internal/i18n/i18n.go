@@ -484,33 +484,39 @@ type Messages struct {
 	SSHConfigWarningProxyCommandFmt string
 
 	// New Host dialog.
-	DialogTitle                 string
-	EditHostTitle               string
-	CopyHostTitle               string
-	FieldLabel                  string
-	FieldLabelPlaceholder       string
-	FieldAddress                string
-	FieldAddressPlaceholder     string
-	FieldUser                   string
-	FieldUserPlaceholder        string
-	FieldPassword               string
-	FieldPasswordHint           string
-	FieldPasswordKeepHint       string
-	FieldPasswordCopyHint       string
-	FieldAuthentication         string
-	AuthAutomatic               string
-	AuthPassword                string
-	AuthPrivateKey              string
-	AuthAgent                   string
-	FieldIdentity               string
-	AuthAllKeys                 string
-	AuthKeyUnavailable          string
-	AuthImportKey               string
-	FieldVNCPassword            string
-	HostPasswordShared          string
-	HostPasswordNotCarried      string
-	FieldGroup                  string
-	FieldGroupPlaceholder       string
+	DialogTitle             string
+	EditHostTitle           string
+	CopyHostTitle           string
+	FieldLabel              string
+	FieldLabelPlaceholder   string
+	FieldAddress            string
+	FieldAddressPlaceholder string
+	FieldUser               string
+	FieldUserPlaceholder    string
+	FieldPassword           string
+	FieldPasswordHint       string
+	FieldPasswordKeepHint   string
+	FieldPasswordCopyHint   string
+	FieldAuthentication     string
+	AuthAutomatic           string
+	AuthPassword            string
+	AuthPrivateKey          string
+	AuthAgent               string
+	FieldIdentity           string
+	AuthAllKeys             string
+	AuthKeyUnavailable      string
+	AuthImportKey           string
+	FieldVNCPassword        string
+	HostPasswordShared      string
+	HostPasswordNotCarried  string
+	FieldGroup              string
+	FieldGroupPlaceholder   string
+	// Encoding is the remote charset of a connection's shell; see the searchable
+	// picker in the New/Edit Host dialog.
+	FieldEncoding               string
+	FieldEncodingPlaceholder    string
+	HostEncodingsEmpty          string
+	EncodingUTF8Default         string
 	FieldPort                   string
 	FieldTags                   string
 	FieldTagsPlaceholder        string

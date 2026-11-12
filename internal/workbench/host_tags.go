@@ -116,9 +116,11 @@ func (state *State) clickHostTags(id gfx.ID) bool {
 	case id == hitDialogTags:
 		p.control.Open = true
 		state.editor.groupPicker.control.Open = false
+		state.editor.encodingPicker.control.Open = false
 	case id == hitHostTagsTrigger:
 		p.control.Open = !p.control.Open
 		state.editor.groupPicker.control.Open = false
+		state.editor.encodingPicker.control.Open = false
 	case id == hitHostTagsDismiss:
 		p.control.Open = false
 	case id.Scope() == hitHostTagOptions:

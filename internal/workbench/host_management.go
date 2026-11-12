@@ -278,6 +278,9 @@ func (state *State) submitHostDialog() {
 	if !state.commitHostGroupQuery() {
 		return
 	}
+	if !state.commitHostEncodingQuery() {
+		return
+	}
 	if !state.commitHostTagQuery() {
 		return
 	}
