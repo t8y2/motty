@@ -28,6 +28,11 @@ import (
 //	    { "or a bare JSON body": true }
 //	  </｜DSML｜ invoke>
 //	</｜DSML｜ calls>
+//
+// A corrupted structural token can lose or misspell a parameter's closer. Its
+// value then ends at the next parameter opener or the invoke's end, and any
+// DSML closer in between still terminates it, so one damaged tag never swallows
+// the parameters that follow.
 const (
 	// dsmlHoldLimit is how long a candidate tag may be withheld; a real
 	// opener is a few dozen bytes, so a longer run is prose that merely
@@ -348,7 +353,10 @@ func dsmlClassify(tag string) (kind dsmlKind, closer bool, name string) {
 		return dsmlNone, closer, ""
 	}
 	switch body {
-	case "calls", "tool_calls", "function_calls":
+	// "toolcalls" and "tool" are spellings production lanes have emitted for
+	// "tool_calls"; recognizing them as a block keeps their contents out of the
+	// text channel even when the call cannot be recovered.
+	case "calls", "tool_calls", "function_calls", "toolcalls", "tool":
 		return dsmlBlock, closer, ""
 	case "invoke":
 		return dsmlInvoke, closer, ""
@@ -426,7 +434,13 @@ var (
 	// lane may write the closing tag as "< / ｜ DSML ｜ invoke>", and the
 	// scanner must not recognize a block whose calls it then cannot recover.
 	dsmlInvokeRe = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*invoke\b([^>]*)>(.*?)<[ \t]*/[ \t]*[｜|][\s｜|]*DSML[\s｜|]*invoke[ \t]*>`)
-	dsmlParamRe  = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*parameter\b([^>]*)>(.*?)<[ \t]*/[ \t]*[｜|][\s｜|]*DSML[\s｜|]*parameter[ \t]*>`)
+	// dsmlParamOpenRe matches a parameter's opening tag only. A corrupted
+	// structural token can lose or misspell the closing tag, so a value is
+	// bounded by the next opener or the invoke's end, never by a paired match.
+	dsmlParamOpenRe = regexp.MustCompile(`(?s)<\s*[｜|][\s｜|]*DSML[\s｜|]*parameter\b([^>]*)>`)
+	// dsmlParamCloseRe matches any DSML closing tag: a closer whose name was
+	// corrupted still ends the value it closes.
+	dsmlParamCloseRe = regexp.MustCompile(`(?s)<[ \t]*/[ \t]*[｜|][\s｜|]*DSML\b[^>]*>`)
 )
 
 // recoverDSMLCalls turns the complete invokes of a markup region into calls.
@@ -448,9 +462,13 @@ func recoverDSMLCalls(markup string) []ToolCall {
 
 // dsmlArguments builds the JSON object an invoke's parameters describe. An
 // invoke without parameters carries the object itself.
+//
+// A parameter's value ends at its closer, at the next parameter's opener, or at
+// the end of the invoke body. The middle case is how a lane that lost a closer
+// still yields intact arguments: the damaged parameter cannot swallow the ones
+// that follow it.
 func dsmlArguments(body string) (string, bool) {
-	params := dsmlParamRe.FindAllStringSubmatchIndex(body, -1)
-	if len(params) == 0 {
+	if !dsmlParamOpenRe.MatchString(body) {
 		raw := strings.TrimSpace(body)
 		if raw == "" {
 			return "{}", true
@@ -460,21 +478,40 @@ func dsmlArguments(body string) (string, bool) {
 	}
 	var b strings.Builder
 	b.WriteByte('{')
-	first := true
-	for _, m := range params {
-		attrs := body[m[2]:m[3]]
-		name := dsmlAttribute(attrs, "name")
-		if name == "" {
-			continue
+	comma := false
+	for pos := 0; pos < len(body); {
+		m := dsmlParamOpenRe.FindStringSubmatchIndex(body[pos:])
+		if m == nil {
+			break
 		}
-		if !first {
-			b.WriteByte(',')
+		attrs := body[pos+m[2] : pos+m[3]]
+		rest := pos + m[1]
+		next := dsmlParamOpenRe.FindStringIndex(body[rest:])
+		close := dsmlParamCloseRe.FindStringIndex(body[rest:])
+		var value string
+		switch {
+		case close != nil && (next == nil || close[0] < next[0]):
+			value = body[rest : rest+close[0]]
+			pos = rest + close[1]
+		case next != nil:
+			// The closer was lost or misspelled: the value ends at the next
+			// opener, and the line break that formatted it is not part of it.
+			value = strings.TrimRight(body[rest:rest+next[0]], " \t\r\n")
+			pos = rest + next[0]
+		default:
+			value = strings.TrimRight(body[rest:], " \t\r\n")
+			pos = len(body)
 		}
-		first = false
-		key, _ := json.Marshal(name)
-		b.Write(key)
-		b.WriteByte(':')
-		b.WriteString(dsmlValue(body[m[4]:m[5]], dsmlAttribute(attrs, "string") == "true"))
+		if name := dsmlAttribute(attrs, "name"); name != "" {
+			if comma {
+				b.WriteByte(',')
+			}
+			comma = true
+			key, _ := json.Marshal(name)
+			b.Write(key)
+			b.WriteByte(':')
+			b.WriteString(dsmlValue(value, dsmlAttribute(attrs, "string") == "true"))
+		}
 	}
 	b.WriteByte('}')
 	args, err := validateArgs(b.String())
