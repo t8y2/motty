@@ -233,7 +233,7 @@ func (state *State) declareVerticalTabsOverlay(c ui.C) {
 	view := &state.verticalTabs
 	size := gfx.Size{Width: c.Bounds().Width, Height: c.Bounds().Height}
 	width := state.verticalTabsReserve(size)
-	compact := view.autoHide && !view.over && !state.tabMenu.open && !state.tabDrag.pressed && !verticalTabsKeyboardFocused(c.Canvas())
+	compact := view.autoHide && !view.over && !state.tabMenu.open && !state.tabDrag.pressed && !verticalTabsKeyboardFocused(c.Canvas()) && !state.tabInlineActive()
 	if view.autoHide && !compact {
 		width = min(verticalTabsWidth, size.Width*0.6)
 	}
@@ -429,7 +429,8 @@ func (state *State) paintWorkspaceTabParts(canvas *gfx.Canvas, strip gfx.Rect, t
 	defer canvas.Unclip()
 	for index := range tabs {
 		tab := &tabs[index]
-		if tab.pathLabel != "" && tab.output == outputAlertNone {
+		editing := !tab.compact && state.tabInlineEditing(tab.workspace.ID)
+		if tab.pathLabel != "" && tab.output == outputAlertNone && !editing {
 			bounds := tab.title.Rect()
 			label := elideTabDirectory(tab.pathLabel, func(value string) bool {
 				return canvas.TextWidthWeight(value, metrics.FontSizeS, gfx.WeightMedium) <= bounds.Width
@@ -444,12 +445,19 @@ func (state *State) paintWorkspaceTabParts(canvas *gfx.Canvas, strip gfx.Rect, t
 		} else if pane, ok := state.deck.Pane(tab.workspace.ID, tab.workspace.ActivePane); ok && pane.SessionID != 0 {
 			session, _ = state.sessionByIDPointer(uint32(pane.SessionID))
 		}
-		if tab.output != outputAlertNone && !tab.compact {
+		if tab.output != outputAlertNone && !tab.compact && !editing {
 			state.paintOutputAlertTitle(canvas, tab, strip)
 		}
 		badge := tab.badge.Rect()
 		if session != nil {
 			state.paintHostCatalogIcon(canvas, session.host, badge, tab.background)
+		} else if state.tabOrientation == tabsVertical {
+			canvas.DrawIcon(lucideIcons[iconTerminal], badge, state.pal.muted)
+		}
+		if editing {
+			// The name field takes the light's room while it is open.
+			state.paintTabInlineField(canvas, tab.title.Rect())
+		} else if session != nil {
 			kind, dot := state.sessionLight(session)
 			var light gfx.Rect
 			if tab.compact {
@@ -458,8 +466,6 @@ func (state *State) paintWorkspaceTabParts(canvas *gfx.Canvas, strip gfx.Rect, t
 				light = tab.light.Rect()
 			}
 			paintLight(canvas, light.X+light.Width/2, light.Y+light.Height/2, kind, dot, tab.background)
-		} else if state.tabOrientation == tabsVertical {
-			canvas.DrawIcon(lucideIcons[iconTerminal], badge, state.pal.muted)
 		}
 		if tab.workspace.ID != 0 {
 			state.openTabMenuOn(canvas, tab.workspace.ID, tab.id, tab.closeID)

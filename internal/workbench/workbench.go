@@ -539,6 +539,10 @@ type State struct {
 	hostGroupEditor   text.Editor
 	groupActions      hostGroupActions
 	tabRename         tabRename
+	tabInline         tabInline
+	// pendingFocus asks the click that just ran for the keyboard, for a click
+	// that opened a field of its own and has no event result to carry it out.
+	pendingFocus      gfx.ID
 	tabsClose         tabsClose
 	sessionLink       sessionLink
 	hostDialogMode    hostDialogMode
@@ -1242,6 +1246,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	if hit == hitWorkspaceInlineField && state.workspaceCommandEdit.template != "" && state.modal == modalNone && state.activeSection == sectionWorkspaces {
 		return &state.workspaceCommandEdit.editor
 	}
+	if hit == hitTabInline && state.tabInlineActive() && state.modal == modalNone {
+		return &state.tabInline.editor
+	}
 	if editor := state.noteEditor(hit); editor != nil {
 		return editor
 	}
@@ -1473,6 +1480,13 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	}
 	if !workspaceInlineOwns(id) {
 		state.workspaceCommandEdit = workspaceCommandInline{}
+	}
+	// The pointer path above already ends the edit on a press; this catches the
+	// clicks no press made, such as the ones keys synthesize. The click the first
+	// press of a double click leaves behind activates the tab being renamed, and
+	// must not close the field the second press just opened.
+	if state.tabInlineActive() && id != hitTabInline && id != hitTabList.At(int(state.tabInline.workspace)) {
+		state.commitTabInline()
 	}
 	if feedback {
 		state.pressIconMotion(id)
@@ -2247,6 +2261,14 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if event.Kind == gfx.PointerDown && !workspaceInlineOwns(event.Target) {
 		state.workspaceCommandEdit = workspaceCommandInline{}
 	}
+	// A press anywhere but on the tab-name field applies the drafted name, the
+	// way an in-place edit ends when its surface loses the pointer. The press
+	// then goes on to what it hit, with the tab already named.
+	if event.Kind == gfx.PointerDown && state.tabInlineActive() && event.Target != hitTabInline {
+		if !state.commitTabInline() {
+			return gfx.EventResult{Handled: true, Focus: hitTabInline, Repaint: true}
+		}
+	}
 	if result := state.notesPointer(event); result.Handled {
 		return result
 	}
@@ -2667,6 +2689,9 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 
 func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.workspaceInlineKey(event); handled {
+		return result
+	}
+	if result, handled := state.tabInlineKey(event); handled {
 		return result
 	}
 	if result := state.notesKey(event); result.Handled {

@@ -595,7 +595,6 @@ var TraditionalMessages = Messages{
 	DisconnectTitleFmt:             "中斷「%s」？",
 	DisconnectDescription:          "此工作階段中正在執行的程式會停止。分頁會保留，之後可以在其中重新連線。",
 	DisconnectConfirm:              "中斷連線",
-	RenameTabTitle:                 "重新命名分頁",
 	RenameTerminalTitle:            "重新命名終端機",
 	RenameTerminalPlaceholder:      "終端機名稱",
 	RenameTabField:                 "名稱",

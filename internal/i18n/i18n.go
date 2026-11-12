@@ -640,7 +640,6 @@ type Messages struct {
 	DisconnectTitleFmt            string
 	DisconnectDescription         string
 	DisconnectConfirm             string
-	RenameTabTitle                string
 	RenameTerminalTitle           string
 	RenameTerminalPlaceholder     string
 	RenameTabField                string

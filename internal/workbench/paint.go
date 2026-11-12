@@ -179,6 +179,13 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	if state.activeSection != sectionSettings || state.settingsCategory != settingsTerminal || state.settingsSearching() {
 		state.localShellMenu.open = false
 	}
+	if state.tabInlineActive() {
+		if _, ok := state.workspaceTab(state.tabInline.workspace); !ok {
+			// The workspace left while its name was being typed; the edit has
+			// nothing left to name.
+			state.tabInline = tabInline{}
+		}
+	}
 	state.ai.panel.targetBounds = gfx.Rect{}
 	if !state.aiSettingsVisible() || state.settingsCategory != settingsMCP || state.settingsSearching() {
 		state.ai.cfg.mcpSelectOpen = false
@@ -905,27 +912,38 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 	label := state.tabLabel(workspace)
 	entry.label = label
 	entry.output = state.workspaceOutputAlert(workspace.ID)
+	editing := !compact && state.tabInlineEditing(workspace.ID)
 	tabOptions := gfx.HitOptions{Role: gfx.RoleTab, Selected: active}
 	// Every tab shows its full name as a tooltip on hover, so a long, elided
 	// label (a deep path or a long host label among many tabs) stays readable.
 	// The shared hover tooltip paints Hit, so naming it here is all it takes.
-	tabOptions.Hint = label
-	if workspace.Locked {
-		tabOptions.Hint = m.TabLockedHint
-	}
-	if directory := state.tabDirectory(workspace); directory != "" {
-		if tabOptions.Hint != "" && workspace.Locked {
-			tabOptions.Hint += "\n" + directory
-		} else {
-			tabOptions.Hint = directory
+	if !editing {
+		// A tooltip must not cover the field the name is being typed in.
+		tabOptions.Hint = label
+		if workspace.Locked {
+			tabOptions.Hint = m.TabLockedHint
+		}
+		if directory := state.tabDirectory(workspace); directory != "" {
+			if tabOptions.Hint != "" && workspace.Locked {
+				tabOptions.Hint += "\n" + directory
+			} else {
+				tabOptions.Hint = directory
+			}
+		}
+		// A desktop keeps its size and protection in the status line under the
+		// picture, which the host may have hidden: the tab says it on hover instead.
+		if session := state.tabSession(workspace); session != nil && session.desk != nil {
+			if hint := state.desktopStripLeft(session.desk, session); hint != "" {
+				tabOptions.Hint = hint
+			}
 		}
 	}
-	// A desktop keeps its size and protection in the status line under the
-	// picture, which the host may have hidden: the tab says it on hover instead.
-	if session := state.tabSession(workspace); session != nil && session.desk != nil {
-		if hint := state.desktopStripLeft(session.desk, session); hint != "" {
-			tabOptions.Hint = hint
-		}
+	if editing {
+		// The tab under the field is not a second focusable control: the field
+		// is what the keyboard belongs to, and a press anywhere else ends the
+		// edit before it lands. It still takes presses, so its menu and its
+		// close button keep working.
+		tabOptions.SkipFocus = true
 	}
 	row := ui.Row(c).Size(width, height).Shrink(0)
 	if vertical {
@@ -946,6 +964,14 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 		if state.tabNumbers && entry.number != "" {
 			// The number names the name beside it, so it carries less ink.
 			ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+		}
+		if editing {
+			// The title is the field itself, and the room the lock, the light
+			// and the close button took belongs to the name while it is typed.
+			// The parts painter fills the slot with the framework's field,
+			// which declares the field's own hit after layout.
+			entry.title = ui.Slot(c).Size(0, 20).Grow(1).Basis(0)
+			return
 		}
 		titleColor := foreground
 		if entry.output != outputAlertNone {

@@ -595,7 +595,6 @@ var ChineseMessages = Messages{
 	DisconnectTitleFmt:             "断开「%s」？",
 	DisconnectDescription:          "此会话中正在运行的程序会停止。标签页会保留，之后可以在其中重新连接。",
 	DisconnectConfirm:              "断开连接",
-	RenameTabTitle:                 "重命名标签页",
 	RenameTerminalTitle:            "重命名终端",
 	RenameTerminalPlaceholder:      "终端名称",
 	RenameTabField:                 "名称",

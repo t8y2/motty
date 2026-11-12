@@ -69,13 +69,24 @@ type tabMenu struct {
 
 // tabMenuPointer closes an open menu on a secondary press outside it (the
 // backdrop swallows the press; only a primary one is also a click). Opening it is
-// the paint of a tab (openTabMenuOn).
+// the paint of a tab (openTabMenuOn). A press on the rename row starts the
+// in-place rename here, on the press, so the field is handed the keyboard by the
+// same event that opens it.
 func (state *State) tabMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone || event.Button == gfx.PointerButtonPrimary {
+	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone {
 		return gfx.EventResult{}, false
 	}
-	if state.tabMenu.open && event.Target == hitTabMenuDismiss {
+	if state.tabMenu.open && event.Target == hitTabMenuDismiss && event.Button != gfx.PointerButtonPrimary {
 		state.tabMenu.open = false
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	if state.tabMenu.open && event.Target == hitTabMenuRename {
+		workspace := state.tabMenu.workspace
+		state.tabMenu.open = false
+		state.beginTabInline(workspace)
+		if state.tabInlineActive() {
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTabInline}, true
+		}
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false
@@ -241,7 +252,7 @@ func (state *State) clickTabMenu(id gfx.ID) bool {
 			state.copyConnectionText(session.host.Label)
 		}
 	case hitTabMenuRename:
-		state.openTabRename(workspace)
+		state.beginTabInline(workspace)
 	case hitTabMenuLock:
 		_ = state.deck.SetLocked(workspace, !state.deck.Locked(workspace))
 		state.rebuildTabOptions()

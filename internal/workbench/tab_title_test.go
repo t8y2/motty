@@ -96,9 +96,9 @@ func TestPathTabAbbreviatesOnlyReportedHomeAndKeepsAbsoluteHint(t *testing.T) {
 	if got := state.tabLabel(activeTab(state)); got != "~/project" {
 		t.Fatalf("POSIX home containing backslash = %q, want ~/project", got)
 	}
-	state.openTabRename(state.deck.ActiveWorkspace())
-	state.tabRename.editor.Insert("production")
-	state.clickTabRenameDialog(hitTabRenameSubmit)
+	state.beginTabInline(state.deck.ActiveWorkspace())
+	state.tabInline.editor.Insert("production")
+	state.commitTabInline()
 	if got := state.tabLabel(activeTab(state)); got != "production" {
 		t.Fatalf("manual name = %q", got)
 	}
@@ -163,9 +163,9 @@ func TestRenamedTabKeepsItsNameWhenTheTerminalReportsATitle(t *testing.T) {
 	state.tabTitleMode = tabTitleTerminal
 	openHost(state)
 	workspace := state.deck.ActiveWorkspace()
-	state.openTabRename(workspace)
-	state.tabRename.editor.Insert("production")
-	state.clickTabRenameDialog(hitTabRenameSubmit)
+	state.beginTabInline(workspace)
+	state.tabInline.editor.Insert("production")
+	state.commitTabInline()
 
 	state.sessions[0].term.screen.Write([]byte("\x1b]2;work:1:bash\a"))
 	if got := state.tabLabel(activeTab(state)); got != "production" {
@@ -215,9 +215,9 @@ func TestActivatingPaneRefreshesCachedTabIdentityAndKeepsRenamedTitle(t *testing
 		t.Fatalf("after second activation: cached pane=%d session=%p label=%q", cached.ActivePane, state.tabSession(cached), state.tabLabel(cached))
 	}
 
-	state.openTabRename(workspaceID)
-	state.tabRename.editor.Insert("production-main")
-	state.clickTabRenameDialog(hitTabRenameSubmit)
+	state.beginTabInline(workspaceID)
+	state.tabInline.editor.Insert("production-main")
+	state.commitTabInline()
 	state.ActivatePane(firstSession.ID)
 	cached = state.workspaceTabs[workspaceIndex]
 	if !cached.Named || cached.ActivePane != firstPane || state.tabSession(cached) != firstSession {

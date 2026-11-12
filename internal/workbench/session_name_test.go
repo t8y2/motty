@@ -3,7 +3,6 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/text"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -74,9 +73,9 @@ func TestSessionNameCollisionRenameAndRestore(t *testing.T) {
 	}
 	workspace, _, _ := state.deck.PaneForSession(layoutcore.SessionID(second))
 	state.rebuildTabOptions()
-	state.openTabRename(workspace)
-	state.tabRename.editor = *text.NewEditor("Prod DB")
-	state.clickTabRenameDialog(hitTabRenameSubmit)
+	state.beginTabInline(workspace)
+	state.tabInline.editor.Insert("Prod DB")
+	state.commitTabInline()
 	if b.Title != "Prod DB" || b.Mention != "Prod-DB-2" {
 		t.Fatalf("tab rename did not rename session: %q @%q", b.Title, b.Mention)
 	}

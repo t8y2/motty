@@ -595,7 +595,6 @@ var EnglishMessages = Messages{
 	DisconnectTitleFmt:             "Disconnect “%s”?",
 	DisconnectDescription:          "Whatever is running in this session stops. The tab stays open, and you can connect again from it.",
 	DisconnectConfirm:              "Disconnect",
-	RenameTabTitle:                 "Rename Tab",
 	RenameTerminalTitle:            "Rename Terminal",
 	RenameTerminalPlaceholder:      "Terminal name",
 	RenameTabField:                 "Name",
