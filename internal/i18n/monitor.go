@@ -13,6 +13,7 @@ type MonitorMessages struct {
 	CPU, Memory, Disks, Network                                                string
 	LoadFmt, UptimeFmt, CPUCountFmt                                            string
 	MoreDisksFmt, AllNetworks, Hardware, NoHardware                            string
+	GPUMemory, Utilization, Power, Temperature, Processes, NoProcesses         string
 	NoDisks, WaitingDetails, DetailsUnavailable                                string
 	Pause, Resume, Paused, Updated, Interval, IntervalFmt, Retry, NotConnected string
 	Collapse                                                                   string
@@ -32,6 +33,7 @@ var chineseMonitor = MonitorMessages{
 	CPU:            "CPU", Memory: "内存", Disks: "磁盘", Network: "网络",
 	LoadFmt: "%.2f / %.2f / %.2f", UptimeFmt: "%d天%d小时", CPUCountFmt: "%d 逻辑核",
 	MoreDisksFmt: "更多（%d）", AllNetworks: "总流量", Hardware: "硬件信息", NoHardware: "未获取到加速卡指标",
+	GPUMemory: "显存", Utilization: "负载", Power: "功耗", Temperature: "温度", Processes: "进程 / 显存", NoProcesses: "无占用进程",
 	NoDisks: "没有可用的磁盘信息", WaitingDetails: "正在读取主机信息…", DetailsUnavailable: "部分主机信息暂不可用，稍后自动重试",
 	Pause: "暂停监控", Resume: "继续监控", Paused: "已暂停", Updated: "自动刷新 · 刚刚更新", Interval: "刷新间隔", IntervalFmt: "%d 秒", Retry: "重试", NotConnected: "连接到服务器后可查看监控。",
 	Collapse: "收起",
@@ -51,6 +53,7 @@ var englishMonitor = MonitorMessages{
 	CPU:            "CPU", Memory: "Memory", Disks: "Disks", Network: "Network",
 	LoadFmt: "%.2f / %.2f / %.2f", UptimeFmt: "%dd %dh", CPUCountFmt: "%d vCPU",
 	MoreDisksFmt: "More (%d)", AllNetworks: "Total traffic", Hardware: "Hardware", NoHardware: "No accelerator metrics available",
+	GPUMemory: "VRAM", Utilization: "Load", Power: "Power", Temperature: "Temp", Processes: "Processes / VRAM", NoProcesses: "No compute processes",
 	NoDisks: "No disk information available", WaitingDetails: "Reading host information…", DetailsUnavailable: "Some host information is unavailable. Retrying automatically.",
 	Pause: "Pause monitoring", Resume: "Resume monitoring", Paused: "Paused", Updated: "Auto refresh · just updated", Interval: "Refresh interval", IntervalFmt: "%ds", Retry: "Retry", NotConnected: "Connect to a server to view monitoring.",
 	Collapse: "Collapse",

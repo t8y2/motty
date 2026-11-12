@@ -77,7 +77,9 @@ const command = `# motty-stats-v2
 LC_ALL=C
 export LC_ALL
 gpu_timeout=
+gpu_proc_timeout=
 if command -v timeout >/dev/null 2>&1; then gpu_timeout='timeout 3'; fi
+if command -v timeout >/dev/null 2>&1; then gpu_proc_timeout='timeout 2'; fi
 # gpu-probe-begin
 gpu_read() {
 	v=-
@@ -86,8 +88,11 @@ gpu_read() {
 }
 gpu_probe() {
 	if command -v nvidia-smi >/dev/null 2>&1; then
-		$gpu_timeout nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,fan.speed --format=csv,noheader,nounits 2>&1 | head -n 16 | while IFS= read -r row; do
+		$gpu_timeout nvidia-smi --query-gpu=index,gpu_uuid,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed --format=csv,noheader,nounits 2>&1 | head -n 16 | while IFS= read -r row; do
 			printf 'gop-gpu-nvidia %s\n' "$row"
+		done
+		$gpu_proc_timeout nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv,noheader,nounits 2>&1 | head -n 64 | while IFS= read -r row; do
+			printf 'gop-gpu-nvidia-proc %s\n' "$row"
 		done
 	fi
 	amd=
