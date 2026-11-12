@@ -1145,6 +1145,7 @@ var traditionalAIPanel = AIPanelMessages{
 	SetupSummary: "先新增服務供應商並選擇一個模型。",
 
 	ModelChooseFmt: "模型：%s,點選切換",
+	ModelSettings:  "管理模型…",
 	ResizePanel:    "調整助手面板寬度",
 	ResizeComposer: "調整輸入框高度",
 

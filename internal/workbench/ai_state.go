@@ -186,6 +186,11 @@ type aiState struct {
 	settings   aiSettings
 	providers  []store.Provider
 	models     []store.Model
+	// modelProvider and modelName are the model this conversation asks. They
+	// follow the settings' default until the user picks one in the workspace;
+	// the pick is never stored, so the workspace never changes the settings.
+	modelProvider, modelName string
+	modelPinned              bool
 	// list of saved conversations for the history menu, loaded on demand.
 	conversations []store.Conversation
 
@@ -359,6 +364,7 @@ func (state *State) reloadAISettings() {
 	if !failed {
 		ai.settings = settings
 	}
+	state.aiSyncModel()
 }
 
 // aiVaultUsable reports whether the vault can be read and written right now: it
@@ -422,24 +428,85 @@ func (state *State) aiKeyedProvider(provider store.Provider, retry func()) (stor
 	return provider, true
 }
 
-// aiModel is the provider and model requests go to, or why there is none.
+// aiModel is the provider and model requests go to, or why there is none. It is
+// the conversation's choice, not the settings' default.
 func (state *State) aiModel() (store.Provider, string, error) {
 	ai := &state.ai
 	if _, err := state.aiStore(); err != nil {
 		return store.Provider{}, "", err
 	}
-	providerID, model, ok, err := ai.store.DefaultModel()
-	if err != nil {
-		return store.Provider{}, "", err
+	state.aiSyncModel()
+	if !state.aiModelAvailable(ai.modelProvider, ai.modelName) {
+		return store.Provider{}, "", errNoAIModel
 	}
-	if ok {
-		for _, provider := range ai.providers {
-			if provider.ID == providerID && provider.Enabled {
-				return provider, model, nil
-			}
+	for _, provider := range ai.providers {
+		if provider.ID == ai.modelProvider && provider.Enabled {
+			return provider, ai.modelName, nil
 		}
 	}
 	return store.Provider{}, "", errNoAIModel
+}
+
+// aiModelAvailable reports whether the settings let this conversation use the
+// model: its provider is on, and the model is switched on. The configured
+// default stays available even for a CLI provider with no model row of its own.
+func (state *State) aiModelAvailable(providerID, model string) bool {
+	if providerID == "" || model == "" {
+		return false
+	}
+	enabledProvider := false
+	for _, provider := range state.ai.providers {
+		if provider.ID == providerID {
+			enabledProvider = provider.Enabled
+			break
+		}
+	}
+	if !enabledProvider {
+		return false
+	}
+	for _, entry := range state.ai.models {
+		if entry.ProviderID == providerID && entry.Name == model {
+			return entry.Enabled || state.aiIsDefault(providerID, model)
+		}
+	}
+	return state.aiIsDefault(providerID, model)
+}
+
+// aiFirstEnabledModel is the first switched-on model of a switched-on provider,
+// in the store's order, for a window whose default model is gone.
+func (state *State) aiFirstEnabledModel() (providerID, model string, ok bool) {
+	for _, provider := range state.ai.providers {
+		if !provider.Enabled {
+			continue
+		}
+		for _, entry := range state.ai.models {
+			if entry.ProviderID == provider.ID && entry.Enabled {
+				return entry.ProviderID, entry.Name, true
+			}
+		}
+	}
+	return "", "", false
+}
+
+// aiSyncModel aligns the conversation's model with the settings. A pick the
+// user made in the workspace stays while it is still enabled; otherwise the
+// conversation follows the default, or the first enabled model when the default
+// is gone. Nothing here writes to the store.
+func (state *State) aiSyncModel() {
+	ai := &state.ai
+	if ai.modelPinned && state.aiModelAvailable(ai.modelProvider, ai.modelName) {
+		return
+	}
+	ai.modelPinned = false
+	if state.aiModelAvailable(ai.settings.defaultProvider, ai.settings.defaultModel) {
+		ai.modelProvider, ai.modelName = ai.settings.defaultProvider, ai.settings.defaultModel
+		return
+	}
+	if providerID, model, ok := state.aiFirstEnabledModel(); ok {
+		ai.modelProvider, ai.modelName = providerID, model
+		return
+	}
+	ai.modelProvider, ai.modelName = "", ""
 }
 
 var errNoAIModel = errors.New("no model is set up")
@@ -1185,6 +1252,8 @@ func (state *State) aiNewConversation() {
 	state.aiClearAttachments()
 	ai.approvals = nil
 	ai.autoUpTo = nil // a new conversation starts from the setting
+	ai.modelPinned = false
+	state.aiSyncModel()
 	ai.retry = false
 	ai.answerOnly = false
 	ai.lastUsage, ai.totalUsage = llm.Usage{}, llm.Usage{}
@@ -1214,6 +1283,8 @@ func (state *State) aiOpenConversation(id int64) {
 	ai.panel.targetOpen = false
 	ai.panel.autoMenu = false
 	ai.autoUpTo = nil // another conversation's scope does not follow this one
+	ai.modelPinned = false
+	state.aiSyncModel()
 	ai.notice = ""
 	ai.retry, ai.answerOnly = false, false
 	state.dropEscalationApprovals()
@@ -1265,11 +1336,11 @@ func stripContext(text string) string {
 // aiCurrentModel 返回当前选中的模型（从已常驻内存的模型列表与设置中获取，避免在绘制循环中触发数据库查询）。
 func (state *State) aiCurrentModel() *store.Model {
 	ai := &state.ai
-	if ai.settings.defaultModel == "" || ai.settings.defaultProvider == "" {
+	if ai.modelName == "" || ai.modelProvider == "" {
 		return nil
 	}
 	for i := range ai.models {
-		if ai.models[i].ProviderID == ai.settings.defaultProvider && ai.models[i].Name == ai.settings.defaultModel {
+		if ai.models[i].ProviderID == ai.modelProvider && ai.models[i].Name == ai.modelName {
 			return &ai.models[i]
 		}
 	}
