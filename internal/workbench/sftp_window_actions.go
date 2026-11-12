@@ -62,6 +62,9 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 			add(hitSFTPEditExternal, iconExternal, m.Tools.ExtEditButton)
 		}
 		add(hitSFTPSend, iconUpload, m.Tools.SendToServer)
+		if count > 0 {
+			add(hitSFTPDelete, iconTrash, m.SFTPDelete)
+		}
 		return actions
 	}
 	add(hitSFTPDownload, iconDownload, m.SFTPDownload)
@@ -105,7 +108,7 @@ func (w *sftpWindow) fileAction(local bool, id gfx.ID) {
 		}
 		return
 	}
-	if w.browse.pending != nil || w.pendingLocal != "" || !local && (w.view.busy || !w.connected()) {
+	if w.browse.pending != nil || w.pendingLocal != "" || local && w.view.localBusy || !local && (w.view.busy || !w.connected()) {
 		return
 	}
 	w.cancelDrag()
@@ -159,9 +162,7 @@ func (w *sftpWindow) fileAction(local bool, id gfx.ID) {
 			w.owner.openSFTPDialog(w.view, sftpDialogChmod)
 		}
 	case hitSFTPDelete:
-		if !local {
-			w.owner.openSFTPDialog(w.view, sftpDialogDelete)
-		}
+		w.owner.openSFTPDialog(w.view, sftpDialogDelete)
 	case hitSFTPExtract:
 		if !local {
 			w.owner.openSFTPExtractDialog(w.view)

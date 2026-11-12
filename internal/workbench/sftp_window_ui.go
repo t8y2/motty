@@ -632,7 +632,7 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 					if sftpWindowActionIDs[action.index] == hitSFTPDelete {
 						style = iconButtonDanger
 					}
-					icon(sftpWindowActions[sideIndex(local)].At(action.index), action.glyph, action.label, w.browse.pending != nil || w.view.busy && !local || !local && !w.connected(), style)
+					icon(sftpWindowActions[sideIndex(local)].At(action.index), action.glyph, action.label, w.browse.pending != nil || w.view.busy && !local || local && w.view.localBusy || !local && !w.connected(), style)
 				}
 			})
 			if bounds.Height >= 320 {
@@ -792,7 +792,7 @@ func (w *sftpWindow) paintMenu(canvas *gfx.Canvas) {
 		if index := sftpWindowActionIndex(action); index >= 0 {
 			item.ID = sftpWindowMenuActions.At(index)
 			if action != hitSFTPProperties {
-				item.Disabled = w.browse.pending != nil || w.pendingLocal != "" || !w.activeLocal && (!w.connected() || w.view.busy)
+				item.Disabled = w.browse.pending != nil || w.pendingLocal != "" || w.activeLocal && w.view.localBusy || !w.activeLocal && (!w.connected() || w.view.busy)
 			}
 		}
 	}

@@ -154,6 +154,7 @@ type sftpView struct {
 	followUpPath        string // a follow-up that arrived before those rows were ready
 	followUpEntries     []sftpclient.Entry
 	busy                bool
+	localBusy           bool // a local deletion is walking the disk; the server side stays usable
 	approximate         bool // the listing came from `ls` over SCP
 	operation           sftpclient.Operation
 	status              string
@@ -1620,6 +1621,10 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		status = fmt.Sprintf(state.messages.SFTPMovingFmt, view.dialogEntry.Name)
 		view.moveAfterRename = queued
 	case sftpDialogDelete:
+		if view.local {
+			state.submitLocalDelete(view)
+			return
+		}
 		if len(view.dialogEntries) > 1 {
 			view.deleteRemaining = slices.Clone(view.dialogEntries)
 			view.deleteCompleted = 0

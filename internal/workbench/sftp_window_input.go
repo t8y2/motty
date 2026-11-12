@@ -827,7 +827,16 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			return handled
 		}
 	case gfx.KeyDelete:
-		if !w.activeLocal && !w.view.busy && w.connected() {
+		if w.activeLocal {
+			if !w.view.localBusy && w.pendingLocal == "" && w.browse.pending == nil {
+				w.cancelDrag()
+				w.view.local = true
+				w.owner.openSFTPDialog(w.view, sftpDialogDelete)
+				return handled
+			}
+			return handled
+		}
+		if !w.view.busy && w.connected() {
 			w.cancelDrag()
 			w.view.local = false
 			w.owner.openSFTPDialog(w.view, sftpDialogDelete)
