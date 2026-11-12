@@ -44,6 +44,13 @@ func (folder *sftpFolder) clearFilter() {
 	folder.filterReady = true
 }
 
+// selectFilterQuery selects the whole filter, so the Find shortcut's next
+// typed rune or paste replaces it instead of appending to it.
+func (folder *sftpFolder) selectFilterQuery() {
+	editor := folder.filterInputEditor()
+	editor.SetSelection(text.Range{Start: 0, End: editor.RuneCount()})
+}
+
 // SFTPInput resolves the native editor used by the current side's file filter.
 // The callback derives visible rows after each text-system mutation.
 func (state *State) SFTPInput(context app.TextInputContext) *app.TextInput {
@@ -274,7 +281,9 @@ func (state *State) sftpFilterShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	if session.files == nil || state.activeSection != sectionTerminal || state.modal != modalNone || session.files.editPath != "" || session.files.dialog != sftpDialogNone {
 		return gfx.EventResult{}, false
 	}
-	session.files.active().filterOpen = true
+	active := session.files.active()
+	active.filterOpen = true
+	active.selectFilterQuery()
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitSFTPFilter, FocusVisible: true}, true
 }
 

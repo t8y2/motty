@@ -144,6 +144,23 @@ func TestSFTPFilterShortcutUsesTheFileListFocusAndLeavesTerminalFindAlone(t *tes
 	}
 }
 
+func TestSFTPFilterShortcutSelectsTheRetainedQuery(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	replaceSFTPFilter(t, state, session, false, "notes")
+	folder := session.files.active()
+	folder.filterEditor.SetSelection(text.Range{Start: 0, End: 0})
+	find := state.shortcuts.chords.Chord(shortcutFind)
+	result := state.Shortcut(gfx.KeyEvent{
+		Target: contextID(hitSFTPEntryList.At(0)), Modifiers: find.Modifiers, Text: string(find.Char),
+	})
+	if !result.Handled || result.Focus != contextID(hitSFTPFilter) {
+		t.Fatalf("file-list find result=%+v", result)
+	}
+	if selected := folder.filterInputEditor().Selection(); selected.Start != 0 || selected.End != folder.filterInputEditor().RuneCount() {
+		t.Fatalf("filter selection = %+v, want all %d runes", selected, folder.filterInputEditor().RuneCount())
+	}
+}
+
 func TestSFTPHiddenLocalDefaultsOffAndToggleHasVisibleState(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	dir := t.TempDir()
