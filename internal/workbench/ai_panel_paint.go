@@ -439,6 +439,7 @@ func (state *State) aiPanelBeginPaint() {
 	panel.rect, panel.list, panel.listing = gfx.Rect{}, gfx.Rect{}, false
 	panel.scrollbar.geometry = components.MessageScrollerGeometry{}
 	panel.messageScroll, panel.historyScroll = nil, nil
+	panel.messageArea = ui.Box{}
 	panel.paintedRows = panel.paintedRows[:0]
 	panel.paintedHistory = panel.paintedHistory[:0]
 	panel.copySlots = panel.copySlots[:0]
@@ -1005,6 +1006,7 @@ func (state *State) declareAIMessages(c ui.C) {
 	}
 	list.DrawOver(panel.messageChrome)
 	panel.messageScroll = scroll
+	panel.messageArea = list
 }
 
 // declareAIMessageRow declares one message into the room the List gave it. Its
@@ -1096,7 +1098,7 @@ func (state *State) paintAIMessageChrome(d *ui.DrawContext) {
 	scroll := panel.messageScroll
 	if scroll != nil {
 		panel.maxScroll = scroll.Max()
-		if scroll.AtEnd() {
+		if scroll.AtEnd() && !panel.scrollbar.dragging {
 			panel.followSuppressed = false
 		}
 	}
