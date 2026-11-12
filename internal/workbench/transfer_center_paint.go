@@ -118,14 +118,21 @@ func (state *State) declareTransferPopoverBody(c ui.C, width, height float32) {
 				center.body.replace = pageButtonSlot(c, m.Replace, true)
 				center.body.resume = pageButtonSlot(c, m.Resume, true)
 			})
-			center.body.list = ui.Column(c).Grow(1).HitWith(hitTransfersList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup}).Children(func() {
-				state.prepareTransferCards()
-				center.listBox = ui.List(c, &center.listState, center.count, center.rowDecl).Fill().Label(m.Title)
-				if scroll := center.listBox.ScrollState(); scroll != nil && center.scroll != center.scrollSynced {
-					scroll.ScrollTo(center.scroll)
-					center.scrollSynced = center.scroll
-				}
-			})
+			// The List is the body's flexible child: a scroll area is what gives way
+			// in a column, so it takes the room the rows above leave and scrolls the
+			// rest instead of painting its whole height past the panel.
+			state.prepareTransferCards()
+			center.listBox = ui.List(c, &center.listState, center.count, center.rowDecl).Grow(1).Label(m.Title).
+				HitWith(hitTransfersList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
+			center.body.list = center.listBox
+			if scroll := center.listBox.ScrollState(); scroll != nil && center.scroll != center.scrollSynced {
+				scroll.ScrollTo(center.scroll)
+				center.scrollSynced = center.scroll
+				// The List places its rows from the offset it is declared at, so the
+				// paint that moved the offset still shows the old one: ask for the
+				// paint that follows, as a List asking for a scroll it applied does.
+				c.Canvas().RequestFrame()
+			}
 		})
 	})
 	body.DrawOver(center.bodyDraw)

@@ -50,6 +50,16 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			if box.X < 0 || box.Y < 0 || box.X+box.Width > size.Width || box.Y+box.Height > size.Height {
 				t.Fatalf("popover outside viewport: %+v", box)
 			}
+			// The cards scroll inside the popover: the list ends within the panel and
+			// is shorter than its rows, so the rest is reached by scrolling instead of
+			// being painted past the panel's bottom edge.
+			list := state.transfers.body.list.Rect()
+			if list.Y+list.Height > box.Y+box.Height {
+				t.Fatalf("transfer list %+v spills out of the popover %+v", list, box)
+			}
+			if list.Height >= float32(state.transfers.count)*transferCardHeight {
+				t.Fatalf("list viewport %v is not shorter than its %d rows", list.Height, state.transfers.count)
+			}
 			if hit, ok := findSnapshotHit(view.Snapshot(), hitTransferCenter); !ok || hit.Bounds.X >= state.chrome.bar.assistant.Rect().X {
 				t.Fatal("transfer button is not left of the assistant")
 			}
@@ -66,6 +76,10 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			}
 			if state.transfers.scroll != state.transfers.geometry.MaxOffsetY {
 				t.Fatal("End did not reveal the bottom of history")
+			}
+			// The List applies the offset at its next declaration, which it asks for.
+			if err := view.Wait(16 * time.Millisecond); err != nil {
+				t.Fatal(err)
 			}
 			reveal, ok := findSnapshotHit(view.Snapshot(), hitTransfersReveal.At(1))
 			if !ok {
@@ -93,6 +107,9 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			click(hitTransfersFilter.At(2))
 			if state.transfers.filter != 2 || state.transfers.count != 2 {
 				t.Fatalf("finished filter=%d count=%d", state.transfers.filter, state.transfers.count)
+			}
+			if err := view.Wait(16 * time.Millisecond); err != nil {
+				t.Fatal(err)
 			}
 			click(hitTransfersRemove.At(2))
 			if len(state.transfers.entries) != 3 {
@@ -150,6 +167,10 @@ func TestTransferCenterNativeRevealUsesVivaWithoutOpeningTheFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
+		t.Fatal(err)
+	}
+	// The List applies the offset at its next declaration, which it asks for.
+	if err := view.Wait(16 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	hit, ok := findSnapshotHit(view.Snapshot(), hitTransfersReveal.At(entry.id))
