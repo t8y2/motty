@@ -1122,6 +1122,9 @@ func (state *State) aiPanelScrollGesture(event gfx.ScrollEvent) (gfx.EventResult
 	if panel.rect.Width <= 0 || !pointInRect(event.X, event.Y, panel.rect) {
 		return gfx.EventResult{}, false
 	}
+	if approval := &panel.approvalLay; approval.scroll != nil && pointInRect(event.X, event.Y, approval.bounds) {
+		return approval.scroll.Wheel(event), true
+	}
 	if pointInRect(event.X, event.Y, panel.composer) {
 		panel.inputLayout.ScrollBy(event.DeltaY)
 		return gfx.EventResult{Handled: true, Repaint: true}, true
