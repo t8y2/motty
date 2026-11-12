@@ -292,12 +292,16 @@ func (state *State) paintTransferCenterBody(d *ui.DrawContext) {
 	}
 	paintTransferProgress(canvas, center.body.summaryBar.Rect(), center.fraction, pal.accent, pal.line)
 	state.paintTransferBodyControls(canvas, theme)
-	state.paintTransferCards(canvas, theme)
-	if center.count == 0 {
-		state.paintTransferEmpty(canvas, center.list, theme)
-	}
 	area := components.BeginScrollArea(canvas, theme, center.list, gfx.Size{Height: float32(center.count) * transferCardHeight}).
 		Offset(0, center.scroll).VerticalScrollbar(hitTransfersBar, m.Title, "")
+	// The body's DrawOver runs outside the declarative List's clip.
+	if center.list.Width > 0 && center.list.Height > 0 {
+		area.BeginContent()
+		state.paintTransferCardsFor(canvas, theme, center.cards)
+		if center.count == 0 {
+			state.paintTransferEmpty(canvas, center.list, theme)
+		}
+	}
 	center.geometry = area.EndContent()
 	center.hostBounds = center.body.hostBox.Rect()
 	state.paintTransferHosts(canvas)
@@ -355,12 +359,6 @@ func (state *State) paintTransferBatchControls(canvas *gfx.Canvas, theme gfx.The
 	center := &state.transfers
 	components.BeginButton(canvas, theme, hitTransfersBulkCancel, center.batchBody.cancel.Rect()).Secondary(state.messages.Cancel)
 	components.BeginButton(canvas, theme, hitTransfersBulkConfirm, center.batchBody.confirm.Rect()).Destructive(center.batch.action)
-}
-
-// paintTransferCards paints the progress bar and buttons of every card row the
-// List declared.
-func (state *State) paintTransferCards(canvas *gfx.Canvas, theme gfx.Theme) {
-	state.paintTransferCardsFor(canvas, theme, state.transfers.cards)
 }
 
 // paintTransferCardsFor paints the progress bar and buttons of a set of cards.
