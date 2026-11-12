@@ -1212,6 +1212,8 @@ var englishAIPanel = AIPanelMessages{
 	ToolSFTPList:         "List directory",
 	ToolSFTPRead:         "Read file",
 	ToolSFTPWrite:        "Write file",
+	ToolNotesQuery:       "Query notes",
+	ToolNotesEdit:        "Edit notes",
 	ToolSFTPRemove:       "Delete path",
 
 	StatusRunning: "Running",

@@ -21,7 +21,7 @@ import (
 type Mode uint8
 
 const (
-	// ModeAsk offers only request_agent_mode: the model answers, and can ask the
+	// ModeAsk offers request_agent_mode and explicitly configured note_query: the model answers, and can ask the
 	// user to switch to Agent when the request needs a tool.
 	ModeAsk Mode = iota
 	// ModeAgent offers Config.Tools (all tools when nil).
@@ -36,7 +36,7 @@ const (
 	EventReasoning                         // Text is a reasoning delta (never sent back to the model)
 	EventToolStart                         // Call is about to run
 	EventToolDone                          // Call finished; Result is what the model will see (before truncation)
-	EventAgentModeRequest                  // Ask mode's one tool: the user may switch to Agent
+	EventAgentModeRequest                  // The user may switch from Ask to Agent
 	EventDone                              // the run finished; Usage is the sum over all turns
 	EventError                             // Text describes the failure; the run ends
 )
@@ -61,7 +61,7 @@ type Config struct {
 	Model    string
 	System   string
 	Mode     Mode
-	Tools    []tools.Spec // offered in ModeAgent; nil means tools.All()
+	Tools    []tools.Spec // Agent: nil means tools.All(); Ask: only note_query is eligible.
 	Gate     gate.Gate
 
 	// UserInHistory says history already ends with the user message to answer;
@@ -107,7 +107,7 @@ const (
 	// askNote overrides the system prompt's description of running commands:
 	// a model told it can run them, with no tool definitions in the request, emits
 	// its native call markup as plain text (DeepSeek's DSML).
-	askNote           = "\n\nAsk mode is active. The only tool available is request_agent_mode; it runs nothing. Call it when the user asks you to run, change, inspect a session, or otherwise use a tool. The application will ask the user to switch to Agent mode and retry. Do not claim you lack permission, do not write tool-call markup as text, and do not ask the user to run commands themselves when request_agent_mode can ask for the switch."
+	askNote           = "\n\nAsk mode is active. If note_query is offered, use it directly to search and read the note library without switching modes. All edits and terminal operations require switching to Agent. request_agent_mode runs nothing; call it when the user asks for an operation this mode withholds. The application will ask the user to switch to Agent mode and retry. Do not claim you lack permission, do not write tool-call markup as text, and do not ask the user to run commands themselves when request_agent_mode can ask for the switch."
 	noToolsAnswerNote = "\n\nAsk mode is active and the user declined switching to Agent. No tools are available. Answer from the attached terminal text and the conversation; do not claim a permission problem, do not write a tool call, and do not ask the user to run commands unless the answer genuinely cannot be given otherwise."
 )
 
@@ -209,12 +209,19 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			offered[t.Name] = true
 		}
 	default:
-		// Ask mode normally gets exactly one meta-tool. After a decline it gets
-		// none, so the model can answer without starting another escalation.
+		// Ask mode allows only explicitly configured note queries plus escalation.
+		// After a decline it gets no tools, preventing repeated escalation.
 		if !cfg.NoTools {
 			t := tools.RequestAgentModeSpec()
 			specs = append(specs, llm.ToolSpec{Name: t.Name, Description: t.Description, Schema: t.Schema})
 			offered[t.Name] = true
+			for _, t := range cfg.Tools {
+				if t.Name != tools.NameNoteQuery {
+					continue
+				}
+				specs = append(specs, llm.ToolSpec{Name: t.Name, Description: t.Description, Schema: t.Schema})
+				offered[t.Name] = true
+			}
 		}
 	}
 
@@ -274,9 +281,7 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			return newMsgs(), err
 		}
 		if cfg.Mode != ModeAgent {
-			// The only call Ask mode can act on is the escalation request. It
-			// never reaches the gate; it ends this run and leaves the approval
-			// card to the caller.
+			// Escalation ends the run before any operations in this batch execute.
 			var escalation *llm.ToolCall
 			for index := range calls {
 				if calls[index].Name == tools.NameRequestAgentMode {
@@ -284,18 +289,23 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 					break
 				}
 			}
-			if escalation != nil && !final {
+			if escalation != nil && !final && offered[tools.NameRequestAgentMode] {
 				emit(Event{Kind: EventAgentModeRequest, Call: *escalation, Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				return newMsgs(), nil
 			}
-			// A call to anything else cannot run, and with no prose beside it
-			// the turn would end on nothing the user can read.
-			if len(calls) > 0 && strings.TrimSpace(text) == "" {
-				err := fmt.Errorf("agent: the model called %q, which this mode does not offer", calls[0].Name)
-				emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
-				return newMsgs(), err
+			allowed := make([]llm.ToolCall, 0, len(calls))
+			for _, call := range calls {
+				if call.Name == tools.NameNoteQuery && offered[call.Name] {
+					allowed = append(allowed, call)
+					continue
+				}
+				if strings.TrimSpace(text) == "" {
+					err := fmt.Errorf("agent: the model called %q, which this mode does not offer", call.Name)
+					emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
+					return newMsgs(), err
+				}
 			}
-			calls = nil // nothing else was offered, so nothing is run
+			calls = allowed
 		}
 		if final || len(calls) == 0 {
 			// A turn with no prose and no calls is never a real answer: say so
@@ -436,7 +446,7 @@ func stream(ctx context.Context, p llm.Provider, req llm.Request, turn int, emit
 }
 
 func runTool(ctx context.Context, cfg Config, offered map[string]bool, call llm.ToolCall) gate.Result {
-	if cfg.Mode != ModeAgent || !offered[call.Name] {
+	if !offered[call.Name] || cfg.Mode != ModeAgent && call.Name != tools.NameNoteQuery {
 		return gate.Result{Text: "unknown tool " + call.Name, IsError: true}
 	}
 	tctx, cancel := context.WithTimeout(ctx, cfg.StepTimeout)

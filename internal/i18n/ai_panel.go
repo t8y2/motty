@@ -136,6 +136,8 @@ type AIPanelMessages struct {
 	ToolSFTPRead         string
 	ToolSFTPWrite        string
 	ToolSFTPRemove       string
+	ToolNotesQuery       string
+	ToolNotesEdit        string
 
 	StatusRunning string
 	StatusWaiting string

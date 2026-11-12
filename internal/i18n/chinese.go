@@ -1212,6 +1212,8 @@ var chineseAIPanel = AIPanelMessages{
 	ToolSFTPList:         "列出目录",
 	ToolSFTPRead:         "读取文件",
 	ToolSFTPWrite:        "写入文件",
+	ToolNotesQuery:       "查询笔记",
+	ToolNotesEdit:        "编辑笔记",
 	ToolSFTPRemove:       "删除路径",
 
 	StatusRunning: "运行中",

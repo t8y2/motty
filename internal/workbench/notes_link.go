@@ -309,6 +309,9 @@ func (s *State) noteLinksRestored() {
 		live[n.ID] = true
 		if _, known := s.noteLinks[n.ID]; !known {
 			s.noteLinkInfo(n.ID).bodyHash = noteHash(n.Body)
+			if n.Link.WriteBase != "" {
+				s.noteLinkInfo(n.ID).bodyHash = n.Link.WriteBase
+			}
 			if n.Link.Tree == "" {
 				s.noteLinkRefresh(n.ID)
 			}
@@ -386,6 +389,9 @@ func (s *State) noteLinkAdopt(id, path string, file linkedFile) {
 		// note's own just wrote: nothing to do, and a conflict that came from a
 		// change since undone is over.
 		st.conflict = false
+		if i := s.noteIndex(id); i >= 0 && s.notes.list[i].Link.WriteBase != "" && noteHash(s.notes.list[i].Body) != disk {
+			st.problem = s.noteText("File save is pending; committed note text is retained.", "文件尚未保存，已提交的笔记正文已保留。")
+		}
 		return
 	}
 	memory := s.noteMemoryBody(id)
@@ -422,26 +428,36 @@ func (s *State) noteLinkSetBody(id, body string) {
 	s.save()
 }
 
-// noteLinkWrite is the save of a linked note's text to its file. A file that
-// cannot be written, or that changed meanwhile, leaves the text in the note and
-// says so in the note's notice; the user is not held in the note.
-func (s *State) noteLinkWrite(note savedNote) {
+// noteLinkCheck validates the disk baseline without writing or adopting text.
+func (s *State) noteLinkCheck(note savedNote) bool {
 	st := s.noteLinkInfo(note.ID)
 	if st.conflict || st.missing {
-		return
+		return false
 	}
 	disk := readLinkedFile(note.Link.Path)
 	switch {
 	case disk.missing:
 		st.missing = true
-		return
+		return false
 	case disk.err != nil:
 		st.problem = s.noteLinkMessage(disk.err)
-		return
+		return false
 	case noteHash(disk.body) != st.bodyHash:
 		st.bom, st.conflict = disk.bom, true
+		return false
+	}
+	st.problem = ""
+	return true
+}
+
+// noteLinkWrite is the save of a linked note's text to its file. A file that
+// cannot be written, or that changed meanwhile, leaves the text in the note and
+// says so in the note's notice; the user is not held in the note.
+func (s *State) noteLinkWrite(note savedNote) {
+	if !s.noteLinkCheck(note) {
 		return
 	}
+	st := s.noteLinkInfo(note.ID)
 	if err := writeLinkedFile(note.Link.Path, note.Body, st.bom); err != nil {
 		st.problem = s.noteText("Could not write the file: ", "无法写入文件：") + err.Error()
 		return
