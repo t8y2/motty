@@ -40,6 +40,7 @@ const (
 	shortcutHistory
 	shortcutClearScreen
 	shortcutCompletion
+	shortcutSnippetPicker
 	shortcutActionCount
 )
 
@@ -89,6 +90,7 @@ func defaultShortcuts() shortcutMap {
 	shortcuts.chords.Set(shortcutHistory, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'h'})
 	shortcuts.chords.Set(shortcutClearScreen, keymap.Chord{Modifiers: primary, Char: 'k'})
 	shortcuts.chords.Set(shortcutCompletion, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'j'})
+	shortcuts.chords.Set(shortcutSnippetPicker, keymap.Chord{Modifiers: primary | gfx.ModifierShift, Char: 'g'})
 	shortcuts.refreshLabels()
 	return shortcuts
 }
@@ -295,6 +297,8 @@ func (action shortcutAction) String() string {
 		return "clear_screen"
 	case shortcutCompletion:
 		return "command_completion"
+	case shortcutSnippetPicker:
+		return "snippet_picker"
 	default:
 		return ""
 	}
@@ -586,6 +590,9 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 	switch action {
 	case shortcutCommandPalette:
 		state.openCommandPalette()
+		result.Focus = hitCommandPaletteSearch
+	case shortcutSnippetPicker:
+		state.openSnippetPicker()
 		result.Focus = hitCommandPaletteSearch
 	case shortcutNewWindow:
 		state.openNewWindow()
