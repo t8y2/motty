@@ -108,6 +108,7 @@ const (
 	iconSave
 	iconProcess
 	iconDirectoryTree
+	iconFollowFolder
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -2630,6 +2631,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconSFTPProfiles:   icons.SftpProfiles,
 	iconFileClock:      icons.FileClock,
 	iconClock:          icons.Clock3,
+	iconFollowFolder:   icons.LocateFixed,
 }
 
 func paintIcon(canvas *gfx.Canvas, kind uint8, bounds gfx.Rect, foreground gfx.Color) {

@@ -21,6 +21,7 @@ var (
 	hitSFTPHeaderMore        = tree.ID(sftpHits, "sftp-header-more")
 	hitSFTPHeaderFilter      = tree.ID(sftpHits, "sftp-header-filter")
 	hitSFTPHeaderHidden      = tree.ID(sftpHits, "sftp-header-hidden")
+	hitSFTPHeaderFollow      = tree.ID(sftpHits, "sftp-header-follow")
 	hitSFTPHeaderEditor      = tree.ID(sftpHits, "sftp-header-editor")
 	hitSFTPHeaderMenuDismiss = tree.ID(sftpHits, "sftp-header-menu-dismiss")
 	hitSFTPCoverage          = tree.ID(sftpHits, "sftp-local-coverage")
@@ -212,7 +213,7 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, a
 	}
 	dismiss := hitSFTPHeaderMenuDismiss
 	const menuWidth = float32(280)
-	rows := 9 + len(folder.history.recent)
+	rows := 10 + len(folder.history.recent)
 	if label, _ := state.sftpEditorItem(view, folder); label != "" {
 		rows++
 	}
@@ -235,6 +236,10 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, a
 	menu.AddItem(components.DropdownMenuItem{
 		ID: hitSFTPHeaderHidden, Label: hiddenLabel, Icon: lucideIcons[hiddenIcon],
 		Selected: folder.showHidden,
+	})
+	menu.AddItem(components.DropdownMenuItem{
+		ID: hitSFTPHeaderFollow, Label: state.messages.Tools.FilesFollow, Icon: lucideIcons[iconFollowFolder],
+		Selected: !state.sftpFollowOff,
 	})
 	if label, disabled := state.sftpEditorItem(view, folder); label != "" {
 		menu.AddItem(components.DropdownMenuItem{ID: hitSFTPHeaderEditor, Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
