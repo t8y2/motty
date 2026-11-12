@@ -67,3 +67,53 @@ func TestHostProtocolTagsAppearInListAndGrid(t *testing.T) {
 		})
 	}
 }
+
+// A user tag whose pill cannot fit the room the protocol tag leaves is left
+// out, not painted over the status column or the card's checkbox. Measuring
+// used to clamp an oversized pill to the room, so it passed the fit check and
+// the painter still drew it whole.
+func TestTooWideHostTagLeftOutBesideProtocolTag(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.hosts = []Host{
+		{ID: 1, CatalogID: "wide-tag", Label: "alpha", Address: "a.io", User: "ops", Protocol: protocolRDP,
+			Tags: "abcdefghijklmnopqrstuvwxyz012345"},
+		{ID: 2, CatalogID: "fitting-tag", Label: "bravo", Address: "b.io", User: "ci", Protocol: protocolSSH,
+			Tags: "web"},
+	}
+	state.hostDataChanged()
+
+	for _, view := range []struct {
+		name string
+		mode hostViewMode
+		// The widest tag a host can take (32 runes) stays over the tag room at
+		// these widths while a one-word tag still fits whole: the list's tag
+		// column collapses below about 1100 and its 18% share grows past such a
+		// pill above about 1400, the grid's cards are narrowest around 960.
+		width  float32
+		height float32
+	}{
+		{name: "list", mode: hostViewList, width: 1180, height: 700},
+		{name: "grid", mode: hostViewGrid, width: 960, height: 700},
+	} {
+		t.Run(view.name, func(t *testing.T) {
+			state.hostView = view.mode
+			state.hostsScroll = 0
+			var canvas gfx.Canvas
+			state.Paint(&canvas, gfx.Size{Width: view.width, Height: view.height})
+
+			painted := make(map[string]bool)
+			for _, text := range canvas.Texts() {
+				painted[text.Value] = true
+			}
+			if painted[state.hosts[0].Tags] {
+				t.Fatalf("tag wider than the room beside the protocol tag was painted")
+			}
+			if !painted["web"] {
+				t.Fatalf("a tag that fits was left out")
+			}
+			if !painted["RDP"] || !painted["SSH"] {
+				t.Fatalf("protocol tag missing beside user tags")
+			}
+		})
+	}
+}

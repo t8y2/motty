@@ -2472,8 +2472,8 @@ func (state *State) fitHostTags(canvas *gfx.Canvas, host Host, width float32, sh
 	count, used := 0, float32(0)
 	for remaining := host.Tags; remaining != "" && count < len(shown); {
 		tag, tail, found := strings.Cut(remaining, ", ")
-		pill := min(canvas.TextWidthWeight(tag, metrics.FontSizeS, gfx.WeightMedium)+14, width)
-		if pill <= 0 || used+pill > width {
+		pill := canvas.TextWidthWeight(tag, metrics.FontSizeS, gfx.WeightMedium) + 14
+		if used+pill > width {
 			break
 		}
 		shown[count] = tag
