@@ -2648,6 +2648,8 @@ var traditionalDesktop = DesktopMessages{
 	ShareClipboard:            "與遠端桌面共享剪貼簿",
 	HideBars:                  "只顯示畫面（隱藏頂部列與狀態列）",
 	ConsoleSession:            "連線控制檯（管理員）工作階段",
+	StandardSecurity:          "使用標準 RDP 安全層（不使用 TLS/NLA）",
+	StandardSecurityNote:      "僅在伺服器要求時使用。標準 RDP 安全層使用伺服器從未證明其持有的金鑰加密，網路中的任何人都能讀取或竄改工作階段內容，包括你的密碼。狀態列會顯示為未加密。",
 	VNCPlaintext:              "VNC 工作階段未加密：螢幕、剪貼簿和你輸入的一切都以明文經過網路。可能的話請透過 SSH 連線。",
 	TipCapture:                "鍵盤現在交給遠端桌面。點選改為留在 Motty（%s）",
 	TipRelease:                "鍵盤現在留在 Motty。點選交給遠端桌面（%s）",

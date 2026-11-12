@@ -111,9 +111,9 @@ type hostEditor struct {
 	protocolBefore hostProtocol
 	flow           serial.Flow
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
-	// console is RDP's own: it asks the server for its console (administrative)
-	// session.
-	viaSSH, clipboard, console, chromeless bool
+	// console and standardSecurity are RDP's own: the server's console
+	// (administrative) session, and Standard RDP Security without TLS or NLA.
+	viaSSH, clipboard, console, standardSecurity, chromeless bool
 	// ports are the serial ports found when the picker was last opened.
 	ports     []serial.Port
 	portsOpen bool
@@ -292,6 +292,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.protocol, editor.flow = host.Protocol, host.Line.Flow
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
+	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
 	editor.portsOpen = false
 	if host.Protocol == protocolSerial {
 		editor.port.Insert(host.Line.String())
@@ -325,6 +326,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	if editor.protocol == protocolRDP {
 		host.Console = editor.console
+		host.StandardSecurity = editor.standardSecurity
 	}
 	if editor.protocol == protocolSSH {
 		host.SSHOptions = editor.sshOptions.Clone()
@@ -388,7 +390,7 @@ func (editor *hostEditor) reset() {
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
 	editor.protocol, editor.flow, editor.portsOpen = protocolSSH, serial.FlowNone, false
-	editor.viaSSH, editor.clipboard, editor.console, editor.chromeless = false, false, false, false
+	editor.viaSSH, editor.clipboard, editor.console, editor.standardSecurity, editor.chromeless = false, false, false, false, false
 }
 
 // defaultPortText is what the port field holds for a protocol until the user

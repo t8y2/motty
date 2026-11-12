@@ -32,7 +32,9 @@ Changed:
   before any credential is sent, instead of `net.DialTimeout` and a blanket
   `InsecureSkipVerify`. A refused certificate ends the attempt (`ErrCertificateRejected`)
   and does not fall back to other TLS versions.
-* Standard RDP Security (RC4 without TLS) is off unless `Options.AllowLegacySecurity`.
+* Standard RDP Security (RC4 without TLS) is used only when
+  `Options.Security` is `SecurityStandard`; the default refuses a server that
+  offers nothing else.
 * A wrong password stops after one attempt (`%w` instead of `%v` kept
   `nla.ErrCredentialsFatal` visible; a server that drops the connection after the
   credentials were sent counts as a refusal). Upstream made 14 logon attempts for

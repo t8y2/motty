@@ -249,7 +249,13 @@ module in `go.mod`.
 
 TLS (1.0-1.3; TLS 1.2 for CredSSP) with NLA (CredSSP + NTLMv2) preferred, TLS
 without NLA if the server allows it; standard RDP Security (RC4 without TLS) is
-refused. NLA starts with SPNEGO; if token negotiation fails before credentials
+refused unless the host's **Use standard RDP security** switch asks for it. That
+switch makes the client offer Standard RDP Security only, for a server that
+offers nothing else or whose administrator chose the RDP security layer. Its
+keys come from a server key that is never authenticated, so anyone on the path
+can read and alter the session, including the password: the switch states that,
+and the status line reports the connection as **Not encrypted** (a tunneled host
+still reports the SSH protection). NLA starts with SPNEGO; if token negotiation fails before credentials
 are sent, it reconnects once using raw NTLM tokens for older WinPR servers such
 as GNOME Remote Desktop on Ubuntu 22.04. Both paths keep certificate checks,
 NTLMv2 MIC/channel binding and CredSSP public-key verification. The client

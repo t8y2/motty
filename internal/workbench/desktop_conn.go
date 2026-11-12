@@ -90,6 +90,7 @@ func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Se
 	if host.Protocol == protocolRDP {
 		options.Username, options.Domain = rdpAccount(host.User)
 		options.Console = host.Console
+		options.StandardSecurity = host.StandardSecurity
 		options.Width, options.Height, options.Scale = request.Width, request.Height, request.Scale
 		if request.Verify != nil {
 			typedAddress := net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))

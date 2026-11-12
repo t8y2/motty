@@ -61,14 +61,14 @@ func rdpState(t *testing.T, certificate *[]byte, opened *[]desktopRequest) (*Sta
 }
 
 func TestRDPHostIsSavedWithItsAccountAndDefaultPort(t *testing.T) {
-	host := Host{Label: "Win", Address: "win.example.com", User: `CORP\alice`, Protocol: protocolRDP, Clipboard: true, Console: true}
+	host := Host{Label: "Win", Address: "win.example.com", User: `CORP\alice`, Protocol: protocolRDP, Clipboard: true, Console: true, StandardSecurity: true}
 	host.normalizeEndpoint()
 	host.finish()
 	if host.Port != 3389 || host.User != `CORP\alice` || host.target != "rdp://win.example.com" {
 		t.Fatalf("host = %+v", host)
 	}
 	var restored Host
-	if !restored.applyTransport(host.transport()) || restored.Protocol != protocolRDP || !restored.Clipboard || !restored.Console {
+	if !restored.applyTransport(host.transport()) || restored.Protocol != protocolRDP || !restored.Clipboard || !restored.Console || !restored.StandardSecurity {
 		t.Fatalf("restored = %+v", restored)
 	}
 	if user, domain := rdpAccount(`CORP\alice`); user != "alice" || domain != "CORP" {
@@ -159,6 +159,43 @@ func TestRDPConsoleSessionIsAnRDPOnlySwitch(t *testing.T) {
 	}
 	var restored Host
 	if !restored.applyTransport(host.transport()) || !restored.Console {
+		t.Fatalf("restored = %+v", restored)
+	}
+}
+
+// Standard RDP security is an RDP-only switch: a VNC host cannot ask for it,
+// and the choice is saved with the host.
+func TestRDPStandardSecurityIsAnRDPOnlySwitch(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openHostDialog()
+	state.editor.setProtocol(protocolVNC)
+	canvas, _ := paintAt(state, gfx.Size{Width: 1200, Height: 1000})
+	if _, ok := hitByID(canvas, hitDialogStandardSecurity); ok {
+		t.Fatal("a VNC host was offered standard RDP security")
+	}
+	state.editor.setProtocol(protocolRDP)
+	canvas, _ = paintAt(state, gfx.Size{Width: 1200, Height: 1000})
+	if _, ok := hitByID(canvas, hitDialogStandardSecurity); !ok {
+		t.Fatal("an RDP host was not offered standard RDP security")
+	}
+	state.Click(hitDialogStandardSecurity)
+	typeInto(state, hitDialogLabel, "Legacy")
+	typeInto(state, hitDialogAddress, "legacy.example.com")
+	typeInto(state, hitDialogUser, `CORP\alice`)
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone || state.dialogError != "" {
+		t.Fatalf("submit: modal=%d error=%q", state.modal, state.dialogError)
+	}
+	index := state.hostIndexByEndpoint(Host{Protocol: protocolRDP, Address: "legacy.example.com", User: `CORP\alice`, Port: 3389})
+	if index < 0 {
+		t.Fatal("the RDP host was not added")
+	}
+	host := state.hosts[index]
+	if !host.StandardSecurity {
+		t.Fatal("the standard security switch was not saved with the host")
+	}
+	var restored Host
+	if !restored.applyTransport(host.transport()) || !restored.StandardSecurity {
 		t.Fatalf("restored = %+v", restored)
 	}
 }

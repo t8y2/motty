@@ -2648,6 +2648,8 @@ var englishDesktop = DesktopMessages{
 	ShareClipboard:            "Share the clipboard with the remote desktop",
 	HideBars:                  "Show the picture alone (no bar above, no status line)",
 	ConsoleSession:            "Connect to the console (admin) session",
+	StandardSecurity:          "Use standard RDP security (no TLS/NLA)",
+	StandardSecurityNote:      "Only for a server that requires it. Standard RDP security encrypts with a key the server never proves it holds, so anyone on the path can read or alter the session, including the password. The status line reports it as not encrypted.",
 	VNCPlaintext:              "The VNC session is not encrypted: the screen, clipboard and everything you type cross the network in the clear. Connect through SSH when you can.",
 	TipCapture:                "The keyboard goes to the remote desktop. Click to keep it in Motty (%s)",
 	TipRelease:                "The keyboard stays in Motty. Click to send it to the remote desktop (%s)",

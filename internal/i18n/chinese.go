@@ -2648,6 +2648,8 @@ var chineseDesktop = DesktopMessages{
 	ShareClipboard:            "与远程桌面共享剪贴板",
 	HideBars:                  "只显示画面（隐藏顶栏与状态栏）",
 	ConsoleSession:            "连接控制台（管理员）会话",
+	StandardSecurity:          "使用标准 RDP 安全层（不使用 TLS/NLA）",
+	StandardSecurityNote:      "仅在服务器要求时使用。标准 RDP 安全层使用服务器从未证明其持有的密钥加密，网络中的任何人都能读取或篡改会话内容，包括你的密码。状态栏会显示为未加密。",
 	VNCPlaintext:              "VNC 会话未加密：屏幕、剪贴板和你输入的一切都以明文经过网络。可能的话请通过 SSH 连接。",
 	TipCapture:                "键盘现在交给远程桌面。点击改为留在 Motty（%s）",
 	TipRelease:                "键盘现在留在 Motty。点击交给远程桌面（%s）",
