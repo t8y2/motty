@@ -307,9 +307,6 @@ type aiPanel struct {
 	// messageScroll and historyScroll are the Lists' scroll states of the paint
 	// in progress. They are only valid in the paint that declared them.
 	messageScroll, historyScroll *ui.ScrollState
-	// messageArea is valid until the next paint begins. A thumb press turns
-	// following off before List uses the previous frame's pinned state.
-	messageArea ui.Box
 	// messageRow, historyRow, messageChrome and historyChrome are kept so a paint
 	// makes no closures: the Lists declare their rows with them.
 	messageRow, historyRow       func(ui.ListRow)
@@ -946,9 +943,13 @@ func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventRe
 		}
 		if !history {
 			// A held thumb holds the conversation where it is: streaming must not
-			// drag it to the end under the reader's hand.
+			// drag it to the end under the reader's hand. The List reads whether it
+			// follows when it is declared, before the Follow(false) of that paint
+			// reaches it, so stop following on the state now.
 			panel.followSuppressed = true
-			panel.messageArea.Follow(false)
+			if scroll, _ := state.aiActiveScroll(); scroll != nil {
+				scroll.Follow(false)
+			}
 		}
 		bar.dragging = true
 		bar.history = history
