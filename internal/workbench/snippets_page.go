@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -167,7 +168,7 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 					view.filter = ui.Slot(c).Size(220, toolbarHeight)
 				})
 			}
-			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, catalogBarGutter, 0)
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
@@ -189,6 +190,7 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 	form.sendAt = gfx.Point{X: view.send.Rect().X, Y: view.send.Rect().Y + toolbarHeight + 4}
 
 	if len(form.list) == 0 {
+		form.scroll.bounds = gfx.Rect{}
 		state.drawReservedEmptyPage(canvas, view.empty, iconNote)
 		return
 	}
@@ -223,22 +225,60 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 		}
 	}
 	components.FitSortableTableHeadings(canvas, state.Theme(), columns[:], headers[:])
-	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
-	table.SortableHeader(headers[:])
+	bounds := view.content.Rect()
+	rowHeight := components.TableRowHeight(theme)
+	headerHeight := components.TableHeaderHeight(theme)
+	body := gfx.Rect{X: bounds.X, Y: bounds.Y + headerHeight, Width: bounds.Width, Height: max(bounds.Height-headerHeight, 0)}
+	list := &form.scroll
+	list.bounds = body
+	if body.Height <= 0 {
+		return
+	}
+	// Every row has the table's height except the expanded command's detail,
+	// whose wrapped height is measured first so the scroll area knows the whole
+	// list. The bar lives in the gutter beside the rows, so it never narrows them.
+	base := float32(len(form.visible)) * rowHeight
+	detailLines, detailLineHeight, detailHeight := state.snippetDetailHeight(canvas, body.Width-2*snippetDetailPadding)
+	area, geometry := list.begin(canvas, theme, body, base+detailHeight,
+		hitSnippetScroll, hitSnippetScrollThumb, m.SnippetsTitle, m.SnippetListScroll)
+	head := components.BeginTable(canvas, theme,
+		gfx.Rect{X: bounds.X, Y: bounds.Y, Width: body.Width, Height: headerHeight}, columns[:])
+	head.SortableHeader(headers[:])
 	var grid components.ReorderGrid
 	if manualOrder {
-		grid = components.BeginReorderGrid(canvas, theme, view.content.Rect(), &form.grid)
+		grid = components.BeginReorderGrid(canvas, theme, geometry.Viewport, &form.grid)
 		for index := range form.list {
 			grid.Order(hitSnippetHandles.At(index), 0, index, false)
 		}
 	} else {
 		form.grid.Cancel()
 	}
+	geometry = area.BeginContent()
+	list.scroll = geometry.OffsetY
+	viewportBottom := geometry.Viewport.Y + geometry.Viewport.Height
+	holdingBar := form.scroll.holdingBar()
 	hovered := canvas.Hovered()
 	hoverRow, hoverAnchor := 0, gfx.Rect{}
+	y := geometry.Content.Y
 	for _, index := range form.visible {
+		expanded := form.expanded == index+1 && detailHeight > 0
+		height := rowHeight
+		if expanded {
+			height += detailHeight
+		}
+		if y+height <= geometry.Viewport.Y || y >= viewportBottom {
+			y += height
+			continue
+		}
 		rowID := hitSnippetRowList.At(index)
+		if holdingBar {
+			// The press owns the pointer while the bar is dragged, so the row
+			// under it neither highlights nor takes a click.
+			rowID = gfx.ID{}
+		}
 		var cellRects [4]gfx.Rect
+		table := components.BeginTable(canvas, theme,
+			gfx.Rect{X: geometry.Content.X, Y: y, Width: body.Width, Height: height}, columns[:])
 		row := table.RowLayout(rowID, form.list[index].cells[:], components.TableRowState{
 			Selected: index == form.selected,
 			Expanded: form.expanded == index+1,
@@ -247,8 +287,10 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 			grid.Item(hitSnippetHandles.At(index), form.list[index].Name, 0, index, row.Bounds,
 				gfx.Rect{X: row.Bounds.X + 7, Y: row.Bounds.Y + (row.Bounds.Height-24)/2, Width: 24, Height: 24}, false)
 		}
-		if clicked, ok := canvas.ClickedIn(hitSnippetRowList); ok && clicked == index && state.modal == modalNone {
-			form.selected = index
+		if !holdingBar {
+			if clicked, ok := canvas.ClickedIn(hitSnippetRowList); ok && clicked == index && state.modal == modalNone {
+				form.selected = index
+			}
 		}
 		if len(row.Cells) == len(cellRects) {
 			command := row.Cells[3]
@@ -256,23 +298,49 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 				components.Kbd(canvas, theme, gfx.Rect{X: command.X + theme.Metrics.GapItem, Y: command.Y + (command.Height-keyHeight)/2, Height: keyHeight}, enterKeyLabel)
 			}
 			state.paintSnippetExpander(canvas, index, command)
-			if form.expanded == index+1 {
-				state.paintSnippetDetail(canvas, &table, index, row.Bounds)
+			if expanded {
+				state.paintSnippetDetail(canvas, &table, index, row.Bounds, detailLines, detailLineHeight)
 			}
-			if hovered == rowID && form.expanded != index+1 && strings.Contains(form.list[index].Command, "\n") {
+			if !holdingBar && hovered == rowID && !expanded && strings.Contains(form.list[index].Command, "\n") {
 				hoverRow, hoverAnchor = index+1, command
 			}
 		}
 		state.sendSnippetOn(canvas, rowID, index)
 		state.openSnippetMenuOn(canvas, rowID, index)
+		y += height
 	}
 	if manualOrder {
 		grid.End()
 	}
+	area.EndContent()
 	state.updateSnippetHover(canvas, hoverRow, hoverAnchor)
 	if view.filter.Valid() {
 		state.paintSnippetFilter(canvas, view.filter.Rect())
 	}
+}
+
+// scrollSnippets moves the snippet table with the wheel.
+func (state *State) scrollSnippets(event gfx.ScrollEvent) gfx.EventResult {
+	if state.activeSection != sectionSnippets || state.modal != modalNone {
+		return gfx.EventResult{}
+	}
+	return state.snippets.scroll.wheel(event, state.Theme())
+}
+
+// snippetsPointer drags the snippet table's scrollbar.
+func (state *State) snippetsPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionSnippets || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	return state.snippets.scroll.pointer(event, state.Theme(), hitSnippetScrollThumb, hitSnippetScroll)
+}
+
+// snippetsListKey scrolls the focused snippet table with the keyboard.
+func (state *State) snippetsListKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionSnippets || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	return state.snippets.scroll.key(event, state.Theme(), hitSnippetScroll)
 }
 
 // paintSnippetExpander draws the chevron that opens one row's command. It sits
@@ -298,19 +366,34 @@ func (state *State) paintSnippetExpander(canvas *gfx.Canvas, index int, cell gfx
 		gfx.HitOptions{Expanded: open, Expandable: true, Description: state.snippets.list[index].Name})
 }
 
-// paintSnippetDetail paints the expanded command under its row, in the terminal's
-// fixed-pitch face, capped at snippetDetailLines so one long command cannot push
-// every other row out of view.
-func (state *State) paintSnippetDetail(canvas *gfx.Canvas, table *components.Table, index int, rowBounds gfx.Rect) {
+// snippetDetailHeight wraps the expanded command at width and returns the lines,
+// their line height and the band height the page reserves for them. Nothing is
+// measured unless a row the filter shows is expanded.
+func (state *State) snippetDetailHeight(canvas *gfx.Canvas, width float32) (lines []string, lineHeight, height float32) {
+	form := &state.snippets
+	if form.expanded < 1 || form.expanded > len(form.list) || !slices.Contains(form.visible, form.expanded-1) {
+		return nil, 0, 0
+	}
+	theme := state.Theme()
+	style := gfx.TextStyle{Size: theme.Metrics.FontSizeS, Mono: true, MonoFace: state.terminalFontFace, Color: theme.Foreground}
+	_, lineHeight = canvas.MonoCellSize(style.Size, style.MonoFace)
+	lineHeight = max(lineHeight, style.Size+4)
+	lines = canvas.WrapLinesStyle(form.detailLines[:0], form.list[form.expanded-1].Command, style,
+		max(width, 0), snippetDetailLines, &form.detailCache)
+	form.detailLines = lines
+	return lines, lineHeight, 2*snippetDetailPadding + float32(len(lines))*lineHeight
+}
+
+// paintSnippetDetail paints the expanded command under its row, in the
+// terminal's fixed-pitch face, capped at snippetDetailLines so one long command
+// cannot push every other row out of view. lines and lineHeight come from
+// snippetDetailHeight, which sized the row for them.
+func (state *State) paintSnippetDetail(canvas *gfx.Canvas, table *components.Table, index int, rowBounds gfx.Rect, lines []string, lineHeight float32) {
 	form := &state.snippets
 	entry := &form.list[index]
 	theme := state.Theme()
 	style := gfx.TextStyle{Size: theme.Metrics.FontSizeS, Mono: true, MonoFace: state.terminalFontFace, Color: theme.Foreground}
-	_, lineHeight := canvas.MonoCellSize(style.Size, style.MonoFace)
-	lineHeight = max(lineHeight, style.Size+4)
 	width := max(0, rowBounds.Width-2*snippetDetailPadding)
-	lines := canvas.WrapLinesStyle(form.detailLines[:0], entry.Command, style, width, snippetDetailLines, &form.detailCache)
-	form.detailLines = lines
 	height := 2*snippetDetailPadding + float32(len(lines))*lineHeight
 	detail := table.Detail(height)
 	if detail == (gfx.Rect{}) {

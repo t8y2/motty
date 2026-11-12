@@ -78,7 +78,7 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 		if len(state.forwards) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd, hitForwardAdd, iconForward, canAdd)
 		} else {
-			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, catalogBarGutter, 0)
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
@@ -95,8 +95,10 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 // state into the slots its declaration left.
 func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas) {
 	view, messages := &state.sectionBodies.forwards, state.messages
+	list := &state.forwardList
 
 	if len(state.forwards) == 0 {
+		list.bounds = gfx.Rect{}
 		state.drawReservedEmptyPage(canvas, view.empty, iconForward)
 		return
 	}
@@ -109,14 +111,41 @@ func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas) {
 		messages.ForwardColumnStatus,
 	}
 	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
-	table.Header(headings[:])
-	for index := range state.forwards {
-		forward := &state.forwards[index]
-		if table.RowAt(hitForwardRowList, int(forward.ID), forward.cells[:], forward.ID == state.selectedForwardID) && state.modal == modalNone {
-			state.selectForward(forward.ID)
-		}
+	theme := state.Theme()
+	bounds := view.content.Rect()
+	rowHeight := components.TableRowHeight(theme)
+	headerHeight := components.TableHeaderHeight(theme)
+	body := gfx.Rect{X: bounds.X, Y: bounds.Y + headerHeight, Width: bounds.Width, Height: max(bounds.Height-headerHeight, 0)}
+	list.bounds = body
+	if body.Height <= 0 {
+		return
 	}
+	// The header stays put while the body scrolls under it. The bar's strip is
+	// reserved, so both are painted at the width the rows really get.
+	area, geometry := list.begin(canvas, theme, body, float32(len(state.forwards))*rowHeight,
+		hitForwardScroll, hitForwardScrollThumb, messages.ForwardTitle, messages.ForwardListScroll)
+	head := components.BeginTable(canvas, theme,
+		gfx.Rect{X: bounds.X, Y: bounds.Y, Width: body.Width, Height: headerHeight}, columns[:])
+	head.Header(headings[:])
+	geometry = area.BeginContent()
+	list.scroll = geometry.OffsetY
+	viewportBottom := geometry.Viewport.Y + geometry.Viewport.Height
+	y := geometry.Content.Y
+	for index := range state.forwards {
+		if y+rowHeight > geometry.Viewport.Y && y < viewportBottom {
+			forward := &state.forwards[index]
+			selected := forward.ID == state.selectedForwardID
+			table := components.BeginTable(canvas, theme,
+				gfx.Rect{X: geometry.Content.X, Y: y, Width: body.Width, Height: rowHeight}, columns[:])
+			if list.holdingBar() {
+				table.RowState(gfx.ID{}, forward.cells[:], components.TableRowState{Selected: selected})
+			} else if table.RowAt(hitForwardRowList, int(forward.ID), forward.cells[:], selected) && state.modal == modalNone {
+				state.selectForward(forward.ID)
+			}
+		}
+		y += rowHeight
+	}
+	area.EndContent()
 }
 
 // declareForwardDialog declares the forward editor as a dialog of the workbench

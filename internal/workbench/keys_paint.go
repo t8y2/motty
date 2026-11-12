@@ -76,7 +76,7 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 		if len(state.identities) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd, hitKeysAdd, iconKey, true)
 		} else {
-			view.content = ui.Slot(c).Grow(1).MarginSides(17, 0, 9, 0)
+			view.content = ui.Slot(c).Grow(1).MarginSides(17, 0, catalogBarGutter, 0)
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 0, 0).Gap(4).Items(ui.Start).Children(func() {
@@ -94,8 +94,10 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 func (state *State) paintKeysWorkspace(canvas *gfx.Canvas) {
 	view, messages := &state.sectionBodies.keys, state.messages
 	state.keysAddButton = view.addButton.Rect()
+	list := &state.keysList
 
 	if len(state.identities) == 0 {
+		list.bounds = gfx.Rect{}
 		state.drawReservedEmptyPage(canvas, view.empty, iconKey)
 		state.paintKeysMenu(canvas)
 		return
@@ -103,12 +105,37 @@ func (state *State) paintKeysWorkspace(canvas *gfx.Canvas) {
 	columns := [...]components.TableColumn{{Width: 210}, {Width: 170}, {Width: 145}, {Width: 0}}
 	headings := [...]string{messages.KeyColumnName, messages.KeyColumnType, messages.KeyColumnProtection, messages.KeyColumnFingerprint}
 	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
-	table.Header(headings[:])
-	for _, identity := range state.identities {
-		if table.RowAt(hitKeyRowList, int(identity.ID), identity.cells[:], identity.ID == state.selectedIdentityID) && state.modal == modalNone {
-			state.selectIdentity(identity.ID)
+	theme := state.Theme()
+	bounds := view.content.Rect()
+	rowHeight := components.TableRowHeight(theme)
+	headerHeight := components.TableHeaderHeight(theme)
+	body := gfx.Rect{X: bounds.X, Y: bounds.Y + headerHeight, Width: bounds.Width, Height: max(bounds.Height-headerHeight, 0)}
+	list.bounds = body
+	if body.Height > 0 {
+		area, geometry := list.begin(canvas, theme, body, float32(len(state.identities))*rowHeight,
+			hitKeysScroll, hitKeysScrollThumb, messages.KeyTitle, messages.KeyListScroll)
+		head := components.BeginTable(canvas, theme,
+			gfx.Rect{X: bounds.X, Y: bounds.Y, Width: body.Width, Height: headerHeight}, columns[:])
+		head.Header(headings[:])
+		geometry = area.BeginContent()
+		list.scroll = geometry.OffsetY
+		viewportBottom := geometry.Viewport.Y + geometry.Viewport.Height
+		y := geometry.Content.Y
+		for index := range state.identities {
+			identity := &state.identities[index]
+			if y+rowHeight > geometry.Viewport.Y && y < viewportBottom {
+				selected := identity.ID == state.selectedIdentityID
+				table := components.BeginTable(canvas, theme,
+					gfx.Rect{X: geometry.Content.X, Y: y, Width: body.Width, Height: rowHeight}, columns[:])
+				if list.holdingBar() {
+					table.RowState(gfx.ID{}, identity.cells[:], components.TableRowState{Selected: selected})
+				} else if table.RowAt(hitKeyRowList, int(identity.ID), identity.cells[:], selected) && state.modal == modalNone {
+					state.selectIdentity(identity.ID)
+				}
+			}
+			y += rowHeight
 		}
+		area.EndContent()
 	}
 	state.paintKeysMenu(canvas)
 }

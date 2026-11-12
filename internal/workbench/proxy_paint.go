@@ -75,7 +75,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 		if len(state.proxies) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd, hitProxyAdd, iconGlobe, canAdd)
 		} else {
-			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, catalogBarGutter, 0)
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
@@ -92,21 +92,49 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 // into the slots its declaration left.
 func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas) {
 	view, messages := &state.sectionBodies.proxies, state.messages
+	list := &state.proxyList
 
 	if len(state.proxies) == 0 {
+		list.bounds = gfx.Rect{}
 		state.drawReservedEmptyPage(canvas, view.empty, iconGlobe)
 		return
 	}
 	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 120}, {Width: 0}}
 	headings := [...]string{messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnStatus, messages.ProxyColumnRoute}
 	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
-	table.Header(headings[:])
-	for _, route := range state.proxies {
-		if table.RowAt(hitProxyRowList, int(route.ID), route.cells[:], route.ID == state.selectedProxyID) && state.modal == modalNone {
-			state.selectProxy(route.ID)
-		}
+	theme := state.Theme()
+	bounds := view.content.Rect()
+	rowHeight := components.TableRowHeight(theme)
+	headerHeight := components.TableHeaderHeight(theme)
+	body := gfx.Rect{X: bounds.X, Y: bounds.Y + headerHeight, Width: bounds.Width, Height: max(bounds.Height-headerHeight, 0)}
+	list.bounds = body
+	if body.Height <= 0 {
+		return
 	}
+	area, geometry := list.begin(canvas, theme, body, float32(len(state.proxies))*rowHeight,
+		hitProxyScroll, hitProxyScrollThumb, messages.ProxyTitle, messages.ProxyListScroll)
+	head := components.BeginTable(canvas, theme,
+		gfx.Rect{X: bounds.X, Y: bounds.Y, Width: body.Width, Height: headerHeight}, columns[:])
+	head.Header(headings[:])
+	geometry = area.BeginContent()
+	list.scroll = geometry.OffsetY
+	viewportBottom := geometry.Viewport.Y + geometry.Viewport.Height
+	y := geometry.Content.Y
+	for index := range state.proxies {
+		route := &state.proxies[index]
+		if y+rowHeight > geometry.Viewport.Y && y < viewportBottom {
+			selected := route.ID == state.selectedProxyID
+			table := components.BeginTable(canvas, theme,
+				gfx.Rect{X: geometry.Content.X, Y: y, Width: body.Width, Height: rowHeight}, columns[:])
+			if list.holdingBar() {
+				table.RowState(gfx.ID{}, route.cells[:], components.TableRowState{Selected: selected})
+			} else if table.RowAt(hitProxyRowList, int(route.ID), route.cells[:], selected) && state.modal == modalNone {
+				state.selectProxy(route.ID)
+			}
+		}
+		y += rowHeight
+	}
+	area.EndContent()
 }
 
 // declareProxyDialog declares the route editor as a dialog of the workbench

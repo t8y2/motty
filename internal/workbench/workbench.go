@@ -175,6 +175,8 @@ var (
 	hitKeysCopyPublic  = tree.ID(keysHits, "keys-copy-public")
 	hitKeysRemove      = tree.ID(keysHits, "keys-remove")
 	hitKeysPassphrase  = tree.ID(keysHits, "keys-passphrase")
+	hitKeysScroll      = tree.ID(keysHits, "keys-scroll")
+	hitKeysScrollThumb = tree.ID(keysHits, "keys-scroll-thumb")
 	hitKeyRowList      = tree.Sub(keysHits, tree.Name("key-row"))
 )
 
@@ -198,6 +200,8 @@ var (
 	hitForwardHostTrigger           = tree.ID(forwardsHits, "forward-host-trigger")
 	hitForwardHostScroll            = tree.ID(forwardsHits, "forward-host-scroll")
 	hitForwardHostPickerScope       = tree.ID(forwardsHits, "forward-host-picker-scope")
+	hitForwardScroll                = tree.ID(forwardsHits, "forward-scroll")
+	hitForwardScrollThumb           = tree.ID(forwardsHits, "forward-scroll-thumb")
 	hitForwardRowList               = tree.Sub(forwardsHits, tree.Name("forward-row"))
 	hitForwardHostItemList          = tree.Sub(forwardsHits, tree.Name("forward-host-item"))
 )
@@ -241,6 +245,8 @@ var (
 	hitProxyJumpScroll        = tree.ID(proxiesHits, "proxy-jump-scroll")
 	hitProxyTargetPickerScope = tree.ID(proxiesHits, "proxy-target-picker-scope")
 	hitProxyJumpPickerScope   = tree.ID(proxiesHits, "proxy-jump-picker-scope")
+	hitProxyScroll            = tree.ID(proxiesHits, "proxy-scroll")
+	hitProxyScrollThumb       = tree.ID(proxiesHits, "proxy-scroll-thumb")
 	hitProxyRowList           = tree.Sub(proxiesHits, tree.Name("proxy-row"))
 	hitProxyTargetItemList    = tree.Sub(proxiesHits, tree.Name("proxy-target-item"))
 	hitProxyJumpItemList      = tree.Sub(proxiesHits, tree.Name("proxy-jump-item"))
@@ -489,7 +495,9 @@ type State struct {
 	forwardTunnels     []*forwardTunnel
 	selectedIdentityID uint32
 	selectedForwardID  uint32
+	forwardList        catalogList
 	selectedProxyID    uint32
+	proxyList          catalogList
 	activeSection      uint8
 	hostFilterOn       bool   // only the group named hostFilter is listed
 	hostFilter         string // a group name; empty is the unnamed bucket
@@ -533,6 +541,7 @@ type State struct {
 	// keysAddButton where that button was painted.
 	keysMenu          bool
 	keysAddButton     gfx.Rect
+	keysList          catalogList
 	hostsBounds       gfx.Rect // the hosts page as last painted; the menus anchor to it
 	hostsGridViewport gfx.Rect // the card grid's absolute viewport as last painted
 	terminalMenu      terminalMenu
@@ -2293,6 +2302,21 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.sessionLogsPointer(event); handled {
 		return result
 	}
+	if state.trackCatalogList(event) {
+		defer func() { outcome.Repaint = true }()
+	}
+	if result, handled := state.forwardsPointer(event); handled {
+		return result
+	}
+	if result, handled := state.keysPointer(event); handled {
+		return result
+	}
+	if result, handled := state.proxiesPointer(event); handled {
+		return result
+	}
+	if result, handled := state.snippetsPointer(event); handled {
+		return result
+	}
 	if state.modal == modalFileProperties {
 		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
 			return gfx.EventResult{}
@@ -2752,6 +2776,18 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.forwardDialogKey(event); handled {
+		return result
+	}
+	if result, handled := state.forwardListKey(event); handled {
+		return result
+	}
+	if result, handled := state.keysListKey(event); handled {
+		return result
+	}
+	if result, handled := state.proxiesListKey(event); handled {
+		return result
+	}
+	if result, handled := state.snippetsListKey(event); handled {
 		return result
 	}
 	if result, handled := state.snippetGroupKey(event); handled {

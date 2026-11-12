@@ -146,6 +146,30 @@ func (state *State) keysKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	return gfx.EventResult{}, false
 }
 
+// scrollKeys moves the key list with the wheel.
+func (state *State) scrollKeys(event gfx.ScrollEvent) gfx.EventResult {
+	if state.activeSection != sectionKeys || state.modal != modalNone {
+		return gfx.EventResult{}
+	}
+	return state.keysList.wheel(event, state.Theme())
+}
+
+// keysPointer drags the key list's scrollbar.
+func (state *State) keysPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionKeys || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	return state.keysList.pointer(event, state.Theme(), hitKeysScrollThumb, hitKeysScroll)
+}
+
+// keysListKey scrolls the focused key list with the keyboard.
+func (state *State) keysListKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionKeys || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	return state.keysList.key(event, state.Theme(), hitKeysScroll)
+}
+
 // selectIdentity makes a key the selected one. The table calls it from the paint
 // that delivers the click on its row.
 func (state *State) selectIdentity(id uint32) {

@@ -71,6 +71,7 @@ type ToolsMessages struct {
 	SnippetEmpty              string
 	SnippetEmptySub           string
 	SnippetCountFmt           string
+	SnippetListScroll         string
 	SnippetColumnName         string
 	SnippetColumnShortcut     string
 	SnippetColumnGroup        string

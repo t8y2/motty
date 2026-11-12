@@ -802,6 +802,7 @@ type Messages struct {
 	KeyEmpty                    string
 	KeyEmptySub                 string
 	KeyCountFmt                 string
+	KeyListScroll               string
 	KeyUnavailable              string
 	KeyUnencrypted              string
 	KeyPassphraseProtected      string
@@ -876,6 +877,7 @@ type Messages struct {
 	ForwardEmpty                  string
 	ForwardEmptySub               string
 	ForwardCountFmt               string
+	ForwardListScroll             string
 	ForwardStopped                string
 	ForwardStoppedError           string
 	ForwardWaiting                string
@@ -945,6 +947,7 @@ type Messages struct {
 	ProxyEmpty                 string
 	ProxyEmptySub              string
 	ProxyCountFmt              string
+	ProxyListScroll            string
 	ProxySelected              string
 	ProxyAdded                 string
 	ProxyStartedStatus         string

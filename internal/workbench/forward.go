@@ -461,6 +461,31 @@ func (state *State) scrollForwardDialog(event gfx.ScrollEvent) gfx.EventResult {
 	return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.hostPopup) && editor.hostSelect.Wheel(event)}
 }
 
+// scrollForwards moves the forwards list with the wheel. A long list has more
+// rows than the page's body can show, so the rest is reached by scrolling.
+func (state *State) scrollForwards(event gfx.ScrollEvent) gfx.EventResult {
+	if state.activeSection != sectionForwards || state.modal != modalNone {
+		return gfx.EventResult{}
+	}
+	return state.forwardList.wheel(event, state.Theme())
+}
+
+// forwardsPointer drags the forwards list's scrollbar.
+func (state *State) forwardsPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionForwards || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	return state.forwardList.pointer(event, state.Theme(), hitForwardScrollThumb, hitForwardScroll)
+}
+
+// forwardListKey scrolls the focused forwards list with the keyboard.
+func (state *State) forwardListKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionForwards || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	return state.forwardList.key(event, state.Theme(), hitForwardScroll)
+}
+
 func (state *State) submitForwardDialog() {
 	state.forwardEditor.hostSelect.Open = false
 	if state.forwardDialogError = state.forwardEditor.validate(state); state.forwardDialogError != "" {

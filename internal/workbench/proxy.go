@@ -467,6 +467,30 @@ func (state *State) selectProxy(id uint32) {
 	}
 }
 
+// scrollProxies moves the route list with the wheel.
+func (state *State) scrollProxies(event gfx.ScrollEvent) gfx.EventResult {
+	if state.activeSection != sectionProxies || state.modal != modalNone {
+		return gfx.EventResult{}
+	}
+	return state.proxyList.wheel(event, state.Theme())
+}
+
+// proxiesPointer drags the route list's scrollbar.
+func (state *State) proxiesPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionProxies || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	return state.proxyList.pointer(event, state.Theme(), hitProxyScrollThumb, hitProxyScroll)
+}
+
+// proxiesListKey scrolls the focused route list with the keyboard.
+func (state *State) proxiesListKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.activeSection != sectionProxies || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	return state.proxyList.key(event, state.Theme(), hitProxyScroll)
+}
+
 func (state *State) removeSelectedProxy() {
 	for index := range state.proxies {
 		if state.proxies[index].ID != state.selectedProxyID {
