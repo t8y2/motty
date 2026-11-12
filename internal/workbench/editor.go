@@ -37,10 +37,14 @@ type hostEditor struct {
 	groupPicker   hostGroupPicker
 	tags          text.Editor
 	tagPicker     hostTagPicker
-	icon          hostIcon
-	color         text.Editor
-	colorPicker   hostColorPicker
-	form          hostFormScroll
+	// encoding is the remote charset the host's shells use: empty is UTF-8.
+	// encodingPicker is the searchable field that chooses it.
+	encoding       string
+	encodingPicker hostEncodingPicker
+	icon           hostIcon
+	color          text.Editor
+	colorPicker    hostColorPicker
+	form           hostFormScroll
 	// system is the system the host was last detected to run, whose badge the
 	// automatic icon shows.
 	system sshconn.RemoteSystem
@@ -257,6 +261,8 @@ func (editor *hostEditor) load(host Host) {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
+	editor.encodingPicker = hostEncodingPicker{}
+	editor.encoding = host.Encoding
 	editor.icon, editor.iconOpen = hostIconAuto, false
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
@@ -307,6 +313,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		Address:  editor.value(fieldAddress),
 		User:     editor.value(fieldUser),
 		Protocol: editor.protocol,
+		Encoding: editor.encoding,
 	}
 	if editor.protocol == protocolSerial {
 		host.Line, _ = serial.ParseLine(editor.value(fieldPort), editor.flow)
@@ -365,6 +372,8 @@ func (editor *hostEditor) reset() {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
+	editor.encodingPicker = hostEncodingPicker{}
+	editor.encoding = ""
 	editor.icon, editor.iconChosen, editor.system, editor.iconOpen = hostIconAuto, false, sshconn.SystemUnknown, false
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}

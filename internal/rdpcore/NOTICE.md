@@ -43,6 +43,19 @@ Changed:
   SPNEGO mechanism-list MIC sequence numbers. Failures after an Authenticate
   write stop probing and TLS-only fallback; protocol errors remain distinct
   from credential refusals so the UI does not discard a saved password for them.
+* CredSSP runs the SPNEGO token exchange to its end before sending the
+  public-key binding. When the acceptor requests a mechListMIC (WinPR never
+  treats NTLM as its preferred mechanism, so GNOME Remote Desktop does), the
+  client signs the mechanism list it offered and verifies the acceptor's MIC
+  with sequence zero; the binding then travels in a separate TSRequest. The MIC
+  exchange counts as a signed message on both peers — WinPR's Negotiate layer
+  adds one to every later EncryptMessage/DecryptMessage sequence and Windows
+  advances its own counters — so the CredSSP sealing sequences start at one,
+  while the RC4 handles stay at their start (MS-SPNG 3.2.5.1). Sending the
+  Authenticate token and the binding in one TSRequest made libfreerdp 3.x
+  answer with its own token in a message that still carried the client's
+  pubKeyAuth bytes; the client unsealed them as the server's binding and failed
+  the MAC check (issue #661). Windows accepts both forms.
 * CredSSP keeps the client's own supported version in every TSRequest and uses
   the server's lower version only to pick the public-key binding. Echoing the
   server's version back made every target older than Windows 10 abort the TLS

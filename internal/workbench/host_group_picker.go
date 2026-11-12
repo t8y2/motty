@@ -90,9 +90,11 @@ func (state *State) clickHostGroupPicker(id gfx.ID) bool {
 	case id == hitDialogGroup:
 		p.control.Open = true
 		state.editor.tagPicker.control.Open = false
+		state.editor.encodingPicker.control.Open = false
 	case id == hitHostGroupTrigger:
 		p.control.Open = !p.control.Open
 		state.editor.tagPicker.control.Open = false
+		state.editor.encodingPicker.control.Open = false
 	case id == hitHostGroupClear:
 		p.control.Clear()
 		state.syncHostGroup()

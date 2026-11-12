@@ -71,3 +71,39 @@ func TestSendingToARealRzThroughALocalShell(t *testing.T) {
 		return bytes.Equal(got, payload)
 	})
 }
+
+// TestSendingAfterTheReceiverRepeatsItsRequest is the real receiver's version of
+// TestARepeatedSendOfferIsAnsweredOnce. rz asks again every second (--timeout
+// 10) while the user decides — the situation a file chooser and a slow bastion
+// make ordinary — and the file must still arrive with the transfer ending at
+// once, not waiting out the receiver's timeout.
+func TestSendingAfterTheReceiverRepeatsItsRequest(t *testing.T) {
+	rzPath, err := exec.LookPath("rz")
+	if err != nil {
+		t.Skip("lrzsz is not installed")
+	}
+	state, session := openLocal(t)
+	state.Wake()
+	source := t.TempDir()
+	payload := make([]byte, 1900)
+	rand.New(rand.NewSource(11)).Read(payload)
+	file := filepath.Join(source, "repeated.bin")
+	os.WriteFile(file, payload, 0o644)
+	dest := t.TempDir()
+	state.options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+
+	session.term.send([]byte("cd " + dest + " && " + rzPath + " --binary --quiet --overwrite --timeout 10\n"))
+	waitUntil(t, state, "the offer", func() bool { return state.modal == modalFileTransfer })
+	waitUntil(t, state, "the receiver to ask again", func() bool {
+		return bytes.Count(state.transfer.held, []byte("**\x18B01")) >= 2
+	})
+	state.Click(hitTransferChoose)
+	waitUntil(t, state, "the end", func() bool { return state.transfer.phase == transferNone })
+	got, err := os.ReadFile(filepath.Join(dest, "repeated.bin"))
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("received %d bytes (%v); screen %q", len(got), err, screenText(state, 0))
+	}
+	if !strings.Contains(screenText(state, 0), "Sent 1 files") {
+		t.Fatalf("screen = %q", screenText(state, 0))
+	}
+}

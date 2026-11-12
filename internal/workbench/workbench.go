@@ -82,6 +82,7 @@ var (
 	hitDialogPassword          = tree.ID(shellHits, "dialog-password")
 	hitDialogPassphrase        = tree.ID(shellHits, "dialog-passphrase")
 	hitDialogGroup             = tree.ID(shellHits, "dialog-group")
+	hitDialogEncoding          = tree.ID(shellHits, "dialog-encoding")
 	hitDialogPort              = tree.ID(shellHits, "dialog-port")
 	hitDialogTags              = tree.ID(shellHits, "dialog-tags")
 	hitDialogIcon              = tree.ID(shellHits, "dialog-icon")
@@ -556,6 +557,7 @@ type State struct {
 	hostsBounds       gfx.Rect // the hosts page as last painted; the menus anchor to it
 	hostsGridViewport gfx.Rect // the card grid's absolute viewport as last painted
 	terminalMenu      terminalMenu
+	ghostMenu         ghostMenu
 	hostGroupEditor   text.Editor
 	groupActions      hostGroupActions
 	tabRename         tabRename
@@ -1314,6 +1316,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitDialogGroup {
 			return &state.hostGroupPicker().control.Query
 		}
+		if hit == hitDialogEncoding {
+			return &state.hostEncodingPicker().control.Query
+		}
 		if isDialogField(hit) {
 			if state.editor.colorPicker.open {
 				return nil
@@ -1534,6 +1539,13 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickCompletion(id) {
 		return
 	}
+	// The badge beside an inline suggestion is a part of the terminal control;
+	// its press is handled there, and this is the path an assistive press or a
+	// keyboard activation takes to the same menu.
+	if session := state.terminalPageSession(id); session != nil && session.term != nil && id == session.term.parts.At(terminalPartGhostHint) {
+		state.openGhostMenu(session)
+		return
+	}
 	if session, local, ok := state.decodePaneHit(id); ok {
 		if state.activeSessionID != session.ID && state.ActivatePane(session.ID) {
 			state.save()
@@ -1701,7 +1713,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	}
 	if state.clickHostOrder(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
-		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
+		state.clickHostGroupActions(id) || state.clickTerminalMenu(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) || state.clickHostMenu(id) || state.clickLocalShellPicker(id) || state.clickSnippetMenu(id) || state.clickSFTPMenu(id) {
 		return
 	}
 	if state.clickWorkspaceCommand(id) {
@@ -1840,6 +1852,12 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.openHistoryActive()
 	case id == hitSettingsHistoryToggle:
 		state.toggleHistory()
+	case id == hitSettingsCompletionHint:
+		state.history.acceptHintOff = !state.history.acceptHintOff
+		if state.history.acceptHintOff {
+			state.ghostMenu.open = false
+		}
+		state.save()
 	case id == hitCompletionUpdate:
 		state.updateCompletions()
 	case id == hitSettingsHistoryClear:
@@ -2110,6 +2128,9 @@ func (state *State) reconnect(session *Session) {
 // focus, which the runtime already did; clicks anywhere else are swallowed.
 func (state *State) clickHostDialog(id gfx.ID) {
 	if state.clickHostGroupPicker(id) {
+		return
+	}
+	if state.clickHostEncodingPicker(id) {
 		return
 	}
 	if state.clickHostTags(id) {
@@ -2392,6 +2413,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.terminalMenuPointer(event); handled {
 		return result
 	}
+	if result, handled := state.ghostMenuPointer(event); handled {
+		return result
+	}
 	if result, handled := state.tabMenuPointer(event); handled {
 		return result
 	}
@@ -2404,6 +2428,7 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.hostMenuPointer(event); handled {
 		return result
 	}
+	state.hostPressPointer(event)
 	if result, handled := state.hostSortPointer(event); handled {
 		return result
 	}
@@ -2578,6 +2603,15 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		if result := state.editor.groupPicker.control.Pointer(event); result.Handled {
+			return result
+		}
+	}
+	if state.modal == modalNewHost && state.editor.encodingPicker.control.Open {
+		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isHostEncodingPickerTarget(event.Target) {
+			state.editor.encodingPicker.control.Open = false
+			return gfx.EventResult{Handled: true, Repaint: true}
+		}
+		if result := state.editor.encodingPicker.control.Pointer(event); result.Handled {
 			return result
 		}
 	}
@@ -2802,6 +2836,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.hostGroupPickerKey(event); handled {
 		return result
 	}
+	if result, handled := state.hostEncodingPickerKey(event); handled {
+		return result
+	}
 	if result, handled := state.proxyDialogKey(event); handled {
 		return result
 	}
@@ -2860,6 +2897,10 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if state.terminalMenu.open && event.Key == gfx.KeyEscape {
 		state.terminalMenu.open = false
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.ghostMenu.open && event.Key == gfx.KeyEscape {
+		state.ghostMenu.open = false
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.workspaceTemplateMenuKey(event); handled {

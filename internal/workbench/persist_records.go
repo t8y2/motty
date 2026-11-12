@@ -261,6 +261,7 @@ var syncedSettings = map[string]bool{
 	"command_history":              true,
 	"command_suggest_off":          true,
 	"command_inline_suggest_off":   true,
+	"command_accept_hint_off":      true,
 }
 
 // stateVersionFields are written back as this build's own on every load.

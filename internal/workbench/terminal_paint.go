@@ -427,7 +427,7 @@ func (state *State) paintGridControl(canvas *gfx.Canvas, session *Session, geome
 }
 
 func (state *State) paintGridWithID(canvas *gfx.Canvas, session *Session, geometry terminalGeometry, id gfx.ID, sensitive bool) {
-	state.paintGridBody(canvas, session, geometry, id, sensitive, canvas.Focused() == id, true)
+	state.paintGridBody(canvas, session, geometry, id, sensitive, terminalGridFocused(canvas, session, canvas.Focused() == id), true)
 }
 
 func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry terminalGeometry, id gfx.ID, sensitive, focused, declareHit bool) {
@@ -615,11 +615,19 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		y := geometry.top + float32(cursor.Y)*cellHeight
 		canvas.Fill(gfx.Rect{X: x, Y: y, Width: float32(covered.to-covered.from) * cellWidth, Height: cellHeight}, pal.terminal)
 	}
-	if !sensitive && focused && !composing && !predicting && t.sync == nil {
+	var hintRect gfx.Rect
+	hintShown := false
+	// The suggestion and its badge stay while their own menu has the keyboard,
+	// as the reference keeps them behind the menu; the other overlays still
+	// need the terminal itself focused.
+	suggesting := focused || state.ghostMenu.open && state.ghostMenu.session == session.ID
+	if !sensitive && suggesting && !composing && !predicting && t.sync == nil {
 		if rest, ok := state.passwordHintGhost(session); ok {
 			state.paintGhost(canvas, t, geometry, cursor, rest, block)
 		} else if rest, ok := state.commandGhost(session); ok {
-			state.paintGhost(canvas, t, geometry, cursor, rest, block)
+			if used, limit, painted := state.paintGhost(canvas, t, geometry, cursor, rest, block); painted {
+				hintRect, hintShown = state.paintGhostHint(canvas, session, geometry, cursor, used, limit)
+			}
 		}
 	}
 	canvas.Unclip()
@@ -628,6 +636,11 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		canvas.HitWithOptions(id, geometry.area, t.accessibleName(state.messages.LabelTerminalFmt, session.Address), gfx.HitOptions{
 			Role: gfx.RoleTerminal, Autofocus: session.ID == state.activeSessionID,
 		})
+	}
+	if hintShown {
+		// Declared after the terminal's own region: hit testing takes the last
+		// region painted, as it does for the scrollbar.
+		state.declareGhostHintHit(canvas, session, hintRect)
 	}
 }
 

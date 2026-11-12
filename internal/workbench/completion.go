@@ -37,6 +37,7 @@ var (
 	hitSettingsCompletionOff  = tree.ID(settingsHits, "settings-completion-off")
 	hitSettingsCompletionList = tree.ID(settingsHits, "settings-completion-list")
 	hitSettingsCompletionBoth = tree.ID(settingsHits, "settings-completion-both")
+	hitSettingsCompletionHint = tree.ID(settingsHits, "settings-completion-hint")
 )
 
 // completionMode is how much of command completion is on. It is stored in two

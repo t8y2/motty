@@ -146,6 +146,7 @@ type savedState struct {
 	Credentials             []savedCredential   `json:"credentials,omitempty"`
 	CommandHistory          bool                `json:"command_history,omitempty"`
 	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
+	CommandAcceptHintOff    bool                `json:"command_accept_hint_off,omitempty"`
 	NoteSidebars            *savedNoteSidebars  `json:"note_sidebars,omitempty"`
 	NoteView                savedNoteView       `json:"notes_view,omitempty"`
 	Notes                   []savedNote         `json:"notes,omitempty"`
@@ -543,6 +544,7 @@ func (state *State) snapshot() savedState {
 		TerminalCloseConfirm:       notifyString(state.closeConfirmOff),
 		CommandHistory:             state.history.on,
 		CommandSuggestOff:          state.history.suggestOff,
+		CommandAcceptHintOff:       state.history.acceptHintOff,
 		SessionLogsOff:             state.sessionLogsOff,
 		SessionLogsView:            state.snapshotSessionLogsView(),
 		CommandInlineSuggestOff:    state.history.inlineOff,
@@ -1118,6 +1120,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.closeConfirmOff = saved.TerminalCloseConfirm == "off"
 	state.history.on = saved.CommandHistory
 	state.history.suggestOff = saved.CommandSuggestOff
+	state.history.acceptHintOff = saved.CommandAcceptHintOff
 	state.history.inlineOff = saved.CommandInlineSuggestOff
 	state.restoreSFTPSettings(saved)
 	state.proxy = decodeOutboundProxy(saved.OutboundProxy)

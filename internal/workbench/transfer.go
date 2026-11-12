@@ -302,8 +302,29 @@ func (state *State) startTransfer(session *Session, engine zmodem.Engine) {
 	transfer.lastActive = state.now()
 	held := transfer.held
 	transfer.held = nil
-	engine.Feed(held)
+	engine.Feed(newestTransferStart(held, transfer.sending))
 	state.afterTransferFeed(session)
+}
+
+// newestTransferStart keeps only the newest copy of the request that began the
+// transfer, dropping the copies that piled up while the user was deciding.
+// The other end repeats its request every few seconds until it is answered, and
+// every copy but the last has already timed out on its side: answering them all
+// tells it the same thing more than once, which a receiver takes for more files
+// and a sender takes for readiness to send again, and the transfer loses step
+// and waits out the other end's timeout. A request that was cut by the reading
+// boundary may be the only copy, so nothing is dropped unless a whole second
+// one has arrived.
+func newestTransferStart(held []byte, sending bool) []byte {
+	signature := zmodemSignatureSend // the other end runs sz: it asks to send
+	if sending {
+		signature = zmodemSignatureReceive // the other end runs rz: it is ready
+	}
+	newest := bytes.LastIndex(held, signature)
+	if newest <= 0 || bytes.Index(held[:newest], signature) < 0 {
+		return held
+	}
+	return held[newest:]
 }
 
 func (state *State) clickTransfer(id gfx.ID) {
