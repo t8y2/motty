@@ -480,6 +480,7 @@ func (state *State) windowPage() *ui.Page {
 	if chrome.windowPage == nil {
 		chrome.windowPage = ui.NewPage(ui.PageConfig{
 			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareShell,
+			ScrollbarSize: catalogBarGutter,
 		})
 	}
 	return chrome.windowPage

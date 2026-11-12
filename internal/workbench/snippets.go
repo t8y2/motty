@@ -69,14 +69,12 @@ var (
 )
 
 var (
-	hitSnippetRowList     = tree.Sub(snippetsHits, tree.Name("snippet-row")) // + snippet index
-	hitSnippetHandles     = tree.Sub(snippetsHits, tree.Name("snippet-handle"))
-	hitSnippetExpandList  = tree.Sub(snippetsHits, tree.Name("snippet-expand")) // + snippet index
-	hitSnippetSort        = tree.Sub(snippetsHits, tree.Name("snippet-sort"))   // + column index
-	hitSnippetSendList    = tree.Sub(snippetsHits, tree.Name("snippet-send"))   // the command palette's entries
-	hitSnippetPickList    = tree.Sub(snippetsHits, tree.Name("snippet-pick"))   // + session ID: the terminals to send to
-	hitSnippetScroll      = tree.ID(snippetsHits, "snippet-scroll")
-	hitSnippetScrollThumb = tree.ID(snippetsHits, "snippet-scroll-thumb")
+	hitSnippetRowList    = tree.Sub(snippetsHits, tree.Name("snippet-row")) // + snippet index
+	hitSnippetHandles    = tree.Sub(snippetsHits, tree.Name("snippet-handle"))
+	hitSnippetExpandList = tree.Sub(snippetsHits, tree.Name("snippet-expand")) // + snippet index
+	hitSnippetSort       = tree.Sub(snippetsHits, tree.Name("snippet-sort"))   // + column index
+	hitSnippetSendList   = tree.Sub(snippetsHits, tree.Name("snippet-send"))   // the command palette's entries
+	hitSnippetPickList   = tree.Sub(snippetsHits, tree.Name("snippet-pick"))   // + session ID: the terminals to send to
 	// hitSnippetHoverCard is the preview card the pointer rests on to keep open.
 	hitSnippetHoverCard = tree.ID(snippetsHits, "snippet-hover-card")
 )
@@ -114,9 +112,10 @@ type snippetsUI struct {
 	sort      components.TableSortState
 	grid      components.ReorderGridState
 	countText string
-	// scroll is the table's offset and body geometry; the rows carry an
-	// expanded command's detail, so the page measures their heights itself.
-	scroll catalogList
+	// detailHeight and detailLineHeight are the band the expanded command takes,
+	// measured when the page declares the scroll area.
+	detailHeight     float32
+	detailLineHeight float32
 	// sendAt is where the menu of terminals opens from the Send button.
 	sendAt gfx.Point
 	// deleting is the snippet index plus one the delete confirmation asks about;

@@ -2316,12 +2316,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.sessionLogsPointer(event); handled {
 		return result
 	}
-	if state.trackCatalogList(event) {
-		defer func() { outcome.Repaint = true }()
-	}
-	if result, handled := state.snippetsPointer(event); handled {
-		return result
-	}
 	if state.modal == modalFileProperties {
 		if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
 			return gfx.EventResult{}
@@ -2803,9 +2797,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 			state.takeProxyTableSelection()
 			return result
 		}
-	}
-	if result, handled := state.snippetsListKey(event); handled {
-		return result
 	}
 	if result, handled := state.snippetGroupKey(event); handled {
 		return result

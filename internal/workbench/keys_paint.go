@@ -83,7 +83,7 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 			table := ui.Table(c, &state.keysTable, ui.TableSpec{
 				Rows: hitKeyRowList, Columns: state.keysColumns[:], Headers: state.keysHeadings[:], Source: &state.keysRows,
 				Scrollbar: hitKeysScrollThumb, ScrollbarLabel: messages.KeyListScroll,
-				ScrollbarSize: catalogBarGutter, ScrollbarGutter: catalogBarGutter,
+				ScrollbarGutter: catalogBarGutter,
 			}).Grow(1).Shrink(1)
 			if row, ok := table.RowClicked(); ok && state.modal == modalNone && row >= 0 && row < len(state.identities) {
 				state.keysTable.Select(row)

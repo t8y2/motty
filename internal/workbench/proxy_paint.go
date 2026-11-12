@@ -82,7 +82,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 			table := ui.Table(c, &state.proxyTable, ui.TableSpec{
 				Rows: hitProxyRowList, Columns: state.proxyColumns[:], Headers: state.proxyHeadings[:], Source: &state.proxyRows,
 				Scrollbar: hitProxyScrollThumb, ScrollbarLabel: messages.ProxyListScroll,
-				ScrollbarSize: catalogBarGutter, ScrollbarGutter: catalogBarGutter,
+				ScrollbarGutter: catalogBarGutter,
 			}).Grow(1).Shrink(1)
 			if row, ok := table.RowClicked(); ok && state.modal == modalNone && row >= 0 && row < len(state.proxies) {
 				state.proxyTable.Select(row)
