@@ -2929,11 +2929,13 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				b.group = ui.Slot(c).Grow(1)
 				b.tags = ui.Slot(c).Grow(1)
 			})
-			b.encoding = ui.Slot(c).Height(rowHeight)
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				b.iconField = ui.Slot(c).Grow(1)
 				if ssh {
 					b.transfer = ui.Slot(c).Grow(1)
+				}
+				if state.hostShowsEncoding() {
+					b.encoding = ui.Slot(c).Grow(1)
 				}
 			})
 			if networkHost {
@@ -3060,7 +3062,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	state.paintHostEndpointRows(canvas)
 	state.paintHostGroupPicker(canvas, b.group.Rect())
 	state.paintHostTags(canvas, b.tags.Rect())
-	state.paintHostEncodingPicker(canvas, b.encoding.Rect())
+	if b.encoding.Valid() {
+		state.paintHostEncodingPicker(canvas, b.encoding.Rect())
+	}
 	state.paintHostIconChoice(canvas, b.iconField.Rect())
 	state.paintHostColorChoice(canvas, b.colorField.Rect())
 	if networkHost {

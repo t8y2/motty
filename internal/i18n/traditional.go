@@ -508,7 +508,7 @@ var TraditionalMessages = Messages{
 	ColorBlue:                   "藍色",
 	ColorPurple:                 "紫色",
 	ErrHostColorInvalid:         "請輸入 #3B82F6 這樣的顏色值，或留空使用預設顏色",
-	IconAuto:                    "自動 (按系統)",
+	IconAuto:                    "自動",
 	IconServer:                  "伺服器",
 	IconTerminal:                "終端機",
 	IconSerial:                  "序列埠",

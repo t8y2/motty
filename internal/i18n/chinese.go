@@ -508,7 +508,7 @@ var ChineseMessages = Messages{
 	ColorBlue:                   "蓝色",
 	ColorPurple:                 "紫色",
 	ErrHostColorInvalid:         "请输入 #3B82F6 这样的颜色值，或留空使用默认颜色",
-	IconAuto:                    "自动 (按系统)",
+	IconAuto:                    "自动",
 	IconServer:                  "服务器",
 	IconTerminal:                "终端",
 	IconSerial:                  "串口",

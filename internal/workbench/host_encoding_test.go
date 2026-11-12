@@ -6,8 +6,65 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
+
 	"motty/internal/charset"
 )
+
+// The encoding is a control of the icon row, next to the file transfer mode,
+// not a labelled row of its own; a protocol that opens no shell has no byte
+// stream to encode and does not ask for one.
+func TestHostEncodingSharesTheIconRow(t *testing.T) {
+	cases := []struct {
+		protocol hostProtocol
+		shown    bool
+	}{
+		{protocolSSH, true},
+		{protocolTelnet, true},
+		{protocolSerial, true},
+		{protocolVNC, false},
+		{protocolRDP, false},
+	}
+	for _, c := range cases {
+		t.Run(protocolName(c.protocol), func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			state.openEditHostID(hostByLabel(t, state, "Production").ID)
+			state.editor.setProtocol(c.protocol)
+			canvas, _ := paintAt(state, gfx.Size{Width: 900, Height: 900})
+			body := &state.editor.form.body
+			icon := body.iconField.Rect()
+			hit, painted := hitByID(canvas, hitDialogEncoding)
+			if !c.shown {
+				if body.encoding.Valid() || painted {
+					t.Fatalf("encoding %+v painted on a protocol without a shell", hit.Bounds)
+				}
+				return
+			}
+			if !painted {
+				t.Fatal("the encoding field was not painted")
+			}
+			if !body.encoding.Valid() {
+				t.Fatal("the encoding field has no slot in the form")
+			}
+			encoding := body.encoding.Rect()
+			if encoding.Y != icon.Y || encoding.Height != icon.Height {
+				t.Fatalf("encoding %+v is not in the icon row %+v", encoding, icon)
+			}
+			// The control lies to the right of the icon's, inside the row.
+			if hit.Bounds.X < icon.X+icon.Width {
+				t.Fatalf("encoding %+v overlaps the icon field %+v", hit.Bounds, icon)
+			}
+			if hit.Bounds.Y < icon.Y || hit.Bounds.Y+hit.Bounds.Height > icon.Y+icon.Height {
+				t.Fatalf("encoding control %+v is outside the icon row %+v", hit.Bounds, icon)
+			}
+			// And the row it shares is below the tags: the encoding did not replace
+			// a row of its own further up.
+			if icon.Y <= body.tags.Rect().Y {
+				t.Fatalf("icon row %+v is not below the tags %+v", icon, body.tags.Rect())
+			}
+		})
+	}
+}
 
 func TestHostEncodingSurvivesTransportRoundTrip(t *testing.T) {
 	for _, encoding := range []string{"", "GB18030", "GBK", "Big5", "Shift_JIS", "KOI8-R"} {

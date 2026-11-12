@@ -52,6 +52,17 @@ func hostEncoding(value string) string {
 	return value
 }
 
+// hostShowsEncoding reports whether the form asks for the remote encoding: it
+// belongs to the byte stream of a shell, which SSH, Telnet and Serial open and
+// the desktop protocols do not.
+func (state *State) hostShowsEncoding() bool {
+	switch state.editor.protocol {
+	case protocolSSH, protocolTelnet, protocolSerial:
+		return true
+	}
+	return false
+}
+
 func (state *State) hostEncodingPicker() *hostEncodingPicker {
 	p := &state.editor.encodingPicker
 	if !p.ready {
