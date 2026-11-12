@@ -486,9 +486,8 @@ func (state *State) declareAIPanel(c ui.C) {
 	}
 	panel.declared = true
 	size := gfx.Size{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	if panel.contentDraw == nil {
-		panel.contentDraw = state.paintAIPanelContent
-		panel.overDraw = state.paintAIPanelChrome
+	if panel.overDraw == nil {
+		panel.overDraw = state.paintAIPanelOver
 	}
 	c.Part(aiPanelPart)
 	ui.Stack(c).Absolute().Inset(0).Children(func() {
@@ -643,9 +642,9 @@ func aiMenuWidth(text float32) float32 { return min(max(text+56, 140), 320) }
 const aiMenuContextWidth = float32(144)
 
 // paintAIPanelContent paints the parts the declaration left for the last pass,
-// once the page has laid the body out: the title buttons and setup card in their
-// slots and the bottom's field and buttons. The lists paint their own rows; their
-// chrome is painted over them (paintAIMessageChrome, paintAIHistoryChrome).
+// once the page has laid the body out: the setup card's button and the bottom's
+// field and buttons. The lists paint their own rows; their chrome is painted
+// over them (paintAIMessageChrome, paintAIHistoryChrome).
 func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
 	s := &panel.pageScratch
@@ -660,6 +659,16 @@ func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	// list paints rows at all: the empty state has no Draw to do it later.
 	panel.textSelect.Clamp(len(ai.items)*int(aiTextPartCount), panel.textLength)
 	state.paintAIBottom(canvas, &panel.body)
+}
+
+// paintAIPanelOver paints the hand-painted controls and then the chrome that
+// must sit over them. Both belong on the page's DrawOver, after its children:
+// the pinned question is declared inside a card whose own background is a
+// child, so a control painted from Draw is under that background — only its
+// label survives, and the button reads as bare text on the card.
+func (state *State) paintAIPanelOver(d *ui.DrawContext) {
+	state.paintAIPanelContent(d)
+	state.paintAIPanelChrome(d)
 }
 
 // paintAIPanelChrome paints what must come over the body's controls: the
@@ -710,7 +719,7 @@ func (state *State) declareAIPanelBody(c ui.C) {
 	}
 
 	panel.body = aiBody{}
-	ui.Column(c).Fill().Draw(panel.contentDraw).DrawOver(panel.overDraw).Children(func() {
+	ui.Column(c).Fill().DrawOver(panel.overDraw).Children(func() {
 		// The title row: the name, a new conversation, the history, and the way out.
 		ui.Row(c).Height(aiTitleRow).PadX(aiPad).Gap(4).Items(ui.Center).Children(func() {
 			ui.Icon(c, lucideIcons[iconBot]).Color(pal.accent).MarginSides(0, 4, 0, 0)
