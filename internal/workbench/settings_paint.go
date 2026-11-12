@@ -510,6 +510,15 @@ func (page *settingsPage) rowOf(height float32) ui.Box {
 	return ui.Row(page.c).Height(height).Items(ui.Center)
 }
 
+// growRow opens a row of a card that is at least as tall as a normal row but
+// grows with what it holds: for words the application does not write, such as
+// the reason a sync failed. The padding gives a longer text the same room above
+// and below it that a normal row's lines have.
+func (page *settingsPage) growRow() ui.Box {
+	page.separator()
+	return ui.Row(page.c).MinHeight(page.rowHeight).Items(ui.Center).PadY(6)
+}
+
 // line is one row of a group: the name and explanation on the left, wrapping to
 // the room the control leaves, and a slot of controlWidth on the right, which it
 // returns. In a card too narrow for its name and its control, the control keeps
@@ -524,19 +533,44 @@ func (page *settingsPage) lineWith(label, description string, controlWidth float
 	return page.lineFor(gfx.ID{}, label, description, controlWidth, inside)
 }
 
+// lineWrap is line whose description takes as many lines as its room needs and
+// whose row grows to hold them.
+func (page *settingsPage) lineWrap(label, description string, controlWidth float32) ui.Box {
+	return page.lineWrapFor(gfx.ID{}, label, description, controlWidth, nil)
+}
+
 // lineFor is lineWith whose words are the label of the control with that
 // identity, as a Field's label is: pressing them focuses and clicks it, which for
 // a switch flips it. A zero identity makes the words plain text.
 func (page *settingsPage) lineFor(labelFor gfx.ID, label, description string, controlWidth float32, inside func()) ui.Box {
+	return page.lineForLines(labelFor, label, description, controlWidth, settingsDescLines, inside)
+}
+
+// lineWrapFor is lineFor whose description takes as many lines as its room
+// needs, and whose row grows to hold them: for a status whose words the
+// application does not write, such as why the last sync failed.
+func (page *settingsPage) lineWrapFor(labelFor gfx.ID, label, description string, controlWidth float32, inside func()) ui.Box {
+	return page.lineForLines(labelFor, label, description, controlWidth, 0, inside)
+}
+
+// lineForLines is lineFor with a limit on the description's lines: a positive
+// count ends a longer text with an ellipsis in a row of the card's normal
+// height, and zero takes as many lines as the words need, growing the row.
+func (page *settingsPage) lineForLines(labelFor gfx.ID, label, description string, controlWidth float32, descLines int, inside func()) ui.Box {
 	c, pal := page.c, page.state.pal
 	controlWidth = min(controlWidth, max(page.width-60, 0))
 	var control ui.Box
-	row := page.rowOf(page.rowHeight)
+	var row ui.Box
+	if descLines == 0 {
+		row = page.growRow()
+	} else {
+		row = page.rowOf(page.rowHeight)
+	}
 	page.matchAnchor(label, row, 0)
 	row.PadX(18).Gap(24).Children(func() {
 		words := ui.Column(c).Grow(1).Children(func() {
 			ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(21)
-			ui.Paragraph(c, description, settingsDescLines).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15).MarginSides(1, 0, 0, 0)
+			ui.Paragraph(c, description, descLines).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(15).MarginSides(1, 0, 0, 0)
 		})
 		page.labels(labelFor, words, label, false)
 		control = ui.Row(c).Size(controlWidth, 34).Shrink(0).Justify(ui.End).Items(ui.Center)
@@ -608,18 +642,29 @@ func (page *settingsPage) toggleRow(label, description string, on bool, id gfx.I
 
 // actionRow is a settings row whose control is buttons, not a choice.
 func (page *settingsPage) actionRow(label, description string, disabled bool, actions ...components.ButtonAction) {
-	// Room for the buttons as wide as their labels, and no more: what is left is
-	// for the explanation, which wraps to it.
+	page.buttons(page.line(label, description, page.actionWidth(actions)), disabled, actions...)
+}
+
+// actionRowWrap is actionRow whose description takes as many lines as its room
+// needs: for a row that reports words the application does not write, such as
+// why the last sync failed, the whole of them stays readable.
+func (page *settingsPage) actionRowWrap(label, description string, disabled bool, actions ...components.ButtonAction) {
+	page.buttons(page.lineWrap(label, description, page.actionWidth(actions)), disabled, actions...)
+}
+
+// actionWidth is the room the buttons of an action row take: as wide as their
+// labels, and no more, so what is left is for the row's explanation.
+func (page *settingsPage) actionWidth(actions []components.ButtonAction) float32 {
 	theme := page.state.Theme()
-	controlWidth := theme.Metrics.GapItem * float32(len(actions)-1)
+	width := theme.Metrics.GapItem * float32(len(actions)-1)
 	for _, action := range actions {
-		controlWidth += components.BeginButton(page.canvas(), theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
+		width += components.BeginButton(page.canvas(), theme, gfx.ID{}, gfx.Rect{}).Small().SizeToFit(action.Label).BoundsWidth()
 	}
-	controlWidth = min(controlWidth, page.width*0.6)
+	width = min(width, page.width*0.6)
 	if page.controlWidth > 0 {
-		controlWidth = page.controlWidth
+		width = page.controlWidth
 	}
-	page.buttons(page.line(label, description, controlWidth), disabled, actions...)
+	return width
 }
 
 // valueActionRow is actionRow for a setting whose current value the row names

@@ -621,11 +621,12 @@ func (w *remoteToolsWindow) declareFormDialog(c ui.C) {
 	}
 	form := &w.ui.form
 	viewport := c.Bounds()
+	bodyHeight := form.bodyHeight() + w.ui.formProblemHeight(c.Canvas(), form.formProblem())
 	layout := components.BeginDialog(c.Canvas(), *c.Theme(), gfx.Rect{Width: viewport.Width, Height: viewport.Height}, components.DialogOptions{
-		ContentSize: gfx.Size{Width: 540}, FitBody: true, BodyHeight: form.bodyHeight(),
+		ContentSize: gfx.Size{Width: formWidth}, FitBody: true, BodyHeight: bodyHeight,
 	}).Layout(form.description)
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: form.title, Description: form.description, Width: 540,
+		Title: form.title, Description: form.description, Width: formWidth,
 		Height: layout.Content.Height, Layer: dialogLayer, Scope: dialogScope, CloseID: hitFormClose,
 	})
 	dialog.Body(func() {
@@ -646,11 +647,11 @@ func (w *remoteToolsWindow) declareFormDialog(c ui.C) {
 				}
 			}
 			if form.dialogError != "" {
-				ui.Text(c, form.dialogError).FontSize(w.ui.Theme().Metrics.FontSizeS).Weight(gfx.WeightMedium).
-					Color(w.ui.pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
+				ui.Paragraph(c, form.dialogError, 0).FontSize(w.ui.Theme().Metrics.FontSizeS).Weight(gfx.WeightMedium).
+					Color(w.ui.pal.danger).LineHeight(formProblemLine).MarginSides(formProblemGap, 0, 0, 0)
 			} else if form.testNote != "" {
-				ui.Text(c, form.testNote).FontSize(w.ui.Theme().Metrics.FontSizeS).Weight(gfx.WeightMedium).
-					Color(w.ui.pal.success).LineHeight(18).MarginSides(12, 0, 0, 0)
+				ui.Paragraph(c, form.testNote, 0).FontSize(w.ui.Theme().Metrics.FontSizeS).Weight(gfx.WeightMedium).
+					Color(w.ui.pal.success).LineHeight(formProblemLine).MarginSides(formProblemGap, 0, 0, 0)
 			}
 		})
 	})

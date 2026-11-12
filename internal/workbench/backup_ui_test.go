@@ -994,3 +994,49 @@ func TestTheBackupPageAndTheFormPaintTheirControls(t *testing.T) {
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 }
+
+// syncFailure is a failure as long as the network stack's or a server's own
+// words: longer than one line in the sync dialog and than two in the settings
+// row.
+func syncFailure() string {
+	host := strings.Repeat("a-very-long-server-name.", 5) + "example.invalid"
+	return `Get "http://` + host + `/e2e/motty/backup.mottybak": dial tcp: lookup ` + host + `: no such host`
+}
+
+// TestTheSyncDialogShowsALongFailureWhole guards the reason a sync could not go
+// through: it is the server's or the network stack's own words, so the dialog
+// wraps them to its body instead of cutting them off at its edge.
+func TestTheSyncDialogShowsALongFailureWhole(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	state.openSyncConfigure()
+	if state.modal != modalForm {
+		t.Fatal("the sync form did not open")
+	}
+	problem := syncFailure()
+	state.form.dialogError = problem
+	canvas, texts := paintedTexts(state)
+	if !contains(texts, "no such host") {
+		t.Fatal("the end of the failure is not shown")
+	}
+	for _, painted := range canvas.Texts() {
+		if painted.Value == "" || !strings.Contains(problem, painted.Value) {
+			continue
+		}
+		if width := canvas.TextWidthWeight(painted.Value, painted.Style.Size, painted.Style.Weight); width > painted.Bounds.Width+1 {
+			t.Errorf("%q is %.1f wide in a %.1f box: the reason runs past the dialog", painted.Value, width, painted.Bounds.Width)
+		}
+	}
+}
+
+// TestSettingsShowsALongSyncFailureWhole guards the record the settings page
+// keeps of a failed sync: its words are not the application's, so the row grows
+// with them rather than ending them with an ellipsis.
+func TestSettingsShowsALongSyncFailureWhole(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	state.sync = syncState{kind: syncWebDAV, url: "https://dav.example.com/dav", user: "e2e", path: "motty/backup.mottybak"}
+	state.sync.err = syncFailure()
+	_, texts := paintedTexts(state)
+	if !contains(texts, "no such host") {
+		t.Fatal("the end of the last sync's failure is not shown")
+	}
+}
