@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/filecontent"
 )
@@ -79,7 +80,10 @@ type fileDocumentUI struct {
 	tooltip                                   components.HoverTooltip
 	// caret is the phase of the caret both views draw: the one in the editor and
 	// the one in the comparison, which never shows together.
-	caret components.CaretBlink
+	caret          components.CaretBlink
+	clickSelection *text.Range
+	wordAnchor     *text.Range
+	lineAnchor     *text.Range
 }
 
 // comparisonBody is what the comparison page leaves for the buttons painted by
@@ -687,6 +691,7 @@ func (d *fileDocument) textInput(context app.TextInputContext) *app.TextInput {
 			if event.Kind == app.TextInsert || event.Kind == app.TextPaste {
 				event.Text = strings.ReplaceAll(strings.ReplaceAll(event.Text, "\r\n", "\n"), "\r", "\n")
 			}
+			d.adjustSelectionEvent(&event)
 			event.Apply(&d.editor)
 			if d.comparison.active && d.editor.String() != before {
 				d.scheduleDiff()
@@ -710,6 +715,7 @@ func (d *fileDocument) comparisonTextInput(context app.TextInputContext) *app.Te
 			if event.Kind == app.TextInsert || event.Kind == app.TextPaste {
 				event.Text = strings.ReplaceAll(strings.ReplaceAll(event.Text, "\r\n", "\n"), "\r", "\n")
 			}
+			d.adjustSelectionEvent(&event)
 			event.Apply(&d.editor)
 			if d.editor.String() != before {
 				d.scheduleDiff()
@@ -923,6 +929,9 @@ func (d *fileDocument) pointer(event gfx.PointerEvent) gfx.EventResult {
 		d.ui.menu.Drag(event)
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
+	if result, handled := d.checkEditorClick(event, d.ui.code.OffsetAt); handled {
+		return result
+	}
 	return d.ui.code.Pointer(event)
 }
 
@@ -937,7 +946,100 @@ func (d *fileDocument) comparisonPointer(event gfx.PointerEvent) gfx.EventResult
 	if !d.comparison.active || d.comparison.confirm {
 		return gfx.EventResult{}
 	}
+	if result, handled := d.checkEditorClick(event, d.comparison.ui.diff.OffsetAt); handled {
+		return result
+	}
 	return d.comparison.ui.diff.Pointer(event)
+}
+
+func (d *fileDocument) checkEditorClick(event gfx.PointerEvent, offsetAt func(gfx.Point) (int, bool)) (gfx.EventResult, bool) {
+	if event.Target != hitDocumentInput {
+		return gfx.EventResult{}, false
+	}
+	if event.Button != gfx.PointerButtonPrimary && event.Button != gfx.PointerButtonNone {
+		return gfx.EventResult{}, false
+	}
+	if event.Kind == gfx.PointerDown {
+		if event.ClickCount >= 2 {
+			if offset, ok := offsetAt(gfx.Point{X: event.X, Y: event.Y}); ok {
+				value := d.editor.String()
+				runeIndex := d.editor.RuneIndex(offset)
+				var sel text.Range
+				if event.ClickCount >= 3 {
+					sel = lineRange(value, runeIndex)
+					d.ui.lineAnchor = &sel
+					d.ui.wordAnchor = nil
+				} else {
+					sel = text.WordRange(value, runeIndex)
+					d.ui.wordAnchor = &sel
+					d.ui.lineAnchor = nil
+				}
+				d.ui.clickSelection = &sel
+				d.editor.SetSelection(sel)
+				return gfx.EventResult{Handled: true, Repaint: true, Focus: hitDocumentInput}, true
+			}
+		} else {
+			d.ui.clickSelection = nil
+			d.ui.wordAnchor = nil
+			d.ui.lineAnchor = nil
+		}
+	}
+	return gfx.EventResult{}, false
+}
+
+func (d *fileDocument) adjustSelectionEvent(event *app.TextEvent) {
+	if event.Kind == app.TextSetSelection {
+		if d.ui.clickSelection != nil {
+			event.Selection = app.TextRange{Start: d.ui.clickSelection.Start, End: d.ui.clickSelection.End}
+			d.ui.clickSelection = nil
+		} else if d.ui.wordAnchor != nil {
+			value := d.editor.String()
+			if event.Selection.End >= d.ui.wordAnchor.Start && event.Selection.End <= d.ui.wordAnchor.End {
+				event.Selection = app.TextRange{Start: d.ui.wordAnchor.Start, End: d.ui.wordAnchor.End}
+			} else if event.Selection.End > d.ui.wordAnchor.End {
+				targetWord := text.WordRange(value, event.Selection.End)
+				event.Selection = app.TextRange{Start: d.ui.wordAnchor.Start, End: targetWord.End}
+			} else {
+				targetWord := text.WordRange(value, event.Selection.End)
+				event.Selection = app.TextRange{Start: d.ui.wordAnchor.End, End: targetWord.Start}
+			}
+		} else if d.ui.lineAnchor != nil {
+			value := d.editor.String()
+			if event.Selection.End >= d.ui.lineAnchor.Start && event.Selection.End <= d.ui.lineAnchor.End {
+				event.Selection = app.TextRange{Start: d.ui.lineAnchor.Start, End: d.ui.lineAnchor.End}
+			} else if event.Selection.End > d.ui.lineAnchor.End {
+				targetLine := lineRange(value, event.Selection.End)
+				event.Selection = app.TextRange{Start: d.ui.lineAnchor.Start, End: targetLine.End}
+			} else {
+				targetLine := lineRange(value, event.Selection.End)
+				event.Selection = app.TextRange{Start: d.ui.lineAnchor.End, End: targetLine.Start}
+			}
+		}
+	} else {
+		d.ui.clickSelection = nil
+		d.ui.wordAnchor = nil
+		d.ui.lineAnchor = nil
+	}
+}
+
+func lineRange(value string, index int) text.Range {
+	runes := []rune(value)
+	if len(runes) == 0 {
+		return text.Range{}
+	}
+	index = max(0, min(index, len(runes)-1))
+	start := index
+	for start > 0 && runes[start-1] != '\n' {
+		start--
+	}
+	end := index
+	for end < len(runes) && runes[end] != '\n' {
+		end++
+	}
+	if end < len(runes) && runes[end] == '\n' {
+		end++
+	}
+	return text.Range{Start: start, End: end}
 }
 
 func (d *fileDocument) codeColors() [components.MarkdownCodeClasses]gfx.Color {
