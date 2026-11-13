@@ -184,11 +184,18 @@ func (stream *consoleIO) Close() error {
 }
 
 // defaultShell is PowerShell when it is installed, else the command interpreter.
+// A Store package is not on PATH for a process that did not receive its alias
+// directory, so it is checked by its own location before Windows PowerShell
+// (issue #750).
 func defaultShell() string {
-	for _, name := range []string{"pwsh.exe", "powershell.exe"} {
-		if path, err := exec.LookPath(name); err == nil {
-			return path
-		}
+	if path, err := exec.LookPath("pwsh.exe"); err == nil {
+		return path
+	}
+	if store := storePowerShell(); store != "" {
+		return store
+	}
+	if path, err := exec.LookPath("powershell.exe"); err == nil {
+		return path
 	}
 	if comspec := os.Getenv("COMSPEC"); comspec != "" {
 		return comspec
