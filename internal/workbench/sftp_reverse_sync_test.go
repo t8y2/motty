@@ -36,7 +36,6 @@ func TestReverseFolderSyncIsOffByDefaultAndPersistsIndependently(t *testing.T) {
 func TestFolderSyncCanOptOutOfShellIntegration(t *testing.T) {
 	state, session, fake, _ := openTestSFTP(t)
 	state.sftpFollowOff, state.sftpTerminalFollow = true, false
-	state.setCompletionMode(completionOff)
 	session.term.shell.Close()
 	session.term.shell = nil
 	state.openShell(session)
@@ -44,7 +43,7 @@ func TestFolderSyncCanOptOutOfShellIntegration(t *testing.T) {
 	config := fake.configs[len(fake.configs)-1]
 	fake.mu.Unlock()
 	if config.IntegrateShell {
-		t.Fatal("folder synchronization and automatic completion are off, but startup still changes")
+		t.Fatal("both synchronization directions are off, but startup still changes")
 	}
 }
 

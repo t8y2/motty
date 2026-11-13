@@ -52,51 +52,6 @@ func TestInlineSettingDisablesGhostButKeepsManualCompletion(t *testing.T) {
 	}
 }
 
-func TestAutomaticCompletionEnablesShellIntegrationWithoutFileSync(t *testing.T) {
-	for _, mode := range []completionMode{completionList, completionInline} {
-		t.Run(mode.persistName(), func(t *testing.T) {
-			state, session, fake, _ := openTestSFTP(t)
-			state.sftpFollowOff, state.sftpTerminalFollow = true, false
-			state.tabTitleMode = tabTitleConnection
-			state.history.on = false
-			state.setCompletionMode(mode)
-			session.term.shell.Close()
-			session.term.shell = nil
-			state.openShell(session)
-			fake.mu.Lock()
-			config := fake.configs[len(fake.configs)-1]
-			fake.mu.Unlock()
-			if !config.IntegrateShell || config.IntegrationToken == "" {
-				t.Fatal("automatic completion has no prompt reports when file sync is off")
-			}
-		})
-	}
-}
-
-func TestAutomaticOptionCompletionWorksWithoutHistoryOrFileSync(t *testing.T) {
-	w := newCompletionWorld(t)
-	w.state.sftpFollowOff, w.state.sftpTerminalFollow = true, false
-	w.state.tabTitleMode = tabTitleConnection
-	w.state.history.on = false
-	w.state.setCompletionMode(completionList)
-	for _, input := range []string{"g", "r", "e", "p", " ", "-"} {
-		w.type_(input)
-	}
-	waitCompletionList(t, w)
-	for _, want := range []string{"-A", "-i", "-n"} {
-		found := false
-		for _, candidate := range w.state.completion.list.candidates {
-			if candidate.Text == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("grep - lacks %q in %v", want, listTexts(w))
-		}
-	}
-}
-
 func TestCompletionControlsAndKeysHaveSeparateSettingsHomes(t *testing.T) {
 	for _, language := range []i18n.Language{i18n.English, i18n.Chinese} {
 		t.Run(language.String(), func(t *testing.T) {
