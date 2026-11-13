@@ -135,6 +135,48 @@ func TestMonitorHostInfoLayoutAndScrollAcrossPages(t *testing.T) {
 	}
 }
 
+func TestMonitorHostInfoSeparatorsRequireVisibleFields(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		width          float32
+		copied         bool
+		wantFields     int
+		wantSeparators int
+	}{
+		{name: "no field space", width: 21},
+		{name: "only copy feedback", width: 21, copied: true, wantFields: 1},
+		{name: "all fields", width: 640, wantFields: 3, wantSeparators: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state, session := monitorFixture(t)
+			if test.copied {
+				session.stats.panel.copiedAddress = session.host.Address
+				session.stats.panel.addressCopiedUntil = state.now() + 2*time.Second
+			}
+			canvas := hostPrivacyCanvas(t)
+			state.paintMonitorHostInfo(&canvas, gfx.Rect{Width: test.width, Height: monitorHostInfoHeight}, session)
+			fields := 0
+			for _, id := range []gfx.ID{hitMonitorHostName, hitMonitorHostAddress, hitMonitorHostUser} {
+				if _, ok := hitByID(&canvas, id); ok {
+					fields++
+				}
+			}
+			if fields != test.wantFields {
+				t.Fatalf("visible fields = %d, want %d", fields, test.wantFields)
+			}
+			separators := 0
+			for _, text := range canvas.Texts() {
+				if strings.TrimSpace(text.Value) == "·" {
+					separators++
+				}
+			}
+			if separators != test.wantSeparators {
+				t.Fatalf("separators = %d, want %d", separators, test.wantSeparators)
+			}
+		})
+	}
+}
+
 func TestMonitorHostAddressCopyReportsSuccessAndFailure(t *testing.T) {
 	state, session := monitorFixture(t)
 	address := "2001:db8:1234:5678:abcd:ef01:2345:6789"

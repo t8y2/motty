@@ -113,7 +113,7 @@ func (state *State) paintMonitorHostInfo(canvas *gfx.Canvas, b gfx.Rect, session
 			}
 		}
 		b.X += widths[i]
-		if i < len(fields)-1 {
+		if i < len(fields)-1 && widths[i] > 0 && widths[i+1] > 0 {
 			monitorLabel(canvas, separator, gfx.Rect{X: b.X, Y: b.Y, Width: separatorWidth, Height: b.Height}, style.Size, style.Color, style.Weight)
 			b.X += separatorWidth
 		}
