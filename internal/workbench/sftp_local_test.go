@@ -222,7 +222,11 @@ func TestLocalPaneSteadyPaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := openLocalPane(t, state, session, localFixture(t))
 	clickSFTPLocalRow(t, state, view, "report.txt")
+	// The completion catalog loads on a background wake. Settle it before
+	// measuring the allocations of an otherwise idle paint.
+	waitFor(t, state, func() bool { return !state.completion.catalogLoading })
 	var canvas gfx.Canvas
+	canvas.SetClock(func() time.Duration { return time.Second })
 	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testingAllocs(func() { canvas.Reset(); state.Paint(&canvas, size) }); allocations != 0 {
