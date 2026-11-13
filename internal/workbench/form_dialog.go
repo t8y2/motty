@@ -22,6 +22,7 @@ var (
 	hitFormFieldList = tree.Sub(formDialogHits, tree.Name("form-field"))
 	hitFormSubmit    = tree.ID(formDialogHits, "form-submit")
 	hitFormTest      = tree.ID(formDialogHits, "form-test")
+	hitFormBack      = tree.ID(formDialogHits, "form-back")
 	hitFormCancel    = tree.ID(formDialogHits, "form-cancel")
 	hitFormClose     = tree.ID(formDialogHits, "form-close")
 	hitFormCheckbox  = tree.ID(formDialogHits, "form-checkbox")
@@ -56,6 +57,9 @@ type formField struct {
 type formDialog struct {
 	title, description string
 	submit             string
+	submitLabel        func(*formDialog) string
+	backLabel          string
+	back               func(*State, *formDialog)
 	danger             bool
 	// test, if set, gives the form a button that tries what the fields say
 	// without saving them. It starts its network work and returns "" at once;
@@ -178,6 +182,13 @@ func (state *State) clickForm(id gfx.ID) {
 	case hitFormTest:
 		if message := state.startFormTest(); message != "" {
 			state.form.dialogError = message
+		}
+	case hitFormBack:
+		if state.form.back != nil {
+			form := state.form
+			state.clearFormTestStatus()
+			state.closeModal()
+			form.back(state, &form)
 		}
 	case hitFormCancel, hitFormClose:
 		cancel := state.form.cancel
@@ -326,6 +337,9 @@ func (state *State) declareFormDialog(c ui.C) {
 		actions := []components.ButtonAction{
 			{ID: hitFormCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 		}
+		if form.back != nil {
+			actions = append(actions, components.ButtonAction{ID: hitFormBack, Label: form.backLabel, Variant: components.ButtonOutline})
+		}
 		if form.test != nil {
 			actions = append(actions, components.ButtonAction{ID: hitFormTest, Label: state.messages.Tools.SyncTest, Variant: components.ButtonOutline, Disabled: form.testRunning})
 		}
@@ -333,7 +347,11 @@ func (state *State) declareFormDialog(c ui.C) {
 		if form.danger {
 			variant = components.ButtonDestructive
 		}
-		actions = append(actions, components.ButtonAction{ID: hitFormSubmit, Label: form.submit, Variant: variant})
+		label := form.submit
+		if form.submitLabel != nil {
+			label = form.submitLabel(form)
+		}
+		actions = append(actions, components.ButtonAction{ID: hitFormSubmit, Label: label, Variant: variant})
 		state.dialogActionFooter(c, actions...)
 	})
 }

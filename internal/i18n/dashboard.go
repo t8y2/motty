@@ -6,7 +6,7 @@ type DashboardMessages struct {
 	NamePlaceholder, NotePlaceholder                                          string
 	AllGroups, Ungrouped, GroupFilter, SelectedOnly, PickerCount              string
 	OrderTab, OrderHint                                                       string
-	AddHosts, AddHint, Sort, SortPanel                              string
+	AddHosts, AddHint, Sort, SortPanel                                        string
 	Selected, View, Metrics, Usage                                            string
 	Host, Mount, Interface, Used, Total, Available, ReceivedTotal, SentTotal  string
 	Title, New, Edit, Delete, Start, Stop, Simple, Detailed, Search           string

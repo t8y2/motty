@@ -267,6 +267,7 @@ func TestTabNameModeMigratesAndSurvivesRestart(t *testing.T) {
 func TestPathModeEnablesReportsWithoutFileSyncOnNextShell(t *testing.T) {
 	state, session, fake, _ := openTestSFTP(t)
 	state.sftpFollowOff, state.sftpTerminalFollow = true, false
+	state.setCompletionMode(completionOff)
 	fake.mu.Lock()
 	before := len(fake.configs)
 	fake.mu.Unlock()
