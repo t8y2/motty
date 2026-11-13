@@ -255,6 +255,9 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 		}
 		return handled
 	}
+	if result, handled := w.columnResizePointer(event); handled {
+		return result
+	}
 	if result, ok := w.directoryTreePointer(event); ok {
 		return result
 	}

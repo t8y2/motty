@@ -36,6 +36,7 @@ type sftpRow struct {
 	icon                 *gfx.Icon     // the file-type glyph, chosen when the listing arrives
 	mono                 bool          // the glyph has no colors of its own and is tinted
 	appIcon              *fileIconSlot // the system's icon for a local application bundle, once it has answered
+	typeIcon             *fileIconSlot // the system's icon for this file type, shared by every row with the extension
 	hidden               bool
 	matchStart, matchEnd int // byte range highlighted by the current folder filter
 	// where is the folder a search result is in, relative to where the search
@@ -174,22 +175,29 @@ type sftpView struct {
 	// beside an application modal, so it does not share the window's footer
 	// scratch. The boxes are where that body laid out the parts painted by hand:
 	// the one or two fields and the permission grid.
-	dialogFieldLabel      string
-	dialogDraw            func(*ui.DrawContext)
-	dialogCancelLabel     string
-	dialogSubmitLabel     string
-	dialogSubmitVariant   components.ButtonVariant
-	dialogFooterDraw      func(*ui.DrawContext)
-	dialogFirst           ui.Box
-	dialogSecond          ui.Box
-	dialogChmod           [9]ui.Box
-	bookmarksOpen         bool
-	places                sftpPlaceMenu
-	dropping              bool // files are being dragged over the panel
-	dropRow               int  // the folder row they are over, or -1
-	clipboard             sftpClipboard
-	scrollDrag            bool
-	scrollGrab            float32
+	dialogFieldLabel    string
+	dialogDraw          func(*ui.DrawContext)
+	dialogCancelLabel   string
+	dialogSubmitLabel   string
+	dialogSubmitVariant components.ButtonVariant
+	dialogFooterDraw    func(*ui.DrawContext)
+	dialogFirst         ui.Box
+	dialogSecond        ui.Box
+	dialogChmod         [9]ui.Box
+	bookmarksOpen       bool
+	places              sftpPlaceMenu
+	dropping            bool // files are being dragged over the panel
+	dropRow             int  // the folder row they are over, or -1
+	clipboard           sftpClipboard
+	scrollDrag          bool
+	scrollGrab          float32
+	// columnDragging and columnDrag are the divider of this panel the pointer
+	// holds; columnFitPending asks the next paint to fit that divider's left
+	// column to its content after a double click.
+	columnDragging        bool
+	columnDrag            int
+	columnFitPending      bool
+	columnFitDivider      int
 	details               sftpDetails
 	extracting            bool
 	archiveSequence       uint64
@@ -1116,6 +1124,7 @@ func (state *State) applySFTPListingNavigation(view *sftpView, remotePath string
 		state.refreshSFTPDirectory(view, remotePath)
 	}
 	view.allRows = rows
+	state.loadTypeIcons(view, rows)
 	view.crumbs = prepareSFTPCrumbs(view.crumbs, remotePath)
 	if view.detached != nil {
 		entries := make([]sftpclient.Entry, len(rows))
