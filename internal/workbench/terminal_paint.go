@@ -108,6 +108,13 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 		filesHint = state.messages.TipFilesLocal
 	}
 	tools = append(tools, barTool{id: hitSFTPOpen, icon: iconFolderOpen, hint: filesHint, disabled: !session.canBrowseFiles(), style: filesStyle})
+	if session.remoteLogHost() {
+		style := iconButtonQuiet
+		if session.remoteLogs != nil {
+			style = iconButtonActive
+		}
+		tools = append(tools, barTool{id: hitServerLogs, icon: iconFileClock, hint: state.messages.RemoteLogs.Title, disabled: !session.canViewRemoteLogs(), style: style})
+	}
 	if state.localProxyActionVisible(session) {
 		tool := barTool{id: hitLocalProxyOpen, icon: iconGlobe, hint: state.messages.LocalProxy.Title}
 		if snapshot := state.localProxySnapshot(session); snapshot.Phase != localProxyDisconnected {

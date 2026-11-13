@@ -1042,6 +1042,7 @@ func (state *State) Close() {
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		session.closeSSHBrowser()
+		session.stopRemoteLogs()
 		state.cancelReconnect(session)
 		state.closeCompletionPath(session)
 		state.closeSFTP(session)
@@ -1558,6 +1559,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickDashboard(id) {
 		return
 	}
+	if state.clickRemoteLogs(id) {
+		return
+	}
 	if state.clickSessionLogs(id) {
 		return
 	}
@@ -2031,6 +2035,7 @@ func (state *State) closeSession(id uint32) {
 	defer memoryTrim.request()
 	session := &state.sessions[index]
 	session.closeSSHBrowser()
+	session.stopRemoteLogs()
 	state.leaveLocalProxy(session)
 	if session.transferBusy() {
 		state.abandonTransfer(session)
@@ -2400,6 +2405,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		if !state.commitTabInline() {
 			return gfx.EventResult{Handled: true, Focus: hitTabInline, Repaint: true}
 		}
+	}
+	if result := state.remoteLogResize(event); result.Handled {
+		return result
 	}
 	if result := state.notesPointer(event); result.Handled {
 		return result

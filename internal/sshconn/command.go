@@ -252,64 +252,90 @@ func (conn *Conn) StreamCommand(ctx context.Context, command string, maxLineByte
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	var connDone <-chan struct{}
+	operation, cancel := context.WithCancel(ctx)
+	defer cancel()
 	if conn.ctx != nil {
-		connDone = conn.ctx.Done()
-		select {
-		case <-connDone:
+		if conn.ctx.Err() != nil {
 			return ErrCanceled
-		default:
 		}
+		defer context.AfterFunc(conn.ctx, cancel)()
+	}
+	canceled := func() error {
+		if conn.ctx != nil && conn.ctx.Err() != nil {
+			return ErrCanceled
+		}
+		return ctx.Err()
 	}
 	client := conn.Client()
 	if client == nil {
 		return errors.New("sshconn: not connected")
 	}
-	session, err := client.NewSession()
+	session, err := openCommandSession(operation, client)
 	if err != nil {
+		if operation.Err() != nil {
+			return canceled()
+		}
 		return err
 	}
-	defer session.Close()
+	closeSession := func() {
+		_ = session.Signal(ssh.SIGTERM)
+		_ = session.Close()
+	}
+	stop := context.AfterFunc(operation, closeSession)
+	defer func() {
+		if stop() {
+			go closeSession()
+		}
+	}()
 	stdout, err := session.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	if err := session.Start(command); err != nil {
-		return err
-	}
-	finished := make(chan struct{})
-	defer close(finished)
+	started := make(chan error, 1)
 	go func() {
-		select {
-		case <-ctx.Done():
-		case <-connDone:
-		case <-finished:
+		if err := operation.Err(); err != nil {
+			started <- err
 			return
 		}
-		_ = session.Close()
+		started <- session.Start(command)
 	}()
+	select {
+	case err := <-started:
+		if operation.Err() != nil {
+			return canceled()
+		}
+		if err != nil {
+			return err
+		}
+	case <-operation.Done():
+		return canceled()
+	}
 
 	reader := bufio.NewReaderSize(stdout, max(maxLineBytes, 16))
 	for {
 		data, err := reader.ReadSlice('\n')
-		if err == nil {
-			if !line(data) {
-				return nil
-			}
-			continue
+		if operation.Err() != nil {
+			return canceled()
 		}
-		if errors.Is(err, bufio.ErrBufferFull) {
+		if len(data) > maxLineBytes || errors.Is(err, bufio.ErrBufferFull) {
 			return fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxLineBytes)
 		}
-		break
+		if len(data) != 0 && !line(data) {
+			return nil
+		}
+		if err != nil {
+			break
+		}
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+	waited := make(chan error, 1)
+	go func() { waited <- session.Wait() }()
 	select {
-	case <-connDone:
-		return ErrCanceled
-	default:
+	case err := <-waited:
+		if operation.Err() != nil {
+			return canceled()
+		}
+		return err
+	case <-operation.Done():
+		return canceled()
 	}
-	return session.Wait()
 }

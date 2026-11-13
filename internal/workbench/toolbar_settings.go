@@ -46,6 +46,7 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"files", hitSFTPOpen, iconFolderOpen}, {"local-proxy", hitLocalProxyOpen, iconGlobe},
 		{"file-transfer", hitSFTPDetach, iconSFTPTransfer},
 		{"remote-tools", hitProcessToolsOpen, iconProcess},
+		{"remote-logs", hitServerLogs, iconFileClock},
 	},
 	toolbarSFTP: {
 		{"upload-file", hitSFTPUpload, iconUpload}, {"upload-folder", hitSFTPUploadDirectory, iconFolderUp},
@@ -224,6 +225,8 @@ func (state *State) toolbarLabel(id gfx.ID) string {
 		return m.Tools.LatencyRow
 	case hitProcessToolsOpen:
 		return m.Tools.RemoteTabProcesses
+	case hitServerLogs:
+		return m.RemoteLogs.Title
 	case hitNotesPanel:
 		return state.noteText("Notes", "笔记")
 	case hitTerminalRecord:

@@ -432,6 +432,8 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 // disappear from the rail just because this list was not updated.
 func (state *State) terminalToolbarOffers(session *Session, id gfx.ID) bool {
 	switch id {
+	case hitServerLogs:
+		return session.remoteLogHost()
 	case hitSFTPDetach:
 		return session.hasServer()
 	case hitSFTPOpen, hitConnExport, hitTerminalRecordingExport, hitTerminalRecord,

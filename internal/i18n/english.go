@@ -3,6 +3,7 @@ package i18n
 // The English catalog lives here, one file per language.
 
 var EnglishMessages = Messages{
+	RemoteLogs:     remoteLogsEnglish,
 	ActionFeedback: englishActionFeedback,
 	Monitor:        englishMonitor,
 	Dashboard:      englishDashboard,

@@ -152,9 +152,10 @@ type savedTransport struct {
 	// IdleKeepAliveSeconds is how often an idle terminal is sent input; zero is
 	// off. IdleInput is "cr", "nul" or "custom" (empty follows the protocol),
 	// and IdleInputCustom is the escaped text for "custom".
-	IdleKeepAliveSeconds int    `json:"idle_keepalive_seconds,omitempty"`
-	IdleInput            string `json:"idle_keepalive_input,omitempty"`
-	IdleInputCustom      string `json:"idle_keepalive_custom,omitempty"`
+	IdleKeepAliveSeconds int             `json:"idle_keepalive_seconds,omitempty"`
+	IdleInput            string          `json:"idle_keepalive_input,omitempty"`
+	IdleInputCustom      string          `json:"idle_keepalive_custom,omitempty"`
+	RemoteLogPaths       []remoteLogPath `json:"remote_log_paths,omitempty"`
 	// Transfer is "sftp" or "scp" for an SSH host whose file panel does not
 	// choose by itself.
 	Transfer string `json:"transfer,omitempty"`
@@ -222,6 +223,7 @@ func (host Host) transport() savedTransport {
 	transport.ForwardX11, transport.AgentForward, transport.NoHistory, transport.Transfer = host.ForwardX11, host.AgentForward, host.NoHistory, host.savedTransfer()
 	transport.InteractiveOnly = host.InteractiveOnly
 	transport.LoginCommand = host.LoginCommand
+	transport.RemoteLogPaths = host.RemoteLogPaths
 	return transport
 }
 
@@ -263,6 +265,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.InteractiveOnly = transport.InteractiveOnly
 		host.NoHistory = transport.NoHistory
 		host.LoginCommand = restoredLoginCommand(transport.LoginCommand)
+		host.RemoteLogPaths = restoreRemoteLogPaths(transport.RemoteLogPaths)
 		switch transport.Terminal {
 		case "", "ssh":
 			host.Terminal = terminalSSH
