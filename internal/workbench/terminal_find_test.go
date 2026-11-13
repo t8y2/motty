@@ -278,6 +278,38 @@ func TestTerminalFindPaintsAccessibleControlsAndDistinctHighlights(t *testing.T)
 	}
 }
 
+// TestTerminalFindReopeningWithAQueryKeepsTheConfiguredStart covers the second
+// and later opens: the field still holds the previous query, and the origin
+// chosen since then must still pick the first match.
+func TestTerminalFindReopeningWithAQueryKeepsTheConfiguredStart(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	state.Resize(gfx.Size{Width: 500, Height: 410})
+	for line := range 100 {
+		if line%15 == 0 && line < 90 {
+			shell.say("needle\r\n")
+		} else {
+			shell.say("other\r\n")
+		}
+	}
+	state.Wake()
+	state.terminalFindPrefs.Origin = findSessionTop
+	_, find := openFindForTest(t, state)
+	typeTerminalFind(t, state, "needle")
+	if len(find.matches) != 6 || find.active != 0 {
+		t.Fatalf("first open = matches %d active %d", len(find.matches), find.active)
+	}
+	state.Key(gfx.KeyEvent{Target: hitTerminalFindField, Key: gfx.KeyEscape})
+	if find.open || find.editor.String() != "needle" {
+		t.Fatalf("close = open %t query %q", find.open, find.editor.String())
+	}
+
+	state.terminalFindPrefs.Origin = findSessionBottom
+	openFindForTest(t, state)
+	if find.active != len(find.matches)-1 {
+		t.Fatalf("reopen with the remembered query = matches %d active %d, want the last one", len(find.matches), find.active)
+	}
+}
+
 func TestTerminalFindStartsAtTheSelectedBufferEdge(t *testing.T) {
 	for _, test := range []struct {
 		origin terminalFindOrigin

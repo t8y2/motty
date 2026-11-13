@@ -249,11 +249,14 @@ func (state *State) openTerminalFind(session *Session) gfx.EventResult {
 		}
 	}
 	find.selectQuery()
-	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
+	// The origin and the view are read before the bar takes its strip: the
+	// resize scans the screen too, and that scan must already start where this
+	// open will start, or the scan after it preserves a match from the old edge.
 	if opening {
 		find.start = state.terminalFindPrefs.Origin
 		find.captureView(session.term.screen)
 	}
+	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	find.refresh(session.term.screen, state.messages, true)
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTerminalFindField, FocusVisible: true}
 }

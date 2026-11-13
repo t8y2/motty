@@ -84,7 +84,7 @@ var (
 )
 
 type terminalFindSettingsUI struct {
-	open, originOpen                       bool
+	open, originOpen, opacityDrag          bool
 	session                                uint32
 	anchor, foreground, background, origin gfx.Rect
 	color                                  gfx.ID
@@ -94,7 +94,7 @@ type terminalFindSettingsUI struct {
 }
 
 func (v *terminalFindSettingsUI) close() {
-	v.open, v.originOpen = false, false
+	v.open, v.originOpen, v.opacityDrag = false, false, false
 	v.color = gfx.ID{}
 	v.focus = gfx.ID{}
 }
@@ -110,7 +110,9 @@ func (state *State) findSettingsOnBar() bool {
 	return v.open && ok && session.ID == v.session && session.term.find.open
 }
 
-func (state *State) setFindPreferences(p terminalFindPreferences) {
+// applyFindPreferences stores the preferences and repaints an open find bar.
+// A drag calls this on every move and saves once when the pointer is released.
+func (state *State) applyFindPreferences(p terminalFindPreferences) {
 	if p == state.terminalFindPrefs {
 		return
 	}
@@ -122,6 +124,10 @@ func (state *State) setFindPreferences(p terminalFindPreferences) {
 		find.active = -1
 		find.refresh(session.term.screen, state.messages, true)
 	}
+}
+
+func (state *State) setFindPreferences(p terminalFindPreferences) {
+	state.applyFindPreferences(p)
 	state.save()
 }
 
@@ -390,15 +396,32 @@ func (state *State) findPreferencesPointer(event gfx.PointerEvent) gfx.EventResu
 		}
 		return result
 	}
+	if v.opacityDrag {
+		switch event.Kind {
+		case gfx.PointerMove:
+			p := state.terminalFindPrefs
+			p.Opacity = int(v.slider.ValueAt(event.X))
+			state.applyFindPreferences(p)
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitFindSettingsOpacity}
+		case gfx.PointerUp, gfx.PointerExit:
+			v.opacityDrag = false
+			state.save()
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitFindSettingsOpacity}
+		}
+		// A press elsewhere ends a drag whose release was never delivered; that
+		// press still reaches what it names.
+		v.opacityDrag = false
+		state.save()
+	}
 	if event.Target != hitFindSettingsOpacity {
 		return gfx.EventResult{}
 	}
 	switch {
-	case event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone),
-		event.Kind == gfx.PointerMove && event.Captured:
+	case event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone):
 		p := state.terminalFindPrefs
 		p.Opacity = int(v.slider.ValueAt(event.X))
-		state.setFindPreferences(p)
+		state.applyFindPreferences(p)
+		v.opacityDrag = true
 		return gfx.EventResult{Handled: true, Repaint: true, Focus: hitFindSettingsOpacity}
 	}
 	return gfx.EventResult{}
