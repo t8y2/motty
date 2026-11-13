@@ -418,8 +418,12 @@ func (state *State) configureTerminal(session *Session) {
 		if current, ok := state.sessionByIDPointer(sessionID); ok && current.term != nil {
 			t := current.term
 			t.promptReady = t.promptStarted && !t.promptDirty && t.commandReporting && t.submittedLines == 0
-			t.inputGuard.active = t.promptReady
+			// Readline redraws PS1 (including B) on resize without starting a
+			// new prompt. A dirty line is not idle for directory sync, but it
+			// keeps its existing shell ownership for typing and completion.
+			// A/C markers and submitted input revoke that ownership themselves.
 			if t.promptReady {
+				t.inputGuard.active = true
 				t.releasePromptWait()
 			}
 			t.inputLine = true
