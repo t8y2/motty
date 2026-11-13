@@ -368,7 +368,10 @@ const (
 	// the tooltip so the tooltip's text never shares a layer with another
 	// overlay.
 	hoverCardLayer = uint16(800)
-	tooltipLayer   = uint16(900)
+	// A running terminal transfer floats above dialogs and the hover card, so
+	// using the rest of the window does not cancel it, and below tooltips.
+	transferProgressLayer = uint16(850)
+	tooltipLayer          = uint16(900)
 )
 
 const (
@@ -693,9 +696,8 @@ type State struct {
 	openStream func(context.Context, streamRequest) (Shell, error)
 	// dialDesktop opens the remote desktop of a VNC host; tests replace it.
 	dialDesktop func(context.Context, desktopRequest) (desktop.Session, error)
-	// transfer is the file transfer in progress, if any; transferLeftover is what
-	// followed the end of one and belongs to the screen.
-	transfer  fileTransfer
+	// transfers is the file-panel transfer center. A terminal transfer lives on
+	// its session, so several tabs can move files at once.
 	transfers transferCenter
 	xy        xySetup
 	// Requests from outside to connect (see launch.go), the link being asked
@@ -736,7 +738,6 @@ type State struct {
 	sftpPanelWidth         float32
 	sftpBookmarks          []sftpBookmark
 	sftpLocalBookmarks     []string
-	transferLeftover       []byte
 	secrets                secretsUI
 	shareConnections       shareConnectionsPolicy
 	tooltip                components.HoverTooltip
@@ -1573,6 +1574,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickTransferCenter(id) {
 		return
 	}
+	if state.clickRunningTransfer(id) {
+		return
+	}
 	if state.aiClick(id) {
 		return
 	}
@@ -2005,6 +2009,9 @@ func (state *State) closeSession(id uint32) {
 	session := &state.sessions[index]
 	session.closeSSHBrowser()
 	state.leaveLocalProxy(session)
+	if session.transferBusy() {
+		state.abandonTransfer(session)
+	}
 	// Closing a tab cancels its connection and deletes the Session in this call,
 	// so the terminal PhaseClosed is never observed; the row is finalized here.
 	state.finishSessionLog(session, sessionlog.StatusEnded, sessionlog.ReasonUserClosed)

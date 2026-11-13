@@ -170,6 +170,12 @@ type Session struct {
 	pendingSecretName  string
 	pendingSecretValue string
 	term               *terminal
+	// transfer is this terminal's ZMODEM or X/YMODEM transfer. Each session has
+	// its own: the protocol uses that shell's bytes, so another tab can transfer
+	// at the same time. rzsz is an assistant transfer armed here, waiting for
+	// the remote rz or sz.
+	transfer fileTransfer
+	rzsz     *rzszJob
 	// desk is the remote desktop a VNC tab shows; nil for every other kind.
 	desk     *desktopView
 	version  uint64

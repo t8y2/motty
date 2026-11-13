@@ -70,8 +70,14 @@ type terminal struct {
 	// terminal's output; see pumpBudget.
 	pumpBudget time.Duration
 	// zmodemTail is the last bytes of output, in case a transfer header is cut
-	// between two reads.
-	zmodemTail []byte
+	// between two reads. transferLeftover is output that followed the end of
+	// this terminal's transfer and belongs on the screen.
+	zmodemTail       []byte
+	transferLeftover []byte
+	// transferHoldsInput is set while a file transfer owns this shell. What the
+	// user types, and anything else that would write through send, waits until
+	// the transfer ends. The transfer itself writes straight to the shell.
+	transferHoldsInput bool
 
 	told announcement
 	// noShellTold records that a keystroke into a tab with no shell has already
@@ -552,7 +558,12 @@ func (t *terminal) writeShellInput(p []byte) bool {
 }
 
 // send writes input to the shell. Typing returns the view to the live screen.
+// A transfer that owns the shell refuses it: those bytes would land in the
+// protocol instead of in a program.
 func (t *terminal) send(p []byte) bool {
+	if t.transferHoldsInput {
+		return false
+	}
 	return t.sendInput(p, true)
 }
 

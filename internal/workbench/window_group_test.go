@@ -322,8 +322,8 @@ func TestATabWithAFileTransferRunningStaysWhereItIs(t *testing.T) {
 	pair := newTwoWindows(t)
 	liveTab(t, pair.first, pair.firstW, 0)
 	moving := tabOrder(pair.first)[0]
-	pair.first.transfer.phase = transferRunning
-	pair.first.transfer.sessionID = pair.first.sessions[0].ID
+	pair.first.sessions[0].transfer.phase = transferRunning
+	pair.first.sessions[0].transfer.sessionID = pair.first.sessions[0].ID
 	dragAcross(pair.first, moving, gfx.Point{X: 2200, Y: 450}, gfx.Point{})
 	if len(pair.first.sessions) != 1 || len(pair.second.sessions) != 0 {
 		t.Fatalf("sessions: first %d second %d", len(pair.first.sessions), len(pair.second.sessions))
