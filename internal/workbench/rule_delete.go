@@ -1,12 +1,14 @@
 package workbench
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/autofill"
+	"motty/internal/configstore"
 	"motty/internal/vault"
 )
 
@@ -169,6 +171,20 @@ func (state *State) deleteSelectedRules(ask ruleDelete) {
 		err = state.secrets.vault.ApplyWithCommit(changes, commit)
 	}
 	if err != nil {
+		// ApplyWithCommit holds the vault lock, so shared state may only be
+		// reloaded after it has returned. Reloading on a conflict is what lets
+		// the retry build on the store the other window wrote; without it the
+		// base stays stale and every retry fails the same way. The reload also
+		// replaces both rule lists with the store's current records, so the
+		// rolled-back copies must not overwrite them afterwards.
+		if errors.Is(err, configstore.ErrConflict) {
+			if refreshErr := state.refreshShared(); refreshErr != nil {
+				err = errors.Join(err, fmt.Errorf("reload configuration after conflict: %w", refreshErr))
+			} else {
+				state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
+				return
+			}
+		}
 		state.autofillRules.rules, state.highlighting.rules = previousAutofill, previousHighlights
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
 		return

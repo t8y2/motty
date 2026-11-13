@@ -222,6 +222,36 @@ func TestRuleManagerBatchDeletionConflictPreservesAutofillRulesAndVault(test *te
 	}
 }
 
+func TestRuleManagerBatchDeletionRetriesAfterAConflict(test *testing.T) {
+	world := liveAutofillSession(test)
+	state := world.state
+	world.addRule(test, "one", `^One:`, "", autofill.SendText, "private-one")
+	world.addRule(test, "two", `^Two:`, "", autofill.SendText, "private-two")
+	world.addRule(test, "three", `^Three:`, "", autofill.SendText, "private-three")
+	state.Click(hitSettingsAutofillManage)
+	state.Click(hitRuleManagerSelect.At(0))
+	state.Click(hitRuleManagerSelect.At(2))
+	state.Click(hitRuleManagerDelete)
+
+	other := newTestState(test, state.options)
+	other.autofillRules.rules[2].Name = "changed elsewhere"
+	if err := other.saveWithResult(); err != nil {
+		test.Fatal(err)
+	}
+	state.Click(hitRuleDeleteConfirm)
+	if len(state.autofillRules.rules) != 3 {
+		test.Fatalf("conflicted deletion changed rules: %d", len(state.autofillRules.rules))
+	}
+
+	// The conflict has to refresh the base the next attempt builds on; without
+	// it the retry reports the same conflict and deletes nothing.
+	state.Click(hitRuleManagerDelete)
+	state.Click(hitRuleDeleteConfirm)
+	if len(state.autofillRules.rules) != 1 || state.autofillRules.rules[0].Name != "two" {
+		test.Fatalf("retry after conflict left %+v, want only the unselected rule", state.autofillRules.rules)
+	}
+}
+
 func TestRuleManagerBatchDeletionSaveFailureKeepsRulesAndSelection(test *testing.T) {
 	for _, kind := range []ruleDeleteKind{ruleDeleteAutofill, ruleDeleteHighlight} {
 		test.Run(fmt.Sprint(kind), func(test *testing.T) {
