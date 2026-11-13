@@ -342,6 +342,102 @@ func TestIdleKeepAliveWritesTheShellEncoding(t *testing.T) {
 	}
 }
 
+// A full-screen program owns the keys: Enter scrolls less and Ctrl-@ repeats an
+// insertion in vim, so the probe waits like the login command does.
+func TestIdleKeepAliveSkipsAFullScreenProgram(t *testing.T) {
+	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	session.term.screen.Write([]byte("\x1b[?1049h"))
+	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+		t.Fatalf("wait = %v, want %v", wait, time.Minute)
+	}
+	if got := shell.typed(); got != "" {
+		t.Fatalf("typed %q into a full-screen program", got)
+	}
+	if session.term.idleLastInput != time.Minute {
+		t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
+	}
+}
+
+// Programs ask for credentials in their own words; an Enter at any of these
+// would submit an empty password.
+func TestIdleKeepAliveSkipsCredentialPrompts(t *testing.T) {
+	prompts := []string{
+		"Password: ",
+		"user@host's password: ",
+		"Enter passphrase for key '/home/me/.ssh/id_ed25519': ",
+		"[sudo] password for deploy: ",
+		"密码：",
+		"口令: ",
+	}
+	for _, prompt := range prompts {
+		t.Run(prompt, func(t *testing.T) {
+			state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+			session.term.screen.Write([]byte(prompt))
+			if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+				t.Fatalf("wait = %v, want %v", wait, time.Minute)
+			}
+			if got := shell.typed(); got != "" {
+				t.Fatalf("typed %q at a credential prompt", got)
+			}
+			if session.term.idleLastInput != time.Minute {
+				t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
+			}
+		})
+	}
+}
+
+// A line the user has typed but not submitted is not a prompt: a CR would run
+// it.
+func TestIdleKeepAliveSkipsAPartiallyTypedLine(t *testing.T) {
+	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	session.term.clock = func() time.Duration { return 0 }
+	if !session.term.sendInput([]byte("rm -rf /"), false) {
+		t.Fatal("sendInput refused the user's keys")
+	}
+	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+		t.Fatalf("wait = %v, want %v", wait, time.Minute)
+	}
+	if got := shell.typed(); got != "rm -rf /" {
+		t.Fatalf("typed %q, want only the user's line", got)
+	}
+	if session.term.idleLastInput != time.Minute {
+		t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
+	}
+}
+
+// The other automatic input paths drain first; a prompt that arrived after the
+// frame's pump must stop the probe too.
+func TestIdleKeepAliveDrainsTheShellBeforeDeciding(t *testing.T) {
+	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	drained := false
+	session.term.takeOutput = func() {
+		drained = true
+		session.term.takeOutput = nil
+		session.term.screen.Write([]byte("Password: "))
+	}
+	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+		t.Fatalf("wait = %v, want %v", wait, time.Minute)
+	}
+	if !drained {
+		t.Fatal("the probe did not drain the shell before deciding")
+	}
+	if got := shell.typed(); got != "" {
+		t.Fatalf("typed %q at a prompt found by the drain", got)
+	}
+}
+
+func TestIdleKeepAliveStopsWhenTheDrainEndsTheShell(t *testing.T) {
+	state, session, _ := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	session.term.takeOutput = func() {
+		session.term.takeOutput = nil
+		session.term.shell = nil
+		session.term.ended = true
+	}
+	if wait := state.idleKeepAliveWait(session, time.Minute); wait != 0 {
+		t.Fatalf("wait = %v, want no timer after the shell ended", wait)
+	}
+}
+
 func TestIdleKeepAliveIsOnlyForRemoteTerminals(t *testing.T) {
 	cases := []struct {
 		name string

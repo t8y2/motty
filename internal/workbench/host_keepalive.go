@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -255,15 +256,37 @@ func idleKeepAliveProtocol(protocol hostProtocol) bool {
 	return false
 }
 
+// idleSecretPromptRe recognizes the line a program uses to ask for a password
+// or passphrase. The wording is the program's own (ssh, su, enable, sudo and
+// others), so the match is on the visible line, not on the sudo offer the
+// password hint tracks. A CR must never answer one: it would submit an empty
+// password, and sshd or fail2ban may count the failures.
+var idleSecretPromptRe = regexp.MustCompile(`(?i)(password|passphrase|密码|口令)[^:?：？]*[:?：？]`)
+
+// idleSeesSecretPrompt reports whether the line under the cursor is a
+// credential question. A line the user has typed but not submitted is not one:
+// promptDirty keeps the probe away from a partial command as well.
+func idleSeesSecretPrompt(t *terminal) bool {
+	if t == nil || t.screen == nil || t.screen.Modes().AltScreen {
+		return false
+	}
+	cursor := t.screen.Cursor()
+	_, rows := t.screen.Size()
+	if cursor.Y < 0 || cursor.Y >= rows {
+		return false
+	}
+	return idleSecretPromptRe.MatchString(t.screen.RowText(cursor.Y))
+}
+
 // idleKeepAliveWait sends the host's probe when its shell has been quiet for
 // the whole interval, and returns how long until the next check. Zero means
 // this session has no timer: the setting is off, the shell has ended, or the
 // host is not a remote terminal.
 //
-// A password prompt, an assistant command and a completion suggestion are all
-// questions an Enter could answer, so the probe waits for a whole interval
-// instead of disturbing them. A refused write is retried at the next interval,
-// never in a loop.
+// A password prompt, an assistant command, a completion suggestion, a
+// full-screen program and a partially typed line are all states an Enter could
+// disturb or submit, so the probe waits for a whole interval instead. A refused
+// write is retried at the next interval, never in a loop.
 func (state *State) idleKeepAliveWait(session *Session, now time.Duration) time.Duration {
 	if session == nil || session.isLocal() {
 		return 0
@@ -282,13 +305,23 @@ func (state *State) idleKeepAliveWait(session *Session, now time.Duration) time.
 		}
 		return interval - (now - t.idleLastInput)
 	}
+	// The other automatic input paths drain the shell before deciding. A prompt
+	// that arrived after this frame's pump, or outside its budget, is only
+	// visible after the drain; the shell may also have ended while it ran.
+	if t.takeOutput != nil {
+		t.takeOutput()
+		if t.shell == nil || t.ended {
+			return 0
+		}
+	}
 	// The bytes are made only when the probe is due: the paint that schedules
 	// the next frame must not parse the custom text sixty times a second.
 	payload, err := host.idleInputBytes()
 	if err != nil {
 		return 0
 	}
-	if t.passwordHint != "" || t.exec != nil || t.suggestionPending != nil {
+	if t.passwordHint != "" || t.exec != nil || t.suggestionPending != nil ||
+		t.screen.Modes().AltScreen || t.promptDirty || idleSeesSecretPrompt(t) {
 		t.idleLastInput = now
 		return interval
 	}
