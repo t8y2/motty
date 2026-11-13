@@ -2493,6 +2493,10 @@ func (state *State) fitHostTags(canvas *gfx.Canvas, host Host, width float32, sh
 }
 
 func (state *State) paintHostCatalogIcon(canvas *gfx.Canvas, host Host, bounds gfx.Rect, background gfx.Color) {
+	if host.ID == localHostID {
+		state.paintLocalShellIcon(canvas, host, bounds, background)
+		return
+	}
 	if host.Icon == hostIconAuto {
 		if host.isDesktop() && host.System == sshconn.SystemUnknown {
 			canvas.Rounded(bounds, bounds.Width*0.24, state.hostBadgeFill(background))

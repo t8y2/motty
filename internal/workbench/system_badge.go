@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/vivaui/viva/gfx"
@@ -111,13 +112,19 @@ func systemBadgeArt(system sshconn.RemoteSystem, dark bool) (badgeArt, bool) {
 }
 
 func paintSystemBadge(canvas *gfx.Canvas, system sshconn.RemoteSystem, bounds gfx.Rect, pal *palette) {
-	const badgeRadius = float32(0.24)
 	art, ok := systemBadgeArt(system, pal.dark)
 	if !ok {
-		canvas.Rounded(bounds, bounds.Width*badgeRadius, pal.accentSoft)
+		canvas.Rounded(bounds, bounds.Width*0.24, pal.accentSoft)
 		canvas.DrawIcon(icons.Server, insetRect(bounds, 0.22), pal.accent)
 		return
 	}
+	paintBadgeArt(canvas, art, bounds)
+}
+
+// paintBadgeArt draws a badge's background and glyphs, the shape both a
+// system's badge and a WSL distribution's use.
+func paintBadgeArt(canvas *gfx.Canvas, art badgeArt, bounds gfx.Rect) {
+	const badgeRadius = float32(0.24)
 	radius := bounds.Width * badgeRadius
 	if art.circle {
 		radius = bounds.Width / 2
@@ -225,4 +232,52 @@ func paintFilledIcon(canvas *gfx.Canvas, icon gfx.Icon, bounds gfx.Rect, tint gf
 func insetRect(bounds gfx.Rect, ratio float32) gfx.Rect {
 	inset := bounds.Width * ratio
 	return gfx.Rect{X: bounds.X + inset, Y: bounds.Y + inset, Width: bounds.Width - inset*2, Height: bounds.Height - inset*2}
+}
+
+// wslDistroBadgeArt is the badge of a WSL distribution: the mark of the system
+// it is, the same one a server of that distribution wears. A distribution Motty
+// has no mark for is still Linux, so it gets the Linux badge.
+func wslDistroBadgeArt(distro string, dark bool) (badgeArt, bool) {
+	system := wslDistroSystem(distro)
+	if system == sshconn.SystemUnknown {
+		system = sshconn.SystemLinux
+	}
+	return systemBadgeArt(system, dark)
+}
+
+// wslDistroSystem reads a distribution's name, as `wsl.exe --list --quiet`
+// prints it, as the system whose badge it wears: "Ubuntu-22.04" is Ubuntu,
+// "FedoraLinux-42" is Fedora. The release suffix is dropped first, then the
+// name is read as a persisted system name, then as the start of one.
+func wslDistroSystem(distro string) sshconn.RemoteSystem {
+	name := strings.ToLower(strings.TrimSpace(distro))
+	if index := strings.IndexAny(name, "-_."); index > 0 {
+		name = name[:index]
+	}
+	if system := sshconn.ParseRemoteSystem(name); system != sshconn.SystemUnknown {
+		return system
+	}
+	// The store's names omit the separator: archlinux, rockylinux, centos7.
+	for system := sshconn.SystemLinux; system.String() != ""; system++ {
+		if strings.HasPrefix(name, system.String()) {
+			return system
+		}
+	}
+	switch name {
+	case "alma":
+		return sshconn.SystemAlma
+	case "redhat":
+		return sshconn.SystemRedHat
+	case "mint":
+		return sshconn.SystemMint
+	case "pop":
+		return sshconn.SystemPopOS
+	case "suse":
+		return sshconn.SystemOpenSUSE
+	case "oracle":
+		return sshconn.SystemOracleLinux
+	case "amazon":
+		return sshconn.SystemAmazonLinux
+	}
+	return sshconn.SystemUnknown
 }
