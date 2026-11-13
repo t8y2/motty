@@ -2285,6 +2285,7 @@ var englishTools = ToolsMessages{
 	SyncFailedFmt:                   "Sync failed: %s",
 	SyncErrUnauthorized:             "The service refused the login, or the login may not do this.",
 	SyncErrNotFound:                 "There is no backup on the server yet.",
+	SyncErrChanged:                  "Another device changed the cloud backup just now.",
 	SyncErrInsecure:                 "Use HTTPS, or allow insecure remote HTTP for this service.",
 	SyncAllowInsecureHTTP:           "Allow insecure remote HTTP",
 	SyncInsecureHTTPDescription:     "HTTP is not encrypted. Anyone on the network can read the connection, intercept logins, and keep a copy of the encrypted backup to attack offline. Enable only on a network you trust.",

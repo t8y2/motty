@@ -2285,6 +2285,7 @@ var traditionalTools = ToolsMessages{
 	SyncFailedFmt:                   "同步出錯：%s",
 	SyncErrUnauthorized:             "服務拒絕了該登入，或該登入沒有這個權限。",
 	SyncErrNotFound:                 "伺服器上還沒有備份。",
+	SyncErrChanged:                  "雲端備份剛被其他裝置改過。",
 	SyncErrInsecure:                 "請使用 HTTPS，或為此服務允許不安全的遠端 HTTP。",
 	SyncAllowInsecureHTTP:           "允許不安全的遠端 HTTP",
 	SyncInsecureHTTPDescription:     "HTTP 連線不加密。網路中的其他人可以讀取連線、竊取登入資訊，並儲存加密備份用於離線破解。僅在你信任的網路中啟用。",

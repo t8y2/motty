@@ -2285,6 +2285,7 @@ var chineseTools = ToolsMessages{
 	SyncFailedFmt:                   "同步出错：%s",
 	SyncErrUnauthorized:             "服务拒绝了该登录，或该登录没有这个权限。",
 	SyncErrNotFound:                 "服务器上还没有备份。",
+	SyncErrChanged:                  "云端备份刚被其他设备改过。",
 	SyncErrInsecure:                 "请使用 HTTPS，或为此服务允许不安全的远程 HTTP。",
 	SyncAllowInsecureHTTP:           "允许不安全的远程 HTTP",
 	SyncInsecureHTTPDescription:     "HTTP 连接不加密。网络中的其他人可以读取连接、窃取登录信息，并保存加密备份用于离线破解。仅在你信任的网络中启用。",

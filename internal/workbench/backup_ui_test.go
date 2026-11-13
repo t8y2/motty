@@ -16,6 +16,8 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+
+	"motty/internal/cloudsync"
 )
 
 const testBackupPassword = "correct horse battery"
@@ -1038,5 +1040,19 @@ func TestSettingsShowsALongSyncFailureWhole(t *testing.T) {
 	_, texts := paintedTexts(state)
 	if !contains(texts, "no such host") {
 		t.Fatal("the end of the last sync's failure is not shown")
+	}
+}
+
+// A sync that lost the race to another device is not a failure the user can do
+// anything about, and the window must not drop the backend's English error into
+// its own language.
+func TestAChangedBackupIsReportedInTheWindowLanguage(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	got := state.backupErrorText(cloudsync.ErrChanged)
+	if got != state.messages.Tools.SyncErrChanged {
+		t.Fatalf("message %q, want %q", got, state.messages.Tools.SyncErrChanged)
+	}
+	if got == cloudsync.ErrChanged.Error() {
+		t.Fatal("the raw error is shown")
 	}
 }
