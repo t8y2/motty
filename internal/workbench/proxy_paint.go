@@ -49,7 +49,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 
-	canAdd := state.sshHostCount() >= 2
+	canAdd := state.canAddJumpRoute()
 	view := &state.sectionBodies.proxies
 	draw := view.draw
 	*view = proxySectionUI{

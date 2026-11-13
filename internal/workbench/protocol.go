@@ -89,6 +89,11 @@ func (host Host) isDesktop() bool {
 	return host.Protocol == protocolVNC || host.Protocol == protocolRDP
 }
 
+// isRouteTarget reports whether a jump route can reach the host as its target:
+// an SSH host, whose connection the route extends, or a remote desktop, whose
+// port the route's jump host forwards. A jump itself is always an SSH host.
+func (host Host) isRouteTarget() bool { return host.isSSH() || host.isDesktop() }
+
 // tunneled reports whether the host is reached through an SSH connection of its
 // own: a remote desktop whose server is only listening on the SSH server's own
 // loopback.
@@ -618,7 +623,7 @@ func (state *State) sayStreamOpened(session *Session) {
 	case protocolTelnet:
 		session.term.say(sgrWarn, m.TelnetPlaintext)
 	case protocolVNC:
-		protected := session.host.tunneled()
+		protected := session.host.tunneled() || session.desktopTunnel
 		if source, ok := session.conn.(desktopSource); ok && source.Desktop() != nil {
 			protected = protected || source.Desktop().Info().Encrypted
 		}

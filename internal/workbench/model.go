@@ -151,6 +151,11 @@ type Session struct {
 
 	host     Host // what was dialed, to dial again
 	jumpPath string
+	// desktopTunnel says this remote desktop is reached over SSH: its ViaSSH
+	// tunnel, or the jump route that carries its port. It is what the desktop's
+	// own encryption and login rows follow, where host.tunneled() names only
+	// the same-machine switch.
+	desktopTunnel bool
 	// proxyRoute is the effective outbound proxy frozen when this connection
 	// was dialed. Editing the host updates host, but not the live transport.
 	proxyRoute   string

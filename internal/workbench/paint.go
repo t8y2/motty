@@ -2974,7 +2974,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				// icon value and the proxy summary on VNC, RDP and Telnet.
 				b.proxy = state.declareHostProxyRow(c)
 			}
-			if ssh {
+			if ssh || vncHost {
 				b.jump = state.declareHostJumpRow(c)
 			}
 			if terminalHost {
@@ -3109,13 +3109,13 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if networkHost {
 		state.paintHostProxyRow(canvas)
 	}
+	if ssh || vncHost {
+		state.paintHostJumpRow(canvas)
+	}
 	if vncHost {
 		state.paintVNCRows(canvas)
 	}
 	if idleKeepAliveProtocol(protocol) {
-		if ssh {
-			state.paintHostJumpRow(canvas)
-		}
 		state.paintAdvancedSection(canvas)
 	}
 	// The choices are the page's controls: keep the option the tab ring reaches

@@ -23,6 +23,7 @@ type DesktopMessages struct {
 	CertChangedFmt            string
 	StripTLS                  string
 	ViaSSH                    string
+	ViaSSHRouted              string
 	ShareClipboard            string
 	HideBars                  string
 	ConsoleSession            string
