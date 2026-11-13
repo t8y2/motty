@@ -572,7 +572,13 @@ func (state *State) declareSFTPColumnHeader(c ui.C, folder *sftpFolder, column i
 		if grow {
 			textBox = textBox.Grow(1)
 		} else {
-			textBox = textBox.Width(width - 4).TextEnd()
+			// The name starts at the list's left edge, like the rows under it
+			// and the detached window's header; the numeric columns end at
+			// their right edge.
+			textBox = textBox.Width(width - 4)
+			if column > 0 {
+				textBox = textBox.TextEnd()
+			}
 		}
 	})
 }

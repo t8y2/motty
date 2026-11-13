@@ -76,6 +76,23 @@ func TestResizeSFTPColumnsMovesTheDividers(t *testing.T) {
 	}
 }
 
+func TestSFTPColumnDragKeepsTheWidthItShows(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	area := gfx.Rect{X: 10, Width: 500}
+	if !state.resizeSFTPColumns(0, area.X-1000, area, 0) {
+		t.Fatal("the name divider refused an over-drag")
+	}
+	shown := state.sftpColumnMetrics(area.Width, 0).size
+	if state.sftpColumnSizeWidth != shown {
+		t.Fatalf("stored size = %v, want the %v painted for this area", state.sftpColumnSizeWidth, shown)
+	}
+	// Widening the panel must not make the fixed column wider than the drag
+	// left it; the stored width has to stay what the panel showed.
+	if wider := state.sftpColumnMetrics(1000, 0).size; wider != shown {
+		t.Fatalf("size after widening = %v, want %v", wider, shown)
+	}
+}
+
 func TestSFTPWindowColumnDividerRoutesItsDrag(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	w := &sftpWindow{owner: state}

@@ -91,7 +91,9 @@ func (state *State) resizeSFTPColumns(divider int, x float32, area gfx.Rect, gap
 	}
 	metrics := state.sftpColumnMetrics(area.Width, gap)
 	widths := [3]float32{metrics.name, metrics.size, metrics.modified}
-	resize := components.BeginColumnResize(nil, state.Theme(), area, widths[:]).Gap(gap)
+	resize := components.BeginColumnResize(nil, state.Theme(), area, widths[:]).
+		Minimums(sftpColumnMinimums[:]).
+		Gap(gap)
 	edit, ok := resize.Edit(divider, x)
 	if !ok {
 		return false
