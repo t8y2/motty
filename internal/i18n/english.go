@@ -2596,6 +2596,14 @@ var englishTools = ToolsMessages{
 	UpdateFailedFmt:                 "Could not check for updates: %v",
 	LoginFailedFmt:                  "Could not change starting at login: %v",
 }
+var englishRuleManagement = RuleManagementMessages{
+	Manage: "Manage rules", CountFmt: "%d rules", SelectedFmt: "%d selected",
+	SelectAll: "Select all", ClearSelection: "Clear selection", DeleteSelected: "Delete selected",
+	DeleteSelectedTitle: "Delete selected rules?",
+	DeleteSelectedFmt:   "Delete %d selected rules? This cannot be undone.", Empty: "No rules", Close: "Done",
+	HighlightEditTitle: "Edit a highlight rule", Duplicate: "This rule already exists.",
+}
+
 var englishAutofill = AutofillMessages{
 	Group:              "Autofill rules",
 	Row:                "Autofill rules",

@@ -42,8 +42,37 @@ type ruleDelete struct {
 	text     bool
 	// credential is the saved password to delete, by id; uses is how many hosts
 	// take their password from it when the question is asked.
-	credential string
-	uses       int
+	credential         string
+	uses               int
+	selectedAutofill   []*autofill.Rule
+	selectedHighlights []selectedHighlightRule
+}
+
+type selectedHighlightRule struct {
+	index int
+	rule  highlightRule
+}
+
+func (state *State) askDeleteSelectedRules() {
+	manager := &state.ruleManager
+	ask := ruleDelete{kind: manager.kind}
+	for index := range state.ruleManagerCount() {
+		if !manager.selected[index] {
+			continue
+		}
+		if manager.kind == ruleDeleteAutofill {
+			rule := state.autofillRules.rules[index]
+			ask.selectedAutofill = append(ask.selectedAutofill, rule)
+			ask.text = ask.text || rule.Send == autofill.SendText
+		} else {
+			ask.selectedHighlights = append(ask.selectedHighlights, selectedHighlightRule{index: index, rule: state.highlighting.rules[index]})
+		}
+	}
+	if len(ask.selectedAutofill)+len(ask.selectedHighlights) == 0 {
+		return
+	}
+	state.ruleDelete, manager.returning = ask, true
+	state.modal = modalDeleteRule
 }
 
 func (state *State) askDeleteAutofillRule(index int) {
@@ -79,6 +108,24 @@ func (state *State) clickDeleteRuleDialog(id gfx.ID) {
 	switch id {
 	case hitRuleDeleteConfirm:
 		state.closeModal()
+		if len(ask.selectedAutofill)+len(ask.selectedHighlights) > 0 {
+			for index := len(state.autofillRules.rules) - 1; index >= 0; index-- {
+				for _, selected := range ask.selectedAutofill {
+					if state.autofillRules.rules[index] == selected {
+						state.deleteAutofillRule(index)
+						break
+					}
+				}
+			}
+			for position := len(ask.selectedHighlights) - 1; position >= 0; position-- {
+				selected := ask.selectedHighlights[position]
+				if selected.index < len(state.highlighting.rules) && state.highlighting.rules[selected.index] == selected.rule {
+					state.deleteHighlightRule(selected.index)
+				}
+			}
+			clear(state.ruleManager.selected)
+			return
+		}
 		switch ask.kind {
 		case ruleDeleteAutofill:
 			for index, rule := range state.autofillRules.rules {
@@ -105,10 +152,16 @@ func (state *State) paintDeleteRuleDialog(canvas *gfx.Canvas, viewport gfx.Rect)
 	m := state.messages.Autofill
 	ask := state.ruleDelete
 	description := fmt.Sprintf(m.DeleteFmt, ask.name)
+	if count := len(ask.selectedAutofill) + len(ask.selectedHighlights); count > 0 {
+		description = fmt.Sprintf(state.messages.RuleManagement.DeleteSelectedFmt, count)
+	}
 	if ask.text {
 		description += " " + m.DeleteTextNote
 	}
 	title := m.DeleteTitle
+	if len(ask.selectedAutofill)+len(ask.selectedHighlights) > 0 {
+		title = state.messages.RuleManagement.DeleteSelectedTitle
+	}
 	if ask.kind == ruleDeleteCredential {
 		c := state.messages.Credentials
 		title, description = c.DeleteTitle, fmt.Sprintf(c.DeleteFmt, ask.name)

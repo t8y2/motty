@@ -580,6 +580,7 @@ type State struct {
 	hostDialogMode    hostDialogMode
 	hostDialogID      uint32
 	ruleDelete        ruleDelete
+	ruleManager       ruleManagerUI
 	hostTest          hostTest
 	hostDialogText    string
 	identityCountText string
@@ -1657,6 +1658,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalHighlightRule:
 		state.clickHighlightDialog(id)
 		return
+	case modalRuleManager:
+		state.clickRuleManager(id)
+		return
 	case modalAutofillRule:
 		state.clickAutofillDialog(id)
 		return
@@ -2447,6 +2451,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result := state.toolbarSettingsPointer(event); result.Handled {
+		return result
+	}
+	if result := state.ruleManagerPointer(event); result.Handled {
 		return result
 	}
 	if result := state.sftpColumnSettingsPointer(event); result.Handled {
