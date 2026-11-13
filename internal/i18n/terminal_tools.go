@@ -738,6 +738,7 @@ type ToolsMessages struct {
 	S3PathStyle                     string
 	S3LoginTitle                    string
 	S3LoginDescription              string
+	S3Next, S3Back, S3Stop          string
 	S3AccessKey                     string
 	S3Secret                        string
 	S3ErrFields                     string
