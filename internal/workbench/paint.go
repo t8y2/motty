@@ -463,7 +463,12 @@ type barTab struct {
 	fileSession  uint32
 	id, closeID  gfx.ID
 	background   gfx.Color
-	compact      bool
+	// base is the fill before tint colours it; the alert title is backed by it
+	// so its ink keeps the contrast it has on an uncoloured tab. tint is the
+	// tab colour, empty when the tab has none.
+	base    gfx.Color
+	tint    string
+	compact bool
 }
 
 // barGeometry is what a first pass over the window bar says about its tabs: the
@@ -842,6 +847,8 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 							fill, foreground = pal.tabHover, pal.text
 						}
 						color := fileTab.session.host.Color
+						entry.tint = color
+						entry.base = fill
 						fill = tabFill(pal, fill, color, active, hovered)
 						edge = tintHostSurface(edge, color, tabColorBorderTint)
 						foreground = tabInk(pal, color, foreground)
@@ -918,6 +925,8 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 		fill, foreground = pal.tabHover, pal.text
 	}
 	color := state.tabColor(workspace)
+	entry.tint = color
+	entry.base = fill
 	fill = tabFill(pal, fill, color, active, hovered)
 	edge = tintHostSurface(edge, color, tabColorBorderTint)
 	foreground = tabInk(pal, color, foreground)

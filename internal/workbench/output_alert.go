@@ -123,6 +123,17 @@ func (state *State) paintOutputAlertTitle(canvas *gfx.Canvas, tab *barTab, strip
 	if bounds.Width <= 0 || bounds.Height <= 0 || bounds.X >= strip.X+strip.Width || bounds.X+bounds.Width <= strip.X || bounds.Y >= strip.Y+strip.Height || bounds.Y+bounds.Height <= strip.Y {
 		return
 	}
+	// The alert inks were chosen against the tab's own fill. A coloured tab
+	// therefore backs the title with the fill it would have without the tint, so
+	// an unseen-output, running or failed command stays as readable as it is on
+	// an uncoloured tab.
+	if tabColored(tab.tint) {
+		backing := tab.base
+		if backing.Alpha == 0 {
+			backing = state.pal.tab
+		}
+		canvas.Rounded(bounds, 4, backing)
+	}
 	style := gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.success}
 	label := canvas.FitLine(tab.label, style.Size, style.Weight, bounds.Width)
 	if tab.pathLabel != "" {
