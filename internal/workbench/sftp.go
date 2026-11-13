@@ -36,6 +36,7 @@ type sftpRow struct {
 	icon                 *gfx.Icon     // the file-type glyph, chosen when the listing arrives
 	mono                 bool          // the glyph has no colors of its own and is tinted
 	appIcon              *fileIconSlot // the system's icon for a local application bundle, once it has answered
+	typeIcon             *fileIconSlot // the system's icon for this file type, shared by every row with the extension
 	hidden               bool
 	matchStart, matchEnd int // byte range highlighted by the current folder filter
 	// where is the folder a search result is in, relative to where the search
@@ -1128,6 +1129,7 @@ func (state *State) applySFTPListingNavigation(view *sftpView, remotePath string
 		state.refreshSFTPDirectory(view, remotePath)
 	}
 	view.allRows = rows
+	state.loadTypeIcons(view, rows)
 	view.crumbs = prepareSFTPCrumbs(view.crumbs, remotePath)
 	if view.detached != nil {
 		entries := make([]sftpclient.Entry, len(rows))

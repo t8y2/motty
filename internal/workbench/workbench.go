@@ -731,6 +731,9 @@ type State struct {
 	sftpWindowOrder    sftpWindowOrder
 	sftpOpenMode       sftpOpenMode
 	sftpColumns        sftpColumnPreferences
+	// sftpTypeIcons is the system icon of each file extension, shared by every
+	// row and every listing. A nil map means none has been asked for yet.
+	sftpTypeIcons map[string]*fileIconSlot
 	// sftpColumnSizeWidth and sftpColumnModifiedWidth are the widths the user
 	// dragged the file lists' columns to; zero until a width was chosen, when
 	// the lists keep their width-based defaults. sftpColumnWidthsChosen says a

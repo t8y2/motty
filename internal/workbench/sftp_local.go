@@ -325,6 +325,7 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 	previousRows := folder.allRows
 	folder.allRows = listing.rows
 	state.loadAppIcons(view, previousRows, listing.rows)
+	state.loadTypeIcons(view, listing.rows)
 	folder.localCoverage = listing.coverage
 	folder.crumbs = prepareLocalCrumbs(folder.crumbs, listing.dir)
 	if view.detached != nil {
