@@ -35,10 +35,15 @@ type hostFormScroll struct {
 	// choiceIDs are the last painted option of each page Choice, kept so the
 	// form's tab ring can reach a choice while it lies outside the viewport.
 	choiceIDs hostFormChoiceIDs
-	// vncBody and algoBody are the slots the sections painted inside the form
-	// laid out.
+	// vncBody, algoBody and idleBody are the slots the sections painted inside
+	// the form laid out.
 	vncBody  hostVNCRowsBody
 	algoBody hostAlgoRowsBody
+	idleBody hostIdleKeepAliveRowsBody
+	// idleLayout and idleInputLayout are the probe values this frame's rows were
+	// laid out for, before a click writes the values the next frame shows.
+	idleLayout      idleKeepAlivePreset
+	idleInputLayout idleInputMode
 }
 
 // hostFormChoiceIDs is the chosen option hit of each Choice of the host form.
@@ -131,7 +136,8 @@ func (state *State) rememberHostChoice(canvas *gfx.Canvas, bounds gfx.Rect, chos
 
 func (state *State) hostFormPopupOpen() bool {
 	e := &state.editor
-	return e.colorPicker.open || e.authOpen || e.identityOpen || e.credentialOpen || e.portsOpen
+	return e.colorPicker.open || e.authOpen || e.identityOpen || e.credentialOpen || e.portsOpen ||
+		e.idleKeepAliveOpen || e.idleUnitOpen || e.idleInputOpen
 }
 
 func (state *State) scrollHostForm(event gfx.ScrollEvent) gfx.EventResult {

@@ -1050,6 +1050,7 @@ func (state *State) Close() {
 			releaseShell(session.term.shell)
 		}
 		session.term.abandonShell()
+		session.term.stopIdleKeepAlive()
 		if session.conn != nil {
 			session.conn.Cancel()
 		}
@@ -2044,6 +2045,7 @@ func (state *State) closeSession(id uint32) {
 		releaseShell(session.term.shell)
 	}
 	session.term.abandonShell()
+	session.term.stopIdleKeepAlive()
 	state.dropExternalEdits(session.ID)
 	state.closeSFTPTabForSource(session.ID)
 	state.closeCompletionPath(session)
@@ -2743,7 +2745,8 @@ func isHostTagsTarget(id gfx.ID) bool {
 // isDialogField reports whether a hit is one of the New Host dialog's text fields.
 func isDialogField(id gfx.ID) bool {
 	switch id {
-	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogPassphrase, hitDialogGroup, hitDialogPort, hitDialogTags:
+	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogPassphrase, hitDialogGroup, hitDialogPort, hitDialogTags,
+		hitDialogIdleInterval, hitDialogIdleCustomInput:
 		return true
 	}
 	return false
@@ -2766,6 +2769,10 @@ func fieldForDialogHit(id gfx.ID) hostField {
 		return fieldGroup
 	case hitDialogTags:
 		return fieldTags
+	case hitDialogIdleInterval:
+		return fieldIdleInterval
+	case hitDialogIdleCustomInput:
+		return fieldIdleInputCustom
 	default:
 		return fieldPort
 	}

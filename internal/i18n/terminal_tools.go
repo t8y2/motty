@@ -1007,6 +1007,24 @@ type ToolsMessages struct {
 	LoginCommandField               string
 	LoginCommandPlaceholder         string
 	ErrLoginCommand                 string
+	IdleKeepAliveHeading            string
+	IdleKeepAliveField              string
+	IdleKeepAliveOff                string
+	IdleKeepAliveOneMinute          string
+	IdleKeepAliveFiveMinutes        string
+	IdleKeepAliveTenMinutes         string
+	IdleKeepAliveCustom             string
+	IdleKeepAliveCustomInterval     string
+	IdleKeepAliveUnitSeconds        string
+	IdleKeepAliveUnitMinutes        string
+	IdleKeepAliveInputField         string
+	IdleKeepAliveInputCR            string
+	IdleKeepAliveInputNUL           string
+	IdleKeepAliveInputCustom        string
+	IdleKeepAliveCustomInput        string
+	IdleKeepAliveCustomPlaceholder  string
+	ErrIdleKeepAliveInterval        string
+	ErrIdleKeepAliveInput           string
 	ErrAlgoUnknownFmt               string
 	AlgoWeakFmt                     string
 	AlgoNegotiatedFmt               string

@@ -66,6 +66,13 @@ type Host struct {
 	// means UTF-8. A legacy server whose LANG names GB18030, Big5 or Shift_JIS
 	// needs its output decoded and its input encoded with that charset.
 	Encoding string
+	// IdleKeepAlive types input into an idle shell at this interval, which some
+	// servers require to keep a session from being closed for inactivity. Zero
+	// is off. IdleInput chooses what is typed, and IdleInputCustom holds the
+	// escaped text when that choice is custom.
+	IdleKeepAlive   time.Duration
+	IdleInput       idleInputMode
+	IdleInputCustom string
 	// tunnel marks the ephemeral host of a .xsh bastion tunnel opened on this
 	// computer. It is never saved, so only that launch gets the relaxed policy.
 	tunnel bool

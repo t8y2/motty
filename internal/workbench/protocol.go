@@ -149,6 +149,12 @@ type savedTransport struct {
 	NoHistory bool `json:"no_history,omitempty"`
 	// LoginCommand is the line an SSH host types into its shell after login.
 	LoginCommand string `json:"login_command,omitempty"`
+	// IdleKeepAliveSeconds is how often an idle terminal is sent input; zero is
+	// off. IdleInput is "cr", "nul" or "custom" (empty follows the protocol),
+	// and IdleInputCustom is the escaped text for "custom".
+	IdleKeepAliveSeconds int    `json:"idle_keepalive_seconds,omitempty"`
+	IdleInput            string `json:"idle_keepalive_input,omitempty"`
+	IdleInputCustom      string `json:"idle_keepalive_custom,omitempty"`
 	// Transfer is "sftp" or "scp" for an SSH host whose file panel does not
 	// choose by itself.
 	Transfer string `json:"transfer,omitempty"`
@@ -174,6 +180,15 @@ func (host Host) transport() savedTransport {
 	// old record byte-for-byte.
 	if host.Encoding != "" && host.Encoding != charset.UTF8 {
 		transport.Encoding = host.Encoding
+	}
+	// Every terminal protocol keeps this setting, so it is written before the
+	// switch that gives the rest of the transport its protocol-specific shape.
+	if validIdleKeepAliveInterval(host.IdleKeepAlive) {
+		transport.IdleKeepAliveSeconds = int(host.IdleKeepAlive / time.Second)
+	}
+	transport.IdleInput = host.savedIdleInput()
+	if host.IdleInput == idleInputCustom {
+		transport.IdleInputCustom = host.IdleInputCustom
 	}
 	switch host.Protocol {
 	case protocolTelnet:
@@ -227,6 +242,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 	}
 	host.Encoding = encoding
 	host.Terminal = terminalSSH
+	host.applyIdleKeepAlive(transport)
 	switch transport.Protocol {
 	case "", "ssh":
 		host.Protocol = protocolSSH

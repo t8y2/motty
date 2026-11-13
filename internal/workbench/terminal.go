@@ -221,6 +221,17 @@ type terminal struct {
 	// records sees releases, so the end of that press is dropped with its
 	// repeats: the program never got the press itself.
 	acceptedKey acceptedKey
+	// idleLastInput is when this shell last received input from any source. The
+	// idle keepalive measures its quiet interval from here.
+	idleLastInput time.Duration
+	// idleInterval and idlePayload are the probe this shell was opened with.
+	// They are frozen here so editing the host changes only the next connection,
+	// as its settings already do. idleTimer holds the wake that keeps probing
+	// while the window is not painting.
+	idleInterval time.Duration
+	idlePayload  []byte
+	idleTimer    *time.Timer
+	idleTimerAt  time.Duration
 
 	// exec is the command the assistant is waiting on in this terminal.
 	exec *aiExec
@@ -360,6 +371,7 @@ func (state *State) configureTerminal(session *Session) {
 	session.term.screen.SetDefaultCursor(state.terminalCursorStyle.termCursorStyle())
 	session.term.openLink = state.openTerminalLink
 	session.term.clock = state.now
+	session.term.adoptIdleClock()
 	// An image decoded off the window thread asks for the frame that shows it.
 	session.term.screen.SetImageWake(state.options.Invalidate)
 	state.attachHistory(session)
@@ -676,7 +688,49 @@ func (t *terminal) sendSecret(p []byte) bool {
 	return accepted
 }
 
+// noteInput restarts this shell's quiet interval. Any input counts, whether the
+// user typed it, an autofill answer wrote it, or a command did.
+func (t *terminal) noteInput() {
+	if t.clock != nil {
+		t.idleLastInput = t.clock()
+	}
+}
+
+// sendIdleKeepAlive writes the probe into the shell without going through the
+// typed-input path: it is neither history nor the user's line, so the recorder,
+// autofill and completion never see it.
+func (t *terminal) sendIdleKeepAlive(p []byte) bool {
+	if t.shell == nil || len(p) == 0 || t.transferHoldsInput {
+		return false
+	}
+	return t.writeShellInput(p)
+}
+
+// configureIdleKeepAlive freezes the host's probe for this shell. A damaged
+// custom payload is no probe: the shell keeps the setting off until it connects
+// again with a valid one.
+func (t *terminal) configureIdleKeepAlive(host Host, local bool) {
+	t.idleInterval, t.idlePayload = 0, nil
+	if local || !idleKeepAliveProtocol(host.Protocol) || host.IdleKeepAlive <= 0 {
+		return
+	}
+	payload, err := host.idleInputBytes()
+	if err != nil {
+		return
+	}
+	t.idleInterval, t.idlePayload = host.IdleKeepAlive, payload
+}
+
+// adoptIdleClock restarts this shell's idle measurement in a new window's clock
+// after a tab moves between windows, whose monotonic origins differ.
+func (t *terminal) adoptIdleClock() {
+	if t.clock != nil {
+		t.idleLastInput = t.clock()
+	}
+}
+
 func (t *terminal) noteShellInput(p []byte) {
+	t.noteInput()
 	t.passwordHint = ""
 	if bytes.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		t.inputLine = false // Enter, Tab, an arrow or Ctrl-R: the line is no longer what was typed
@@ -712,6 +766,7 @@ func (t *terminal) sendProtocol(p []byte) bool {
 	}
 	accepted := t.writeShellInput(p)
 	if accepted {
+		t.noteInput()
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
 	}
 	return accepted
@@ -866,6 +921,9 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	}
 	t.shell = shell
 	t.shellOpened = state.now()
+	t.idleLastInput = t.shellOpened
+	t.configureIdleKeepAlive(session.host, session.isLocal())
+	state.armIdleKeepAlive(session, state.idleKeepAliveWait(session, t.idleLastInput), t.idleLastInput)
 	t.noShellTold = false
 	// A connection that drops takes the running program's teardown with it, so
 	// the modes it had armed on this screen (the alternate screen, mouse
@@ -1067,6 +1125,7 @@ func (state *State) shellEnded(session *Session) {
 	err := t.shell.Err()
 	t.shell.Close()
 	t.shell = nil
+	t.stopIdleKeepAlive()
 	t.login = loginCommand{}
 	t.finishExec(endShell)
 	t.releasePromptWait()
