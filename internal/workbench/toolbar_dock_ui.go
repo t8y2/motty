@@ -320,6 +320,49 @@ func (state *State) toolbarRailReservedOnSide(left bool) bool {
 	return false
 }
 
+// toolbarRailSession reports the terminal whose tools the shared rail shows and
+// whether that terminal is the pane with the keyboard. While the workspace has a
+// terminal, the rail keeps its tools even when focus rests on a pane without one
+// of its own or the shell is still coming up: they are drawn disabled rather
+// than vanishing with the rail's room. Another section owns its chrome and gets
+// no rail.
+func (state *State) toolbarRailSession() (session *Session, active bool) {
+	if state.activeSection != sectionTerminal {
+		return nil, false
+	}
+	if rail, ok := state.terminalSideRailSession(); ok {
+		return rail, true
+	}
+	if own, ok := state.terminalToolbarSession(); ok {
+		// The connection page owns the pane while the shell comes up, but the
+		// terminal object already exists: keep the rail's tools in place,
+		// disabled, instead of leaving the room they reserved blank.
+		return own, false
+	}
+	return state.firstLiveWorkspaceSession(), false
+}
+
+// firstLiveWorkspaceSession finds a pane of the active workspace that has a
+// terminal, even though another pane holds the keyboard.
+func (state *State) firstLiveWorkspaceSession() *Session {
+	workspaceID := state.deck.ActiveWorkspace()
+	if workspaceID == 0 {
+		return nil
+	}
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.term == nil || session.restored || session.desk != nil {
+			continue
+		}
+		workspace, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+		if ok && workspace == workspaceID {
+			return session
+		}
+	}
+	return nil
+}
+
+// terminalToolbarShowsOnSide reports whether this physical side has actual
 // content: a tool the bar paints there, or a latency badge backed by an RTT
 // sample. It runs on the steady-state paint path, so it scans preferences
 // directly; a tool this does not know yet counts as offered rather than
@@ -576,9 +619,9 @@ func (state *State) toolbarDockSideReserve() float32 {
 // page. Each rail's upper and lower groups scroll in viewports of their own;
 // their heights were measured here, since they decide the split.
 func (state *State) declareToolbarDockSides(c ui.C) {
-	session, terminalVisible := state.terminalSideRailSession()
+	session, _ := state.toolbarRailSession()
 	for _, left := range []bool{false, true} {
-		state.declareToolbarDockSide(c, left, session, terminalVisible)
+		state.declareToolbarDockSide(c, left, session, session != nil)
 	}
 }
 
@@ -618,7 +661,8 @@ func (state *State) declareToolbarDockSide(c ui.C, left bool, session *Session, 
 }
 
 func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
-	session, terminalVisible := state.terminalSideRailSession()
+	session, _ := state.toolbarRailSession()
+	terminalVisible := session != nil
 	for _, left := range []bool{false, true} {
 		primary := (state.terminalToolbarPosition == terminalToolbarLeft) == left
 		if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {

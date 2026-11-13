@@ -87,7 +87,7 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 }
 
 func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools]barTool) []barTool {
-	if session == nil || session.term == nil || state.paneIsInactive(session.ID) {
+	if session == nil || session.term == nil {
 		return nil
 	}
 	tools := toolList[:0]
