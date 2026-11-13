@@ -1,0 +1,44 @@
+# End to end: a host whose terminal runs over mosh, bootstrapped through a real
+# loopback SSH connection. Needs a headless Viva build, the mosh package on this
+# machine (mosh-server on PATH), and the e2esshd fixture with exec allowed:
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .) && E2E_ALLOW_EXEC=1 /tmp/e2esshd 2259 &
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/mosh_e2e.txt
+#
+# The fixture runs mosh-server as the account that started it, so the shell is
+# that account's login shell; the marker proves the terminal reached it over UDP
+# after the SSH bootstrap.
+
+click "New Host"
+type Mosh E2E
+click textfield:Address
+type 127.0.0.1
+click textfield:User
+type tester
+click textfield:Port
+key cmd+a
+type 2259
+click "Mosh"
+click "Add Host"
+settle 800
+dblclick 400 160
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+settle 1500
+type echo MOTTY_MOSH_E2E
+key enter
+waitfor "MOTTY_MOSH_E2E" 8000
+texts
+layout
+
+# Close the tab while the app is still running, so the client's shutdown
+# handshake reaches mosh-server instead of dying with the process. A running
+# shell asks first.
+click "Close tab"
+settle 400
+click "Close Tabs"
+settle 1500

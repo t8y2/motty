@@ -8,6 +8,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"motty/internal/charset"
 	"motty/internal/i18n"
 	"motty/internal/otp"
 	"motty/internal/serial"
@@ -102,11 +103,14 @@ type hostEditor struct {
 	advancedOpen bool
 
 	protocol hostProtocol
-	// protocolBefore is the protocol the frame was laid out for when the form's
-	// protocol choice is declared: the choice writes the new one, and applyProtocol
-	// needs what the port field was filled from.
-	protocolBefore hostProtocol
-	flow           serial.Flow
+	// terminal is an SSH host's terminal transport: SSH itself or mosh.
+	terminal hostTerminal
+	// connection is the form's connection-type choice (SSH, Mosh, Telnet, ...).
+	// connectionBefore is the type the frame was laid out for: the choice writes
+	// the new one, and applyConnection needs what the form showed before it.
+	connection       hostConnectionType
+	connectionBefore hostConnectionType
+	flow             serial.Flow
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
 	// console and standardSecurity are RDP's own: the server's console
 	// (administrative) session, and Standard RDP Security without TLS or NLA.
@@ -170,6 +174,12 @@ func (editor *hostEditor) value(field hostField) string {
 	return strings.TrimSpace(editor.field(field).String())
 }
 
+// moshTerminal reports whether the form describes a mosh session, whose
+// settings are narrower than an SSH session's.
+func (editor *hostEditor) moshTerminal() bool {
+	return editor.protocol == protocolSSH && editor.terminal == terminalMosh
+}
+
 // portNumber returns the port the form describes and whether it is valid. An empty
 // field means the default.
 func (editor *hostEditor) portNumber() (uint16, bool) {
@@ -230,6 +240,17 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 		editor.advancedOpen = true
 		return messages.Tools.ErrLoginCommand
 	}
+	if editor.moshTerminal() && editor.encoding != "" && editor.encoding != charset.UTF8 {
+		return messages.Tools.ErrMoshEncoding
+	}
+	if editor.moshTerminal() && (editor.forwardX11 || editor.agentForward) {
+		editor.advancedOpen = true
+		return messages.Tools.ErrMoshForwarding
+	}
+	if editor.moshTerminal() && editor.interactiveOnly {
+		editor.advancedOpen = true
+		return messages.Tools.ErrMoshInteractive
+	}
 	if _, ok := parseHostTags(editor.value(fieldTags)); !ok {
 		return messages.ErrHostTagsInvalid
 	}
@@ -288,6 +309,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.tags.Insert(formatHostTags(host))
 	editor.icon, editor.iconChosen, editor.system = host.Icon, true, host.System
 	editor.protocol, editor.flow = host.Protocol, host.Line.Flow
+	editor.terminal = host.Terminal
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
 	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
@@ -329,6 +351,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	if editor.protocol == protocolSSH {
 		host.SSHOptions = editor.sshOptions.Clone()
 		host.Auth, host.Identity = editor.auth, editor.identity
+		host.Terminal = editor.terminal
 		if host.Auth != authPrivateKey {
 			host.Identity = ""
 		}
@@ -388,7 +411,7 @@ func (editor *hostEditor) reset() {
 	editor.proxy, editor.proxyPassword = nil, ""
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
-	editor.protocol, editor.flow, editor.portsOpen = protocolSSH, serial.FlowNone, false
+	editor.protocol, editor.terminal, editor.flow, editor.portsOpen = protocolSSH, terminalSSH, serial.FlowNone, false
 	editor.viaSSH, editor.clipboard, editor.console, editor.standardSecurity, editor.chromeless = false, false, false, false, false
 }
 
@@ -413,6 +436,26 @@ func (editor *hostEditor) setProtocol(protocol hostProtocol) {
 	editor.applyProtocol(previous)
 }
 
+// applyConnection maps the form's connection-type choice to the protocol and
+// terminal transport the rest of the form reads. SSH and Mosh share the same
+// protocol, so switching between them keeps the password and port the user
+// typed; a real protocol change runs applyProtocol.
+func (editor *hostEditor) applyConnection(previous hostConnectionType) {
+	protocol := editor.connection.protocol()
+	terminal := editor.connection.terminal()
+	editor.protocol, editor.terminal = protocol, terminal
+	if protocol != previous.protocol() {
+		editor.applyProtocol(previous.protocol())
+		editor.terminal = terminal // applyProtocol resets it for a non-SSH protocol
+	}
+	if terminal == terminalMosh {
+		// mosh-server needs a UTF-8 locale, and a mosh session carries no X11
+		// or agent forwarding.
+		editor.forwardX11, editor.agentForward = false, false
+		editor.encoding = ""
+	}
+}
+
 // applyProtocol applies the protocol the page's choice already wrote. previous is
 // the protocol the form was showing: what the port and device fields were filled
 // from before the choice replaced it.
@@ -434,6 +477,9 @@ func (editor *hostEditor) applyProtocol(previous hostProtocol) {
 		}
 	}
 	editor.protocol, editor.portsOpen = protocol, false
+	if protocol != protocolSSH {
+		editor.terminal = terminalSSH
+	}
 	editor.iconPicker.control.Open = false
 	if !editor.iconChosen {
 		if protocol == protocolSerial {

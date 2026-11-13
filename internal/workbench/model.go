@@ -27,6 +27,10 @@ type Host struct {
 	// Protocol says how the host is reached. A serial host keeps its device in
 	// Address and its line settings in Line; it has no user or port.
 	Protocol hostProtocol
+	// Terminal is how an SSH host's interactive session is carried. The zero
+	// value is SSH itself; terminalMosh bootstraps mosh-server over SSH and
+	// carries the terminal over UDP. It is meaningful only for protocolSSH.
+	Terminal hostTerminal
 	Line     serial.Settings
 	// Algo, when set, replaces the default SSH algorithms for this host. Nil is
 	// the default, so a host that never asked costs one pointer.

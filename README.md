@@ -80,7 +80,11 @@ the project, the packages and how to build it.
 </table>
 
 **Keyboard first.** Tabs, splits, SFTP, forwarding and the assistant are
-commands in the palette; the mouse is optional. **Honest about limits:**
+commands in the palette; the mouse is optional. **Mosh when the network
+moves:** an SSH host can carry its terminal over Mosh, keeping the session
+through Wi-Fi, hotspot and VPN changes and drawing slow-link typing before the
+echo; [docs/mosh.md](docs/mosh.md) lists what such a session does not carry.
+**Honest about limits:**
 [docs/remote-desktop.md](docs/remote-desktop.md) lists what the VNC and RDP
 implementations do not do, and the release notes say which platforms were
 tested on real hardware. **Nothing phones home:** no analytics, and the update

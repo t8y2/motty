@@ -131,7 +131,7 @@ func (state *State) describe(session *Session) {
 		default:
 			session.details[stageConnect] = jump
 		}
-	case session.serverVersion != "":
+	case session.serverVersion != "" && !session.failed():
 		session.details[stageConnect] = fmt.Sprintf(m.ConnDetailServerFmt, session.serverVersion)
 	case session.failed() && session.stage == stageConnect:
 		if session.jumpPath != "" {

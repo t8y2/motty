@@ -17,7 +17,9 @@ var (
 )
 
 // Local terminals also use the zero-valued SSH protocol; exclude them explicitly.
-func workspaceCommandHost(host Host) bool { return host.ID != localHostID && host.isSSH() }
+func workspaceCommandHost(host Host) bool {
+	return host.ID != localHostID && host.isSSH() && !host.mosh()
+}
 
 func (draft *workspaceDraft) commandEditor(id string) *text.Editor {
 	if draft.commandEditors == nil {

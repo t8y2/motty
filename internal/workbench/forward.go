@@ -353,7 +353,7 @@ func (state *State) syncForwardHostSelect() {
 	editor := &state.forwardEditor
 	options := make([]components.SingleSelectOption, 0, len(state.hosts))
 	for _, host := range state.hosts {
-		options = append(options, hostSelectOption(host, !host.isSSH()))
+		options = append(options, hostSelectOption(host, !host.isSSH() || host.mosh()))
 	}
 	editor.hostSelect.SetOptions(options)
 	editor.hostSelect.SetValue(hostSelectValue(editor.hostID))
@@ -365,10 +365,10 @@ func (state *State) openForwardDialog() {
 		return
 	}
 	hostID := state.selectedHostID
-	if host, ok := state.hostByID(hostID); !ok || !host.isSSH() {
+	if host, ok := state.hostByID(hostID); !ok || !host.isSSH() || host.mosh() {
 		hostID = 0
 		for _, host := range state.hosts {
-			if host.isSSH() {
+			if host.isSSH() && !host.mosh() {
 				hostID = host.ID
 				break
 			}
@@ -758,6 +758,9 @@ func (state *State) startRemoteForward(forward *forwardRecord, session *Session)
 }
 
 func (state *State) startPendingForwards(session *Session) {
+	if !session.hasServer() {
+		return // a mosh, Telnet, serial or local session has no SSH server to forward through
+	}
 	for index := range state.forwards {
 		forward := &state.forwards[index]
 		if forward.pending && forward.sessionID == session.ID {

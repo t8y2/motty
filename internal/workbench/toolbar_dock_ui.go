@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 type toolbarDockHit struct {
@@ -265,11 +266,11 @@ func (state *State) paintToolbarDockTop(canvas *gfx.Canvas) {
 // Reserve each physical side independently. Background terminals keep their
 // eventual tool widths; ordinary pages only reserve globally available actions.
 func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float32 {
-	session, hasTerminal := state.terminalToolbarSession()
+	_, hasTerminal := state.terminalToolbarSession()
 	if !hasTerminal && state.noteSidebarVisible() && (state.terminalToolbarPosition == terminalToolbarLeft) == left {
 		return state.terminalToolbarMetrics().railExtent
 	}
-	if includeTerminal && hasTerminal && state.terminalToolbarShowsOnSide(session, left) {
+	if includeTerminal && state.toolbarRailReservedOnSide(left) {
 		return state.terminalToolbarMetrics().railExtent
 	}
 	if state.toolbars.dock == nil {
@@ -291,7 +292,34 @@ func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float3
 	return 0
 }
 
-// terminalToolbarShowsOnSide reports whether this physical side has actual
+// toolbarRailReservedOnSide reports whether the shared terminal rail owns room
+// on one side of the active workspace. The room belongs to the workspace, not to
+// the pane that happens to have the keyboard: a restored pane beside a live one
+// must not take the rail's width away, and resize both PTYs, when focus moves.
+// The active terminal answers first; otherwise any live terminal of the
+// workspace stands for it.
+func (state *State) toolbarRailReservedOnSide(left bool) bool {
+	active, activeLive := state.terminalToolbarSession()
+	if activeLive && state.terminalToolbarShowsOnSide(active, left) {
+		return true
+	}
+	workspaceID := state.deck.ActiveWorkspace()
+	if workspaceID == 0 {
+		return false
+	}
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.ID == state.activeSessionID || session.term == nil || session.restored || session.desk != nil {
+			continue
+		}
+		workspace, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+		if ok && workspace == workspaceID && state.terminalToolbarShowsOnSide(session, left) {
+			return true
+		}
+	}
+	return false
+}
+
 // content: a tool the bar paints there, or a latency badge backed by an RTT
 // sample. It runs on the steady-state paint path, so it scans preferences
 // directly; a tool this does not know yet counts as offered rather than
@@ -362,7 +390,7 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 func (state *State) terminalToolbarOffers(session *Session, id gfx.ID) bool {
 	switch id {
 	case hitSFTPDetach:
-		return session.host.isSSH() && !session.isLocal()
+		return session.hasServer()
 	case hitSFTPOpen, hitConnExport, hitTerminalRecordingExport, hitTerminalRecord,
 		hitTerminalSaveOutput, hitProcessToolsOpen, hitPaneSplitVertical, hitPaneSplitHorizontal,
 		hitTerminalSnippets:

@@ -8,7 +8,7 @@ import (
 // A host-menu connection has no terminal, pane or persisted session. SSH's
 // existing authentication dialogs and vault still own host trust and secrets.
 func (state *State) openHostSFTPWindow(host Host) {
-	if !host.isSSH() || host.ID == localHostID || !state.sftpManagersAvailable() {
+	if !host.isSSH() || host.mosh() || host.ID == localHostID || !state.sftpManagersAvailable() {
 		return
 	}
 	for _, w := range state.sftpWindows {

@@ -41,6 +41,17 @@ type Shell interface {
 	Close()
 }
 
+// predictedInput is a shell whose transport reports which input the server has
+// applied and whether the link has been heard from recently. The prediction
+// overlay uses it to tell "the keystroke is still on its way" from "the server
+// applied it and chose not to echo"; a shell that does not implement it keeps
+// the SSH echo timing.
+type predictedInput interface {
+	LastInputID() uint64
+	AckedInputID() uint64
+	LinkAlive() bool
+}
+
 // scrollbackLines is how much history each terminal keeps above its screen.
 const scrollbackLines = 5000
 
@@ -173,6 +184,9 @@ type terminal struct {
 	integrated bool
 	// prediction draws typed text before the server echoes it; see terminalPrediction.
 	prediction terminalPrediction
+	// lastInputID is the transport's id for the newest input written to the
+	// shell, when the shell reports one (mosh does; SSH does not).
+	lastInputID uint64
 	// inputLine is set between the end of this shell's prompt and the next
 	// command start or control key: the cursor is on the line being typed, which
 	// is what lets typed text be shown before its echo (see terminalPrediction).
@@ -527,6 +541,20 @@ func (t *terminal) writeRemote(p []byte, now time.Duration) {
 	}
 }
 
+// observePredictionInput copies what a transport-aware shell knows about the
+// newest input and the link into the prediction overlay. It is cheap and is
+// called on the pump, so an acknowledgement that carried no output is seen.
+func (t *terminal) observePredictionInput() {
+	tracker, ok := t.shell.(predictedInput)
+	if !ok {
+		return
+	}
+	if id := tracker.LastInputID(); id > t.lastInputID {
+		t.lastInputID = id
+	}
+	t.prediction.observe(tracker.AckedInputID(), tracker.LinkAlive())
+}
+
 // writeScreen parses output and keeps the selection where the user put it, as
 // terminals do: output is text arriving, not an edit, so a selection stays on
 // its text and lets scrolling push it up instead of being erased. It is only
@@ -600,6 +628,7 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 	}
 	accepted := t.writeShellInput(p)
 	if accepted {
+		t.observePredictionInput()
 		t.inputSent = true
 		t.noteShellInput(p)
 		if bytes.ContainsAny(p, "\r\n\x03\x04") {
@@ -716,7 +745,7 @@ func (state *State) openShell(session *Session) {
 	// off. SSH enables integration for either file-panel following or path tabs,
 	// except on a host confined to the interactive session, whose gateway would
 	// end the connection on the command this starts.
-	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && !session.host.InteractiveOnly &&
+	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && !session.host.mosh() && !session.host.InteractiveOnly &&
 		session.host.System != sshconn.SystemWindows &&
 		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow || state.tabTitleMode == tabTitleDirectory))
 	config.IntegrationToken = t.folderToken
@@ -724,11 +753,11 @@ func (state *State) openShell(session *Session) {
 		config.StartDirectory = session.startDirectory
 	}
 	t.integrated = config.IntegrateShell
-	if session.host.ForwardX11 && session.host.isSSH() {
+	if session.host.ForwardX11 && session.host.isSSH() && !session.host.mosh() {
 		environ := x11fwd.CurrentEnviron()
 		config.X11 = &environ
 	}
-	if session.host.AgentForward && session.host.isSSH() {
+	if session.host.AgentForward && session.host.isSSH() && !session.host.mosh() {
 		config.AgentForward = true
 	}
 	// A host with an explicit remote charset keeps the server's own locale:
@@ -925,6 +954,7 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 	if t.shell == nil {
 		return
 	}
+	t.observePredictionInput()
 	t.rx = t.shell.Drain(t.rx) // keep what an earlier frame could not parse
 	finished := false
 	select {
@@ -1468,7 +1498,7 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 			// The typed text is drawn at once, ahead of the server's echo; the
 			// event asks for that frame, which committed terminal text otherwise
 			// never gets.
-			redraw = t.prediction.input(t.screen, input, state.now(), t.inputLine && !session.isLocal())
+			redraw = t.prediction.input(t.screen, input, state.now(), t.inputLine && !session.isLocal(), t.lastInputID)
 		}
 	case app.TextPaste:
 		if state.modal == modalTerminalInput || state.guardTerminalText(session, event) {

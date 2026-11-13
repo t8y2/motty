@@ -4,8 +4,11 @@ import "github.com/vivaui/viva/gfx"
 
 // hostProtocolTagLabel names a host's protocol the way the host form's protocol
 // choice does, so a tag on the hosts page follows the selection made there.
-func (state *State) hostProtocolTagLabel(protocol hostProtocol) string {
-	return state.hostProtocolChoiceLabel(protocol)
+func (state *State) hostProtocolTagLabel(host Host) string {
+	if host.mosh() {
+		return state.messages.Tools.ProtocolMosh
+	}
+	return state.hostProtocolChoiceLabel(host.Protocol)
 }
 
 // hostProtocolTagColor is one protocol's tag colour. The palette's ANSI colours

@@ -43,13 +43,80 @@ var (
 // this is not choosing from a list.
 const maxListedPorts = 12
 
+// hostConnectionType is one entry of the host form's connection-type choice.
+// Mosh is a connection type to the user even though the saved host is an SSH
+// host whose terminal transport is mosh.
+type hostConnectionType uint8
+
+const (
+	connectionSSH hostConnectionType = iota
+	connectionMosh
+	connectionTelnet
+	connectionSerial
+	connectionVNC
+	connectionRDP
+)
+
+func (kind hostConnectionType) protocol() hostProtocol {
+	switch kind {
+	case connectionMosh, connectionSSH:
+		return protocolSSH
+	case connectionTelnet:
+		return protocolTelnet
+	case connectionSerial:
+		return protocolSerial
+	case connectionVNC:
+		return protocolVNC
+	case connectionRDP:
+		return protocolRDP
+	}
+	return protocolSSH
+}
+
+func (kind hostConnectionType) terminal() hostTerminal {
+	if kind == connectionMosh {
+		return terminalMosh
+	}
+	return terminalSSH
+}
+
+// connectionType is the form's current connection type.
+func (editor *hostEditor) connectionType() hostConnectionType {
+	if editor.protocol == protocolSSH {
+		if editor.terminal == terminalMosh {
+			return connectionMosh
+		}
+		return connectionSSH
+	}
+	switch editor.protocol {
+	case protocolTelnet:
+		return connectionTelnet
+	case protocolSerial:
+		return connectionSerial
+	case protocolVNC:
+		return connectionVNC
+	case protocolRDP:
+		return connectionRDP
+	}
+	return connectionSSH
+}
+
 // The segmented choices of the host form. Each is a Choice of the form's own
 // page, declared at the row its layout reserved.
 var (
-	hostProtocolChoices = [...]hostProtocol{protocolSSH, protocolTelnet, protocolSerial, protocolVNC, protocolRDP}
-	hostFlowChoices     = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
-	hostAlgoChoices     = [...]algoMode{algoDefault, algoCompatible, algoCustom}
+	hostConnectionChoices = [...]hostConnectionType{connectionSSH, connectionTelnet, connectionSerial, connectionVNC, connectionRDP, connectionMosh}
+	hostFlowChoices       = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
+	hostAlgoChoices       = [...]algoMode{algoDefault, algoCompatible, algoCustom}
 )
+
+// hostConnectionChoiceLabel names one connection type as the form's choice
+// shows it.
+func (state *State) hostConnectionChoiceLabel(kind hostConnectionType) string {
+	if kind == connectionMosh {
+		return state.messages.Tools.ProtocolMosh
+	}
+	return state.hostProtocolChoiceLabel(kind.protocol())
+}
 
 // hostProtocolChoiceLabel names one protocol as the form's choice shows it.
 func (state *State) hostProtocolChoiceLabel(protocol hostProtocol) string {
@@ -91,15 +158,17 @@ func (state *State) hostAlgoChoiceLabel(mode algoMode) string {
 	}
 }
 
-// declareHostProtocolChoice declares the protocol choice in the form's page at
-// the slot the body reserved for it. It writes editor.protocol, so applyProtocol
-// is what follows the switch.
+// declareHostProtocolChoice declares the connection-type choice in the form's
+// page at the slot the body reserved for it. It writes editor.connection; a
+// change maps that to the protocol and terminal transport the form then shows,
+// and applyProtocol is what follows a real protocol change.
 func (state *State) declareHostProtocolChoice(c ui.C) ui.Box {
 	editor := &state.editor
-	editor.protocolBefore = editor.protocol
-	choice := ui.Choice(c, &editor.protocol, hostProtocolChoices[:], state.hostProtocolChoiceLabel).Fill()
+	editor.connectionBefore = editor.connectionType()
+	editor.connection = editor.connectionBefore
+	choice := ui.Choice(c, &editor.connection, hostConnectionChoices[:], state.hostConnectionChoiceLabel).Fill()
 	if choice.Changed() {
-		editor.applyProtocol(editor.protocolBefore)
+		editor.applyConnection(editor.connectionBefore)
 		state.dialogError = ""
 	}
 	return choice
@@ -422,8 +491,13 @@ func (state *State) hostFormHeight() float32 {
 		height += hostFormRowHeight
 	}
 	if state.editor.protocol == protocolSSH {
-		// The jump route row sits under the proxy row.
+		// The jump route row sits under the proxy row, and the terminal
+		// transport choice (with its hint when mosh is chosen) under the
+		// protocol choice.
 		height += hostFormRowHeight
+		if state.editor.terminal == terminalMosh {
+			height += 36
+		}
 	}
 	if state.dialogError != "" {
 		height += 32

@@ -2345,7 +2345,7 @@ func (state *State) connectParsed(parsed connection) {
 // how a window appears; when files are set to live in the session panel, the
 // link opens the session that owns one.
 func (state *State) openParsedHost(host Host, files bool) {
-	if files && host.isSSH() && state.sftpManagersAvailable() {
+	if files && host.isSSH() && !host.mosh() && state.sftpManagersAvailable() {
 		state.openHostSFTPWindow(host)
 		return
 	}

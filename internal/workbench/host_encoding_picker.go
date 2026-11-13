@@ -56,6 +56,9 @@ func hostEncoding(value string) string {
 // belongs to the byte stream of a shell, which SSH, Telnet and Serial open and
 // the desktop protocols do not.
 func (state *State) hostShowsEncoding() bool {
+	if state.editor.moshTerminal() {
+		return false // mosh-server needs UTF-8
+	}
 	switch state.editor.protocol {
 	case protocolSSH, protocolTelnet, protocolSerial:
 		return true

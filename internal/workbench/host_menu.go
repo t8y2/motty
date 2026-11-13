@@ -102,7 +102,7 @@ func (state *State) paintHostMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	rows.add(components.ContextMenuItem{ID: hitHostMenuConnect, Label: messages.Connect, Icon: icon(iconPlug), Disabled: several})
-	if host, ok := state.hostByID(state.hostMenu.host); ok && host.isSSH() {
+	if host, ok := state.hostByID(state.hostMenu.host); ok && host.isSSH() && !host.mosh() {
 		rows.add(components.ContextMenuItem{ID: hitHostMenuSFTP, Label: messages.SFTPWindow.Open, Icon: icon(iconSFTPTransfer), Disabled: several || !state.sftpManagersAvailable()})
 	}
 	rows.separate()

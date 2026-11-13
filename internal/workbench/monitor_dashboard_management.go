@@ -35,7 +35,7 @@ func (s *State) dashboardEditorTabs() [2]components.TabOption {
 
 func (s *State) dashboardCanAddHosts() bool {
 	for _, h := range s.hosts {
-		if h.ID != localHostID && h.isSSH() && h.CatalogID != "" && s.hostSelected(h.ID) {
+		if h.ID != localHostID && h.isSSH() && !h.mosh() && h.CatalogID != "" && s.hostSelected(h.ID) {
 			return true
 		}
 	}
@@ -45,7 +45,7 @@ func (s *State) dashboardCanAddHosts() bool {
 func (s *State) dashboardSelectedHosts() []string {
 	var hosts []string
 	for _, h := range s.hosts {
-		if h.ID != localHostID && h.isSSH() && h.CatalogID != "" && s.hostSelected(h.ID) {
+		if h.ID != localHostID && h.isSSH() && !h.mosh() && h.CatalogID != "" && s.hostSelected(h.ID) {
 			hosts = append(hosts, h.CatalogID)
 		}
 	}
@@ -72,7 +72,7 @@ func (s *State) clickDashboardManagement(id gfx.ID) bool {
 			if i < len(d.panels) {
 				p := &d.panels[i]
 				for _, host := range d.addHosts {
-					if h, ok := s.dashboardHost(host); ok && h.isSSH() && !slices.Contains(p.Hosts, host) {
+					if h, ok := s.dashboardHost(host); ok && h.isSSH() && !h.mosh() && !slices.Contains(p.Hosts, host) {
 						p.Hosts = append(p.Hosts, host)
 					}
 				}

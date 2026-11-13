@@ -117,7 +117,7 @@ func (d *dashboardState) panelDefinitions() []monitoring.Panel {
 	return panels
 }
 
-func dashboardHostEligible(h Host) bool { return h.isSSH() && h.ID != localHostID }
+func dashboardHostEligible(h Host) bool { return h.isSSH() && !h.mosh() && h.ID != localHostID }
 
 func (s *State) dashboardPanel() *monitoring.Panel {
 	for i := range s.dashboard.panels {
@@ -589,7 +589,7 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 			s.showNextPrompt()
 		case id.Scope() == hitDashboardHostList:
 			h, ok := s.hostByID(uint32(item(id)))
-			if ok && h.isSSH() && h.ID != localHostID {
+			if ok && h.isSSH() && !h.mosh() && h.ID != localHostID {
 				if slices.Contains(d.editor.selected, h.CatalogID) {
 					d.editor.selected = slices.DeleteFunc(d.editor.selected, func(v string) bool { return v == h.CatalogID })
 				} else {

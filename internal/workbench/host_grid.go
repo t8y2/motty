@@ -402,7 +402,7 @@ func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) 
 	textWidth := max(check.X-12-textX, 0)
 	tagCount := 0
 	var tagList [maxHostTags]string
-	protocolLabel := state.hostProtocolTagLabel(host.Protocol)
+	protocolLabel := state.hostProtocolTagLabel(host)
 	protocolWidth := canvas.TextWidthWeight(protocolLabel, metrics.FontSizeS, gfx.WeightMedium) + 15
 	subtitleLimit := textWidth
 	if protocolWidth+8 <= textWidth {

@@ -615,6 +615,15 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		state.finishStartingConnection(session, automatic)
 		return
 	}
+	if host.mosh() {
+		// An SSH host whose terminal runs over mosh: the SSH connection is the
+		// bootstrap, and the session has no SSH server once it is up.
+		config, _ := state.sshConfigFor(session, host)
+		session.sshOptions = host.SSHOptions.Clone()
+		session.conn = state.newMoshConn(session, host, config)
+		state.finishStartingConnection(session, automatic)
+		return
+	}
 	if !host.isSSH() {
 		// Telnet and serial: a stream, dialed in the background.
 		session.conn = state.newStreamConn(host, state.notifyFor(session))

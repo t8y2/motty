@@ -33,6 +33,16 @@ const (
 	protocolRDP
 )
 
+// hostTerminal is how an SSH host's interactive session is carried. Mosh is
+// not a protocol of its own: it is bootstrapped and authenticated over SSH and
+// then carries the terminal over UDP, so the host keeps every SSH setting.
+type hostTerminal uint8
+
+const (
+	terminalSSH hostTerminal = iota
+	terminalMosh
+)
+
 // defaultTelnetPort is the port a Telnet host without an explicit one uses,
 // defaultVNCPort the one of a VNC server (display :0) and defaultRDPPort the one
 // of Remote Desktop.
@@ -44,6 +54,11 @@ const (
 
 // isSSH reports whether the host is reached over SSH.
 func (host Host) isSSH() bool { return host.Protocol == protocolSSH }
+
+// mosh reports whether this SSH host's interactive terminal runs over mosh.
+// The SSH connection is used only for the bootstrap; the session has no SSH
+// server once the terminal is up.
+func (host Host) mosh() bool { return host.Protocol == protocolSSH && host.Terminal == terminalMosh }
 
 func (state *State) sshHostCount() int {
 	count := 0
@@ -80,9 +95,10 @@ func (host Host) isDesktop() bool {
 func (host Host) tunneled() bool { return host.isDesktop() && host.ViaSSH }
 
 // hasServer reports whether the session talks to an SSH server: the only kind
-// that can list files, forward ports and run commands.
+// that can list files, forward ports and run commands. A mosh host keeps no SSH
+// connection after its bootstrap, so it has none of those.
 func (session *Session) hasServer() bool {
-	return !session.isLocal() && session.host.isSSH()
+	return !session.isLocal() && session.host.isSSH() && !session.host.mosh()
 }
 
 // canBrowseFiles reports whether the session has files to show: the server's
@@ -96,6 +112,9 @@ func (session *Session) canBrowseFiles() bool {
 // without any of them describes an SSH host as before.
 type savedTransport struct {
 	Protocol string `json:"protocol,omitempty"` // "telnet", "serial", "vnc" or "rdp"
+	// Terminal is "mosh" for an SSH host whose interactive session runs over
+	// mosh. Empty is SSH, and a file without it describes the host as before.
+	Terminal string `json:"terminal,omitempty"`
 	// Encoding is the charset of the remote shell's byte stream. Empty (or
 	// "UTF-8") is the default; any other value names a charset.Encodings entry.
 	Encoding string `json:"encoding,omitempty"`
@@ -179,6 +198,9 @@ func (host Host) transport() savedTransport {
 		return transport
 	}
 	mode, list := host.savedAlgo()
+	if host.mosh() {
+		transport.Terminal = "mosh"
+	}
 	transport.Algorithms, transport.AlgorithmList = mode, list
 	transport.Authentication, transport.Identity = host.Auth.saved(), host.Identity
 	transport.SSHOptions = host.SSHOptions.Clone()
@@ -204,6 +226,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		encoding = "" // keep the zero value as the UTF-8 default
 	}
 	host.Encoding = encoding
+	host.Terminal = terminalSSH
 	switch transport.Protocol {
 	case "", "ssh":
 		host.Protocol = protocolSSH
@@ -224,6 +247,22 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.InteractiveOnly = transport.InteractiveOnly
 		host.NoHistory = transport.NoHistory
 		host.LoginCommand = restoredLoginCommand(transport.LoginCommand)
+		switch transport.Terminal {
+		case "", "ssh":
+			host.Terminal = terminalSSH
+		case "mosh":
+			// mosh-server needs a UTF-8 locale and a command session to start;
+			// X11, agent forwarding and an interactive-only gateway belong to
+			// an SSH session, not to a mosh one.
+			if host.Encoding != "" {
+				return false
+			}
+			host.Terminal = terminalMosh
+			host.ForwardX11, host.AgentForward = false, false
+			host.InteractiveOnly = false
+		default:
+			return false
+		}
 		return host.applyTransfer(transport.Transfer) && host.applyAlgo(transport.Algorithms, transport.AlgorithmList)
 	case "telnet":
 		host.Protocol, host.Credential = protocolTelnet, ""
@@ -271,9 +310,11 @@ func validEndpoint(protocol hostProtocol, address string) bool {
 }
 
 // sameEndpoint reports whether two hosts are the same destination: for SSH and
-// Telnet the address, account and port, for a serial port the device.
+// Telnet the address, account and port, for a serial port the device. The
+// terminal transport is part of an SSH destination: typing its SSH address must
+// not silently open the mosh host saved for it.
 func sameEndpoint(a Host, b Host) bool {
-	if a.Protocol != b.Protocol || a.Address != b.Address {
+	if a.Protocol != b.Protocol || a.Terminal != b.Terminal || a.Address != b.Address {
 		return false
 	}
 	return a.Protocol == protocolSerial || a.User == b.User && a.Port == b.Port && a.ViaSSH == b.ViaSSH

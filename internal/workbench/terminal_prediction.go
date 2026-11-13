@@ -29,6 +29,13 @@ const (
 	terminalPredictionStaleMin     = 500 * time.Millisecond
 	terminalPredictionStaleMax     = 3 * time.Second
 	terminalPredictionUnknownStale = time.Second
+	// A mosh session knows whether the server has applied an input state. While
+	// the newest input in the guess is still unacknowledged and the link has
+	// been heard from recently, a guess may stay for a longer round trip than
+	// the echo timing above allows. Once the server acknowledges the input, the
+	// normal stale bound applies again: an acknowledged input that never echoes
+	// is exactly a prompt that must not show the guess.
+	terminalPredictionUnconfirmedStale = 10 * time.Second
 )
 
 type terminalPredictionPhase uint8
@@ -85,6 +92,13 @@ type terminalPrediction struct {
 	text     string
 	runs     [maxTerminalPredictionBytes]gfx.TextRun
 	runCount int
+
+	// inputID is the newest input event this guess carries, and ackedInput the
+	// newest the transport's server acknowledged. linkAlive says the transport
+	// heard from its server recently. They are zero and false for a transport
+	// that cannot report them (SSH, Telnet, serial).
+	inputID, ackedInput uint64
+	linkAlive           bool
 }
 
 func (prediction *terminalPrediction) reset() bool {
@@ -98,6 +112,7 @@ func (prediction *terminalPrediction) reset() bool {
 	prediction.trustedUntil = 0
 	prediction.text = ""
 	prediction.runCount = 0
+	prediction.inputID = 0
 	return changed
 }
 
@@ -124,7 +139,24 @@ func (prediction *terminalPrediction) staleAfter() time.Duration {
 	if prediction.echo == 0 {
 		return terminalPredictionUnknownStale
 	}
-	return min(max(4*prediction.echo, terminalPredictionStaleMin), terminalPredictionStaleMax)
+	bound := min(max(4*prediction.echo, terminalPredictionStaleMin), terminalPredictionStaleMax)
+	if prediction.inputID > prediction.ackedInput && prediction.linkAlive {
+		// The server has not applied this input yet; on a slow link the echo
+		// cannot have arrived. The hard bound still takes the guess back if
+		// nobody acknowledges it.
+		bound = max(bound, terminalPredictionUnconfirmedStale)
+	}
+	return bound
+}
+
+// observe records what the transport knows about the input and the link. A
+// transport that cannot tell leaves both zero and false, which keeps the SSH
+// timing exactly as it was.
+func (prediction *terminalPrediction) observe(acked uint64, linkAlive bool) {
+	if acked > prediction.ackedInput {
+		prediction.ackedInput = acked
+	}
+	prediction.linkAlive = linkAlive
 }
 
 func (prediction *terminalPrediction) stale(now time.Duration) bool {
@@ -159,8 +191,9 @@ func (prediction *terminalPrediction) overlay(now time.Duration) (string, []gfx.
 }
 
 // input records accepted printable input; proof says the shell's prompt proof
-// holds. It reports whether the overlay changed or may have.
-func (prediction *terminalPrediction) input(screen *term.Terminal, input []byte, now time.Duration, proof bool) bool {
+// holds, and inputID is the transport's id for this input (zero when it does
+// not report one). It reports whether the overlay changed or may have.
+func (prediction *terminalPrediction) input(screen *term.Terminal, input []byte, now time.Duration, proof bool, inputID uint64) bool {
 	if len(input) == 0 {
 		return false
 	}
@@ -204,6 +237,9 @@ func (prediction *terminalPrediction) input(screen *term.Terminal, input []byte,
 	copy(prediction.data[prediction.length:], input)
 	prediction.length += len(input)
 	prediction.cells += cells
+	if inputID > prediction.inputID {
+		prediction.inputID = inputID
+	}
 	prediction.chunkEnd[prediction.chunks] = uint16(prediction.length)
 	prediction.chunkAt[prediction.chunks] = now
 	prediction.chunks++

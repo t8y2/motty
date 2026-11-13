@@ -364,6 +364,16 @@ type ToolsMessages struct {
 	ProtocolSSH            string
 	ProtocolTelnet         string
 	ProtocolSerial         string
+	ProtocolMosh           string
+	MoshHint               string
+	ErrMoshEncoding        string
+	ErrMoshForwarding      string
+	ErrMoshInteractive     string
+	MoshServerMissing      string
+	MoshLocaleMissing      string
+	MoshUDPUnreachable     string
+	MoshWaiting            string
+	MoshBootstrapFailedFmt string
 	FieldDevice            string
 	FieldDevicePlaceholder string
 	FieldLine              string

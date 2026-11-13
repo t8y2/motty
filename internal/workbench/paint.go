@@ -2207,7 +2207,7 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 	tagsWidth := min(rowWidth*0.18, statusStart-tagsStart-8)
 	status, _ := state.hostStatus(host)
 	checkMargin := 46 - 10 - components.CheckboxExtent(state.Theme())
-	protocolLabel := state.hostProtocolTagLabel(host.Protocol)
+	protocolLabel := state.hostProtocolTagLabel(host)
 	protocolWidth := canvas.TextWidthWeight(protocolLabel, metrics.FontSizeS, gfx.WeightMedium) + 14
 	showProtocol := tagsWidth >= protocolWidth
 	tagCount, tagsRoom := 0, tagsWidth
@@ -2937,6 +2937,9 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 		}
 		content.Children(func() {
 			b.protocol = ui.Slot(c).Height(34).MarginSides(0, 0, 10, 0)
+			if editor.moshTerminal() {
+				ui.Paragraph(c, state.messages.Tools.MoshHint, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(16)
+			}
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				b.label = ui.Slot(c).Grow(1)
 				b.colorField = ui.Slot(c).Grow(1)
@@ -2949,7 +2952,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 			})
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				b.iconField = ui.Slot(c).Grow(1)
-				if ssh {
+				if ssh && !editor.moshTerminal() {
 					b.transfer = ui.Slot(c).Grow(1)
 				}
 				if state.hostShowsEncoding() {
@@ -3000,7 +3003,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 					})
 				})
 			}
-			if ssh {
+			if ssh && !editor.moshTerminal() {
 				transfer := b.transfer
 				transfer.Children(func() {
 					b.transfer = state.declareHostTransferChoice(c)

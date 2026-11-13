@@ -37,6 +37,12 @@ func (state *State) linkWatchNeeded() bool {
 		if session.isLocal() {
 			continue
 		}
+		if session.host.mosh() {
+			// The mosh client owns its UDP path: it keeps the session through
+			// an address change and retries by itself. Nothing here can verify
+			// or revive it, and a 2-second poll would be pure idle work.
+			continue
+		}
 		if session.reconnectPending || session.reconnectExhausted {
 			return true
 		}
