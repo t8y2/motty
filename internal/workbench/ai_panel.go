@@ -47,6 +47,8 @@ var (
 	hitAIAutoScope     = tree.ID(aiPanelHits, "ai-auto-scope")
 	hitAIReasoningChip = tree.ID(aiPanelHits, "ai-reasoning-chip")
 	hitAIRunStatus     = tree.ID(aiPanelHits, "ai-run-status")
+	hitAIUsageChip     = tree.ID(aiPanelHits, "ai-usage-chip")
+	hitAIUsageCard     = tree.ID(aiPanelHits, "ai-usage-card")
 )
 
 const (
@@ -323,10 +325,19 @@ type aiPanel struct {
 	paintedRows                []aiPaintedRow
 	paintedHistory             []aiPaintedHistoryRow
 	copySlots                  []aiCopySlot
-	statusLabel                string
-	statusActivity             ui.Box
-	statusPainted              bool
-	historyTop                 float32
+	// statusText is the run status the last row shows, statusLabel the same row
+	// as one accessible group with the token counts the chip leaves out. usage
+	// is the run the footer's chip prices, usageChipWidth the room its label
+	// measured, and usageChipSlot where the row declared it.
+	statusText     string
+	statusLabel    string
+	statusActivity ui.Box
+	statusPainted  bool
+	usage          aiUsage
+	hasUsage       bool
+	usageChipWidth float32
+	usageChipSlot  ui.Box
+	historyTop     float32
 
 	// focusBack asks the next paint to put the keyboard back in the terminal
 	// after the panel closed from inside itself, which a trapped drawer used to
@@ -367,9 +378,14 @@ type aiPanel struct {
 	linkBase  int
 
 	// Scratch space reused by every layout so a paint allocates nothing.
-	wrapped     []string
-	statusLines []string
-	usageLines  []string
+	wrapped []string
+
+	// usageChip is where the footer's usage chip was painted at the last paint,
+	// usageCard whether the card it opens is showing, and usageCardRect where that
+	// card was, so a pointer crossing between them keeps it open.
+	usageChip     gfx.Rect
+	usageCard     bool
+	usageCardRect gfx.Rect
 
 	// inputLayout is the message box's rows and scroll, and composer where the box
 	// was painted, for the wheel.

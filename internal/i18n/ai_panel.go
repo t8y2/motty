@@ -38,8 +38,6 @@ type AIPanelMessages struct {
 	RenameSubmit      string
 	RenameRequired    string
 
-	UsageFmt                string
-	UsageTotalFmt           string
 	UsageCachedFmt          string
 	RunWaiting              string
 	RunWaitingLong          string
@@ -55,6 +53,21 @@ type AIPanelMessages struct {
 	RunUsageUnknown         string
 	RunUsageIncomplete      string
 	RunUsageConversationFmt string
+
+	// The usage chip under the conversation and the card it opens on hover.
+	UsageChipFmt        string // the chip: usage and its compact total
+	UsageChipUnknown    string // and what it says when the provider reported nothing
+	UsageChipHint       string // the chip's accessible hint
+	UsageCardTitle      string // the card's title
+	UsageCardProvider   string // provider and model
+	UsageCardHitRate    string // the share of the prompt served from cache
+	UsageCardUncached   string // prompt tokens the provider had to read
+	UsageCardCached     string // prompt tokens the provider served from cache
+	UsageCardOutput     string // answer tokens
+	UsageCardTotal      string // the conversation's total, once it exceeds the run
+	UsageCardTokensFmt  string // a token count in the card
+	UsageCardNone       string // the card's remark when nothing was reported
+	UsageCardIncomplete string // and when only part of the run was reported
 
 	ModeAsk   string
 	ModeAgent string

@@ -932,13 +932,16 @@ func (state *State) aiSend() bool {
 	config.Gate.Backend = backend
 	config.System += "\n\nConnection routing for this request: the selected primary connection is the locked default. Omitted session arguments ALWAYS resolve to that default, never to the active tab or a referenced session. Only that default, the other connections the user selected and the explicit @references listed above are available to tools for this question. A reference by itself attaches context, not an instruction to act: when the user only asks to compare or analyze the attached text, answer from it. When the user explicitly asks to inspect, run a command, or modify files on an @referenced connection, use its exact session ID in the tool arguments; do NOT ask them to switch the primary selector. Cross-connection execution and writes require approval showing the actual target. For a request covering several explicitly named connections, use the specified IDs; never include an unmentioned connection from history or list_sessions. Changing tabs does not change any of these bindings."
 	ctx, cancel := context.WithCancel(context.Background())
-	stats := aiRunStats{startedAt: state.now()}
+	stats := aiRunStats{startedAt: state.now(), provider: provider.Name, model: model}
 	var usageBase llm.Usage
 	if retry && ai.pendingRun != nil {
 		stats = *ai.pendingRun
 		stats.duration = 0
 		stats.phase = aiRunWaitingModel
 		stats.tool = ""
+		// The retry runs on the selection the user sees now, not the one the
+		// paused leg started on.
+		stats.provider, stats.model = provider.Name, model
 		usageBase = stats.usage
 		ai.pendingRun = nil
 	}
@@ -1092,22 +1095,6 @@ func (state *State) aiEvent(run *aiRun, event agent.Event) {
 	}
 }
 
-// aiUsageText is the token accounting shown under the last answer: the
-// finished run, and behind it the running total of the conversation while the
-// window is open.
-func (state *State) aiUsageText() string {
-	m := state.messages.AIPanel
-	last := fmt.Sprintf(m.UsageFmt, groupDigits(state.ai.lastUsage.InputTokens), groupDigits(state.ai.lastUsage.OutputTokens))
-	if state.ai.lastUsage.CacheReadTokens > 0 {
-		last += fmt.Sprintf(m.UsageCachedFmt, groupDigits(state.ai.lastUsage.CacheReadTokens))
-	}
-	if state.ai.totalUsage.InputTokens > state.ai.lastUsage.InputTokens ||
-		state.ai.totalUsage.OutputTokens > state.ai.lastUsage.OutputTokens {
-		last += fmt.Sprintf(m.UsageTotalFmt, groupDigits(state.ai.totalUsage.InputTokens), groupDigits(state.ai.totalUsage.OutputTokens))
-	}
-	return last
-}
-
 // groupDigits writes n with a comma every three digits.
 func groupDigits(n int) string {
 	digits := strconv.Itoa(n)
@@ -1187,10 +1174,26 @@ func (state *State) aiFinished(run *aiRun, messages []llm.Message, err error) {
 		}
 	}
 	ai.history = append(ai.history, messages...)
-	state.aiPersist(messages, run.target, run.extras, run.targetKey, run.attachments)
+	spend := aiSpend{provider: stats.provider, model: stats.model, usage: stats.usage}
+	if pendingApproval {
+		// The retried leg re-prices the whole request when it lands, and a
+		// dismissed one is priced when it resolves, so the paused leg writes
+		// no price of its own.
+		spend = aiSpend{}
+	}
+	state.aiPersist(messages, run.target, run.extras, run.targetKey, run.attachments, spend)
 }
 
-func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo, extras []gate.SessionInfo, key string, attachments []aiAttachmentRef) {
+// aiSpend is what one finished request cost, recorded on the answer it wrote —
+// or, when it wrote no answer, on the last row it did write — so that a
+// reopened conversation can show its usage.
+type aiSpend struct {
+	provider string
+	model    string
+	usage    llm.Usage
+}
+
+func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo, extras []gate.SessionInfo, key string, attachments []aiAttachmentRef, spend aiSpend) {
 	ai := &state.ai
 	if !ai.settings.keepHistory || ai.store == nil || len(messages) == 0 {
 		return
@@ -1214,8 +1217,25 @@ func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo, e
 		}
 		ai.conv = conversation.ID
 	}
-	for _, message := range messages {
+	lastAnswer := -1
+	for index, message := range messages {
+		if message.Role == llm.RoleAssistant {
+			lastAnswer = index
+		}
+	}
+	priced := lastAnswer
+	if priced < 0 {
+		// A request that wrote no answer still cost what it did; its spend
+		// rides on the last row it wrote.
+		priced = len(messages) - 1
+	}
+	for index, message := range messages {
 		stored := toStored(message)
+		if index == priced {
+			// The cost belongs to the request that wrote the answer, not to
+			// every message it touched.
+			stored.Provider, stored.Model, stored.Usage = spend.provider, spend.model, spend.usage
+		}
 		if message.Role == llm.RoleUser || len(message.ToolCalls) > 0 {
 			var metadata storedTools
 			_ = json.Unmarshal(stored.ToolJSON, &metadata)
@@ -1231,6 +1251,22 @@ func (state *State) aiPersist(messages []llm.Message, target gate.SessionInfo, e
 			ai.notice = fmt.Sprintf(state.messages.AIPanel.HistorySaveFailedFmt, err)
 			return
 		}
+	}
+}
+
+// aiPricePendingSpend records what a request that resolved without a retry
+// cost, on the last row it persisted: the paused leg wrote its batch unpriced,
+// and no later leg is coming to price the whole request.
+func (state *State) aiPricePendingSpend(stats *aiRunStats) {
+	ai := &state.ai
+	if !ai.settings.keepHistory || ai.store == nil || ai.conv == 0 {
+		return
+	}
+	if stats.usage == (llm.Usage{}) && stats.provider == "" {
+		return
+	}
+	if err := ai.store.PriceLastMessage(ai.conv, stats.provider, stats.model, stats.usage); err != nil {
+		ai.notice = fmt.Sprintf(state.messages.AIPanel.HistorySaveFailedFmt, err)
 	}
 }
 
@@ -1325,6 +1361,13 @@ func (state *State) aiOpenConversation(id int64) {
 		var metadata storedTools
 		_ = json.Unmarshal(row.ToolJSON, &metadata)
 		message := fromStored(row)
+		ai.totalUsage = ai.totalUsage.Add(row.Usage)
+		if row.Usage != (llm.Usage{}) || row.Provider != "" {
+			// The last priced answer is what the chip shows: a restored run
+			// knows its cost but not its timing.
+			stats := aiRunStats{phase: aiRunCompleted, usage: row.Usage, provider: row.Provider, model: row.Model, restored: true}
+			ai.lastUsage, ai.lastRun = row.Usage, &stats
+		}
 		ai.history = append(ai.history, message)
 		switch message.Role {
 		case llm.RoleUser:

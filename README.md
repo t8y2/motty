@@ -312,8 +312,9 @@ Secrets are redacted before terminal text reaches a model — key files,
 assignments, embedded URL credentials and well-known token formats — and
 provider keys stay in the vault. Long conversations send their newest rounds
 within a fixed budget, so a session cannot outgrow the model's context.
-Hovering the last answer shows its token usage and a copy button, and saved
-conversations can be renamed.
+The chip under the conversation prices the last request; hovering it shows the
+provider, model and cache breakdown. The last answer carries a copy button, and
+a saved conversation keeps what its last answer cost and can be renamed.
 
 An optional MCP server exposes the same tools to external agents. It is off by
 default, loopback-only, bearer-token protected, and supports observe and ask

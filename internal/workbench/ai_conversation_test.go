@@ -37,22 +37,37 @@ func TestUsageAccumulatesAcrossRuns(t *testing.T) {
 	if state.ai.totalUsage.InputTokens != 30 {
 		t.Fatalf("total usage = %+v", state.ai.totalUsage)
 	}
-	if text := state.aiUsageText(); !strings.Contains(text, "30") || !strings.Contains(text, "5") {
-		t.Fatalf("usage line %q misses the run's numbers", text)
+	usage, ok := state.aiRunUsage()
+	if !ok || usage.usage.InputTokens != 30 || usage.usage.OutputTokens != 5 {
+		t.Fatalf("usage = %+v (present %v)", usage, ok)
 	}
 }
 
-// TestUsageTextShowsCachedTokens proves a reader can see how much of the prompt
+// TestUsageCardShowsCachedTokens proves a reader can see how much of the prompt
 // the provider served from its cache, and sees nothing when it served none.
-func TestUsageTextShowsCachedTokens(t *testing.T) {
+func TestUsageCardShowsCachedTokens(t *testing.T) {
 	state, _ := assistantSession(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("x") }})
-	state.ai.lastUsage = llm.Usage{InputTokens: 12000, OutputTokens: 90}
-	if text := state.aiUsageText(); strings.Contains(text, "9,800") || strings.Contains(text, "缓存") || strings.Contains(text, "cached") {
-		t.Fatalf("usage line %q mentions a cache that was not hit", text)
+	state.ai.lastRun = &aiRunStats{phase: aiRunCompleted, usage: llm.Usage{InputTokens: 12000, OutputTokens: 90}}
+	usage, ok := state.aiRunUsage()
+	if !ok {
+		t.Fatal("a finished request has no usage to show")
 	}
-	state.ai.lastUsage.CacheReadTokens = 9800
-	if text := state.aiUsageText(); !strings.Contains(text, "9,800") {
-		t.Fatalf("usage line %q misses the cached tokens", text)
+	for _, row := range usage.rows(state.messages.AIPanel) {
+		if strings.Contains(row.value, "9,800") {
+			t.Fatalf("usage card mentions a cache that was not hit: %+v", row)
+		}
+	}
+	state.ai.lastRun.usage.CacheReadTokens = 9800
+	usage, _ = state.aiRunUsage()
+	if rate, hit := usage.hitRate(); !hit || rate != "81.7%" {
+		t.Fatalf("cache hit rate = %q (reported %v)", rate, hit)
+	}
+	cached := false
+	for _, row := range usage.rows(state.messages.AIPanel) {
+		cached = cached || strings.Contains(row.value, "9,800")
+	}
+	if !cached {
+		t.Fatalf("usage card misses the cached tokens: %+v", usage.rows(state.messages.AIPanel))
 	}
 }
 

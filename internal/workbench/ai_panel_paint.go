@@ -31,6 +31,11 @@ const (
 	aiTitleRow     = infoBarHeight - 1 // with the divider under it, as tall as the terminal's info bar beside it, whose last pixel is its line
 	aiButton       = float32(28)
 	aiMaxLines     = 4096 // the most lines one message is laid out in
+
+	// The usage chip under the conversation and the card it opens on hover.
+	aiChipIcon       = float32(13)
+	aiUsageRow       = float32(22)  // a row of the card
+	aiUsageCardWidth = float32(300) // room for "provider/long-model-name" and its numbers
 )
 
 // aiPanelPart names the assistant's container in the workbench page. The page
@@ -451,6 +456,7 @@ func (state *State) aiPanelBeginPaint() {
 	panel.copySlots = panel.copySlots[:0]
 	panel.rowSlots = panel.rowSlots[:0]
 	panel.statusPainted = false
+	panel.usageChip, panel.usageCardRect = gfx.Rect{}, gfx.Rect{}
 	if !state.aiPanelVisible() {
 		panel.scrollbar.dragging = false
 		panel.drawerOpen = false
@@ -698,6 +704,8 @@ func (state *State) paintAIPanelOver(d *ui.DrawContext) {
 // paintAIPanelChrome paints what must come over the body's controls: the
 // composer's resize grip, and, for the drawer, the panel's resize edge and the
 // file-drop hint, which belong on the drawer's layer rather than the page's.
+// The usage card rides here too: it opens above the chip in the list, on the
+// tooltip layer, where neither the list's clip nor the body's can cut it.
 func (state *State) paintAIPanelChrome(d *ui.DrawContext) {
 	canvas, panel := d.Canvas, &state.ai.panel
 	if box := panel.composer; box.Width > 0 {
@@ -709,6 +717,7 @@ func (state *State) paintAIPanelChrome(d *ui.DrawContext) {
 		state.paintAIResize(canvas)
 		state.paintAIDrop(canvas)
 	}
+	state.paintAIUsageCard(canvas, d.Rect)
 }
 
 // declareAIPanelBody declares the panel's chrome in the container the workbench
@@ -997,18 +1006,16 @@ func (state *State) declareAIMessages(c ui.C) {
 	if canvas := c.Canvas(); canvas != nil {
 		panel.cell, panel.cellHeight = canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
 		status, usage := state.aiRunStatusText()
-		if status != "" {
-			panel.statusLines = canvas.WrapLines(panel.statusLines[:0], status, aiSmallSize, gfx.WeightRegular, max(panel.rowWidth-20, 1), 4)
-			panel.usageLines = panel.usageLines[:0]
-			if usage != "" {
-				panel.usageLines = canvas.WrapLines(panel.usageLines, usage, aiSmallSize, gfx.WeightRegular, max(panel.rowWidth-20, 1), 8)
+		panel.usage, panel.hasUsage = state.aiRunUsage()
+		panel.statusText, panel.statusLabel = status, status
+		if usage != "" {
+			if panel.statusLabel != "" {
+				panel.statusLabel += " · "
 			}
-			panel.statusLabel = status
-			if usage != "" {
-				panel.statusLabel += "\n" + usage
-			}
-		} else {
-			panel.statusLines, panel.usageLines = panel.statusLines[:0], panel.usageLines[:0]
+			panel.statusLabel += usage
+		}
+		if panel.hasUsage {
+			panel.usageChipWidth = state.aiUsageChipWidth(canvas, panel.usage)
 		}
 	}
 	for len(panel.rows) < len(ai.items) {
@@ -1096,31 +1103,31 @@ func (state *State) declareAIMessageRow(row ui.ListRow) {
 }
 
 // declareAIRunStatusRow declares the run's status after the last message, as the
-// conversation's last row so it scrolls with it.
+// conversation's last row so it scrolls with it: how the request in flight or
+// the last one is doing, and at its right end the chip that prices the run. The
+// row is one accessible group, so a reader still gets the exact numbers the
+// chip only shows compressed.
 func (state *State) declareAIRunStatusRow(row ui.ListRow) {
 	panel, pal := &state.ai.panel, state.pal
 	topGap := float32(0)
 	if row.Index == 0 {
 		topGap = aiGap
 	}
-	f := aiRowFrame{c: row.C}
-	var activity ui.Box
+	var activity, chip ui.Box
 	row.Element.PadSides(topGap, aiPad, aiGap, aiPad).Children(func() {
-		ui.Column(row.C).Fill().Gap(4).HitWith(hitAIRunStatus, panel.statusLabel, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true}).Children(func() {
-			ui.Row(row.C).Gap(8).Children(func() {
-				activity = ui.Slot(row.C).Size(12, 12).Shrink(0).MarginSides(2, 0, 0, 0)
-				ui.Column(row.C).Grow(1).Children(func() {
-					aiTextLines(f, panel.statusLines, aiSmallSize, aiSmallLine, pal.muted)
-				})
-			})
-			if len(panel.usageLines) > 0 {
-				ui.Column(row.C).Children(func() {
-					aiTextLines(f, panel.usageLines, aiSmallSize, aiSmallLine, pal.muted)
-				})
+		ui.Row(row.C).Fill().Gap(8).Items(ui.Center).HitWith(hitAIRunStatus, panel.statusLabel, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true}).Children(func() {
+			activity = ui.Slot(row.C).Size(12, 12).Shrink(0).MarginSides(2, 0, 0, 0)
+			if panel.statusText != "" {
+				ui.Text(row.C, panel.statusText).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).Ellipsis().Grow(1)
+			} else {
+				ui.Spacer(row.C)
+			}
+			if panel.hasUsage {
+				chip = ui.Slot(row.C).Size(panel.usageChipWidth, aiChipHeight).Shrink(0)
 			}
 		})
 	})
-	panel.statusActivity, panel.statusPainted = activity, true
+	panel.statusActivity, panel.usageChipSlot, panel.statusPainted = activity, chip, true
 }
 
 // paintAIMessageChrome paints what the conversation's List cannot: the
@@ -1182,6 +1189,9 @@ func (state *State) paintAIMessageChrome(d *ui.DrawContext) {
 	}
 	if panel.statusPainted {
 		state.paintAIRunStatusChrome(canvas, panel.statusActivity.Rect())
+		if panel.hasUsage {
+			state.paintAIUsageChip(canvas, panel.usageChipSlot.Rect(), d.Rect, panel.usage)
+		}
 	}
 	if scroll != nil {
 		scroller := components.BeginMessageScroller(canvas, state.aiScrollbarTheme(), d.Rect, scroll.Content, scroll.Offset).
@@ -1205,6 +1215,104 @@ func (state *State) paintAIRunStatusChrome(canvas *gfx.Canvas, bounds gfx.Rect) 
 		icon = iconBot
 	}
 	canvas.DrawIcon(lucideIcons[icon], bounds, pal.muted)
+}
+
+// aiUsageChipWidth is the room the chip needs: its padding, the icon, the gap
+// between them and the text.
+func (state *State) aiUsageChipWidth(canvas *gfx.Canvas, usage aiUsage) float32 {
+	text := usage.chipLabel(state.messages.AIPanel)
+	return 8 + aiChipIcon + 5 + canvas.TextWidthWeight(text, aiSmallSize, gfx.WeightMedium) + 10
+}
+
+// paintAIUsageChip is the pill that prices the run, and the hover that opens the
+// card spelling it out.
+func (state *State) paintAIUsageChip(canvas *gfx.Canvas, bounds, clip gfx.Rect, usage aiUsage) {
+	panel, pal, m := &state.ai.panel, state.pal, state.messages.AIPanel
+	// The chip answers the pointer only where it is on screen: a status row
+	// scrolled out of the list is clipped away, but its rect would otherwise
+	// match a pointer resting on whatever now covers that place.
+	over := pointInRect(panel.pointer.X, panel.pointer.Y, bounds) && pointInRect(panel.pointer.X, panel.pointer.Y, clip)
+	if !over && panel.usageCard {
+		// The card opens above the chip: crossing the gap between them, or resting
+		// on the card itself, is still pointing at the chip.
+		bottom := panel.usageCardRect.Bottom()
+		over = pointInRect(panel.pointer.X, panel.pointer.Y, panel.usageCardRect) ||
+			pointInRect(panel.pointer.X, panel.pointer.Y, gfx.Rect{X: bounds.X, Y: min(bottom, bounds.Y), Width: bounds.Width, Height: max(bounds.Y-min(bottom, bounds.Y), 0)})
+	}
+	panel.usageCard = over
+	panel.usageChip = bounds
+	if bounds.Width <= 0 || bounds.Height <= 0 {
+		return
+	}
+	background := pal.surfaceSoft
+	if panel.usageCard {
+		background = pal.surfaceHot
+	}
+	canvas.Rounded(bounds, bounds.Height/2, background)
+	icon := gfx.Rect{X: bounds.X + 8, Y: bounds.Y + (bounds.Height-aiChipIcon)/2, Width: aiChipIcon, Height: aiChipIcon}
+	canvas.DrawIcon(lucideIcons[iconActivity], icon, pal.muted)
+	text := usage.chipLabel(m)
+	textX := icon.X + aiChipIcon + 5
+	canvas.Label(text, gfx.Rect{X: textX, Y: bounds.Y, Width: max(bounds.X+bounds.Width-8-textX, 1), Height: bounds.Height}, gfx.TextStyle{
+		Size: aiSmallSize, Weight: gfx.WeightMedium, Color: pal.text,
+	})
+	canvas.HitWithOptions(hitAIUsageChip, bounds, text, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true, Hint: m.UsageChipHint})
+}
+
+// paintAIUsageCard is the card the chip opens: the numbers the chip compresses,
+// their request, and the conversation's total once it is more than this run. It
+// is painted over the panel's controls, on the tooltip layer, where the body's
+// clip cannot cut it.
+func (state *State) paintAIUsageCard(canvas *gfx.Canvas, viewport gfx.Rect) {
+	panel := &state.ai.panel
+	if !panel.usageCard {
+		return
+	}
+	usage, ok := state.aiRunUsage()
+	if !ok || panel.usageChip.Width <= 0 {
+		panel.usageCard, panel.usageCardRect = false, gfx.Rect{}
+		return
+	}
+	m := state.messages.AIPanel
+	theme := state.Theme()
+	metrics := theme.Metrics
+	rows, note := usage.rows(m), usage.note(m)
+	bodyHeight := float32(len(rows)) * aiUsageRow
+	if note != "" {
+		bodyHeight += aiUsageRow
+	}
+	card := components.BeginHoverCard(canvas, theme, viewport, panel.usageChip, components.HoverCardOptions{
+		Layer: tooltipLayer, ID: hitAIUsageCard, Side: components.HoverCardTop, Align: components.HoverCardAlignEnd,
+		SideOffset: 6, ContentSize: gfx.Size{Width: aiUsageCardWidth}, BodyHeight: bodyHeight,
+	})
+	layout := card.Begin(m.UsageCardTitle, "")
+	panel.usageCardRect = layout.Content
+	inner := layout.Content.Inset(gfx.All(metrics.PadSurface))
+	// The run's total rides on the title's line, at the card's other end.
+	if usage.known() {
+		canvas.LabelAligned(usage.tokens(m, usage.spent()), gfx.Rect{X: inner.X, Y: inner.Y, Width: inner.Width, Height: metrics.FontSizeM + 7},
+			gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightRegular, Color: theme.PopoverForeground}, gfx.AlignEnd)
+	}
+	row := gfx.Rect{X: inner.X, Y: layout.Body.Y, Width: inner.Width, Height: aiUsageRow}
+	for _, entry := range rows {
+		label := canvas.FitLine(entry.label, metrics.FontSizeS, gfx.WeightRegular, inner.Width/2)
+		// The value keeps to the room the label leaves it, so a long provider or
+		// model name is cut rather than run over its own label.
+		valueRoom := max(inner.Width-canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightRegular)-aiGap, 1)
+		canvas.LabelAligned(label, row, gfx.TextStyle{
+			Size: metrics.FontSizeS, Weight: gfx.WeightRegular, Color: theme.MutedForeground,
+		}, gfx.AlignStart)
+		canvas.LabelAligned(canvas.FitLine(entry.value, metrics.FontSizeS, gfx.WeightRegular, valueRoom),
+			gfx.Rect{X: row.Right() - valueRoom, Y: row.Y, Width: valueRoom, Height: row.Height},
+			gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightRegular, Color: theme.PopoverForeground}, gfx.AlignEnd)
+		row.Y += aiUsageRow
+	}
+	if note != "" {
+		canvas.LabelAligned(note, row, gfx.TextStyle{
+			Size: metrics.FontSizeS, Weight: gfx.WeightRegular, Color: theme.MutedForeground,
+		}, gfx.AlignStart)
+	}
+	card.End()
 }
 
 // aiThinking reports whether row index is a thought the model is still writing:

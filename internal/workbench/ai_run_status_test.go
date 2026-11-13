@@ -9,7 +9,9 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
+	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
+	"motty/internal/ai/store"
 	"motty/internal/ai/tools"
 	"motty/internal/i18n"
 )
@@ -28,7 +30,7 @@ func TestAIRunShowsActivityBeforeFirstOutputAndSchedulesRepaint(t *testing.T) {
 			t.Errorf("missing %q before first output: %q", want, texts)
 		}
 	}
-	if hasText(texts, "Tokens") || len(state.ai.panel.usageLines) != 0 {
+	if _, ok := state.aiRunUsage(); ok || state.ai.panel.usageChip.Width != 0 {
 		t.Fatalf("running request shows token details: %q", texts)
 	}
 	if _, scheduled := canvas.NextFrame(); !scheduled {
@@ -60,10 +62,20 @@ func TestAIRunShowsFinalTimeAndTokensWithoutHover(t *testing.T) {
 			state.options.Now = func() time.Duration { return time.Hour }
 			state.ai.panel.pointer = gfx.Point{}
 			_, texts := paintAt(state, panelWide)
-			for _, want := range []string{outcome.want, "Total time 8.0s", "1,284", "1,200", "84"} {
+			for _, want := range []string{outcome.want, "Total time 8.0s"} {
 				if !hasText(texts, want) {
 					t.Errorf("missing %q without hover: %q", want, texts)
 				}
+			}
+			usage, ok := state.aiRunUsage()
+			if !ok {
+				t.Fatalf("a finished request has no usage to show")
+			}
+			if usage.usage.InputTokens != 1200 || usage.usage.OutputTokens != 84 || usage.spent() != 1284 {
+				t.Fatalf("usage = %+v", usage)
+			}
+			if !hasText(texts, usage.chipLabel(state.messages.AIPanel)) {
+				t.Errorf("missing the run's usage chip %q: %q", usage.chipLabel(state.messages.AIPanel), texts)
 			}
 			state.aiNewConversation()
 			_, texts = paintAt(state, panelWide)
@@ -352,5 +364,196 @@ func TestAIRunMixedReportedAndUnknownTurnsRemainIncomplete(t *testing.T) {
 	_, usage := state.aiRunStatusText()
 	if !strings.Contains(usage, "46") || !strings.Contains(usage, "may be incomplete") {
 		t.Fatalf("mixed reported and unknown turns look complete: %q", usage)
+	}
+}
+
+// TestAReopenedConversationShowsWhatItsAnswerCost proves the cost outlives the
+// window: the answer carries it in the database, and reopening the conversation
+// shows it as a run that knows its price but not its time.
+func TestAReopenedConversationShowsWhatItsAnswerCost(t *testing.T) {
+	model := &scriptedModel{turn: func(int, llm.Request) []llm.Event {
+		return []llm.Event{
+			{Kind: llm.EventText, Text: "the answer"},
+			{Kind: llm.EventDone, Usage: llm.Usage{InputTokens: 1200, OutputTokens: 84, CacheReadTokens: 900}},
+		}
+	}}
+	state, _ := assistantTestSession(t, model)
+	withModel(t, state)
+	ask(state, "question", agent.ModeAsk)
+	pumpUntil(t, state, "the answer", func() bool { return state.ai.run == nil })
+	id := state.ai.conv
+	if id == 0 {
+		t.Fatal("the conversation was not saved")
+	}
+	stored, err := state.ai.store.Messages(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := stored[len(stored)-1]
+	if last.Role != string(llm.RoleAssistant) || last.Usage.OutputTokens != 84 || last.Provider == "" || last.Model == "" {
+		t.Fatalf("the saved answer carries %+v", last)
+	}
+	state.aiNewConversation()
+	if _, ok := state.aiRunUsage(); ok {
+		t.Fatal("a new conversation shows the previous run's usage")
+	}
+	state.aiOpenConversation(id)
+	usage, ok := state.aiRunUsage()
+	if !ok || usage.usage.CacheReadTokens != 900 || usage.modelLine() == "" {
+		t.Fatalf("reopened usage = %+v (present %v)", usage, ok)
+	}
+	if status, _ := state.aiRunStatusText(); status != "" {
+		t.Fatalf("a restored run reports a time: %q", status)
+	}
+}
+
+// TestAConversationSavedBeforeUsageExistedShowsNone proves the migration leaves
+// old rows readable and silent rather than zero-priced.
+func TestAConversationSavedBeforeUsageExistedShowsNone(t *testing.T) {
+	state, _ := assistantTestSession(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("unused") }})
+	conversation, err := state.ai.store.CreateConversation("before usage", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.ai.conv = conversation.ID // the rows below are that conversation's, not a new one's
+	state.aiPersist([]llm.Message{
+		{Role: llm.RoleUser, Text: "old question"},
+		{Role: llm.RoleAssistant, Text: "old answer"},
+	}, gate.SessionInfo{}, nil, "", nil, aiSpend{})
+	state.aiOpenConversation(conversation.ID)
+	if usage, ok := state.aiRunUsage(); ok {
+		t.Fatalf("an unpriced conversation shows usage: %+v", usage)
+	}
+	if status, usage := state.aiRunStatusText(); status != "" || usage != "" {
+		t.Fatalf("an unpriced conversation reports %q %q", status, usage)
+	}
+}
+
+// TestADismissedEscalationKeepsItsCost proves a request that escalated and was
+// dismissed without a retry keeps what it spent: the live window counted it, and
+// the row it wrote carries it for a reopened conversation.
+func TestADismissedEscalationKeepsItsCost(t *testing.T) {
+	model := &scriptedModel{turn: func(index int, request llm.Request) []llm.Event {
+		if index == 0 {
+			return []llm.Event{
+				{Kind: llm.EventToolCall, ToolCall: &llm.ToolCall{ID: "c1", Name: tools.NameRequestAgentMode, Arguments: `{"reason":"needs a terminal"}`}},
+				{Kind: llm.EventDone, Usage: llm.Usage{InputTokens: 300, OutputTokens: 7}},
+			}
+		}
+		return textTurn("unused")
+	}}
+	state, _ := assistantTestSession(t, model)
+	withModel(t, state)
+	ask(state, "list the files", agent.ModeAsk)
+	pumpUntil(t, state, "the escalation card", func() bool { return len(state.ai.approvals) == 1 && state.ai.run == nil })
+	id := state.ai.conv
+	if id == 0 {
+		t.Fatal("the conversation was not saved")
+	}
+	state.dropEscalationApprovals() // what the mode toggle or a new question does
+	if state.ai.totalUsage.InputTokens != 300 {
+		t.Fatalf("the dismissed run was not counted live: %+v", state.ai.totalUsage)
+	}
+	stored, err := state.ai.store.Messages(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := stored[len(stored)-1]
+	if last.Role != string(llm.RoleUser) || last.Usage.InputTokens != 300 || last.Provider == "" {
+		t.Fatalf("the dismissed run left no price on its row: %+v", last)
+	}
+	state.aiNewConversation()
+	usage, ok := state.aiRunUsage()
+	if ok {
+		t.Fatalf("a new conversation shows the dismissed run: %+v", usage)
+	}
+	state.aiOpenConversation(id)
+	if usage, ok := state.aiRunUsage(); !ok || usage.usage.InputTokens != 300 {
+		t.Fatalf("the reopened conversation lost the dismissed run's cost: %+v (present %v)", usage, ok)
+	}
+}
+
+// TestAEscalationSpendIsPricedOnce proves an approved escalation prices the
+// whole request on the retried answer alone: the paused leg wrote its rows
+// unpriced, so reopening counts exactly what the live window counted.
+func TestAEscalationSpendIsPricedOnce(t *testing.T) {
+	model := &scriptedModel{turn: func(index int, request llm.Request) []llm.Event {
+		if index == 0 {
+			return []llm.Event{
+				{Kind: llm.EventToolCall, ToolCall: &llm.ToolCall{ID: "c1", Name: tools.NameRequestAgentMode, Arguments: `{"reason":"needs a terminal"}`}},
+				{Kind: llm.EventDone, Usage: llm.Usage{InputTokens: 300}},
+			}
+		}
+		return []llm.Event{{Kind: llm.EventText, Text: "done"}, {Kind: llm.EventDone, Usage: llm.Usage{InputTokens: 50}}}
+	}}
+	state, _ := assistantTestSession(t, model)
+	withModel(t, state)
+	ask(state, "list the files", agent.ModeAsk)
+	pumpUntil(t, state, "the escalation card", func() bool { return len(state.ai.approvals) == 1 && state.ai.run == nil })
+	state.aiAnswerApproval(true)
+	pumpUntil(t, state, "the retried Agent run", func() bool { return state.ai.run == nil && state.ai.pendingRun == nil })
+	if state.ai.totalUsage.InputTokens != 350 {
+		t.Fatalf("live total = %+v", state.ai.totalUsage)
+	}
+	stored, err := state.ai.store.Messages(state.ai.conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	priced, answer := 0, store.StoredMessage{}
+	for _, row := range stored {
+		if row.Provider != "" || row.Usage != (llm.Usage{}) {
+			priced++
+			answer = row
+		}
+	}
+	if priced != 1 || answer.Role != string(llm.RoleAssistant) || answer.Usage.InputTokens != 350 {
+		t.Fatalf("priced rows = %d, answer = %+v", priced, answer)
+	}
+	id := state.ai.conv
+	state.aiNewConversation()
+	state.aiOpenConversation(id)
+	usage, ok := state.aiRunUsage()
+	if !ok || usage.usage.InputTokens != 350 || usage.total.InputTokens != 350 {
+		t.Fatalf("the reopened conversation counts %+v (present %v)", usage, ok)
+	}
+}
+
+// TestAEscalationRetryNamesTheModelThatRan proves the retried request's price
+// names the model that executed it, not the one the paused leg started on.
+func TestAEscalationRetryNamesTheModelThatRan(t *testing.T) {
+	model := &scriptedModel{turn: func(index int, request llm.Request) []llm.Event {
+		if index == 0 {
+			return []llm.Event{
+				{Kind: llm.EventToolCall, ToolCall: &llm.ToolCall{ID: "c1", Name: tools.NameRequestAgentMode, Arguments: `{"reason":"needs a terminal"}`}},
+				{Kind: llm.EventDone, Usage: llm.Usage{InputTokens: 300}},
+			}
+		}
+		return []llm.Event{{Kind: llm.EventText, Text: "done"}, {Kind: llm.EventDone, Usage: llm.Usage{InputTokens: 50}}}
+	}}
+	state, _ := assistantTestSession(t, model)
+	withModel(t, state)
+	ask(state, "list the files", agent.ModeAsk)
+	pumpUntil(t, state, "the escalation card", func() bool { return len(state.ai.approvals) == 1 && state.ai.run == nil })
+	// While the approval waits, the user picks a different model.
+	db, err := state.aiStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetDefaultModel("p", "other-model"); err != nil {
+		t.Fatal(err)
+	}
+	state.reloadAI()
+	state.aiAnswerApproval(true)
+	pumpUntil(t, state, "the retried Agent run", func() bool { return state.ai.run == nil && state.ai.pendingRun == nil })
+	usage, ok := state.aiRunUsage()
+	if !ok || usage.model != "other-model" || usage.provider != "Work" {
+		t.Fatalf("the retry's price names %+v (present %v)", usage, ok)
+	}
+	stored, err := state.ai.store.Messages(state.ai.conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last := stored[len(stored)-1]; last.Model != "other-model" {
+		t.Fatalf("the stored answer names %q", last.Model)
 	}
 }
