@@ -18,7 +18,7 @@ type MonitorMessages struct {
 	Pause, Resume, Paused, Updated, Interval, IntervalFmt, Retry, NotConnected string
 	Collapse                                                                   string
 	Logins, NoLogins, LoginsUnavailable, LoginsTruncated                       string
-	AddressCopied, AddressCopyFailed, AddressCopy     string
+	AddressCopied, AddressCopyFailed, AddressCopy                              string
 }
 
 var chineseMonitor = MonitorMessages{
