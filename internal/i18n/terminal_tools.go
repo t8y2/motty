@@ -334,6 +334,7 @@ type ToolsMessages struct {
 	ImportGuide                  string // the link to the docs on exporting from each client
 	ImportGuideURL               string
 	ImportPickerFmt              string // the client's name
+	ImportFolderPickerFmt        string // the client's name; it keeps sessions in a folder
 	ImportCanceled               string
 	ImportFailedFmt              string
 	ImportSummaryFmt             string // hosts, client, duplicates

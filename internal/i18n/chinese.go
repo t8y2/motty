@@ -1877,7 +1877,7 @@ var chineseTools = ToolsMessages{
 
 	ImportSessions:               "从其他软件导入",
 	ImportChooserTitle:           "导入会话",
-	ImportChooserBody:            "选择导入来源，再选取它保存会话的文件。",
+	ImportChooserBody:            "选择导入来源，再选取它保存会话的文件或文件夹。",
 	ImportEncodingTitle:          "选择 MobaXterm 文件编码",
 	ImportEncodingBody:           "此文件同时符合 UTF-8 和 GB18030。比较下方连接信息后再导入。",
 	ImportEncodingSampleUTF8Fmt:  "UTF-8 示例：%s",
@@ -1886,6 +1886,7 @@ var chineseTools = ToolsMessages{
 	ImportGuide:                  "导入指南",
 	ImportGuideURL:               "https://motty.page/zh/docs/connections/hosts-and-authentication#导入",
 	ImportPickerFmt:              "导入 %s 会话",
+	ImportFolderPickerFmt:        "选择 %s 的 Sessions 文件夹",
 	ImportCanceled:               "已取消导入。",
 	ImportFailedFmt:              "无法导入：%v",
 	ImportSummaryFmt:             "已从 %[2]s 导入 %[1]d 台主机；跳过 %[3]d 台已保存的主机。",

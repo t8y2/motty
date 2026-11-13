@@ -1877,7 +1877,7 @@ var englishTools = ToolsMessages{
 
 	ImportSessions:               "Import from",
 	ImportChooserTitle:           "Import sessions",
-	ImportChooserBody:            "Choose a client, then pick its saved session files.",
+	ImportChooserBody:            "Choose a client, then pick the files or folder that hold its saved sessions.",
 	ImportEncodingTitle:          "Choose MobaXterm encoding",
 	ImportEncodingBody:           "This file can be read as UTF-8 or GB18030. Compare the connection text below before importing.",
 	ImportEncodingSampleUTF8Fmt:  "UTF-8: %s",
@@ -1886,6 +1886,7 @@ var englishTools = ToolsMessages{
 	ImportGuide:                  "Import guide",
 	ImportGuideURL:               "https://motty.page/en/docs/connections/hosts-and-authentication#import",
 	ImportPickerFmt:              "Import %s sessions",
+	ImportFolderPickerFmt:        "Choose the %s Sessions folder",
 	ImportCanceled:               "Import canceled.",
 	ImportFailedFmt:              "Could not import: %v",
 	ImportSummaryFmt:             "Imported %d hosts from %s; skipped %d already saved.",
