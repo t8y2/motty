@@ -190,7 +190,7 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 // where it is available without taking space in the row.
 func (state *State) declareCommandPaletteBarToggle(c ui.C) {
 	pal := state.pal
-	checked := !state.commands.closed
+	checked := state.commands.shown
 	label := state.messages.Tools.CommandsBarShow
 	hovered := false
 	if canvas := c.Canvas(); canvas != nil && canvas.Hovered() == hitCommandsBarToggle {

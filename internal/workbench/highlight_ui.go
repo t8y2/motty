@@ -465,7 +465,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 		}
 	}
 	state.refreshSnippets()
-	state.commands.closed = saved.CommandsClosed
+	state.commands.shown = saved.CommandsShown
 	state.commands.sort = commandsSortFromString(saved.CommandsSort)
 	state.commands.hiddenGroups = make(map[string]bool)
 	for _, group := range saved.CommandsHiddenGroups {

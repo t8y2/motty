@@ -22,6 +22,8 @@ func openCommandsDrawerTest(t *testing.T) *State {
 		{Name: "ls", Command: "ls", Run: true},
 		{Name: "pwd", Command: "pwd", Group: "shell"},
 	}
+	// The bar hides until the user opts in; these tests exercise the open bar.
+	state.commands.shown = true
 	return state
 }
 
@@ -47,6 +49,12 @@ func TestCommandDrawerHeight(t *testing.T) {
 		t.Fatalf("drawer reserved space off the terminal page: %v", h)
 	}
 	state.activeSection = sectionTerminal
+	// Opting in is the only way the strip appears: a fresh state reserves nothing.
+	state.commands.shown = false
+	if h := state.commandsDrawerHeight(); h != 0 {
+		t.Fatalf("a fresh state reserved bar space: %v", h)
+	}
+	state.commands.shown = true
 	if h := state.commandsDrawerHeight(); h != commandsBarHeight {
 		t.Fatalf("open drawer height = %v, want %v", h, commandsBarHeight)
 	}
@@ -62,8 +70,8 @@ func TestCommandDrawerCloseAndReopen(t *testing.T) {
 		t.Fatal("drawer was not open before closing")
 	}
 	state.Click(hitCommandsClose)
-	if !state.commands.closed {
-		t.Fatal("close did not set the drawer closed")
+	if state.commands.shown {
+		t.Fatal("close did not hide the drawer")
 	}
 	if h := state.commandsDrawerHeight(); h != 0 {
 		t.Fatalf("closed drawer still reserved space: %v", h)
@@ -72,7 +80,7 @@ func TestCommandDrawerCloseAndReopen(t *testing.T) {
 	if state.modal != modalCommandPalette {
 		t.Fatalf("the snippet button opened %v, want the picker", state.modal)
 	}
-	if !state.commands.closed {
+	if state.commands.shown {
 		t.Fatal("the snippet button reopened the bar instead of opening the picker")
 	}
 	if !state.commandBarSwitchShown() {
@@ -82,7 +90,7 @@ func TestCommandDrawerCloseAndReopen(t *testing.T) {
 	if state.modal != modalCommandPalette {
 		t.Fatalf("ticking the checkbox closed the picker: modal = %v", state.modal)
 	}
-	if state.commands.closed {
+	if !state.commands.shown {
 		t.Fatal("ticking the checkbox did not show the bar")
 	}
 	if h := state.commandsDrawerHeight(); h != commandsBarHeight {
@@ -90,8 +98,8 @@ func TestCommandDrawerCloseAndReopen(t *testing.T) {
 	}
 	// Unticking hides it again, with the picker still open.
 	state.Click(hitCommandsBarToggle)
-	if !state.commands.closed || state.modal != modalCommandPalette {
-		t.Fatalf("unticking left closed=%v modal=%v", state.commands.closed, state.modal)
+	if state.commands.shown || state.modal != modalCommandPalette {
+		t.Fatalf("unticking left shown=%v modal=%v", state.commands.shown, state.modal)
 	}
 }
 
@@ -116,8 +124,8 @@ func TestCommandBarSwitchIsOutsideTheSearchList(t *testing.T) {
 		t.Fatal("the search changed the dialog height reserved for the switch")
 	}
 	state.Click(hitCommandsBarToggle)
-	if state.modal != modalCommandPalette || state.commands.closed {
-		t.Fatalf("ticking left modal=%v closed=%v", state.modal, state.commands.closed)
+	if state.modal != modalCommandPalette || !state.commands.shown {
+		t.Fatalf("ticking left modal=%v shown=%v", state.modal, state.commands.shown)
 	}
 	if palette.search.String() != "no-such-command" {
 		t.Fatalf("ticking the checkbox reset the query to %q", palette.search.String())
@@ -143,12 +151,12 @@ func TestCommandBarCheckboxStaysInPlace(t *testing.T) {
 		t.Fatalf("searching matched %d rows, want 1", len(palette.visible))
 	}
 	state.Click(hitCommandsBarToggle)
-	if !state.commands.closed || state.modal != modalCommandPalette ||
+	if state.commands.shown || state.modal != modalCommandPalette ||
 		!state.commandBarSwitchShown() || len(palette.visible) != 1 {
-		t.Fatalf("unticking left closed=%v modal=%v rows=%d", state.commands.closed, state.modal, len(palette.visible))
+		t.Fatalf("unticking left shown=%v modal=%v rows=%d", state.commands.shown, state.modal, len(palette.visible))
 	}
 	state.Click(hitCommandsBarToggle)
-	if state.commands.closed {
+	if !state.commands.shown {
 		t.Fatal("ticking the checkbox again did not bring the bar back")
 	}
 	if palette.search.String() != "pwd" {
@@ -359,5 +367,29 @@ func TestCommandBarScroll(t *testing.T) {
 	state.commands.maxOffset = 0
 	if _, handled := state.scrollCommandsBar(over); handled {
 		t.Fatal("a wheel was taken although every chip fits")
+	}
+}
+
+// The bar's opt-in survives a restart, hiding it does too, and a fresh profile
+// starts with the bar hidden.
+func TestCommandBarOptInSurvivesRestart(t *testing.T) {
+	options := testOptions(t)
+	state := newTestState(t, options)
+	state.commands.shown = true
+	state.save()
+	again := newTestState(t, options)
+	if !again.commands.shown {
+		t.Fatal("after a restart the opted-in bar was hidden again")
+	}
+	again.commands.shown = false
+	again.save()
+	hidden := newTestState(t, options)
+	if hidden.commands.shown {
+		t.Fatal("after hiding the bar a restart showed it again")
+	}
+
+	fresh := newTestState(t, testOptions(t))
+	if fresh.commands.shown {
+		t.Fatal("a new profile must start with the bar hidden")
 	}
 }

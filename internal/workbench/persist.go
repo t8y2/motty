@@ -202,7 +202,7 @@ type savedState struct {
 	// The bottom command bar's own layout: whether it is hidden, the snippet
 	// groups it filters out (keyed by lowercased name; "" means ungrouped), and
 	// the order of its chips. A fresh state shows every group in list order.
-	CommandsClosed       bool     `json:"commands_closed,omitempty"`
+	CommandsShown        bool     `json:"commands_shown,omitempty"`
 	CommandsHiddenGroups []string `json:"commands_hidden_groups,omitempty"`
 	CommandsSort         string   `json:"commands_sort,omitempty"`
 }
@@ -625,7 +625,7 @@ func (state *State) snapshot() savedState {
 			})
 		}
 	}
-	saved.CommandsClosed = state.commands.closed
+	saved.CommandsShown = state.commands.shown
 	saved.CommandsSort = state.commands.sort.String()
 	for key := range state.commands.hiddenGroups {
 		saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)

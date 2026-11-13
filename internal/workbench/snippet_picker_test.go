@@ -131,15 +131,15 @@ func TestCommandBarSwitchIsClickableChrome(t *testing.T) {
 		}
 	}
 	press()
-	if !state.commands.closed || state.modal != modalCommandPalette {
-		t.Fatalf("a press left closed=%v modal=%v", state.commands.closed, state.modal)
+	if state.commands.shown || state.modal != modalCommandPalette {
+		t.Fatalf("a press left shown=%v modal=%v", state.commands.shown, state.modal)
 	}
 	unticked, ok := hitByIDSnapshot(view.Snapshot().Hits, hitCommandsBarToggle)
 	if !ok || unticked.Checked {
 		t.Fatal("the unticked checkbox did not report its new state")
 	}
 	press()
-	if state.commands.closed {
+	if !state.commands.shown {
 		t.Fatal("a second press did not show the bar again")
 	}
 }

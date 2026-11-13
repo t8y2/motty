@@ -67,13 +67,14 @@ const (
 	commandsScrollStep    float32 = 60 // pixels a wheel notch moves the chips
 )
 
-// commandsUI is the bottom command drawer's state. The single bar is either fully
-// shown or hidden entirely by closed (zero height, no bar). hiddenGroups are the
+// commandsUI is the bottom command drawer's state. The single bar stays hidden
+// until shown opts it in (zero height, no bar). hiddenGroups are the
 // snippet groups (by lowercased name; "" means ungrouped) not shown in the bar,
 // and sort is the order the visible commands appear in.
 type commandsUI struct {
-	// closed hides the drawer entirely. When false the bar shows.
-	closed bool
+	// shown is whether the user opted the bar in. The zero value hides it,
+	// so a fresh install sees no bar until the picker's checkbox turns it on.
+	shown bool
 	// filterOpen is whether the group-filter dropdown is showing.
 	filterOpen bool
 	// sortOpen is whether the order dropdown is showing.
@@ -110,7 +111,7 @@ func (state *State) commandsBarAvailable() bool {
 // commandsDrawerHeight is the bottom space the drawer reserves, subtracted from
 // the terminal panes so they do not sit under it. Zero off the terminal page.
 func (state *State) commandsDrawerHeight() float32 {
-	if !state.commandsBarAvailable() || state.commands.closed {
+	if !state.commandsBarAvailable() || !state.commands.shown {
 		return 0
 	}
 	return commandsBarHeight
@@ -484,8 +485,8 @@ func (state *State) commandBarSwitchShown() bool {
 // not the query, scroll or selection — because the switch is not a list entry.
 // The choice is saved like the bar's other settings.
 func (state *State) toggleCommandBarFromPicker() {
-	state.commands.closed = !state.commands.closed
-	if state.commands.closed {
+	state.commands.shown = !state.commands.shown
+	if !state.commands.shown {
 		state.commands.filterOpen = false
 		state.commands.sortOpen = false
 	}
@@ -543,7 +544,7 @@ func (state *State) clickCommandsDrawer(id gfx.ID) bool {
 	case id == hitCommandsAdd:
 		state.openSnippetDialog(-1)
 	case id == hitCommandsClose:
-		state.commands.closed = true
+		state.commands.shown = false
 		state.commands.filterOpen = false
 		state.commands.sortOpen = false
 		state.save()
