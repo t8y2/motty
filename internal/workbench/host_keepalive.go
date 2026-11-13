@@ -278,58 +278,81 @@ func idleSeesSecretPrompt(t *terminal) bool {
 	return idleSecretPromptRe.MatchString(t.screen.RowText(cursor.Y))
 }
 
-// idleKeepAliveWait sends the host's probe when its shell has been quiet for
-// the whole interval, and returns how long until the next check. Zero means
-// this session has no timer: the setting is off, the shell has ended, or the
-// host is not a remote terminal.
-//
-// A password prompt, an assistant command, a completion suggestion, a
-// full-screen program and a partially typed line are all states an Enter could
-// disturb or submit, so the probe waits for a whole interval instead. A refused
-// write is retried at the next interval, never in a loop.
-func (state *State) idleKeepAliveWait(session *Session, now time.Duration) time.Duration {
+// idleKeepAliveInterval is the configured interval of a session that has a
+// shell to probe, and whether it has one at all.
+func idleKeepAliveInterval(session *Session) (time.Duration, bool) {
 	if session == nil || session.isLocal() {
-		return 0
+		return 0, false
 	}
 	host, t := session.host, session.term
 	if t == nil || t.shell == nil || t.ended || !idleKeepAliveProtocol(host.Protocol) {
-		return 0
+		return 0, false
 	}
 	interval := host.IdleKeepAlive
 	if interval <= 0 {
+		return 0, false
+	}
+	return interval, true
+}
+
+// idleKeepAliveWait is what Paint asks: how long until this session's probe is
+// due. It does no shell I/O. Zero means no timer; a nanosecond when due asks
+// the update loop for the frame that runs the probe.
+func (state *State) idleKeepAliveWait(session *Session, now time.Duration) time.Duration {
+	interval, ok := idleKeepAliveInterval(session)
+	if !ok {
 		return 0
 	}
+	t := session.term
+	if idleKeepAliveDue(now, t.idleLastInput, interval) {
+		return time.Nanosecond
+	}
+	if now < t.idleLastInput {
+		return interval
+	}
+	return interval - (now - t.idleLastInput)
+}
+
+// runIdleKeepAlive decides and writes in the update loop, next to the login
+// command, so Paint never touches the shell.
+//
+// A transfer that owns the shell, a password prompt, an assistant command, a
+// completion suggestion, a full-screen program and a partially typed line are
+// all states an Enter could disturb or submit, so the probe waits for another
+// interval instead. A refused write is retried at the next interval, never in a
+// loop.
+func (state *State) runIdleKeepAlive(session *Session, now time.Duration) {
+	interval, ok := idleKeepAliveInterval(session)
+	if !ok {
+		return
+	}
+	t := session.term
 	if !idleKeepAliveDue(now, t.idleLastInput, interval) {
-		if now < t.idleLastInput {
-			return interval
-		}
-		return interval - (now - t.idleLastInput)
+		return
 	}
-	// The other automatic input paths drain the shell before deciding. A prompt
-	// that arrived after this frame's pump, or outside its budget, is only
-	// visible after the drain; the shell may also have ended while it ran.
-	if t.takeOutput != nil {
-		t.takeOutput()
-		if t.shell == nil || t.ended {
-			return 0
-		}
+	// A transfer's binary stream would take a stray CR/NUL as data. The
+	// transfer itself writes straight to the shell and does not refresh
+	// idleLastInput, so the probe must stand aside for it.
+	if t.transferHoldsInput {
+		t.idleLastInput = now
+		return
 	}
-	// The bytes are made only when the probe is due: the paint that schedules
-	// the next frame must not parse the custom text sixty times a second.
-	payload, err := host.idleInputBytes()
+	payload, err := session.host.idleInputBytes()
 	if err != nil {
-		return 0
+		// A damaged custom setting is repaired by the form or the next load;
+		// until then, do not ask for a frame every paint.
+		t.idleLastInput = now
+		return
 	}
 	if t.passwordHint != "" || t.exec != nil || t.suggestionPending != nil ||
 		t.screen.Modes().AltScreen || t.promptDirty || idleSeesSecretPrompt(t) {
 		t.idleLastInput = now
-		return interval
+		return
 	}
 	// The next check starts from this attempt, whether or not the shell took
 	// the bytes: a refused write is retried then, not on the next frame.
 	t.idleLastInput = now
 	t.sendIdleKeepAlive(payload)
-	return interval
 }
 
 // requestIdleKeepAliveFrames asks for the frame in which each connected

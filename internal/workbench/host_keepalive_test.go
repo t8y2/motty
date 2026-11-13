@@ -249,14 +249,22 @@ func TestIdleKeepAliveWritesTheHostsInputWhenDue(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			state, session, shell := idleKeepAliveSession(t, test.host)
-			if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
-				t.Fatalf("wait = %v, want %v", wait, time.Minute)
+			// Paint only asks for the frame; the update loop writes.
+			if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Nanosecond {
+				t.Fatalf("paint wait = %v, want a frame request", wait)
 			}
+			if got := shell.typed(); got != "" {
+				t.Fatalf("Paint typed %q", got)
+			}
+			state.runIdleKeepAlive(session, time.Minute)
 			if got := shell.typed(); got != test.want {
 				t.Fatalf("typed %q, want %q", got, test.want)
 			}
 			if session.term.idleLastInput != time.Minute {
 				t.Fatalf("last input = %v, want %v", session.term.idleLastInput, time.Minute)
+			}
+			if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+				t.Fatalf("next wait = %v, want %v", wait, time.Minute)
 			}
 		})
 	}
@@ -294,14 +302,15 @@ func TestIdleKeepAliveTypingPostponesTheProbe(t *testing.T) {
 func TestIdleKeepAliveSkipsAPasswordPrompt(t *testing.T) {
 	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
 	session.term.passwordHint = "Password:"
-	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
-		t.Fatalf("wait = %v, want %v", wait, time.Minute)
-	}
+	state.runIdleKeepAlive(session, time.Minute)
 	if got := shell.typed(); got != "" {
 		t.Fatalf("typed %q into a password prompt", got)
 	}
 	if session.term.idleLastInput != time.Minute {
 		t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
+	}
+	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+		t.Fatalf("next wait = %v, want %v", wait, time.Minute)
 	}
 }
 
@@ -347,14 +356,15 @@ func TestIdleKeepAliveWritesTheShellEncoding(t *testing.T) {
 func TestIdleKeepAliveSkipsAFullScreenProgram(t *testing.T) {
 	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
 	session.term.screen.Write([]byte("\x1b[?1049h"))
-	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
-		t.Fatalf("wait = %v, want %v", wait, time.Minute)
-	}
+	state.runIdleKeepAlive(session, time.Minute)
 	if got := shell.typed(); got != "" {
 		t.Fatalf("typed %q into a full-screen program", got)
 	}
 	if session.term.idleLastInput != time.Minute {
 		t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
+	}
+	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+		t.Fatalf("next wait = %v, want %v", wait, time.Minute)
 	}
 }
 
@@ -373,14 +383,15 @@ func TestIdleKeepAliveSkipsCredentialPrompts(t *testing.T) {
 		t.Run(prompt, func(t *testing.T) {
 			state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
 			session.term.screen.Write([]byte(prompt))
-			if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
-				t.Fatalf("wait = %v, want %v", wait, time.Minute)
-			}
+			state.runIdleKeepAlive(session, time.Minute)
 			if got := shell.typed(); got != "" {
 				t.Fatalf("typed %q at a credential prompt", got)
 			}
 			if session.term.idleLastInput != time.Minute {
 				t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
+			}
+			if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+				t.Fatalf("next wait = %v, want %v", wait, time.Minute)
 			}
 		})
 	}
@@ -394,47 +405,32 @@ func TestIdleKeepAliveSkipsAPartiallyTypedLine(t *testing.T) {
 	if !session.term.sendInput([]byte("rm -rf /"), false) {
 		t.Fatal("sendInput refused the user's keys")
 	}
-	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
-		t.Fatalf("wait = %v, want %v", wait, time.Minute)
-	}
+	state.runIdleKeepAlive(session, time.Minute)
 	if got := shell.typed(); got != "rm -rf /" {
 		t.Fatalf("typed %q, want only the user's line", got)
 	}
 	if session.term.idleLastInput != time.Minute {
 		t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
 	}
+	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+		t.Fatalf("next wait = %v, want %v", wait, time.Minute)
+	}
 }
 
-// The other automatic input paths drain first; a prompt that arrived after the
-// frame's pump must stop the probe too.
-func TestIdleKeepAliveDrainsTheShellBeforeDeciding(t *testing.T) {
+// A transfer owns the shell's byte stream: a stray CR/NUL would land in the
+// ZMODEM data, so the probe stands aside while it runs.
+func TestIdleKeepAliveSkipsAFileTransfer(t *testing.T) {
 	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
-	drained := false
-	session.term.takeOutput = func() {
-		drained = true
-		session.term.takeOutput = nil
-		session.term.screen.Write([]byte("Password: "))
+	session.term.transferHoldsInput = true
+	state.runIdleKeepAlive(session, time.Minute)
+	if got := shell.typed(); got != "" {
+		t.Fatalf("typed %q into a file transfer", got)
+	}
+	if session.term.idleLastInput != time.Minute {
+		t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
 	}
 	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
-		t.Fatalf("wait = %v, want %v", wait, time.Minute)
-	}
-	if !drained {
-		t.Fatal("the probe did not drain the shell before deciding")
-	}
-	if got := shell.typed(); got != "" {
-		t.Fatalf("typed %q at a prompt found by the drain", got)
-	}
-}
-
-func TestIdleKeepAliveStopsWhenTheDrainEndsTheShell(t *testing.T) {
-	state, session, _ := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
-	session.term.takeOutput = func() {
-		session.term.takeOutput = nil
-		session.term.shell = nil
-		session.term.ended = true
-	}
-	if wait := state.idleKeepAliveWait(session, time.Minute); wait != 0 {
-		t.Fatalf("wait = %v, want no timer after the shell ended", wait)
+		t.Fatalf("next wait = %v, want %v", wait, time.Minute)
 	}
 }
 
@@ -468,11 +464,12 @@ func TestIdleKeepAliveIsOnlyForRemoteTerminals(t *testing.T) {
 func TestIdleKeepAliveRefusedWriteWaitsAnotherInterval(t *testing.T) {
 	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
 	shell.refuse = true
-	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
-		t.Fatalf("wait = %v, want %v", wait, time.Minute)
-	}
+	state.runIdleKeepAlive(session, time.Minute)
 	if session.term.idleLastInput != time.Minute {
 		t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
+	}
+	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+		t.Fatalf("next wait = %v, want %v", wait, time.Minute)
 	}
 }
 
@@ -492,11 +489,15 @@ func TestIdleKeepAliveStopsWhenTheShellEndedOrTheTextIsDamaged(t *testing.T) {
 			Protocol: protocolSSH, IdleKeepAlive: time.Minute,
 			IdleInput: idleInputCustom, IdleInputCustom: `\q`,
 		})
-		if wait := state.idleKeepAliveWait(session, time.Minute); wait != 0 {
-			t.Fatalf("wait = %v, want no timer", wait)
-		}
+		state.runIdleKeepAlive(session, time.Minute)
 		if got := shell.typed(); got != "" {
 			t.Fatalf("typed %q", got)
+		}
+		if session.term.idleLastInput != time.Minute {
+			t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
+		}
+		if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
+			t.Fatalf("next wait = %v, want %v", wait, time.Minute)
 		}
 	})
 }

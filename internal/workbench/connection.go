@@ -789,6 +789,7 @@ func (state *State) Wake() {
 		state.pump(session)
 		state.pumpCompletionPath(session)
 		state.runLoginCommand(session)
+		state.runIdleKeepAlive(session, findNow)
 		// A session-local charset notice changes the available character grid.
 		// Resize after parsing output, never reentrantly from an OSC callback.
 		state.fitTerminal(session)
