@@ -9,12 +9,76 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"motty/internal/remotestats"
 )
+
+func TestMonitorHostAddressCopyFeedback(t *testing.T) {
+	state, session := monitorFixture(t)
+	now := 10 * time.Second
+	state.options.Now = func() time.Duration { return now }
+	session.stats.panel.paused = true // expiry must repaint without monitor refreshes
+	var copied []string
+	state.options.SetClipboardText = func(value string) error {
+		copied = append(copied, value)
+		return nil
+	}
+	view, err := headless.Open(app.Config{
+		Title: "Monitor", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint,
+		OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll, OnResize: state.Resize,
+	}, nil, headless.Options{Scale: 1.5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err = view.ClickLabel(session.host.Address); err != nil {
+		t.Fatal(err)
+	}
+	if len(copied) != 1 || copied[0] != session.host.Address || !view.HasText(state.messages.Monitor.AddressCopied) || len(state.fileNotices.items) != 0 {
+		t.Fatalf("copy did not write the address and show feedback: %q", copied)
+	}
+	now += 1500 * time.Millisecond
+	if err = view.Wait(1500 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if !view.HasText(state.messages.Monitor.AddressCopied) {
+		t.Fatal("inline feedback disappeared before two seconds")
+	}
+	if dir := os.Getenv("MOTTY_MONITOR_SCREENSHOTS"); dir != "" {
+		if err = view.Screenshot(filepath.Join(dir, "monitor-address-copied.png")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = view.Keys("enter"); err != nil {
+		t.Fatal(err)
+	}
+	if len(copied) != 2 || copied[1] != session.host.Address {
+		t.Fatalf("focused address cannot be copied with Enter: %q", copied)
+	}
+	now += 1500 * time.Millisecond
+	if err = view.Wait(1500 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if !view.HasText(state.messages.Monitor.AddressCopied) {
+		t.Fatal("copying again did not restart the feedback timer")
+	}
+	now += 500 * time.Millisecond
+	if err = view.Wait(500 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if view.HasText(state.messages.Monitor.AddressCopied) {
+		t.Fatal("inline feedback did not disappear after two seconds")
+	}
+	if dir := os.Getenv("MOTTY_MONITOR_SCREENSHOTS"); dir != "" {
+		if err = view.Screenshot(filepath.Join(dir, "monitor-address-restored.png")); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestMonitorNativePanelAtDifferentScales(t *testing.T) {
 	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {

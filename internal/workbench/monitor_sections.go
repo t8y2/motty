@@ -8,6 +8,7 @@ import (
 
 const monitorInset = float32(12)
 const monitorControlsHeight = float32(44)
+const monitorHostInfoHeight = float32(40)
 const monitorTileHeight = float32(128)
 const monitorLowerTileHeight = float32(128)
 const monitorGap = float32(10)
