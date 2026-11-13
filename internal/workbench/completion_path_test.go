@@ -70,8 +70,8 @@ func TestPathCompletionOpensAutomaticallyAndOffersTheDirectory(t *testing.T) {
 		t.Fatal("the list was not the automatic one")
 	}
 	got := strings.Join(listTexts(w), ",")
-	if got != "docs/,notes.txt" {
-		t.Fatalf("candidates = %q, want the directory first and the hidden file left out", got)
+	if got != "docs/" {
+		t.Fatalf("candidates = %q, want only the folders a cd can enter", got)
 	}
 	if w.state.completion.list.candidates[0].Kind != completion.KindPath {
 		t.Fatalf("candidate kind = %v", w.state.completion.list.candidates[0].Kind)
@@ -103,7 +103,7 @@ func TestPathCompletionOpensBeforeTheSpace(t *testing.T) {
 	w.type_("cd")
 	waitCompletionList(t, w)
 	got := strings.Join(listTexts(w), ",")
-	if got != "docs/,notes.txt" {
+	if got != "docs/" {
 		t.Fatalf("candidates = %q", got)
 	}
 	before := w.shell.typed()
