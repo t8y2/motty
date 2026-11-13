@@ -158,6 +158,49 @@ func TestAIReasoningMenuInteractionAndRequestTransmission(t *testing.T) {
 	}
 }
 
+func TestAIReasoningSettingsRefresh(t *testing.T) {
+	state, _ := panelState(t, &captureProvider{})
+	db, err := state.aiStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveProvider(store.Provider{ID: "p1", Name: "Custom", Kind: "openai", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveModels("p1", []store.Model{{ProviderID: "p1", Name: "custom-model", Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetDefaultModel("p1", "custom-model"); err != nil {
+		t.Fatal(err)
+	}
+	state.reloadAI()
+	if got := state.aiEffectiveReasoningEffort(); got != "" {
+		t.Fatalf("initial effort = %q", got)
+	}
+	for _, tc := range []struct {
+		name     string
+		config   *store.ReasoningConfig
+		disabled bool
+		want     string
+	}{
+		{"enabled", &store.ReasoningConfig{Levels: []string{"low", "high"}, Default: "high"}, false, "high"},
+		{"changed", &store.ReasoningConfig{Levels: []string{"low", "high"}, Default: "low"}, false, "low"},
+		{"disabled", nil, true, ""},
+		{"auto", nil, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := db.SetModelReasoning("p1", "custom-model", tc.config, tc.disabled); err != nil {
+				t.Fatal(err)
+			}
+			state.setMCPEndpoint("", tc.name)
+			pumpSettings(t, state, "reasoning settings", func() bool { return state.ai.mcpToken == tc.name })
+			if got := state.aiEffectiveReasoningEffort(); got != tc.want {
+				t.Fatalf("refreshed effort = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAIReasoningPaintWithoutPanic(t *testing.T) {
 	prov := &captureProvider{}
 	state, _ := panelState(t, prov)

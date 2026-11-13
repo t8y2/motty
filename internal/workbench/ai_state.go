@@ -366,6 +366,10 @@ func (state *State) reloadAISettings() {
 	if !failed {
 		ai.settings = settings
 	}
+	// Model reasoning settings can change in another window while this panel stays open.
+	if models, err := ai.store.Models(); err == nil {
+		ai.models = models
+	}
 	state.aiSyncModel()
 }
 
