@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
@@ -8,6 +9,39 @@ import (
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
 )
+
+func TestApprovalExtrasTinyBudget(t *testing.T) {
+	for _, budget := range []float32{0, 1, 7, 8, 9} {
+		t.Run(fmt.Sprint(budget), func(t *testing.T) {
+			state := agentPanel(t)
+			approvalFixture(state, risk.Critical, true)
+			state.ai.notice = "Ancillary notice must not overflow"
+			panel := &state.ai.panel
+			panel.pageScratch.composerBarHeight = aiSendSize + 8
+			composerMin := aiComposerMinimum(panel.pageScratch.composerBarHeight, state.Theme().Metrics.FontSizeM)
+			approvalMin := aiApprovalMinimum(true)
+			reserved := 2*aiComposerMargin + aiBottomTopPad + approvalMin
+			panel.rect = gfx.Rect{Width: 352, Height: aiTitleRow + 1 + reserved + composerMin + budget}
+			bounds := gfx.Rect{Width: 352, Height: reserved + composerMin + budget}
+			canvas := new(gfx.Canvas)
+			canvas.SetTree(&tree)
+			page := ui.NewPage(ui.PageConfig{Tree: &tree, Root: shellPageRoot, Theme: &state.theme})
+			var body aiBody
+			page.Draw(canvas, bounds, func(c ui.C) {
+				state.declareAIBottom(c, &body, composerMin)
+			})
+			box := body.box.Rect()
+			details := body.approvalDetails.Rect()
+			if details.Height < aiApprovalMinDetails-1 {
+				t.Errorf("extras squeezed approval details: %+v", details)
+			}
+			t.Logf("extras budget=%v composer=%+v bounds=%+v", budget, box, bounds)
+			if box.Y+box.Height > bounds.Height+0.01 || box.Height < composerMin {
+				t.Fatalf("extras overflow or squeeze composer: box=%+v bounds=%+v minimum=%v", box, bounds, composerMin)
+			}
+		})
+	}
+}
 
 // The List measures a row from what the row declares. Every kind of message must
 // declare exactly the height its own layout measured, or the List's estimate for

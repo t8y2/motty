@@ -406,12 +406,10 @@ type aiPanel struct {
 	approvalLay aiApprovalLayout
 
 	// mode is how the workbench page placed the panel in its last paint, and
-	// declared whether it declared it at all. drawerOpen is the page Drawer's open
-	// bool: its address is the drawer's identity, so it must stay one field.
-	mode       aiPanelMode
-	declared   bool
-	drawerOpen bool
-	resize     aiPanelResize
+	// declared whether it declared it at all.
+	mode     aiPanelMode
+	declared bool
+	resize   aiPanelResize
 
 	// overDraw paints what the page's declaration left for the last pass: the
 	// hand-painted controls and the chrome over them. It runs on the page's

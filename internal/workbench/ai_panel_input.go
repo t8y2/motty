@@ -12,20 +12,49 @@ import (
 )
 
 const (
-	aiAutoRows       = 8 // the most rows the box grows to by itself
-	aiMaxReasons     = 4
-	aiMaxSummary     = 5
-	aiApprovalPad    = float32(10)
-	aiApprovalSize   = float32(11)
-	aiApprovalLine   = float32(15)
-	aiButtonHeight   = float32(30)
-	aiSendSize       = float32(28)
-	aiComposerBar    = float32(48) // the row under the text: the model chip and Send
-	aiComposerTarget = float32(32) // the compact target selector above the text
-	aiComposerMargin = float32(8)  // between the box and the panel's edges
-	aiBottomPadding  = float32(12)
-	aiMentionRow     = float32(28)
+	aiAutoRows           = 8 // the most rows the box grows to by itself
+	aiMaxReasons         = 4
+	aiMaxSummary         = 5
+	aiApprovalPad        = float32(10)
+	aiApprovalSize       = float32(11)
+	aiApprovalLine       = float32(15)
+	aiApprovalMinDetails = float32(48) // leave a usable scroll viewport above the actions
+	aiApprovalHeader     = aiApprovalPad + 24
+	aiApprovalCardPad    = aiApprovalPad - 1 // the card's own padding at its sides and foot
+	aiConfirmLabel       = float32(18)       // the confirmation instruction line
+	aiConfirmGap         = float32(2)        // between that line and its field
+	aiConfirmField       = float32(32)       // the confirmation field
+	aiConfirmFoot        = float32(8)        // the card's foot margin under the field
+	aiButtonHeight       = float32(30)
+	aiSendSize           = float32(28)
+	aiComposerBar        = float32(48) // the row under the text: the model chip and Send
+	aiComposerTarget     = float32(32) // the compact target selector above the text
+	aiComposerMargin     = float32(8)  // between the box and the panel's edges
+	aiComposerLineGap    = float32(7)  // between the rows of the box's text
+	aiComposerPad        = float32(8)  // the box's padding above and below the text
+	aiBottomTopPad       = float32(7)  // the bottom's padding above the approval card
+	aiBottomPadding      = float32(12)
+	aiMentionRow         = float32(28)
 )
+
+// aiApprovalMinimum is the least height the approval card needs: its title row,
+// a details viewport that can be read, its action row and, for a request that
+// needs the confirmation word, that line and its field. declareAIBottom
+// reserves it before the history is laid out, and declareAIApproval builds the
+// card from the same sizes so the reservation cannot drift from what it paints.
+func aiApprovalMinimum(needsText bool) float32 {
+	height := aiApprovalHeader + aiApprovalCardPad + aiApprovalMinDetails + aiButtonHeight + 2 // border
+	if needsText {
+		height += aiConfirmLabel + aiConfirmGap + aiConfirmField + aiConfirmFoot
+	}
+	return height
+}
+
+// aiComposerMinimum is the least height of the message box: the target row, one
+// editable line inside the box's padding, and the action row under it.
+func aiComposerMinimum(barHeight, fontSizeM float32) float32 {
+	return aiComposerTarget + fontSizeM + aiComposerLineGap + aiComposerPad + barHeight
+}
 
 // aiApprovalLayout keeps the wrapped command and the scroll area for the
 // question at the front of the approval queue.
@@ -57,7 +86,7 @@ type aiBody struct {
 func (state *State) aiPrepareBottom(canvas *gfx.Canvas, width float32) (boxHeight float32) {
 	ai, panel := &state.ai, &state.ai.panel
 	theme := state.Theme()
-	lineHeight := theme.Metrics.FontSizeM + 7
+	lineHeight := theme.Metrics.FontSizeM + aiComposerLineGap
 	boxWidth := width + 2*aiPad - 2*aiComposerMargin
 	s := &panel.pageScratch
 	s.composerBarHeight = aiComposerBar
@@ -71,7 +100,7 @@ func (state *State) aiPrepareBottom(canvas *gfx.Canvas, width float32) (boxHeigh
 	if len(ai.approvals) > 0 {
 		state.aiLayoutApprovalSummary(canvas, ai.approvals[0], width)
 	}
-	height := float32(min(rows, aiAutoRows))*lineHeight + 8 + s.composerBarHeight + aiComposerTarget
+	height := float32(min(rows, aiAutoRows))*lineHeight + aiComposerPad + s.composerBarHeight + aiComposerTarget
 	if limit := panel.rect.Height * 0.6; limit > height {
 		height = min(max(height, ai.composerHeight), limit)
 	}
@@ -124,32 +153,69 @@ func aiByteOffset(value string, n int) int {
 func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	bottom := ui.Column(c)
+	extrasHeight := float32(0)
+	if text := state.aiNoticeText(); text != "" {
+		lines := c.Canvas().WrapLines(nil, text, aiSmallSize, gfx.WeightRegular, max(panel.rect.Width-2*aiPad-20, 1), 6)
+		extrasHeight += 12 + float32(len(lines))*aiSmallLine + 8
+	}
+	if len(panel.mentions) > 0 {
+		extrasHeight += 6 + float32(len(panel.mentions))*aiMentionRow + 8
+	}
+	if panel.chipRows > 0 {
+		extrasHeight += float32(panel.chipRows)*(aiChipHeight+aiChipGap) - aiChipGap + 8
+	}
+	extrasHeight = min(extrasHeight, 96)
 	if len(ai.approvals) > 0 {
-		bottom.Shrink(1)
+		// Reserve fixed controls and bounded extras so history cannot squeeze them out.
+		approvalMin := aiApprovalMinimum(ai.approvals[0].request.NeedsText)
+		reserved := 2*aiComposerMargin + aiBottomTopPad + approvalMin
+		available := panel.rect.Height - aiTitleRow - 1 // divider
+		if panel.pageScratch.showSetup {
+			available -= 56 + 8
+		}
+		// Bound extras to preserve fixed composer rows and the last editable line.
+		composerMin := aiComposerMinimum(panel.pageScratch.composerBarHeight, state.Theme().Metrics.FontSizeM)
+		extrasHeight = min(extrasHeight, max(available-reserved-composerMin, 0))
+		reserved += extrasHeight
+		// Temporarily shrink dragged boxes for approvals without changing the user's preferred height.
+		boxHeight = min(boxHeight, max(available-reserved, 0))
+		bottom.Shrink(1).MinHeight(boxHeight + reserved)
 	}
 	bottom.Children(func() {
-		aboveComposer := ui.Column(c).PadSides(7, aiPad, 0, aiPad).Gap(8)
+		aboveComposer := ui.Column(c).PadSides(aiBottomTopPad, aiPad, 0, aiPad).Gap(8)
 		if len(ai.approvals) > 0 {
 			aboveComposer.Shrink(1)
 		}
 		aboveComposer.Children(func() {
-			if text := state.aiNoticeText(); text != "" {
-				ui.Column(c).PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
-					ui.Paragraph(c, text, 6).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
-				})
-			}
 			if len(ai.approvals) > 0 {
 				state.declareAIApproval(c, body)
 			}
-			if len(panel.mentions) > 0 {
-				ui.Column(c).Pad(3).Border(1, pal.line).Background(pal.surface).Radius(radius.popup).Children(func() {
-					for index, name := range panel.mentions {
-						state.declareAIMention(c, index, name)
-					}
-				})
+			extras := func() {
+				if text := state.aiNoticeText(); text != "" {
+					ui.Column(c).PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
+						ui.Paragraph(c, text, 6).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
+					})
+				}
+				if len(panel.mentions) > 0 {
+					ui.Column(c).Pad(3).Border(1, pal.line).Background(pal.surface).Radius(radius.popup).Children(func() {
+						for index, name := range panel.mentions {
+							state.declareAIMention(c, index, name)
+						}
+					})
+				}
+				if panel.chipRows > 0 {
+					state.declareAIChips(c)
+				}
 			}
-			if panel.chipRows > 0 {
-				state.declareAIChips(c)
+			if len(ai.approvals) > 0 || ai.composerHeight > 0 {
+				// Omit extras when their budget cannot cover the gap and a positive viewport.
+				if extrasHeight > 8 {
+					ui.Scroll(c).Height(extrasHeight - 8).Shrink(0).Scrollbars().Children(func() {
+						ui.Column(c).Gap(8).Children(extras)
+					})
+				}
+			} else {
+				extras()
 			}
 		})
 		ui.Stack(c).Height(boxHeight).MarginSides(aiComposerMargin, aiComposerMargin, aiComposerMargin, aiComposerMargin).Children(func() {
@@ -332,8 +398,8 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 		title = m.EscalationTitle
 	}
 
-	ui.Column(c).Shrink(1).PadSides(0, aiApprovalPad-1, aiApprovalPad-1, aiApprovalPad-1).Background(pal.surface).Border(1, withAlpha(foreground, 0.7)).Radius(radius.popup).Children(func() {
-		ui.Row(c).Height(aiApprovalPad + 24).Items(ui.Start).Children(func() {
+	ui.Column(c).Shrink(1).PadSides(0, aiApprovalCardPad, aiApprovalCardPad, aiApprovalCardPad).Background(pal.surface).Border(1, withAlpha(foreground, 0.7)).Radius(radius.popup).Children(func() {
+		ui.Row(c).Height(aiApprovalHeader).Items(ui.Start).Children(func() {
 			ui.Text(c, title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(20).Grow(1).MarginSides(8, 0, 0, 0)
 			if !approval.escalation {
 				ui.Row(c).Height(16).PadX(6).Center().Shrink(0).MarginSides(10, 0, 0, 0).Background(fill).Radius(radius.control).Children(func() {
@@ -350,9 +416,9 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 				panel.confirmFor, panel.confirmFormat = approval, m.ConfirmFmt
 				panel.confirmText = fmt.Sprintf(m.ConfirmFmt, request.Confirm)
 			}
-			ui.Column(c).MarginSides(0, 0, 8, 0).Children(func() {
-				ui.Text(c, panel.confirmText).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(18).MarginSides(0, 0, 2, 0)
-				body.confirm = ui.Slot(c).Height(32)
+			ui.Column(c).MarginSides(0, 0, aiConfirmFoot, 0).Children(func() {
+				ui.Text(c, panel.confirmText).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiConfirmLabel).MarginSides(0, 0, aiConfirmGap, 0)
+				body.confirm = ui.Slot(c).Height(aiConfirmField)
 			})
 		}
 		ui.Row(c).Height(aiButtonHeight).Gap(8).Items(ui.Center).Children(func() {
