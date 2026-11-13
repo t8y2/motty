@@ -765,17 +765,17 @@ func (state *State) saveWithResult() error {
 // file stays as it is and the notice comes back on each change. flushSync is
 // false for a caller that schedules the sync itself.
 func (state *State) saveWithResultMode(flushSync bool) (saveErr error) {
-	return state.saveWithResultModeRecovery(flushSync, true)
+	return state.saveWithResultModeRecovery(flushSync, true, true)
 }
 
 // saveWithResultWithoutRefresh is for a save made while another store holds a
 // lock that must not be re-entered. A conflict is returned to the caller, which
 // can reload shared state after releasing that lock.
 func (state *State) saveWithResultWithoutRefresh() (saveErr error) {
-	return state.saveWithResultModeRecovery(false, false)
+	return state.saveWithResultModeRecovery(false, false, true)
 }
 
-func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict bool) (saveErr error) {
+func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict, notify bool) (saveErr error) {
 	defer func() {
 		message := state.noteSaveFailure()
 		unsaved := state.hasUnsavedNotes()
@@ -808,7 +808,7 @@ func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict bool) 
 		}
 	}()
 	previous := state.status
-	err := state.persistSnapshot(flushSync)
+	err := state.persistSnapshot(flushSync, notify)
 	if err == nil || !errors.Is(err, configstore.ErrConflict) || state.saveRetrying || !refreshConflict {
 		return err
 	}
@@ -844,7 +844,9 @@ func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict bool) 
 	// This save replaced the store the other windows were built on, so the ones
 	// showing configuration it changed have to read it back, exactly as a save
 	// that did not have to retry does.
-	state.configurationSaved(changedSavedFields(state.lastSaved, snapshot), false, flushSync)
+	if notify {
+		state.configurationSaved(changedSavedFields(state.lastSaved, snapshot), false, flushSync)
+	}
 	state.lastSaved, state.hasSaved = snapshot, true
 	state.status = previous
 	return nil
@@ -852,7 +854,7 @@ func (state *State) saveWithResultModeRecovery(flushSync, refreshConflict bool) 
 
 // persistSnapshot writes what changed since the last save and reports why it
 // could not be written.
-func (state *State) persistSnapshot(flushSync bool) error {
+func (state *State) persistSnapshot(flushSync, notify bool) error {
 	if state.saveBlocked {
 		if state.modal == modalNone {
 			state.modal = modalStateNotice
@@ -879,7 +881,9 @@ func (state *State) persistSnapshot(flushSync bool) error {
 				return err
 			}
 			state.lastSaved, state.hasSaved = snapshot, true
-			state.configurationSaved(changes, shared, flushSync)
+			if notify {
+				state.configurationSaved(changes, shared, flushSync)
+			}
 			return nil
 		}
 	}
@@ -889,7 +893,9 @@ func (state *State) persistSnapshot(flushSync bool) error {
 		return err
 	}
 	state.lastSaved, state.hasSaved = snapshot, true
-	state.configurationSaved(changes, shared, flushSync)
+	if notify {
+		state.configurationSaved(changes, shared, flushSync)
+	}
 	return nil
 }
 

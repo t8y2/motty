@@ -2,10 +2,12 @@ package workbench
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/autofill"
+	"motty/internal/vault"
 )
 
 // Deleting a rule from Settings asks first. An autofill rule that sends a fixed
@@ -109,21 +111,7 @@ func (state *State) clickDeleteRuleDialog(id gfx.ID) {
 	case hitRuleDeleteConfirm:
 		state.closeModal()
 		if len(ask.selectedAutofill)+len(ask.selectedHighlights) > 0 {
-			for index := len(state.autofillRules.rules) - 1; index >= 0; index-- {
-				for _, selected := range ask.selectedAutofill {
-					if state.autofillRules.rules[index] == selected {
-						state.deleteAutofillRule(index)
-						break
-					}
-				}
-			}
-			for position := len(ask.selectedHighlights) - 1; position >= 0; position-- {
-				selected := ask.selectedHighlights[position]
-				if selected.index < len(state.highlighting.rules) && state.highlighting.rules[selected.index] == selected.rule {
-					state.deleteHighlightRule(selected.index)
-				}
-			}
-			clear(state.ruleManager.selected)
+			state.deleteSelectedRules(ask)
 			return
 		}
 		switch ask.kind {
@@ -146,6 +134,55 @@ func (state *State) clickDeleteRuleDialog(id gfx.ID) {
 	case hitRuleDeleteCancel, hitRuleDeleteClose, hitRuleDeleteDismiss:
 		state.closeModal()
 	}
+}
+
+func (state *State) deleteSelectedRules(ask ruleDelete) {
+	previousAutofill, previousHighlights := state.autofillRules.rules, state.highlighting.rules
+	previousSaved := state.lastSaved
+	var changes []vault.Change
+	if len(ask.selectedAutofill) > 0 {
+		state.autofillRules.rules = slices.DeleteFunc(slices.Clone(previousAutofill), func(rule *autofill.Rule) bool {
+			if !slices.Contains(ask.selectedAutofill, rule) {
+				return false
+			}
+			if rule.Send == autofill.SendText {
+				changes = append(changes, vault.Change{Name: autofillSecretName(rule), Delete: true})
+			}
+			return true
+		})
+	}
+	if len(ask.selectedHighlights) > 0 {
+		state.highlighting.rules = make([]highlightRule, 0, len(previousHighlights))
+		for index, rule := range previousHighlights {
+			if !slices.Contains(ask.selectedHighlights, selectedHighlightRule{index: index, rule: rule}) {
+				state.highlighting.rules = append(state.highlighting.rules, rule)
+			}
+		}
+	}
+	commit := func() error { return state.saveWithResultModeRecovery(false, false, false) }
+	var err error
+	if len(changes) == 0 {
+		err = commit()
+	} else if state.secrets.vault == nil {
+		err = vault.ErrUnavailable
+	} else {
+		err = state.secrets.vault.ApplyWithCommit(changes, commit)
+	}
+	if err != nil {
+		state.autofillRules.rules, state.highlighting.rules = previousAutofill, previousHighlights
+		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
+		return
+	}
+	if len(ask.selectedAutofill) > 0 {
+		state.refreshAutofillArmed()
+	}
+	if len(ask.selectedHighlights) > 0 {
+		state.recompileHighlights()
+	}
+	clear(state.ruleManager.selected)
+	shared := len(previousAutofill) != len(state.autofillRules.rules) || len(previousHighlights) != len(state.highlighting.rules)
+	state.configurationSaved(changedSavedFields(previousSaved, state.lastSaved), shared, true)
+	state.sshSyncFlush()
 }
 
 func (state *State) paintDeleteRuleDialog(canvas *gfx.Canvas, viewport gfx.Rect) {

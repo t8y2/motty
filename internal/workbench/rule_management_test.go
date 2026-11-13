@@ -76,10 +76,12 @@ func TestRuleManagerAutofillBatchDeletionRemovesOnlySelectedVaultText(t *testing
 	state := w.state
 	w.addRule(t, "one", `^One:`, "", autofill.SendText, "private-one")
 	w.addRule(t, "two", `^Two:`, "", autofill.SendText, "private-two")
-	first, second := state.autofillRules.rules[0], state.autofillRules.rules[1]
+	w.addRule(t, "three", `^Three:`, "", autofill.SendText, "private-three")
+	first, second, third := state.autofillRules.rules[0], state.autofillRules.rules[1], state.autofillRules.rules[2]
 	state.toggleAutofillRule(1)
 	state.Click(hitSettingsAutofillManage)
 	state.Click(hitRuleManagerSelect.At(0))
+	state.Click(hitRuleManagerSelect.At(2))
 	state.Click(hitRuleManagerDelete)
 	if !state.ruleDelete.text {
 		t.Fatal("batch confirmation omitted the vault deletion warning")
@@ -95,6 +97,9 @@ func TestRuleManagerAutofillBatchDeletionRemovesOnlySelectedVaultText(t *testing
 	}
 	if _, found, _ := state.secrets.vault.Get(autofillSecretName(first)); found {
 		t.Fatal("deleted rule left fixed text in the vault")
+	}
+	if _, found, _ := state.secrets.vault.Get(autofillSecretName(third)); found {
+		t.Fatal("second selected rule left fixed text in the vault")
 	}
 	if _, found, _ := state.secrets.vault.Get(autofillSecretName(second)); !found {
 		t.Fatal("unselected rule lost fixed text")
@@ -180,5 +185,135 @@ func TestRuleManagerVaultSaveFailureKeepsAutofillEditorAndOriginalRule(t *testin
 	}
 	if value, found, _ := vault.Get(autofillSecretName(original)); !found || value != "private-value" {
 		t.Fatal("save failure changed existing vault text")
+	}
+}
+
+func TestRuleManagerBatchDeletionConflictPreservesAutofillRulesAndVault(test *testing.T) {
+	world := liveAutofillSession(test)
+	state := world.state
+	world.addRule(test, "one", `^One:`, "", autofill.SendText, "private-one")
+	world.addRule(test, "two", `^Two:`, "", autofill.SendText, "private-two")
+	world.addRule(test, "three", `^Three:`, "", autofill.SendText, "private-three")
+	state.Click(hitSettingsAutofillManage)
+	state.Click(hitRuleManagerSelect.At(0))
+	state.Click(hitRuleManagerSelect.At(2))
+	state.Click(hitRuleManagerDelete)
+
+	other := newTestState(test, state.options)
+	other.autofillRules.rules[2].Name = "changed elsewhere"
+	if err := other.saveWithResult(); err != nil {
+		test.Fatal(err)
+	}
+	state.Click(hitRuleDeleteConfirm)
+	if len(state.autofillRules.rules) != 3 || !state.ruleManager.selected[0] || !state.ruleManager.selected[2] {
+		test.Fatalf("conflicted deletion changed rules or selection: rules=%d selection=%v", len(state.autofillRules.rules), state.ruleManager.selected)
+	}
+	if !contains([]string{state.status}, "Could not save") {
+		test.Fatalf("conflict was not reported: %q", state.status)
+	}
+	for index, value := range []string{"private-one", "private-two", "private-three"} {
+		if got, found, err := state.secrets.vault.Get(autofillSecretName(state.autofillRules.rules[index])); err != nil || !found || got != value {
+			test.Fatalf("conflict removed rule %d's vault text: found=%v err=%v", index, found, err)
+		}
+	}
+	restarted := newTestState(test, state.options)
+	if len(restarted.autofillRules.rules) != 3 || restarted.autofillRules.rules[2].Name != "changed elsewhere" {
+		test.Fatal("conflicted deletion overwrote another window's rules")
+	}
+}
+
+func TestRuleManagerBatchDeletionSaveFailureKeepsRulesAndSelection(test *testing.T) {
+	for _, kind := range []ruleDeleteKind{ruleDeleteAutofill, ruleDeleteHighlight} {
+		test.Run(fmt.Sprint(kind), func(test *testing.T) {
+			world := liveAutofillSession(test)
+			state := world.state
+			world.addRule(test, "one", `^One:`, "", autofill.SendText, "private-one")
+			world.addRule(test, "two", `^Two:`, "", autofill.SendText, "private-two")
+			state.highlighting.rules = []highlightRule{{Pattern: "one", Slot: highlight.Red}, {Pattern: "two", Slot: highlight.Blue}}
+			if err := state.saveWithResult(); err != nil {
+				test.Fatal(err)
+			}
+			state.openRuleManager(kind)
+			state.Click(hitRuleManagerAll)
+			state.Click(hitRuleManagerDelete)
+			state.saveBlocked = true
+			state.Click(hitRuleDeleteConfirm)
+			if state.ruleManagerCount() != 2 || len(state.ruleManager.selected) != 2 {
+				test.Fatalf("failed deletion changed rules or selection: count=%d selection=%v", state.ruleManagerCount(), state.ruleManager.selected)
+			}
+			for index, value := range []string{"private-one", "private-two"} {
+				if got, found, err := state.secrets.vault.Get(autofillSecretName(state.autofillRules.rules[index])); err != nil || !found || got != value {
+					test.Fatalf("failed deletion removed rule %d's vault text: found=%v err=%v", index, found, err)
+				}
+			}
+			state.saveBlocked = false
+			state.Click(hitRuleManagerDelete)
+			state.Click(hitRuleDeleteConfirm)
+			if state.ruleManagerCount() != 0 || len(state.ruleManager.selected) != 0 {
+				test.Fatal("retry did not delete all selected rules")
+			}
+		})
+	}
+}
+
+func TestRuleManagerBatchDeletionVaultFailureKeepsRulesAndSelection(test *testing.T) {
+	world := liveAutofillSession(test)
+	state := world.state
+	world.addRule(test, "one", `^One:`, "", autofill.SendText, "private-one")
+	world.addRule(test, "two", `^Two:`, "", autofill.SendText, "private-two")
+	state.openRuleManager(ruleDeleteAutofill)
+	state.Click(hitRuleManagerAll)
+	state.Click(hitRuleManagerDelete)
+	vaultFile := state.secrets.vault
+	state.secrets.vault = nil
+	state.Click(hitRuleDeleteConfirm)
+	state.secrets.vault = vaultFile
+	if len(state.autofillRules.rules) != 2 || len(state.ruleManager.selected) != 2 {
+		test.Fatal("unavailable vault removed rules or cleared the selection")
+	}
+	restarted := newTestState(test, state.options)
+	if len(restarted.autofillRules.rules) != 2 {
+		test.Fatal("unavailable vault persisted the deletion")
+	}
+}
+
+func TestRuleManagerBatchDeletionUpdatesOtherWindowsAfterVaultCommit(test *testing.T) {
+	pair := newWindowsOnOneStore(test)
+	state := pair.first
+	rules := []*autofill.Rule{
+		{ID: "one", Name: "one", Pattern: "^One:", Send: autofill.SendText},
+		{ID: "two", Name: "two", Pattern: "^Two:", Send: autofill.SendText},
+		{ID: "three", Name: "three", Pattern: "^Three:", Send: autofill.SendText},
+	}
+	for _, rule := range rules {
+		if err := rule.Compile(); err != nil {
+			test.Fatal(err)
+		}
+		if err := state.secrets.vault.Set(autofillSecretName(rule), "synthetic-"+rule.ID); err != nil {
+			test.Fatal(err)
+		}
+	}
+	state.autofillRules.rules = rules
+	if err := state.saveWithResult(); err != nil {
+		test.Fatal(err)
+	}
+	if state.secrets.vault != pair.second.secrets.vault {
+		test.Fatal("fixture does not share the vault between windows")
+	}
+	state.openRuleManager(ruleDeleteAutofill)
+	state.Click(hitRuleManagerSelect.At(0))
+	state.Click(hitRuleManagerSelect.At(2))
+	state.Click(hitRuleManagerDelete)
+	state.Click(hitRuleDeleteConfirm)
+	for _, window := range []*State{state, pair.second} {
+		if len(window.autofillRules.rules) != 1 || window.autofillRules.rules[0].ID != "two" {
+			test.Fatalf("window retained selected rules or lost an unselected rule: %+v", window.autofillRules.rules)
+		}
+	}
+	for _, rule := range rules {
+		_, found, err := state.secrets.vault.Get(autofillSecretName(rule))
+		if err != nil || found != (rule.ID == "two") {
+			test.Fatalf("wrong vault ownership after deletion for %s: found=%v err=%v", rule.ID, found, err)
+		}
 	}
 }
