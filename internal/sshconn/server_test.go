@@ -535,6 +535,7 @@ type fakeShell struct {
 	term    string
 	cols    int
 	rows    int
+	modes   string // the pty request's encoded terminal modes
 	env     map[string]string
 	resizes [][2]int
 	x11     *x11Request
@@ -585,6 +586,7 @@ func serveSession(server *testServer, conn ssh.Conn, channel ssh.Channel, reques
 			ssh.Unmarshal(request.Payload, &payload)
 			shell.mu.Lock()
 			shell.term, shell.cols, shell.rows = payload.Term, int(payload.Columns), int(payload.Rows)
+			shell.modes = payload.Modes
 			shell.mu.Unlock()
 			request.Reply(true, nil)
 		case "x11-req":
