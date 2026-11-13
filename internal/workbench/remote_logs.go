@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -68,7 +67,7 @@ type remoteLogBuffer struct {
 	err         error
 }
 
-func (b *remoteLogBuffer) append(raw []byte) {
+func (b *remoteLogBuffer) append(raw []byte) bool {
 	line := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")
 	line = strings.Map(func(r rune) rune {
 		if r == '\t' {
@@ -80,7 +79,7 @@ func (b *remoteLogBuffer) append(raw []byte) {
 		return r
 	}, line)
 	if len(line) > remoteLogBufferSize {
-		return
+		return false
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -94,6 +93,7 @@ func (b *remoteLogBuffer) append(raw []byte) {
 	b.next++
 	b.bytes += len(line)
 	b.revision++
+	return true
 }
 
 type remoteLogSnapshot struct {
@@ -190,25 +190,6 @@ func (state *State) followRemoteLog(session *Session, view *remoteLogView, path 
 	view.follow, view.top, view.scrollRemainder = true, 0, 0
 	conn, notify := session.conn, state.notifyFor(session)
 	go func() {
-		var revision uint64
-		timer := time.NewTicker(100 * time.Millisecond)
-		defer timer.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-timer.C:
-				buffer.mu.Lock()
-				changed := buffer.revision != revision
-				revision = buffer.revision
-				buffer.mu.Unlock()
-				if changed {
-					notify()
-				}
-			}
-		}
-	}()
-	go func() {
 		first := true
 		stream := conn.StreamCommand
 		if tolerant, ok := conn.(interface {
@@ -227,10 +208,13 @@ func (state *State) followRemoteLog(session *Session, view *remoteLogView, path 
 					buffer.ready = true
 					buffer.revision++
 					buffer.mu.Unlock()
+					notify()
 					return true
 				}
 			}
-			buffer.append(line)
+			if buffer.append(line) {
+				notify()
+			}
 			return true
 		})
 		buffer.mu.Lock()

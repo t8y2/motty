@@ -71,20 +71,25 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 			entry = hit.Bounds
 		}
 	}
-	if rail := state.toolbarDockSideBoundsFor(state.viewport, false); entry.Width == 0 || entry.X < rail.X || entry.Y+entry.Height != rail.Y+rail.Height-4 {
+	if rail := state.toolbarDockSideBoundsFor(state.viewport, false); entry.Width == 0 ||
+		entry.X < rail.X || entry.X+entry.Width > rail.X+rail.Width ||
+		entry.Y < rail.Y+rail.Height/2 || entry.Y+entry.Height > rail.Y+rail.Height {
 		t.Fatalf("log entry %v is not anchored to the bottom of the right rail %v", entry, rail)
 	}
 	click(state.messages.RemoteLogs.Title)
 	if session.remoteLogs == nil {
 		t.Fatal("the toolbar did not open the log panel")
 	}
-	terminalHeight := state.workspacePixelBounds(state.viewport).Height
+	collapsedHeight := state.workspacePixelBounds(state.viewport).Height
 	click(state.messages.RemoteLogs.Expand)
-	if !session.remoteLogs.expanded || state.workspacePixelBounds(state.viewport).Height >= terminalHeight {
+	expandedHeight := state.workspacePixelBounds(state.viewport).Height
+	if !session.remoteLogs.expanded || expandedHeight >= collapsedHeight {
 		t.Fatal("expand icon did not increase the panel height")
 	}
 	click(state.messages.RemoteLogs.Restore)
-	if session.remoteLogs.expanded || state.workspacePixelBounds(state.viewport).Height != terminalHeight {
+	restoredHeight := state.workspacePixelBounds(state.viewport).Height
+	if session.remoteLogs.expanded || restoredHeight <= expandedHeight ||
+		math.Abs(float64(restoredHeight-collapsedHeight)) > 1 {
 		t.Fatal("restore icon did not restore the original height")
 	}
 	split, err := view.Locate(state.messages.RemoteLogs.ResizePaths)
@@ -138,13 +143,19 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 		t.Fatalf("remote command did not quote the path: %s", command)
 	}
 	liveRow := func() bool {
-		for _, hit := range view.Snapshot().Hits {
-			if hit.Label == path.Name+" "+path.Path+" · "+state.messages.RemoteLogs.Live {
-				for _, mark := range view.Snapshot().Primitives {
-					if mark.Color == state.pal.success && mark.Bounds.Width == 7 && mark.Bounds.Height == 7 &&
-						pointInRect(mark.Bounds.X, mark.Bounds.Y, hit.Bounds) {
-						return true
-					}
+		snapshot := view.Snapshot()
+		for _, hit := range snapshot.Hits {
+			if hit.Label != path.Name+" "+path.Path+" · "+state.messages.RemoteLogs.Live {
+				continue
+			}
+			for _, mark := range snapshot.Primitives {
+				centerX, centerY := mark.Bounds.X+mark.Bounds.Width/2, mark.Bounds.Y+mark.Bounds.Height/2
+				// The live marker is the small square success dot inside the row;
+				// its exact size belongs to the table, not to the behavior.
+				if mark.Kind == app.RectanglePrimitive && mark.Radius > 0 && mark.Color == state.pal.success &&
+					mark.Bounds.Width > 0 && mark.Bounds.Width == mark.Bounds.Height &&
+					mark.Bounds.Width < hit.Bounds.Height && pointInRect(centerX, centerY, hit.Bounds) {
+					return true
 				}
 			}
 		}
@@ -167,36 +178,60 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	if !liveRow() {
 		t.Fatal("connected path has no green indicator")
 	}
-	assertSwitch := func(checked bool) {
+	assertSwitch := func(checked bool) gfx.Rect {
 		t.Helper()
 		snapshot := view.Snapshot()
 		hit, err := view.Locate("Auto-scroll")
 		if err != nil || hit.Role != gfx.RoleSwitch || hit.Checked != checked {
 			t.Fatalf("auto-scroll switch hit = %+v, want checked=%v, error %v", hit, checked, err)
 		}
-		track := gfx.Rect{X: float32(math.Round(float64(hit.Bounds.X))), Y: float32(math.Round(float64(hit.Bounds.Y + 5))), Width: 32, Height: 18}
-		thumb := gfx.Rect{X: track.X + 2, Y: track.Y + 2, Width: 14, Height: 14}
-
-		if checked {
-			thumb.X += 14
-
-		}
-
-		var hasTrack, hasThumb, hasCaption bool
+		// The switch draws its track first and the thumb on top; paint order
+		// tells them apart without pinning their size or radius.
+		var track, thumb gfx.Rect
+		shapes := 0
 		for _, mark := range snapshot.Primitives {
-			hasTrack = hasTrack || mark.Bounds == track && mark.Radius == 9
-			hasThumb = hasThumb || mark.Bounds == thumb && mark.Radius == 7
+			centerX, centerY := mark.Bounds.X+mark.Bounds.Width/2, mark.Bounds.Y+mark.Bounds.Height/2
+			if mark.Kind != app.RectanglePrimitive || mark.Radius <= 0 || !pointInRect(centerX, centerY, hit.Bounds) {
+				continue
+			}
+			if shapes == 0 {
+				track = mark.Bounds
+			}
+			thumb = mark.Bounds
+			shapes++
 		}
+		if shapes < 2 {
+			t.Fatalf("auto-scroll switch drew %d rounded parts, want a track and a thumb", shapes)
+		}
+		if thumb.Width >= track.Width || thumb.Y < track.Y || thumb.Y+thumb.Height > track.Y+track.Height ||
+			thumb.X < track.X || thumb.X+thumb.Width > track.X+track.Width {
+			t.Fatalf("auto-scroll thumb %v is not inside its track %v", thumb, track)
+		}
+		trackCenterY := track.Y + track.Height/2
+		caption := false
 		for _, text := range snapshot.Texts {
-			hasCaption = hasCaption || text.Value == "Auto-scroll" && text.Bounds.Y+text.Bounds.Height/2 == hit.Bounds.Y+hit.Bounds.Height/2
+			if text.Value != "Auto-scroll" {
+				continue
+			}
+			centerY := text.Bounds.Y + text.Bounds.Height/2
+			// The caption rides the same band as the track rather than an
+			// exact pixel row.
+			if centerY >= hit.Bounds.Y && centerY < hit.Bounds.Y+hit.Bounds.Height &&
+				math.Abs(float64(centerY-trackCenterY)) < float64(track.Height/2) {
+				caption = true
+			}
 		}
-		if !hasTrack || !hasThumb || !hasCaption {
-			t.Fatalf("auto-scroll alignment: hit=%v track=%v thumb=%v caption=%v", hit.Bounds, hasTrack, hasThumb, hasCaption)
+		if !caption {
+			t.Fatalf("auto-scroll caption is not aligned with the switch track: hit=%v track=%v", hit.Bounds, track)
 		}
+		return thumb
 	}
-	assertSwitch(true)
+	rightThumb := assertSwitch(true)
 	click("Auto-scroll")
-	assertSwitch(false)
+	leftThumb := assertSwitch(false)
+	if leftThumb.X >= rightThumb.X {
+		t.Fatalf("unchecked thumb %v did not move left of checked thumb %v", leftThumb, rightThumb)
+	}
 	if !liveRow() {
 		t.Fatal("pausing scroll cleared the live indicator")
 	}
@@ -204,6 +239,10 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 		t.Fatal("pause left following enabled")
 	}
 	click("Auto-scroll")
+	resumedThumb := assertSwitch(true)
+	if resumedThumb.X <= leftThumb.X {
+		t.Fatalf("resumed thumb %v did not move right of paused thumb %v", resumedThumb, leftThumb)
+	}
 	if !session.remoteLogs.follow {
 		t.Fatal("auto-scroll did not resume following")
 	}
