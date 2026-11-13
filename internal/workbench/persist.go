@@ -54,7 +54,8 @@ type savedState struct {
 	SSHAgent                   string                  `json:"ssh_agent,omitempty"`
 	SSHAgentPath               string                  `json:"ssh_agent_path,omitempty"`
 	TerminalFontSize           int                     `json:"terminal_font_size,omitempty"`
-	TextScale                  string                  `json:"text_scale,omitempty"`
+	TextScale                  string                  `json:"text_scale,omitempty"` // read only: before the size was kept in pixels
+	InterfaceTextSize          int                     `json:"interface_text_size,omitempty"`
 	InterfaceFont              string                  `json:"interface_font,omitempty"`
 	TerminalFontFace           string                  `json:"terminal_font_face,omitempty"`
 	TerminalFontFamily         string                  `json:"terminal_font_family,omitempty"`
@@ -510,7 +511,7 @@ func (state *State) snapshot() savedState {
 		SSHAgent:                   savedAgent,
 		SSHAgentPath:               savedAgentPath,
 		TerminalFontSize:           int(state.terminalFontSize),
-		TextScale:                  state.textScale.String(),
+		InterfaceTextSize:          int(state.interfaceTextSize),
 		InterfaceFont:              state.uiFont.family,
 		TerminalFontFace:           terminalFontFaceString(state.fonts.classic),
 		TerminalFontFamily:         state.fonts.family,
@@ -1030,9 +1031,16 @@ func (state *State) restoreLocal(saved savedState) {
 	state.networkProxy = networkProxyModeFromString(saved.NetworkProxy)
 	state.syncNativeAppearance()
 	// The theme setAppearance builds copies the metrics by value, so the saved
-	// text scale must be in effect before it runs.
-	state.textScale = textScaleFromString(saved.TextScale)
-	applyTextMetrics(state.textScale.factor())
+	// text size must be in effect before it runs.
+	state.interfaceTextSize = normalizeInterfaceTextSize(saved.InterfaceTextSize)
+	if saved.InterfaceTextSize == 0 {
+		// A state from before the size was kept in pixels names one of three
+		// steps only: it becomes the body size that step drew.
+		if legacy, ok := interfaceTextSizeFromLegacy(saved.TextScale); ok {
+			state.interfaceTextSize = legacy
+		}
+	}
+	applyTextMetrics(state.interfaceTextSize.factor())
 	state.setAppearance(state.resolveAppearance())
 	state.setTerminalFontSize(float32(saved.TerminalFontSize))
 	// Only the choice: what is in effect is decided once the window starts, when

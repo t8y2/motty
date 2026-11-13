@@ -87,7 +87,9 @@ import (
 // writer would drop the records it does not know.
 // Version 27 preserves the latency readout's docked position and order: older
 // writers would drop the new toolbar key and silently move it back.
-const configFormat = 27
+// Version 28 preserves the device-local interface text size as a pixel number:
+// an older full save would drop the field and reset the size.
+const configFormat = 28
 
 const (
 	kindSetting             = "setting"

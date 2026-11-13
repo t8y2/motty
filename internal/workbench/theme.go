@@ -226,15 +226,10 @@ func (a appearance) palette() *palette {
 // radius is every corner the workbench draws itself, derived from them, so one
 // change to the corners reaches the framework's controls and the workbench's own
 // tabs, rows and cards alike.
-// textScaleFactors are the interface text sizes a user can choose: the whole
-// window's text drawn a step smaller or larger, its layout intact. The terminal
-// has a font size of its own and does not follow.
-const (
-	textScaleSmallFactor   = float32(0.9)
-	textScaleRegularFactor = float32(1)
-	textScaleLargeFactor   = float32(1.15)
-)
-
+//
+// The scale they are built at is the interface body size over the framework's
+// own: the whole window's text is drawn at the size the user chose, its layout
+// intact. The terminal has a font size of its own and does not follow.
 type radii struct {
 	item    float32 // a small row, chip or close button
 	control float32 // a button, tab, field or list row
@@ -242,19 +237,17 @@ type radii struct {
 	surface float32 // a dialog or a large panel
 }
 
-var metrics, radius = workbenchMetrics(textScaleRegularFactor)
+var metrics, radius = workbenchMetrics(1)
 
-// barTitleSize is the size of the name in a pane's bar. It follows the text
-// scale, as every text the window paints does.
+// barTitleSize is the size of the name in a pane's bar. It follows the interface
+// text size, as every text the window paints does.
 var barTitleSize = float32(13)
 
 func workbenchMetrics(scale float32) (gfx.Metrics, radii) {
 	m := gfx.DefaultMetrics()
-	if scale != textScaleRegularFactor {
-		m.FontSizeS *= scale
-		m.FontSizeM *= scale
-		m.FontSizeL *= scale
-	}
+	m.FontSizeS *= scale
+	m.FontSizeM *= scale
+	m.FontSizeL *= scale
 	return m, radii{item: m.RadiusItem(), control: m.RadiusControl, popup: m.RadiusPopup(), surface: m.RadiusSurface}
 }
 

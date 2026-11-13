@@ -6,78 +6,108 @@ import (
 	"github.com/vivaui/viva/gfx"
 )
 
-// The interface text size is one choice the user makes for the whole window —
-// the terminal's font size stays its own. It is a step each way, so nothing
-// that was measured to sit beside the text needs to move.
+// The interface text size is the window's body text size in pixels — one choice
+// the user makes for the whole window, with the descriptions and headings
+// following the framework's proportions of it. The terminal's font size stays
+// its own.
 
-func TestTextScaleStepsTheWholeWindow(t *testing.T) {
-	defer applyTextMetrics(textScaleRegularFactor) // the package's tokens are shared with every other test
+func TestInterfaceTextSizeStepsTheWholeWindow(t *testing.T) {
+	defer applyTextMetrics(interfaceTextSizeDefault.factor()) // the package's tokens are shared with every other test
 	state := newTestState(t, testOptions(t))
-	if state.textScale != textScaleRegular || metrics.FontSizeS != gfx.DefaultMetrics().FontSizeS {
-		t.Fatalf("the window opens at the regular size: %v %v", state.textScale, metrics.FontSizeS)
+	if state.interfaceTextSize != interfaceTextSizeDefault || metrics.FontSizeS != gfx.DefaultMetrics().FontSizeS {
+		t.Fatalf("the window opens at the default size: %v %v", state.interfaceTextSize, metrics.FontSizeS)
 	}
+	titleSize := barTitleSize
 	state.Click(hitSettings)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := settingsChoiceIn(&canvas, state.messages.SettingsTextSizeRegular); !ok {
-		t.Fatal("the settings page shows no interface text size choice")
+	for _, id := range []gfx.ID{hitSettingsTextSizeDown, hitSettingsTextSizeReset, hitSettingsTextSizeUp} {
+		if _, ok := hitByID(&canvas, id); !ok {
+			t.Fatalf("the settings page shows no interface text size control %d", id)
+		}
 	}
-	clickSettingsChoice(t, state, state.messages.SettingsTextSizeLarge)
-	if state.textScale != textScaleLarge {
-		t.Fatalf("the choice did not stick: %v", state.textScale)
+	state.Click(hitSettingsTextSizeUp)
+	if state.interfaceTextSize != interfaceTextSizeDefault+1 {
+		t.Fatalf("the step did not stick: %v", state.interfaceTextSize)
 	}
 	if metrics.FontSizeM <= gfx.DefaultMetrics().FontSizeM || metrics.FontSizeL <= gfx.DefaultMetrics().FontSizeL {
-		t.Fatalf("the large step leaves the sizes at %v %v %v", metrics.FontSizeS, metrics.FontSizeM, metrics.FontSizeL)
+		t.Fatalf("the larger size leaves the sizes at %v %v %v", metrics.FontSizeS, metrics.FontSizeM, metrics.FontSizeL)
 	}
 	// The theme copies the metrics by value: without a rebuild every framework
 	// component — the settings rows, menus, dialogs — stays at the old size.
 	if state.theme.Metrics.FontSizeM <= gfx.DefaultMetrics().FontSizeM {
-		t.Fatalf("the theme did not follow the large step: %v", state.theme.Metrics.FontSizeM)
+		t.Fatalf("the theme did not follow the larger size: %v", state.theme.Metrics.FontSizeM)
 	}
-	if barTitleSize <= float32(13) {
+	if barTitleSize <= titleSize {
 		t.Fatalf("the pane title stays at %v", barTitleSize)
 	}
-	clickSettingsChoice(t, state, state.messages.SettingsTextSizeSmall)
+	for state.interfaceTextSize > interfaceTextSizeMin {
+		state.Click(hitSettingsTextSizeDown)
+	}
+	state.Click(hitSettingsTextSizeDown) // past the smallest: it stops there
+	if state.interfaceTextSize != interfaceTextSizeMin {
+		t.Fatalf("the size went past its smallest: %v", state.interfaceTextSize)
+	}
 	if metrics.FontSizeM >= gfx.DefaultMetrics().FontSizeM {
-		t.Fatalf("the small step leaves the sizes at %v %v %v", metrics.FontSizeS, metrics.FontSizeM, metrics.FontSizeL)
+		t.Fatalf("the smaller size leaves the sizes at %v %v %v", metrics.FontSizeS, metrics.FontSizeM, metrics.FontSizeL)
 	}
 	if state.theme.Metrics.FontSizeM >= gfx.DefaultMetrics().FontSizeM {
-		t.Fatalf("the theme did not follow the small step: %v", state.theme.Metrics.FontSizeM)
+		t.Fatalf("the theme did not follow the smaller size: %v", state.theme.Metrics.FontSizeM)
 	}
-	clickSettingsChoice(t, state, state.messages.SettingsTextSizeRegular)
-	if metrics.FontSizeS != gfx.DefaultMetrics().FontSizeS || barTitleSize != 13 {
-		t.Fatalf("the regular step does not restore %v %v", metrics.FontSizeS, barTitleSize)
+	state.Click(hitSettingsTextSizeReset)
+	if state.interfaceTextSize != interfaceTextSizeDefault || metrics.FontSizeS != gfx.DefaultMetrics().FontSizeS || barTitleSize != titleSize {
+		t.Fatalf("the default step does not restore %v %v %v", state.interfaceTextSize, metrics.FontSizeS, barTitleSize)
 	}
 }
 
-func TestTextScaleTravelsThroughTheStateFile(t *testing.T) {
+func TestInterfaceTextSizeTravelsThroughTheStateFile(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
-	state.setTextScale(textScaleSmall)
+	state.setInterfaceTextSize(12)
 	state.save()
 	saved, _, err := loadState(state.options.StatePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.TextScale != "small" {
-		t.Fatalf("the saved scale is %q", saved.TextScale)
+	if saved.InterfaceTextSize != 12 {
+		t.Fatalf("the saved size is %d", saved.InterfaceTextSize)
 	}
-	defer applyTextMetrics(textScaleRegularFactor)
+	if saved.TextScale != "" {
+		t.Fatalf("the state still writes the retired text scale %q", saved.TextScale)
+	}
+	defer applyTextMetrics(interfaceTextSizeDefault.factor())
 	second := newTestState(t, options)
-	if second.textScale != textScaleSmall || metrics.FontSizeM >= gfx.DefaultMetrics().FontSizeM {
-		t.Fatalf("the saved scale came back as %v at size %v", second.textScale, metrics.FontSizeM)
+	if second.interfaceTextSize != 12 || metrics.FontSizeM >= gfx.DefaultMetrics().FontSizeM {
+		t.Fatalf("the saved size came back as %v at size %v", second.interfaceTextSize, metrics.FontSizeM)
 	}
 	if second.theme.Metrics.FontSizeM >= gfx.DefaultMetrics().FontSizeM {
-		t.Fatalf("the restored theme did not follow the saved scale: %v", second.theme.Metrics.FontSizeM)
+		t.Fatalf("the restored theme did not follow the saved size: %v", second.theme.Metrics.FontSizeM)
 	}
-	saved.TextScale = "huge"
-	saved.Version = stateFileVersion
-	if saveState(state.options.StatePath, saved) != nil {
-		t.Fatal("writing the state")
+	for _, legacy := range []struct {
+		name string
+		want interfaceTextSize
+	}{{"small", 13}, {"large", 16}, {"", interfaceTextSizeDefault}} {
+		saved.InterfaceTextSize = 0
+		saved.TextScale = legacy.name
+		saved.Version = stateFileVersion
+		if saveState(state.options.StatePath, saved) != nil {
+			t.Fatal("writing the state")
+		}
+		restored := newTestState(t, options)
+		if restored.interfaceTextSize != legacy.want {
+			t.Fatalf("the retired %q scale came back as %v", legacy.name, restored.interfaceTextSize)
+		}
 	}
-	defer func() { applyTextMetrics(textScaleRegularFactor) }()
-	third := newTestState(t, options)
-	if third.textScale != textScaleRegular || metrics.FontSizeS != gfx.DefaultMetrics().FontSizeS {
-		t.Fatalf("an unknown scale comes back as %v at size %v", third.textScale, metrics.FontSizeS)
+	for _, damaged := range []int{0, interfaceTextSizeMin - 1, interfaceTextSizeMax + 1} {
+		saved.InterfaceTextSize = damaged
+		saved.TextScale = "huge"
+		saved.Version = stateFileVersion
+		if saveState(state.options.StatePath, saved) != nil {
+			t.Fatal("writing the state")
+		}
+		restored := newTestState(t, options)
+		if restored.interfaceTextSize != interfaceTextSizeDefault || metrics.FontSizeS != gfx.DefaultMetrics().FontSizeS {
+			t.Fatalf("a damaged size %d comes back as %v at size %v", damaged, restored.interfaceTextSize, metrics.FontSizeS)
+		}
 	}
 }

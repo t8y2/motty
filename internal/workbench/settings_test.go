@@ -219,7 +219,7 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 			hits     []gfx.ID
 			choices  []string
 		}{
-			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance, state.messages.SettingsInterfaceFont}, []gfx.ID{hitInterfaceFontChoose}, nil},
+			{settingsGeneral, []string{state.messages.SettingsLanguage, state.messages.SettingsAppearance, state.messages.SettingsTextSize, state.messages.SettingsInterfaceFont}, []gfx.ID{hitInterfaceFontChoose, hitSettingsTextSizeDown, hitSettingsTextSizeReset, hitSettingsTextSizeUp}, nil},
 			{settingsTerminal, []string{
 				state.messages.SettingsTerminalOption, state.messages.SettingsTerminalFontSize, state.messages.SettingsTerminalFontFamily,
 				state.messages.SettingsTerminalScrollback, state.messages.SettingsTerminalClipboard,

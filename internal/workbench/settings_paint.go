@@ -329,8 +329,10 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				})
 			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
 				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
-			settingsChoiceRow(page, messages.SettingsTextSize, messages.SettingsTextSizeDescription, &state.textScale, settingsTextSizeChoices[:], state.settingsTextSizeLabel,
-				func() { state.applyTextScale(); state.save() }, nil)
+			page.actionRow(messages.SettingsTextSize, messages.SettingsTextSizeDescription, false,
+				components.ButtonAction{ID: hitSettingsTextSizeDown, Label: "−", Variant: components.ButtonOutline},
+				components.ButtonAction{ID: hitSettingsTextSizeReset, Label: state.interfaceTextSizeLabel(), Variant: components.ButtonGhost},
+				components.ButtonAction{ID: hitSettingsTextSizeUp, Label: "+", Variant: components.ButtonOutline})
 			settingsChoiceRow(page, messages.SettingsToolbarPosition, messages.SettingsToolbarPositionDescription, &state.terminalToolbarPosition, settingsToolbarPositionChoices[:], state.settingsToolbarPositionLabel,
 				func() { state.applyTerminalToolbarPosition(); state.save() }, nil)
 			settingsChoiceRow(page, messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, &state.tabOrientation, settingsTabOrientationChoices[:], state.settingsTabOrientationLabel,

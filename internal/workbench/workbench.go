@@ -208,6 +208,9 @@ var (
 
 // Settings: its explicit choices.
 var (
+	hitSettingsTextSizeDown    = tree.ID(settingsHits, "settings-text-size-down")
+	hitSettingsTextSizeReset   = tree.ID(settingsHits, "settings-text-size-reset")
+	hitSettingsTextSizeUp      = tree.ID(settingsHits, "settings-text-size-up")
 	hitSettingsFontSizeDown    = tree.ID(settingsHits, "settings-font-size-down")
 	hitSettingsFontSizeReset   = tree.ID(settingsHits, "settings-font-size-reset")
 	hitSettingsFontSizeUp      = tree.ID(settingsHits, "settings-font-size-up")
@@ -671,9 +674,10 @@ type State struct {
 	terminalScrollback int
 	terminalFindPrefs  terminalFindPreferences
 	findSettingsUI     terminalFindSettingsUI
-	// textScale is the interface text size the user chose: the scale the whole
-	// window's text is drawn at, apart from the terminal's own font size.
-	textScale           textScale
+	// interfaceTextSize is the body text size the user chose, in logical pixels:
+	// the size the whole window's text is drawn at, apart from the terminal's own
+	// font size.
+	interfaceTextSize   interfaceTextSize
 	terminalCursorStyle terminalCursorStyle
 	connectionReconnect reconnectPolicy
 	restoreConnect      restoreConnectPolicy
