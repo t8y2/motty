@@ -201,6 +201,69 @@ func TestAIReasoningSettingsRefresh(t *testing.T) {
 	}
 }
 
+func TestAIReasoningDialogSaveReachesOtherWindows(t *testing.T) {
+	windows, _ := assistantWindowsOnOneStore(t)
+	origin := windows[0]
+	db := origin.ai.store
+	if err := db.SaveProvider(store.Provider{ID: "p", Name: "Test", Kind: store.KindOpenAI, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveModels("p", []store.Model{{Name: "o3-mini", Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetDefaultModel("p", "o3-mini"); err != nil {
+		t.Fatal(err)
+	}
+	origin.aiWrote()
+	for _, state := range windows {
+		state.Wake()
+		state.ai.open = true
+		state.ai.cfg.selected = "p"
+		state.save()
+	}
+	for _, state := range windows {
+		state.Wake()
+		state.aiCurrentModelReasoning()
+	}
+	m := origin.messages.AISettings
+	for _, tc := range []struct {
+		name, mode, preset string
+		levels             []string
+		disabled, override bool
+	}{
+		{"disabled", m.ModelReasoningDisable, "", nil, true, true},
+		{"enabled", m.ModelReasoningEnable, m.ModelReasoningPreset6, []string{"minimal", "low", "medium", "high", "xhigh", "max"}, false, true},
+		{"changed", m.ModelReasoningEnable, m.ModelReasoningPreset3, []string{"low", "medium", "high"}, false, true},
+		{"auto", m.ModelReasoningAuto, "", []string{"low", "medium", "high"}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			origin.Click(hitAISetModelReasoning.At(0))
+			if origin.ai.cfg.dialog != aiDialogModelReasoning {
+				t.Fatal("reasoning dialog did not open")
+			}
+			clickSettingsChoice(t, origin, tc.mode)
+			if tc.preset != "" {
+				clickSettingsChoice(t, origin, tc.preset)
+			}
+			origin.Click(hitAISetReasoningSave)
+			if origin.ai.cfg.dialog != aiDialogNone {
+				t.Fatalf("save failed: %s", origin.ai.cfg.formErr)
+			}
+			for index, state := range windows {
+				state.Wake()
+				model, levels, supported := state.aiCurrentModelReasoning()
+				if model == nil {
+					t.Fatalf("window %d has no selected model", index)
+				}
+				_, _, _, override, disabled := state.aiModelReasoningInfo(model)
+				if !slices.Equal(levels, tc.levels) || supported != (len(tc.levels) > 0) || disabled != tc.disabled || override != tc.override {
+					t.Errorf("window %d: levels=%v supported=%v disabled=%v override=%v; want levels=%v disabled=%v override=%v", index, levels, supported, disabled, override, tc.levels, tc.disabled, tc.override)
+				}
+			}
+		})
+	}
+}
+
 func TestAIReasoningPaintWithoutPanic(t *testing.T) {
 	prov := &captureProvider{}
 	state, _ := panelState(t, prov)
