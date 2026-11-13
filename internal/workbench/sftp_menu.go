@@ -26,6 +26,8 @@ var (
 	hitSFTPMenuCompress     = tree.ID(sftpMenuHits, "sftp-menu-compress")
 	hitSFTPMenuDelete       = tree.ID(sftpMenuHits, "sftp-menu-delete")
 	hitSFTPMenuSudo         = tree.ID(sftpMenuHits, "sftp-menu-sudo")
+	hitSFTPMenuCopyFiles    = tree.ID(sftpMenuHits, "sftp-menu-copy-files")
+	hitSFTPMenuPasteFiles   = tree.ID(sftpMenuHits, "sftp-menu-paste-files")
 )
 
 // sftpMenuAction is the button of the bar that a menu row stands for.
@@ -57,8 +59,12 @@ func sftpMenuAction(id gfx.ID) (gfx.ID, bool) {
 		return hitSFTPDelete, true
 	case hitSFTPMenuSudo:
 		return hitSFTPMenuSudo, true
+	case hitSFTPMenuCopyFiles:
+		return hitSFTPCopyFiles, true
+	case hitSFTPMenuPasteFiles:
+		return hitSFTPPasteFiles, true
 	case hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink,
-		hitSFTPCopyPath, hitSFTPProperties:
+		hitSFTPCopyPath, hitSFTPProperties, hitSFTPCopyFiles, hitSFTPPasteFiles:
 		return id, true
 	}
 	return gfx.ID{}, false
@@ -223,6 +229,17 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 		rows.add(components.ContextMenuItem{ID: hitSFTPUploadDirectory, Label: messages.SFTPUploadDirectory, Icon: icon(iconFolderUp), Disabled: busy})
 		rows.add(components.ContextMenuItem{ID: hitSFTPNewLink, Label: messages.Tools.TipNewLink, Icon: icon(iconLink), Disabled: busy})
 	}
+	if count > 0 {
+		rows.add(components.ContextMenuItem{ID: hitSFTPMenuCopyFiles, Label: messages.SFTPWindow.CopyFiles, Icon: icon(iconCopy), Disabled: busy || view.active().searching()})
+	}
+	// A local side pastes the server files this panel copied; the server side
+	// pastes the files the system clipboard holds, which is only known once the
+	// paste runs.
+	paste := view.worker != nil
+	if local {
+		paste = len(view.clipboard.entries) > 0
+	}
+	rows.add(components.ContextMenuItem{ID: hitSFTPMenuPasteFiles, Label: messages.SFTPWindow.PasteFiles, Icon: icon(iconPaste), Disabled: busy || view.busy || view.worker == nil || !paste || view.active().searching()})
 	if count > 0 {
 		rows.add(components.ContextMenuItem{ID: hitSFTPCopyPath, Label: messages.SFTPWindow.CopyPath, Icon: icon(iconCopy)})
 	}

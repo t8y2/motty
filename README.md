@@ -237,8 +237,9 @@ matching keys from the SSH agent, without offering unrelated agent keys.
 
 ### Files
 
-SFTP browsing with multi-select, recursive upload/download, a bounded transfer
-queue, resume, cancel/retry, rename, delete, permissions and bookmarks.
+SFTP browsing with multi-select, recursive upload/download, copy and paste
+between the local and server sides, a bounded transfer queue, resume,
+cancel/retry, rename, delete, permissions and bookmarks.
 Replacing a file stages a partial copy, verifies resumed prefixes and renames
 atomically only after a complete synced copy. The previous file stays intact on
 failure.

@@ -21,7 +21,7 @@ type SFTPWindowMessages struct {
 	QueueRejectedFmt                                                                                        string
 	Open, Title, Local, Remote, Path, Name, Size, Modified                                                  string
 	Upload, Download, DragHint, DropUpload, DropDownload                                                    string
-	SelectedFmt, CopyPath                                                                                   string
+	SelectedFmt, CopyPath, CopyFiles, PasteFiles                                                            string
 	CalculatingSize, FolderSizeIncompleteFmt                                                                string
 	CalculateDirectorySize                                                                                  string
 	PropertiesTitle, PropertiesName, PropertiesPath, PropertiesType, PropertiesSize, PropertiesModified     string

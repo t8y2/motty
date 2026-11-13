@@ -187,6 +187,7 @@ type sftpView struct {
 	places                sftpPlaceMenu
 	dropping              bool // files are being dragged over the panel
 	dropRow               int  // the folder row they are over, or -1
+	clipboard             sftpClipboard
 	scrollDrag            bool
 	scrollGrab            float32
 	details               sftpDetails
@@ -424,6 +425,16 @@ func (state *State) clickSFTP(id gfx.ID) {
 		if err := state.copySFTPPaths(view.active(), view.local); err != nil {
 			state.showActionError(state.messages.SFTPWindow.Title, err.Error())
 		}
+		return
+	}
+	if id == hitSFTPCopyFiles {
+		if _, err := state.copySFTPSelection(view); err != nil {
+			state.showActionError(state.messages.SFTPWindow.Title, err.Error())
+		}
+		return
+	}
+	if id == hitSFTPPasteFiles {
+		state.pasteSFTPClipboard(view)
 		return
 	}
 	if id == hitSFTPProperties {
@@ -1323,16 +1334,7 @@ func (state *State) handleSFTPPickerError(view *sftpView, err error, canceled st
 }
 
 func (state *State) queueSFTPDownload(view *sftpView, entry sftpclient.Entry, localPath string) {
-	_, queued := view.worker.QueueDownload(path.Join(view.path, entry.Name), localPath, entry.IsDir(), sftpclient.ExistingFail)
-	if !queued {
-		view.errorText = state.messages.SFTPUnavailable
-		return
-	}
-	view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, entry.Name)
-	view.errorText = ""
-	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
-	state.transfers.host = nil
-	state.refreshSFTPTransfers(view)
+	state.queueSFTPDownloadFrom(view, view.path, entry, localPath)
 }
 
 func (state *State) uploadSFTP(view *sftpView) {

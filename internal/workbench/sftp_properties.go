@@ -25,6 +25,8 @@ var (
 	hitSFTPCopyPath               = tree.ID(sftpHits, "copy-path")
 	hitSFTPProperties             = tree.ID(sftpHits, "properties")
 	hitSFTPCalculateDirectorySize = tree.ID(sftpHits, "calculate-directory-size")
+	hitSFTPCopyFiles              = tree.ID(sftpHits, "copy-files")
+	hitSFTPPasteFiles             = tree.ID(sftpHits, "paste-files")
 )
 
 const filePropertiesRowHeight float32 = 34

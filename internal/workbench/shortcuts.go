@@ -502,6 +502,9 @@ func (state *State) shortcut(event gfx.KeyEvent, chord keymap.Chord) gfx.EventRe
 		return result
 	}
 	action := state.shortcuts.actionFor(chord)
+	if result, handled := state.sftpClipboardShortcut(event, action); handled {
+		return result
+	}
 	if action == shortcutNone {
 		if index := state.snippetFor(chord, -1); index >= 0 && state.activeSection == sectionTerminal {
 			if !event.Repeat {
