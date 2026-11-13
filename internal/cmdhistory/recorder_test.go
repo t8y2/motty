@@ -111,6 +111,30 @@ func TestAPromptThatAsksForASecretIsNeverRecordedEvenIfEchoed(t *testing.T) {
 	s.wantNothing()
 }
 
+// The first command after a password prompt is a command, not an answer: su,
+// sudo -i and ssh leave their question on the row above the child shell's own
+// prompt, and that prompt is no continuation of it (#799).
+func TestACommandBelowAPasswordPromptRowIsRecordedAndSuggestable(t *testing.T) {
+	s := newShell(t, 80)
+	s.prompt("[user@host ~]$ ")
+	s.typeEchoed("su - root")
+	s.wantRecorded("su - root")
+	s.out("密码： ")
+	s.now += 300 * time.Millisecond
+	s.typeHidden("hunter2")
+	if command, ok := s.send("\r"); ok {
+		t.Fatalf("the password was recorded as %q", command)
+	}
+	s.out("\r\n")
+	s.out("[root@host ~]# ")
+	s.now += 300 * time.Millisecond
+	s.typeEchoed("doc")
+	if line, ok := s.line(); !ok || line != "doc" {
+		t.Fatalf("line = %q, %v", line, ok)
+	}
+	s.wantRecorded("doc")
+}
+
 func TestALineStartingWithASpaceIsNotRecorded(t *testing.T) {
 	s := newShell(t, 80)
 	s.prompt("$ ")

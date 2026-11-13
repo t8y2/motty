@@ -166,7 +166,12 @@ func (r *Recorder) finish(screen Screen) (string, bool) {
 	for row := first; row < promptRow; row++ {
 		context = screen.Span(row, 0, -1, false) + " " + context
 	}
-	if first > 0 {
+	// A prompt that reads like a line-editing program's own may be the
+	// continuation of a question on the row above (a token prompt, a bare `>`),
+	// so that wording counts too. A prompt that names a shell is not a
+	// continuation: the first command after `su` sits below the password prompt,
+	// not inside it (#799).
+	if first > 0 && ProgramPrompt(prompt) {
 		context = screen.Span(first-1, 0, -1, true) + " " + context
 	}
 	if PasswordPrompt(context) {
@@ -295,7 +300,9 @@ func (r *Recorder) lineAt(screen Screen) (line, promptText string, ok bool) {
 		context = part + " " + context
 	}
 	full.WriteString(prompt)
-	if first > 0 {
+	// As in finish: the row above belongs to the question only when this
+	// prompt could be the question's continuation (#799).
+	if first > 0 && ProgramPrompt(prompt) {
 		context = screen.Span(first-1, 0, -1, true) + " " + context
 	}
 	if PasswordPrompt(context) {
