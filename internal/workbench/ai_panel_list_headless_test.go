@@ -279,7 +279,7 @@ func testHeadlessApprovalActions(t *testing.T, history bool, width int, extras, 
 		t.Fatal("critical approval is enabled without the confirmation word")
 	}
 	// The target row, at least one editable line and the action row must not overlap.
-	minimumComposer := aiComposerTarget + state.ai.panel.pageScratch.composerBarHeight + state.Theme().Metrics.FontSizeM + 7 + 8
+	minimumComposer := aiComposerMinimum(state.ai.panel.pageScratch.composerBarHeight, state.Theme().Metrics.FontSizeM)
 	if state.ai.panel.boxHeight < minimumComposer {
 		t.Fatalf("critical approval squeezed composer: height=%v minimum=%v", state.ai.panel.boxHeight, minimumComposer)
 	}

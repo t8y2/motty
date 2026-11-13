@@ -18,9 +18,9 @@ func TestApprovalExtrasTinyBudget(t *testing.T) {
 			state.ai.notice = "Ancillary notice must not overflow"
 			panel := &state.ai.panel
 			panel.pageScratch.composerBarHeight = aiSendSize + 8
-			composerMin := aiComposerTarget + panel.pageScratch.composerBarHeight + state.Theme().Metrics.FontSizeM + 7 + 8
-			approvalMin := float32(aiApprovalPad + 24 + aiApprovalPad - 1 + aiButtonHeight + aiApprovalMinDetails + 2 + 18 + 2 + 32 + 8)
-			reserved := 2*aiComposerMargin + 7 + approvalMin
+			composerMin := aiComposerMinimum(panel.pageScratch.composerBarHeight, state.Theme().Metrics.FontSizeM)
+			approvalMin := aiApprovalMinimum(true)
+			reserved := 2*aiComposerMargin + aiBottomTopPad + approvalMin
 			panel.rect = gfx.Rect{Width: 352, Height: aiTitleRow + 1 + reserved + composerMin + budget}
 			bounds := gfx.Rect{Width: 352, Height: reserved + composerMin + budget}
 			canvas := new(gfx.Canvas)

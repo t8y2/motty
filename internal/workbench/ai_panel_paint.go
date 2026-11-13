@@ -453,7 +453,6 @@ func (state *State) aiPanelBeginPaint() {
 	panel.statusPainted = false
 	if !state.aiPanelVisible() {
 		panel.scrollbar.dragging = false
-		panel.drawerOpen = false
 	}
 	panel.declared = false
 	panel.menusShown = false
@@ -559,7 +558,6 @@ func (state *State) declareAIDrawer(c ui.C, size gfx.Size) {
 	bounds := gfx.Rect{X: viewport.X + viewport.Width - contentWidth, Y: viewport.Y, Width: contentWidth, Height: viewport.Height}
 	panel.rect = bounds
 	panel.resize = aiPanelResize{window: viewport, ratio: (bounds.X - viewport.X) / max(viewport.Width-1, 1), handle: 8}
-	panel.drawerOpen = true
 	dismiss := ui.ID(c)
 	if canvas := c.Canvas(); canvas != nil && canvas.Clicked(dismiss) {
 		c.After(state.closeAIPanel)
