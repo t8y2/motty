@@ -1,0 +1,67 @@
+# End to end: a server that refuses every forwarded channel still carries a
+# port forward, through a relay program run in a shell on it. The fixture is
+# started with E2E_NO_DIRECT=1, so a plain forward over this host fails with
+# "administratively prohibited"; the forward marked "Relay through the host's
+# shell" runs nc there instead, and the listener carries the HTTP request to the
+# service the shell reaches.
+#
+#   python3 -m http.server 28080 --bind 127.0.0.1 --directory /tmp/mottyfwd &
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .)
+#   E2E_NO_DIRECT=1 /tmp/e2esshd 2291 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/forward_shell_relay_e2e.txt
+#
+# What to look for: the forward reads "Running", and the local terminal prints
+# RELAY_FWD_OK, which only the service on 28080 serves. Nothing opens a
+# direct-tcpip channel; the shell carries the stream.
+resize 1400 900
+settle 400
+click "New Host"
+settle 500
+click id:shell/dialog-label
+type relayed
+click id:shell/dialog-address
+type 127.0.0.1
+click id:shell/dialog-port
+key cmd+a
+type 2291
+click id:shell/dialog-user
+type tester
+click id:shell/dialog-password
+type secret
+click "Add Host"
+settle 700
+click "Port Forwarding"
+settle 600
+click "New Forward"
+settle 600
+click id:forwards/forward-dialog-label
+type relayed-forward
+click id:forwards/forward-dialog-local-port
+key cmd+a
+type 18080
+click id:forwards/forward-dialog-destination
+type 127.0.0.1
+click id:forwards/forward-dialog-destination-port
+key cmd+a
+type 28080
+click id:forwards/forward-dialog-via-shell
+settle 200
+click id:forwards/forward-dialog-relay
+key cmd+a
+type nc %h %p
+settle 200
+click "Add Forward"
+settle 800
+click "Start"
+waitfor "Trust" 15000
+click "Trust and Save"
+waitfor "Running" 20000
+settle 500
+# A local terminal asks the listener for the page: it must arrive from the
+# service the shell reaches, which no forwarded channel could have opened.
+click "Local Terminal"
+settle 1500
+type curl -s --noproxy "*" http://127.0.0.1:18080/
+key enter
+waitfor "RELAY_FWD_OK" 15000

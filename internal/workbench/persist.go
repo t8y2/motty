@@ -290,6 +290,11 @@ type savedForward struct {
 	// again. It is off unless chosen, so a forward saved before it existed
 	// stops on a lost connection as it always did.
 	Resume bool `json:"resume,omitempty"`
+	// ViaShell and Relay carry each connection through a relay program run in a
+	// shell on the host, for a server that refuses forwarded channels. Both are
+	// absent unless chosen.
+	ViaShell bool   `json:"via_shell,omitempty"`
+	Relay    string `json:"relay_command,omitempty"`
 }
 
 type savedProxy struct {
@@ -680,7 +685,7 @@ func (state *State) snapshot() savedState {
 			ID: forward.ID, Label: forward.Label, Mode: forward.savedMode(), HostLabel: forward.HostLabel, HostAddress: forward.HostAddress,
 			HostUser: forward.HostUser, HostPort: forward.HostPort, LocalPort: forward.LocalPort,
 			DestinationHost: forward.DestinationHost, DestinationPort: forward.DestinationPort,
-			Resume: forward.Resume,
+			Resume: forward.Resume, ViaShell: forward.ViaShell, Relay: forward.Relay,
 		})
 	}
 	for _, route := range state.proxies {

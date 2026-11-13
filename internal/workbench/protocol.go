@@ -462,6 +462,10 @@ func (conn *streamConn) DialContext(context.Context, string, string) (net.Conn, 
 	return nil, errNoServer
 }
 
+func (conn *streamConn) DialShellContext(context.Context, string, string) (net.Conn, error) {
+	return nil, errNoServer
+}
+
 func (conn *streamConn) Listen(string, string) (net.Listener, error) { return nil, errNoServer }
 
 func (conn *streamConn) ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error) {

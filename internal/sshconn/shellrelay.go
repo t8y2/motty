@@ -106,20 +106,94 @@ func (conn *Conn) dialRelay(previous *ssh.Client, previousEndpoint Endpoint, rel
 	if err := checkRelayPrelude(relay.Prelude); err != nil {
 		return nil, err
 	}
-	var random [8]byte
-	if _, err := rand.Read(random[:]); err != nil {
+	nonce, err := relayNonce()
+	if err != nil {
 		return nil, err
 	}
-	nonce := hex.EncodeToString(random[:])
-
-	session, err := previous.NewSession()
+	start, err := conn.openRelayShell(previous, previousEndpoint, nonce)
 	if err != nil {
-		return nil, fmt.Errorf("open a shell on %s: %w", previousEndpoint.address(), err)
+		return nil, err
+	}
+	start.stream = "SSH stream"
+	socket, err := start.run(conn.ctx, relay.Prelude, relayLine(command, nonce), net.JoinHostPort(next.Host, strconv.Itoa(int(next.Port))))
+	if err != nil {
+		start.abandon()
+		return nil, err
+	}
+	return socket, nil
+}
+
+// DialShellContext runs command in a shell on the connected host, with the
+// tokens of ExpandProxyCommand filled from address, and returns the program's
+// input and output as a connection. A relay such as `nc %h %p` makes it the
+// bytes of a TCP connection to address, which is how a forward gets through a
+// server that refuses forwarded channels but gives a shell.
+func (conn *Conn) DialShellContext(ctx context.Context, command, address string) (net.Conn, error) {
+	client := conn.Client()
+	if client == nil {
+		return nil, errors.New("sshconn: not connected")
+	}
+	host, rawPort, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("sshconn: %s: %w", address, err)
+	}
+	port, err := strconv.Atoi(rawPort)
+	if err != nil || port < 1 || port > 65535 {
+		return nil, fmt.Errorf("sshconn: %s: the port must be 1-65535", address)
+	}
+	// The account is the one the connection logged in with, which is the account
+	// the shell under the relay runs as.
+	endpoint := Endpoint{Host: conn.config.Host, Port: conn.config.Port, User: conn.config.User}
+	line, err := expandRelay(Relay{Command: command}, host, port, endpoint.User)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(line) == "" {
+		return nil, errors.New("sshconn: no relay command")
+	}
+	nonce, err := relayNonce()
+	if err != nil {
+		return nil, err
+	}
+	start, err := conn.openRelayShell(client, endpoint, nonce)
+	if err != nil {
+		return nil, err
+	}
+	start.stream = "stream"
+	relayCtx, cancel := context.WithTimeout(ctx, relayStartTimeout)
+	defer cancel()
+	data, err := start.start(relayCtx, "", relayLine(line, nonce))
+	if err != nil {
+		start.abandon()
+		return nil, err
+	}
+	// The program's output is the stream from the first byte on: unlike a next
+	// hop, there is no version line to wait for. A relay command that prints a
+	// banner of its own would therefore corrupt the stream.
+	return start.connection(data, address), nil
+}
+
+// relayNonce is the random part of the marker a relay prints when it starts.
+func relayNonce() (string, error) {
+	var random [8]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(random[:]), nil
+}
+
+// openRelayShell opens a shell on client and starts reading it: the terminal
+// that becomes the relay program's input and output. endpoint is what failure
+// messages name.
+func (conn *Conn) openRelayShell(client *ssh.Client, endpoint Endpoint, nonce string) (*relayStart, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return nil, fmt.Errorf("open a shell on %s: %w", endpoint.address(), err)
 	}
 	// Only an implementation known to take it is asked for a locale: a gateway
 	// with a menu of its own may end the connection on a request it lacks, and
 	// a route confined to the interactive session is not asked at all.
-	if !conn.config.InteractiveOnly && standardImplementation(string(previous.ServerVersion())) {
+	if !conn.config.InteractiveOnly && standardImplementation(string(client.ServerVersion())) {
 		_ = session.Setenv("LANG", utf8Locale())
 	}
 	modes := ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 38400, ssh.TTY_OP_OSPEED: 38400}
@@ -127,7 +201,7 @@ func (conn *Conn) dialRelay(previous *ssh.Client, previousEndpoint Endpoint, rel
 	// shell's own line editor.
 	if err := session.RequestPty("xterm", 24, 240, modes); err != nil {
 		session.Close()
-		return nil, fmt.Errorf("open a terminal on %s: %w", previousEndpoint.address(), err)
+		return nil, fmt.Errorf("open a terminal on %s: %w", endpoint.address(), err)
 	}
 	stdin, err := session.StdinPipe()
 	if err != nil {
@@ -141,22 +215,18 @@ func (conn *Conn) dialRelay(previous *ssh.Client, previousEndpoint Endpoint, rel
 	}
 	if err := session.Shell(); err != nil {
 		session.Close()
-		return nil, fmt.Errorf("start a shell on %s: %w", previousEndpoint.address(), err)
+		return nil, fmt.Errorf("start a shell on %s: %w", endpoint.address(), err)
 	}
 	go session.Wait()
 
 	start := &relayStart{
-		session: session, stdin: stdin, stdout: stdout, hop: previousEndpoint,
+		session: session, stdin: stdin, stdout: stdout, hop: endpoint,
 		marker: relayMarker + nonce + "\n",
 		chunks: make(chan []byte), stop: make(chan struct{}),
+		stream: "stream",
 	}
 	go start.read()
-	socket, err := start.run(conn.ctx, relay.Prelude, relayLine(command, nonce), net.JoinHostPort(next.Host, strconv.Itoa(int(next.Port))))
-	if err != nil {
-		start.abandon()
-		return nil, err
-	}
-	return socket, nil
+	return start, nil
 }
 
 // relayStart is a relay on its way up: the hop's shell, and what it has said.
@@ -174,6 +244,10 @@ type relayStart struct {
 	stop   chan struct{}
 	once   sync.Once
 	noise  []byte
+	// stream names what the relay is expected to carry after the marker, for
+	// the message of a relay that never gets there: "SSH stream" for a next
+	// hop, "stream" for what a forward carries.
+	stream string
 }
 
 func (start *relayStart) read() {
@@ -213,6 +287,23 @@ func (start *relayStart) run(parent context.Context, prelude, line, destination 
 	ctx, cancel := context.WithTimeout(parent, relayStartTimeout)
 	defer cancel()
 
+	data, err := start.start(ctx, prelude, line)
+	if err != nil {
+		return nil, err
+	}
+	// The relay program is running. Its first lines may be a banner or an error
+	// message; the stream is what starts with the SSH version.
+	data, err = start.untilVersion(ctx, data)
+	if err != nil {
+		return nil, err
+	}
+	return start.connection(data, destination), nil
+}
+
+// start drives the shell to the point where the relay program is running, and
+// returns what the shell said after the marker: the first bytes the program
+// carried. The caller decides where the stream itself begins.
+func (start *relayStart) start(ctx context.Context, prelude, line string) ([]byte, error) {
 	if err := start.waitQuiet(ctx); err != nil {
 		return nil, err
 	}
@@ -229,17 +320,7 @@ func (start *relayStart) run(parent context.Context, prelude, line, destination 
 	// Both lines are typed ahead: the terminal holds the second until the
 	// prelude's shell reads it, which is what it would do for a person typing
 	// quickly.
-	data, err := start.until(ctx, start.marker)
-	if err != nil {
-		return nil, err
-	}
-	// The relay program is running. Its first lines may be a banner or an error
-	// message; the stream is what starts with the SSH version.
-	data, err = start.untilVersion(ctx, data)
-	if err != nil {
-		return nil, err
-	}
-	return start.connection(data, destination), nil
+	return start.until(ctx, start.marker)
 }
 
 // waitQuiet waits until the shell has said something and then fallen quiet, or
@@ -337,7 +418,7 @@ func (start *relayStart) fail(ctx context.Context, cause error) error {
 	where := start.hop.address()
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		cause = fmt.Errorf("no SSH stream came from the relay on %s within %s", where, relayStartTimeout)
+		cause = fmt.Errorf("no %s came from the relay on %s within %s", start.stream, where, relayStartTimeout)
 	case ctx.Err() != nil:
 		return ctx.Err()
 	case cause == nil || errors.Is(cause, io.EOF):

@@ -41,6 +41,8 @@ type fakeConn struct {
 	scpOpens          int
 	dial              func(context.Context, string, string) (net.Conn, error)
 	dialCalls         []fakeDialCall
+	shellDial         func(context.Context, string, string) (net.Conn, error)
+	shellDialCalls    []fakeShellDialCall
 	listen            func(string, string) (net.Listener, error)
 	listenCalls       []fakeListenCall
 	runCommand        func(context.Context, string, int) ([]byte, error)
@@ -55,6 +57,11 @@ type fakeConn struct {
 
 type fakeDialCall struct {
 	network string
+	address string
+}
+
+type fakeShellDialCall struct {
+	command string
 	address string
 }
 
@@ -123,6 +130,17 @@ func (fake *fakeConn) DialContext(ctx context.Context, network, address string) 
 		return nil, errors.New("test remote dialer is not configured")
 	}
 	return dial(ctx, network, address)
+}
+
+func (fake *fakeConn) DialShellContext(ctx context.Context, command, address string) (net.Conn, error) {
+	fake.mu.Lock()
+	fake.shellDialCalls = append(fake.shellDialCalls, fakeShellDialCall{command: command, address: address})
+	dial := fake.shellDial
+	fake.mu.Unlock()
+	if dial == nil {
+		return nil, errors.New("test shell relay is not configured")
+	}
+	return dial(ctx, command, address)
 }
 
 func (fake *fakeConn) Listen(network, address string) (net.Listener, error) {

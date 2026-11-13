@@ -382,6 +382,14 @@ func (conn *Conn) DialContext(ctx context.Context, network, address string) (net
 	return client.DialContext(ctx, network, address)
 }
 
+// IsChannelRefused reports whether err is the server declining to open an SSH
+// channel, which is how a server that disallows forwarding answers a forwarded
+// connection: administratively prohibited.
+func IsChannelRefused(err error) bool {
+	var refused *ssh.OpenChannelError
+	return errors.As(err, &refused) && refused.Reason == ssh.Prohibited
+}
+
 // Listen asks the authenticated SSH server to open one remote listener.
 func (conn *Conn) Listen(network, address string) (net.Listener, error) {
 	return conn.ListenContext(context.Background(), network, address, nil)

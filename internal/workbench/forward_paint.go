@@ -125,7 +125,15 @@ func (state *State) declareForwardDialog(c ui.C) {
 		dialogTitle = messages.ForwardEditDialogTitle
 		submitLabel = messages.ForwardSave
 	}
-	bodyHeight := withError(4*58+2+30, state.forwardDialogError) // four rows of fields, then the checkbox
+	// Four rows of fields, the resume box, and for a forward that dials through
+	// the server the shell-relay box with its relay command when it is on.
+	bodyHeight := withError(4*58+2+30, state.forwardDialogError)
+	if modeUsesServerDestination(state.forwardEditor.mode) {
+		bodyHeight += 30
+		if state.forwardEditor.viaShell {
+			bodyHeight += 58
+		}
+	}
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, messages.ForwardDialogDescription, bodyHeight)
 	// No scrim dismiss: a press beside the form must not discard its input.
@@ -175,6 +183,12 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 				})
 			}
 		})
+		if modeUsesServerDestination(mode) {
+			b.viaShell, b.viaShellHelp = state.declareDialogCheckboxHelpC(c, messages.ForwardFieldViaShell, 4, 6)
+			if editor.viaShell {
+				b.relay = ui.Slot(c).Height(rowHeight)
+			}
+		}
 		b.resume, b.resumeHelp = state.declareDialogCheckboxHelpC(c, messages.ForwardFieldResume, 4, 6)
 		if state.forwardDialogError != "" {
 			ui.Text(c, state.forwardDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
@@ -202,6 +216,13 @@ func (state *State) paintForwardDialogFields(canvas *gfx.Canvas, mode portforwar
 		}
 		state.paintForwardDialogField(canvas, hitForwardDialogDestination, forwardFieldDestinationHost, messages.ForwardFieldDestination, placeholder, b.destination.Rect())
 		state.paintForwardDialogField(canvas, hitForwardDialogDestinationPort, forwardFieldDestinationPort, messages.ForwardFieldDestinationPort, "", b.destinationPort.Rect())
+	}
+	if modeUsesServerDestination(mode) {
+		state.paintDialogCheckbox(canvas, hitForwardDialogViaShell, messages.ForwardFieldViaShell, state.forwardEditor.viaShell, b.viaShell)
+		state.paintHelpIcon(canvas, hitForwardDialogViaShellHelp, messages.ForwardViaShellHelp, b.viaShellHelp.Rect())
+		if state.forwardEditor.viaShell {
+			state.paintForwardDialogField(canvas, hitForwardDialogRelay, forwardFieldRelay, messages.ForwardFieldRelay, messages.ForwardRelayPlaceholder, b.relay.Rect())
+		}
 	}
 	state.paintDialogCheckbox(canvas, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, b.resume)
 	state.paintHelpIcon(canvas, hitForwardDialogResumeHelp, messages.ForwardResumeHelp, b.resumeHelp.Rect())

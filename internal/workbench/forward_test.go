@@ -15,6 +15,8 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"golang.org/x/crypto/ssh"
+	"motty/internal/i18n"
 	"motty/internal/portforward"
 	"motty/internal/sshconn"
 )
@@ -1698,5 +1700,91 @@ func TestTabClosesAnOpenSelectBeforeTraversal(t *testing.T) {
 	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyTab, Target: hitForwardDialogHost})
 	if !result.ContinueTraversal || !result.Handled || state.forwardEditor.hostSelect.Open {
 		t.Fatalf("Tab = %+v open=%v, want close then traversal", result, state.forwardEditor.hostSelect.Open)
+	}
+}
+
+// A server that refuses forwarded channels can still carry a forward through a
+// shell: the relay switch makes each accepted connection run a program there
+// instead of opening a channel, and that program's input and output are the
+// stream.
+func TestForwardThroughTheHostsShellUsesTheRelayInsteadOfAChannel(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+
+	target := forwardEchoServer(t)
+	fake.dial = func(context.Context, string, string) (net.Conn, error) {
+		return nil, errors.New("direct-tcpip disabled")
+	}
+	fake.shellDial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", target.Addr().String())
+	}
+	addViaShellForwardRule(t, state, "Bastion Web", freePort(t), "127.0.0.1", 3336)
+
+	forward := &state.forwards[0]
+	if !forward.ViaShell || forward.Relay != "ncat %h %p" {
+		t.Fatalf("forward = %+v", *forward)
+	}
+	state.Click(hitForwardStartStop)
+	waitForward(t, state, func() bool { return forward.runner != nil })
+	client, err := net.Dial("tcp", forward.runner.Status().ListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	writeForwardTestBytes(t, client, []byte("through the shell"))
+	readForwardTestBytes(t, client, []byte("THROUGH THE SHELL"))
+
+	fake.mu.Lock()
+	channels := len(fake.dialCalls)
+	shellDials := append([]fakeShellDialCall(nil), fake.shellDialCalls...)
+	fake.mu.Unlock()
+	if channels != 0 {
+		t.Fatalf("the forward opened %d forwarded channels", channels)
+	}
+	if len(shellDials) != 1 || shellDials[0] != (fakeShellDialCall{command: "ncat %h %p", address: "127.0.0.1:3336"}) {
+		t.Fatalf("shell relay calls = %+v", shellDials)
+	}
+	state.Click(hitForwardStartStop)
+
+	restarted := newTestState(t, options)
+	if len(restarted.forwards) != 1 || !restarted.forwards[0].ViaShell || restarted.forwards[0].Relay != "ncat %h %p" {
+		t.Fatalf("restored forward = %+v", restarted.forwards)
+	}
+}
+
+// A forward the server refuses says where the way out is, instead of repeating
+// the protocol's own words; one that already relayed says the relay was refused.
+func TestARefusedForwardExplainsTheShellRelay(t *testing.T) {
+	messages := i18n.For(i18n.English)
+	refused := &ssh.OpenChannelError{Reason: ssh.Prohibited}
+	if got := forwardFailureText(messages, forwardRecord{}, refused); got != messages.ForwardRefusedHint {
+		t.Fatalf("refused detail = %q", got)
+	}
+	if got := forwardFailureText(messages, forwardRecord{ViaShell: true}, refused); got != messages.ForwardRelayRefused {
+		t.Fatalf("relayed detail = %q", got)
+	}
+	other := errors.New("connection refused")
+	if got := forwardFailureText(messages, forwardRecord{}, other); got != other.Error() {
+		t.Fatalf("other detail = %q", got)
+	}
+}
+
+func addViaShellForwardRule(t testing.TB, state *State, label string, localPort uint16, destination string, destinationPort uint16) {
+	t.Helper()
+	openForwardEditor(t, state)
+	replaceForwardField(state, hitForwardDialogLabel, label)
+	replaceForwardField(state, hitForwardDialogLocalPort, fmt.Sprint(localPort))
+	replaceForwardField(state, hitForwardDialogDestination, destination)
+	replaceForwardField(state, hitForwardDialogDestinationPort, fmt.Sprint(destinationPort))
+	state.Click(hitForwardDialogViaShell)
+	replaceForwardField(state, hitForwardDialogRelay, "ncat %h %p")
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitForwardDialogRelay}); !result.Handled {
+		t.Fatal("Enter did not submit the forward dialog")
+	}
+	if state.modal != modalNone || state.forwardDialogError != "" {
+		t.Fatalf("forward submit modal=%d error=%q", state.modal, state.forwardDialogError)
 	}
 }

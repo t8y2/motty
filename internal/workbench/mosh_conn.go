@@ -502,6 +502,10 @@ func (conn *moshConn) DialContext(context.Context, string, string) (net.Conn, er
 	return nil, errNoServer
 }
 
+func (conn *moshConn) DialShellContext(context.Context, string, string) (net.Conn, error) {
+	return nil, errNoServer
+}
+
 func (conn *moshConn) Listen(string, string) (net.Listener, error) { return nil, errNoServer }
 
 func (conn *moshConn) ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error) {

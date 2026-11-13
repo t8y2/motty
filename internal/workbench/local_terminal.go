@@ -185,6 +185,10 @@ func (conn *localConn) DialContext(context.Context, string, string) (net.Conn, e
 	return nil, errLocalOnly
 }
 
+func (conn *localConn) DialShellContext(context.Context, string, string) (net.Conn, error) {
+	return nil, errLocalOnly
+}
+
 func (conn *localConn) Listen(string, string) (net.Listener, error) { return nil, errLocalOnly }
 
 func (conn *localConn) ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error) {

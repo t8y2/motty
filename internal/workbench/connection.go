@@ -45,6 +45,10 @@ type Connection interface {
 	OpenSFTP() (sftpclient.Remote, error)
 	// DialContext opens a remote stream through the authenticated connection.
 	DialContext(context.Context, string, string) (net.Conn, error)
+	// DialShellContext runs a relay command in a shell on the server and returns
+	// its input and output as a remote stream, for a server that refuses
+	// forwarded channels.
+	DialShellContext(context.Context, string, string) (net.Conn, error)
 	// Listen asks the authenticated server to open a remote listener.
 	Listen(string, string) (net.Listener, error)
 	ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error)

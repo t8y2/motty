@@ -197,6 +197,9 @@ var (
 	hitForwardDialogDestinationPort = tree.ID(forwardsHits, "forward-dialog-destination-port")
 	hitForwardDialogResume          = tree.ID(forwardsHits, "forward-dialog-resume")
 	hitForwardDialogResumeHelp      = tree.ID(forwardsHits, "forward-dialog-resume-help")
+	hitForwardDialogViaShell        = tree.ID(forwardsHits, "forward-dialog-via-shell")
+	hitForwardDialogViaShellHelp    = tree.ID(forwardsHits, "forward-dialog-via-shell-help")
+	hitForwardDialogRelay           = tree.ID(forwardsHits, "forward-dialog-relay")
 	hitForwardHostDismiss           = tree.ID(forwardsHits, "forward-host-dismiss")
 	hitForwardHostTrigger           = tree.ID(forwardsHits, "forward-host-trigger")
 	hitForwardHostScroll            = tree.ID(forwardsHits, "forward-host-scroll")
@@ -1390,6 +1393,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 			return &state.forwardEditor.hostSelect.Query
 		}
 		if hit == hitForwardDialogLabel || hit == hitForwardDialogLocalPort || hit == hitForwardDialogDestination || hit == hitForwardDialogDestinationPort {
+			return state.forwardEditor.field(forwardDialogField(hit))
+		}
+		if hit == hitForwardDialogRelay && state.forwardEditor.viaShell {
 			return state.forwardEditor.field(forwardDialogField(hit))
 		}
 	case modalPassword:

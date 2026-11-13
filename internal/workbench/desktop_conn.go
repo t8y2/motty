@@ -595,6 +595,10 @@ func (conn *desktopConn) DialContext(context.Context, string, string) (net.Conn,
 	return nil, errNoServer
 }
 
+func (conn *desktopConn) DialShellContext(context.Context, string, string) (net.Conn, error) {
+	return nil, errNoServer
+}
+
 func (conn *desktopConn) Listen(string, string) (net.Listener, error) { return nil, errNoServer }
 
 func (conn *desktopConn) ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error) {

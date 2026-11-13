@@ -924,6 +924,13 @@ type Messages struct {
 	ForwardFieldDestinationPort   string
 	ForwardFieldResume            string
 	ForwardResumeHelp             string
+	ForwardFieldViaShell          string
+	ForwardViaShellHelp           string
+	ForwardFieldRelay             string
+	ForwardRelayPlaceholder       string
+	ForwardRefusedHint            string
+	ForwardRelayRefused           string
+	ErrForwardRelayFmt            string
 	ForwardDestinationPlaceholder string
 	ForwardLocalDestinationHint   string
 	ForwardRemoteListenerFmt      string
