@@ -234,7 +234,11 @@ func (state *State) clickHostIdleKeepAlive(id gfx.ID) bool {
 		if index < 0 || index >= len(idleInputChoices) {
 			return false
 		}
-		editor.idleInput, editor.idleInputChosen = idleInputChoices[index], true
+		mode := idleInputChoices[index]
+		editor.idleInput = mode
+		// Clicking the option already shown as this protocol's default does not
+		// pin it: a later protocol change still follows that protocol.
+		editor.idleInputChosen = mode != idleInputForProtocol(editor.protocol)
 		editor.idleInputOpen = false
 	default:
 		return false

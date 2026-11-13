@@ -528,6 +528,7 @@ func (editor *hostEditor) applyProtocol(previous hostProtocol) {
 		}
 	}
 	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
+	editor.idleKeepAliveOpen, editor.idleUnitOpen, editor.idleInputOpen = false, false, false
 	if protocol == protocolSerial {
 		editor.ports = serial.Ports()
 		if editor.value(fieldAddress) == "" && len(editor.ports) > 0 {

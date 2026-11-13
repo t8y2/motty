@@ -3,13 +3,14 @@ package workbench
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+
+	"motty/internal/cmdhistory"
 )
 
 // idleKeepAlivePreset is the interval the form offers. The custom preset reads
@@ -60,6 +61,11 @@ func (editor *hostEditor) idleKeepAliveDuration() (time.Duration, bool) {
 	unit := time.Second
 	if editor.idleUnit == idleIntervalMinutes {
 		unit = time.Minute
+	}
+	// Check the bound before multiplying: a huge value would wrap into a small,
+	// apparently valid duration.
+	if int64(value) > int64((24*time.Hour)/unit) {
+		return 0, false
 	}
 	interval := time.Duration(value) * unit
 	if !validIdleKeepAliveInterval(interval) {
@@ -205,12 +211,19 @@ func parseSavedIdleInput(value string) (idleInputMode, bool) {
 	return idleInputProtocolDefault, false
 }
 
-// applyIdleKeepAlive reads the saved setting into the host. A damaged value
-// falls back to off and the protocol default rather than sending bytes nobody
-// chose; a choice saved while the interval is off is kept, so reopening the
-// form shows what the user last picked.
+// applyIdleKeepAlive reads the saved setting into the host. A damaged input
+// falls back to the protocol default rather than sending bytes nobody chose,
+// but a valid interval is kept: one bad field must not discard the whole
+// setting. A choice saved while the interval is off is kept too, so reopening
+// the form shows what the user last picked.
 func (host *Host) applyIdleKeepAlive(transport savedTransport) {
 	host.IdleKeepAlive, host.IdleInput, host.IdleInputCustom = 0, idleInputProtocolDefault, ""
+	// Bound before multiplying: a hand-edited huge count would wrap into a
+	// small, apparently valid interval.
+	seconds := int64(transport.IdleKeepAliveSeconds)
+	if seconds >= 1 && seconds <= int64(24*time.Hour/time.Second) {
+		host.IdleKeepAlive = time.Duration(seconds) * time.Second
+	}
 	mode, ok := parseSavedIdleInput(transport.IdleInput)
 	if !ok {
 		return
@@ -222,10 +235,6 @@ func (host *Host) applyIdleKeepAlive(transport savedTransport) {
 		host.IdleInputCustom = transport.IdleInputCustom
 	}
 	host.IdleInput = mode
-	interval := time.Duration(transport.IdleKeepAliveSeconds) * time.Second
-	if validIdleKeepAliveInterval(interval) {
-		host.IdleKeepAlive = interval
-	}
 }
 
 // validIdleKeepAliveInterval reports whether an interval is one this build
@@ -256,43 +265,47 @@ func idleKeepAliveProtocol(protocol hostProtocol) bool {
 	return false
 }
 
-// idleSecretPromptRe recognizes the line a program uses to ask for a password
-// or passphrase. The wording is the program's own (ssh, su, enable, sudo and
-// others), so the match is on the visible line, not on the sudo offer the
-// password hint tracks. A CR must never answer one: it would submit an empty
-// password, and sshd or fail2ban may count the failures.
-var idleSecretPromptRe = regexp.MustCompile(`(?i)(password|passphrase|密码|口令)[^:?：？]*[:?：？]`)
-
 // idleSeesSecretPrompt reports whether the line under the cursor is a
-// credential question. A line the user has typed but not submitted is not one:
-// promptDirty keeps the probe away from a partial command as well.
+// credential question. The wording is the program's own (ssh, su, enable, sudo
+// and others), so the test uses the same vocabulary the command recorder uses
+// to refuse secrets, and requires the colon or question mark that makes it a
+// prompt. A CR must never answer one: it would submit an empty password, and
+// sshd or fail2ban may count the failures.
+//
+// A scrolled-back view cannot show a prompt that just arrived, so the probe
+// stands aside while the user is reading history. Soft wrapping can leave the
+// prompt word on the row above the cursor, so both rows are checked.
 func idleSeesSecretPrompt(t *terminal) bool {
 	if t == nil || t.screen == nil || t.screen.Modes().AltScreen {
 		return false
 	}
+	if t.screen.ViewOffset() != 0 {
+		return true
+	}
 	cursor := t.screen.Cursor()
 	_, rows := t.screen.Size()
 	if cursor.Y < 0 || cursor.Y >= rows {
-		return false
+		return true
 	}
-	return idleSecretPromptRe.MatchString(t.screen.RowText(cursor.Y))
+	line := t.screen.RowText(cursor.Y)
+	if cursor.Y > 0 {
+		line = t.screen.RowText(cursor.Y-1) + " " + line
+	}
+	return cmdhistory.PasswordPrompt(line) && strings.ContainsAny(line, ":?：？")
 }
 
-// idleKeepAliveInterval is the configured interval of a session that has a
-// shell to probe, and whether it has one at all.
+// idleKeepAliveInterval is the interval this shell was opened with, and whether
+// it has one at all. The host is not read here: editing a connected host
+// changes its next connection, as every other host setting does.
 func idleKeepAliveInterval(session *Session) (time.Duration, bool) {
-	if session == nil || session.isLocal() {
+	if session == nil || session.isLocal() || session.term == nil {
 		return 0, false
 	}
-	host, t := session.host, session.term
-	if t == nil || t.shell == nil || t.ended || !idleKeepAliveProtocol(host.Protocol) {
+	t := session.term
+	if t.shell == nil || t.ended || t.idleInterval <= 0 {
 		return 0, false
 	}
-	interval := host.IdleKeepAlive
-	if interval <= 0 {
-		return 0, false
-	}
-	return interval, true
+	return t.idleInterval, true
 }
 
 // idleKeepAliveWait is what Paint asks: how long until this session's probe is
@@ -324,23 +337,43 @@ func (state *State) idleKeepAliveWait(session *Session, now time.Duration) time.
 func (state *State) runIdleKeepAlive(session *Session, now time.Duration) {
 	interval, ok := idleKeepAliveInterval(session)
 	if !ok {
+		state.armIdleKeepAlive(session, 0, now)
 		return
 	}
 	t := session.term
+	// Keep a wake scheduled even when the window stops painting (hidden,
+	// minimized or covered): the probe must not depend on a repaint. The wait is
+	// read in the closure, after this attempt moved idleLastInput.
+	defer func() {
+		state.armIdleKeepAlive(session, state.idleKeepAliveWait(session, now), now)
+	}()
 	if !idleKeepAliveDue(now, t.idleLastInput, interval) {
 		return
 	}
+	// The pump before this point is bounded; a prompt that arrived after its
+	// budget is only on screen after another drain. This runs in the update
+	// loop, never in Paint.
+	if t.takeOutput != nil {
+		t.takeOutput()
+		if t.shell == nil || t.ended {
+			return
+		}
+	}
 	// A transfer's binary stream would take a stray CR/NUL as data. The
 	// transfer itself writes straight to the shell and does not refresh
-	// idleLastInput, so the probe must stand aside for it.
-	if t.transferHoldsInput {
+	// idleLastInput, so the probe must stand aside for it. transferBusy covers
+	// an offered ZMODEM transfer before the user has accepted it.
+	if t.transferHoldsInput || session.transferBusy() {
 		t.idleLastInput = now
 		return
 	}
-	payload, err := session.host.idleInputBytes()
-	if err != nil {
-		// A damaged custom setting is repaired by the form or the next load;
-		// until then, do not ask for a frame every paint.
+	// A modal question or an input-method composition is waiting for the user;
+	// neither has sent a byte to the shell yet.
+	if state.modal != modalNone || t.preedit.Composing {
+		t.idleLastInput = now
+		return
+	}
+	if len(t.idlePayload) == 0 {
 		t.idleLastInput = now
 		return
 	}
@@ -352,7 +385,46 @@ func (state *State) runIdleKeepAlive(session *Session, now time.Duration) {
 	// The next check starts from this attempt, whether or not the shell took
 	// the bytes: a refused write is retried then, not on the next frame.
 	t.idleLastInput = now
-	t.sendIdleKeepAlive(payload)
+	t.sendIdleKeepAlive(t.idlePayload)
+}
+
+// armIdleKeepAlive schedules the wake that runs the probe while the window is
+// not painting. The timer exists only when the app can wake the window; a
+// headless test drives Wake itself.
+//
+// A pending timer that is no later than the wanted one is kept: when it fires,
+// Wake runs this function again with the interval in effect then, so the chain
+// continues without touching window state from the timer goroutine.
+func (state *State) armIdleKeepAlive(session *Session, wait, now time.Duration) {
+	if session == nil || session.term == nil {
+		return
+	}
+	t := session.term
+	if wait <= 0 {
+		if t.idleTimer != nil {
+			t.idleTimer.Stop()
+			t.idleTimer = nil
+		}
+		t.idleTimerAt = 0
+		return
+	}
+	due := now + wait
+	// A timer still ahead of now and no later than the wanted one is kept. A
+	// timer whose deadline has passed has fired (or is firing): Wake is running
+	// because of it, so replace it to continue the chain.
+	if t.idleTimer != nil && t.idleTimerAt > now && t.idleTimerAt <= due {
+		return
+	}
+	if t.idleTimer != nil {
+		t.idleTimer.Stop()
+	}
+	invalidate := state.options.Invalidate
+	if invalidate == nil {
+		t.idleTimer, t.idleTimerAt = nil, 0
+		return
+	}
+	t.idleTimer = time.AfterFunc(wait, invalidate)
+	t.idleTimerAt = due
 }
 
 // requestIdleKeepAliveFrames asks for the frame in which each connected

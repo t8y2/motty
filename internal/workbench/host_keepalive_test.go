@@ -228,6 +228,7 @@ func idleKeepAliveSession(t *testing.T, host Host) (*State, *Session, *fakeShell
 	shell := &fakeShell{done: make(chan struct{})}
 	term := newTerminal(80, 24)
 	term.shell = shell
+	term.configureIdleKeepAlive(host, false)
 	session := &Session{HostID: 1, host: host, term: term}
 	return state, session, shell
 }
@@ -377,7 +378,11 @@ func TestIdleKeepAliveSkipsCredentialPrompts(t *testing.T) {
 		"Enter passphrase for key '/home/me/.ssh/id_ed25519': ",
 		"[sudo] password for deploy: ",
 		"密码：",
+		"密碼：",
 		"口令: ",
+		"Verification code: ",
+		"Enter PIN: ",
+		"Token: ",
 	}
 	for _, prompt := range prompts {
 		t.Run(prompt, func(t *testing.T) {
@@ -431,6 +436,116 @@ func TestIdleKeepAliveSkipsAFileTransfer(t *testing.T) {
 	}
 	if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
 		t.Fatalf("next wait = %v, want %v", wait, time.Minute)
+	}
+}
+
+func TestIdleKeepAliveSkipsAnOfferedTransfer(t *testing.T) {
+	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	session.transfer.phase = transferOffered
+	state.runIdleKeepAlive(session, time.Minute)
+	if got := shell.typed(); got != "" {
+		t.Fatalf("typed %q while a transfer was offered", got)
+	}
+	if session.term.idleLastInput != time.Minute {
+		t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
+	}
+}
+
+func TestIdleKeepAliveSkipsAModalOrImeComposition(t *testing.T) {
+	t.Run("modal", func(t *testing.T) {
+		state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+		state.modal = modalNewHost
+		state.runIdleKeepAlive(session, time.Minute)
+		if got := shell.typed(); got != "" {
+			t.Fatalf("typed %q with a modal open", got)
+		}
+	})
+	t.Run("ime composition", func(t *testing.T) {
+		state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+		session.term.preedit.Composing = true
+		state.runIdleKeepAlive(session, time.Minute)
+		if got := shell.typed(); got != "" {
+			t.Fatalf("typed %q during IME composition", got)
+		}
+	})
+}
+
+func TestIdleKeepAliveSkipsScrolledOrWrappedPrompts(t *testing.T) {
+	t.Run("scrolled", func(t *testing.T) {
+		state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+		session.term.screen.Write([]byte(strings.Repeat("line\r\n", 30)))
+		session.term.screen.Scroll(1)
+		state.runIdleKeepAlive(session, time.Minute)
+		if got := shell.typed(); got != "" {
+			t.Fatalf("typed %q while the view was scrolled", got)
+		}
+	})
+	t.Run("soft wrapped", func(t *testing.T) {
+		state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+		session.term.screen.Write([]byte(strings.Repeat("x", 80) + "passphrase: "))
+		state.runIdleKeepAlive(session, time.Minute)
+		if got := shell.typed(); got != "" {
+			t.Fatalf("typed %q at a wrapped passphrase prompt", got)
+		}
+	})
+}
+
+func TestIdleKeepAliveDrainsTheShellBeforeDeciding(t *testing.T) {
+	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	session.term.takeOutput = func() {
+		session.term.takeOutput = nil
+		session.term.screen.Write([]byte("Password: "))
+	}
+	state.runIdleKeepAlive(session, time.Minute)
+	if got := shell.typed(); got != "" {
+		t.Fatalf("typed %q at a prompt found by the drain", got)
+	}
+}
+
+func TestIdleKeepAliveStopsWhenTheDrainEndsTheShell(t *testing.T) {
+	state, session, _ := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	session.term.takeOutput = func() {
+		session.term.takeOutput = nil
+		session.term.shell = nil
+		session.term.ended = true
+	}
+	state.runIdleKeepAlive(session, time.Minute)
+	if wait := state.idleKeepAliveWait(session, time.Minute); wait != 0 {
+		t.Fatalf("wait = %v, want no timer after the shell ended", wait)
+	}
+}
+
+func TestIdleKeepAliveFreezesTheProbeForTheShell(t *testing.T) {
+	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	session.host.Protocol = protocolTelnet
+	session.host.IdleInput = idleInputCR
+	state.runIdleKeepAlive(session, time.Minute)
+	if got := shell.typed(); got != "\x00" {
+		t.Fatalf("typed %q, want the SSH NUL frozen when the shell opened", got)
+	}
+}
+
+func TestIdleKeepAliveArmsAWakeWithoutPaint(t *testing.T) {
+	state, session, _ := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: 10 * time.Millisecond})
+	now := time.Duration(0)
+	state.options.Now = func() time.Duration { return now }
+	woke := make(chan struct{}, 1)
+	state.options.Invalidate = func() {
+		select {
+		case woke <- struct{}{}:
+		default:
+		}
+	}
+	state.runIdleKeepAlive(session, now)
+	select {
+	case <-woke:
+	case <-time.After(time.Second):
+		t.Fatal("no wake was armed for a window that stopped painting")
+	}
+	now = 20 * time.Millisecond
+	state.runIdleKeepAlive(session, now)
+	if session.term.idleTimer == nil || session.term.idleTimerAt != 30*time.Millisecond {
+		t.Fatalf("timer = %v at %v, want one due at 30ms", session.term.idleTimer, session.term.idleTimerAt)
 	}
 }
 
@@ -493,13 +608,69 @@ func TestIdleKeepAliveStopsWhenTheShellEndedOrTheTextIsDamaged(t *testing.T) {
 		if got := shell.typed(); got != "" {
 			t.Fatalf("typed %q", got)
 		}
-		if session.term.idleLastInput != time.Minute {
-			t.Fatalf("last input = %v, want the check deferred", session.term.idleLastInput)
-		}
-		if wait := state.idleKeepAliveWait(session, time.Minute); wait != time.Minute {
-			t.Fatalf("next wait = %v, want %v", wait, time.Minute)
+		if wait := state.idleKeepAliveWait(session, time.Minute); wait != 0 {
+			t.Fatalf("wait = %v, want no timer for a damaged payload", wait)
 		}
 	})
+}
+
+func TestIdleKeepAliveLoadKeepsTheIntervalWhenTheInputIsDamaged(t *testing.T) {
+	var host Host
+	if !host.applyTransport(savedTransport{
+		Protocol: "ssh", IdleKeepAliveSeconds: 60,
+		IdleInput: "custom", IdleInputCustom: `\q`,
+	}) {
+		t.Fatal("applyTransport refused the host")
+	}
+	if host.IdleKeepAlive != time.Minute {
+		t.Fatalf("interval = %v, want the valid minute kept", host.IdleKeepAlive)
+	}
+	if host.IdleInput != idleInputProtocolDefault || host.IdleInputCustom != "" {
+		t.Fatalf("input = %v %q, want the protocol default", host.IdleInput, host.IdleInputCustom)
+	}
+}
+
+func TestIdleKeepAliveRejectsOverflowingIntervals(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	editor := &state.editor
+	editor.reset()
+	editor.idleKeepAlive = idleKeepAliveCustom
+	editor.idleUnit = idleIntervalSeconds
+	editor.idleInterval = textEditorWith("36028797018963969")
+	if _, ok := editor.idleKeepAliveDuration(); ok {
+		t.Fatal("an interval whose multiplication overflows was accepted")
+	}
+	var host Host
+	host.applyTransport(savedTransport{Protocol: "ssh", IdleKeepAliveSeconds: int(^uint(0) >> 1)})
+	if host.IdleKeepAlive != 0 {
+		t.Fatalf("overflowing saved interval = %v, want off", host.IdleKeepAlive)
+	}
+}
+
+func TestChoosingTheProtocolDefaultDoesNotPinTheSendMode(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	editor := &state.editor
+	editor.reset()
+	editor.protocol = protocolSSH
+	state.clickHostIdleKeepAlive(hitDialogIdleInputItemList.At(1)) // NUL, the SSH default
+	if editor.idleInput != idleInputNUL || editor.idleInputChosen {
+		t.Fatalf("input = %v chosen=%v, want the default left unpinned", editor.idleInput, editor.idleInputChosen)
+	}
+	state.clickHostIdleKeepAlive(hitDialogIdleInputItemList.At(0)) // CR
+	if editor.idleInput != idleInputCR || !editor.idleInputChosen {
+		t.Fatalf("input = %v chosen=%v, want CR pinned", editor.idleInput, editor.idleInputChosen)
+	}
+}
+
+func TestProtocolSwitchClosesIdleDropdowns(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	editor := &state.editor
+	editor.reset()
+	editor.idleKeepAliveOpen, editor.idleUnitOpen, editor.idleInputOpen = true, true, true
+	editor.applyProtocol(protocolSSH)
+	if editor.idleKeepAliveOpen || editor.idleUnitOpen || editor.idleInputOpen {
+		t.Fatal("a protocol switch left an idle dropdown open")
+	}
 }
 
 func TestHostEditorSavesIdleKeepAlive(t *testing.T) {
@@ -664,11 +835,12 @@ func TestIdleKeepAliveIgnoresDamagedSavedValues(t *testing.T) {
 	cases := []struct {
 		name      string
 		transport savedTransport
+		want      time.Duration
 	}{
 		{name: "negative interval", transport: savedTransport{Protocol: "ssh", IdleKeepAliveSeconds: -5}},
 		{name: "too long interval", transport: savedTransport{Protocol: "ssh", IdleKeepAliveSeconds: int((25 * time.Hour) / time.Second)}},
-		{name: "unknown input", transport: savedTransport{Protocol: "ssh", IdleKeepAliveSeconds: 60, IdleInput: "wat"}},
-		{name: "damaged custom input", transport: savedTransport{Protocol: "ssh", IdleKeepAliveSeconds: 60, IdleInput: "custom", IdleInputCustom: `\q`}},
+		{name: "unknown input", transport: savedTransport{Protocol: "ssh", IdleKeepAliveSeconds: 60, IdleInput: "wat"}, want: time.Minute},
+		{name: "damaged custom input", transport: savedTransport{Protocol: "ssh", IdleKeepAliveSeconds: 60, IdleInput: "custom", IdleInputCustom: `\q`}, want: time.Minute},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -676,8 +848,8 @@ func TestIdleKeepAliveIgnoresDamagedSavedValues(t *testing.T) {
 			if !host.applyTransport(test.transport) {
 				t.Fatal("applyTransport refused the saved host")
 			}
-			if host.IdleKeepAlive != 0 {
-				t.Fatalf("interval = %v, want off", host.IdleKeepAlive)
+			if host.IdleKeepAlive != test.want {
+				t.Fatalf("interval = %v, want %v", host.IdleKeepAlive, test.want)
 			}
 			if host.IdleInput != idleInputProtocolDefault || host.IdleInputCustom != "" {
 				t.Fatalf("input = %v %q, want the protocol default", host.IdleInput, host.IdleInputCustom)

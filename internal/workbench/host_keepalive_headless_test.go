@@ -115,9 +115,9 @@ func TestIdleKeepAliveFormChoosesIntervalAndInput(t *testing.T) {
 	}
 	focusFormHit(t, state, view, hitDialogIdleInput)
 	clickFormHit(t, view, hitDialogIdleInput)
-	clickFormHit(t, view, hitDialogIdleInputItemList.At(1)) // NUL
-	if !state.editor.idleInputChosen || state.editor.idleInput != idleInputNUL {
-		t.Fatalf("input = %v chosen=%v, want NUL", state.editor.idleInput, state.editor.idleInputChosen)
+	clickFormHit(t, view, hitDialogIdleInputItemList.At(1)) // NUL, the SSH default
+	if state.editor.idleInputChosen || state.editor.idleInput != idleInputNUL {
+		t.Fatalf("input = %v chosen=%v, want the default left unpinned", state.editor.idleInput, state.editor.idleInputChosen)
 	}
 	canvas, texts := paintedTexts(state)
 	if !contains(texts, state.messages.Tools.IdleKeepAliveFiveMinutes) {

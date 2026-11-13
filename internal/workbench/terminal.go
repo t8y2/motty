@@ -224,6 +224,14 @@ type terminal struct {
 	// idleLastInput is when this shell last received input from any source. The
 	// idle keepalive measures its quiet interval from here.
 	idleLastInput time.Duration
+	// idleInterval and idlePayload are the probe this shell was opened with.
+	// They are frozen here so editing the host changes only the next connection,
+	// as its settings already do. idleTimer holds the wake that keeps probing
+	// while the window is not painting.
+	idleInterval time.Duration
+	idlePayload  []byte
+	idleTimer    *time.Timer
+	idleTimerAt  time.Duration
 
 	// exec is the command the assistant is waiting on in this terminal.
 	exec *aiExec
@@ -363,6 +371,7 @@ func (state *State) configureTerminal(session *Session) {
 	session.term.screen.SetDefaultCursor(state.terminalCursorStyle.termCursorStyle())
 	session.term.openLink = state.openTerminalLink
 	session.term.clock = state.now
+	session.term.adoptIdleClock()
 	// An image decoded off the window thread asks for the frame that shows it.
 	session.term.screen.SetImageWake(state.options.Invalidate)
 	state.attachHistory(session)
@@ -691,10 +700,33 @@ func (t *terminal) noteInput() {
 // typed-input path: it is neither history nor the user's line, so the recorder,
 // autofill and completion never see it.
 func (t *terminal) sendIdleKeepAlive(p []byte) bool {
-	if t.shell == nil || len(p) == 0 {
+	if t.shell == nil || len(p) == 0 || t.transferHoldsInput {
 		return false
 	}
 	return t.writeShellInput(p)
+}
+
+// configureIdleKeepAlive freezes the host's probe for this shell. A damaged
+// custom payload is no probe: the shell keeps the setting off until it connects
+// again with a valid one.
+func (t *terminal) configureIdleKeepAlive(host Host, local bool) {
+	t.idleInterval, t.idlePayload = 0, nil
+	if local || !idleKeepAliveProtocol(host.Protocol) || host.IdleKeepAlive <= 0 {
+		return
+	}
+	payload, err := host.idleInputBytes()
+	if err != nil {
+		return
+	}
+	t.idleInterval, t.idlePayload = host.IdleKeepAlive, payload
+}
+
+// adoptIdleClock restarts this shell's idle measurement in a new window's clock
+// after a tab moves between windows, whose monotonic origins differ.
+func (t *terminal) adoptIdleClock() {
+	if t.clock != nil {
+		t.idleLastInput = t.clock()
+	}
 }
 
 func (t *terminal) noteShellInput(p []byte) {
@@ -890,6 +922,8 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	t.shell = shell
 	t.shellOpened = state.now()
 	t.idleLastInput = t.shellOpened
+	t.configureIdleKeepAlive(session.host, session.isLocal())
+	state.armIdleKeepAlive(session, state.idleKeepAliveWait(session, t.idleLastInput), t.idleLastInput)
 	t.noShellTold = false
 	// A connection that drops takes the running program's teardown with it, so
 	// the modes it had armed on this screen (the alternate screen, mouse
