@@ -250,7 +250,8 @@ func TestRemoteStatsShowGPUPiecesOnlyWhenTheServerHasGPUs(t *testing.T) {
 			t.Fatal("remote monitor hardware section did not start expanded")
 		}
 		var canvas gfx.Canvas
-		state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900})
+		// Keep both GPU cards visible below the fixed host information bar.
+		state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900 + monitorHostInfoHeight})
 		var names []string
 		for _, text := range canvas.Texts() {
 			if strings.HasPrefix(text.Value, "GPU") && strings.Contains(text.Value, "·") {
@@ -312,7 +313,8 @@ func TestHardwareShowsGPUMetricsAndProcesses(t *testing.T) {
 	state.Click(hitRemoteStats)
 	waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
 	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900})
+	// Keep both process rows visible below the fixed host information bar.
+	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900 + monitorHostInfoHeight})
 	texts := []string{}
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
