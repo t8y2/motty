@@ -77,3 +77,20 @@ deterministic ordering, draft/cancel/save boundaries or event routing. It noted
 minor remaining explicit test gaps for VNC-specific selection, monitor-specific
 Chinese collation and Tab/outside-click menu dismissal; shared protocol/comparator
 behavior remains unchanged. No Viva source or dependency pin was modified.
+
+## CI Follow-Up
+
+The first PR check ran merge `41fe888629026b6e8086654cb0f80068c1aa43d7`
+against the newer upstream baseline `800e1f40`. Workbench passed, but the new
+upstream Mosh interoperability scenario waited for a literal `%` prompt while the
+Ubuntu runner displayed `$`. The failing job was
+`43391021589 / 131771025706`.
+
+The branch incorporates that exact CI baseline and reuses the existing
+shell-independent `waitForOutput(..., nil)` helper to seed the scenario's terminal.
+Per-character, execution-count and screen assertions remain unchanged. The local
+full suite, Mosh/terminal race tests and vet pass after this correction. The
+real-server test is explicitly skipped locally because `mosh-server` is not
+installed; Ubuntu CI supplies the reference-server acceptance, rather than the
+local skip being counted as that acceptance. Complete failed-job and local rerun
+logs are retained under the external evidence directory's `ci-repair/` folder.
