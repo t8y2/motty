@@ -125,8 +125,7 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 	if term == "" {
 		term = "xterm-256color"
 	}
-	modes := ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 38400, ssh.TTY_OP_OSPEED: 38400}
-	if err := session.RequestPty(term, max(config.Rows, 1), max(config.Cols, 1), modes); err != nil {
+	if err := session.RequestPty(term, max(config.Rows, 1), max(config.Cols, 1), ptyModes()); err != nil {
 		session.Close()
 		return nil, fmt.Errorf("request pty: %w", err)
 	}
@@ -399,4 +398,15 @@ func (queue *inputQueue) close() {
 	queue.closed = true
 	queue.mu.Unlock()
 	queue.ready.Broadcast()
+}
+
+// backspaceByte is what the terminal sends for Backspace (term.EncodeKey).
+const backspaceByte = 0x7f
+
+// ptyModes are the terminal modes a pty is asked for. They name the erase
+// character, as OpenSSH does from its own terminal: a system whose terminals
+// erase with Control+H by default, AIX and HP-UX among them, would otherwise
+// echo every Backspace as ^? instead of deleting.
+func ptyModes() ssh.TerminalModes {
+	return ssh.TerminalModes{ssh.ECHO: 1, ssh.VERASE: backspaceByte, ssh.TTY_OP_ISPEED: 38400, ssh.TTY_OP_OSPEED: 38400}
 }

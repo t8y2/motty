@@ -196,10 +196,9 @@ func (conn *Conn) openRelayShell(client *ssh.Client, endpoint Endpoint, nonce st
 	if !conn.config.InteractiveOnly && standardImplementation(string(client.ServerVersion())) {
 		_ = session.Setenv("LANG", utf8Locale())
 	}
-	modes := ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 38400, ssh.TTY_OP_OSPEED: 38400}
 	// The terminal is wide so that a long typed line is not wrapped by the
 	// shell's own line editor.
-	if err := session.RequestPty("xterm", 24, 240, modes); err != nil {
+	if err := session.RequestPty("xterm", 24, 240, ptyModes()); err != nil {
 		session.Close()
 		return nil, fmt.Errorf("open a terminal on %s: %w", endpoint.address(), err)
 	}

@@ -56,6 +56,7 @@ var distroBadges = map[sshconn.RemoteSystem]distroBadge{
 	sshconn.SystemAzureLinux:  {icons.Azurelinux, gfx.RGB(0, 120, 212)},
 	sshconn.SystemOracleLinux: {icons.Oraclelinux, gfx.RGB(199, 70, 52)},
 	sshconn.SystemESXi:        {icons.Esxi, gfx.RGB(96, 112, 120)},
+	sshconn.SystemAIX:         {icons.Aix, gfx.RGB(106, 158, 0)},
 }
 
 // badgeGlyph is one filled glyph of a system's badge: the icon, how far the badge's
@@ -98,9 +99,10 @@ func systemBadgeArt(system sshconn.RemoteSystem, dark bool) (badgeArt, bool) {
 	}
 	if badge, ok := distroBadges[system]; ok {
 		// VMware's mark is a monogram two and a half times wider than it is tall,
-		// so the square-mark inset would leave it a few pixels high.
+		// so the square-mark inset would leave it a few pixels high. AIX's mark
+		// is a ring around small lettering, which needs the same room.
 		inset := float32(0.16)
-		if system == sshconn.SystemESXi {
+		if system == sshconn.SystemESXi || system == sshconn.SystemAIX {
 			inset = 0.10
 		}
 		return badgeArt{background: badge.brand, glyphs: []badgeGlyph{{badge.icon, inset, white}}}, true
