@@ -242,3 +242,12 @@ func TestBridgeSlowCallDoesNotBlockPing(t *testing.T) {
 	inW.Close()
 	io.Copy(io.Discard, outR)
 }
+
+// TestAToolsCallNotificationIsNotAProgressCall guards the stream decision for a
+// request without an id: it is a notification, and there is nothing to stream.
+func TestAToolsCallNotificationIsNotAProgressCall(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"` + tools.NameRZSZUpload + `","_meta":{"progressToken":1}}}`)
+	if _, ok := rzszProgressCall("text/event-stream", body); ok {
+		t.Fatal("a tools/call without an id was treated as a progress call")
+	}
+}

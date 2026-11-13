@@ -25,7 +25,7 @@ func rzszProgressCall(accept string, body []byte) (token json.RawMessage, ok boo
 		return nil, false
 	}
 	var req rpcRequest
-	if json.Unmarshal([]byte(trimmed), &req) != nil || req.Method != "tools/call" || !validID(req.ID) {
+	if json.Unmarshal([]byte(trimmed), &req) != nil || req.Method != "tools/call" || len(req.ID) == 0 || !validID(req.ID) {
 		return nil, false
 	}
 	var params struct {
