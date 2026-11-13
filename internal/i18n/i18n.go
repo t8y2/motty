@@ -66,6 +66,7 @@ func ChineseVariant(tag string) Language {
 // Messages is the complete set of user-visible workbench strings. Adding a
 // language means adding one field initialization, not touching call sites.
 type Messages struct {
+	RemoteLogs     RemoteLogMessages
 	ActionFeedback ActionFeedbackMessages
 	Monitor        MonitorMessages
 	Dashboard      DashboardMessages

@@ -306,6 +306,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.NoHistory == right.NoHistory && left.LoginCommand == right.LoginCommand && left.Transfer == right.Transfer &&
 		left.IdleKeepAliveSeconds == right.IdleKeepAliveSeconds && left.IdleInput == right.IdleInput &&
 		left.IdleInputCustom == right.IdleInputCustom &&
+		slices.Equal(left.RemoteLogPaths, right.RemoteLogPaths) &&
 		left.ViaSSH == right.ViaSSH && left.Clipboard == right.Clipboard && left.Console == right.Console &&
 		left.StandardSecurity == right.StandardSecurity && left.Chromeless == right.Chromeless
 }

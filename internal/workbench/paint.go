@@ -621,6 +621,7 @@ func (state *State) declareShell(c ui.C) {
 	if chrome.shellFullPage {
 		if state.terminalPage() {
 			state.declareWorkspacePanes(c)
+			state.declareRemoteLogs(c)
 			state.declareContextPanel(c)
 		} else {
 			// The file-manager tab is part of the page like the panes.

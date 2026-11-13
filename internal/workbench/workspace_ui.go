@@ -63,6 +63,14 @@ func (state *State) workspacePixelBounds(size gfx.Size) gfx.Rect {
 }
 
 func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, size gfx.Size) gfx.Rect {
+	bounds := state.workspaceBoundsAboveLogs(workspaceID, size)
+	if view := state.workspaceRemoteLogs(workspaceID); view != nil {
+		bounds.Height -= view.extent(bounds.Height)
+	}
+	return bounds
+}
+
+func (state *State) workspaceBoundsAboveLogs(workspaceID layoutcore.WorkspaceID, size gfx.Size) gfx.Rect {
 	bounds := state.baseWorkspacePixelBounds(size)
 	context, ok := state.deck.Context(workspaceID)
 	if ok && context.Open && size.Width >= contextDrawerAt {

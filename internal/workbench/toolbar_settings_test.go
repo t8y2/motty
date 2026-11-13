@@ -219,7 +219,7 @@ func TestTerminalToolbarDefaultOrderMatchesTheRail(t *testing.T) {
 		"notes", "close-pane", "broadcast", "snippets",
 		"split-horizontal", "split-vertical",
 		"record", "export-recording", "save-output", "export-log",
-		"resources", "files", "local-proxy", "file-transfer", "remote-tools",
+		"resources", "files", "local-proxy", "file-transfer", "remote-tools", "remote-logs",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("terminal toolbar order = %v, want %v", got, want)

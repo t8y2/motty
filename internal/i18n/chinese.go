@@ -3,6 +3,7 @@ package i18n
 // The Chinese catalog lives here, one file per language.
 
 var ChineseMessages = Messages{
+	RemoteLogs:     chineseRemoteLogs,
 	ActionFeedback: chineseActionFeedback,
 	Monitor:        chineseMonitor,
 	Dashboard:      chineseDashboard,

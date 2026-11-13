@@ -188,6 +188,9 @@ func (state *State) rebuildCommandPalette() {
 		palette.add(messages.MenuRenameTerminal, hitPaneRename)
 		palette.add(messages.SFTPOpen, hitSFTPOpen)
 		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil {
+			if session.canViewRemoteLogs() {
+				palette.add(messages.RemoteLogs.Title, hitServerLogs)
+			}
 			if _, ok := state.localProxyTarget(session); ok && !session.host.isDesktop() {
 				palette.addDetailed(messages.LocalProxy.Title, state.sessionAddress(session.host), hitLocalProxyOpen)
 			}

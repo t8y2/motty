@@ -86,6 +86,7 @@ type hostEditor struct {
 	idleInputCustom text.Editor
 	// The three lists the probe's selects open, and the interval field.
 	idleKeepAliveOpen, idleUnitOpen, idleInputOpen bool
+	remoteLogPaths                                 []remoteLogPath
 	// forwardX11 is the host's "Forward X11" switch.
 	forwardX11 bool
 	// agentForward is the host's "Forward ssh-agent" switch.
@@ -318,6 +319,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.loginCommand = text.Editor{}
 	editor.loginCommand.Insert(host.LoginCommand)
 	editor.loadIdleKeepAlive(host)
+	editor.remoteLogPaths = host.RemoteLogPaths
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode = host.algoMode()
 	editor.auth, editor.identity, editor.credential = host.Auth, host.Identity, host.Credential
@@ -394,6 +396,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.InteractiveOnly = editor.interactiveOnly
 		host.NoHistory = editor.noHistory
 		host.LoginCommand = editor.value(fieldLoginCommand)
+		host.RemoteLogPaths = editor.remoteLogPaths
 		host.Transfer = editor.transfer
 		switch editor.algoMode {
 		case algoCompatible:
@@ -444,6 +447,7 @@ func (editor *hostEditor) reset() {
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
 	editor.resetIdleKeepAlive()
+	editor.remoteLogPaths = nil
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode, editor.auth, editor.identity, editor.credential = algoDefault, authAutomatic, "", ""
 	editor.sshOptions = nil

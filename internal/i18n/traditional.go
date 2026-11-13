@@ -3,6 +3,7 @@
 package i18n
 
 var TraditionalMessages = Messages{
+	RemoteLogs:     traditionalRemoteLogs,
 	ActionFeedback: traditionalActionFeedback,
 	Monitor:        traditionalMonitor,
 	Dashboard:      traditionalDashboard,
@@ -2990,6 +2991,19 @@ var traditionalMonitor = MonitorMessages{
 	Pause: "暫停監控", Resume: "繼續監控", Paused: "已暫停", Updated: "自動重新整理 · 剛剛更新", Interval: "重新整理間隔", IntervalFmt: "%d 秒", Retry: "重試", NotConnected: "連線到伺服器後可檢視監控。",
 	Collapse: "收起",
 	Logins:   "登入工作階段 (who)", NoLogins: "系統未回報登入工作階段", LoginsUnavailable: "無法讀取登入工作階段", LoginsTruncated: "僅顯示前 32 個工作階段",
+}
+
+var traditionalRemoteLogs = RemoteLogMessages{
+	Title: "伺服器記錄", Paths: "已儲存路徑", Add: "新增路徑", Edit: "編輯路徑", Remove: "移除路徑",
+	RemovePrompt: "移除已儲存的路徑 %s？", Name: "名稱", Path: "遠端絕對路徑",
+	Search: "搜尋記錄", AutoScroll: "自動捲動", Live: "即時",
+	ResizePaths: "調整路徑清單寬度", PathActionsFmt: "%s 的路徑操作",
+	Connecting: "正在開啟記錄…", Stopped: "記錄流已結束", Retry: "重試", Expand: "展開", Restore: "還原大小", Close: "關閉記錄",
+	NoPaths: "新增一個路徑即可開始。", SelectPath: "選擇已儲存的路徑以讀取記錄。",
+	NoMatches: "目前緩衝區中沒有符合項。", Disconnected: "SSH 已中斷",
+	InvalidPath:   "請輸入名稱和絕對路徑，且不能包含控制字元。",
+	DuplicatePath: "此路徑已儲存。", PathLimit: "最多可儲存 64 個路徑。",
+	PathChanged: "已儲存的路徑發生了變化，請重新開啟後再試。",
 }
 
 var traditionalSessionLogs = SessionLogsMessages{

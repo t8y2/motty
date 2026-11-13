@@ -30,9 +30,14 @@ func TestTheDockedAssistantIsBoundedFromTheSideRail(t *testing.T) {
 		t.Fatalf("the panel's edge beside the side rail is %+v, want the line at %v", got, want)
 	}
 
-	// With the rail on the other side the panel ends at the window's own edge,
-	// where it keeps no line.
+	// Move the configurable tools left and hide the fixed server-log entry
+	// to exercise the layout with no rail beside the assistant.
 	state.terminalToolbarPosition = terminalToolbarLeft
+	for i, entry := range state.toolbars.customize(toolbarTerminal) {
+		if entry.Key == "remote-logs" {
+			state.toolbars.layouts[toolbarTerminal][i].Enabled = false
+		}
+	}
 	canvas, _ = paintAt(state, panelWide)
 	panel = state.ai.panel.rect
 	if panel.X+panel.Width != panelWide.Width {

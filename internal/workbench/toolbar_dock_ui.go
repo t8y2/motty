@@ -377,6 +377,12 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 	compactMenu := false
 	entries := state.toolbars.entries(toolbarTerminal)
 	for _, preference := range entries {
+		if preference.Key == "remote-logs" {
+			if !left && preference.Enabled && session.remoteLogHost() {
+				return true
+			}
+			continue
+		}
 		spec, ok := toolbarSpecFor(toolbarTerminal, preference.Key)
 		if !ok {
 			continue
@@ -619,16 +625,17 @@ func (state *State) toolbarDockSideReserve() float32 {
 // page. Each rail's upper and lower groups scroll in viewports of their own;
 // their heights were measured here, since they decide the split.
 func (state *State) declareToolbarDockSides(c ui.C) {
-	session, _ := state.toolbarRailSession()
+	session, active := state.toolbarRailSession()
+	_, footer := state.serverLogsRailTool(session, active)
 	for _, left := range []bool{false, true} {
-		state.declareToolbarDockSide(c, left, session, session != nil)
+		state.declareToolbarDockSide(c, left, session != nil, !left && footer)
 	}
 }
 
 // declareToolbarDockSide declares one side rail: its upper and lower groups
 // scroll in viewports of their own. A side the shell holds no room for declares
 // nothing and leaves no boxes behind.
-func (state *State) declareToolbarDockSide(c ui.C, left bool, session *Session, terminalVisible bool) {
+func (state *State) declareToolbarDockSide(c ui.C, left, terminalVisible, footer bool) {
 	dock := &state.toolbarDock
 	side := toolbarDockSideAt(left)
 	scratch := &dock.sideScratch[side]
@@ -645,6 +652,11 @@ func (state *State) declareToolbarDockSide(c ui.C, left bool, session *Session, 
 	top := state.toolbarDockTools(topZone, &topBuffer)
 	bottom := state.toolbarDockTools(bottomZone, &bottomBuffer)
 	viewport := bounds.Inset(gfx.All(4))
+	footerHeight := float32(0)
+	if footer {
+		footerHeight = state.terminalToolbarMetrics().toolSize + 4
+		viewport.Height = max(0, viewport.Height-footerHeight)
+	}
 	bottomHeight := min(state.terminalRailContentExtent(bottom), viewport.Height/2)
 	if len(top) == 0 {
 		bottomHeight = min(state.terminalRailContentExtent(bottom), viewport.Height)
@@ -661,8 +673,9 @@ func (state *State) declareToolbarDockSide(c ui.C, left bool, session *Session, 
 }
 
 func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
-	session, _ := state.toolbarRailSession()
+	session, active := state.toolbarRailSession()
 	terminalVisible := session != nil
+	logTool, hasLogTool := state.serverLogsRailTool(session, active)
 	for _, left := range []bool{false, true} {
 		primary := (state.terminalToolbarPosition == terminalToolbarLeft) == left
 		if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {
@@ -690,9 +703,14 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 		// read as a column of that surface. A docked panel that takes the same
 		// workspace draws its own line against the rail instead.
 		background := state.windowFrameColor()
+		footer := !left && hasLogTool
 		if terminalVisible && primary {
-			state.setTerminalRailTools(session, append(top, bottom...))
-			if len(bottom) == 0 {
+			tools := append(top, bottom...)
+			if footer {
+				tools = append(tools, logTool)
+			}
+			state.setTerminalRailTools(session, tools)
+			if len(bottom) == 0 && !footer {
 				state.paintTerminalSideRail(canvas, bounds, session, top, background)
 				continue
 			}
@@ -702,12 +720,24 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 			session.term.railBounds = bounds
 		}
 		scratch := &dock.sideScratch[side]
+		// An input event can switch sections after the page declared its rail.
+		// The repaint will lay out the rail for the new section.
+		if !scratch.top.Valid() || !scratch.bottom.Valid() {
+			continue
+		}
 		var owner *Session
 		if terminalVisible && primary {
 			owner = session
 		}
 		state.paintToolbarDockSideGroup(canvas, top, topZone, scratch.top.Rect(), background, owner)
 		state.paintToolbarDockSideGroup(canvas, bottom, bottomZone, scratch.bottom.Rect(), background, owner)
+		if footer {
+			metrics := state.terminalToolbarMetrics()
+			rect := bounds.Inset(gfx.All(4))
+			rect.Y += max(rect.Height-metrics.toolSize, 0)
+			rect.Height = min(rect.Height, metrics.toolSize)
+			state.paintIconButtonSized(canvas, logTool.id, logTool.icon, rect, logTool.hint, logTool.disabled, logTool.style, background, metrics.iconSize)
+		}
 	}
 }
 
