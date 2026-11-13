@@ -55,6 +55,7 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 	if session.term == nil {
 		return
 	}
+	state.settleShellResize(canvas, session)
 	state.wantLatencyProbe(session, canvas)
 	t := session.term
 	canvas.Clip(bounds)

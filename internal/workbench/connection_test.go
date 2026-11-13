@@ -264,6 +264,21 @@ func (shell *fakeShell) Resize(cols, rows int) {
 	shell.mu.Unlock()
 }
 
+func (shell *fakeShell) resizeCount() int {
+	shell.mu.Lock()
+	defer shell.mu.Unlock()
+	return len(shell.resizes)
+}
+
+func (shell *fakeShell) lastResize() [2]int {
+	shell.mu.Lock()
+	defer shell.mu.Unlock()
+	if len(shell.resizes) == 0 {
+		return [2]int{}
+	}
+	return shell.resizes[len(shell.resizes)-1]
+}
+
 func (shell *fakeShell) Done() <-chan struct{} { return shell.done }
 func (shell *fakeShell) Err() error {
 	shell.mu.Lock()

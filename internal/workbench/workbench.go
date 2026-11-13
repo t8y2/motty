@@ -799,6 +799,10 @@ type State struct {
 	// terminalInputClickOff stops a click on the line being typed from moving
 	// the shell's cursor (see moveInputCursor).
 	terminalInputClickOff bool
+	// pointerHeld is true while a drag captures the pointer. The panes can change
+	// size on every motion then, and the shells are told once it is released;
+	// see resizeShell.
+	pointerHeld bool
 
 	// settingsScroll is how far the settings page is scrolled, in pixels, and
 	// settingsContent how tall it was when last painted.
@@ -2399,6 +2403,19 @@ func (state *State) hostForRow(id gfx.ID) (Host, bool) {
 // Pointer handles the pointer events the runtime does not turn into clicks. A
 // double click on a host row connects to it.
 func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
+	// A drag owns the pointer from the press it captures to its release: the
+	// panes may change size on every motion, and the shells wait for the end.
+	switch event.Kind {
+	case gfx.PointerDown, gfx.PointerMove:
+		if event.Captured {
+			state.pointerHeld = true
+		}
+	case gfx.PointerUp, gfx.PointerExit:
+		if state.pointerHeld {
+			state.pointerHeld = false
+			state.flushShellSizes()
+		}
+	}
 	if state.noteExit != nil {
 		if isNoteExitHit(event.Target) {
 			return gfx.EventResult{}
