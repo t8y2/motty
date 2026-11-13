@@ -41,6 +41,8 @@ type fakeConn struct {
 	scpOpens          int
 	dial              func(context.Context, string, string) (net.Conn, error)
 	dialCalls         []fakeDialCall
+	shellDial         func(context.Context, string, string) (net.Conn, error)
+	shellDialCalls    []fakeShellDialCall
 	listen            func(string, string) (net.Listener, error)
 	listenCalls       []fakeListenCall
 	runCommand        func(context.Context, string, int) ([]byte, error)
@@ -55,6 +57,11 @@ type fakeConn struct {
 
 type fakeDialCall struct {
 	network string
+	address string
+}
+
+type fakeShellDialCall struct {
+	command string
 	address string
 }
 
@@ -123,6 +130,17 @@ func (fake *fakeConn) DialContext(ctx context.Context, network, address string) 
 		return nil, errors.New("test remote dialer is not configured")
 	}
 	return dial(ctx, network, address)
+}
+
+func (fake *fakeConn) DialShellContext(ctx context.Context, command, address string) (net.Conn, error) {
+	fake.mu.Lock()
+	fake.shellDialCalls = append(fake.shellDialCalls, fakeShellDialCall{command: command, address: address})
+	dial := fake.shellDial
+	fake.mu.Unlock()
+	if dial == nil {
+		return nil, errors.New("test shell relay is not configured")
+	}
+	return dial(ctx, command, address)
 }
 
 func (fake *fakeConn) Listen(network, address string) (net.Listener, error) {
@@ -244,6 +262,21 @@ func (shell *fakeShell) Resize(cols, rows int) {
 	shell.mu.Lock()
 	shell.resizes = append(shell.resizes, [2]int{cols, rows})
 	shell.mu.Unlock()
+}
+
+func (shell *fakeShell) resizeCount() int {
+	shell.mu.Lock()
+	defer shell.mu.Unlock()
+	return len(shell.resizes)
+}
+
+func (shell *fakeShell) lastResize() [2]int {
+	shell.mu.Lock()
+	defer shell.mu.Unlock()
+	if len(shell.resizes) == 0 {
+		return [2]int{}
+	}
+	return shell.resizes[len(shell.resizes)-1]
 }
 
 func (shell *fakeShell) Done() <-chan struct{} { return shell.done }
@@ -693,6 +726,37 @@ func TestDismissingThePasswordDialogCancelsTheConnection(t *testing.T) {
 		if fake.canceled != 1 || len(fake.passwords) != 0 || state.modal != modalNone || len(state.passwordFields) != 0 {
 			t.Fatalf("hit %d: canceled=%d passwords=%v modal=%d kept=%d", hit, fake.canceled, fake.passwords, state.modal, len(state.passwordFields))
 		}
+	}
+}
+
+// A changed key is a warning with the old and the presented fingerprint, and
+// its primary action replaces the saved record rather than treating the key as
+// a first connection.
+func TestChangedHostKeyDialogShowsBothFingerprintsAndUpdates(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	changed := sshconn.HostKeyInfo{
+		Address: "prod.example.com:22", Type: "ssh-ed25519", Fingerprint: "SHA256:NEW",
+		Changed: true, Known: []string{"SHA256:OLD"}, File: "/tmp/known_hosts",
+	}
+	fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseHostKeyPrompt; s.HostKey = changed })
+	state.Wake()
+	if state.modal != modalHostKey {
+		t.Fatal("a changed host key did not open the dialog")
+	}
+	_, texts := paintedTexts(state)
+	for _, want := range []string{
+		state.messages.HostKeyChangedTitle, state.messages.HostKeySavedFingerprint,
+		state.messages.HostKeyUpdateAndContinue, "SHA256:OLD", "SHA256:NEW", "prod.example.com:22",
+	} {
+		if !contains(texts, want) {
+			t.Fatalf("the changed-key dialog does not show %q: %q", want, texts)
+		}
+	}
+	state.Click(hitHostKeyTrust)
+	if len(fake.trusted) != 1 || !fake.trusted[0] {
+		t.Fatalf("update and continue sent trusted=%v, want one save", fake.trusted)
 	}
 }
 

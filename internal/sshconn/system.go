@@ -57,6 +57,7 @@ const (
 	SystemAzureLinux
 	SystemOracleLinux
 	SystemESXi
+	SystemAIX
 )
 
 // systemNames is each system's persisted name. An /etc/os-release ID that has a
@@ -74,6 +75,7 @@ var systemNames = [...]string{
 	SystemElementary: "elementary", SystemVoid: "void", SystemSlackware: "slackware",
 	SystemAnolis: "anolis", SystemTencentOS: "tencentos", SystemAmazonLinux: "amazonlinux",
 	SystemAzureLinux: "azurelinux", SystemOracleLinux: "oraclelinux", SystemESXi: "esxi",
+	SystemAIX: "aix",
 }
 
 func (system RemoteSystem) String() string {
@@ -86,7 +88,7 @@ func (system RemoteSystem) String() string {
 // IsLinux reports whether the system is a Linux distribution or Linux itself.
 func (system RemoteSystem) IsLinux() bool {
 	switch system {
-	case SystemUnknown, SystemWindows, SystemDarwin, SystemFreeBSD, SystemESXi:
+	case SystemUnknown, SystemWindows, SystemDarwin, SystemFreeBSD, SystemESXi, SystemAIX:
 		return false
 	}
 	return int(system) < len(systemNames)
@@ -227,6 +229,9 @@ func classifyProbe(output string) RemoteSystem {
 		// ESXi is its own kernel: it answers uname with VMkernel, and every
 		// userland file it carries comes from busybox, not from a distribution.
 		return SystemESXi
+	case kernel == "aix":
+		// AIX is a Unix of its own: no /etc/os-release, and uname is all it says.
+		return SystemAIX
 	}
 	// An appliance's own marker outranks the distribution it borrows its userland
 	// from, which is why the markers are read before the ID.

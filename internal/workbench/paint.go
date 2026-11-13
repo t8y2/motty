@@ -108,6 +108,9 @@ const (
 	iconSave
 	iconProcess
 	iconDirectoryTree
+	iconFollowFolder
+	// iconArrowUpDown is the command bar's order button.
+	iconArrowUpDown
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -179,12 +182,23 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	if state.activeSection != sectionSettings || state.settingsCategory != settingsTerminal || state.settingsSearching() {
 		state.localShellMenu.open = false
 	}
+	if state.tabInlineActive() {
+		if _, ok := state.workspaceTab(state.tabInline.workspace); !ok {
+			// The workspace left while its name was being typed; the edit has
+			// nothing left to name.
+			state.tabInline = tabInline{}
+		}
+	}
 	state.ai.panel.targetBounds = gfx.Rect{}
 	if !state.aiSettingsVisible() || state.settingsCategory != settingsMCP || state.settingsSearching() {
 		state.ai.cfg.mcpSelectOpen = false
 		state.ai.cfg.agentSelectOpen = false
 	}
 	state.aiPanelBeginPaint()
+	if state.noteSidebarFocusBack && state.activeSection == sectionTerminal {
+		state.noteSidebarFocusBack = false
+		canvas.RequestFocus(state.activeTerminalFocusHit())
+	}
 	// A panel closed from inside itself returns the keyboard to the terminal it
 	// covered. The request is made once: a later click decides focus again.
 	if state.ai.panel.focusBack && !state.aiPanelVisible() {
@@ -204,6 +218,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.windowPage().Draw(canvas, bounds, state.declareShell)
 		state.paintDesktopDetails(canvas, session, bounds)
 		state.endMenus()
+		state.paintTransferProgressCard(canvas)
 		state.tooltip.Paint(canvas, state.Theme(), state.windowRect(), components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 		state.fileNotices.paint(canvas, state.Theme(), state.windowRect())
 		return
@@ -284,6 +299,9 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		// Assistant popovers may intentionally extend to the window edge; paint
 		// the rail first so they can remain above it and nothing is clipped.
 		state.paintAIPanel(canvas, size)
+		// The bottom command drawer sits beneath the panes, in the space the
+		// panes gave up for it.
+		state.paintCommandsDrawer(canvas, size)
 	} else if fileManager {
 		state.paintSFTPTab(canvas, state.fileManagerPixelBounds(size))
 		state.paintAIPanel(canvas, size)
@@ -318,6 +336,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintAITargetSelect(canvas)
 	state.paintMCPClientSelect(canvas)
 	state.paintLocalShellSelect(canvas)
+	state.paintFindPreferences(canvas)
 	state.paintEditorSelect(canvas)
 	state.paintStartupHostSelect(canvas)
 	state.paintMonitorIntervalMenu(canvas)
@@ -340,6 +359,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintLocalProxyScrollbar(canvas)
 	}
 	state.paintTerminalMenu(canvas, viewport)
+	state.paintGhostMenu(canvas, viewport)
 	state.paintToolbarDockMenu(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
 	state.paintHostMenu(canvas, viewport)
@@ -351,10 +371,13 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintQueuedSFTPHeaderMenu(canvas)
 	state.paintHostMenus(canvas, viewport)
 	state.endMenus()
+	state.paintSnippetHoverCard(canvas, viewport)
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
+	state.requestIdleKeepAliveFrames(canvas)
 	state.paintLocalProxyFocus(canvas)
+	state.paintTransferProgressCard(canvas)
 	// Last, so a tooltip is never covered by what it describes.
 	if _, formatting := canvas.Hovered().In(hitNoteFormats); !formatting {
 		state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
@@ -442,7 +465,12 @@ type barTab struct {
 	fileSession  uint32
 	id, closeID  gfx.ID
 	background   gfx.Color
-	compact      bool
+	// base is the fill before tint colours it; the alert title is backed by it
+	// so its ink keeps the contrast it has on an uncoloured tab. tint is the
+	// tab colour, empty when the tab has none.
+	base    gfx.Color
+	tint    string
+	compact bool
 }
 
 // barGeometry is what a first pass over the window bar says about its tabs: the
@@ -457,6 +485,7 @@ type barGeometry struct {
 	numbers           bool
 	orientation       tabOrientation
 	leading, trailing float32
+	padRight          float32
 	valid             bool
 	area, row         gfx.Rect
 	tabWidth          float32
@@ -469,6 +498,7 @@ func (state *State) windowPage() *ui.Page {
 	if chrome.windowPage == nil {
 		chrome.windowPage = ui.NewPage(ui.PageConfig{
 			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareShell,
+			ScrollbarSize: catalogBarGutter,
 		})
 	}
 	return chrome.windowPage
@@ -495,6 +525,10 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 // the wheel over its backdrop: the panel keeps still behind it, as it did when
 // its list was painted by hand and the window's own handler saw the event first.
 func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
+	if state.hostGroupMenu {
+		// The move picker and its backdrop own the wheel over the host list.
+		return state.Scroll(event)
+	}
 	if state.aiMenuShown() {
 		// An open chip menu is the page's popup and owns the wheel; its own
 		// scroll route (and its backdrop) decide where the event goes.
@@ -507,6 +541,13 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 	if result, handled := state.aiPanelScroll(event); handled {
 		return result
 	}
+	// A window dialog owns the wheel over its backdrop. Ask the window's own
+	// handler before the page: the page hands the wheel to the scroll area,
+	// table or list under the pointer first, and those lie behind the dialog
+	// too, so the page would scroll them out from under it.
+	if state.modal != modalNone {
+		return state.Scroll(event)
+	}
 	return state.windowPage().Wheel(event)
 }
 
@@ -515,6 +556,32 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 func (state *State) aiBackgroundScrollBlocked() bool {
 	return state.modal != modalNone || state.knownHosts.action != knownHostsActionNone ||
 		(state.aiSettingsVisible() && state.ai.cfg.dialog != aiDialogNone)
+}
+
+// windowFrameColor is the surface of the chrome around the panes: the window
+// bar, the side rails and the strip below. A full-page pane fills the window,
+// so the chrome there takes the workspace surface it frames, as the panes do;
+// the shell around a workspace card stays a step away from the card.
+func (state *State) windowFrameColor() gfx.Color {
+	if state.chrome.shellFullPage {
+		return state.pal.workspace
+	}
+	return state.pal.shell
+}
+
+// windowBarRightPad keeps the bar's last control centred over the side rail's
+// column, where that rail puts its tools. The rail comes and goes with the
+// session, so the pad follows the toolbar size rather than the rail itself:
+// connecting must not shift the bar's right end sideways. Where the platform
+// draws the window controls in the corner, their inset owns the space and the
+// bar keeps its own margin; the rail is left where it is.
+func (state *State) windowBarRightPad() float32 {
+	_, trailing := app.TitlebarInsets()
+	centred := state.terminalToolbarMetrics().railExtent/2 - barButtonSize/2
+	if centred <= trailing {
+		return trailing + barMargin
+	}
+	return centred
 }
 
 // declareShell declares the window's shell as a page: the bar over the body,
@@ -531,7 +598,7 @@ func (state *State) declareShell(c ui.C) {
 	chrome, pal := &state.chrome, state.pal
 	root := ui.Column(c).Fill()
 	if !chrome.shellPicture {
-		root.Background(pal.shell)
+		root.Background(state.windowFrameColor())
 	}
 	root.Children(func() {
 		state.declareWindowBar(c, &chrome.bar, false, chrome.shellPicture, chrome.shellGeometry, chrome.shellScroll)
@@ -540,7 +607,7 @@ func (state *State) declareShell(c ui.C) {
 		}
 		ui.Row(c).Grow(1).Shrink(1).MarginSides(0, 0, state.toolbarDockBottomReserve(false), 0).Children(func() {
 			ui.Slot(c).Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
-			state.declareNavigation(c, chrome.shellHeight)
+			state.declareNavigation(c)
 			workspace := ui.Slot(c).Grow(1).MarginSides(0, chrome.shellCardRight, sectionCardMargin, 0).
 				Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
 			// The hosts page is part of this page like the panes: its header is a
@@ -561,6 +628,7 @@ func (state *State) declareShell(c ui.C) {
 	if chrome.shellFullPage {
 		if state.terminalPage() {
 			state.declareWorkspacePanes(c)
+			state.declareRemoteLogs(c)
 			state.declareContextPanel(c)
 		} else {
 			// The file-manager tab is part of the page like the panes.
@@ -611,6 +679,7 @@ func (state *State) declareShell(c ui.C) {
 func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeometry {
 	chrome := &state.chrome
 	leading, trailing := app.TitlebarInsets()
+	padRight := state.windowBarRightPad()
 	buttons := state.windowBarButtons()
 	tabCount := len(state.workspaceTabs) + len(state.sftpTabs)
 	locked := false
@@ -623,7 +692,8 @@ func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeom
 		geometry.orientation == state.tabOrientation &&
 		geometry.locked == locked &&
 		geometry.numbers == state.tabNumbers &&
-		geometry.leading == leading && geometry.trailing == trailing {
+		geometry.leading == leading && geometry.trailing == trailing &&
+		geometry.padRight == padRight {
 		return *geometry
 	}
 	chrome.probeInput = barGeometry{locked: locked, numbers: state.tabNumbers}
@@ -633,7 +703,7 @@ func (state *State) windowBarGeometry(canvas *gfx.Canvas, width float32) barGeom
 	}
 	chrome.probePage.Draw(canvas, gfx.Rect{Width: width, Height: windowBarHeight}, chrome.probeView)
 	*geometry = barGeometry{
-		width: width, tabCount: tabCount, barButtons: buttons, leading: leading, trailing: trailing, valid: true,
+		width: width, tabCount: tabCount, barButtons: buttons, leading: leading, trailing: trailing, padRight: padRight, valid: true,
 		locked:      locked,
 		numbers:     state.tabNumbers,
 		orientation: state.tabOrientation,
@@ -662,7 +732,7 @@ func (state *State) declareProbeBar(c ui.C) {
 // window. With probe set only the places are declared, for windowBarGeometry.
 func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
 	m, pal, chrome := state.messages, state.pal, &state.chrome
-	leading, trailing := app.TitlebarInsets()
+	leading, _ := app.TitlebarInsets()
 	visibleFileTabs := 0
 	for _, tab := range state.sftpTabs {
 		if tab != nil && !tab.closed {
@@ -675,14 +745,14 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 	if probe {
 		chrome.probeTabs = chrome.probeTabs[:0]
 	}
-	row := ui.Row(c).Height(windowBarHeight).PadSides(0, trailing+barMargin, 0, leading+barMargin).Items(ui.Center)
+	row := ui.Row(c).Height(windowBarHeight).PadSides(0, state.windowBarRightPad(), 0, leading+barMargin).Items(ui.Center)
 	if !probe {
 		// The bar is where the window is moved from; its buttons and tabs, declared
 		// after it, take their own presses.
 		row.MovesWindow()
 	}
 	if picture {
-		row.Background(pal.shell)
+		row.Background(state.windowFrameColor())
 	}
 	row.Children(func() {
 		state.barButton(c, probe, hitHome, iconHome, m.NavHosts).MarginSides(0, barGap+2, 0, 0)
@@ -778,14 +848,12 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 						case hovered:
 							fill, foreground = pal.tabHover, pal.text
 						}
-						amount := float32(.08)
-						if active {
-							amount = .18
-						} else if hovered {
-							amount = .12
-						}
-						fill = tintHostSurface(fill, fileTab.session.host.Color, amount)
-						edge = tintHostSurface(edge, fileTab.session.host.Color, .35)
+						color := fileTab.session.host.Color
+						entry.tint = color
+						entry.base = fill
+						fill = tabFill(pal, fill, color, active, hovered)
+						edge = tintHostSurface(edge, color, tabColorBorderTint)
+						foreground = tabInk(pal, color, foreground)
 						entry.background = fill
 						first := float32(0)
 						if state.tabOrientation == tabsVertical {
@@ -798,12 +866,12 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 						label := state.sftpFileTabTitle(fileTab)
 						ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
 							HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
-							HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active}).Children(func() {
+							HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active, Hint: label}).Children(func() {
 							entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
 							if state.tabNumbers && entry.number != "" {
 								// File tabs follow the session tabs in the number row,
 								// as they do for the number shortcuts.
-								ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+								ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberInk(foreground, fileTab.session.host.Color)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
 							}
 							ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
 							entry.light = ui.Slot(c).Size(9, 20).MarginSides(0, 0, 0, 7)
@@ -858,42 +926,49 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 	case hovered:
 		fill, foreground = pal.tabHover, pal.text
 	}
-	if session := state.tabSession(workspace); session != nil {
-		amount := float32(.08)
-		if active {
-			amount = .18
-		} else if hovered {
-			amount = .12
-		}
-		fill = tintHostSurface(fill, session.host.Color, amount)
-		edge = tintHostSurface(edge, session.host.Color, .35)
-	}
+	color := state.tabColor(workspace)
+	entry.tint = color
+	entry.base = fill
+	fill = tabFill(pal, fill, color, active, hovered)
+	edge = tintHostSurface(edge, color, tabColorBorderTint)
+	foreground = tabInk(pal, color, foreground)
 	entry.background = fill
 	entry.foreground = foreground
 	label := state.tabLabel(workspace)
 	entry.label = label
 	entry.output = state.workspaceOutputAlert(workspace.ID)
+	editing := !compact && state.tabInlineEditing(workspace.ID)
 	tabOptions := gfx.HitOptions{Role: gfx.RoleTab, Selected: active}
 	// Every tab shows its full name as a tooltip on hover, so a long, elided
 	// label (a deep path or a long host label among many tabs) stays readable.
 	// The shared hover tooltip paints Hit, so naming it here is all it takes.
-	tabOptions.Hint = label
-	if workspace.Locked {
-		tabOptions.Hint = m.TabLockedHint
-	}
-	if directory := state.tabDirectory(workspace); directory != "" {
-		if tabOptions.Hint != "" && workspace.Locked {
-			tabOptions.Hint += "\n" + directory
-		} else {
-			tabOptions.Hint = directory
+	if !editing {
+		// A tooltip must not cover the field the name is being typed in.
+		tabOptions.Hint = label
+		if workspace.Locked {
+			tabOptions.Hint = m.TabLockedHint
+		}
+		if directory := state.tabDirectory(workspace); directory != "" {
+			if tabOptions.Hint != "" && workspace.Locked {
+				tabOptions.Hint += "\n" + directory
+			} else {
+				tabOptions.Hint = directory
+			}
+		}
+		// A desktop keeps its size and protection in the status line under the
+		// picture, which the host may have hidden: the tab says it on hover instead.
+		if session := state.tabSession(workspace); session != nil && session.desk != nil {
+			if hint := state.desktopStripLeft(session.desk, session); hint != "" {
+				tabOptions.Hint = hint
+			}
 		}
 	}
-	// A desktop keeps its size and protection in the status line under the
-	// picture, which the host may have hidden: the tab says it on hover instead.
-	if session := state.tabSession(workspace); session != nil && session.desk != nil {
-		if hint := state.desktopStripLeft(session.desk, session); hint != "" {
-			tabOptions.Hint = hint
-		}
+	if editing {
+		// The tab under the field is not a second focusable control: the field
+		// is what the keyboard belongs to, and a press anywhere else ends the
+		// edit before it lands. It still takes presses, so its menu and its
+		// close button keep working.
+		tabOptions.SkipFocus = true
 	}
 	row := ui.Row(c).Size(width, height).Shrink(0)
 	if vertical {
@@ -913,7 +988,15 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 		entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
 		if state.tabNumbers && entry.number != "" {
 			// The number names the name beside it, so it carries less ink.
-			ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+			ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberInk(foreground, color)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+		}
+		if editing {
+			// The title is the field itself, and the room the lock, the light
+			// and the close button took belongs to the name while it is typed.
+			// The parts painter fills the slot with the framework's field,
+			// which declares the field's own hit after layout.
+			entry.title = ui.Slot(c).Size(0, 20).Grow(1).Basis(0)
+			return
 		}
 		titleColor := foreground
 		if entry.output != outputAlertNone {
@@ -1207,17 +1290,13 @@ type hostsHeaderBoxes struct {
 
 // hostToggleBoxes are the slots of the hosts header's view and sort controls.
 type hostToggleBoxes struct {
-	list, grid, sort, order ui.Box
+	list, grid, sort, privacy, order ui.Box
 }
 
 // declareNavigation declares the sidebar: the name of the application over the
 // pages, and the way to a shell on this computer and to the settings at the bottom.
-func (state *State) declareNavigation(c ui.C, height float32) {
+func (state *State) declareNavigation(c ui.C) {
 	m := state.messages
-	logoGap := float32(20)
-	if height < 640 {
-		logoGap = 0
-	}
 
 	items := [...]struct {
 		id     gfx.ID
@@ -1238,7 +1317,7 @@ func (state *State) declareNavigation(c ui.C, height float32) {
 	}
 	ui.Column(c).Width(navigationWidth).Shrink(0).Children(func() {
 		// The logo with the name beside it, painted into this slot after layout.
-		state.chrome.lockup = ui.Slot(c).Size(lockupWidth, lockupHeight).MarginSides(15, 0, logoGap, 0).Self(ui.Center)
+		state.chrome.lockup = ui.Slot(c).Size(lockupWidth, lockupHeight).MarginSides(15, 0, 20, 0).Self(ui.Center)
 		for _, item := range items {
 			state.navigationItem(c, item.id, item.icon, item.label, item.active, 4)
 		}
@@ -1298,6 +1377,7 @@ func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 			state.paintNoMatches(canvas)
 		}
 	}
+	state.paintHostSortDrag(canvas, list)
 	state.hostsBounds = bounds
 }
 
@@ -1319,6 +1399,9 @@ func (state *State) paintHostMenus(canvas *gfx.Canvas, viewport gfx.Rect) {
 	}
 	if state.importMenu {
 		state.paintImportMenu(canvas, viewport)
+	}
+	if state.hostPrivacy.menu {
+		state.paintHostPrivacyMenu(canvas, viewport)
 	}
 	state.paintHostOrder(canvas, viewport)
 }
@@ -1400,7 +1483,7 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, bounds gfx.Rect) hostsHe
 	plan.showChips = state.hasHostFilter()
 	plan.showGroupControls = plan.showChips && !state.hostFilterOn
 	plan.compactHostControls = bounds.Width < 450
-	viewControlsWidth := toggleWidth + 6 + 26
+	viewControlsWidth := toggleWidth + 6 + 26 + 6 + 26
 	selectionControlsWidth := float32(0)
 	if !plan.compactHostControls {
 		viewControlsWidth += 32
@@ -1490,10 +1573,7 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 						b.groupControls[1] = state.declareIconButton(c, hitHostGroupsCollapseAll, iconChevronRight, m.HostGroupActions.CollapseAll, !collapse, iconButtonQuiet).Size(26, 26)
 					})
 				}
-				viewControlsWidth := float32(56 + 6 + 26)
-				if !plan.compactHostControls {
-					viewControlsWidth += 32
-				}
+				viewControlsWidth := float32(56 + 6 + 26 + 6 + 26)
 				b.toggle = ui.Slot(c).Size(viewControlsWidth, hostHeaderRowHeight).MarginSides(0, 0, 0, 2)
 				chrome.hostToggle = hostToggleBoxes{}
 				b.toggle.Children(func() {
@@ -1508,19 +1588,18 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 							chrome.hostToggle.list = state.declareIconButton(c, hitHostViewList, iconRows2, state.messages.Tools.HostViewList, false, listStyle).Size(26, 26)
 							chrome.hostToggle.grid = state.declareIconButton(c, hitHostViewGrid, iconHome, state.messages.Tools.HostViewGrid, false, gridStyle).Size(26, 26)
 						})
-						sortLabel, sortStyle := state.messages.Tools.HostSort, iconButtonQuiet
-						if state.hostSort.enabled {
-							sortLabel, sortStyle = state.messages.Tools.HostSortDone, iconButtonActive
+						privacyIcon, privacyStyle := uint8(iconEye), iconButtonQuiet
+						if state.hostPrivacy.enabled {
+							privacyIcon, privacyStyle = iconEyeOff, iconButtonActive
 						}
-						sortDisabled := !state.hostSort.enabled && (state.hostOrder != hostOrderManual || len(state.hosts) < 2 || state.typedQuery() != "")
-						chrome.hostToggle.sort = state.declareIconButton(c, hitHostSort, iconTransfer, sortLabel, sortDisabled, sortStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
-						if !plan.compactHostControls {
-							orderStyle := iconButtonQuiet
-							if state.hostOrder != hostOrderManual {
-								orderStyle = iconButtonActive
-							}
-							chrome.hostToggle.order = state.declareIconButton(c, hitHostOrder, iconSliders, state.messages.HostCatalog.Order, false, orderStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
+						chrome.hostToggle.privacy = state.declareIconButton(c, hitHostPrivacy, privacyIcon, state.messages.Tools.HostPrivacy, false, privacyStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
+						orderStyle := iconButtonQuiet
+						if state.hostOrder != hostOrderManual {
+							orderStyle = iconButtonActive
 						}
+						// The far-right control is the display-order menu, wearing the
+						// manual-sort mark; manual moves are made by dragging a host.
+						chrome.hostToggle.order = state.declareIconButton(c, hitHostOrder, iconTransfer, state.messages.HostCatalog.Order, false, orderStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
 					})
 				})
 			})
@@ -1528,12 +1607,6 @@ func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
 				ui.Row(c).Height(hostHeaderRowHeight).MarginSides(hostHeaderRowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(8).Items(ui.Center).Children(func() {
 					b.selectAll = ui.Slot(c).Size(40, hostHeaderRowHeight).Shrink(0)
 					ui.Spacer(c)
-					ui.Text(c, m.HostCatalog.Order).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Shrink(1)
-					orderStyle := iconButtonQuiet
-					if state.hostOrder != hostOrderManual {
-						orderStyle = iconButtonActive
-					}
-					b.orderButton = state.declareIconButton(c, hitHostOrder, iconSliders, m.HostCatalog.Order, false, orderStyle).Size(26, 26).Shrink(0)
 				})
 			}
 			if plan.anySelected {
@@ -1580,11 +1653,8 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas) {
 	// Connect needs something to connect to.
 	chrome.importButton = b.importButton.Rect()
 
-	if plan.compactHostControls {
-		state.hostOrderButton = b.orderButton.Rect()
-	} else {
-		state.hostOrderButton = chrome.hostToggle.order.Rect()
-	}
+	state.hostOrderButton = chrome.hostToggle.order.Rect()
+	state.hostPrivacy.button = chrome.hostToggle.privacy.Rect()
 	state.paintHostScopeCheckbox(canvas, hitHostSelectAll, b.selectAll.Rect(), state.hostScopeSelection.all)
 	if plan.showChips {
 		state.paintHostFilterChips(canvas, chrome.chips)
@@ -1789,7 +1859,7 @@ func (state *State) paintHostFilterMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	menu.End()
 }
 
-func (state *State) paintHostGroupMenu(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
+func (state *State) paintFlatHostGroupMenu(canvas *gfx.Canvas, bounds, viewport gfx.Rect) {
 	// The ungrouped bucket is in the list with an empty name; "No group" already
 	// says it, so it is not offered a second time as a blank row.
 	named := 0
@@ -1817,7 +1887,7 @@ func (state *State) paintHostGroupMenu(canvas *gfx.Canvas, bounds, viewport gfx.
 		if group.Name == "" {
 			continue
 		}
-		menu.AddItem(components.DropdownMenuItem{ID: hitHostGroupItemList.At(index), Label: group.Name})
+		menu.AddItem(components.DropdownMenuItem{ID: hitHostGroupItemList.At(index), Label: group.Name, Value: group.Name})
 	}
 	menu.AddSeparator()
 	menu.AddItem(components.DropdownMenuItem{ID: hitHostGroupNew, Label: state.messages.MoveGroupNew})
@@ -2040,7 +2110,7 @@ func (state *State) sessionStatus(session *Session) (string, gfx.Color) {
 func (state *State) paintHostGridTable(canvas *gfx.Canvas, treeBounds gfx.Rect) {
 	// The cards were declared at this scroll position; the bar is Viva's scroll
 	// area, and it paints nothing at all while the content fits.
-	area, geometry := hostListScrollArea(canvas, state.Theme(), treeBounds, state.hostsContent, state.hostsScroll)
+	area, geometry := hostListScrollArea(canvas, state.Theme(), treeBounds, state.hostsContent, state.hostsScroll, state.hostListBarRevealed())
 	state.hostsGridViewport = geometry.Viewport
 	area.EndContent()
 }
@@ -2074,10 +2144,7 @@ func (state *State) paintHostListTable(canvas *gfx.Canvas, treeBounds gfx.Rect) 
 
 // paintHostListBar paints the bar the list view keeps beside its rows.
 func (state *State) paintHostListBar(canvas *gfx.Canvas, treeBounds gfx.Rect, content float32) {
-	bar := components.BeginScrollArea(canvas, state.Theme(), treeBounds, gfx.Size{Height: content}).
-		Offset(0, state.hostsScroll).
-		ReserveScrollbars().
-		VerticalScrollbar(gfx.ID{}, "", "")
+	bar, _ := hostListScrollArea(canvas, state.Theme(), treeBounds, content, state.hostsScroll, state.hostListBarRevealed())
 	bar.EndContent()
 }
 
@@ -2147,9 +2214,14 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 	tagsWidth := min(rowWidth*0.18, statusStart-tagsStart-8)
 	status, _ := state.hostStatus(host)
 	checkMargin := 46 - 10 - components.CheckboxExtent(state.Theme())
+	protocolLabel := state.hostProtocolTagLabel(host)
+	protocolWidth := canvas.TextWidthWeight(protocolLabel, metrics.FontSizeS, gfx.WeightMedium) + 14
+	showProtocol := tagsWidth >= protocolWidth
 	tagCount, tagsRoom := 0, tagsWidth
 	var tagList [maxHostTags]string
-	if tagsWidth >= 60 {
+	if showProtocol {
+		tagCount = state.fitHostTags(canvas, host, max(tagsWidth-protocolWidth-5, 0), &tagList)
+	} else if tagsWidth >= 60 {
 		tagCount = state.fitHostTags(canvas, host, tagsWidth, &tagList)
 	}
 	ui.Stack(c).Width(rowWidth).Height(hostRowHeight).Children(func() {
@@ -2166,18 +2238,33 @@ func (state *State) declareHostTreeRow(c ui.C, d *hostRowDrawer, rowWidth, left 
 				}
 				d.avatar = ui.Slot(c).Size(36, 36).MarginSides(0, 10, 0, 0)
 				ui.Column(c).Width(nameWidth).Shrink(0).Gap(2).Children(func() {
-					ui.Text(c, host.Label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis()
-					ui.Text(c, state.hostSubtitle(host)).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(19).Ellipsis()
+					if state.hostPrivacy.enabled {
+						d.name = ui.Slot(c).Height(22)
+						d.subtitle = ui.Slot(c).Height(19)
+					} else {
+						ui.Text(c, host.Label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).Ellipsis()
+						ui.Text(c, state.hostSubtitle(host)).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(19).Ellipsis()
+					}
 				})
 			})
 			ui.Row(c).Width(tagsStart - addressStart).Shrink(0).Children(func() {
 				if addressWidth < 60 { // a sliver of an address says less than nothing
 					return
 				}
-				ui.Text(c, host.target).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(22).Width(addressWidth).Shrink(0).Ellipsis()
+				if state.hostPrivacy.enabled {
+					d.address = ui.Slot(c).Height(22).Width(addressWidth).Shrink(0)
+				} else {
+					ui.Text(c, host.target).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(22).Width(addressWidth).Shrink(0).Ellipsis()
+				}
 			})
-			if tagCount > 0 {
+			if showProtocol || tagCount > 0 {
 				ui.Row(c).Width(tagsRoom).Shrink(0).Gap(5).Items(ui.Center).Children(func() {
+					if showProtocol {
+						color := hostProtocolTagColor(pal, host.Protocol)
+						ui.Row(c).Height(24).PadX(7).Items(ui.Center).Radius(12).Background(withAlpha(color, 0.14)).Children(func() {
+							ui.Text(c, protocolLabel).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color)
+						})
+					}
 					for _, tag := range tagList[:tagCount] {
 						ui.Row(c).Height(24).PadX(7).Items(ui.Center).Radius(12).Background(pal.surface).Children(func() {
 							ui.Text(c, tag).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted)
@@ -2271,15 +2358,22 @@ func (state *State) hostListHeight(width float32) float32 {
 // hostListScrollArea is how the hosts list scrolls: Viva's scroll area owns the
 // bar, keeping its strip out of the rows and painting the thumb from the list's
 // content height. Nothing is painted while the content fits.
-func hostListScrollArea(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect, content, offset float32) (components.ScrollArea, components.ScrollAreaGeometry) {
+func hostListScrollArea(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect, content, offset float32, revealed bool) (components.ScrollArea, components.ScrollAreaGeometry) {
 	// Width zero says the list has no horizontal extent of its own: it is laid out
-	// to geometry.Viewport.Width, so no horizontal bar is ever due.
+	// to geometry.Viewport.Width, so no horizontal bar is ever due. The bar is
+	// hover-revealed but keeps its reserved strip, so revealing it never moves a
+	// row.
 	area := components.BeginScrollArea(canvas, theme, bounds, gfx.Size{Height: content}).
 		Offset(0, offset).
+		ScrollbarSize(hostListBarWidth).
 		ReserveScrollbars().
-		VerticalScrollbar(gfx.ID{}, "", "")
+		HoverScrollbars(revealed).
+		VerticalScrollbar(hitHostListBar, "", "")
 	return area, area.Geometry()
 }
+
+// hostListBarWidth is the hosts list scroll bar's strip and thickness.
+const hostListBarWidth = float32(10)
 
 // scrollHosts moves the hosts list with the wheel. The list view's Tree is part
 // of the workbench page, so the page's wheel route has already offered the
@@ -2350,10 +2444,27 @@ func (state *State) paintHostTreeRowControls(canvas *gfx.Canvas, row gfx.Rect, h
 		side := components.CheckboxExtent(state.Theme())
 		box := d.check.Rect()
 		bounds := gfx.Rect{X: box.X + (box.Width-side)/2, Y: box.Y + (box.Height-side)/2, Width: side, Height: side}
-		components.BeginCheckbox(canvas, state.Theme(), hitHostCheckList.At(int(host.ID)), bounds, state.hostSelected(host.ID)).Label(host.Label).Paint()
+		components.BeginCheckbox(canvas, state.Theme(), hitHostCheckList.At(int(host.ID)), bounds, state.hostSelected(host.ID)).Label(state.hostPrivacySemanticLabel(host)).Paint()
 	}
 	if state.hostSort.enabled && d.grip.Valid() {
 		state.declareHostSortItem(host, row, d.grip.Rect())
+	}
+	if state.hostPrivacy.enabled {
+		name := d.name.Rect()
+		if state.hostPrivacy.nameHidden() {
+			state.paintHostPrivacyMask(canvas, name, host.Label, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: state.pal.text})
+		} else {
+			paintHostGridLine(canvas, host.Label, name, 22, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: state.pal.text})
+		}
+		subtitle := d.subtitle.Rect()
+		if state.hostPrivacy.userHidden() && state.hostPrivacySubtitleIsUser(host) {
+			state.paintHostPrivacyMask(canvas, subtitle, state.hostSubtitle(host), gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
+		} else {
+			paintHostGridLine(canvas, state.hostSubtitle(host), subtitle, 19, gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
+		}
+		if d.address.Valid() {
+			state.paintHostPrivacyTarget(canvas, d.address.Rect(), host, 22, gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.text})
+		}
 	}
 	state.paintHostCatalogIcon(canvas, host, d.avatar.Rect(), background)
 	_, dot := state.hostStatus(host)
@@ -2368,8 +2479,8 @@ func (state *State) fitHostTags(canvas *gfx.Canvas, host Host, width float32, sh
 	count, used := 0, float32(0)
 	for remaining := host.Tags; remaining != "" && count < len(shown); {
 		tag, tail, found := strings.Cut(remaining, ", ")
-		pill := min(canvas.TextWidthWeight(tag, metrics.FontSizeS, gfx.WeightMedium)+14, width)
-		if pill <= 0 || used+pill > width {
+		pill := canvas.TextWidthWeight(tag, metrics.FontSizeS, gfx.WeightMedium) + 14
+		if used+pill > width {
 			break
 		}
 		shown[count] = tag
@@ -2384,6 +2495,10 @@ func (state *State) fitHostTags(canvas *gfx.Canvas, host Host, width float32, sh
 }
 
 func (state *State) paintHostCatalogIcon(canvas *gfx.Canvas, host Host, bounds gfx.Rect, background gfx.Color) {
+	if host.ID == localHostID {
+		state.paintLocalShellIcon(canvas, host, bounds, background)
+		return
+	}
 	if host.Icon == hostIconAuto {
 		if host.isDesktop() && host.System == sshconn.SystemUnknown {
 			canvas.Rounded(bounds, bounds.Width*0.24, state.hostBadgeFill(background))
@@ -2508,6 +2623,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconWrench:         icons.Wrench,
 	iconProcess:        icons.Process,
 	iconDirectoryTree:  icons.PanelLeft,
+	iconArrowUpDown:    icons.ArrowUpDown,
 	iconCloseOthers:    icons.ListX,
 	iconCloseRight:     icons.ArrowRightToLine,
 	iconSparkles:       icons.Sparkles,
@@ -2525,6 +2641,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconSFTPProfiles:   icons.SftpProfiles,
 	iconFileClock:      icons.FileClock,
 	iconClock:          icons.Clock3,
+	iconFollowFolder:   icons.LocateFixed,
 }
 
 func paintIcon(canvas *gfx.Canvas, kind uint8, bounds gfx.Rect, foreground gfx.Color) {
@@ -2684,6 +2801,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareToolbarSettings(c)
 	case modalHighlightRule:
 		state.declareHighlightDialog(c)
+	case modalRuleManager:
+		state.declareRuleManager(c)
 	case modalNewForward:
 		state.declareForwardDialog(c)
 	case modalNewProxy:
@@ -2692,6 +2811,10 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareXYDialog(c)
 	case modalSnippet:
 		state.declareSnippetDialog(c)
+	case modalSnippetDelete:
+		state.declareSnippetDeleteDialog(c)
+	case modalSnippetVariables:
+		state.declareSnippetVariablesDialog(c)
 	case modalVaultUnlock:
 		state.declareVaultUnlockDialog(c)
 	case modalVaultForget:
@@ -2796,6 +2919,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 	form := &editor.form
 	b := &editor.form.body
 	ssh := editor.protocol == protocolSSH
+	terminalHost := idleKeepAliveProtocol(editor.protocol)
 	networkHost := editor.protocol != protocolSerial
 	vncHost := editor.protocol == protocolVNC || editor.protocol == protocolRDP
 	rowHeight := float32(hostFormRowHeight)
@@ -2827,6 +2951,9 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 		}
 		content.Children(func() {
 			b.protocol = ui.Slot(c).Height(34).MarginSides(0, 0, 10, 0)
+			if editor.moshTerminal() {
+				ui.Paragraph(c, state.messages.Tools.MoshHint, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(16)
+			}
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				b.label = ui.Slot(c).Grow(1)
 				b.colorField = ui.Slot(c).Grow(1)
@@ -2839,8 +2966,11 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 			})
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				b.iconField = ui.Slot(c).Grow(1)
-				if ssh {
+				if ssh && !editor.moshTerminal() {
 					b.transfer = ui.Slot(c).Grow(1)
+				}
+				if state.hostShowsEncoding() {
+					b.encoding = ui.Slot(c).Grow(1)
 				}
 			})
 			if networkHost {
@@ -2848,21 +2978,29 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				// icon value and the proxy summary on VNC, RDP and Telnet.
 				b.proxy = state.declareHostProxyRow(c)
 			}
-			if ssh {
+			if ssh || vncHost {
 				b.jump = state.declareHostJumpRow(c)
+			}
+			if terminalHost {
 				b.advanced = ui.Slot(c).Height(state.advancedSectionHeight())
 				advanced := b.advanced
 				advanced.Children(func() {
 					b.advancedHeader, b.advancedHeaderIcon = state.declareHostAdvancedHeader(c)
 					if editor.advancedOpen {
-						// The rows and the choice are declared as the same overlay:
-						// the choice keeps its press for after the rows laid out.
-						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
-							state.declareHostAlgoRows(c)
-						})
-						ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Height(rowHeight).Children(func() {
-							b.algo = state.declareHostAlgoChoice(c)
-						})
+						if ssh {
+							// The rows and the choice are declared as the same overlay:
+							// the choice keeps its press for after the rows laid out.
+							ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
+								state.declareHostAlgoRows(c)
+							})
+							ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Height(rowHeight).Children(func() {
+								b.algo = state.declareHostAlgoChoice(c)
+							})
+						} else {
+							ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
+								state.declareHostIdleKeepAliveRows(c)
+							})
+						}
 					}
 				})
 			}
@@ -2887,7 +3025,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 					})
 				})
 			}
-			if ssh {
+			if ssh && !editor.moshTerminal() {
 				transfer := b.transfer
 				transfer.Children(func() {
 					b.transfer = state.declareHostTransferChoice(c)
@@ -2967,16 +3105,21 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	state.paintHostEndpointRows(canvas)
 	state.paintHostGroupPicker(canvas, b.group.Rect())
 	state.paintHostTags(canvas, b.tags.Rect())
-	state.paintHostIconChoice(canvas, b.iconField.Rect())
+	if b.encoding.Valid() {
+		state.paintHostEncodingPicker(canvas, b.encoding.Rect())
+	}
+	state.paintHostIconPicker(canvas, b.iconField.Rect())
 	state.paintHostColorChoice(canvas, b.colorField.Rect())
 	if networkHost {
 		state.paintHostProxyRow(canvas)
 	}
+	if ssh || vncHost {
+		state.paintHostJumpRow(canvas)
+	}
 	if vncHost {
 		state.paintVNCRows(canvas)
 	}
-	if ssh {
-		state.paintHostJumpRow(canvas)
+	if idleKeepAliveProtocol(protocol) {
 		state.paintAdvancedSection(canvas)
 	}
 	// The choices are the page's controls: keep the option the tab ring reaches
@@ -3172,13 +3315,10 @@ var hostSystemChoices = [...]struct {
 	{sshconn.SystemVoid, "Void Linux"}, {sshconn.SystemSlackware, "Slackware"},
 	{sshconn.SystemAnolis, "Anolis OS"}, {sshconn.SystemTencentOS, "TencentOS"},
 	{sshconn.SystemAmazonLinux, "Amazon Linux"}, {sshconn.SystemAzureLinux, "Azure Linux"},
-	{sshconn.SystemOracleLinux, "Oracle Linux"}, {sshconn.SystemESXi, "VMware ESXi"},
+	{sshconn.SystemOracleLinux, "Oracle Linux"}, {sshconn.SystemESXi, "VMware ESXi"}, {sshconn.SystemAIX, "AIX"},
 	{sshconn.SystemFreeBSD, "FreeBSD"}, {sshconn.SystemLinux, "Linux"},
 	{sshconn.SystemWindows, "Windows"}, {sshconn.SystemDarwin, "macOS"},
 }
-
-// hostIconListRows is how many rows of the icon list show before it scrolls.
-const hostIconListRows = 7
 
 // hostIconLabel is the name of an icon in the list.
 func (state *State) hostIconLabel(icon hostIcon) string {
@@ -3250,57 +3390,6 @@ func hostIconChoices() []hostIcon {
 	return append(choices, hostIconServer, hostIconTerminal, hostIconSerial, hostIconGlobe, hostIconKey, hostIconDesktop)
 }
 
-// paintHostIconChoice paints the list of icons a host can have.
-func (state *State) paintHostIconChoice(canvas *gfx.Canvas, bounds gfx.Rect) {
-	m, editor, theme := state.messages, &state.editor, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(m.FieldIcon, "", "")
-	state.rememberHostControl(hitDialogIcon, content)
-	portal := state.beginHostFormPopup(canvas, state.editor.iconOpen)
-	defer state.endHostFormPopup(canvas, portal)
-	choices := hostIconChoices()
-	window := state.windowRect()
-	rows := min(len(choices), hostIconListRows)
-	top := content.Y + content.Height + 4
-	// The list goes under the field unless that leaves it fewer than four rows
-	// and there is more room above, where it hangs from the field's top.
-	if room := int((window.Height - top - 8 - 8) / 32); room < min(rows, 4) {
-		if above := int((content.Y - 4 - 8 - 8) / 32); above > room {
-			rows = min(rows, above)
-			top = content.Y - 4 - float32(8+rows*32)
-		} else {
-			rows = max(room, 1)
-		}
-	} else {
-		rows = min(rows, room)
-	}
-	list := gfx.Rect{X: content.X, Y: top, Width: content.Width, Height: float32(8 + rows*32)}
-	var scroll *components.MenuScroll
-	if editor.iconOpen {
-		scroll = state.menuScrollFor(hitDialogIconDismiss)
-		state.menuPlaced(list)
-		if editor.iconReveal {
-			editor.iconReveal = false
-			for index, choice := range choices {
-				if choice == editor.icon {
-					scroll.Offset = max(min(float32(index*32-64), float32((len(choices)-rows)*32)), 0)
-				}
-			}
-		}
-	}
-	selectControl := components.BeginSelect(canvas, theme, content, components.SelectOptions{
-		TriggerID: hitDialogIcon, Label: m.FieldIcon, Value: state.hostIconLabel(editor.icon), Icon: state.hostIconArt(editor.icon, editor.system, editor.protocol == protocolVNC || editor.protocol == protocolRDP),
-		Open: editor.iconOpen, Content: list, Scroll: scroll,
-		Layer: dialogLayer + 1, Scope: dialogScope, DismissID: hitDialogIconDismiss, Viewport: window,
-	})
-	defer selectControl.End()
-	for _, choice := range choices {
-		selectControl.AddItem(components.SelectItem{
-			ID: hitDialogIconItemList.At(int(choice)), Label: state.hostIconLabel(choice), Icon: state.hostIconArt(choice, editor.system, editor.protocol == protocolVNC || editor.protocol == protocolRDP),
-			Selected: choice == editor.icon,
-		})
-	}
-}
-
 func (state *State) paintDialogField(canvas *gfx.Canvas, id gfx.ID, field hostField, title, placeholder string, bounds gfx.Rect) {
 	state.paintDialogFieldWithSecurity(canvas, id, field, title, placeholder, bounds, false)
 }
@@ -3338,11 +3427,20 @@ func (state *State) declareHostKeyDialog(c ui.C) {
 	if session == nil {
 		return
 	}
-	bodyHeight := float32(3*30 - 8) // three rows of address, type and fingerprint
+	changed := session.hostKey.Changed
+	title, trustLabel := m.HostKeyTitle, m.HostKeyTrust
+	if changed {
+		title, trustLabel = m.HostKeyChangedTitle, m.HostKeyUpdateAndContinue
+	}
+	saved := 0
+	if changed {
+		saved = len(session.hostKey.Known)
+	}
+	bodyHeight := float32((3+saved)*30 - 8) // address, type, fingerprint and the saved ones
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 540, state.hostKeyDescription, bodyHeight)
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: m.HostKeyTitle, Description: state.hostKeyDescription,
+		Title: title, Description: state.hostKeyDescription,
 		Width: 540, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitHostKeyDismiss, CloseID: hitHostKeyClose, InitialFocusID: hitHostKeyReject,
 	})
@@ -3351,7 +3449,7 @@ func (state *State) declareHostKeyDialog(c ui.C) {
 		actions := [...]components.ButtonAction{
 			{ID: hitHostKeyReject, Label: m.HostKeyReject, Variant: components.ButtonSecondary},
 			{ID: hitHostKeyOnce, Label: m.HostKeyOnce, Variant: components.ButtonOutline},
-			{ID: hitHostKeyTrust, Label: m.HostKeyTrust},
+			{ID: hitHostKeyTrust, Label: trustLabel},
 			{ID: hitHostKeyForget, Label: m.HostKeyForget, Variant: components.ButtonOutline},
 		}
 		count := 3
@@ -3369,15 +3467,23 @@ func (state *State) declareHostKeyBody(c ui.C) {
 		return
 	}
 	m, pal := state.messages, state.pal
-	rows := [...]struct{ label, value string }{
+	type keyRow struct{ label, value string }
+	rows := []keyRow{
 		{m.FieldAddress, session.hostKey.Address},
 		{m.HostKeyType, session.hostKey.Type},
 		{m.HostKeyFingerprint, session.hostKey.Fingerprint},
 	}
+	labelWidth := float32(90)
+	if session.hostKey.Changed {
+		labelWidth = 110
+		for _, fingerprint := range session.hostKey.Known {
+			rows = append(rows, keyRow{m.HostKeySavedFingerprint, fingerprint})
+		}
+	}
 	ui.Column(c).Fill().Gap(8).Children(func() {
 		for _, row := range rows {
 			ui.Row(c).Height(22).Gap(6).Children(func() {
-				ui.Text(c, row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).Width(90).Shrink(0)
+				ui.Text(c, row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).Width(labelWidth).Shrink(0)
 				ui.Text(c, row.value).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(pal.text).LineHeight(22)
 			})
 		}

@@ -5,6 +5,8 @@ import (
 
 	"motty/internal/serial"
 	"motty/internal/sessionlog"
+	"motty/internal/sshbrowser"
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 )
 
@@ -25,6 +27,10 @@ type Host struct {
 	// Protocol says how the host is reached. A serial host keeps its device in
 	// Address and its line settings in Line; it has no user or port.
 	Protocol hostProtocol
+	// Terminal is how an SSH host's interactive session is carried. The zero
+	// value is SSH itself; terminalMosh bootstraps mosh-server over SSH and
+	// carries the terminal over UDP. It is meaningful only for protocolSSH.
+	Terminal hostTerminal
 	Line     serial.Settings
 	// Algo, when set, replaces the default SSH algorithms for this host. Nil is
 	// the default, so a host that never asked costs one pointer.
@@ -32,8 +38,9 @@ type Host struct {
 	// Auth limits which credentials an SSH connection offers. Identity is the
 	// fingerprint of a specific imported private key when Auth is authPrivateKey;
 	// an empty value lets that mode try the default and imported keys.
-	Auth     hostAuth
-	Identity string
+	Auth       hostAuth
+	Identity   string
+	SSHOptions *sshconfig.ConnectionOptions
 	// Credential is the id of the saved password (see credentials.go) the host
 	// takes its password from; empty keeps the host's own. An id that no saved
 	// password has is treated as empty.
@@ -54,10 +61,26 @@ type Host struct {
 	NoHistory bool
 	// LoginCommand is typed into each new shell of an SSH host once it is ready
 	// for input, as the user would type it. One line, empty for none.
-	LoginCommand string
+	LoginCommand   string
+	RemoteLogPaths []remoteLogPath
+	// Encoding is the character set of the remote shell's byte stream. Empty
+	// means UTF-8. A legacy server whose LANG names GB18030, Big5 or Shift_JIS
+	// needs its output decoded and its input encoded with that charset.
+	Encoding string
+	// IdleKeepAlive types input into an idle shell at this interval, which some
+	// servers require to keep a session from being closed for inactivity. Zero
+	// is off. IdleInput chooses what is typed, and IdleInputCustom holds the
+	// escaped text when that choice is custom.
+	IdleKeepAlive   time.Duration
+	IdleInput       idleInputMode
+	IdleInputCustom string
 	// tunnel marks the ephemeral host of a .xsh bastion tunnel opened on this
 	// computer. It is never saved, so only that launch gets the relaxed policy.
 	tunnel bool
+	// linkPassword is the password a link carried in its userinfo. It answers
+	// that one connection and is cleared when it is used; it has no saved
+	// field, so it never reaches the state file.
+	linkPassword string
 	// Transfer is the file protocol of the host's file panel.
 	Transfer transferMode
 	// Proxy overrides the global outbound proxy for this host. Nil inherits the
@@ -67,12 +90,15 @@ type Host struct {
 	// through an SSH connection to Address (User is then the SSH account), and
 	// the clipboard is shared with the remote desktop. Console is an RDP host's:
 	// it asks Windows for its console (administrative) session instead of a new
-	// one. Chromeless is a desktop host's too: its page shows the picture alone,
+	// one. StandardSecurity is an RDP host's too: the connection uses Standard
+	// RDP Security alone, with no TLS or NLA, for a server that requires it.
+	// Chromeless is a desktop host's: its page shows the picture alone,
 	// without the bar above it and the status line under it.
-	ViaSSH     bool
-	Clipboard  bool
-	Console    bool
-	Chromeless bool
+	ViaSSH           bool
+	Clipboard        bool
+	Console          bool
+	StandardSecurity bool
+	Chromeless       bool
 	// VNCAuthOnly permits RSA-AES modes that encrypt login credentials but
 	// leave the remote desktop session unencrypted. Off unless explicitly set.
 	VNCAuthOnly bool
@@ -104,7 +130,9 @@ func (host *Host) finish() {
 // presentation state: conn owns the network, term holds the screen and the
 // shell, the other fields are what the window last read from the connection.
 type Session struct {
-	outputAlert terminalOutputAlert // runtime only; connection status stays independent
+	remoteLogs       *remoteLogView
+	workspaceCommand WorkspaceCommand    // immutable workspace configuration for this session
+	outputAlert      terminalOutputAlert // runtime only; connection status stays independent
 
 	ID     uint32
 	HostID uint32
@@ -121,15 +149,26 @@ type Session struct {
 	// trusted prompt reported, or the place a split asked for. It is a hint to
 	// the server, which may no longer have that directory.
 	startDirectory string
+	// pathCompletion is this session's directory cache and its own reader for
+	// path completion. A pointer: it holds channels and a once, and the session
+	// value is copied when a tab moves between windows.
+	pathCompletion *pathCompletion
 
 	host     Host // what was dialed, to dial again
 	jumpPath string
+	// desktopTunnel says this remote desktop is reached over SSH: its ViaSSH
+	// tunnel, or the jump route that carries its port. It is what the desktop's
+	// own encryption and login rows follow, where host.tunneled() names only
+	// the same-machine switch.
+	desktopTunnel bool
 	// proxyRoute is the effective outbound proxy frozen when this connection
 	// was dialed. Editing the host updates host, but not the live transport.
 	proxyRoute   string
+	sshOptions   *sshconfig.ConnectionOptions
 	endpoint     sshconn.Endpoint
 	role         sshconn.EndpointRole
 	conn         Connection
+	browser      *sshbrowser.Browser
 	sudoCommands bool
 	sudoPassword string
 	recordRecent bool // this user dial may update its recent success once
@@ -152,6 +191,12 @@ type Session struct {
 	pendingSecretName  string
 	pendingSecretValue string
 	term               *terminal
+	// transfer is this terminal's ZMODEM or X/YMODEM transfer. Each session has
+	// its own: the protocol uses that shell's bytes, so another tab can transfer
+	// at the same time. rzsz is an assistant transfer armed here, waiting for
+	// the remote rz or sz.
+	transfer fileTransfer
+	rzsz     *rzszJob
 	// desk is the remote desktop a VNC tab shows; nil for every other kind.
 	desk     *desktopView
 	version  uint64

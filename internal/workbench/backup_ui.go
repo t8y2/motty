@@ -241,6 +241,8 @@ func (state *State) backupErrorText(err error) string {
 		return m.SyncErrUnauthorized
 	case errors.Is(err, cloudsync.ErrNotFound):
 		return m.SyncErrNotFound
+	case errors.Is(err, cloudsync.ErrChanged):
+		return m.SyncErrChanged
 	case errors.Is(err, cloudsync.ErrInsecure):
 		return m.SyncErrInsecure
 	case errors.Is(err, cloudsync.ErrTooLarge):
@@ -919,7 +921,7 @@ func (state *State) paintBackupSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitSyncConfigureGist, Label: m.SyncConfigureGist, Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSyncConfigureGitee, Label: m.SyncConfigureGitee, Variant: components.ButtonOutline})
 			page.toggleRow(m.SyncAuto, m.SyncAutoDescription, !state.sync.manual, hitSyncAuto)
-			page.actionRow(m.SyncRunRow, run, !state.sync.configured() || state.sync.working,
+			page.actionRowWrap(m.SyncRunRow, run, !state.sync.configured() || state.sync.working,
 				components.ButtonAction{ID: hitSyncNow, Label: m.SyncNow, Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSyncRestore, Label: m.SyncRestore, Variant: components.ButtonOutline},
 			)

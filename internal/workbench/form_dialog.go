@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"math"
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/components"
@@ -247,8 +248,8 @@ func (state *State) submitForm() {
 	state.closeModal()
 }
 
-// bodyHeight is the dialog body's height: its fields, and the error under them
-// when there is one.
+// bodyHeight is the dialog body's height: its fields and consent box. The error
+// under them, if any, adds its wrapped lines (formProblemHeight).
 func (form *formDialog) bodyHeight() float32 {
 	height := float32(0)
 	for index := 0; index < form.count; index++ {
@@ -257,7 +258,52 @@ func (form *formDialog) bodyHeight() float32 {
 	if form.checkLabel != "" {
 		height += 72
 	}
-	return withError(height, form.dialogError+form.testNote)
+	return height
+}
+
+// The form dialog's width, the room its body keeps on each side of its fields,
+// and the error line under them. The error's words can be a server's or the
+// network stack's and are not known when the dialog is written, so the dialog is
+// sized to the lines they wrap to instead of cutting them at its edge.
+const (
+	formWidth       = float32(540)
+	formBodyPad     = float32(4)
+	formProblemLine = float32(18)
+	formProblemGap  = float32(12)
+)
+
+// formProblemHeight is the room the error or test note under the form's fields
+// takes: its gap above and as many lines as its words need at the body's width.
+func (state *State) formProblemHeight(canvas *gfx.Canvas, problem string) float32 {
+	if problem == "" {
+		return 0
+	}
+	metrics := state.Theme().Metrics
+	width := formWidth - 2*(metrics.PadSurface+metrics.GapItem) - 2*formBodyPad
+	// The scratch holds the lines of a reason of ordinary length; a longer one
+	// allocates, which is rare enough not to keep room for.
+	var scratch [8]string
+	lines := canvas.WrapLines(scratch[:0], problem, metrics.FontSizeS, gfx.WeightMedium, max(width, 1), math.MaxInt32)
+	return formProblemGap + float32(len(lines))*formProblemLine
+}
+
+// formProblem is what the form says under its fields: the error of the last
+// submit, or the note of a test that went through.
+func (form *formDialog) formProblem() string {
+	if form.dialogError != "" {
+		return form.dialogError
+	}
+	return form.testNote
+}
+
+// problemWrapC declares a form's error under its fields: its words are the
+// server's or the network stack's, not the application's, so it takes as many
+// lines as the room needs. The dialog is sized with the same lines
+// (formProblemHeight).
+func (state *State) problemWrapC(c ui.C, problem string) {
+	if problem != "" {
+		ui.Paragraph(c, problem, 0).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(formProblemLine)
+	}
 }
 
 // declareFormDialog declares the open form as a dialog of the page.
@@ -268,10 +314,11 @@ func (state *State) declareFormDialog(c ui.C) {
 		initial = hitFormFieldList.At(0)
 	}
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 540, form.description, form.bodyHeight())
+	bodyHeight := form.bodyHeight() + state.formProblemHeight(c.Canvas(), form.formProblem())
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, formWidth, form.description, bodyHeight)
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: form.title, Description: form.description, Width: 540, Height: height, Layer: dialogLayer,
+		Title: form.title, Description: form.description, Width: formWidth, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, CloseID: hitFormClose, InitialFocusID: initial,
 	})
 	dialog.Body(func() { state.declareFormDialogBody(c) })
@@ -310,9 +357,9 @@ func (state *State) declareFormDialogBody(c ui.C) {
 				ui.Paragraph(c, form.checkDescription, 2).FontSize(metrics.FontSizeS).LineHeight(16).Color(state.pal.muted).MarginSides(0, 0, 0, 28)
 			})
 		}
-		state.problemLineC(c, form.dialogError)
+		state.problemWrapC(c, form.dialogError)
 		if form.dialogError == "" && form.testNote != "" {
-			ui.Text(c, form.testNote).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.success).LineHeight(18)
+			ui.Paragraph(c, form.testNote, 0).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.success).LineHeight(formProblemLine)
 		}
 	})
 	column.DrawOver(func(d *ui.DrawContext) {

@@ -401,14 +401,12 @@ func (w *remoteToolsWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 	return w.ui.remoteSearchShortcut(event)
 }
 
-// pointer handles the pointers the page's controls do not own: selecting and
-// scrolling the detail text, dragging the process scrollbar, and holding the
-// dialogs' modal layer.
+// pointer handles the pointers the page's controls and overlays do not own:
+// selecting and scrolling the detail text, and dragging the process scrollbar.
+// A press or release it leaves untouched reaches the page's click pass, which
+// is what lets a dialog's buttons, its close target and a menu's items act.
 func (w *remoteToolsWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if w.closed {
-		return gfx.EventResult{Handled: true}
-	}
-	if w.ui.modal == modalSudoSFTP || w.ui.modal == modalForm {
 		return gfx.EventResult{Handled: true}
 	}
 	if w.ui.remote.processDetails.open {
@@ -418,7 +416,6 @@ func (w *remoteToolsWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 		if result, handled := w.ui.remoteProcessDetailsScrollPointer(event); handled {
 			return result
 		}
-		return gfx.EventResult{Handled: true}
 	}
 	if w.ui.remote.containerDetails.open {
 		if result, handled := w.ui.remoteContainerDetailsTextPointer(event); handled {
@@ -427,10 +424,6 @@ func (w *remoteToolsWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 		if result, handled := w.ui.remoteContainerDetailsScrollPointer(event); handled {
 			return result
 		}
-		return gfx.EventResult{Handled: true}
-	}
-	if w.ui.remote.auto.open {
-		return gfx.EventResult{Handled: true}
 	}
 	if result, handled := w.ui.remoteProcessScrollPointer(event); handled {
 		return result

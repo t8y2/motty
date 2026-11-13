@@ -52,7 +52,7 @@ func TestNotesHostTagsShareEditingAndStableSelection(t *testing.T) {
 		t.Fatal("ordinary editing lost or exposed host association")
 	}
 	s.activeSection = sectionNotes
-	s.notes.panel = true
+	s.noteSidebarState().open = true
 	if noteHostCount(s.notes.draft.Tags) != 1 {
 		t.Fatal("associations changed")
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,5 +234,76 @@ func TestExecBoundsOutputAndKeepsWhatWasPrintedWhenCanceled(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Exec did not return after cancel")
+	}
+}
+
+func TestStreamCommandCancellationWhileExecAcknowledgmentIsWithheld(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.command = func(_ string, channel ssh.Channel) { _ = channel.Close() }
+		server.beforeExecReply = func(command string) {
+			if command == "follow" {
+				close(started)
+				<-release
+			}
+		}
+	})
+	defer close(release)
+	h := connect(t, server)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		result <- h.conn.StreamCommand(ctx, "follow", 4096, func([]byte) bool { return true })
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream did not reach the exec request")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled establishment returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancellation waited for the withheld acknowledgment")
+	}
+	if h.conn.Status().Phase != PhaseConnected {
+		t.Fatal("canceling the stream disconnected the SSH client")
+	}
+}
+
+func TestStreamCommandDeliversFinalPartialLine(t *testing.T) {
+	h := connectedCommandHarness(t, func(_ string, channel ssh.Channel) {
+		defer channel.Close()
+		io.WriteString(channel, "last line")
+		channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+	})
+	var got string
+	err := h.conn.StreamCommand(context.Background(), "read", 32, func(line []byte) bool {
+		got += string(line)
+		return true
+	})
+	if err != nil || got != "last line" {
+		t.Fatalf("got %q, error %v", got, err)
+	}
+}
+
+func TestStreamCommandSkipsOversizedLinesAndKeepsReading(t *testing.T) {
+	h := connectedCommandHarness(t, func(_ string, channel ssh.Channel) {
+		defer channel.Close()
+		_, _ = io.WriteString(channel, "before\n"+strings.Repeat("x", 128)+"\nafter\n"+strings.Repeat("y", 70))
+		channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+	})
+	var got string
+	err := h.conn.StreamCommandSkippingLongLines(context.Background(), "read", 32, func(line []byte) bool {
+		got += string(line)
+		return true
+	})
+	if err != nil || got != "before\nafter\n" {
+		t.Fatalf("got %q, error %v", got, err)
 	}
 }

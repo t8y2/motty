@@ -13,7 +13,6 @@ import (
 )
 
 var (
-	sftpHeaderSortHits       = tree.Sub(sftpHits, tree.Name("header-sort"))
 	hitSFTPFilterToggle      = tree.ID(sftpHits, "sftp-filter-toggle")
 	hitSFTPFilter            = tree.ID(sftpHits, "sftp-filter")
 	hitSFTPFilterClear       = tree.ID(sftpHits, "sftp-filter-clear")
@@ -21,6 +20,7 @@ var (
 	hitSFTPHeaderMore        = tree.ID(sftpHits, "sftp-header-more")
 	hitSFTPHeaderFilter      = tree.ID(sftpHits, "sftp-header-filter")
 	hitSFTPHeaderHidden      = tree.ID(sftpHits, "sftp-header-hidden")
+	hitSFTPHeaderFollow      = tree.ID(sftpHits, "sftp-header-follow")
 	hitSFTPHeaderEditor      = tree.ID(sftpHits, "sftp-header-editor")
 	hitSFTPHeaderMenuDismiss = tree.ID(sftpHits, "sftp-header-menu-dismiss")
 	hitSFTPCoverage          = tree.ID(sftpHits, "sftp-local-coverage")
@@ -42,6 +42,13 @@ func (folder *sftpFolder) clearFilter() {
 	folder.filterEditor = *text.NewEditor("")
 	folder.filterEditor.Restrict(sftpFilterRune, sftpFilterMaxRunes)
 	folder.filterReady = true
+}
+
+// selectFilterQuery selects the whole filter, so the Find shortcut's next
+// typed rune or paste replaces it instead of appending to it.
+func (folder *sftpFolder) selectFilterQuery() {
+	editor := folder.filterInputEditor()
+	editor.SetSelection(text.Range{Start: 0, End: editor.RuneCount()})
 }
 
 // SFTPInput resolves the native editor used by the current side's file filter.
@@ -205,7 +212,7 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, a
 	}
 	dismiss := hitSFTPHeaderMenuDismiss
 	const menuWidth = float32(280)
-	rows := 8 + len(folder.history.recent)
+	rows := 7 + len(folder.history.recent)
 	if label, _ := state.sftpEditorItem(view, folder); label != "" {
 		rows++
 	}
@@ -229,31 +236,18 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, a
 		ID: hitSFTPHeaderHidden, Label: hiddenLabel, Icon: lucideIcons[hiddenIcon],
 		Selected: folder.showHidden,
 	})
+	menu.AddItem(components.DropdownMenuItem{
+		ID: hitSFTPHeaderFollow, Label: state.messages.Tools.FilesFollow, Icon: lucideIcons[iconFollowFolder],
+		Selected: !state.sftpFollowOff,
+	})
 	if label, disabled := state.sftpEditorItem(view, folder); label != "" {
 		menu.AddItem(components.DropdownMenuItem{ID: hitSFTPHeaderEditor, Label: label, Icon: lucideIcons[iconExternal], Disabled: disabled})
 	}
 	menu.AddSeparator()
-	for _, entry := range state.sftpColumns.entries {
-		if !entry.Enabled {
-			continue
-		}
-		column, label := int(entry.Key), state.messages.SFTPWindow.Name
-		switch entry.Key {
-		case sftpColumnSize:
-			label = state.messages.SFTPWindow.Size
-		case sftpColumnModified:
-			label = state.messages.SFTPWindow.Modified
-		}
-		icon := uint8(iconArrowUp)
-		if folder.sortOrder.descending {
-			icon = iconChevronDown
-		}
-		item := components.DropdownMenuItem{ID: sftpHeaderSortHits.At(column), Label: label, Selected: folder.sortOrder.column == column}
-		if item.Selected {
-			item.Icon = lucideIcons[icon]
-		}
-		menu.AddItem(item)
-	}
+	menu.AddItem(components.DropdownMenuItem{
+		ID: hitSFTPCalculateDirectorySize, Label: state.messages.SFTPWindow.CalculateDirectorySize, Icon: lucideIcons[iconInfo],
+		Disabled: folder.path == "" || !view.local && view.openFiles == nil,
+	})
 	menu.End()
 }
 
@@ -270,7 +264,9 @@ func (state *State) sftpFilterShortcut(target gfx.ID) (gfx.EventResult, bool) {
 	if session.files == nil || state.activeSection != sectionTerminal || state.modal != modalNone || session.files.editPath != "" || session.files.dialog != sftpDialogNone {
 		return gfx.EventResult{}, false
 	}
-	session.files.active().filterOpen = true
+	active := session.files.active()
+	active.filterOpen = true
+	active.selectFilterQuery()
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitSFTPFilter, FocusVisible: true}, true
 }
 

@@ -10,11 +10,12 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
-// tabRename is the rename dialog's state: which tab, and the name being typed.
+// tabRename is the terminal-rename dialog's state: which session of a split
+// tab, and the name being typed. A tab itself is renamed in place on its tab;
+// see tab_inline.go.
 type tabRename struct {
-	workspace layoutcore.WorkspaceID
-	// session, when set, renames that one terminal of a split tab instead of the
-	// tab. The name is what the assistant's target list and @ mentions show.
+	// session names the one terminal of a split tab whose name is edited. The
+	// name is what the assistant's target list and @ mentions show.
 	session uint32
 	editor  text.Editor
 	// field is the slot the dialog's field is painted into, and draw the painter
@@ -44,18 +45,22 @@ func (state *State) renameActiveTerminal() {
 	}
 }
 
-// openTabRename asks for a new name for a tab, starting from its current one.
-func (state *State) openTabRename(workspace layoutcore.WorkspaceID) {
-	index, ok := state.workspaceTab(workspace)
-	if !ok {
-		return
+// applyTabRename gives a tab a name its user chose: the deck remembers it, a
+// tab with a single pane carries the name onto its session, and the choice is
+// saved. A nil return leaves the tab unchanged, as callers already expect of
+// deck.Rename.
+func (state *State) applyTabRename(workspace layoutcore.WorkspaceID, name string) {
+	if state.deck.Rename(workspace, name) == nil {
+		_ = state.deck.SetNamed(workspace, true)
+		panes := state.deck.Panes(workspace, nil)
+		if len(panes) == 1 {
+			if session, ok := state.sessionByIDPointer(uint32(panes[0].SessionID)); ok {
+				state.renameSession(session, name)
+			}
+		}
+		state.rebuildTabOptions()
+		state.save()
 	}
-	state.tabRename = tabRename{workspace: workspace}
-	state.tabRename.draw = state.drawTabRenameField
-	state.tabRename.editor.Insert(state.tabLabel(state.workspaceTabs[index]))
-	state.tabRename.editor.SetSelection(text.Range{End: state.tabRename.editor.RuneCount()})
-	state.dialogError = ""
-	state.modal = modalRenameTab
 }
 
 func (state *State) clickTabRenameDialog(id gfx.ID) {
@@ -71,22 +76,8 @@ func (state *State) clickTabRenameDialog(id gfx.ID) {
 		}
 		state.modal = modalNone
 		state.dialogError = ""
-		if id := state.tabRename.session; id != 0 {
-			if session, ok := state.sessionByIDPointer(id); ok {
-				state.renameSession(session, name)
-				state.rebuildTabOptions()
-				state.save()
-			}
-			return
-		}
-		if state.deck.Rename(state.tabRename.workspace, name) == nil {
-			_ = state.deck.SetNamed(state.tabRename.workspace, true)
-			panes := state.deck.Panes(state.tabRename.workspace, nil)
-			if len(panes) == 1 {
-				if session, ok := state.sessionByIDPointer(uint32(panes[0].SessionID)); ok {
-					state.renameSession(session, name)
-				}
-			}
+		if session, ok := state.sessionByIDPointer(state.tabRename.session); ok {
+			state.renameSession(session, name)
 			state.rebuildTabOptions()
 			state.save()
 		}
@@ -110,12 +101,8 @@ func (state *State) declareTabRenameDialog(c ui.C) {
 	// No scrim dismiss: a press beside the form must not discard its input.
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, "", 62)
-	title := messages.RenameTabTitle
-	if state.tabRename.session != 0 {
-		title = messages.RenameTerminalTitle
-	}
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: title, Width: 460, Height: height, Layer: dialogLayer,
+		Title: messages.RenameTerminalTitle, Width: 460, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, CloseID: hitTabRenameClose, InitialFocusID: hitTabRenameField,
 	})
 	dialog.Body(func() {
@@ -140,10 +127,6 @@ func (state *State) declareTabRenameDialog(c ui.C) {
 // laid out.
 func (state *State) drawTabRenameField(d *ui.DrawContext) {
 	messages := state.messages
-	placeholder := messages.RenameTabPlaceholder
-	if state.tabRename.session != 0 {
-		placeholder = messages.RenameTerminalPlaceholder
-	}
 	field := components.BeginField(d.Canvas, *d.Theme, state.tabRename.field.Rect())
 	if state.dialogError != "" {
 		field = field.Invalid()
@@ -154,6 +137,6 @@ func (state *State) drawTabRenameField(d *ui.DrawContext) {
 	content.Height = 32
 	components.PaintInput(d.Canvas, *d.Theme, content, components.InputSnapshot{
 		ID: hitTabRenameField, Label: messages.RenameTabField, Value: value,
-		Placeholder: placeholder, Focused: focused, PlatformEditing: focused && value != "",
+		Placeholder: messages.RenameTerminalPlaceholder, Focused: focused, PlatformEditing: focused && value != "",
 	})
 }

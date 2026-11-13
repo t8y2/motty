@@ -729,12 +729,13 @@ func TestAIDefaultModelIsWhatTheEngineUses(t *testing.T) {
 	if enabled := state.aiModelList(provider.ID)[1].Enabled; !enabled {
 		t.Fatal("the default model is not enabled")
 	}
+	// With the default model pinned to top, "small" is now in row 0, and "big" in row 1.
 	// The default's switch cannot turn it off; the other model's can.
-	state.Click(hitAISetModelSwitch.At(1))
+	state.Click(hitAISetModelSwitch.At(0))
 	if !state.aiModelList(provider.ID)[1].Enabled {
 		t.Fatal("the default model was disabled")
 	}
-	state.Click(hitAISetModelSwitch.At(0))
+	state.Click(hitAISetModelSwitch.At(1))
 	if state.aiModelList(provider.ID)[0].Enabled {
 		t.Fatal("big, no longer the default, should switch off")
 	}
@@ -742,7 +743,7 @@ func TestAIDefaultModelIsWhatTheEngineUses(t *testing.T) {
 	if !contains(texts, state.messages.AISettings.ModelDefault) {
 		t.Fatalf("the default is not marked: %v", texts)
 	}
-	if hit, ok := hitByID(canvas, hitAISetModelSwitch.At(1)); !ok || !hit.Disabled || !hit.Checked {
+	if hit, ok := hitByID(canvas, hitAISetModelSwitch.At(0)); !ok || !hit.Disabled || !hit.Checked {
 		t.Fatalf("the default model's switch = %+v", hit)
 	}
 

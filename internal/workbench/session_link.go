@@ -108,6 +108,8 @@ func (state *State) disconnect(session *Session) {
 		return
 	}
 	session.disconnected = true
+	session.closeSSHBrowser()
+	session.stopRemoteLogs()
 	state.cancelReconnect(session)
 	state.finishSessionLog(session, sessionlog.StatusEnded, sessionlog.ReasonUserClosed)
 	state.stopSessionForwards(session.ID, true)

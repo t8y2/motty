@@ -51,7 +51,7 @@ func TestHostDisplayOrderNameIsDeterministicAndPreservesManual(t *testing.T) {
 	original := slices.Clone(state.hosts)
 	state.Click(hitHostCheckList.At(2))
 	chooseDisplayOrder(state, "name")
-	want := []string{"host_a", "host_b", "host_c", "host_d", "host_e", "host_f", "host_z"}
+	want := []string{"host_c", "host_a", "host_b", "host_d", "host_e", "host_f", "host_z"}
 	if got := displayHostIDs(state); !slices.Equal(got, want) {
 		t.Fatalf("name order = %v, want %v", got, want)
 	}
@@ -112,36 +112,31 @@ func TestHostDisplayOrderWorksWithSearchAndGroupFilter(t *testing.T) {
 	chooseDisplayOrder(state, "name")
 	typeSearch(state, "alpha")
 	state.setHostFilter(true, "Servers")
-	if got := displayHostIDs(state); !slices.Equal(got, []string{"host_a", "host_b", "host_c"}) {
+	if got := displayHostIDs(state); !slices.Equal(got, []string{"host_c", "host_a", "host_b"}) {
 		t.Fatalf("filtered order = %v", got)
 	}
 	state.Click(bulkAllHit())
 	requireBulkSelection(t, state, 2, 3, 4)
 }
 
-func TestHostDisplayOrderAutomaticDisablesManualMoves(t *testing.T) {
+func TestHostDisplayOrderHoldSwitchesToManual(t *testing.T) {
 	state := displayOrderState(t)
-	state.Click(hitHostSort)
-	if !state.hostSort.enabled {
-		t.Fatal("manual reorder did not start")
-	}
 	chooseDisplayOrder(state, "ip")
-	if state.hostSort.enabled {
-		t.Fatal("automatic order did not cancel manual reorder")
+	if state.hostOrder != hostOrderIP {
+		t.Fatal("automatic order did not apply")
 	}
-	state.Click(hitHostSort)
-	if state.hostSort.enabled {
-		t.Fatal("manual reorder started under automatic display order")
+	beginHostSortCase(t, state)
+	if state.hostOrder != hostOrderManual || !state.hostSort.enabled {
+		t.Fatalf("holding a host under %v order did not switch to manual sorting", hostOrderIP)
 	}
+	state.endHostSort()
+	// The automatic order still refuses a reorder move that reaches it stale.
+	chooseDisplayOrder(state, "ip")
 	before := slices.Clone(state.hosts)
 	move := components.ReorderGridMove{ID: hitHostSortHandles.At(1), Target: hitHostSortHandles.At(2), From: 0, To: 1}
 	state.applyHostSortMove(move)
 	if !reflect.DeepEqual(state.hosts, before) {
 		t.Fatal("stale reorder gesture rewrote an automatically ordered catalog")
-	}
-	canvas, _ := paintedTexts(state)
-	if hit, ok := hitByID(canvas, hitHostSort); !ok || !hit.Disabled {
-		t.Fatal("manual reorder button is not disabled under automatic order")
 	}
 }
 

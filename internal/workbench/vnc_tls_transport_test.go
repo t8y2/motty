@@ -147,7 +147,7 @@ func TestVNCTLSMixedAuthenticationUsesVNCPasswordThroughSSH(t *testing.T) {
 	tunnel := &fakeConn{dial: func(context.Context, string, string) (net.Conn, error) { return client, nil }}
 	verified, asked := false, 0
 	_, err := openDesktopSession(context.Background(), desktopRequest{
-		Host: Host{Address: "pi.example.com", Port: 5900, User: "ssh-user", Protocol: protocolVNC, ViaSSH: true}, Tunnel: tunnel,
+		Host: Host{Address: "pi.example.com", Port: 5900, User: "ssh-user", Protocol: protocolVNC, ViaSSH: true}, Tunnel: tunnel, ViaSSH: true,
 		Verify: func(address string, der []byte) error {
 			if address != "pi.example.com:5900" || !bytes.Equal(der, certificate.Certificate[0]) {
 				return errors.New("wrong server identity")
@@ -185,7 +185,7 @@ func TestVNCTLSCertificateUsesTypedAddressThroughSSHAndCancellation(t *testing.T
 			refused := errors.New("VNC certificate refused")
 			checked := false
 			_, err := openDesktopSession(ctx, desktopRequest{
-				Host: Host{Address: "pi.example.com", Port: 5900, User: "ssh-user", Protocol: protocolVNC, ViaSSH: true}, Tunnel: tunnel,
+				Host: Host{Address: "pi.example.com", Port: 5900, User: "ssh-user", Protocol: protocolVNC, ViaSSH: true}, Tunnel: tunnel, ViaSSH: true,
 				Verify: func(address string, der []byte) error {
 					checked = true
 					if address != "pi.example.com:5900" || !bytes.Equal(der, certificate) {

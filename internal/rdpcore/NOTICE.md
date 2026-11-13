@@ -32,17 +32,40 @@ Changed:
   before any credential is sent, instead of `net.DialTimeout` and a blanket
   `InsecureSkipVerify`. A refused certificate ends the attempt (`ErrCertificateRejected`)
   and does not fall back to other TLS versions.
-* Standard RDP Security (RC4 without TLS) is off unless `Options.AllowLegacySecurity`.
+* Standard RDP Security (RC4 without TLS) is used only when
+  `Options.Security` is `SecurityStandard`; the default refuses a server that
+  offers nothing else.
 * A wrong password stops after one attempt (`%w` instead of `%v` kept
-  `nla.ErrCredentialsFatal` visible; a server that drops the connection after the
-  credentials were sent counts as a refusal). Upstream made 14 logon attempts for
-  one wrong password, which locks an account out.
+  `nla.ErrCredentialsFatal` visible). A server that drops the connection after the
+  credentials were sent is still not retried, but it is reported as an unproven
+  outcome (`nla.ErrClosedAfterCredentials`) instead of a refusal, and the saved
+  password is kept: Windows Server 2012 and other old CredSSP peers close on
+  handshake mismatches as well. Upstream made 14 logon attempts for one wrong
+  password, which locks an account out.
 * CredSSP can reconnect once with raw NTLM tokens when SPNEGO negotiation fails
   before credentials are sent, for older WinPR servers. Raw NTLM keeps TLS,
   NTLMv2 MIC/channel binding and public-key verification, but does not consume
   SPNEGO mechanism-list MIC sequence numbers. Failures after an Authenticate
   write stop probing and TLS-only fallback; protocol errors remain distinct
   from credential refusals so the UI does not discard a saved password for them.
+* CredSSP runs the SPNEGO token exchange to its end before sending the
+  public-key binding. When the acceptor requests a mechListMIC (WinPR never
+  treats NTLM as its preferred mechanism, so GNOME Remote Desktop does), the
+  client signs the mechanism list it offered and verifies the acceptor's MIC
+  with sequence zero; the binding then travels in a separate TSRequest. The MIC
+  exchange counts as a signed message on both peers — WinPR's Negotiate layer
+  adds one to every later EncryptMessage/DecryptMessage sequence and Windows
+  advances its own counters — so the CredSSP sealing sequences start at one,
+  while the RC4 handles stay at their start (MS-SPNG 3.2.5.1). Sending the
+  Authenticate token and the binding in one TSRequest made libfreerdp 3.x
+  answer with its own token in a message that still carried the client's
+  pubKeyAuth bytes; the client unsealed them as the server's binding and failed
+  the MAC check (issue #661). Windows accepts both forms.
+* CredSSP keeps the client's own supported version in every TSRequest and uses
+  the server's lower version only to pick the public-key binding. Echoing the
+  server's version back made every target older than Windows 10 abort the TLS
+  session (internal_error) right after the Authenticate message; patched
+  Windows 7 and Server 2008 R2 report version 5 and expect the client's own.
 * Extended scancodes (`0xE0xx`) set the extended flag. `ReadRectBGRA` and
   `SetOutputSuppressed` were added. The receive loop recovers from a panic in a
   decoder and ends the connection.

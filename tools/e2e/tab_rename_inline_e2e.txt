@@ -1,0 +1,77 @@
+# 端到端:双击标签页在标签上原地改名。字段开在标签上、预填当前名并全选;
+# 键入加回车生效,Esc 保留旧名,点击终端等其他位置同样生效;输入法组合中
+# 回车不提交。标签保持统一宽度,长名字在字段内滚动,不改动相邻标签。
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/tab_rename_inline_e2e.txt
+#
+# 本地终端起一个真实的本机 shell 标签,改名是纯 UI 交互,不需要 SSH 夹具。
+
+resize 1400 900
+settle 400
+click "本地终端"
+settle 1200
+expect exists id:shell/tab/#1
+
+# 双击标签页:名字字段开在标签上,预填当前名并全选
+dblclick "本机"
+expect focus id:shell/tab-inline within 2000
+expect editor "本机"
+editor
+
+# 键入替换全选的名字,回车在标签上生效
+type 构建机
+key Enter
+expect absent id:shell/tab-inline
+expect text "构建机" within 2000
+
+# Esc 丢弃草稿,旧名保留
+dblclick "构建机"
+expect focus id:shell/tab-inline within 2000
+type 临时名字
+key Escape
+expect absent id:shell/tab-inline
+expect text "构建机" within 2000
+expect no-text "临时名字"
+
+# 点击终端区域(字段之外)同样提交
+dblclick "构建机"
+expect focus id:shell/tab-inline within 2000
+type 生产构建
+click 700 400
+expect absent id:shell/tab-inline
+expect text "生产构建" within 2000
+
+# 输入法组合中,回车属于输入法:不提交
+dblclick "生产构建"
+expect focus id:shell/tab-inline within 2000
+compose 构建中
+key Enter
+expect editor contains 构建中
+key Escape
+expect text "生产构建" within 1000
+
+# 长名字不撑开标签:标签保持统一宽度,名字在字段内滚动,提交后正常省略
+dblclick "生产构建"
+expect focus id:shell/tab-inline within 2000
+type 一个名字很长很长的构建机器
+expect editor contains 一个名字很长很长的构建机器
+key Enter
+expect absent id:shell/tab-inline
+expect exists id:shell/tab/#1
+settle 300
+layout
+expect layout clean
+
+# 多标签:双击后台标签一次就同时切换并进入编辑态,不必先单击再双击
+click "本地终端"
+settle 1200
+expect exists id:shell/tab/#2
+dblclick "一个名字很长很长的构建机器"
+expect focus id:shell/tab-inline within 2000
+expect editor "一个名字很长很长的构建机器"
+type 多标签改名
+key Enter
+expect absent id:shell/tab-inline
+expect text "多标签改名" within 2000
+expect text "本机" within 1000

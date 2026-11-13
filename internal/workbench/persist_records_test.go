@@ -18,18 +18,21 @@ import (
 // other, so each must be named here or in the record tables.
 func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 	ownDevice := map[string]bool{
-		"notes_view": true, "recent_connect_sort": true, "recent_connections": true,
+		"notes_view": true, "note_sidebars": true, "recent_connect_sort": true, "recent_connections": true,
 		"monitor_panels": true, "monitor_active": true,
-		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_font": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
+		"language": true, "theme": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_text_size": true, "interface_font": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_fallbacks": true,
 		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "relaunch_action": true, "tray_hint_shown": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
 		"sftp_panel_width": true, "monitor_panel_width": true,
 		"terminal_toolbar_position": true,
+		"terminal_find":             true,
 		"terminal_toolbar_size":     true,
 		"workspace":                 true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "sessions": true, "deck": true, "sync": true,
 		// The generation of default chords this computer's table was reconciled
 		// against: which defaults a build ships is not another device's business.
 		"shortcut_defaults_generation": true,
-		"host_view":                    true, "background": true, "snippet_shortcuts": true,
+		"host_view":                    true, "host_privacy": true, "host_privacy_show_name": true,
+		"host_privacy_show_address": true, "host_privacy_show_user": true,
+		"background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,
 		"tab_numbers":            true,
@@ -40,6 +43,9 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"sftp_window_order": true, "sftp_open_mode": true, "sftp_directory_tree": true, "custom_editor_path": true,
 		"toolbars":    true,
 		"local_shell": true, "local_start": true, "last_local_directory": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
+		// Whether the command bar shows, which groups it filters and how it
+		// orders them are this computer's own layout, not a preference to sync.
+		"commands_shown": true, "commands_sort": true, "commands_hidden_groups": true,
 		// The shells a computer hides from its pickers name this machine's own
 		// programs and distributions; another device hides its own.
 		"hidden_shells": true,
@@ -73,7 +79,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
-		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/",
+		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/", HiddenHostTags: []string{"dev", "prod"},
 		RecentConnectSort: true, RecentConnections: map[string]time.Time{"host_b": time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
 		SFTPParallel: 2, SFTPTerminalFollow: true, CommandHistory: true,
 		Hosts: []savedHost{

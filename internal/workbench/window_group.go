@@ -207,13 +207,12 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 	if !ok {
 		return nil, false
 	}
-	// A transfer in progress belongs to this window's dialog and cannot follow.
-	if state.transfer.phase != transferNone {
-		for _, pane := range dto.Panes {
-			if uint32(pane.SessionID) == state.transfer.sessionID {
-				state.status = state.messages.Tools.TabMoveBusy
-				return nil, false
-			}
+	// A transfer in progress owns that terminal's stream and cannot follow the tab.
+	for _, pane := range dto.Panes {
+		session, ok := state.sessionByIDPointer(uint32(pane.SessionID))
+		if ok && session.transferBusy() {
+			state.status = state.messages.Tools.TabMoveBusy
+			return nil, false
 		}
 	}
 	payload := &tabPayload{title: dto.Title, dto: dto}

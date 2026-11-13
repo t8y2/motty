@@ -23,7 +23,6 @@ var hostGridHits = tree.Feature("host-grid")
 var (
 	hitHostViewList = tree.ID(hostGridHits, "host-view-list")
 	hitHostViewGrid = tree.ID(hostGridHits, "host-view-grid")
-	hitHostSort     = tree.ID(hostGridHits, "host-sort")
 )
 
 const (
@@ -131,10 +130,6 @@ func (mode hostViewMode) saved() string {
 }
 
 func (state *State) clickHostView(id gfx.ID) bool {
-	if id == hitHostSort {
-		state.toggleHostSort()
-		return true
-	}
 	var mode hostViewMode
 	switch id {
 	case hitHostViewList:
@@ -156,9 +151,31 @@ func hostGridColumns(width float32) int {
 	return max(int((width+hostCardGap)/(hostCardMinWidth+hostCardGap)), 1)
 }
 
+// hostGridWidestRun is the number of hosts between group headers in the run
+// that holds the most of them: the columns a row can actually fill. A grid never
+// needs more columns than that, or widening the window past the point where an
+// empty column would fit would shrink every card although no card was added.
+func (state *State) hostGridWidestRun() int {
+	widest, run := 1, 0
+	for _, entry := range state.hostTreeRows {
+		if entry.Kind == hostTreeGroup {
+			widest, run = max(widest, run), 0
+			continue
+		}
+		run++
+	}
+	return max(widest, run)
+}
+
+// hostGridColumnCount is how many columns the grid shows at width: every column
+// that fits, but never more than the hosts to fill a row.
+func (state *State) hostGridColumnCount(width float32) int {
+	return min(hostGridColumns(width), state.hostGridWidestRun())
+}
+
 // hostGridHeight is the height of the whole card layout at width.
 func (state *State) hostGridHeight(width float32) float32 {
-	columns := hostGridColumns(width)
+	columns := state.hostGridColumnCount(width)
 	var height float32
 	run := 0
 	flush := func() {
@@ -187,12 +204,12 @@ func (state *State) hostGridHeight(width float32) float32 {
 func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32) {
 	bounds := gfx.Rect{X: 18, Y: headerHeight, Width: max(width-36, 0), Height: max(height-headerHeight-18, 0)}
 	content := state.hostListHeight(bounds.Width)
-	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll, state.hostListBarRevealed())
 	if geometry.MaxOffsetY > 0 {
 		// Taking the bar's strip narrows the list; the cards pack to the width they
 		// are really given, so read the height again at the reserved width.
 		content = state.hostListHeight(geometry.Viewport.Width)
-		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll, state.hostListBarRevealed())
 	}
 	canvas := c.Canvas()
 	if state.hostRevealID != 0 {
@@ -203,14 +220,14 @@ func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32)
 		}
 		canvas.RequestFocus(focus)
 		state.hostRevealID = 0
-		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll, state.hostListBarRevealed())
 	}
 	state.hostsContent, state.hostsScroll = content, geometry.OffsetY
 	viewport := geometry.Viewport
 	// The sort's edge scroll reads the pointer in window coordinates; the last
 	// paint's absolute viewport is what the list view uses for the same check.
 	if state.hostSortAutoScrollFrame(canvas, state.hostsGridViewport, content) {
-		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll)
+		_, geometry = hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll, state.hostListBarRevealed())
 		state.hostsScroll = geometry.OffsetY
 		viewport = geometry.Viewport
 	}
@@ -229,7 +246,7 @@ func (state *State) drawHostGrid(d *ui.DrawContext) {
 		return
 	}
 	drag := state.ensureHostGridDrag()
-	columns := hostGridColumns(viewport.Width)
+	columns := state.hostGridColumnCount(viewport.Width)
 	cardWidth := (viewport.Width - float32(columns-1)*hostCardGap) / float32(columns)
 	state.beginHostSortPaint(canvas, viewport)
 	y := viewport.Y - state.hostsScroll
@@ -361,7 +378,7 @@ func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) 
 	canvas.RoundedBorder(card, radius.surface, edgeWidth, edge, background)
 	paintHostColorMark(canvas, card, host.Color)
 	if !state.hostSort.enabled {
-		canvas.HitWithOptions(id, card, host.Label, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
+		canvas.HitWithOptions(id, card, state.hostPrivacySemanticLabel(host), gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
 		state.hostRowEvents(canvas, id, host)
 	}
 	if canvas.FocusVisible() == id {
@@ -385,20 +402,49 @@ func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) 
 	textWidth := max(check.X-12-textX, 0)
 	tagCount := 0
 	var tagList [maxHostTags]string
-	subtitleWidth := min(canvas.TextWidth(subtitle, metrics.FontSizeS)+1, textWidth)
-	if room := textWidth - subtitleWidth - 8; room >= 40 {
+	protocolLabel := state.hostProtocolTagLabel(host)
+	protocolWidth := canvas.TextWidthWeight(protocolLabel, metrics.FontSizeS, gfx.WeightMedium) + 15
+	subtitleLimit := textWidth
+	if protocolWidth+8 <= textWidth {
+		// Reserve the protocol tag first: the connection line gives way to it
+		// rather than hiding the tag on a long account and destination.
+		subtitleLimit = textWidth - protocolWidth - 8
+	}
+	subtitleWidth := min(canvas.TextWidth(subtitle, metrics.FontSizeS)+1, subtitleLimit)
+	if state.hostPrivacy.enabled {
+		subtitleWidth = state.hostPrivacyConnectionWidth(canvas, host, subtitleLimit)
+	}
+	room := textWidth - subtitleWidth - 8
+	showProtocol := room >= protocolWidth
+	if showProtocol {
+		tagCount = state.fitHostTags(canvas, host, max(room-protocolWidth-5, 0), &tagList)
+	} else if room >= 40 {
 		tagCount = state.fitHostTags(canvas, host, room, &tagList)
 	}
 	// The title and the connection line are 22 and 1+19 tall, centered as the
 	// column was in the card's row.
 	columnTop := card.Y + (card.Height-42)/2
-	paintHostGridLine(canvas, host.Label, gfx.Rect{X: textX, Y: columnTop, Width: textWidth, Height: 22},
-		22, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: pal.text})
-	paintHostGridLine(canvas, subtitle, gfx.Rect{X: textX, Y: columnTop + 23, Width: subtitleWidth, Height: 19},
-		19, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
-	if tagCount > 0 {
+	nameBounds := gfx.Rect{X: textX, Y: columnTop, Width: textWidth, Height: 22}
+	connectionBounds := gfx.Rect{X: textX, Y: columnTop + 23, Width: subtitleWidth, Height: 19}
+	if state.hostPrivacy.enabled {
+		if state.hostPrivacy.nameHidden() {
+			state.paintHostPrivacyMask(canvas, nameBounds, host.Label, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: pal.text})
+		} else {
+			paintHostGridLine(canvas, host.Label, nameBounds, 22, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: pal.text})
+		}
+		state.paintHostPrivacyConnection(canvas, connectionBounds, host)
+	} else {
+		paintHostGridLine(canvas, host.Label, nameBounds, 22, gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightSemibold, Color: pal.text})
+		paintHostGridLine(canvas, subtitle, connectionBounds, 19, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
+	}
+	if showProtocol || tagCount > 0 {
 		pillX := textX + subtitleWidth + 8
 		pillY := columnTop + 23 + (19-18)/2
+		if showProtocol {
+			pill := gfx.Rect{X: pillX, Y: pillY, Width: protocolWidth, Height: 18}
+			paintHostProtocolTag(canvas, pill, protocolLabel, hostProtocolTagColor(pal, host.Protocol))
+			pillX += pill.Width + 5
+		}
 		for _, tag := range tagList[:tagCount] {
 			width := canvas.TextWidthWeight(tag, metrics.FontSizeS, gfx.WeightMedium)
 			pill := gfx.Rect{X: pillX, Y: pillY, Width: width + 15, Height: 18}
@@ -414,7 +460,7 @@ func (state *State) paintHostCard(canvas *gfx.Canvas, card gfx.Rect, host Host) 
 		side := components.CheckboxExtent(state.Theme())
 		bounds := gfx.Rect{X: check.X + (check.Width-side)/2, Y: check.Y + (check.Height-side)/2, Width: side, Height: side}
 		components.BeginCheckbox(canvas, state.Theme(), hitHostCheckList.At(int(host.ID)), bounds, state.hostSelected(host.ID)).
-			Label(host.Label).Paint()
+			Label(state.hostPrivacySemanticLabel(host)).Paint()
 	}
 	state.paintHostCatalogIcon(canvas, host, avatar, badgeBackground)
 	if kind != lightIdle {

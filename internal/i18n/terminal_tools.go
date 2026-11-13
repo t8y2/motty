@@ -71,6 +71,7 @@ type ToolsMessages struct {
 	SnippetEmpty              string
 	SnippetEmptySub           string
 	SnippetCountFmt           string
+	SnippetListScroll         string
 	SnippetColumnName         string
 	SnippetColumnShortcut     string
 	SnippetColumnGroup        string
@@ -81,6 +82,8 @@ type ToolsMessages struct {
 	SnippetSortAction         string
 	SnippetSortAscending      string
 	SnippetSortDescending     string
+	SnippetExpand             string
+	SnippetCollapse           string
 	SnippetMoveUp             string
 	SnippetMoveDown           string
 	StatusSnippetRemovedFmt   string
@@ -89,6 +92,9 @@ type ToolsMessages struct {
 	SnippetSend               string
 	SnippetSendCurrent        string
 	SnippetDelete             string
+	SnippetDeleteTitle        string
+	SnippetDeleteBodyFmt      string
+	SnippetDeleteConfirm      string
 	SnippetDialogAddTitle     string
 	SnippetDialogEditTitle    string
 	SnippetName               string
@@ -109,19 +115,53 @@ type ToolsMessages struct {
 	StatusSnippetSentFmt      string
 	StatusSnippetNoTerminal   string
 	StatusSnippetNotConnected string
-	SendCommandLabel          string
-	SendCommandPlaceholder    string
-	SendCommandButton         string
-	SendTargetCurrent         string
-	SendTargetAll             string
-	SendTargetChosen          string
-	SendRun                   string
-	SendChosenFmt             string
-	SendTargetsPlaceholder    string
-	SendTargetsEmpty          string
-	StatusSendSentFmt         string
-	StatusSendNoTarget        string
-	StatusSendChooseNone      string
+	// Snippet dynamic variables.
+	SnippetVarTitle        string
+	SnippetVarDescFmt      string
+	SnippetVarHint         string
+	SnippetVarPreview      string
+	SnippetVarRun          string
+	SnippetVarRequired     string
+	SnippetVarPlaceholder  string
+	SnippetVarDefaultFmt   string
+	SendCommandLabel       string
+	SendCommandPlaceholder string
+	SendCommandButton      string
+	SendTargetCurrent      string
+	SendTargetAll          string
+	SendTargetChosen       string
+	SendRun                string
+	SendChosenFmt          string
+	SendTargetsPlaceholder string
+	SendTargetsEmpty       string
+	StatusSendSentFmt      string
+	StatusSendNoTarget     string
+	StatusSendChooseNone   string
+
+	// The strip of saved commands under the terminal.
+	CommandsAdd   string
+	CommandsClose string
+	// CommandsBarShow is the label of the picker's quiet checkbox for that strip;
+	// CommandsBarHidden is that checkbox's tooltip while unticked. Neither names
+	// the strip: the UI uses the language's own word for saved commands.
+	CommandsBarHidden string
+	CommandsBarShow   string
+	// CommandsFilter is the tooltip of the group-filter button at the bar's left
+	// and the heading of the menu it opens.
+	CommandsFilter string
+	// CommandsUngrouped is the checkbox for commands with no group in the filter.
+	CommandsUngrouped string
+	// CommandsShowAll checks every group in the filter; CommandsHideAll clears them.
+	CommandsShowAll string
+	CommandsHideAll string
+	// CommandsNoGroups is the disabled placeholder when no snippet has a group yet.
+	CommandsNoGroups string
+	// The bar's order: the tooltip of its order button, and the three orders that
+	// button offers.
+	CommandsSortRow     string
+	CommandsSortCreated string
+	CommandsSortName    string
+	CommandsSortGroup   string
 
 	// The categories of the settings page, and what each holds.
 	CatGeneral    string
@@ -258,12 +298,13 @@ type ToolsMessages struct {
 	HostProxyPasswordNotCarried string
 	// The host form's jump route row: whether the host is reached through
 	// another, and the way to add or edit that route.
-	HostJumpRow                    string
-	HostJumpDescriptionDirect      string
-	HostJumpDescriptionFmt         string // the jump host's label
-	HostJumpDescriptionUnsaved     string
-	HostJumpDescriptionUnavailable string
-	HostJumpDescriptionMissing     string
+	HostJumpRow                           string
+	HostJumpDescriptionDirect             string
+	HostJumpDescriptionFmt                string // the jump host's label
+	HostJumpDescriptionUnsaved            string
+	HostJumpDescriptionUnavailable        string
+	HostJumpDescriptionUnavailableDesktop string
+	HostJumpDescriptionMissing            string
 
 	// A proxy command: a local program that carries a host's first connection.
 	ProxyCommand                   string
@@ -324,6 +365,16 @@ type ToolsMessages struct {
 	ProtocolSSH            string
 	ProtocolTelnet         string
 	ProtocolSerial         string
+	ProtocolMosh           string
+	MoshHint               string
+	ErrMoshEncoding        string
+	ErrMoshForwarding      string
+	ErrMoshInteractive     string
+	MoshServerMissing      string
+	MoshLocaleMissing      string
+	MoshUDPUnreachable     string
+	MoshWaiting            string
+	MoshBootstrapFailedFmt string
 	FieldDevice            string
 	FieldDevicePlaceholder string
 	FieldLine              string
@@ -358,7 +409,7 @@ type ToolsMessages struct {
 	TransferDecline           string
 	TransferChooseFiles       string
 	TransferChooseFolder      string
-	TransferToDownloads       string
+	TransferToFolderFmt       string
 
 	// The file panel.
 	CatFiles                        string
@@ -536,6 +587,9 @@ type ToolsMessages struct {
 	LaunchTitle                     string
 	LaunchWarning                   string
 	LaunchDescriptionFmt            string
+	LaunchFilesDescriptionFmt       string // user@host:port
+	LaunchPasswordWarning           string
+	LaunchFTPUnsupported            string
 	LaunchConnect                   string
 	LaunchXshellFailedFmt           string // base name, error
 	LaunchXshellEmptyFmt            string // base name
@@ -664,6 +718,7 @@ type ToolsMessages struct {
 	SyncFailedFmt                   string
 	SyncErrUnauthorized             string
 	SyncErrNotFound                 string
+	SyncErrChanged                  string
 	SyncErrInsecure                 string
 	SyncAllowInsecureHTTP           string
 	SyncInsecureHTTPDescription     string
@@ -877,6 +932,12 @@ type ToolsMessages struct {
 	HostViewGrid                    string
 	HostSort                        string
 	HostSortDone                    string
+	HostPrivacy                     string
+	HostPrivacyFields               string
+	HostPrivacyName                 string
+	HostPrivacyAddress              string
+	HostPrivacyUser                 string
+	HostPrivacyHiddenHost           string
 	BgGroup                         string
 	BgRow                           string
 	BgRowNone                       string
@@ -948,6 +1009,24 @@ type ToolsMessages struct {
 	LoginCommandField               string
 	LoginCommandPlaceholder         string
 	ErrLoginCommand                 string
+	IdleKeepAliveHeading            string
+	IdleKeepAliveField              string
+	IdleKeepAliveOff                string
+	IdleKeepAliveOneMinute          string
+	IdleKeepAliveFiveMinutes        string
+	IdleKeepAliveTenMinutes         string
+	IdleKeepAliveCustom             string
+	IdleKeepAliveCustomInterval     string
+	IdleKeepAliveUnitSeconds        string
+	IdleKeepAliveUnitMinutes        string
+	IdleKeepAliveInputField         string
+	IdleKeepAliveInputCR            string
+	IdleKeepAliveInputNUL           string
+	IdleKeepAliveInputCustom        string
+	IdleKeepAliveCustomInput        string
+	IdleKeepAliveCustomPlaceholder  string
+	ErrIdleKeepAliveInterval        string
+	ErrIdleKeepAliveInput           string
 	ErrAlgoUnknownFmt               string
 	AlgoWeakFmt                     string
 	AlgoNegotiatedFmt               string
@@ -968,6 +1047,7 @@ type ToolsMessages struct {
 	FilesColumnsReset                    string
 	FilesColumnsClose                    string
 	FilesDownloadDirectory               string
+	FilesResizeColumn                    string
 	FilesDownloadAskDescription          string
 	FilesDownloadCurrentFmt              string
 	FilesDownloadChoose                  string

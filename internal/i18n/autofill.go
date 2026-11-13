@@ -11,9 +11,7 @@ type AutofillMessages struct {
 	DeleteFmt          string
 	DeleteTextNote     string
 	PresetSudo         string
-	PresetSu           string
 	PresetSudoName     string
-	PresetSuName       string
 	Edit               string
 	Delete             string
 	TurnOn             string
@@ -61,4 +59,19 @@ type AutofillMessages struct {
 	StatusNoSecret  string
 	StatusLockedFmt string
 	StatusDeclined  string
+
+	// The password prompt assist: PickTitle heads the offer; PickSelect,
+	// PickSend and PickDismiss name what the keycaps do; PickHostDetail and
+	// PickSharedDetail say where a row's secret lives.
+	PickTitle        string
+	PickSelect       string
+	PickSend         string
+	PickDismiss      string
+	PickHostDetail   string
+	PickSharedDetail string
+	// PickSentFmt, PickMissingFmt and PickLockedFmt report the chosen password by
+	// name, in the same status line as the other rule messages.
+	PickSentFmt    string
+	PickMissingFmt string
+	PickLockedFmt  string
 }

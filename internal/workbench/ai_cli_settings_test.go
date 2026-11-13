@@ -61,7 +61,7 @@ func TestCLIFormReflectsAutomaticPathWithoutPinningIt(t *testing.T) {
 }
 
 func TestCLIFormHidesHTTPInputsAndRoundTripsPath(t *testing.T) {
-	for _, kind := range []string{"claude-code-cli", "codex-cli", "opencode-cli"} {
+	for _, kind := range []string{"claude-code-cli", "codex-cli", "opencode-cli", "pi-cli"} {
 		t.Run(kind, func(t *testing.T) {
 			w := newSettingsWorld(t, newLister("default"))
 			s := w.state

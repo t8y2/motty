@@ -12,27 +12,57 @@ import (
 )
 
 const (
-	aiAutoRows       = 8 // the most rows the box grows to by itself
-	aiMaxReasons     = 4
-	aiMaxSummary     = 5
-	aiApprovalPad    = float32(10)
-	aiApprovalSize   = float32(11)
-	aiApprovalLine   = float32(15)
-	aiButtonHeight   = float32(30)
-	aiSendSize       = float32(28)
-	aiComposerBar    = float32(48) // the row under the text: the model chip and Send
-	aiComposerTarget = float32(32) // the compact target selector above the text
-	aiComposerMargin = float32(8)  // between the box and the panel's edges
-	aiBottomPadding  = float32(12)
-	aiMentionRow     = float32(28)
+	aiAutoRows           = 8 // the most rows the box grows to by itself
+	aiMaxReasons         = 4
+	aiMaxSummary         = 5
+	aiApprovalPad        = float32(10)
+	aiApprovalMinDetails = float32(48) // leave a usable scroll viewport above the actions
+	aiApprovalHeader     = aiApprovalPad + 24
+	aiApprovalCardPad    = aiApprovalPad - 1 // the card's own padding at its sides and foot
+	aiConfirmLabel       = float32(18)       // the confirmation instruction line
+	aiConfirmGap         = float32(2)        // between that line and its field
+	aiConfirmField       = float32(32)       // the confirmation field
+	aiConfirmFoot        = float32(8)        // the card's foot margin under the field
+	aiButtonHeight       = float32(30)
+	aiSendSize           = float32(28)
+	aiComposerBar        = float32(48) // the row under the text: the model chip and Send
+	aiComposerTarget     = float32(32) // the compact target selector above the text
+	aiComposerMargin     = float32(8)  // between the box and the panel's edges
+	aiComposerLineGap    = float32(7)  // between the rows of the box's text
+	aiComposerPad        = float32(8)  // the box's padding above and below the text
+	aiBottomTopPad       = float32(7)  // the bottom's padding above the approval card
+	aiBottomPadding      = float32(12)
+	aiMentionRow         = float32(28)
 )
 
-// aiApprovalLayout is the part of the pinned question that is measured before it
-// is declared, for the width of the panel: the command wrapped in the terminal's
-// font, whose line count sets the height of the box it is painted in.
+// aiApprovalMinimum is the least height the approval card needs: its title row,
+// a details viewport that can be read, its action row and, for a request that
+// needs the confirmation word, that line and its field. declareAIBottom
+// reserves it before the history is laid out, and declareAIApproval builds the
+// card from the same sizes so the reservation cannot drift from what it paints.
+func aiApprovalMinimum(needsText bool) float32 {
+	height := aiApprovalHeader + aiApprovalCardPad + aiApprovalMinDetails + aiButtonHeight + 2 // border
+	if needsText {
+		height += aiConfirmLabel + aiConfirmGap + aiConfirmField + aiConfirmFoot
+	}
+	return height
+}
+
+// aiComposerMinimum is the least height of the message box: the target row, one
+// editable line inside the box's padding, and the action row under it.
+func aiComposerMinimum(barHeight, fontSizeM float32) float32 {
+	return aiComposerTarget + fontSizeM + aiComposerLineGap + aiComposerPad + barHeight
+}
+
+// aiApprovalLayout keeps the wrapped command and the scroll area for the
+// question at the front of the approval queue.
 type aiApprovalLayout struct {
 	summary  []string
 	summaryH float32
+	request  *aiApproval
+	key      int
+	bounds   gfx.Rect
+	scroll   *ui.ScrollState
 }
 
 // aiBody holds where the panel's hand-painted parts went once its layout was
@@ -42,6 +72,7 @@ type aiApprovalLayout struct {
 type aiBody struct {
 	close, history, newChat                  ui.Box
 	setup, list                              ui.Box
+	approvalDetails                          ui.Box
 	confirm, decline, approve                ui.Box
 	box, modelChip, scopeChip, reasoningChip ui.Box
 }
@@ -53,19 +84,50 @@ type aiBody struct {
 func (state *State) aiPrepareBottom(canvas *gfx.Canvas, width float32) (boxHeight float32) {
 	ai, panel := &state.ai, &state.ai.panel
 	theme := state.Theme()
-	lineHeight := theme.Metrics.FontSizeM + 7
+	lineHeight := theme.Metrics.FontSizeM + aiComposerLineGap
 	boxWidth := width + 2*aiPad - 2*aiComposerMargin
+	s := &panel.pageScratch
+	s.composerBarHeight = aiComposerBar
+	s.wrapComposerOptions = state.aiComposerRowMinWidth(canvas) > boxWidth
+	if s.wrapComposerOptions {
+		s.composerBarHeight += aiSendSize + 4
+	}
 	rows := max(panel.inputLayout.RowCount(canvas, theme, ai.input.String(), boxWidth, false), 2) // two rows to begin with
 	state.aiSyncMentions()
 	state.aiLayoutChips(canvas, width)
 	if len(ai.approvals) > 0 {
 		state.aiLayoutApprovalSummary(canvas, ai.approvals[0], width)
 	}
-	height := float32(min(rows, aiAutoRows))*lineHeight + 8 + aiComposerBar + aiComposerTarget
+	height := float32(min(rows, aiAutoRows))*lineHeight + aiComposerPad + s.composerBarHeight + aiComposerTarget
 	if limit := panel.rect.Height * 0.6; limit > height {
 		height = min(max(height, ai.composerHeight), limit)
 	}
 	return height
+}
+
+// aiComposerRowMinWidth accounts for the chips' minimum sizes, fixed buttons,
+// padding and gaps. Extra options move above the action row when it cannot fit.
+func (state *State) aiComposerRowMinWidth(canvas *gfx.Canvas) float32 {
+	ai, m := &state.ai, state.messages.AIPanel
+	_, hasModel := state.aiModelText()
+	_, _, hasReasoning := state.aiCurrentModelReasoning()
+	if !hasModel || !hasReasoning && ai.mode == agent.ModeAsk {
+		return 0
+	}
+	mode := m.ModeAsk
+	if ai.mode != agent.ModeAsk {
+		mode = m.ModeAgent
+	}
+	width := float32(24+3*5+20) + 2*aiSendSize + canvas.TextWidthWeight(mode, metrics.FontSizeS, gfx.WeightMedium)
+	width += 56 + 5 // model chip
+	if hasReasoning {
+		width += 50 + 5
+	}
+	if ai.mode == agent.ModeAgent {
+		width += aiSendSize + 5 // upload
+		width += 52 + 5 + canvas.TextWidthWeight(state.aiScopeName(state.aiAutoUpTo()), metrics.FontSizeS, gfx.WeightMedium)
+	}
+	return width
 }
 
 // aiByteOffset is the byte offset of the n-th character of value.
@@ -88,25 +150,70 @@ func aiByteOffset(value string, n int) int {
 // buttons and Send are ordinary page elements painted over it.
 func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
-	ui.Column(c).Children(func() {
-		ui.Column(c).PadSides(7, aiPad, 0, aiPad).Gap(8).Children(func() {
-			if text := state.aiNoticeText(); text != "" {
-				ui.Column(c).PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
-					ui.Paragraph(c, text, 6).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
-				})
-			}
+	bottom := ui.Column(c)
+	extrasHeight := float32(0)
+	if text := state.aiNoticeText(); text != "" {
+		lines := c.Canvas().WrapLines(nil, text, aiSizes.small, gfx.WeightRegular, max(panel.rect.Width-2*aiPad-20, 1), 6)
+		extrasHeight += 12 + float32(len(lines))*aiSizes.smallLine + 8
+	}
+	if len(panel.mentions) > 0 {
+		extrasHeight += 6 + float32(len(panel.mentions))*aiMentionRow + 8
+	}
+	if panel.chipRows > 0 {
+		extrasHeight += float32(panel.chipRows)*(aiChipHeight+aiChipGap) - aiChipGap + 8
+	}
+	extrasHeight = min(extrasHeight, 96)
+	if len(ai.approvals) > 0 {
+		// Reserve fixed controls and bounded extras so history cannot squeeze them out.
+		approvalMin := aiApprovalMinimum(ai.approvals[0].request.NeedsText)
+		reserved := 2*aiComposerMargin + aiBottomTopPad + approvalMin
+		available := panel.rect.Height - aiTitleRow - 1 // divider
+		if panel.pageScratch.showSetup {
+			available -= 56 + 8
+		}
+		// Bound extras to preserve fixed composer rows and the last editable line.
+		composerMin := aiComposerMinimum(panel.pageScratch.composerBarHeight, state.Theme().Metrics.FontSizeM)
+		extrasHeight = min(extrasHeight, max(available-reserved-composerMin, 0))
+		reserved += extrasHeight
+		// Temporarily shrink dragged boxes for approvals without changing the user's preferred height.
+		boxHeight = min(boxHeight, max(available-reserved, 0))
+		bottom.Shrink(1).MinHeight(boxHeight + reserved)
+	}
+	bottom.Children(func() {
+		aboveComposer := ui.Column(c).PadSides(aiBottomTopPad, aiPad, 0, aiPad).Gap(8)
+		if len(ai.approvals) > 0 {
+			aboveComposer.Shrink(1)
+		}
+		aboveComposer.Children(func() {
 			if len(ai.approvals) > 0 {
 				state.declareAIApproval(c, body)
 			}
-			if len(panel.mentions) > 0 {
-				ui.Column(c).Pad(3).Border(1, pal.line).Background(pal.surface).Radius(radius.popup).Children(func() {
-					for index, name := range panel.mentions {
-						state.declareAIMention(c, index, name)
-					}
-				})
+			extras := func() {
+				if text := state.aiNoticeText(); text != "" {
+					ui.Column(c).PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
+						ui.Paragraph(c, text, 6).FontSize(aiSizes.small).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSizes.smallLine)
+					})
+				}
+				if len(panel.mentions) > 0 {
+					ui.Column(c).Pad(3).Border(1, pal.line).Background(pal.surface).Radius(radius.popup).Children(func() {
+						for index, name := range panel.mentions {
+							state.declareAIMention(c, index, name)
+						}
+					})
+				}
+				if panel.chipRows > 0 {
+					state.declareAIChips(c)
+				}
 			}
-			if panel.chipRows > 0 {
-				state.declareAIChips(c)
+			if len(ai.approvals) > 0 || ai.composerHeight > 0 {
+				// Omit extras when their budget cannot cover the gap and a positive viewport.
+				if extrasHeight > 8 {
+					ui.Scroll(c).Height(extrasHeight - 8).Shrink(0).Scrollbars().Children(func() {
+						ui.Column(c).Gap(8).Children(extras)
+					})
+				}
+			} else {
+				extras()
 			}
 		})
 		ui.Stack(c).Height(boxHeight).MarginSides(aiComposerMargin, aiComposerMargin, aiComposerMargin, aiComposerMargin).Children(func() {
@@ -123,21 +230,33 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 
 // declareAIComposerRow declares the row along the bottom of the message box:
 // the mode, the model and the other chips at the left, attach, upload and Send
-// at the right.
+// at the right. Extra options sit above it when the panel is narrow.
 func (state *State) declareAIComposerRow(c ui.C, body *aiBody) {
 	ai := &state.ai
 	running := ai.run != nil
 	_, hasModel := state.aiModelText()
 	disabled := !running && (!state.aiCanSend() || !hasModel)
 	_, _, hasReasoning := state.aiCurrentModelReasoning()
-	ui.Row(c).Height(aiSendSize+8).PadSides(0, 12, 6, 12).Gap(5).Items(ui.Center).Children(func() {
-		state.declareAIModePill(c)
-		if hasModel {
-			body.modelChip = state.declareAIModelChip(c)
+	wrap := ai.panel.pageScratch.wrapComposerOptions
+	if wrap {
+		ui.Row(c).Height(aiSendSize+4).PadSides(0, 12, 8, 12).Gap(5).Items(ui.Center).Children(func() {
 			if hasReasoning {
 				body.reasoningChip = state.declareAIReasoningChip(c)
 			}
 			if ai.mode == agent.ModeAgent {
+				body.scopeChip = state.declareAIAutoScopeChip(c, running || len(ai.approvals) > 0)
+			}
+			ui.Spacer(c)
+		})
+	}
+	ui.Row(c).Height(aiSendSize+8).PadSides(0, 12, 6, 12).Gap(5).Items(ui.Center).Children(func() {
+		state.declareAIModePill(c)
+		if hasModel {
+			body.modelChip = state.declareAIModelChip(c)
+			if hasReasoning && !wrap {
+				body.reasoningChip = state.declareAIReasoningChip(c)
+			}
+			if ai.mode == agent.ModeAgent && !wrap {
 				body.scopeChip = state.declareAIAutoScopeChip(c, running || len(ai.approvals) > 0)
 			}
 		}
@@ -203,7 +322,7 @@ func (state *State) paintAIComposerTextarea(d *ui.DrawContext) {
 	snapshot := components.TextareaSnapshot{
 		ID: hitAIInput, Label: m.InputLabel, Value: value, Placeholder: placeholder,
 		Focused: focused, HideEditorText: true, ShowCaret: selection.Start == selection.End,
-		Layout: &panel.inputLayout, InsetTop: aiComposerTarget, InsetBottom: aiComposerBar - 8,
+		Layout: &panel.inputLayout, InsetTop: aiComposerTarget, InsetBottom: panel.pageScratch.composerBarHeight - 8,
 		SelectionStart: aiByteOffset(value, selection.Start), SelectionEnd: aiByteOffset(value, selection.End),
 		Caret: aiByteOffset(value, ai.input.Caret()),
 	}
@@ -252,7 +371,11 @@ func (state *State) aiNoticeText() string {
 // terminal's font, which sets the height of the box it is painted in.
 func (state *State) aiLayoutApprovalSummary(canvas *gfx.Canvas, approval *aiApproval, width float32) {
 	layout := &state.ai.panel.approvalLay
-	cell, cellHeight := canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
+	if layout.request != approval {
+		layout.request = approval
+		layout.key++
+	}
+	cell, cellHeight := canvas.MonoCellSize(aiSizes.mono, state.terminalFontFace)
 	layout.summary, _ = aiMonoWrap(layout.summary[:0], approval.request.Summary, max(int((width-2*aiApprovalPad-12)/cell), 8), aiMaxSummary)
 	layout.summaryH = aiBlockHeight(len(layout.summary), cellHeight, aiBoxPad)
 }
@@ -273,8 +396,8 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 		title = m.EscalationTitle
 	}
 
-	ui.Column(c).PadSides(0, aiApprovalPad-1, aiApprovalPad-1, aiApprovalPad-1).Background(pal.surface).Border(1, withAlpha(foreground, 0.7)).Radius(radius.popup).Children(func() {
-		ui.Row(c).Height(aiApprovalPad + 24).Items(ui.Start).Children(func() {
+	ui.Column(c).Shrink(1).PadSides(0, aiApprovalCardPad, aiApprovalCardPad, aiApprovalCardPad).Background(pal.surface).Border(1, withAlpha(foreground, 0.7)).Radius(radius.popup).Children(func() {
+		ui.Row(c).Height(aiApprovalHeader).Items(ui.Start).Children(func() {
 			ui.Text(c, title).FontSize(metrics.FontSizeM).Bold().Color(pal.text).LineHeight(20).Grow(1).MarginSides(8, 0, 0, 0)
 			if !approval.escalation {
 				ui.Row(c).Height(16).PadX(6).Center().Shrink(0).MarginSides(10, 0, 0, 0).Background(fill).Radius(radius.control).Children(func() {
@@ -282,41 +405,18 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 				})
 			}
 		})
-		ui.Column(c).Height(panel.approvalLay.summaryH).MarginSides(0, 0, 8, 0).Pad(aiBoxPad).Background(pal.terminal).Radius(radius.item).Children(func() {
-			for _, line := range panel.approvalLay.summary {
-				ui.Text(c, line).FontSize(aiMonoSize).MonoFace(state.terminalFontFace).Color(pal.text)
-			}
+		// Let long details scroll while the confirmation field and actions stay in view.
+		body.approvalDetails = ui.Scroll(c.KeyInt(panel.approvalLay.key)).MaxHeight(panel.rect.Height).Scrollbars().Children(func() {
+			state.declareAIApprovalDetails(c, approval)
 		})
-		if request.SessionLabel != "" {
-			ui.Text(c, m.Target+": "+request.SessionLabel).MaxLines(0).FontSize(aiSmallSize).Color(pal.text).LineHeight(aiSmallLine).MarginSides(0, 0, 8, 0)
-		}
-		if len(assessment.Reasons) > 0 {
-			ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
-				for index, reason := range assessment.Reasons {
-					if index == aiMaxReasons {
-						break
-					}
-					ui.Row(c).Items(ui.Start).Children(func() {
-						ui.Text(c, "•").FontSize(aiApprovalSize).Color(pal.muted).LineHeight(aiApprovalLine).Width(12)
-						ui.Paragraph(c, reason, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine).Grow(1)
-					})
-				}
-			})
-		}
-		if assessment.Safer != "" {
-			ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
-				ui.Text(c, m.ApprovalSafer).FontSize(aiApprovalSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiApprovalLine)
-				ui.Paragraph(c, assessment.Safer, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine)
-			})
-		}
 		if request.NeedsText {
 			if panel.confirmFor != approval || panel.confirmFormat != m.ConfirmFmt {
 				panel.confirmFor, panel.confirmFormat = approval, m.ConfirmFmt
 				panel.confirmText = fmt.Sprintf(m.ConfirmFmt, request.Confirm)
 			}
-			ui.Column(c).MarginSides(0, 0, 8, 0).Children(func() {
-				ui.Text(c, panel.confirmText).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(18).MarginSides(0, 0, 2, 0)
-				body.confirm = ui.Slot(c).Height(32)
+			ui.Column(c).MarginSides(0, 0, aiConfirmFoot, 0).Children(func() {
+				ui.Text(c, panel.confirmText).FontSize(aiSizes.small).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiConfirmLabel).MarginSides(0, 0, aiConfirmGap, 0)
+				body.confirm = ui.Slot(c).Height(aiConfirmField)
 			})
 		}
 		ui.Row(c).Height(aiButtonHeight).Gap(8).Items(ui.Center).Children(func() {
@@ -326,7 +426,7 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 					panel.moreCount, panel.moreFormat = more, m.ApprovalMoreFmt
 					panel.moreText = fmt.Sprintf(m.ApprovalMoreFmt, more)
 				}
-				ui.Text(c, panel.moreText).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1)
+				ui.Text(c, panel.moreText).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Grow(1)
 			} else {
 				ui.Spacer(c)
 			}
@@ -334,6 +434,39 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 			body.approve = ui.Slot(c).Size(92, aiButtonHeight)
 		})
 	})
+}
+
+func (state *State) declareAIApprovalDetails(c ui.C, approval *aiApproval) {
+	panel, pal, m := &state.ai.panel, state.pal, state.messages.AIPanel
+	request := &approval.request
+	assessment := &request.Assessment
+	ui.Column(c).Height(panel.approvalLay.summaryH).MarginSides(0, 0, 8, 0).Pad(aiBoxPad).Background(pal.terminal).Radius(radius.item).Children(func() {
+		for _, line := range panel.approvalLay.summary {
+			ui.Text(c, line).FontSize(aiSizes.mono).MonoFace(state.terminalFontFace).Color(pal.text)
+		}
+	})
+	if request.SessionLabel != "" {
+		ui.Text(c, m.Target+": "+request.SessionLabel).MaxLines(0).FontSize(aiSizes.small).Color(pal.text).LineHeight(aiSizes.smallLine).MarginSides(0, 0, 8, 0)
+	}
+	if len(assessment.Reasons) > 0 {
+		ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
+			for index, reason := range assessment.Reasons {
+				if index == aiMaxReasons {
+					break
+				}
+				ui.Row(c).Items(ui.Start).Children(func() {
+					ui.Text(c, "•").FontSize(aiSizes.approval).Color(pal.muted).LineHeight(aiSizes.approvalLine).Width(12)
+					ui.Paragraph(c, reason, 2).FontSize(aiSizes.approval).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSizes.approvalLine).Grow(1)
+				})
+			}
+		})
+	}
+	if assessment.Safer != "" {
+		ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
+			ui.Text(c, m.ApprovalSafer).FontSize(aiSizes.approval).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSizes.approvalLine)
+			ui.Paragraph(c, assessment.Safer, 2).FontSize(aiSizes.approval).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSizes.approvalLine)
+		})
+	}
 }
 
 // paintAIBottom paints into the slots of the bottom the parts that are not page
@@ -346,6 +479,8 @@ func (state *State) paintAIBottom(canvas *gfx.Canvas, body *aiBody) {
 	theme := state.Theme()
 
 	if len(ai.approvals) > 0 {
+		panel.approvalLay.bounds = body.approvalDetails.Rect()
+		panel.approvalLay.scroll = body.approvalDetails.ScrollState()
 		approval := ai.approvals[0]
 		request := &approval.request
 		allowed := true
@@ -439,11 +574,11 @@ func (state *State) declareAIModelChip(c ui.C) ui.Box {
 	if canvas := c.Canvas(); canvas != nil && (canvas.Pressed() == hitAIModelChip || canvas.Hovered() == hitAIModelChip) || state.ai.panel.modelMenu {
 		fill = pal.surfaceHot
 	}
-	label := state.ai.settings.defaultModel
+	label := state.ai.modelName
 	accessible := fmt.Sprintf(state.messages.AIPanel.ModelChooseFmt, label)
 	return ui.Row(c).Height(aiSendSize-4).PadX(9).Gap(5).Shrink(1).MinWidth(56).Items(ui.Center).Background(fill).Radius((aiSendSize-4)/2).
 		HitWith(hitAIModelChip, accessible, gfx.HitOptions{Role: gfx.RoleButton, Expanded: state.ai.panel.modelMenu}).Children(func() {
-		chipIcon, known := state.aiDefaultProviderIcon()
+		chipIcon, known := state.aiSelectedProviderIcon()
 		if !known {
 			chipIcon = lucideIcons[iconSliders]
 		}
@@ -530,10 +665,10 @@ func (state *State) aiScopeName(level risk.Level) string {
 	return scopes[len(scopes)-1].name
 }
 
-// aiDefaultProviderIcon is the mark of the provider new questions go to.
-func (state *State) aiDefaultProviderIcon() (gfx.Icon, bool) {
+// aiSelectedProviderIcon is the mark of the provider this conversation asks.
+func (state *State) aiSelectedProviderIcon() (gfx.Icon, bool) {
 	for _, provider := range state.ai.providers {
-		if provider.ID == state.ai.settings.defaultProvider {
+		if provider.ID == state.ai.modelProvider {
 			return aiProviderIcon(provider), true
 		}
 	}
@@ -554,8 +689,9 @@ type aiMenuModel struct {
 	current bool
 }
 
-// aiMenuProviders lists the enabled providers that have models, each with them.
-// A model that was fetched but not switched on yet is chosen from here too.
+// aiMenuProviders lists the enabled providers and the models switched on in the
+// settings, each with the conversation's current pick. A configured CLI default
+// with no model row is listed alone, so the chip can still name it.
 func (state *State) aiMenuProviders() []aiMenuProvider {
 	ai := &state.ai
 	var list []aiMenuProvider
@@ -564,10 +700,21 @@ func (state *State) aiMenuProviders() []aiMenuProvider {
 			continue
 		}
 		entry := aiMenuProvider{id: provider.ID, name: provider.Name, icon: aiProviderIcon(provider)}
+		selected := ai.modelProvider == provider.ID && ai.modelName != ""
+		listed := false
 		for _, model := range ai.models {
-			if model.ProviderID == provider.ID && len(entry.models) < aiMenuModels {
-				entry.models = append(entry.models, aiMenuModel{name: model.Name, current: state.aiIsDefault(provider.ID, model.Name)})
+			if model.ProviderID != provider.ID || len(entry.models) >= aiMenuModels {
+				continue
 			}
+			if !model.Enabled && !state.aiIsDefault(provider.ID, model.Name) {
+				continue
+			}
+			current := selected && model.Name == ai.modelName
+			listed = listed || current
+			entry.models = append(entry.models, aiMenuModel{name: model.Name, current: current})
+		}
+		if selected && !listed {
+			entry.models = append(entry.models, aiMenuModel{name: ai.modelName, current: true})
 		}
 		if len(entry.models) > 0 {
 			list = append(list, entry)
@@ -585,6 +732,7 @@ func (state *State) declareAIModelMenu(c ui.C, anchor ui.Box) {
 	if len(providers) == 0 {
 		return
 	}
+	m := state.messages.AIPanel
 	canvas, size := c.Canvas(), c.Theme().Metrics.FontSizeM
 	textWidth := func(value string) float32 {
 		if canvas == nil {
@@ -596,6 +744,7 @@ func (state *State) declareAIModelMenu(c ui.C, anchor ui.Box) {
 	for _, provider := range providers {
 		providersWidth = max(providersWidth, textWidth(provider.name))
 	}
+	providersWidth = max(providersWidth, textWidth(m.ModelSettings))
 	providersWidth += 24 // the mark before each name
 	width := aiMenuWidth(providersWidth)
 	// The menus are dialogs' peers: they must paint over a drawer's content.
@@ -621,7 +770,21 @@ func (state *State) declareAIModelMenu(c ui.C, anchor ui.Box) {
 				}
 			}).Icon(provider.icon)
 		}
+		// The settings page at the providers' level: it is where a model is
+		// switched on or made the default, which is not this menu's to change.
+		if menu.Item(m.ModelSettings).Icon(lucideIcons[iconSettings]).Clicked() {
+			panel.modelMenu = false
+			c.After(state.openAIModelSettings)
+		}
 	})
+}
+
+// openAIModelSettings shows the settings page that switches models on and
+// chooses the default, so the shortcut beside the providers reaches it without
+// closing the assistant first.
+func (state *State) openAIModelSettings() {
+	state.openSettings()
+	state.selectSettingsCategory(settingsAssistant)
 }
 
 // declareAIAutoScopeMenu declares the approval chip's menu, above it: the scopes
@@ -691,8 +854,9 @@ func (state *State) declareAIReasoningMenu(c ui.C, anchor ui.Box) {
 	})
 }
 
-// aiChooseModel makes the n-th model of provider providerIndex the one that
-// answers, switching it on if it was only fetched.
+// aiChooseModel makes the n-th model of provider providerIndex this
+// conversation's model. It changes nothing in the store: the settings' default
+// and enable switches belong to the settings page alone.
 func (state *State) aiChooseModel(providerIndex, n int) {
 	panel := &state.ai.panel
 	panel.modelMenu = false
@@ -704,16 +868,10 @@ func (state *State) aiChooseModel(providerIndex, n int) {
 	if n < 0 || n >= len(provider.models) {
 		return
 	}
-	db, err := state.aiStore()
-	if err == nil {
-		err = db.SetModelEnabled(provider.id, provider.models[n].name, true)
-	}
-	if err == nil {
-		err = db.SetDefaultModel(provider.id, provider.models[n].name)
-	}
-	if err != nil {
-		state.ai.notice = state.aiScrub(err.Error(), "")
+	model := provider.models[n].name
+	if !state.aiModelAvailable(provider.id, model) {
 		return
 	}
-	state.aiWrote()
+	state.ai.modelProvider, state.ai.modelName = provider.id, model
+	state.ai.modelPinned = true
 }

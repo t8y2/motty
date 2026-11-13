@@ -131,7 +131,7 @@ func (state *State) describe(session *Session) {
 		default:
 			session.details[stageConnect] = jump
 		}
-	case session.serverVersion != "":
+	case session.serverVersion != "" && !session.failed():
 		session.details[stageConnect] = fmt.Sprintf(m.ConnDetailServerFmt, session.serverVersion)
 	case session.failed() && session.stage == stageConnect:
 		if session.jumpPath != "" {
@@ -157,7 +157,7 @@ func (state *State) describe(session *Session) {
 	}
 
 	session.details[stageHostKey] = ""
-	if !session.host.isSSH() && !session.host.tunneled() && session.host.Protocol != protocolVNC {
+	if !session.host.isSSH() && !session.host.tunneled() && !session.desktopTunnel && session.host.Protocol != protocolVNC {
 		// Nothing to verify and no one to log in to: whatever asks for a login
 		// does so in the terminal.
 		session.details[stageLogin] = ""

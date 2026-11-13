@@ -295,6 +295,27 @@ git -C "$work/motty" checkout -q --detach "$commit"
 (cd "$work/viva" && go build -o "$work/viva-cli" ./cmd/viva)
 
 cd "$work/motty"
+# The Windows local terminal loads the bundled ConPTY pair from conpty/<arch>.
+# The same files go into the installer and the portable zip; OpenConsole.exe
+# matches the kernel architecture, so an x64 build also carries the arm64 host
+# for Windows on ARM.
+windows_conpty_files() {
+	case "$1" in
+	amd64) cat <<-'EOF'
+	internal/localshell/conpty/LICENSE.txt=conpty/LICENSE.txt
+	internal/localshell/conpty/x64/arm64/OpenConsole.exe=conpty/x64/arm64/OpenConsole.exe
+	internal/localshell/conpty/x64/conpty.dll=conpty/x64/conpty.dll
+	internal/localshell/conpty/x64/x64/OpenConsole.exe=conpty/x64/x64/OpenConsole.exe
+	EOF
+	;;
+	arm64) cat <<-'EOF'
+	internal/localshell/conpty/LICENSE.txt=conpty/LICENSE.txt
+	internal/localshell/conpty/arm64/arm64/OpenConsole.exe=conpty/arm64/arm64/OpenConsole.exe
+	internal/localshell/conpty/arm64/conpty.dll=conpty/arm64/conpty.dll
+	EOF
+	;;
+	esac
+}
 build_package() {
 	local target=$1 arch=$2 program
 	shift 2
@@ -308,9 +329,26 @@ build_package() {
 	# Windows executable is signed here, before the check reads its bytes.
 	[ "$target" != windows ] || "$work/viva-cli" sign --target windows --program "$program" || return
 	go run ./tools/checkbuild -program "$program" -revision "$commit" -time "$commit_time" -target "$target" -arch "$arch" || return
+	local -a conpty=() portable=()
+	if [ "$target" = windows ]; then
+		local entry
+		while IFS= read -r entry; do
+			conpty+=(--file "$entry")
+			portable+=(-file "$entry")
+		done < <(windows_conpty_files "$arch")
+		[ ${#conpty[@]} -gt 0 ] || { echo "   no conpty files for windows/$arch" >&2; return 1; }
+	fi
 	# The portable copy holds these same signed bytes (see internal/datadir).
-	[ "$target" != windows ] || go run ./tools/portablezip -program "$program" -time "$commit_time" -o "$out/motty-$version-windows-$arch.zip" || return
-	"$work/viva-cli" package --target "$target" --arch "$arch" --program "$program" "$@"
+	if [ "$target" = windows ]; then
+		go run ./tools/portablezip -program "$program" -time "$commit_time" \
+			-o "$out/motty-$version-windows-$arch.zip" "${portable[@]+"${portable[@]}"}" || return
+		unzip -l "$out/motty-$version-windows-$arch.zip" > "$work/zip-list-$arch.txt" || return
+		if ! grep -q ' conpty/' "$work/zip-list-$arch.txt"; then
+			echo "   the portable zip is missing its conpty files" >&2
+			return 1
+		fi
+	fi
+	"$work/viva-cli" package --target "$target" --arch "$arch" --program "$program" "${conpty[@]+"${conpty[@]}"}" "$@"
 }
 package() { build_package "$@" 2>&1 | sed 's/^/   /'; }
 

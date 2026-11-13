@@ -23,6 +23,8 @@ const (
 	Exec
 	// Write changes remote files.
 	Write
+	// NoteWrite changes the local note library, not a remote file.
+	NoteWrite
 )
 
 func (k Kind) String() string {
@@ -33,6 +35,8 @@ func (k Kind) String() string {
 		return "exec"
 	case Write:
 		return "write"
+	case NoteWrite:
+		return "note_write"
 	}
 	return "unknown"
 }
@@ -58,7 +62,7 @@ type RequestAgentModeArgs struct {
 func RequestAgentModeSpec() Spec {
 	return Spec{
 		Name:        NameRequestAgentMode,
-		Description: "Ask mode only. Call this when the user asks you to run, change, inspect a session, or otherwise use a tool that Ask mode withholds. It runs nothing; the application asks the user to switch to Agent mode and retry. Do not use it for an ordinary question that can be answered from the attached terminal text.",
+		Description: "Ask mode only. Call this when the user asks you to run, change, inspect a session, or otherwise use a tool that Ask mode withholds. It runs nothing; the application asks the user to switch to Agent mode and retry. Do not use it for an ordinary question that can be answered from the attached terminal text or with note_query when that tool is offered.",
 		Schema: json.RawMessage(`{"type":"object","properties":{` +
 			`"reason":{"type":"string","maxLength":512,"description":"One short sentence saying what needs to run or why tools are needed."},` +
 			`"command":{"type":"string","maxLength":8192,"description":"Optional command you would run if switched."}` +
@@ -102,6 +106,11 @@ const (
 	NameSFTPRead         = "sftp_read"
 	NameSFTPWrite        = "sftp_write"
 	NameSFTPRemove       = "sftp_remove"
+	// ZMODEM over the visible terminal. A jump host's shell, then another ssh,
+	// is not the host SFTP talks to; rz and sz ride that shell.
+	NameRZSZUpload   = "rzsz_upload"
+	NameRZSZDownload = "rzsz_download"
+	NameRZSZStatus   = "rzsz_status"
 
 	// NameRequestAgentMode is the one tool Ask mode offers. It runs nothing:
 	// the application asks the user to switch to Agent and retry.
@@ -131,7 +140,7 @@ const (
 var specs = []Spec{
 	{
 		Name:        NameListSessions,
-		Description: "List the open terminal sessions with their ids, titles, hosts and connection state, and say which one is active. Call this first when you need a session id.",
+		Description: "List the open terminal sessions with their ids, titles, hosts and connection state, and say which one is active. Call this first when you need a session id. Each session includes host_id (persistent saved-host ID), host_name and host_group (catalog group path). Empty host_id means no saved host; empty group for a saved host means root. Session aliases are not host identities.",
 		Schema:      json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 		Kind:        Read,
 	},
@@ -268,7 +277,7 @@ func Targeted() []Spec {
 		}
 		switch spec.Name {
 		case NameListSessions:
-			spec.Description = "List this request's locked primary connection and explicitly @referenced sessions with ids, titles, addresses and readiness. Active marks the locked primary, not the currently visible tab. Call this first when you need a session id."
+			spec.Description = "List this request's locked primary connection and explicitly @referenced sessions with ids, titles, addresses and readiness. Active marks the locked primary, not the currently visible tab. Call this first when you need a session id. Each session includes host_id (persistent saved-host ID), host_name and host_group (catalog group path). Empty host_id means no saved host; empty group for a saved host means root. Session aliases are not host identities."
 		case NameTerminalExec:
 			spec.Description = "Run one command in the addressed terminal session and return its output and, in a shell, its exit status. On a Telnet or serial device console it is sent exactly as typed and finishes when the prompt returns; there is no exit status. If the session id is omitted, use the locked primary. Explicitly supply the id for an @referenced session; cross-connection execution requires approval naming that actual target. The command remains visible in that session's tab and must finish within the timeout."
 		}
@@ -298,7 +307,7 @@ func Headless(commands, writeFiles, localFiles bool) []Spec {
 	out := make([]Spec, 0, len(specs))
 	for _, spec := range specs {
 		switch {
-		case spec.Name == NameTerminalRead, spec.Name == NameToolOutputRead, isJobTool(spec.Name), spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
+		case spec.Name == NameTerminalRead, spec.Name == NameToolOutputRead, isJobTool(spec.Name), isRZSZ(spec.Name), spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
 			continue
 		}
 		schema := strings.ReplaceAll(string(spec.Schema), sessionHint, hostHint)
@@ -335,8 +344,19 @@ func isJobTool(name string) bool {
 	return name == NameTerminalStart || name == NameTerminalPoll || name == NameTerminalStop
 }
 
+// isRZSZ reports the terminal ZMODEM tools. They need the visible shell, so a
+// headless server, which has no terminal, does not offer them.
+func isRZSZ(name string) bool {
+	return name == NameRZSZUpload || name == NameRZSZDownload || name == NameRZSZStatus
+}
+
 // Lookup finds a tool by name.
 func Lookup(name string) (Spec, bool) {
+	for _, spec := range noteSpecs {
+		if spec.Name == name {
+			return spec, true
+		}
+	}
 	if name == NameUploadSelected {
 		return selectedUploadSpec, true
 	}

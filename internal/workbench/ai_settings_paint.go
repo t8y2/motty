@@ -51,6 +51,18 @@ var (
 	aiFormKindChoices        = [...]string{store.KindOpenAI, store.KindAnthropic}
 	aiFormAuthChoices        = [...]string{store.AuthStyleAPIKey, store.AuthStyleBearer}
 	aiFormFormatChoices      = [...]string{"", store.APIFormatResponses}
+	aiModelFilterChoices     = [...]aiModelFilter{
+		aiModelFilterAll,
+		aiModelFilterAvailable,
+		aiModelFilterFailed,
+		aiModelFilterEnabled,
+	}
+	aiModelSortChoices = [...]aiModelSort{
+		aiModelSortDefault,
+		aiModelSortLatencyAsc,
+		aiModelSortLatencyDesc,
+		aiModelSortNameAsc,
+	}
 )
 
 func (state *State) aiRiskLabel(level risk.Level) string {
@@ -460,6 +472,50 @@ func (state *State) paintAIModels(page *settingsPage) {
 		}
 		if total == 0 {
 			page.aiText(aiModelRowHeight, m.ModelsEmpty, metrics.FontSizeS, gfx.WeightRegular, pal.muted)
+		} else {
+			totalCnt, availCnt, failCnt, _ := state.aiModelCounts(provider.ID)
+			filterName := func(filter aiModelFilter) string {
+				switch filter {
+				case aiModelFilterAvailable:
+					return fmt.Sprintf("%s (%d)", m.ModelFilterAvailable, availCnt)
+				case aiModelFilterFailed:
+					return fmt.Sprintf("%s (%d)", m.ModelFilterFailed, failCnt)
+				case aiModelFilterEnabled:
+					return m.ModelFilterEnabled
+				default:
+					return fmt.Sprintf("%s (%d)", m.ModelFilterAll, totalCnt)
+				}
+			}
+			sortName := func(s aiModelSort) string {
+				switch s {
+				case aiModelSortLatencyAsc:
+					return m.ModelSortLatencyAsc
+				case aiModelSortLatencyDesc:
+					return m.ModelSortLatencyDesc
+				case aiModelSortNameAsc:
+					return m.ModelSortNameAsc
+				default:
+					return m.ModelSortDefault
+				}
+			}
+
+			filterWidth := settingsChoiceWidth(page, aiModelFilterChoices[:], filterName)
+			sortWidth := settingsChoiceWidth(page, aiModelSortChoices[:], sortName)
+			page.rowOf(46).PadX(18).Gap(10).Children(func() {
+				ui.Row(c).Grow(1).Gap(12).Items(ui.Center).Children(func() {
+					choice := ui.Choice(page.c, &cfg.modelFilter, aiModelFilterChoices[:], filterName).Width(filterWidth)
+					if choice.Changed() {
+						cfg.page = 0
+						state.aiSettingsChanged()
+					}
+					ui.Spacer(c)
+					choice = ui.Choice(page.c, &cfg.modelSort, aiModelSortChoices[:], sortName).Width(sortWidth)
+					if choice.Changed() {
+						cfg.page = 0
+						state.aiSettingsChanged()
+					}
+				})
+			})
 		}
 		filteredModels := state.aiFilteredModels(provider.ID)
 		filteredTotal := len(filteredModels)
@@ -476,7 +532,10 @@ func (state *State) paintAIModels(page *settingsPage) {
 			model := filteredModels[cfg.page*aiModelPageSize+row]
 			isDefault := state.aiIsDefault(provider.ID, model.Name)
 			nameColor := pal.text
-			if !model.Enabled {
+			nameWeight := gfx.WeightRegular
+			if isDefault {
+				nameWeight = gfx.WeightMedium
+			} else if !model.Enabled {
 				nameColor = pal.muted
 			}
 			res, hasRes := state.aiGetProbeResult(provider.ID, model.Name)
@@ -489,7 +548,7 @@ func (state *State) paintAIModels(page *settingsPage) {
 				}
 				// Name and reasoning chip (left-aligned, clickable to configure reasoning effort)
 				ui.Row(c).Grow(1).Gap(8).Items(ui.Center).Children(func() {
-					ui.Text(c, label).FontSize(metrics.FontSizeM).Color(nameColor).MarginSides(0, 4, 0, 0)
+					ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(nameWeight).Color(nameColor).MarginSides(0, 4, 0, 0)
 					_, _, isReasoning, isOverride, isDisabled := state.aiModelReasoningInfo(&model)
 					var (
 						chipText      string

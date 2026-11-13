@@ -1,0 +1,56 @@
+# Rapidly switch sidebar pages, then settings categories: the Windows jank report.
+place 200 100 2000 1300
+focus
+sleep 1500
+mark idle
+sleep 1200
+mark nav-switch
+clickw 102 125
+sleep 40
+clickw 102 165
+sleep 40
+clickw 102 125
+sleep 40
+clickw 102 165
+sleep 40
+clickw 102 125
+sleep 40
+clickw 102 165
+sleep 40
+clickw 102 125
+sleep 40
+clickw 102 165
+sleep 40
+clickw 102 125
+sleep 40
+clickw 102 165
+sleep 40
+mark nav-switch-end
+sleep 600
+mark settings-open
+clickw 102 610
+sleep 1500
+mark cat-switch
+clickw 300 168
+sleep 40
+clickw 300 208
+sleep 40
+clickw 300 168
+sleep 40
+clickw 300 248
+sleep 40
+clickw 300 168
+sleep 40
+clickw 300 288
+sleep 40
+clickw 300 168
+sleep 40
+clickw 300 328
+sleep 40
+clickw 300 168
+sleep 40
+clickw 300 208
+sleep 40
+mark cat-switch-end
+shot after-switch
+sleep 500

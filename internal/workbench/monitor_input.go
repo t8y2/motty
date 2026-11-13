@@ -8,8 +8,8 @@ import (
 
 func (state *State) monitorScrollArea(p *monitorView) components.ScrollArea {
 	b := state.monitorRect
-	b.Y += infoBarHeight + monitorControlsHeight
-	b.Height = max(0, b.Height-infoBarHeight-monitorControlsHeight-24)
+	b.Y += infoBarHeight + monitorControlsHeight + monitorHostInfoHeight
+	b.Height = max(0, b.Height-infoBarHeight-monitorControlsHeight-monitorHostInfoHeight-24)
 	return components.BeginScrollArea(nil, state.Theme(), b, gfx.Size{Width: b.Width, Height: p.contentHeight}).Offset(0, p.scroll)
 }
 

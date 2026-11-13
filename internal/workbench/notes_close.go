@@ -14,6 +14,10 @@ var (
 	hitNoteExitDiscard = tree.ID(noteExitHits, "discard")
 )
 
+func isNoteExitHit(id gfx.ID) bool {
+	return id == hitNoteExitCancel || id == hitNoteExitRetry || id == hitNoteExitDiscard
+}
+
 type noteExitRequest struct{ allow func() }
 
 func (s *State) confirmNoteClose(allow func()) bool {

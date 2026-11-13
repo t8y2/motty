@@ -191,6 +191,9 @@ func (state *State) rebuildCommandPalette() {
 			if session.desk != nil && session.host.Protocol == protocolVNC {
 				palette.add(messages.Desktop.SecurityDetails, hitDesktopSecurity)
 			}
+			if session.canViewRemoteLogs() {
+				palette.add(messages.RemoteLogs.Title, hitServerLogs)
+			}
 			if _, ok := state.localProxyTarget(session); ok && !session.host.isDesktop() {
 				palette.addDetailed(messages.LocalProxy.Title, state.sessionAddress(session.host), hitLocalProxyOpen)
 			}
@@ -345,6 +348,11 @@ func (state *State) clickCommandPalette(id gfx.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
 		state.closeCommandPalette()
+	case hitCommandsBarToggle:
+		// The bar's checkbox is a control of the picker's chrome, not a row of
+		// its searchable list. It switches in place without closing the dialog.
+		state.toggleCommandBarFromPicker()
+		return
 	case hitCommandPaletteSearch:
 		return
 	default:

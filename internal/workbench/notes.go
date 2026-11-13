@@ -15,7 +15,6 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
 	"github.com/vivaui/viva/text"
-	"motty/internal/configstore"
 	"motty/internal/i18n"
 )
 
@@ -27,6 +26,9 @@ type savedNoteView struct {
 	Panel     bool     `json:"panel,omitempty"`
 	Selected  string   `json:"selected,omitempty"`
 	Folder    string   `json:"folder,omitempty"`
+	// WindowMode is the mode a note window opens in: the one last chosen in a
+	// note window, which is its own choice, not the library's.
+	WindowMode noteMode `json:"window_mode,omitempty"`
 }
 
 type savedNote struct {
@@ -51,7 +53,10 @@ type savedNote struct {
 
 // noteLink is where a linked note's text is stored.
 type noteLink struct {
-	Path string `json:"path"`
+	// WriteBase is the disk body fingerprint before a committed library edit.
+	// It preserves pending text across restarts if the later file write fails.
+	WriteBase string `json:"write_base,omitempty"`
+	Path      string `json:"path"`
 	// Tree is the linked folder this note's file belongs to, or empty for a file
 	// linked on its own. The folder's own link follows its files.
 	Tree string `json:"tree,omitempty"`
@@ -85,7 +90,6 @@ type notesUI struct {
 	windowView bool
 	viewport   gfx.Rect
 	selection  noteEditorSelection
-	sidebar    *noteSidebar
 
 	groupJobs []*noteGroupJob
 
@@ -97,7 +101,6 @@ type notesUI struct {
 	folders                                 []savedNoteFolder
 	selected, folder                        string
 	query                                   text.Editor
-	panel                                   bool
 	sideAll                                 bool
 	error                                   string
 	code                                    components.CodeEditor
@@ -197,7 +200,7 @@ func (s *State) noteViewEditor(n *notesUI, id gfx.ID, activate bool) *text.Edito
 	if n.view.menu != "" {
 		return nil
 	}
-	if !n.windowView && (s.modal != modalNone || (s.activeSection != sectionNotes && !(n.panel && s.activeSection == sectionTerminal))) {
+	if !n.windowView && (s.modal != modalNone || (s.activeSection != sectionNotes && !(s.notesPanelOpen() && s.activeSection == sectionTerminal))) {
 		return nil
 	}
 	switch id {
@@ -292,16 +295,9 @@ func (s *State) flushNoteBuffer(id string, buffer *noteDraft) bool {
 	if next.Title == n.draft.Title && next.Body == n.draft.Body && slices.Equal(next.Tags, n.draft.Tags) {
 		return true
 	}
-	if next.Body != n.draft.Body {
-		h := noteRevision(n.draft)
-		next.Revision = noteID()
-		if !slices.Contains(next.Ancestors, h) {
-			next.Ancestors = append(slices.Clone(next.Ancestors), h)
-		}
-	}
-	next.Updated = s.options.WallNow().UTC().Format(time.RFC3339Nano)
-	raw := mustNoteJSON(recordPayload{Data: mustNoteJSON(next)})
-	if len(raw) > configstore.MaxPayload {
+	var err error
+	next, err = prepareNoteUpdate(n.draft, next, s.options.WallNow())
+	if err != nil {
 		buffer.problem = s.noteText("Note exceeds the 1 MiB record limit; draft retained.", "笔记超过 1 MiB 记录上限，草稿已保留。")
 		return false
 	}
@@ -446,11 +442,12 @@ func (s *State) selectNoteWithoutSave(id string) {
 
 }
 func (s *State) autosaveNotes(c *gfx.Canvas) {
+	s.autosaveNoteSidebars(c)
 	if len(s.notes.groupJobs) > 0 && !s.noteComposing() {
 		c.AfterPaint(func() { s.save() })
 	}
 
-	if s.notes.hostRefreshNeeded && (s.activeSection == sectionNotes || s.activeSection == sectionTerminal && s.notes.panel) {
+	if s.notes.hostRefreshNeeded && (s.activeSection == sectionNotes || s.activeSection == sectionTerminal && s.notesPanelOpen()) {
 		c.AfterPaint(func() { s.refreshNoteHosts() })
 	}
 	if !s.noteComposing() && (len(s.notes.hostUpdates) > 0 || s.notes.hostScanAgain && !s.notes.hostScanRunning) {
@@ -488,21 +485,22 @@ func (s *State) clickNotes(id gfx.ID) bool {
 		return true
 	}
 	if id == hitNotesPanel {
-		n.panel = !n.panel
-		if n.panel {
-			s.noteSidebarState()
+		v := s.noteSidebarState()
+		v.open = !v.open
+		if v.open {
 			s.refreshNoteHosts()
-		} else if n.sidebar != nil {
-			n.sidebar.stopCapture()
+		} else {
+			v.stopCapture()
 		}
-		s.fitTerminals()
+		s.fitWorkspaceTerminals(s.deck.ActiveWorkspace())
+		s.save()
 		return true
 	}
 	if s.noteSidebarVisible() {
 		return s.clickNoteSidebar(id)
 	}
 
-	if s.modal != modalNone || (s.activeSection != sectionNotes && !(n.panel && s.activeSection == sectionTerminal)) {
+	if s.modal != modalNone || (s.activeSection != sectionNotes && !(s.notesPanelOpen() && s.activeSection == sectionTerminal)) {
 		return false
 	}
 	if n.confirm != "" {

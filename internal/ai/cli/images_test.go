@@ -25,7 +25,7 @@ func TestCodexAndOpenCodeReadPicturesFromPrivateFiles(t *testing.T) {
 	for kind, flag := range map[string]string{"codex-cli": "--image=", "opencode-cli": "--file="} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
-			cmd, err := buildCommand(kind, command{program: "agent"}, imageConversation(), dir, "http://127.0.0.1:1/mcp", "token", nil)
+			cmd, err := buildCommand(kind, command{program: "agent"}, imageConversation(), dir, "http://127.0.0.1:1/mcp", "token", nil, "motty_session")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -57,8 +57,9 @@ func TestCodexAndOpenCodeReadPicturesFromPrivateFiles(t *testing.T) {
 }
 
 func TestNoPicturesAddNoFlags(t *testing.T) {
-	for _, kind := range []string{"claude-code-cli", "codex-cli", "opencode-cli"} {
-		cmd, err := buildCommand(kind, command{program: "agent"}, llm.Request{Model: "default"}, t.TempDir(), "http://127.0.0.1:1/mcp", "token", nil)
+	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
+	for _, kind := range []string{"claude-code-cli", "codex-cli", "opencode-cli", "pi-cli"} {
+		cmd, err := buildCommand(kind, command{program: "agent"}, llm.Request{Model: "default"}, t.TempDir(), "http://127.0.0.1:1/mcp", "token", nil, "motty_session")
 		if err != nil {
 			t.Fatal(err)
 		}

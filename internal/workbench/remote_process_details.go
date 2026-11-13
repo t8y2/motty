@@ -433,14 +433,14 @@ func (state *State) remoteProcessDetailsKey(event gfx.KeyEvent) (gfx.EventResult
 				return gfx.EventResult{Focus: next, FocusVisible: true, Handled: true, Repaint: true}, true
 			}
 		}
-		if event.Key == gfx.KeyTab && event.Modifiers&^gfx.ModifierShift == 0 {
-			return gfx.EventResult{Handled: true, ContinueTraversal: true}, true
-		}
 		if event.Key == gfx.KeyEscape && !event.Repeat {
 			state.closeRemoteProcessDetails()
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-		return gfx.EventResult{Handled: true}, true
+		// The dialog is the page's: its focus trap and the Router's activation of
+		// the focused footer button take every key this handler leaves empty,
+		// while none of the page's own shortcuts may act underneath it.
+		return gfx.EventResult{}, true
 	}
 	return gfx.EventResult{}, false
 }

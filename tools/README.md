@@ -19,6 +19,27 @@ in a package.
 
 Run the first two from the repository root.
 
+## Linux tray registration
+
+`e2e/tray_registration_e2e.js` runs a real Motty executable against an isolated
+session bus and a GLib StatusNotifier host. The host requests the icon and menu
+before acknowledging registration. Both must be readable without an unrelated
+bus event waking the application. The probe emits such an event afterward to
+distinguish a stalled dispatch queue from invalid icon or menu data, and exits
+nonzero if the initial requests stalled.
+
+This opens a real window: run it only on an authorized Linux test desktop, not
+on the local workstation. It requires `gjs`, `dbus-run-session`, a display and
+the graphics libraries needed by the executable. Use a fresh temporary home:
+
+```sh
+HOME=$(mktemp -d) MOTTY_LANG=zh-CN dbus-run-session -- \
+  gjs -m tools/e2e/tray_registration_e2e.js /tmp/motty-linux
+```
+
+Preserve the desktop's `DISPLAY` and `XAUTHORITY` when changing `HOME`. This is
+a real protocol and application check, not a GNOME Shell rendering check.
+
 ## Development launch and signing
 
 Use `make run` for one build and `make dev` for the edit loop. Development uses

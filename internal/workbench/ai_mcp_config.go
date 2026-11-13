@@ -125,6 +125,10 @@ func aiMCPConfig(client aiMCPClient, endpoint, token string) string {
 	case aiMCPCherry:
 		delete(server, "url")
 		server["baseUrl"], server["type"], server["name"] = endpoint, "streamableHttp", "motty"
+	case aiMCPPi:
+		// Pi's default exposure keeps MCP tools out of the model's tool list and
+		// reachable only from codemode scripts; direct exposure declares them.
+		server["exposure"], server["timeout"] = "direct", 900
 	}
 	if client == aiMCPVSCode {
 		root = "servers"

@@ -156,6 +156,9 @@ func (state *State) workspaceCardText(item workspaceArrangementItem) (Host, stri
 		detail := strings.Trim(strings.Join([]string{host.Group, host.Tags}, " · "), " ·")
 		if host.ID == localHostID {
 			detail = state.messages.WorkspaceLocalTerminalHint
+			if shell, ok := workspaceLocalShellRef(host.CatalogID); ok {
+				detail = shell
+			}
 		}
 		return host, host.Label, state.sessionAddress(host), detail, true
 	}
@@ -190,6 +193,11 @@ func (state *State) paintWorkspaceHostCard(canvas *gfx.Canvas, region workspaceC
 	ink := state.workspaceStatusInk(pal.muted)
 	width := max(0, box.Width-20)
 	monitorLabel(canvas, elide(canvas, address, 12, gfx.WeightRegular, width), gfx.Rect{X: box.X + 10, Y: box.Y + 40, Width: width, Height: 20}, 12, ink, gfx.WeightRegular)
+	var command WorkspaceCommand
+	if region.view == workspaceCardsTemplate && available && workspaceCommandHost(host) {
+		command = state.workspaceCardCommand(region.template, item.host)
+	}
+	showCommand := region.view == workspaceCardsTemplate && available && workspaceCommandHost(host) && command.Command != ""
 	detailWidth := width
 	if region.view == workspaceCardsDraft && state.workspaceDraft.mode == workspaceDraftEdit {
 		detailWidth = max(0, box.Width-44)
@@ -197,6 +205,9 @@ func (state *State) paintWorkspaceHostCard(canvas *gfx.Canvas, region workspaceC
 	monitorLabel(canvas, elide(canvas, detail, 11, gfx.WeightRegular, detailWidth), gfx.Rect{X: box.X + 10, Y: box.Y + 66, Width: detailWidth, Height: 18}, 11, ink, gfx.WeightRegular)
 	canvas.HitWithOptions(region.id, box, name, gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand, Hint: state.messages.WorkspaceCardReorderHint,
 		Description: address + " · " + detail, PosInSet: int32(region.index + 1), SetSize: int32(count), Selected: active})
+	if showCommand {
+		state.paintWorkspaceInline(canvas, region, item.host, command, gfx.Rect{X: box.X + 10, Y: box.Y + 88, Width: width, Height: 52})
+	}
 	drag := &state.workspaceCardDrag
 	if workspaceCardDropTarget(drag, region) {
 		if drag.zone == zoneSwap {

@@ -55,6 +55,7 @@ type Host struct {
 	User         string
 	Port         uint16
 	IdentityFile string
+	Options      *ConnectionOptions
 	ProxyJump    []JumpHost
 	// ProxyCommand is the command line as written, its %-tokens left for the
 	// connection to fill in. Empty when none applies, or when it is "none".
@@ -299,6 +300,7 @@ func (p *parser) evaluate(alias string) Host {
 	// ProxyJump and ProxyCommand compete: whichever comes first decides, as in
 	// OpenSSH.
 	var hostNameSet, userSet, portSet, identitySet, proxySet bool
+	var intervalSet, countSet, identitiesOnlySet bool
 	for _, d := range p.directives {
 		if d.name == "host" {
 			active = matchPatternList(d.args, alias)
@@ -342,9 +344,7 @@ func (p *parser) evaluate(alias string) Host {
 			}
 			host.Port = port
 		case "identityfile":
-			if identitySet {
-				continue
-			}
+			first := !identitySet
 			identitySet = true
 			value, ok := p.singleValue(d)
 			if !ok || p.rejectDynamic(d, value) {
@@ -355,7 +355,54 @@ func (p *parser) evaluate(alias string) Host {
 				p.warn(WarningDynamicValue, d.path, d.line, d.name, "IdentityFile uses an unsupported home expansion")
 				continue
 			}
-			host.IdentityFile = expanded
+			if first {
+				host.IdentityFile = expanded
+			}
+			if host.Options == nil {
+				host.Options = &ConnectionOptions{}
+			}
+			host.Options.IdentityFiles = append(host.Options.IdentityFiles, expanded)
+		case "serveraliveinterval", "serveralivecountmax", "identitiesonly":
+			seen := &intervalSet
+			if d.name == "serveralivecountmax" {
+				seen = &countSet
+			} else if d.name == "identitiesonly" {
+				seen = &identitiesOnlySet
+			}
+			if *seen {
+				continue
+			}
+			*seen = true
+			value, ok := p.singleValue(d)
+			if !ok {
+				continue
+			}
+			if d.name == "identitiesonly" {
+				value = strings.ToLower(value)
+				if value != "yes" && value != "no" {
+					p.warn(WarningInvalidSyntax, d.path, d.line, d.name, "expected yes or no")
+					continue
+				}
+				if host.Options == nil {
+					host.Options = &ConnectionOptions{}
+				}
+				enabled := value == "yes"
+				host.Options.IdentitiesOnly = &enabled
+				continue
+			}
+			number, err := parseNonnegativeOption(value, d.name == "serveraliveinterval")
+			if err != nil {
+				p.warn(WarningInvalidSyntax, d.path, d.line, d.name, err.Error())
+				continue
+			}
+			if host.Options == nil {
+				host.Options = &ConnectionOptions{}
+			}
+			if d.name == "serveraliveinterval" {
+				host.Options.ServerAliveInterval = &number
+			} else {
+				host.Options.ServerAliveCountMax = &number
+			}
 		case "proxycommand":
 			if proxySet {
 				continue
@@ -526,7 +573,7 @@ func hasDynamicValue(value string) bool {
 
 func isSupportedDirective(name string) bool {
 	switch name {
-	case "hostname", "user", "port", "identityfile", "proxyjump", "proxycommand":
+	case "hostname", "user", "port", "identityfile", "proxyjump", "proxycommand", "serveraliveinterval", "serveralivecountmax", "identitiesonly":
 		return true
 	default:
 		return false

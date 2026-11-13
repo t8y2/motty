@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"math"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -256,6 +255,9 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 		}
 		return handled
 	}
+	if result, handled := w.columnResizePointer(event); handled {
+		return result
+	}
 	if result, ok := w.directoryTreePointer(event); ok {
 		return result
 	}
@@ -348,11 +350,7 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 			if event.Target == id && event.Button == gfx.PointerButtonSecondary {
 				w.cancelDrag()
 				w.activeLocal, w.view.local = side == 0, side == 0
-				folder := w.folder(side == 0)
-				for i := range folder.rows {
-					folder.rows[i].selected = false
-				}
-				folder.selected = -1
+				w.folder(side == 0).clearSelection()
 				w.selectionChanged(side == 0)
 				w.ui.menuOpen, w.ui.menuAt = true, gfx.Point{X: event.X, Y: event.Y}
 				return handled
@@ -471,6 +469,14 @@ func (w *sftpWindow) click(id gfx.ID) {
 			if err := w.owner.copySFTPPaths(w.folder(w.activeLocal), w.activeLocal); err != nil {
 				w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
 			}
+		}
+		if id == hitSFTPMenuCopyFiles {
+			if _, err := w.owner.copySFTPSelection(w.view); err != nil {
+				w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
+			}
+		}
+		if id == hitSFTPMenuPasteFiles {
+			w.pasteClipboard()
 		}
 		return
 	}
@@ -831,7 +837,16 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			return handled
 		}
 	case gfx.KeyDelete:
-		if !w.activeLocal && !w.view.busy && w.connected() {
+		if w.activeLocal {
+			if !w.view.localBusy && w.pendingLocal == "" && w.browse.pending == nil {
+				w.cancelDrag()
+				w.view.local = true
+				w.owner.openSFTPDialog(w.view, sftpDialogDelete)
+				return handled
+			}
+			return handled
+		}
+		if !w.view.busy && w.connected() {
 			w.cancelDrag()
 			w.view.local = false
 			w.owner.openSFTPDialog(w.view, sftpDialogDelete)
@@ -913,6 +928,26 @@ func (w *sftpWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 		w.activeLocal, w.view.local = local, local
 	}
 	handled := gfx.EventResult{Handled: true, Repaint: true}
+	// Copy and paste are application actions with bindings the settings page
+	// owns, so the window follows the chord the user kept or chose.
+	if chord, ok := keymap.FromEvent(event); ok {
+		switch w.owner.shortcuts.actionFor(chord) {
+		case shortcutCopy:
+			if event.Repeat {
+				return handled
+			}
+			if _, err := w.owner.copySFTPSelection(w.view); err != nil {
+				w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
+			}
+			return handled
+		case shortcutPaste:
+			if event.Repeat {
+				return handled
+			}
+			w.pasteClipboard()
+			return handled
+		}
+	}
 	switch strings.ToLower(event.Text) {
 	case "f":
 		if event.Modifiers != keymap.Primary {
@@ -1029,13 +1064,6 @@ func (w *sftpWindow) fileDrop(event gfx.FileDropEvent) gfx.EventResult {
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	w.cancelDrag()
-	for _, location := range event.Paths {
-		info, err := os.Lstat(location)
-		if err != nil {
-			w.notices.show(w.owner.messages.SFTPWindow.Title, err.Error(), components.ToastError)
-			continue
-		}
-		w.queueEntries(true, []sftpclient.Entry{{Name: filepath.Base(location), Mode: info.Mode()}}, filepath.Dir(location), target)
-	}
+	w.queueLocalPaths(event.Paths, target)
 	return gfx.EventResult{Handled: true, Repaint: true}
 }

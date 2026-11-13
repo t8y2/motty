@@ -71,8 +71,16 @@ func main() {
 		}
 		allowedTargets = append(allowedTargets, directTarget{requested: target, dial: target})
 	}
+	// The banner says which server the client thinks it talks to. The default
+	// names no real implementation, so the client keeps its shell-integration
+	// probes to itself; a test that needs them (path completion reads the
+	// shell's own directory) can claim an OpenSSH banner for one run.
+	banner := os.Getenv("E2ESSHD_BANNER")
+	if banner == "" {
+		banner = "SSH-2.0-GopE2E"
+	}
 	config := &ssh.ServerConfig{
-		ServerVersion: "SSH-2.0-GopE2E",
+		ServerVersion: banner,
 		PublicKeyCallback: func(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 			if bytes.Equal(key.Marshal(), fixture.publicKey.Marshal()) || certs.acceptKey(key) {
 				return nil, nil
@@ -425,18 +433,24 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 						return
 					}
 					go func() { io.Copy(ptmx, channel) }()
-					io.Copy(channel, ptmx)
-					status := uint32(0)
-					if err := command.Wait(); err != nil {
-						status = 1
-						var exit *exec.ExitError
-						if errors.As(err, &exit) {
-							status = uint32(exit.ExitCode())
+					// The output copy runs beside the request loop, as it does for
+					// a plain shell: an sshd keeps answering window-change while
+					// the command owns the pty, and the client's startup shim is
+					// the shell it resizes.
+					go func() {
+						io.Copy(channel, ptmx)
+						status := uint32(0)
+						if err := command.Wait(); err != nil {
+							status = 1
+							var exit *exec.ExitError
+							if errors.As(err, &exit) {
+								status = uint32(exit.ExitCode())
+							}
 						}
-					}
-					channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
-					channel.Close()
-					return
+						channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
+						channel.Close()
+					}()
+					continue
 				}
 				command.Stdout, command.Stderr = channel, channel
 				status := uint32(0)

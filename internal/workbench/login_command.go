@@ -47,9 +47,14 @@ const (
 // loginCommand is the command a terminal still has to type, and when its shell
 // last wrote.
 type loginCommand struct {
-	line string
-	last time.Duration
-	seen bool
+	line          string
+	workspace     string
+	paused        bool
+	waitPrompt    bool
+	loginFirst    bool
+	promptVersion uint64
+	last          time.Duration
+	seen          bool
 }
 
 func (login *loginCommand) arm(line string) { *login = loginCommand{line: line} }
@@ -82,6 +87,12 @@ func (state *State) runLoginCommand(session *Session) {
 	if t == nil || t.login.line == "" || t.shell == nil || t.ended || t.screen.Modes().AltScreen {
 		return
 	}
+	if t.login.paused {
+		return
+	}
+	if t.login.waitPrompt && (!t.promptReady || t.promptDirty || t.promptVersion <= t.login.promptVersion) {
+		return
+	}
 	now := state.now()
 	switch {
 	case t.promptReady && !t.promptDirty:
@@ -92,9 +103,7 @@ func (state *State) runLoginCommand(session *Session) {
 	case t.login.quietWait(now, state.loginQuiet(session)) > 0:
 		return
 	}
-	line := t.login.line
-	t.login = loginCommand{}
-	t.sendAssistant([]byte(line + "\r"))
+	state.sendInitializationCommand(t)
 }
 
 // requestLoginCommandFrames asks for the frame that lets the quiet rule apply to
@@ -104,9 +113,50 @@ func (state *State) requestLoginCommandFrames(canvas *gfx.Canvas) {
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		t := session.term
-		if t == nil || t.login.line == "" || !t.login.seen || t.folderIntegrationSeen || t.shell == nil {
+		if t == nil || t.login.line == "" || t.login.paused || t.login.waitPrompt || !t.login.seen || t.folderIntegrationSeen || t.shell == nil {
 			continue
 		}
 		canvas.RequestFrameIn(max(t.login.quietWait(state.now(), state.loginQuiet(session)), time.Millisecond))
+	}
+}
+
+// armInitialization freezes both commands for this shell, independently of later host edits.
+func (t *terminal) armInitialization(session *Session) {
+	t.login = loginCommand{}
+	if !workspaceCommandHost(session.host) || session.containerCommand != "" {
+		return
+	}
+	command := session.workspaceCommand
+	if command.Command == "" {
+		t.login.arm(session.host.LoginCommand)
+	} else if session.host.LoginCommand != "" {
+		t.login.arm(session.host.LoginCommand)
+		t.login.workspace = command.Command
+		t.login.loginFirst = true
+	} else {
+		t.login.arm(command.Command)
+		t.login.workspace = command.Command
+	}
+}
+
+func (t *terminal) pauseInitialization() {
+	if t.login.workspace != "" {
+		t.login.paused = true
+	}
+}
+
+func (state *State) sendInitializationCommand(t *terminal) {
+	login := t.login
+	if !t.sendAssistant([]byte(login.line + "\r")) {
+		t.login.paused = true
+		if login.workspace != "" {
+			state.showActionWarning(state.messages.WorkspaceCommandField, state.messages.TerminalInput.SendFailed)
+		}
+		return
+	}
+	if login.workspace != "" && login.loginFirst {
+		t.login = loginCommand{line: login.workspace, workspace: login.workspace, waitPrompt: true, paused: login.paused, promptVersion: t.promptVersion}
+	} else {
+		t.login = loginCommand{}
 	}
 }

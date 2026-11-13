@@ -15,6 +15,7 @@ import (
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
+	"motty/internal/charset"
 	"motty/internal/cmdhistory"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
@@ -40,6 +41,17 @@ type Shell interface {
 	Close()
 }
 
+// predictedInput is a shell whose transport reports which input the server has
+// applied and whether the link has been heard from recently. The prediction
+// overlay uses it to tell "the keystroke is still on its way" from "the server
+// applied it and chose not to echo"; a shell that does not implement it keeps
+// the SSH echo timing.
+type predictedInput interface {
+	LastInputID() uint64
+	AckedInputID() uint64
+	LinkAlive() bool
+}
+
 // scrollbackLines is how much history each terminal keeps above its screen.
 const scrollbackLines = 5000
 
@@ -60,12 +72,29 @@ type terminal struct {
 	screen *term.Terminal
 	shell  Shell
 	rx     []byte // scratch for draining output
+	// shellCols and shellRows are the size the shell was last told, wantCols
+	// and wantRows the size a prompt's redraw is waiting for; see resizeShell.
+	shellCols, shellRows int
+	wantCols, wantRows   int
+	shellWaiting         bool
+	shellWaitAt          time.Time
+	// encoding is the remote charset of this shell; empty is UTF-8. decoder
+	// streams its bytes to UTF-8, keeping a partial multibyte character until
+	// the next read completes it. It is nil for a UTF-8 shell.
+	encoding string
+	decoder  *charset.Decoder
 	// pumpBudget is the window-thread time a Wake may spend parsing this
 	// terminal's output; see pumpBudget.
 	pumpBudget time.Duration
 	// zmodemTail is the last bytes of output, in case a transfer header is cut
-	// between two reads.
-	zmodemTail []byte
+	// between two reads. transferLeftover is output that followed the end of
+	// this terminal's transfer and belongs on the screen.
+	zmodemTail       []byte
+	transferLeftover []byte
+	// transferHoldsInput is set while a file transfer owns this shell. What the
+	// user types, and anything else that would write through send, waits until
+	// the transfer ends. The transfer itself writes straight to the shell.
+	transferHoldsInput bool
 
 	told announcement
 	// noShellTold records that a keystroke into a tab with no shell has already
@@ -118,9 +147,16 @@ type terminal struct {
 	// painting and event routing do not rebuild the page's name.
 	controlID gfx.ID
 	parts     gfx.Scope
+	// hintChord and hintLabel are the accept-suggestion badge's text, rebuilt
+	// only when the binding changes so the paint path joins no strings.
+	hintChord keymap.Chord
+	hintLabel string
+	hintRect  gfx.Rect
 	// paintFinding, paintInSplit and paintInactive are the shapes the last
 	// declaration made, which the bar's slots are painted in after the page.
 	paintFinding, paintInSplit, paintInactive bool
+	paintCommandNoticeShown                   bool
+	paintCommandNotice                        ui.Box
 	paintNoticeShown                          bool
 	paintBarBackground                        gfx.Color
 	paintGeometry                             terminalGeometry
@@ -154,6 +190,9 @@ type terminal struct {
 	integrated bool
 	// prediction draws typed text before the server echoes it; see terminalPrediction.
 	prediction terminalPrediction
+	// lastInputID is the transport's id for the newest input written to the
+	// shell, when the shell reports one (mosh does; SSH does not).
+	lastInputID uint64
 	// inputLine is set between the end of this shell's prompt and the next
 	// command start or control key: the cursor is on the line being typed, which
 	// is what lets typed text be shown before its echo (see terminalPrediction).
@@ -178,9 +217,27 @@ type terminal struct {
 	// catalog is public data and works with learning off.
 	completionFeed func() bool
 	// completionInput runs after the shell accepted input, so an open list
-	// closes on the first typed byte instead of offering a stale line.
-	completionInput   func()
+	// closes on the first typed byte instead of offering a stale line. An
+	// automatic path list follows the line instead, and closes only on the keys
+	// that end it.
+	completionInput   func([]byte)
 	suggestionPending *suggestionEcho
+	// acceptedKey is a press the terminal took for a prompt-level overlay (a
+	// suggestion, the password hint). A program that asked for win32 input
+	// records sees releases, so the end of that press is dropped with its
+	// repeats: the program never got the press itself.
+	acceptedKey acceptedKey
+	// idleLastInput is when this shell last received input from any source. The
+	// idle keepalive measures its quiet interval from here.
+	idleLastInput time.Duration
+	// idleInterval and idlePayload are the probe this shell was opened with.
+	// They are frozen here so editing the host changes only the next connection,
+	// as its settings already do. idleTimer holds the wake that keeps probing
+	// while the window is not painting.
+	idleInterval time.Duration
+	idlePayload  []byte
+	idleTimer    *time.Timer
+	idleTimerAt  time.Duration
 
 	// exec is the command the assistant is waiting on in this terminal.
 	exec *aiExec
@@ -320,6 +377,7 @@ func (state *State) configureTerminal(session *Session) {
 	session.term.screen.SetDefaultCursor(state.terminalCursorStyle.termCursorStyle())
 	session.term.openLink = state.openTerminalLink
 	session.term.clock = state.now
+	session.term.adoptIdleClock()
 	// An image decoded off the window thread asks for the frame that shows it.
 	session.term.screen.SetImageWake(state.options.Invalidate)
 	state.attachHistory(session)
@@ -399,6 +457,7 @@ func (state *State) configureTerminal(session *Session) {
 }
 
 func (t *terminal) resetFolderSync() {
+	t.login = loginCommand{}
 	t.inputGuard = terminalInputGuard{}
 	t.suggestionPending = nil
 	t.folderToken = rand.Text()
@@ -450,26 +509,107 @@ func (t *terminal) clearScreen(messages i18n.Messages) {
 	}
 }
 
+// setEncoding chooses the charset of the shell's byte stream. It is called once
+// the shell is attached, before its first output is drained. A UTF-8 (or empty)
+// encoding needs no decoder at all.
+func (t *terminal) setEncoding(encoding string) {
+	if encoding == t.encoding && (encoding == "" || t.decoder != nil) {
+		return
+	}
+	t.encoding = encoding
+	if encoding == "" || encoding == charset.UTF8 {
+		t.decoder = nil
+		return
+	}
+	t.decoder = charset.NewDecoder(encoding)
+}
+
+// decodeRemote converts one slice of the shell's output to UTF-8. A partial
+// multibyte character at the end is held by the decoder for the next slice.
+// The returned buffer is independent of the caller's Drain buffer.
+func (t *terminal) decodeRemote(p []byte) []byte {
+	if t.decoder == nil || len(p) == 0 {
+		return p
+	}
+	return t.decoder.Append(nil, p)
+}
+
+// flushRemoteDecoder emits the last, incomplete character of a stream that has
+// ended. It is called once when the shell closes; see closeDisconnectedShell.
+func (t *terminal) flushRemoteDecoder() []byte {
+	if t.decoder == nil {
+		return nil
+	}
+	return t.decoder.Flush(nil)
+}
+
 func (t *terminal) write(p []byte) {
-	t.selection.clear()
 	t.prediction.reset()
-	t.screen.Write(p)
+	t.writeScreen(p)
 }
 
 // writeRemote commits the shell's output. Unlike write it then lets the
 // prediction compare the screen with what was typed, so an echo of it confirms
 // the overlay instead of dropping it.
 func (t *terminal) writeRemote(p []byte, now time.Duration) {
-	t.selection.clear()
-	t.screen.Write(p)
+	t.writeScreen(p)
 	t.prediction.reconcile(t.screen, now)
 	if t.inputGuard.active && cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) {
 		t.inputGuard.start()
 	}
 }
 
+// observePredictionInput copies what a transport-aware shell knows about the
+// newest input and the link into the prediction overlay. It is cheap and is
+// called on the pump, so an acknowledgement that carried no output is seen.
+func (t *terminal) observePredictionInput() {
+	tracker, ok := t.shell.(predictedInput)
+	if !ok {
+		return
+	}
+	if id := tracker.LastInputID(); id > t.lastInputID {
+		t.lastInputID = id
+	}
+	t.prediction.observe(tracker.AckedInputID(), tracker.LinkAlive())
+}
+
+// writeScreen parses output and keeps the selection where the user put it, as
+// terminals do: output is text arriving, not an edit, so a selection stays on
+// its text and lets scrolling push it up instead of being erased. It is only
+// dropped when the buffer stops holding the lines it points at.
+func (t *terminal) writeScreen(p []byte) {
+	generation := t.screen.BufferGeneration()
+	t.screen.Write(p)
+	t.reconcileSelection(generation)
+}
+
+// reconcileSelection drops a selection whose buffer is gone and trims one
+// whose oldest lines the scrollback has dropped.
+func (t *terminal) reconcileSelection(generation uint64) {
+	if t.screen.BufferGeneration() != generation {
+		t.selection.clear()
+		return
+	}
+	t.selection.trim(t.screen)
+}
+
+// writeShellInput sends text to the remote shell in its own charset. Terminal
+// control sequences are ASCII and survive unchanged; a UTF-8 shell is a plain
+// write. zmodem and other binary protocols call shell.Write directly instead.
+func (t *terminal) writeShellInput(p []byte) bool {
+	if t.encoding == "" || t.encoding == charset.UTF8 {
+		return t.shell.Write(p)
+	}
+	return t.shell.Write(charset.EncodeInput(p, t.encoding))
+}
+
 // send writes input to the shell. Typing returns the view to the live screen.
+// A transfer that owns the shell refuses it: those bytes would land in the
+// protocol instead of in a program.
 func (t *terminal) send(p []byte) bool {
+	if t.transferHoldsInput {
+		return false
+	}
 	return t.sendInput(p, true)
 }
 
@@ -479,6 +619,7 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
+	t.pauseInitialization()
 	if drain && t.takeOutput != nil {
 		t.takeOutput()
 		if t.shell == nil {
@@ -503,8 +644,9 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 			t.onCommand(command)
 		}
 	}
-	accepted := t.shell.Write(p)
+	accepted := t.writeShellInput(p)
 	if accepted {
+		t.observePredictionInput()
 		t.inputSent = true
 		t.noteShellInput(p)
 		if bytes.ContainsAny(p, "\r\n\x03\x04") {
@@ -512,7 +654,7 @@ func (t *terminal) sendInput(p []byte, drain bool) bool {
 		}
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
 		if t.completionInput != nil {
-			t.completionInput()
+			t.completionInput(p)
 		}
 	}
 	return accepted
@@ -529,7 +671,7 @@ func (t *terminal) sendAssistant(p []byte) bool {
 	}
 	t.selection.clear()
 	t.screen.ScrollToBottom()
-	accepted := t.shell.Write(p)
+	accepted := t.writeShellInput(p)
 	t.inputSent = t.inputSent || accepted
 	if accepted {
 		t.noteShellInput(p)
@@ -540,10 +682,11 @@ func (t *terminal) sendAssistant(p []byte) bool {
 // sendSecret writes an autofill answer to the shell. It is not typed input, so
 // it is neither recorded nor mistaken for the user's own keys.
 func (t *terminal) sendSecret(p []byte) bool {
+	t.pauseInitialization()
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
-	accepted := t.shell.Write(p)
+	accepted := t.writeShellInput(p)
 	t.inputSent = t.inputSent || accepted
 	if accepted {
 		t.noteShellInput(p)
@@ -551,7 +694,49 @@ func (t *terminal) sendSecret(p []byte) bool {
 	return accepted
 }
 
+// noteInput restarts this shell's quiet interval. Any input counts, whether the
+// user typed it, an autofill answer wrote it, or a command did.
+func (t *terminal) noteInput() {
+	if t.clock != nil {
+		t.idleLastInput = t.clock()
+	}
+}
+
+// sendIdleKeepAlive writes the probe into the shell without going through the
+// typed-input path: it is neither history nor the user's line, so the recorder,
+// autofill and completion never see it.
+func (t *terminal) sendIdleKeepAlive(p []byte) bool {
+	if t.shell == nil || len(p) == 0 || t.transferHoldsInput {
+		return false
+	}
+	return t.writeShellInput(p)
+}
+
+// configureIdleKeepAlive freezes the host's probe for this shell. A damaged
+// custom payload is no probe: the shell keeps the setting off until it connects
+// again with a valid one.
+func (t *terminal) configureIdleKeepAlive(host Host, local bool) {
+	t.idleInterval, t.idlePayload = 0, nil
+	if local || !idleKeepAliveProtocol(host.Protocol) || host.IdleKeepAlive <= 0 {
+		return
+	}
+	payload, err := host.idleInputBytes()
+	if err != nil {
+		return
+	}
+	t.idleInterval, t.idlePayload = host.IdleKeepAlive, payload
+}
+
+// adoptIdleClock restarts this shell's idle measurement in a new window's clock
+// after a tab moves between windows, whose monotonic origins differ.
+func (t *terminal) adoptIdleClock() {
+	if t.clock != nil {
+		t.idleLastInput = t.clock()
+	}
+}
+
 func (t *terminal) noteShellInput(p []byte) {
+	t.noteInput()
 	t.passwordHint = ""
 	if bytes.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 		t.inputLine = false // Enter, Tab, an arrow or Ctrl-R: the line is no longer what was typed
@@ -585,8 +770,9 @@ func (t *terminal) sendProtocol(p []byte) bool {
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
-	accepted := t.shell.Write(p)
+	accepted := t.writeShellInput(p)
 	if accepted {
+		t.noteInput()
 		t.recording.append(t.recordingNow(), terminalRecordingInput, p)
 	}
 	return accepted
@@ -620,7 +806,7 @@ func (state *State) openShell(session *Session) {
 	// off. SSH enables integration for either file-panel following or path tabs,
 	// except on a host confined to the interactive session, whose gateway would
 	// end the connection on the command this starts.
-	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && !session.host.InteractiveOnly &&
+	config.IntegrateShell = session.isLocal() || (session.host.isSSH() && !session.host.mosh() && !session.host.InteractiveOnly &&
 		session.host.System != sshconn.SystemWindows &&
 		session.containerCommand == "" && (!state.sftpFollowOff || state.sftpTerminalFollow || state.tabTitleMode == tabTitleDirectory))
 	config.IntegrationToken = t.folderToken
@@ -628,12 +814,18 @@ func (state *State) openShell(session *Session) {
 		config.StartDirectory = session.startDirectory
 	}
 	t.integrated = config.IntegrateShell
-	if session.host.ForwardX11 && session.host.isSSH() {
+	if session.host.ForwardX11 && session.host.isSSH() && !session.host.mosh() {
 		environ := x11fwd.CurrentEnviron()
 		config.X11 = &environ
 	}
-	if session.host.AgentForward && session.host.isSSH() {
+	if session.host.AgentForward && session.host.isSSH() && !session.host.mosh() {
 		config.AgentForward = true
+	}
+	// A host with an explicit remote charset keeps the server's own locale:
+	// forcing LANG to UTF-8 would make the server emit UTF-8 that the client
+	// then decodes as, say, GB18030.
+	if session.host.Encoding != "" && session.host.Encoding != charset.UTF8 {
+		config.SkipUTF8Locale = true
 	}
 	if opener, ok := session.conn.(slowShellOpener); !ok || !opener.opensShellSlowly() {
 		shell, err := session.conn.OpenShell(config)
@@ -727,8 +919,19 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	if session.isLocal() {
 		state.rememberRecentConnection(session)
 	}
+	// A new shell is a new byte stream: choose its charset and drop any partial
+	// character a previous shell left in the decoder.
+	t.setEncoding(session.host.Encoding)
+	if t.decoder != nil {
+		t.decoder.Reset()
+	}
 	t.shell = shell
+	t.shellCols, t.shellRows = t.screen.Size()
+	t.shellWaiting = false
 	t.shellOpened = state.now()
+	t.idleLastInput = t.shellOpened
+	t.configureIdleKeepAlive(session.host, session.isLocal())
+	state.armIdleKeepAlive(session, state.idleKeepAliveWait(session, t.idleLastInput), t.idleLastInput)
 	t.noShellTold = false
 	// A connection that drops takes the running program's teardown with it, so
 	// the modes it had armed on this screen (the alternate screen, mouse
@@ -764,9 +967,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	t.screen.SetReply(func(reply []byte) {
 		t.sendProtocol(reply)
 	})
-	if session.host.isSSH() && session.containerCommand == "" && session.host.LoginCommand != "" {
-		t.login.arm(session.host.LoginCommand)
-	}
+	t.armInitialization(session)
 	state.describe(session)
 }
 
@@ -819,6 +1020,7 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 	if t.shell == nil {
 		return
 	}
+	t.observePredictionInput()
 	t.rx = t.shell.Drain(t.rx) // keep what an earlier frame could not parse
 	finished := false
 	select {
@@ -845,7 +1047,7 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 			break
 		}
 	}
-	if state.autofillRules.armed {
+	if state.autofillRules.armed || state.passwordAssistOn() {
 		state.scanAutofill(session)
 	}
 	switch {
@@ -866,8 +1068,8 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 	if !finished && len(t.rx) == 0 {
 		state.reconcileSuggestionEcho(session)
 	}
-	if !finished && len(t.rx) == 0 && state.completion.list.active && state.completion.list.sessionID == session.ID {
-		state.completionRefresh(session)
+	if !finished && len(t.rx) == 0 {
+		state.completionAfterOutput(session)
 	}
 	if finished {
 		state.shellEnded(session)
@@ -887,6 +1089,13 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 	if len(data) == 0 {
 		return
 	}
+	// The transfer scanner needs the raw bytes (a zmodem stream is binary). Text
+	// consumers below — the background-output watchers, the recording and the
+	// screen — all want one UTF-8 view of the remote output.
+	data = t.decodeRemote(data)
+	if len(data) == 0 {
+		return
+	}
 	state.receiveBackgroundOutput(session)
 	t.recording.append(state.now(), terminalRecordingOutput, data)
 	t.writeRemote(data, state.now())
@@ -895,7 +1104,7 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 		t.markAIBlock(t.exec == nil)
 	}
 	t.recorder.Output(state.now())
-	if state.autofillRules.armed {
+	if state.autofillRules.armed || state.passwordAssistOn() {
 		t.autofill.Output(state.now())
 	}
 	state.notePasswordPrompt(session)
@@ -906,14 +1115,26 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 // shellEnded tells the screen the session is over and lets the connection go.
 func (state *State) shellEnded(session *Session) {
 	session.outputAlert.commandRunning = false
+	state.closeCompletionPath(session)
 	if state.completion.list.active && state.completion.list.sessionID == session.ID {
 		state.closeCompletionList()
 	}
+	if len(state.autofillRules.pick.candidates) > 0 && state.autofillRules.pick.sessionID == session.ID {
+		state.closeAutofillPick()
+	}
 	t := session.term
+	// A stream can end with a partial multibyte character still held by the
+	// decoder. Flush it to the screen before the session-local closing lines.
+	if tail := t.flushRemoteDecoder(); len(tail) > 0 {
+		t.recording.append(state.now(), terminalRecordingOutput, tail)
+		t.writeScreen(tail)
+	}
 	state.goLive(session) // whatever it said, and that it ended, is the terminal's to show
 	err := t.shell.Err()
 	t.shell.Close()
 	t.shell = nil
+	t.stopIdleKeepAlive()
+	t.login = loginCommand{}
 	t.finishExec(endShell)
 	t.releasePromptWait()
 	t.recording.stop()
@@ -1036,6 +1257,9 @@ func (state *State) terminalChromeForSession(sessionID uint32) (terminalChrome, 
 		chrome.top = infoBarHeight
 	}
 	if state.terminalInputNoticeVisibleInWorkspace(session) && (inSplit || !finding) {
+		chrome.top += inputNoticeHeight
+	}
+	if state.workspaceCommandNoticeInWorkspace(session) && (inSplit || !finding) {
 		chrome.top += inputNoticeHeight
 	}
 	return chrome, true
@@ -1170,8 +1394,75 @@ func (state *State) fitTerminal(session *Session) {
 	t.selection.clear()
 	t.find.refreshIfChanged(t.screen, state.messages, 0)
 	if t.shell != nil {
-		t.shell.Resize(geometry.cols, geometry.rows)
+		state.resizeShell(session, geometry.cols, geometry.rows)
 	}
+}
+
+// shellResizeDelay is how long a size holds before a shell at its prompt is
+// told about it. That shell redraws the prompt itself after a resize, and a
+// drag changes the columns faster than a remote shell can: every redraw then
+// answers a width the screen has already left and lands beside the prompt it
+// was going to replace. The screen follows each step; while the pointer is held
+// the shells wait for its release, and a size changed by something else waits
+// until it holds.
+const shellResizeDelay = 100 * time.Millisecond
+
+// resizeShell gives a shell the size its pane now affords. A shell at a prompt,
+// and any shell whose size changes with the pointer down, is told through
+// settleShellResize or flushShellSizes; a program that draws its own screen is
+// told at once.
+func (state *State) resizeShell(session *Session, cols, rows int) {
+	t := session.term
+	t.shellWaiting = false
+	if t.shell == nil {
+		return
+	}
+	if !state.pointerHeld && !t.screen.AtPrompt() {
+		state.tellShellSize(t, cols, rows)
+		return
+	}
+	if t.shellCols == cols && t.shellRows == rows {
+		return
+	}
+	t.wantCols, t.wantRows, t.shellWaiting, t.shellWaitAt = cols, rows, true, state.options.WallNow()
+}
+
+// settleShellResize tells a waiting shell its size once the size has held for
+// shellResizeDelay, and asks for the frame that does it. A held pointer keeps
+// the shells waiting for its release instead.
+func (state *State) settleShellResize(canvas *gfx.Canvas, session *Session) {
+	t := session.term
+	if t == nil || !t.shellWaiting || t.shell == nil || state.pointerHeld {
+		return
+	}
+	if wait := shellResizeDelay - state.options.WallNow().Sub(t.shellWaitAt); wait > 0 {
+		canvas.RequestFrameIn(wait)
+		return
+	}
+	t.shellWaiting = false
+	if t.shellCols != t.wantCols || t.shellRows != t.wantRows {
+		state.tellShellSize(t, t.wantCols, t.wantRows)
+	}
+}
+
+// flushShellSizes tells every waiting shell the size its pane settled on when
+// the pointer is released.
+func (state *State) flushShellSizes() {
+	for index := range state.sessions {
+		t := state.sessions[index].term
+		if t == nil || !t.shellWaiting || t.shell == nil {
+			continue
+		}
+		t.shellWaiting = false
+		if t.shellCols != t.wantCols || t.shellRows != t.wantRows {
+			state.tellShellSize(t, t.wantCols, t.wantRows)
+		}
+	}
+}
+
+func (state *State) tellShellSize(t *terminal, cols, rows int) {
+	t.shellCols, t.shellRows = cols, rows
+	t.shell.Resize(cols, rows)
 }
 
 // Resize is the window-size callback: the terminals follow the window.
@@ -1316,6 +1607,17 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 		return app.TextState{}
 	}
 	t := session.term
+	// Text the user supplies, typed or pasted, takes the password offer back:
+	// Enter after it must submit what the user supplied, not the highlighted
+	// saved password.
+	if len(state.autofillRules.pick.candidates) > 0 && state.autofillRules.pick.sessionID == sessionID &&
+		(event.Kind == app.TextInsert || event.Kind == app.TextPaste ||
+			(event.Kind == app.TextSetMarked && event.Text != "")) {
+		state.closeAutofillPick()
+	}
+	if event.Kind == app.TextInsert || event.Kind == app.TextPaste || (event.Kind == app.TextSetMarked && event.Text != "") {
+		t.pauseInitialization()
+	}
 	redraw := false
 	switch event.Kind {
 	case app.TextInsert:
@@ -1330,7 +1632,7 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 			// The typed text is drawn at once, ahead of the server's echo; the
 			// event asks for that frame, which committed terminal text otherwise
 			// never gets.
-			redraw = t.prediction.input(t.screen, input, state.now(), t.inputLine && !session.isLocal())
+			redraw = t.prediction.input(t.screen, input, state.now(), t.inputLine && !session.isLocal(), t.lastInputID)
 		}
 	case app.TextPaste:
 		if state.modal == modalTerminalInput || state.guardTerminalText(session, event) {
@@ -1370,6 +1672,29 @@ func displayCells(value string) int {
 	return cells
 }
 
+// acceptedKey is a key press the terminal took for a prompt-level overlay. The
+// program that asked for win32 input records sees presses and releases, so the
+// release of a press it never got is dropped, along with its repeats.
+type acceptedKey struct {
+	set  bool
+	key  gfx.Key
+	text string
+}
+
+// noteAcceptedKey remembers a press the terminal consumed when the program will
+// also be sent its release.
+func (t *terminal) noteAcceptedKey(event gfx.KeyEvent) {
+	if t.screen.Modes().Win32Input && !event.Release && !event.Repeat {
+		t.acceptedKey = acceptedKey{set: true, key: event.Key, text: event.Text}
+	}
+}
+
+// holds reports whether event ends the press the terminal consumed, or repeats
+// it: it is that key's release or a repeat, with the same text.
+func (a acceptedKey) holds(event gfx.KeyEvent) bool {
+	return a.set && (event.Release || event.Repeat) && event.Key == a.key && event.Text == a.text
+}
+
 // terminalKey encodes keys left unclaimed by the application shortcut routes.
 // Unclaimed Command chords are forwarded after kitty keyboard negotiation;
 // macOS Command line edits keep their existing behavior.
@@ -1379,7 +1704,21 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 	if t.preedit.Composing && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !t.screen.Modes().AltScreen {
 		return handled
 	}
+	if t.acceptedKey.holds(event) {
+		if event.Release {
+			t.acceptedKey = acceptedKey{}
+		}
+		return handled
+	}
 	if event.Modifiers&gfx.ModifierMeta != 0 && !event.Key.IsModifier() {
+		// A Command chord the user bound to accepting a suggestion is checked
+		// before the platform's line edits, which would rewrite it. The program
+		// keeps its keys only where it negotiated a keyboard protocol of its
+		// own; win32 input records are how a local console shell receives keys.
+		if t.screen.KeyboardFlags() == 0 && state.ghostKey(session, event) {
+			t.noteAcceptedKey(event)
+			return handled
+		}
 		if letter, ok := term.CommandLineEdit(event.Key, event.Modifiers); ok && keymap.Primary == gfx.ModifierMeta {
 			event.Key, event.Modifiers, event.Text, event.Typed = gfx.KeyUnknown, gfx.ModifierControl, letter, ""
 		} else if t.screen.KeyboardFlags() == 0 || state.shortcutBound(event) {
@@ -1421,7 +1760,8 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		}
 	}
 	modes := t.screen.Modes()
-	if t.screen.KeyboardFlags() == 0 && !modes.Win32Input && (state.passwordHintKey(session, event) || state.ghostKey(session, event)) {
+	if t.screen.KeyboardFlags() == 0 && (state.passwordHintKey(session, event) || state.ghostKey(session, event)) {
+		t.noteAcceptedKey(event)
 		return handled
 	}
 	var bytes []byte
@@ -1576,8 +1916,21 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result := state.scrollForwardDialog(event); result.Handled {
 		return result
 	}
+	if state.hostGroupMenu {
+		if menu := state.moveGroupTree(); menu != nil {
+			return gfx.EventResult{Handled: true, Repaint: menu.Wheel(event)}
+		}
+	}
 	if state.modal == modalNewHost && state.editor.groupPicker.control.Open {
 		p := &state.editor.groupPicker
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
+	}
+	if state.modal == modalNewHost && state.editor.encodingPicker.control.Open {
+		p := &state.editor.encodingPicker
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
+	}
+	if state.modal == modalNewHost && state.editor.iconPicker.control.Open {
+		p := &state.editor.iconPicker
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
 	if state.modal == modalToolbarSettings {
@@ -1618,6 +1971,12 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		state.desktopSecurity.layout.ScrollBy(event.StepY(18))
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
+	if state.modal == modalSnippetVariables {
+		return state.scrollSnippetVariables(event)
+	}
+	if state.modal == modalRuleManager {
+		return state.scrollRuleManager(event)
+	}
 	// Dialogs own the wheel even over their backdrop. Menus and scrollable
 	// dialogs above have their own handlers; nothing behind them should move.
 	if state.modal != modalNone || state.knownHosts.action != knownHostsActionNone ||
@@ -1647,6 +2006,11 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		return gfx.EventResult{Handled: true}
 	}
 	if result, handled := state.scrollMonitor(event); handled {
+		return result
+	}
+	// The command bar is a strip of its own below the panes: a wheel over it
+	// moves its chips sideways rather than scrolling a terminal behind it.
+	if result, handled := state.scrollCommandsBar(event); handled {
 		return result
 	}
 	// A wheel over a control of the files panel belongs to the panel's list. The

@@ -157,6 +157,7 @@ func mcpModeFromSetting(value string) gate.Mode {
 func (hub *AIHub) start(token string, mode gate.Mode, port int) error {
 	server, err := mcp.New(mcp.Config{
 		Token: token, Gate: hub.gate, ServerName: "motty", Version: "1",
+		CallTimeout: mcpCallTimeout,
 	})
 	if err != nil {
 		return err

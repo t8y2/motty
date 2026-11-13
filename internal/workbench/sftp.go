@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/pkg/sftp"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -35,6 +36,7 @@ type sftpRow struct {
 	icon                 *gfx.Icon     // the file-type glyph, chosen when the listing arrives
 	mono                 bool          // the glyph has no colors of its own and is tinted
 	appIcon              *fileIconSlot // the system's icon for a local application bundle, once it has answered
+	typeIcon             *fileIconSlot // the system's icon for this file type, shared by every row with the extension
 	hidden               bool
 	matchStart, matchEnd int // byte range highlighted by the current folder filter
 	// where is the folder a search result is in, relative to where the search
@@ -122,6 +124,7 @@ type sftpFolder struct {
 	search      *sftpSearch
 	searchShown bool
 	reveal      sftpReveal
+	cancelSize  context.CancelFunc
 }
 
 type sftpView struct {
@@ -152,6 +155,7 @@ type sftpView struct {
 	followUpPath        string // a follow-up that arrived before those rows were ready
 	followUpEntries     []sftpclient.Entry
 	busy                bool
+	localBusy           bool // a local deletion is walking the disk; the server side stays usable
 	approximate         bool // the listing came from `ls` over SCP
 	operation           sftpclient.Operation
 	status              string
@@ -171,21 +175,29 @@ type sftpView struct {
 	// beside an application modal, so it does not share the window's footer
 	// scratch. The boxes are where that body laid out the parts painted by hand:
 	// the one or two fields and the permission grid.
-	dialogFieldLabel      string
-	dialogDraw            func(*ui.DrawContext)
-	dialogCancelLabel     string
-	dialogSubmitLabel     string
-	dialogSubmitVariant   components.ButtonVariant
-	dialogFooterDraw      func(*ui.DrawContext)
-	dialogFirst           ui.Box
-	dialogSecond          ui.Box
-	dialogChmod           [9]ui.Box
-	bookmarksOpen         bool
-	places                sftpPlaceMenu
-	dropping              bool // files are being dragged over the panel
-	dropRow               int  // the folder row they are over, or -1
-	scrollDrag            bool
-	scrollGrab            float32
+	dialogFieldLabel    string
+	dialogDraw          func(*ui.DrawContext)
+	dialogCancelLabel   string
+	dialogSubmitLabel   string
+	dialogSubmitVariant components.ButtonVariant
+	dialogFooterDraw    func(*ui.DrawContext)
+	dialogFirst         ui.Box
+	dialogSecond        ui.Box
+	dialogChmod         [9]ui.Box
+	bookmarksOpen       bool
+	places              sftpPlaceMenu
+	dropping            bool // files are being dragged over the panel
+	dropRow             int  // the folder row they are over, or -1
+	clipboard           sftpClipboard
+	scrollDrag          bool
+	scrollGrab          float32
+	// columnDragging and columnDrag are the divider of this panel the pointer
+	// holds; columnFitPending asks the next paint to fit that divider's left
+	// column to its content after a double click.
+	columnDragging        bool
+	columnDrag            int
+	columnFitPending      bool
+	columnFitDivider      int
 	details               sftpDetails
 	extracting            bool
 	archiveSequence       uint64
@@ -295,11 +307,16 @@ func (state *State) closeSFTP(session *Session) {
 	if session.files == nil {
 		return
 	}
+	if state.modal == modalFileProperties && session.ID == state.activeSessionID {
+		state.clickFileProperties(hitFilePropertiesClose)
+	}
 	session.files.localSeq++
 	session.files.remoteSeq++
 	session.files.navigation, session.files.lfolder.navigation = sftpNavigation{}, sftpNavigation{}
 	stopSFTPSearch(&session.files.sftpFolder)
 	stopSFTPSearch(&session.files.lfolder)
+	session.files.sftpFolder.stopSizeCalculation()
+	session.files.lfolder.stopSizeCalculation()
 	if session.files.cancelExtract != nil {
 		session.files.cancelExtract()
 	}
@@ -418,19 +435,31 @@ func (state *State) clickSFTP(id gfx.ID) {
 		}
 		return
 	}
+	if id == hitSFTPCopyFiles {
+		if _, err := state.copySFTPSelection(view); err != nil {
+			state.showActionError(state.messages.SFTPWindow.Title, err.Error())
+		}
+		return
+	}
+	if id == hitSFTPPasteFiles {
+		state.pasteSFTPClipboard(view)
+		return
+	}
 	if id == hitSFTPProperties {
-		state.openSFTPProperties(view.active(), view.local)
+		if state.openSFTPProperties(view.active(), view.local) && canCalculateSFTPFolderSize(view) {
+			state.calculateSFTPFolderSize(view, &state.fileProperties)
+		}
+		return
+	}
+	if id == hitSFTPCalculateDirectorySize {
+		view.active().headerMenuOpen = false
+		state.calculateSFTPDirectorySize(view)
 		return
 	}
 	folder := view.active()
 	if folder.headerMenuOpen {
 		if state.clickSFTPHistory(view, view.local, id, hitSFTPHistoryBack, hitSFTPHistoryForward, sftpRecentHits) {
 			folder.headerMenuOpen = false
-			return
-		}
-		if column, ok := id.In(sftpHeaderSortHits); ok && column < 3 {
-			folder.headerMenuOpen = false
-			state.toggleSFTPSidebarSort(folder, column)
 			return
 		}
 		switch id {
@@ -443,6 +472,9 @@ func (state *State) clickSFTP(id gfx.ID) {
 		case hitSFTPHeaderHidden:
 			folder.headerMenuOpen = false
 			state.clickSFTPFilter(view, hitSFTPHiddenToggle)
+		case hitSFTPHeaderFollow:
+			folder.headerMenuOpen = false
+			state.toggleSFTPFollow(session)
 		default:
 			folder.headerMenuOpen = false
 		}
@@ -596,6 +628,20 @@ func (view *sftpView) setItemCountStatus(format string, count int) {
 	view.listingStatus = ""
 }
 
+func (folder *sftpFolder) hasEntry(name string) bool {
+	for _, row := range folder.allRows {
+		if row.entry.Name == name {
+			return true
+		}
+	}
+	for _, row := range folder.rows {
+		if row.entry.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // selectRow applies a press on a row the way a file list does: a plain press
 // selects that row alone, Command or Control toggles it among the others, and
 // Shift selects every row from the one last chosen to it.
@@ -623,6 +669,17 @@ func (folder *sftpFolder) selectRow(index int, modifiers gfx.Modifiers) {
 		folder.rows[row].cells[0] = sftpSelectionCell(folder.rows[row].selected)
 	}
 	folder.selected = index
+	folder.listNeedsSeed = true
+}
+
+func (folder *sftpFolder) clearSelection() {
+	for i := range folder.rows {
+		if folder.rows[i].selected {
+			folder.rows[i].selected = false
+			folder.rows[i].cells[0] = sftpSelectionCell(false)
+		}
+	}
+	folder.selected, folder.anchor = -1, -1
 	folder.listNeedsSeed = true
 }
 
@@ -1067,6 +1124,7 @@ func (state *State) applySFTPListingNavigation(view *sftpView, remotePath string
 		state.refreshSFTPDirectory(view, remotePath)
 	}
 	view.allRows = rows
+	state.loadTypeIcons(view, rows)
 	view.crumbs = prepareSFTPCrumbs(view.crumbs, remotePath)
 	if view.detached != nil {
 		entries := make([]sftpclient.Entry, len(rows))
@@ -1119,7 +1177,7 @@ func (state *State) finishSFTPPrefetch(view *sftpView, result sftpclient.Result)
 			if errors.Is(result.Err, sftpclient.ErrCanceled) {
 				view.status = state.messages.SFTPCanceled
 			} else {
-				view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+				view.errorText = state.formatSFTPError(result.Err)
 			}
 		}
 		return
@@ -1246,26 +1304,7 @@ func (state *State) ensureSFTPDownloadDirectory(view *sftpView) (string, bool) {
 	if directory == "" {
 		return "", false
 	}
-	if !validSFTPDownloadDirectory(directory) {
-		state.fileOpenNotice(
-			view.detached,
-			state.messages.Tools.FilesDownloadDirectory,
-			fmt.Sprintf(state.messages.Tools.FilesDownloadDirectoryUnavailableFmt, directory),
-			components.ToastWarning,
-		)
-		return "", false
-	}
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		state.fileOpenNotice(
-			view.detached,
-			state.messages.Tools.FilesDownloadDirectory,
-			fmt.Sprintf(state.messages.Tools.FilesDownloadDirectoryUnavailableFmt, directory),
-			components.ToastWarning,
-		)
-		return "", false
-	}
-	info, err := os.Stat(directory)
-	if err != nil || !info.IsDir() {
+	if !validSFTPDownloadDirectory(directory) || prepareDownloadDirectory(directory) != nil {
 		state.fileOpenNotice(
 			view.detached,
 			state.messages.Tools.FilesDownloadDirectory,
@@ -1299,16 +1338,7 @@ func (state *State) handleSFTPPickerError(view *sftpView, err error, canceled st
 }
 
 func (state *State) queueSFTPDownload(view *sftpView, entry sftpclient.Entry, localPath string) {
-	_, queued := view.worker.QueueDownload(path.Join(view.path, entry.Name), localPath, entry.IsDir(), sftpclient.ExistingFail)
-	if !queued {
-		view.errorText = state.messages.SFTPUnavailable
-		return
-	}
-	view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, entry.Name)
-	view.errorText = ""
-	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
-	state.transfers.host = nil
-	state.refreshSFTPTransfers(view)
+	state.queueSFTPDownloadFrom(view, view.path, entry, localPath)
 }
 
 func (state *State) uploadSFTP(view *sftpView) {
@@ -1367,7 +1397,7 @@ func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	view.dialogEntries = nil
 	view.dialogError = ""
 	if dialog != sftpDialogCreateDirectory {
-		if dialog == sftpDialogDelete {
+		if dialog == sftpDialogDelete || dialog == sftpDialogMove {
 			for _, row := range selectedSFTPRows(view) {
 				view.dialogEntries = append(view.dialogEntries, row.entry)
 			}
@@ -1539,6 +1569,10 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 			view.dialogError = state.messages.SFTPErrDirectoryRequired
 			return
 		}
+		if !validRemoteBaseName(value) {
+			view.dialogError = state.messages.SFTPErrRenameInvalid
+			return
+		}
 		remotePath := sftpRemotePath(view.path, value)
 		queued = view.worker.CreateDirectory(remotePath)
 		operation = sftpclient.OperationCreateDirectory
@@ -1571,18 +1605,32 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 			view.dialogError = state.messages.SFTPErrMoveSame
 			return
 		}
-		source := path.Join(view.path, view.dialogEntry.Name)
-		if view.dialogEntry.IsDir() && !view.dialogEntry.IsLink() &&
-			(path.Clean(folder) == path.Clean(source) || strings.HasPrefix(path.Clean(folder), path.Clean(source)+"/")) {
-			view.dialogError = state.messages.SFTPErrMoveInside
-			return
+		sources := make([]string, 0, len(view.dialogEntries))
+		for _, entry := range view.dialogEntries {
+			source := path.Join(view.path, entry.Name)
+			if entry.IsDir() && !entry.IsLink() && (folder == source || strings.HasPrefix(folder, source+"/")) {
+				view.dialogError = state.messages.SFTPErrMoveInside
+				return
+			}
+			sources = append(sources, source)
 		}
+		if len(sources) > 1 {
+			queued = view.worker.MoveSelection(sources, folder)
+			operation = sftpclient.OperationMoveSelection
+			status = fmt.Sprintf(state.messages.SFTPMovingCountFmt, len(sources))
+			break
+		}
+		source := path.Join(view.path, view.dialogEntry.Name)
 		destination := path.Join(folder, view.dialogEntry.Name)
 		queued = view.worker.Rename(source, destination)
 		operation = sftpclient.OperationRename
 		status = fmt.Sprintf(state.messages.SFTPMovingFmt, view.dialogEntry.Name)
 		view.moveAfterRename = queued
 	case sftpDialogDelete:
+		if view.local {
+			state.submitLocalDelete(view)
+			return
+		}
 		if len(view.dialogEntries) > 1 {
 			view.deleteRemaining = slices.Clone(view.dialogEntries)
 			view.deleteCompleted = 0
@@ -1715,7 +1763,7 @@ func (state *State) pumpSFTP(session *Session) {
 							state.transfers.open = true
 						}
 					} else {
-						view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+						view.errorText = state.formatSFTPError(result.Err)
 					}
 				} else if result.Operation == sftpclient.OperationUpload {
 					view.refreshAfterTransfers = true
@@ -1735,6 +1783,19 @@ func (state *State) pumpSFTP(session *Session) {
 				continue
 			}
 			view.busy = false
+			if result.Operation == sftpclient.OperationMoveSelection {
+				if result.Err != nil {
+					detail := fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+					if errors.Is(result.Err, sftpclient.ErrCanceled) {
+						detail = state.messages.SFTPCanceled
+					}
+					state.fileOpenNotice(view.detached, state.messages.SFTPMoveTitle, detail, components.ToastError)
+				}
+				view.forgetListings()
+				view.refreshStatus = fmt.Sprintf(state.messages.SFTPMovedCountFmt, result.Files, result.Destination)
+				state.listSFTP(view, view.path)
+				continue
+			}
 			if result.Operation == sftpclient.OperationRename && result.Err != nil {
 				view.moveAfterRename = false
 			}
@@ -1774,7 +1835,7 @@ func (state *State) pumpSFTP(session *Session) {
 					view.dialog = sftpDialogRemoteChanged
 					view.errorText = state.messages.SFTPEditConflict
 				} else {
-					view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+					view.errorText = state.formatSFTPError(result.Err)
 				}
 				if result.Operation == sftpclient.OperationRemoveDirectory {
 					state.sftpFolderRemovalStopped(view, result.Err)
@@ -2022,6 +2083,23 @@ func (state *State) fitSFTP(size gfx.Size) {
 			view.lfolder.first = min(view.lfolder.first, max(0, len(view.lfolder.shownRows())-view.lfolder.visibleRows))
 		}
 	}
+}
+
+func (state *State) formatSFTPError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, sftpclient.ErrDestinationExists) || errors.Is(err, os.ErrExist) {
+		return fmt.Sprintf(state.messages.SFTPErrorFmt, state.messages.SFTPErrDirectoryExists)
+	}
+	var status *sftp.StatusError
+	if errors.As(err, &status) {
+		switch status.FxCode() {
+		case sftp.ErrSSHFxPermissionDenied:
+			return fmt.Sprintf(state.messages.SFTPErrorFmt, state.messages.SFTPErrPermissionDenied)
+		}
+	}
+	return fmt.Sprintf(state.messages.SFTPErrorFmt, err)
 }
 
 func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {

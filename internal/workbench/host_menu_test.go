@@ -261,9 +261,10 @@ func TestMoveGroupFromAHostsMenuOpensThePickerWhereTheMenuWas(t *testing.T) {
 		t.Fatalf("the host menu was not opened at the pointer: %+v", menu)
 	}
 	state.Click(hitHostMenuMove)
-	paintedTexts(state)
-	if picker := state.popups.surface; picker.X != menu.X || picker.Y != menu.Y {
-		t.Fatalf("the group picker opened at %+v, want the menu's place %+v", picker, menu)
+	canvas, _ := paintedTexts(state)
+	first, ok := hitByID(canvas, hitHostGroupNone)
+	if !ok || first.Bounds.X-4 != menu.X || first.Bounds.Y-4 != menu.Y {
+		t.Fatalf("the group picker first row opened at %+v, want menu at %+v", first.Bounds, menu)
 	}
 }
 

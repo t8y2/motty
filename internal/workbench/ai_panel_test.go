@@ -521,25 +521,33 @@ func TestModelChipSwitchesTheModelThatAnswers(t *testing.T) {
 	if !hasText(texts, "Work") {
 		t.Fatalf("the menu should list the provider: %q", texts)
 	}
-	// The provider's models open beside its row.
+	// The provider's models open beside its row: only the ones the settings
+	// switched on, not every model that was fetched.
 	clickAIMenuRow(t, state, "Work")
 	_, texts = paintAt(state, panelWide)
-	if !hasText(texts, "gpt-y") || !hasText(texts, "gpt-off") {
-		t.Fatalf("the menu should list every model that was fetched, switched on or not: %q", texts)
+	if !hasText(texts, "gpt-y") || hasText(texts, "gpt-off") {
+		t.Fatalf("the menu should list only the models switched on in the settings: %q", texts)
 	}
-	// A fetched model that is still off is switched on by choosing it.
-	clickAIMenuRow(t, state, "gpt-off")
-	if _, model, err := state.aiModel(); err != nil || model != "gpt-off" {
+	clickAIMenuRow(t, state, "gpt-y")
+	if _, model, err := state.aiModel(); err != nil || model != "gpt-y" {
 		t.Fatalf("model after choosing = %q %v", model, err)
 	}
+	// The pick belongs to the workspace: the settings keep their default and
+	// the model they left off stays off.
+	if providerID, name, ok, err := db.DefaultModel(); err != nil || !ok || providerID != "p" || name != "gpt-x" {
+		t.Fatalf("workspace choice changed the settings' default: %q/%q ok=%v err=%v", providerID, name, ok, err)
+	}
 	for _, model := range state.aiModelList("p") {
-		if model.Name == "gpt-off" && !model.Enabled {
-			t.Error("the chosen model was not switched on")
+		if model.Name == "gpt-off" && model.Enabled {
+			t.Error("choosing in the workspace switched on a disabled setting")
 		}
 	}
 	canvas, _ = paintAt(state, panelWide)
-	if _, ok := aiMenuRowNamed(canvas, "gpt-off"); ok {
+	if _, ok := aiMenuRowNamed(canvas, "gpt-y"); ok {
 		t.Error("the menu stayed open after a choice")
+	}
+	if chip = panelHit(t, canvas, hitAIModelChip); !strings.Contains(chip.Label, "gpt-y") {
+		t.Fatalf("chip after choosing = %+v", chip)
 	}
 }
 
@@ -552,7 +560,7 @@ func TestModelMenuScrollsAProviderWithManyModels(t *testing.T) {
 	}
 	var models []store.Model
 	for index := 0; index < 40; index++ {
-		models = append(models, store.Model{ProviderID: "p", Name: fmt.Sprintf("model-%02d", index)})
+		models = append(models, store.Model{ProviderID: "p", Name: fmt.Sprintf("model-%02d", index), Enabled: true})
 	}
 	models = append(models, store.Model{ProviderID: "p", Name: "gpt-x", Enabled: true})
 	if err := db.SaveModels("p", models); err != nil {

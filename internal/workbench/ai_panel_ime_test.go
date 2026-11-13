@@ -26,10 +26,11 @@ func TestAIComposerPreeditCommitAndSend(t *testing.T) {
 		}
 		canvas, _ := paintAt(state, panelWide)
 		hit := panelHit(t, canvas, hitAIInput)
-		if !hit.Multiline || hit.Placement == nil {
+		text := hitText(canvas, &hit)
+		if !hit.Multiline || text.Placement == nil {
 			t.Fatal("AI composer lost its multiline caret placement")
 		}
-		if _, ok := hit.Placement.CaretBounds(); !ok {
+		if _, ok := text.Placement.CaretBounds(); !ok {
 			t.Fatal("AI composer has no candidate-window anchor")
 		}
 		if got := state.AIPanelInput(app.TextInputContext{ID: hitAIInput}).State; got != app.TextStateOf(&state.ai.input) {

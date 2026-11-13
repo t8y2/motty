@@ -118,14 +118,21 @@ func (state *State) declareTransferPopoverBody(c ui.C, width, height float32) {
 				center.body.replace = pageButtonSlot(c, m.Replace, true)
 				center.body.resume = pageButtonSlot(c, m.Resume, true)
 			})
-			center.body.list = ui.Column(c).Grow(1).HitWith(hitTransfersList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup}).Children(func() {
-				state.prepareTransferCards()
-				center.listBox = ui.List(c, &center.listState, center.count, center.rowDecl).Fill().Label(m.Title)
-				if scroll := center.listBox.ScrollState(); scroll != nil && center.scroll != center.scrollSynced {
-					scroll.ScrollTo(center.scroll)
-					center.scrollSynced = center.scroll
-				}
-			})
+			// The List is the body's flexible child: a scroll area is what gives way
+			// in a column, so it takes the room the rows above leave and scrolls the
+			// rest instead of painting its whole height past the panel.
+			state.prepareTransferCards()
+			center.listBox = ui.List(c, &center.listState, center.count, center.rowDecl).Grow(1).Label(m.Title).
+				HitWith(hitTransfersList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
+			center.body.list = center.listBox
+			if scroll := center.listBox.ScrollState(); scroll != nil && center.scroll != center.scrollSynced {
+				scroll.ScrollTo(center.scroll)
+				center.scrollSynced = center.scroll
+				// The List places its rows from the offset it is declared at, so the
+				// paint that moved the offset still shows the old one: ask for the
+				// paint that follows, as a List asking for a scroll it applied does.
+				c.Canvas().RequestFrame()
+			}
 		})
 	})
 	body.DrawOver(center.bodyDraw)
@@ -285,12 +292,16 @@ func (state *State) paintTransferCenterBody(d *ui.DrawContext) {
 	}
 	paintTransferProgress(canvas, center.body.summaryBar.Rect(), center.fraction, pal.accent, pal.line)
 	state.paintTransferBodyControls(canvas, theme)
-	state.paintTransferCards(canvas, theme)
-	if center.count == 0 {
-		state.paintTransferEmpty(canvas, center.list, theme)
-	}
 	area := components.BeginScrollArea(canvas, theme, center.list, gfx.Size{Height: float32(center.count) * transferCardHeight}).
 		Offset(0, center.scroll).VerticalScrollbar(hitTransfersBar, m.Title, "")
+	// The body's DrawOver runs outside the declarative List's clip.
+	if center.list.Width > 0 && center.list.Height > 0 {
+		area.BeginContent()
+		state.paintTransferCardsFor(canvas, theme, center.cards)
+		if center.count == 0 {
+			state.paintTransferEmpty(canvas, center.list, theme)
+		}
+	}
 	center.geometry = area.EndContent()
 	center.hostBounds = center.body.hostBox.Rect()
 	state.paintTransferHosts(canvas)
@@ -348,12 +359,6 @@ func (state *State) paintTransferBatchControls(canvas *gfx.Canvas, theme gfx.The
 	center := &state.transfers
 	components.BeginButton(canvas, theme, hitTransfersBulkCancel, center.batchBody.cancel.Rect()).Secondary(state.messages.Cancel)
 	components.BeginButton(canvas, theme, hitTransfersBulkConfirm, center.batchBody.confirm.Rect()).Destructive(center.batch.action)
-}
-
-// paintTransferCards paints the progress bar and buttons of every card row the
-// List declared.
-func (state *State) paintTransferCards(canvas *gfx.Canvas, theme gfx.Theme) {
-	state.paintTransferCardsFor(canvas, theme, state.transfers.cards)
 }
 
 // paintTransferCardsFor paints the progress bar and buttons of a set of cards.

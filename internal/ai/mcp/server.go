@@ -57,7 +57,9 @@ const (
 const instructions = "Tools to inspect and operate the terminal sessions the user has open in Motty. " +
 	"Call list_sessions first to get a session id. list_hosts lists saved SSH hosts explicitly opened to agents, " +
 	"including hosts without a session; its host ids are not terminal session ids. Commands and file changes may need the user's approval " +
-	"in the Motty window; such a call waits for the answer and is refused if the user declines."
+	"in the Motty window; such a call waits for the answer and is refused if the user declines. " +
+	"When this shell was reached by ssh from a jump host, SFTP is not that shell: use rzsz_upload and rzsz_download. The remote needs rz and sz. " +
+	"Those calls report how many bytes have moved. The remote screen stays at rz waiting to receive until the end, which is also what it shows when the sender has not connected; call rzsz_status to tell those apart. A client timeout does not mean the transfer failed."
 
 // Config configures a Server.
 type Config struct {
@@ -316,6 +318,12 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			ctx = gate.WithOutputOwner(ctx, id)
 		}
 	}
+	if token, ok := rzszProgressCall(r.Header.Get("Accept"), body); ok {
+		if flusher, can := w.(http.Flusher); can {
+			s.serveRZSZProgress(w, flusher, ctx, body, token)
+			return
+		}
+	}
 	out := s.handleBody(ctx, body)
 	if r.Context().Err() != nil {
 		return // the client left; nobody to answer
@@ -540,7 +548,13 @@ func buildToolsListFor(specs []tools.Spec) (json.RawMessage, error) {
 		if sp.Kind == tools.Read {
 			a.DestructiveHint = &no
 		}
-		list = append(list, entry{sp.Name, sp.Description, sp.Schema, a})
+		// inputSchema is required to be a JSON Schema object. A missing schema
+		// serialized as null, which strict clients reject for the whole list.
+		schema := sp.Schema
+		if len(schema) == 0 || string(schema) == "null" {
+			schema = json.RawMessage(`{"type":"object"}`)
+		}
+		list = append(list, entry{sp.Name, sp.Description, schema, a})
 	}
 	return json.Marshal(struct {
 		Tools []entry `json:"tools"`

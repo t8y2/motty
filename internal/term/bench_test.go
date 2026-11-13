@@ -5,8 +5,13 @@ import (
 	"testing"
 )
 
-func benchWrite(b *testing.B, stream []byte) {
+func benchWrite(b *testing.B, stream []byte) { benchWriteClock(b, stream, nil) }
+
+func benchWriteClock(b *testing.B, stream []byte, clock func() int64) {
 	term := New(120, 40, DefaultScrollback)
+	if clock != nil {
+		term.SetClock(clock)
+	}
 	b.ReportAllocs()
 	cpu := startCPU()
 	for b.Loop() {
@@ -50,12 +55,22 @@ func BenchmarkWriteScrollbackWide(b *testing.B) {
 
 // Cursor-addressed redraws, as vim or htop do: every cell positioned and styled.
 func BenchmarkWriteFullScreenRedraw(b *testing.B) {
+	benchWrite(b, fullScreenRedraw())
+}
+
+// The same frame with the line gutter on: every line it writes is stamped, and
+// the clock must still be asked only once per Write.
+func BenchmarkWriteFullScreenRedrawStamped(b *testing.B) {
+	benchWriteClock(b, fullScreenRedraw(), func() int64 { return 1700000000 })
+}
+
+func fullScreenRedraw() []byte {
 	var sb strings.Builder
 	sb.WriteString("\x1b[H")
 	for row := 1; row <= 40; row++ {
 		sb.WriteString("\x1b[" + itoa(row) + ";1H\x1b[7m status \x1b[0m\x1b[K some text on this row \x1b[32mgreen\x1b[0m")
 	}
-	benchWrite(b, []byte(sb.String()))
+	return []byte(sb.String())
 }
 
 func itoa(n int) string {

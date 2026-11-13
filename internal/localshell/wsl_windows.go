@@ -26,6 +26,10 @@ func wslExecutable() string {
 	return ""
 }
 
+// WSLExecutable is the wsl.exe that runs distributions, or empty when this
+// Windows has none. The resource monitor starts its commands through it.
+func WSLExecutable() string { return wslExecutable() }
+
 // InstalledWSL lists the distributions that can be started, asking wsl.exe.
 // It starts a process, so callers keep it off the window thread. No wsl.exe, a
 // failing one, or no distribution is an empty list.

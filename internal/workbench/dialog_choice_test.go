@@ -18,7 +18,7 @@ var hostChoicePaint = gfx.Size{Width: 1400, Height: 1400}
 // hostChoiceIn finds a dialog Choice's segment by label.
 func hostChoiceIn(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
 	hits := canvas.Hits()
-	for i := len(hits) - 1; i >= 0; i-- {
+	for i := 0; i < len(hits); i++ {
 		if hit := hits[i]; hit.Label == label && hit.Role == gfx.RoleRadio {
 			return hit, true
 		}
@@ -102,7 +102,9 @@ func TestHostDialogChoicesHaveRovingKeyboardFocus(t *testing.T) {
 		t.Fatalf("transfer = %v after the arrow", state.editor.transfer)
 	}
 
-	// The protocol choice roves too, and writes what the form then shows.
+	// The connection-type choice roves too. Mosh is the last entry, after the
+	// existing protocols; it is the same SSH host with a different terminal
+	// transport.
 	ssh := hostChoiceHit(t, state, m.ProtocolSSH)
 	telnet := hostChoiceHit(t, state, m.ProtocolTelnet)
 	result = windowKeyRoutes(state, gfx.KeyEvent{Target: ssh.ID, Key: gfx.KeyRight})
@@ -112,6 +114,32 @@ func TestHostDialogChoicesHaveRovingKeyboardFocus(t *testing.T) {
 	activateHostChoice(t, state, result.Activate)
 	if state.editor.protocol != protocolTelnet {
 		t.Fatalf("protocol = %v after the arrow picked the next option", state.editor.protocol)
+	}
+
+	rdp := hostChoiceHit(t, state, state.messages.Desktop.ProtocolRDP)
+	mosh := hostChoiceHit(t, state, m.ProtocolMosh)
+	result = windowKeyRoutes(state, gfx.KeyEvent{Target: rdp.ID, Key: gfx.KeyRight})
+	if !result.Handled || result.Focus != mosh.ID || result.Activate != mosh.ID {
+		t.Fatalf("connection result = %+v", result)
+	}
+	activateHostChoice(t, state, result.Activate)
+	if state.editor.protocol != protocolSSH || state.editor.terminal != terminalMosh {
+		t.Fatalf("connection = protocol %v, terminal %v after the arrow", state.editor.protocol, state.editor.terminal)
+	}
+}
+
+// A protocol click writes its value after the rows were laid out, and the same
+// frame paints into them: the rows a protocol has only for itself, such as
+// RDP's console switch, must be painted only when this frame laid them out.
+func TestTheHostDialogPaintsTheConsoleSwitchAfterASwitchFromVNCToRDP(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openHostDialog()
+	clickHostChoice(t, state, state.messages.Desktop.ProtocolVNC)
+	clickHostChoice(t, state, state.messages.Desktop.ProtocolRDP)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, hostChoicePaint)
+	if _, ok := hitByID(&canvas, hitDialogConsole); !ok {
+		t.Fatal("the form switched to RDP without painting its console switch")
 	}
 }
 

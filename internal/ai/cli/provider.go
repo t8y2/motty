@@ -51,7 +51,7 @@ func ExecutablePath(kind, path string) (string, error) {
 	resolved, err := exec.LookPath(path)
 	if err != nil && !strings.ContainsAny(path, `/\`) {
 		home, _ := os.UserHomeDir()
-		for _, dir := range []string{filepath.Join(home, ".local", "bin"), filepath.Join(home, ".npm-global", "bin"), "/opt/homebrew/bin", "/usr/local/bin"} {
+		for _, dir := range []string{filepath.Join(home, ".local", "bin"), filepath.Join(home, ".npm-global", "bin"), filepath.Join(home, ".bun", "bin"), "/opt/homebrew/bin", "/usr/local/bin"} {
 			if candidate, e := exec.LookPath(filepath.Join(dir, path)); e == nil {
 				resolved, err = candidate, nil
 				break
@@ -83,7 +83,7 @@ func resolve(kind, path string) (command, error) {
 				return c, nil
 			}
 		}
-		packages := map[string]string{store.KindCodexCLI: filepath.Join("@openai", "codex", "bin", "codex.js"), store.KindClaudeCLI: filepath.Join("@anthropic-ai", "claude-code", "cli.js")}
+		packages := map[string]string{store.KindCodexCLI: filepath.Join("@openai", "codex", "bin", "codex.js"), store.KindClaudeCLI: filepath.Join("@anthropic-ai", "claude-code", "cli.js"), store.KindPiCLI: filepath.Join("@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js")}
 		entry := filepath.Join(dir, "node_modules", packages[kind])
 		if packages[kind] == "" {
 			return command{}, errors.New("cli: unsupported_launcher")
@@ -160,6 +160,11 @@ func (p *provider) RunSession(parent context.Context, req llm.Request, call func
 	}
 	token := mcp.GenerateToken()
 	specs := sessionTools(req.Tools)
+	toolNames := make([]string, 0, len(req.Tools))
+	for _, spec := range req.Tools {
+		toolNames = append(toolNames, spec.Name)
+	}
+	serverName := sessionName()
 	server, err := mcp.New(mcp.Config{Token: token, Tools: specs, Dispatch: func(ctx context.Context, name string, args []byte) gate.Result {
 		return call(ctx, llm.ToolCall{Name: name, Arguments: string(args)})
 	}, CallTimeout: 15 * time.Minute})
@@ -179,9 +184,18 @@ func (p *provider) RunSession(parent context.Context, req llm.Request, call func
 		<-stopped
 	}()
 	endpoint := "http://" + listener.Addr().(*net.TCPAddr).String() + mcp.Path
-	c, err = buildCommand(p.kind, c, req, dir, endpoint, token, extra)
+	base := c
+	c, err = buildCommand(p.kind, c, req, dir, endpoint, token, extra, serverName)
 	if err != nil {
 		return err
+	}
+	if p.kind == store.KindPiCLI {
+		check := base
+		check.dir = dir
+		check.env = append([]string{}, c.env...)
+		if err := verifyPiMCP(ctx, check, serverName, toolNames); err != nil {
+			return err
+		}
 	}
 	history, err := json.Marshal(req.Messages)
 	if err != nil || len(history) > 2<<20 {

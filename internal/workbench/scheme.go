@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/vivaui/viva/gfx"
@@ -239,6 +240,26 @@ func rgb8(c gfx.Color) [3]uint8 {
 
 func luminance(c [3]uint8) float32 {
 	return (0.2126*float32(c[0]) + 0.7152*float32(c[1]) + 0.0722*float32(c[2])) / 255
+}
+
+// contrastRatio is the WCAG contrast of two opaque colours: how far apart they are
+// on the scale a readability threshold is written on.
+func contrastRatio(a, b [3]uint8) float32 {
+	relative := func(c [3]uint8) float32 {
+		channel := func(v uint8) float32 {
+			f := float32(v) / 255
+			if f <= 0.03928 {
+				return f / 12.92
+			}
+			return float32(math.Pow(float64((f+0.055)/1.055), 2.4))
+		}
+		return 0.2126*channel(c[0]) + 0.7152*channel(c[1]) + 0.0722*channel(c[2])
+	}
+	high, low := relative(a), relative(b)
+	if high < low {
+		high, low = low, high
+	}
+	return (high + 0.05) / (low + 0.05)
 }
 
 func (state *State) setTerminalScheme(id string) bool {

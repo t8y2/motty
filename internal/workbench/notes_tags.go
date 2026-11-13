@@ -281,7 +281,7 @@ func (s *State) paintNoteTagPopup(c *gfx.Canvas, viewport gfx.Rect) {
 	innerWidth := max(1, width-2*m.PadSurface-12)
 	items, height := layoutNoteTags(c, filtered, innerWidth, m.FontSizeM, 32)
 	contentHeight := min(2*m.PadSurface+38+height, maxHeight)
-	pop := components.BeginPopover(c, theme, viewport, v.overlayAnchorRect(c), components.PopoverOptions{Layer: popupLayer + 2, Scope: hitNoteDismiss, DismissID: hitNoteDismiss, ConsumeOutsidePress: true, Align: components.PopoverAlignStart, Side: s.notePopoverSide(), ContentSize: gfx.Size{Width: width, Height: contentHeight}, InitialFocusID: hitNotePicker})
+	pop := components.BeginPopover(c, theme, viewport, v.overlayAnchorRect(c), components.PopoverOptions{Layer: dialogLayer + 1, Scope: hitNoteDismiss, DismissID: hitNoteDismiss, ConsumeOutsidePress: true, Align: components.PopoverAlignStart, Side: s.notePopoverSide(), ContentSize: gfx.Size{Width: width, Height: contentHeight}, InitialFocusID: hitNotePicker})
 	layout := pop.Begin("", "")
 	c.TrapFocus(hitNoteDismiss)
 	body := layout.Content.Inset(gfx.All(m.PadSurface))

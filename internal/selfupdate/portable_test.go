@@ -51,7 +51,7 @@ func portableImage(architecture string) []byte {
 	return image
 }
 
-func TestSignedPortableUpgradePreservesTheDataAndReplacesOnlyTheProgram(t *testing.T) {
+func TestSignedPortableUpgradePreservesTheDataAndReplacesTheProgramAndConpty(t *testing.T) {
 	root := t.TempDir()
 	dataDir := filepath.Join(root, "motty-data")
 	if err := os.Mkdir(dataDir, 0o700); err != nil {
@@ -65,12 +65,20 @@ func TestSignedPortableUpgradePreservesTheDataAndReplacesOnlyTheProgram(t *testi
 	if err := os.WriteFile(filepath.Join(dataDir, "vault.key"), key, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	conpty := filepath.Join(root, "conpty", "x64")
+	if err := os.MkdirAll(conpty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(conpty, "conpty.dll"), []byte("old conpty"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "my-notes.txt"), []byte("keep"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	image := portableImage(runtime.GOARCH)
 	archive := portableArchive(t, map[string][]byte{
 		"motty.exe": image, "motty-data/README.txt": []byte("marker only"),
+		"conpty/x64/conpty.dll": []byte("new conpty"),
 	})
 	public, private, err := minisign.GenerateKey(nil)
 	if err != nil {
@@ -104,8 +112,11 @@ func TestSignedPortableUpgradePreservesTheDataAndReplacesOnlyTheProgram(t *testi
 	if got, err := os.ReadFile(filepath.Join(dataDir, "vault.key")); err != nil || !bytes.Equal(got, key) {
 		t.Fatalf("vault key: %q, %v", got, err)
 	}
-	if _, err := os.Stat(filepath.Join(dataDir, "README.txt")); !os.IsNotExist(err) {
-		t.Fatalf("archive overwrote the portable data marker: %v", err)
+	if got, err := os.ReadFile(filepath.Join(dataDir, "README.txt")); err != nil || string(got) != "marker only" {
+		t.Fatalf("portable note: %q, %v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(conpty, "conpty.dll")); err != nil || string(got) != "new conpty" {
+		t.Fatalf("conpty: %q, %v", got, err)
 	}
 	if got, err := os.ReadFile(filepath.Join(root, "my-notes.txt")); err != nil || string(got) != "keep" {
 		t.Fatalf("unrelated file changed: %q, %v", got, err)
@@ -121,6 +132,7 @@ func TestPortableUpgradeRejectsUnexpectedContentsAndArchitecture(t *testing.T) {
 	for name, entries := range map[string]map[string][]byte{
 		"missing executable": {"motty-data/README.txt": []byte("marker")},
 		"extra data":         {"motty.exe": image, "motty-data/README.txt": []byte("marker"), "motty-data/vault.key": []byte("overwrite")},
+		"empty conpty":       {"motty.exe": image, "motty-data/README.txt": []byte("marker"), "conpty/x64/conpty.dll": {}},
 		"path traversal":     {"motty.exe": image, "motty-data/README.txt": []byte("marker"), "../bad": []byte("bad")},
 		"wrong architecture": {"motty.exe": portableImage(opposite), "motty-data/README.txt": []byte("marker")},
 	} {

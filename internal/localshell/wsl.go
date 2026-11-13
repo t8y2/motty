@@ -2,6 +2,7 @@ package localshell
 
 import (
 	"encoding/base64"
+	"path"
 	"strings"
 	"unicode/utf16"
 )
@@ -149,6 +150,35 @@ func WSLPath(windowsPath, distro string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// WSLWindowsPath is linuxPath as Windows sees it: a path inside distro under
+// its network share, or a Windows drive path for a folder of a mounted drive.
+// It reports false for a path Windows cannot name. The drive mount points are
+// assumed to be WSL's defaults, as WSLPath assumes for the other direction,
+// and a name containing a backslash is refused because Windows would read it
+// as a separator.
+func WSLWindowsPath(linuxPath, distro string) (string, bool) {
+	if !validDistro(distro) || linuxPath == "" || len(linuxPath) > 2048 || linuxPath[0] != '/' ||
+		strings.ContainsAny(linuxPath, "\\\x00") || strings.IndexFunc(linuxPath, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+		return "", false
+	}
+	clean := path.Clean(linuxPath)
+	if rest, ok := strings.CutPrefix(clean, "/mnt/"); ok {
+		drive, after, _ := strings.Cut(rest, "/")
+		if len(drive) == 1 && (drive[0] >= 'a' && drive[0] <= 'z' || drive[0] >= 'A' && drive[0] <= 'Z') {
+			letter := strings.ToUpper(drive)
+			if after == "" {
+				return letter + `:\`, true
+			}
+			return letter + `:\` + strings.ReplaceAll(after, "/", `\`), true
+		}
+	}
+	rest := strings.Trim(strings.ReplaceAll(clean, "/", `\`), `\`)
+	if rest == "" {
+		return `\\wsl.localhost\` + distro + `\`, true
+	}
+	return `\\wsl.localhost\` + distro + `\` + rest, true
 }
 
 // wslStartDirectory is what to tell the start script to change into for dir,

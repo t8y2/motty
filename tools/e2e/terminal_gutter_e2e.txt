@@ -1,0 +1,57 @@
+# 端到端：行号栏的时间跟随被原地重写的行；备用屏幕不显示时间栏。
+# 需要无头 Viva 构建和 2271 端口的 e2esshd 夹具：
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head-gutter ./cmd/motty
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd-gutter .) && /tmp/e2esshd-gutter 2271 &
+#   MOTTY_HEAD=/tmp/motty-head-gutter \
+#     python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/terminal_gutter_e2e.txt
+#
+# 验证点：
+# - 两张主屏幕截图里，两行的时间都变晚了：top 这类程序在主屏幕上原地重画，
+#   一行的时间是它最后一次被写入的时间，不是第一次出现的时间。
+# - top 的截图里没有时间栏文字：macOS 的 top 走备用屏幕，备用屏幕没有可回溯
+#   的历史，列宽照旧保留。
+#
+# 下面的循环写出的字节和主屏全屏程序一致：光标回左上角，再逐行重写；它不是
+# 备用屏幕。
+
+click "搜索"
+type tester@127.0.0.1:2271
+click "连接"
+waitfor "信任" 5000
+click "信任并保存"
+waitfor "密码" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+
+# 打开时间栏（设置 > 终端 > 行号栏 > 时间）。
+click "设置"
+settle 600
+click "终端"
+settle 700
+click "时间"
+settle 400
+click "127.0.0.1:2271"
+settle 600
+
+type clear
+key enter
+settle 400
+
+type for i in 1 2 3; do printf '\033[Hframe %s\033[K\nrow two\033[K\n' "$i"; sleep 2; done
+key enter
+settle 600
+shot /tmp/terminal-gutter-main-first.png
+settle 2500
+shot /tmp/terminal-gutter-main-second.png
+texts
+
+# macOS 的 top 进入备用屏幕；时间栏保持空白，列宽不变。
+type top -s 1
+key enter
+settle 1500
+shot /tmp/terminal-gutter-top.png
+key q
+settle 400

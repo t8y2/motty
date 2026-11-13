@@ -586,6 +586,158 @@ func pointerPageControl(w *remoteToolsWindow, event gfx.PointerEvent) {
 	w.config().OnPointer(event)
 }
 
+// nativeWindowDriver runs a tools window's config in the app runtime, which is
+// where hit testing, the press, and the click pass live. The paint helpers above
+// deliver a click to a control by its identity, so they cannot see a base
+// pointer handler swallow the press a page control needs.
+func nativeWindowDriver(t *testing.T, config app.Config) *app.Driver {
+	t.Helper()
+	driver, err := app.NewDriver(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(driver.Close)
+	return driver
+}
+
+// driverHit finds the page control a label and role name in the driver's frame.
+func driverHit(t *testing.T, driver *app.Driver, label string, role gfx.Role) gfx.Hit {
+	t.Helper()
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.Label == label && hit.Role == role && !hit.Block {
+			return hit
+		}
+	}
+	t.Fatalf("missing %v %q", role, label)
+	return gfx.Hit{}
+}
+
+// driverHitPrefix finds the page control whose label starts with prefix.
+func driverHitPrefix(t *testing.T, driver *app.Driver, prefix string, role gfx.Role) gfx.Hit {
+	t.Helper()
+	for _, hit := range driver.Snapshot().Hits {
+		if strings.HasPrefix(hit.Label, prefix) && hit.Role == role && !hit.Block {
+			return hit
+		}
+	}
+	t.Fatalf("missing %v with prefix %q", role, prefix)
+	return gfx.Hit{}
+}
+
+// driverClick clicks the center of a hit, as the pointer would.
+func driverClick(t *testing.T, driver *app.Driver, hit gfx.Hit) {
+	t.Helper()
+	if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestRemoteNativeWindowProcessDetailsTakesPointerAndKeys holds the details
+// dialog's own dismiss targets live through the real input path: its Close
+// button, its corner close, a press on the scrim, and the key activation of the
+// focused button. A press the window's base pointer handler swallows never
+// reaches the page's click pass, which leaves the dialog impossible to close
+// except by the native titlebar.
+func TestRemoteNativeWindowProcessDetailsTakesPointerAndKeys(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		driver := nativeWindowDriver(t, host.windows[0].config)
+
+		bounds := w.ui.remote.tableBodyBounds
+		open := func() {
+			t.Helper()
+			if err := driver.Click(bounds.X+bounds.Width/2, bounds.Y+w.ui.remote.tableRowHeight/2); err != nil {
+				t.Fatal(err)
+			}
+			if !w.ui.remote.processDetails.open {
+				t.Fatal("a press on a process row did not open its details")
+			}
+		}
+
+		open()
+		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Tools.RemoteClose, gfx.RoleButton))
+		if w.ui.remote.processDetails.open {
+			t.Fatal("the pointer did not reach the details' Close button")
+		}
+
+		open()
+		if err := driver.Key(gfx.KeyEnter, 0); err != nil {
+			t.Fatal(err)
+		}
+		if w.ui.remote.processDetails.open {
+			t.Fatal("Enter did not activate the focused Close button")
+		}
+
+		open()
+		var corner gfx.Hit
+		for _, hit := range driver.Snapshot().Hits {
+			if hit.ID == hitRemoteProcessDetailsClose {
+				corner = hit
+			}
+		}
+		if corner.ID.IsZero() {
+			t.Fatal("the details dialog has no corner close")
+		}
+		driverClick(t, driver, corner)
+		if w.ui.remote.processDetails.open {
+			t.Fatal("the corner close did not take the click")
+		}
+
+		// A Dialog keeps its surface 16 pixels inside the frame, so this point is
+		// the scrim whatever the viewport and the text metrics are.
+		open()
+		if err := driver.Click(8, 8); err != nil {
+			t.Fatal(err)
+		}
+		if w.ui.remote.processDetails.open {
+			t.Fatal("a press on the scrim did not dismiss the details")
+		}
+	})
+}
+
+// TestRemoteNativeWindowMenusAndFormsTakePointer holds the window's other
+// overlays live through the real input path: an interval menu opened from its
+// control, and the confirmation a footer action opens.
+func TestRemoteNativeWindowMenusAndFormsTakePointer(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		driver := nativeWindowDriver(t, host.windows[0].config)
+
+		driverClick(t, driver, driverHitPrefix(t, driver, w.ui.remoteAutoAccessibleLabel(), gfx.RoleButton))
+		if !w.ui.remote.auto.open {
+			t.Fatal("a press on the auto-refresh control did not open its menu")
+		}
+		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Tools.RemoteAutoStart, gfx.RoleMenuItem))
+		if w.ui.remote.auto.open {
+			t.Fatal("a press on a menu item did not close the menu")
+		}
+
+		selectRemoteToolsWindowRow(w, 0)
+		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Tools.RemoteForceKill, gfx.RoleButton))
+		if w.ui.modal != modalForm {
+			t.Fatal("a press on Force kill did not open its confirmation")
+		}
+		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Cancel, gfx.RoleButton))
+		if w.ui.modal != modalRemoteTools {
+			t.Fatal("the pointer did not reach the confirmation's Cancel button")
+		}
+	})
+}
+
 func TestRemoteNativeWindowDialogsArePageControls(t *testing.T) {
 	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
 		state, _, fake, _ := liveSession(t)

@@ -8,11 +8,13 @@ import (
 // A host-menu connection has no terminal, pane or persisted session. SSH's
 // existing authentication dialogs and vault still own host trust and secrets.
 func (state *State) openHostSFTPWindow(host Host) {
-	if !host.isSSH() || host.ID == localHostID || !state.sftpManagersAvailable() {
+	if !host.isSSH() || host.mosh() || host.ID == localHostID || !state.sftpManagersAvailable() {
 		return
 	}
 	for _, w := range state.sftpWindows {
-		if !w.closed && w.session.HostID == host.ID {
+		// A host with no ID is a one-off link target. Every such target shares
+		// ID 0, so reusing by ID would show a window opened for another host.
+		if host.ID != 0 && !w.closed && w.session.HostID == host.ID {
 			w.reveal()
 			return
 		}
@@ -146,6 +148,11 @@ func (state *State) connectionSessions() func(func(*Session) bool) {
 		}
 		for i := range state.sessions {
 			if !yield(&state.sessions[i]) {
+				return
+			}
+		}
+		for _, tunnel := range state.forwardTunnels {
+			if !yield(&tunnel.session) {
 				return
 			}
 		}

@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -184,9 +185,10 @@ func TestTerminalChangesClearASelection(t *testing.T) {
 		name   string
 		change func(*State, *terminal)
 	}{
-		{"output", func(_ *State, terminal *terminal) { terminal.write([]byte("new")) }},
 		{"input", func(_ *State, terminal *terminal) { terminal.shell = &fakeShell{}; terminal.send([]byte("x")) }},
 		{"resize", func(state *State, _ *terminal) { state.Resize(gfx.Size{Width: 400, Height: 300}) }},
+		{"alternate screen", func(_ *State, terminal *terminal) { terminal.write([]byte("\x1b[?1049h")) }},
+		{"reset", func(_ *State, terminal *terminal) { terminal.write([]byte("\x1bc")) }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -201,6 +203,74 @@ func TestTerminalChangesClearASelection(t *testing.T) {
 				t.Fatal("selection survived the terminal change")
 			}
 		})
+	}
+}
+
+func TestOutputKeepsTheSelectionOnItsText(t *testing.T) {
+	_, session, _ := selectionState()
+	session.term.write([]byte("alpha beta\r\ngamma\r\n"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 1, Column: 4}),
+	)
+	// Output arrives and scrolls the screen: the selection stays on its text
+	// instead of being erased with the rows that moved.
+	session.term.write([]byte("delta\r\nepsilon\r\nzeta\r\neta\r\ntheta\r\n"))
+	if !session.term.selection.selected {
+		t.Fatal("output cleared the selection")
+	}
+	if got := selectedText(session); got != "alpha beta\ngamma" {
+		t.Fatalf("selection copied %q after output", got)
+	}
+}
+
+func TestOutputDoesNotBreakASelectionDrag(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.write([]byte("alpha beta\r\ngamma delta\r\n"))
+	hit := terminalTestHit(state, session)
+	startX, startY := cellPoint(geometry, 0, 2, state.cellWidth, state.cellHeight)
+	endX, endY := cellPoint(geometry, 0, 8, state.cellWidth, state.cellHeight)
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hit,
+		X: startX, Y: startY, Viewport: state.viewport,
+	})
+	// The shell speaks while the button is still held; the drag must go on.
+	session.term.write([]byte("one\r\ntwo\r\n"))
+	if !session.term.selection.dragging {
+		t.Fatal("output ended the drag")
+	}
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true,
+		X: endX, Y: endY, Viewport: state.viewport,
+	})
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hit, Captured: true,
+		X: endX, Y: endY, Viewport: state.viewport,
+	})
+	if got := selectedText(session); got != "pha bet" {
+		t.Fatalf("drag selected %q across output", got)
+	}
+}
+
+func TestOutputTrimsASelectionTheScrollbackDropped(t *testing.T) {
+	_, session, _ := selectionState()
+	session.term.screen.SetScrollbackLimit(2)
+	session.term.write([]byte("keep\r\ndrop\r\nmore\r\n"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 1, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 2, Column: 3}),
+	)
+	for _, line := range []string{"x", "y", "z", "w", "v"} {
+		session.term.write([]byte(line + "\r\n"))
+	}
+	if !session.term.selection.selected || selectedText(session) != "more" {
+		t.Fatalf("selection after the start was trimmed = %+v, text %q",
+			session.term.selection, selectedText(session))
+	}
+	// The last line it covered has now left the scrollback too.
+	session.term.write([]byte("u\r\n"))
+	if session.term.selection.selected {
+		t.Fatalf("selection outlived its text: %+v", session.term.selection)
 	}
 }
 
@@ -418,9 +488,35 @@ func TestRightClickCopiesSelectionInsteadOfPasting(t *testing.T) {
 	if copied != "hello" || len(shell.input) != 0 || state.terminalMenu.open {
 		t.Fatalf("selected right click: copied=%q input=%q menu=%v", copied, shell.input, state.terminalMenu.open)
 	}
+	if session.term.selection.selected {
+		t.Fatal("the copy left the selection behind, so the next right click would copy again instead of pasting")
+	}
 	click(gfx.ModifierShift)
 	if !state.terminalMenu.open || len(shell.input) != 0 {
-		t.Fatal("Shift+right click with a selection did not open the menu")
+		t.Fatal("Shift+right click did not open the menu")
+	}
+}
+
+func TestRightClickCopyKeepsTheSelectionWhenTheClipboardFails(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("hello world"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 4}),
+	)
+	state.options.SetClipboardText = func(string) error { return errors.New("clipboard busy") }
+	state.options.ClipboardText = func() (string, error) { return "paste", nil }
+	state.terminalRightClickPaste = true
+	x, y := cellPoint(geometry, 0, 8, state.cellWidth, state.cellHeight)
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary,
+		Target: terminalTestHit(state, session), X: x, Y: y, Viewport: state.viewport})
+	if !session.term.selection.selected || state.status != "clipboard busy" {
+		t.Fatalf("failed copy: selected=%v status=%q", session.term.selection.selected, state.status)
+	}
+	if len(shell.input) != 0 || state.terminalMenu.open {
+		t.Fatalf("failed copy pasted or opened the menu: input=%q menu=%v", shell.input, state.terminalMenu.open)
 	}
 }
 
@@ -772,5 +868,87 @@ func TestAPlainClickAfterAWordSelectionGoesBackToCells(t *testing.T) {
 	gesture(state, session, geometry, 1, [2]int{0, 0}, [2]int{0, 5})
 	if got := selectedText(session); got != "one tw" {
 		t.Fatalf("a cell drag after a word selection selected %q", got)
+	}
+}
+
+// blockGesture drags from down to the last move with modifiers held and
+// releases there, the way a block selection is drawn.
+func blockGesture(state *State, session *Session, geometry terminalGeometry, modifiers gfx.Modifiers, down [2]int, moves ...[2]int) {
+	hit := terminalTestHit(state, session)
+	at := func(cell [2]int) (float32, float32) {
+		return cellPoint(geometry, cell[0], cell[1], state.cellWidth, state.cellHeight)
+	}
+	x, y := at(down)
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1, Modifiers: modifiers,
+		Target: hit, X: x, Y: y, Viewport: state.viewport,
+	})
+	last := down
+	for _, cell := range moves {
+		x, y = at(cell)
+		state.Pointer(gfx.PointerEvent{
+			Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Captured: true, Modifiers: modifiers,
+			Target: hit, X: x, Y: y, Viewport: state.viewport,
+		})
+		last = cell
+	}
+	x, y = at(last)
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Captured: true, Modifiers: modifiers,
+		Target: hit, X: x, Y: y, Viewport: state.viewport,
+	})
+}
+
+func TestBlockDragSelectsTheRectangleAndCopiesIt(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.write([]byte("name    value\r\nalpha   1234\r\nbeta    5678\r\n"))
+	blockGesture(state, session, geometry, terminalBlockModifiers(), [2]int{0, 8}, [2]int{1, 10}, [2]int{2, 12})
+
+	hit := terminalTestHit(state, session)
+	result := state.Key(gfx.KeyEvent{Target: hit, Modifiers: gfx.ModifierControl | gfx.ModifierShift, Text: "c"})
+	if result.ClipboardText != "value\n1234\n5678" {
+		t.Fatalf("copy = %q (%+v)", result.ClipboardText, result)
+	}
+
+	cols, _ := session.term.screen.Size()
+	for row := 0; row < 3; row++ {
+		from, to, selected := session.term.selection.span(
+			session.term.screen.LineNumber(row), session.term.screen.Row(row), cols)
+		if !selected || from != 8 || to != 13 {
+			t.Fatalf("row %d span %d..%d, %v", row, from, to, selected)
+		}
+	}
+	if _, _, selected := session.term.selection.span(
+		session.term.screen.LineNumber(3), session.term.screen.Row(3), cols); selected {
+		t.Fatal("a row below the rectangle is painted as selected")
+	}
+}
+
+func TestBlockPressWithoutADragStaysAClick(t *testing.T) {
+	state, session, geometry := selectionState()
+	blockGesture(state, session, geometry, terminalBlockModifiers(), [2]int{1, 2})
+	if session.term.selection.selected || session.term.selection.dragging || session.term.selection.block {
+		t.Fatalf("click left %+v", session.term.selection)
+	}
+}
+
+func TestBlockSelectionYieldsToProgramsUsingTheMouse(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("\x1b[?1000h"))
+	session.term.write([]byte("name    value\r\nalpha   1234\r\nbeta    5678\r\n"))
+
+	blockGesture(state, session, geometry, terminalBlockModifiers(), [2]int{0, 8}, [2]int{2, 12})
+	if session.term.selection.selected {
+		t.Fatal("the terminal took a drag the program had the mouse for")
+	}
+	if shell.typed() == "" {
+		t.Fatal("the program using the mouse received nothing")
+	}
+	// Shift takes the press back, and the block chord then selects the rectangle.
+	blockGesture(state, session, geometry, gfx.ModifierShift|terminalBlockModifiers(), [2]int{0, 8}, [2]int{2, 12})
+	if got := selectedText(session); got != "value\n1234\n5678" {
+		t.Fatalf("Shift+block drag selected %q", got)
 	}
 }

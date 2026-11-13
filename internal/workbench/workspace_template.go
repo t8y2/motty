@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"unicode"
@@ -31,14 +32,30 @@ var (
 	ErrWorkspaceSaveDuplicateHost  = errors.New("workbench: workspace panes repeat a host")
 )
 
+// WorkspaceCommand configures one SSH terminal within a workspace.
+type WorkspaceCommand struct {
+	Command string `json:"command"`
+}
+
+func (command WorkspaceCommand) normalized() WorkspaceCommand {
+	command.Command = restoredLoginCommand(command.Command)
+	return command
+}
+
 // WorkspaceTemplate is the small, shareable definition of a saved workspace.
-// It references catalog hosts or this computer's default local terminal and
-// never contains credentials, sessions, or terminal state.
+// It references catalog hosts, this computer's default local terminal, or one
+// named local shell, and never contains credentials, sessions, or terminal
+// state.
 type WorkspaceTemplate struct {
-	ID      string                `json:"id"`
-	Name    string                `json:"name"`
-	HostIDs []string              `json:"host_ids"`
-	Layout  layoutcore.LayoutSpec `json:"layout"`
+	Commands map[string]WorkspaceCommand `json:"commands,omitempty"`
+	ID       string                      `json:"id"`
+	Name     string                      `json:"name"`
+	HostIDs  []string                    `json:"host_ids"`
+	// Layout is left out when it is zero. A record from before layouts existed
+	// holds only Columns, and the save that projects such a record re-encodes
+	// it; a zero kind has no name to write and would otherwise fail every save
+	// for as long as that record is stored.
+	Layout layoutcore.LayoutSpec `json:"layout,omitzero"`
 	// Columns is read from files written before layouts existed, which stored
 	// only a grid width. normalizeWorkspaceTemplate folds it into Layout.
 	Columns uint8 `json:"columns,omitempty"`
@@ -75,14 +92,28 @@ func (template *WorkspaceTemplate) validate() error {
 	seen := make(map[string]struct{}, len(template.HostIDs))
 	for index, hostID := range template.HostIDs {
 		hostID = strings.TrimSpace(hostID)
-		if hostID != workspaceLocalTerminalRef && (!validCatalogID(hostID) || hostID == "") {
-			return ErrWorkspaceTemplateHostID
+		if hostID != workspaceLocalTerminalRef {
+			if _, shell := workspaceLocalShellRef(hostID); !shell && (!validCatalogID(hostID) || hostID == "") {
+				return ErrWorkspaceTemplateHostID
+			}
 		}
 		if _, exists := seen[hostID]; exists {
 			return ErrWorkspaceTemplateDupID
 		}
 		seen[hostID] = struct{}{}
 		template.HostIDs[index] = hostID
+	}
+	template.Commands = maps.Clone(template.Commands)
+	for id, command := range template.Commands {
+		command = command.normalized()
+		if _, ok := seen[id]; !ok || id == workspaceLocalTerminalRef || command.Command == "" {
+			delete(template.Commands, id)
+		} else {
+			template.Commands[id] = command
+		}
+	}
+	if len(template.Commands) == 0 {
+		template.Commands = nil
 	}
 	return nil
 }

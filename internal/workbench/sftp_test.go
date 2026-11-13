@@ -32,6 +32,7 @@ type workbenchSFTPRemote struct {
 	readDelay    time.Duration     // how long a listing takes
 	linkDelay    time.Duration     // how long resolving one link takes
 	links        map[string]string // symbolic links: path to target
+	renameErrAt  map[string]error  // refuses a particular rename source
 	removeErr    error             // refuses every removal while set
 	removeErrAt  map[string]error  // refuses a particular path
 	unreadable   map[string]bool   // folders whose listing is refused
@@ -293,6 +294,9 @@ func (remote *workbenchSFTPRemote) Mkdir(remotePath string) error {
 func (remote *workbenchSFTPRemote) Rename(oldPath, newPath string) error {
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if err := remote.renameErrAt[oldPath]; err != nil {
+		return err
+	}
 	entry, ok := remote.removeEntryLocked(path.Dir(oldPath), path.Base(oldPath))
 	if !ok {
 		return os.ErrNotExist
@@ -1247,8 +1251,8 @@ func TestSFTPWriteErrorsRemainVisible(t *testing.T) {
 	replaceSFTPDialogText(t, state, "docs")
 	state.Click(hitSFTPDialogSubmit)
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.errorText != "" })
-	if view.errorText == "" {
-		t.Fatalf("create error = %q", view.errorText)
+	if !strings.Contains(view.errorText, state.messages.SFTPErrDirectoryExists) {
+		t.Fatalf("create error = %q, want containing %q", view.errorText, state.messages.SFTPErrDirectoryExists)
 	}
 
 	// A removal the server refuses stays visible instead of passing for done.
@@ -1377,7 +1381,11 @@ func TestLeavingSFTPStopsItsWorker(t *testing.T) {
 func TestSFTPSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	clickSFTPRow(t, state, session.files, "notes.txt")
+	// The completion catalog loads on a background wake. Settle it before
+	// measuring the allocations of an otherwise idle paint.
+	waitFor(t, state, func() bool { return !state.completion.catalogLoading })
 	var canvas gfx.Canvas
+	canvas.SetClock(func() time.Duration { return time.Second })
 	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {

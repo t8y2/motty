@@ -11,11 +11,12 @@ var (
 	oidNTLMSSP = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 2, 10}
 )
 
-// SPNEGO NegState values
+// SPNEGO NegState values (RFC 4178 §4.2.2)
 const (
 	spnegoAcceptCompleted  = 0
 	spnegoAcceptIncomplete = 1
 	spnegoReject           = 2
+	spnegoRequestMIC       = 3
 )
 
 // negTokenInit is the initial SPNEGO token containing mechanism type and token.
@@ -24,11 +25,23 @@ type negTokenInit struct {
 	MechToken []byte                  `asn1:"explicit,optional,tag:2"`
 }
 
-// negTokenResp is the SPNEGO response containing state and response token.
+// negTokenResp is the SPNEGO response containing state, response token and,
+// when the acceptor signs the mechanism list, its mechListMIC.
 type negTokenResp struct {
 	NegState      asn1.Enumerated       `asn1:"explicit,optional,tag:0"`
 	SupportedMech asn1.ObjectIdentifier `asn1:"explicit,optional,tag:1"`
 	ResponseToken []byte                `asn1:"explicit,optional,tag:2"`
+	MechListMIC   []byte                `asn1:"explicit,optional,tag:3"`
+}
+
+// negTokenRespData is a decoded NegTokenResp. negState is -1 when the field is
+// absent, which is not the same as accept-completed: WinPR and Windows use
+// that difference to decide whether the acceptor must sign the mechanism list.
+type negTokenRespData struct {
+	negState      int
+	supportedMech asn1.ObjectIdentifier
+	responseToken []byte
+	mechListMIC   []byte
 }
 
 // encodeNegTokenInit wraps an NTLM Negotiate message in SPNEGO NegTokenInit
@@ -60,8 +73,10 @@ func encodeNegTokenInit(ntlmNegotiate []byte) (spnegoToken []byte, mechTypeList 
 	return
 }
 
-// decodeNegTokenResp parses a SPNEGO NegTokenResp and returns the NTLM challenge token.
-func decodeNegTokenResp(data []byte) (negState int, responseToken []byte, err error) {
+// decodeNegTokenResp parses a SPNEGO NegTokenResp. A missing negState decodes
+// as -1 (NOSTATE), matching the peers that omit it from the initiator's
+// message.
+func decodeNegTokenResp(data []byte) (*negTokenRespData, error) {
 	// The server sends NegTokenResp wrapped in context tag [1]
 	// or directly as a SEQUENCE. Try to unwrap.
 	inner := data
@@ -74,13 +89,23 @@ func decodeNegTokenResp(data []byte) (negState int, responseToken []byte, err er
 		}
 	}
 
-	var resp negTokenResp
+	// Go's ASN.1 decoder writes the zero value of an absent optional
+	// asn1.Enumerated, so start from the absent state explicitly.
+	resp := negTokenResp{NegState: asn1.Enumerated(negStateAbsent)}
 	if _, err := asn1.Unmarshal(inner, &resp); err != nil {
-		return 0, nil, errors.New("spnego: failed to unmarshal NegTokenResp")
+		return nil, errors.New("spnego: failed to unmarshal NegTokenResp")
 	}
 
-	return int(resp.NegState), resp.ResponseToken, nil
+	return &negTokenRespData{
+		negState:      int(resp.NegState),
+		supportedMech: resp.SupportedMech,
+		responseToken: resp.ResponseToken,
+		mechListMIC:   resp.MechListMIC,
+	}, nil
 }
+
+// negStateAbsent is the value of an absent negState field.
+const negStateAbsent = -1
 
 // encodeNegTokenResp wraps an NTLM Authenticate message in SPNEGO NegTokenResp.
 // Client only sends ResponseToken [2] and optional mechListMIC [3],

@@ -60,7 +60,7 @@ func TestHostDisplayOrderWebDAVSharesPreferenceAndPreservesManualOrder(t *testin
 	chooseDisplayOrder(first, "name")
 	syncAndWait(t, first, hitSyncNow, done)
 	syncAndWait(t, second, hitSyncNow, done)
-	if got, want := displayHostIDs(second), []string{"host_a", "host_c", "host_d", "host_b", "host_z", "host_e", "host_f"}; !slices.Equal(got, want) {
+	if got, want := displayHostIDs(second), []string{"host_c", "host_a", "host_d", "host_b", "host_z", "host_e", "host_f"}; !slices.Equal(got, want) {
 		t.Fatalf("synced name display = %v, want %v", got, want)
 	}
 	chooseDisplayOrder(first, "manual")

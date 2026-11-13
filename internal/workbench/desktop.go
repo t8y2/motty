@@ -1170,10 +1170,10 @@ func (state *State) desktopStripLeft(view *desktopView, session *Session) string
 	switch {
 	case session.host.Protocol == protocolVNC && view.session.Info().Security != "":
 		parts = append(parts, state.vncSecurityStatus(view))
-		if session.host.tunneled() {
+		if session.host.tunneled() || session.desktopTunnel {
 			parts = append(parts, m.StripEncrypted)
 		}
-	case session.host.tunneled():
+	case session.host.tunneled() || session.desktopTunnel:
 		parts = append(parts, m.StripEncrypted)
 	case view.session.Info().Encrypted:
 		if session.host.Protocol == protocolVNC {

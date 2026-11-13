@@ -161,7 +161,28 @@ jobs:
 
       - name: Install NSIS and osslsigncode, for the Windows installer and its signature
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y nsis osslsigncode
+        run: |
+          set -euo pipefail
+          # The hosted runner's default mirror (azure.archive.ubuntu.com) sometimes
+          # fails to resolve for a while. Retry the install with short network
+          # timeouts, and from the fourth attempt use the main Ubuntu archive
+          # instead of that mirror, so a DNS outage on one host does not block a
+          # release whose macOS assets are already built.
+          options=(-o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=0)
+          for attempt in $(seq 1 10); do
+            if [ "$attempt" -eq 4 ] && [ -f /etc/apt/apt-mirrors.txt ]; then
+              echo "::warning::the azure apt mirror is unreachable; falling back to archive.ubuntu.com"
+              sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt
+            fi
+            if sudo apt-get "${options[@]}" update &&
+              sudo apt-get "${options[@]}" install -y nsis osslsigncode; then
+              exit 0
+            fi
+            echo "::warning::NSIS/osslsigncode install failed (attempt $attempt); retrying in 30s"
+            sleep 30
+          done
+          echo "::error::could not install NSIS/osslsigncode after 10 attempts"
+          exit 1
 
       # A signed but un-notarized image would be blocked by Gatekeeper all the same,
       # so a certificate without notary credentials stops the build here.

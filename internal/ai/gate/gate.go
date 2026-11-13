@@ -21,11 +21,15 @@ import (
 
 // SessionInfo describes one open session for list_sessions.
 type SessionInfo struct {
-	ID      string // the handle a tool call passes as "session"
-	Title   string
-	Address string
-	Active  bool
-	Ready   bool // a shell is open and can take commands
+	// HostID is the persistent catalog identity, never the runtime host number.
+	HostID    string
+	HostName  string
+	HostGroup string
+	ID        string // the handle a tool call passes as "session"
+	Title     string
+	Address   string
+	Active    bool
+	Ready     bool // a shell is open and can take commands
 }
 
 type HostInfo struct {
@@ -108,11 +112,13 @@ const (
 
 // Gate decides and runs tool calls.
 type Gate struct {
-	Backend  Backend
-	Policy   risk.Policy
-	Mode     Mode
-	Approver Approver // nil means nothing that needs approval can run
-	Outputs  *OutputStore
+	// NotesEnabled is set only by the in-app Agent, never external MCP.
+	NotesEnabled bool
+	Backend      Backend
+	Policy       risk.Policy
+	Mode         Mode
+	Approver     Approver // nil means nothing that needs approval can run
+	Outputs      *OutputStore
 	// Target is an in-app request's immutable default. References contains only
 	// sessions explicitly mentioned in this question. Nil Target retains the
 	// external MCP contract; references never change the default.
@@ -164,6 +170,9 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 	}
 	if g.Mode == ModeObserve && spec.Kind != tools.Read {
 		return Result{Text: "this connection is read-only: " + name + " is not allowed", IsError: true, Denied: true}
+	}
+	if name == tools.NameNoteQuery || name == tools.NameNoteEdit {
+		return g.runNotesTool(ctx, name, raw)
 	}
 	if result, handled := g.runHostTool(ctx, name, raw); handled {
 		return result
@@ -360,6 +369,10 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 			}
 		}
 		return g.execMany(ctx, name, args)
+	case tools.NameRZSZUpload, tools.NameRZSZDownload:
+		return g.runRZSZ(ctx, name, raw)
+	case tools.NameRZSZStatus:
+		return g.runRZSZStatus(ctx, raw)
 	case tools.NameSFTPWrite:
 		args, err := tools.DecodeSFTPWrite(raw)
 		if err != nil {
@@ -629,7 +642,7 @@ func formatSessions(sessions []SessionInfo) string {
 		if s.Active {
 			active = " (active)"
 		}
-		fmt.Fprintf(&b, "%s: %s %s [%s]%s\n", s.ID, s.Title, s.Address, state, active)
+		fmt.Fprintf(&b, "%s: %s %s [%s]%s %s\n", s.ID, s.Title, s.Address, state, active, SessionHostMetadata(s))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -679,4 +692,10 @@ func formatExec(r ExecResult) string {
 		fmt.Fprintf(&b, "[exit status %d]", r.ExitCode)
 	}
 	return b.String()
+}
+
+// SessionHostMetadata is shared by tool output and attached terminal context.
+// An empty group with a nonempty host ID means the catalog root.
+func SessionHostMetadata(s SessionInfo) string {
+	return fmt.Sprintf("host_id=%q host_name=%q host_group=%q saved_host=%t", s.HostID, s.HostName, s.HostGroup, s.HostID != "")
 }

@@ -460,6 +460,94 @@ func TestSSHSyncOffersTheIdentityFileOnce(t *testing.T) {
 	}
 }
 
+func TestSSHSyncLeavesGitRemoteAliasesAlone(t *testing.T) {
+	key := writeWorkbenchIdentity(t, "id_github", "")
+	state, path := newSyncState(t, "Host github.com\n    HostName github.com\n    User git\n    IdentityFile "+key+"\n\n"+
+		"Host work\n    HostName work.example\n    User deploy\n")
+	enableSync(t, state)
+	if host, ok := state.hostByLabel("github.com"); ok {
+		t.Fatalf("the Git alias was imported: %+v", host)
+	}
+	if len(state.identities) != 0 {
+		t.Fatalf("the Git alias brought its key along: %+v", state.identities)
+	}
+	if _, ok := state.hostByLabel("work"); !ok {
+		t.Fatalf("an ordinary host was skipped: %+v", state.hosts)
+	}
+	if file := readSyncFile(t, path); !strings.Contains(file, "Host github.com") {
+		t.Fatalf("the Git alias was removed from the file: %q", file)
+	}
+	if state.modal != modalHostImportResult || state.hostImportResult.visible == 0 || !strings.Contains(state.hostImportResult.warnings[0], "Git remote alias") {
+		t.Fatalf("the skip was not reported: modal=%d %+v", state.modal, state.hostImportResult)
+	}
+}
+
+func TestSSHSyncLeavesGitRemoteAliasesWithoutAUserAlone(t *testing.T) {
+	// The remote URL names git, so the block often carries no User of its own.
+	key := writeWorkbenchIdentity(t, "id_github", "")
+	state, _ := newSyncState(t, "Host github.com\n    IdentityFile "+key+"\n")
+	enableSync(t, state)
+	if _, ok := state.hostByLabel("github.com"); ok {
+		t.Fatalf("a Git alias without a user was imported: %+v", state.hosts)
+	}
+	if len(state.identities) != 0 {
+		t.Fatalf("the Git alias brought its key along: %+v", state.identities)
+	}
+}
+
+func TestSSHSyncLeavesForgeAlternateEndpointsAlone(t *testing.T) {
+	// The alternate endpoints of the same forges get their own blocks, also
+	// without a User, and reach no shell either.
+	for _, alias := range []string{"altssh.gitlab.com", "vs-ssh.visualstudio.com"} {
+		state, _ := newSyncState(t, "Host "+alias+"\n")
+		enableSync(t, state)
+		if _, ok := state.hostByLabel(alias); ok {
+			t.Fatalf("%s was imported as a host: %+v", alias, state.hosts)
+		}
+	}
+}
+
+func TestSSHSyncDoesNotLinkAHostToAGitAlias(t *testing.T) {
+	key := writeWorkbenchIdentity(t, "id_github", "")
+	state, path := newSyncState(t, "Host github.com\n    HostName github.com\n    User git\n    IdentityFile "+key+"\n")
+	addSyncHost(t, state, "github", "github.com", "git", 22)
+	enableSync(t, state)
+	if len(state.identities) != 0 {
+		t.Fatalf("the linked Git alias brought its key along: %+v", state.identities)
+	}
+	if len(state.sshSync.file.Links) != 0 {
+		t.Fatalf("a host was linked to the Git alias: %+v", state.sshSync.file.Links)
+	}
+	if _, ok := state.hostByLabel("github"); !ok {
+		t.Fatalf("the host was removed: %+v", state.hosts)
+	}
+	if file := readSyncFile(t, path); strings.Contains(file, "Host github\n") {
+		t.Fatalf("the host was written to the file beside the Git alias:\n%s", file)
+	}
+}
+
+func TestSSHSyncStopsSyncingAHostLinkedToAGitAlias(t *testing.T) {
+	key := writeWorkbenchIdentity(t, "id_github", "")
+	state, path := newSyncState(t, "Host github.com\n    HostName github.com\n    User git\n    IdentityFile "+key+"\n")
+	host := addSyncHost(t, state, "github", "github.com", "git", 22)
+	// As an earlier version left it: the host is linked to the Git block.
+	state.sshSync.file.Links = []sshSyncLink{{ID: host.CatalogID, Alias: "github.com", Base: fieldsOf(host)}}
+	enableSync(t, state)
+	if len(state.identities) != 0 {
+		t.Fatalf("the linked Git alias brought its key along: %+v", state.identities)
+	}
+	detached := false
+	for _, link := range state.sshSync.file.Links {
+		detached = detached || link.ID == host.CatalogID && link.Detached
+	}
+	if !detached {
+		t.Fatalf("the link to the Git alias is still live: %+v", state.sshSync.file.Links)
+	}
+	if file := readSyncFile(t, path); !strings.Contains(file, "Host github.com") {
+		t.Fatalf("the Git alias was removed from the file: %q", file)
+	}
+}
+
 func TestSSHSyncLargeConfigIsFast(t *testing.T) {
 	var hosts strings.Builder
 	for index := 0; index < 400; index++ {

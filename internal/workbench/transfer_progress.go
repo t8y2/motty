@@ -28,10 +28,13 @@ func (state *State) transferProgress() (progress transferProgress) {
 	// session rather than to a file panel, and it is over before a panel could
 	// list it. One whose size the other end has not announced yet counts as
 	// running but contributes no bytes.
-	if transfer := &state.transfer; transfer.phase == transferRunning && transfer.progress.Size > 0 {
-		progress.active++
-		progress.done += min(transfer.progress.Done, transfer.progress.Size)
-		progress.total += transfer.progress.Size
+	for index := range state.sessions {
+		transfer := &state.sessions[index].transfer
+		if transfer.phase == transferRunning && transfer.progress.Size > 0 {
+			progress.active++
+			progress.done += min(transfer.progress.Done, transfer.progress.Size)
+			progress.total += transfer.progress.Size
+		}
 	}
 	return progress
 }

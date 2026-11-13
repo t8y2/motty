@@ -508,3 +508,37 @@ func TestReadOnlySeesWhatAnotherProcessCommittedWhileItWasOpen(t *testing.T) {
 		t.Fatalf("second read %v, %v", entries, err)
 	}
 }
+
+func TestExpectedKindsRejectsPhantomMembersAtomically(t *testing.T) {
+	store := open(t)
+	if _, err := store.Commit(Change{Put: []Entry{put("note-folder", "f", `{"name":"folder"}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	folders := []Entry{}
+	for _, e := range entries {
+		if e.Kind == "note-folder" {
+			folders = append(folders, e)
+		}
+	}
+	// A new member appeared after an empty-directory check.
+	if _, err = store.Commit(Change{Put: []Entry{put("note", "child", `{"folder":"f"}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := store.Records()
+	_, err = store.Commit(Change{Delete: []Key{{Kind: "note-folder", ID: "f"}}, ExpectedKinds: map[string][]Entry{"note": {}, "note-folder": folders}, Local: map[string][]byte{"probe": []byte(`"must not write"`)}})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("phantom insert was not rejected: %v", err)
+	}
+	after, _ := store.Records()
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("failed transaction changed records")
+	}
+	_, local, _ := store.Load()
+	if local["probe"] != nil {
+		t.Fatal("failed transaction changed local values")
+	}
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/localshell"
 	"motty/internal/sftpclient"
 )
 
@@ -34,8 +35,22 @@ const maxLocalEntries = 20000
 // pays tens of milliseconds in stat calls, sorting and row preparation.
 const localListingInlineEntries = 512
 
-// localStart is where the local side opens: Downloads if there is one, else home.
-func localStart() string {
+// localSideStart is where the local side opens: the download folder the
+// settings name, when it is set and on disk, so the folder holding received
+// files is the one on show. Without a usable setting it is the system Downloads
+// folder, then home.
+func (state *State) localSideStart() string {
+	if directory := state.sftpDownloadDirectory; validSFTPDownloadDirectory(directory) {
+		if info, err := os.Stat(directory); err == nil && info.IsDir() {
+			return filepath.Clean(directory)
+		}
+	}
+	return localDefaultStart()
+}
+
+// localDefaultStart is where a local side opens when no configured download
+// folder applies: Downloads if there is one, else home.
+func localDefaultStart() string {
 	if dir := downloadsDirectory(); dir != "" {
 		return dir
 	}
@@ -53,13 +68,21 @@ func localHome() string {
 	if home, err := os.UserHomeDir(); err == nil {
 		return home
 	}
-	return localStart()
+	return localDefaultStart()
 }
 
 // localPanelStart is the folder a local terminal's panel opens in: the one its
-// shell last reported, if that is still a folder, else the home folder.
+// shell last reported, if that is still a folder, else the shell's own home
+// folder. A WSL shell's home is the distribution's root, not this computer's
+// home: the panel then shows the files the terminal is working on, and the
+// shell's reported folder takes over once it arrives.
 func (state *State) localPanelStart(session *Session) string {
 	home := localHome()
+	if distro := session.wslDistro(); distro != "" {
+		if root, ok := localshell.WSLWindowsPath("/", distro); ok {
+			home = root
+		}
+	}
 	t := session.term
 	if t == nil {
 		return home
@@ -96,7 +119,7 @@ func (state *State) toggleSFTPPane(view *sftpView) {
 		}
 	}
 	if dir == "" {
-		dir = localStart()
+		dir = state.localSideStart()
 	}
 	state.listLocal(view, dir)
 }
@@ -311,6 +334,7 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 	previousRows := folder.allRows
 	folder.allRows = listing.rows
 	state.loadAppIcons(view, previousRows, listing.rows)
+	state.loadTypeIcons(view, listing.rows)
 	folder.localCoverage = listing.coverage
 	folder.crumbs = prepareLocalCrumbs(folder.crumbs, listing.dir)
 	if view.detached != nil {
@@ -369,8 +393,16 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id gfx.ID) 
 		state.openLocalSelected(view)
 	case id == hitSFTPEditExternal:
 		state.openLocalExternal(view)
+	case id == hitSFTPDelete:
+		// The press belongs to the local side whatever its state: falling
+		// through would run the server's delete on this computer's panel.
+		if !view.localBusy {
+			state.openSFTPDialog(view, sftpDialogDelete)
+		}
 	case id == hitSFTPSend && !view.localOnly:
-		state.sendLocalSelection(view)
+		if !view.localBusy {
+			state.sendLocalSelection(view)
+		}
 	case id == hitSFTPInsertPath && view.localOnly:
 		state.insertLocalPaths(session, view)
 	case id.Scope() == hitSFTPBreadcrumbList:
@@ -478,11 +510,16 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 		view.dialogError = state.messages.Tools.ExtractErrorFolder
 		return false
 	}
+	if view.lfolder.hasEntry(name) {
+		view.dialogError = state.messages.SFTPErrDirectoryExists
+		return false
+	}
 	target := filepath.Join(view.lfolder.path, name)
 	if err := os.Mkdir(target, 0o755); err != nil {
-		view.dialogError = err.Error()
 		if errors.Is(err, os.ErrExist) {
-			view.dialogError = fmt.Sprintf(state.messages.SFTPErrorFmt, err)
+			view.dialogError = state.messages.SFTPErrDirectoryExists
+		} else {
+			view.dialogError = err.Error()
 		}
 		return false
 	}
@@ -490,6 +527,91 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 	state.listLocal(view, view.lfolder.path)
 	view.status = fmt.Sprintf(state.messages.SFTPDirectoryCreatedFmt, target)
 	return true
+}
+
+// submitLocalDelete removes the local entries the confirmation dialog named. A
+// folder may hold a whole tree, so the walk runs on a goroutine and the folder
+// is read again when it finishes.
+func (state *State) submitLocalDelete(view *sftpView) {
+	entries := slices.Clone(view.dialogEntries)
+	if len(entries) == 0 || view.localBusy {
+		return
+	}
+	dir := view.lfolder.path
+	state.closeSFTPDialog(view)
+	view.errorText = ""
+	view.localBusy = true
+	view.status = fmt.Sprintf(state.messages.SFTPDeletingFmt, entries[0].Name)
+	go func() {
+		result := removeLocalEntries(dir, entries)
+		state.aiPost(func(*State) { state.finishLocalDelete(view, result) })
+	}()
+}
+
+// localDeleteResult is what removing a set of local entries did. The walk stops
+// at the first failure: what it already removed cannot be restored.
+type localDeleteResult struct {
+	dir     string
+	total   int
+	removed []string
+	failed  string // the path that stopped the walk
+	err     error  // why it stopped
+}
+
+// removeLocalEntries removes entries of dir in the order the list showed them.
+// It touches no State, so a goroutine may run it while the window keeps painting.
+func removeLocalEntries(dir string, entries []sftpclient.Entry) localDeleteResult {
+	result := localDeleteResult{dir: dir, total: len(entries)}
+	for _, entry := range entries {
+		location := filepath.Join(dir, entry.Name)
+		if err := removeLocalEntry(location); err != nil {
+			result.failed, result.err = location, err
+			return result
+		}
+		result.removed = append(result.removed, location)
+	}
+	return result
+}
+
+// removeLocalEntry removes one entry, looking at the disk again rather than at
+// the listing it came from. A link is only the link: what it points at is not
+// ours to empty.
+func removeLocalEntry(location string) error {
+	info, err := os.Lstat(location)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return os.RemoveAll(location)
+	}
+	return os.Remove(location)
+}
+
+// finishLocalDelete puts a finished local deletion on screen: the folder on show
+// is read again when it is the one the entries were in, and a failure says that
+// what was removed is gone for good.
+func (state *State) finishLocalDelete(view *sftpView, result localDeleteResult) {
+	session, ok := state.sftpSession(view)
+	if !ok || session.files != view || !view.localBusy {
+		return
+	}
+	view.localBusy = false
+	// The window shows both sides, so its local pane needs the new listing
+	// whatever side is active; the panel only shows the local side when it is.
+	if (view.local || view.detached != nil) && filepath.Clean(view.lfolder.path) == filepath.Clean(result.dir) {
+		state.listLocal(view, result.dir)
+	}
+	messages := state.messages
+	if result.err != nil {
+		view.status = fmt.Sprintf(messages.SFTPErrorFmt, result.err)
+		detail := fmt.Sprintf("%s: %s %s", result.failed, fmt.Sprintf(messages.SFTPErrorFmt, result.err), messages.SFTPDeleteSelectionPartial)
+		state.fileOpenNotice(view.detached, messages.SFTPDeleteSelectionTitle, detail, components.ToastError)
+	} else if result.total > 1 {
+		view.status = fmt.Sprintf(messages.SFTPDeletedCountFmt, len(result.removed))
+	} else {
+		view.status = fmt.Sprintf(messages.SFTPDeletedFmt, result.removed[0])
+	}
+	view.invalidateDetached()
 }
 
 // scrollFolder is scrollSFTP for whichever folder is on show.

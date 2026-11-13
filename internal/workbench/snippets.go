@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -57,17 +58,25 @@ var (
 	hitSnippetSubmit      = tree.ID(snippetsHits, "snippet-submit")
 	hitSnippetCancel      = tree.ID(snippetsHits, "snippet-cancel")
 	hitSnippetClose       = tree.ID(snippetsHits, "snippet-close")
+	// The delete confirmation's buttons.
+	hitSnippetDeleteDismiss = tree.ID(snippetsHits, "snippet-delete-dismiss")
+	hitSnippetDeleteClose   = tree.ID(snippetsHits, "snippet-delete-close")
+	hitSnippetDeleteCancel  = tree.ID(snippetsHits, "snippet-delete-cancel")
+	hitSnippetDeleteConfirm = tree.ID(snippetsHits, "snippet-delete-confirm")
 	// hitTerminalSnippets is the terminal toolbar's button that lists the
 	// snippets to send to that terminal.
 	hitTerminalSnippets = tree.ID(snippetsHits, "terminal-snippets")
 )
 
 var (
-	hitSnippetRowList  = tree.Sub(snippetsHits, tree.Name("snippet-row")) // + snippet index
-	hitSnippetHandles  = tree.Sub(snippetsHits, tree.Name("snippet-handle"))
-	hitSnippetSort     = tree.Sub(snippetsHits, tree.Name("snippet-sort")) // + column index
-	hitSnippetSendList = tree.Sub(snippetsHits, tree.Name("snippet-send")) // the command palette's entries
-	hitSnippetPickList = tree.Sub(snippetsHits, tree.Name("snippet-pick")) // + session ID: the terminals to send to
+	hitSnippetRowList    = tree.Sub(snippetsHits, tree.Name("snippet-row")) // + snippet index
+	hitSnippetHandles    = tree.Sub(snippetsHits, tree.Name("snippet-handle"))
+	hitSnippetExpandList = tree.Sub(snippetsHits, tree.Name("snippet-expand")) // + snippet index
+	hitSnippetSort       = tree.Sub(snippetsHits, tree.Name("snippet-sort"))   // + column index
+	hitSnippetSendList   = tree.Sub(snippetsHits, tree.Name("snippet-send"))   // the command palette's entries
+	hitSnippetPickList   = tree.Sub(snippetsHits, tree.Name("snippet-pick"))   // + session ID: the terminals to send to
+	// hitSnippetHoverCard is the preview card the pointer rests on to keep open.
+	hitSnippetHoverCard = tree.ID(snippetsHits, "snippet-hover-card")
 )
 
 type snippetsUI struct {
@@ -103,8 +112,41 @@ type snippetsUI struct {
 	sort      components.TableSortState
 	grid      components.ReorderGridState
 	countText string
+	// detailHeight and detailLineHeight are the band the expanded command takes,
+	// measured when the page declares the scroll area.
+	detailHeight     float32
+	detailLineHeight float32
 	// sendAt is where the menu of terminals opens from the Send button.
 	sendAt gfx.Point
+	// deleting is the snippet index plus one the delete confirmation asks about;
+	// zero means no confirmation is open.
+	deleting int
+
+	// expanded is the snippet index plus one whose command shows below its row;
+	// zero hides every detail. detailLines and detailCache are the wrapped
+	// command, reused across paints.
+	expanded    int
+	detailLines []string
+	detailCache gfx.EllipsisCache
+
+	// The command preview that opens after the pointer rests on a multi-line
+	// row: hoverTarget and hoverSince time the rest, while hoverOpen, hoverRow
+	// and hoverAnchor keep the card painted when the pointer moves onto it.
+	hoverTarget gfx.ID
+	hoverSince  time.Duration
+	hoverOpen   bool
+	hoverRow    int
+	hoverAnchor gfx.Rect
+	cardLines   []string
+	cardCache   gfx.EllipsisCache
+}
+
+// resetSnippetPreview closes the expanded row and the command preview after the
+// list changed, so neither still points at a command the user no longer has.
+func (form *snippetsUI) resetSnippetPreview() {
+	form.expanded = 0
+	form.hoverTarget, form.hoverOpen, form.hoverRow = gfx.ID{}, false, 0
+	form.hoverAnchor = gfx.Rect{}
 }
 
 // cleanSnippetText makes one line of what was typed: a snippet is sent as
@@ -329,6 +371,7 @@ func (state *State) submitSnippet() {
 		form.selected = len(form.list) - 1
 	}
 	form.showSnippet(form.selected)
+	form.resetSnippetPreview()
 	state.refreshSnippets()
 	state.closeModal()
 	state.save()
@@ -340,9 +383,34 @@ func (state *State) deleteSnippet(index int) {
 		return
 	}
 	state.snippets.list = append(list[:index:index], list[index+1:]...)
+	state.snippets.resetSnippetPreview()
 	state.refreshSnippets()
 	state.status = fmt.Sprintf(state.messages.Tools.StatusSnippetRemovedFmt, list[index].Name)
 	state.save()
+}
+
+// openSnippetDelete asks before deleting a snippet: a saved command may be the
+// only copy the user has.
+func (state *State) openSnippetDelete(index int) {
+	if index < 0 || index >= len(state.snippets.list) {
+		return
+	}
+	state.snippets.deleting = index + 1
+	state.modal = modalSnippetDelete
+}
+
+// clickSnippetDeleteDialog runs the delete confirmation.
+func (state *State) clickSnippetDeleteDialog(id gfx.ID) {
+	switch id {
+	case hitSnippetDeleteDismiss, hitSnippetDeleteClose, hitSnippetDeleteCancel:
+		state.snippets.deleting = 0
+		state.closeModal()
+	case hitSnippetDeleteConfirm:
+		index := state.snippets.deleting - 1
+		state.snippets.deleting = 0
+		state.closeModal()
+		state.deleteSnippet(index)
+	}
 }
 
 func (state *State) snippetNeighbor(index, direction int) int {
@@ -367,6 +435,7 @@ func (state *State) moveSnippet(index, direction int) bool {
 	form.list[index], form.list[target] = form.list[target], form.list[index]
 	form.selected = target
 	form.sort = components.TableSortState{}
+	form.resetSnippetPreview()
 	state.refreshSnippets()
 	state.save()
 	return true
@@ -386,6 +455,7 @@ func (state *State) moveSnippetTo(source, target int) bool {
 	}
 	form.list[target] = entry
 	form.selected = target
+	form.resetSnippetPreview()
 	state.refreshSnippets()
 	state.save()
 	return true
@@ -431,15 +501,11 @@ func (state *State) sendSnippet(index int) bool {
 	return state.sendSnippetTo(index, session)
 }
 
-// sendSnippetTo types a snippet into session, and into the other panes of its tab
+// sendResolvedSnippet types command into session, and into the other panes of its tab
 // while the tab is broadcasting.
-func (state *State) sendSnippetTo(index int, session *Session) bool {
+func (state *State) sendResolvedSnippet(entry snippet, command string, session *Session) bool {
 	m := state.messages.Tools
-	if index < 0 || index >= len(state.snippets.list) {
-		return false
-	}
-	entry := state.snippets.list[index]
-	input := term.EncodePaste(entry.Command, session.term.screen.Modes().BracketedPaste && strings.Contains(entry.Command, "\n"))
+	input := term.EncodePaste(command, session.term.screen.Modes().BracketedPaste && strings.Contains(command, "\n"))
 	if entry.Run {
 		input = append(input, '\r')
 	}
@@ -449,6 +515,21 @@ func (state *State) sendSnippetTo(index int, session *Session) bool {
 	}
 	state.status = fmt.Sprintf(m.StatusSnippetSentFmt, entry.Name, session.Title)
 	return true
+}
+
+// sendSnippetTo types a snippet into session, and into the other panes of its tab
+// while the tab is broadcasting. If dynamic variables are present, it opens the
+// variable input dialog instead.
+func (state *State) sendSnippetTo(index int, session *Session) bool {
+	if index < 0 || index >= len(state.snippets.list) {
+		return false
+	}
+	entry := state.snippets.list[index]
+	if snippetHasVariables(entry.Command) {
+		state.openSnippetVariablesDialog(index, session.ID, false)
+		return true
+	}
+	return state.sendResolvedSnippet(entry, entry.Command, session)
 }
 
 // sendSnippetFromPage sends a snippet picked on the Snippets page. The page has
@@ -480,7 +561,15 @@ func (state *State) sendSnippetFromPage(index int, at gfx.Point) {
 
 // sendSnippetPicked sends to session and shows its terminal.
 func (state *State) sendSnippetPicked(index int, session *Session) {
-	if state.sendSnippetTo(index, session) {
+	if index < 0 || index >= len(state.snippets.list) {
+		return
+	}
+	entry := state.snippets.list[index]
+	if snippetHasVariables(entry.Command) {
+		state.openSnippetVariablesDialog(index, session.ID, true)
+		return
+	}
+	if state.sendResolvedSnippet(entry, entry.Command, session) {
 		state.ActivatePane(session.ID)
 		state.activeSection = sectionTerminal
 	}
@@ -497,6 +586,30 @@ func (state *State) sendSnippetOn(canvas *gfx.Canvas, id gfx.ID, index int) {
 	state.snippets.selected = index
 	state.sendSnippetFromPage(index, gfx.Point{X: event.X, Y: event.Y})
 	canvas.Consume()
+}
+
+// declareSnippetDeleteDialog asks before the page deletes a snippet.
+func (state *State) declareSnippetDeleteDialog(c ui.C) {
+	m, form := state.messages.Tools, &state.snippets
+	name := ""
+	if form.deleting > 0 && form.deleting <= len(form.list) {
+		name = form.list[form.deleting-1].Name
+	}
+	description := fmt.Sprintf(m.SnippetDeleteBodyFmt, name)
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, 0)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.SnippetDeleteTitle, Description: description,
+		Width: 480, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitSnippetDeleteDismiss, CloseID: hitSnippetDeleteClose,
+		InitialFocusID: hitSnippetDeleteCancel,
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitSnippetDeleteCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitSnippetDeleteConfirm, Label: m.SnippetDeleteConfirm, Variant: components.ButtonDestructive},
+		)
+	})
 }
 
 // declareSnippetDialog declares the snippet editor as a dialog of the workbench

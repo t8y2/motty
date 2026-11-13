@@ -129,6 +129,9 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	}
 	config.Clipboard = opts.Clipboard
 	config.ConsoleSession = opts.Console
+	if opts.StandardSecurity {
+		config.Security = rdpcore.SecurityStandard
+	}
 	config.GFX = true
 	config.NoAVC = true // no H.264 decoder: the server then sends RemoteFX or ClearCodec
 	handshakeEnds := time.Now().Add(handshakeTimeout)
@@ -170,6 +173,19 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 			config.Password = password
 			return err
 		})
+	}
+	// Standard RDP security sends the account in the first client information
+	// PDU, with no certificate to check first and therefore no handshake step
+	// to ask at. Ask before connecting; the switch has already said that this
+	// layer does not authenticate the server.
+	if opts.StandardSecurity && config.Password == "" {
+		if err := asking(func() error {
+			password, err := opts.AskPassword()
+			config.Password = password
+			return err
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	client, err := rdpcore.NewClient(config)
@@ -236,7 +252,9 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 		}
 		return nil, translate(err)
 	}
-	session.info = desktop.Info{Protocol: "RDP", Name: host, Encrypted: true}
+	// Standard RDP Security is requested explicitly, so a connected session
+	// that asked for it has only RC4 under an unauthenticated server key.
+	session.info = desktop.Info{Protocol: "RDP", Name: host, Encrypted: !opts.StandardSecurity}
 	go func() {
 		<-client.Done()
 		session.finish(nil)

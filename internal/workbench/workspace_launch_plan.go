@@ -17,9 +17,10 @@ var (
 // Missing keeps the template references this catalog no longer has; a launch
 // may proceed with Hosts when at least one remains.
 type WorkspaceLaunchPlan struct {
-	Hosts   []Host
-	Missing []string
-	Layout  layoutcore.LayoutSpec
+	Commands map[string]WorkspaceCommand
+	Hosts    []Host
+	Missing  []string
+	Layout   layoutcore.LayoutSpec
 }
 
 // PlanWorkspaceLaunch resolves host catalog ids in the catalog's display order.

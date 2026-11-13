@@ -91,7 +91,7 @@ func (state *State) vncSecurityDetails(session *Session) string {
 		}
 		result.WriteString(row.label + ": " + value + "\n\n")
 	}
-	if session.host.tunneled() {
+	if session.host.tunneled() || session.desktopTunnel {
 		result.WriteString(m.StripEncrypted + "\n")
 	}
 	return strings.TrimSpace(result.String())

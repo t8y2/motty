@@ -54,10 +54,18 @@ func (expected expectedBuild) check(info *debug.BuildInfo) error {
 	for _, setting := range info.Settings {
 		settings[setting.Key] = setting.Value
 	}
-	for _, field := range []struct{ key, want string }{
+	fields := []struct{ key, want string }{
 		{"vcs", "git"}, {"vcs.revision", expected.revision},
 		{"vcs.modified", "false"}, {"GOOS", expected.target}, {"GOARCH", expected.arch},
-	} {
+	}
+	// A cgo program links the C library of the machine that built it, so a
+	// Linux program built on a newer distribution refuses to start on an older
+	// one. Neither platform uses cgo (Viva reaches them through purego and
+	// system calls); the macOS program does, through the Objective-C bridge.
+	if expected.target == "linux" || expected.target == "windows" {
+		fields = append(fields, struct{ key, want string }{"CGO_ENABLED", "0"})
+	}
+	for _, field := range fields {
 		if got := settings[field.key]; got != field.want {
 			return fmt.Errorf("%s=%q, want %q", field.key, got, field.want)
 		}

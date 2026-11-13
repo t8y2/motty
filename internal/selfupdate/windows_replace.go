@@ -74,9 +74,77 @@ func (job Job) applyPortable() error {
 	if err := copyExecutable(job.Staged, ready); err != nil {
 		return err
 	}
-	return replaceWindowsExecutable(job.Root, "motty.exe", func() error {
+
+	stagedRoot := filepath.Dir(job.Staged)
+	stagedConpty := filepath.Join(stagedRoot, "conpty")
+	var rollbackConpty func() error
+	keepConptyBackup := false
+	if isDir(stagedConpty) {
+		work, err := os.MkdirTemp(job.Root, ".motty-conpty-stage-")
+		if err != nil {
+			return err
+		}
+		defer func() {
+			// A failed restore leaves the old tree in work; deleting it would
+			// remove the only copy, so the failure path keeps it for support.
+			if !keepConptyBackup {
+				os.RemoveAll(work)
+			}
+		}()
+		fresh := filepath.Join(work, "new")
+		if err := moveTree(stagedConpty, fresh); err != nil {
+			return fmt.Errorf("staging the conpty files: %w", err)
+		}
+		installed := filepath.Join(job.Root, "conpty")
+		previous := filepath.Join(work, "old")
+		hadPrevious := false
+		if _, err := os.Stat(installed); err == nil {
+			if err := os.Rename(installed, previous); err != nil {
+				return fmt.Errorf("setting the old conpty files aside: %w", err)
+			}
+			hadPrevious = true
+		}
+		if err := os.Rename(fresh, installed); err != nil {
+			if hadPrevious {
+				if restoreErr := os.Rename(previous, installed); restoreErr != nil {
+					keepConptyBackup = true
+					return errors.Join(
+						fmt.Errorf("installing the conpty files: %w", err),
+						fmt.Errorf("restoring the old conpty files from %s: %w", previous, restoreErr))
+				}
+			}
+			return fmt.Errorf("installing the conpty files: %w", err)
+		}
+		rollbackConpty = func() error {
+			if err := os.RemoveAll(installed); err != nil {
+				return err
+			}
+			if hadPrevious {
+				if err := os.Rename(previous, installed); err != nil {
+					return fmt.Errorf("restoring the old conpty files from %s: %w", previous, err)
+				}
+			}
+			return nil
+		}
+	}
+
+	if err := replaceWindowsExecutable(job.Root, "motty.exe", func() error {
 		return os.Rename(ready, job.Exe)
-	})
+	}); err != nil {
+		if rollbackConpty != nil {
+			if restoreErr := rollbackConpty(); restoreErr != nil {
+				keepConptyBackup = true
+				return errors.Join(err, restoreErr)
+			}
+		}
+		return err
+	}
+	// The portable folder's note now describes the payload it arrived with.
+	// Failing to refresh documentation must not fail an installed update.
+	if note, err := os.ReadFile(filepath.Join(stagedRoot, "motty-data", "README.txt")); err == nil {
+		_ = os.WriteFile(filepath.Join(job.Root, datadir.PortableName, "README.txt"), note, 0o644)
+	}
+	return nil
 }
 
 // restoreExecutable puts the retired image back at the install path. A partial

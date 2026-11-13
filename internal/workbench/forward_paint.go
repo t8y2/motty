@@ -9,12 +9,12 @@ import (
 
 // forwardSectionUI is what the forwards page's declaration leaves for its paint.
 type forwardSectionUI struct {
-	content, remove, edit, action, add, empty     ui.Box
+	remove, edit, action, add, empty              ui.Box
 	removeWidth, editWidth, actionWidth, addWidth float32
 	removeIcon, editIcon, actionIcon, addIcon     uint8
 	actionLabel                                   string
 	condensed                                     bool
-	// draw is the page hook that paints into these slots. It is kept so a paint
+	// draw is the page hook that paints the empty state. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
 }
@@ -25,6 +25,7 @@ type forwardSectionUI struct {
 func (state *State) declareForwardsWorkspace(c ui.C) {
 	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
+	state.syncForwardTable()
 	selected, hasSelection := state.forwardByID(state.selectedForwardID)
 	actionLabel := messages.ForwardStart
 	actionIcon := uint8(iconPlay)
@@ -78,7 +79,21 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 		if len(state.forwards) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.ForwardEmpty, messages.ForwardEmptySub, messages.ForwardAdd, hitForwardAdd, iconForward, canAdd)
 		} else {
-			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+			state.forwardColumns = [...]components.TableColumn{{Width: 180}, {Width: 160}, {Width: 170}, {Width: 210}, {Width: 0}}
+			state.forwardHeadings = [...]string{
+				messages.ForwardColumnName, messages.ForwardColumnHost, messages.ForwardColumnListener,
+				messages.ForwardColumnDestination, messages.ForwardColumnStatus,
+			}
+			components.FitTableHeadings(canvas, state.Theme(), state.forwardColumns[:], state.forwardHeadings[:])
+			table := ui.Table(c, &state.forwardTable, ui.TableSpec{
+				Rows: hitForwardRowList, Columns: state.forwardColumns[:], Headers: state.forwardHeadings[:], Source: &state.forwardRows,
+				Scrollbar: hitForwardScrollThumb, ScrollbarLabel: messages.ForwardListScroll,
+				ScrollbarGutter: catalogBarGutter,
+			}).Grow(1).Shrink(1)
+			if row, ok := table.RowClicked(); ok && state.modal == modalNone && row >= 0 && row < len(state.forwards) {
+				state.forwardTable.Select(row)
+				state.selectForward(state.forwards[row].ID)
+			}
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
@@ -91,31 +106,12 @@ func (state *State) declareForwardsWorkspace(c ui.C) {
 	body.Clip().DrawOver(view.draw)
 }
 
-// paintForwardsWorkspace paints the forwards page's buttons, table and empty
-// state into the slots its declaration left.
+// paintForwardsWorkspace paints the forwards page's empty state into the slot
+// its declaration left. A table is painted by the page itself.
 func (state *State) paintForwardsWorkspace(canvas *gfx.Canvas) {
-	view, messages := &state.sectionBodies.forwards, state.messages
-
+	view := &state.sectionBodies.forwards
 	if len(state.forwards) == 0 {
 		state.drawReservedEmptyPage(canvas, view.empty, iconForward)
-		return
-	}
-	columns := [...]components.TableColumn{{Width: 180}, {Width: 160}, {Width: 170}, {Width: 210}, {Width: 0}}
-	headings := [...]string{
-		messages.ForwardColumnName,
-		messages.ForwardColumnHost,
-		messages.ForwardColumnListener,
-		messages.ForwardColumnDestination,
-		messages.ForwardColumnStatus,
-	}
-	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
-	table.Header(headings[:])
-	for index := range state.forwards {
-		forward := &state.forwards[index]
-		if table.RowAt(hitForwardRowList, int(forward.ID), forward.cells[:], forward.ID == state.selectedForwardID) && state.modal == modalNone {
-			state.selectForward(forward.ID)
-		}
 	}
 }
 
@@ -129,7 +125,15 @@ func (state *State) declareForwardDialog(c ui.C) {
 		dialogTitle = messages.ForwardEditDialogTitle
 		submitLabel = messages.ForwardSave
 	}
-	bodyHeight := withError(4*58+2+30, state.forwardDialogError) // four rows of fields, then the checkbox
+	// Four rows of fields, the resume box, and for a forward that dials through
+	// the server the shell-relay box with its relay command when it is on.
+	bodyHeight := withError(4*58+2+30, state.forwardDialogError)
+	if modeUsesServerDestination(state.forwardEditor.mode) {
+		bodyHeight += 30
+		if state.forwardEditor.viaShell {
+			bodyHeight += 58
+		}
+	}
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, messages.ForwardDialogDescription, bodyHeight)
 	// No scrim dismiss: a press beside the form must not discard its input.
@@ -179,6 +183,12 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 				})
 			}
 		})
+		if modeUsesServerDestination(mode) {
+			b.viaShell, b.viaShellHelp = state.declareDialogCheckboxHelpC(c, messages.ForwardFieldViaShell, 4, 6)
+			if editor.viaShell {
+				b.relay = ui.Slot(c).Height(rowHeight)
+			}
+		}
 		b.resume, b.resumeHelp = state.declareDialogCheckboxHelpC(c, messages.ForwardFieldResume, 4, 6)
 		if state.forwardDialogError != "" {
 			ui.Text(c, state.forwardDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
@@ -206,6 +216,13 @@ func (state *State) paintForwardDialogFields(canvas *gfx.Canvas, mode portforwar
 		}
 		state.paintForwardDialogField(canvas, hitForwardDialogDestination, forwardFieldDestinationHost, messages.ForwardFieldDestination, placeholder, b.destination.Rect())
 		state.paintForwardDialogField(canvas, hitForwardDialogDestinationPort, forwardFieldDestinationPort, messages.ForwardFieldDestinationPort, "", b.destinationPort.Rect())
+	}
+	if modeUsesServerDestination(mode) {
+		state.paintDialogCheckbox(canvas, hitForwardDialogViaShell, messages.ForwardFieldViaShell, state.forwardEditor.viaShell, b.viaShell)
+		state.paintHelpIcon(canvas, hitForwardDialogViaShellHelp, messages.ForwardViaShellHelp, b.viaShellHelp.Rect())
+		if state.forwardEditor.viaShell {
+			state.paintForwardDialogField(canvas, hitForwardDialogRelay, forwardFieldRelay, messages.ForwardFieldRelay, messages.ForwardRelayPlaceholder, b.relay.Rect())
+		}
 	}
 	state.paintDialogCheckbox(canvas, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, b.resume)
 	state.paintHelpIcon(canvas, hitForwardDialogResumeHelp, messages.ForwardResumeHelp, b.resumeHelp.Rect())

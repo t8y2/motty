@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vivaui/viva/text/collation"
 	"motty/internal/sshconn"
 )
 
@@ -214,6 +215,7 @@ type hostMerge struct {
 // and the name, as in sameHost.
 type mergeKey struct {
 	protocol    uint8
+	terminal    uint8
 	address     string
 	user        string
 	port        uint16
@@ -223,7 +225,7 @@ type mergeKey struct {
 }
 
 func mergeKeyOf(host Host) mergeKey {
-	key := mergeKey{protocol: uint8(host.Protocol), address: host.Address, label: strings.ToLower(strings.TrimSpace(host.Label))}
+	key := mergeKey{protocol: uint8(host.Protocol), terminal: uint8(host.Terminal), address: host.Address, label: strings.ToLower(strings.TrimSpace(host.Label))}
 	if host.Protocol != protocolSerial {
 		key.user, key.port, key.viaSSH = host.User, host.Port, host.ViaSSH
 	}
@@ -339,11 +341,12 @@ func (state *State) refreshHostGroups() {
 	for _, group := range state.hostGroups {
 		byName[group.Name] = group
 	}
+	collator := state.hostNameCollator()
 	sort.Slice(state.hostGroups, func(left, right int) bool {
 		if state.hostOrder != hostOrderManual {
-			return hostGroupLess(state.hostGroups[left].Name, state.hostGroups[right].Name)
+			return hostGroupLess(collator, state.hostGroups[left].Name, state.hostGroups[right].Name)
 		}
-		return orderedHostGroupLess(state.hostGroups[left].Name, state.hostGroups[right].Name, byName)
+		return orderedHostGroupLess(collator, state.hostGroups[left].Name, state.hostGroups[right].Name, byName)
 	})
 	for index := range state.hostGroups {
 		group := &state.hostGroups[index]
@@ -393,13 +396,14 @@ func hostGroupWithin(path, parent string) bool {
 }
 
 // Compare one segment at a time so punctuation in a sibling cannot split a subtree.
-func hostGroupLess(left, right string) bool {
+func hostGroupLess(collator *collation.Collator, left, right string) bool {
 	for {
 		l, lrest, lmore := strings.Cut(left, "/")
 		r, rrest, rmore := strings.Cut(right, "/")
-		if order := strings.Compare(strings.ToLower(l), strings.ToLower(r)); order != 0 {
+		if order := collator.Compare(l, r); order != 0 {
 			return order < 0
 		}
+		// Names that collate the same still need one fixed order.
 		if l != r {
 			return l < r
 		}

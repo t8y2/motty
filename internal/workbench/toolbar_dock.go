@@ -127,6 +127,9 @@ func (prefs *toolbarPreferences) restoreDock(saved []toolbarDockEntry) {
 }
 
 func toolbarDockIdentity(id gfx.ID) (toolbarDockEntry, bool) {
+	if id == hitServerLogs {
+		return toolbarDockEntry{}, false
+	}
 	for group := toolbarWindow; group <= toolbarTerminal; group++ {
 		for _, spec := range toolbarCatalog[group] {
 			if spec.id == id {
@@ -163,8 +166,20 @@ func (state *State) windowDockTool(spec toolbarSpec) barTool {
 func (state *State) toolbarDockTools(zone toolbarDockZone, dst *[maxBarTools]barTool) []barTool {
 	var terminal [maxBarTools]barTool
 	var terminalTools []barTool
-	if session, ok := state.terminalSideRailSession(); ok {
+	if session, active := state.toolbarRailSession(); session != nil {
 		terminalTools = state.activeTerminalTools(session, &terminal)
+		if !active {
+			// Focus rests on a pane with no terminal of its own. Keep the live
+			// pane's tools in their places, disabled: the rail belongs to the
+			// workspace and its actions cannot address the restored pane. The
+			// latency readout describes the live terminal, so it stays out.
+			terminalTools = slices.DeleteFunc(terminalTools, func(tool barTool) bool {
+				return tool.id == hitToolbarLatency
+			})
+			for index := range terminalTools {
+				terminalTools[index].disabled = true
+			}
+		}
 	} else if state.noteSidebarVisible() {
 		// Restored/disconnected sessions still need the action that closes the browser.
 		terminalTools = append(terminal[:0], barTool{id: hitNotesPanel, icon: iconNotebook, hint: state.noteText("Notes", "笔记"), style: iconButtonActive})
@@ -299,6 +314,9 @@ func (state *State) toolbarTopLimit() int {
 }
 
 func (state *State) toolbarDockZoneFor(group toolbarGroup, key string) toolbarDockZone {
+	if group == toolbarTerminal && key == "remote-logs" {
+		return toolbarDockSideBottom
+	}
 	for _, entry := range state.toolbars.dock {
 		if entry.Group == group && entry.Key == key {
 			return entry.Zone

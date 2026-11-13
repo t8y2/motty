@@ -286,7 +286,7 @@ func (h *rsHandler) finish(em *emitter, reason string, u *rsUsage) error {
 			return err
 		}
 	}
-	if err := h.flushText(em); err != nil {
+	if err := h.flushText(em, StopsAtLimit(reason)); err != nil {
 		return err
 	}
 	if err := h.emitReasoningCalls(em); err != nil {
@@ -438,9 +438,14 @@ func (h *rsHandler) reasoningDelta(f *dsmlFilter, delta string, em *emitter) err
 }
 
 // flushText publishes what the content filter still holds when the response is
-// done.
-func (h *rsHandler) flushText(em *emitter) error {
+// done. Like the Chat Completions handler, leftover markup does not fail a turn
+// that already answered, and a turn cut off at the output limit is reported as
+// the truncation it is.
+func (h *rsHandler) flushText(em *emitter, limited bool) error {
 	text, calls, err := h.dsml.flush()
+	if err != nil && (h.texted || limited) {
+		err = nil
+	}
 	if err != nil {
 		return err
 	}

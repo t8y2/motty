@@ -4,6 +4,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	layoutcore "motty/internal/workspace"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -72,8 +73,10 @@ func TestNotesSidebarReadOnlyFilteringAndSharedDraft(t *testing.T) {
 	}
 	s.Click(hitNoteRows.At(s.notes.view.noteTokens["pinned"]))
 	paint()
-	if s.notes.selected != "other" || s.notes.body.String() != before || s.notes.list[2].Body != "saved" {
-		t.Fatal("browser saved or switched the draft")
+	// Saving the per-tab view may flush the shared draft; browsing must not
+	// change its contents or select a different note in the main editor.
+	if s.notes.selected != "other" || s.notes.body.String() != before || s.notes.list[2].Body != before {
+		t.Fatal("browser changed or switched the main draft")
 	}
 	s.Click(hitNoteSideLinked)
 	n.query.SetSelection(text.Range{End: len([]rune(n.query.String()))})
@@ -205,5 +208,83 @@ func TestNotesSidebarImageResultCannotOverwriteAnotherPreview(t *testing.T) {
 	}
 	if s.notes.error != "" || len(s.notes.images) != 0 {
 		t.Fatal("sidebar image result leaked to editor")
+	}
+}
+
+func TestNotesSidebarUsesFullWorkspaceHeight(t *testing.T) {
+	for _, mode := range []string{"ordinary", "workspace", "tabs"} {
+		t.Run(mode, func(t *testing.T) {
+			world, options := newWorld(t)
+			s := newTestState(t, options)
+			if mode == "ordinary" {
+				connect(t, s, world)
+			} else {
+				id := launchTemporaryWorkspace(t, s, 0, 1)
+				if mode == "tabs" {
+					s.managedWorkspaceLayouts[id] = layoutcore.LayoutSpec{Kind: layoutcore.LayoutTabs}
+				}
+			}
+			s.Click(hitNotesPanel)
+			size := gfx.Size{Width: 1400, Height: 900}
+			c, _ := paintAt(s, size)
+			base, v := s.baseWorkspacePixelBounds(size), s.noteSidebarState()
+			if v.bounds.Y != base.Y || v.bounds.Height != base.Height || v.resizeBounds.Y != base.Y || v.resizeBounds.Height != base.Height {
+				t.Fatalf("sidebar=%+v resize=%+v base=%+v", v.bounds, v.resizeBounds, base)
+			}
+			close := panelHit(t, c, hitNoteSideClose)
+			if close.Bounds.Y < base.Y || close.Bounds.Y+close.Bounds.Height > base.Y+40 {
+				t.Fatalf("close button below sidebar header: %+v", close.Bounds)
+			}
+		})
+	}
+}
+
+func TestNotesSidebarHeaderWrapsWithoutOverlappingControls(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	for _, width := range []float32{400, 280, 160, 90} {
+		var c gfx.Canvas
+		s.paintNoteSidebarTree(&c, gfx.Rect{Width: width, Height: 400})
+		search := panelHit(t, &c, hitNoteSearch).Bounds
+		linked := panelHit(t, &c, hitNoteSideLinked).Bounds
+		close := panelHit(t, &c, hitNoteSideClose).Bounds
+		if linked.X+linked.Width > close.X || close.X+close.Width > width || search.Width < 0 {
+			t.Fatalf("width=%v search=%+v linked=%+v close=%+v", width, search, linked, close)
+		}
+		if width == 400 {
+			if search.Y != linked.Y || search.X+search.Width > linked.X {
+				t.Fatal("normal header overlaps or wraps")
+			}
+		} else if search.Y < linked.Y+linked.Height || s.noteSidebarState().content.listBounds.Y < search.Y+search.Height {
+			t.Fatalf("wrapped header overlaps: search=%+v linked=%+v", search, linked)
+		}
+	}
+}
+
+func TestNotesSidebarCloseKeyPreservesBrowserState(t *testing.T) {
+	for _, key := range []gfx.Key{gfx.KeyEnter, gfx.KeySpace} {
+		s, _, _, _ := liveSession(t)
+		// Closing now saves, and the save syncs the browser selection against
+		// the library, so the selected note must actually exist.
+		s.notes.list = []savedNote{{ID: "note", Body: "body"}}
+		s.activeSection = sectionTerminal
+		s.Click(hitNotesPanel)
+		v := s.noteSidebarState()
+		v.content.query.Insert("needle")
+		v.content.sideAll = true
+		v.content.selected = "note"
+		v.content.view.treeScroll = 42
+		v.content.previewScroll = 84
+		v.width, v.fraction = 450, .6
+		v.widthDragging, v.splitDragging = true, true
+		size := gfx.Size{Width: 1400, Height: 900}
+		before := s.workspacePixelBounds(size).Width
+		result := s.noteSidebarKey(gfx.KeyEvent{Target: hitNoteSideClose, Key: key})
+		if !result.Handled || s.notesPanelOpen() || v.widthDragging || v.splitDragging || s.workspacePixelBounds(size).Width <= before {
+			t.Fatal("close did not hide sidebar and release its width/capture")
+		}
+		s.Click(hitNotesPanel)
+		if s.noteSidebarState() != v || v.content.query.String() != "needle" || !v.content.sideAll || v.content.selected != "note" || v.content.view.treeScroll != 42 || v.content.previewScroll != 84 || v.width != 450 || v.fraction != .6 {
+			t.Fatal("reopening lost browser state")
+		}
 	}
 }

@@ -26,13 +26,16 @@ var (
 // one entry per keyboard shortcut and what the About page holds. The test keeps
 // a quarter of it free, so adding entries fails loudly here instead of becoming
 // silently unsearchable when the array fills.
-const maxSettingsEntries = 192
+const maxSettingsEntries = 256
 
 // settingsEntry is one thing a user may look for.
 type settingsEntry struct {
 	category    settingsCategory
 	label       string
 	description string
+	// search is wording a user may know a setting by although the page no longer
+	// shows it, such as the old name of a renamed setting.
+	search string
 	// anchor is the text the page paints where the entry lives (a row's name or
 	// a group's title), which is what a result scrolls to.
 	anchor string
@@ -104,7 +107,7 @@ func (state *State) settingsSearching() bool {
 		if view.count == len(view.results) {
 			return
 		}
-		haystack := strings.ToLower(entry.label + " " + entry.description + " " + state.settingsCategoryName(entry.category))
+		haystack := strings.ToLower(entry.label + " " + entry.description + " " + entry.search + " " + state.settingsCategoryName(entry.category))
 		for _, term := range terms {
 			if !strings.Contains(haystack, term) {
 				return
@@ -124,6 +127,9 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	m2 := state.messages.Autofill
 	row := func(category settingsCategory, label, description string) {
 		add(settingsEntry{category: category, label: label, description: description, anchor: label})
+	}
+	rowSearch := func(category settingsCategory, label, description, search string) {
+		add(settingsEntry{category: category, label: label, description: description, search: search, anchor: label})
 	}
 	group := func(category settingsCategory, anchor, label, description string) {
 		add(settingsEntry{category: category, label: label, description: description, anchor: anchor})
@@ -154,8 +160,6 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	for _, label := range []string{m.Toolbars.Window, m.Toolbars.Terminal, m.Toolbars.SFTP} {
 		row(settingsGeneral, label, m.Toolbars.Description)
 	}
-	row(settingsGeneral, tools.GeneralUpdateStartup, tools.GeneralUpdateStartupDescription)
-	row(settingsGeneral, tools.GeneralUpdate, tools.GeneralUpdateDescription)
 	row(settingsGeneral, tools.DiagnosticsRow, tools.DiagnosticsDescription)
 	row(settingsTerminal, m.SettingsTerminalOption, m.SettingsTerminalOptionDescription)
 	row(settingsTerminal, m.SettingsTerminalFontSize, m.SettingsTerminalFontSizeDescription)
@@ -179,9 +183,15 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, tools.CloseConfirmRow, tools.CloseConfirmDescription)
 	row(settingsTerminal, tools.PasswordHintRow, tools.PasswordHintDescription)
 	row(settingsTerminal, tools.NotifyRow, tools.NotifyDescription)
+	group(settingsTerminal, m.FindSettings.Title, m.FindSettings.Title, "")
+	row(settingsTerminal, m.FindSettings.Foreground, "")
+	row(settingsTerminal, m.FindSettings.Background, "")
+	row(settingsTerminal, m.FindSettings.Opacity, "")
+	row(settingsTerminal, m.FindSettings.Origin, "")
 	group(settingsTerminal, m.Completion.Group, m.Completion.Group, "")
 	row(settingsTerminal, m.Completion.CatalogRow, "")
 	row(settingsTerminal, state.messages.History.SuggestRow, state.messages.History.SuggestDescription)
+	row(settingsTerminal, m.Completion.AcceptHintRow, m.Completion.AcceptHintDescription)
 	row(settingsTerminal, state.messages.History.SettingsRow, state.messages.History.SettingsDescription)
 	row(settingsTerminal, state.messages.History.ClearRow, state.messages.History.ClearDescription)
 	row(settingsTerminal, m.SettingsLocalStart, m.SettingsLocalStartDescription)
@@ -196,7 +206,14 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, tools.BgVisibility, "")
 
 	row(settingsConnection, m.SettingsConnectionTimeout, m.SettingsConnectionTimeoutDescription)
-	row(settingsConnection, m.SettingsConnectionKeepAlive, m.SettingsConnectionKeepAliveDescription)
+	// The setting is called "SSH liveness probe" now, but the wording users know
+	// it by still finds it. The alias follows the language, as the rest of the
+	// index does.
+	keepAliveAlias := "SSH keepalive"
+	if state.language != i18n.English {
+		keepAliveAlias = "SSH 保活"
+	}
+	rowSearch(settingsConnection, m.SettingsConnectionKeepAlive, m.SettingsConnectionKeepAliveDescription, keepAliveAlias)
 	row(settingsConnection, m.SettingsConnectionReconnect, m.SettingsConnectionReconnectDescription)
 	row(settingsConnection, m.SettingsShare, m.SettingsShareDescription)
 	row(settingsConnection, m.SettingsRestore, m.SettingsRestoreDescription)
@@ -206,6 +223,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsConnection, state.messages.SSHSync.ToggleRow, state.messages.SSHSync.ToggleDescription)
 	row(settingsConnection, state.messages.SSHSync.FileRow, "")
 	row(settingsConnection, state.messages.SSHSync.NowRow, "")
+	group(settingsConnection, m.HostTags.Group, m.HostTags.Group, "")
 
 	row(settingsFiles, tools.FilesPanelAutoOpen, tools.FilesPanelAutoOpenDescription)
 	row(settingsFiles, tools.FilesPanelPosition, tools.FilesPanelPositionDescription)
@@ -270,6 +288,9 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsAbout, about.Build, facts.buildText(about))
 	row(settingsAbout, about.Runtime, facts.runtime)
 	group(settingsAbout, about.InfoTitle, about.CopyRow, about.CopyDescription)
+	group(settingsAbout, about.UpdateTitle, about.UpdateTitle, "")
+	row(settingsAbout, tools.GeneralUpdateStartup, tools.GeneralUpdateStartupDescription)
+	row(settingsAbout, tools.GeneralUpdate, tools.GeneralUpdateDescription)
 	row(settingsAbout, about.QQ, about.QQDescription)
 	row(settingsAbout, about.WeChat, about.WeChatDescription)
 	row(settingsAbout, about.Discord, about.DiscordDescription)

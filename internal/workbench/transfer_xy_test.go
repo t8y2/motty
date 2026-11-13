@@ -77,7 +77,7 @@ func TestYmodemReceiveIntoAFolderFromTheTerminalMenu(t *testing.T) {
 	state.closeModal()
 
 	startXY(t, state, session, xymodem.YMODEM, false)
-	waitUntil(t, state, "the transfer to end", func() bool { return state.transfer.phase == transferNone })
+	waitUntil(t, state, "the transfer to end", func() bool { return session.transfer.phase == transferNone })
 	if got, _ := os.ReadFile(filepath.Join(dir, "one.bin")); !bytes.Equal(got, payload) {
 		t.Fatalf("one.bin is %d bytes", len(got))
 	}
@@ -98,7 +98,7 @@ func TestXmodemReceiveSavesUnderTheNameTheUserChose(t *testing.T) {
 	data := bytes.Repeat([]byte("x1"), 300)
 	remote(shell, xymodem.NewSender(xymodem.XMODEM1K, []zmodem.SendFile{{Name: "ignored", Size: int64(len(data)), Source: bytes.NewReader(data)}}))
 	startXY(t, state, session, xymodem.XMODEM1K, false)
-	waitUntil(t, state, "the transfer to end", func() bool { return state.transfer.phase == transferNone })
+	waitUntil(t, state, "the transfer to end", func() bool { return session.transfer.phase == transferNone })
 	if got, _ := os.ReadFile(chosen); !bytes.Equal(got, data) {
 		t.Fatalf("saved %d bytes, want %d", len(got), len(data))
 	}
@@ -116,7 +116,7 @@ func TestYmodemSendToTheOtherSide(t *testing.T) {
 	remote(shell, receiver)
 	shell.say(string(receiver.TakeOutput(nil))) // rb asks with 'C'
 	startXY(t, state, session, xymodem.YMODEM, true)
-	waitUntil(t, state, "the transfer to end", func() bool { return state.transfer.phase == transferNone })
+	waitUntil(t, state, "the transfer to end", func() bool { return session.transfer.phase == transferNone })
 	if got := target.files["firmware.bin"]; got == nil || !bytes.Equal(got.Bytes(), payload) {
 		t.Fatalf("the other side got %v", got)
 	}
@@ -141,9 +141,9 @@ func TestCancellingAnXmodemReceiveRemovesTheUnfinishedFile(t *testing.T) {
 		}
 	}
 	startXY(t, state, session, xymodem.XMODEM, false)
-	waitUntil(t, state, "some data", func() bool { return state.transfer.progress.Done > 0 })
+	waitUntil(t, state, "some data", func() bool { return session.transfer.progress.Done > 0 })
 	state.Click(hitTransferCancel)
-	waitUntil(t, state, "the end", func() bool { return state.transfer.phase == transferNone })
+	waitUntil(t, state, "the end", func() bool { return session.transfer.phase == transferNone })
 	if _, err := os.Stat(chosen); err == nil {
 		t.Fatal("a cancelled XMODEM receive left its file")
 	}
@@ -151,7 +151,7 @@ func TestCancellingAnXmodemReceiveRemovesTheUnfinishedFile(t *testing.T) {
 
 func TestSetupIsRefusedWhileATransferRuns(t *testing.T) {
 	state, session, _ := transferState(t)
-	state.transfer.phase = transferRunning
+	session.transfer.phase = transferRunning
 	state.openXYSetup(session)
 	if state.modal == modalXYTransfer {
 		t.Fatal("a second transfer was offered")

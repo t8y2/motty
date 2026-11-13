@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"motty/internal/ai/gate"
+	"motty/internal/ai/tools"
 )
 
 func runBridge(t *testing.T, url, token, input string) []string {
@@ -114,6 +117,113 @@ func TestBridgeWithPipesStopsOnEOFAndOnContext(t *testing.T) {
 	}
 }
 
+func TestBridgeStreamsRZSZProgressBeforeTheCallFinishes(t *testing.T) {
+	release := make(chan struct{})
+	server, err := New(Config{
+		Token: testToken,
+		Tools: tools.All(),
+		Dispatch: func(ctx context.Context, name string, args []byte) gate.Result {
+			if name != tools.NameRZSZUpload {
+				t.Errorf("tool %s", name)
+			}
+			gate.ReportProgress(ctx, gate.ProgressReport{Message: "waiting for the remote to accept a.bin; 0 bytes have moved"})
+			gate.ReportProgress(ctx, gate.ProgressReport{Message: "waiting again"})
+			<-release
+			gate.ReportProgress(ctx, gate.ProgressReport{Progress: 100, Total: 200, HasTotal: true, Message: "transferring a.bin; 100/200 bytes have moved"})
+			return gate.Result{Text: "transferred"}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	inR, inW := io.Pipe()
+	outR, outW := io.Pipe()
+	bridgeDone := make(chan error, 1)
+	go func() {
+		bridgeDone <- Bridge(context.Background(), inR, outW, ts.URL+Path, testToken, nil)
+		outW.Close()
+	}()
+	lines := make(chan string, 8)
+	go func() {
+		br := bufio.NewReader(outR)
+		for {
+			line, err := br.ReadString('\n')
+			if line != "" {
+				lines <- line
+			}
+			if err != nil {
+				close(lines)
+				return
+			}
+		}
+	}()
+	_, err = io.WriteString(inW, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"rzsz_upload","arguments":{"local_path":"C:/a.bin"},"_meta":{"progressToken":"p1"}}}`+"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case line := <-lines:
+		if !strings.Contains(line, `"method":"notifications/progress"`) || !strings.Contains(line, "waiting for the remote") || strings.Contains(line, "waiting again") {
+			t.Fatalf("first progress line: %s", line)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("progress was not streamed before the call finished")
+	}
+	close(release)
+	var got strings.Builder
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case line, ok := <-lines:
+			if !ok {
+				t.Fatal("stream ended without the tool result")
+			}
+			got.WriteString(line)
+			if strings.Contains(line, `"id":3`) {
+				goto done
+			}
+		case <-deadline:
+			t.Fatalf("result did not follow progress: %s", got.String())
+		}
+	}
+done:
+	text := got.String()
+	if strings.Contains(text, "waiting again") || !strings.Contains(text, `"progress":100`) || !strings.Contains(text, `"total":200`) || !strings.Contains(text, "transferred") {
+		t.Fatalf("after release: %s", text)
+	}
+	inW.Close()
+	select {
+	case err := <-bridgeDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("bridge did not return")
+	}
+}
+
+func TestRZSZWithoutAnEventStreamStaysOneJSONResult(t *testing.T) {
+	server, err := New(Config{
+		Token: testToken,
+		Tools: tools.All(),
+		Dispatch: func(ctx context.Context, name string, args []byte) gate.Result {
+			gate.ReportProgress(ctx, gate.ProgressReport{Progress: 5, Total: 9, HasTotal: true, Message: "transferring"})
+			return gate.Result{Text: "done"}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(server.Handler())
+	t.Cleanup(ts.Close)
+	resp, body := post(t, ts.URL, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"rzsz_upload","arguments":{"local_path":"C:/a.bin"},"_meta":{"progressToken":9}}}`, nil)
+	if resp.Header.Get("Content-Type") != "application/json" || strings.Contains(body, "notifications/progress") || !strings.Contains(body, "done") {
+		t.Fatalf("content-type %s body %s", resp.Header.Get("Content-Type"), body)
+	}
+}
+
 func TestBridgeSlowCallDoesNotBlockPing(t *testing.T) {
 	release := make(chan struct{})
 	b := &fakeBackend{block: true, execRelease: release}
@@ -131,4 +241,13 @@ func TestBridgeSlowCallDoesNotBlockPing(t *testing.T) {
 	close(release)
 	inW.Close()
 	io.Copy(io.Discard, outR)
+}
+
+// TestAToolsCallNotificationIsNotAProgressCall guards the stream decision for a
+// request without an id: it is a notification, and there is nothing to stream.
+func TestAToolsCallNotificationIsNotAProgressCall(t *testing.T) {
+	body := []byte(`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"` + tools.NameRZSZUpload + `","_meta":{"progressToken":1}}}`)
+	if _, ok := rzszProgressCall("text/event-stream", body); ok {
+		t.Fatal("a tools/call without an id was treated as a progress call")
+	}
 }

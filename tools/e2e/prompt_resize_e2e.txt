@@ -1,0 +1,39 @@
+# End to end: dragging the assistant panel no longer copies the shell prompt.
+# The fixture must report a real server implementation, because the client only
+# starts its shell integration (whose OSC 133 prompts the resize leaves to the
+# shell) for one, and must start bash:
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .)
+#   E2E_ALLOW_EXEC=1 SHELL=/bin/bash E2ESSHD_BANNER=SSH-2.0-OpenSSH_9.0 \
+#     /tmp/e2esshd 2244 &
+#   make head
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/prompt_resize_e2e.txt
+#
+# The prompt is longer than the terminal once the panel widens it, so before
+# the fix the reflow moved it away from the rows the shell redraws it on and
+# every redraw added another copy. The last texts must show the prompt once at
+# the final width, wrapped onto the next row, and the shot shows the same.
+click "Search"
+type tester@127.0.0.1:2244
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+settle 2500
+type PS1='Tdaofei@user-System-Product-Name:/data/Tdaofei/project/DefMamba-main$ (base) '
+key enter
+settle 800
+click "AI Assistant"
+settle 600
+down 979 500
+move 850 500
+move 700 500
+settle 400
+move 550 500
+settle 1200
+up 550 500
+settle 1200
+texts "Tdaofei"
+shot /tmp/prompt-resize.png

@@ -7,7 +7,7 @@ type CompletionMessages struct {
 	Open                  string
 	ModeOff               string
 	ModeList              string
-	ModeBoth              string
+	ModeInline            string
 	KeysGroup             string
 	KeysAccept            string
 	KeysAcceptWord        string
@@ -17,6 +17,13 @@ type CompletionMessages struct {
 	KeysClose             string
 	KeysShell             string
 	KeysShellDescription  string
+	// The accept-suggestion badge, its setting and its menu.
+	AcceptHintAction      string
+	AcceptHintBadge       string
+	AcceptHintRow         string
+	AcceptHintDescription string
+	AcceptHintCustom      string
+	AcceptHintTurnOff     string
 	Group                 string
 	CatalogRow            string
 	CatalogDescriptionFmt string
@@ -50,6 +57,8 @@ type CompletionMessages struct {
 	NoDataDir        string
 	// PrefixRow names the shared-prefix row of the history matches.
 	PrefixRow string
+	// Loading is the one row of a list whose directory is still being read.
+	Loading string
 	// The relative age of a history match, as its row shows it. TimeJustNow
 	// covers a match used less than a minute ago.
 	TimeJustNow    string

@@ -125,3 +125,33 @@ func TestImportingAnOversizedFileIsRefused(t *testing.T) {
 		t.Fatalf("status = %q, want the file-too-large warning", state.status)
 	}
 }
+
+func TestImportHighlightRulesSkipsExactDuplicatesBeforeCapacity(t *testing.T) {
+	state := importFile(t, "ERROR | red\nERROR | red\nERROR | blue\nERROR | red | case\nERROR | red | regex\n")
+	if got := len(state.highlighting.rules); got != 4 {
+		t.Fatalf("rules = %d, want four distinct configurations", got)
+	}
+	state.Click(hitSettingsHighlightImport)
+	if got := len(state.highlighting.rules); got != 4 {
+		t.Fatalf("repeat import grew rules to %d", got)
+	}
+	if want := fmt.Sprintf(state.messages.Tools.HighlightImportAllSkippedFmt, 5); state.status != want {
+		t.Fatalf("status = %q, want duplicate count %q", state.status, want)
+	}
+}
+
+func TestImportHighlightRulesScansPastDuplicateForRemainingCapacity(t *testing.T) {
+	state := importFile(t, "EXISTING | red\nNEW | blue\n")
+	state.highlighting.rules = state.highlighting.rules[:1]
+	for len(state.highlighting.rules) < maxCustomHighlightRules-1 {
+		state.highlighting.rules = append(state.highlighting.rules, highlightRule{Pattern: fmt.Sprintf("seed-%d", len(state.highlighting.rules)), Slot: highlight.Red})
+	}
+	state.Click(hitSettingsHighlightImport)
+	if got := state.highlighting.rules[len(state.highlighting.rules)-1].Pattern; got != "NEW" {
+		t.Fatalf("last available slot contains %q, want NEW", got)
+	}
+	state.Click(hitSettingsHighlightImport)
+	if state.status == state.messages.Tools.HighlightErrorTooMany {
+		t.Fatal("a full list reported capacity exhaustion for duplicate-only input")
+	}
+}

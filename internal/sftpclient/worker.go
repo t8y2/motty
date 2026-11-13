@@ -67,6 +67,7 @@ const (
 	OperationOpenDocument
 	OperationSaveDocument
 	OperationReadDocument
+	OperationMoveSelection
 )
 
 // ExistingPolicy controls what a transfer does when its final destination or
@@ -156,7 +157,10 @@ type Result struct {
 	// Background marks the result of Prefetch: a listing the caller asked for in
 	// advance. It is the caller's to cache, not to show as the outcome of an
 	// action, and its failure is not worth reporting.
-	Background  bool
+	Background bool
+	// NamesOnly marks a listing made by ListNames: owner names and link targets
+	// were not resolved.
+	NamesOnly   bool
 	Operation   Operation
 	TransferID  uint64
 	Path        string
@@ -198,10 +202,12 @@ type linkJob struct {
 }
 
 type request struct {
+	sources     []string
 	listID      uint64
 	data        []byte
 	id          uint64
 	background  bool // a listing nobody is waiting on: its Result says so
+	namesOnly   bool // a listing for path completion: names and the directory bit
 	operation   Operation
 	remote      string
 	local       string
@@ -354,6 +360,14 @@ func (worker *Worker) List(remotePath string) bool {
 	return worker.ListWithID(remotePath, 0)
 }
 
+// ListNames asks for a directory listing for path completion: names and the
+// directory bit only. Owner names and symbolic-link targets are not resolved,
+// so the listing costs one round trip however many links the directory holds.
+// Its Result says NamesOnly.
+func (worker *Worker) ListNames(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationList, remote: remotePath, namesOnly: true})
+}
+
 func (worker *Worker) ListWithID(remotePath string, id uint64) bool {
 	return worker.enqueue(request{operation: OperationList, remote: remotePath, listID: id})
 }
@@ -409,6 +423,11 @@ func (worker *Worker) CreateDirectories(remotePath string) bool {
 
 func (worker *Worker) Rename(oldPath, newPath string) bool {
 	return worker.enqueue(request{operation: OperationRename, remote: oldPath, destination: newPath})
+}
+
+// MoveSelection moves each source into the destination folder using Rename.
+func (worker *Worker) MoveSelection(sources []string, folder string) bool {
+	return worker.enqueue(request{operation: OperationMoveSelection, sources: slices.Clone(sources), destination: folder})
 }
 
 func (worker *Worker) RemoveFile(remotePath string) bool {
@@ -1024,9 +1043,14 @@ func (worker *Worker) execute(next request) Result {
 	}
 	switch next.operation {
 	case OperationList:
-		result.Path, result.Entries, result.Err = worker.list(client, next.remote, generation)
+		result.NamesOnly = next.namesOnly
+		if next.namesOnly {
+			result.Path, result.Entries, result.Err = worker.listNames(client, next.remote, generation)
+		} else {
+			result.Path, result.Entries, result.Err = worker.list(client, next.remote, generation)
+		}
 		result.Approximate = IsSCP(client)
-		if result.Err == nil && hasLinks(result.Entries) {
+		if result.Err == nil && !next.namesOnly && hasLinks(result.Entries) {
 			if _, ok := client.(remoteLinks); ok {
 				result.LinksPending = true
 				result.links = &linkJob{
@@ -1048,6 +1072,20 @@ func (worker *Worker) execute(next request) Result {
 		}
 	case OperationRename:
 		result.Err = rename(client, next.remote, next.destination)
+	case OperationMoveSelection:
+		var failures []error
+		for _, source := range next.sources {
+			if worker.canceled(generation) {
+				break
+			}
+			destination := path.Join(next.destination, path.Base(source))
+			if err := rename(client, source, destination); err != nil {
+				failures = append(failures, fmt.Errorf("%s: %w", source, err))
+				continue
+			}
+			result.Files++
+		}
+		result.Err = errors.Join(failures...)
 	case OperationRemoveFile:
 		result.Err = removeFile(client, next.remote)
 	case OperationRemoveDirectory:
@@ -1122,6 +1160,41 @@ func (worker *Worker) list(client Remote, remotePath string, generation uint64) 
 	}
 	entries := entriesFrom(infos)
 	worker.describeOwners(client, entries)
+	return remotePath, entries, nil
+}
+
+// maxNameEntries bounds a names-only listing. Completion holds a bounded set of
+// rows, and a directory past this is not worth the memory.
+const maxNameEntries = 2048
+
+// listNames is list for path completion. It reads the directory once and keeps
+// only what a candidate row needs: a name and whether it is a folder. A
+// symbolic link is not followed, so it is offered as a name without a trailing
+// slash; opening it after typing the slash still works.
+func (worker *Worker) listNames(client Remote, remotePath string, generation uint64) (string, []Entry, error) {
+	if remotePath == "" {
+		resolved, err := client.Getwd()
+		if err != nil {
+			return "", nil, err
+		}
+		remotePath = resolved
+	}
+	infos, err := client.ReadDir(remotePath)
+	if err != nil {
+		return remotePath, nil, err
+	}
+	if worker.canceled(generation) {
+		return remotePath, nil, ErrCanceled
+	}
+	entries := entriesFrom(infos)
+	if len(entries) > maxNameEntries {
+		entries = entries[:maxNameEntries]
+	}
+	for index := range entries {
+		entries[index].UID, entries[index].GID, entries[index].HasOwner = 0, 0, false
+		entries[index].Owner, entries[index].Group = "", ""
+		entries[index].LinkTarget, entries[index].LinkDir, entries[index].LinkBroken = "", false, false
+	}
 	return remotePath, entries, nil
 }
 
@@ -2556,7 +2629,17 @@ func createDirectory(client Remote, remotePath string) error {
 	if !ok {
 		return fmt.Errorf("sftp: create directory is not supported by the remote")
 	}
-	return creator.Mkdir(remotePath)
+	err := creator.Mkdir(remotePath)
+	if err != nil {
+		if linker, ok := client.(remoteLinker); ok {
+			if _, statErr := linker.Lstat(remotePath); statErr == nil {
+				return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+			}
+		} else if _, statErr := client.ReadDir(remotePath); statErr == nil {
+			return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+		}
+	}
+	return err
 }
 
 func createDirectories(client Remote, remotePath string) error {
@@ -2564,7 +2647,15 @@ func createDirectories(client Remote, remotePath string) error {
 		return errors.New("sftp: create directories requires a remote path")
 	}
 	if creator, ok := client.(interface{ MkdirAll(string) error }); ok {
-		return creator.MkdirAll(remotePath)
+		err := creator.MkdirAll(remotePath)
+		if err != nil {
+			if linker, ok := client.(remoteLinker); ok {
+				if _, statErr := linker.Lstat(remotePath); statErr == nil {
+					return fmt.Errorf("%w: %s", ErrDestinationExists, remotePath)
+				}
+			}
+		}
+		return err
 	}
 	// SCP and minimal backends can still create a tree using their existing
 	// directory primitives. Permission and non-directory errors are never

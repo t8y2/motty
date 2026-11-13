@@ -48,7 +48,7 @@ const (
 
 	agentIdleDefault   = 2 * time.Minute
 	agentDialLimit     = 60 * time.Second
-	agentCallTimeout   = 12 * time.Minute // a command may take tools.MaxTimeoutSeconds, and dialing comes first
+	mcpCallTimeout     = 12 * time.Minute // a command may take tools.MaxTimeoutSeconds, and approval or dialing comes first
 	agentAuditRetained = 30 * 24 * time.Hour
 )
 
@@ -148,7 +148,7 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 		Dispatch:     backend.audited(agentGate, log),
 		ServerName:   "motty",
 		Version:      "1",
-		CallTimeout:  agentCallTimeout,
+		CallTimeout:  mcpCallTimeout,
 		Instructions: instructions,
 	})
 }
@@ -610,6 +610,10 @@ func (b *agentBackend) answerAgentPrompt(conn *sshconn.Conn, host Host, status s
 	switch status.Phase {
 	case sshconn.PhaseHostKeyPrompt:
 		conn.RejectHostKey()
+		if status.HostKey.Changed {
+			return fmt.Errorf("%s: the host key changed (trusted %s, offered %s); confirm the change in the Motty window before agents can use this host",
+				formatEndpoint(status.Endpoint), strings.Join(status.HostKey.Known, ", "), status.HostKey.Fingerprint)
+		}
 		return fmt.Errorf("the host key %s (%s) of %s is not trusted yet; connect to it once from the Motty window to trust it",
 			status.HostKey.Fingerprint, status.HostKey.Type, status.HostKey.Address)
 	case sshconn.PhasePasswordPrompt:

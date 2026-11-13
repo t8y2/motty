@@ -63,6 +63,9 @@ type highlightUI struct {
 	regex, folded bool // folded: match case
 	slot          highlight.Slot
 	dialogError   string
+	editing       int
+	editRule      highlightRule
+	isEditing     bool
 
 	// field, regexRow and caseRow are the slots the dialog body laid out; the
 	// field and the checkboxes are painted into them after the body, by the
@@ -95,11 +98,24 @@ func (state *State) setBuiltinHighlight(on bool) bool {
 
 func (state *State) openHighlightDialog() {
 	form := &state.highlighting
+	form.isEditing = false
 	form.pattern = text.Editor{}
 	form.regex, form.folded = false, false
 	form.slot = highlight.Red
 	form.dialogError = ""
 	state.modal = modalHighlightRule
+}
+
+func (state *State) openHighlightEdit(index int) {
+	if index < 0 || index >= len(state.highlighting.rules) {
+		return
+	}
+	state.openHighlightDialog()
+	form := &state.highlighting
+	rule := form.rules[index]
+	form.editing, form.editRule, form.isEditing = index, rule, true
+	form.pattern.Insert(rule.Pattern)
+	form.regex, form.folded, form.slot = rule.Regex, rule.CaseSensitive, rule.Slot
 }
 
 func (state *State) clickHighlightDialog(id gfx.ID) {
@@ -122,7 +138,7 @@ func (state *State) submitHighlightRule() {
 	rule := highlightRule{
 		Pattern: strings.TrimSpace(form.pattern.String()), Regex: form.regex, CaseSensitive: form.folded, Slot: form.slot,
 	}
-	if len(form.rules) >= maxCustomHighlightRules {
+	if !form.isEditing && len(form.rules) >= maxCustomHighlightRules {
 		form.dialogError = m.HighlightErrorTooMany
 		return
 	}
@@ -146,7 +162,21 @@ func (state *State) submitHighlightRule() {
 		form.dialogError = fmt.Sprintf(m.HighlightErrorInvalidFmt, err)
 		return
 	}
-	form.rules = append(form.rules, rule)
+	for index, existing := range form.rules {
+		if existing == rule && (!form.isEditing || index != form.editing) {
+			form.dialogError = state.messages.RuleManagement.Duplicate
+			return
+		}
+	}
+	if form.isEditing {
+		if form.editing < 0 || form.editing >= len(form.rules) || form.rules[form.editing] != form.editRule {
+			state.closeModal()
+			return
+		}
+		form.rules[form.editing] = rule
+	} else {
+		form.rules = append(form.rules, rule)
+	}
 	state.closeModal()
 	state.recompileHighlights()
 	state.save()
@@ -199,17 +229,35 @@ func (state *State) importHighlightRules() {
 		}
 		return
 	}
-	room := max(0, maxCustomHighlightRules-len(state.highlighting.rules))
-	imported := min(len(parsed), room)
-	skipped += len(parsed) - imported
-	if imported == 0 {
-		state.showActionWarning(title, m.HighlightErrorTooMany)
-		return
+	seen := make(map[highlightRule]bool, len(state.highlighting.rules)+len(parsed))
+	for _, rule := range state.highlighting.rules {
+		seen[rule] = true
 	}
-	for _, rule := range parsed[:imported] {
-		state.highlighting.rules = append(state.highlighting.rules, highlightRule{
+	imported, full := 0, false
+	for _, rule := range parsed {
+		candidate := highlightRule{
 			Pattern: rule.Pattern, Regex: rule.Regex, CaseSensitive: rule.CaseSensitive, Slot: rule.Slot,
-		})
+		}
+		if seen[candidate] {
+			skipped++
+			continue
+		}
+		seen[candidate] = true
+		if len(state.highlighting.rules) >= maxCustomHighlightRules {
+			skipped++
+			full = true
+			continue
+		}
+		state.highlighting.rules = append(state.highlighting.rules, candidate)
+		imported++
+	}
+	if imported == 0 {
+		message := fmt.Sprintf(m.HighlightImportAllSkippedFmt, skipped)
+		if full {
+			message = m.HighlightErrorTooMany
+		}
+		state.showActionWarning(title, message)
+		return
 	}
 	state.recompileHighlights()
 	state.save()
@@ -274,11 +322,15 @@ func (state *State) slotColor(slot highlight.Slot) gfx.Color {
 func (state *State) declareHighlightDialog(c ui.C) {
 	m := state.messages.Tools
 	form := &state.highlighting
+	title, save := m.HighlightDialogTitle, m.HighlightSave
+	if form.isEditing {
+		title, save = state.messages.RuleManagement.HighlightEditTitle, state.messages.Autofill.Save
+	}
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, "", withError(198, form.dialogError)) // the pattern, two boxes and the colors
 	// No scrim dismiss: a press beside the form must not discard its input.
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: m.HighlightDialogTitle, Width: 520, Height: height, Layer: dialogLayer,
+		Title: title, Width: 520, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, CloseID: hitHighlightClose, InitialFocusID: hitHighlightPattern,
 	})
 	dialog.Body(func() { state.declareHighlightDialogBody(c) })
@@ -286,7 +338,7 @@ func (state *State) declareHighlightDialog(c ui.C) {
 		if dialogButton(c, state.messages.Cancel, components.ButtonSecondary, false).Clicked() {
 			c.After(func() { state.clickHighlightDialog(hitHighlightCancel) })
 		}
-		if dialogButton(c, m.HighlightSave, components.ButtonDefault, false).Clicked() {
+		if dialogButton(c, save, components.ButtonDefault, false).Clicked() {
 			c.After(func() { state.clickHighlightDialog(hitHighlightSubmit) })
 		}
 	})
@@ -353,6 +405,16 @@ func (state *State) declareDialogCheckboxC(c ui.C, label string, above, below fl
 	})
 }
 
+// declareDialogCheckboxMutedC is declareDialogCheckboxC with the words dimmed:
+// the row's switch cannot be used, and the dimming says so with the checkbox.
+func (state *State) declareDialogCheckboxMutedC(c ui.C, label string, above, below float32) ui.Box {
+	side := components.CheckboxExtent(state.Theme())
+	return ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
+		ui.Slot(c).Size(side, side).Shrink(0)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(20).Grow(1)
+	})
+}
+
 // declareDialogCheckboxHelpC is declareDialogCheckboxC with a help icon right
 // after the label, which paintHelpIcon fills in.
 func (state *State) declareDialogCheckboxHelpC(c ui.C, label string, above, below float32) (row, help ui.Box) {
@@ -388,26 +450,24 @@ func (state *State) paintDialogCheckbox(canvas *gfx.Canvas, id gfx.ID, label str
 	canvas.HitLabel(id, gfx.Rect{X: words, Y: rect.Y, Width: max(rect.X+rect.Width-words, 0), Height: rect.Height}, label, false)
 }
 
+// paintDialogCheckboxDisabled paints the checkbox of a declared row dimmed and
+// inert: it is not a tab stop, and its words do not toggle it or reach the
+// protocol's click handler.
+func (state *State) paintDialogCheckboxDisabled(canvas *gfx.Canvas, id gfx.ID, label string, checked bool, row ui.Box) {
+	rect := row.Rect()
+	side := components.CheckboxExtent(state.Theme())
+	components.BeginCheckbox(canvas, state.Theme(), id, gfx.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, checked).Label(label).Disabled().Paint()
+}
+
 // paintHighlightSettings is the Keyword highlighting group of Settings.
 func (state *State) paintHighlightSettings(page *settingsPage) {
 	m := state.messages.Tools
 	rules := state.highlighting.rules
 	page.group(m.HighlightGroup, func() {
 		page.toggleRow(m.HighlightBuiltin, m.HighlightBuiltinDescription, !state.highlighting.builtinOff, hitSettingsHighlightToggle)
-		for index, rule := range rules {
-			kind := m.HighlightKindText
-			switch {
-			case rule.Regex && rule.CaseSensitive:
-				kind = m.HighlightKindRegexCase
-			case rule.Regex:
-				kind = m.HighlightKindRegex
-			case rule.CaseSensitive:
-				kind = m.HighlightKindTextCase
-			}
-			page.actionRow(rule.Pattern, state.slotName(rule.Slot)+" · "+kind, false,
-				components.ButtonAction{ID: hitHighlightDeleteList.At(index), Label: m.HighlightDelete, Variant: components.ButtonOutline})
-		}
-		page.actionRow(m.HighlightCustom, m.HighlightCustomDescription, len(rules) >= maxCustomHighlightRules,
+		page.actionRow(m.HighlightCustom, fmt.Sprintf(state.messages.RuleManagement.CountFmt, len(rules)), false,
+			components.ButtonAction{ID: hitSettingsHighlightManage, Label: state.messages.RuleManagement.Manage, Variant: components.ButtonOutline})
+		page.actionRow(m.HighlightAdd, m.HighlightCustomDescription, len(rules) >= maxCustomHighlightRules,
 			components.ButtonAction{ID: hitSettingsHighlightAdd, Label: m.HighlightAdd, Variant: components.ButtonOutline})
 		page.actionRow(m.HighlightImport, m.HighlightImportDescription, len(rules) >= maxCustomHighlightRules,
 			components.ButtonAction{ID: hitSettingsHighlightImport, Label: m.HighlightImport, Variant: components.ButtonOutline})
@@ -431,6 +491,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	}
 	clear(state.snippets.list)
 	state.snippets.list = state.snippets.list[:0]
+	state.snippets.resetSnippetPreview()
 	slices.SortStableFunc(saved.Snippets, func(left, right savedSnippet) int {
 		switch {
 		case left.Order < right.Order:
@@ -464,5 +525,11 @@ func (state *State) restoreTerminalTools(saved savedState) {
 		}
 	}
 	state.refreshSnippets()
+	state.commands.shown = saved.CommandsShown
+	state.commands.sort = commandsSortFromString(saved.CommandsSort)
+	state.commands.hiddenGroups = make(map[string]bool)
+	for _, group := range saved.CommandsHiddenGroups {
+		state.commands.hiddenGroups[group] = true
+	}
 	state.recompileHighlights()
 }

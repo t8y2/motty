@@ -73,66 +73,82 @@ func normalizeConnectionKeepAliveSeconds(value int) int {
 // discovered only by the next keystroke, which can be minutes.
 const defaultConnectionKeepAlive = 30 * time.Second
 
-// textScale is the interface text size: the default, or a step each way. It is
-// saved by name, as the appearance mode is.
-type textScale uint8
-
+// The interface text size is the body text size in logical pixels: any whole
+// size from the smallest that stays legible to the largest the window's fixed
+// row heights hold. The descriptions and headings are the framework's own
+// proportions of it, so they follow without a size of their own. The terminal
+// has a font size apart.
 const (
-	textScaleRegular textScale = iota
-	textScaleSmall
-	textScaleLarge
+	interfaceTextSizeMin  = 11
+	interfaceTextSizeMax  = 18
+	interfaceTextSizeStep = 1
 )
 
-// factor is the multiplier every interface text size is drawn at.
-func (scale textScale) factor() float32 {
-	switch scale {
-	case textScaleSmall:
-		return textScaleSmallFactor
-	case textScaleLarge:
-		return textScaleLargeFactor
-	}
-	return textScaleRegularFactor
+// interfaceTextSize is the body text size in logical pixels.
+type interfaceTextSize int
+
+// interfaceTextSizeDefault is the framework's own body size: the window opens at
+// it, and the stepper's middle button returns to it.
+var interfaceTextSizeDefault = interfaceTextSize(gfx.DefaultMetrics().FontSizeM)
+
+// factor is the multiplier every interface text size is drawn at: the chosen
+// body size over the framework's own.
+func (size interfaceTextSize) factor() float32 {
+	return float32(size) / gfx.DefaultMetrics().FontSizeM
 }
 
-func (scale textScale) String() string {
-	switch scale {
-	case textScaleSmall:
-		return "small"
-	case textScaleLarge:
-		return "large"
+// normalizeInterfaceTextSize makes a saved size a usable one: a whole size
+// inside the range; anything else (a damaged file) is the default.
+func normalizeInterfaceTextSize(value int) interfaceTextSize {
+	if value < interfaceTextSizeMin || value > interfaceTextSizeMax {
+		return interfaceTextSizeDefault
 	}
-	return ""
+	return interfaceTextSize(value)
 }
 
-func textScaleFromString(value string) textScale {
+// interfaceTextSizeFromLegacy is a saved size from before the setting kept
+// pixels: the two named steps become the body size they drew (0.9 and 1.15 of
+// the 14 px body), and an unset one the default. Whether the name was known is
+// told apart from a file that simply predates the setting.
+func interfaceTextSizeFromLegacy(value string) (interfaceTextSize, bool) {
 	switch value {
 	case "small":
-		return textScaleSmall
+		return 13, true
 	case "large":
-		return textScaleLarge
+		return 16, true
+	case "":
+		return interfaceTextSizeDefault, true
 	}
-	return textScaleRegular
+	return 0, false
 }
 
-// setTextScale is the user choosing an interface text size: the size tokens are
-// rebuilt at once, and everything that paints follows in the next frame. The
-// theme is rebuilt too — it copied the metrics by value — so framework
-// components, menus and dialogs follow the choice and not just workbench text.
-func (state *State) setTextScale(scale textScale) bool {
-	if state.textScale == scale {
+// setInterfaceTextSize is the user choosing an interface text size: the size
+// tokens are rebuilt at once, and everything that paints follows in the next
+// frame. A size past either end stops at it.
+func (state *State) setInterfaceTextSize(size interfaceTextSize) bool {
+	size = interfaceTextSize(min(max(int(size), interfaceTextSizeMin), interfaceTextSizeMax))
+	if state.interfaceTextSize == size {
 		return false
 	}
-	state.textScale = scale
-	state.applyTextScale()
+	state.interfaceTextSize = size
+	state.applyInterfaceTextSize()
 	return true
 }
 
-// applyTextScale applies the scale the page's choice already wrote: the metrics,
-// the theme built from them, and the windows that draw with both.
-func (state *State) applyTextScale() {
-	applyTextMetrics(state.textScale.factor())
+// applyInterfaceTextSize applies the size the row already wrote: the metrics,
+// the theme built from them, and the windows that draw with both. The theme is
+// rebuilt too — it copied the metrics by value — so framework components, menus
+// and dialogs follow the choice and not just workbench text.
+func (state *State) applyInterfaceTextSize() {
+	applyTextMetrics(state.interfaceTextSize.factor())
 	state.theme = state.pal.theme()
 	state.invalidateRemoteToolsWindows()
+}
+
+// interfaceTextSizeLabel is the body size named beside the stepper's buttons,
+// so what is in effect is read without pressing either of them.
+func (state *State) interfaceTextSizeLabel() string {
+	return fmt.Sprintf("%d px", int(state.interfaceTextSize))
 }
 
 func (state *State) setTerminalFontSize(value float32) bool {
@@ -345,12 +361,19 @@ func (state *State) applyLanguage() {
 	state.rebuildTransferCenter()
 	state.status = state.messages.StatusReadyIdle
 	state.refreshHostSelection()
+	// The order is read in the new language, and an unchanged host set and
+	// query keep syncVisible from resorting it.
+	state.sortVisibleHosts()
 	state.refreshHostGroups()
 	state.refreshIdentityCount()
 	state.refreshIdentityCells()
 	state.refreshForwards()
 	state.refreshProxies()
 	state.refreshSnippets()
+	// The host dialog's encoding options carry a localised UTF-8 label, and its
+	// icon options localised labels for the generic icons.
+	state.resetHostEncodingPicker()
+	state.resetHostIconPicker()
 	for index := range state.sessions {
 		state.sessions[index].reconnectText = ""
 		state.describe(&state.sessions[index])
@@ -393,6 +416,12 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		changed = state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
 	case hitSettingsVerticalTabsGrouping:
 		changed = state.setVerticalTabsGrouping(!state.verticalTabs.grouping)
+	case hitSettingsTextSizeDown:
+		changed = state.setInterfaceTextSize(state.interfaceTextSize - interfaceTextSizeStep)
+	case hitSettingsTextSizeUp:
+		changed = state.setInterfaceTextSize(state.interfaceTextSize + interfaceTextSizeStep)
+	case hitSettingsTextSizeReset:
+		changed = state.setInterfaceTextSize(interfaceTextSizeDefault)
 	case hitSettingsFontSizeDown:
 		changed = state.setTerminalFontSize(state.terminalFontSize - 1)
 	case hitSettingsFontSizeUp:
@@ -443,6 +472,7 @@ func (state *State) applyTerminalScrollback() {
 	for index := range state.sessions {
 		if terminal := state.sessions[index].term; terminal != nil {
 			terminal.screen.SetScrollbackLimit(state.terminalScrollback)
+			terminal.selection.trim(terminal.screen)
 			terminal.find.refreshIfChanged(terminal.screen, state.messages, 0)
 		}
 	}
@@ -453,7 +483,6 @@ func (state *State) applyTerminalScrollback() {
 var (
 	settingsLanguageChoices        = [...]i18n.Language{i18n.English, i18n.Chinese, i18n.TraditionalChinese}
 	settingsAppearanceChoices      = [...]appearanceMode{appearanceFollowSystem, appearancePinnedDark, appearancePinnedLight}
-	settingsTextSizeChoices        = [...]textScale{textScaleSmall, textScaleRegular, textScaleLarge}
 	settingsToolbarPositionChoices = [...]terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight}
 	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
 	settingsCloseChoices           = [...]closeAction{closeToTray, closeQuits}
@@ -478,16 +507,6 @@ func (state *State) settingsAppearanceLabel(mode appearanceMode) string {
 		return state.messages.SettingsAppearanceLight
 	}
 	return state.messages.SettingsAppearanceSystem
-}
-
-func (state *State) settingsTextSizeLabel(scale textScale) string {
-	switch scale {
-	case textScaleSmall:
-		return state.messages.SettingsTextSizeSmall
-	case textScaleLarge:
-		return state.messages.SettingsTextSizeLarge
-	}
-	return state.messages.SettingsTextSizeRegular
 }
 
 func (state *State) settingsToolbarPositionLabel(position terminalToolbarPosition) string {

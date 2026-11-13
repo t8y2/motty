@@ -387,7 +387,7 @@ func TestJumpRoutePageAndHostSelectorsAreInteractive(t *testing.T) {
 	state.Click(hitProxyDialogSubmit)
 	canvas, texts = paintedTexts(state)
 	if !contains(texts, "Production") || !contains(texts, "Router") || !contains(texts, state.messages.ProxyRunning) ||
-		!hasHit(canvas, hitProxyRowList.At(int(state.proxies[0].ID))) || !hasHit(canvas, hitProxyStartStop) {
+		!hasHit(canvas, hitProxyRowList.At(0)) || !hasHit(canvas, hitProxyStartStop) {
 		t.Fatalf("route page texts=%v hits=%+v", texts, canvas.Hits())
 	}
 }

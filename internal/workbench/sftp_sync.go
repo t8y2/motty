@@ -117,7 +117,7 @@ func (state *State) terminalDirectoryReady(session *Session) bool {
 	t := session.term
 	return session.hasServer() && session.containerCommand == "" && session.phase == sshconn.PhaseConnected &&
 		t != nil && t.shell != nil && !t.ended && t.promptReady && !t.promptDirty && t.exec == nil &&
-		!t.screen.Modes().AltScreen && !(state.transfer.phase != transferNone && state.transfer.sessionID == session.ID)
+		!t.screen.Modes().AltScreen && !session.transferBusy()
 }
 
 // The successful listing is the commit point. A failed/obsolete listing must

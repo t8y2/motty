@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"motty/internal/desktop"
+	rdpcore "motty/internal/rdpcore"
 )
 
 // The live tests talk to a real RDP server and are skipped without it:
@@ -325,6 +326,41 @@ func TestLiveRefusedCertificateStopsAtOnce(t *testing.T) {
 		t.Errorf("a refused certificate made %d connections", got)
 	}
 	t.Logf("a refused certificate: %v after %d connection(s)", err, dials.Load())
+}
+
+// The standard RDP security switch is what reaches a server whose RDP security
+// layer offers no TLS. Without it the same server is refused before any
+// credential is sent.
+//
+// MOTTY_RDP_SECURITY=rdp says the server was started that way; see
+// tools/live/rdp_live.sh.
+func TestLiveStandardSecurity(t *testing.T) {
+	config := liveEnv(t)
+	if os.Getenv("MOTTY_RDP_SECURITY") != "rdp" {
+		t.Skip("MOTTY_RDP_SECURITY is not rdp: the server offers TLS")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	options := desktop.Options{Username: config.user, Domain: config.domain, Password: config.password}
+	if _, err := Open(ctx, direct, config.address, options); !errors.Is(err, rdpcore.ErrNegotiationFailed) {
+		t.Fatalf("default security against a standard-only server = %v, want a negotiation failure", err)
+	}
+	options.StandardSecurity = true
+	session, err := Open(ctx, direct, config.address, options)
+	if err != nil {
+		t.Fatalf("standard security: %v", err)
+	}
+	defer session.Close()
+	if session.Info().Encrypted {
+		t.Fatal("a standard-security session reported encryption")
+	}
+	view := &screen{}
+	if !pump(t, session, view, 60*time.Second, func() bool { return view.colors(64) >= 16 }) {
+		t.Fatalf("no picture: %d colours (session ended: %v)", view.colors(64), session.Err())
+	}
+	if config.png != "" {
+		view.savePNG(t, config.png+"-standard-security.png")
+	}
 }
 
 func TestLiveWrongPasswordIsRefusedOnce(t *testing.T) {

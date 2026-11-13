@@ -91,6 +91,8 @@ RDP 目前做不到什么，发布说明也会写清楚哪些平台在真实硬�
 | Windows（amd64、arm64） | 安装程序、便携版 zip（数据保存在 `motty.exe` 旁的 `motty-data`） |
 | Linux（amd64、arm64） | `.deb`、`.tar.gz` |
 
+Windows 安装包需要 Windows 10 或 Windows Server 2016 及更高版本。
+
 macOS 包在发布带证书时签名并公证，Windows 包在配置证书时签名；Linux 包不签名。
 AUR 和 `.AppImage` 暂不提供。
 
@@ -127,9 +129,10 @@ Windows 便携版在有签名更新时也可原地升级，并保留 `motty-data
 Windows 下可在 **设置 → 终端 → 本地 Shell**（“行内建议”下方）的下拉框中选择
 本地终端使用的 Shell。Motty 会从 PATH 和常见安装目录中自动检测 PowerShell、
 CMD、Git Bash 等已安装的 Shell，并把每个已安装的 WSL 发行版列为单独的选项。
-选择 WSL 发行版后，文件面板同样会跟随终端所在目录（经由发行版的
-`\\wsl.localhost` 共享访问）。请在这里选择发行版，而不是在 PowerShell 里输入
-`wsl`：只有 Motty 自己启动的 Shell 才能上报所在目录。此配置仅保存在本机，对新建或重连的本地终端生效。
+选择某个 Shell 后，标签页和侧边栏显示它自己的图标，WSL 发行版显示其 logo；
+文件面板直接打开在发行版的文件系统中（经由发行版的 `\\wsl.localhost` 共享访问），
+并跟随终端所在目录，资源监控也读取发行版内部的数据。请在这里选择发行版，而不是在
+PowerShell 里输入 `wsl`：只有 Motty 自己启动的 Shell 才能上报所在目录。此配置仅保存在本机，对新建或重连的本地终端生效。
 
 | 操作 | macOS | Windows / Linux |
 | --- | --- | --- |
@@ -186,6 +189,10 @@ win32-input-mode。连字在固定网格内按单元格整形。标签可以重�
 WindTerm、Electerm、Netcatty 导入。TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
 进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里。
 Electerm 和 Netcatty 的明文 SSH 密码可在明确确认后导入；重新导入只补齐缺失密码。
+
+OpenSSH 配置导入和同步会保留每台主机的 `ServerAliveInterval`、
+`ServerAliveCountMax`、`IdentitiesOnly` 和指定的身份文件。显式设置间隔为 0
+会关闭该主机的保活；限制身份时仍可使用 SSH agent 中匹配的密钥，但不会尝试其他 agent 密钥。
 
 ### 文件不用另开应用
 
@@ -244,6 +251,12 @@ agent 通过 stdio 启动它，它只使用你对 agent 开放的主机，没有
 WebDAV 和 S3 默认要求远程地址使用 HTTPS。使用局域网 HTTP 服务时，可以在配置
 表单底部勾选“允许不安全的远程 HTTP”。HTTP 连接不加密，认证信息可能被窃听；
 备份文件仍在本机加密后上传。此选择仅保存在本机。
+
+WebDAV 下载支持 AList/OpenList 的“302 重定向”策略，最多跟随 5 次重定向；
+跨站后不再携带 WebDAV 凭据、Cookie 或来源地址，也不允许从 HTTPS 降级到 HTTP。
+上传和连接测试仍拒绝跨主机重定向。同步使用 WebDAV 文件自身的 ETag 保护并发更新，
+不使用云盘下载地址的 ETag；重定向未提供 ETag 时，会在下载前后查询 WebDAV 文件属性。
+服务器无法提供版本标识时，请将其 WebDAV 策略改为“本机代理（native proxy）”。
 
 ## 从源码构建
 

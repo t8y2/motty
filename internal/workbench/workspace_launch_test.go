@@ -21,6 +21,10 @@ func TestLaunchTwelveHostsCreatesOneWorkspaceAndDialsEveryHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The first pane of the plan keeps the focus, however many splits ran.
+	if state.activeSessionID != sessions[0].ID {
+		t.Fatalf("active session %d, want the first pane's %d", state.activeSessionID, sessions[0].ID)
+	}
 	if len(sessions) != layoutcore.MaxPanes || len(state.deck.Panes(workspaceID, nil)) != layoutcore.MaxPanes || len(world.configs) != layoutcore.MaxPanes {
 		t.Fatalf("sessions=%d panes=%d dials=%d", len(sessions), len(state.deck.Panes(workspaceID, nil)), len(world.configs))
 	}

@@ -19,14 +19,32 @@ func TestCheckRejectsMissingMismatchedAndDirtyBuilds(t *testing.T) {
 		{Key: "vcs", Value: "git"}, {Key: "vcs.revision", Value: expected.revision},
 		{Key: "vcs.time", Value: "2026-10-28T15:55:15+08:00"}, {Key: "vcs.modified", Value: "false"},
 		{Key: "GOOS", Value: expected.target}, {Key: "GOARCH", Value: expected.arch},
+		{Key: "CGO_ENABLED", Value: "0"},
 	}
 	if err := expected.check(&debug.BuildInfo{Settings: valid}); err != nil {
 		t.Fatal(err)
+	}
+	// The macOS program reaches Cocoa through cgo, so its CGO_ENABLED is 1 and
+	// is not checked.
+	mac := expected
+	mac.target = "darwin"
+	withCgo := append([]debug.BuildSetting(nil), valid...)
+	for index := range withCgo {
+		switch withCgo[index].Key {
+		case "GOOS":
+			withCgo[index].Value = "darwin"
+		case "CGO_ENABLED":
+			withCgo[index].Value = "1"
+		}
+	}
+	if err := mac.check(&debug.BuildInfo{Settings: withCgo}); err != nil {
+		t.Fatalf("a macOS build was rejected for using cgo: %v", err)
 	}
 	for _, test := range []struct{ key, value string }{
 		{"vcs", ""}, {"vcs.revision", ""}, {"vcs.revision", "another-commit"},
 		{"vcs.time", ""}, {"vcs.time", "invalid"}, {"vcs.time", "2026-10-27T07:55:15Z"},
 		{"vcs.modified", "true"}, {"GOOS", "linux"}, {"GOARCH", "arm64"},
+		{"CGO_ENABLED", "1"},
 	} {
 		t.Run(test.key+"="+test.value, func(t *testing.T) {
 			settings := append([]debug.BuildSetting(nil), valid...)

@@ -165,12 +165,15 @@ func (state *State) clickTerminalTools(id gfx.ID) bool {
 	case id == hitImportSessions:
 		state.modal = modalImportSessions
 	case state.clickCredentialSettings(id):
+	case state.clickHostTagSettings(id):
+	case id == hitSettingsHighlightManage:
+		state.openRuleManager(ruleDeleteHighlight)
+	case id == hitSettingsAutofillManage:
+		state.openRuleManager(ruleDeleteAutofill)
 	case id == hitSettingsAutofillAdd:
 		state.openAutofillDialog(nil)
 	case id == hitSettingsAutofillSudo:
 		state.openAutofillSudoPreset()
-	case id == hitSettingsAutofillSu:
-		state.openAutofillSuPreset()
 	case id.Scope() == hitAutofillToggleList:
 		state.toggleAutofillRule(item(id))
 	case id.Scope() == hitAutofillEditList:

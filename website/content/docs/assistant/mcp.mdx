@@ -56,8 +56,17 @@ authorized saved hosts.
 | `tool_output_read` | Page through retained desktop HTTP `terminal_exec` output without rerunning the command. |
 | `sftp_list`, `sftp_read` | List and read remote files. |
 | `sftp_write`, `sftp_remove` | Change remote files. |
+| `rzsz_upload`, `rzsz_download` | Upload or download one file through the visible terminal with `rz` / `sz` (ZMODEM). Desktop HTTP MCP only. |
 
 In Observe mode only the read tools are available.
+
+A jump host configured on the host does not block SFTP: `sftp_upload` on the headless
+server follows that SSH connection to the final host. `rzsz_upload` and `rzsz_download`
+use the terminal you are looking at, which is what reaches a shell after you `ssh` onward
+from the jump, and what still works when that machine has no SFTP. The remote needs `rz`
+and `sz`, and the shell must be sitting at a prompt. One file at a time; existing files
+are left alone unless `overwrite` is true. Local paths are absolute paths on the computer
+running Motty.
 
 Desktop HTTP `terminal_exec` still returns a bounded head-and-tail preview (about
 64 KiB). When a complete result was retained, its response includes an

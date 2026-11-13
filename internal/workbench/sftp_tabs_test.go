@@ -675,6 +675,21 @@ func TestFileTabOwnsWindowNamedMenuRows(t *testing.T) {
 	}
 }
 
+func TestSFTPFileTabShowsItsFullTitleOnHover(t *testing.T) {
+	state, _, w, _, _ := openSFTPTabFixture(t)
+	w.session.Title = "production-db-replica-01.example.internal"
+	label := state.sftpFileTabTitle(w)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 600, Height: 900})
+	hit, ok := hitByID(&canvas, sftpFileTabID(w.session.ID))
+	if !ok {
+		t.Fatal("the file transfer tab is not painted")
+	}
+	if hit.Hint != label {
+		t.Fatalf("hovering the file transfer tab should show its full title, got hint %q want %q", hit.Hint, label)
+	}
+}
+
 func TestSFTPFileTabIsRuntimeOnlyAndSourceCloseRemovesIt(t *testing.T) {
 	state, source, w, _, _ := openSFTPTabFixture(t)
 

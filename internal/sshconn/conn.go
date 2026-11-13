@@ -30,7 +30,8 @@ type Phase uint8
 const (
 	// PhaseConnecting covers the TCP dial and the key exchange.
 	PhaseConnecting Phase = iota
-	// PhaseHostKeyPrompt waits for the user to trust or reject an unknown key.
+	// PhaseHostKeyPrompt waits for the user to accept or reject a new or
+	// changed host key.
 	PhaseHostKeyPrompt
 	// PhaseAuthenticating covers key and agent attempts, no input needed.
 	PhaseAuthenticating
@@ -67,8 +68,12 @@ type HostKeyInfo struct {
 	Type string
 	// Fingerprint is the SHA256 fingerprint in the form OpenSSH prints.
 	Fingerprint string
-	// Known lists the fingerprints on file for this address when the key
-	// changed; it is empty for a first connection.
+	// Changed says the address has a trusted key of this type and the server
+	// presented a different one.
+	Changed bool
+	// Known lists the fingerprints on file for this address whose key type
+	// matches the presented key when Changed is set; it is empty for a first
+	// connection.
 	Known []string
 	// File is the known-hosts file that holds (or will hold) the entry.
 	File string
@@ -95,7 +100,8 @@ type Authentication struct {
 	// default identities when IdentityFiles is nil.
 	AdditionalIdentityFiles []string
 	// Agent controls whether the running ssh-agent is offered.
-	Agent bool
+	Agent          bool
+	IdentitiesOnly bool
 }
 
 // StoredKeyPrefix starts the name of a private key that is not a file but is
@@ -194,7 +200,8 @@ type KeepAliveConfig struct {
 	// keepalive; zero disables it.
 	Interval time.Duration
 	// Timeout bounds each probe response. It must be positive when Interval is.
-	Timeout time.Duration
+	Timeout  time.Duration
+	CountMax *int
 }
 
 // Config describes one connection attempt.
@@ -244,7 +251,8 @@ type Config struct {
 	// hosts. Zero disables the timeout.
 	DialTimeout time.Duration
 	// KeepAlive optionally detects an unresponsive established connection.
-	KeepAlive KeepAliveConfig
+	KeepAlive         KeepAliveConfig
+	EndpointKeepAlive map[Endpoint]KeepAliveConfig
 	// InteractiveOnly keeps the connection to the interactive session alone:
 	// the client asks for the pty and the shell, and for nothing else. A
 	// gateway that permits only an interactive login ends the whole connection
@@ -372,6 +380,14 @@ func (conn *Conn) DialContext(ctx context.Context, network, address string) (net
 		return nil, errors.New("sshconn: not connected")
 	}
 	return client.DialContext(ctx, network, address)
+}
+
+// IsChannelRefused reports whether err is the server declining to open an SSH
+// channel, which is how a server that disallows forwarding answers a forwarded
+// connection: administratively prohibited.
+func IsChannelRefused(err error) bool {
+	var refused *ssh.OpenChannelError
+	return errors.As(err, &refused) && refused.Reason == ssh.Prohibited
 }
 
 // Listen asks the authenticated SSH server to open one remote listener.
@@ -535,6 +551,11 @@ func (conn *Conn) run() {
 	}
 	if conn.ctx.Err() != nil && !errors.Is(err, ErrHostKeyChanged) {
 		err = ErrCanceled
+		conn.mu.Lock()
+		if conn.disconnectErr != nil {
+			err = conn.disconnectErr
+		}
+		conn.mu.Unlock()
 	}
 	conn.update(func(status *Status) {
 		status.Phase = PhaseFailed
@@ -701,6 +722,12 @@ func (conn *Conn) beginEndpoint(endpoint Endpoint, role EndpointRole) {
 }
 
 func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys) (*ssh.Client, string, error) {
+	keepAlive := conn.keepAliveFor(endpoint)
+	var monitored *aliveSocket
+	if keepAlive.Interval > 0 && keepAlive.CountMax != nil {
+		monitored = &aliveSocket{Conn: socket, received: make(chan struct{}, 1)}
+		socket = monitored
+	}
 	address := endpoint.address()
 	wanted := conn.config.Algorithms[address]
 	authentication := conn.authentication(endpoint)
@@ -732,7 +759,11 @@ func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys)
 	if negotiated, ok := negotiatedFrom(sshConn); ok {
 		conn.update(func(status *Status) { status.Negotiated = negotiated })
 	}
-	return ssh.NewClient(sshConn, channels, requests), string(sshConn.ServerVersion()), nil
+	client := ssh.NewClient(sshConn, channels, requests)
+	if monitored != nil {
+		conn.startCountKeepAlive(client, monitored, keepAlive)
+	}
+	return client, string(sshConn.ServerVersion()), nil
 }
 
 func (conn *Conn) authentication(endpoint Endpoint) Authentication {

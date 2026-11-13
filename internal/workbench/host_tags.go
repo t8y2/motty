@@ -1,14 +1,11 @@
 package workbench
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-
-	"motty/internal/i18n"
 )
 
 var (
@@ -39,17 +36,11 @@ func (state *State) hostTagPicker() *hostTagPicker {
 	if !p.ready {
 		p.control.AllowCreate, p.control.MatchCaseInsensitive, p.control.Limit = true, true, maxHostTags
 		p.control.SetValidateCreate(validHostTag)
-		options := []components.MultiSelectOption{{Value: "开发"}, {Value: "测试"}, {Value: "生产"}}
-		if state.language == i18n.TraditionalChinese {
-			options = []components.MultiSelectOption{{Value: "開發"}, {Value: "測試"}, {Value: "生產"}}
-		}
-		for _, host := range state.hosts {
-			tags, _ := parseHostTags(host.Tags)
-			for _, tag := range tags {
-				if !slices.ContainsFunc(options, func(o components.MultiSelectOption) bool { return strings.EqualFold(o.Value, tag) }) {
-					options = append(options, components.MultiSelectOption{Value: tag})
-				}
-			}
+		// The suggestions are the tags Settings > Host tags lists: the built-in
+		// ones not deleted there, then every tag a host has.
+		var options []components.MultiSelectOption
+		for _, entry := range state.hostTagInventory() {
+			options = append(options, components.MultiSelectOption{Value: entry.name})
 		}
 		p.control.SetOptions(options)
 		p.ready = true
@@ -123,11 +114,12 @@ func (state *State) clickHostTags(id gfx.ID) bool {
 	p := state.hostTagPicker()
 	switch {
 	case id == hitDialogTags:
+		state.closeOtherHostPickers()
 		p.control.Open = true
-		state.editor.groupPicker.control.Open = false
 	case id == hitHostTagsTrigger:
-		p.control.Open = !p.control.Open
-		state.editor.groupPicker.control.Open = false
+		open := !p.control.Open
+		state.closeOtherHostPickers()
+		p.control.Open = open
 	case id == hitHostTagsDismiss:
 		p.control.Open = false
 	case id.Scope() == hitHostTagOptions:

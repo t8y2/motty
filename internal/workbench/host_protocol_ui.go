@@ -15,42 +15,109 @@ import (
 var hostProtocolUiHits = tree.Feature("host-protocol-ui")
 
 var (
-	hitDialogViaSSH          = tree.ID(hostProtocolUiHits, "dialog-via-ssh")
-	hitDialogClipboard       = tree.ID(hostProtocolUiHits, "dialog-clipboard")
-	hitDialogConsole         = tree.ID(hostProtocolUiHits, "dialog-console")
-	hitDialogVNCAuthOnly     = tree.ID(hostProtocolUiHits, "dialog-vnc-auth-only")
-	hitDialogChromeless      = tree.ID(hostProtocolUiHits, "dialog-chromeless")
-	hitDialogPortsTrigger    = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
-	hitDialogPortsDismiss    = tree.ID(hostProtocolUiHits, "dialog-ports-dismiss")
-	hitDialogAlgorithms      = tree.ID(hostProtocolUiHits, "dialog-algorithms")
-	hitDialogLoginCommand    = tree.ID(hostProtocolUiHits, "dialog-login-command")
-	hitDialogAdvanced        = tree.ID(hostProtocolUiHits, "dialog-advanced")
-	hitDialogForwardX11      = tree.ID(hostProtocolUiHits, "dialog-forward-x11")
-	hitDialogAgentForward    = tree.ID(hostProtocolUiHits, "dialog-agent-forward")
-	hitDialogInteractiveOnly = tree.ID(hostProtocolUiHits, "dialog-interactive-only")
-	hitDialogNoHistory       = tree.ID(hostProtocolUiHits, "dialog-no-history")
-	hitDialogAgentAccess     = tree.ID(hostProtocolUiHits, "dialog-agent-access")
-	hitDialogAgentAccessHelp = tree.ID(hostProtocolUiHits, "dialog-agent-access-help")
-	hitDialogOTP             = tree.ID(hostProtocolUiHits, "dialog-otp")
-	hitDialogOTPRemove       = tree.ID(hostProtocolUiHits, "dialog-otp-remove")
-	hitDialogOTPScan         = tree.ID(hostProtocolUiHits, "dialog-otp-scan")
-	hitDialogOTPPaste        = tree.ID(hostProtocolUiHits, "dialog-otp-paste")
-	hitDialogPortsItemList   = tree.Sub(hostProtocolUiHits, tree.Name("dialog-ports-item")) // + index of a detected port
-	hitDialogIconDismiss     = tree.ID(hostProtocolUiHits, "dialog-icon-dismiss")
-	hitDialogIconItemList    = tree.Sub(hostProtocolUiHits, tree.Name("dialog-icon-item")) // + a hostIcon
+	hitDialogViaSSH               = tree.ID(hostProtocolUiHits, "dialog-via-ssh")
+	hitDialogClipboard            = tree.ID(hostProtocolUiHits, "dialog-clipboard")
+	hitDialogConsole              = tree.ID(hostProtocolUiHits, "dialog-console")
+	hitDialogVNCAuthOnly          = tree.ID(hostProtocolUiHits, "dialog-vnc-auth-only")
+	hitDialogStandardSecurity     = tree.ID(hostProtocolUiHits, "dialog-standard-security")
+	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
+	hitDialogChromeless           = tree.ID(hostProtocolUiHits, "dialog-chromeless")
+	hitDialogPortsTrigger         = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
+	hitDialogPortsDismiss         = tree.ID(hostProtocolUiHits, "dialog-ports-dismiss")
+	hitDialogAlgorithms           = tree.ID(hostProtocolUiHits, "dialog-algorithms")
+	hitDialogLoginCommand         = tree.ID(hostProtocolUiHits, "dialog-login-command")
+	hitDialogAdvanced             = tree.ID(hostProtocolUiHits, "dialog-advanced")
+	hitDialogForwardX11           = tree.ID(hostProtocolUiHits, "dialog-forward-x11")
+	hitDialogAgentForward         = tree.ID(hostProtocolUiHits, "dialog-agent-forward")
+	hitDialogInteractiveOnly      = tree.ID(hostProtocolUiHits, "dialog-interactive-only")
+	hitDialogNoHistory            = tree.ID(hostProtocolUiHits, "dialog-no-history")
+	hitDialogAgentAccess          = tree.ID(hostProtocolUiHits, "dialog-agent-access")
+	hitDialogAgentAccessHelp      = tree.ID(hostProtocolUiHits, "dialog-agent-access-help")
+	hitDialogOTP                  = tree.ID(hostProtocolUiHits, "dialog-otp")
+	hitDialogOTPRemove            = tree.ID(hostProtocolUiHits, "dialog-otp-remove")
+	hitDialogOTPScan              = tree.ID(hostProtocolUiHits, "dialog-otp-scan")
+	hitDialogOTPPaste             = tree.ID(hostProtocolUiHits, "dialog-otp-paste")
+	hitDialogPortsItemList        = tree.Sub(hostProtocolUiHits, tree.Name("dialog-ports-item")) // + index of a detected port
 )
 
 // maxListedPorts bounds the picker: a machine with more serial devices than
 // this is not choosing from a list.
 const maxListedPorts = 12
 
+// hostConnectionType is one entry of the host form's connection-type choice.
+// Mosh is a connection type to the user even though the saved host is an SSH
+// host whose terminal transport is mosh.
+type hostConnectionType uint8
+
+const (
+	connectionSSH hostConnectionType = iota
+	connectionMosh
+	connectionTelnet
+	connectionSerial
+	connectionVNC
+	connectionRDP
+)
+
+func (kind hostConnectionType) protocol() hostProtocol {
+	switch kind {
+	case connectionMosh, connectionSSH:
+		return protocolSSH
+	case connectionTelnet:
+		return protocolTelnet
+	case connectionSerial:
+		return protocolSerial
+	case connectionVNC:
+		return protocolVNC
+	case connectionRDP:
+		return protocolRDP
+	}
+	return protocolSSH
+}
+
+func (kind hostConnectionType) terminal() hostTerminal {
+	if kind == connectionMosh {
+		return terminalMosh
+	}
+	return terminalSSH
+}
+
+// connectionType is the form's current connection type.
+func (editor *hostEditor) connectionType() hostConnectionType {
+	if editor.protocol == protocolSSH {
+		if editor.terminal == terminalMosh {
+			return connectionMosh
+		}
+		return connectionSSH
+	}
+	switch editor.protocol {
+	case protocolTelnet:
+		return connectionTelnet
+	case protocolSerial:
+		return connectionSerial
+	case protocolVNC:
+		return connectionVNC
+	case protocolRDP:
+		return connectionRDP
+	}
+	return connectionSSH
+}
+
 // The segmented choices of the host form. Each is a Choice of the form's own
 // page, declared at the row its layout reserved.
 var (
-	hostProtocolChoices = [...]hostProtocol{protocolSSH, protocolTelnet, protocolSerial, protocolVNC, protocolRDP}
-	hostFlowChoices     = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
-	hostAlgoChoices     = [...]algoMode{algoDefault, algoCompatible, algoCustom}
+	hostConnectionChoices = [...]hostConnectionType{connectionSSH, connectionTelnet, connectionSerial, connectionVNC, connectionRDP, connectionMosh}
+	hostFlowChoices       = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
+	hostAlgoChoices       = [...]algoMode{algoDefault, algoCompatible, algoCustom}
 )
+
+// hostConnectionChoiceLabel names one connection type as the form's choice
+// shows it.
+func (state *State) hostConnectionChoiceLabel(kind hostConnectionType) string {
+	if kind == connectionMosh {
+		return state.messages.Tools.ProtocolMosh
+	}
+	return state.hostProtocolChoiceLabel(kind.protocol())
+}
 
 // hostProtocolChoiceLabel names one protocol as the form's choice shows it.
 func (state *State) hostProtocolChoiceLabel(protocol hostProtocol) string {
@@ -92,15 +159,17 @@ func (state *State) hostAlgoChoiceLabel(mode algoMode) string {
 	}
 }
 
-// declareHostProtocolChoice declares the protocol choice in the form's page at
-// the slot the body reserved for it. It writes editor.protocol, so applyProtocol
-// is what follows the switch.
+// declareHostProtocolChoice declares the connection-type choice in the form's
+// page at the slot the body reserved for it. It writes editor.connection; a
+// change maps that to the protocol and terminal transport the form then shows,
+// and applyProtocol is what follows a real protocol change.
 func (state *State) declareHostProtocolChoice(c ui.C) ui.Box {
 	editor := &state.editor
-	editor.protocolBefore = editor.protocol
-	choice := ui.Choice(c, &editor.protocol, hostProtocolChoices[:], state.hostProtocolChoiceLabel).Fill()
+	editor.connectionBefore = editor.connectionType()
+	editor.connection = editor.connectionBefore
+	choice := ui.Choice(c, &editor.connection, hostConnectionChoices[:], state.hostConnectionChoiceLabel).Fill()
 	if choice.Changed() {
-		editor.applyProtocol(editor.protocolBefore)
+		editor.applyConnection(editor.connectionBefore)
 		state.dialogError = ""
 	}
 	return choice
@@ -319,7 +388,11 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 	editor := &state.editor
 	switch {
 	case id == hitDialogViaSSH:
-		editor.viaSSH = !editor.viaSSH
+		// A route owns the connection of a host that has one; the same-machine
+		// tunnel cannot also apply.
+		if !state.desktopRouteConfigured() {
+			editor.viaSSH = !editor.viaSSH
+		}
 	case id == hitDialogClipboard:
 		editor.clipboard = !editor.clipboard
 	case id == hitDialogChromeless:
@@ -330,6 +403,8 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		if editor.protocol == protocolVNC {
 			editor.vncAuthOnly = !editor.vncAuthOnly
 		}
+	case id == hitDialogStandardSecurity:
+		editor.standardSecurity = !editor.standardSecurity
 	case id == hitDialogAdvanced:
 		editor.advancedOpen = !editor.advancedOpen
 	case id == hitDialogForwardX11:
@@ -356,18 +431,9 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 	case id == hitDialogPortsTrigger:
 		editor.ports = serial.Ports()
 		editor.portsOpen = !editor.portsOpen
+	case state.clickHostIdleKeepAlive(id):
 	case id == hitDialogPortsDismiss:
 		editor.portsOpen = false
-	case id == hitDialogIcon:
-		editor.iconOpen = !editor.iconOpen
-		editor.iconReveal = editor.iconOpen
-	case id == hitDialogIconDismiss:
-		editor.iconOpen = false
-	case id.Scope() == hitDialogIconItemList:
-		if choice := hostIcon(item(id)); choice.valid() {
-			editor.icon, editor.iconChosen = choice, true
-		}
-		editor.iconOpen = false
 	case id.Scope() == hitDialogPortsItemList:
 		if index := item(id); index < len(editor.ports) {
 			editor.address = text.Editor{}
@@ -427,13 +493,23 @@ func (state *State) hostPassphraseHint() string {
 }
 
 // Size the body from its rows; short viewports scroll instead of shrinking them.
+// The fixed rows are Label/Color, Group/Tags and the Icon row, which carries the
+// file transfer mode and, on a protocol with a shell, the encoding.
 func (state *State) hostFormHeight() float32 {
 	height := float32(2+44+(3+state.hostEndpointRows())*hostFormRowHeight) + state.hostDialogExtra()
 	if state.editor.protocol != protocolSerial {
 		height += hostFormRowHeight
 	}
 	if state.editor.protocol == protocolSSH {
-		// The jump route row sits under the proxy row.
+		// The terminal transport choice (with its hint when mosh is chosen)
+		// sits under the protocol choice.
+		if state.editor.terminal == terminalMosh {
+			height += 36
+		}
+	}
+	if state.editor.protocol == protocolSSH || state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP {
+		// The jump route row sits under the proxy row: SSH hosts and remote
+		// desktops are both reached through one.
 		height += hostFormRowHeight
 	}
 	if state.dialogError != "" {
@@ -470,18 +546,47 @@ const advancedHeaderHeight = 48
 // it: 8px each, around its 32px.
 const advancedHeaderGap = 8
 
-// advancedSectionHeight is the room of an SSH host's Advanced section: its row
-// alone while closed, and open the algorithm choice (a third row for a custom
-// list), the one-time code secret with its buttons, and the switches.
-func (state *State) advancedSectionHeight() float32 {
-	if !state.editor.advancedOpen {
-		return advancedHeaderHeight
+// sshAdvancedRowsHeight is the room of the SSH-only part of an open Advanced
+// section: the algorithm choice (a third row for a custom list), the one-time
+// code secret with its buttons, and the switches.
+func (state *State) sshAdvancedRowsHeight() float32 {
+	if state.editor.protocol != protocolSSH {
+		return 0
 	}
 	rows := float32(1)
 	if state.editor.algoMode == algoCustom {
 		rows++
 	}
-	return advancedHeaderHeight + rows*hostFormRowHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight
+	return rows*hostFormRowHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight
+}
+
+// idleAdvancedRowsHeight is the room of the idle keepalive rows: a heading, the
+// interval, the custom interval and unit when chosen, and the send content with
+// its custom field when the probe is on.
+func (state *State) idleAdvancedRowsHeight() float32 {
+	if !idleKeepAliveProtocol(state.editor.protocol) {
+		return 0
+	}
+	height := float32(groupHeadingHeight + hostFormRowHeight)
+	if state.editor.idleKeepAlive == idleKeepAliveCustom {
+		height += hostFormRowHeight
+	}
+	if state.editor.idleKeepAlive != idleKeepAliveOff {
+		height += hostFormRowHeight
+		if state.editor.idleInputValue() == idleInputCustom {
+			height += hostFormRowHeight
+		}
+	}
+	return height + 16
+}
+
+// advancedSectionHeight is the room of a terminal host's Advanced section: its
+// row alone while closed, and open the protocol's rows plus the idle keepalive.
+func (state *State) advancedSectionHeight() float32 {
+	if !state.editor.advancedOpen {
+		return advancedHeaderHeight
+	}
+	return advancedHeaderHeight + state.sshAdvancedRowsHeight() + state.idleAdvancedRowsHeight()
 }
 
 // hostDialogExtra is the height the protocol-specific rows add to the host dialog.
@@ -489,7 +594,7 @@ func (state *State) hostDialogExtra() float32 {
 	if state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP {
 		return state.desktopRowsHeight()
 	}
-	if state.editor.protocol != protocolSSH {
+	if !idleKeepAliveProtocol(state.editor.protocol) {
 		return 0
 	}
 	return state.advancedSectionHeight()
@@ -528,7 +633,12 @@ func (state *State) paintAdvancedSection(canvas *gfx.Canvas) {
 	}
 	paintIcon(canvas, uint8(chevron), icon.Rect(), pal.muted)
 	if open {
-		state.paintAlgorithmRows(canvas)
+		if state.editor.form.layoutProtocol == protocolSSH {
+			state.paintAlgorithmRows(canvas)
+		}
+		if idleKeepAliveProtocol(state.editor.form.layoutProtocol) {
+			state.paintHostIdleKeepAliveRows(canvas)
+		}
 	}
 }
 
@@ -541,7 +651,7 @@ const (
 
 // hostVNCRowsBody is where the desktop switches' body put each checkbox row.
 type hostVNCRowsBody struct {
-	tunnel, clipboard, chromeless, console, authOnly ui.Box
+	tunnel, clipboard, chromeless, console, authOnly, standardSecurity, standardSecurityHelp ui.Box
 }
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
@@ -616,6 +726,7 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 		b.interactive = state.declareDialogCheckboxC(c, m.InteractiveOnly, 12, 0)
 		heading(m.AdvancedAgents)
 		b.agentAccess, b.agentHelp = state.declareDialogCheckboxHelpC(c, m.AgentAccess, 4, 0)
+		state.declareHostIdleKeepAliveRows(c)
 	})
 }
 
@@ -650,8 +761,9 @@ func (state *State) paintOTPRow(canvas *gfx.Canvas, field, scan, paste, remove g
 // vncRowsHeight is the room of the three switches every remote desktop host has.
 const vncRowsHeight = 4 + 20 + (12 + 20) + (12 + 20) + 16
 
-// rdpRowsHeight adds the console session's switch, which only an RDP host has.
-const rdpRowsHeight = vncRowsHeight + (12 + 20)
+// rdpRowsHeight adds the two switches only an RDP host has: the console
+// session and Standard RDP Security.
+const rdpRowsHeight = vncRowsHeight + 2*(12+20)
 
 // desktopRowsHeight is the room paintVNCRows takes for the protocol on screen.
 func (state *State) desktopRowsHeight() float32 {
@@ -668,17 +780,30 @@ func (state *State) desktopRowsHeight() float32 {
 // paintVNCRows paints the switches of a VNC or RDP host in the slots the host
 // form's page laid out: connecting through SSH, sharing the clipboard, showing
 // the picture without the bars around it and, for RDP, asking Windows for its
-// console (administrative) session.
+// console (administrative) session and choosing Standard RDP Security. A host
+// whose route carries the connection cannot also use the same-machine tunnel,
+// so that switch is dimmed and inert.
 func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
-	state.paintDialogCheckbox(canvas, hitDialogViaSSH, m.ViaSSH, editor.viaSSH, b.tunnel)
+	viaLabel := m.ViaSSH
+	if state.desktopRouteConfigured() {
+		viaLabel = m.ViaSSHRouted
+		state.paintDialogCheckboxDisabled(canvas, hitDialogViaSSH, viaLabel, editor.viaSSH, b.tunnel)
+	} else {
+		state.paintDialogCheckbox(canvas, hitDialogViaSSH, viaLabel, editor.viaSSH, b.tunnel)
+	}
 	state.paintDialogCheckbox(canvas, hitDialogClipboard, m.ShareClipboard, editor.clipboard, b.clipboard)
 	state.paintDialogCheckbox(canvas, hitDialogChromeless, m.HideBars, editor.chromeless, b.chromeless)
-	// A protocol choice takes effect during this frame's event pass; paint the
-	// switches that were declared before that choice changed the protocol.
+	// The rows this frame laid out are the ones before a protocol click wrote
+	// its new value at the end of the declaration: painting the console row
+	// needs the RDP rows on the page, not just RDP in effect.
 	if editor.form.layoutProtocol == protocolRDP {
 		state.paintDialogCheckbox(canvas, hitDialogConsole, m.ConsoleSession, editor.console, b.console)
+		state.paintDialogCheckbox(canvas, hitDialogStandardSecurity, m.StandardSecurity, editor.standardSecurity, b.standardSecurity)
+		// After the checkbox, whose words reach to the end of the row, so that
+		// this is the hit on top where the two meet.
+		state.paintHelpIcon(canvas, hitDialogStandardSecurityHelp, m.StandardSecurityNote, b.standardSecurityHelp.Rect())
 	} else if editor.form.layoutProtocol == protocolVNC {
 		state.paintDialogCheckbox(canvas, hitDialogVNCAuthOnly, m.AllowVNCAuthOnly, editor.vncAuthOnly, b.authOnly)
 	}
@@ -687,17 +812,26 @@ func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 // declareHostVNCRows lays out the switches of a VNC or RDP host: connecting
 // through SSH, sharing the clipboard, showing the picture without the bars
 // around it and, for RDP, asking Windows for its console (administrative)
-// session.
+// session and choosing Standard RDP Security.
 func (state *State) declareHostVNCRows(c ui.C) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
 	*b = hostVNCRowsBody{}
+	viaLabel, routed := m.ViaSSH, state.desktopRouteConfigured()
+	if routed {
+		viaLabel = m.ViaSSHRouted
+	}
 	ui.Column(c).Fill().Children(func() {
-		b.tunnel = state.declareDialogCheckboxC(c, m.ViaSSH, 4, 0)
+		if routed {
+			b.tunnel = state.declareDialogCheckboxMutedC(c, viaLabel, 4, 0)
+		} else {
+			b.tunnel = state.declareDialogCheckboxC(c, viaLabel, 4, 0)
+		}
 		b.clipboard = state.declareDialogCheckboxC(c, m.ShareClipboard, 12, 0)
 		b.chromeless = state.declareDialogCheckboxC(c, m.HideBars, 12, 0)
 		if editor.protocol == protocolRDP {
 			b.console = state.declareDialogCheckboxC(c, m.ConsoleSession, 12, 0)
+			b.standardSecurity, b.standardSecurityHelp = state.declareDialogCheckboxHelpC(c, m.StandardSecurity, 12, 0)
 		} else if editor.protocol == protocolVNC {
 			b.authOnly = state.declareDialogCheckboxC(c, m.AllowVNCAuthOnly, 12, 0)
 			ui.Paragraph(c, m.VNCNegotiationHint, 3).FontSize(metrics.FontSizeS).LineHeight(18).Color(state.pal.muted).MarginSides(12, 0, 0, 0)

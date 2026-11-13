@@ -103,8 +103,8 @@ func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
 						if got, want := displayHostIDs(state), []string{"host_f", "host_b", "host_z", "host_c", "host_a", "host_e", "host_d"}; !slices.Equal(got, want) {
 							t.Fatalf("native IP order = %v", got)
 						}
-						if !hit(hitHostSort).Disabled {
-							t.Fatal("native manual reorder remained enabled")
+						if _, ok := hitByIDSnapshot(view.Snapshot().Hits, hitHostOrder); !ok {
+							t.Fatal("the display-order control is missing")
 						}
 						click(hitHostOrder)
 						click(hitHostOrderName)
@@ -120,7 +120,7 @@ func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
 							t.Fatalf("native filtered export: hosts=%d err=%v", len(document.Hosts), err)
 						}
 						shot("name-filtered")
-						controls := []gfx.ID{hitHostSelectAll, hitHostOrder, hitHostSort, hitHostViewList, hitHostViewGrid, hitExportHosts}
+						controls := []gfx.ID{hitHostSelectAll, hitHostOrder, hitHostViewList, hitHostViewGrid, hitExportHosts}
 						for index, id := range controls {
 							control := hit(id)
 							if control.Bounds.X < state.hostsBounds.X || control.Bounds.X+control.Bounds.Width > state.hostsBounds.X+state.hostsBounds.Width {
@@ -151,7 +151,7 @@ func TestHostCatalogControlsNativeCompactPanel(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	ids := []gfx.ID{hitHostSelectAll, hitHostFilterAll, hitHostFilterMore, hitHostOrder, hitHostSort, hitHostViewList, hitHostViewGrid, hitHostGroupsExpandAll, hitHostGroupsCollapseAll}
+	ids := []gfx.ID{hitHostSelectAll, hitHostFilterAll, hitHostFilterMore, hitHostOrder, hitHostViewList, hitHostViewGrid, hitHostGroupsExpandAll, hitHostGroupsCollapseAll}
 	for index, id := range ids {
 		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 		if !ok {

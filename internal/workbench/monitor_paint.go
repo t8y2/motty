@@ -73,7 +73,8 @@ func (state *State) paintMonitor(canvas *gfx.Canvas, b gfx.Rect, s *Session) {
 	}
 	v := s.stats
 	p := &v.panel
-	p.loginsUnsupported = s.host.System == sshconn.SystemWindows
+	system := monitorSystem(s)
+	p.loginsUnsupported = system == sshconn.SystemWindows
 	if p.language != state.language.String() {
 		state.formatMonitor(v)
 	}
@@ -85,9 +86,11 @@ func (state *State) paintMonitor(canvas *gfx.Canvas, b gfx.Rect, s *Session) {
 	state.paintIconButton(canvas, hitMonitorPause, pause, gfx.Rect{X: state.monitorMenuRect.X + state.monitorMenuRect.Width + 4, Y: header.Y + (header.Height-24)/2, Width: 24, Height: 24}, hint, false, iconButtonQuiet, bg)
 	state.paintMonitorNavigation(canvas, p, gfx.Rect{X: b.X + 12, Y: y + 6, Width: b.Width - 24, Height: 32})
 	y += monitorControlsHeight
+	state.paintMonitorHostInfo(canvas, gfx.Rect{X: b.X + monitorInset, Y: y, Width: b.Width - 2*monitorInset, Height: monitorHostInfoHeight}, s)
+	y += monitorHostInfoHeight
 	if v.state >= remoteStatsUnsupported || p.count == 0 {
 		message := state.remoteStatsText(v)
-		unsupportedSystem := !monitorSupported(s.host.System)
+		unsupportedSystem := !monitorSupported(system)
 		if unsupportedSystem {
 			message = m.UnsupportedPlatform
 		}
@@ -237,7 +240,7 @@ func (state *State) scrollMonitor(e gfx.ScrollEvent) (gfx.EventResult, bool) {
 		return gfx.EventResult{Handled: true}, true
 	}
 	p := &s.stats.panel
-	next := min(max(p.scroll+e.DeltaY, 0), max(p.contentHeight-(state.monitorRect.Height-infoBarHeight-monitorControlsHeight-24), 0))
+	next := min(max(p.scroll+e.DeltaY, 0), state.monitorScrollArea(p).Geometry().MaxOffsetY)
 	changed := next != p.scroll
 	p.scroll = next
 	return gfx.EventResult{Handled: true, Repaint: changed}, true

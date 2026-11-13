@@ -406,21 +406,21 @@ type aiPanel struct {
 	approvalLay aiApprovalLayout
 
 	// mode is how the workbench page placed the panel in its last paint, and
-	// declared whether it declared it at all. drawerOpen is the page Drawer's open
-	// bool: its address is the drawer's identity, so it must stay one field.
-	mode       aiPanelMode
-	declared   bool
-	drawerOpen bool
-	resize     aiPanelResize
+	// declared whether it declared it at all.
+	mode     aiPanelMode
+	declared bool
+	resize   aiPanelResize
 
-	// contentDraw and overDraw paint the parts the page's declaration left for
-	// the last pass, kept so a paint makes no method values. composerDraw paints
-	// the native textarea into the box the page reserved, and is kept for the
-	// same reason.
-	contentDraw, overDraw func(*ui.DrawContext)
-	composerDraw          func(*ui.DrawContext)
-	body                  aiBody
-	pageScratch           aiPanelPageScratch
+	// overDraw paints what the page's declaration left for the last pass: the
+	// hand-painted controls and the chrome over them. It runs on the page's
+	// DrawOver, after its children, whose own backgrounds would otherwise cover
+	// a control's surface. composerDraw paints the native textarea into the box
+	// the page reserved. Both are kept as method values so a paint allocates
+	// nothing.
+	overDraw     func(*ui.DrawContext)
+	composerDraw func(*ui.DrawContext)
+	body         aiBody
+	pageScratch  aiPanelPageScratch
 
 	// importPages is the provider import dialog's page and the slots its
 	// hand-painted buttons go into.
@@ -943,8 +943,13 @@ func (state *State) aiPanelScrollbarPointer(event gfx.PointerEvent) (gfx.EventRe
 		}
 		if !history {
 			// A held thumb holds the conversation where it is: streaming must not
-			// drag it to the end under the reader's hand.
+			// drag it to the end under the reader's hand. The List reads whether it
+			// follows when it is declared, before the Follow(false) of that paint
+			// reaches it, so stop following on the state now.
 			panel.followSuppressed = true
+			if scroll, _ := state.aiActiveScroll(); scroll != nil {
+				scroll.Follow(false)
+			}
 		}
 		bar.dragging = true
 		bar.history = history
@@ -1114,6 +1119,9 @@ func (state *State) aiPanelScrollGesture(event gfx.ScrollEvent) (gfx.EventResult
 	}
 	if panel.rect.Width <= 0 || !pointInRect(event.X, event.Y, panel.rect) {
 		return gfx.EventResult{}, false
+	}
+	if approval := &panel.approvalLay; approval.scroll != nil && pointInRect(event.X, event.Y, approval.bounds) {
+		return approval.scroll.Wheel(event), true
 	}
 	if pointInRect(event.X, event.Y, panel.composer) {
 		panel.inputLayout.ScrollBy(event.DeltaY)

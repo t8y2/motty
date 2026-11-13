@@ -25,23 +25,26 @@ func TestVNCSecurityStatusSeparatesProtocolAndTunnelProtection(t *testing.T) {
 		state := &State{messages: i18n.For(language)}
 		m := state.messages.Desktop
 		for _, test := range []struct {
-			mode              string
-			encrypted, tunnel bool
-			protection        string
+			mode                     string
+			encrypted, tunnel, route bool
+			protection               string
 		}{
-			{"None", false, false, m.StripPlain},
-			{"VNC Authentication", false, true, m.StripPlain},
-			{"RA2", true, false, m.StripVNCEncrypted},
-			{"RA256ne", false, true, m.SecurityAuthOnly},
-			{"X509None", true, false, m.StripVNCEncrypted},
+			{"None", false, false, false, m.StripPlain},
+			{"VNC Authentication", false, true, false, m.StripPlain},
+			{"RA2", true, false, false, m.StripVNCEncrypted},
+			{"RA256ne", false, true, false, m.SecurityAuthOnly},
+			{"X509None", true, false, false, m.StripVNCEncrypted},
+			{"None", false, false, true, m.StripPlain},
+			{"RA256ne", false, false, true, m.SecurityAuthOnly},
+			{"X509None", true, false, true, m.StripVNCEncrypted},
 		} {
-			view := &desktopView{session: &securityDesktop{info: desktop.Info{Security: test.mode, ProtocolEncrypted: test.encrypted, Encrypted: test.encrypted || test.tunnel}}}
-			session := &Session{host: Host{Protocol: protocolVNC, ViaSSH: test.tunnel}}
+			view := &desktopView{session: &securityDesktop{info: desktop.Info{Security: test.mode, ProtocolEncrypted: test.encrypted, Encrypted: test.encrypted || test.tunnel || test.route}}}
+			session := &Session{host: Host{Protocol: protocolVNC, ViaSSH: test.tunnel}, desktopTunnel: test.route}
 			line := state.desktopStripLeft(view, session)
 			if !strings.Contains(line, test.mode) || !strings.Contains(line, test.protection) {
 				t.Fatalf("mode %s: status %q does not describe its protocol protection", test.mode, line)
 			}
-			if strings.Contains(line, m.StripEncrypted) != test.tunnel {
+			if strings.Contains(line, m.StripEncrypted) != (test.tunnel || test.route) {
 				t.Fatalf("mode %s: status %q misreports SSH protection", test.mode, line)
 			}
 		}
@@ -83,6 +86,10 @@ func TestVNCSecurityDetailsUseActualMetadataAndEnteredEndpoint(t *testing.T) {
 		if !strings.Contains(details, value) {
 			t.Fatalf("security details omit %q: %q", value, details)
 		}
+	}
+	session.host.ViaSSH, session.desktopTunnel = false, true
+	if details := state.vncSecurityDetails(session); !strings.Contains(details, state.messages.Desktop.StripEncrypted) {
+		t.Fatalf("security details omit jump route SSH protection: %q", details)
 	}
 	// Seeing VeNCrypt among advertised top-level modes does not discover its
 	// subtypes when the connection chose RSA-AES instead.
@@ -316,7 +323,7 @@ func TestVNCSecuritySmallWindowDetailsScrollAndRemainAccessible(t *testing.T) {
 				if !closeFound {
 					t.Fatal("details close action has the wrong purpose")
 				}
-				point := gfx.Point{X: hit.TextBounds.X, Y: hit.TextBounds.Y + 1}
+				point := gfx.Point{X: hit.Bounds.X, Y: hit.Bounds.Y + 1}
 				before, valid := state.desktopSecurity.layout.OffsetAt(point)
 				if !valid {
 					t.Fatal("details have no text placement for their wrapped rows")

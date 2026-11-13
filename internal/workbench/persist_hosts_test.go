@@ -47,6 +47,7 @@ func hostEntryWithOrd(t testing.TB, id, label string, ord int64) configstore.Ent
 func cloneSavedHost(host savedHost) savedHost {
 	clone := host
 	clone.Tags = slices.Clone(host.Tags)
+	clone.SSHOptions = host.SSHOptions.Clone()
 	if host.Proxy != nil {
 		proxy := *host.Proxy
 		clone.Proxy = &proxy
@@ -65,6 +66,7 @@ func TestSameSavedHostNoticesEveryField(t *testing.T) {
 			Proxy:      &savedOutboundProxy{Kind: "socks5", Address: "proxy.example.com:1080", User: "pu", Bypass: "localhost"},
 			Algorithms: "compatible", AlgorithmList: "a,b", Authentication: "key", Identity: "SHA256:abc",
 			ForwardX11: true, AgentForward: true, NoHistory: true, Transfer: "sftp", ViaSSH: true, Clipboard: true,
+			IdleKeepAliveSeconds: 300, IdleInput: "custom", IdleInputCustom: `\x00`,
 		},
 	}
 	if !sameSavedHost(base, cloneSavedHost(base)) {
@@ -104,6 +106,8 @@ func TestSameSavedHostNoticesEveryField(t *testing.T) {
 		switch last.Kind() {
 		case reflect.String:
 			last.SetString(last.String() + "-other")
+		case reflect.Int:
+			last.SetInt(last.Int() + 1)
 		case reflect.Uint16:
 			last.SetUint(last.Uint() + 1)
 		case reflect.Bool:
@@ -113,7 +117,7 @@ func TestSameSavedHostNoticesEveryField(t *testing.T) {
 			reflect.Copy(changed, last)
 			last.Set(changed)
 		case reflect.Ptr:
-			last.Set(reflect.ValueOf(&savedOutboundProxy{Kind: "other"}))
+			last.Set(reflect.New(last.Type().Elem()))
 		default:
 			t.Fatalf("%s: unsupported field kind %s", leaf.name, last.Kind())
 		}

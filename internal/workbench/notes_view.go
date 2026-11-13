@@ -64,6 +64,9 @@ type noteViewState struct {
 	picker                   text.Editor
 	resizing                 bool
 	drop                     noteDrop
+	// windowMode is the mode a note window opens in, remembered here because
+	// every window is created fresh while the choice outlives it.
+	windowMode noteMode
 }
 type noteDrop struct {
 	parent, before string
@@ -221,8 +224,15 @@ func (s *State) commitNoteInline() bool {
 // overlayAnchorRect is where the open menu or popup hangs: under the control
 // that opened it, as this paint declared it, or at the point it was opened at.
 func (v *noteViewState) overlayAnchorRect(c *gfx.Canvas) gfx.Rect {
-	if bounds, ok := c.HitBounds(v.overlayFrom); ok {
+	if bounds, ok := c.HitBounds(v.overlayFrom); ok && bounds.Width > 0 && bounds.Height > 0 {
+		v.overlayAnchor = bounds
 		return bounds
+	}
+	if v.overlayAnchor.Width > 0 && v.overlayAnchor.Height > 0 {
+		return v.overlayAnchor
+	}
+	if v.treeBounds.Width > 0 && v.treeBounds.Height > 0 {
+		return gfx.Rect{X: v.treeBounds.X + v.treeBounds.Width - 32, Y: v.treeBounds.Y + 40, Width: 28, Height: 28}
 	}
 	return v.overlayAnchor
 }
@@ -340,9 +350,10 @@ func (s *State) noteViewClick(id gfx.ID) bool {
 			if v.mode == notePreview {
 				v.focus = id
 			}
-			if !n.windowView {
-				s.save()
+			if n.windowView {
+				s.notes.view.windowMode = v.mode
 			}
+			s.save()
 			return true
 		}
 		if token, ok := id.In(hitNoteTagRows); ok {
@@ -381,16 +392,22 @@ func (s *State) noteViewClick(id gfx.ID) bool {
 		}
 		if token, ok := id.In(hitNoteRowMore); ok {
 			v.menu = "note"
-			v.menuID = v.tokenNotes[token]
+			noteID := v.tokenNotes[token]
+			v.menuID = noteID
 			v.menuFolder = false
 			v.overlayFrom = id
+			s.selectNote(noteID)
 			return true
 		}
 		if token, ok := id.In(hitNoteFolderMore); ok {
 			v.menu = "folder"
-			v.menuID = v.tokenFolders[token]
+			folder := v.tokenFolders[token]
+			v.menuID = folder
 			v.menuFolder = true
 			v.overlayFrom = id
+			n.folder = folder
+			v.treeFolderSelection = true
+			s.save()
 			return true
 		}
 		if token, ok := id.In(hitNoteRows); ok {
@@ -424,13 +441,17 @@ func (s *State) savedNotesView() savedNoteView {
 		}
 	}
 	slices.Sort(expanded)
-	return savedNoteView{Panel: s.notes.panel, Selected: s.notes.selected, Folder: s.notes.folder, Mode: v.mode, Width: v.width, Collapsed: v.collapsed, Expanded: expanded}
+	return savedNoteView{Selected: s.notes.selected, Folder: s.notes.folder, Mode: v.mode, WindowMode: v.windowMode, Width: v.width, Collapsed: v.collapsed, Expanded: expanded}
 }
 func (s *State) restoreNotesView(saved savedNoteView) {
 	v := &s.notes.view
 	v.mode = saved.Mode
 	if v.mode != noteSource && v.mode != notePreview && v.mode != noteSplit {
 		v.mode = noteSource
+	}
+	v.windowMode = saved.WindowMode
+	if v.windowMode != noteSource && v.windowMode != notePreview && v.windowMode != noteSplit {
+		v.windowMode = noteSource
 	}
 	v.width = saved.Width
 	if v.width == 0 {
@@ -441,6 +462,17 @@ func (s *State) restoreNotesView(saved savedNoteView) {
 	v.expanded = map[string]bool{}
 	for _, id := range saved.Expanded {
 		v.expanded[id] = true
+	}
+}
+
+// noteWindowMode is the mode a new note window opens in: the one last chosen
+// in a note window, or source before the user has chosen one.
+func (s *State) noteWindowMode() noteMode {
+	switch m := s.notes.view.windowMode; m {
+	case noteSource, notePreview, noteSplit:
+		return m
+	default:
+		return noteSource
 	}
 }
 
