@@ -38,13 +38,22 @@ The application is built from a clean local clone with a real `.git` directory.
 Go 1.26 does not automatically stamp Git metadata from the `.git` file of a
 linked worktree. Before each generated executable is packaged, `tools/checkbuild`
 reads its Go build information and checks the exact commit, commit time, clean
-source status and target OS/architecture. Viva packages that checked executable
+source status and target OS/architecture; for Linux and Windows it also refuses
+an executable built with cgo, so a package cannot silently take the build
+machine's C library. Viva packages that checked executable
 through `--program`, so the Windows executable is Authenticode-signed with the
 configured options before the check reads it: Viva uses a supplied program as it
 is and would otherwise package it unsigned. The check also works for
 cross-compiled Windows binaries.
 The optional `--installer` input is an externally built installer and is not
 covered by this executable check; the automated release workflow does not use it.
+
+Linux and Windows programs are built without cgo: Viva reaches those systems
+through purego and their own system calls, so `viva build` pins `CGO_ENABLED=0`
+for both targets. The Linux packages therefore do not link the C library of the
+runner that built them (a cgo build would take that runner's glibc, and an
+Ubuntu 24.04 binary refuses to start on a distribution with glibc 2.28). They
+need only the libraries they load at run time: Vulkan, XCB and Cairo.
 
 ## What each job does
 
