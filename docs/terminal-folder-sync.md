@@ -37,8 +37,9 @@ made before that reconnect inherit the same remembered directory.
 Only trusted prompt reports are remembered. A running program, a nested login,
 or a report that does not belong to this session's integration cannot change
 the next start directory. Native Windows SSH hosts are not POSIX shell targets,
-and disabling both integration directions keeps the ordinary shell startup, so
-neither remembers a remote directory in this way.
+and disabling both integration directions, setting **Command completions** to
+**Shortcut**, and leaving **Tab name** off **Current path** keeps the ordinary
+shell startup, so neither remembers a remote directory in this way.
 
 Local panes, standalone file windows and container command sessions do not
 control terminals. Refreshing a list or following a terminal report never sends

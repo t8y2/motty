@@ -81,6 +81,135 @@ func TestPathCompletionOpensAutomaticallyAndOffersTheDirectory(t *testing.T) {
 	}
 }
 
+func TestPathCompletionWithFilePanelAndFollowingOff(t *testing.T) {
+	for _, opening := range []string{"before-input", "during-input"} {
+		t.Run(opening, func(t *testing.T) {
+			w, _ := newPathWorld(t)
+			w.state.sftpFollowOff = true
+			w.state.Resize(gfx.Size{Width: 1400, Height: 900})
+			if opening == "during-input" {
+				w.type_("cd ")
+				waitCompletionList(t, w)
+			}
+			w.state.Click(hitSFTPOpen)
+			waitSFTP(t, w.state, w.session, func(view *sftpView) bool { return !view.busy })
+			if !w.state.filesPanelShown() {
+				t.Fatal("file panel did not open")
+			}
+			// The fake shell does not react to SIGWINCH. Redraw the prompt
+			// and existing input as Readline would after the panel resizes it.
+			line := ""
+			if opening == "during-input" {
+				line = "cd "
+			}
+			w.shell.say("\r\x1b[K$ " + folderSyncMarker(w.session, "B") + line)
+			w.state.Wake()
+			if opening == "before-input" {
+				w.type_("cd ")
+			} else {
+				w.type_("d")
+			}
+			waitCompletionList(t, w)
+			if got := strings.Join(listTexts(w), ","); got != "docs/" {
+				t.Fatalf("directory candidates with file following off = %q", got)
+			}
+			var canvas gfx.Canvas
+			w.state.Paint(&canvas, w.state.viewport)
+			if _, ok := hitByID(&canvas, hitCompletionList.At(0)); !ok {
+				t.Fatal("directory candidates exist but are not painted beside the file panel")
+			}
+		})
+	}
+}
+
+func TestPathCompletionWithFilePanelThroughWindowInput(t *testing.T) {
+	w, _ := newPathWorld(t)
+	driver := sftpPathFocusDriver(t, w.state)
+	clickSFTPPathFocusHit(t, driver, hitSFTPOpen)
+	waitSFTP(t, w.state, w.session, func(view *sftpView) bool { return !view.busy })
+	if err := driver.Advance(0); err != nil {
+		t.Fatal(err)
+	}
+	clickSFTPPathFocusHit(t, driver, contextID(hitSFTPFollowToggle))
+	if !w.state.sftpFollowOff {
+		t.Fatal("file panel following did not turn off")
+	}
+	w.state.navigateSFTPDirectory(w.session.files, "/home/test/docs")
+	waitSFTP(t, w.state, w.session, func(view *sftpView) bool { return !view.busy })
+	if err := driver.Advance(0); err != nil {
+		t.Fatal(err)
+	}
+	clickSFTPPathFocusHit(t, driver, terminalTestHit(w.state, w.session))
+	// Type part of the command before the redraw: a redraw on an empty prompt
+	// says nothing about the prompt proof of an input already on the line.
+	for _, input := range []string{"c", "d"} {
+		w.tick()
+		if err := driver.Type(input); err != nil {
+			t.Fatal(err)
+		}
+		if err := driver.Advance(0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The fake shell must redraw after the window and file panel resize it,
+	// with the typed line on screen, as readline repaints PS1 and the buffer.
+	w.shell.say("\r\x1b[K$ " + folderSyncMarker(w.session, "B") + "cd")
+	w.state.Wake()
+	w.tick()
+	if err := driver.Type(" "); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Advance(0); err != nil {
+		t.Fatal(err)
+	}
+	waitCompletionList(t, w)
+	if err := driver.Advance(0); err != nil {
+		t.Fatal(err)
+	}
+	hitOf(t, driver, hitCompletionList.At(0))
+	if got := strings.Join(listTexts(w), ","); got != "docs/" {
+		t.Fatalf("completion followed file panel instead of shell: %q", got)
+	}
+}
+
+func TestPathCompletionSurvivesShellRedrawWhenFilePanelOpens(t *testing.T) {
+	w, remote := newPathWorld(t)
+	w.state.sftpFollowOff = true
+	w.state.Resize(gfx.Size{Width: 1400, Height: 900})
+	remote.entries["/"] = remote.entries["/home/test"]
+	w.type_("cd /")
+	waitCompletionList(t, w)
+	w.state.Click(hitSFTPOpen)
+	waitSFTP(t, w.state, w.session, func(view *sftpView) bool { return !view.busy })
+	// Readline redraws PS1 on SIGWINCH. The end-of-prompt marker is part of
+	// PS1, but PROMPT_COMMAND does not run: there is no new A or C marker.
+	w.shell.say("\r\x1b[K$ " + folderSyncMarker(w.session, "B") + "cd /")
+	w.state.Wake()
+	if line := w.line(t); line != "cd /" {
+		t.Fatalf("redrawn command = %q", line)
+	}
+	if !w.state.inputGuardAvailable(w.session) {
+		t.Fatal("redrawing the current prompt revoked shell input ownership")
+	}
+	if !w.state.completion.list.active {
+		t.Fatal("redrawing the current prompt closed directory completion")
+	}
+	if w.session.term.promptReady || !w.session.term.promptDirty {
+		t.Fatal("redrawing a typed line authorized automatic directory changes")
+	}
+	w.state.Click(hitSFTPFollowToggle)
+	w.state.Wake()
+	if !w.state.completion.list.active {
+		t.Fatal("changing file following closed directory completion after redraw")
+	}
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: terminalHit(w.state, 0)})
+	before := w.shell.typed()
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: terminalHit(w.state, 0)})
+	if got := w.shell.typed(); got != before+"docs/" {
+		t.Fatalf("directory acceptance after redraw = %q", got[len(before):])
+	}
+}
+
 // A press chooses a row; it must not move keyboard focus off the terminal, or
 // the next keystroke would go nowhere.
 func TestCompletionRowsKeepTheTerminalFocus(t *testing.T) {
