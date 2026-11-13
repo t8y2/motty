@@ -13,7 +13,6 @@ import (
 )
 
 var (
-	sftpHeaderSortHits       = tree.Sub(sftpHits, tree.Name("header-sort"))
 	hitSFTPFilterToggle      = tree.ID(sftpHits, "sftp-filter-toggle")
 	hitSFTPFilter            = tree.ID(sftpHits, "sftp-filter")
 	hitSFTPFilterClear       = tree.ID(sftpHits, "sftp-filter-clear")
@@ -213,7 +212,7 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, a
 	}
 	dismiss := hitSFTPHeaderMenuDismiss
 	const menuWidth = float32(280)
-	rows := 10 + len(folder.history.recent)
+	rows := 7 + len(folder.history.recent)
 	if label, _ := state.sftpEditorItem(view, folder); label != "" {
 		rows++
 	}
@@ -249,27 +248,6 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, a
 		ID: hitSFTPCalculateDirectorySize, Label: state.messages.SFTPWindow.CalculateDirectorySize, Icon: lucideIcons[iconInfo],
 		Disabled: folder.path == "" || !view.local && view.openFiles == nil,
 	})
-	for _, entry := range state.sftpColumns.entries {
-		if !entry.Enabled {
-			continue
-		}
-		column, label := int(entry.Key), state.messages.SFTPWindow.Name
-		switch entry.Key {
-		case sftpColumnSize:
-			label = state.messages.SFTPWindow.Size
-		case sftpColumnModified:
-			label = state.messages.SFTPWindow.Modified
-		}
-		icon := uint8(iconArrowUp)
-		if folder.sortOrder.descending {
-			icon = iconChevronDown
-		}
-		item := components.DropdownMenuItem{ID: sftpHeaderSortHits.At(column), Label: label, Selected: folder.sortOrder.column == column}
-		if item.Selected {
-			item.Icon = lucideIcons[icon]
-		}
-		menu.AddItem(item)
-	}
 	menu.End()
 }
 
