@@ -501,15 +501,11 @@ func (state *State) sendSnippet(index int) bool {
 	return state.sendSnippetTo(index, session)
 }
 
-// sendSnippetTo types a snippet into session, and into the other panes of its tab
+// sendResolvedSnippet types command into session, and into the other panes of its tab
 // while the tab is broadcasting.
-func (state *State) sendSnippetTo(index int, session *Session) bool {
+func (state *State) sendResolvedSnippet(entry snippet, command string, session *Session) bool {
 	m := state.messages.Tools
-	if index < 0 || index >= len(state.snippets.list) {
-		return false
-	}
-	entry := state.snippets.list[index]
-	input := term.EncodePaste(entry.Command, session.term.screen.Modes().BracketedPaste && strings.Contains(entry.Command, "\n"))
+	input := term.EncodePaste(command, session.term.screen.Modes().BracketedPaste && strings.Contains(command, "\n"))
 	if entry.Run {
 		input = append(input, '\r')
 	}
@@ -519,6 +515,21 @@ func (state *State) sendSnippetTo(index int, session *Session) bool {
 	}
 	state.status = fmt.Sprintf(m.StatusSnippetSentFmt, entry.Name, session.Title)
 	return true
+}
+
+// sendSnippetTo types a snippet into session, and into the other panes of its tab
+// while the tab is broadcasting. If dynamic variables are present, it opens the
+// variable input dialog instead.
+func (state *State) sendSnippetTo(index int, session *Session) bool {
+	if index < 0 || index >= len(state.snippets.list) {
+		return false
+	}
+	entry := state.snippets.list[index]
+	if snippetHasVariables(entry.Command) {
+		state.openSnippetVariablesDialog(index, session.ID, false)
+		return true
+	}
+	return state.sendResolvedSnippet(entry, entry.Command, session)
 }
 
 // sendSnippetFromPage sends a snippet picked on the Snippets page. The page has
@@ -550,7 +561,15 @@ func (state *State) sendSnippetFromPage(index int, at gfx.Point) {
 
 // sendSnippetPicked sends to session and shows its terminal.
 func (state *State) sendSnippetPicked(index int, session *Session) {
-	if state.sendSnippetTo(index, session) {
+	if index < 0 || index >= len(state.snippets.list) {
+		return
+	}
+	entry := state.snippets.list[index]
+	if snippetHasVariables(entry.Command) {
+		state.openSnippetVariablesDialog(index, session.ID, true)
+		return
+	}
+	if state.sendResolvedSnippet(entry, entry.Command, session) {
 		state.ActivatePane(session.ID)
 		state.activeSection = sectionTerminal
 	}

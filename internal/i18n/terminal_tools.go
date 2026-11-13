@@ -115,19 +115,28 @@ type ToolsMessages struct {
 	StatusSnippetSentFmt      string
 	StatusSnippetNoTerminal   string
 	StatusSnippetNotConnected string
-	SendCommandLabel          string
-	SendCommandPlaceholder    string
-	SendCommandButton         string
-	SendTargetCurrent         string
-	SendTargetAll             string
-	SendTargetChosen          string
-	SendRun                   string
-	SendChosenFmt             string
-	SendTargetsPlaceholder    string
-	SendTargetsEmpty          string
-	StatusSendSentFmt         string
-	StatusSendNoTarget        string
-	StatusSendChooseNone      string
+	// Snippet dynamic variables.
+	SnippetVarTitle        string
+	SnippetVarDescFmt      string
+	SnippetVarHint         string
+	SnippetVarPreview      string
+	SnippetVarRun          string
+	SnippetVarRequired     string
+	SnippetVarPlaceholder  string
+	SnippetVarDefaultFmt   string
+	SendCommandLabel       string
+	SendCommandPlaceholder string
+	SendCommandButton      string
+	SendTargetCurrent      string
+	SendTargetAll          string
+	SendTargetChosen       string
+	SendRun                string
+	SendChosenFmt          string
+	SendTargetsPlaceholder string
+	SendTargetsEmpty       string
+	StatusSendSentFmt      string
+	StatusSendNoTarget     string
+	StatusSendChooseNone   string
 
 	// The categories of the settings page, and what each holds.
 	CatGeneral    string
