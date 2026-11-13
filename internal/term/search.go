@@ -1,6 +1,9 @@
 package term
 
-import "unicode"
+import (
+	"slices"
+	"unicode"
+)
 
 // BufferPosition is one cell position in the retained terminal buffer. Line 0
 // is the oldest scrollback line; screen lines follow the history.
@@ -21,20 +24,102 @@ type SearchMatch struct {
 // nonpositive limits and queries containing a line break return no matches.
 func (t *Terminal) Search(dst []SearchMatch, query string, limit int) ([]SearchMatch, bool) {
 	dst = dst[:0]
-	if query == "" || limit <= 0 {
+	if limit <= 0 {
 		return dst, false
+	}
+	truncated := false
+	t.search(query, func(match SearchMatch) {
+		if len(dst) < limit {
+			dst = append(dst, match)
+		} else {
+			truncated = true
+		}
+	})
+	return dst, truncated
+}
+
+// SearchFrom retains up to limit matches in search order from line, wrapping
+// once. Results are returned in buffer order, with the first match's index.
+// A match that spans the starting line is eligible in either direction.
+func (t *Terminal) SearchFrom(dst []SearchMatch, query string, limit, line int, backward bool) ([]SearchMatch, int, bool) {
+	dst = dst[:0]
+	if limit <= 0 {
+		return dst, -1, false
+	}
+
+	var before, after searchWindow
+	before.matches = dst
+	total := 0
+	t.search(query, func(match SearchMatch) {
+		total++
+		earlier := match.End.Line < line
+		if backward {
+			earlier = match.Start.Line <= line
+		}
+		if earlier {
+			before.add(match, limit, backward)
+		} else {
+			after.add(match, limit, backward)
+		}
+	})
+	lo, hi := before.ordered(), after.ordered()
+	if total == 0 {
+		return lo, -1, false
+	}
+	if backward {
+		hi = hi[max(0, len(hi)-(limit-len(lo))):]
+		first := len(lo) - 1
+		if first < 0 {
+			first = len(hi) - 1
+		}
+		return append(lo, hi...), first, total > limit
+	}
+	lo = lo[:min(len(lo), limit-len(hi))]
+	first := 0
+	if len(hi) != 0 {
+		first = len(lo)
+	}
+	return append(lo, hi...), first, total > limit
+}
+
+type searchWindow struct {
+	matches []SearchMatch
+	next    int
+}
+
+func (w *searchWindow) add(match SearchMatch, limit int, keepLast bool) {
+	if len(w.matches) < limit {
+		w.matches = append(w.matches, match)
+	} else if keepLast {
+		w.matches[w.next] = match
+		w.next = (w.next + 1) % limit
+	}
+}
+
+func (w searchWindow) ordered() []SearchMatch {
+	if w.next == 0 {
+		return w.matches
+	}
+	slices.Reverse(w.matches[:w.next])
+	slices.Reverse(w.matches[w.next:])
+	slices.Reverse(w.matches)
+	return w.matches
+}
+
+func (t *Terminal) search(query string, add func(SearchMatch)) {
+	if query == "" {
+		return
 	}
 	needle := []rune(query)
 	for index, value := range needle {
 		if value == '\r' || value == '\n' {
-			return dst, false
+			return
 		}
 		needle[index] = unicode.ToLower(value)
 	}
 	prefix := searchPrefix(needle)
 	starts := make([]BufferPosition, len(needle))
 	matched, emitted := 0, 0
-	truncated := false
 
 	emit := func(value rune, start, end BufferPosition) {
 		value = unicode.ToLower(value)
@@ -49,11 +134,7 @@ func (t *Terminal) Search(dst []SearchMatch, query string, limit int) ([]SearchM
 		if matched != len(needle) {
 			return
 		}
-		if len(dst) < limit {
-			dst = append(dst, SearchMatch{Start: starts[(emitted-len(needle))%len(starts)], End: end})
-		} else {
-			truncated = true
-		}
+		add(SearchMatch{Start: starts[(emitted-len(needle))%len(starts)], End: end})
 		matched = prefix[matched-1]
 	}
 
@@ -89,7 +170,6 @@ func (t *Terminal) Search(dst []SearchMatch, query string, limit int) ([]SearchM
 			matched, emitted = 0, 0
 		}
 	}
-	return dst, truncated
 }
 
 func searchPrefix(needle []rune) []int {

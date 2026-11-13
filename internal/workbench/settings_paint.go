@@ -25,21 +25,22 @@ const (
 type settingsControlKind uint8
 
 const (
-	controlSwitch           settingsControlKind = iota // a two-state switch
-	controlButtons                                     // buttons against the right edge of the slot
-	controlButton                                      // one small button filling the slot
-	controlHit                                         // the slot is a pointer target
-	controlSearch                                      // the search box
-	controlModelInput                                  // the assistant's model-name field
-	controlWordSeparators                              // the terminal's word-selection separators
-	controlSwatches                                    // a strip of round color dots
-	controlLabel                                       // the words of a row, which label the control beside them
-	controlMCPSelect                                   // client configuration select
-	controlLogo                                        // the product wordmark in a slot
-	controlAgentSelect                                 // independent stdio client configuration
-	controlLocalShellSelect                            // detected Windows shells
-	controlEditorSelect                                // installed editors
-	controlStartupHosts                                // the hosts a launch connects
+	controlSwitch     settingsControlKind = iota // a two-state switch
+	controlButtons                               // buttons against the right edge of the slot
+	controlButton                                // one small button filling the slot
+	controlHit                                   // the slot is a pointer target
+	controlSearch                                // the search box
+	controlModelInput                            // the assistant's model-name field
+	controlFindPreference
+	controlWordSeparators   // the terminal's word-selection separators
+	controlSwatches         // a strip of round color dots
+	controlLabel            // the words of a row, which label the control beside them
+	controlMCPSelect        // client configuration select
+	controlLogo             // the product wordmark in a slot
+	controlAgentSelect      // independent stdio client configuration
+	controlLocalShellSelect // detected Windows shells
+	controlEditorSelect     // installed editors
+	controlStartupHosts     // the hosts a launch connects
 )
 
 // settingsControl is one control of the page, recorded while the page is
@@ -244,6 +245,8 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 			state.paintSettingsSearchBox(canvas, rect)
 		case controlModelInput:
 			state.paintAIModelInput(canvas, rect)
+		case controlFindPreference:
+			state.paintFindSetting(canvas, control.id, rect)
 		case controlWordSeparators:
 			state.paintWordSeparatorsInput(canvas, rect)
 		case controlSwatches:
@@ -429,6 +432,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 		state.paintHighlightSettings(page)
 		state.paintAutofillSettings(page)
 		state.paintBackgroundSettings(page)
+		state.paintTerminalFindSettingsGroup(page)
 	})
 }
 

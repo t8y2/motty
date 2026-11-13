@@ -668,6 +668,8 @@ type State struct {
 	terminalFontFace   gfx.MonoFace
 	terminalLineHeight lineHeight
 	terminalScrollback int
+	terminalFindPrefs  terminalFindPreferences
+	findSettingsUI     terminalFindSettingsUI
 	// textScale is the interface text size the user chose: the scale the whole
 	// window's text is drawn at, apart from the terminal's own font size.
 	textScale           textScale
@@ -1081,6 +1083,7 @@ func New(options Options) *State {
 		viewport:           gfx.Size{Width: 1400, Height: 900},
 		terminalFontSize:   termFontSize,
 		terminalScrollback: scrollbackLines,
+		terminalFindPrefs:  defaultTerminalFindPreferences,
 		tabTitleMode:       tabTitleConnection,
 		startupReuse:       true,
 		startupEnabled:     true,
@@ -1293,6 +1296,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	}
 	if _, local, ok := state.decodePaneHit(hit); ok {
 		hit = local
+	}
+	if editor := state.findPreferencesEditor(hit); editor != nil {
+		return editor
 	}
 	if editor := state.aiEditor(hit); editor != nil {
 		return editor
@@ -1746,7 +1752,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickCommandsDrawer(id) {
 		return
 	}
-	if state.clickTerminalFind(id) {
+	if state.clickFindPreferences(id) || state.clickTerminalFind(id) {
 		return
 	}
 	if id == hitTerminalSnippets {
@@ -2673,6 +2679,9 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result := state.hostFormPointer(event); result.Handled {
 		return result
 	}
+	if result := state.findPreferencesPointer(event); result.Handled {
+		return result
+	}
 	if result := state.hostPickerPointer(event); result.Handled {
 		return result
 	}
@@ -2915,6 +2924,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.hostTagsKey(event); handled {
+		return result
+	}
+	if result := state.findPreferencesKey(event); result.Handled {
 		return result
 	}
 	if result := state.hostPickerKey(event); result.Handled {

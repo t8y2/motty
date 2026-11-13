@@ -336,6 +336,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintAITargetSelect(canvas)
 	state.paintMCPClientSelect(canvas)
 	state.paintLocalShellSelect(canvas)
+	state.paintFindPreferences(canvas)
 	state.paintEditorSelect(canvas)
 	state.paintStartupHostSelect(canvas)
 	state.paintMonitorIntervalMenu(canvas)
