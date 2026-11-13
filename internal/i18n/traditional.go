@@ -2884,6 +2884,7 @@ var traditionalCodeEditor = CodeEditorMessages{
 }
 
 var traditionalDashboard = DashboardMessages{
+	SelectMatches: "全選符合條件的主機", SortBy: "排序方式",
 	UnavailableHosts: "不可用主機",
 	NamePlaceholder:  "例如：生產環境、個人實驗室", NotePlaceholder: "例如：Web、API 與資料庫主機",
 	AllGroups: "全部群組", Ungrouped: "未群組", GroupFilter: "群組篩選", SelectedOnly: "僅已選", PickerCount: "已選 %d · 顯示 %d / %d",

@@ -133,6 +133,7 @@ func (s *State) moveDashboardHost(move components.ReorderMove) {
 		copy(e.selected[move.To+1:move.From+1], e.selected[move.To:move.From])
 	}
 	e.selected[move.To] = host
+	e.orderMode = hostOrderManual
 	e.scroll = max(0, e.scroll+e.order.RevealScroll(move.To))
 }
 

@@ -1,6 +1,7 @@
 package i18n
 
 type DashboardMessages struct {
+	SelectMatches, SortBy                                                     string
 	UnavailableHosts                                                          string
 	NamePlaceholder, NotePlaceholder                                          string
 	AllGroups, Ungrouped, GroupFilter, SelectedOnly, PickerCount              string
@@ -17,6 +18,7 @@ type DashboardMessages struct {
 }
 
 var chineseDashboard = DashboardMessages{
+	SelectMatches: "全选匹配主机", SortBy: "排序方式",
 	UnavailableHosts: "不可用主机",
 	NamePlaceholder:  "例如：生产环境、个人实验室", NotePlaceholder: "例如：Web、API 与数据库主机",
 	AllGroups: "全部分组", Ungrouped: "未分组", GroupFilter: "分组筛选", SelectedOnly: "仅已选", PickerCount: "已选 %d · 显示 %d / %d",
@@ -31,6 +33,7 @@ var chineseDashboard = DashboardMessages{
 	CPU: "CPU", Memory: "内存", Disk: "磁盘", Network: "网络收发", Receive: "接收", Send: "发送", Terminal: "打开终端", Retry: "重试", PickerHint: "可跨分组选择 SSH 主机。创建后点击“开始监控”才会连接并采集。",
 }
 var englishDashboard = DashboardMessages{
+	SelectMatches: "Select all matches", SortBy: "Sort hosts by",
 	UnavailableHosts: "Unavailable hosts",
 	NamePlaceholder:  "e.g. Production or Home lab", NotePlaceholder: "e.g. Web, API and database hosts",
 	AllGroups: "All groups", Ungrouped: "Ungrouped", GroupFilter: "Filter by group", SelectedOnly: "Selected", PickerCount: "%d selected · %d / %d shown",

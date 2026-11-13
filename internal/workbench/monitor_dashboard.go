@@ -70,6 +70,8 @@ type dashboardEditor struct {
 	groups                               []string
 	group                                string
 	groupFilter, groupOpen, selectedOnly bool
+	orderMode                            hostOrderMode
+	orderOpen                            bool
 }
 type dashboardState struct {
 	panels          []monitoring.Panel
@@ -553,6 +555,17 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 		switch {
 		case id == hitDashboardGroupFilter:
 			d.editor.groupOpen = !d.editor.groupOpen
+			d.editor.orderOpen = false
+		case id == hitDashboardSelectMatches && d.editor.page == 0:
+			s.toggleDashboardMatches()
+		case id == hitDashboardOrderMode && d.editor.page == 1:
+			d.editor.orderOpen = !d.editor.orderOpen
+		case id == hitDashboardOrderDismiss:
+			d.editor.orderOpen = false
+		case id.Scope() == hitDashboardOrderModes && d.editor.page == 1:
+			if mode := hostOrderMode(item(id)); mode <= hostOrderIP {
+				s.sortDashboardHosts(mode)
+			}
 		case id == hitDashboardGroupDismiss:
 			d.editor.groupOpen = false
 		case id == hitDashboardSelectedOnly:
@@ -571,6 +584,7 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 		case id == hitDashboardPickTab || id == hitDashboardOrderTab:
 			d.editor.order.Cancel()
 			d.editor.groupOpen = false
+			d.editor.orderOpen = false
 			d.editor.page = 0
 			if id == hitDashboardOrderTab {
 				d.editor.page = 1
