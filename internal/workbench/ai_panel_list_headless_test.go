@@ -36,10 +36,39 @@ func TestHeadlessApprovalAfterComposerDrag(t *testing.T) {
 	}
 }
 
-func testHeadlessApprovalActions(t *testing.T, history bool, width int, extras, dragComposer bool) {
+func TestHeadlessApprovalWithCommandsBar(t *testing.T) {
+	for _, terminal := range []bool{false, true} {
+		for _, shown := range []bool{false, true} {
+			for _, width := range []int{800, MinimumWindowWidth, 1400} {
+				for _, drag := range []bool{false, true} {
+					t.Run(fmt.Sprintf("terminal=%v/bar=%v/width=%d/drag=%v", terminal, shown, width, drag), func(t *testing.T) {
+						testHeadlessApprovalActions(t, true, width, true, drag, func(state *State) {
+							state.commands.shown = shown
+							state.ai.needLogin = "test-provider"
+							state.moveToolbarDockTool(hitTheme, toolbarDockBottom, gfx.ID{})
+							if terminal {
+								if _, _, err := state.deck.Create("approval test"); err != nil {
+									t.Fatal(err)
+								}
+								state.activeSection = sectionTerminal
+							} else {
+								state.activeSection = sectionSettings
+							}
+						})
+					})
+				}
+			}
+		}
+	}
+}
+
+func testHeadlessApprovalActions(t *testing.T, history bool, width int, extras, dragComposer bool, configure ...func(*State)) {
 	t.Helper()
 	state := agentPanel(t)
 	state.ai.panelWidth = aiPanelMin
+	for _, setup := range configure {
+		setup(state)
+	}
 	if history {
 		db, err := state.aiStore()
 		if err != nil {
@@ -172,6 +201,18 @@ func testHeadlessApprovalActions(t *testing.T, history bool, width int, extras, 
 	if width == 800 && state.ai.panel.mode != aiPanelDrawer {
 		t.Fatalf("narrow window did not exercise Drawer: mode=%v", state.ai.panel.mode)
 	}
+	if len(configure) > 0 && width == 1400 {
+		want := aiPanelSection
+		if state.terminalPage() {
+			want = aiPanelDocked
+		}
+		if state.ai.panel.mode != want {
+			t.Fatalf("panel mode=%v want=%v", state.ai.panel.mode, want)
+		}
+		if !state.terminalPage() && state.commandsDrawerHeight() != 0 {
+			t.Fatal("section reserved a terminal-only commands bar")
+		}
+	}
 	visible(hitAIClose)
 	visible(hitAIHistory)
 	visible(hitAINew)
@@ -237,8 +278,16 @@ func testHeadlessApprovalActions(t *testing.T, history bool, width int, extras, 
 	if !visible(hitAIApprove).Disabled {
 		t.Fatal("critical approval is enabled without the confirmation word")
 	}
+	// The target row, at least one editable line and the action row must not overlap.
+	minimumComposer := aiComposerTarget + state.ai.panel.pageScratch.composerBarHeight + state.Theme().Metrics.FontSizeM + 7 + 8
+	if state.ai.panel.boxHeight < minimumComposer {
+		t.Fatalf("critical approval squeezed composer: height=%v minimum=%v", state.ai.panel.boxHeight, minimumComposer)
+	}
+	if state.commandsDrawerHeight() > 0 && state.ai.panel.rect.Y+state.ai.panel.rect.Height > state.commands.bar.Y+1 {
+		t.Fatalf("assistant overlaps commands strip: panel=%+v bar=%+v", state.ai.panel.rect, state.commands.bar)
+	}
 	if dir := os.Getenv("MOTTY_AI_APPROVAL_SCREENSHOTS"); dir != "" {
-		if err := view.Screenshot(filepath.Join(dir, fmt.Sprintf("approval-history-%v-width-%d-extras-%v.png", history, width, extras))); err != nil {
+		if err := view.Screenshot(filepath.Join(dir, fmt.Sprintf("approval-section-%d-bar-%v-history-%v-width-%d-extras-%v-drag-%v.png", state.activeSection, state.commands.shown, history, width, extras, dragComposer))); err != nil {
 			t.Logf("screenshot unavailable: %v", err)
 		}
 	}

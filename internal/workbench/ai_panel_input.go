@@ -143,11 +143,15 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 		if ai.approvals[0].request.NeedsText {
 			approvalMin += 18 + 2 + 32 + 8
 		}
-		reserved := 2*aiComposerMargin + 7 + approvalMin + extrasHeight
-		available := panel.rect.Height - aiTitleRow
+		reserved := 2*aiComposerMargin + 7 + approvalMin
+		available := panel.rect.Height - aiTitleRow - 1 // divider
 		if panel.pageScratch.showSetup {
 			available -= 56 + 8
 		}
+		// Bound extras to preserve fixed composer rows and the last editable line.
+		composerMin := aiComposerTarget + panel.pageScratch.composerBarHeight + state.Theme().Metrics.FontSizeM + 7 + 8
+		extrasHeight = min(extrasHeight, max(available-reserved-composerMin, 0))
+		reserved += extrasHeight
 		// Temporarily shrink dragged boxes for approvals without changing the user's preferred height.
 		boxHeight = min(boxHeight, max(available-reserved, 0))
 		bottom.Shrink(1).MinHeight(boxHeight + reserved)
@@ -178,11 +182,13 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 					state.declareAIChips(c)
 				}
 			}
-			if (len(ai.approvals) > 0 || ai.composerHeight > 0) && extrasHeight > 0 {
-				// Bound ancillary content around approvals and manually enlarged boxes.
-				ui.Scroll(c).Height(extrasHeight - 8).Shrink(0).Scrollbars().Children(func() {
-					ui.Column(c).Gap(8).Children(extras)
-				})
+			if len(ai.approvals) > 0 || ai.composerHeight > 0 {
+				// Omit extras when their budget cannot cover the gap and a positive viewport.
+				if extrasHeight > 8 {
+					ui.Scroll(c).Height(extrasHeight - 8).Shrink(0).Scrollbars().Children(func() {
+						ui.Column(c).Gap(8).Children(extras)
+					})
+				}
 			} else {
 				extras()
 			}
