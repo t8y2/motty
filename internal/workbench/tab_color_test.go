@@ -183,6 +183,11 @@ func TestTabColorSwatchesDoNotTintTheMenuRowUnderThem(t *testing.T) {
 		t.Helper()
 		canvas.Reset()
 		canvas.SetInteraction(hovered, gfx.ID{}, focused, false)
+		// The runtime records the hovered hit's role; swatches are radios inside
+		// the menu, rows are menu items.
+		if _, swatch := hovered.In(hitTabColors); swatch {
+			canvas.SetHoveredRole(gfx.RoleRadio)
+		}
 		canvas.BeginFrame()
 		state.Paint(&canvas, size)
 		canvas.EndFrame()
@@ -238,13 +243,9 @@ func TestTabColorSwatchesDoNotTintTheMenuRowUnderThem(t *testing.T) {
 	}
 }
 
-// Fixing the flicker must not throw away the swatches' hover feedback, nor break
-// the arrow keys once the pointer rests.
-//
-// A swatch becomes the current item the same way a menu row does: it requests
-// focus only on the moment the pointer crosses onto it. It stops requesting while
-// the pointer stays put, so the arrow keys can still move focus back to a menu row,
-// matching how Viva treats a menu row.
+// Moving the pointer over the colour row must not move keyboard focus: the menu
+// row keeps the current item, and the swatches stay reachable by Tab and the
+// arrow keys.
 func TestTabColorSwatchesKeepTheirHoverFeedback(t *testing.T) {
 	state, tabs := fourTabs(t)
 	size := gfx.Size{Width: 1400, Height: 900}
@@ -256,6 +257,9 @@ func TestTabColorSwatchesKeepTheirHoverFeedback(t *testing.T) {
 		t.Helper()
 		canvas.Reset()
 		canvas.SetInteraction(hovered, gfx.ID{}, focused, false)
+		if _, swatch := hovered.In(hitTabColors); swatch {
+			canvas.SetHoveredRole(gfx.RoleRadio)
+		}
 		canvas.BeginFrame()
 		state.Paint(&canvas, size)
 		canvas.EndFrame()
@@ -264,13 +268,11 @@ func TestTabColorSwatchesKeepTheirHoverFeedback(t *testing.T) {
 	// The first frame only establishes the hover state; the second is the frame where
 	// the pointer crosses onto the swatch.
 	paint(gfx.ID{}, gfx.ID{})
-	if request := paint(hitTabColors.At(2), gfx.ID{}); request != hitTabColors.At(2) {
-		t.Fatalf("crossing onto a swatch requested focus %v, want the swatch %v", request, hitTabColors.At(2))
-	}
-	// A small movement that stays inside the swatch is not a crossing: it no longer
-	// grabs focus, so the arrow keys keep working.
 	if request := paint(hitTabColors.At(2), gfx.ID{}); !request.IsZero() {
-		t.Fatalf("a pointer resting on a swatch kept requesting focus %v", request)
+		t.Fatalf("crossing onto a swatch requested focus %v", request)
+	}
+	if request := paint(hitTabColors.At(2), gfx.ID{}); !request.IsZero() {
+		t.Fatalf("a pointer resting on a swatch requested focus %v", request)
 	}
 	// On hover the border becomes Ring, which is visible even without focus.
 	swatch, ok := hitByID(&canvas, hitTabColors.At(2))

@@ -215,16 +215,6 @@ func (state *State) paintTabColorChoices(canvas *gfx.Canvas, menu *components.Co
 // colour. The selected border is the foreground colour at the same weight as
 // any other.
 func (state *State) paintTabColorSwatch(canvas *gfx.Canvas, id gfx.ID, bounds gfx.Rect, label, color string, selected bool) {
-	if canvas.Hovered() == id && canvas.HoverCrossed() {
-		// The menu records its "current item" as the row holding focus: while the
-		// pointer rests on a swatch, the row it left still holds focus, so every
-		// repaint lights that row again and the rows blink as the pointer moves
-		// between swatches. Handing focus to the swatch at the moment the pointer
-		// crosses onto it makes the swatch the current item instead. Requesting it
-		// only on the crossing matches how Viva treats a menu row: while the pointer
-		// stays put, the arrow keys can still move focus back to a menu row.
-		canvas.RequestFocus(id)
-	}
 	components.BeginColorSwatch(canvas, state.Theme(), id, bounds, hostAccent(color)).
 		Flush().
 		Label(label).
