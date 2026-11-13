@@ -341,15 +341,18 @@ func (c *Client) Connect() error {
 	c.tpktConn = tpkt.NewConn(conn, c.logTpkt)
 
 	// Step 2: X.224 Connection Request with RDP negotiation.
-	// Auto-fallback: try TLS+NLA first, then TLS-only, then legacy RDP Security.
 	c.setState(StateX224Negotiation)
 	if err := c.negotiateX224WithFallback(); err != nil {
 		c.Close()
 		return err
 	}
-	if c.selectedProtocol == x224.ProtocolRDP && !c.opts.AllowLegacySecurity {
+	if c.selectedProtocol == x224.ProtocolRDP && c.opts.Security != SecurityStandard {
 		c.Close()
-		return fmt.Errorf("%w: the server only offers standard RDP security, which is not encrypted against an attacker on the path", ErrNegotiationFailed)
+		return fmt.Errorf("%w: the server only offers standard RDP security, which is not protected against an attacker on the path", ErrNegotiationFailed)
+	}
+	if c.selectedProtocol != x224.ProtocolRDP && c.opts.Security == SecurityStandard {
+		c.Close()
+		return fmt.Errorf("%w: standard RDP security was requested, but the server selected %s", ErrNegotiationFailed, x224.ProtocolName(c.selectedProtocol))
 	}
 
 	// Step 3: TLS handshake (if TLS/CredSSP selected)
@@ -518,26 +521,26 @@ func (c *Client) Connect() error {
 	return nil
 }
 
-// negotiateX224WithFallback tries progressively weaker security protocols:
-// TLS+NLA → TLS-only → legacy RDP Security. Each downgrade requires a fresh
-// TCP connection because the server closes the socket on negotiation failure.
+// negotiateX224WithFallback negotiates the security protocol. The default asks
+// for TLS+NLA, then TLS alone; a server that offers neither is refused. Standard
+// RDP Security is asked for only when Options.Security selects it: its keys come
+// from an unauthenticated server key, so anyone on the path can read the session.
+// Each downgrade requires a fresh TCP connection because the server closes the
+// socket on negotiation failure.
 func (c *Client) negotiateX224WithFallback() error {
-	// Protocol sets to try, in order of preference.
-	attempts := []struct {
+	type attempt struct {
 		protos uint32
 		label  string
-	}{
-		{x224.ProtocolSSL | x224.ProtocolHybrid, "TLS+NLA"},
-		{x224.ProtocolSSL, "TLS"},
 	}
-	// Motty divergence: standard RDP Security (RC4 keyed from an unauthenticated
-	// server key) lets anyone on the path read the password, and the negotiation
-	// that selects it is itself unauthenticated, so it is only tried on request.
-	if c.opts.AllowLegacySecurity {
-		attempts = append(attempts, struct {
-			protos uint32
-			label  string
-		}{x224.ProtocolRDP, "RDP Security"})
+	// Protocol sets to try, in order of preference.
+	var attempts []attempt
+	if c.opts.Security == SecurityStandard {
+		attempts = []attempt{{x224.ProtocolRDP, "RDP Security"}}
+	} else {
+		attempts = []attempt{
+			{x224.ProtocolSSL | x224.ProtocolHybrid, "TLS+NLA"},
+			{x224.ProtocolSSL, "TLS"},
+		}
 	}
 
 	var lastErr error

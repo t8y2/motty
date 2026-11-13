@@ -402,6 +402,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if input := state.TerminalFindInput(context); input != nil {
 			return input
 		}
+		if input := state.TerminalFindPreferencesInput(context); input != nil {
+			return input
+		}
 		if input := state.TerminalWordInput(context); input != nil {
 			return input
 		}

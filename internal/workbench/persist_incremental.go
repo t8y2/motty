@@ -294,7 +294,8 @@ func sameSavedHost(left, right savedHost) bool {
 		left.Group == right.Group && slices.Equal(left.Tags, right.Tags) && left.Icon == right.Icon &&
 		left.Address == right.Address && left.User == right.User && left.Port == right.Port &&
 		left.System == right.System &&
-		left.Protocol == right.Protocol && left.Line == right.Line && left.Flow == right.Flow &&
+		left.Protocol == right.Protocol && left.Encoding == right.Encoding &&
+		left.Line == right.Line && left.Flow == right.Flow &&
 		sameSavedProxy(left.Proxy, right.Proxy) &&
 		left.Algorithms == right.Algorithms && left.AlgorithmList == right.AlgorithmList &&
 		left.Authentication == right.Authentication && left.Identity == right.Identity && left.Credential == right.Credential &&
@@ -303,7 +304,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.InteractiveOnly == right.InteractiveOnly &&
 		left.NoHistory == right.NoHistory && left.LoginCommand == right.LoginCommand && left.Transfer == right.Transfer &&
 		left.ViaSSH == right.ViaSSH && left.Clipboard == right.Clipboard && left.Console == right.Console &&
-		left.Chromeless == right.Chromeless
+		left.StandardSecurity == right.StandardSecurity && left.Chromeless == right.Chromeless
 }
 
 func sameSavedProxy(left, right *savedOutboundProxy) bool {

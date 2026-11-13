@@ -9,7 +9,7 @@ import (
 )
 
 func TestOrderAndLookup(t *testing.T) {
-	want := []string{NameListSessions, NameListHosts, NameTerminalRead, NameTerminalExec, NameTerminalStart, NameTerminalPoll, NameTerminalStop, NameToolOutputRead, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPWrite, NameSFTPRemove}
+	want := []string{NameListSessions, NameListHosts, NameTerminalRead, NameTerminalExec, NameTerminalStart, NameTerminalPoll, NameTerminalStop, NameToolOutputRead, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPWrite, NameSFTPRemove, NameRZSZUpload, NameRZSZDownload, NameRZSZStatus}
 	var got []string
 	for _, s := range All() {
 		got = append(got, s.Name)
@@ -55,10 +55,12 @@ func TestSchemasMatchArgs(t *testing.T) {
 	args := map[string]any{
 		NameListSessions: ListSessionsArgs{}, NameListHosts: ListHostsArgs{}, NameTerminalRead: TerminalReadArgs{}, NameTerminalExec: TerminalExecArgs{}, NameTerminalStart: TerminalStartArgs{}, NameTerminalPoll: TerminalPollArgs{}, NameTerminalStop: TerminalStopArgs{}, NameToolOutputRead: ToolOutputReadArgs{}, NameTerminalExecMany: TerminalExecManyArgs{},
 		NameSFTPList: SFTPListArgs{}, NameSFTPRead: SFTPReadArgs{}, NameSFTPWrite: SFTPWriteArgs{}, NameSFTPRemove: SFTPRemoveArgs{},
+		NameRZSZUpload: RZSZUploadArgs{}, NameRZSZDownload: RZSZDownloadArgs{}, NameRZSZStatus: RZSZStatusArgs{},
 	}
 	required := map[string][]string{
 		NameTerminalExec: {"command"}, NameTerminalStart: {"command"}, NameTerminalPoll: {"job_id"}, NameTerminalStop: {"job_id"}, NameToolOutputRead: {"offset", "output_id"}, NameTerminalExecMany: {"command", "sessions"}, NameSFTPList: {"path"}, NameSFTPRead: {"path"},
 		NameSFTPWrite: {"content", "path"}, NameSFTPRemove: {"path"},
+		NameRZSZUpload: {"local_path"}, NameRZSZDownload: {"local_dir", "remote_path"},
 	}
 	for _, s := range All() {
 		var sc struct {
@@ -280,7 +282,9 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 
 func TestHeadlessFullAccessAddsFileChangesWithoutInventingATerminal(t *testing.T) {
 	full := Headless(true, true, false)
-	if len(full) != len(All())-5+3 {
+	// Dropped from the window catalog: terminal_read, tool_output_read, the three
+	// job tools, and the three rz/sz tools. Three host metadata tools are added.
+	if len(full) != len(All())-8+3 {
 		t.Fatal("full access did not expose every tool that works without a terminal")
 	}
 	var writes int

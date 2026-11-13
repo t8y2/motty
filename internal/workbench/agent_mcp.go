@@ -48,7 +48,7 @@ const (
 
 	agentIdleDefault   = 2 * time.Minute
 	agentDialLimit     = 60 * time.Second
-	agentCallTimeout   = 12 * time.Minute // a command may take tools.MaxTimeoutSeconds, and dialing comes first
+	mcpCallTimeout     = 12 * time.Minute // a command may take tools.MaxTimeoutSeconds, and approval or dialing comes first
 	agentAuditRetained = 30 * 24 * time.Hour
 )
 
@@ -148,7 +148,7 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 		Dispatch:     backend.audited(agentGate, log),
 		ServerName:   "motty",
 		Version:      "1",
-		CallTimeout:  agentCallTimeout,
+		CallTimeout:  mcpCallTimeout,
 		Instructions: instructions,
 	})
 }

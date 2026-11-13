@@ -57,7 +57,9 @@ const (
 const instructions = "Tools to inspect and operate the terminal sessions the user has open in Motty. " +
 	"Call list_sessions first to get a session id. list_hosts lists saved SSH hosts explicitly opened to agents, " +
 	"including hosts without a session; its host ids are not terminal session ids. Commands and file changes may need the user's approval " +
-	"in the Motty window; such a call waits for the answer and is refused if the user declines."
+	"in the Motty window; such a call waits for the answer and is refused if the user declines. " +
+	"When this shell was reached by ssh from a jump host, SFTP is not that shell: use rzsz_upload and rzsz_download. The remote needs rz and sz. " +
+	"Those calls report how many bytes have moved. The remote screen stays at rz waiting to receive until the end, which is also what it shows when the sender has not connected; call rzsz_status to tell those apart. A client timeout does not mean the transfer failed."
 
 // Config configures a Server.
 type Config struct {
@@ -314,6 +316,12 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			s.mu.Unlock()
 			w.Header().Set("Mcp-Session-Id", id)
 			ctx = gate.WithOutputOwner(ctx, id)
+		}
+	}
+	if token, ok := rzszProgressCall(r.Header.Get("Accept"), body); ok {
+		if flusher, can := w.(http.Flusher); can {
+			s.serveRZSZProgress(w, flusher, ctx, body, token)
+			return
 		}
 	}
 	out := s.handleBody(ctx, body)

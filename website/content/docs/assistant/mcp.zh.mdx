@@ -47,8 +47,14 @@ HTTP MCP 服务器会把 Motty 中已打开的会话提供给 Claude Code 等外
 | `tool_output_read` | 分页读取桌面 HTTP MCP 中 `terminal_exec` 被截短的结果，不会重跑命令。 |
 | `sftp_list`、`sftp_read` | 列出并读取远程文件。 |
 | `sftp_write`、`sftp_remove` | 修改远程文件。 |
+| `rzsz_upload`、`rzsz_download` | 在当前终端里用 `rz` / `sz`（ZMODEM）上传或下载一个文件。仅桌面 HTTP MCP。 |
 
 观察模式下只有读取类工具可用。
+
+主机配置了跳板时，SFTP 走的是连到最终主机的那条 SSH，`sftp_upload`（独立服务）可以用。
+`rzsz_upload` 和 `rzsz_download` 用的是你正在看的那个终端：先登录跳板，再在终端里
+ssh 到内网，或者这台机器没有 SFTP 时，文件才能跟着这个 shell 走。远端要装有 `rz` 和
+`sz`，终端停在提示符上。一次传一个文件，默认不覆盖。本地路径是运行 Motty 的这台电脑上的绝对路径。
 
 桌面 HTTP MCP 的 `terminal_exec` 仍返回约 64 KiB 的首尾预览。输出超出预览时，
 若采集到完整结果，返回文本中会给出 `output_id`；

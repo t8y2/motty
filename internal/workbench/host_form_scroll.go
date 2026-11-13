@@ -49,7 +49,7 @@ type hostFormChoiceIDs struct {
 // hostFormBody is where the host form's body put each control: the slots it
 // paints by hand and the Box each page Choice was declared in.
 type hostFormBody struct {
-	protocol, label, endpoint, group, tags                 ui.Box
+	protocol, label, endpoint, group, tags, encoding       ui.Box
 	iconField, colorField, transfer, proxy, jump, advanced ui.Box
 	vncRows                                                ui.Box
 	flow, algo                                             ui.Box
@@ -131,7 +131,7 @@ func (state *State) rememberHostChoice(canvas *gfx.Canvas, bounds gfx.Rect, chos
 
 func (state *State) hostFormPopupOpen() bool {
 	e := &state.editor
-	return e.colorPicker.open || e.authOpen || e.identityOpen || e.credentialOpen || e.portsOpen || e.iconOpen
+	return e.colorPicker.open || e.authOpen || e.identityOpen || e.credentialOpen || e.portsOpen
 }
 
 func (state *State) scrollHostForm(event gfx.ScrollEvent) gfx.EventResult {

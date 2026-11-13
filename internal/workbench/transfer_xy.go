@@ -96,7 +96,7 @@ func (state *State) declareXYDialog(c ui.C) {
 
 // openXYSetup opens the dialog for the session.
 func (state *State) openXYSetup(session *Session) {
-	if session.term == nil || session.term.shell == nil || state.transfer.phase != transferNone {
+	if session.term == nil || session.term.shell == nil || session.transferBusy() {
 		return
 	}
 	state.xy = xySetup{mode: xymodem.YMODEM, sending: true}
@@ -115,7 +115,7 @@ func (state *State) clickXYSetup(id gfx.ID) {
 // startXYTransfer asks for the files or the place to put them, and starts.
 func (state *State) startXYTransfer() {
 	session := state.promptSession()
-	if session == nil || session.term == nil || session.term.shell == nil || state.transfer.phase != transferNone {
+	if session == nil || session.term == nil || session.term.shell == nil || session.transferBusy() {
 		state.closeModal()
 		return
 	}
@@ -162,9 +162,9 @@ func (state *State) startXYTransfer() {
 		engine = xymodem.NewReceiver(setup.mode, filepath.Base(name), target)
 	}
 	state.closeModal()
-	state.transfer = fileTransfer{phase: transferOffered, sessionID: session.ID, sending: setup.sending, target: target, sources: sources}
-	state.modal, state.modalSession = modalFileTransfer, session.ID
+	session.transfer = fileTransfer{phase: transferOffered, sessionID: session.ID, sending: setup.sending, target: target, sources: sources}
 	state.startTransfer(session, engine)
+	state.showNextPrompt()
 }
 
 // openSendFiles opens the files to send, refusing what a transfer cannot carry.

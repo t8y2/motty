@@ -58,6 +58,10 @@ type Host struct {
 	// LoginCommand is typed into each new shell of an SSH host once it is ready
 	// for input, as the user would type it. One line, empty for none.
 	LoginCommand string
+	// Encoding is the character set of the remote shell's byte stream. Empty
+	// means UTF-8. A legacy server whose LANG names GB18030, Big5 or Shift_JIS
+	// needs its output decoded and its input encoded with that charset.
+	Encoding string
 	// tunnel marks the ephemeral host of a .xsh bastion tunnel opened on this
 	// computer. It is never saved, so only that launch gets the relaxed policy.
 	tunnel bool
@@ -74,12 +78,15 @@ type Host struct {
 	// through an SSH connection to Address (User is then the SSH account), and
 	// the clipboard is shared with the remote desktop. Console is an RDP host's:
 	// it asks Windows for its console (administrative) session instead of a new
-	// one. Chromeless is a desktop host's too: its page shows the picture alone,
+	// one. StandardSecurity is an RDP host's too: the connection uses Standard
+	// RDP Security alone, with no TLS or NLA, for a server that requires it.
+	// Chromeless is a desktop host's: its page shows the picture alone,
 	// without the bar above it and the status line under it.
-	ViaSSH     bool
-	Clipboard  bool
-	Console    bool
-	Chromeless bool
+	ViaSSH           bool
+	Clipboard        bool
+	Console          bool
+	StandardSecurity bool
+	Chromeless       bool
 
 	// localShell is the shell a local terminal was opened with: a program path,
 	// or a WSL distribution as localshell.WSLShell names it. Empty starts the
@@ -126,6 +133,10 @@ type Session struct {
 	// trusted prompt reported, or the place a split asked for. It is a hint to
 	// the server, which may no longer have that directory.
 	startDirectory string
+	// pathCompletion is this session's directory cache and its own reader for
+	// path completion. A pointer: it holds channels and a once, and the session
+	// value is copied when a tab moves between windows.
+	pathCompletion *pathCompletion
 
 	host     Host // what was dialed, to dial again
 	jumpPath string
@@ -159,6 +170,12 @@ type Session struct {
 	pendingSecretName  string
 	pendingSecretValue string
 	term               *terminal
+	// transfer is this terminal's ZMODEM or X/YMODEM transfer. Each session has
+	// its own: the protocol uses that shell's bytes, so another tab can transfer
+	// at the same time. rzsz is an assistant transfer armed here, waiting for
+	// the remote rz or sz.
+	transfer fileTransfer
+	rzsz     *rzszJob
 	// desk is the remote desktop a VNC tab shows; nil for every other kind.
 	desk     *desktopView
 	version  uint64

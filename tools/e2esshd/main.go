@@ -71,8 +71,16 @@ func main() {
 		}
 		allowedTargets = append(allowedTargets, directTarget{requested: target, dial: target})
 	}
+	// The banner says which server the client thinks it talks to. The default
+	// names no real implementation, so the client keeps its shell-integration
+	// probes to itself; a test that needs them (path completion reads the
+	// shell's own directory) can claim an OpenSSH banner for one run.
+	banner := os.Getenv("E2ESSHD_BANNER")
+	if banner == "" {
+		banner = "SSH-2.0-GopE2E"
+	}
 	config := &ssh.ServerConfig{
-		ServerVersion: "SSH-2.0-GopE2E",
+		ServerVersion: banner,
 		PublicKeyCallback: func(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 			if bytes.Equal(key.Marshal(), fixture.publicKey.Marshal()) || certs.acceptKey(key) {
 				return nil, nil

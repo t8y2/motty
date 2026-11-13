@@ -32,7 +32,10 @@ func (state *State) paintGhostHint(canvas *gfx.Canvas, session *Session, geometr
 	if state.history.acceptHintOff || state.cellHeight < ghostHintMinCell {
 		return gfx.Rect{}, false
 	}
-	if session.term == nil || session.term.screen.KeyboardFlags() != 0 || session.term.screen.Modes().Win32Input {
+	// A program that asked for win32 input records still leaves the terminal
+	// free to accept its own suggestion: the mode is how a local console shell
+	// receives keys as console records, not a claim on this key.
+	if session.term == nil || session.term.screen.KeyboardFlags() != 0 {
 		return gfx.Rect{}, false
 	}
 	// Embedded terminals, such as the CLI sign-in view, have no control part

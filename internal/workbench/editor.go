@@ -37,17 +37,18 @@ type hostEditor struct {
 	groupPicker   hostGroupPicker
 	tags          text.Editor
 	tagPicker     hostTagPicker
-	icon          hostIcon
-	color         text.Editor
-	colorPicker   hostColorPicker
-	form          hostFormScroll
+	// encoding is the remote charset the host's shells use: empty is UTF-8.
+	// encodingPicker is the searchable field that chooses it.
+	encoding       string
+	encodingPicker hostEncodingPicker
+	icon           hostIcon
+	iconPicker     hostIconPicker
+	color          text.Editor
+	colorPicker    hostColorPicker
+	form           hostFormScroll
 	// system is the system the host was last detected to run, whose badge the
 	// automatic icon shows.
 	system sshconn.RemoteSystem
-	// iconOpen is the icon choice's list being open.
-	iconOpen bool
-	// iconReveal says the list has just opened and has to scroll to the chosen icon.
-	iconReveal bool
 	// iconChosen says the user picked an icon, or the host being edited already
 	// has one, so a protocol switch must not replace it with that protocol's
 	// default.
@@ -107,9 +108,9 @@ type hostEditor struct {
 	protocolBefore hostProtocol
 	flow           serial.Flow
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
-	// console is RDP's own: it asks the server for its console (administrative)
-	// session.
-	viaSSH, clipboard, console, chromeless bool
+	// console and standardSecurity are RDP's own: the server's console
+	// (administrative) session, and Standard RDP Security without TLS or NLA.
+	viaSSH, clipboard, console, standardSecurity, chromeless bool
 	// ports are the serial ports found when the picker was last opened.
 	ports     []serial.Port
 	portsOpen bool
@@ -257,7 +258,10 @@ func (editor *hostEditor) load(host Host) {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
-	editor.icon, editor.iconOpen = hostIconAuto, false
+	editor.encodingPicker = hostEncodingPicker{}
+	editor.iconPicker = hostIconPicker{}
+	editor.encoding = host.Encoding
+	editor.icon = hostIconAuto
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
@@ -286,6 +290,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.protocol, editor.flow = host.Protocol, host.Line.Flow
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
+	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
 	editor.portsOpen = false
 	if host.Protocol == protocolSerial {
 		editor.port.Insert(host.Line.String())
@@ -307,6 +312,7 @@ func (editor *hostEditor) host(id uint32) Host {
 		Address:  editor.value(fieldAddress),
 		User:     editor.value(fieldUser),
 		Protocol: editor.protocol,
+		Encoding: editor.encoding,
 	}
 	if editor.protocol == protocolSerial {
 		host.Line, _ = serial.ParseLine(editor.value(fieldPort), editor.flow)
@@ -318,6 +324,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	if editor.protocol == protocolRDP {
 		host.Console = editor.console
+		host.StandardSecurity = editor.standardSecurity
 	}
 	if editor.protocol == protocolSSH {
 		host.SSHOptions = editor.sshOptions.Clone()
@@ -365,7 +372,10 @@ func (editor *hostEditor) reset() {
 	editor.tags = text.Editor{}
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
-	editor.icon, editor.iconChosen, editor.system, editor.iconOpen = hostIconAuto, false, sshconn.SystemUnknown, false
+	editor.encodingPicker = hostEncodingPicker{}
+	editor.iconPicker = hostIconPicker{}
+	editor.encoding = ""
+	editor.icon, editor.iconChosen, editor.system = hostIconAuto, false, sshconn.SystemUnknown
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
@@ -379,7 +389,7 @@ func (editor *hostEditor) reset() {
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
 	editor.protocol, editor.flow, editor.portsOpen = protocolSSH, serial.FlowNone, false
-	editor.viaSSH, editor.clipboard, editor.console, editor.chromeless = false, false, false, false
+	editor.viaSSH, editor.clipboard, editor.console, editor.standardSecurity, editor.chromeless = false, false, false, false, false
 }
 
 // defaultPortText is what the port field holds for a protocol until the user
@@ -423,7 +433,8 @@ func (editor *hostEditor) applyProtocol(previous hostProtocol) {
 			}
 		}
 	}
-	editor.protocol, editor.portsOpen, editor.iconOpen = protocol, false, false
+	editor.protocol, editor.portsOpen = protocol, false
+	editor.iconPicker.control.Open = false
 	if !editor.iconChosen {
 		if protocol == protocolSerial {
 			editor.icon = hostIconSerial

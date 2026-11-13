@@ -188,7 +188,7 @@ func (state *State) inputGuardAvailable(session *Session) bool {
 	return state.modal == modalNone && state.activeSection == sectionTerminal && state.activeSessionID == session.ID && state.broadcast == 0 && !state.transfers.open && state.knownHosts.action == knownHostsActionNone &&
 		t != nil && t.shell != nil && !t.ended && t.exec == nil && len(t.rx) == 0 && t.inputGuard.active && t.inputGuard.environment.Charset != "" && t.commandReporting && t.folderToken != "" &&
 		session.desk == nil && session.containerCommand == "" && !t.screen.Modes().AltScreen && t.screen.KeyboardFlags() == 0 && !t.screen.Modes().Win32Input &&
-		!(state.transfer.phase != transferNone && state.transfer.sessionID == session.ID)
+		!session.transferBusy()
 }
 
 func (state *State) guardTerminalText(session *Session, event app.TextEvent) bool {

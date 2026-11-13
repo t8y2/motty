@@ -386,7 +386,38 @@ func (state *State) Shortcut(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		}
 		return gfx.EventResult{}
 	}
+	if result, handled := state.popupTypeaheadShortcut(event, chord); handled {
+		return result
+	}
 	return state.shortcut(event, chord)
+}
+
+// popupTypeaheadShortcut routes a printable key that no binding or snippet
+// claims to the typeahead of the open popup menu or closed select it lands on.
+// A window offers printable keys to OnShortcut when nothing edits text, and
+// only named keys to OnKey (see app.Config), so the typeahead State.Key drives
+// never sees a typed letter in a real window; without this it would run only
+// where a test feeds State.Key an event directly.
+func (state *State) popupTypeaheadShortcut(event gfx.KeyEvent, chord keymap.Chord) (gfx.EventResult, bool) {
+	if event.Release || event.Text == "" || state.modal == modalShortcutCapture ||
+		event.Modifiers&^(gfx.ModifierShift) != 0 {
+		return gfx.EventResult{}, false
+	}
+	if state.shortcuts.actionFor(chord) != shortcutNone || state.snippetFor(chord, -1) >= 0 {
+		return gfx.EventResult{}, false
+	}
+	// A field that edits text owns its letters through the text system, and a
+	// remote desktop that holds the keyboard owns every key.
+	if state.shortcutTextInput(event.Target) {
+		return gfx.EventResult{}, false
+	}
+	if _, view := state.focusedDesktop(event.Target); view != nil && !view.released {
+		return gfx.EventResult{}, false
+	}
+	if result, handled := state.menuKey(event); handled {
+		return result, true
+	}
+	return state.selectTypeaheadKey(event)
 }
 
 // shortcut shares contextual routing between printable and named bindings.

@@ -259,8 +259,10 @@ var syncedSettings = map[string]bool{
 	"sftp_panel_auto_open":         true,
 	"sftp_panel_side":              true,
 	"command_history":              true,
+	"command_completion_mode":      true,
 	"command_suggest_off":          true,
 	"command_inline_suggest_off":   true,
+	"command_accept_hint_off":      true,
 }
 
 // stateVersionFields are written back as this build's own on every load.

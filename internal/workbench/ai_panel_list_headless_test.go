@@ -4,9 +4,124 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
+	"motty/internal/ai/risk"
 	"motty/internal/ai/store"
 )
+
+func TestHeadlessApprovalActionsStayVisibleWithLongDetails(t *testing.T) {
+	state := agentPanel(t)
+	state.ai.panelWidth = aiPanelMin
+	regular := approvalFixture(state, risk.Medium, false)
+	critical := approvalFixture(state, risk.Critical, true)
+	targets := strings.Repeat("web-production.example.com; ", 24) + "last-host"
+	regular.request.SessionLabel = targets
+	critical.request.SessionLabel = targets
+
+	var nativeInput app.TextInput
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Width: MinimumWindowWidth, Height: MinimumWindowHeight, Tree: Tree(),
+		Paint: state.Paint, OnResize: state.Resize, OnPointer: state.Pointer,
+		OnKey: state.Key, OnScroll: state.Scroll,
+		TextInput: func(context app.TextInputContext) *app.TextInput {
+			if input := state.AIPanelInput(context); input != nil {
+				return input
+			}
+			editor := state.EditorFor(context.ID)
+			if editor == nil {
+				return nil
+			}
+			nativeInput = app.TextInput{Editor: editor, NavigationKeys: context.NavigationKeys}
+			return &nativeInput
+		},
+	}), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	visible := func(id gfx.ID) gfx.Hit {
+		t.Helper()
+		panel := state.ai.panel.rect
+		for _, hit := range view.Snapshot().Hits {
+			if hit.ID == id {
+				box := hit.Bounds
+				if box.Width <= 0 || box.Height <= 0 || box.X < panel.X ||
+					box.X+box.Width > panel.X+panel.Width || box.Y < panel.Y || box.Y+box.Height > panel.Y+panel.Height {
+					t.Fatalf("%q is outside the assistant panel: bounds=%+v panel=%+v", hit.Label, box, panel)
+				}
+				return hit
+			}
+		}
+		t.Fatalf("hit %v is not painted", id)
+		return gfx.Hit{}
+	}
+	click := func(hit gfx.Hit) {
+		t.Helper()
+		box := hit.Bounds
+		if err := view.Click(box.X+box.Width/2, box.Y+box.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Rest(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	visible(hitAIDecline)
+	approve := visible(hitAIApprove)
+	if approve.Disabled {
+		t.Fatal("manual approval in the low-risk scope is disabled")
+	}
+
+	details := state.ai.panel.approvalLay.bounds
+	if err := view.Scroll(gfx.ScrollEvent{X: details.X + 8, Y: details.Y + 8, DeltaY: 10000, Precise: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	scroll := state.ai.panel.approvalLay.scroll
+	if scroll.Max() <= 0 || !scroll.AtEnd() || !view.HasText("last-host") {
+		t.Fatalf("scrolling the approval details did not reveal the last target: offset=%v max=%v", scroll.Offset, scroll.Max())
+	}
+	if after := visible(hitAIApprove); after.Bounds != approve.Bounds {
+		t.Fatalf("scrolling moved the Approve button: %+v -> %+v", approve.Bounds, after.Bounds)
+	}
+	click(approve)
+	select {
+	case answer := <-regular.reply:
+		if !answer.approved {
+			t.Fatalf("regular request was declined: %+v", answer)
+		}
+	default:
+		t.Fatal("clicking Approve did not answer the regular request")
+	}
+	if state.ai.panel.approvalLay.scroll.Offset != 0 {
+		t.Fatal("the next approval inherited the previous scroll position")
+	}
+	if !visible(hitAIApprove).Disabled {
+		t.Fatal("critical approval is enabled without the confirmation word")
+	}
+	click(visible(hitAIConfirm))
+	if err := view.Type(critical.request.Confirm); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	click(visible(hitAIApprove))
+	select {
+	case answer := <-critical.reply:
+		if !answer.approved || answer.text != critical.request.Confirm {
+			t.Fatalf("critical approval returned %+v", answer)
+		}
+	default:
+		t.Fatal("clicking Approve with the confirmation word did not answer the critical request")
+	}
+}
 
 // TestHeadlessConversationFollowsNewRowsAndLeavesAScrolledReaderAlone drives
 // the page List through the runtime: a conversation follows rows that arrive

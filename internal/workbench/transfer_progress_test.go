@@ -78,24 +78,26 @@ func TestTransferProgressCountsTheTerminalsOwnTransfer(t *testing.T) {
 	state := newTestState(t, Options{Group: group})
 	// A transfer the terminal runs itself, with sz or rz, is not one of the
 	// transfer center's, and is as much work as the panels' transfers.
-	state.transfer = fileTransfer{
-		phase:    transferRunning,
-		progress: zmodem.Progress{Name: "release.tar.gz", Size: 2000, Done: 500},
-	}
+	state.sessions = []Session{{
+		transfer: fileTransfer{
+			phase:    transferRunning,
+			progress: zmodem.Progress{Name: "release.tar.gz", Size: 2000, Done: 500},
+		},
+	}}
 	state.reportTransferProgress()
 	if told.active != 1 || told.fraction != 0.25 {
 		t.Fatalf("terminal transfer: active=%d fraction=%v, want 1 and 0.25", told.active, told.fraction)
 	}
 	// A change the bar cannot draw is not sent.
 	calls := told.calls
-	state.transfer.progress.Done = 505
+	state.sessions[0].transfer.progress.Done = 505
 	state.reportTransferProgress()
 	if told.calls != calls {
 		t.Fatal("a fraction finer than the bar draws reached the desktop")
 	}
 	// A transfer whose size the other end has not announced has no bar: one at
 	// its start would say the work had not begun.
-	state.transfer.progress.Size = -1
+	state.sessions[0].transfer.progress.Size = -1
 	state.reportTransferProgress()
 	if told.fraction >= 0 {
 		t.Fatalf("fraction of an unannounced size = %v, want no bar", told.fraction)

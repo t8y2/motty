@@ -17,15 +17,19 @@ import (
 type completionWorld struct {
 	state   *State
 	shell   *fakeShell
+	conn    *fakeConn
 	session *Session
 	clock   time.Duration
 }
 
 func newCompletionWorld(t *testing.T) *completionWorld {
 	t.Helper()
-	state, _, _, shell := liveSession(t)
-	w := &completionWorld{state: state, shell: shell, clock: time.Second}
+	state, _, conn, shell := liveSession(t)
+	w := &completionWorld{state: state, shell: shell, conn: conn, clock: time.Second}
 	state.options.Now = func() time.Duration { return w.clock }
+	// The world starts in inline mode, where the ghost is the offer. Tests of
+	// the automatic list set the list mode themselves.
+	state.history.suggestOff, state.history.inlineOff = false, false
 	shell.onWrite = func(p []byte) {
 		shell.say(strings.ReplaceAll(string(p), "\r", "\r\n"))
 	}
@@ -149,17 +153,108 @@ func TestCompletionKeysCloseOrMoveWithoutTyping(t *testing.T) {
 	}
 }
 
-func TestCompletionTypingClosesTheList(t *testing.T) {
+func TestCompletionTypingHandsTheListToTheAutomaticOne(t *testing.T) {
 	w := newCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode
 	w.type_("git s")
 	w.state.openCompletions()
+	if !w.state.completion.list.active || w.state.completion.list.auto {
+		t.Fatal("the shortcut did not open its own list")
+	}
 	w.type_("t")
-	if w.state.completion.list.active {
-		t.Fatal("typing left the list open")
+	list := &w.state.completion.list
+	if !list.active || !list.auto {
+		t.Fatal("typing did not hand the list to the automatic one")
 	}
 	if got := w.shell.typed(); !strings.HasSuffix(got, "git st") {
 		t.Fatalf("typed %q", got)
 	}
+}
+
+// Off stops the automatic menu and the ghost, not the shortcut: the user can
+// still ask for the list. Typing after that closes it, as an explicit list does.
+func TestCompletionShortcutOpensUnderOff(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.suggestOff = true
+	w.state.history.inlineOff = true
+	w.type_("git s")
+	for index := 0; index < 10; index++ {
+		w.state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	if w.state.completion.list.active {
+		t.Fatal("Off opened a list on its own")
+	}
+	w.state.openCompletions()
+	list := &w.state.completion.list
+	if !list.active || list.auto || len(list.candidates) == 0 {
+		t.Fatalf("the shortcut under Off = active %v auto %v candidates %d", list.active, list.auto, len(list.candidates))
+	}
+	w.type_("t")
+	if w.state.completion.list.active {
+		t.Fatal("typing left the shortcut's list open under Off")
+	}
+}
+
+// A single answer is the inline suggestion's job in List + inline; the menu
+// opens for it when there is no inline suggestion to show it.
+func TestCompletionAutoListLeavesAUniqueMatchToTheGhost(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.type_("git statu")
+	for index := 0; index < 10; index++ {
+		w.state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	if w.state.completion.list.active {
+		t.Fatal("a unique answer opened the menu in List + inline mode")
+	}
+	if rest, ok := w.state.commandGhost(w.session); !ok || rest != "s" {
+		t.Fatalf("the unique answer was not offered inline: %q ok=%v", rest, ok)
+	}
+
+	// Without the inline suggestion, the list is the only place it can appear.
+	listOnly := newCompletionWorld(t)
+	listOnly.state.history.inlineOff = true
+	listOnly.type_("git statu")
+	waitCompletionList(t, listOnly)
+	if !listOnly.state.completion.list.auto || len(listOnly.state.completion.list.candidates) != 1 {
+		t.Fatalf("the list-only mode did not open the unique answer: %+v", listOnly.state.completion.list.candidates)
+	}
+}
+
+// The inline mode shows the gray suggestion and never pops a menu.
+func TestInlineModeNeverPopsTheList(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.suggestOff, w.state.history.inlineOff = false, false
+	w.type_("git s")
+	for index := 0; index < 20; index++ {
+		w.state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	if w.state.completion.list.active {
+		t.Fatal("the inline mode opened the list")
+	}
+}
+
+func TestCompletionAutoDismissRemembersTheCommand(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode
+	w.type_("git s")
+	waitCompletionList(t, w)
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: terminalHit(w.state, 0)})
+	if w.state.completion.list.active {
+		t.Fatal("Escape left the list open")
+	}
+	w.type_("t")
+	for index := 0; index < 10; index++ {
+		w.state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	if w.state.completion.list.active {
+		t.Fatal("the dismissed command reopened while typing")
+	}
+	w.session.term.inputGuard.epoch++
+	waitCompletionList(t, w)
 }
 
 func TestCompletionAcceptanceRechecksTheSnapshot(t *testing.T) {

@@ -278,6 +278,9 @@ func (state *State) submitHostDialog() {
 	if !state.commitHostGroupQuery() {
 		return
 	}
+	if !state.commitHostEncodingQuery() {
+		return
+	}
 	if !state.commitHostTagQuery() {
 		return
 	}
@@ -962,10 +965,12 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			return result, true
 		}
 		if event.Key == gfx.KeyEscape && event.Modifiers == 0 && !event.Release && !event.Repeat {
-			state.hostSort.grid.Cancel()
-			state.hostSort.enabled = false
+			state.endHostSort()
 			return handled, true
 		}
+	}
+	if result, handled := state.hostRowReorderKey(event); handled {
+		return result, true
 	}
 	if state.groupActions.open && event.Key == gfx.KeyEscape {
 		state.groupActions.open = false

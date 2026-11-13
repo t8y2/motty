@@ -369,6 +369,10 @@ func (g Gate) Run(ctx context.Context, name string, raw []byte) Result {
 			}
 		}
 		return g.execMany(ctx, name, args)
+	case tools.NameRZSZUpload, tools.NameRZSZDownload:
+		return g.runRZSZ(ctx, name, raw)
+	case tools.NameRZSZStatus:
+		return g.runRZSZStatus(ctx, raw)
 	case tools.NameSFTPWrite:
 		args, err := tools.DecodeSFTPWrite(raw)
 		if err != nil {

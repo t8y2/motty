@@ -4,7 +4,10 @@
 #
 #   tools/live/rdp_live.sh docker    xrdp in a throwaway container (motty-e2e-rdp, port
 #                               3389 on loopback, user motty, password motty-pw);
-#                               the container and its image are removed afterwards
+#                               the container and its image are removed afterwards.
+#                               MOTTY_RDP_SECURITY_LAYER=rdp starts xrdp with
+#                               standard RDP security only and runs
+#                               TestLiveStandardSecurity instead of the TLS tests.
 #   tools/live/rdp_live.sh windows USER PASSWORD
 #                               the physical Windows machine (tools/realwin; run
 #                               `realwin.sh setup` once first): the test binary
@@ -27,10 +30,15 @@ case "${1:-}" in
 docker)
 	trap 'docker rm -f motty-e2e-rdp >/dev/null 2>&1; docker rmi motty-e2e-rdp:latest >/dev/null 2>&1' EXIT
 	docker build --platform linux/amd64 --build-arg APT_PROXY="${DOCKER_BUILD_PROXY:-http://host.docker.internal:7897}" -t motty-e2e-rdp:latest tools/live/rdp
-	docker run -d --name motty-e2e-rdp --platform linux/amd64 -p 127.0.0.1:3389:3389 motty-e2e-rdp:latest
+	security_layer="${MOTTY_RDP_SECURITY_LAYER:-}"
+	docker run -d --name motty-e2e-rdp --platform linux/amd64 -e MOTTY_RDP_SECURITY_LAYER="$security_layer" -p 127.0.0.1:3389:3389 motty-e2e-rdp:latest
 	sleep 6
+	# The standard-security server refuses TLS, so only the test that asks for
+	# standard security applies to it; the others need the default TLS/NLA layer.
+	run=Live
+	if [ "$security_layer" = rdp ]; then run=LiveStandardSecurity; fi
 	MOTTY_RDP_ADDR=127.0.0.1:3389 MOTTY_RDP_USER=motty MOTTY_RDP_PASSWORD=motty-pw MOTTY_RDP_PNG="${MOTTY_RDP_PNG:-}" \
-		go test ./internal/desktop/rdp -run Live -v -count=1
+		MOTTY_RDP_SECURITY="$security_layer" go test ./internal/desktop/rdp -run "$run" -v -count=1
 	;;
 windows)
 	user=${2:?user} password=${3:?password}

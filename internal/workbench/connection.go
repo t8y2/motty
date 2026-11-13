@@ -491,6 +491,7 @@ const (
 	modalHighlightRule
 	modalSnippet
 	modalSnippetDelete
+	modalSnippetVariables
 	modalImportSessions
 	modalFontPicker
 	modalOutboundProxy
@@ -559,6 +560,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.avoidShare = false
 	session.closeSSHBrowser()
 	state.redialSessionForwards(session.ID)
+	state.closeCompletionPath(session)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
 	session.sudoCommands, session.sudoPassword = false, ""
@@ -772,6 +774,7 @@ func (state *State) Wake() {
 		state.pumpRemoteStats(session)
 		state.pumpDesktop(session)
 		state.pump(session)
+		state.pumpCompletionPath(session)
 		state.runLoginCommand(session)
 		// A session-local charset notice changes the available character grid.
 		// Resize after parsing output, never reentrantly from an OSC callback.
@@ -915,6 +918,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
+		state.closeCompletionPath(session)
 		state.closeSFTP(session)
 		state.closeDisconnectedShell(session)
 		if status.Err != nil && !session.disconnected {
@@ -930,6 +934,7 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
+		state.closeCompletionPath(session)
 		state.closeSFTP(session)
 		session.tone = toneFail
 		state.tell(session, toldEnded, status)
@@ -971,10 +976,17 @@ func (state *State) closeDisconnectedShell(session *Session) {
 		return
 	}
 	terminal.rx = terminal.shell.Drain(terminal.rx[:0])
-	if len(terminal.rx) > 0 {
-		terminal.recording.append(state.now(), terminalRecordingOutput, terminal.rx)
-		terminal.write(terminal.rx)
-		state.goLive(session)
+	if len(terminal.rx) > 0 || terminal.decoder != nil {
+		// The last read may end mid-character; decode and flush it before the
+		// shell goes away, so a trailing GB18030 character is not lost.
+		output := terminal.decodeRemote(terminal.rx)
+		output = append(output, terminal.flushRemoteDecoder()...)
+		terminal.rx = terminal.rx[:0]
+		if len(output) > 0 {
+			terminal.recording.append(state.now(), terminalRecordingOutput, output)
+			terminal.write(output)
+			state.goLive(session)
+		}
 	}
 	releaseShell(terminal.shell)
 	terminal.shell = nil
@@ -1231,9 +1243,12 @@ func (state *State) showNextPrompt() {
 		state.modalSession = state.clipboardRequest.sessionID
 		return
 	}
-	if state.transfer.phase == transferOffered {
+	for index := range state.sessions {
+		if state.sessions[index].transfer.phase != transferOffered {
+			continue
+		}
 		state.modal = modalFileTransfer
-		state.modalSession = state.transfer.sessionID
+		state.modalSession = state.sessions[index].ID
 		return
 	}
 	if state.update.offer {
@@ -1245,6 +1260,9 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	if state.modal == modalSnippetVariables {
+		state.snippetPrompt = snippetPromptState{}
+	}
 	if state.modal == modalTerminalInput {
 		state.inputConfirmation = terminalInputConfirmation{}
 	}

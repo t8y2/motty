@@ -325,7 +325,7 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 			c.Part(terminalControlPart)
 			label := t.accessibleName(state.messages.LabelTerminalFmt, session.Address)
 			terminal := ui.Control(c, label, &t.handlers)
-			if session.ID == state.activeSessionID {
+			if session.ID == state.activeSessionID && !t.find.open {
 				terminal.AutoFocus()
 			}
 			terminal.Grow(1).FillWidth().Background(state.ground(state.termPal.terminal)).Draw(t.controlDraw)

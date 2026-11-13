@@ -502,6 +502,11 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		t.rowIDs = t.rowIDs[:rows]
 	}
 	firstFindMatch := 0
+	finding := t.sync == nil && t.find.open && len(t.find.matches) > 0
+	var findInk, findBackground gfx.Color
+	if finding {
+		findInk, findBackground = state.findHighlightColors(false)
+	}
 	for row := 0; row < rows; row++ {
 		column := -1
 		if block && row == cursor.Y {
@@ -516,8 +521,8 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 			to := snap(geometry.left + float32(span.to)*cellWidth)
 			canvas.Fill(gfx.Rect{X: from, Y: y, Width: to - from, Height: cellHeight}, span.color)
 		}
-		if t.sync == nil && t.find.open && len(t.find.matches) > 0 {
-			firstFindMatch = state.paintTerminalFindMatches(canvas, session, geometry, row, t.screen.ViewLine(row), firstFindMatch)
+		if finding {
+			firstFindMatch = state.paintTerminalFindMatches(canvas, &t.find, geometry, row, t.screen.ViewLine(row), firstFindMatch, findInk, findBackground)
 		}
 	}
 	if t.sync == nil {
@@ -528,6 +533,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		edge := geometry.left - gutterRuleGap/2
 		canvas.Fill(gfx.Rect{X: geometry.area.X, Y: geometry.area.Y, Width: edge - geometry.area.X, Height: geometry.area.Height}, withAlpha(pal.termFG, 0.035))
 	}
+	firstFindMatch = 0
 	for row := 0; row < rows; row++ {
 		column := -1
 		if block && row == cursor.Y {
@@ -557,7 +563,14 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 			if t.rowIDs[row] != 0 {
 				identity = gfx.TextIdentity{Owner: session.ID, Item: t.rowIDs[row]}
 			}
-			canvas.LabelRunsWithIdentity(identity, entry.text, gfx.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, entry.runs)
+			runs := entry.runs
+			if finding {
+				t.find.paintRuns, firstFindMatch = terminalFindRuns(t.find.paintRuns, entry, &t.find, t.screen.ViewLine(row), cols, firstFindMatch, findInk)
+				if len(t.find.paintRuns) != 0 {
+					runs = t.find.paintRuns
+				}
+			}
+			canvas.LabelRunsWithIdentity(identity, entry.text, gfx.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, runs)
 		}
 		if t.sync == nil {
 			state.paintTerminalLink(canvas, t, geometry, row)
