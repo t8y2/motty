@@ -721,6 +721,11 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 			session.term.railBounds = bounds
 		}
 		scratch := &dock.sideScratch[side]
+		// An input event can switch sections after the page declared its rail.
+		// The repaint will lay out the rail for the new section.
+		if !scratch.top.Valid() || !scratch.bottom.Valid() {
+			continue
+		}
 		var owner *Session
 		if terminalVisible && primary {
 			owner = session
