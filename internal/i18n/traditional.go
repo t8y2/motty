@@ -2599,6 +2599,14 @@ var traditionalTools = ToolsMessages{
 	UpdateFailedFmt:                 "無法檢查更新：%v",
 	LoginFailedFmt:                  "無法更改開機時啟動：%v",
 }
+var traditionalRuleManagement = RuleManagementMessages{
+	Manage: "管理規則", CountFmt: "%d 條規則", SelectedFmt: "已選 %d 條",
+	SelectAll: "全選", ClearSelection: "取消全選", DeleteSelected: "刪除所選",
+	DeleteSelectedTitle: "刪除所選規則？",
+	DeleteSelectedFmt:   "刪除選中的 %d 條規則？此操作無法撤銷。", Empty: "暫無規則", Close: "完成",
+	HighlightEditTitle: "編輯高亮規則", Duplicate: "此規則已存在。",
+}
+
 var traditionalAutofill = AutofillMessages{
 	Group:              "自動填入規則",
 	Row:                "自動填入規則",

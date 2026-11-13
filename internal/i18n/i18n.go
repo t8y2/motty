@@ -87,7 +87,8 @@ type Messages struct {
 	// TerminalInput holds the terminal command and character-handling notices.
 	TerminalInput TerminalInputMessages
 	// Autofill holds the autofill rules' texts; see autofill.go.
-	Autofill AutofillMessages
+	Autofill       AutofillMessages
+	RuleManagement RuleManagementMessages
 	// Credentials holds the saved passwords' texts; see credentials.go.
 	Credentials CredentialMessages
 	// HostTags holds the host tag manager's texts; see host_tags.go.
@@ -1194,6 +1195,7 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = chineseAIPanel, chineseAISettings, chineseTools
 		messages.Toolbars = chineseToolbars
 		messages.Autofill = chineseAutofill
+		messages.RuleManagement = chineseRuleManagement
 		messages.Credentials = chineseCredentials
 		messages.HostTags = chineseHostTags
 		messages.History = chineseHistory
@@ -1207,6 +1209,7 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = traditionalAIPanel, traditionalAISettings, traditionalTools
 		messages.Toolbars = traditionalToolbars
 		messages.Autofill = traditionalAutofill
+		messages.RuleManagement = traditionalRuleManagement
 		messages.Credentials = traditionalCredentials
 		messages.HostTags = traditionalHostTags
 		messages.History = traditionalHistory
@@ -1220,6 +1223,7 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = englishAIPanel, englishAISettings, englishTools
 		messages.Toolbars = englishToolbars
 		messages.Autofill = englishAutofill
+		messages.RuleManagement = englishRuleManagement
 		messages.Credentials = englishCredentials
 		messages.HostTags = englishHostTags
 		messages.History = englishHistory

@@ -2599,6 +2599,14 @@ var chineseTools = ToolsMessages{
 	UpdateFailedFmt:                 "无法检查更新:%v",
 	LoginFailedFmt:                  "无法更改开机自启:%v",
 }
+var chineseRuleManagement = RuleManagementMessages{
+	Manage: "管理规则", CountFmt: "%d 条规则", SelectedFmt: "已选 %d 条",
+	SelectAll: "全选", ClearSelection: "取消全选", DeleteSelected: "删除所选",
+	DeleteSelectedTitle: "删除所选规则？",
+	DeleteSelectedFmt:   "删除选中的 %d 条规则？此操作无法撤销。", Empty: "暂无规则", Close: "完成",
+	HighlightEditTitle: "编辑高亮规则", Duplicate: "此规则已存在。",
+}
+
 var chineseAutofill = AutofillMessages{
 	Group:              "自动填充规则",
 	Row:                "自动填充规则",
