@@ -549,10 +549,7 @@ func (state *State) declareAIDockedPanel(c ui.C, size gfx.Size) {
 	})
 }
 
-// declareAIDrawer declares the panel as a drawer over the window, as Viva's page
-// Drawer: it paints its scrim and surface on a layer above the page's content
-// and declares the body inside that layer, so a section painted after the page
-// does not cover it.
+// Use the workspace viewport so the drawer never covers the native title bar.
 func (state *State) declareAIDrawer(c ui.C, size gfx.Size) {
 	panel := &state.ai.panel
 	viewport := state.visibleWorkspacePixelBounds(size)
@@ -563,15 +560,21 @@ func (state *State) declareAIDrawer(c ui.C, size gfx.Size) {
 	panel.rect = bounds
 	panel.resize = aiPanelResize{window: viewport, ratio: (bounds.X - viewport.X) / max(viewport.Width-1, 1), handle: 8}
 	panel.drawerOpen = true
-	dismissed := ui.Drawer(c, &panel.drawerOpen, "", ui.DrawerSpec{
-		Side: ui.DrawerRight, Size: drawerExtent, NonModal: true,
-	}, func() {
-		state.declareAIPanelBody(c)
-	}, nil)
-	if dismissed || !panel.drawerOpen {
-		panel.drawerOpen = true // closing now; the next open starts open
+	dismiss := ui.ID(c)
+	if canvas := c.Canvas(); canvas != nil && canvas.Clicked(dismiss) {
 		c.After(state.closeAIPanel)
 	}
+	drawer := components.BeginDrawer(c.Canvas(), state.Theme(), viewport, components.DrawerOptions{
+		Layer: drawerLayer, DismissID: dismiss,
+		Side: components.DrawerRight, ContentExtent: contentWidth,
+	})
+	ui.Stack(c).Absolute().Left(viewport.X).Top(viewport.Y).Size(viewport.Width, viewport.Height).
+		Draw(func(*ui.DrawContext) { drawer.Begin("", "") }).Children(func() {
+		ui.Column(c).Absolute().Left(bounds.X-viewport.X).Top(0).Size(bounds.Width, bounds.Height).Children(func() {
+			state.declareAIPanelBody(c)
+		})
+		ui.Slot(c).Absolute().Size(0, 0).Draw(func(*ui.DrawContext) { drawer.End() })
+	})
 }
 
 // paintAIPanel paints what the declared panel needs outside the page: its resize

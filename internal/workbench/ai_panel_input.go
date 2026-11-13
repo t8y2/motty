@@ -12,19 +12,20 @@ import (
 )
 
 const (
-	aiAutoRows       = 8 // the most rows the box grows to by itself
-	aiMaxReasons     = 4
-	aiMaxSummary     = 5
-	aiApprovalPad    = float32(10)
-	aiApprovalSize   = float32(11)
-	aiApprovalLine   = float32(15)
-	aiButtonHeight   = float32(30)
-	aiSendSize       = float32(28)
-	aiComposerBar    = float32(48) // the row under the text: the model chip and Send
-	aiComposerTarget = float32(32) // the compact target selector above the text
-	aiComposerMargin = float32(8)  // between the box and the panel's edges
-	aiBottomPadding  = float32(12)
-	aiMentionRow     = float32(28)
+	aiAutoRows           = 8 // the most rows the box grows to by itself
+	aiMaxReasons         = 4
+	aiMaxSummary         = 5
+	aiApprovalPad        = float32(10)
+	aiApprovalSize       = float32(11)
+	aiApprovalLine       = float32(15)
+	aiApprovalMinDetails = float32(48) // leave a usable scroll viewport above the actions
+	aiButtonHeight       = float32(30)
+	aiSendSize           = float32(28)
+	aiComposerBar        = float32(48) // the row under the text: the model chip and Send
+	aiComposerTarget     = float32(32) // the compact target selector above the text
+	aiComposerMargin     = float32(8)  // between the box and the panel's edges
+	aiBottomPadding      = float32(12)
+	aiMentionRow         = float32(28)
 )
 
 // aiApprovalLayout keeps the wrapped command and the scroll area for the
@@ -124,8 +125,32 @@ func aiByteOffset(value string, n int) int {
 func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	bottom := ui.Column(c)
+	extrasHeight := float32(0)
+	if text := state.aiNoticeText(); text != "" {
+		lines := c.Canvas().WrapLines(nil, text, aiSmallSize, gfx.WeightRegular, max(panel.rect.Width-2*aiPad-20, 1), 6)
+		extrasHeight += 12 + float32(len(lines))*aiSmallLine + 8
+	}
+	if len(panel.mentions) > 0 {
+		extrasHeight += 6 + float32(len(panel.mentions))*aiMentionRow + 8
+	}
+	if panel.chipRows > 0 {
+		extrasHeight += float32(panel.chipRows)*(aiChipHeight+aiChipGap) - aiChipGap + 8
+	}
+	extrasHeight = min(extrasHeight, 96)
 	if len(ai.approvals) > 0 {
-		bottom.Shrink(1)
+		// Reserve fixed controls and bounded extras so history cannot squeeze them out.
+		approvalMin := aiApprovalPad + 24 + aiApprovalPad - 1 + aiButtonHeight + aiApprovalMinDetails + 2 // border
+		if ai.approvals[0].request.NeedsText {
+			approvalMin += 18 + 2 + 32 + 8
+		}
+		reserved := 2*aiComposerMargin + 7 + approvalMin + extrasHeight
+		available := panel.rect.Height - aiTitleRow
+		if panel.pageScratch.showSetup {
+			available -= 56 + 8
+		}
+		// Temporarily shrink dragged boxes for approvals without changing the user's preferred height.
+		boxHeight = min(boxHeight, max(available-reserved, 0))
+		bottom.Shrink(1).MinHeight(boxHeight + reserved)
 	}
 	bottom.Children(func() {
 		aboveComposer := ui.Column(c).PadSides(7, aiPad, 0, aiPad).Gap(8)
@@ -133,23 +158,33 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 			aboveComposer.Shrink(1)
 		}
 		aboveComposer.Children(func() {
-			if text := state.aiNoticeText(); text != "" {
-				ui.Column(c).PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
-					ui.Paragraph(c, text, 6).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
-				})
-			}
 			if len(ai.approvals) > 0 {
 				state.declareAIApproval(c, body)
 			}
-			if len(panel.mentions) > 0 {
-				ui.Column(c).Pad(3).Border(1, pal.line).Background(pal.surface).Radius(radius.popup).Children(func() {
-					for index, name := range panel.mentions {
-						state.declareAIMention(c, index, name)
-					}
-				})
+			extras := func() {
+				if text := state.aiNoticeText(); text != "" {
+					ui.Column(c).PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
+						ui.Paragraph(c, text, 6).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
+					})
+				}
+				if len(panel.mentions) > 0 {
+					ui.Column(c).Pad(3).Border(1, pal.line).Background(pal.surface).Radius(radius.popup).Children(func() {
+						for index, name := range panel.mentions {
+							state.declareAIMention(c, index, name)
+						}
+					})
+				}
+				if panel.chipRows > 0 {
+					state.declareAIChips(c)
+				}
 			}
-			if panel.chipRows > 0 {
-				state.declareAIChips(c)
+			if (len(ai.approvals) > 0 || ai.composerHeight > 0) && extrasHeight > 0 {
+				// Bound ancillary content around approvals and manually enlarged boxes.
+				ui.Scroll(c).Height(extrasHeight - 8).Shrink(0).Scrollbars().Children(func() {
+					ui.Column(c).Gap(8).Children(extras)
+				})
+			} else {
+				extras()
 			}
 		})
 		ui.Stack(c).Height(boxHeight).MarginSides(aiComposerMargin, aiComposerMargin, aiComposerMargin, aiComposerMargin).Children(func() {
