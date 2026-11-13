@@ -25,7 +25,24 @@ type snippetPromptState struct {
 	editors         []text.Editor
 	slots           []ui.Box
 	dialogError     string
+	// list is the fields' scroll area, and preview the box the resolved
+	// command is shown in; both are what the last paint laid out, so the
+	// wheel handler and the tests read them between paints.
+	list, preview ui.Box
+	listBounds    gfx.Rect
+	listScroll    *ui.ScrollState
+	listSet       bool
 }
+
+// The fields step 68px (62px input and a 6px gap); the list holds five of
+// them before it scrolls, so the preview and the actions stay in the dialog
+// whatever the number of variables.
+const (
+	snippetVarFieldHeight   = 62
+	snippetVarFieldGap      = 6
+	snippetVarFieldStep     = snippetVarFieldHeight + snippetVarFieldGap
+	snippetVarListMaxHeight = 5 * snippetVarFieldStep
+)
 
 func (state *State) openSnippetVariablesDialog(index int, targetSessionID uint32, fromPage bool) {
 	if index < 0 || index >= len(state.snippets.list) {
@@ -83,7 +100,8 @@ func (state *State) declareSnippetVariablesDialog(c ui.C) {
 	if prompt.dialogError != "" {
 		errorExtra = 26
 	}
-	bodyHeight := float32(24+len(prompt.defs)*68+22) + 60 + errorExtra + 16
+	listHeight := min(float32(len(prompt.defs))*snippetVarFieldStep, snippetVarListMaxHeight)
+	bodyHeight := 24 + listHeight + 22 + 60 + errorExtra + 16
 
 	viewport := dialogViewport(c)
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, description, bodyHeight)
@@ -120,13 +138,32 @@ func (state *State) declareSnippetVariablesDialogBody(c ui.C, preview string) {
 	column.Children(func() {
 		ui.Text(c, m.SnippetVarHint).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 8, 0)
 
-		for i := range prompt.defs {
-			prompt.slots[i] = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
-		}
+		// The fields scroll once they outgrow the dialog, so a snippet with
+		// many variables keeps every field, the preview and the actions
+		// reachable instead of pushing them below the window. The wheel and
+		// the scrollbar reach every field; keyboard focus stays with the
+		// fields on screen, as in every other scrollable list of the app: a
+		// control scrolled out of a clip leaves the tab ring with its hits.
+		list := ui.Scroll(c).MaxHeight(snippetVarListMaxHeight).FillWidth().Scrollbars()
+		list.Children(func() {
+			for i := range prompt.defs {
+				prompt.slots[i] = ui.Slot(c).Height(snippetVarFieldHeight).MarginSides(0, 0, snippetVarFieldGap, 0)
+			}
+		})
+		// The inputs are painted inside the area's clip, over the slots; the
+		// bounds the wheel handler tests are where the area ended up, which
+		// only the laid-out draw pass knows.
+		list.DrawOver(func(d *ui.DrawContext) {
+			prompt.listBounds = d.Rect
+			state.paintSnippetVariablesDialogFields(d.Canvas)
+		})
+		prompt.list, prompt.listSet = list, true
+		prompt.listScroll = list.ScrollState()
 
 		ui.Text(c, m.SnippetVarPreview).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18).MarginSides(4, 0, 4, 0)
 
-		ui.Row(c).Fill().Pad(8).Background(pal.terminal).Radius(radius.control).Border(1, pal.line).Children(func() {
+		prompt.preview = ui.Row(c).Fill().Pad(8).Background(pal.terminal).Radius(radius.control).Border(1, pal.line)
+		prompt.preview.Children(func() {
 			ui.Text(c, preview).Mono().FontSize(metrics.FontSizeS).Color(pal.text).LineHeight(16)
 		})
 
@@ -134,10 +171,19 @@ func (state *State) declareSnippetVariablesDialogBody(c ui.C, preview string) {
 			ui.Text(c, prompt.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(8, 0, 0, 0)
 		}
 	})
+}
 
-	column.DrawOver(func(d *ui.DrawContext) {
-		state.paintSnippetVariablesDialogFields(d.Canvas)
-	})
+// scrollSnippetVariables gives the wheel to the fields' scroll area when the
+// pointer is over it. The dialog owns the wheel over the rest of itself, as
+// every modal does, so nothing behind it moves.
+func (state *State) scrollSnippetVariables(event gfx.ScrollEvent) gfx.EventResult {
+	prompt := &state.snippetPrompt
+	if !prompt.listSet || prompt.listScroll == nil || !pointInRect(event.X, event.Y, prompt.listBounds) {
+		return gfx.EventResult{Handled: true}
+	}
+	result := prompt.listScroll.Wheel(event)
+	result.Handled = true
+	return result
 }
 
 func (state *State) paintSnippetVariablesDialogFields(canvas *gfx.Canvas) {

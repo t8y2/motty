@@ -3,11 +3,13 @@
 package workbench
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 )
 
 func TestSnippetDynamicVariablesDialogFlow(t *testing.T) {
@@ -135,5 +137,92 @@ func TestSnippetDynamicVariablesFromPage(t *testing.T) {
 	}
 	if !strings.Contains(shell.typed(), "systemctl restart nginx\r") {
 		t.Fatalf("expected command to be sent, got %q", shell.typed())
+	}
+}
+
+// A snippet with more variables than the list holds must keep the preview and
+// the actions inside the dialog, and every field reachable: the list scrolls,
+// and the field that takes the focus is brought back into it.
+func TestSnippetVariablesDialogManyFieldsStayReachable(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	var command strings.Builder
+	command.WriteString("build")
+	for i := 0; i < 14; i++ {
+		fmt.Fprintf(&command, " --v%d={{v%d:%d}}", i, i, i)
+	}
+	state.snippets.list = []snippet{
+		{Name: "Batch", Command: command.String(), Run: true},
+	}
+	state.openSnippetVariablesDialog(0, 0, false)
+
+	view, err := headless.Open(app.Config{
+		Width: 1400, Height: 900, Tree: Tree(), Paint: state.Paint,
+		OnKey: state.Key, OnPointer: state.Pointer, OnShortcut: state.Shortcut,
+		OnScroll: state.Scroll, OnResize: state.Resize,
+		TextInput: func(c app.TextInputContext) *app.TextInput {
+			if e := state.EditorFor(c.ID); e != nil {
+				return &app.TextInput{Editor: e}
+			}
+			return nil
+		},
+	}, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+
+	prompt := &state.snippetPrompt
+	if !prompt.listSet {
+		t.Fatal("the fields were not declared in a scroll area")
+	}
+	list := prompt.list.Rect()
+
+	// The list scrolls: fourteen fields no longer fit the height it holds.
+	scroll := prompt.list.ScrollState()
+	if scroll.Content <= scroll.Viewport {
+		t.Fatalf("14 fields did not make the list scrollable: content %v, viewport %v", scroll.Content, scroll.Viewport)
+	}
+
+	// The preview and the actions stay inside the window: they were pushed
+	// below its edge before the list scrolled.
+	window := gfx.Rect{Width: 1400, Height: 900}
+	if got := prompt.preview.Rect(); got.Y+got.Height > window.Height || got.Width <= 0 {
+		t.Fatalf("preview box %+v is outside the window", got)
+	}
+	for _, label := range []string{state.messages.Tools.SnippetVarRun, state.messages.Cancel} {
+		var hit gfx.Hit
+		for _, candidate := range view.Snapshot().Hits {
+			if candidate.Label == label && !candidate.IsLabel {
+				hit = candidate
+				break
+			}
+		}
+		if hit.Bounds.Width <= 0 || hit.Bounds.Y+hit.Bounds.Height > window.Height {
+			t.Fatalf("dialog action %q has no place in the window: %+v", label, hit.Bounds)
+		}
+	}
+
+	// Wheel notches over the list scroll it — through the window's own scroll
+	// routing — until the last field is inside the list's viewport: every
+	// field is reachable with the wheel and the scrollbar.
+	for i := 0; i < len(prompt.defs); i++ {
+		if err := view.Scroll(gfx.ScrollEvent{X: list.X + list.Width/2, Y: list.Y + list.Height/2, DeltaY: 48, Precise: true}); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Rest(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if scroll.Offset <= 0 {
+		t.Fatalf("the wheel never moved the list: offset %v", scroll.Offset)
+	}
+	last := len(prompt.defs) - 1
+	slot := prompt.slots[last].Rect()
+	list = prompt.list.Rect()
+	if slot.Y < list.Y || slot.Y+slot.Height > list.Y+list.Height {
+		t.Fatalf("the last field %+v is not reachable in the list %+v", slot, list)
 	}
 }
