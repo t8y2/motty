@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/configstore"
 	"motty/internal/sshconn"
 )
 
@@ -270,7 +272,21 @@ func (state *State) saveRemoteLogPath(session *Session, original, replacement re
 
 	state.replaceHost(index, previous, updated)
 	state.hostDataChanged()
-	if err := state.saveWithResultWithoutRefresh(); err != nil {
+	// This save is not under another store's lock, so it may flush the sync. A
+	// conflict is returned rather than retried here: the retry would rebuild the
+	// snapshot from the store and silently drop the path just added. Reloading
+	// the shared records after the save returns (the same order as host edits)
+	// gives the next attempt a current base.
+	if err := state.saveWithResultModeRecovery(true, false, true); err != nil {
+		if errors.Is(err, configstore.ErrConflict) {
+			refreshErr := state.refreshShared()
+			if refreshErr == nil {
+				// The reload restored the stored host, so the failed edit must not
+				// be rolled back onto whatever now sits at this index.
+				return err
+			}
+			err = errors.Join(err, fmt.Errorf("reload configuration after conflict: %w", refreshErr))
+		}
 		state.replaceHost(index, updated, previous)
 		state.hostDataChanged()
 		return err

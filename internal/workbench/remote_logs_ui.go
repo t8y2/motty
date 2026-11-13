@@ -290,12 +290,14 @@ func (state *State) declareRemoteLogAutoScroll(c ui.C, view *remoteLogView) {
 	label := state.messages.RemoteLogs.AutoScroll
 	width := c.Canvas().TextWidthWeight(label, metrics.FontSizeM, gfx.WeightMedium)
 	theme := state.switchTheme()
+	// The track and thumb keep Viva's switch geometry, scaled by the theme's
+	// density, so the control here matches ui.Switch elsewhere.
+	trackWidth, trackHeight := components.SwitchExtent(theme, false)
+	scale := theme.Metrics.ControlHeight / 32
+	thumbSize := trackHeight - 2*scale
 	ui.SwitchBase(c, &view.follow, label).
-		Size(32+8+width, 28).Shrink(0).HitOutset(0, 0, 0, 0).
+		Size(trackWidth+8+width, max(28, trackHeight+10)).Shrink(0).HitOutset(0, 0, 0, 0).
 		Disabled(view.buffer == nil).Draw(func(d *ui.DrawContext) {
-		// Use an even-height track and a two-pixel inset on both axes so
-		// the thumb stays inside the pill at either end, including at high DPI.
-		const trackWidth, trackHeight, thumbSize = 32, 18, 14
 		track := gfx.Rect{X: d.Rect.X, Y: d.Rect.Y + (d.Rect.Height-trackHeight)/2, Width: trackWidth, Height: trackHeight}
 		progress := float32(0)
 		if d.State.Checked {
@@ -303,10 +305,11 @@ func (state *State) declareRemoteLogAutoScroll(c ui.C, view *remoteLogView) {
 		}
 		look := components.SwitchRecipe(theme, d.State, progress)
 		if d.State.FocusVisible {
-			d.Canvas.RoundedOutline(gfx.Rect{X: track.X - 2, Y: track.Y - 2, Width: trackWidth + 4, Height: trackHeight + 4}, 11, 2, look.Ring)
+			d.Canvas.RoundedOutline(gfx.Rect{X: track.X - 2, Y: track.Y - 2, Width: trackWidth + 4, Height: trackHeight + 4}, trackHeight/2+2, 2, look.Ring)
 		}
 		d.Canvas.Rounded(track, trackHeight/2, look.Track)
-		d.Canvas.Rounded(gfx.Rect{X: track.X + 2 + progress*(trackWidth-thumbSize-4), Y: track.Y + 2, Width: thumbSize, Height: thumbSize}, thumbSize/2, look.Thumb)
+		inset := 1 * scale
+		d.Canvas.Rounded(gfx.Rect{X: track.X + inset + progress*(trackWidth-thumbSize-2*inset), Y: track.Y + (trackHeight-thumbSize)/2, Width: thumbSize, Height: thumbSize}, thumbSize/2, look.Thumb)
 		color := state.pal.text
 		if d.State.Disabled {
 			color = state.pal.muted
