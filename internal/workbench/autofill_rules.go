@@ -329,7 +329,7 @@ func (state *State) openAutofillDialog(rule *autofill.Rule) {
 // that preset sends a fixed text. Both are anchored at the start of the line, so
 // a program that only mentions a password is not taken for the prompt.
 const (
-	sudoPromptPattern = `(?i)^\[sudo\][^\n]*(?:password|密码|密碼)[^\n]*[:：]\s*$`
+	sudoPromptPattern = `(?i)^\[sudo(?::[^\]]*)?\][^\n]*(?:password|密码|密碼)[^\n]*[:：]\s*$`
 	suPromptPattern   = `(?i)^(?:password|密码|密碼|口令)\s*[:：]\s*$`
 )
 
