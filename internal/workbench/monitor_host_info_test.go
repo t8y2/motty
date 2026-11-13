@@ -60,8 +60,14 @@ func TestMonitorHostInfoPrivacyAndNoTooltips(t *testing.T) {
 			}
 			if mask&(1<<i) != 0 {
 				assertHostSecretsAbsent(t, &canvas, value)
-			} else if !canvasContainsText(&canvas, value) || hit.Label != value {
+			} else if !canvasContainsText(&canvas, value) {
 				t.Fatalf("mask %d: visible field %q missing from text: %+v", mask, value, hit)
+			} else if i == 1 {
+				if hit.Label != state.messages.Monitor.AddressCopy || hit.Value != value {
+					t.Fatalf("mask %d: copy button = %+v, want the copy label and address value", mask, hit)
+				}
+			} else if hit.Label != value {
+				t.Fatalf("mask %d: visible field %q missing from hit: %+v", mask, value, hit)
 			}
 			if hit.Hint != "" {
 				t.Fatalf("host information still has a tooltip: %+v", hit)
@@ -89,7 +95,11 @@ func TestMonitorHostInfoFollowsActiveSession(t *testing.T) {
 		want := state.monitorHostInfo(state.contextSession())
 		for i, fieldID := range []gfx.ID{hitMonitorHostName, hitMonitorHostAddress, hitMonitorHostUser} {
 			hit, ok := hitByID(&canvas, fieldID)
-			if !ok || hit.Label != want[i] {
+			wantLabel := want[i]
+			if i == 1 {
+				wantLabel = state.messages.Monitor.AddressCopy
+			}
+			if !ok || hit.Label != wantLabel || (i == 1 && hit.Value != want[i]) {
 				t.Fatalf("session %d: stale host information: %+v, want %q", id, hit, want[i])
 			}
 		}
@@ -144,7 +154,7 @@ func TestMonitorHostInfoSeparatorsRequireVisibleFields(t *testing.T) {
 		wantSeparators int
 	}{
 		{name: "no field space", width: 21},
-		{name: "only copy feedback", width: 21, copied: true, wantFields: 1},
+		{name: "only copy feedback", width: 21, copied: true},
 		{name: "all fields", width: 640, wantFields: 3, wantSeparators: 2},
 	} {
 		t.Run(test.name, func(t *testing.T) {

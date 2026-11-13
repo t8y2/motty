@@ -2956,7 +2956,7 @@ var traditionalMonitor = MonitorMessages{
 	NoDisks: "沒有可用的磁碟資訊", WaitingDetails: "正在讀取主機資訊…", DetailsUnavailable: "部分主機資訊暫不可用，稍後自動重試",
 	Pause: "暫停監控", Resume: "繼續監控", Paused: "已暫停", Updated: "自動重新整理 · 剛剛更新", Interval: "重新整理間隔", IntervalFmt: "%d 秒", Retry: "重試", NotConnected: "連線到伺服器後可檢視監控。",
 	Collapse:      "收起",
-	AddressCopied: "[複製成功]", AddressCopyFailed: "複製位址失敗",
+	AddressCopied: "已複製", AddressCopyFailed: "複製位址失敗", AddressCopy: "複製位址",
 	Logins: "登入工作階段 (who)", NoLogins: "系統未回報登入工作階段", LoginsUnavailable: "無法讀取登入工作階段", LoginsTruncated: "僅顯示前 32 個工作階段",
 }
 

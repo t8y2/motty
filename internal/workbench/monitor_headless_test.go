@@ -35,7 +35,7 @@ func TestMonitorHostAddressCopyFeedback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer view.Close()
-	if err = view.ClickLabel(session.host.Address); err != nil {
+	if err = view.ClickLabel("button:" + state.messages.Monitor.AddressCopy); err != nil {
 		t.Fatal(err)
 	}
 	if len(copied) != 1 || copied[0] != session.host.Address || !view.HasText(state.messages.Monitor.AddressCopied) || len(state.fileNotices.items) != 0 {

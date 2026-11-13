@@ -73,10 +73,16 @@ func (state *State) paintMonitorHostInfo(canvas *gfx.Canvas, b gfx.Rect, session
 		user += min(max(widths[2]-user, 0), max(available-name-address-user, 0))
 		widths = [3]float32{name, address, user}
 	}
-	if feedbackWidth > 0 {
-		widths[1] += feedbackWidth + 4
+	feedbackShown := false
+	if feedbackWidth > 0 && widths[1] > 0 {
+		room := max(b.Width-widths[0]-widths[1]-widths[2]-2*separatorWidth, 0)
+		if add := min(feedbackWidth+4, room); add == feedbackWidth+4 {
+			widths[1] += add
+			feedbackShown = true
+		}
 	}
 	for i, value := range fields {
+		hitLabel := value
 		bounds := gfx.Rect{X: b.X, Y: b.Y, Width: widths[i], Height: b.Height}
 		if bounds.Width > 0 {
 			if hidden[i] {
@@ -91,7 +97,7 @@ func (state *State) paintMonitorHostInfo(canvas *gfx.Canvas, b gfx.Rect, session
 						background = state.pal.surfaceSoft
 						canvas.Rounded(bounds, 4, background)
 					}
-					if feedbackWidth > 0 {
+					if feedbackShown {
 						background = withAlpha(state.pal.success, 0.12)
 						canvas.Rounded(bounds, 4, background)
 					}
@@ -100,16 +106,17 @@ func (state *State) paintMonitorHostInfo(canvas *gfx.Canvas, b gfx.Rect, session
 					}
 					textBounds = bounds.Inset(gfx.Insets{Left: 4, Right: 4})
 					color = colors.cpu
-					if feedbackWidth > 0 {
+					if feedbackShown {
 						color = state.pal.success
 						feedback := gfx.Rect{X: textBounds.X + textBounds.Width - feedbackWidth, Y: textBounds.Y, Width: feedbackWidth, Height: textBounds.Height}
 						monitorLabel(canvas, state.messages.Monitor.AddressCopied, feedback, style.Size, color, style.Weight)
 						textBounds.Width = max(textBounds.Width-feedbackWidth-4, 0)
 					}
-					hit = gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand}
+					hit = gfx.HitOptions{Role: gfx.RoleButton, Cursor: gfx.PointerCursorHand, Value: value}
+					hitLabel = state.messages.Monitor.AddressCopy
 				}
 				monitorLabel(canvas, value, textBounds, style.Size, color, style.Weight)
-				canvas.HitWithOptions(ids[i], bounds, value, hit)
+				canvas.HitWithOptions(ids[i], bounds, hitLabel, hit)
 			}
 		}
 		b.X += widths[i]
