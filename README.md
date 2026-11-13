@@ -153,11 +153,14 @@ all of them are configurable.
 On Windows, choose the local shell from the dropdown in **Settings → Terminal
 → Local shell**, below **Inline suggestions**. Motty detects installed shells
 such as PowerShell, CMD and Git Bash from PATH and common installation folders,
-and lists each installed WSL distribution as its own entry. The file panel
-follows a WSL terminal's folder too, through the distribution's `\\wsl.localhost`
-share. Choose the distribution here, rather than typing `wsl` into PowerShell:
-only a shell Motty starts itself can report its folder. The choice stays on this
-computer and applies to new or reconnected local terminals.
+and lists each installed WSL distribution as its own entry. A tab or side-bar
+row shows the shell's own mark, and a distribution shows its logo. The file
+panel opens inside a WSL terminal's distribution, through the distribution's
+`\\wsl.localhost` share, and follows the folder the shell reports; the resource
+monitor samples the distribution itself. Choose the distribution here, rather
+than typing `wsl` into PowerShell: only a shell Motty starts itself can report
+its folder. The choice stays on this computer and applies to new or reconnected
+local terminals.
 
 ## Features
 
