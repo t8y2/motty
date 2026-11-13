@@ -67,7 +67,7 @@ type toolbarDockUI struct {
 // the group painted into each half of the rail.
 type toolbarDockSideScratch struct {
 	topHeight, bottomHeight float32
-	top, bottom, footer     ui.Box
+	top, bottom             ui.Box
 }
 
 // The bottom strip and each side rail are Part-named containers of the
@@ -640,7 +640,7 @@ func (state *State) declareToolbarDockSide(c ui.C, left, terminalVisible, footer
 	side := toolbarDockSideAt(left)
 	scratch := &dock.sideScratch[side]
 	if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {
-		scratch.top, scratch.bottom, scratch.footer = ui.Box{}, ui.Box{}, ui.Box{}
+		scratch.top, scratch.bottom = ui.Box{}, ui.Box{}
 		return
 	}
 	topZone, bottomZone := toolbarDockSideTop, toolbarDockSideBottom
@@ -669,7 +669,6 @@ func (state *State) declareToolbarDockSide(c ui.C, left, terminalVisible, footer
 	ui.Column(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).Pad(4).Children(func() {
 		scratch.top = ui.Slot(c).Height(scratch.topHeight).Shrink(0)
 		scratch.bottom = ui.Slot(c).Height(scratch.bottomHeight).Shrink(0)
-		scratch.footer = ui.Slot(c).Height(footerHeight).Shrink(0)
 	})
 }
 
@@ -733,10 +732,10 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintToolbarDockSideGroup(canvas, top, topZone, scratch.top.Rect(), background, owner)
 		state.paintToolbarDockSideGroup(canvas, bottom, bottomZone, scratch.bottom.Rect(), background, owner)
 		if footer {
-			rect := scratch.footer.Rect()
-			rect.Y += 4
-			rect.Height = max(0, rect.Height-4)
 			metrics := state.terminalToolbarMetrics()
+			rect := bounds.Inset(gfx.All(4))
+			rect.Y += max(rect.Height-metrics.toolSize, 0)
+			rect.Height = min(rect.Height, metrics.toolSize)
 			state.paintIconButtonSized(canvas, logTool.id, logTool.icon, rect, logTool.hint, logTool.disabled, logTool.style, background, metrics.iconSize)
 		}
 	}

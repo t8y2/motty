@@ -284,3 +284,16 @@ func TestRemoteLogsRetentionBoundsAndLineNumbers(t *testing.T) {
 		t.Fatalf("retained %d bytes across %d lines starting at %d", size, len(snap.lines), snap.first)
 	}
 }
+
+func TestClosingSSHBrowserKeepsRemoteLogsRunning(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	canceled := false
+	session.remoteLogs = &remoteLogView{cancel: func() { canceled = true }}
+	state.tabMenu.open = true
+	state.tabMenu.workspace = state.deck.ActiveWorkspace()
+	state.clickTabMenu(hitTabMenuBrowserClose)
+	if canceled {
+		t.Fatal("closing the SSH browser stopped the log stream")
+	}
+}

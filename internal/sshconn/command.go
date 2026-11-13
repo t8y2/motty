@@ -243,6 +243,17 @@ func (output *commandOutput) execResult() ExecResult {
 // than maxLineBytes. When the command ends by itself the result is its exit
 // status. Canceling ctx closes only this command session.
 func (conn *Conn) StreamCommand(ctx context.Context, command string, maxLineBytes int, line func([]byte) bool) error {
+	return conn.streamCommand(ctx, command, maxLineBytes, false, line)
+}
+
+// StreamCommandSkippingLongLines drains oversized lines without buffering them
+// or interrupting the command. It delivers only complete in-limit lines and
+// the final in-limit partial line, if any.
+func (conn *Conn) StreamCommandSkippingLongLines(ctx context.Context, command string, maxLineBytes int, line func([]byte) bool) error {
+	return conn.streamCommand(ctx, command, maxLineBytes, true, line)
+}
+
+func (conn *Conn) streamCommand(ctx context.Context, command string, maxLineBytes int, skipLongLines bool, line func([]byte) bool) error {
 	if command == "" {
 		return errors.New("sshconn: empty command")
 	}
@@ -312,17 +323,26 @@ func (conn *Conn) StreamCommand(ctx context.Context, command string, maxLineByte
 	}
 
 	reader := bufio.NewReaderSize(stdout, max(maxLineBytes, 16))
+	discarding := false
 	for {
 		data, err := reader.ReadSlice('\n')
 		if operation.Err() != nil {
 			return canceled()
 		}
-		if len(data) > maxLineBytes || errors.Is(err, bufio.ErrBufferFull) {
-			return fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxLineBytes)
+		full := errors.Is(err, bufio.ErrBufferFull)
+		if full || len(data) > maxLineBytes {
+			if !skipLongLines {
+				return fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxLineBytes)
+			}
+			discarding = true
 		}
-		if len(data) != 0 && !line(data) {
+		if full {
+			continue
+		}
+		if !discarding && len(data) != 0 && !line(data) {
 			return nil
 		}
+		discarding = false
 		if err != nil {
 			break
 		}

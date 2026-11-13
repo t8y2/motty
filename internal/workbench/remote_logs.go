@@ -210,7 +210,13 @@ func (state *State) followRemoteLog(session *Session, view *remoteLogView, path 
 	}()
 	go func() {
 		first := true
-		err := conn.StreamCommand(ctx, remoteLogCommand(path.Path), remoteLogLineLimit, func(line []byte) bool {
+		stream := conn.StreamCommand
+		if tolerant, ok := conn.(interface {
+			StreamCommandSkippingLongLines(context.Context, string, int, func([]byte) bool) error
+		}); ok {
+			stream = tolerant.StreamCommandSkippingLongLines
+		}
+		err := stream(ctx, remoteLogCommand(path.Path), remoteLogLineLimit, func(line []byte) bool {
 			if ctx.Err() != nil {
 				return false
 			}

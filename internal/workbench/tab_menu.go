@@ -255,7 +255,6 @@ func (state *State) clickTabMenu(id gfx.ID) bool {
 	case hitTabMenuBrowserClose:
 		if session, ok := state.tabMenuSessionFor(workspace); ok {
 			session.closeSSHBrowser()
-			session.stopRemoteLogs()
 		}
 	case hitTabMenuNewWindow:
 		if frame, ok := state.windowFrameOnScreen(); ok && state.canTearOffTab() {

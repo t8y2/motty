@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -287,6 +288,22 @@ func TestStreamCommandDeliversFinalPartialLine(t *testing.T) {
 		return true
 	})
 	if err != nil || got != "last line" {
+		t.Fatalf("got %q, error %v", got, err)
+	}
+}
+
+func TestStreamCommandSkipsOversizedLinesAndKeepsReading(t *testing.T) {
+	h := connectedCommandHarness(t, func(_ string, channel ssh.Channel) {
+		defer channel.Close()
+		_, _ = io.WriteString(channel, "before\n"+strings.Repeat("x", 128)+"\nafter\n"+strings.Repeat("y", 70))
+		channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+	})
+	var got string
+	err := h.conn.StreamCommandSkippingLongLines(context.Background(), "read", 32, func(line []byte) bool {
+		got += string(line)
+		return true
+	})
+	if err != nil || got != "before\nafter\n" {
 		t.Fatalf("got %q, error %v", got, err)
 	}
 }
