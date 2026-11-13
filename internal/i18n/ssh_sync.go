@@ -24,6 +24,7 @@ type SSHSyncMessages struct {
 	WarnSharedFmt        string
 	WarnOverriddenFmt    string
 	WarnEndpointFmt      string
+	WarnGitAliasFmt      string
 	WarnJumpFmt          string
 	WarnMissingFmt       string
 	WarnMarkers          string
@@ -58,6 +59,7 @@ var englishSSHSync = SSHSyncMessages{
 	WarnSharedFmt:        "%s shares a block with other hosts in the file, so it can only be changed there.",
 	WarnOverriddenFmt:    "%s: an earlier setting in the file overrides %s.",
 	WarnEndpointFmt:      "Skipped %s: another host here already has its address, user and port.",
+	WarnGitAliasFmt:      "Skipped %s: it is a Git remote alias, not a host to open.",
 	WarnJumpFmt:          "Could not map the ProxyJump of %s.",
 	WarnMissingFmt:       "%d synced hosts are missing here, so none were removed from the SSH config.",
 	WarnMarkers:          "Motty's block in the SSH config has damaged markers, so no host was added to it.",
@@ -92,6 +94,7 @@ var chineseSSHSync = SSHSyncMessages{
 	WarnSharedFmt:        "%s 与文件中的其他主机共用一个区块,只能在文件里修改。",
 	WarnOverriddenFmt:    "%s:文件中靠前的设置覆盖了 %s。",
 	WarnEndpointFmt:      "已跳过 %s:这里已有主机使用相同的地址、用户和端口。",
+	WarnGitAliasFmt:      "已跳过 %s:它是 Git 远程别名,不是要打开的主机。",
 	WarnJumpFmt:          "无法映射 %s 的 ProxyJump。",
 	WarnMissingFmt:       "有 %d 台已同步的主机在这里找不到,因此没有从 SSH 配置中删除任何主机。",
 	WarnMarkers:          "SSH 配置中 Motty 区块的标记已损坏,未添加任何主机。",
