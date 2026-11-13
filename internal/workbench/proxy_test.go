@@ -95,11 +95,12 @@ func TestJumpRouteStopsPersistsAndRestarts(t *testing.T) {
 		t.Fatalf("running route config = %+v, valid=%t", config.ProxyJumps, valid)
 	}
 	canvas, texts := paintedTexts(state)
-	if !hasHit(canvas, hitProxyStartStop) || !contains(texts, state.messages.ProxyStop) || !contains(texts, state.messages.ProxyRunning) {
+	switchHit := hitProxyRowSwitchList.At(int(route.ID))
+	if !hasHit(canvas, switchHit) || !contains(texts, state.messages.ProxyRunning) {
 		t.Fatalf("running route page texts=%v hits=%+v", texts, canvas.Hits())
 	}
 
-	state.Click(hitProxyStartStop)
+	state.Click(switchHit)
 	stopped := state.proxies[0]
 	if !stopped.Stopped || stopped.cells[2] != state.messages.ProxyStopped || stopped.label != route.label {
 		t.Fatalf("stopped route = %+v", stopped)
@@ -119,7 +120,7 @@ func TestJumpRouteStopsPersistsAndRestarts(t *testing.T) {
 		t.Fatalf("restored stopped route config = %+v, valid=%t", config.ProxyJumps, valid)
 	}
 
-	state.Click(hitProxyStartStop)
+	state.Click(hitProxyRowSwitchList.At(int(state.proxies[0].ID)))
 	if state.proxies[0].Stopped || state.proxies[0].cells[2] != state.messages.ProxyRunning {
 		t.Fatalf("restarted route = %+v", state.proxies[0])
 	}
@@ -387,7 +388,7 @@ func TestJumpRoutePageAndHostSelectorsAreInteractive(t *testing.T) {
 	state.Click(hitProxyDialogSubmit)
 	canvas, texts = paintedTexts(state)
 	if !contains(texts, "Production") || !contains(texts, "Router") || !contains(texts, state.messages.ProxyRunning) ||
-		!hasHit(canvas, hitProxyRowList.At(0)) || !hasHit(canvas, hitProxyStartStop) {
+		!hasHit(canvas, hitProxyRowList.At(int(state.proxies[0].ID))) || !hasHit(canvas, hitProxyRowSwitchList.At(int(state.proxies[0].ID))) {
 		t.Fatalf("route page texts=%v hits=%+v", texts, canvas.Hits())
 	}
 }
