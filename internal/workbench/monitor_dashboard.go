@@ -70,6 +70,8 @@ type dashboardEditor struct {
 	groups                               []string
 	group                                string
 	groupFilter, groupOpen, selectedOnly bool
+	orderMode                            hostOrderMode
+	orderOpen                            bool
 }
 type dashboardState struct {
 	panels          []monitoring.Panel
@@ -553,6 +555,17 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 		switch {
 		case id == hitDashboardGroupFilter:
 			d.editor.groupOpen = !d.editor.groupOpen
+			d.editor.orderOpen = false
+		case id == hitDashboardSelectMatches && d.editor.page == 0:
+			s.toggleDashboardMatches()
+		case id == hitDashboardOrderMode && d.editor.page == 1:
+			d.editor.orderOpen = !d.editor.orderOpen
+		case id == hitDashboardOrderDismiss:
+			d.editor.orderOpen = false
+		case id.Scope() == hitDashboardOrderModes && d.editor.page == 1:
+			if mode := hostOrderMode(item(id)); mode <= hostOrderIP {
+				s.sortDashboardHosts(mode)
+			}
 		case id == hitDashboardGroupDismiss:
 			d.editor.groupOpen = false
 		case id == hitDashboardSelectedOnly:
@@ -571,6 +584,7 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 		case id == hitDashboardPickTab || id == hitDashboardOrderTab:
 			d.editor.order.Cancel()
 			d.editor.groupOpen = false
+			d.editor.orderOpen = false
 			d.editor.page = 0
 			if id == hitDashboardOrderTab {
 				d.editor.page = 1
@@ -580,6 +594,7 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 			if i := item(id); i < len(d.editor.selected) {
 				if host, ok := s.dashboardHost(d.editor.selected[i]); !ok || !dashboardHostEligible(host) {
 					d.editor.selected = slices.Delete(d.editor.selected, i, i+1)
+					d.editor.orderMode = hostOrderManual
 				}
 			}
 		case id == hitDashboardDialogSave:
@@ -590,6 +605,7 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 		case id.Scope() == hitDashboardHostList:
 			h, ok := s.hostByID(uint32(item(id)))
 			if ok && h.isSSH() && !h.mosh() && h.ID != localHostID {
+				d.editor.orderMode = hostOrderManual
 				if slices.Contains(d.editor.selected, h.CatalogID) {
 					d.editor.selected = slices.DeleteFunc(d.editor.selected, func(v string) bool { return v == h.CatalogID })
 				} else {
