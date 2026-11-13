@@ -45,6 +45,10 @@ type moshConn struct {
 	messages i18n.ToolsMessages
 	notify   func()
 	timeout  time.Duration
+	// cols and rows are the terminal size the session starts from: the size of
+	// the screen it is about to get. Mosh governs the remote terminal's size
+	// from the client, so both ends must start from the same one.
+	cols, rows int
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -63,11 +67,19 @@ func (state *State) newMoshConn(session *Session, host Host, config sshconn.Conf
 	if timeout <= 0 {
 		timeout = 20 * time.Second
 	}
+	cols, rows := 80, 24
+	if session.term != nil {
+		cols, rows = session.term.screen.Size()
+	} else if geometry := state.layoutForSession(session.ID); geometry.cols > 0 && geometry.rows > 0 {
+		cols, rows = geometry.cols, geometry.rows
+	}
 	conn := &moshConn{
 		host:     host,
 		messages: state.messages.Tools,
 		notify:   state.notifyFor(session),
 		timeout:  timeout,
+		cols:     cols,
+		rows:     rows,
 		ctx:      ctx,
 		cancel:   cancel,
 		status:   sshconn.Status{Version: 1, Phase: sshconn.PhaseConnecting},
@@ -231,8 +243,8 @@ func (conn *moshConn) startClient(ctx context.Context) (*mosh.Client, error) {
 		Conn:   socket,
 		Server: server,
 		Key:    key,
-		Cols:   80,
-		Rows:   24,
+		Cols:   conn.cols,
+		Rows:   conn.rows,
 		Notify: conn.notify,
 	})
 	if err != nil {

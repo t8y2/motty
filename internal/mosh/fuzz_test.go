@@ -60,7 +60,7 @@ func FuzzTransportRecv(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
-	transport := NewTransport(ocb, false)
+	transport := NewTransport(ocb, false, newByteState())
 	now := time.Unix(1_700_000_000, 0)
 	f.Add([]byte{})
 	f.Add(make([]byte, minDatagram))

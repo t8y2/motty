@@ -35,6 +35,18 @@ waitfor "MOTTY_MOSH_E2E" 8000
 texts
 layout
 
+# Tab completion redraws the line the shell owns; the completed command must
+# run once, not once per redraw.
+type ech
+key tab
+key space
+settle 300
+type O_E2E_TAB
+key enter
+waitfor "O_E2E_TAB" 8000
+texts
+layout
+
 # Close the tab while the app is still running, so the client's shutdown
 # handshake reaches mosh-server instead of dying with the process. A running
 # shell asks first.

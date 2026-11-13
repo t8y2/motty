@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"motty/internal/term"
 )
 
 // The wire format and the shutdown handshake are only proven against the
@@ -56,6 +58,40 @@ func TestAgainstRealMoshServer(t *testing.T) {
 			t.Fatal("client did not end its shutdown")
 		}
 		waitProcessGone(t, pid, 5*time.Second)
+	})
+
+	// Typing character by character is where the receiver meets the sender's
+	// prospective resend: two states may share a reference, and the second one
+	// repeats content the first already showed. The screen must show each
+	// character once.
+	t.Run("typing shows each character once", func(t *testing.T) {
+		client, pid := startMosh(t)
+		defer killMosh(pid)
+
+		display := term.New(80, 24, 0)
+		pumpScreen(t, client, display, 10*time.Second, "prompt", []byte("%"))
+
+		// A short path keeps the command on one row, so the screen can be
+		// counted without joining wrapped lines.
+		runs := "/tmp/motty_mosh_typing_runs"
+		os.Remove(runs)
+		defer os.Remove(runs)
+		typed := "echo x>>" + runs
+		for _, r := range typed {
+			client.SendInput([]byte(string(r)))
+			pumpScreen(t, client, display, 40*time.Millisecond, "", nil)
+		}
+		client.SendInput([]byte("\r"))
+		pumpScreen(t, client, display, 800*time.Millisecond, "", nil)
+
+		waitForLines(t, runs, 1)
+		time.Sleep(300 * time.Millisecond)
+		if data, err := os.ReadFile(runs); err != nil || strings.Count(string(data), "\n") != 1 {
+			t.Fatalf("command ran %q times, want 1 (%v)", data, err)
+		}
+		if got := screenCount(display, typed); got != 1 {
+			t.Fatalf("the command line appears %d times on screen, want 1:\n%s", got, screenText(display))
+		}
 	})
 
 	t.Run("server exit ends the session", func(t *testing.T) {
@@ -128,6 +164,61 @@ func startMosh(t *testing.T) (*Client, int) {
 		t.Fatal(err)
 	}
 	return client, pid
+}
+
+// pumpScreen drains the client into a terminal for at least d, so the screen
+// the owner would show follows the client's updates. It stops early once
+// marker appears when one is given.
+func pumpScreen(t *testing.T, client *Client, display *term.Terminal, d time.Duration, what string, marker []byte) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	var seen []byte
+	buf := make([]byte, 8192)
+	for time.Now().Before(deadline) {
+		buf = client.Drain(buf[:0])
+		if len(buf) > 0 {
+			display.Write(buf)
+			seen = append(seen, buf...)
+			if marker != nil && bytes.Contains(seen, marker) {
+				return
+			}
+		}
+		select {
+		case <-client.Done():
+			if marker != nil {
+				t.Fatalf("session ended while waiting for %s; err=%v", what, client.Err())
+			}
+			return
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	if marker != nil && !bytes.Contains(seen, marker) {
+		t.Fatalf("timed out waiting for %s; screen:\n%s", what, screenText(display))
+	}
+}
+
+// screenText is every screen row, for a failure message.
+func screenText(display *term.Terminal) string {
+	_, rows := display.Size()
+	var text strings.Builder
+	for y := 0; y < rows; y++ {
+		if line := strings.TrimRight(display.RowText(y), " "); line != "" {
+			text.WriteString(line + "\n")
+		}
+	}
+	return text.String()
+}
+
+// screenCount counts the rows whose text contains s.
+func screenCount(display *term.Terminal, s string) int {
+	_, rows := display.Size()
+	count := 0
+	for y := 0; y < rows; y++ {
+		if strings.Contains(display.RowText(y), s) {
+			count++
+		}
+	}
+	return count
 }
 
 // waitForOutput drains the client until it has seen marker, or until it has

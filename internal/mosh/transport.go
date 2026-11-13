@@ -48,13 +48,18 @@ type Transport struct {
 	hasPendingBase bool
 	pendingDataAck bool
 
-	// Incoming states.
-	receivedNums   []uint64
+	// Incoming states. states holds one complete state per received state
+	// number, sorted by number, because a host diff is relative to the state
+	// its old_num names and the sender may resend from an older base than the
+	// last one delivered (see Transport::recv in the C client).
+	states         []receivedState
+	presented      hostState // the state last handed to the owner; nil until then
 	ackNum         uint64
 	sentAckNum     uint64
 	throwawayNum   uint64
 	lastRecvOldNum uint64
 	lastRecvNewNum uint64
+	lastEchoAck    uint64
 
 	// Crypto sequence, independent of SSP state numbering.
 	seqOut      uint64
@@ -90,18 +95,48 @@ type Transport struct {
 	shutdownAcked        bool
 }
 
-// NewTransport creates a transport. isServer selects the direction bits.
-func NewTransport(ocb *OCB, isServer bool) *Transport {
+// receivedState is one host state the receiver holds: its number and the
+// complete terminal state the remote described.
+type receivedState struct {
+	num   uint64
+	state hostState
+}
+
+// hostState is one complete host-side state. The transport keeps one for every
+// received state so a diff can be applied to the state its old_num names, and
+// hands the owner only the net difference between delivered states. The client
+// uses the terminal screen implementation; transport tests use a plain byte
+// stream.
+type hostState interface {
+	// clone returns an independent copy for a diff to be applied to.
+	clone() hostState
+	// apply applies one host message and returns the echo ack it named. ok is
+	// false when the message could not be understood.
+	apply(diff []byte) (echoAck uint64, ok bool)
+	// diffFrom returns what turns older into this state; older is nil for the
+	// first state the owner sees.
+	diffFrom(older hostState) []byte
+}
+
+// maxReceivedStates bounds the states held for the remote to reference. The
+// remote's own send window and throwaway number keep the queue small; this only
+// caps a misbehaving sender. A state that would exceed it is ignored and the
+// remote retransmits.
+const maxReceivedStates = 64
+
+// NewTransport creates a transport. isServer selects the direction bits, and
+// initial is the state number 0 both ends start from.
+func NewTransport(ocb *OCB, isServer bool, initial hostState) *Transport {
 	now := time.Now()
 	t := &Transport{
-		ocb:          ocb,
-		srtt:         1000 * time.Millisecond,
-		rttvar:       500 * time.Millisecond,
-		rto:          maxRTOInitial,
-		lastSend:     now,
-		lastRecv:     now,
-		receivedNums: []uint64{0},
-		nextAck:      now,
+		ocb:      ocb,
+		srtt:     1000 * time.Millisecond,
+		rttvar:   500 * time.Millisecond,
+		rto:      maxRTOInitial,
+		lastSend: now,
+		lastRecv: now,
+		states:   []receivedState{{num: 0, state: initial}},
+		nextAck:  now,
 	}
 	if isServer {
 		t.toRemote = dirToClient
@@ -152,6 +187,10 @@ func (t *Transport) AckedByRemote() uint64 { return t.ackedByRemote }
 
 // LastRecvNewNum returns the state number of the newest state received.
 func (t *Transport) LastRecvNewNum() uint64 { return t.lastRecvNewNum }
+
+// LastEchoAck returns the newest echo ack carried by a delivered state: the
+// newest user input the remote has applied to its terminal.
+func (t *Transport) LastEchoAck() uint64 { return t.lastEchoAck }
 
 // LastRecv returns when a datagram was last accepted.
 func (t *Transport) LastRecv() time.Time { return t.lastRecv }
@@ -340,8 +379,11 @@ func (t *Transport) sendInstruction(now time.Time, diff []byte, oldNum, newNum u
 	return datagrams
 }
 
-// Recv processes one datagram and returns the remote state diff it carried,
-// if any. now is the client's clock, for testability.
+// Recv processes one datagram and returns the terminal update it produced, if
+// any. A state that only extends what the owner has is delivered as its net
+// difference from the last delivered state; a state that fills a gap is kept
+// for later to reference but not delivered. now is the client's clock, for
+// testability.
 func (t *Transport) Recv(wire []byte, now time.Time) []byte {
 	if len(wire) < minDatagram {
 		return nil
@@ -410,48 +452,94 @@ func (t *Transport) Recv(wire []byte, now time.Time) []byte {
 		t.counterpartyShutdown = true
 		t.ackNum = shutdownNum
 		t.nextAck = now
-		// The final screen diff travels with the shutdown state; still return
-		// it so the tab can show it before it ends.
-		return ti.Diff
+		// The final screen diff travels with the shutdown state; show it before
+		// the tab ends. It is applied to the presented state like any other
+		// message, and only its visible difference is delivered.
+		if t.presented != nil && len(ti.Diff) > 0 {
+			next := t.presented.clone()
+			if _, ok := next.apply(ti.Diff); ok {
+				update := next.diffFrom(t.presented)
+				t.presented = next
+				return update
+			}
+		}
+		return nil
 	}
 
-	for _, n := range t.receivedNums {
-		if n == ti.NewNum {
+	for _, state := range t.states {
+		if state.num == ti.NewNum {
 			return nil
 		}
 	}
-	hasOld := false
-	for _, n := range t.receivedNums {
-		if n == ti.OldNum {
-			hasOld = true
-			break
-		}
-	}
-	if !hasOld {
+	// The diff is relative to this particular state. If it was pruned or never
+	// arrived, the state cannot be reconstructed and is dropped; the sender
+	// will resend from a state the receiver keeps.
+	reference := t.reference(ti.OldNum)
+	if reference < 0 {
 		return nil
 	}
 	if ti.ThrowawayNum > t.throwawayNum {
 		t.throwawayNum = ti.ThrowawayNum
-		filtered := t.receivedNums[:0]
-		for _, n := range t.receivedNums {
-			if n >= t.throwawayNum {
-				filtered = append(filtered, n)
+		kept := t.states[:0]
+		for _, state := range t.states {
+			if state.num >= t.throwawayNum {
+				kept = append(kept, state)
 			}
 		}
-		t.receivedNums = filtered
+		t.states = kept
+		reference = t.reference(ti.OldNum)
+		if reference < 0 {
+			return nil
+		}
+	}
+	if len(t.states) >= maxReceivedStates {
+		return nil
+	}
+	next := t.states[reference].state.clone()
+	echoAck, ok := next.apply(ti.Diff)
+	if !ok {
+		return nil
 	}
 	t.lastRecvOldNum = ti.OldNum
-	t.lastRecvNewNum = ti.NewNum
-	t.receivedNums = append(t.receivedNums, ti.NewNum)
-	if len(t.receivedNums) > 128 {
-		t.receivedNums = t.receivedNums[1:]
+	if ti.NewNum > t.lastRecvNewNum {
+		t.lastRecvNewNum = ti.NewNum
 	}
+	position := len(t.states)
+	for i := range t.states {
+		if t.states[i].num > ti.NewNum {
+			position = i
+			break
+		}
+	}
+	t.states = append(t.states, receivedState{})
+	copy(t.states[position+1:], t.states[position:])
+	t.states[position] = receivedState{num: ti.NewNum, state: next}
+	if position != len(t.states)-1 {
+		// A state older than one already held: it is kept so a later state can
+		// be applied to it, but it is neither shown nor acknowledged.
+		return nil
+	}
+	update := next.diffFrom(t.presented)
+	t.presented = next
 	t.ackNum = ti.NewNum
+	if echoAck > t.lastEchoAck {
+		t.lastEchoAck = echoAck
+	}
 	if len(ti.Diff) > 0 {
 		t.pendingDataAck = true
 	}
 	t.nextAck = now.Add(ackDelay)
-	return ti.Diff
+	return update
+}
+
+// reference finds the held state a diff names, or -1.
+func (t *Transport) reference(num uint64) int {
+	for i := range t.states {
+		if t.states[i].num == num {
+			return i
+		}
+	}
+	return -1
 }
 
 // encryptFragment wraps one fragment in the mosh datagram format.
