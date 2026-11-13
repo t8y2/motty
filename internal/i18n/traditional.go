@@ -2938,6 +2938,7 @@ var traditionalMonitor = MonitorMessages{
 	CPU:            "CPU", Memory: "記憶體", Disks: "磁碟", Network: "網路",
 	LoadFmt: "%.2f / %.2f / %.2f", UptimeFmt: "%d天%d小時", CPUCountFmt: "%d 邏輯核",
 	MoreDisksFmt: "更多（%d）", AllNetworks: "總流量", Hardware: "硬體資訊", NoHardware: "未取得到加速卡指標",
+	GPUMemory: "顯存", Utilization: "負載", Power: "功耗", Temperature: "溫度", Processes: "程序 / 顯存", NoProcesses: "無佔用程序",
 	NoDisks: "沒有可用的磁碟資訊", WaitingDetails: "正在讀取主機資訊…", DetailsUnavailable: "部分主機資訊暫不可用，稍後自動重試",
 	Pause: "暫停監控", Resume: "繼續監控", Paused: "已暫停", Updated: "自動重新整理 · 剛剛更新", Interval: "重新整理間隔", IntervalFmt: "%d 秒", Retry: "重試", NotConnected: "連線到伺服器後可檢視監控。",
 	Collapse: "收起",

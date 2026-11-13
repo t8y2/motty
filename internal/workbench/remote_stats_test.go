@@ -240,31 +240,142 @@ func BenchmarkPaintRemoteStats(b *testing.B) {
 // A server with GPUs gets one extra piece per GPU after the four metrics; one
 // without shows none and costs nothing more.
 func TestRemoteStatsShowGPUPiecesOnlyWhenTheServerHasGPUs(t *testing.T) {
-	gpuPieces := func(lines ...string) []string {
+	gpuReadout := func(lines ...string) ([]string, []string) {
 		state, _, fake, _ := liveSession(t)
 		fake.streamCommand = streamReadings(lines...)
 		state.Click(hitRemoteStats)
 		waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
-		state.Click(hitMonitorHardware)
+		session, _ := state.sessionByIDPointer(state.activeSessionID)
+		if !session.stats.panel.hardwareOpen {
+			t.Fatal("remote monitor hardware section did not start expanded")
+		}
 		var canvas gfx.Canvas
 		state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900})
-		var pieces []string
+		var names []string
 		for _, text := range canvas.Texts() {
-			if strings.HasPrefix(text.Value, "GPU") {
-				pieces = append(pieces, text.Value)
+			if strings.HasPrefix(text.Value, "GPU") && strings.Contains(text.Value, "·") {
+				names = append(names, text.Value)
 			}
 		}
-		return pieces
+		return session.stats.parts[statsMetricCount:], names
 	}
-	if pieces := gpuPieces(statsReadings...); len(pieces) != 0 {
+	if pieces, names := gpuReadout(statsReadings...); len(pieces) != 0 || len(names) != 0 {
 		t.Fatalf("a server without GPUs showed %q", pieces)
 	}
-	pieces := gpuPieces(statsReadings[0],
-		"gop-gpu-nvidia 0, NVIDIA GeForce RTX 4090, 87, 20481, 24564, 71, 312.45, 64\n",
-		"gop-gpu-nvidia 1, NVIDIA GeForce RTX 3060, [N/A], 6144, 12288, [N/A], [N/A], [N/A]\n",
+	pieces, names := gpuReadout(statsReadings[0],
+		"gop-gpu-nvidia 0, GPU-A, NVIDIA GeForce RTX 4090, 87, 20481, 24564, 71, 312.45, 300, 64\n",
+		"gop-gpu-nvidia 1, GPU-B, NVIDIA GeForce RTX 3060, [N/A], 6144, 12288, [N/A], [N/A], [N/A], [N/A]\n",
 		statsReadings[1])
 	want := []string{"GPU0 87% 20.0/24.0G 71°C 312W", "GPU1 6.0/12.0G"}
 	if strings.Join(pieces, "|") != strings.Join(want, "|") {
 		t.Fatalf("GPU pieces = %q, want %q", pieces, want)
+	}
+	wantNames := []string{"GPU0 · NVIDIA GeForce RTX 4090", "GPU1 · NVIDIA GeForce RTX 3060"}
+	if strings.Join(names, "|") != strings.Join(wantNames, "|") {
+		t.Fatalf("GPU names = %q, want %q", names, wantNames)
+	}
+}
+
+func TestRemoteMonitorHardwareStartsExpandedWithoutForcingItBackOpen(t *testing.T) {
+	state, _, fake, _ := liveSession(t)
+	fake.streamCommand = streamReadings(statsReadings...)
+	state.Click(hitRemoteStats)
+	waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
+	session := state.contextSession()
+	defer state.stopRemoteStats(session)
+	if !session.stats.panel.hardwareOpen {
+		t.Fatal("hardware section did not start expanded")
+	}
+	state.Click(hitMonitorHardware)
+	if session.stats.panel.hardwareOpen {
+		t.Fatal("hardware section did not collapse")
+	}
+	state.ensureMonitor(session)
+	if session.stats.panel.hardwareOpen {
+		t.Fatal("refreshing reopened a collapsed hardware section")
+	}
+	state.stopRemoteStats(session)
+	state.ensureMonitor(session)
+	if !session.stats.panel.hardwareOpen {
+		t.Fatal("a new remote monitor did not start with hardware expanded")
+	}
+}
+
+func TestHardwareShowsGPUMetricsAndProcesses(t *testing.T) {
+	state, _, fake, _ := liveSession(t)
+	fake.streamCommand = streamReadings(
+		statsReadings[0],
+		"gop-gpu-nvidia 0, GPU-A, NVIDIA RTX A6000, 100, 47311, 49140, 87, 291, 300, 74\n",
+		"gop-gpu-nvidia-proc GPU-A, 1698741, /opt/conda/envs/gsdti/bin/python, 21754\n",
+		"gop-gpu-nvidia-proc GPU-A, 1708478, python, 6260\n",
+		statsReadings[1])
+	state.Click(hitRemoteStats)
+	waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900})
+	texts := []string{}
+	for _, text := range canvas.Texts() {
+		texts = append(texts, text.Value)
+	}
+	joined := strings.Join(texts, "|")
+	for _, want := range []string{
+		"NVIDIA RTX A6000", "46.2 / 48.0 GiB", "100%", "291 / 300 W", "87°C",
+		"python · PID 1698741", "python · PID 1708478",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("hardware UI missing %q; texts=%q", want, joined)
+		}
+	}
+}
+
+// TestHardwareShowsALightlyUsedCardsExactMemory keeps the exact figure of a
+// barely used card: the value column has to fit "12.0 MiB / 12.0 GiB" rather
+// than ellipsize it, and the card's empty process list still says so.
+func TestHardwareShowsALightlyUsedCardsExactMemory(t *testing.T) {
+	state, _, fake, _ := liveSession(t)
+	fake.streamCommand = streamReadings(
+		statsReadings[0],
+		"gop-gpu-nvidia 0, GPU-A, NVIDIA GeForce RTX 3060, 0, 12, 12288, 38, 14, 170, [N/A]\n",
+		statsReadings[1])
+	state.Click(hitRemoteStats)
+	waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900})
+	texts := []string{}
+	for _, text := range canvas.Texts() {
+		texts = append(texts, text.Value)
+	}
+	joined := strings.Join(texts, "|")
+	for _, want := range []string{"12.0 MiB / 12.0 GiB", state.messages.Monitor.NoProcesses} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("hardware UI missing %q; texts=%q", want, joined)
+		}
+	}
+}
+
+// TestHardwareDoesNotClaimAMDCardHasNoProcesses keeps the process section off a
+// card whose vendor the monitor does not collect processes for.
+func TestHardwareDoesNotClaimAMDCardHasNoProcesses(t *testing.T) {
+	state, _, fake, _ := liveSession(t)
+	fake.streamCommand = streamReadings(
+		statsReadings[0],
+		`gop-gpu-rocm {"card0": {"GPU use (%)": "35", "VRAM Total Memory (B)": "17163091968", "VRAM Total Used Memory (B)": "292503552", "Temperature (Sensor edge) (C)": "45.0", "Card series": "Radeon RX 7900 XTX"}}`+"\n",
+		statsReadings[1])
+	state.Click(hitRemoteStats)
+	waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900})
+	texts := []string{}
+	for _, text := range canvas.Texts() {
+		texts = append(texts, text.Value)
+	}
+	joined := strings.Join(texts, "|")
+	if !strings.Contains(joined, "Radeon RX 7900 XTX") {
+		t.Fatalf("hardware UI missing the AMD card; texts=%q", joined)
+	}
+	for _, absent := range []string{state.messages.Monitor.NoProcesses, state.messages.Monitor.Processes} {
+		if strings.Contains(joined, absent) {
+			t.Fatalf("an AMD card claimed %q; texts=%q", absent, joined)
+		}
 	}
 }

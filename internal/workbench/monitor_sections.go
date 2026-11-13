@@ -70,6 +70,30 @@ func monitorCoresHeight(p *monitorView) float32 {
 	}
 	return h
 }
+func monitorGPUHeight(p *monitorView) float32 {
+	if !p.hardwareOpen {
+		return 0
+	}
+	if len(p.gpuRows) == 0 {
+		return 28
+	}
+	height := float32(0)
+	for index := range p.gpuRows {
+		height += 94
+		row := &p.gpuRows[index]
+		if row.processesKnown {
+			if len(row.processes) == 0 {
+				height += 24
+			} else {
+				height += 18 + float32(len(row.processes))*26
+			}
+		}
+		if index < len(p.gpuRows)-1 {
+			height += 16
+		}
+	}
+	return height
+}
 func monitorDisksHeight(p *monitorView) float32 {
 	if p.disksCollapsed {
 		return 32
@@ -93,7 +117,7 @@ func monitorContentHeight(p *monitorView) float32 {
 	if p.page == 0 {
 		h += monitorGap + 28
 		if p.hardwareOpen {
-			h += 28 * float32(max(1, len(p.sample.GPUs)))
+			h += monitorGPUHeight(p)
 			if p.data.Kernel != "" {
 				h += 24
 			}
@@ -252,6 +276,79 @@ func (s *State) paintMonitorCores(c *gfx.Canvas, p *monitorView, b, viewport gfx
 	}
 }
 
+// paintMonitorGPUs draws each accelerator as metric bars, then the compute
+// processes the NVIDIA driver reports against that card.
+func (s *State) paintMonitorGPUs(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) float32 {
+	colors := s.monitorColors()
+	x, y, w := b.X+10, b.Y, b.Width-20
+	for index := range p.gpuRows {
+		row := &p.gpuRows[index]
+		if monitorRowVisible(viewport, y, 18) {
+			monitorLabel(c, row.name, gfx.Rect{X: x, Y: y, Width: w, Height: 18}, 11, colors.memory, gfx.WeightSemibold)
+		}
+		y += 22
+		rows := [...]struct {
+			label, value string
+			valueValue   float64
+		}{
+			{p.powerLabel, row.power, row.powerValue},
+			{p.memoryLabel, row.memory, row.memoryValue},
+			{p.temperatureLabel, row.temperature, row.temperatureValue},
+			{p.utilLabel, row.util, row.utilValue},
+		}
+		for _, metric := range rows {
+			if monitorRowVisible(viewport, y, 16) {
+				monitorLabel(c, metric.label, gfx.Rect{X: x, Y: y, Width: w * .15, Height: 16}, 10, colors.muted, gfx.WeightRegular)
+				monitorRight(c, metric.value, gfx.Rect{X: x + w*.15, Y: y, Width: w * .42, Height: 16}, 10, colors.text, gfx.WeightMedium)
+				if metric.valueValue >= 0 {
+					theme := s.Theme()
+					theme.Primary = s.monitorMetricColor(metric.valueValue)
+					theme.Muted = colors.track
+					components.Progress(c, theme, gfx.Rect{X: x + w*.58, Y: y + 5, Width: w * .42, Height: 5}, float32(min(metric.valueValue, 100)/100))
+				}
+			}
+			y += 18
+		}
+		if !row.processesKnown {
+			// This vendor's processes are not collected; say nothing rather
+			// than report a card with none.
+		} else if len(row.processes) == 0 {
+			if monitorRowVisible(viewport, y, 24) {
+				monitorLabel(c, p.noProcessLabel, gfx.Rect{X: x, Y: y, Width: w, Height: 24}, 10, colors.muted, gfx.WeightRegular)
+			}
+			y += 24
+		} else {
+			if monitorRowVisible(viewport, y, 18) {
+				monitorLabel(c, p.processLabel, gfx.Rect{X: x, Y: y, Width: w, Height: 18}, 10, colors.muted, gfx.WeightSemibold)
+			}
+			y += 18
+			for _, process := range row.processes {
+				if monitorRowVisible(viewport, y, 20) {
+					monitorLabel(c, process.label, gfx.Rect{X: x + 10, Y: y, Width: w - 82, Height: 20}, 10, colors.text, gfx.WeightRegular)
+					monitorRight(c, process.memory, gfx.Rect{X: x + w - 70, Y: y, Width: 60, Height: 20}, 10, colors.muted, gfx.WeightMedium)
+				}
+				y += 26
+			}
+		}
+		if index < len(p.gpuRows)-1 {
+			y += 16
+		}
+	}
+	return y
+}
+
+func (s *State) monitorMetricColor(value float64) gfx.Color {
+	colors := s.monitorColors()
+	switch {
+	case value >= 95:
+		return s.pal.danger
+	case value >= 75:
+		return colors.disk
+	default:
+		return colors.memory
+	}
+}
+
 func (s *State) paintMonitorDisks(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) {
 	colors, m := s.monitorColors(), s.messages.Monitor
 	c.RoundedBorder(b, 10, 1, colors.border, colors.surface)
@@ -350,14 +447,11 @@ func (s *State) paintMonitorSections(c *gfx.Canvas, v *remoteStatsView, b, viewp
 				monitorLabel(c, p.data.Kernel, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: 24}, 11, colors.muted, gfx.WeightRegular)
 				y += 24
 			}
-			if len(p.sample.GPUs) == 0 {
+			if len(p.gpuRows) == 0 {
 				monitorLabel(c, m.NoHardware, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: 28}, 11, colors.muted, gfx.WeightRegular)
 				y += 28
 			} else {
-				for _, part := range v.parts[min(int(statsMetricCount), len(v.parts)):] {
-					monitorLabel(c, part, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: 28}, 11, colors.muted, gfx.WeightRegular)
-					y += 28
-				}
+				y = s.paintMonitorGPUs(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorGPUHeight(p)}, viewport)
 			}
 		}
 		if !p.loginsUnsupported {

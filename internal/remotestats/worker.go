@@ -115,6 +115,7 @@ func (worker *Worker) run(first, next time.Duration) {
 		have                 bool
 		fault                error
 		pending              []GPU // the GPU lines that came before the counters line they belong to
+		pendingGPUProcesses  []GPUProcess
 		primary              string
 		previousPrimary      string
 		cores, previousCores []coreCounters
@@ -185,7 +186,14 @@ func (worker *Worker) run(first, next time.Duration) {
 			return true
 		}
 		if isGPULine(line) {
-			pending = parseGPULine(pending, line)
+			text := strings.TrimSpace(string(line))
+			if strings.HasPrefix(text, gpuNvidiaProcessPrefix) {
+				if process, ok := parseNvidiaProcess(text[len(gpuNvidiaProcessPrefix):]); ok && len(pendingGPUProcesses) < MaxGPUs*MaxGPUProcesses {
+					pendingGPUProcesses = append(pendingGPUProcesses, process)
+				}
+			} else {
+				pending = parseGPULine(pending, line)
+			}
 			return true
 		}
 		current, err := parse(line)
@@ -196,7 +204,7 @@ func (worker *Worker) run(first, next time.Duration) {
 		watchdog.Reset(next)
 		if have {
 			if reading, ok := sample(previous, current); ok {
-				reading.GPUs = pending
+				reading.GPUs = attachNvidiaProcesses(pending, pendingGPUProcesses)
 				reading.Cores = coreUsage(previousCores, cores)
 				reading.NetworkInterface = primary
 				if primary != previousPrimary {
@@ -211,6 +219,7 @@ func (worker *Worker) run(first, next time.Duration) {
 		previousCores = cores
 		cores = nil
 		pending = nil
+		pendingGPUProcesses = nil
 		primary = ""
 		return true
 	})

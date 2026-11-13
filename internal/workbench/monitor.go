@@ -65,6 +65,17 @@ type monitorCoreText struct {
 	label, percent string
 	value          float64
 }
+type monitorGPUProcessText struct {
+	label, memory string
+}
+type monitorGPUText struct {
+	name, memory, util, power, temperature               string
+	memoryValue, utilValue, powerValue, temperatureValue float64
+	processes                                            []monitorGPUProcessText
+	// processesKnown is false for a card whose vendor the monitor does not
+	// collect processes for: the section is left out rather than claiming none.
+	processesKnown bool
+}
 
 // Fixed storage bounds the last minute of samples, independent of session age.
 type monitorView struct {
@@ -78,6 +89,9 @@ type monitorView struct {
 	noPerCore                                                 bool
 	cores                                                     []monitorCoreText
 	coresTitle, coreMoreText, cpuNote, diskText, diskCapacity string
+	gpuRows                                                   []monitorGPUText
+	memoryLabel, utilLabel, powerLabel, temperatureLabel      string
+	processLabel, noProcessLabel                              string
 	diskValue                                                 float64
 	diskAvailable                                             bool
 	dragging                                                  bool
@@ -200,6 +214,7 @@ func (state *State) ensureMonitor(session *Session) {
 	if session.stats == nil {
 		session.stats = &remoteStatsView{state: remoteStatsMeasuring}
 		session.stats.panel.interval = 2
+		session.stats.panel.hardwareOpen = !session.isLocal()
 	}
 	v := session.stats
 	system := session.host.System
@@ -436,6 +451,8 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 	p := &v.panel
 	m := state.messages.Monitor
 	p.language = state.language.String()
+	p.memoryLabel, p.utilLabel, p.powerLabel, p.temperatureLabel = m.GPUMemory, m.Utilization, m.Power, m.Temperature
+	p.processLabel, p.noProcessLabel = m.Processes, m.NoProcesses
 	p.cpuText = fmt.Sprintf("%.1f%%", p.sample.CPUPercent)
 	if p.sample.CPUUnavailable {
 		p.cpuText = "—"
@@ -551,6 +568,58 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 		}
 		p.networks = append(p.networks, monitorNetworkText{name: n.Name, rates: down + " / " + up})
 	}
+	p.gpuRows = p.gpuRows[:0]
+	for index := range p.sample.GPUs {
+		gpu := &p.sample.GPUs[index]
+		name := gpu.Name
+		if len(p.sample.GPUs) > 1 {
+			name = fmt.Sprintf("GPU%d · %s", gpu.Index, gpu.Name)
+		}
+		row := monitorGPUText{
+			name:             name,
+			memory:           monitorCapacity(gpu.MemoryUsedBytes, gpu.MemoryTotalBytes),
+			memoryValue:      percentOf(gpu.MemoryUsedBytes, gpu.MemoryTotalBytes),
+			util:             "—",
+			utilValue:        -1,
+			power:            "—",
+			powerValue:       -1,
+			temperature:      "—",
+			temperatureValue: -1,
+			processesKnown:   gpu.Vendor == "NVIDIA",
+		}
+		if gpu.UtilPercent >= 0 {
+			row.util = fmt.Sprintf("%.0f%%", gpu.UtilPercent)
+			row.utilValue = gpu.UtilPercent
+		}
+		if gpu.PowerLimitWatts > 0 && gpu.PowerWatts >= 0 {
+			row.power = fmt.Sprintf("%.0f / %.0f W", gpu.PowerWatts, gpu.PowerLimitWatts)
+			row.powerValue = 100 * gpu.PowerWatts / gpu.PowerLimitWatts
+		} else if gpu.PowerWatts >= 0 {
+			row.power = fmt.Sprintf("%.0f W", gpu.PowerWatts)
+		}
+		if gpu.TemperatureC >= 0 {
+			row.temperature = fmt.Sprintf("%.0f°C", gpu.TemperatureC)
+			row.temperatureValue = gpu.TemperatureC / 110 * 100
+		}
+		for _, process := range gpu.Processes {
+			memory := "—"
+			if process.MemoryKnown {
+				memory = monitorBytes(process.MemoryUsedBytes)
+			}
+			row.processes = append(row.processes, monitorGPUProcessText{
+				label:  fmt.Sprintf("%s · PID %d", process.Name, process.PID),
+				memory: memory,
+			})
+		}
+		p.gpuRows = append(p.gpuRows, row)
+	}
+}
+
+func percentOf(value, total uint64) float64 {
+	if total == 0 {
+		return -1
+	}
+	return min(100, 100*float64(value)/float64(total))
 }
 
 func monitorBytes(value uint64) string {
