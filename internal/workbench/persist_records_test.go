@@ -24,6 +24,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "relaunch_action": true, "tray_hint_shown": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
 		"sftp_panel_width": true, "monitor_panel_width": true,
 		"terminal_toolbar_position": true,
+		"terminal_find":             true,
 		"terminal_toolbar_size":     true,
 		"workspace":                 true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "sessions": true, "deck": true, "sync": true,
 		// The generation of default chords this computer's table was reconciled

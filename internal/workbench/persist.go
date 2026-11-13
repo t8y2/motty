@@ -35,34 +35,35 @@ type savedState struct {
 	RecentConnectSort bool                 `json:"recent_connect_sort,omitempty"`
 	RecentConnections map[string]time.Time `json:"recent_connections,omitempty"`
 
-	MonitorPanels              []monitoring.Panel `json:"monitor_panels,omitempty"`
-	MonitorActive              string             `json:"monitor_active,omitempty"`
-	Version                    int                `json:"version"`
-	Language                   string             `json:"language,omitempty"`
-	Theme                      string             `json:"theme,omitempty"`
-	BackgroundOutputAlerts     bool               `json:"background_output_alerts,omitempty"`
-	TabOrientation             string             `json:"tab_orientation,omitempty"`
-	TabNumbers                 bool               `json:"tab_numbers,omitempty"`
-	VerticalTabsAutoHide       bool               `json:"vertical_tabs_auto_hide,omitempty"`
-	VerticalTabsGrouping       bool               `json:"vertical_tabs_grouping,omitempty"`
-	NetworkProxy               string             `json:"network_proxy,omitempty"`
-	TerminalOption             string             `json:"terminalOption,omitempty"`
-	LocalShell                 string             `json:"local_shell,omitempty"`
-	HiddenShells               []string           `json:"hidden_shells,omitempty"`
-	LocalStart                 string             `json:"local_start,omitempty"`
-	LastLocalDirectory         string             `json:"last_local_directory,omitempty"`
-	SSHAgent                   string             `json:"ssh_agent,omitempty"`
-	SSHAgentPath               string             `json:"ssh_agent_path,omitempty"`
-	TerminalFontSize           int                `json:"terminal_font_size,omitempty"`
-	TextScale                  string             `json:"text_scale,omitempty"`
-	InterfaceFont              string             `json:"interface_font,omitempty"`
-	TerminalFontFace           string             `json:"terminal_font_face,omitempty"`
-	TerminalFontFamily         string             `json:"terminal_font_family,omitempty"`
-	TerminalFontFallbacks      []string           `json:"terminal_font_fallbacks,omitempty"`
-	TerminalScrollback         int                `json:"terminal_scrollback,omitempty"`
-	TerminalCursor             string             `json:"terminal_cursor,omitempty"`
-	ConnectionTimeoutSeconds   int                `json:"connection_timeout_seconds,omitempty"`
-	ConnectionKeepAliveSeconds int                `json:"connection_keepalive_seconds,omitempty"`
+	MonitorPanels              []monitoring.Panel      `json:"monitor_panels,omitempty"`
+	MonitorActive              string                  `json:"monitor_active,omitempty"`
+	Version                    int                     `json:"version"`
+	Language                   string                  `json:"language,omitempty"`
+	Theme                      string                  `json:"theme,omitempty"`
+	BackgroundOutputAlerts     bool                    `json:"background_output_alerts,omitempty"`
+	TabOrientation             string                  `json:"tab_orientation,omitempty"`
+	TabNumbers                 bool                    `json:"tab_numbers,omitempty"`
+	VerticalTabsAutoHide       bool                    `json:"vertical_tabs_auto_hide,omitempty"`
+	VerticalTabsGrouping       bool                    `json:"vertical_tabs_grouping,omitempty"`
+	NetworkProxy               string                  `json:"network_proxy,omitempty"`
+	TerminalOption             string                  `json:"terminalOption,omitempty"`
+	LocalShell                 string                  `json:"local_shell,omitempty"`
+	HiddenShells               []string                `json:"hidden_shells,omitempty"`
+	LocalStart                 string                  `json:"local_start,omitempty"`
+	LastLocalDirectory         string                  `json:"last_local_directory,omitempty"`
+	SSHAgent                   string                  `json:"ssh_agent,omitempty"`
+	SSHAgentPath               string                  `json:"ssh_agent_path,omitempty"`
+	TerminalFontSize           int                     `json:"terminal_font_size,omitempty"`
+	TextScale                  string                  `json:"text_scale,omitempty"`
+	InterfaceFont              string                  `json:"interface_font,omitempty"`
+	TerminalFontFace           string                  `json:"terminal_font_face,omitempty"`
+	TerminalFontFamily         string                  `json:"terminal_font_family,omitempty"`
+	TerminalFontFallbacks      []string                `json:"terminal_font_fallbacks,omitempty"`
+	TerminalFind               terminalFindPreferences `json:"terminal_find,omitzero"`
+	TerminalScrollback         int                     `json:"terminal_scrollback,omitempty"`
+	TerminalCursor             string                  `json:"terminal_cursor,omitempty"`
+	ConnectionTimeoutSeconds   int                     `json:"connection_timeout_seconds,omitempty"`
+	ConnectionKeepAliveSeconds int                     `json:"connection_keepalive_seconds,omitempty"`
 	// ConnectionKeepAliveOff records the user's "off" choice. The interval
 	// above cannot: zero is dropped from the file, so it would be
 	// indistinguishable from never having chosen, and a state file that says
@@ -507,6 +508,7 @@ func (state *State) snapshot() savedState {
 		TerminalFontFace:           terminalFontFaceString(state.fonts.classic),
 		TerminalFontFamily:         state.fonts.family,
 		TerminalFontFallbacks:      slices.Clone(state.fonts.fallbacks),
+		TerminalFind:               state.terminalFindPrefs,
 		TerminalScrollback:         state.terminalScrollback,
 		TerminalCursor:             state.terminalCursorStyle.String(),
 		ConnectionTimeoutSeconds:   int(state.connectionTimeout / time.Second),
@@ -979,6 +981,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.setVerticalTabsGrouping(saved.VerticalTabsGrouping)
 	state.restoreSFTPLocalFavorites(saved.SFTPLocalBookmarks)
 	state.toolbars.restore(saved.Toolbars)
+	state.terminalFindPrefs = saved.TerminalFind.normalized()
 	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
 	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
 	state.localShell = saved.LocalShell
