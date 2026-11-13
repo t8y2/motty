@@ -11,6 +11,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/localshell"
 	"motty/internal/sftpclient"
 )
 
@@ -71,9 +72,17 @@ func localHome() string {
 }
 
 // localPanelStart is the folder a local terminal's panel opens in: the one its
-// shell last reported, if that is still a folder, else the home folder.
+// shell last reported, if that is still a folder, else the shell's own home
+// folder. A WSL shell's home is the distribution's root, not this computer's
+// home: the panel then shows the files the terminal is working on, and the
+// shell's reported folder takes over once it arrives.
 func (state *State) localPanelStart(session *Session) string {
 	home := localHome()
+	if distro := session.wslDistro(); distro != "" {
+		if root, ok := localshell.WSLWindowsPath("/", distro); ok {
+			home = root
+		}
+	}
 	t := session.term
 	if t == nil {
 		return home

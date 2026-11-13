@@ -74,7 +74,10 @@ type Client struct {
 	wake     bool
 	finishAt time.Time
 	lastRecv time.Time
-	err      error
+	// lastEchoAck is the newest echo ack already handed to the input queue, so
+	// a received state that only repeats it does not wake the owner.
+	lastEchoAck uint64
+	err         error
 }
 
 type pendingInput struct {
@@ -118,7 +121,7 @@ func Dial(config Config) (*Client, error) {
 	c := &Client{
 		conn:             config.Conn,
 		server:           config.Server,
-		transport:        NewTransport(ocb, false),
+		transport:        NewTransport(ocb, false, newScreenState(cols, rows)),
 		notify:           config.Notify,
 		done:             make(chan struct{}),
 		sentActionCounts: make(map[uint64]int),
@@ -304,14 +307,27 @@ func (c *Client) run() {
 			return
 		}
 		now = time.Now()
-		diff := c.transport.Recv(buf[:n], now)
+		update := c.transport.Recv(buf[:n], now)
+		echoAck := c.transport.LastEchoAck()
 		c.mu.Lock()
 		if c.transport.Heard() {
 			c.lastRecv = c.transport.LastRecv()
 		}
+		notify := false
+		if len(update) > 0 {
+			c.output = append(c.output, update...)
+			notify = true
+		}
+		// An acknowledgement may arrive without new screen text; the owner
+		// still has to learn that its input was applied.
+		if echoAck > c.lastEchoAck {
+			c.lastEchoAck = echoAck
+			c.applyEchoAck(echoAck)
+			notify = true
+		}
 		c.mu.Unlock()
-		if len(diff) > 0 {
-			c.applyHostMessage(diff)
+		if notify && c.notify != nil {
+			c.notify()
 		}
 	}
 }
@@ -371,41 +387,6 @@ func (c *Client) fillPending(now time.Time) {
 	// the life of the session; the oldest entries are the ones furthest behind.
 	if len(c.inputStates) > maxInputStates {
 		c.inputStates = c.inputStates[len(c.inputStates)-maxInputStates:]
-	}
-}
-
-// applyHostMessage delivers the server's output and records what it has
-// applied. EchoAck is the state number the server last applied to the
-// terminal; it retires input ids, not the screen text (the scrollback is
-// judged by the terminal itself).
-func (c *Client) applyHostMessage(diff []byte) {
-	instructions, err := UnmarshalHostMessage(diff)
-	if err != nil {
-		return
-	}
-	var output []byte
-	echoAck := int64(-1)
-	for i := range instructions {
-		output = append(output, instructions[i].Hoststring...)
-		if instructions[i].EchoAckNum > echoAck {
-			echoAck = instructions[i].EchoAckNum
-		}
-	}
-	notify := false
-	c.mu.Lock()
-	if len(output) > 0 {
-		c.output = append(c.output, output...)
-		notify = true
-	}
-	if echoAck >= 0 {
-		c.applyEchoAck(uint64(echoAck))
-		// An acknowledgement may arrive without new screen text; the owner
-		// still has to learn that its input was applied.
-		notify = true
-	}
-	c.mu.Unlock()
-	if notify && c.notify != nil {
-		c.notify()
 	}
 }
 
