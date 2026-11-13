@@ -46,11 +46,6 @@ const (
 	tabColorSofteningSteps = 12
 )
 
-// tabColorSwatchBorder is the border a swatch paints. The disc sits flush inside
-// it: a background ring between border and disc reads as an empty centre and
-// leaves the colour smaller than the space the swatch was given.
-const tabColorSwatchBorder = float32(1)
-
 // tabColorAmount is how much of a tab's colour its fill shows. The states stay
 // apart — a hovered or active tab shows more of its colour, so a pointer and the
 // current tab still read — but every state shows enough that the tab is the
@@ -122,17 +117,6 @@ func tabNumberInk(foreground gfx.Color, color string) gfx.Color {
 // means the same thing here as it does to an eye on the screen.
 func inkContrast(a, b gfx.Color) float32 {
 	return contrastRatio(rgb8(a), rgb8(b))
-}
-
-// tabColorSwatchGeometry is the border circle and the colour disc of a swatch.
-// Both are square and concentric, and the disc is inset by exactly the border, so
-// there is no gap between them however the row was sized.
-func tabColorSwatchGeometry(bounds gfx.Rect) (border, disc gfx.Rect) {
-	side := min(bounds.Width, bounds.Height)
-	border = gfx.Rect{X: bounds.X + (bounds.Width-side)/2, Y: bounds.Y + (bounds.Height-side)/2, Width: side, Height: side}
-	inner := max(side-2*tabColorSwatchBorder, 0)
-	disc = gfx.Rect{X: border.X + tabColorSwatchBorder, Y: border.Y + tabColorSwatchBorder, Width: inner, Height: inner}
-	return border, disc
 }
 
 var hitTabColors = tree.Sub(tabMenuHits, tree.Name("tab-colors"))
@@ -225,24 +209,13 @@ func (state *State) paintTabColorChoices(canvas *gfx.Canvas, menu *components.Co
 	}
 }
 
-// paintTabColorSwatch paints one colour choice. Viva's ColorSwatch draws a
-// background-coloured ring between border and disc, which at this size leaves the
-// colour visibly smaller than the circle around it; here the disc fills the ring
-// instead, so a swatch reads as one solid colour inside a hairline border. The
-// selected border is the foreground colour at the same weight as any other, not a
-// heavier ring of its own.
+// paintTabColorSwatch paints one colour choice with Viva's ColorSwatch. The
+// flush disc keeps the colour filling its hairline border instead of leaving a
+// background-coloured ring around it, which at this size reads as a faded
+// colour. The selected border is the foreground colour at the same weight as
+// any other.
 func (state *State) paintTabColorSwatch(canvas *gfx.Canvas, id gfx.ID, bounds gfx.Rect, label, color string, selected bool) {
-	border, disc := tabColorSwatchGeometry(bounds)
-	if disc.Width <= 0 {
-		return
-	}
-	theme := state.Theme()
-	borderColor := theme.Input
-	if selected {
-		borderColor = theme.Foreground
-	}
-	hovered := canvas.Hovered() == id
-	if hovered && canvas.HoverCrossed() {
+	if canvas.Hovered() == id && canvas.HoverCrossed() {
 		// The menu records its "current item" as the row holding focus: while the
 		// pointer rests on a swatch, the row it left still holds focus, so every
 		// repaint lights that row again and the rows blink as the pointer moves
@@ -252,23 +225,27 @@ func (state *State) paintTabColorSwatch(canvas *gfx.Canvas, id gfx.ID, bounds gf
 		// stays put, the arrow keys can still move focus back to a menu row.
 		canvas.RequestFocus(id)
 	}
-	if canvas.FocusVisible() == id || hovered {
-		borderColor = theme.Ring
-	}
-	// The border circle is painted whole and the disc over its middle, so the ring
-	// is exactly tabColorSwatchBorder wide whatever the swatch was sized to.
-	canvas.Rounded(border, border.Width/2, borderColor)
-	fill := hostAccent(color)
-	if fill.Alpha == 0 {
-		fill = theme.Muted
-	}
-	canvas.Rounded(disc, disc.Width/2, fill)
-	if hostAccent(color).Alpha == 0 {
-		canvas.DrawIcon(noTabColorIcon, insetRect(disc, 0.2), theme.MutedForeground)
-	}
-	canvas.HitWithOptions(id, bounds, label, gfx.HitOptions{Role: gfx.RoleRadio, Checked: selected, Selected: selected})
+	components.BeginColorSwatch(canvas, state.Theme(), id, bounds, hostAccent(color)).
+		Flush().
+		Label(label).
+		Selected(selected).
+		TabStop(selected).
+		Paint()
 }
 
-// noTabColorIcon is the diagonal a swatch without a colour carries, so "no
-// colour" is told apart from "not selected" without relying on the ring alone.
-var noTabColorIcon = gfx.Icon{ViewBox: 24, Stroke: 1.5, Cap: gfx.CapRound, Commands: []gfx.PathCommand{gfx.MoveTo(6, 18), gfx.LineTo(18, 6)}}
+// tabMenuColorKey moves focus across the colour row with the arrow keys, as a
+// radio group does; the selected swatch is the row's single Tab stop.
+func (state *State) tabMenuColorKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if !state.tabMenu.open || event.Release {
+		return gfx.EventResult{}, false
+	}
+	var options [len(tabColors)]components.RadioOption
+	for index := range tabColors {
+		options[index] = components.RadioOption{ID: hitTabColors.At(index)}
+	}
+	next, ok := components.RadioGroupKeyDown(event.Target, options[:], components.DirectionLTR, event.Key)
+	if !ok {
+		return gfx.EventResult{}, false
+	}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}, true
+}

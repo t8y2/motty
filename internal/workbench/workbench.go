@@ -2859,6 +2859,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.workspaceArrangementKey(event); handled {
 		return result
 	}
+	if result, handled := state.tabMenuColorKey(event); handled {
+		return result
+	}
 	if result, handled := state.terminalInputKey(event); handled {
 		return result
 	}

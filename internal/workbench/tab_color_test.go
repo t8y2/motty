@@ -150,24 +150,6 @@ func TestTabColorSwatchLayoutShrinksToTheRow(t *testing.T) {
 	}
 }
 
-// The selected swatch uses a foreground border at the same weight as every other
-// swatch, with the disc flush against it and no background-coloured seam.
-func TestTabColorSwatchHasNoGapBetweenBorderAndDisc(t *testing.T) {
-	border, disc := tabColorSwatchGeometry(gfx.Rect{X: 10, Y: 20, Width: 20, Height: 20})
-	if border != (gfx.Rect{X: 10, Y: 20, Width: 20, Height: 20}) {
-		t.Fatalf("border %+v", border)
-	}
-	if gap := disc.X - border.X; gap != tabColorSwatchBorder {
-		t.Fatalf("horizontal gap between border and disc is %.2fpx, want %.2f", gap, tabColorSwatchBorder)
-	}
-	if gap := disc.Y - border.Y; gap != tabColorSwatchBorder {
-		t.Fatalf("vertical gap between border and disc is %.2fpx, want %.2f", gap, tabColorSwatchBorder)
-	}
-	if disc.Width != border.Width-2*tabColorSwatchBorder {
-		t.Fatalf("disc is %.2fpx wide inside a %.2fpx border", disc.Width, border.Width)
-	}
-}
-
 // nearlySame compares two painted lengths through the half-pixel a snapped edge
 // may move.
 func nearlySame(left, right float32) bool {
@@ -295,7 +277,8 @@ func TestTabColorSwatchesKeepTheirHoverFeedback(t *testing.T) {
 	if !ok {
 		t.Fatal("the hovered swatch is missing")
 	}
-	border, _ := tabColorSwatchGeometry(swatch.Bounds)
+	side := min(swatch.Bounds.Width, swatch.Bounds.Height)
+	border := gfx.Rect{X: swatch.Bounds.X + (swatch.Bounds.Width-side)/2, Y: swatch.Bounds.Y + (swatch.Bounds.Height-side)/2, Width: side, Height: side}
 	ring := state.Theme().Ring
 	found := false
 	for _, rectangle := range canvas.Rectangles() {
@@ -444,5 +427,21 @@ func TestColoredTabIsPaintedWithItsColour(t *testing.T) {
 		if !found {
 			t.Fatalf("%v: no rectangle inside the tab is painted %v (its colour %s)", appearance, rgb8(want), color)
 		}
+	}
+}
+
+func TestTabColorRowMovesFocusWithArrowKeys(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.tabMenu.open = true
+	result, handled := state.tabMenuColorKey(gfx.KeyEvent{Key: gfx.KeyRight, Target: hitTabColors.At(0)})
+	if !handled || result.Focus != hitTabColors.At(1) || !result.Repaint || !result.FocusVisible {
+		t.Fatalf("right arrow = %+v handled=%v, want focus on the second swatch", result, handled)
+	}
+	if _, handled := state.tabMenuColorKey(gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitTabColors.At(0)}); handled {
+		t.Fatal("a non-arrow key moved the colour row's focus")
+	}
+	state.tabMenu.open = false
+	if _, handled := state.tabMenuColorKey(gfx.KeyEvent{Key: gfx.KeyRight, Target: hitTabColors.At(0)}); handled {
+		t.Fatal("a closed menu handled the colour row's arrow key")
 	}
 }
