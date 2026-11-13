@@ -92,8 +92,8 @@ func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {
 			}
 			move, ok := findSnapshotHit(preview.Snapshot(), contextID(hitSFTPPanelSide))
 			close, _ := findSnapshotHit(preview.Snapshot(), contextID(hitSFTPClose))
-			if !ok || move.Bounds.X+move.Bounds.Width > close.Bounds.X || move.Label != state.messages.Tools.FilesMoveRight {
-				t.Fatal("move action must be immediately before Close and name its destination")
+			if !ok || move.Bounds.Y != close.Bounds.Y || move.Bounds.X+move.Bounds.Width > close.Bounds.X || move.Label != state.messages.Tools.FilesMoveRight {
+				t.Fatal("move action must be beside Close on its left and name its destination")
 			}
 			click(contextID(hitSFTPPanelSide))
 			context, _ := state.deck.Context(state.deck.ActiveWorkspace())
