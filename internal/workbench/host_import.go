@@ -388,14 +388,16 @@ func validImportedAddress(address string) bool {
 // offer no shell, so a block that points at one is a Git alias even when the
 // remote URL, not the block, names the "git" user.
 var gitHostingHosts = map[string]bool{
-	"github.com":        true,
-	"ssh.github.com":    true,
-	"gitlab.com":        true,
-	"gitee.com":         true,
-	"bitbucket.org":     true,
-	"codeberg.org":      true,
-	"git.sr.ht":         true,
-	"ssh.dev.azure.com": true,
+	"github.com":              true,
+	"ssh.github.com":          true,
+	"gitlab.com":              true,
+	"altssh.gitlab.com":       true,
+	"gitee.com":               true,
+	"bitbucket.org":           true,
+	"codeberg.org":            true,
+	"git.sr.ht":               true,
+	"ssh.dev.azure.com":       true,
+	"vs-ssh.visualstudio.com": true,
 }
 
 // gitRemoteAlias reports whether a config block is an alias for a Git remote

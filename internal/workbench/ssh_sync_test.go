@@ -495,6 +495,18 @@ func TestSSHSyncLeavesGitRemoteAliasesWithoutAUserAlone(t *testing.T) {
 	}
 }
 
+func TestSSHSyncLeavesForgeAlternateEndpointsAlone(t *testing.T) {
+	// The alternate endpoints of the same forges get their own blocks, also
+	// without a User, and reach no shell either.
+	for _, alias := range []string{"altssh.gitlab.com", "vs-ssh.visualstudio.com"} {
+		state, _ := newSyncState(t, "Host "+alias+"\n")
+		enableSync(t, state)
+		if _, ok := state.hostByLabel(alias); ok {
+			t.Fatalf("%s was imported as a host: %+v", alias, state.hosts)
+		}
+	}
+}
+
 func TestSSHSyncDoesNotLinkAHostToAGitAlias(t *testing.T) {
 	key := writeWorkbenchIdentity(t, "id_github", "")
 	state, path := newSyncState(t, "Host github.com\n    HostName github.com\n    User git\n    IdentityFile "+key+"\n")
