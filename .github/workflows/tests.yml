@@ -17,7 +17,7 @@ permissions:
 # reverse) without any change on the Motty side. Move the pin in the same commit
 # that needs a newer Viva API; do not check out the default branch here.
 env:
-  VIVA_REF: 08ef0fa296f3305c87a7149c8f6b4296f566663e
+  VIVA_REF: 1a2f1d320bb02e41de76d98fb0ecd840b71aba05
 
 # A superseded pull-request run is cancelled: the newer push contains everything
 # the older one would have tested, and leaving the older run in place makes the
