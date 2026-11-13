@@ -140,10 +140,9 @@ func TestPathCompletionWithFilePanelThroughWindowInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	clickSFTPPathFocusHit(t, driver, terminalTestHit(w.state, w.session))
-	// The fake shell must redraw after the window and file panel resize it.
-	w.shell.say("\r\x1b[K$ " + folderSyncMarker(w.session, "B"))
-	w.state.Wake()
-	for _, input := range []string{"c", "d", " "} {
+	// Type part of the command before the redraw: a redraw on an empty prompt
+	// says nothing about the prompt proof of an input already on the line.
+	for _, input := range []string{"c", "d"} {
 		w.tick()
 		if err := driver.Type(input); err != nil {
 			t.Fatal(err)
@@ -151,6 +150,17 @@ func TestPathCompletionWithFilePanelThroughWindowInput(t *testing.T) {
 		if err := driver.Advance(0); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// The fake shell must redraw after the window and file panel resize it,
+	// with the typed line on screen, as readline repaints PS1 and the buffer.
+	w.shell.say("\r\x1b[K$ " + folderSyncMarker(w.session, "B") + "cd")
+	w.state.Wake()
+	w.tick()
+	if err := driver.Type(" "); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Advance(0); err != nil {
+		t.Fatal(err)
 	}
 	waitCompletionList(t, w)
 	if err := driver.Advance(0); err != nil {
