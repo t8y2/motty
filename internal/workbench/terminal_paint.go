@@ -383,7 +383,12 @@ func (state *State) declarePaneBar(c ui.C, width float32, title, status string, 
 		if active {
 			light = ui.Slot(c).Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0)
 		} else {
-			ui.Icon(c, lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint).MarginSides(0, 7, 0, 0)
+			// The idle marker keeps the light's 16 point box, so the name and the
+			// reading beside it do not move when the pane gains or loses the
+			// keyboard.
+			ui.Row(c).Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0).Center().Children(func() {
+				ui.Icon(c, lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint)
+			})
 		}
 		titleColor := pal.muted
 		if active {

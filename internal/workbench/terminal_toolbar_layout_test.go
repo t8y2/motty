@@ -939,3 +939,48 @@ func TestClickingFindCloseResizesEveryPaneForTheSharedRail(t *testing.T) {
 	}
 	assertPaneSizes("stable click close")
 }
+
+// Changing which split pane has the keyboard changes only the focus marker at
+// the start of its bar. The name and the connection reading beside it keep their
+// places, so switching panes does not make the bar's text jump.
+func TestSplitPaneBarTextKeepsItsPlaceWhenFocusChanges(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	openHostInSplit(t, state, 2, layoutcore.Horizontal)
+	if len(state.sessions) < 2 {
+		t.Fatalf("split created only %d sessions", len(state.sessions))
+	}
+	size := gfx.Size{Width: 1200, Height: 800}
+	state.Resize(size)
+	first, second := &state.sessions[0], &state.sessions[1]
+	title := first.Title
+	if title == "" {
+		title = first.Address
+	}
+
+	titleBounds := func() gfx.Rect {
+		t.Helper()
+		var canvas gfx.Canvas
+		state.Paint(&canvas, size)
+		pane := paneBoundsOf(t, state, size, first)
+		for _, text := range canvas.Texts() {
+			if text.Value == title && text.Bounds.Y >= pane.Y && text.Bounds.Y < pane.Y+infoBarHeight {
+				return text.Bounds
+			}
+		}
+		t.Fatalf("session %d's name %q is not painted in its bar", first.ID, title)
+		return gfx.Rect{}
+	}
+
+	if !state.ActivatePane(first.ID) {
+		t.Fatal("activate the first pane")
+	}
+	active := titleBounds()
+	if !state.ActivatePane(second.ID) {
+		t.Fatal("activate the second pane")
+	}
+	inactive := titleBounds()
+	if active != inactive {
+		t.Fatalf("the pane's name moved when focus changed: active=%+v inactive=%+v", active, inactive)
+	}
+}
