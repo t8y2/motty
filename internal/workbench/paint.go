@@ -517,6 +517,10 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 // the wheel over its backdrop: the panel keeps still behind it, as it did when
 // its list was painted by hand and the window's own handler saw the event first.
 func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
+	if state.hostGroupMenu {
+		// The move picker and its backdrop own the wheel over the host list.
+		return state.Scroll(event)
+	}
 	if state.aiMenuShown() {
 		// An open chip menu is the page's popup and owns the wheel; its own
 		// scroll route (and its backdrop) decide where the event goes.
