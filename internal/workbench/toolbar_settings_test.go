@@ -187,7 +187,7 @@ func TestToolbarCustomOrderAppearsInTheThreeRealToolbars(t *testing.T) {
 	}{
 		{hitWindowSettings, hitTransferCenter, true},
 		{hitSFTPOpen, hitConnExport, false},
-		{contextID(hitSFTPClose), contextID(hitSFTPUpload), true},
+		{contextID(hitSFTPFollowToggle), contextID(hitSFTPUpload), true},
 	} {
 		first, firstOK := hitByID(&canvas, pair.first)
 		second, secondOK := hitByID(&canvas, pair.second)

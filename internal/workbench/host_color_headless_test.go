@@ -105,7 +105,7 @@ func TestConnectionColorChromeAtDifferentScales(t *testing.T) {
 				}
 				refresh := dualHit(t, view, contextID(hitSFTPRefresh))
 				close := dualHit(t, view, contextID(hitSFTPClose))
-				if refresh.Y != close.Y || close.X+close.Width > 1400 || close.Y < 0 {
+				if refresh.Y < close.Y+close.Height || close.X+close.Width > 1400 || close.Y < 0 {
 					t.Fatal("file header actions are clipped or misaligned")
 				}
 				for move := 0; move < 2; move++ {

@@ -192,8 +192,6 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	}
 	addHeader(hitSFTPFollowToggle, iconFollowFolder, messages.Tools.FilesFollow, false, followStyle)
 	moveIcon, moveHint := state.sftpPanelMoveAction()
-	addHeader(hitSFTPPanelSide, moveIcon, moveHint, false)
-	addHeader(hitSFTPClose, iconClose, messages.TipSFTPClose, false)
 	headerTools = state.orderToolbarTools(toolbarSFTP, headerTools, false)
 
 	// icon declares an icon button where it goes; it is painted after Draw.
@@ -202,24 +200,31 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		s.buttonCount++
 	}
 	ui.Column(c).Fill().PadSides(0, sftpPad, 6, sftpPad).Background(pal.workspace).Children(func() {
-		// One row for the panel: its name, then the actions on the folder and
-		// refresh and close, from the right. The words "Files" and the address say
-		// nothing the tab does not already; the room goes to the list.
+		// Keep the panel's title, docking and close buttons on their own row, with the
+		// folder actions below so they do not compete with the title for space.
 		s.header = ui.Row(c).FillWidth().Height(infoBarHeight).Shrink(0).MarginSides(0, -sftpPad, 0, -sftpPad).PadX(sftpPad).Background(pal.workspace).Items(ui.Center)
 		s.header.Children(func() {
 			ui.Text(c, title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).MarginSides(0, 8, 0, 0)
 			ui.Row(c).Gap(4).Shrink(0).Children(func() {
-				for _, tool := range headerTools {
-					icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, tool.style)
+				if state.toolbarVisible(toolbarSFTP, hitSFTPPanelSide) {
+					icon(sftpHeaderButton, hitSFTPPanelSide, moveIcon, moveHint, false, iconButtonQuiet)
 				}
-				// Filtering and turning hidden entries on are secondary actions. Keep
-				// the header stable at the narrow default width; once hidden entries are
-				// enabled, the Eye control remains visible as their status affordance.
-				if folder.showHidden {
-					icon(sftpHeaderButton, hitSFTPHiddenToggle, iconEye, messages.Tools.FilesHideHidden, false, iconButtonActive)
+				if state.toolbarVisible(toolbarSFTP, hitSFTPClose) {
+					icon(sftpHeaderButton, hitSFTPClose, iconClose, messages.TipSFTPClose, false, iconButtonQuiet)
 				}
-				icon(sftpHeaderButton, hitSFTPHeaderMore, iconEllipsis, messages.Tools.FilesMore, false, iconButtonQuiet)
 			})
+		})
+		ui.Row(c).FillWidth().Height(sftpButton).Shrink(0).Gap(4).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
+			for _, tool := range headerTools {
+				icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, tool.style)
+			}
+			// Once hidden entries are enabled, the Eye control remains visible
+			// as their status affordance beside the secondary actions menu.
+			if folder.showHidden {
+				icon(sftpHeaderButton, hitSFTPHiddenToggle, iconEye, messages.Tools.FilesHideHidden, false, iconButtonActive)
+			}
+			ui.Spacer(c)
+			icon(sftpHeaderButton, hitSFTPHeaderMore, iconEllipsis, messages.Tools.FilesMore, false, iconButtonQuiet)
 		})
 		s.headerButtonCount = s.buttonCount
 
