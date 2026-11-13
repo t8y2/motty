@@ -89,7 +89,9 @@ GB18030，Motty 会先展示两种名称供选择，在确认前不会保存主�
 **设置 > 连接 > 与 SSH 配置同步**。
 
 - 你在文件里新增或修改的 `Host` 会出现在 Motty，在 Motty 里新增或修改的主机会写回
-  文件。主机地址、用户、端口和 `ProxyJump` 双向同步；`IdentityFile` 只会加入一次密钥串。
+  文件。服务于 Git 而不是 shell 的区块（用户为 `git`，或指向 `github.com` 这类公共托管平台）
+  不是可打开的主机，会保持原样并在同步结果里列出。
+  主机地址、用户、端口和 `ProxyJump` 双向同步；`IdentityFile` 只会加入一次密钥串。
   `ProxyCommand` 只在主机第一次进入 Motty 时带过来，并等你确认（见
   [出站代理](/zh/docs/network/port-forwarding#出站代理)）。
   在 Motty 里停止跳板路由只影响 Motty 自己的连接；文件里仍保留 `ProxyJump`，终端里的

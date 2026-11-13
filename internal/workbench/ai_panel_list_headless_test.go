@@ -536,7 +536,7 @@ func TestHeadlessWrappedRowHeightFollowsTheWidth(t *testing.T) {
 		t.Fatal(err)
 	}
 	wide := state.ai.panel.messageList.RowHeightAt(0)
-	if wide <= aiBodyLine {
+	if wide <= aiSizes.bodyLine {
 		t.Fatalf("the wrapped message measured %.1f, no taller than one line", wide)
 	}
 	state.ai.panelWidth = aiPanelMin

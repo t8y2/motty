@@ -353,6 +353,16 @@ func (state *State) declareDialogCheckboxC(c ui.C, label string, above, below fl
 	})
 }
 
+// declareDialogCheckboxMutedC is declareDialogCheckboxC with the words dimmed:
+// the row's switch cannot be used, and the dimming says so with the checkbox.
+func (state *State) declareDialogCheckboxMutedC(c ui.C, label string, above, below float32) ui.Box {
+	side := components.CheckboxExtent(state.Theme())
+	return ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(above, 0, below, 2).Children(func() {
+		ui.Slot(c).Size(side, side).Shrink(0)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(20).Grow(1)
+	})
+}
+
 // declareDialogCheckboxHelpC is declareDialogCheckboxC with a help icon right
 // after the label, which paintHelpIcon fills in.
 func (state *State) declareDialogCheckboxHelpC(c ui.C, label string, above, below float32) (row, help ui.Box) {
@@ -386,6 +396,15 @@ func (state *State) paintDialogCheckbox(canvas *gfx.Canvas, id gfx.ID, label str
 	// The checkbox's own hit reaches 12px past its box; the label starts there.
 	words := rect.X + side + 12
 	canvas.HitLabel(id, gfx.Rect{X: words, Y: rect.Y, Width: max(rect.X+rect.Width-words, 0), Height: rect.Height}, label, false)
+}
+
+// paintDialogCheckboxDisabled paints the checkbox of a declared row dimmed and
+// inert: it is not a tab stop, and its words do not toggle it or reach the
+// protocol's click handler.
+func (state *State) paintDialogCheckboxDisabled(canvas *gfx.Canvas, id gfx.ID, label string, checked bool, row ui.Box) {
+	rect := row.Rect()
+	side := components.CheckboxExtent(state.Theme())
+	components.BeginCheckbox(canvas, state.Theme(), id, gfx.Rect{X: rect.X, Y: rect.Y + (rect.Height-side)/2}, checked).Label(label).Disabled().Paint()
 }
 
 // paintHighlightSettings is the Keyword highlighting group of Settings.

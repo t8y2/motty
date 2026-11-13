@@ -152,6 +152,11 @@ func openGeneralSettings(state *State) {
 	state.settingsCategory = settingsGeneral
 }
 
+func openAboutSettings(state *State) {
+	state.activeSection = sectionSettings
+	state.settingsCategory = settingsAbout
+}
+
 func waitUpdate(t *testing.T, state *State, done func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -175,7 +180,7 @@ func TestCheckingForUpdatesOffersTheDownloadOfANewerVersion(t *testing.T) {
 	var opened []string
 	options.OpenURL = func(url string) error { opened = append(opened, url); return nil }
 	state := newTestState(t, options)
-	openGeneralSettings(state)
+	openAboutSettings(state)
 	_, texts := paintedTexts(state)
 	if contains(texts, state.messages.Tools.GeneralUpdateDownload) {
 		t.Fatal("a download button before any check")

@@ -96,6 +96,20 @@ func TestTheListStillOpensWhileTypingInANestedShell(t *testing.T) {
 	waitCompletionList(t, w)
 }
 
+// su, sudo -i and ssh ask for a password before the child shell starts, so the
+// child's prompt sits directly below the question. That row is not part of the
+// new prompt and must not hide it (#799).
+func TestTheListOpensInANestedShellEnteredThroughAPasswordPrompt(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode
+	w.type_("su - root\r")
+	w.shell.say("密码： ")
+	w.shell.say("\r\n[root@host ~]# ")
+	w.state.Wake()
+	w.type_("git s")
+	waitCompletionList(t, w)
+}
+
 // Accepting in a nested shell still revalidates the line and types only the
 // suffix: the input guard is unavailable there, but the recorder's proof is not.
 func TestNestedShellAcceptanceTypesOnlyTheSuffix(t *testing.T) {

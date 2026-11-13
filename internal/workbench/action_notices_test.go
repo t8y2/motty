@@ -24,17 +24,20 @@ func requireActionNotice(t *testing.T, state *State, detail string, kind compone
 	}
 }
 
-func TestCreationButtonsUseOnlySSHHosts(t *testing.T) {
-	for _, protocols := range [][]hostProtocol{nil, {protocolRDP, protocolVNC}, {protocolSSH, protocolTelnet}, {protocolSSH, protocolSSH}} {
+func TestCreationButtonsFollowEachPagesNeed(t *testing.T) {
+	for _, protocols := range [][]hostProtocol{nil, {protocolRDP, protocolVNC}, {protocolSSH, protocolTelnet}, {protocolSSH, protocolRDP}, {protocolSSH, protocolSSH}} {
 		t.Run(fmt.Sprint(protocols), func(t *testing.T) {
 			_, o := newWorld(t)
 			s := newTestState(t, o)
 			s.hosts = nil
-			sshHosts := 0
+			sshHosts, desktops := 0, 0
 			for i, protocol := range protocols {
 				s.hosts = append(s.hosts, Host{ID: uint32(i + 1), Protocol: protocol})
 				if protocol == protocolSSH {
 					sshHosts++
+				}
+				if (Host{Protocol: protocol}).isDesktop() {
+					desktops++
 				}
 			}
 			for _, page := range []struct {
@@ -44,11 +47,18 @@ func TestCreationButtonsUseOnlySSHHosts(t *testing.T) {
 			}{{sectionForwards, hitForwardAdd, 1}, {sectionProxies, hitProxyAdd, 2}} {
 				s.activeSection = page.section
 				canvas, _ := paintedTexts(s)
+				want := sshHosts >= page.minimum
+				if page.section == sectionProxies {
+					// A route signs in to an SSH jump; its target may be that
+					// SSH host (a second SSH host is then the jump) or a remote
+					// desktop (the jump alone is enough).
+					want = sshHosts >= 2 || sshHosts >= 1 && desktops >= 1
+				}
 				buttons := 0
 				for _, hit := range canvas.Hits() {
 					if hit.ID == page.id {
 						buttons++
-						if hit.Disabled != (sshHosts < page.minimum) {
+						if hit.Disabled == want {
 							t.Fatalf("wrong creation availability: %+v", hit)
 						}
 					}

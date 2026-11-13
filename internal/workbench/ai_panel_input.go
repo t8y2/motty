@@ -16,8 +16,6 @@ const (
 	aiMaxReasons         = 4
 	aiMaxSummary         = 5
 	aiApprovalPad        = float32(10)
-	aiApprovalSize       = float32(11)
-	aiApprovalLine       = float32(15)
 	aiApprovalMinDetails = float32(48) // leave a usable scroll viewport above the actions
 	aiApprovalHeader     = aiApprovalPad + 24
 	aiApprovalCardPad    = aiApprovalPad - 1 // the card's own padding at its sides and foot
@@ -155,8 +153,8 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 	bottom := ui.Column(c)
 	extrasHeight := float32(0)
 	if text := state.aiNoticeText(); text != "" {
-		lines := c.Canvas().WrapLines(nil, text, aiSmallSize, gfx.WeightRegular, max(panel.rect.Width-2*aiPad-20, 1), 6)
-		extrasHeight += 12 + float32(len(lines))*aiSmallLine + 8
+		lines := c.Canvas().WrapLines(nil, text, aiSizes.small, gfx.WeightRegular, max(panel.rect.Width-2*aiPad-20, 1), 6)
+		extrasHeight += 12 + float32(len(lines))*aiSizes.smallLine + 8
 	}
 	if len(panel.mentions) > 0 {
 		extrasHeight += 6 + float32(len(panel.mentions))*aiMentionRow + 8
@@ -193,7 +191,7 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 			extras := func() {
 				if text := state.aiNoticeText(); text != "" {
 					ui.Column(c).PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
-						ui.Paragraph(c, text, 6).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSmallLine)
+						ui.Paragraph(c, text, 6).FontSize(aiSizes.small).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSizes.smallLine)
 					})
 				}
 				if len(panel.mentions) > 0 {
@@ -377,7 +375,7 @@ func (state *State) aiLayoutApprovalSummary(canvas *gfx.Canvas, approval *aiAppr
 		layout.request = approval
 		layout.key++
 	}
-	cell, cellHeight := canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
+	cell, cellHeight := canvas.MonoCellSize(aiSizes.mono, state.terminalFontFace)
 	layout.summary, _ = aiMonoWrap(layout.summary[:0], approval.request.Summary, max(int((width-2*aiApprovalPad-12)/cell), 8), aiMaxSummary)
 	layout.summaryH = aiBlockHeight(len(layout.summary), cellHeight, aiBoxPad)
 }
@@ -417,7 +415,7 @@ func (state *State) declareAIApproval(c ui.C, body *aiBody) {
 				panel.confirmText = fmt.Sprintf(m.ConfirmFmt, request.Confirm)
 			}
 			ui.Column(c).MarginSides(0, 0, aiConfirmFoot, 0).Children(func() {
-				ui.Text(c, panel.confirmText).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiConfirmLabel).MarginSides(0, 0, aiConfirmGap, 0)
+				ui.Text(c, panel.confirmText).FontSize(aiSizes.small).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiConfirmLabel).MarginSides(0, 0, aiConfirmGap, 0)
 				body.confirm = ui.Slot(c).Height(aiConfirmField)
 			})
 		}
@@ -444,11 +442,11 @@ func (state *State) declareAIApprovalDetails(c ui.C, approval *aiApproval) {
 	assessment := &request.Assessment
 	ui.Column(c).Height(panel.approvalLay.summaryH).MarginSides(0, 0, 8, 0).Pad(aiBoxPad).Background(pal.terminal).Radius(radius.item).Children(func() {
 		for _, line := range panel.approvalLay.summary {
-			ui.Text(c, line).FontSize(aiMonoSize).MonoFace(state.terminalFontFace).Color(pal.text)
+			ui.Text(c, line).FontSize(aiSizes.mono).MonoFace(state.terminalFontFace).Color(pal.text)
 		}
 	})
 	if request.SessionLabel != "" {
-		ui.Text(c, m.Target+": "+request.SessionLabel).MaxLines(0).FontSize(aiSmallSize).Color(pal.text).LineHeight(aiSmallLine).MarginSides(0, 0, 8, 0)
+		ui.Text(c, m.Target+": "+request.SessionLabel).MaxLines(0).FontSize(aiSizes.small).Color(pal.text).LineHeight(aiSizes.smallLine).MarginSides(0, 0, 8, 0)
 	}
 	if len(assessment.Reasons) > 0 {
 		ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
@@ -457,16 +455,16 @@ func (state *State) declareAIApprovalDetails(c ui.C, approval *aiApproval) {
 					break
 				}
 				ui.Row(c).Items(ui.Start).Children(func() {
-					ui.Text(c, "•").FontSize(aiApprovalSize).Color(pal.muted).LineHeight(aiApprovalLine).Width(12)
-					ui.Paragraph(c, reason, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine).Grow(1)
+					ui.Text(c, "•").FontSize(aiSizes.approval).Color(pal.muted).LineHeight(aiSizes.approvalLine).Width(12)
+					ui.Paragraph(c, reason, 2).FontSize(aiSizes.approval).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSizes.approvalLine).Grow(1)
 				})
 			}
 		})
 	}
 	if assessment.Safer != "" {
 		ui.Column(c).MarginSides(0, 0, 4, 0).Children(func() {
-			ui.Text(c, m.ApprovalSafer).FontSize(aiApprovalSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiApprovalLine)
-			ui.Paragraph(c, assessment.Safer, 2).FontSize(aiApprovalSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiApprovalLine)
+			ui.Text(c, m.ApprovalSafer).FontSize(aiSizes.approval).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSizes.approvalLine)
+			ui.Paragraph(c, assessment.Safer, 2).FontSize(aiSizes.approval).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSizes.approvalLine)
 		})
 	}
 }

@@ -1154,7 +1154,7 @@ func (state *State) desktopStripLeft(view *desktopView, session *Session) string
 		parts = append(parts, size)
 	}
 	switch {
-	case session.host.tunneled():
+	case session.host.tunneled() || session.desktopTunnel:
 		parts = append(parts, m.StripEncrypted)
 	case view.session.Info().Encrypted:
 		if session.host.Protocol == protocolVNC {

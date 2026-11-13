@@ -598,6 +598,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.endpoint = sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)}
 	session.role = sshconn.EndpointTarget
 	session.jumpPath = ""
+	session.desktopTunnel = false
 	if host.ID == localHostID {
 		// A shell on this machine: nothing to dial, so it is connected at once.
 		conn := newLocalConn(state.resolveLocalShell(host), state.networkProxy)

@@ -454,11 +454,6 @@ func (state *State) clickSFTP(id gfx.ID) {
 			folder.headerMenuOpen = false
 			return
 		}
-		if column, ok := id.In(sftpHeaderSortHits); ok && column < 3 {
-			folder.headerMenuOpen = false
-			state.toggleSFTPSidebarSort(folder, column)
-			return
-		}
 		switch id {
 		case hitSFTPHeaderFilter:
 			folder.headerMenuOpen = false

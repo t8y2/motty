@@ -60,6 +60,42 @@ func TestInterfaceTextSizeStepsTheWholeWindow(t *testing.T) {
 	}
 }
 
+// The assistant's panel is window text too: its body is the window's body size
+// and its captions the window's caption size, so the interface text size reaches
+// it like it reaches the settings pages.
+func TestAITextFollowsTheInterfaceTextSize(t *testing.T) {
+	applyTextMetrics(interfaceTextSizeDefault.factor())
+	defer applyTextMetrics(interfaceTextSizeDefault.factor())
+	state := newTestState(t, testOptions(t))
+	before := aiSizes
+	if before.body != gfx.DefaultMetrics().FontSizeM || before.small != gfx.DefaultMetrics().FontSizeS {
+		t.Fatalf("the panel opens at body %v caption %v", before.body, before.small)
+	}
+	state.setInterfaceTextSize(interfaceTextSizeMin)
+	if aiSizes.body != state.theme.Metrics.FontSizeM || aiSizes.small != state.theme.Metrics.FontSizeS {
+		t.Fatalf("the panel is at body %v caption %v, the interface at %v %v",
+			aiSizes.body, aiSizes.small, state.theme.Metrics.FontSizeM, state.theme.Metrics.FontSizeS)
+	}
+	if aiSizes.body >= before.body || aiSizes.bodyLine >= before.bodyLine || aiSizes.smallLine >= before.smallLine {
+		t.Fatalf("the smaller interface leaves the panel at %+v, was %+v", aiSizes, before)
+	}
+	// A conversation row is its wrapped lines and the height they add up to, so a
+	// row measured at the old size must be measured again, never reused as it is.
+	view := aiRowView{valid: true, kind: aiAssistant, size: before.body, width: 100, cell: 7}
+	item := &aiItem{kind: aiAssistant}
+	if view.current(item, 100, 7, "") {
+		t.Fatal("a row measured at the old text size survived the size change")
+	}
+	view.size = aiSizes.body
+	if !view.current(item, 100, 7, "") {
+		t.Fatal("a row measured at the current text size is not reused")
+	}
+	state.setInterfaceTextSize(interfaceTextSizeDefault)
+	if aiSizes.body != before.body || aiSizes.body != gfx.DefaultMetrics().FontSizeM {
+		t.Fatalf("the default size does not restore the panel: %v", aiSizes.body)
+	}
+}
+
 func TestInterfaceTextSizeTravelsThroughTheStateFile(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)

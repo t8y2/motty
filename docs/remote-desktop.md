@@ -168,6 +168,14 @@ DesktopSize; pointer, key and cut-text messages.
   saved SSH host with the same address and account (its port, algorithms and
   jump route) or plain SSH on port 22, asks the SSH questions first, and dials
   `127.0.0.1:<port>` from the SSH server through a `direct-tcpip` channel.
+* **A jump route reaches a desktop too**: a route whose target is a VNC or RDP
+  host signs in to the route's nearest jump host (that host's own route still
+  applies) and dials the desktop's address and port from there, with a
+  forwarded channel or the route's shell relay. The desktop machine therefore
+  needs no SSH server. A route owns the connection: while one is configured,
+  **Connect through SSH** is dimmed, because that switch is the same-machine
+  tunnel to the server's loopback. Only an SSH host can be a jump, since the
+  route has to sign in to it.
 * Limits on a server: every length is checked before allocating (desktop at most
   7680x4320 pixels, names, reasons, clipboard 256 KB, ZRLE data in proportion to
   the rectangle, RRE sub-rectangles at most the pixels), every rectangle and copy
@@ -317,7 +325,8 @@ counts every failed NLA logon towards the account lockout (10 on the test machin
 Motty reports the refusal and asks again. xrdp checks the password after the
 handshake and shows its own login screen, so a wrong one there is not detected by the
 client. "Connect through SSH" uses the first saved SSH host with the same address
-(or plain SSH on port 22), as VNC does.
+(or plain SSH on port 22), as VNC does; a jump route reaches the RDP port from
+the route's jump host instead and leaves the Windows machine without SSH.
 
 **Console session.** An RDP host can ask Windows for its console session instead
 of a new one, which is what `mstsc /admin` does: the client sets

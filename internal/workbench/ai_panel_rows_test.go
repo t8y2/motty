@@ -61,7 +61,7 @@ func TestMessageRowIsMeasuredAtItsBuiltHeight(t *testing.T) {
 		{kind: aiTool, call: llm.ToolCall{ID: "4", Name: "terminal_read"}, status: aiToolDone, result: "output only"},
 	}
 	var builtCanvas gfx.Canvas
-	cell, cellHeight := builtCanvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
+	cell, cellHeight := builtCanvas.MonoCellSize(aiSizes.mono, state.terminalFontFace)
 	for _, width := range []float32{352, 160} {
 		for _, open := range []bool{false, true} {
 			for index := range items {

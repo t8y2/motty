@@ -157,7 +157,7 @@ func (state *State) describe(session *Session) {
 	}
 
 	session.details[stageHostKey] = ""
-	if !session.host.isSSH() && !session.host.tunneled() {
+	if !session.host.isSSH() && !session.host.tunneled() && !session.desktopTunnel {
 		// Nothing to verify and no one to log in to: whatever asks for a login
 		// does so in the terminal.
 		session.details[stageLogin] = ""

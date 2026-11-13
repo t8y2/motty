@@ -298,12 +298,13 @@ type ToolsMessages struct {
 	HostProxyPasswordNotCarried string
 	// The host form's jump route row: whether the host is reached through
 	// another, and the way to add or edit that route.
-	HostJumpRow                    string
-	HostJumpDescriptionDirect      string
-	HostJumpDescriptionFmt         string // the jump host's label
-	HostJumpDescriptionUnsaved     string
-	HostJumpDescriptionUnavailable string
-	HostJumpDescriptionMissing     string
+	HostJumpRow                           string
+	HostJumpDescriptionDirect             string
+	HostJumpDescriptionFmt                string // the jump host's label
+	HostJumpDescriptionUnsaved            string
+	HostJumpDescriptionUnavailable        string
+	HostJumpDescriptionUnavailableDesktop string
+	HostJumpDescriptionMissing            string
 
 	// A proxy command: a local program that carries a host's first connection.
 	ProxyCommand                   string

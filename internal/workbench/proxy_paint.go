@@ -34,7 +34,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 		gap        = float32(8)
 	)
 	bounds := state.catalogSectionBounds()
-	canAdd := state.sshHostCount() >= 2
+	canAdd := state.canAddJumpRoute()
 
 	var (
 		addWidth, batchAddWidth, batchDeleteWidth, batchStartWidth, batchStopWidth, batchClearWidth float32
@@ -60,7 +60,6 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 		batchAddWidth, batchAddIcon = toolbarButtonLayout(canvas, messages.ProxyBatchAssociate, iconPlus, iconPlus, condensed)
 		addWidth, addIcon = toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 	}
-
 	view := &state.sectionBodies.proxies
 	draw := view.draw
 	*view = proxySectionUI{

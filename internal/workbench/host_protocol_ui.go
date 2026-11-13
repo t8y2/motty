@@ -387,7 +387,11 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 	editor := &state.editor
 	switch {
 	case id == hitDialogViaSSH:
-		editor.viaSSH = !editor.viaSSH
+		// A route owns the connection of a host that has one; the same-machine
+		// tunnel cannot also apply.
+		if !state.desktopRouteConfigured() {
+			editor.viaSSH = !editor.viaSSH
+		}
 	case id == hitDialogClipboard:
 		editor.clipboard = !editor.clipboard
 	case id == hitDialogChromeless:
@@ -492,13 +496,16 @@ func (state *State) hostFormHeight() float32 {
 		height += hostFormRowHeight
 	}
 	if state.editor.protocol == protocolSSH {
-		// The jump route row sits under the proxy row, and the terminal
-		// transport choice (with its hint when mosh is chosen) under the
-		// protocol choice.
-		height += hostFormRowHeight
+		// The terminal transport choice (with its hint when mosh is chosen)
+		// sits under the protocol choice.
 		if state.editor.terminal == terminalMosh {
 			height += 36
 		}
+	}
+	if state.editor.protocol == protocolSSH || state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP {
+		// The jump route row sits under the proxy row: SSH hosts and remote
+		// desktops are both reached through one.
+		height += hostFormRowHeight
 	}
 	if state.dialogError != "" {
 		height += 32
@@ -764,11 +771,19 @@ func (state *State) desktopRowsHeight() float32 {
 // paintVNCRows paints the switches of a VNC or RDP host in the slots the host
 // form's page laid out: connecting through SSH, sharing the clipboard, showing
 // the picture without the bars around it and, for RDP, asking Windows for its
-// console (administrative) session and choosing Standard RDP Security.
+// console (administrative) session and choosing Standard RDP Security. A host
+// whose route carries the connection cannot also use the same-machine tunnel,
+// so that switch is dimmed and inert.
 func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
-	state.paintDialogCheckbox(canvas, hitDialogViaSSH, m.ViaSSH, editor.viaSSH, b.tunnel)
+	viaLabel := m.ViaSSH
+	if state.desktopRouteConfigured() {
+		viaLabel = m.ViaSSHRouted
+		state.paintDialogCheckboxDisabled(canvas, hitDialogViaSSH, viaLabel, editor.viaSSH, b.tunnel)
+	} else {
+		state.paintDialogCheckbox(canvas, hitDialogViaSSH, viaLabel, editor.viaSSH, b.tunnel)
+	}
 	state.paintDialogCheckbox(canvas, hitDialogClipboard, m.ShareClipboard, editor.clipboard, b.clipboard)
 	state.paintDialogCheckbox(canvas, hitDialogChromeless, m.HideBars, editor.chromeless, b.chromeless)
 	// The rows this frame laid out are the ones before a protocol click wrote
@@ -791,8 +806,16 @@ func (state *State) declareHostVNCRows(c ui.C) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
 	*b = hostVNCRowsBody{}
+	viaLabel, routed := m.ViaSSH, state.desktopRouteConfigured()
+	if routed {
+		viaLabel = m.ViaSSHRouted
+	}
 	ui.Column(c).Fill().Children(func() {
-		b.tunnel = state.declareDialogCheckboxC(c, m.ViaSSH, 4, 0)
+		if routed {
+			b.tunnel = state.declareDialogCheckboxMutedC(c, viaLabel, 4, 0)
+		} else {
+			b.tunnel = state.declareDialogCheckboxC(c, viaLabel, 4, 0)
+		}
 		b.clipboard = state.declareDialogCheckboxC(c, m.ShareClipboard, 12, 0)
 		b.chromeless = state.declareDialogCheckboxC(c, m.HideBars, 12, 0)
 		if editor.protocol == protocolRDP {

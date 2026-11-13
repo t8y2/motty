@@ -51,6 +51,20 @@ type desktopRequest struct {
 	// Tunnel, when set, is the SSH connection the server is reached through: the
 	// address is then dialed from the SSH server, as its own loopback.
 	Tunnel Connection
+	// TunnelTarget makes the tunnel dial the host's own address and port rather
+	// than the SSH server's loopback: a jump route reaches the desktop from
+	// another machine, while the ViaSSH switch reaches a server bound to the
+	// loopback of the machine it runs on.
+	TunnelTarget bool
+	// TunnelRelay is the program, with the tokens of ExpandProxyCommand, a
+	// tunnel runs in a shell on its host to reach the desktop: the relay of a
+	// jump route that goes through the jump host's shell. Empty means a
+	// forwarded channel.
+	TunnelRelay string
+	// ViaSSH says the username is the SSH gateway's, not the desktop's, for a
+	// server reached on that gateway's loopback. A jump route leaves it false:
+	// the account is the desktop's there.
+	ViaSSH bool
 	// Ask is called when the server wants a password; see desktop.Options.
 	Ask            func() (string, error)
 	Notify         func()
@@ -73,6 +87,9 @@ func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Se
 	proxyUser, _ := rdpAccount(host.User)
 	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
 		if request.Tunnel != nil {
+			if request.TunnelRelay != "" {
+				return request.Tunnel.DialShellContext(ctx, request.TunnelRelay, address)
+			}
 			return request.Tunnel.DialContext(ctx, network, address)
 		}
 		if request.Proxy.Uses(address) {
@@ -81,7 +98,7 @@ func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Se
 		dialer := net.Dialer{Timeout: request.Timeout}
 		return dialer.DialContext(ctx, network, address)
 	}
-	if request.Tunnel != nil {
+	if request.Tunnel != nil && !request.TunnelTarget {
 		address = net.JoinHostPort("127.0.0.1", strconv.Itoa(int(host.Port)))
 	}
 	options := desktop.Options{
@@ -104,7 +121,7 @@ func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Se
 		}
 		return session, nil
 	}
-	if !host.tunneled() {
+	if !request.ViaSSH {
 		options.Username = host.User
 	}
 	options.AskCredentials = request.AskCredentials
@@ -178,6 +195,7 @@ func newDesktopConn(host Host, notify func(), open func(context.Context, desktop
 		Host: host, Timeout: timeout, Proxy: proxy, Ask: conn.ask, Notify: notify,
 		AskCredentials: conn.askCredentials,
 		Verify:         conn.verifyCertificate, VerifyServerKey: conn.verifyServerKey,
+		ViaSSH: host.tunneled(),
 	}
 	conn.status = sshconn.Status{Version: 1, Phase: sshconn.PhaseConnecting, Endpoint: conn.endpoint()}
 	return conn
@@ -664,6 +682,20 @@ func (state *State) newDesktopConn(session *Session, host Host) *desktopConn {
 	if state.options.KnownHostsPath != "" {
 		conn.identityFile = filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile)
 	}
+	// A jump route owns a desktop host's connection: it says how the desktop
+	// port is reached, and the ViaSSH switch is the same-machine tunnel only for
+	// a host without one. A stopped route keeps the host direct, as it does for
+	// an SSH host.
+	_, routed := state.proxyRouteForTarget(host.ID)
+	var runningRoute proxyRecord
+	routeRunning := false
+	if routed {
+		conn.request.ViaSSH = false
+		if host.Protocol == protocolVNC {
+			conn.credentialUser = host.User
+		}
+		runningRoute, routeRunning = state.hostCatalog.proxyRoute(host.ID)
+	}
 	if host.Protocol == protocolVNC {
 		if conn.credentialUser == "" {
 			owner := state.secretOwner(host, sshconn.Endpoint{}, sshconn.EndpointTarget)
@@ -680,12 +712,39 @@ func (state *State) newDesktopConn(session *Session, host Host) *desktopConn {
 	}
 	target := state.desktopTargetFor(session)
 	conn.request.Width, conn.request.Height, conn.request.Scale = target.width, target.height, target.scale
-	if !host.tunneled() {
+	var config sshconn.Config
+	tunneled := false
+	switch {
+	case routed && routeRunning:
+		// The desktop port is dialed at its own address from the route's nearest
+		// jump, whose own route carries that SSH connection. A broken route
+		// leaves no host to dial, and the connection says so.
+		conn.request.TunnelTarget = true
+		if runningRoute.ViaShell {
+			conn.request.TunnelRelay = runningRoute.relayCommand()
+		}
+		if chain, valid := state.hostCatalog.proxyChainFor(host); valid && len(chain) > 0 {
+			gateway := chain[0]
+			config, _ = state.sshConfigFor(session, gateway)
+			hop := formatEndpoint(sshconn.Endpoint{Host: gateway.Address, Port: gateway.Port, User: state.hostCatalog.login(gateway)})
+			if session.jumpPath != "" {
+				hop = session.jumpPath + " → " + hop
+			}
+			session.jumpPath = hop
+		}
+		tunneled = true
+	case routed:
+		// Stopped: the host goes straight to its desktop, as an SSH host does.
+	case host.tunneled():
+		gateway := state.gatewayFor(host)
+		config, _ = state.sshConfigFor(session, gateway) // a broken route has no host, and dialing says so
+		tunneled = true
+	}
+	if !tunneled {
 		conn.startDirect()
 		return conn
 	}
-	gateway := state.gatewayFor(host)
-	config, _ := state.sshConfigFor(session, gateway) // a broken route has no host, and dialing says so
+	session.desktopTunnel = true
 	config.Notify = conn.innerChanged
 	inner := state.options.Dial(config)
 	conn.mu.Lock()

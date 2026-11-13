@@ -271,8 +271,8 @@ func (page *settingsPage) vivaColophon() {
 	})
 }
 
-// paintAboutSettings paints the About category: what this copy is, where to
-// report a problem and where the project lives.
+// paintAboutSettings paints the About category: what this copy is, how to bring
+// it up to date, where to report a problem and where the project lives.
 func (state *State) paintAboutSettings(page *settingsPage) {
 	m, pal := state.messages, state.pal
 	facts := aboutFacts()
@@ -307,6 +307,11 @@ func (state *State) paintAboutSettings(page *settingsPage) {
 					page.factTile(iconTerminal, m.About.Runtime, facts.runtime)
 				})
 			})
+		})
+		// The update controls change the copy the facts above describe, so they
+		// sit with it rather than among the application's other preferences.
+		page.group(m.About.UpdateTitle, func() {
+			state.paintUpdateRows(page)
 		})
 		page.group(m.About.CommunityTitle, func() {
 			page.tileBox(func() {
