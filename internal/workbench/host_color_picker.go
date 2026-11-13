@@ -112,7 +112,8 @@ func (state *State) clickHostColorPicker(id gfx.ID) bool {
 		}
 		p.setValue(components.ColorPickerValue{}.WithColor(color))
 		p.open = true
-		state.editor.iconOpen, state.editor.authOpen, state.editor.identityOpen, state.editor.credentialOpen, state.editor.portsOpen = false, false, false, false, false
+		state.closeOtherHostPickers()
+		state.editor.authOpen, state.editor.identityOpen, state.editor.credentialOpen, state.editor.portsOpen = false, false, false, false
 		return true
 	case hostPickerIDs.Cancel, hostPickerIDs.Dismiss:
 		if p.open {

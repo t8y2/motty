@@ -114,24 +114,6 @@ func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuType
 			state.editor.address.Insert(state.editor.ports[index].Device)
 			return true
 		}, true
-
-	case state.modal == modalNewHost && target == hitDialogIcon && !state.editor.iconOpen:
-		choices := hostIconChoices()
-		items := make([]components.MenuTypeaheadItem, 0, len(choices))
-		for _, choice := range choices {
-			items = append(items, components.MenuTypeaheadItem{
-				ID: hitDialogIconItemList.At(int(choice)), Label: state.hostIconLabel(choice),
-			})
-		}
-		return items, func(id gfx.ID) bool {
-			index, ok := id.In(hitDialogIconItemList)
-			choice := hostIcon(index)
-			if !ok || !choice.valid() {
-				return false
-			}
-			state.editor.icon, state.editor.iconChosen = choice, true
-			return true
-		}, true
 	}
 	return nil, nil, false
 }

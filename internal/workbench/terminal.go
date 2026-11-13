@@ -1754,6 +1754,10 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		p := &state.editor.encodingPicker
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
+	if state.modal == modalNewHost && state.editor.iconPicker.control.Open {
+		p := &state.editor.iconPicker
+		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
+	}
 	if state.modal == modalToolbarSettings {
 		return state.toolbarSettingsScroll(event)
 	}

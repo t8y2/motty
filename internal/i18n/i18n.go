@@ -526,6 +526,8 @@ type Messages struct {
 	ErrHostGroupInvalid         string
 	HostTagsCreatePrefix        string
 	FieldIcon                   string
+	FieldIconPlaceholder        string
+	IconsEmpty                  string
 	FieldColor                  string
 	FieldColorCustom            string
 	ColorPickerChoose           string

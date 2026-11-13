@@ -128,11 +128,12 @@ func (state *State) clickHostEncodingPicker(id gfx.ID) bool {
 	p := state.hostEncodingPicker()
 	switch {
 	case id == hitDialogEncoding:
+		state.closeOtherHostPickers()
 		p.control.Open = true
-		state.closeOtherHostPickers()
 	case id == hitHostEncodingTrigger:
-		p.control.Open = !p.control.Open
+		open := !p.control.Open
 		state.closeOtherHostPickers()
+		p.control.Open = open
 	case id == hitHostEncodingClear:
 		p.control.Clear()
 		state.syncHostEncoding()
@@ -147,11 +148,13 @@ func (state *State) clickHostEncodingPicker(id gfx.ID) bool {
 	return true
 }
 
-// closeOtherHostPickers keeps only one searchable popup open at a time, as the
-// group and tag pickers already do between themselves.
+// closeOtherHostPickers keeps only one searchable host-form popup open at a
+// time. Each picker closes every other one before it opens itself.
 func (state *State) closeOtherHostPickers() {
 	state.editor.groupPicker.control.Open = false
 	state.editor.tagPicker.control.Open = false
+	state.editor.encodingPicker.control.Open = false
+	state.editor.iconPicker.control.Open = false
 }
 
 func (state *State) hostEncodingPickerKey(event gfx.KeyEvent) (gfx.EventResult, bool) {

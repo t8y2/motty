@@ -492,6 +492,8 @@ var EnglishMessages = Messages{
 	ErrHostGroupInvalid:         "Group names cannot contain line breaks or control characters",
 	HostTagsCreatePrefix:        "Create tag: ",
 	FieldIcon:                   "Icon",
+	FieldIconPlaceholder:        "Search icons…",
+	IconsEmpty:                  "No matching icon",
 	FieldColor:                  "Color",
 	FieldColorCustom:            "Custom HEX",
 	ColorPickerChoose:           "Custom color",

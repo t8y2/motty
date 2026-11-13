@@ -131,7 +131,7 @@ func (state *State) rememberHostChoice(canvas *gfx.Canvas, bounds gfx.Rect, chos
 
 func (state *State) hostFormPopupOpen() bool {
 	e := &state.editor
-	return e.colorPicker.open || e.authOpen || e.identityOpen || e.credentialOpen || e.portsOpen || e.iconOpen
+	return e.colorPicker.open || e.authOpen || e.identityOpen || e.credentialOpen || e.portsOpen
 }
 
 func (state *State) scrollHostForm(event gfx.ScrollEvent) gfx.EventResult {

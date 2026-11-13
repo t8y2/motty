@@ -492,6 +492,8 @@ var TraditionalMessages = Messages{
 	ErrHostGroupInvalid:         "群組名稱不能包含換行或控制字元",
 	HostTagsCreatePrefix:        "建立標籤：",
 	FieldIcon:                   "圖示",
+	FieldIconPlaceholder:        "搜尋圖示…",
+	IconsEmpty:                  "沒有符合的圖示",
 	FieldColor:                  "顏色",
 	FieldColorCustom:            "自訂色值",
 	ColorPickerChoose:           "自訂顏色",

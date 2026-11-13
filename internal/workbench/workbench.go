@@ -1329,6 +1329,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitDialogEncoding {
 			return &state.hostEncodingPicker().control.Query
 		}
+		if hit == hitDialogIcon {
+			return &state.hostIconPicker().control.Query
+		}
 		if isDialogField(hit) {
 			if state.editor.colorPicker.open {
 				return nil
@@ -2156,6 +2159,9 @@ func (state *State) clickHostDialog(id gfx.ID) {
 	if state.clickHostEncodingPicker(id) {
 		return
 	}
+	if state.clickHostIconPicker(id) {
+		return
+	}
 	if state.clickHostTags(id) {
 		return
 	}
@@ -2860,6 +2866,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.hostEncodingPickerKey(event); handled {
+		return result
+	}
+	if result, handled := state.hostIconPickerKey(event); handled {
 		return result
 	}
 	if result, handled := state.proxyDialogKey(event); handled {

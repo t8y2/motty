@@ -492,6 +492,8 @@ var ChineseMessages = Messages{
 	ErrHostGroupInvalid:         "分组名称不能包含换行或控制字符",
 	HostTagsCreatePrefix:        "创建标签：",
 	FieldIcon:                   "图标",
+	FieldIconPlaceholder:        "搜索图标…",
+	IconsEmpty:                  "没有匹配的图标",
 	FieldColor:                  "颜色",
 	FieldColorCustom:            "自定义色值",
 	ColorPickerChoose:           "自定义颜色",
