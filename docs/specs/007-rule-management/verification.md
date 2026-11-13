@@ -59,3 +59,24 @@ Independent read-only review found a scrollbar-hover mutation (P2); a native red
 The initial scroll-area issue is local app integration: Motty embeds `windowPage().Draw` while routing pointer events centrally, so the page-owned hover scrollbar is not notified. This change uses the existing toolbar settings pattern with `components.ScrollArea` geometry and local pointer routing; Viva is unmodified.
 
 Configuration saving retains the existing nontransactional `save()` behavior and status reporting. This work does not promise rollback for configuration-store failures or atomic multi-rule/vault transactions. No real SSH, credential-store interaction, production data, physical desktop, cross-platform runtime, installation, release or merge was exercised. Commit, push and PR creation use the separately authorized issue-specific branch after these gates.
+
+## CI Follow-Up
+
+The initial PR 803 Ubuntu job `43391780083 / 131776324780` tested merge
+`820ef6eb74e8a2c65a8cd8c03fe9f84711353c6f` against upstream `a4bafd0a`.
+Workbench passed (157.085s), but the newly inherited Mosh interoperability test
+waited for a literal `%` prompt while the runner's bash prompt ended in `$`.
+
+The branch now includes that exact upstream baseline and the same correction
+verified by PR 802's Ubuntu unit/integration job: reuse the shell-independent
+first-screen wait and seed the test display with its drained bytes. Typing,
+single-execution and screen assertions are unchanged. Local macOS has no
+`mosh-server`; that real-server test is skipped locally and is validated by the
+Ubuntu CI job that installs the reference implementation. Follow-up evidence is
+retained under the external evidence directory's `ci-repair/` folder.
+
+After this correction, `go test -p 2 ./... -count=1 -timeout 15m` passed locally
+(workbench 123.094s), the tagged headless rule/import acceptance passed (2.016s),
+Mosh/terminal race tests passed, and focused vet/format/diff checks passed. The
+local real-server skip remains explicit; the corrected PR must still complete
+its own Ubuntu and other remote checks.
