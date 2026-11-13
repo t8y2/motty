@@ -1004,6 +1004,7 @@ func (state *State) closeDisconnectedShell(session *Session) {
 	}
 	releaseShell(terminal.shell)
 	terminal.shell = nil
+	terminal.stopIdleKeepAlive()
 	terminal.login = loginCommand{}
 	terminal.recording.stop()
 	terminal.ended = true

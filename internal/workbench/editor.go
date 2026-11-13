@@ -268,10 +268,13 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 		return messages.Tools.ErrMoshInteractive
 	}
 	if idleKeepAliveProtocol(editor.protocol) {
-		if interval, ok := editor.idleKeepAliveDuration(); !ok {
+		if _, ok := editor.idleKeepAliveDuration(); !ok {
 			editor.advancedOpen = true
 			return messages.Tools.ErrIdleKeepAliveInterval
-		} else if interval > 0 && editor.idleInputValue() == idleInputCustom {
+		} else if editor.idleInputValue() == idleInputCustom {
+			// The payload is saved whether or not the probe is on, so it is
+			// validated the same way: text the next load would drop must not be
+			// saved just because the interval is off.
 			if _, err := parseIdleEscapes(editor.value(fieldIdleInputCustom)); err != nil {
 				editor.advancedOpen = true
 				return messages.Tools.ErrIdleKeepAliveInput

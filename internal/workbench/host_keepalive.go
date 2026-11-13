@@ -274,7 +274,10 @@ func idleKeepAliveProtocol(protocol hostProtocol) bool {
 //
 // A scrolled-back view cannot show a prompt that just arrived, so the probe
 // stands aside while the user is reading history. Soft wrapping can leave the
-// prompt word on the row above the cursor, so both rows are checked.
+// prompt word on the row above the cursor, so the previous row is checked when
+// the terminal says it wrapped onto this one. A hard newline ends the prompt:
+// after "Password:\r\nRouter# " the row above is history, not part of the
+// prompt the cursor is on.
 func idleSeesSecretPrompt(t *terminal) bool {
 	if t == nil || t.screen == nil || t.screen.Modes().AltScreen {
 		return false
@@ -288,7 +291,7 @@ func idleSeesSecretPrompt(t *terminal) bool {
 		return true
 	}
 	line := t.screen.RowText(cursor.Y)
-	if cursor.Y > 0 {
+	if cursor.Y > 0 && t.screen.Row(cursor.Y-1).Wrapped {
 		line = t.screen.RowText(cursor.Y-1) + " " + line
 	}
 	return cmdhistory.PasswordPrompt(line) && strings.ContainsAny(line, ":?：？")
@@ -425,6 +428,17 @@ func (state *State) armIdleKeepAlive(session *Session, wait, now time.Duration) 
 	}
 	t.idleTimer = time.AfterFunc(wait, invalidate)
 	t.idleTimerAt = due
+}
+
+// stopIdleKeepAlive drops the wake scheduled for a shell that is gone. Its only
+// job is to wake the window for a probe, and a closed shell has none to run.
+func (t *terminal) stopIdleKeepAlive() {
+	if t == nil || t.idleTimer == nil {
+		return
+	}
+	t.idleTimer.Stop()
+	t.idleTimer = nil
+	t.idleTimerAt = 0
 }
 
 // requestIdleKeepAliveFrames asks for the frame in which each connected

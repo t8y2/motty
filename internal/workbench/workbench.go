@@ -1050,6 +1050,7 @@ func (state *State) Close() {
 			releaseShell(session.term.shell)
 		}
 		session.term.abandonShell()
+		session.term.stopIdleKeepAlive()
 		if session.conn != nil {
 			session.conn.Cancel()
 		}
@@ -2044,6 +2045,7 @@ func (state *State) closeSession(id uint32) {
 		releaseShell(session.term.shell)
 	}
 	session.term.abandonShell()
+	session.term.stopIdleKeepAlive()
 	state.dropExternalEdits(session.ID)
 	state.closeSFTPTabForSource(session.ID)
 	state.closeCompletionPath(session)

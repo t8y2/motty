@@ -488,6 +488,29 @@ func TestIdleKeepAliveSkipsScrolledOrWrappedPrompts(t *testing.T) {
 			t.Fatalf("typed %q at a wrapped passphrase prompt", got)
 		}
 	})
+	t.Run("new prompt after a password prompt", func(t *testing.T) {
+		state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+		session.term.screen.Write([]byte("Password:\r\nRouter# "))
+		state.runIdleKeepAlive(session, time.Minute)
+		if got := shell.typed(); got == "" {
+			t.Fatal("typed nothing after the password prompt was answered")
+		}
+	})
+}
+
+// A closed shell has nothing left to probe: the wake armed for it is dropped so
+// the window is not asked to repaint for it later.
+func TestIdleKeepAliveDropsTheWakeWhenTheShellIsGone(t *testing.T) {
+	state, session, _ := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
+	state.options.Invalidate = func() {}
+	state.armIdleKeepAlive(session, time.Minute, 0)
+	if session.term.idleTimer == nil {
+		t.Fatal("no wake was armed")
+	}
+	session.term.stopIdleKeepAlive()
+	if session.term.idleTimer != nil || session.term.idleTimerAt != 0 {
+		t.Fatalf("timer = %v at %v after the shell went away", session.term.idleTimer, session.term.idleTimerAt)
+	}
 }
 
 func TestIdleKeepAliveDrainsTheShellBeforeDeciding(t *testing.T) {
@@ -797,6 +820,7 @@ func TestHostEditorValidatesIdleKeepAlive(t *testing.T) {
 		{name: "beyond a day", preset: idleKeepAliveCustom, unit: idleIntervalMinutes, value: "1441", input: idleInputNUL, want: "interval"},
 		{name: "one minute", preset: idleKeepAliveCustom, unit: idleIntervalMinutes, value: "1", input: idleInputNUL},
 		{name: "damaged custom input", preset: idleKeepAliveOneMinute, input: idleInputCustom, chosen: true, custom: `\q`, want: "input"},
+		{name: "damaged custom input while off", preset: idleKeepAliveOff, input: idleInputCustom, chosen: true, custom: `\q`, want: "input"},
 		{name: "valid custom input", preset: idleKeepAliveOneMinute, input: idleInputCustom, chosen: true, custom: `\x00hi`},
 	}
 	for _, test := range cases {

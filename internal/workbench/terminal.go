@@ -1125,6 +1125,7 @@ func (state *State) shellEnded(session *Session) {
 	err := t.shell.Err()
 	t.shell.Close()
 	t.shell = nil
+	t.stopIdleKeepAlive()
 	t.login = loginCommand{}
 	t.finishExec(endShell)
 	t.releasePromptWait()
