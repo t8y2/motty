@@ -399,7 +399,7 @@ func (state *State) aiLayoutChips(canvas *gfx.Canvas, width float32) {
 	row, used := 0, float32(0)
 	for index := range state.ai.attachments {
 		name := aiAttachmentName(state.ai.attachments[index].file.Name)
-		text := min(canvas.TextWidthWeight(name, aiSmallSize, gfx.WeightMedium), aiChipTextMax)
+		text := min(canvas.TextWidthWeight(name, aiSizes.small, gfx.WeightMedium), aiChipTextMax)
 		// icon, text, remove button and the space between and around them
 		chip := min(8+13+5+text+5+18+4, width)
 		if used > 0 && used+aiChipGap+chip > width {
@@ -457,7 +457,7 @@ func (state *State) declareAIChip(c ui.C, chip aiChip) {
 	ui.Row(c).Width(chip.width).Height(aiChipHeight).PadSides(0, 3, 0, 8).Gap(5).Shrink(0).Items(ui.Center).
 		Background(pal.surfaceSoft).Radius(aiChipHeight / 2).Children(func() {
 		ui.Icon(c, lucideIcons[icon]).Size(13, 13).Color(pal.muted).Shrink(0)
-		ui.Text(c, name).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Shrink(1).Grow(1)
+		ui.Text(c, name).FontSize(aiSizes.small).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSizes.smallLine).Ellipsis().Shrink(1).Grow(1)
 		ui.Column(c).Size(18, 18).Shrink(0).Center().Background(fill).Radius(9).
 			HitWith(remove, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: label}).Children(func() {
 			ui.Icon(c, lucideIcons[iconClose]).Size(11, 11).Color(pal.muted)

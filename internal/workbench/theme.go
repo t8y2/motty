@@ -257,6 +257,7 @@ func workbenchMetrics(scale float32) (gfx.Metrics, radii) {
 func applyTextMetrics(scale float32) {
 	metrics, radius = workbenchMetrics(scale)
 	barTitleSize = 13 * scale
+	aiSizes = aiTextMetricsAt(metrics)
 }
 
 // theme maps the palette onto the component theme tokens so framework
