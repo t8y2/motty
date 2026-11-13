@@ -35,6 +35,25 @@ func TestEnterSendsTheSavedPasswordAtASudoPrompt(t *testing.T) {
 	}
 }
 
+func TestEnterSendsTheSavedPasswordAtASudoRsPrompt(t *testing.T) {
+	state, session, shell := passwordHintSession(t)
+	shell.say("$ sudo -i\r\n[sudo: authenticate] Password: ")
+	state.Wake()
+	if rest, ok := state.passwordHintGhost(session); !ok || rest != state.messages.Tools.PasswordHintGhost {
+		t.Fatalf("no offer at the prompt: %q %v", rest, ok)
+	}
+	if shell.typed() != "" {
+		t.Fatalf("the password was sent before Enter: %q", shell.typed())
+	}
+	state.terminalKey(session, gfx.KeyEvent{Key: gfx.KeyEnter})
+	if got := shell.typed(); got != "hunter2\r" {
+		t.Fatalf("typed %q", got)
+	}
+	if _, ok := state.passwordHintGhost(session); ok {
+		t.Fatal("the offer outlived the answer")
+	}
+}
+
 func TestTypingTakesTheSudoOfferBack(t *testing.T) {
 	state, session, shell := passwordHintSession(t)
 	shell.say("[sudo] password for dev: ")
