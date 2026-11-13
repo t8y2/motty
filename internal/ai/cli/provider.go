@@ -51,7 +51,11 @@ func ExecutablePath(kind, path string) (string, error) {
 	resolved, err := exec.LookPath(path)
 	if err != nil && !strings.ContainsAny(path, `/\`) {
 		home, _ := os.UserHomeDir()
-		for _, dir := range []string{filepath.Join(home, ".local", "bin"), filepath.Join(home, ".npm-global", "bin"), filepath.Join(home, ".bun", "bin"), "/opt/homebrew/bin", "/usr/local/bin"} {
+		dirs := []string{filepath.Join(home, ".local", "bin"), filepath.Join(home, ".npm-global", "bin"), filepath.Join(home, ".bun", "bin"), "/opt/homebrew/bin", "/usr/local/bin"}
+		if kind == store.KindPiCLI {
+			dirs = append(dirs, filepath.Join(home, ".pi", "agent", "bin"))
+		}
+		for _, dir := range dirs {
 			if candidate, e := exec.LookPath(filepath.Join(dir, path)); e == nil {
 				resolved, err = candidate, nil
 				break
@@ -74,6 +78,9 @@ func resolve(kind, path string) (command, error) {
 		return command{}, err
 	}
 	c := command{program: resolved}
+	if runtime.GOOS == "windows" && kind == store.KindPiCLI {
+		return resolvePiLauncher(resolved)
+	}
 	if runtime.GOOS == "windows" && (strings.EqualFold(filepath.Ext(resolved), ".cmd") || strings.EqualFold(filepath.Ext(resolved), ".bat")) {
 		dir := filepath.Dir(resolved)
 		if kind == store.KindOpenCodeCLI {
@@ -83,7 +90,7 @@ func resolve(kind, path string) (command, error) {
 				return c, nil
 			}
 		}
-		packages := map[string]string{store.KindCodexCLI: filepath.Join("@openai", "codex", "bin", "codex.js"), store.KindClaudeCLI: filepath.Join("@anthropic-ai", "claude-code", "cli.js"), store.KindPiCLI: filepath.Join("@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js")}
+		packages := map[string]string{store.KindCodexCLI: filepath.Join("@openai", "codex", "bin", "codex.js"), store.KindClaudeCLI: filepath.Join("@anthropic-ai", "claude-code", "cli.js")}
 		entry := filepath.Join(dir, "node_modules", packages[kind])
 		if packages[kind] == "" {
 			return command{}, errors.New("cli: unsupported_launcher")
