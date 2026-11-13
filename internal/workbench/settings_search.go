@@ -160,8 +160,6 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	for _, label := range []string{m.Toolbars.Window, m.Toolbars.Terminal, m.Toolbars.SFTP} {
 		row(settingsGeneral, label, m.Toolbars.Description)
 	}
-	row(settingsGeneral, tools.GeneralUpdateStartup, tools.GeneralUpdateStartupDescription)
-	row(settingsGeneral, tools.GeneralUpdate, tools.GeneralUpdateDescription)
 	row(settingsGeneral, tools.DiagnosticsRow, tools.DiagnosticsDescription)
 	row(settingsTerminal, m.SettingsTerminalOption, m.SettingsTerminalOptionDescription)
 	row(settingsTerminal, m.SettingsTerminalFontSize, m.SettingsTerminalFontSizeDescription)
@@ -290,6 +288,9 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsAbout, about.Build, facts.buildText(about))
 	row(settingsAbout, about.Runtime, facts.runtime)
 	group(settingsAbout, about.InfoTitle, about.CopyRow, about.CopyDescription)
+	group(settingsAbout, about.UpdateTitle, about.UpdateTitle, "")
+	row(settingsAbout, tools.GeneralUpdateStartup, tools.GeneralUpdateStartupDescription)
+	row(settingsAbout, tools.GeneralUpdate, tools.GeneralUpdateDescription)
 	row(settingsAbout, about.QQ, about.QQDescription)
 	row(settingsAbout, about.WeChat, about.WeChatDescription)
 	row(settingsAbout, about.Discord, about.DiscordDescription)

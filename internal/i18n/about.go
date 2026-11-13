@@ -16,6 +16,10 @@ type AboutMessages struct {
 	BuildUnavailable string
 	Runtime          string
 
+	// The update controls sit beside those facts, because they act on the copy
+	// the facts describe.
+	UpdateTitle string
+
 	// Copying those facts for a bug report.
 	CopyRow         string
 	CopyDescription string

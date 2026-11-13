@@ -2759,6 +2759,8 @@ var chineseAbout = AboutMessages{
 	BuildUnavailable: "构建信息不可用",
 	Runtime:          "运行时",
 
+	UpdateTitle: "更新",
+
 	CopyRow:         "复制版本信息",
 	CopyDescription: "版本、平台和提交号，方便写进 Issue。",
 	CopyAction:      "复制",

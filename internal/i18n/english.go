@@ -2759,6 +2759,8 @@ var englishAbout = AboutMessages{
 	BuildUnavailable: "Build information unavailable",
 	Runtime:          "Runtime",
 
+	UpdateTitle: "Updates",
+
 	CopyRow:         "Copy version info",
 	CopyDescription: "Version, platform and commit for a bug report.",
 	CopyAction:      "Copy",

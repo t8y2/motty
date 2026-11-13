@@ -2759,6 +2759,8 @@ var traditionalAbout = AboutMessages{
 	BuildUnavailable: "構建資訊不可用",
 	Runtime:          "執行時",
 
+	UpdateTitle: "更新",
+
 	CopyRow:         "複製版本資訊",
 	CopyDescription: "版本、平台和提交號，方便寫進 Issue。",
 	CopyAction:      "複製",

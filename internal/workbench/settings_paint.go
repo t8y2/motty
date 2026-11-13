@@ -363,7 +363,7 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 			}
 			state.paintToolbarSettingsRows(page)
 		})
-		state.paintUpdateSettings(page)
+		state.paintDiagnosticsSetting(page)
 	})
 }
 
