@@ -2789,6 +2789,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareToolbarSettings(c)
 	case modalHighlightRule:
 		state.declareHighlightDialog(c)
+	case modalRuleManager:
+		state.declareRuleManager(c)
 	case modalNewForward:
 		state.declareForwardDialog(c)
 	case modalNewProxy:

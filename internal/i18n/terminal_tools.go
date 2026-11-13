@@ -718,6 +718,7 @@ type ToolsMessages struct {
 	SyncFailedFmt                   string
 	SyncErrUnauthorized             string
 	SyncErrNotFound                 string
+	SyncErrChanged                  string
 	SyncErrInsecure                 string
 	SyncAllowInsecureHTTP           string
 	SyncInsecureHTTPDescription     string
@@ -1046,6 +1047,7 @@ type ToolsMessages struct {
 	FilesColumnsReset                    string
 	FilesColumnsClose                    string
 	FilesDownloadDirectory               string
+	FilesResizeColumn                    string
 	FilesDownloadAskDescription          string
 	FilesDownloadCurrentFmt              string
 	FilesDownloadChoose                  string

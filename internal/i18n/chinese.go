@@ -359,7 +359,8 @@ var ChineseMessages = Messages{
 	TipFilesLocal:                          "文件:浏览本机文件",
 	SFTPInsertPath:                         "把路径输入终端",
 	MenuCopy:                               "复制",
-	CopyAddressAndPort:                     "复制连接地址和端口",
+	CopyHostAddress:                        "复制 IP",
+	CopyAddressAndPort:                     "复制 IP:PORT",
 	CopyConnectionName:                     "复制连接名称",
 	MenuPaste:                              "粘贴",
 	MenuSelectAll:                          "全选",
@@ -1992,6 +1993,7 @@ var chineseTools = ToolsMessages{
 	FilesColumnsReset:                    "恢复默认",
 	FilesColumnsClose:                    "关闭",
 	FilesDownloadDirectory:               "默认下载文件夹",
+	FilesResizeColumn:                    "调整列宽",
 	FilesDownloadAskDescription:          "每次下载前询问保存位置。",
 	FilesDownloadCurrentFmt:              "下载文件将直接保存到 %s。",
 	FilesDownloadChoose:                  "选择文件夹",
@@ -2285,6 +2287,7 @@ var chineseTools = ToolsMessages{
 	SyncFailedFmt:                   "同步出错：%s",
 	SyncErrUnauthorized:             "服务拒绝了该登录，或该登录没有这个权限。",
 	SyncErrNotFound:                 "服务器上还没有备份。",
+	SyncErrChanged:                  "云端备份刚被其他设备改过。",
 	SyncErrInsecure:                 "请使用 HTTPS，或为此服务允许不安全的远程 HTTP。",
 	SyncAllowInsecureHTTP:           "允许不安全的远程 HTTP",
 	SyncInsecureHTTPDescription:     "HTTP 连接不加密。网络中的其他人可以读取连接、窃取登录信息，并保存加密备份用于离线破解。仅在你信任的网络中启用。",
@@ -2599,6 +2602,14 @@ var chineseTools = ToolsMessages{
 	UpdateFailedFmt:                 "无法检查更新:%v",
 	LoginFailedFmt:                  "无法更改开机自启:%v",
 }
+var chineseRuleManagement = RuleManagementMessages{
+	Manage: "管理规则", CountFmt: "%d 条规则", SelectedFmt: "已选 %d 条",
+	SelectAll: "全选", ClearSelection: "取消全选", DeleteSelected: "删除所选",
+	DeleteSelectedTitle: "删除所选规则？",
+	DeleteSelectedFmt:   "删除选中的 %d 条规则？此操作无法撤销。", Empty: "暂无规则", Close: "完成",
+	HighlightEditTitle: "编辑高亮规则", Duplicate: "此规则已存在。",
+}
+
 var chineseAutofill = AutofillMessages{
 	Group:              "自动填充规则",
 	Row:                "自动填充规则",

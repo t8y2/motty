@@ -69,7 +69,7 @@ func TestAgainstRealMoshServer(t *testing.T) {
 		defer killMosh(pid)
 
 		display := term.New(80, 24, 0)
-		pumpScreen(t, client, display, 10*time.Second, "prompt", []byte("%"))
+		display.Write(waitForOutput(t, client, 10*time.Second, "prompt", nil))
 
 		// A short path keeps the command on one row, so the screen can be
 		// counted without joining wrapped lines.

@@ -98,36 +98,7 @@ func configure(handle windows.Handle, settings Settings) error {
 	if result, _, err := procGetCommState.Call(uintptr(handle), uintptr(unsafe.Pointer(&state))); result == 0 {
 		return err
 	}
-	state.BaudRate = uint32(settings.Baud)
-	state.ByteSize = uint8(settings.DataBits)
-	state.Flags = flagBinary | flagDTRControl
-	switch settings.Parity {
-	case ParityNone:
-	case ParityOdd:
-		state.Parity = 1
-	case ParityEven:
-		state.Parity = 2
-	case ParityMark:
-		state.Parity = 3
-	case ParitySpace:
-		state.Parity = 4
-	}
-	if settings.Parity != ParityNone {
-		state.Flags |= flagParity
-	}
-	if settings.StopBits == 2 {
-		state.StopBits = 2
-	}
-	switch settings.Flow {
-	case FlowHardware:
-		state.Flags |= flagOutxCTS | 2*flagRTSControl
-	case FlowSoftware:
-		state.Flags |= flagOutX | flagInX | flagRTSControl
-		state.XonChar, state.XoffChar = 0x11, 0x13
-		state.XonLim, state.XoffLim = 2048, 512
-	default:
-		state.Flags |= flagRTSControl
-	}
+	applySettings(&state, settings)
 	if result, _, err := procSetCommState.Call(uintptr(handle), uintptr(unsafe.Pointer(&state))); result == 0 {
 		return err
 	}
@@ -139,6 +110,37 @@ func configure(handle windows.Handle, settings Settings) error {
 	}
 	_, _, _ = procPurgeComm.Call(uintptr(handle), 0x0004|0x0008|0x0001|0x0002) // abort and clear both directions
 	return nil
+}
+
+// applySettings writes every field that defines the line into state. A port
+// keeps the settings of whoever opened it last, so a field left as GetCommState
+// returned it lets another program's parity or stop bits decide the frame this
+// one runs. Windows takes the wire format from these fields alone; fParity only
+// turns error reporting on, so selecting no parity must write NOPARITY itself.
+func applySettings(state *dcb, settings Settings) {
+	state.BaudRate = uint32(settings.Baud)
+	state.ByteSize = uint8(settings.DataBits)
+	// NOPARITY, ODDPARITY, EVENPARITY, MARKPARITY and SPACEPARITY are 0 to 4, the
+	// order of the Parity named here.
+	state.Parity = uint8(settings.Parity)
+	state.StopBits = 0 // ONESTOPBIT
+	if settings.StopBits == 2 {
+		state.StopBits = 2 // TWOSTOPBITS
+	}
+	state.Flags = flagBinary | flagDTRControl
+	if settings.Parity != ParityNone {
+		state.Flags |= flagParity
+	}
+	switch settings.Flow {
+	case FlowHardware:
+		state.Flags |= flagOutxCTS | 2*flagRTSControl
+	case FlowSoftware:
+		state.Flags |= flagOutX | flagInX | flagRTSControl
+		state.XonChar, state.XoffChar = 0x11, 0x13
+		state.XonLim, state.XoffLim = 2048, 512
+	default:
+		state.Flags |= flagRTSControl
+	}
 }
 
 func (p *port) enter() bool {

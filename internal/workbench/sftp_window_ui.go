@@ -87,15 +87,24 @@ type sftpWindowUI struct {
 	barGrab      float32
 	treeBarDrag  int // 1: local tree, 2: remote tree; zero when idle
 	treeBarGrab  float32
-	fraction     float32
-	split        components.Resizable
-	splitting    bool
-	tooltip      components.HoverTooltip
-	menuOpen     bool
-	menuAt       gfx.Point
-	queueBounds  gfx.Rect
-	queueOffset  float32
-	queueBar     components.ScrollAreaGeometry
+	// columnDragging, columnDrag and the fit fields are the file lists' column
+	// dividers. The area and widths the panes last painted are kept for the
+	// pointer, which has no canvas of its own.
+	columnDragging   [2]bool
+	columnDrag       [2]int
+	columnFitPending [2]bool
+	columnFitDivider [2]int
+	columnArea       [2]gfx.Rect
+	columnWidths     [2][3]float32
+	fraction         float32
+	split            components.Resizable
+	splitting        bool
+	tooltip          components.HoverTooltip
+	menuOpen         bool
+	menuAt           gfx.Point
+	queueBounds      gfx.Rect
+	queueOffset      float32
+	queueBar         components.ScrollAreaGeometry
 	// The queue's cards are page elements now; these are the entries drawn and
 	// the scratch their hand-painted parts go into.
 	queueItems          int
@@ -129,6 +138,7 @@ type sftpWindowScratch struct {
 	// page is not drawn in a page of its own, so it reads its size from here.
 	bounds      gfx.Rect
 	local       bool
+	header      ui.Box
 	address     ui.Box
 	list        ui.Box
 	tree        ui.Box
@@ -196,6 +206,20 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	}
 	if s := &w.ui.panes[sideIndex(!firstLocal)]; s.list.Valid() {
 		w.paintPaneDetails(canvas, s, !firstLocal)
+	}
+	for side := range w.ui.panes {
+		header := w.ui.panes[side].header
+		if !header.Valid() {
+			continue
+		}
+		rect := header.Rect()
+		if rect.Width <= 16 || rect.Height <= 0 {
+			continue
+		}
+		w.ui.columnArea[side] = gfx.Rect{X: rect.X + 8, Y: rect.Y, Width: rect.Width - 16, Height: rect.Height}
+		if w.owner.sftpColumnResizeAvailable() {
+			w.paintColumnDividers(canvas, side)
+		}
 	}
 	if w.queueCount() > 0 {
 		w.paintQueueDetails(canvas, w.ui.queue)
@@ -459,10 +483,23 @@ func (w *sftpWindow) paintPaneDetails(canvas *gfx.Canvas, s *sftpWindowScratch, 
 // side even when the panes swap places.
 func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 	local := s.local
+	side := sideIndex(local)
 	folder := w.folder(local)
 	theme, m := w.owner.Theme(), w.owner.messages
 	bounds := s.bounds
 	compact := bounds.Height < 230
+	resizable := w.owner.sftpColumnResizeAvailable()
+	var columns sftpColumnMetrics
+	if resizable {
+		columnAreaWidth := max(bounds.Width-32, 0)
+		columns = w.owner.sftpColumnMetrics(columnAreaWidth, sftpColumnNameGap)
+		if w.ui.columnFitPending[side] {
+			fit := w.owner.sftpColumnFitWidth(folder, c.Canvas(), w.ui.columnFitDivider[side])
+			columns = w.owner.applySFTPColumnFit(columns, w.ui.columnFitDivider[side], fit)
+			w.ui.columnFitPending[side] = false
+		}
+		w.ui.columnWidths[side] = [3]float32{columns.name, columns.size, columns.modified}
+	}
 	icon := func(id gfx.ID, glyph uint8, hint string, disabled bool, style iconButtonStyle) {
 		s.buttons[s.buttonCount] = sftpIconButton{box: w.owner.declareIconButton(c, id, glyph, hint, disabled, style).Size(28, 28), id: id}
 		s.buttonCount++
@@ -535,7 +572,8 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 		if local {
 			w.owner.declareLocalCoverage(c, folder, hitSFTPWindowCoverage)
 		}
-		ui.Row(c).Height(20).Gap(8).PadX(8).Items(ui.Center).Children(func() {
+		s.header = ui.Row(c).Height(20).Gap(8).PadX(8).Items(ui.Center)
+		s.header.Children(func() {
 			for _, entry := range w.owner.sftpColumns.entries {
 				if !entry.Enabled {
 					continue
@@ -547,20 +585,32 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 				case sftpColumnModified:
 					label = m.SFTPWindow.Modified
 				}
-				if w.ui.sort[sideIndex(local)].column == column {
-					if w.ui.sort[sideIndex(local)].descending {
+				if w.ui.sort[side].column == column {
+					if w.ui.sort[side].descending {
 						label += " ↓"
 					} else {
 						label += " ↑"
 					}
 				}
-				box := ui.Text(c, label).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().HitWith(sftpWindowSortHits[sideIndex(local)].At(column), label, gfx.HitOptions{Role: gfx.RoleButton})
+				box := ui.Text(c, label).FontSize(theme.Metrics.FontSizeS).Color(theme.MutedForeground).Ellipsis().HitWith(sftpWindowSortHits[side].At(column), label, gfx.HitOptions{Role: gfx.RoleButton})
 				if column == 0 {
-					box.Grow(1)
+					if resizable {
+						box.Width(columns.name)
+					} else {
+						box.Grow(1)
+					}
 				} else if column == 1 {
-					box.Width(62).TextEnd()
+					if resizable {
+						box.Width(columns.size).TextEnd()
+					} else {
+						box.Width(62).TextEnd()
+					}
 				} else {
-					box.Width(w.dateWidth(bounds.Width))
+					if resizable {
+						box.Width(columns.modified)
+					} else {
+						box.Width(w.dateWidth(bounds.Width))
+					}
 				}
 			}
 		})
@@ -586,7 +636,7 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 				folder.prepareSFTPList()
 				folder.seedSFTPListChoice()
 				s.list = ui.List(c, &folder.list, len(folder.rows), func(row ui.ListRow) {
-					w.declareListRow(row, sideIndex(local), bounds.Width, rowWidth)
+					w.declareListRow(row, side, bounds.Width, rowWidth, columns)
 				}).Grow(1).Label(m.SFTPFiles)
 				folder.seedSFTPListCurrent()
 				if folder.list.Changed() {
@@ -650,7 +700,7 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 // and, when the columns are on, its size and modification time. A selected row
 // is tinted, the pointer lightens one, and the keyboard's row is ringed. The
 // List owns the choice and the hover identity; the window only reads them.
-func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidth float32) {
+func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidth float32, columns sftpColumnMetrics) {
 	folder := w.folder(side == 0)
 	if row.Index < 0 || row.Index >= len(folder.rows) {
 		return
@@ -680,22 +730,35 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 	if row.Focused() {
 		box = box.Border(1, pal.accent)
 	}
+	sizeWidth, modifiedWidth := float32(62), w.dateWidth(paneWidth)
+	resizable := w.owner.sftpColumnResizeAvailable()
+	if resizable {
+		sizeWidth, modifiedWidth = columns.size, columns.modified
+	}
 	box.Children(func() {
 		declareSFTPRowIcon(c, entry, tint)
-		ui.Text(c, entry.entry.Name).Color(color).Ellipsis().Grow(1)
+		name := ui.Text(c, entry.entry.Name).Color(color).Ellipsis().Grow(1)
+		if resizable {
+			// The row spends its padding, the icon and the gaps before the name
+			// text; a name wider than what is left is the one the tooltip is for.
+			available := rowWidth - 16 - sftpColumnIconWidth - 3*sftpColumnNameGap - sizeWidth - modifiedWidth
+			if available > 0 && c.Canvas().TextWidth(entry.entry.Name, metrics.FontSizeM) > available {
+				name = name.HitWith(row.ID, entry.entry.Name, gfx.HitOptions{Hint: entry.entry.Name, SkipFocus: true})
+			}
+		}
 		for _, column := range w.owner.sftpColumns.entries[1:] {
 			if !column.Enabled {
 				continue
 			}
 			if column.Key == sftpColumnSize {
-				ui.Text(c, entry.cells[2]).FontSize(metrics.FontSizeS).Color(pal.muted).Width(62).TextEnd()
+				ui.Text(c, entry.cells[2]).FontSize(metrics.FontSizeS).Color(pal.muted).Width(sizeWidth).TextEnd()
 			}
 			if column.Key == sftpColumnModified {
 				date := entry.cells[3]
 				if paneWidth < 420 && len(date) >= 16 {
 					date = date[5:10]
 				}
-				ui.Text(c, date).FontSize(metrics.FontSizeS).Color(pal.muted).Width(w.dateWidth(paneWidth))
+				ui.Text(c, date).FontSize(metrics.FontSizeS).Color(pal.muted).Width(modifiedWidth)
 			}
 		}
 	})

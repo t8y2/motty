@@ -8,14 +8,17 @@ func TestParseFindsThePathPosition(t *testing.T) {
 		command, dir, base             string
 		query                          string
 		home, path, separate, supports bool
+		dirsOnly                       bool
 	}{
-		{line: "cd ", command: "cd", path: true, supports: true},
-		{line: "cd src/", command: "cd", dir: "src/", query: "src/", path: true, supports: true},
-		{line: "cd src/al", command: "cd", dir: "src/", base: "al", query: "src/", path: true, supports: true},
-		{line: "cd /usr/lo", command: "cd", dir: "/usr/", base: "lo", query: "/usr/", path: true, supports: true},
-		{line: "cd ~", command: "cd", dir: "~/", home: true, path: true, supports: true},
-		{line: "cd ~/", command: "cd", dir: "~/", home: true, path: true, supports: true},
-		{line: "cd ~/pro", command: "cd", dir: "~/", base: "pro", home: true, path: true, supports: true},
+		{line: "cd ", command: "cd", path: true, supports: true, dirsOnly: true},
+		{line: "cd src/", command: "cd", dir: "src/", query: "src/", path: true, supports: true, dirsOnly: true},
+		{line: "cd src/al", command: "cd", dir: "src/", base: "al", query: "src/", path: true, supports: true, dirsOnly: true},
+		{line: "cd /usr/lo", command: "cd", dir: "/usr/", base: "lo", query: "/usr/", path: true, supports: true, dirsOnly: true},
+		{line: "cd ~", command: "cd", dir: "~/", home: true, path: true, supports: true, dirsOnly: true},
+		{line: "cd ~/", command: "cd", dir: "~/", home: true, path: true, supports: true, dirsOnly: true},
+		{line: "cd ~/pro", command: "cd", dir: "~/", base: "pro", home: true, path: true, supports: true, dirsOnly: true},
+		{line: "pushd s", command: "pushd", base: "s", path: true, supports: true, dirsOnly: true},
+		{line: "rmdir s", command: "rmdir", base: "s", path: true, supports: true, dirsOnly: true},
 		{line: "cat file", command: "cat", base: "file", path: true, supports: true},
 		{line: "ls -l ", command: "ls", path: true, supports: true},
 		{line: "chmod 755 fi", command: "chmod", base: "fi", path: true, supports: true},
@@ -25,7 +28,7 @@ func TestParseFindsThePathPosition(t *testing.T) {
 
 		// A complete path command is asking for its argument before the space:
 		// the menu opens there and the insertion supplies the separator.
-		{line: "cd", command: "cd", path: true, separate: true, supports: true},
+		{line: "cd", command: "cd", path: true, separate: true, supports: true, dirsOnly: true},
 		{line: "cat", command: "cat", path: true, separate: true, supports: true},
 		{line: "./cat", command: "cat", path: true, separate: true, supports: true},
 		{line: "chmod", command: "chmod", supports: true},
@@ -68,9 +71,10 @@ func TestParseFindsThePathPosition(t *testing.T) {
 				return
 			}
 			if got.Command != test.command || got.Dir != test.dir || got.Base != test.base ||
-				got.Query != test.query || got.Home != test.home || got.Path != test.path || got.Separate != test.separate {
-				t.Fatalf("Parse(%q) = %+v, want command=%q dir=%q base=%q query=%q home=%v path=%v separate=%v",
-					test.line, got, test.command, test.dir, test.base, test.query, test.home, test.path, test.separate)
+				got.Query != test.query || got.Home != test.home || got.Path != test.path || got.Separate != test.separate ||
+				got.DirsOnly != test.dirsOnly {
+				t.Fatalf("Parse(%q) = %+v, want command=%q dir=%q base=%q query=%q home=%v path=%v separate=%v dirsOnly=%v",
+					test.line, got, test.command, test.dir, test.base, test.query, test.home, test.path, test.separate, test.dirsOnly)
 			}
 		})
 	}
@@ -151,7 +155,7 @@ func TestSafeInsertAcceptsOnlyTheEscapedAlphabet(t *testing.T) {
 }
 
 func TestCandidatesReadTheListingOrder(t *testing.T) {
-	ctx, ok := Parse("cd src/")
+	ctx, ok := Parse("cat src/")
 	if !ok || !ctx.Path {
 		t.Fatalf("line parsed as %+v ok=%v", ctx, ok)
 	}
@@ -178,6 +182,38 @@ func TestCandidatesReadTheListingOrder(t *testing.T) {
 	}
 }
 
+func TestCandidatesKeepOnlyFoldersWhereTheCommandNeedsOne(t *testing.T) {
+	ctx, ok := Parse("cd ")
+	if !ok || !ctx.DirsOnly {
+		t.Fatalf("cd parsed as %+v ok=%v", ctx, ok)
+	}
+	entries := []Entry{
+		{Name: "docs", Dir: true},
+		{Name: "hostfile"},
+		{Name: "latest", Link: true}, // a link may name a folder
+	}
+	got := Candidates(ctx, entries)
+	want := []Candidate{
+		{Text: "docs/", Insert: "docs/", Dir: true},
+		{Text: "latest", Insert: "latest"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("candidates = %+v", got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("candidate %d = %+v, want %+v", index, got[index], want[index])
+		}
+	}
+	// A file command keeps folders: they are how a user reaches a file inside
+	// one, which is what the shell's own completion does.
+	ctx, _ = Parse("cat ")
+	got = Candidates(ctx, []Entry{{Name: "docs", Dir: true}, {Name: "hostfile"}})
+	if len(got) != 2 {
+		t.Fatalf("cat candidates = %+v", got)
+	}
+}
+
 func TestCandidatesFilterAndCompleteExactNames(t *testing.T) {
 	ctx, _ := Parse("cat al")
 	got := Candidates(ctx, []Entry{{Name: "alpha"}, {Name: "beta"}})
@@ -200,7 +236,7 @@ func TestCandidatesFilterAndCompleteExactNames(t *testing.T) {
 
 func TestCandidatesShowHiddenNamesOnlyAfterADot(t *testing.T) {
 	entries := []Entry{{Name: ".config", Dir: true}, {Name: "visible"}}
-	ctx, _ := Parse("cd ")
+	ctx, _ := Parse("cat ")
 	if got := Candidates(ctx, entries); len(got) != 1 || got[0].Text != "visible" {
 		t.Fatalf("hidden names without a dot: %+v", got)
 	}
@@ -211,7 +247,7 @@ func TestCandidatesShowHiddenNamesOnlyAfterADot(t *testing.T) {
 }
 
 func TestCandidatesSeparateTheCommandFromItsArgument(t *testing.T) {
-	ctx, ok := Parse("cd")
+	ctx, ok := Parse("cat")
 	if !ok || !ctx.Path || !ctx.Separate {
 		t.Fatalf("bare command parsed as %+v ok=%v", ctx, ok)
 	}

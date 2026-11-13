@@ -41,6 +41,8 @@ type fileIconSlot struct {
 	path    string
 	modTime time.Time  // of the bundle when listed: an updated one is a different icon
 	bitmap  gfx.Bitmap // empty until the system has answered
+	loading bool       // a goroutine is asking the system
+	failed  bool       // the system has no icon for this kind, so do not ask again
 }
 
 func (slot *fileIconSlot) ready() bool { return slot != nil && slot.bitmap.Width > 0 }
@@ -124,6 +126,8 @@ func declareSFTPRowIcon(c ui.C, row *sftpRow, tint gfx.Color) {
 	switch {
 	case row.appIcon.ready():
 		ui.Image(c, row.appIcon.bitmap)
+	case row.typeIcon.ready():
+		ui.Image(c, row.typeIcon.bitmap)
 	case row.icon != nil:
 		ui.Icon(c, *row.icon).Color(tint)
 	}

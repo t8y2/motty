@@ -42,6 +42,10 @@ type Context struct {
 	Home bool
 	// Path reports that the current word is a filesystem path to complete.
 	Path bool
+	// DirsOnly reports that the command's positional names a directory: a file
+	// there would fail, so only folders and links (which may name one) are
+	// offered.
+	DirsOnly bool
 	// Separate reports that the current word is the command itself: the path is
 	// its next argument, so an insertion starts with a space.
 	Separate bool
@@ -70,8 +74,13 @@ type Candidate struct {
 }
 
 // pathCommand is how a command's positionals are read. skip is how many leading
-// positionals are not paths (chmod's mode, grep's pattern).
-type pathCommand struct{ skip int }
+// positionals are not paths (chmod's mode, grep's pattern). dirsOnly marks a
+// command whose positional names a directory (cd, pushd, rmdir), where a file
+// is not an answer.
+type pathCommand struct {
+	skip     int
+	dirsOnly bool
+}
 
 // pathCommands are the commands whose positional arguments are filesystem
 // paths. This is product data, not catalog data: the public catalog is command
@@ -80,9 +89,9 @@ type pathCommand struct{ skip int }
 // word itself looks like a path ("." or "/" or "~"), which is how any script
 // can be helped.
 var pathCommands = map[string]pathCommand{
-	"cd": {}, "pushd": {},
+	"cd": {dirsOnly: true}, "pushd": {dirsOnly: true},
 	"ls": {}, "cat": {}, "less": {}, "more": {}, "head": {}, "tail": {},
-	"mkdir": {}, "rmdir": {}, "touch": {}, "cp": {}, "mv": {}, "rm": {},
+	"mkdir": {}, "rmdir": {dirsOnly: true}, "touch": {}, "cp": {}, "mv": {}, "rm": {},
 	"ln": {}, "stat": {}, "file": {}, "du": {}, "df": {},
 	"tar": {}, "unzip": {}, "zip": {}, "gzip": {}, "gunzip": {},
 	"vim": {}, "vi": {}, "nvim": {}, "nano": {}, "emacs": {}, "code": {},
@@ -106,7 +115,7 @@ func Parse(line string) (Context, bool) {
 		// here; the insertion supplies the space.
 		ctx := Context{Command: commandName(word), Word: word}
 		if command, known := pathCommands[ctx.Command]; known && command.skip == 0 {
-			ctx.Path, ctx.Separate = true, true
+			ctx.Path, ctx.Separate, ctx.DirsOnly = true, true, command.dirsOnly
 		}
 		return ctx, true
 	}
@@ -130,13 +139,15 @@ func Parse(line string) (Context, bool) {
 		return ctx, true // an option, never a path
 	}
 	pathWord := strings.Contains(word, "/") || strings.HasPrefix(word, "~")
-	if !pathWord {
-		command, known := pathCommands[ctx.Command]
-		if !known || positionalIndex(tokens) < command.skip {
-			return ctx, true
-		}
+	command, known := pathCommands[ctx.Command]
+	positional := positionalIndex(tokens)
+	if !pathWord && (!known || positional < command.skip) {
+		return ctx, true
 	}
 	ctx.Path = true
+	if known && positional >= command.skip {
+		ctx.DirsOnly = command.dirsOnly
+	}
 	return ctx, true
 }
 
@@ -297,7 +308,9 @@ func SafeInsert(suffix string) bool {
 // in the order they arrive, which the lister sorts directories first. Hidden
 // names are offered only when the user has started typing a dot, and a name
 // that would read as an option is left out: it could never be typed as a
-// positional argument the shell would take literally.
+// positional argument the shell would take literally. A directory-only position
+// keeps folders and links, since a listing does not always know what a link
+// names.
 func Candidates(ctx Context, entries []Entry) []Candidate {
 	if !ctx.Path {
 		return nil
@@ -315,6 +328,9 @@ func Candidates(ctx Context, entries []Entry) []Candidate {
 			continue
 		}
 		if strings.HasPrefix(entry.Name, "-") || !strings.HasPrefix(entry.Name, ctx.Base) {
+			continue
+		}
+		if ctx.DirsOnly && !entry.Dir && !entry.Link {
 			continue
 		}
 		if entry.Name == ctx.Base && !entry.Dir {

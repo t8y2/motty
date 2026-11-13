@@ -493,6 +493,7 @@ const (
 	modalVaultUnlock
 	modalVaultForget
 	modalHighlightRule
+	modalRuleManager
 	modalSnippet
 	modalSnippetDelete
 	modalSnippetVariables
@@ -1282,6 +1283,10 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
+	if state.modal == modalRuleManager {
+		state.ruleManager = ruleManagerUI{}
+	}
 	if state.modal == modalSnippetVariables {
 		state.snippetPrompt = snippetPromptState{}
 	}
@@ -1331,6 +1336,11 @@ func (state *State) closeModal() {
 		state.localProxyUI = localProxyUI{}
 	}
 	state.modal = modalNone
+	if returnToRules {
+		state.modal = modalRuleManager
+		state.ruleManager.returning = false
+		state.ruleManager.list = nil
+	}
 	state.modalSession = 0
 	state.reveal.reset()
 	state.passwordFields = nil

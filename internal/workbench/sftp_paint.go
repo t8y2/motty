@@ -55,6 +55,14 @@ type sftpPanelScratch struct {
 	// width of a row, which the header shares.
 	sizeWidth, modifiedWidth float32
 	rowWidth                 float32
+	// columnArea is where the header's columns lie, and columnWidths the three
+	// widths painted there. The divider geometry the pointer reads and the
+	// rectangles painted over the header are kept here so a repaint reuses them.
+	columnArea     gfx.Rect
+	columnWidths   [3]float32
+	columnColumns  [3]gfx.Rect
+	columnDividers [2]gfx.Rect
+	columnHits     [2]gfx.Rect
 }
 
 // sftpEditorScratch is the room the editor page leaves for its text area and
@@ -116,6 +124,7 @@ func (state *State) paintSFTPPanelDetails(canvas *gfx.Canvas) {
 		state.paintSFTPBreadcrumbs(canvas, s.crumbs.Rect(), folder.crumbs)
 	}
 	state.paintSFTPList(canvas, s, session, view)
+	state.paintSFTPPanelColumnDividers(canvas)
 	view.places.anchors[sideIndex(local)] = s.crumbs.Rect()
 	if view.bookmarksOpen {
 		places := sftpPlaceBrowser{owner: state, session: session, view: view}
@@ -276,10 +285,23 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			rowWidth = max(rowWidth-10, 0)
 		}
 		s.rowWidth = rowWidth
-		s.sizeWidth, s.modifiedWidth = sftpColumnWidths(rowWidth)
+		resizable := state.sftpColumnResizeAvailable()
+		var columns sftpColumnMetrics
+		if resizable {
+			columnAreaWidth := max(rowWidth-16, 0)
+			columns = state.pendingSFTPColumnMetrics(view, folder, c.Canvas(), columnAreaWidth, 0)
+			s.sizeWidth, s.modifiedWidth = columns.size, columns.modified
+			s.columnWidths = [3]float32{columns.name, columns.size, columns.modified}
+		} else {
+			s.sizeWidth, s.modifiedWidth = sftpColumnWidths(rowWidth)
+		}
 		if !searching {
 			s.listHeader = ui.Row(c).Width(rowWidth).Height(sftpListHeaderHeight).Shrink(0).PadX(8).Items(ui.Center).Children(func() {
-				state.declareSFTPColumnHeader(c, folder, 0, state.messages.SFTPWindow.Name, 0, true)
+				if resizable {
+					state.declareSFTPColumnHeader(c, folder, 0, state.messages.SFTPWindow.Name, columns.name, false)
+				} else {
+					state.declareSFTPColumnHeader(c, folder, 0, state.messages.SFTPWindow.Name, 0, true)
+				}
 				for _, entry := range state.sftpColumns.entries[1:] {
 					if !entry.Enabled {
 						continue
@@ -299,7 +321,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			folder.listPendingFirst = -1
 		}
 		s.listSlot = ui.List(c, &folder.list, len(rows), func(row ui.ListRow) {
-			state.declareSFTPListRow(row, folder, view, searching, s.sizeWidth, s.modifiedWidth, rowWidth)
+			state.declareSFTPListRow(row, folder, view, searching, s.sizeWidth, s.modifiedWidth, rowWidth, columns)
 		}).Grow(1).HitWith(hitSFTPListBackground, messages.SFTPFiles, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
 		folder.seedSFTPListCurrent()
 		if folder.list.Changed() {
@@ -399,6 +421,26 @@ func (state *State) declareSFTPPanel(c ui.C) {
 // header, the scroll bar, the empty or loading message and the place dropped
 // files would go. The rows themselves are declared as elements by
 // declareSFTPListRow, and the header by declareSFTPColumnHeader.
+// paintSFTPPanelColumnDividers draws the drag handles over the docked list's
+// header and keeps the geometry the pointer reads.
+func (state *State) paintSFTPPanelColumnDividers(canvas *gfx.Canvas) {
+	if !state.sftpColumnResizeAvailable() {
+		return
+	}
+	s := &state.chrome.sftpPanel
+	if s.view == nil || !s.listHeader.Valid() {
+		return
+	}
+	header := s.listHeader.Rect()
+	if header.Width <= 16 || header.Height <= 0 {
+		return
+	}
+	s.columnArea = gfx.Rect{X: header.X + 8, Y: header.Y, Width: header.Width - 16, Height: header.Height}
+	ids := [2]gfx.ID{hitSFTPPanelColumnDivider.At(0), hitSFTPPanelColumnDivider.At(1)}
+	paintSFTPColumnResize(canvas, state.Theme(), s.columnArea, s.columnWidths, 0, ids,
+		state.messages.Tools.FilesResizeColumn, s.columnColumns[:], s.columnDividers[:], s.columnHits[:])
+}
+
 func (state *State) paintSFTPList(canvas *gfx.Canvas, s *sftpPanelScratch, session *Session, view *sftpView) {
 	pal := state.pal
 	folder, local := view.active(), view.local
@@ -530,7 +572,13 @@ func (state *State) declareSFTPColumnHeader(c ui.C, folder *sftpFolder, column i
 		if grow {
 			textBox = textBox.Grow(1)
 		} else {
-			textBox = textBox.Width(width - 4).TextEnd()
+			// The name starts at the list's left edge, like the rows under it
+			// and the detached window's header; the numeric columns end at
+			// their right edge.
+			textBox = textBox.Width(width - 4)
+			if column > 0 {
+				textBox = textBox.TextEnd()
+			}
 		}
 	})
 }
@@ -539,7 +587,7 @@ func (state *State) declareSFTPColumnHeader(c ui.C, folder *sftpFolder, column i
 // which takes the room and ends with an ellipsis, and, when there is room, its
 // modification time. A selected row is tinted; the pointer lightens one. A
 // search result has its folder after the name, where the columns would be.
-func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view *sftpView, result bool, sizeWidth, modifiedWidth, rowWidth float32) {
+func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view *sftpView, result bool, sizeWidth, modifiedWidth, rowWidth float32, columns sftpColumnMetrics) {
 	rows := folder.shownRows()
 	if row.Index < 0 || row.Index >= len(rows) {
 		return
@@ -593,7 +641,13 @@ func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view 
 				ui.Text(c, suffix).FontSize(metrics.FontSizeM).Color(nameColor).Ellipsis().Grow(1)
 				return
 			}
-			ui.Text(c, name).FontSize(metrics.FontSizeM).Color(nameColor).Ellipsis().Grow(1)
+			nameText := ui.Text(c, name).FontSize(metrics.FontSizeM).Color(nameColor).Ellipsis().Grow(1)
+			if state.sftpColumnResizeAvailable() {
+				available := columns.name - sftpColumnIconWidth - sftpColumnNameGap
+				if available > 0 && canvas.TextWidth(name, metrics.FontSizeM) > available {
+					nameText.HitWith(row.ID, name, gfx.HitOptions{Hint: name, SkipFocus: true})
+				}
+			}
 		})
 		for _, column := range state.sftpColumns.entries[1:] {
 			if !column.Enabled || result {

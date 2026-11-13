@@ -359,7 +359,8 @@ var EnglishMessages = Messages{
 	TipFilesLocal:                          "Files: browse this computer",
 	SFTPInsertPath:                         "Type the path into the terminal",
 	MenuCopy:                               "Copy",
-	CopyAddressAndPort:                     "Copy Address and Port",
+	CopyHostAddress:                        "Copy IP",
+	CopyAddressAndPort:                     "Copy IP:PORT",
 	CopyConnectionName:                     "Copy Connection Name",
 	MenuPaste:                              "Paste",
 	MenuSelectAll:                          "Select All",
@@ -1992,6 +1993,7 @@ var englishTools = ToolsMessages{
 	FilesColumnsReset:                    "Reset",
 	FilesColumnsClose:                    "Close",
 	FilesDownloadDirectory:               "Default download folder",
+	FilesResizeColumn:                    "Resize column",
 	FilesDownloadAskDescription:          "Ask where to save each download.",
 	FilesDownloadCurrentFmt:              "Downloads are saved directly to %s.",
 	FilesDownloadChoose:                  "Choose folder",
@@ -2285,6 +2287,7 @@ var englishTools = ToolsMessages{
 	SyncFailedFmt:                   "Sync failed: %s",
 	SyncErrUnauthorized:             "The service refused the login, or the login may not do this.",
 	SyncErrNotFound:                 "There is no backup on the server yet.",
+	SyncErrChanged:                  "Another device changed the cloud backup just now.",
 	SyncErrInsecure:                 "Use HTTPS, or allow insecure remote HTTP for this service.",
 	SyncAllowInsecureHTTP:           "Allow insecure remote HTTP",
 	SyncInsecureHTTPDescription:     "HTTP is not encrypted. Anyone on the network can read the connection, intercept logins, and keep a copy of the encrypted backup to attack offline. Enable only on a network you trust.",
@@ -2599,6 +2602,14 @@ var englishTools = ToolsMessages{
 	UpdateFailedFmt:                 "Could not check for updates: %v",
 	LoginFailedFmt:                  "Could not change starting at login: %v",
 }
+var englishRuleManagement = RuleManagementMessages{
+	Manage: "Manage rules", CountFmt: "%d rules", SelectedFmt: "%d selected",
+	SelectAll: "Select all", ClearSelection: "Clear selection", DeleteSelected: "Delete selected",
+	DeleteSelectedTitle: "Delete selected rules?",
+	DeleteSelectedFmt:   "Delete %d selected rules? This cannot be undone.", Empty: "No rules", Close: "Done",
+	HighlightEditTitle: "Edit a highlight rule", Duplicate: "This rule already exists.",
+}
+
 var englishAutofill = AutofillMessages{
 	Group:              "Autofill rules",
 	Row:                "Autofill rules",

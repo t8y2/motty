@@ -241,6 +241,8 @@ func (state *State) backupErrorText(err error) string {
 		return m.SyncErrUnauthorized
 	case errors.Is(err, cloudsync.ErrNotFound):
 		return m.SyncErrNotFound
+	case errors.Is(err, cloudsync.ErrChanged):
+		return m.SyncErrChanged
 	case errors.Is(err, cloudsync.ErrInsecure):
 		return m.SyncErrInsecure
 	case errors.Is(err, cloudsync.ErrTooLarge):
