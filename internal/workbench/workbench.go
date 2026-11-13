@@ -879,14 +879,17 @@ type State struct {
 	noteWatches    map[string]*app.DirectoryWatch
 	noteWatchNames []string
 	// noteTreeWatches follows each linked folder, noteScans reads them.
-	noteTreeWatches map[string]*app.DirectoryWatch
-	noteScans       map[string]*noteFolderScanState
-	noteExit        *noteExitRequest
-	noteTarget      *notesUI
-	snippets        snippetsUI
-	snippetSend     snippetSender
-	history         historyUI
-	completion      completionUI
+	noteTreeWatches  map[string]*app.DirectoryWatch
+	noteScans        map[string]*noteFolderScanState
+	noteExit         *noteExitRequest
+	noteTarget       *notesUI
+	snippets         snippetsUI
+	commands         commandsUI
+	snippetSend      snippetSender
+	snippetPrompt    snippetPromptState
+	snippetVarValues map[string]map[string]string
+	history          historyUI
+	completion       completionUI
 	// broadcast is the tab whose panes type together, or zero.
 	broadcast layoutcore.WorkspaceID
 
@@ -1100,6 +1103,7 @@ func New(options Options) *State {
 		update:                updateState{firstDelay: updateFirstDelayDefault, every: updateIntervalDefault},
 		winChrome:             windowChrome{remember: options.RememberWindowFrame},
 	}
+	// The command drawer shows by default; a saved state may close it.
 	// The reference cell stands in until the first paint measures the font on the
 	// window's canvas (measureTerminalCell).
 	state.cellWidth, state.cellHeight = (&gfx.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
@@ -1331,6 +1335,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitDialogEncoding {
 			return &state.hostEncodingPicker().control.Query
 		}
+		if hit == hitDialogIcon {
+			return &state.hostIconPicker().control.Query
+		}
 		if isDialogField(hit) {
 			if state.editor.colorPicker.open {
 				return nil
@@ -1442,6 +1449,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 			return &state.snippets.command
 		case hitSnippetGroup:
 			return &state.snippets.groupPicker.Query
+		}
+	case modalSnippetVariables:
+		if idx, ok := hit.In(hitSnippetVarList); ok && idx >= 0 && idx < len(state.snippetPrompt.editors) {
+			return &state.snippetPrompt.editors[idx]
 		}
 	case modalCommandPalette:
 		if hit == hitCommandPaletteSearch {
@@ -1648,6 +1659,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalSnippetDelete:
 		state.clickSnippetDeleteDialog(id)
 		return
+	case modalSnippetVariables:
+		state.clickSnippetVariablesDialog(id)
+		return
 	case modalImportSessions:
 		state.clickImportSessions(id)
 		return
@@ -1731,10 +1745,15 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickWorkspaceCommand(id) {
 		return
 	}
+	if state.clickCommandsDrawer(id) {
+		return
+	}
 	if state.clickFindPreferences(id) || state.clickTerminalFind(id) {
 		return
 	}
 	if id == hitTerminalSnippets {
+		// One button, one meaning: the picker, whatever the command bar's state.
+		// Its own checkbox above the search field is the way back while hidden.
 		state.openSnippetPicker()
 		return
 	}
@@ -2144,6 +2163,9 @@ func (state *State) clickHostDialog(id gfx.ID) {
 		return
 	}
 	if state.clickHostEncodingPicker(id) {
+		return
+	}
+	if state.clickHostIconPicker(id) {
 		return
 	}
 	if state.clickHostTags(id) {
@@ -2855,6 +2877,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.hostEncodingPickerKey(event); handled {
 		return result
 	}
+	if result, handled := state.hostIconPickerKey(event); handled {
+		return result
+	}
 	if result, handled := state.proxyDialogKey(event); handled {
 		return result
 	}
@@ -3090,6 +3115,10 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		// submitSnippet refuses while either field is composing: that Enter
 		// belongs to the input method, and the preedit is not the text to save.
 		state.submitSnippet()
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalSnippetVariables && event.Key == gfx.KeyEnter && event.Target.Scope() == hitSnippetVarList && !event.Repeat {
+		state.submitSnippetVariables()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalKeyPassphrase && event.Key == gfx.KeyEnter && event.Target == hitKeyPassphraseField && !event.Repeat {

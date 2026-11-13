@@ -354,8 +354,10 @@ func (state *State) applyLanguage() {
 	state.refreshForwards()
 	state.refreshProxies()
 	state.refreshSnippets()
-	// The host dialog's encoding options carry a localised UTF-8 label.
+	// The host dialog's encoding options carry a localised UTF-8 label, and its
+	// icon options localised labels for the generic icons.
 	state.resetHostEncodingPicker()
+	state.resetHostIconPicker()
 	for index := range state.sessions {
 		state.sessions[index].reconnectText = ""
 		state.describe(&state.sessions[index])

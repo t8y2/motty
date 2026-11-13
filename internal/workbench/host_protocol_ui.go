@@ -37,8 +37,6 @@ var (
 	hitDialogOTPScan              = tree.ID(hostProtocolUiHits, "dialog-otp-scan")
 	hitDialogOTPPaste             = tree.ID(hostProtocolUiHits, "dialog-otp-paste")
 	hitDialogPortsItemList        = tree.Sub(hostProtocolUiHits, tree.Name("dialog-ports-item")) // + index of a detected port
-	hitDialogIconDismiss          = tree.ID(hostProtocolUiHits, "dialog-icon-dismiss")
-	hitDialogIconItemList         = tree.Sub(hostProtocolUiHits, tree.Name("dialog-icon-item")) // + a hostIcon
 )
 
 // maxListedPorts bounds the picker: a machine with more serial devices than
@@ -357,16 +355,6 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.portsOpen = !editor.portsOpen
 	case id == hitDialogPortsDismiss:
 		editor.portsOpen = false
-	case id == hitDialogIcon:
-		editor.iconOpen = !editor.iconOpen
-		editor.iconReveal = editor.iconOpen
-	case id == hitDialogIconDismiss:
-		editor.iconOpen = false
-	case id.Scope() == hitDialogIconItemList:
-		if choice := hostIcon(item(id)); choice.valid() {
-			editor.icon, editor.iconChosen = choice, true
-		}
-		editor.iconOpen = false
 	case id.Scope() == hitDialogPortsItemList:
 		if index := item(id); index < len(editor.ports) {
 			editor.address = text.Editor{}

@@ -17,6 +17,9 @@ const (
 )
 
 func (state *State) baseWorkspacePixelBounds(size gfx.Size) gfx.Rect {
+	// The bottom command drawer is already reserved by fullWorkspacePixelBounds,
+	// which toolbarDockContentBounds derives from, so the drawer strip sits clear
+	// of every panel derived from this base.
 	return state.toolbarDockContentBounds(size, true)
 }
 
@@ -38,7 +41,13 @@ func (state *State) toolbarDockContentBounds(size gfx.Size, includeTerminal bool
 
 func (state *State) fullWorkspacePixelBounds(size gfx.Size) gfx.Rect {
 	left := state.verticalTabsReserve(size)
-	return gfx.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
+	bounds := gfx.Rect{X: left, Y: windowBarHeight, Width: max(size.Width-left, 0), Height: max(size.Height-windowBarHeight, 0)}
+	// The bottom command drawer lives in the content area's lowest strip, so the
+	// workspace root accounts for it; every derived panel then sits above it.
+	if reserve := state.commandsDrawerHeight(); reserve > 0 {
+		bounds.Height = max(0, bounds.Height-reserve)
+	}
+	return bounds
 }
 
 func (state *State) terminalSideRailBounds(size gfx.Size) (gfx.Rect, bool) {

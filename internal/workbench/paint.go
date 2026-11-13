@@ -109,6 +109,8 @@ const (
 	iconProcess
 	iconDirectoryTree
 	iconFollowFolder
+	// iconArrowUpDown is the command bar's order button.
+	iconArrowUpDown
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -296,6 +298,9 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		// Assistant popovers may intentionally extend to the window edge; paint
 		// the rail first so they can remain above it and nothing is clipped.
 		state.paintAIPanel(canvas, size)
+		// The bottom command drawer sits beneath the panes, in the space the
+		// panes gave up for it.
+		state.paintCommandsDrawer(canvas, size)
 	} else if fileManager {
 		state.paintSFTPTab(canvas, state.fileManagerPixelBounds(size))
 		state.paintAIPanel(canvas, size)
@@ -521,6 +526,13 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	if result, handled := state.aiPanelScroll(event); handled {
 		return result
+	}
+	// A window dialog owns the wheel over its backdrop. Ask the window's own
+	// handler before the page: the page hands the wheel to the scroll area,
+	// table or list under the pointer first, and those lie behind the dialog
+	// too, so the page would scroll them out from under it.
+	if state.modal != modalNone {
+		return state.Scroll(event)
 	}
 	return state.windowPage().Wheel(event)
 }
@@ -2598,6 +2610,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconWrench:         icons.Wrench,
 	iconProcess:        icons.Process,
 	iconDirectoryTree:  icons.PanelLeft,
+	iconArrowUpDown:    icons.ArrowUpDown,
 	iconCloseOthers:    icons.ListX,
 	iconCloseRight:     icons.ArrowRightToLine,
 	iconSparkles:       icons.Sparkles,
@@ -2785,6 +2798,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareSnippetDialog(c)
 	case modalSnippetDelete:
 		state.declareSnippetDeleteDialog(c)
+	case modalSnippetVariables:
+		state.declareSnippetVariablesDialog(c)
 	case modalVaultUnlock:
 		state.declareVaultUnlockDialog(c)
 	case modalVaultForget:
@@ -3066,7 +3081,7 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if b.encoding.Valid() {
 		state.paintHostEncodingPicker(canvas, b.encoding.Rect())
 	}
-	state.paintHostIconChoice(canvas, b.iconField.Rect())
+	state.paintHostIconPicker(canvas, b.iconField.Rect())
 	state.paintHostColorChoice(canvas, b.colorField.Rect())
 	if networkHost {
 		state.paintHostProxyRow(canvas)
@@ -3276,9 +3291,6 @@ var hostSystemChoices = [...]struct {
 	{sshconn.SystemWindows, "Windows"}, {sshconn.SystemDarwin, "macOS"},
 }
 
-// hostIconListRows is how many rows of the icon list show before it scrolls.
-const hostIconListRows = 7
-
 // hostIconLabel is the name of an icon in the list.
 func (state *State) hostIconLabel(icon hostIcon) string {
 	m := state.messages
@@ -3347,57 +3359,6 @@ func hostIconChoices() []hostIcon {
 		choices = append(choices, hostIconOf(choice.system))
 	}
 	return append(choices, hostIconServer, hostIconTerminal, hostIconSerial, hostIconGlobe, hostIconKey, hostIconDesktop)
-}
-
-// paintHostIconChoice paints the list of icons a host can have.
-func (state *State) paintHostIconChoice(canvas *gfx.Canvas, bounds gfx.Rect) {
-	m, editor, theme := state.messages, &state.editor, state.Theme()
-	content := components.BeginField(canvas, theme, bounds).Paint(m.FieldIcon, "", "")
-	state.rememberHostControl(hitDialogIcon, content)
-	portal := state.beginHostFormPopup(canvas, state.editor.iconOpen)
-	defer state.endHostFormPopup(canvas, portal)
-	choices := hostIconChoices()
-	window := state.windowRect()
-	rows := min(len(choices), hostIconListRows)
-	top := content.Y + content.Height + 4
-	// The list goes under the field unless that leaves it fewer than four rows
-	// and there is more room above, where it hangs from the field's top.
-	if room := int((window.Height - top - 8 - 8) / 32); room < min(rows, 4) {
-		if above := int((content.Y - 4 - 8 - 8) / 32); above > room {
-			rows = min(rows, above)
-			top = content.Y - 4 - float32(8+rows*32)
-		} else {
-			rows = max(room, 1)
-		}
-	} else {
-		rows = min(rows, room)
-	}
-	list := gfx.Rect{X: content.X, Y: top, Width: content.Width, Height: float32(8 + rows*32)}
-	var scroll *components.MenuScroll
-	if editor.iconOpen {
-		scroll = state.menuScrollFor(hitDialogIconDismiss)
-		state.menuPlaced(list)
-		if editor.iconReveal {
-			editor.iconReveal = false
-			for index, choice := range choices {
-				if choice == editor.icon {
-					scroll.Offset = max(min(float32(index*32-64), float32((len(choices)-rows)*32)), 0)
-				}
-			}
-		}
-	}
-	selectControl := components.BeginSelect(canvas, theme, content, components.SelectOptions{
-		TriggerID: hitDialogIcon, Label: m.FieldIcon, Value: state.hostIconLabel(editor.icon), Icon: state.hostIconArt(editor.icon, editor.system, editor.protocol == protocolVNC || editor.protocol == protocolRDP),
-		Open: editor.iconOpen, Content: list, Scroll: scroll,
-		Layer: dialogLayer + 1, Scope: dialogScope, DismissID: hitDialogIconDismiss, Viewport: window,
-	})
-	defer selectControl.End()
-	for _, choice := range choices {
-		selectControl.AddItem(components.SelectItem{
-			ID: hitDialogIconItemList.At(int(choice)), Label: state.hostIconLabel(choice), Icon: state.hostIconArt(choice, editor.system, editor.protocol == protocolVNC || editor.protocol == protocolRDP),
-			Selected: choice == editor.icon,
-		})
-	}
 }
 
 func (state *State) paintDialogField(canvas *gfx.Canvas, id gfx.ID, field hostField, title, placeholder string, bounds gfx.Rect) {

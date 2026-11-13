@@ -42,16 +42,13 @@ type hostEditor struct {
 	encoding       string
 	encodingPicker hostEncodingPicker
 	icon           hostIcon
+	iconPicker     hostIconPicker
 	color          text.Editor
 	colorPicker    hostColorPicker
 	form           hostFormScroll
 	// system is the system the host was last detected to run, whose badge the
 	// automatic icon shows.
 	system sshconn.RemoteSystem
-	// iconOpen is the icon choice's list being open.
-	iconOpen bool
-	// iconReveal says the list has just opened and has to scroll to the chosen icon.
-	iconReveal bool
 	// iconChosen says the user picked an icon, or the host being edited already
 	// has one, so a protocol switch must not replace it with that protocol's
 	// default.
@@ -262,8 +259,9 @@ func (editor *hostEditor) load(host Host) {
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
 	editor.encodingPicker = hostEncodingPicker{}
+	editor.iconPicker = hostIconPicker{}
 	editor.encoding = host.Encoding
-	editor.icon, editor.iconOpen = hostIconAuto, false
+	editor.icon = hostIconAuto
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
@@ -375,8 +373,9 @@ func (editor *hostEditor) reset() {
 	editor.tagPicker = hostTagPicker{}
 	editor.groupPicker = hostGroupPicker{}
 	editor.encodingPicker = hostEncodingPicker{}
+	editor.iconPicker = hostIconPicker{}
 	editor.encoding = ""
-	editor.icon, editor.iconChosen, editor.system, editor.iconOpen = hostIconAuto, false, sshconn.SystemUnknown, false
+	editor.icon, editor.iconChosen, editor.system = hostIconAuto, false, sshconn.SystemUnknown
 	editor.port = text.Editor{}
 	editor.algorithms = text.Editor{}
 	editor.loginCommand = text.Editor{}
@@ -434,7 +433,8 @@ func (editor *hostEditor) applyProtocol(previous hostProtocol) {
 			}
 		}
 	}
-	editor.protocol, editor.portsOpen, editor.iconOpen = protocol, false, false
+	editor.protocol, editor.portsOpen = protocol, false
+	editor.iconPicker.control.Open = false
 	if !editor.iconChosen {
 		if protocol == protocolSerial {
 			editor.icon = hostIconSerial
