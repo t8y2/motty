@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 )
 
@@ -18,8 +19,14 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	state, _, fake, _ := liveSession(t)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	started, stopped := make(chan string, 2), make(chan string, 2)
+	ready := make(chan struct{})
 	fake.streamCommand = func(ctx context.Context, command string, _ int, line func([]byte) bool) error {
 		started <- command
+		select {
+		case <-ready:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 		line([]byte("\n"))
 		for i := range 30 {
 			line(fmt.Appendf(nil, "INFO sample line %d\n", i))
@@ -54,9 +61,28 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	snapshot := view.Snapshot()
+	var entry gfx.Rect
+	for _, hit := range snapshot.Hits {
+		if hit.ID == hitServerLogs {
+			entry = hit.Bounds
+		}
+	}
+	if rail := state.toolbarDockSideBoundsFor(state.viewport, false); entry.Width == 0 || entry.X < rail.X || entry.Y+entry.Height != rail.Y+rail.Height-4 {
+		t.Fatalf("log entry %v is not anchored to the bottom of the right rail %v", entry, rail)
+	}
 	click(state.messages.RemoteLogs.Title)
 	if session.remoteLogs == nil {
 		t.Fatal("the toolbar did not open the log panel")
+	}
+	terminalHeight := state.workspacePixelBounds(state.viewport).Height
+	click(state.messages.RemoteLogs.Expand)
+	if !session.remoteLogs.expanded || state.workspacePixelBounds(state.viewport).Height >= terminalHeight {
+		t.Fatal("expand icon did not increase the panel height")
+	}
+	click(state.messages.RemoteLogs.Restore)
+	if session.remoteLogs.expanded || state.workspacePixelBounds(state.viewport).Height != terminalHeight {
+		t.Fatal("restore icon did not restore the original height")
 	}
 	path := remoteLogPath{Name: "App log", Path: "/var/log/owner's app.log"}
 	click("Add path")
@@ -90,6 +116,23 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	if !strings.Contains(command, "'/var/log/owner'\\''s app.log'") {
 		t.Fatalf("remote command did not quote the path: %s", command)
 	}
+	liveRow := func() bool {
+		for _, hit := range view.Snapshot().Hits {
+			if hit.Label == path.Name+" "+path.Path+" · "+state.messages.RemoteLogs.Live {
+				for _, mark := range view.Snapshot().Primitives {
+					if mark.Color == state.pal.success && mark.Bounds.Width == 7 && mark.Bounds.Height == 7 &&
+						pointInRect(mark.Bounds.X, mark.Bounds.Y, hit.Bounds) {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	if liveRow() {
+		t.Fatal("connecting row already shows a live indicator")
+	}
+	close(ready)
 	deadline := time.Now().Add(time.Second)
 	for len(session.remoteLogs.snapshot.lines) < 31 && time.Now().Before(deadline) {
 		if err := view.Resize(1200, 800); err != nil {
@@ -100,7 +143,13 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	if len(session.remoteLogs.snapshot.lines) != 31 {
 		t.Fatal("stream did not reach the visible panel")
 	}
+	if !liveRow() {
+		t.Fatal("connected path has no green indicator")
+	}
 	click("Pause")
+	if !liveRow() {
+		t.Fatal("pausing scroll cleared the live indicator")
+	}
 	if session.remoteLogs.follow {
 		t.Fatal("pause left following enabled")
 	}

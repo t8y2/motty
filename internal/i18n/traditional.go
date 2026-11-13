@@ -2981,7 +2981,7 @@ var traditionalMonitor = MonitorMessages{
 var traditionalRemoteLogs = RemoteLogMessages{
 	Title: "伺服器記錄", Paths: "已儲存路徑", Add: "新增路徑", Edit: "編輯路徑", Remove: "移除路徑",
 	RemovePrompt: "移除已儲存的路徑 %s？", Name: "名稱", Path: "遠端絕對路徑",
-	Search: "搜尋記錄", Pause: "暫停", Resume: "繼續", Following: "跟隨最新記錄", Paused: "已暫停",
+	Search: "搜尋記錄", Pause: "暫停", Resume: "繼續", Live: "即時", Following: "跟隨最新記錄", Paused: "已暫停",
 	Connecting: "正在開啟記錄…", Stopped: "記錄流已結束", Retry: "重試", Expand: "展開", Restore: "還原大小", Close: "關閉記錄",
 	NoPaths: "新增一個路徑即可開始。", SelectPath: "選擇已儲存的路徑以讀取記錄。",
 	NoMatches: "目前緩衝區中沒有符合項。", Disconnected: "SSH 已中斷",

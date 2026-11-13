@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sshconn"
+	"motty/internal/workbench/icons"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -23,6 +24,38 @@ var (
 )
 
 const remoteLogRowHeight = 20
+
+var remoteLogExpandIcon = gfx.Icon{
+	ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Join: gfx.JoinRound,
+	Commands: []gfx.PathCommand{
+		gfx.MoveTo(9, 4), gfx.LineTo(4, 4), gfx.LineTo(4, 9),
+		gfx.MoveTo(15, 4), gfx.LineTo(20, 4), gfx.LineTo(20, 9),
+		gfx.MoveTo(20, 15), gfx.LineTo(20, 20), gfx.LineTo(15, 20),
+		gfx.MoveTo(9, 20), gfx.LineTo(4, 20), gfx.LineTo(4, 15),
+	},
+}
+
+var remoteLogRestoreIcon = gfx.Icon{
+	ViewBox: 24, Stroke: 2, Cap: gfx.CapRound, Join: gfx.JoinRound,
+	Commands: []gfx.PathCommand{
+		gfx.MoveTo(4, 9), gfx.LineTo(9, 9), gfx.LineTo(9, 4),
+		gfx.MoveTo(15, 4), gfx.LineTo(15, 9), gfx.LineTo(20, 9),
+		gfx.MoveTo(20, 15), gfx.LineTo(15, 15), gfx.LineTo(15, 20),
+		gfx.MoveTo(9, 20), gfx.LineTo(9, 15), gfx.LineTo(4, 15),
+	},
+}
+
+func (state *State) serverLogsRailTool(session *Session, active bool) (barTool, bool) {
+	if session == nil || !session.remoteLogHost() || !state.toolbarVisible(toolbarTerminal, hitServerLogs) {
+		return barTool{}, false
+	}
+	style := iconButtonQuiet
+	if active && session.remoteLogs != nil {
+		style = iconButtonActive
+	}
+	return barTool{id: hitServerLogs, icon: iconFileClock, hint: state.messages.RemoteLogs.Title,
+		style: style, disabled: !active || (session.remoteLogs == nil && !session.canViewRemoteLogs())}, true
+}
 
 func (session *Session) remoteLogHost() bool {
 	return session.HostID != 0 && session.host.isSSH() && !session.host.mosh() && !session.host.InteractiveOnly && session.host.System != sshconn.SystemWindows
@@ -126,17 +159,17 @@ func (state *State) declareRemoteLogs(c ui.C) {
 			ui.Icon(c, lucideIcons[iconFileClock]).Size(16, 16)
 			ui.Text(c, m.Title).Weight(gfx.WeightSemibold).Color(p.text).Shrink(0)
 			ui.Text(c, session.Title).Color(p.muted).Grow(1).Ellipsis()
-			label := m.Expand
+			label, icon := m.Expand, remoteLogExpandIcon
 			if view.expanded {
-				label = m.Restore
+				label, icon = m.Restore, remoteLogRestoreIcon
 			}
-			if ui.Button(c, label).Ghost().Shrink(0).Clicked() {
+			if ui.Button(c, label).Icon(icon).IconOnly().Ghost().Size(28, 28).Shrink(0).Tooltip(label).Clicked() {
 				c.After(func() {
 					view.expanded = !view.expanded
 					state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 				})
 			}
-			if ui.Button(c, m.Close).Icon(lucideIcons[iconClose]).IconOnly().Ghost().Shrink(0).Clicked() {
+			if ui.Button(c, m.Close).Icon(lucideIcons[iconClose]).IconOnly().Ghost().Size(28, 28).Shrink(0).Tooltip(m.Close).Clicked() {
 				c.After(func() { state.closeRemoteLogs(session) })
 			}
 		})
@@ -163,10 +196,12 @@ func (state *State) declareRemoteLogPaths(c ui.C, session *Session, view *remote
 	if selected < 0 && view.selected != (remoteLogPath{}) {
 		c.After(func() { session.clearRemoteLog() })
 	}
-	ui.Column(c).Width(width).FillHeight().Pad(8).Gap(4).Clip().Children(func() {
+	connected := session.canViewRemoteLogs() && view.cancel != nil && view.snapshot.ready && !view.snapshot.done
+	ui.Column(c).Width(width).FillHeight().Pad(8).Gap(5).Clip().Background(p.shell).Children(func() {
 		ui.Row(c).Height(32).Items(ui.Center).Gap(4).Children(func() {
 			ui.Text(c, m.Paths).Weight(gfx.WeightSemibold).Color(p.text).Grow(1).Ellipsis()
-			if ui.Button(c, m.Add).Secondary().Shrink(0).Disabled(!saved || !session.canViewRemoteLogs()).Clicked() {
+			if ui.Button(c, m.Add).Icon(icons.Plus).IconOnly().Secondary().Size(28, 28).Shrink(0).
+				Tooltip(m.Add).Disabled(!saved || !session.canViewRemoteLogs()).Clicked() {
 				c.After(func() { view.editPath(remoteLogFormAdd, remoteLogPath{}) })
 			}
 		})
@@ -176,14 +211,25 @@ func (state *State) declareRemoteLogPaths(c ui.C, session *Session, view *remote
 		}
 		ui.List(c, &view.paths, len(paths), func(row ui.ListRow) {
 			path := paths[row.Index]
-			row.Element.Height(46).PadX(8).Label(path.Name + " " + path.Path)
+			live := row.Index == selected && connected
+			label := path.Name + " " + path.Path
+			if live {
+				label += " · " + m.Live
+			}
+			row.Element.Height(48).PadX(8).Label(label).Radius(6)
 			if row.Index == selected {
-				row.Element.Radius(6).Background(p.surfaceSoft)
+				row.Element.Background(p.surfaceSoft)
 			}
 			row.Element.Children(func() {
-				ui.Column(row.C).Fill().Justify(ui.Center).Children(func() {
-					ui.Text(row.C, path.Name).Color(p.text).Ellipsis()
-					ui.Text(row.C, path.Path).Mono().FontSize(11).Color(p.muted).Ellipsis()
+				ui.Row(row.C).Fill().Items(ui.Center).Gap(8).Children(func() {
+					ui.Icon(row.C, icons.File).Size(16, 16).Shrink(0).Color(p.muted)
+					ui.Column(row.C).Grow(1).MinWidth(0).Gap(2).Children(func() {
+						ui.Text(row.C, path.Name).Weight(gfx.WeightMedium).Color(p.text).Ellipsis()
+						ui.Text(row.C, path.Path).Mono().FontSize(metrics.FontSizeS).Color(p.muted).Ellipsis()
+					})
+					if live {
+						ui.Slot(row.C).Size(7, 7).Shrink(0).Radius(3.5).Background(p.success)
+					}
 				})
 			})
 		}).Label(m.Paths).Grow(1).FillWidth()
@@ -215,12 +261,12 @@ func (state *State) declareRemoteLogOutput(c ui.C, session *Session, view *remot
 			if wide {
 				ui.Text(c, view.selected.Path).Mono().Color(p.text).Grow(1).Ellipsis()
 			}
-			ui.TextField(c, &view.query, m.Search, m.Search).Height(28).MinWidth(70).Grow(1)
-			label := m.Pause
+			ui.TextField(c, &view.query, m.Search, m.Search).Icon(lucideIcons[iconSearch]).Height(28).MinWidth(70).Grow(1)
+			label, icon := m.Pause, icons.Pause
 			if !view.follow {
-				label = m.Resume
+				label, icon = m.Resume, icons.Play
 			}
-			if ui.Button(c, label).Ghost().Shrink(0).Disabled(view.buffer == nil).Clicked() {
+			if ui.Button(c, label).Icon(icon).Ghost().Shrink(0).Disabled(view.buffer == nil).Clicked() {
 				c.After(func() { view.follow = !view.follow })
 			}
 		})
@@ -245,11 +291,17 @@ func (state *State) declareRemoteLogOutput(c ui.C, session *Session, view *remot
 			case !view.snapshot.ready:
 				status = m.Connecting
 			case view.follow:
-				status, color = m.Following, p.success
+				status, color = m.Live, p.success
 			default:
 				status = m.Paused
 			}
+			if status != "" {
+				ui.Slot(c).Size(6, 6).Shrink(0).Radius(3).Background(color)
+			}
 			ui.Text(c, status).Color(color).Grow(1).Ellipsis()
+			if status == m.Live {
+				ui.Text(c, m.Following).Color(p.muted).Shrink(0)
+			}
 			if view.buffer != nil && (view.snapshot.done || view.cancel == nil) && session.canViewRemoteLogs() && ui.Button(c, m.Retry).Ghost().Shrink(0).Clicked() {
 				c.After(func() { state.followRemoteLog(session, view, view.selected) })
 			}

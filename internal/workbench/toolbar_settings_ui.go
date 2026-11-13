@@ -376,7 +376,11 @@ func (state *State) paintToolbarSettingsList(canvas *gfx.Canvas, body gfx.Rect, 
 		}
 		canvas.Label(canvas.FitLine(label, theme.Metrics.FontSizeM, gfx.WeightRegular, caption.Width), caption, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: color})
 		if editor.group <= toolbarTerminal {
-			components.BeginButton(canvas, theme, hitToolbarPositions.At(index), gfx.Rect{X: row.Content.X + row.Content.Width - 52 - zoneWidth, Y: row.Content.Y + (row.Content.Height-28)/2, Width: zoneWidth}).Outline(zoneLabel)
+			button := components.BeginButton(canvas, theme, hitToolbarPositions.At(index), gfx.Rect{X: row.Content.X + row.Content.Width - 52 - zoneWidth, Y: row.Content.Y + (row.Content.Height-28)/2, Width: zoneWidth})
+			if spec.id == hitServerLogs {
+				button = button.Disabled()
+			}
+			button.Outline(zoneLabel)
 		}
 		checked := entry.Enabled
 		if editor.group == toolbarTerminal && entry.Key == "latency" {
