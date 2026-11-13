@@ -277,7 +277,7 @@ func (state *State) declareRemoteLogOutput(c ui.C, session *Session, view *remot
 				ui.Text(c, view.selected.Path).Mono().Color(p.text).Grow(1).Ellipsis()
 			}
 			ui.TextField(c, &view.query, m.Search, m.Search).Icon(lucideIcons[iconSearch]).Height(28).MinWidth(70).Grow(1)
-			ui.Switch(c, &view.follow, m.AutoScroll).Shrink(0).Disabled(view.buffer == nil)
+			state.declareRemoteLogAutoScroll(c, view)
 		})
 		ui.Slot(c).Height(1).FillWidth().Background(p.line)
 		ui.Control(c, m.Title, &view.scroll).Grow(1).FillWidth().Clip().Background(p.terminal).
@@ -286,6 +286,35 @@ func (state *State) declareRemoteLogOutput(c ui.C, session *Session, view *remot
 	})
 }
 
+func (state *State) declareRemoteLogAutoScroll(c ui.C, view *remoteLogView) {
+	label := state.messages.RemoteLogs.AutoScroll
+	width := c.Canvas().TextWidthWeight(label, metrics.FontSizeM, gfx.WeightMedium)
+	theme := state.switchTheme()
+	ui.SwitchBase(c, &view.follow, label).
+		Size(32+8+width, 28).Shrink(0).HitOutset(0, 0, 0, 0).
+		Disabled(view.buffer == nil).Draw(func(d *ui.DrawContext) {
+		// Use an even-height track and a two-pixel inset on both axes so
+		// the thumb stays inside the pill at either end, including at high DPI.
+		const trackWidth, trackHeight, thumbSize = 32, 18, 14
+		track := gfx.Rect{X: d.Rect.X, Y: d.Rect.Y + (d.Rect.Height-trackHeight)/2, Width: trackWidth, Height: trackHeight}
+		progress := float32(0)
+		if d.State.Checked {
+			progress = 1
+		}
+		look := components.SwitchRecipe(theme, d.State, progress)
+		if d.State.FocusVisible {
+			d.Canvas.RoundedOutline(gfx.Rect{X: track.X - 2, Y: track.Y - 2, Width: trackWidth + 4, Height: trackHeight + 4}, 11, 2, look.Ring)
+		}
+		d.Canvas.Rounded(track, trackHeight/2, look.Track)
+		d.Canvas.Rounded(gfx.Rect{X: track.X + 2 + progress*(trackWidth-thumbSize-4), Y: track.Y + 2, Width: thumbSize, Height: thumbSize}, thumbSize/2, look.Thumb)
+		color := state.pal.text
+		if d.State.Disabled {
+			color = state.pal.muted
+		}
+		d.Canvas.Label(label, gfx.Rect{X: track.X + trackWidth + 8, Y: d.Rect.Y, Width: width, Height: d.Rect.Height},
+			gfx.TextStyle{Size: metrics.FontSizeM, Weight: gfx.WeightMedium, Color: color})
+	})
+}
 func (state *State) declareRemoteLogStatus(c ui.C, session *Session, view *remoteLogView) {
 	m, p := state.messages.RemoteLogs, state.pal
 	status, color, retry := "", p.muted, false

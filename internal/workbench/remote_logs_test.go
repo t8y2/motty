@@ -5,18 +5,21 @@ package workbench
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/vivaui/viva/app"
+
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 )
 
 func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	state, _, fake, _ := liveSession(t)
+	state.setAppearance(appearanceLight)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	started, stopped := make(chan string, 2), make(chan string, 2)
 	ready := make(chan struct{})
@@ -164,7 +167,36 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	if !liveRow() {
 		t.Fatal("connected path has no green indicator")
 	}
+	assertSwitch := func(checked bool) {
+		t.Helper()
+		snapshot := view.Snapshot()
+		hit, err := view.Locate("Auto-scroll")
+		if err != nil || hit.Role != gfx.RoleSwitch || hit.Checked != checked {
+			t.Fatalf("auto-scroll switch hit = %+v, want checked=%v, error %v", hit, checked, err)
+		}
+		track := gfx.Rect{X: float32(math.Round(float64(hit.Bounds.X))), Y: float32(math.Round(float64(hit.Bounds.Y + 5))), Width: 32, Height: 18}
+		thumb := gfx.Rect{X: track.X + 2, Y: track.Y + 2, Width: 14, Height: 14}
+
+		if checked {
+			thumb.X += 14
+
+		}
+
+		var hasTrack, hasThumb, hasCaption bool
+		for _, mark := range snapshot.Primitives {
+			hasTrack = hasTrack || mark.Bounds == track && mark.Radius == 9
+			hasThumb = hasThumb || mark.Bounds == thumb && mark.Radius == 7
+		}
+		for _, text := range snapshot.Texts {
+			hasCaption = hasCaption || text.Value == "Auto-scroll" && text.Bounds.Y+text.Bounds.Height/2 == hit.Bounds.Y+hit.Bounds.Height/2
+		}
+		if !hasTrack || !hasThumb || !hasCaption {
+			t.Fatalf("auto-scroll alignment: hit=%v track=%v thumb=%v caption=%v", hit.Bounds, hasTrack, hasThumb, hasCaption)
+		}
+	}
+	assertSwitch(true)
 	click("Auto-scroll")
+	assertSwitch(false)
 	if !liveRow() {
 		t.Fatal("pausing scroll cleared the live indicator")
 	}
