@@ -564,6 +564,12 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 	// table or list under the pointer first, and those lie behind the dialog
 	// too, so the page would scroll them out from under it.
 	if state.modal != modalNone {
+		if state.modal == modalProxyBatchAssociate && !state.proxyBatch.jumpOpen {
+			r := state.proxyBatch.listRect
+			if event.X >= r.X && event.X < r.X+r.Width && event.Y >= r.Y && event.Y < r.Y+r.Height {
+				return state.windowPage().Wheel(event)
+			}
+		}
 		return state.Scroll(event)
 	}
 	return state.windowPage().Wheel(event)

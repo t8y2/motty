@@ -22,50 +22,108 @@ type proxyHop struct {
 // for them, one visible cell at a time.
 type proxyTableSource struct {
 	records *[]proxyRecord
+	indices *[]int
+	jumpID  *uint32
 }
 
 func (source *proxyTableSource) Len() int {
 	if source == nil || source.records == nil {
 		return 0
 	}
+	if source.jumpID != nil && *source.jumpID != 0 && source.indices != nil {
+		return len(*source.indices)
+	}
 	return len(*source.records)
 }
 
-func (source *proxyTableSource) Cell(row, column int) string {
-	if source == nil || source.records == nil {
-		return ""
+func (source *proxyTableSource) recordAt(row int) (*proxyRecord, bool) {
+	if source == nil || source.records == nil || row < 0 {
+		return nil, false
 	}
 	records := *source.records
-	if row < 0 || row >= len(records) {
+	if source.jumpID != nil && *source.jumpID != 0 && source.indices != nil {
+		indices := *source.indices
+		if row >= len(indices) {
+			return nil, false
+		}
+		idx := indices[row]
+		if idx < 0 || idx >= len(records) {
+			return nil, false
+		}
+		return &records[idx], true
+	}
+	if row >= len(records) {
+		return nil, false
+	}
+	return &records[row], true
+}
+
+func (source *proxyTableSource) Cell(row, column int) string {
+	route, ok := source.recordAt(row)
+	if !ok {
 		return ""
 	}
 	switch column {
 	case 1:
-		return records[row].cells[0]
+		return route.cells[0]
 	case 2:
-		return records[row].cells[1]
+		return route.cells[1]
 	default:
 		return ""
 	}
 }
 
-// syncProxyTable makes the table show the route the application selected.
-func (state *State) syncProxyTable() {
-	row := -1
-	for index := range state.proxies {
-		if state.proxies[index].ID == state.selectedProxyID {
-			row = index
-			break
+// rebuildProxyFilter 依据当前选中的跳板中枢重新构建可见路由索引切片（复用底层数组，零额外分配）
+func (state *State) rebuildProxyFilter() {
+	state.proxyFilteredIndices = state.proxyFilteredIndices[:0]
+	for i := range state.proxies {
+		if state.selectedBastionJumpID == 0 || state.proxies[i].JumpID == state.selectedBastionJumpID {
+			state.proxyFilteredIndices = append(state.proxyFilteredIndices, i)
 		}
 	}
-	state.proxyTable.Select(row)
+}
+
+// visibleProxyCount 返回当前中枢过滤视图下的路由总数
+func (state *State) visibleProxyCount() int {
+	if state.selectedBastionJumpID == 0 {
+		return len(state.proxies)
+	}
+	return len(state.proxyFilteredIndices)
+}
+
+// visibleProxyAt 返回当前中枢过滤视图中第 row 行的实际路由指针
+func (state *State) visibleProxyAt(row int) (*proxyRecord, bool) {
+	if row < 0 {
+		return nil, false
+	}
+	if state.selectedBastionJumpID == 0 {
+		if row >= len(state.proxies) {
+			return nil, false
+		}
+		return &state.proxies[row], true
+	}
+	if row >= len(state.proxyFilteredIndices) {
+		return nil, false
+	}
+	idx := state.proxyFilteredIndices[row]
+	if idx < 0 || idx >= len(state.proxies) {
+		return nil, false
+	}
+	return &state.proxies[idx], true
+}
+
+// syncProxyTable keeps table selection within visible bounds without highlighting clicked rows.
+func (state *State) syncProxyTable() {
+	if state.proxyTable.Selected() >= state.visibleProxyCount() {
+		state.proxyTable.Select(-1)
+	}
 }
 
 // takeProxyTableSelection adopts the row a key moved the table to.
 func (state *State) takeProxyTableSelection() {
 	row := state.proxyTable.Selected()
-	if row >= 0 && row < len(state.proxies) {
-		state.selectProxy(state.proxies[row].ID)
+	if route, ok := state.visibleProxyAt(row); ok {
+		state.selectProxy(route.ID)
 	}
 }
 
@@ -566,7 +624,9 @@ func (state *State) clickProxies(id gfx.ID) {
 		state.clearProxyChecked()
 	case id.Scope() == hitProxyRowList:
 		if index, ok := id.In(hitProxyRowList); ok {
-			state.selectProxy(uint32(index))
+			if route, found := state.visibleProxyAt(index); found {
+				state.selectProxy(route.ID)
+			}
 		}
 	case id.Scope() == hitProxyRowCheckList:
 		if index, ok := id.In(hitProxyRowCheckList); ok {
@@ -591,6 +651,14 @@ func (state *State) clickProxies(id gfx.ID) {
 				state.selectedBastionJumpID = 0
 			} else if index-1 < len(hubs) {
 				state.selectedBastionJumpID = hubs[index-1].JumpHost.ID
+			}
+			state.rebuildProxyFilter()
+			state.proxyTable.Scroll.Offset = 0
+			state.proxyTable.Select(-1)
+			if state.visibleProxyCount() > 0 {
+				if first, found := state.visibleProxyAt(0); found {
+					state.selectedProxyID = first.ID
+				}
 			}
 		}
 	}
@@ -859,6 +927,7 @@ func (state *State) refreshProxies() {
 	}
 	state.refreshProxyCount()
 	state.refreshBastionHubs()
+	state.rebuildProxyFilter()
 }
 
 func (state *State) refreshProxyCount() {
@@ -964,12 +1033,10 @@ func (state *State) batchAssociateProxies(jumpID uint32, targetIDs []uint32, ove
 			if !overwrite {
 				continue
 			}
-			// 覆盖现有路由
+			// 覆盖现有路由时仅更新跳板机，保留原有的 ViaShell 与 Relay 配置，避免静默清空造成断连
 			for i := range state.proxies {
 				if state.proxies[i].ID == existingRoute.ID {
 					state.proxies[i].JumpID = jumpID
-					state.proxies[i].ViaShell = viaShell
-					state.proxies[i].Relay = relay
 					updated++
 					break
 				}

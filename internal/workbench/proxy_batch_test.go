@@ -710,3 +710,285 @@ func TestProxyBatchComboboxInputClickAndHover(t *testing.T) {
 		t.Fatalf("expected PointerMove over jump list to be handled with Repaint=true, got handled=%v, res=%+v", handled, res)
 	}
 }
+
+func TestProxyHubTabFiltersRenderedRowsAndSelectAll(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	jumpA := state.hosts[0]
+	jumpB := state.hosts[1]
+	target1 := state.hosts[2]
+	target2 := Host{ID: 201, CatalogID: "t2", Label: "Target-2", Address: "10.0.0.21", System: 1}
+	target3 := Host{ID: 202, CatalogID: "t3", Label: "Target-3", Address: "10.0.0.22", System: 1}
+	target2.finish()
+	target3.finish()
+	state.hosts = append(state.hosts, target2, target3)
+
+	// jumpA 关联 2 台设备，jumpB 关联 1 台设备
+	state.batchAssociateProxies(jumpA.ID, []uint32{target1.ID, target2.ID}, false, false, "")
+	state.batchAssociateProxies(jumpB.ID, []uint32{target3.ID}, false, false, "")
+
+	state.activeSection = sectionProxies
+	var canvas gfx.Canvas
+
+	// 1. 全部视图：应渲染 3 条路由
+	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
+	if got := state.proxyRows.Len(); got != 3 {
+		t.Fatalf("all tab proxyRows.Len() = %d, want 3", got)
+	}
+	countRenderedRows := func(c *gfx.Canvas) int {
+		rows := 0
+		for _, h := range c.Hits() {
+			if h.ID.Scope() == hitProxyRowList {
+				rows++
+			}
+		}
+		return rows
+	}
+	countRenderedSwitches := func(c *gfx.Canvas) int {
+		switches := 0
+		for _, h := range c.Hits() {
+			if h.ID.Scope() == hitProxyRowSwitchList {
+				switches++
+			}
+		}
+		return switches
+	}
+	if got := countRenderedRows(&canvas); got != 3 {
+		t.Fatalf("all tab rendered rows = %d, want 3", got)
+	}
+
+	// 2. 切换到 jumpB 中枢 Tab（索引 2）：渲染行数与行内开关数必须严格等于 1
+	state.Click(hitProxyHubTabList.At(2))
+	if state.selectedBastionJumpID != jumpB.ID {
+		t.Fatalf("selectedBastionJumpID = %d, want %d", state.selectedBastionJumpID, jumpB.ID)
+	}
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
+	if got := state.proxyRows.Len(); got != 1 {
+		t.Fatalf("jumpB tab proxyRows.Len() = %d, want 1", got)
+	}
+	if got := countRenderedRows(&canvas); got != 1 {
+		t.Fatalf("jumpB tab rendered rows = %d, want 1", got)
+	}
+	if got := countRenderedSwitches(&canvas); got != 1 {
+		t.Fatalf("jumpB tab rendered switches = %d, want 1", got)
+	}
+
+	// 3. 在 jumpB 过滤视图下点击全选：仅勾中 jumpB 下的 1 条路由
+	state.Click(hitProxyCheckAll)
+	if got := state.proxyCheckedCount(); got != 1 {
+		t.Fatalf("after select-all on jumpB tab: checkedCount = %d, want 1", got)
+	}
+	totalVis, checkedVis := state.proxyVisibleStats()
+	if totalVis != 1 || checkedVis != 1 {
+		t.Fatalf("visible stats = (%d, %d), want (1, 1)", totalVis, checkedVis)
+	}
+}
+
+func TestProxyNarrowWindowRowActionsRemainReachable(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	// 构造 3 跳长链路：target -> jump2 -> jump1
+	jump1 := state.hosts[0]
+	jump2 := state.hosts[1]
+	target := state.hosts[2]
+	state.proxies = []proxyRecord{
+		{ID: 1, TargetID: jump2.ID, JumpID: jump1.ID},
+		{ID: 2, TargetID: target.ID, JumpID: jump2.ID},
+	}
+	state.nextProxyID = 3
+	state.refreshProxies()
+	state.activeSection = sectionProxies
+
+	// 以 960x640 最小窗口尺寸渲染两帧（第一帧确立 tableBox 布局，第二帧校验控件几何）
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 960, Height: 640}
+	state.Paint(&canvas, size)
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, size)
+
+	tableRect := state.sectionBodies.proxies.tableBox.Rect()
+	if tableRect.Width <= 0 {
+		t.Fatalf("expected non-empty tableRect at 960px width, got %+v", tableRect)
+	}
+
+	for _, route := range state.proxies {
+		editID := hitProxyRowEditList.At(int(route.ID))
+		delID := hitProxyRowDeleteList.At(int(route.ID))
+		var editBounds, delBounds gfx.Rect
+		var hasEdit, hasDel bool
+		for _, h := range canvas.Hits() {
+			if h.ID == editID {
+				editBounds, hasEdit = h.Bounds, true
+			} else if h.ID == delID {
+				delBounds, hasDel = h.Bounds, true
+			}
+		}
+		if !hasEdit || !hasDel {
+			t.Fatalf("route %d action buttons missing at 960px width: edit=%v, del=%v", route.ID, hasEdit, hasDel)
+		}
+		if editBounds.Width < 20 || delBounds.Width < 20 {
+			t.Fatalf("route %d action buttons clipped too narrow: edit=%+v, del=%+v", route.ID, editBounds, delBounds)
+		}
+		if delBounds.X+delBounds.Width > tableRect.X+tableRect.Width {
+			t.Fatalf("route %d delete button overflows table right edge (%v > %v)", route.ID, delBounds.X+delBounds.Width, tableRect.X+tableRect.Width)
+		}
+	}
+
+	// 验证点击第 1 条路由的编辑按钮可以正常打开编辑弹窗
+	state.Click(hitProxyRowEditList.At(1))
+	if state.modal != modalNewProxy || !state.proxyEditor.editing || state.proxyEditor.routeID != 1 {
+		t.Fatalf("clicking edit button at 960px failed: modal=%v editing=%v routeID=%d", state.modal, state.proxyEditor.editing, state.proxyEditor.routeID)
+	}
+}
+
+func TestProxyBatchOverwritePreservesViaShellAndRelay(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	jump1 := state.hosts[0]
+	jump2 := state.hosts[1]
+	target := state.hosts[2]
+
+	// 目标设备已有通过 Shell Relay 跳板的路由配置
+	state.proxies = []proxyRecord{
+		{
+			ID:       1,
+			TargetID: target.ID,
+			JumpID:   jump1.ID,
+			ViaShell: true,
+			Relay:    "nc -X connect %h %p",
+		},
+	}
+	state.nextProxyID = 2
+	state.refreshProxies()
+
+	// 批量覆盖切换到 jump2
+	added, updated := state.batchAssociateProxies(jump2.ID, []uint32{target.ID}, true, false, "")
+	if added != 0 || updated != 1 {
+		t.Fatalf("added=%d updated=%d, want 0, 1", added, updated)
+	}
+	if len(state.proxies) != 1 {
+		t.Fatalf("len(proxies)=%d, want 1", len(state.proxies))
+	}
+	got := state.proxies[0]
+	if got.JumpID != jump2.ID {
+		t.Fatalf("JumpID=%d, want %d", got.JumpID, jump2.ID)
+	}
+	if !got.ViaShell || got.Relay != "nc -X connect %h %p" {
+		t.Fatalf("batch overwrite cleared shell relay: ViaShell=%v Relay=%q", got.ViaShell, got.Relay)
+	}
+}
+
+func TestProxyBatchJumpSelectKeyboardNavigation(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	if len(state.hosts) < 3 {
+		t.Fatalf("need at least 3 hosts in test state, got %d", len(state.hosts))
+	}
+	state.openProxyBatchAssociate(state.hosts[0].ID)
+	state.Click(hitProxyBatchJumpInput)
+	if !state.proxyBatch.jumpOpen {
+		t.Fatal("expected jump picker to open")
+	}
+
+	// 先渲染一帧使 MenuScroll 注册候选列表 items
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
+	candidates := state.proxyBatchJumpCandidates()
+	if len(candidates) < 2 {
+		t.Fatalf("need at least 2 jump candidates, got %d", len(candidates))
+	}
+
+	// 按 Down 将高亮从 candidates[0] 移动到 candidates[1]，再按 Enter 选中
+	res, handled := state.proxyBatchDialogKey(gfx.KeyEvent{Key: gfx.KeyDown})
+	if !handled || !res.Repaint {
+		t.Fatalf("KeyDown not handled: handled=%v res=%+v", handled, res)
+	}
+	if state.proxyBatch.jumpActiveID != hitProxyBatchJumpItemList.At(1) {
+		t.Fatalf("jumpActiveID = %v, want item 1 (%v)", state.proxyBatch.jumpActiveID, hitProxyBatchJumpItemList.At(1))
+	}
+
+	res, handled = state.proxyBatchDialogKey(gfx.KeyEvent{Key: gfx.KeyEnter})
+	if !handled || !res.Repaint {
+		t.Fatalf("KeyEnter not handled: handled=%v res=%+v", handled, res)
+	}
+	if state.proxyBatch.jumpOpen {
+		t.Fatal("expected jump picker to close on Enter")
+	}
+	if state.proxyBatch.jumpID != candidates[1].ID {
+		t.Fatalf("selected jumpID = %d, want candidates[1].ID = %d", state.proxyBatch.jumpID, candidates[1].ID)
+	}
+}
+
+func TestProxyClickRowUsesVisibleRouteIDInsteadOfRowIndex(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	jump := state.hosts[0]
+	t1 := state.hosts[1]
+	t2 := state.hosts[2]
+	state.proxies = []proxyRecord{
+		{ID: 10, TargetID: t1.ID, JumpID: jump.ID},
+		{ID: 25, TargetID: t2.ID, JumpID: jump.ID},
+	}
+	state.nextProxyID = 26
+	state.refreshProxies()
+	state.activeSection = sectionProxies
+
+	// 删除第 0 条（ID=10），此时列表第 0 行对应的路由 ID 应为 25
+	state.removeProxyByID(10)
+	state.selectedProxyID = 0
+
+	// 触发 hitProxyRowList.At(0) 点击，应选中 route ID 25 而非 0
+	state.clickProxies(hitProxyRowList.At(0))
+	if state.selectedProxyID != 25 {
+		t.Fatalf("selectedProxyID = %d, want 25", state.selectedProxyID)
+	}
+}
+
+func TestProxyRowClickDoesNotHighlightTableSelectionAndHidesToolbarRowActions(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.activeSection = sectionProxies
+	jump := state.hosts[0]
+	target := state.hosts[1]
+	state.batchAssociateProxies(jump.ID, []uint32{target.ID}, false, false, "")
+
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
+	if hasHit(&canvas, hitProxyRemove) || hasHit(&canvas, hitProxyEdit) || hasHit(&canvas, hitProxyStartStop) {
+		t.Fatalf("unexpected row action buttons in toolbar hits=%+v", canvas.Hits())
+	}
+
+	state.Click(hitProxyRowList.At(0))
+	if state.proxyTable.Selected() >= 0 {
+		t.Fatalf("proxyTable.Selected() = %d, want < 0 so clicked row background does not highlight", state.proxyTable.Selected())
+	}
+}
+
+func TestProxyBatchDialogListScrollsWithWheel(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	for i := range 20 {
+		h := Host{
+			ID:        uint32(100 + i),
+			CatalogID: fmt.Sprintf("node-%02d", i),
+			Label:     fmt.Sprintf("Node-%02d", i),
+			Address:   fmt.Sprintf("10.0.1.%d:22", 10+i),
+			System:    1,
+		}
+		h.finish()
+		state.hosts = append(state.hosts, h)
+	}
+	state.activeSection = sectionProxies
+	state.openProxyBatchAssociate(state.hosts[0].ID)
+
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
+	r := state.proxyBatch.listRect
+	if r.Width <= 0 || r.Height <= 0 {
+		t.Fatalf("expected non-empty batch candidate listRect, got %+v", r)
+	}
+
+	res := state.scrollWindow(gfx.ScrollEvent{
+		X:       r.X + r.Width/2,
+		Y:       r.Y + r.Height/2,
+		DeltaY:  120,
+		Precise: true,
+	})
+	if !res.Repaint {
+		t.Fatalf("expected wheel inside batch candidate listRect to trigger Repaint, got %+v", res)
+	}
+}

@@ -552,6 +552,8 @@ type State struct {
 	keysHeadings           [4]string
 	proxyColumns           [6]components.TableColumn
 	proxyHeadings          [6]string
+	proxyFilteredIndices   []int
+	proxyRowCells          []gfx.Rect
 	selectedBastionJumpID  uint32
 	selectedBastionTargets map[uint32]bool
 	proxyChecked           map[uint32]bool
@@ -1172,6 +1174,7 @@ func New(options Options) *State {
 	// writes no record for it.
 	state.history.inlineOff = true
 	state.forwardRows.records, state.keysRows.records, state.proxyRows.records = &state.forwards, &state.identities, &state.proxies
+	state.proxyRows.indices, state.proxyRows.jumpID = &state.proxyFilteredIndices, &state.selectedBastionJumpID
 	state.configDefaults = defaultsOf(state.snapshot())
 	config, saved, configBase, report, err := openConfig(state.options.StatePath, state.windowID)
 	state.config, state.configBase = config, configBase

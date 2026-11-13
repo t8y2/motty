@@ -17,6 +17,7 @@ type proxyBatchAssociateDialog struct {
 	jumpQuery      text.Editor
 	jumpScroll     components.MenuScroll
 	jumpPopup      gfx.Rect
+	jumpActiveID   gfx.ID
 	query          text.Editor
 	selected       map[uint32]bool
 	overwrite      bool
@@ -27,6 +28,7 @@ type proxyBatchAssociateDialog struct {
 	scroll         float32
 	content        float32
 	bounds         gfx.Rect
+	listRect       gfx.Rect
 	dialogBody     proxyBatchDialogBody
 }
 
@@ -290,7 +292,10 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 			side := components.CheckboxExtent(theme)
 			hitWidth, hitHeight := components.CheckboxHitExtent(theme)
 
-			list := ui.Scroll(c).Grow(1).FillWidth().Gap(2).Border(1, pal.line).Radius(radius.control).Background(pal.surface).Clip()
+			list := ui.Scroll(c).Grow(1).FillWidth().Gap(2).Border(1, pal.line).Radius(radius.control).Background(pal.surface).Clip().
+				Draw(func(d *ui.DrawContext) {
+					dialog.listRect = d.Rect
+				})
 			list.Children(func() {
 				for index, cand := range candidates {
 					hostID := cand.Host.ID
@@ -451,26 +456,33 @@ func (state *State) paintProxyBatchJumpSelect(canvas *gfx.Canvas, bounds gfx.Rec
 	}
 
 	if len(candidates) == 0 {
+		dialog.jumpActiveID = gfx.ID{}
 		combo.AddEmpty(messages.HostPickerNoMatches)
 		return
 	}
 
-	highlighted := -1
+	if idx, ok := dialog.jumpActiveID.In(hitProxyBatchJumpItemList); !ok || idx < 0 || idx >= len(candidates) {
+		dialog.jumpActiveID = hitProxyBatchJumpItemList.At(0)
+	}
+
+	hovered := -1
 	for i := range candidates {
 		if canvas.Hovered() == hitProxyBatchJumpItemList.At(i) {
-			highlighted = i
+			hovered = i
 			break
 		}
 	}
 
 	for i, host := range candidates {
+		itemID := hitProxyBatchJumpItemList.At(i)
+		isHighlighted := hovered == i || (hovered < 0 && dialog.jumpActiveID == itemID)
 		combo.AddItem(components.ComboboxItem{
-			ID:          hitProxyBatchJumpItemList.At(i),
+			ID:          itemID,
 			Label:       host.Label,
 			Detail:      host.Address,
 			Value:       hostSelectValue(host.ID),
 			Selected:    host.ID == dialog.jumpID,
-			Highlighted: highlighted == i,
+			Highlighted: isHighlighted,
 		})
 	}
 }
@@ -617,28 +629,28 @@ func (state *State) proxyBatchDialogKey(event gfx.KeyEvent) (gfx.EventResult, bo
 	switch event.Key {
 	case gfx.KeyEscape, gfx.KeyTab:
 		dialog.jumpOpen = false
+		dialog.jumpActiveID = gfx.ID{}
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	case gfx.KeyEnter:
-		candidates := state.proxyBatchJumpCandidates()
-		if len(candidates) > 0 {
-			dialog.jumpID = candidates[0].ID
-			delete(dialog.selected, dialog.jumpID)
-			dialog.jumpOpen = false
-			dialog.jumpQuery = text.Editor{}
-			return gfx.EventResult{Handled: true, Repaint: true}, true
-		}
-	case gfx.KeyUp, gfx.KeyDown:
 		if !event.Release {
 			candidates := state.proxyBatchJumpCandidates()
 			if len(candidates) > 0 {
-				dialog.jumpScroll.Wheel(gfx.ScrollEvent{
-					DeltaY: func() float32 {
-						if event.Key == gfx.KeyUp {
-							return -32
-						}
-						return 32
-					}(),
-				})
+				pickIdx := 0
+				if idx, ok := dialog.jumpActiveID.In(hitProxyBatchJumpItemList); ok && idx >= 0 && idx < len(candidates) {
+					pickIdx = idx
+				}
+				dialog.jumpID = candidates[pickIdx].ID
+				delete(dialog.selected, dialog.jumpID)
+				dialog.jumpOpen = false
+				dialog.jumpActiveID = gfx.ID{}
+				dialog.jumpQuery = text.Editor{}
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			}
+		}
+	case gfx.KeyUp, gfx.KeyDown, gfx.KeyHome, gfx.KeyEnd, gfx.KeyPageUp, gfx.KeyPageDown:
+		if !event.Release {
+			if id, ok := dialog.jumpScroll.Navigate(event.Key, dialog.jumpActiveID, true); ok {
+				dialog.jumpActiveID = id
 				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
 		}

@@ -11,12 +11,11 @@ import (
 
 // proxySectionUI is what the proxies page's declaration leaves for its paint.
 type proxySectionUI struct {
-	tableBox                                                                                                                         ui.Box
-	remove, edit, action, add, batchAdd, batchDelete, batchStart, batchStop, batchClear, empty                                       ui.Box
-	removeWidth, editWidth, actionWidth, addWidth, batchAddWidth, batchDeleteWidth, batchStartWidth, batchStopWidth, batchClearWidth float32
-	removeIcon, editIcon, actionIcon, addIcon, batchAddIcon, batchDeleteIcon, batchStartIcon, batchStopIcon, batchClearIcon          uint8
-	actionLabel                                                                                                                      string
-	condensed                                                                                                                        bool
+	tableBox                                                                                    ui.Box
+	add, batchAdd, batchDelete, batchStart, batchStop, batchClear, empty                        ui.Box
+	addWidth, batchAddWidth, batchDeleteWidth, batchStartWidth, batchStopWidth, batchClearWidth float32
+	addIcon, batchAddIcon, batchDeleteIcon, batchStartIcon, batchStopIcon, batchClearIcon       uint8
+	condensed                                                                                   bool
 	// draw is the page hook that paints into these slots. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
@@ -29,13 +28,6 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
 	checkedCount := state.proxyCheckedCount()
-	selected, hasSelection := state.proxyByID(state.selectedProxyID)
-	actionLabel := messages.ProxyStart
-	actionIcon := uint8(iconPlay)
-	if hasSelection && !selected.Stopped {
-		actionLabel = messages.ProxyStop
-		actionIcon = iconStop
-	}
 
 	const (
 		titleLeast = float32(220)
@@ -45,9 +37,9 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 	canAdd := state.sshHostCount() >= 2
 
 	var (
-		removeWidth, editWidth, actionWidth, addWidth, batchAddWidth, batchDeleteWidth, batchStartWidth, batchStopWidth, batchClearWidth float32
-		removeIcon, editIcon, realActionIcon, addIcon, batchAddIcon, batchDeleteIcon, batchStartIcon, batchStopIcon, batchClearIcon      uint8
-		condensed                                                                                                                        bool
+		addWidth, batchAddWidth, batchDeleteWidth, batchStartWidth, batchStopWidth, batchClearWidth float32
+		addIcon, batchAddIcon, batchDeleteIcon, batchStartIcon, batchStopIcon, batchClearIcon       uint8
+		condensed                                                                                   bool
 	)
 
 	if checkedCount > 0 {
@@ -62,15 +54,9 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 		batchStartWidth, batchStartIcon = toolbarButtonLayout(canvas, messages.ProxyBatchStartAll, 0, iconPlay, condensed)
 		batchDeleteWidth, batchDeleteIcon = toolbarButtonLayout(canvas, batchDelLabel, iconTrash, iconTrash, condensed)
 	} else {
-		labeled := toolbarButtonWidth(canvas, messages.ProxyRemove, false) + gap +
-			toolbarButtonWidth(canvas, messages.ProxyEdit, false) + gap +
-			toolbarButtonWidth(canvas, actionLabel, false) + gap +
-			toolbarButtonWidth(canvas, messages.ProxyBatchAssociate, false) + gap +
+		labeled := toolbarButtonWidth(canvas, messages.ProxyBatchAssociate, false) + gap +
 			toolbarButtonWidth(canvas, messages.ProxyAdd, true) + gap + titleLeast
 		condensed = labeled > bounds.Width-36
-		removeWidth, removeIcon = toolbarButtonLayout(canvas, messages.ProxyRemove, 0, iconTrash, condensed)
-		editWidth, editIcon = toolbarButtonLayout(canvas, messages.ProxyEdit, 0, iconPencil, condensed)
-		actionWidth, realActionIcon = toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 		batchAddWidth, batchAddIcon = toolbarButtonLayout(canvas, messages.ProxyBatchAssociate, iconPlus, iconPlus, condensed)
 		addWidth, addIcon = toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 	}
@@ -78,11 +64,11 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 	view := &state.sectionBodies.proxies
 	draw := view.draw
 	*view = proxySectionUI{
-		removeWidth: removeWidth, editWidth: editWidth, actionWidth: actionWidth, addWidth: addWidth, batchAddWidth: batchAddWidth,
+		addWidth: addWidth, batchAddWidth: batchAddWidth,
 		batchDeleteWidth: batchDeleteWidth, batchStartWidth: batchStartWidth, batchStopWidth: batchStopWidth, batchClearWidth: batchClearWidth,
-		removeIcon: removeIcon, editIcon: editIcon, actionIcon: realActionIcon, addIcon: addIcon, batchAddIcon: batchAddIcon,
+		addIcon: addIcon, batchAddIcon: batchAddIcon,
 		batchDeleteIcon: batchDeleteIcon, batchStartIcon: batchStartIcon, batchStopIcon: batchStopIcon, batchClearIcon: batchClearIcon,
-		actionLabel: actionLabel, condensed: condensed,
+		condensed: condensed,
 	}
 	if draw == nil {
 		draw = func(d *ui.DrawContext) { state.paintProxiesWorkspace(d.Canvas) }
@@ -107,9 +93,6 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 				view.batchStart = state.declareButtonSized(c, hitProxyBatchStartAll, messages.ProxyBatchStartAll, batchStartIcon, false, false, true, toolbarFont, condensed).Size(batchStartWidth, toolbarHeight)
 				view.batchDelete = state.declareButtonSized(c, hitProxyBatchDelete, batchDelLabel, batchDeleteIcon, true, true, true, toolbarFont, condensed).Size(batchDeleteWidth, toolbarHeight)
 			} else {
-				view.remove = state.declareButtonSized(c, hitProxyRemove, messages.ProxyRemove, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
-				view.edit = state.declareButtonSized(c, hitProxyEdit, messages.ProxyEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
-				view.action = state.declareButtonSized(c, hitProxyStartStop, actionLabel, realActionIcon, false, false, hasSelection, toolbarFont, condensed).Size(actionWidth, toolbarHeight)
 				view.batchAdd = state.declareButtonSized(c, hitProxyBatchAdd, messages.ProxyBatchAssociate, batchAddIcon, false, false, canAdd, toolbarFont, condensed).Size(batchAddWidth, toolbarHeight)
 				view.add = state.declareButtonSized(c, hitProxyAdd, messages.ProxyAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
 			}
@@ -137,31 +120,49 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 			}
 			state.syncProxyTable()
 			maxHops := 2
-			for _, r := range state.proxies {
-				if len(r.hops) > maxHops {
+			count := state.visibleProxyCount()
+			for i := range count {
+				if r, ok := state.visibleProxyAt(i); ok && len(r.hops) > maxHops {
 					maxHops = len(r.hops)
 				}
 			}
-			routeColWidth := max(float32(260), float32(maxHops)*104+float32(maxHops-1)*24+16)
+			// 基于当前表体可用宽度动态分配弹性列宽，确保在 960px 最小窗口下第 5 列操作按钮区始终至少保留 76px
+			const minActionsW float32 = 76
+			const col0W float32 = 42
+			const col3W float32 = 108
+			availW := max(bounds.Width-36-float32(catalogBarGutter), 400)
+			flexW := max(availW-col0W-col3W-minActionsW, 260)
+			col1W := min(float32(180), max(float32(100), flexW*0.28))
+			col2W := min(float32(180), max(float32(100), flexW*0.28))
+			desiredRouteW := max(float32(260), float32(maxHops)*104+float32(maxHops-1)*24+16)
+			maxRouteW := max(float32(120), flexW-col1W-col2W)
+			routeColWidth := min(desiredRouteW, maxRouteW)
 			state.proxyColumns = [...]components.TableColumn{
-				{Width: 42, Alignment: components.TableAlignCenter},
-				{Width: 180},
-				{Width: 180},
-				{Width: 130},
+				{Width: col0W, Alignment: components.TableAlignCenter},
+				{Width: col1W},
+				{Width: col2W},
+				{Width: col3W},
 				{Width: routeColWidth},
 				{Width: 0},
 			}
 			state.proxyHeadings = [...]string{"", messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnStatus, messages.ProxyColumnRoute, ""}
 			components.FitTableHeadings(canvas, state.Theme(), state.proxyColumns[:], state.proxyHeadings[:])
+			// 若表头适配后前 5 列之和挤压了操作按钮列，优先从路径拓扑列回收多余宽度
+			usedW := state.proxyColumns[0].Width + state.proxyColumns[1].Width + state.proxyColumns[2].Width + state.proxyColumns[3].Width + state.proxyColumns[4].Width
+			if overflow := usedW - (availW - minActionsW); overflow > 0 {
+				shrink := min(overflow, max(state.proxyColumns[4].Width-100, 0))
+				state.proxyColumns[4].Width -= shrink
+			}
 			table := ui.Table(c, &state.proxyTable, ui.TableSpec{
 				Rows: hitProxyRowList, Columns: state.proxyColumns[:], Headers: state.proxyHeadings[:], Source: &state.proxyRows,
 				Scrollbar: hitProxyScrollThumb, ScrollbarLabel: messages.ProxyListScroll,
 				ScrollbarSize: catalogBarGutter, ScrollbarGutter: catalogBarGutter,
 				RowHeight: 52,
 			}).Grow(1).Shrink(1)
-			if row, ok := table.RowClicked(); ok && state.modal == modalNone && row >= 0 && row < len(state.proxies) {
-				state.proxyTable.Select(row)
-				state.selectProxy(state.proxies[row].ID)
+			if row, ok := table.RowClicked(); ok && state.modal == modalNone {
+				if route, found := state.visibleProxyAt(row); found {
+					state.selectProxy(route.ID)
+				}
 			}
 			view.tableBox = table
 		}
@@ -223,154 +224,173 @@ func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas) {
 	if tableRect.Width <= 0 || tableRect.Height <= 0 {
 		return
 	}
-	headerHeight := float32(52)
-	gutter := float32(catalogBarGutter)
-	body := gfx.Rect{X: tableRect.X, Y: tableRect.Y + headerHeight, Width: max(tableRect.Width-gutter, 0), Height: max(tableRect.Height-headerHeight, 0)}
+	rowHeight := float32(52)
+	headerHeight := rowHeight
+	visibleCount := state.visibleProxyCount()
+	body := gfx.Rect{X: tableRect.X, Y: tableRect.Y + headerHeight, Width: tableRect.Width, Height: max(tableRect.Height-headerHeight, 0)}
 	if body.Height <= 0 {
 		return
 	}
+	content := float32(visibleCount) * rowHeight
+	if body.Height+0.5 < content {
+		body.Width = max(body.Width-float32(catalogBarGutter), 0)
+	}
 
-	// 1. 绘制表头 Checkbox
+	// 1. 复用 Viva 的 TableCellBounds 获取与 ui.Table 完全一致的列边界，绘制表头 Checkbox
 	totalVis, checkedVis := state.proxyVisibleStats()
 	allChecked := totalVis > 0 && totalVis == checkedVis
 	theme := state.Theme()
 	side := components.CheckboxExtent(theme)
-	headerRect := gfx.Rect{X: tableRect.X, Y: tableRect.Y, Width: 42, Height: headerHeight}
-	boxRect := gfx.Rect{
-		X:      headerRect.X + (headerRect.Width-side)/2,
-		Y:      headerRect.Y + (headerRect.Height-side)/2,
-		Width:  side,
-		Height: side,
-	}
-	components.BeginCheckbox(canvas, theme, hitProxyCheckAll, boxRect, allChecked).Label(messages.MenuSelectAll).Paint()
-
-	// 2. 依据当前可见行绘制富交互控件
-	swWidth, swHeight := components.SwitchExtent(theme, true)
-	btnSize := float32(24)
-	offset := state.proxyTable.Scroll.Offset
-	rowHeight := float32(52)
-	first := max(0, int(offset/rowHeight))
-	last := min(len(state.proxies), int((offset+body.Height)/rowHeight)+1)
-
-	col0W := state.proxyColumns[0].Width
-	col1W := state.proxyColumns[1].Width
-	col2W := state.proxyColumns[2].Width
-	col3W := state.proxyColumns[3].Width
-	col4W := state.proxyColumns[4].Width
-
-	canvas.Clip(body)
-	for row := first; row < last; row++ {
-		route := &state.proxies[row]
-		rowY := body.Y + float32(row)*rowHeight - offset
-
-		// 列 0: 勾选框
-		cboxRect := gfx.Rect{
-			X:      tableRect.X + (col0W-side)/2,
-			Y:      rowY + (rowHeight-side)/2,
+	headerRow := gfx.Rect{X: tableRect.X, Y: tableRect.Y, Width: body.Width, Height: headerHeight}
+	state.proxyRowCells = components.TableCellBounds(state.proxyColumns[:], headerRow, state.proxyRowCells[:0])
+	if len(state.proxyRowCells) > 0 {
+		headerCell := state.proxyRowCells[0]
+		boxRect := gfx.Rect{
+			X:      headerCell.X + (headerCell.Width-side)/2,
+			Y:      headerCell.Y + (headerCell.Height-side)/2,
 			Width:  side,
 			Height: side,
 		}
-		isChecked := state.proxyChecked != nil && state.proxyChecked[route.ID]
-		components.BeginCheckbox(canvas, theme, hitProxyRowCheckList.At(int(route.ID)), cboxRect, isChecked).Paint()
+		components.BeginCheckbox(canvas, theme, hitProxyCheckAll, boxRect, allChecked).Label(messages.MenuSelectAll).Paint()
+	}
+
+	// 2. 依据当前过滤视图下的可见行绘制富交互控件
+	if visibleCount == 0 {
+		return
+	}
+	swWidth, swHeight := components.SwitchExtent(theme, true)
+	btnSize := float32(24)
+	offset := state.proxyTable.Scroll.Offset
+	first := max(0, int(offset/rowHeight))
+	last := min(visibleCount, int((offset+body.Height)/rowHeight)+1)
+
+	canvas.Clip(body)
+	for row := first; row < last; row++ {
+		route, ok := state.visibleProxyAt(row)
+		if !ok {
+			continue
+		}
+		rowY := body.Y + float32(row)*rowHeight - offset
+		rowRect := gfx.Rect{X: body.X, Y: rowY, Width: body.Width, Height: rowHeight}
+		state.proxyRowCells = components.TableCellBounds(state.proxyColumns[:], rowRect, state.proxyRowCells[:0])
+		cells := state.proxyRowCells
+
+		// 列 0: 勾选框
+		if len(cells) > 0 {
+			c0 := cells[0]
+			cboxRect := gfx.Rect{
+				X:      c0.X + (c0.Width-side)/2,
+				Y:      c0.Y + (c0.Height-side)/2,
+				Width:  side,
+				Height: side,
+			}
+			isChecked := state.proxyChecked != nil && state.proxyChecked[route.ID]
+			components.BeginCheckbox(canvas, theme, hitProxyRowCheckList.At(int(route.ID)), cboxRect, isChecked).Paint()
+		}
 
 		// 列 3: Switch 开关与状态文字
-		cell3X := tableRect.X + col0W + col1W + col2W
-		swRect := gfx.Rect{
-			X:      cell3X + theme.Metrics.GapItem,
-			Y:      rowY + (rowHeight-swHeight)/2,
-			Width:  swWidth,
-			Height: swHeight,
-		}
-		switchID := hitProxyRowSwitchList.At(int(route.ID))
-		components.BeginSwitch(canvas, theme, switchID, swRect, !route.Stopped).Small().Label(route.cells[2]).Paint()
+		if len(cells) > 3 {
+			c3 := cells[3]
+			swRect := gfx.Rect{
+				X:      c3.X + theme.Metrics.GapItem,
+				Y:      c3.Y + (c3.Height-swHeight)/2,
+				Width:  swWidth,
+				Height: swHeight,
+			}
+			switchID := hitProxyRowSwitchList.At(int(route.ID))
+			components.BeginSwitch(canvas, theme, switchID, swRect, !route.Stopped).Small().Label(route.cells[2]).Paint()
 
-		statusText := state.messages.ProxyRunning
-		statusColor := pal.accent
-		if route.Stopped {
-			statusText = state.messages.ProxyStopped
-			statusColor = pal.muted
-		}
-		stRect := gfx.Rect{
-			X:      swRect.X + swWidth + 8,
-			Y:      rowY + (rowHeight-16)/2,
-			Width:  max(0, col3W-swWidth-16),
-			Height: 16,
-		}
-		canvas.Label(statusText, stRect, gfx.TextStyle{Size: metrics.FontSizeS, Color: statusColor})
-
-		// 列 4: 路径精美拓扑卡片呈现
-		cell4X := cell3X + col3W
-		cell4 := gfx.Rect{X: cell4X, Y: rowY, Width: col4W, Height: rowHeight}
-		hops := route.hops
-		if len(hops) == 0 {
-			hops = []proxyHop{
-				{ID: route.JumpID, Label: route.cells[1], Address: "Jump"},
-				{ID: route.TargetID, Label: route.cells[0], Address: "Target"},
+			statusText := state.messages.ProxyRunning
+			statusColor := pal.accent
+			if route.Stopped {
+				statusText = state.messages.ProxyStopped
+				statusColor = pal.muted
+			}
+			stRect := gfx.Rect{
+				X:      swRect.X + swWidth + 8,
+				Y:      c3.Y + (c3.Height-16)/2,
+				Width:  max(0, c3.X+c3.Width-(swRect.X+swWidth+8)-4),
+				Height: 16,
+			}
+			if stRect.Width > 0 {
+				canvas.Label(statusText, stRect, gfx.TextStyle{Size: metrics.FontSizeS, Color: statusColor})
 			}
 		}
-		cardW := float32(104)
-		cardH := float32(38)
-		cardY := rowY + (rowHeight-cardH)/2
-		flowW := float32(24)
 
-		for i, hop := range hops {
-			nodeX := cell4.X + 6 + float32(i)*(cardW+flowW)
-			// 1) 节点微卡片
-			canvas.Rounded(gfx.Rect{X: nodeX, Y: cardY, Width: cardW, Height: cardH}, 6, pal.surfaceSoft.WithAlpha(0.55))
-			canvas.Label(hop.Label, gfx.Rect{X: nodeX + 8, Y: cardY + 4, Width: cardW - 16, Height: 15},
-				gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: pal.text})
-			canvas.Label(hop.Address, gfx.Rect{X: nodeX + 8, Y: cardY + 20, Width: cardW - 16, Height: 13},
-				gfx.TextStyle{Size: 11, Color: pal.muted})
-
-			// 2) 如果不是最后一个节点，绘制流向箭头
-			if i < len(hops)-1 {
-				arrowX := nodeX + cardW
-				midY := rowY + rowHeight/2
-				canvas.Fill(gfx.Rect{X: arrowX + 2, Y: midY, Width: 10, Height: 1}, pal.line)
-				canvas.DrawIcon(icons.ChevronRight, gfx.Rect{X: arrowX + 10, Y: midY - 6, Width: 12, Height: 12}, pal.muted)
-				// 若本路由包含终端中转，且是进入最终目标的最后一跳
-				if route.ViaShell && i == len(hops)-2 {
-					canvas.Label(state.messages.ProxyViaShellTag, gfx.Rect{X: arrowX - 4, Y: cardY - 2, Width: flowW + 8, Height: 10},
-						gfx.TextStyle{Size: 8, Color: pal.accent})
+		// 列 4: 路径精美拓扑卡片呈现（单元格内局部裁剪，防止窄窗口下溢出覆盖操作列）
+		if len(cells) > 4 {
+			c4 := cells[4]
+			hops := route.hops
+			if len(hops) == 0 {
+				hops = []proxyHop{
+					{ID: route.JumpID, Label: route.cells[1], Address: "Jump"},
+					{ID: route.TargetID, Label: route.cells[0], Address: "Target"},
 				}
 			}
+			cardW := float32(104)
+			cardH := float32(38)
+			cardY := c4.Y + (c4.Height-cardH)/2
+			flowW := float32(24)
+
+			canvas.Clip(c4)
+			for i, hop := range hops {
+				nodeX := c4.X + 6 + float32(i)*(cardW+flowW)
+				canvas.Rounded(gfx.Rect{X: nodeX, Y: cardY, Width: cardW, Height: cardH}, 6, pal.surfaceSoft.WithAlpha(0.55))
+				canvas.Label(hop.Label, gfx.Rect{X: nodeX + 8, Y: cardY + 4, Width: cardW - 16, Height: 15},
+					gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: pal.text})
+				canvas.Label(hop.Address, gfx.Rect{X: nodeX + 8, Y: cardY + 20, Width: cardW - 16, Height: 13},
+					gfx.TextStyle{Size: 11, Color: pal.muted})
+
+				if i < len(hops)-1 {
+					arrowX := nodeX + cardW
+					midY := c4.Y + c4.Height/2
+					canvas.Fill(gfx.Rect{X: arrowX + 2, Y: midY, Width: 10, Height: 1}, pal.line)
+					canvas.DrawIcon(icons.ChevronRight, gfx.Rect{X: arrowX + 10, Y: midY - 6, Width: 12, Height: 12}, pal.muted)
+					if route.ViaShell && i == len(hops)-2 {
+						canvas.Label(state.messages.ProxyViaShellTag, gfx.Rect{X: arrowX - 4, Y: cardY - 2, Width: flowW + 8, Height: 10},
+							gfx.TextStyle{Size: 8, Color: pal.accent})
+					}
+				}
+			}
+			canvas.Unclip()
 		}
 
-		// 4. 行尾操作按钮
-		cell5X := cell4X + col4W
-		cell5W := max(float32(0), body.Width-(col0W+col1W+col2W+col3W+col4W))
-		btnY := rowY + (rowHeight-btnSize)/2
-		btnX := max(cell5X+8, cell5X+cell5W-btnSize*2-8)
-		editRect := gfx.Rect{
-			X:      btnX,
-			Y:      btnY,
-			Width:  btnSize,
-			Height: btnSize,
-		}
-		delRect := gfx.Rect{
-			X:      btnX + btnSize + 6,
-			Y:      btnY,
-			Width:  btnSize,
-			Height: btnSize,
-		}
+		// 列 5: 行尾操作按钮
+		if len(cells) > 5 {
+			c5 := cells[5]
+			btnY := c5.Y + (c5.Height-btnSize)/2
+			btnX := max(c5.X+8, c5.X+c5.Width-btnSize*2-14)
+			editRect := gfx.Rect{
+				X:      btnX,
+				Y:      btnY,
+				Width:  btnSize,
+				Height: btnSize,
+			}
+			delRect := gfx.Rect{
+				X:      btnX + btnSize + 6,
+				Y:      btnY,
+				Width:  btnSize,
+				Height: btnSize,
+			}
 
-		editID := hitProxyRowEditList.At(int(route.ID))
-		editColor := pal.muted
-		if canvas.Hovered() == editID {
-			canvas.Rounded(editRect, radius.control, pal.surfaceHot)
-			editColor = pal.text
-		}
-		canvas.DrawIcon(lucideIcons[iconPencil], gfx.Rect{X: editRect.X + 4, Y: editRect.Y + 4, Width: 16, Height: 16}, editColor)
-		canvas.HitWithOptions(editID, editRect, state.messages.ProxyActionEdit, gfx.HitOptions{Role: gfx.RoleButton})
+			editID := hitProxyRowEditList.At(int(route.ID))
+			editColor := pal.muted
+			if canvas.Hovered() == editID {
+				canvas.Rounded(editRect, radius.control, pal.surfaceHot)
+				editColor = pal.text
+			}
+			canvas.DrawIcon(lucideIcons[iconPencil], gfx.Rect{X: editRect.X + 4, Y: editRect.Y + 4, Width: 16, Height: 16}, editColor)
+			canvas.HitWithOptions(editID, editRect, state.messages.ProxyActionEdit, gfx.HitOptions{Role: gfx.RoleButton})
 
-		delID := hitProxyRowDeleteList.At(int(route.ID))
-		delColor := pal.muted
-		if canvas.Hovered() == delID {
-			canvas.Rounded(delRect, radius.control, pal.danger.WithAlpha(0.15))
-			delColor = pal.danger
+			delID := hitProxyRowDeleteList.At(int(route.ID))
+			delColor := pal.muted
+			if canvas.Hovered() == delID {
+				canvas.Rounded(delRect, radius.control, pal.danger.WithAlpha(0.15))
+				delColor = pal.danger
+			}
+			canvas.DrawIcon(lucideIcons[iconTrash], gfx.Rect{X: delRect.X + 4, Y: delRect.Y + 4, Width: 16, Height: 16}, delColor)
+			canvas.HitWithOptions(delID, delRect, state.messages.ProxyActionDelete, gfx.HitOptions{Role: gfx.RoleButton})
 		}
-		canvas.DrawIcon(lucideIcons[iconTrash], gfx.Rect{X: delRect.X + 4, Y: delRect.Y + 4, Width: 16, Height: 16}, delColor)
-		canvas.HitWithOptions(delID, delRect, state.messages.ProxyActionDelete, gfx.HitOptions{Role: gfx.RoleButton})
 	}
 
 	canvas.Unclip()
