@@ -84,6 +84,24 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	if session.remoteLogs.expanded || state.workspacePixelBounds(state.viewport).Height != terminalHeight {
 		t.Fatal("restore icon did not restore the original height")
 	}
+	split, err := view.Locate(state.messages.RemoteLogs.ResizePaths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, y := split.Bounds.X+split.Bounds.Width/2, split.Bounds.Y+split.Bounds.Height/2
+	if err := view.Press(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Move(x+130, y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Release(x+130, y); err != nil {
+		t.Fatal(err)
+	}
+	wider, err := view.Locate(state.messages.RemoteLogs.ResizePaths)
+	if err != nil || wider.Bounds.X < split.Bounds.X+120 {
+		t.Fatalf("dragged splitter = %v, was %v, error %v", wider.Bounds, split.Bounds, err)
+	}
 	path := remoteLogPath{Name: "App log", Path: "/var/log/owner's app.log"}
 	click("Add path")
 	typeText("Name", path.Name)
@@ -106,7 +124,7 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	if !ok || !slices.Equal(host.RemoteLogPaths, []remoteLogPath{path}) {
 		t.Fatalf("restored paths = %v, want %v", host.RemoteLogPaths, path)
 	}
-	click(path.Name)
+	click(path.Name + " " + path.Path)
 	var command string
 	select {
 	case command = <-started:
@@ -146,17 +164,33 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	if !liveRow() {
 		t.Fatal("connected path has no green indicator")
 	}
-	click("Pause")
+	click("Auto-scroll")
 	if !liveRow() {
 		t.Fatal("pausing scroll cleared the live indicator")
 	}
 	if session.remoteLogs.follow {
 		t.Fatal("pause left following enabled")
 	}
+	click("Auto-scroll")
+	if !session.remoteLogs.follow {
+		t.Fatal("auto-scroll did not resume following")
+	}
 	typeText("Find in log", "payment")
 	if !slices.Equal(session.remoteLogs.matches, []int{30}) {
 		t.Fatalf("search matches = %v", session.remoteLogs.matches)
 	}
+	other := remoteLogPath{Name: "Access log", Path: "/var/log/access.log"}
+	click("Add path")
+	typeText("Name", other.Name)
+	typeText("Remote absolute path", other.Path)
+	click("Add path")
+	click("Actions for Access log")
+	click("Remove path")
+	click("Remove path")
+	if !slices.Equal(session.host.RemoteLogPaths, []remoteLogPath{path}) || session.remoteLogs.selected != path || !liveRow() {
+		t.Fatal("removing an inactive path changed the live stream")
+	}
+	click("Actions for App log")
 	click("Edit path")
 	typeText("Name", " v2")
 	click("Edit path")
@@ -176,12 +210,13 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 		t.Fatal("closing the panel did not cancel the stream")
 	}
 	click("Server logs")
-	click("App log v2")
+	click("App log v2 " + path.Path)
 	select {
 	case <-started:
 	case <-time.After(time.Second):
 		t.Fatal("reopening did not start the selected path")
 	}
+	click("Actions for App log v2")
 	click("Remove path")
 	click("Remove path")
 	if len(session.host.RemoteLogPaths) != 0 || session.remoteLogs.buffer != nil {

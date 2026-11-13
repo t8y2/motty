@@ -69,7 +69,7 @@ func (state *State) clickRemoteLogs(id gfx.ID) bool {
 	if ok && session.remoteLogs != nil {
 		state.closeRemoteLogs(session)
 	} else if ok && session.canViewRemoteLogs() {
-		session.remoteLogs = &remoteLogView{follow: true, height: 360}
+		session.remoteLogs = &remoteLogView{follow: true, height: 360, pathSplit: ui.SplitterState{Pos: 280}}
 		state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	}
 	return true
@@ -175,9 +175,11 @@ func (state *State) declareRemoteLogs(c ui.C) {
 		})
 		ui.Slot(c).Height(1).FillWidth().Background(p.line)
 		ui.Row(c).Grow(1).FillWidth().Clip().Children(func() {
-			state.declareRemoteLogPaths(c, session, view, min(280, frame.Width*.36))
-			ui.Slot(c).Width(1).FillHeight().Background(p.line)
-			state.declareRemoteLogOutput(c, session, view, frame.Width >= 690)
+			minPaths, minOutput := min(float32(150), frame.Width*.3), min(float32(260), frame.Width*.55)
+			width := min(view.pathSplit.Pos, max(minPaths, frame.Width-minOutput-8))
+			state.declareRemoteLogPaths(c, session, view, width)
+			ui.Splitter(c, &view.pathSplit).Mins(minPaths, minOutput).Label(m.ResizePaths)
+			state.declareRemoteLogOutput(c, session, view, frame.Width-width >= 470)
 		})
 	})
 	if state.modal == modalNone && view.formMode != remoteLogFormNone {
@@ -209,6 +211,7 @@ func (state *State) declareRemoteLogPaths(c ui.C, session *Session, view *remote
 			ui.Text(c, m.NoPaths).Color(p.muted).FillWidth()
 			return
 		}
+		var menuAnchor ui.Box
 		ui.List(c, &view.paths, len(paths), func(row ui.ListRow) {
 			path := paths[row.Index]
 			live := row.Index == selected && connected
@@ -230,6 +233,16 @@ func (state *State) declareRemoteLogPaths(c ui.C, session *Session, view *remote
 					if live {
 						ui.Slot(row.C).Size(7, 7).Shrink(0).Radius(3.5).Background(p.success)
 					}
+					label := fmt.Sprintf(m.PathActionsFmt, path.Name)
+					more := ui.Button(row.C.Key(path.Path), label).Icon(icons.Ellipsis).IconOnly().Ghost().
+						Size(26, 26).Shrink(0).Tooltip(label).Disabled(!session.canViewRemoteLogs())
+					if more.Clicked() {
+						view.pathMenu = !view.pathMenu || view.pathMenuFor != path
+						view.pathMenuFor = path
+					}
+					if view.pathMenu && view.pathMenuFor == path {
+						menuAnchor = more
+					}
 				})
 			})
 		}).Label(m.Paths).Grow(1).FillWidth()
@@ -240,17 +253,19 @@ func (state *State) declareRemoteLogPaths(c ui.C, session *Session, view *remote
 				c.After(func() { state.followRemoteLog(session, view, path) })
 			}
 		}
-		if selected >= 0 {
-			path := paths[selected]
-			ui.Row(c).Height(30).Gap(4).Children(func() {
-				if ui.Button(c, m.Edit).Ghost().Disabled(!session.canViewRemoteLogs()).Clicked() {
-					c.After(func() { view.editPath(remoteLogFormEdit, path) })
-				}
-				if ui.Button(c, m.Remove).Ghost().Disabled(!session.canViewRemoteLogs()).Clicked() {
-					c.After(func() { view.editPath(remoteLogFormDelete, path) })
-				}
-			})
+		if !menuAnchor.Valid() || state.modal != modalNone || !session.canViewRemoteLogs() {
+			view.pathMenu = false
+			return
 		}
+		path := view.pathMenuFor
+		ui.Menu(c, menuAnchor, &view.pathMenu, func(menu *ui.MenuItems) {
+			if menu.Item(m.Edit).Icon(icons.SquarePen).Clicked() {
+				c.After(func() { view.editPath(remoteLogFormEdit, path) })
+			}
+			if menu.Item(m.Remove).Icon(icons.Trash2).Destructive().Clicked() {
+				c.After(func() { view.editPath(remoteLogFormDelete, path) })
+			}
+		})
 	})
 }
 
@@ -262,50 +277,42 @@ func (state *State) declareRemoteLogOutput(c ui.C, session *Session, view *remot
 				ui.Text(c, view.selected.Path).Mono().Color(p.text).Grow(1).Ellipsis()
 			}
 			ui.TextField(c, &view.query, m.Search, m.Search).Icon(lucideIcons[iconSearch]).Height(28).MinWidth(70).Grow(1)
-			label, icon := m.Pause, icons.Pause
-			if !view.follow {
-				label, icon = m.Resume, icons.Play
-			}
-			if ui.Button(c, label).Icon(icon).Ghost().Shrink(0).Disabled(view.buffer == nil).Clicked() {
-				c.After(func() { view.follow = !view.follow })
-			}
+			ui.Switch(c, &view.follow, m.AutoScroll).Shrink(0).Disabled(view.buffer == nil)
 		})
 		ui.Slot(c).Height(1).FillWidth().Background(p.line)
 		ui.Control(c, m.Title, &view.scroll).Grow(1).FillWidth().Clip().Background(p.terminal).
 			Draw(func(d *ui.DrawContext) { state.drawRemoteLogOutput(d, view) })
-		ui.Slot(c).Height(1).FillWidth().Background(p.line)
-		ui.Row(c).Height(30).PadX(8).Gap(6).Items(ui.Center).Children(func() {
-			status, color := "", p.muted
-			switch {
-			case !session.canViewRemoteLogs():
-				status, color = m.Disconnected, p.warning
-			case view.buffer == nil:
-			case view.snapshot.done || view.cancel == nil:
-				status, color = m.Stopped, p.warning
-				if view.snapshot.err != nil {
-					status += " · " + view.snapshot.err.Error()
-					if !view.snapshot.ready && len(view.snapshot.lines) != 0 {
-						status = view.snapshot.lines[0]
-					}
-				}
-			case !view.snapshot.ready:
-				status = m.Connecting
-			case view.follow:
-				status, color = m.Live, p.success
-			default:
-				status = m.Paused
+		state.declareRemoteLogStatus(c, session, view)
+	})
+}
+
+func (state *State) declareRemoteLogStatus(c ui.C, session *Session, view *remoteLogView) {
+	m, p := state.messages.RemoteLogs, state.pal
+	status, color, retry := "", p.muted, false
+	switch {
+	case !session.canViewRemoteLogs():
+		status, color = m.Disconnected, p.warning
+	case view.buffer == nil:
+		return
+	case view.snapshot.done || view.cancel == nil:
+		status, color, retry = m.Stopped, p.warning, true
+		if view.snapshot.err != nil {
+			status += " · " + view.snapshot.err.Error()
+			if !view.snapshot.ready && len(view.snapshot.lines) != 0 {
+				status = view.snapshot.lines[0]
 			}
-			if status != "" {
-				ui.Slot(c).Size(6, 6).Shrink(0).Radius(3).Background(color)
-			}
-			ui.Text(c, status).Color(color).Grow(1).Ellipsis()
-			if status == m.Live {
-				ui.Text(c, m.Following).Color(p.muted).Shrink(0)
-			}
-			if view.buffer != nil && (view.snapshot.done || view.cancel == nil) && session.canViewRemoteLogs() && ui.Button(c, m.Retry).Ghost().Shrink(0).Clicked() {
-				c.After(func() { state.followRemoteLog(session, view, view.selected) })
-			}
-		})
+		}
+	case !view.snapshot.ready:
+		status = m.Connecting
+	default:
+		return
+	}
+	ui.Slot(c).Height(1).FillWidth().Background(p.line)
+	ui.Row(c).Height(30).PadX(8).Gap(6).Items(ui.Center).Children(func() {
+		ui.Text(c, status).Color(color).Grow(1).Ellipsis()
+		if retry && ui.Button(c, m.Retry).Ghost().Shrink(0).Clicked() {
+			c.After(func() { state.followRemoteLog(session, view, view.selected) })
+		}
 	})
 }
 

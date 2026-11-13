@@ -2792,6 +2792,13 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return state.noteExitKey(event)
 	}
 	defer state.afterEvent(&outcome)
+	if state.modal == modalNone && state.terminalPage() {
+		if view := state.workspaceRemoteLogs(state.deck.ActiveWorkspace()); view != nil && view.formMode == remoteLogFormNone {
+			if result := view.pathSplit.Key(event); result.Handled {
+				return result
+			}
+		}
+	}
 	if result := state.toolbarDockKey(event); result.Handled {
 		return result
 	}

@@ -125,6 +125,9 @@ type remoteLogView struct {
 	snapshot           remoteLogSnapshot
 	selected           remoteLogPath
 	paths              ui.ListState
+	pathSplit          ui.SplitterState
+	pathMenu           bool
+	pathMenuFor        remoteLogPath
 	query              ui.Field
 	name, path         ui.Field
 	formMode           remoteLogForm
