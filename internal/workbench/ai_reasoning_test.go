@@ -225,6 +225,8 @@ func TestAIReasoningDialogSaveReachesOtherWindows(t *testing.T) {
 		state.Wake()
 		state.aiCurrentModelReasoning()
 	}
+	windows[1].ai.panel.reasoningEffort = reasoning.LevelHigh
+	windows[2].ai.panel.reasoningEffort = reasoning.LevelXHigh
 	m := origin.messages.AISettings
 	for _, tc := range []struct {
 		name, mode, preset string
@@ -254,6 +256,20 @@ func TestAIReasoningDialogSaveReachesOtherWindows(t *testing.T) {
 				model, levels, supported := state.aiCurrentModelReasoning()
 				if model == nil {
 					t.Fatalf("window %d has no selected model", index)
+				}
+				wantEffort := reasoning.LevelMedium
+				if tc.disabled {
+					wantEffort = ""
+				} else if index == 1 {
+					wantEffort = reasoning.LevelHigh
+				} else if index == 2 && tc.name == "enabled" {
+					wantEffort = reasoning.LevelXHigh
+				}
+				if got := state.aiEffectiveReasoningEffort(); got != wantEffort {
+					t.Errorf("window %d: effort=%q, want %q", index, got, wantEffort)
+				}
+				if want := []string{"", reasoning.LevelHigh, reasoning.LevelXHigh}[index]; state.ai.panel.reasoningEffort != want {
+					t.Errorf("window %d: local effort override changed to %q, want %q", index, state.ai.panel.reasoningEffort, want)
 				}
 				_, _, _, override, disabled := state.aiModelReasoningInfo(model)
 				if !slices.Equal(levels, tc.levels) || supported != (len(tc.levels) > 0) || disabled != tc.disabled || override != tc.override {

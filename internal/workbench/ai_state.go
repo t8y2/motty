@@ -283,7 +283,6 @@ func (state *State) reloadAI() {
 	}
 	ai.providers, _ = ai.store.Providers()
 	state.aiAdoptKeys()
-	ai.models, _ = ai.store.Models()
 	state.reloadAISettings()
 	read := func(key string, apply func(string)) {
 		if value, ok, err := ai.store.Setting(key); err == nil && ok {
