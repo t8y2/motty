@@ -840,14 +840,10 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 						case hovered:
 							fill, foreground = pal.tabHover, pal.text
 						}
-						amount := float32(.08)
-						if active {
-							amount = .18
-						} else if hovered {
-							amount = .12
-						}
-						fill = tintHostSurface(fill, fileTab.session.host.Color, amount)
-						edge = tintHostSurface(edge, fileTab.session.host.Color, .35)
+						color := fileTab.session.host.Color
+						fill = tabFill(pal, fill, color, active, hovered)
+						edge = tintHostSurface(edge, color, tabColorBorderTint)
+						foreground = tabInk(pal, color, foreground)
 						entry.background = fill
 						first := float32(0)
 						if state.tabOrientation == tabsVertical {
@@ -865,7 +861,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 							if state.tabNumbers && entry.number != "" {
 								// File tabs follow the session tabs in the number row,
 								// as they do for the number shortcuts.
-								ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+								ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberInk(foreground, fileTab.session.host.Color)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
 							}
 							ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).LineHeight(20).Ellipsis()
 							entry.light = ui.Slot(c).Size(9, 20).MarginSides(0, 0, 0, 7)
@@ -920,16 +916,10 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 	case hovered:
 		fill, foreground = pal.tabHover, pal.text
 	}
-	if session := state.tabSession(workspace); session != nil {
-		amount := float32(.08)
-		if active {
-			amount = .18
-		} else if hovered {
-			amount = .12
-		}
-		fill = tintHostSurface(fill, session.host.Color, amount)
-		edge = tintHostSurface(edge, session.host.Color, .35)
-	}
+	color := state.tabColor(workspace)
+	fill = tabFill(pal, fill, color, active, hovered)
+	edge = tintHostSurface(edge, color, tabColorBorderTint)
+	foreground = tabInk(pal, color, foreground)
 	entry.background = fill
 	entry.foreground = foreground
 	label := state.tabLabel(workspace)
@@ -986,7 +976,7 @@ func (state *State) declareWorkspaceTab(c ui.C, workspace layoutcore.WorkspaceIn
 		entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
 		if state.tabNumbers && entry.number != "" {
 			// The number names the name beside it, so it carries less ink.
-			ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberColor(foreground)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
+			ui.Text(c, entry.number).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(tabNumberInk(foreground, color)).LineHeight(20).Shrink(0).MarginSides(0, tabNumberGap, 0, 0)
 		}
 		if editing {
 			// The title is the field itself, and the room the lock, the light

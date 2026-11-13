@@ -86,6 +86,9 @@ type tabDrag struct {
 	// workspace. A group only moves among the groups of this window.
 	group []layoutcore.WorkspaceID
 	title string
+	// color holds the tab's colour at the moment the drag began, so the preview
+	// does not fall back to inheriting the connection's colour.
+	color string
 	// host is the connection the dragged tab shows, so its picture can follow
 	// the pointer as it does on the tab; hasHost is false for a tab without one.
 	host      Host
@@ -128,7 +131,7 @@ func (state *State) tabDragPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 			}
 			for _, tab := range state.workspaceTabs {
 				if tab.ID == id {
-					*drag = tabDrag{pressed: true, workspace: id, title: state.tabLabel(tab), panes: tab.PaneCount, start: gfx.Point{X: event.X, Y: event.Y}}
+					*drag = tabDrag{pressed: true, workspace: id, title: state.tabLabel(tab), color: state.tabColor(tab), panes: tab.PaneCount, start: gfx.Point{X: event.X, Y: event.Y}}
 					if session := state.tabSession(tab); session != nil {
 						drag.host, drag.hasHost = session.host, true
 					}
@@ -141,7 +144,7 @@ func (state *State) tabDragPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 				state.openTerminalRename(session)
 				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
-			*drag = tabDrag{pressed: true, workspace: state.deck.ActiveWorkspace(), pane: pane, title: session.Title, panes: 1, start: gfx.Point{X: event.X, Y: event.Y}, host: session.host, hasHost: true}
+			*drag = tabDrag{pressed: true, workspace: state.deck.ActiveWorkspace(), pane: pane, title: session.Title, panes: 1, start: gfx.Point{X: event.X, Y: event.Y}, host: session.host, hasHost: true, color: session.host.Color}
 			if drag.title == "" {
 				drag.title = session.Address
 			}
@@ -250,9 +253,9 @@ func (state *State) followTabPreview(drag *tabDrag, screen gfx.Point) {
 		preview.handle.MoveTo(origin)
 		return
 	}
-	title, host, hasHost := drag.title, drag.host, drag.hasHost
+	title, host, hasHost, color := drag.title, drag.host, drag.hasHost, drag.color
 	handle, err := state.options.OpenDragPreview(gfx.Size{Width: width, Height: barTabHeight}, origin, func(canvas *gfx.Canvas, size gfx.Size) {
-		state.drawTabGhost(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, title, host, hasHost)
+		state.drawTabGhost(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, title, host, hasHost, color)
 	})
 	if err != nil || handle == nil {
 		preview.refused = true
@@ -297,7 +300,7 @@ func (state *State) trackTabDragEnd(drag *tabDrag, event gfx.PointerEvent) {
 
 // showForeignDrag marks this window as the one another window's tab is over.
 func (state *State) showForeignDrag(from *tabDrag, screen gfx.Point) {
-	state.foreign = tabDrag{active: true, title: from.title, host: from.host, hasHost: from.hasHost, panes: from.panes, outside: true}
+	state.foreign = tabDrag{active: true, title: from.title, color: from.color, host: from.host, hasHost: from.hasHost, panes: from.panes, outside: true}
 	state.foreign.drop = state.foreignDropAt(screen, from.panes)
 	if frame, ok := state.frame(); ok {
 		state.foreign.at = gfx.Point{X: screen.X - frame.X, Y: screen.Y - frame.Y}
@@ -778,7 +781,7 @@ func (state *State) drawTabDragGhost(d *ui.DrawContext) {
 	if drag == nil {
 		return
 	}
-	state.drawTabGhost(d.Canvas, d.Rect, drag.title, drag.host, drag.hasHost)
+	state.drawTabGhost(d.Canvas, d.Rect, drag.title, drag.host, drag.hasHost, drag.color)
 }
 
 // drawTabDragHint paints what letting go does, under the dragged tab and over
@@ -798,13 +801,11 @@ func tabGhostWidth(canvas *gfx.Canvas, title string) float32 {
 }
 
 // drawTabGhost draws a tab in bounds as the active tab of the bar looks.
-func (state *State) drawTabGhost(canvas *gfx.Canvas, bounds gfx.Rect, title string, host Host, hasHost bool) {
+func (state *State) drawTabGhost(canvas *gfx.Canvas, bounds gfx.Rect, title string, host Host, hasHost bool, color string) {
 	pal := state.pal
 	fill, edge := pal.tabActive, pal.windowStroke
-	if hasHost {
-		fill = tintHostSurface(fill, host.Color, .18)
-		edge = tintHostSurface(edge, host.Color, .35)
-	}
+	fill = tabFill(pal, fill, color, true, false)
+	edge = tintHostSurface(edge, color, tabColorBorderTint)
 	canvas.RoundedBorder(bounds, radius.item, 1, edge, fill)
 	badge := gfx.Rect{X: bounds.X + 4, Y: bounds.Y + (bounds.Height-20)/2, Width: 20, Height: 20}
 	if hasHost {

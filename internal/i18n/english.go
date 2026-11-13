@@ -505,6 +505,8 @@ var EnglishMessages = Messages{
 	ColorOrange:                 "Orange",
 	ColorRed:                    "Red",
 	ColorBlue:                   "Blue",
+	ColorPink:                   "Pink",
+	ColorTeal:                   "Teal",
 	ColorPurple:                 "Purple",
 	ErrHostColorInvalid:         "Enter a color such as #3B82F6, or leave it empty",
 	IconAuto:                    "Automatic",

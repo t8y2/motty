@@ -74,8 +74,11 @@ type Pane struct {
 
 // WorkspaceInfo is the stable metadata needed to paint workspace tabs.
 type WorkspaceInfo struct {
-	ID     WorkspaceID
-	Title  string
+	ID    WorkspaceID
+	Title string
+	// An empty Color inherits the connection's colour; "none" means the user
+	// explicitly cleared the tab's colour.
+	Color  string
 	Locked bool
 	// Named is set once the user chose Title; a title the terminal reports then
 	// no longer takes its place on the tab.
@@ -87,6 +90,7 @@ type WorkspaceInfo struct {
 type workspaceRecord struct {
 	id         WorkspaceID
 	title      string
+	color      string
 	locked     bool
 	named      bool
 	layout     Layout
@@ -130,7 +134,7 @@ func (deck *Deck) Workspaces(dst []WorkspaceInfo) []WorkspaceInfo {
 	for index := range deck.workspaces {
 		workspace := &deck.workspaces[index]
 		dst = append(dst, WorkspaceInfo{
-			ID: workspace.id, Title: workspace.title, Locked: workspace.locked, Named: workspace.named,
+			ID: workspace.id, Title: workspace.title, Color: workspace.color, Locked: workspace.locked, Named: workspace.named,
 			ActivePane: workspace.activePane, PaneCount: len(workspace.panes),
 		})
 	}
@@ -182,6 +186,17 @@ func (deck *Deck) Rename(id WorkspaceID, title string) error {
 		return ErrWorkspaceNotFound
 	}
 	workspace.title = title
+	return nil
+}
+
+// SetColor sets a tab's own colour without touching the connection's
+// configuration or any other tab.
+func (deck *Deck) SetColor(id WorkspaceID, color string) error {
+	workspace, ok := deck.workspace(id)
+	if !ok {
+		return ErrWorkspaceNotFound
+	}
+	workspace.color = color
 	return nil
 }
 

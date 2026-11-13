@@ -226,6 +226,7 @@ func (state *State) paintTabMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 		rows.add(components.ContextMenuItem{ID: hitTabMenuSaveWorkspace, Label: messages.WorkspaceSaveMenu, Icon: icon(iconArchive)})
 	}
 	width, height := rows.size(canvas, state.contextMenuTheme())
+	height += contextMenuSeparator + tabColorFooterHeight
 	bounds := state.popupAt(canvas, viewport, state.tabMenu.at, width, height, 6)
 	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
 		Layer: dialogLayer, Scope: dialogScope, DismissID: hitTabMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitTabMenuDismiss),
@@ -233,6 +234,7 @@ func (state *State) paintTabMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	})
 	state.menuPlaced(menu.Bounds())
 	rows.paint(&menu, nil)
+	state.paintTabColorChoices(canvas, &menu)
 	menu.End()
 }
 
@@ -245,6 +247,9 @@ func (state *State) clickTabMenu(id gfx.ID) bool {
 	state.tabMenu.open = false
 	index, ok := state.workspaceTab(workspace)
 	if !ok {
+		return true
+	}
+	if state.clickTabColor(workspace, id) {
 		return true
 	}
 	switch id {
