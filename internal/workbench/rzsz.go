@@ -90,7 +90,10 @@ func (b *aiBackend) TransferRZSZ(ctx context.Context, req tools.RZSZRequest) (ga
 		case <-timer.C:
 			return b.state.abortRZSZWait(job, errors.New("rz/sz timed out"))
 		case <-ctx.Done():
-			return b.state.abortRZSZWait(job, ctx.Err())
+			// The caller going away is not the transfer failing. The tool says a
+			// client timeout is answered by rzsz_status, so leave the job to its
+			// own timer and the progress it publishes.
+			return gate.RZSZStatus{}, ctx.Err()
 		case <-ticker.C:
 			publish()
 		}
@@ -233,7 +236,7 @@ func (state *State) beginRZSZ(session *Session, req tools.RZSZRequest) (*rzszJob
 	if term.exec != nil {
 		return nil, errExecBusy
 	}
-	if session.transfer.phase != transferNone || session.rzsz != nil {
+	if session.transferBusy() {
 		return nil, errors.New("a file transfer is already running")
 	}
 	command, job, err := state.prepareRZSZ(session, req)
@@ -247,6 +250,9 @@ func (state *State) beginRZSZ(session *Session, req tools.RZSZRequest) (*rzszJob
 		state.releaseRZSZ(session, job)
 		return nil, errExecRefuse
 	}
+	// The command is in the shell now, so the shell belongs to this job until it
+	// finishes, as it does once the engine starts.
+	term.transferHoldsInput = true
 	return job, nil
 }
 
@@ -414,22 +420,27 @@ func (state *State) abortRZSZ(job *rzszJob, reason error) {
 		return
 	}
 	job.reason = reason
-	if session.transfer.phase != transferNone && session.transfer.engine != nil {
-		session.transfer.engine.Cancel()
-		state.afterTransferFeed(session)
-	}
-	if session.rzsz != job {
-		return
-	}
-	if session.term != nil {
-		session.term.sendProtocol([]byte{3})
-		if session.term.shell != nil {
-			session.term.shell.Write([]byte("\x18\x18\x18\x18\x18\x18\x18\x18\b\b\b\b\b\b\b\b\b\b"))
+	// A transfer this job did not start owns the shell instead; leave it and
+	// finish only the call.
+	foreign := session.transfer.engine != nil && session.transfer.engine != job.engine
+	if !foreign {
+		if session.transfer.phase != transferNone && session.transfer.engine != nil {
+			session.transfer.engine.Cancel()
+			state.afterTransferFeed(session)
 		}
-	}
-	if session.transfer.phase != transferNone {
-		state.endTransfer(session)
-		return
+		if session.rzsz != job {
+			return
+		}
+		if session.term != nil {
+			session.term.sendProtocol([]byte{3})
+			if session.term.shell != nil {
+				session.term.shell.Write([]byte("\x18\x18\x18\x18\x18\x18\x18\x18\b\b\b\b\b\b\b\b\b\b"))
+			}
+		}
+		if session.transfer.phase != transferNone {
+			state.endTransfer(session)
+			return
+		}
 	}
 	state.finishRZSZ(session)
 }
@@ -466,13 +477,24 @@ func (state *State) finishRZSZ(session *Session) {
 	}
 	session.rzsz = nil
 	state.releaseRZSZ(session, job)
+	if session.transfer.phase == transferNone {
+		// An armed job holds the shell before its engine starts; a running
+		// transfer releases the same hold when it ends.
+		state.releaseTransferInput(session)
+	}
 	err := job.reason
 	files := 0
-	if session.transfer.engine != nil {
+	engine := session.transfer.engine
+	if engine != job.engine {
+		// Only the engine this job started says how the call went. A transfer
+		// that belongs to other work must not report itself as this one.
+		engine = nil
+	}
+	if engine != nil {
 		if err == nil {
-			err = session.transfer.engine.Err()
+			err = engine.Err()
 		}
-		files = session.transfer.engine.Progress().Files
+		files = engine.Progress().Files
 	}
 	if err == nil && files < 1 {
 		err = errors.New("rz/sz finished without transferring the file")

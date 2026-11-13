@@ -3,6 +3,7 @@ package workbench
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -334,4 +335,83 @@ func waitRZSZ(t *testing.T, state *State, run func() error) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	t.Fatal("timed out waiting for rz/sz")
+}
+
+// TestAnArmedRZSZOwnsTheShell pins that a job waiting for the remote program
+// holds the shell the way a running transfer does, and gives it back after.
+func TestAnArmedRZSZOwnsTheShell(t *testing.T) {
+	state, session, shell := transferState(t)
+	session.term.live = true
+	dir := t.TempDir()
+	source := filepath.Join(dir, "note.txt")
+	if err := os.WriteFile(source, []byte("payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := state.ai.backend.TransferRZSZ(context.Background(), tools.RZSZRequest{
+			Upload: true, LocalPath: source, TimeoutSeconds: 30,
+		})
+		errCh <- err
+	}()
+	waitUntil(t, state, "rz armed", func() bool { return session.rzsz != nil })
+	if !session.term.transferHoldsInput {
+		t.Fatal("an armed job does not hold the shell")
+	}
+	session.term.send([]byte("typed"))
+	if strings.Contains(shell.typed(), "typed") {
+		t.Fatal("typing reached the shell while rz was armed")
+	}
+	state.openXYSetup(session)
+	if state.modal == modalXYTransfer {
+		t.Fatal("the X/YMODEM dialog opened while rz was armed")
+	}
+	state.abortRZSZ(session.rzsz, errors.New("test is over"))
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("an aborted call reported success")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the call did not finish after the abort")
+	}
+	if session.rzsz != nil || session.term.transferHoldsInput {
+		t.Fatal("the abort did not give the shell back")
+	}
+}
+
+// TestACancelledClientLeavesTheRZSZTransferRunning pins the contract the tools
+// state: a client timeout is not a failure, so the job keeps running and
+// rzsz_status can still find it.
+func TestACancelledClientLeavesTheRZSZTransferRunning(t *testing.T) {
+	state, session, _ := transferState(t)
+	session.term.live = true
+	dir := t.TempDir()
+	source := filepath.Join(dir, "note.txt")
+	if err := os.WriteFile(source, []byte("payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := state.ai.backend.TransferRZSZ(ctx, tools.RZSZRequest{
+			Upload: true, LocalPath: source, TimeoutSeconds: 30,
+		})
+		errCh <- err
+	}()
+	waitUntil(t, state, "rz armed", func() bool { return session.rzsz != nil })
+	cancel()
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancelled call = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the cancelled call did not return")
+	}
+	if session.rzsz == nil {
+		t.Fatal("a cancelled client ended the armed job")
+	}
+	state.abortRZSZ(session.rzsz, errors.New("test is over"))
 }

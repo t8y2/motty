@@ -1990,7 +1990,7 @@ func (state *State) closeSession(id uint32) {
 	session := &state.sessions[index]
 	session.closeSSHBrowser()
 	state.leaveLocalProxy(session)
-	if session.transfer.phase != transferNone || session.rzsz != nil {
+	if session.transferBusy() {
 		state.abandonTransfer(session)
 	}
 	// Closing a tab cancels its connection and deletes the Session in this call,

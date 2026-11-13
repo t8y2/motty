@@ -86,6 +86,13 @@ type transferText struct {
 	line       string
 }
 
+// transferBusy reports whether a file transfer owns this shell, whether the
+// remote program is still being started or bytes are already moving. An armed
+// rz/sz job holds the shell the same way a running engine does.
+func (session *Session) transferBusy() bool {
+	return session.transfer.phase != transferNone || session.rzsz != nil
+}
+
 // zmodem signatures of the first header each side sends: a sender asks to send
 // (ZRQINIT), a receiver says it is ready (ZRINIT).
 var (

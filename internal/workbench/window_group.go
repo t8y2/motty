@@ -210,7 +210,7 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 	// A transfer in progress owns that terminal's stream and cannot follow the tab.
 	for _, pane := range dto.Panes {
 		session, ok := state.sessionByIDPointer(uint32(pane.SessionID))
-		if ok && (session.transfer.phase != transferNone || session.rzsz != nil) {
+		if ok && session.transferBusy() {
 			state.status = state.messages.Tools.TabMoveBusy
 			return nil, false
 		}
