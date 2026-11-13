@@ -245,7 +245,13 @@ func knownHostsPath(dir string) string {
 func stateDatabasePath() string {
 	dir := datadir.Current().Dir
 	if dir == "" {
-		return ""
+		// An empty directory means the platform's usual place, which is what the
+		// windows resolve the store to as well: an empty path here would read no
+		// window records at all and open a single window every time.
+		var err error
+		if dir, err = defaultDataDir(); err != nil {
+			return ""
+		}
 	}
 	return filepath.Join(dir, "config.db")
 }
