@@ -507,6 +507,8 @@ var TraditionalMessages = Messages{
 	ColorOrange:                 "橙色",
 	ColorRed:                    "紅色",
 	ColorBlue:                   "藍色",
+	ColorPink:                   "粉色",
+	ColorTeal:                   "青色",
 	ColorPurple:                 "紫色",
 	ErrHostColorInvalid:         "請輸入 #3B82F6 這樣的顏色值，或留空使用預設顏色",
 	IconAuto:                    "自動",

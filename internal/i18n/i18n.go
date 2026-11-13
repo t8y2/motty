@@ -543,6 +543,8 @@ type Messages struct {
 	ColorRed                    string
 	ColorBlue                   string
 	ColorPurple                 string
+	ColorPink                   string
+	ColorTeal                   string
 	ErrHostColorInvalid         string
 	IconAuto                    string
 	IconServer                  string
