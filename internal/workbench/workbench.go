@@ -2708,6 +2708,11 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 			return result
 		}
 	}
+	if state.modal == modalNewHost && state.editor.iconPicker.control.Open {
+		if result := state.editor.iconPicker.control.Pointer(event); result.Handled {
+			return result
+		}
+	}
 	if state.modal == modalNewHost && state.editor.encodingPicker.control.Open {
 		if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary && !isHostEncodingPickerTarget(event.Target) {
 			state.editor.encodingPicker.control.Open = false
