@@ -172,6 +172,42 @@ func TestDashboardBulkHeadlessOrdersAndPersists(test *testing.T) {
 	}
 }
 
+func TestDashboardBulkHeadlessSelectionResetsOrderMode(test *testing.T) {
+	state := dashboardBulkFixture(test)
+	state.dashboard.editor.selected = []string{"web-10"}
+	view := dashboardBulkView(test, state, 1440, 1000, 1)
+	messages := state.messages.Dashboard
+	dashboardBulkClick(test, view, messages.OrderTab)
+	dashboardBulkClick(test, view, messages.SortBy)
+	dashboardBulkClick(test, view, state.messages.HostCatalog.IP)
+	tabs := view.Snapshot().Hits
+	index := slices.IndexFunc(tabs, func(hit gfx.Hit) bool { return hit.ID == hitDashboardPickTab })
+	if index < 0 {
+		test.Fatal("host selection tab is missing")
+	}
+	tab := tabs[index].Bounds
+	if err := view.Click(tab.X+tab.Width/2, tab.Y+tab.Height/2); err != nil {
+		test.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		test.Fatal(err)
+	}
+	dashboardBulkClick(test, view, "Web A")
+	dashboardBulkClick(test, view, messages.OrderTab)
+	if state.dashboard.editor.orderMode != hostOrderManual || !slices.Equal(state.dashboard.editor.selected, []string{"web-10", "web-2"}) {
+		test.Fatal("selection changed without resetting the sort label to manual")
+	}
+	dashboardBulkClick(test, view, messages.SortBy)
+	manual, found := view.Hit(state.messages.HostCatalog.Manual)
+	if !found || !manual.Selected {
+		test.Fatalf("manual order is not selected in the order menu: %+v", manual)
+	}
+	if err := view.Keys("escape"); err != nil {
+		test.Fatal(err)
+	}
+	dashboardBulkScreenshot(test, view, "monitor-order-after-selection")
+}
+
 func TestDashboardBulkHeadlessLayoutAcrossLanguagesAndScales(test *testing.T) {
 	for _, language := range []i18n.Language{i18n.Chinese, i18n.English, i18n.TraditionalChinese} {
 		for _, scale := range []float64{1, 1.5, 2} {

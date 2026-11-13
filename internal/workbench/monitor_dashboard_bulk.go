@@ -29,6 +29,10 @@ func (state *State) toggleDashboardMatches() {
 			}
 		}
 	}
+	if len(matching) == 0 {
+		return
+	}
+	state.dashboard.editor.orderMode = hostOrderManual
 	if len(missing) > 0 {
 		state.dashboard.editor.selected = append(state.dashboard.editor.selected, missing...)
 		return

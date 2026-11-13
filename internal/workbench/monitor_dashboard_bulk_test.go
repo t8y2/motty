@@ -1,9 +1,11 @@
 package workbench
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 )
 
@@ -112,5 +114,46 @@ func TestDashboardOrderKeepsUnavailableHostsLast(test *testing.T) {
 	state.Click(tree.Sub(dashboardHits, tree.Name("order-mode")).At(int(hostOrderName)))
 	if want := []string{"web-2", "web-10", "desktop", "removed"}; !slices.Equal(state.dashboard.editor.selected, want) {
 		test.Fatalf("unavailable host order = %v, want %v", state.dashboard.editor.selected, want)
+	}
+}
+
+func TestDashboardSelectionChangesResetOrderMode(test *testing.T) {
+	for _, mode := range []hostOrderMode{hostOrderName, hostOrderIP} {
+		for _, scenario := range []struct {
+			name     string
+			selected []string
+			hit      gfx.ID
+		}{
+			{name: "add host", selected: []string{"web-10"}, hit: hitDashboardHostList.At(2)},
+			{name: "remove host", selected: []string{"web-10", "web-2"}, hit: hitDashboardHostList.At(2)},
+			{name: "remove unavailable host", selected: []string{"removed"}, hit: hitDashboardMissingList.At(0)},
+			{name: "select matches", selected: []string{"web-10"}, hit: hitDashboardSelectMatches},
+			{name: "clear matches", selected: []string{"web-10", "web-2", "db"}, hit: hitDashboardSelectMatches},
+		} {
+			test.Run(fmt.Sprintf("%s/%d", scenario.name, mode), func(test *testing.T) {
+				state := dashboardBulkFixture(test)
+				state.dashboard.editor.selected = slices.Clone(scenario.selected)
+				state.sortDashboardHosts(mode)
+				before := slices.Clone(state.dashboard.editor.selected)
+				state.Click(scenario.hit)
+				if slices.Equal(state.dashboard.editor.selected, before) {
+					test.Fatal("fixture did not change the selection")
+				}
+				if state.dashboard.editor.orderMode != hostOrderManual {
+					test.Fatalf("selection changed but order mode is %v, want manual", state.dashboard.editor.orderMode)
+				}
+			})
+		}
+	}
+}
+
+func TestDashboardEmptySelectionScopeKeepsOrderMode(test *testing.T) {
+	state := dashboardBulkFixture(test)
+	state.dashboard.editor.selected = []string{"web-10", "web-2"}
+	state.sortDashboardHosts(hostOrderIP)
+	state.dashboard.editor.query.Insert("no matches")
+	state.Click(hitDashboardSelectMatches)
+	if state.dashboard.editor.orderMode != hostOrderIP || !slices.Equal(state.dashboard.editor.selected, []string{"web-2", "web-10"}) {
+		test.Fatal("empty matching scope changed the order or mode")
 	}
 }

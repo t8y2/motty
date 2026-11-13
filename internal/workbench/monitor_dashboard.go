@@ -594,6 +594,7 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 			if i := item(id); i < len(d.editor.selected) {
 				if host, ok := s.dashboardHost(d.editor.selected[i]); !ok || !dashboardHostEligible(host) {
 					d.editor.selected = slices.Delete(d.editor.selected, i, i+1)
+					d.editor.orderMode = hostOrderManual
 				}
 			}
 		case id == hitDashboardDialogSave:
@@ -604,6 +605,7 @@ func (s *State) clickDashboard(id gfx.ID) bool {
 		case id.Scope() == hitDashboardHostList:
 			h, ok := s.hostByID(uint32(item(id)))
 			if ok && h.isSSH() && !h.mosh() && h.ID != localHostID {
+				d.editor.orderMode = hostOrderManual
 				if slices.Contains(d.editor.selected, h.CatalogID) {
 					d.editor.selected = slices.DeleteFunc(d.editor.selected, func(v string) bool { return v == h.CatalogID })
 				} else {
