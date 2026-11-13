@@ -3,6 +3,7 @@
 package workbench
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +15,77 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 )
+
+func TestSFTPPanelBottomFolderKeepsItsPositionAfterSelection(t *testing.T) {
+	for _, height := range []int{600, 900} {
+		t.Run(fmt.Sprint(height), func(t *testing.T) {
+			state, session, _, remote := openTestSFTP(t)
+			view := session.files
+			remote.mu.Lock()
+			entries := make([]os.FileInfo, 80)
+			for i := range entries {
+				name := fmt.Sprintf("folder-%03d", i)
+				entries[i] = workbenchFileInfo{name: name, mode: os.ModeDir | 0o755}
+				remote.entries[view.path+"/"+name] = nil
+			}
+			remote.entries[view.path] = entries
+			remote.mu.Unlock()
+			state.Click(hitSFTPRefresh)
+			waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && len(v.rows) == 80 })
+			preview, err := headless.Open(app.Config{
+				Title: "SFTP bottom folder", Width: 1400, Height: height, Tree: Tree(),
+				Paint: state.Paint, OnWake: state.Wake, OnPointer: state.Pointer,
+				OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize,
+			}, nil, headless.Options{Scale: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer preview.Close()
+			if err := preview.Driver().Pump(); err != nil {
+				t.Fatal(err)
+			}
+			list := state.chrome.sftpPanel.listSlot.Rect()
+			for range 100 {
+				if err := preview.Scroll(gfx.ScrollEvent{X: list.X + 24, Y: list.Y + 24, DeltaY: 60, Precise: true}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			last := sftpRowIndex(t, view, "folder-079")
+			rowID := sftpListRowID(t, view.active(), last)
+			findRow := func() gfx.Rect {
+				t.Helper()
+				for _, hit := range preview.Snapshot().Hits {
+					if hit.ID == rowID {
+						return hit.Bounds
+					}
+				}
+				t.Fatal("last folder is not visible")
+				return gfx.Rect{}
+			}
+			before := findRow()
+			x, y := before.X+before.Width/2, before.Y+before.Height/2
+			if err := preview.Click(x, y); err != nil {
+				t.Fatal(err)
+			}
+			if err := preview.Driver().Pump(); err != nil {
+				t.Fatal(err)
+			}
+			if count, _ := selectedSFTP(view); count != 1 || !view.rows[last].selected {
+				t.Fatalf("click did not select the last folder: count=%d selected=%d last=%d row=%+v list=%+v", count, view.selected, last, before, list)
+			}
+			if after := state.chrome.sftpPanel.listSlot.Rect(); after != list {
+				t.Fatalf("selection changed list bounds: before=%+v after=%+v", list, after)
+			}
+			if after := findRow(); after != before {
+				t.Fatalf("selection moved last folder: before=%+v after=%+v", before, after)
+			}
+			if err := preview.DoubleClick(x, y); err != nil {
+				t.Fatal(err)
+			}
+			waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && strings.HasSuffix(v.path, "/folder-079") })
+		})
+	}
+}
 
 func TestSFTPFilterRemoteHeadlessFlow(t *testing.T) {
 	state, session, _, remote := openTestSFTP(t)

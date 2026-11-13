@@ -329,16 +329,14 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			state.afterSFTPListChoice(view, folder)
 		}
 
-		if selectedCount > 0 {
-			// What can be done with the selection, under the list so the rows above
-			// do not move when one is picked.
-			rowBottom := float32(2)
-			if one {
-				rowBottom = 0 // the details line keeps that room
-			}
+		{
+			// Reserve the same space for empty, single and multiple selections.
 			ui.Column(c).Shrink(0).Children(func() {
 				ui.Divider(c).Background(pal.line)
-				ui.Row(c).Gap(2).Height(sftpButton).Shrink(0).MarginSides(5, 0, rowBottom, 0).Children(func() {
+				ui.Row(c).Gap(2).Height(sftpButton).Shrink(0).MarginSides(5, 0, 0, 0).Children(func() {
+					if selectedCount == 0 {
+						return
+					}
 					opBusy := view.busy && !local || local && view.localBusy
 					add := func(id gfx.ID, glyph uint8, label string, danger bool) {
 						style := iconButtonQuiet
@@ -375,9 +373,11 @@ func (state *State) declareSFTPPanel(c ui.C) {
 					}
 					add(hitSFTPDelete, iconTrash, messages.SFTPDelete, true)
 				})
+				details := ""
 				if one {
-					ui.Text(c, state.sftpDetailsLine(view, selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(18).Shrink(0).MarginSides(2, 0, 2, 2)
+					details = state.sftpDetailsLine(view, selected)
 				}
+				ui.Text(c, details).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(18).Shrink(0).MarginSides(2, 0, 2, 2)
 			})
 		}
 
