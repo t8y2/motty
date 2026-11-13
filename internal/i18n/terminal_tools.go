@@ -138,6 +138,31 @@ type ToolsMessages struct {
 	StatusSendNoTarget     string
 	StatusSendChooseNone   string
 
+	// The strip of saved commands under the terminal.
+	CommandsAdd   string
+	CommandsClose string
+	// CommandsBarShow is the label of the picker's quiet checkbox for that strip;
+	// CommandsBarHidden is that checkbox's tooltip while unticked. Neither names
+	// the strip: the UI uses the language's own word for saved commands.
+	CommandsBarHidden string
+	CommandsBarShow   string
+	// CommandsFilter is the tooltip of the group-filter button at the bar's left
+	// and the heading of the menu it opens.
+	CommandsFilter string
+	// CommandsUngrouped is the checkbox for commands with no group in the filter.
+	CommandsUngrouped string
+	// CommandsShowAll checks every group in the filter; CommandsHideAll clears them.
+	CommandsShowAll string
+	CommandsHideAll string
+	// CommandsNoGroups is the disabled placeholder when no snippet has a group yet.
+	CommandsNoGroups string
+	// The bar's order: the tooltip of its order button, and the three orders that
+	// button offers.
+	CommandsSortRow     string
+	CommandsSortCreated string
+	CommandsSortName    string
+	CommandsSortGroup   string
+
 	// The categories of the settings page, and what each holds.
 	CatGeneral    string
 	CatTerminal   string

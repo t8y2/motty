@@ -882,6 +882,7 @@ type State struct {
 	noteExit         *noteExitRequest
 	noteTarget       *notesUI
 	snippets         snippetsUI
+	commands         commandsUI
 	snippetSend      snippetSender
 	snippetPrompt    snippetPromptState
 	snippetVarValues map[string]map[string]string
@@ -1099,6 +1100,7 @@ func New(options Options) *State {
 		update:                updateState{firstDelay: updateFirstDelayDefault, every: updateIntervalDefault},
 		winChrome:             windowChrome{remember: options.RememberWindowFrame},
 	}
+	// The command drawer shows by default; a saved state may close it.
 	// The reference cell stands in until the first paint measures the font on the
 	// window's canvas (measureTerminalCell).
 	state.cellWidth, state.cellHeight = (&gfx.Canvas{}).MonoCellSize(state.terminalFontSize, state.terminalFontFace)
@@ -1734,10 +1736,15 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	if state.clickWorkspaceCommand(id) {
 		return
 	}
+	if state.clickCommandsDrawer(id) {
+		return
+	}
 	if state.clickTerminalFind(id) {
 		return
 	}
 	if id == hitTerminalSnippets {
+		// One button, one meaning: the picker, whatever the command bar's state.
+		// Its own checkbox above the search field is the way back while hidden.
 		state.openSnippetPicker()
 		return
 	}

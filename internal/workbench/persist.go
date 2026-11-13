@@ -198,6 +198,13 @@ type savedState struct {
 	// Provider collections are nil while the assistant's database is unread.
 	AIProviders    *[]savedAIProvider `json:"ai_providers,omitempty"`
 	AICLIProviders *[]savedAIProvider `json:"ai_cli_providers,omitempty"`
+
+	// The bottom command bar's own layout: whether it is hidden, the snippet
+	// groups it filters out (keyed by lowercased name; "" means ungrouped), and
+	// the order of its chips. A fresh state shows every group in list order.
+	CommandsShown        bool     `json:"commands_shown,omitempty"`
+	CommandsHiddenGroups []string `json:"commands_hidden_groups,omitempty"`
+	CommandsSort         string   `json:"commands_sort,omitempty"`
 }
 
 type savedOutboundProxy struct {
@@ -617,6 +624,11 @@ func (state *State) snapshot() savedState {
 				Name: entry.Name, Key: string([]byte{entry.Shortcut.Char}), Modifiers: uint8(entry.Shortcut.Modifiers),
 			})
 		}
+	}
+	saved.CommandsShown = state.commands.shown
+	saved.CommandsSort = state.commands.sort.String()
+	for key := range state.commands.hiddenGroups {
+		saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)
 	}
 	if state.proxy.kind != sshconn.ProxyNone || state.proxy.bypass != "" {
 		saved.OutboundProxy = &savedOutboundProxy{

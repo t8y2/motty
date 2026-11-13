@@ -1822,6 +1822,11 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result, handled := state.scrollMonitor(event); handled {
 		return result
 	}
+	// The command bar is a strip of its own below the panes: a wheel over it
+	// moves its chips sideways rather than scrolling a terminal behind it.
+	if result, handled := state.scrollCommandsBar(event); handled {
+		return result
+	}
 	// A wheel over a control of the files panel belongs to the panel's list. The
 	// panel is part of the workbench page now, so the event already has window
 	// coordinates and the control's own identity.

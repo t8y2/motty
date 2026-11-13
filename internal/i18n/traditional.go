@@ -1689,6 +1689,21 @@ var traditionalTools = ToolsMessages{
 	StatusSendNoTarget:        "沒有可傳送的已連線工作階段。",
 	StatusSendChooseNone:      "請先選擇要傳送的工作階段。",
 
+	// 底部快速指令。
+	CommandsAdd:         "新增命令",
+	CommandsClose:       "隱藏底部快速指令（可在快速指令面板重新勾選顯示）",
+	CommandsBarHidden:   "底部快速指令已隱藏",
+	CommandsBarShow:     "顯示底部快速指令",
+	CommandsFilter:      "按分組篩選",
+	CommandsUngrouped:   "未分組",
+	CommandsShowAll:     "全選",
+	CommandsHideAll:     "全不選",
+	CommandsNoGroups:    "暫無分組",
+	CommandsSortRow:     "命令排序",
+	CommandsSortCreated: "新增順序",
+	CommandsSortName:    "字母順序",
+	CommandsSortGroup:   "按分組",
+
 	CatGeneral:    "通用",
 	CatTerminal:   "終端機",
 	CatConnection: "連線",

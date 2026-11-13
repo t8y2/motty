@@ -1689,6 +1689,21 @@ var englishTools = ToolsMessages{
 	StatusSendNoTarget:        "No connected terminal to send to.",
 	StatusSendChooseNone:      "Choose at least one terminal to send to.",
 
+	// The saved commands shown under the terminal.
+	CommandsAdd:         "Add command",
+	CommandsClose:       "Hide snippets (tick the box in the Snippets picker to show them again)",
+	CommandsBarHidden:   "Snippets hidden",
+	CommandsBarShow:     "Show snippets at the bottom",
+	CommandsFilter:      "Filter by group",
+	CommandsUngrouped:   "Ungrouped",
+	CommandsShowAll:     "Show all",
+	CommandsHideAll:     "Hide all",
+	CommandsNoGroups:    "No groups yet",
+	CommandsSortRow:     "Command order",
+	CommandsSortCreated: "Creation order",
+	CommandsSortName:    "Alphabetical",
+	CommandsSortGroup:   "By group",
+
 	CatGeneral:    "General",
 	CatTerminal:   "Terminal",
 	CatConnection: "Connection",
