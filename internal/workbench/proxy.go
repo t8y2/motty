@@ -36,10 +36,17 @@ func (source *proxyTableSource) Cell(row, column int) string {
 		return ""
 	}
 	records := *source.records
-	if row < 0 || row >= len(records) || column < 0 || column >= len(records[row].cells) {
+	if row < 0 || row >= len(records) {
 		return ""
 	}
-	return records[row].cells[column]
+	switch column {
+	case 1:
+		return records[row].cells[0]
+	case 2:
+		return records[row].cells[1]
+	default:
+		return ""
+	}
 }
 
 // syncProxyTable makes the table show the route the application selected.

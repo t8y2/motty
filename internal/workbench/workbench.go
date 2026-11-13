@@ -550,8 +550,8 @@ type State struct {
 	forwardHeadings        [5]string
 	keysColumns            [4]components.TableColumn
 	keysHeadings           [4]string
-	proxyColumns           [4]components.TableColumn
-	proxyHeadings          [4]string
+	proxyColumns           [6]components.TableColumn
+	proxyHeadings          [6]string
 	selectedBastionJumpID  uint32
 	selectedBastionTargets map[uint32]bool
 	proxyChecked           map[uint32]bool
