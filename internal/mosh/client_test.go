@@ -61,7 +61,7 @@ func TestClientDoesNotResendTransportAcknowledgedActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := &Client{
-		transport:        NewTransport(ocb, false),
+		transport:        NewTransport(ocb, false, newByteState()),
 		sentActionCounts: map[uint64]int{1: 2},
 		actions:          []UserInstruction{{Width: 80, Height: 24}, {Keys: []byte("echo")}},
 	}
