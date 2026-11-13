@@ -6,7 +6,7 @@ type DashboardMessages struct {
 	NamePlaceholder, NotePlaceholder                                          string
 	AllGroups, Ungrouped, GroupFilter, SelectedOnly, PickerCount              string
 	OrderTab, OrderHint                                                       string
-	AddHosts, AddHint, Sort, SortHint, SortPanel                              string
+	AddHosts, AddHint, Sort, SortPanel                              string
 	Selected, View, Metrics, Usage                                            string
 	Host, Mount, Interface, Used, Total, Available, ReceivedTotal, SentTotal  string
 	Title, New, Edit, Delete, Start, Stop, Simple, Detailed, Search           string
@@ -22,7 +22,7 @@ var chineseDashboard = DashboardMessages{
 	UnavailableHosts: "不可用主机",
 	NamePlaceholder:  "例如：生产环境、个人实验室", NotePlaceholder: "例如：Web、API 与数据库主机",
 	AllGroups: "全部分组", Ungrouped: "未分组", GroupFilter: "分组筛选", SelectedOnly: "仅已选", PickerCount: "已选 %d · 显示 %d / %d",
-	AddHosts: "添加到监控面板", AddHint: "添加已选的 %d 台 SSH 主机", Sort: "主机排序", OrderTab: "排列顺序", OrderHint: "顺序同时应用于简洁和详细视图，保存后生效。", SortHint: "拖动手柄调整顺序，或聚焦手柄后用上下方向键移动。", SortPanel: "调整 %s 的位置",
+	AddHosts: "添加到监控面板", AddHint: "添加已选的 %d 台 SSH 主机", Sort: "主机排序", OrderTab: "排列顺序", OrderHint: "拖动手柄调整顺序，或聚焦手柄后用上下方向键移动；顺序同时应用于简洁和详细视图，保存后生效。", SortPanel: "调整 %s 的位置",
 	Selected: "已选 %d 台", View: "视图", Metrics: "资源指标", Usage: "使用率",
 	Host: "主机", Mount: "挂载路径", Interface: "网络接口", Used: "已用", Total: "总容量", Available: "可用", ReceivedTotal: "累计接收", SentTotal: "累计发送",
 	Title: "监控", New: "新建面板", Edit: "编辑当前面板", Delete: "删除当前面板", Start: "开始监控", Stop: "停止监控", Simple: "简洁", Detailed: "详细", Search: "搜索主机、地址或标签",
@@ -37,7 +37,7 @@ var englishDashboard = DashboardMessages{
 	UnavailableHosts: "Unavailable hosts",
 	NamePlaceholder:  "e.g. Production or Home lab", NotePlaceholder: "e.g. Web, API and database hosts",
 	AllGroups: "All groups", Ungrouped: "Ungrouped", GroupFilter: "Filter by group", SelectedOnly: "Selected", PickerCount: "%d selected · %d / %d shown",
-	AddHosts: "Add to monitoring panel", AddHint: "Add %d selected SSH hosts", Sort: "Host order", OrderTab: "Arrange hosts", OrderHint: "The order applies to both views after saving.", SortHint: "Drag a handle to reorder, or focus it and use the arrow keys.", SortPanel: "Reorder %s",
+	AddHosts: "Add to monitoring panel", AddHint: "Add %d selected SSH hosts", Sort: "Host order", OrderTab: "Arrange hosts", OrderHint: "Drag a handle to reorder, or focus it and use the arrow keys. The order applies to both views after saving.", SortPanel: "Reorder %s",
 	Selected: "%d selected", View: "View", Metrics: "Resource metrics", Usage: "Usage",
 	Host: "Host", Mount: "Mount", Interface: "Interface", Used: "Used", Total: "Total", Available: "Available", ReceivedTotal: "Total received", SentTotal: "Total sent",
 	Title: "Monitor", New: "New panel", Edit: "Edit current panel", Delete: "Delete current panel", Start: "Start monitoring", Stop: "Stop monitoring", Simple: "Simple", Detailed: "Detailed", Search: "Search hosts, addresses or tags",

@@ -219,8 +219,17 @@ func TestDashboardBulkHeadlessLayoutAcrossLanguagesAndScales(test *testing.T) {
 				messages := state.messages.Dashboard
 				checkLayout := func() {
 					test.Helper()
+					// The sort trigger paints the current mode's value; SortBy is
+					// only its accessible name and is never drawn.
+					painted := map[string]bool{
+						messages.SelectMatches:            true,
+						messages.SortBy:                   true,
+						state.messages.HostCatalog.Manual: true,
+						state.messages.HostCatalog.Name:   true,
+						state.messages.HostCatalog.IP:     true,
+					}
 					for _, problem := range headless.CheckLayout(view.Snapshot()) {
-						if problem.Text == messages.SelectMatches || problem.Text == messages.SortBy || strings.Contains(problem.Text, " / ") || problem.Kind == headless.LayoutCollide && (problem.Text == messages.SelectMatches || problem.Text == state.messages.HostCatalog.Manual) {
+						if painted[problem.Text] || strings.Contains(problem.Text, " / ") {
 							test.Errorf("bulk control layout: %+v", problem)
 						}
 					}

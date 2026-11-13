@@ -2888,7 +2888,7 @@ var traditionalDashboard = DashboardMessages{
 	UnavailableHosts: "不可用主機",
 	NamePlaceholder:  "例如：生產環境、個人實驗室", NotePlaceholder: "例如：Web、API 與資料庫主機",
 	AllGroups: "全部群組", Ungrouped: "未群組", GroupFilter: "群組篩選", SelectedOnly: "僅已選", PickerCount: "已選 %d · 顯示 %d / %d",
-	AddHosts: "新增到監控面板", AddHint: "新增已選的 %d 台 SSH 主機", Sort: "主機排序", OrderTab: "排列順序", OrderHint: "順序同時應用於簡潔和詳細檢視，儲存後生效。", SortHint: "拖曳手柄調整順序，或聚焦手柄後用上下方向鍵移動。", SortPanel: "調整 %s 的位置",
+	AddHosts: "新增到監控面板", AddHint: "新增已選的 %d 台 SSH 主機", Sort: "主機排序", OrderTab: "排列順序", OrderHint: "拖曳手柄調整順序，或聚焦手柄後用上下方向鍵移動；順序同時應用於簡潔和詳細檢視，儲存後生效。", SortPanel: "調整 %s 的位置",
 	Selected: "已選 %d 台", View: "檢視", Metrics: "資源指標", Usage: "使用率",
 	Host: "主機", Mount: "掛載路徑", Interface: "網路介面", Used: "已用", Total: "總容量", Available: "可用", ReceivedTotal: "累計接收", SentTotal: "累計傳送",
 	Title: "監控", New: "新增面板", Edit: "編輯目前面板", Delete: "刪除目前面板", Start: "開始監控", Stop: "停止監控", Simple: "簡潔", Detailed: "詳細", Search: "搜尋主機、位址或標籤",
