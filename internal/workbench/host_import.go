@@ -384,6 +384,32 @@ func validImportedAddress(address string) bool {
 	return address != "" && !strings.ContainsAny(address, " \t\r\n\x00")
 }
 
+// gitHostingHosts are the public forges a Git remote reaches over SSH. They
+// offer no shell, so a block that points at one is a Git alias even when the
+// remote URL, not the block, names the "git" user.
+var gitHostingHosts = map[string]bool{
+	"github.com":              true,
+	"ssh.github.com":          true,
+	"gitlab.com":              true,
+	"altssh.gitlab.com":       true,
+	"gitee.com":               true,
+	"bitbucket.org":           true,
+	"codeberg.org":            true,
+	"git.sr.ht":               true,
+	"ssh.dev.azure.com":       true,
+	"vs-ssh.visualstudio.com": true,
+}
+
+// gitRemoteAlias reports whether a config block is an alias for a Git remote
+// rather than a host to open: a Git server is asked to run Git as the user
+// "git", and the public forges have no shell to offer either way.
+func gitRemoteAlias(host sshconfig.Host) bool {
+	if strings.EqualFold(strings.TrimSpace(host.User), "git") {
+		return true
+	}
+	return gitHostingHosts[strings.ToLower(strings.TrimSpace(host.HostName))]
+}
+
 func proxyRouteWouldCycle(routes map[uint32]uint32, target, jump uint32) bool {
 	current := jump
 	for range len(routes) + 1 {

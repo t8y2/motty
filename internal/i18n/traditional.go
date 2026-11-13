@@ -3150,6 +3150,7 @@ var traditionalSSHSync = SSHSyncMessages{
 	WarnSharedFmt:        "%s 與檔案中的其他主機共用一個區塊，只能在檔案裡修改。",
 	WarnOverriddenFmt:    "%s:檔案中靠前的設定覆蓋了 %s。",
 	WarnEndpointFmt:      "已跳過 %s:這裡已有主機使用相同的位址、使用者和連接埠。",
+	WarnGitAliasFmt:      "已跳過 %s:它是 Git 遠端別名,不是要開啟的主機。",
 	WarnJumpFmt:          "無法對映 %s 的 ProxyJump。",
 	WarnMissingFmt:       "有 %d 台已同步的主機在這裡找不到，因此沒有從 SSH 設定中刪除任何主機。",
 	WarnMarkers:          "SSH 設定中 Motty 區塊的標記已損壞，未新增任何主機。",

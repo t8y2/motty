@@ -860,7 +860,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 						label := state.sftpFileTabTitle(fileTab)
 						ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
 							HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
-							HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active}).Children(func() {
+							HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active, Hint: label}).Children(func() {
 							entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
 							if state.tabNumbers && entry.number != "" {
 								// File tabs follow the session tabs in the number row,

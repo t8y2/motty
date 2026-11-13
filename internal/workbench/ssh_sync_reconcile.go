@@ -221,6 +221,12 @@ func (r *sshReconciler) loadLinks() {
 		link := link
 		r.work = append(r.work, &link)
 		r.byID[link.ID] = &link
+		if link.live() && r.gitAlias(link.Alias) {
+			// An earlier version could link a host to a Git remote alias; the
+			// block is not a host, so the link stops carrying changes into it.
+			link.Detached = true
+			r.warn(r.m.WarnGitAliasFmt, link.Alias)
+		}
 		if link.live() {
 			r.owners[lower(link.Alias)] = &link
 		}
@@ -228,6 +234,12 @@ func (r *sshReconciler) loadLinks() {
 	for _, alias := range file.Ignored {
 		r.ignored[lower(alias)] = true
 	}
+}
+
+// gitAlias reports whether the file's block for alias is a Git remote alias.
+func (r *sshReconciler) gitAlias(alias string) bool {
+	fileHost, ok := r.cfg.Host(alias)
+	return ok && gitRemoteAlias(fileHost)
 }
 
 func (r *sshReconciler) link(id string) *sshSyncLink {
@@ -321,6 +333,12 @@ func (r *sshReconciler) linkHosts() {
 			continue
 		}
 		if alias, ok := byEndpoint[connectionKey(host.Address, host.User, host.Port)]; ok && r.owners[lower(alias)] == nil {
+			if r.gitAlias(alias) {
+				// Linking the host to a Git alias would bring the alias's key
+				// along and carry the host's changes into the Git block.
+				r.warn(r.m.WarnGitAliasFmt, alias)
+				continue
+			}
 			link = r.link(host.CatalogID)
 			link.Alias, link.Detached = alias, false
 			link.Base = fieldsOf(host)
@@ -588,6 +606,10 @@ func (r *sshReconciler) pickImports() {
 		}
 		if !validImportedAddress(fileHost.HostName) {
 			r.warn(r.state.messages.SSHConfigWarningHostFmt, fileHost.Alias)
+			continue
+		}
+		if gitRemoteAlias(fileHost) {
+			r.warn(r.m.WarnGitAliasFmt, fileHost.Alias)
 			continue
 		}
 		candidate := Host{Label: fileHost.Alias, Address: fileHost.HostName, User: fileHost.User, Port: port22(fileHost.Port)}
@@ -899,7 +921,7 @@ func (r *sshReconciler) applyJump(pull sshJumpPull) {
 func (r *sshReconciler) offerIdentities() {
 	state := r.state
 	for _, link := range r.work {
-		if !r.live(link) {
+		if !r.live(link) || r.gitAlias(link.Alias) {
 			continue
 		}
 		fileHost, ok := r.cfg.Host(link.Alias)
