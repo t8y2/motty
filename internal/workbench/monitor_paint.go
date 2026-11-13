@@ -73,7 +73,8 @@ func (state *State) paintMonitor(canvas *gfx.Canvas, b gfx.Rect, s *Session) {
 	}
 	v := s.stats
 	p := &v.panel
-	p.loginsUnsupported = s.host.System == sshconn.SystemWindows
+	system := monitorSystem(s)
+	p.loginsUnsupported = system == sshconn.SystemWindows
 	if p.language != state.language.String() {
 		state.formatMonitor(v)
 	}
@@ -87,7 +88,7 @@ func (state *State) paintMonitor(canvas *gfx.Canvas, b gfx.Rect, s *Session) {
 	y += monitorControlsHeight
 	if v.state >= remoteStatsUnsupported || p.count == 0 {
 		message := state.remoteStatsText(v)
-		unsupportedSystem := !monitorSupported(s.host.System)
+		unsupportedSystem := !monitorSupported(system)
 		if unsupportedSystem {
 			message = m.UnsupportedPlatform
 		}

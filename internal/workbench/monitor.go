@@ -217,7 +217,7 @@ func (state *State) ensureMonitor(session *Session) {
 		session.stats.panel.hardwareOpen = !session.isLocal()
 	}
 	v := session.stats
-	system := session.host.System
+	system := monitorSystem(session)
 	if !monitorSupported(system) {
 		v.state = remoteStatsUnsupported
 		return

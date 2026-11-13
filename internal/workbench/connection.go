@@ -598,6 +598,12 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	if host.ID == localHostID {
 		// A shell on this machine: nothing to dial, so it is connected at once.
 		conn := newLocalConn(state.resolveLocalShell(host), state.networkProxy)
+		if _, wsl := localshell.WSLDistro(conn.shell); wsl {
+			// A distribution is the Linux system the shell runs in, not the
+			// Windows that hosts it. The monitor and the tooling that reads the
+			// session's system follow the distribution.
+			session.host.System = sshconn.SystemLinux
+		}
 		conn.dir = localStartupDirectory(session.localDirectory, conn.shell)
 		session.conn = conn
 		state.finishStartingConnection(session, automatic)
