@@ -344,6 +344,7 @@ var (
 var (
 	hitPaneDividerList  = tree.Sub(shellHits, tree.Name("pane-divider"))
 	hitPaneActivateList = tree.Sub(shellHits, tree.Name("pane-activate"))
+	hitPaneBarCloseList = tree.Sub(shellHits, tree.Name("pane-bar-close"))
 )
 
 const ()
@@ -1917,6 +1918,11 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case id.Scope() == hitCommandSessionList:
 		state.ActivatePane(uint32(item(id)))
 		state.save()
+	case id.Scope() == hitPaneBarCloseList:
+		// The bar names the pane it closes; pressing one does not move focus to
+		// it first, so closing the pane the user is not in leaves the keyboard
+		// where it was.
+		state.requestCloseSession(uint32(item(id)))
 	case id.Scope() == hitPaneActivateList:
 		index := item(id)
 		state.refreshWorkspaceViews()
