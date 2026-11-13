@@ -96,6 +96,14 @@ func TestPathCompletionWithFilePanelAndFollowingOff(t *testing.T) {
 			if !w.state.filesPanelShown() {
 				t.Fatal("file panel did not open")
 			}
+			// The fake shell does not react to SIGWINCH. Redraw the prompt
+			// and existing input as Readline would after the panel resizes it.
+			line := ""
+			if opening == "during-input" {
+				line = "cd "
+			}
+			w.shell.say("\r\x1b[K$ " + folderSyncMarker(w.session, "B") + line)
+			w.state.Wake()
 			if opening == "before-input" {
 				w.type_("cd ")
 			} else {
@@ -132,6 +140,9 @@ func TestPathCompletionWithFilePanelThroughWindowInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	clickSFTPPathFocusHit(t, driver, terminalTestHit(w.state, w.session))
+	// The fake shell must redraw after the window and file panel resize it.
+	w.shell.say("\r\x1b[K$ " + folderSyncMarker(w.session, "B"))
+	w.state.Wake()
 	for _, input := range []string{"c", "d", " "} {
 		w.tick()
 		if err := driver.Type(input); err != nil {
