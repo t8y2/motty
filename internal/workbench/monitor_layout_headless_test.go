@@ -173,7 +173,7 @@ func TestMonitorMeasuringCentersSpinnerAndText(t *testing.T) {
 			if math.Abs(float64(center-(b.X+b.Width/2))) > 1 {
 				t.Fatalf("text not horizontally centered: %v", text.Bounds)
 			}
-			bodyTop := b.Y + infoBarHeight + monitorControlsHeight
+			bodyTop := b.Y + infoBarHeight + monitorControlsHeight + monitorHostInfoHeight
 			wantY := (bodyTop+b.Y+b.Height)/2 + 16
 			if math.Abs(float64(text.Bounds.Y+text.Bounds.Height/2-wantY)) > 2 {
 				t.Fatalf("loading group is not vertically centered: %v want %v", text.Bounds, wantY)

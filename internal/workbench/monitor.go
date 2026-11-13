@@ -31,6 +31,9 @@ var (
 	hitMonitorOverview      = tree.ID(monitorHits, "overview")
 	hitMonitorDiskPage      = tree.ID(monitorHits, "disk-page")
 	hitMonitorNetworkPage   = tree.ID(monitorHits, "network-page")
+	hitMonitorHostName      = tree.ID(monitorHits, "host-name")
+	hitMonitorHostAddress   = tree.ID(monitorHits, "host-address")
+	hitMonitorHostUser      = tree.ID(monitorHits, "host-user")
 	hitMonitorCores         = tree.ID(monitorHits, "cores")
 	hitMonitorCoresMore     = tree.ID(monitorHits, "cores-more")
 	hitMonitorDisksCollapse = tree.ID(monitorHits, "disks-collapse")
@@ -96,6 +99,8 @@ type monitorView struct {
 	diskAvailable                                             bool
 	dragging                                                  bool
 	grab                                                      float32
+	copiedAddress                                             string
+	addressCopiedUntil                                        time.Duration
 
 	worker                                                   *remotestats.DetailsWorker
 	data                                                     remotestats.Details
@@ -290,6 +295,8 @@ func (state *State) clickMonitor(id gfx.ID) bool {
 	}
 	v := s.stats
 	switch id {
+	case hitMonitorHostAddress:
+		state.copyMonitorHostAddress(s)
 	case hitMonitorSudo:
 		state.monitorMenu = false
 		state.toggleSudoCommands(s, false)
