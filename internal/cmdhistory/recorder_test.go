@@ -302,6 +302,32 @@ func TestAnOverlongCommandIsNotRecorded(t *testing.T) {
 
 func (s *shell) line() (string, bool) { return s.rec.Line(TermScreen{s.screen}) }
 
+func (s *shell) linePrompt() (string, string, bool) {
+	return s.rec.LinePrompt(TermScreen{s.screen})
+}
+
+func TestTheLineComesWithThePromptItWasTypedAfter(t *testing.T) {
+	s := newShell(t, 80)
+	s.prompt("user@host:~$ ")
+	if _, prompt, ok := s.linePrompt(); ok || prompt != "" {
+		t.Fatalf("a line nobody has typed in yet is %q (%v)", prompt, ok)
+	}
+	s.typeEchoed("git s")
+	line, prompt, ok := s.linePrompt()
+	if !ok || line != "git s" || prompt != "user@host:~$" {
+		t.Fatalf("line=%q prompt=%q ok=%v", line, prompt, ok)
+	}
+
+	// A prompt that wraps is one prompt: the continuation rows count too.
+	s = newShell(t, 20)
+	s.prompt("user@a-long-host:~/projects/x$ ")
+	s.typeEchoed("ls")
+	line, prompt, ok = s.linePrompt()
+	if !ok || line != "ls" || prompt != "user@a-long-host:~/projects/x$" {
+		t.Fatalf("wrapped prompt line=%q prompt=%q ok=%v", line, prompt, ok)
+	}
+}
+
 func TestTheLineBeingTypedIsAvailableToSuggestFor(t *testing.T) {
 	s := newShell(t, 80)
 	s.prompt("user@host:~$ ")

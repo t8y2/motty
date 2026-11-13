@@ -255,8 +255,22 @@ func escapeLength(p []byte) int {
 // right-hand prompt seen at the first key (a shell's own suggestion), or the
 // alternate screen.
 func (r *Recorder) Line(screen Screen) (string, bool) {
+	line, _, ok := r.lineAt(screen)
+	return line, ok
+}
+
+// LinePrompt is Line together with the text the line was typed after: the
+// prompt, joined across the rows it wraps onto and with its trailing blanks
+// dropped. Callers that must tell a shell's prompt from a program's are the
+// ones that need it; it reports false exactly when Line does.
+func (r *Recorder) LinePrompt(screen Screen) (line, prompt string, ok bool) {
+	return r.lineAt(screen)
+}
+
+// lineAt reads the current line and its prompt in one pass; see Line.
+func (r *Recorder) lineAt(screen Screen) (line, promptText string, ok bool) {
 	if !r.armed || r.skip || r.multi || r.inPaste || screen.Alt() || screen.Scrolled() {
-		return "", false
+		return "", "", false
 	}
 	x, y := screen.Cursor()
 	first := y
@@ -264,28 +278,32 @@ func (r *Recorder) Line(screen Screen) (string, bool) {
 		first--
 	}
 	if first+r.promptRows != y || x < r.promptX || screen.Wrapped(y) {
-		return "", false
+		return "", "", false
 	}
 	if strings.TrimSpace(screen.Span(y, x, -1, false)) != r.rightShown {
-		return "", false
+		return "", "", false
 	}
 	prompt := screen.Span(y, 0, r.promptX, true)
 	if strings.TrimSpace(prompt) == "" {
-		return "", false
+		return "", "", false
 	}
 	context := prompt
+	var full strings.Builder
 	for row := first; row < y; row++ {
-		context = screen.Span(row, 0, -1, false) + " " + context
+		part := screen.Span(row, 0, -1, false)
+		full.WriteString(part)
+		context = part + " " + context
 	}
+	full.WriteString(prompt)
 	if first > 0 {
 		context = screen.Span(first-1, 0, -1, true) + " " + context
 	}
 	if PasswordPrompt(context) {
-		return "", false
+		return "", "", false
 	}
-	line := screen.Span(y, r.promptX, x, false)
+	line = screen.Span(y, r.promptX, x, false)
 	if strings.TrimSpace(line) == "" || line[0] == ' ' || line[0] == '\t' {
-		return "", false
+		return "", "", false
 	}
-	return line, true
+	return line, full.String(), true
 }

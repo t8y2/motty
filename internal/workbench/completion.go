@@ -591,9 +591,10 @@ func validCommit(commit string) bool {
 }
 
 // completionEligible reports whether this session may show completions now.
-// The catalog is public data, but a list still needs a live prompt whose input
-// the client can confirm: no dialog, no password prompt, no overlay a program
-// draws itself.
+// The catalog is public data, but a list still needs a live prompt the client
+// can prove: the shell's own marker (an integrated prompt), or, when an
+// interactive child shell has taken the terminal and the markers are gone, the
+// screen line the recorder read (see completionScreenPrompt).
 func (state *State) completionEligible(session *Session) bool {
 	if session == nil || session.term == nil || session.host.NoHistory {
 		return false
@@ -601,7 +602,29 @@ func (state *State) completionEligible(session *Session) bool {
 	if session.term.suggestionPending != nil || session.term.preedit.Composing {
 		return false
 	}
-	return state.inputGuardAvailable(session)
+	if state.inputGuardAvailable(session) {
+		return true
+	}
+	return state.completionScreenPrompt(session)
+}
+
+// completionScreenPrompt is the prompt proof left when an integrated shell has
+// handed the terminal to an interactive child that does not run the startup
+// hooks — sudo, su, a nested ssh (#783). No marker will come until the child
+// exits, so the proof is the line the recorder read at the first key of this
+// command: quiet terminal, cursor after a non-empty prompt, echo matching what
+// was typed. A prompt shaped like a line editor's own keeps the list out of
+// programs, which echo and draw a prompt just as a shell does.
+func (state *State) completionScreenPrompt(session *Session) bool {
+	t := session.term
+	if !t.folderIntegrationSeen || t.inputGuard.active || !state.terminalOwnedByShell(session) {
+		return false
+	}
+	line, prompt, ok := t.recorder.LinePrompt(cmdhistory.TermScreen{Term: t.screen})
+	if !ok || strings.TrimSpace(line) == "" {
+		return false
+	}
+	return !cmdhistory.ProgramPrompt(prompt)
 }
 
 // completionFeed reports whether the recorder should follow typing so the list

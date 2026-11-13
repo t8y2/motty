@@ -155,6 +155,12 @@ func (state *State) completionPathDirectory(session *Session) (cwd, home string,
 	if !t.folderIntegrationSeen {
 		return "", "", false
 	}
+	// A nested shell does not report its directory, so the last report belongs
+	// to the parent shell: a relative path read from it could name a file that
+	// is not there. Command completion still works there (#783).
+	if state.completionScreenPrompt(session) {
+		return "", "", false
+	}
 	distro := ""
 	if session.isLocal() {
 		dir := session.localDirectory

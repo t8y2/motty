@@ -65,6 +65,133 @@ func (w *completionWorld) line(t *testing.T) string {
 	return line
 }
 
+// enterNestedShell plays the integrated login shell handing the terminal to a
+// child that does not run the startup hooks (sudo, su, a nested ssh): the OSC
+// 133 markers stop and only the child's screen prompt remains (#783).
+func (w *completionWorld) enterNestedShell(prompt string) {
+	w.type_("sudo -i\r")
+	w.shell.say("\r\n" + prompt)
+	w.state.Wake()
+}
+
+func TestTheShortcutStillOpensTheListInANestedShell(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.enterNestedShell("root@host:~# ")
+	w.type_("git s")
+	if !w.state.completionEligible(w.session) {
+		t.Fatal("the nested shell's line is not eligible")
+	}
+	w.state.openCompletions()
+	list := &w.state.completion.list
+	if !list.active || len(list.candidates) == 0 || list.candidates[0].Text != "stage" {
+		t.Fatalf("list active=%v candidates=%v", list.active, list.candidates)
+	}
+}
+
+func TestTheListStillOpensWhileTypingInANestedShell(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.inlineOff = true // automatic-list mode
+	w.enterNestedShell("root@host:~# ")
+	w.type_("git s")
+	waitCompletionList(t, w)
+}
+
+// Accepting in a nested shell still revalidates the line and types only the
+// suffix: the input guard is unavailable there, but the recorder's proof is not.
+func TestNestedShellAcceptanceTypesOnlyTheSuffix(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.enterNestedShell("root@host:~# ")
+	w.type_("git s")
+	w.state.openCompletions()
+	list := &w.state.completion.list
+	if !list.active || list.candidates[0].Insert != "tage" {
+		t.Fatalf("list active=%v candidates=%v", list.active, list.candidates)
+	}
+	before := w.shell.typed()
+	w.state.Click(hitCompletionList.At(0))
+	if got := w.shell.typed(); got != before+"tage" {
+		t.Fatalf("typed %q, want %q", got, before+"tage")
+	}
+}
+
+// The ghost rests on the same prompt proof as the list: a child shell keeps it,
+// a REPL does not.
+func TestTheGhostFollowsTheNestedShellsPrompt(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.on = true
+	w.state.history.ghost = map[string][]cmdhistory.Entry{
+		historyKey(w.session): {{Command: "git status"}},
+	}
+	w.enterNestedShell("root@host:~# ")
+	w.type_("git s")
+	if rest, ok := w.state.commandGhost(w.session); !ok || rest != "tatus" {
+		t.Fatalf("the nested shell's ghost = %q, %v", rest, ok)
+	}
+
+	w = newCompletionWorld(t)
+	w.state.history.on = true
+	w.state.history.ghost = map[string][]cmdhistory.Entry{
+		historyKey(w.session): {{Command: "git status"}},
+	}
+	w.enterNestedShell(">>> ")
+	w.type_("git s")
+	if rest, ok := w.state.commandGhost(w.session); ok {
+		t.Fatalf("the REPL's ghost offered %q", rest)
+	}
+}
+
+// A dismissal belongs to the line it happened on. In a nested shell no prompt
+// marker ends that line, so the key that submits it must.
+func TestANestedShellDismissalEndsWithTheLine(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.state.history.inlineOff = true
+	w.enterNestedShell("root@host:~# ")
+	w.type_("git s")
+	waitCompletionList(t, w)
+	w.state.Key(gfx.KeyEvent{Key: gfx.KeyEscape, Target: terminalHit(w.state, 0)})
+	if w.state.completion.list.active {
+		t.Fatal("Escape left the list open")
+	}
+	w.type_("\r")
+	w.shell.say("\r\nroot@host:~# ")
+	w.state.Wake()
+	w.type_("git s")
+	waitCompletionList(t, w)
+}
+
+// A child shell does not report its directory, so the parent's last report
+// must not supply paths the child cannot see. Commands are still offered.
+func TestANestedShellOffersNoPaths(t *testing.T) {
+	w, _ := newPathWorld(t)
+	w.enterNestedShell("root@host:~# ")
+	w.type_("cd ")
+	for index := 0; index < 20; index++ {
+		w.state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	for _, candidate := range w.state.completion.list.candidates {
+		if candidate.Kind == completion.KindPath {
+			t.Fatalf("the nested shell offered the parent's path %q", candidate.Text)
+		}
+	}
+}
+
+func TestAProgramPromptOpensNeitherTheListNorTheGhost(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.enterNestedShell(">>> ")
+	w.type_("git statu")
+	if w.state.completionEligible(w.session) {
+		t.Fatal("a REPL prompt was taken for a shell prompt")
+	}
+	w.state.openCompletions()
+	if w.state.completion.list.active {
+		t.Fatal("the list opened at a REPL prompt")
+	}
+	if rest, ok := w.state.commandGhost(w.session); ok {
+		t.Fatalf("the ghost offered %q at a REPL prompt", rest)
+	}
+}
+
 func TestCompletionListInsertsOnlyTheSuffix(t *testing.T) {
 	w := newCompletionWorld(t)
 	w.type_("git s")
