@@ -80,10 +80,13 @@ func monitorGPUHeight(p *monitorView) float32 {
 	height := float32(0)
 	for index := range p.gpuRows {
 		height += 94
-		if len(p.gpuRows[index].processes) == 0 {
-			height += 24
-		} else {
-			height += 18 + float32(len(p.gpuRows[index].processes))*26
+		row := &p.gpuRows[index]
+		if row.processesKnown {
+			if len(row.processes) == 0 {
+				height += 24
+			} else {
+				height += 18 + float32(len(row.processes))*26
+			}
 		}
 		if index < len(p.gpuRows)-1 {
 			height += 16
@@ -296,17 +299,20 @@ func (s *State) paintMonitorGPUs(c *gfx.Canvas, p *monitorView, b, viewport gfx.
 		for _, metric := range rows {
 			if monitorRowVisible(viewport, y, 16) {
 				monitorLabel(c, metric.label, gfx.Rect{X: x, Y: y, Width: w * .15, Height: 16}, 10, colors.muted, gfx.WeightRegular)
-				monitorRight(c, metric.value, gfx.Rect{X: x + w*.15, Y: y, Width: w * .31, Height: 16}, 10, colors.text, gfx.WeightMedium)
+				monitorRight(c, metric.value, gfx.Rect{X: x + w*.15, Y: y, Width: w * .42, Height: 16}, 10, colors.text, gfx.WeightMedium)
 				if metric.valueValue >= 0 {
 					theme := s.Theme()
 					theme.Primary = s.monitorMetricColor(metric.valueValue)
 					theme.Muted = colors.track
-					components.Progress(c, theme, gfx.Rect{X: x + w*.46, Y: y + 5, Width: w * .54, Height: 5}, float32(min(metric.valueValue, 100)/100))
+					components.Progress(c, theme, gfx.Rect{X: x + w*.58, Y: y + 5, Width: w * .42, Height: 5}, float32(min(metric.valueValue, 100)/100))
 				}
 			}
 			y += 18
 		}
-		if len(row.processes) == 0 {
+		if !row.processesKnown {
+			// This vendor's processes are not collected; say nothing rather
+			// than report a card with none.
+		} else if len(row.processes) == 0 {
 			if monitorRowVisible(viewport, y, 24) {
 				monitorLabel(c, p.noProcessLabel, gfx.Rect{X: x, Y: y, Width: w, Height: 24}, 10, colors.muted, gfx.WeightRegular)
 			}

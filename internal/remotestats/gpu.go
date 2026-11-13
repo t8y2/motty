@@ -13,8 +13,8 @@ import (
 // is shown its first MaxGPUs.
 const MaxGPUs = 16
 
-// MaxGPUProcesses bounds the process rows one reading carries; a busy host
-// with more is shown its first MaxGPUProcesses.
+// MaxGPUProcesses bounds the process rows one reading carries per accelerator;
+// a busy card with more is shown its first MaxGPUProcesses.
 const MaxGPUProcesses = 64
 
 // GPU is one accelerator in a Sample. A figure the driver did not report is
@@ -45,6 +45,9 @@ type GPUProcess struct {
 	PID             uint64
 	Name            string
 	MemoryUsedBytes uint64
+	// MemoryKnown is false when the driver could not report the process's
+	// memory; the row is still listed, without a figure.
+	MemoryKnown bool
 }
 
 // The probe lines are printed by the monitor before each counters line, which
@@ -158,11 +161,11 @@ func parseNvidiaProcess(row string) (GPUProcess, bool) {
 	if name == "" {
 		return GPUProcess{}, false
 	}
-	memory := bytesOf(figure(fields[len(fields)-1]), 1<<20)
-	if memory == 0 {
-		return GPUProcess{}, false
-	}
-	return GPUProcess{UUID: uuid, PID: pid, Name: name, MemoryUsedBytes: memory}, true
+	used := figure(fields[len(fields)-1])
+	return GPUProcess{
+		UUID: uuid, PID: pid, Name: name,
+		MemoryUsedBytes: bytesOf(used, 1<<20), MemoryKnown: used >= 0,
+	}, true
 }
 
 func nvidiaProcessName(value string) string {
@@ -255,7 +258,7 @@ func parseROCm(text string) []GPU {
 		}
 		gpu := GPU{
 			Vendor: "AMD", Index: index, Name: "AMD " + key,
-			UtilPercent: -1, TemperatureC: -1, PowerWatts: -1, FanPercent: -1,
+			UtilPercent: -1, TemperatureC: -1, PowerWatts: -1, PowerLimitWatts: -1, FanPercent: -1,
 		}
 		temperature, edge := -1.0, false
 		for label, value := range fields {
@@ -324,6 +327,6 @@ func parseSysfs(row string) (GPU, bool) {
 		UtilPercent:      percent(figure(fields[1])),
 		MemoryUsedBytes:  bytesOf(figure(fields[2]), 1),
 		MemoryTotalBytes: bytesOf(figure(fields[3]), 1),
-		TemperatureC:     temperature, PowerWatts: -1, FanPercent: -1,
+		TemperatureC:     temperature, PowerWatts: -1, PowerLimitWatts: -1, FanPercent: -1,
 	}, true
 }

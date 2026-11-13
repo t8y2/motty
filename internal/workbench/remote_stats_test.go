@@ -327,3 +327,55 @@ func TestHardwareShowsGPUMetricsAndProcesses(t *testing.T) {
 		}
 	}
 }
+
+// TestHardwareShowsALightlyUsedCardsExactMemory keeps the exact figure of a
+// barely used card: the value column has to fit "12.0 MiB / 12.0 GiB" rather
+// than ellipsize it, and the card's empty process list still says so.
+func TestHardwareShowsALightlyUsedCardsExactMemory(t *testing.T) {
+	state, _, fake, _ := liveSession(t)
+	fake.streamCommand = streamReadings(
+		statsReadings[0],
+		"gop-gpu-nvidia 0, GPU-A, NVIDIA GeForce RTX 3060, 0, 12, 12288, 38, 14, 170, [N/A]\n",
+		statsReadings[1])
+	state.Click(hitRemoteStats)
+	waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900})
+	texts := []string{}
+	for _, text := range canvas.Texts() {
+		texts = append(texts, text.Value)
+	}
+	joined := strings.Join(texts, "|")
+	for _, want := range []string{"12.0 MiB / 12.0 GiB", state.messages.Monitor.NoProcesses} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("hardware UI missing %q; texts=%q", want, joined)
+		}
+	}
+}
+
+// TestHardwareDoesNotClaimAMDCardHasNoProcesses keeps the process section off a
+// card whose vendor the monitor does not collect processes for.
+func TestHardwareDoesNotClaimAMDCardHasNoProcesses(t *testing.T) {
+	state, _, fake, _ := liveSession(t)
+	fake.streamCommand = streamReadings(
+		statsReadings[0],
+		`gop-gpu-rocm {"card0": {"GPU use (%)": "35", "VRAM Total Memory (B)": "17163091968", "VRAM Total Used Memory (B)": "292503552", "Temperature (Sensor edge) (C)": "45.0", "Card series": "Radeon RX 7900 XTX"}}`+"\n",
+		statsReadings[1])
+	state.Click(hitRemoteStats)
+	waitRemoteStats(t, state, func(view *remoteStatsView) bool { return view.state == remoteStatsReady })
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1600, Height: 900})
+	texts := []string{}
+	for _, text := range canvas.Texts() {
+		texts = append(texts, text.Value)
+	}
+	joined := strings.Join(texts, "|")
+	if !strings.Contains(joined, "Radeon RX 7900 XTX") {
+		t.Fatalf("hardware UI missing the AMD card; texts=%q", joined)
+	}
+	for _, absent := range []string{state.messages.Monitor.NoProcesses, state.messages.Monitor.Processes} {
+		if strings.Contains(joined, absent) {
+			t.Fatalf("an AMD card claimed %q; texts=%q", absent, joined)
+		}
+	}
+}

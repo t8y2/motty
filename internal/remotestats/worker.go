@@ -188,7 +188,7 @@ func (worker *Worker) run(first, next time.Duration) {
 		if isGPULine(line) {
 			text := strings.TrimSpace(string(line))
 			if strings.HasPrefix(text, gpuNvidiaProcessPrefix) {
-				if process, ok := parseNvidiaProcess(text[len(gpuNvidiaProcessPrefix):]); ok && len(pendingGPUProcesses) < MaxGPUProcesses {
+				if process, ok := parseNvidiaProcess(text[len(gpuNvidiaProcessPrefix):]); ok && len(pendingGPUProcesses) < MaxGPUs*MaxGPUProcesses {
 					pendingGPUProcesses = append(pendingGPUProcesses, process)
 				}
 			} else {

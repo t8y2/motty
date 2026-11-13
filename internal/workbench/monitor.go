@@ -72,6 +72,9 @@ type monitorGPUText struct {
 	name, memory, util, power, temperature               string
 	memoryValue, utilValue, powerValue, temperatureValue float64
 	processes                                            []monitorGPUProcessText
+	// processesKnown is false for a card whose vendor the monitor does not
+	// collect processes for: the section is left out rather than claiming none.
+	processesKnown bool
 }
 
 // Fixed storage bounds the last minute of samples, independent of session age.
@@ -582,6 +585,7 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 			powerValue:       -1,
 			temperature:      "—",
 			temperatureValue: -1,
+			processesKnown:   gpu.Vendor == "NVIDIA",
 		}
 		if gpu.UtilPercent >= 0 {
 			row.util = fmt.Sprintf("%.0f%%", gpu.UtilPercent)
@@ -598,9 +602,13 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 			row.temperatureValue = gpu.TemperatureC / 110 * 100
 		}
 		for _, process := range gpu.Processes {
+			memory := "—"
+			if process.MemoryKnown {
+				memory = monitorBytes(process.MemoryUsedBytes)
+			}
 			row.processes = append(row.processes, monitorGPUProcessText{
 				label:  fmt.Sprintf("%s · PID %d", process.Name, process.PID),
-				memory: monitorBytes(process.MemoryUsedBytes),
+				memory: memory,
 			})
 		}
 		p.gpuRows = append(p.gpuRows, row)

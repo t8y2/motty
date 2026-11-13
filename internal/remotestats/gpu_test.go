@@ -130,7 +130,7 @@ const rocmNew = `WARNING: AMD GPU device(s) is/are in a low-power state.
 
 func TestROCmJSONInTwoShapes(t *testing.T) {
 	old := parseROCm(rocmOld)
-	wantOld := []GPU{{Vendor: "AMD", Index: 0, Name: "AMD card0", UtilPercent: 35, MemoryUsedBytes: 292503552, MemoryTotalBytes: 17163091968, TemperatureC: 45, PowerWatts: -1, FanPercent: -1}}
+	wantOld := []GPU{{Vendor: "AMD", Index: 0, Name: "AMD card0", UtilPercent: 35, MemoryUsedBytes: 292503552, MemoryTotalBytes: 17163091968, TemperatureC: 45, PowerWatts: -1, PowerLimitWatts: -1, FanPercent: -1}}
 	if !reflect.DeepEqual(old, wantOld) {
 		t.Fatalf("old = %+v", old)
 	}
@@ -155,8 +155,8 @@ func TestROCmJSONInTwoShapes(t *testing.T) {
 func TestSysfsRowsFromTheAmdgpuFiles(t *testing.T) {
 	gpus := parseAll(t, "gop-gpu-sysfs card0 35 292503552 17163091968 45000\ngop-gpu-sysfs card1 - - - -\ngop-gpu-sysfs card2 1 2\ngop-gpu-sysfs cardx 1 2 3 4")
 	want := []GPU{
-		{Vendor: "AMD", Index: 0, Name: "AMD card0", UtilPercent: 35, MemoryUsedBytes: 292503552, MemoryTotalBytes: 17163091968, TemperatureC: 45, PowerWatts: -1, FanPercent: -1},
-		{Vendor: "AMD", Index: 1, Name: "AMD card1", UtilPercent: -1, TemperatureC: -1, PowerWatts: -1, FanPercent: -1},
+		{Vendor: "AMD", Index: 0, Name: "AMD card0", UtilPercent: 35, MemoryUsedBytes: 292503552, MemoryTotalBytes: 17163091968, TemperatureC: 45, PowerWatts: -1, PowerLimitWatts: -1, FanPercent: -1},
+		{Vendor: "AMD", Index: 1, Name: "AMD card1", UtilPercent: -1, TemperatureC: -1, PowerWatts: -1, PowerLimitWatts: -1, FanPercent: -1},
 	}
 	if !reflect.DeepEqual(gpus, want) {
 		t.Fatalf("gpus = %+v", gpus)
@@ -173,15 +173,26 @@ func TestOnlyTheFirstGPUsAreKept(t *testing.T) {
 	}
 }
 
-func TestOnlyTheFirstGPUProcessesAreKept(t *testing.T) {
-	gpus := []GPU{{Vendor: "NVIDIA", Index: 0, Name: "Acme", UUID: "GPU-A"}}
+func TestOnlyTheFirstGPUProcessesAreKeptPerCard(t *testing.T) {
+	gpus := []GPU{
+		{Vendor: "NVIDIA", Index: 0, Name: "Acme", UUID: "GPU-A"},
+		{Vendor: "NVIDIA", Index: 1, Name: "Acme", UUID: "GPU-B"},
+	}
 	processes := make([]GPUProcess, 2*MaxGPUProcesses)
 	for index := range processes {
 		processes[index] = GPUProcess{UUID: "GPU-A", PID: uint64(index + 1), Name: "worker", MemoryUsedBytes: 1 << 20}
 	}
+	processes = append(processes, GPUProcess{UUID: "GPU-B", PID: 999, Name: "other", MemoryUsedBytes: 1 << 20})
 	gpus = attachNvidiaProcesses(gpus, processes)
-	if len(gpus[0].Processes) != MaxGPUProcesses {
-		t.Fatalf("kept %d processes", len(gpus[0].Processes))
+	if len(gpus[0].Processes) != MaxGPUProcesses || len(gpus[1].Processes) != 1 {
+		t.Fatalf("kept %d and %d processes", len(gpus[0].Processes), len(gpus[1].Processes))
+	}
+}
+
+func TestAnNvidiaProcessWithoutMemoryIsStillListed(t *testing.T) {
+	processes := parseProcesses(t, string(nvidiaProcessLines("GPU-A, 1698741, python, [N/A]")))
+	if len(processes) != 1 || processes[0].MemoryKnown || processes[0].MemoryUsedBytes != 0 {
+		t.Fatalf("processes = %+v", processes)
 	}
 }
 

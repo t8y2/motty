@@ -72,7 +72,8 @@ type counters struct {
 // helper process per reading beyond sleep. The first reading comes at once and
 // the second after a quarter second where sleep takes fractions, so the first
 // figures appear almost immediately. It reads only Linux procfs and sums the
-// non-loopback interfaces. The loop ends when its output is closed.
+// non-loopback interfaces. The loop ends when its output is closed. Process
+// rows are bounded by what MaxGPUs cards at MaxGPUProcesses each can carry.
 const command = `# motty-stats-v2
 LC_ALL=C
 export LC_ALL
@@ -91,7 +92,7 @@ gpu_probe() {
 		$gpu_timeout nvidia-smi --query-gpu=index,gpu_uuid,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed --format=csv,noheader,nounits 2>&1 | head -n 16 | while IFS= read -r row; do
 			printf 'gop-gpu-nvidia %s\n' "$row"
 		done
-		$gpu_proc_timeout nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv,noheader,nounits 2>&1 | head -n 64 | while IFS= read -r row; do
+		$gpu_proc_timeout nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv,noheader,nounits 2>&1 | head -n 1024 | while IFS= read -r row; do
 			printf 'gop-gpu-nvidia-proc %s\n' "$row"
 		done
 	fi
