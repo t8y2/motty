@@ -137,7 +137,7 @@ func TestStoppedOuterJumpShortensTheConnectionButKeepsTheConfiguredRoute(t *test
 	state := newTestState(t, testOptions(t))
 	addProxyRoute(t, state, state.hosts[0].ID, state.hosts[1].ID)
 	addProxyRoute(t, state, state.hosts[1].ID, state.hosts[2].ID)
-	state.Click(hitProxyRowSwitchList.At(int(state.proxies[0].ID)))
+	state.Click(hitProxyRowSwitchList.At(int(state.proxies[1].ID)))
 
 	chain, valid := state.proxyChainFor(state.hosts[0])
 	if !valid || len(chain) != 1 || chain[0].ID != state.hosts[1].ID {
@@ -147,7 +147,7 @@ func TestStoppedOuterJumpShortensTheConnectionButKeepsTheConfiguredRoute(t *test
 		t.Fatalf("configured routes = %+v", state.proxies)
 	}
 
-	state.Click(hitProxyRowSwitchList.At(int(state.proxies[0].ID)))
+	state.Click(hitProxyRowSwitchList.At(int(state.proxies[1].ID)))
 	chain, valid = state.proxyChainFor(state.hosts[0])
 	if !valid || len(chain) != 2 {
 		t.Fatalf("restarted chain = %+v, valid=%t", chain, valid)
