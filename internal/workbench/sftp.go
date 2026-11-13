@@ -174,29 +174,29 @@ type sftpView struct {
 	// beside an application modal, so it does not share the window's footer
 	// scratch. The boxes are where that body laid out the parts painted by hand:
 	// the one or two fields and the permission grid.
-	dialogFieldLabel      string
-	dialogDraw            func(*ui.DrawContext)
-	dialogCancelLabel     string
-	dialogSubmitLabel     string
-	dialogSubmitVariant   components.ButtonVariant
-	dialogFooterDraw      func(*ui.DrawContext)
-	dialogFirst           ui.Box
-	dialogSecond          ui.Box
-	dialogChmod           [9]ui.Box
-	bookmarksOpen         bool
-	places                sftpPlaceMenu
-	dropping              bool // files are being dragged over the panel
-	dropRow               int  // the folder row they are over, or -1
-	clipboard             sftpClipboard
-	scrollDrag            bool
-	scrollGrab            float32
+	dialogFieldLabel    string
+	dialogDraw          func(*ui.DrawContext)
+	dialogCancelLabel   string
+	dialogSubmitLabel   string
+	dialogSubmitVariant components.ButtonVariant
+	dialogFooterDraw    func(*ui.DrawContext)
+	dialogFirst         ui.Box
+	dialogSecond        ui.Box
+	dialogChmod         [9]ui.Box
+	bookmarksOpen       bool
+	places              sftpPlaceMenu
+	dropping            bool // files are being dragged over the panel
+	dropRow             int  // the folder row they are over, or -1
+	clipboard           sftpClipboard
+	scrollDrag          bool
+	scrollGrab          float32
 	// columnDragging and columnDrag are the divider of this panel the pointer
 	// holds; columnFitPending asks the next paint to fit that divider's left
 	// column to its content after a double click.
-	columnDragging   bool
-	columnDrag       int
-	columnFitPending bool
-	columnFitDivider int
+	columnDragging        bool
+	columnDrag            int
+	columnFitPending      bool
+	columnFitDivider      int
 	details               sftpDetails
 	extracting            bool
 	archiveSequence       uint64
