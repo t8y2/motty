@@ -343,6 +343,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		DevelopmentSource: importSource,
 		Invalidate:        invalidate, Invalidator: &invalidator, NewWindow: newWindow,
 		Post:              application.Post,
+		SetMenuBar:        application.SetMenuBar,
 		OpenContentWindow: application.OpenContentWindow,
 		Group:             windowGroup, Blank: place.blank, Log: recentLog,
 		LogDir: logDirectory(), PreviousCrash: crashNoticeFor(place),
@@ -492,6 +493,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	// handlers keep the events it leaves; the workbench's Paint stays its own.
 	mainWindow, err = application.OpenWindow(state.WindowConfig(config), &canvas)
 	if err == nil {
+		state.SyncMenuBar()
 		state.SetWindow(mainWindow.Frame, func() bool { return !mainWindow.Hidden() && !mainWindow.Closed() })
 		state.SetShortcutCapture(mainWindow.CaptureSystemShortcuts)
 		state.SetFullscreenControl(mainWindow.SetFullscreen)

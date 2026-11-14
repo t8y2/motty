@@ -703,7 +703,11 @@ type State struct {
 	proxyDialogError   string
 	options            Options
 	// post runs work on the window thread; nil uses ai.inbox, which Wake drains.
-	post                func(func())
+	post func(func())
+	// setMenuBar installs the macOS menu bar; menuBarSig is the state it was
+	// built for, so Wake rebuilds it only when enablement or language changed.
+	setMenuBar          func([]app.Menu) error
+	menuBarSig          string
 	appearance          appearance
 	appearanceMode      appearanceMode
 	networkProxy        networkProxyMode
@@ -1157,6 +1161,7 @@ func New(options Options) *State {
 		notes:              notesUI{noteDraft: &noteDraft{}},
 		options:            options.withDefaults(),
 		post:               options.Post,
+		setMenuBar:         options.SetMenuBar,
 		windowID:           max(1, options.WindowID),
 		revealResults:      make(chan revealResult, 1),
 		nextSessionID:      1,
