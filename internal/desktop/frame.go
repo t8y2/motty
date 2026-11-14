@@ -4,9 +4,11 @@ import "sync"
 
 // Frame is the picture of a remote desktop as a backend builds it: BGRA pixels
 // that the network goroutine draws into and the UI goroutine reads out of, with
-// a record of what changed in between. A backend embeds it and implements the
-// drawing half of its protocol's decoders on it (Update, Fill, Copy); Present is
-// the other half of Session.
+// a record of what changed in between. A backend whose decoders have no
+// framebuffer of their own embeds it (VNC does) and implements the drawing half
+// of its protocol's decoders on it (Update, Fill, Copy); Present is the other
+// half of Session. A backend that already owns the picture (RDP keeps it in the
+// client's framebuffer) keeps only the changed-rectangle list.
 //
 // The changed rectangles are kept as a short list. Beyond maxDirty of them they
 // collapse into their bounding box, so a flood of small updates costs one larger

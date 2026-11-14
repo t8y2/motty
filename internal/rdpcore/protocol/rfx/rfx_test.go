@@ -287,8 +287,8 @@ func TestParseQuantValues(t *testing.T) {
 
 func TestFillSignBuffer(t *testing.T) {
 	coeffs := []int16{5, -3, 0, 1, -1, 0}
-	sign := fillSignBuffer(make([]int16, len(coeffs)), coeffs)
-	want := []int16{1, -1, 0, 1, -1, 0}
+	sign := fillSignBuffer(make([]int8, len(coeffs)), coeffs)
+	want := []int8{1, -1, 0, 1, -1, 0}
 	for i, v := range sign {
 		if v != want[i] {
 			t.Errorf("sign[%d] = %d, want %d", i, v, want[i])
@@ -317,7 +317,7 @@ func TestSrlReadZeroRun(t *testing.T) {
 func TestUpgradeBlockLL(t *testing.T) {
 	// LL band: reads directly from RAW, no sign routing
 	current := make([]int16, 4)
-	sign := make([]int16, 4)
+	sign := make([]int8, 4)
 	srl := &bitReader{}
 	raw := &bitReader{data: []byte{0xA5}} // 10100101 → reads of 2 bits: 10=2, 10=2, 01=1, 01=1
 	state := &srlState{kp: 8}
@@ -519,10 +519,11 @@ func BenchmarkDecodeTileData(b *testing.B) {
 	)))
 
 	// Pre-allocate tileCoeffs like Phase 1 does.
-	buf := make([]int16, 6*4096)
+	buf := make([]int16, 3*4096)
+	signs := make([]int8, 3*4096)
 	tc := &tileCoeffs{
 		y: buf[0:4096], cb: buf[4096:8192], cr: buf[8192:12288],
-		ySign: buf[12288:16384], cbSign: buf[16384:20480], crSign: buf[20480:24576],
+		ySign: signs[0:4096], cbSign: signs[4096:8192], crSign: signs[8192:12288],
 	}
 
 	b.ResetTimer()
@@ -547,10 +548,11 @@ func BenchmarkDecodeTileDataParallel(b *testing.B) {
 		dec := NewDecoder(slog.New(slog.NewTextHandler(
 			discardWriter{}, &slog.HandlerOptions{Level: slog.LevelError},
 		)))
-		buf := make([]int16, 6*4096)
+		buf := make([]int16, 3*4096)
+		signs := make([]int8, 3*4096)
 		tc := &tileCoeffs{
 			y: buf[0:4096], cb: buf[4096:8192], cr: buf[8192:12288],
-			ySign: buf[12288:16384], cbSign: buf[16384:20480], crSign: buf[20480:24576],
+			ySign: signs[0:4096], cbSign: signs[4096:8192], crSign: signs[8192:12288],
 		}
 
 		for pb.Next() {

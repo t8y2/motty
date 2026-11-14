@@ -51,7 +51,6 @@ type Session struct {
 	// closeTransport closes the connection the library last dialed: when the
 	// library ends a connection on its own account it leaves the socket open.
 	closeTransport func()
-	frame          *desktop.Frame
 	opts           desktop.Options
 	info           desktop.Info
 
@@ -75,8 +74,20 @@ type Session struct {
 	// a character that needs it on a US keyboard can add it by itself.
 	buttons desktop.Buttons
 	shift   bool
-	// buffer is the receive goroutine's scratch for converted pixels.
+	// buffer is the painting goroutine's scratch for the rows of a rectangle
+	// read out of the library's framebuffer.
 	buffer []byte
+	// picture is the size the server last made the desktop and the rectangles
+	// changed since the last Present. No pixels are kept here: Present reads
+	// them from the library's framebuffer, which is the session's one copy of
+	// the picture. Guarded by pictureMu.
+	pictureMu     sync.Mutex
+	width, height int
+	sized         bool
+	dirty         []desktop.Rect
+	// presentRects is the painting goroutine's copy of dirty for the Present in
+	// progress; it may keep its capacity between calls.
+	presentRects []desktop.Rect
 }
 
 var _ desktop.Session = (*Session)(nil)
@@ -107,9 +118,8 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	}
 	width, height = clampSize(width, height)
 
-	session := &Session{opts: opts, done: make(chan struct{})}
-	session.frame = desktop.NewFrame(opts.Notify)
-	session.frame.Resize(width, height)
+	session := &Session{opts: opts, done: make(chan struct{}), width: width, height: height, sized: true}
+	session.dirty = append(session.dirty, desktop.Rect{X: 0, Y: 0, Width: width, Height: height})
 
 	var connMu sync.Mutex
 	var current net.Conn
@@ -329,68 +339,102 @@ func (session *Session) finish(err error) {
 	session.wake()
 }
 
-// syncSize makes the frame the size of the library's screen, and when that
-// changed it fills the new frame from the whole screen: a resize leaves the
-// remote to repaint, which arrives as ordinary updates.
+// maxDirty is how many changed rectangles are kept before they collapse into
+// their bounding box, as desktop.Frame does.
+const maxDirty = 16
+
+// rectBandRows is how many rows Present reads out of the framebuffer at a time.
+// It is the size of the scratch buffer, not of the picture.
+const rectBandRows = 64
+
+// syncSize follows the library's screen size: a resize marks the whole picture
+// changed, because the remote repaints it.
 func (session *Session) syncSize() {
 	w, h := session.client.FramebufferDims()
 	if w <= 0 || h <= 0 {
 		return
 	}
-	if fw, fh := session.frame.Size(); fw == w && fh == h {
+	session.pictureMu.Lock()
+	if session.width == w && session.height == h {
+		session.pictureMu.Unlock()
 		return
 	}
-	session.frame.Resize(w, h)
-	session.copyRect(0, 0, w, h)
+	session.width, session.height = w, h
+	session.sized = true
+	session.dirty = append(session.dirty[:0], desktop.Rect{X: 0, Y: 0, Width: w, Height: h})
+	session.pictureMu.Unlock()
+	session.wake()
+}
+
+// markDirty records a changed rectangle. Beyond maxDirty of them they collapse
+// into their bounding box, so a flood of small updates costs one larger read.
+func (session *Session) markDirty(x, y, width, height int) {
+	if width <= 0 || height <= 0 {
+		return
+	}
+	session.pictureMu.Lock()
+	if len(session.dirty) >= maxDirty {
+		union := desktop.Rect{X: x, Y: y, Width: width, Height: height}
+		for _, other := range session.dirty {
+			union = union.Union(other)
+		}
+		session.dirty = append(session.dirty[:0], union)
+	} else {
+		session.dirty = append(session.dirty, desktop.Rect{X: x, Y: y, Width: width, Height: height})
+	}
+	session.pictureMu.Unlock()
+	session.wake()
 }
 
 // onBitmap is called on the receive goroutine after the library drew into its
-// framebuffer; the rectangle is read back from there.
+// framebuffer: only the changed rectangle is recorded, and Present reads it.
 func (session *Session) onBitmap(update *rdpcore.BitmapUpdate) {
 	session.syncSize()
-	session.copyRect(update.X, update.Y, update.Width, update.Height)
+	session.markDirty(update.X, update.Y, update.Width, update.Height)
 }
 
-func (session *Session) copyRect(x, y, width, height int) {
-	need := width * height * 4
-	if width <= 0 || height <= 0 || need > maxSize*maxSize*4 {
-		return
-	}
-	if cap(session.buffer) < need {
-		session.buffer = make([]byte, need)
-	}
-	rx, ry, rw, rh := session.client.ReadRectBGRA(session.buffer[:need], x, y, width, height)
-	if rw > 0 {
-		session.frame.Update(rx, ry, rw, rh, session.buffer, rw*4)
-	}
-}
-
-// onStrided is a picture update of the graphics pipeline: top-down RGBA rows
-// stride bytes apart, which the library has also drawn into its framebuffer.
+// onStrided is a picture update of the graphics pipeline. The library has
+// already drawn it into its framebuffer (WriteRectStridedTopDown), so the data
+// handed here is not converted again.
 func (session *Session) onStrided(x, y, width, height int, data []byte, stride int) {
 	session.syncSize()
-	if width <= 0 || height <= 0 || width > maxSize || height > maxSize || stride < width*4 || len(data) < (height-1)*stride+width*4 {
-		return
-	}
-	need := width * height * 4
-	if cap(session.buffer) < need {
-		session.buffer = make([]byte, need)
-	}
-	out := session.buffer[:need]
-	for row := 0; row < height; row++ {
-		src := data[row*stride:][:width*4]
-		dst := out[row*width*4:][:width*4]
-		for i := 0; i < len(src); i += 4 {
-			dst[i], dst[i+1], dst[i+2], dst[i+3] = src[i+2], src[i+1], src[i], 0xFF
-		}
-	}
-	session.frame.Update(x, y, width, height, out, width*4)
+	session.markDirty(x, y, width, height)
 }
 
-func (session *Session) Info() desktop.Info                 { return session.info }
-func (session *Session) Size() (width, height int)          { return session.frame.Size() }
-func (session *Session) Present(dst desktop.Presenter) bool { return session.frame.Present(dst) }
-func (session *Session) Done() <-chan struct{}              { return session.done }
+func (session *Session) Info() desktop.Info { return session.info }
+func (session *Session) Size() (width, height int) {
+	session.pictureMu.Lock()
+	defer session.pictureMu.Unlock()
+	return session.width, session.height
+}
+
+// Present brings dst up to date from the library's framebuffer: the changed
+// rectangles are read once, in rows, and no second full-screen copy is kept.
+func (session *Session) Present(dst desktop.Presenter) bool {
+	session.pictureMu.Lock()
+	if session.width <= 0 || session.height <= 0 || (!session.sized && len(session.dirty) == 0) {
+		session.pictureMu.Unlock()
+		return false
+	}
+	width, height, sized := session.width, session.height, session.sized
+	session.presentRects = append(session.presentRects[:0], session.dirty...)
+	session.dirty = session.dirty[:0]
+	session.sized = false
+	session.pictureMu.Unlock()
+
+	if sized {
+		dst.Resize(width, height)
+	}
+	for _, rect := range session.presentRects {
+		need := rect.Width * rectBandRows * 4
+		if cap(session.buffer) < need {
+			session.buffer = make([]byte, need)
+		}
+		session.client.ReadRectBGRA(session.buffer[:need], rect.X, rect.Y, rect.Width, rect.Height, rectBandRows, dst.Update)
+	}
+	return true
+}
+func (session *Session) Done() <-chan struct{} { return session.done }
 
 func (session *Session) Err() error {
 	session.mu.Lock()

@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -15,6 +16,7 @@ import (
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/desktop"
+	"motty/internal/memlimit"
 	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -130,7 +132,60 @@ func newDesktopView(session desktop.Session, clipboard bool) *desktopView {
 	view := &desktopView{session: session, clipboard: clipboard, fit: true, active: true}
 	view.resizer, _ = session.(desktop.Resizer)
 	view.files.remote, _ = session.(desktop.FileClipboard)
+	trackDesktopPicture(view)
 	return view
+}
+
+// desktopPictures tracks the remote desktops open in this process so the heap
+// soft limit follows the pictures shown. Every window of one process shares the
+// same heap, so the registry is shared too, not kept per window.
+var desktopPictures struct {
+	sync.Mutex
+	views map[*desktopView]memlimit.Size
+}
+
+func trackDesktopPicture(view *desktopView) {
+	desktopPictures.Lock()
+	if desktopPictures.views == nil {
+		desktopPictures.views = make(map[*desktopView]memlimit.Size)
+	}
+	desktopPictures.views[view] = memlimit.Size{}
+	desktopPictures.Unlock()
+	applyDesktopMemoryLimit()
+}
+
+func untrackDesktopPicture(view *desktopView) {
+	desktopPictures.Lock()
+	delete(desktopPictures.views, view)
+	desktopPictures.Unlock()
+	applyDesktopMemoryLimit()
+}
+
+// noteDesktopSize records a picture's size and moves the limit when it changed.
+// It does nothing on the frames where the size stayed the same.
+func noteDesktopSize(view *desktopView, width, height int) {
+	desktopPictures.Lock()
+	old, tracked := desktopPictures.views[view]
+	size := memlimit.Size{Width: width, Height: height}
+	if !tracked || old == size {
+		desktopPictures.Unlock()
+		return
+	}
+	desktopPictures.views[view] = size
+	desktopPictures.Unlock()
+	applyDesktopMemoryLimit()
+}
+
+// applyDesktopMemoryLimit gives the runtime the soft limit for every picture
+// shown, or removes the limit when no remote desktop is open.
+func applyDesktopMemoryLimit() {
+	desktopPictures.Lock()
+	sizes := make([]memlimit.Size, 0, len(desktopPictures.views))
+	for _, size := range desktopPictures.views {
+		sizes = append(sizes, size)
+	}
+	desktopPictures.Unlock()
+	memlimit.Apply(memlimit.ForDesktops(sizes))
 }
 
 // pixelPerfect reports whether the picture is shown pixel for pixel: the server
@@ -149,6 +204,7 @@ func (view *desktopView) logicalPerPixel() float32 {
 }
 
 func (view *desktopView) close() {
+	untrackDesktopPicture(view)
 	if view.session != nil {
 		view.session.Close()
 	}
@@ -159,6 +215,7 @@ func (view *desktopView) present() bool {
 	changed := view.session.Present(&view.surface)
 	if changed {
 		view.width, view.height = view.surface.Size()
+		noteDesktopSize(view, view.width, view.height)
 	}
 	view.presentPointer()
 	return changed

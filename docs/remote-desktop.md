@@ -16,7 +16,7 @@ entry, the certificate question and the pin store.
 | Showing such a bitmap one pixel to one device pixel at any display scale | Viva: `gfx.Surface.DrawPixels` and `gfx.Image.DevicePixels`; the painter keeps those images on device pixels instead of rounding them to logical pixels |
 | Pointer with buttons and positions, wheel, raw keys, committed IME text, focus | Viva (already: `RoleTerminal` focus gives raw keys and text events) |
 | RFB wire protocol, decoders, security types | `internal/rfb` (pure Go, no UI, no cgo) |
-| What every desktop backend offers (`Session`, `Frame`, key/button vocabulary) | `internal/desktop` |
+| What every desktop backend offers (`Session`, `Presenter`, key/button vocabulary) | `internal/desktop` |
 | Tab, scaling, focus capture, status line, reconnect, host editor, vault | `internal/workbench` (`desktop.go`, `desktop_conn.go`) |
 
 ## The interface (`internal/desktop/desktop.go`)
@@ -38,12 +38,15 @@ type Session interface {
 }
 ```
 
-* A backend draws into a `desktop.Frame` (BGRA back buffer + a short list of
-  dirty rectangles; `Update`, `Fill`, `Copy` for the decoders) and returns
-  `frame.Present` from `Present`. The workbench passes a `gfx.Surface`, which
-  satisfies `Presenter`, so a changed 64x64 patch of a 1080p desktop uploads
-  64 KB, not 8 MB. Pixels are BGRA with an undefined fourth byte; `Surface`
-  makes it opaque.
+* A backend presents the picture through `Presenter`. `desktop.Frame` is the
+  shared implementation for a backend whose decoders need their own back buffer
+  (VNC): BGRA pixels plus a short list of dirty rectangles, with `Update`,
+  `Fill` and `Copy` for the decoders. An RDP session keeps only the dirty list
+  and reads the changed rectangles from the client library's framebuffer, so an
+  RDP picture is held once, not twice. The workbench passes a `gfx.Surface`,
+  which satisfies `Presenter`, so a changed 64x64 patch of a 1080p desktop
+  uploads 64 KB, not 8 MB. Pixels are BGRA with an undefined fourth byte;
+  `Surface` makes it opaque.
 * Everything the network goroutine produces ends in `Options.Notify`, which wakes
   the window; `Present` runs on the UI goroutine from `State.Wake` and from the
   page's paint. Nothing polls and an idle desktop schedules no frame.
@@ -188,11 +191,15 @@ DesktopSize; pointer, key and cut-text messages.
   once; local to remote is sent when the pointer is pressed or a paste chord is
   typed, if it changed. RFB carries Latin-1: other characters go as `?`. Pasting
   with the system paste shortcut types the clipboard on the remote instead.
-* Not supported: RA256, RA2ne/RA256ne, VeNCrypt/TLS, Apple Remote Desktop
-  authentication (macOS Screen Sharing needs "VNC viewers may control screen with
-  password"), Tight/JPEG,
-  extended clipboard, images in the clipboard, audio, file transfer, changing the
-  remote resolution, multiple screens.
+* Not supported: RA256, RA2ne/RA256ne, VeNCrypt/TLS, Tight/JPEG,
+  extended clipboard, images in the clipboard, audio, file transfer, changing
+  the remote resolution, multiple screens.
+* macOS Screen Sharing: Apple Remote Desktop authentication (security type 30)
+  signs in with the Mac's own account and password, so the server needs no
+  legacy VNC password. That exchange encrypts the credentials only; the desktop
+  stream itself stays in the clear, so route the connection through SSH when the
+  network is not trusted. The server's Diffie-Hellman parameters are bounded
+  (512-bit to 4096-bit) and validated before the client computes anything.
 * Key releases reach the remote on macOS, Windows and X11; they were exercised
   with synthetic key events on the Windows and Linux machines (xdotool,
   `keybd_event`), not with a physical keyboard or an input method. Viva's web
@@ -409,7 +416,14 @@ that finds the user signed in elsewhere asks the usual "sign out the other user?
 question inside the picture, and a console session is disconnected when the same
 user signs in remotely (that is Windows policy, `fSingleSessionPerUser`).
 Server-controlled lengths are capped (a segmented ZGFX message at 64 MB, history
-distances, MPPC history, Planar runs); the decoders are fuzzed (`fuzz_test.go`,
+distances, MPPC history, Planar runs); the RDPGFX bitmap cache is held to its
+100 MB protocol ceiling and surfaces to a budget of their own. While remote
+desktops are shown the process also sets a soft heap limit derived from their
+pictures (32 bytes per pixel plus a fixed base and the bitmap cache, with
+headroom; 512 MiB floor, 4 GiB ceiling), so Go's doubling of a large live heap
+does not turn a 5K desktop into a gigabyte. It is removed when the last desktop
+closes; `MOTTY_MEMORY_LIMIT_MIB` overrides it for measurements. The decoders are
+fuzzed (`fuzz_test.go`,
 `go test ./internal/rdpcore -run '^$' -fuzz FuzzZGFX -parallel 3`; fuzzing found
 several faults in the upstream decoders, all fixed with their inputs kept in
 `testdata/fuzz`), and the receive loop recovers from a decoder panic and ends only

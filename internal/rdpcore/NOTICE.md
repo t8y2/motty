@@ -85,3 +85,12 @@ Changed:
 * Fixes found by fuzzing (`fuzz_test.go`, corpus in `testdata/fuzz`): zero-length
   runs in the Planar codec, ZGFX history distance, padding and expansion limits,
   an MPPC history bound.
+* The progressive decoder keeps a coefficient's sign in one byte instead of two.
+  The value is +1, -1 or 0, so the byte is exact; every tile the decoder keeps
+  for a later UPGRADE is 12 KiB smaller. Coefficients stay for the surface's
+  whole lifetime because a later tile may be differential to them.
+* The EGFX pixel budget is split in two: surfaces keep the 512 MiB bound, and the
+  bitmap cache is held to the 100 MiB ceiling MS-RDPEGFX 3.3.1.4 gives a client
+  that does not ask for the small cache (the cache is evicted instead of dropping
+  the connection). One shared budget had let a session hold 512 MiB of cache
+  alone, five times what the protocol allows.

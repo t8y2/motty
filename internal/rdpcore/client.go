@@ -238,6 +238,7 @@ type Client struct {
 
 	// Framebuffer and bitmap cache
 	framebufMu     sync.RWMutex             // protects framebuf during resize vs external reads
+	frameMu        sync.RWMutex             // a packet's framebuffer writes against ReadRectBGRA
 	framebuf       *Framebuffer             // client-side screen buffer (bottom-up BGRX)
 	scrBltBuf      []byte                   // reusable scratch for ScrBlt overlap
 	clipBuf        []byte                   // reusable buffer for sub-rect extraction during clipping
@@ -2077,54 +2078,67 @@ func (c *Client) receiveLoop() {
 			return
 		}
 		c.lastReceived.Store(time.Now().UnixNano())
-
-		switch pktType {
-		case tpkt.PacketTPKT:
-			mcsPayload, err := x224.DecodeDataTPDU(data)
-			if err != nil {
-				c.logX224.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: bad X.224 DT", slog.Any("err", err))
-				continue
-			}
-			// Check MCS PDU type before dispatching
-			switch mcs.PDUType(mcsPayload) {
-			case mcs.DomainMCSPDUDisconnectProviderUltimatum:
-				reason, _ := mcs.DecodeDisconnectProviderUltimatum(c.logMcs, mcsPayload)
-				c.handleDisconnect(fmt.Errorf("%w: MCS Disconnect Provider Ultimatum (reason=%d)", ErrDisconnected, reason))
-				return
-			case mcs.DomainMCSPDUSendDataIndication:
-				channelID, userData, err := mcs.DecodeSendDataIndication(c.logMcs, mcsPayload)
-				if err != nil {
-					c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: bad MCS SDI", slog.Any("err", err))
-					continue
-				}
-				if channelID == c.messageChannelID && c.messageChannelID != 0 {
-					if err := c.handleMessageChannel(userData); err != nil {
-						c.handleDisconnect(err)
-						return
-					}
-					continue
-				}
-				// Centralized security-layer decryption for ALL channels
-				// (MS-RDPBCGR 5.3.6). The RC4 stream must be advanced for
-				// every encrypted packet to stay in sync.
-				userData = c.decryptSlowPath(userData)
-				if err := c.autodetect.received(len(userData)); err != nil {
-					c.handleDisconnect(err)
-					return
-				}
-				if channelID != c.ioChannelID {
-					c.handleVirtualChannelData(channelID, userData)
-					continue
-				}
-				c.handleSlowPathPDU(userData)
-			default:
-				c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: unhandled MCS PDU type", util.Hex2("type", uint8(mcs.PDUType(mcsPayload))))
-			}
-
-		case tpkt.PacketFastPath:
-			c.handleFastPathPDU(actionByte, data)
+		if c.dispatchPacket(pktType, actionByte, data) {
+			return
 		}
 	}
+}
+
+// dispatchPacket handles one received packet. It returns whether the packet
+// ended the connection. The framebuffer lock is held for the whole packet so a
+// rectangle a viewer reads cannot change halfway through: the decoders write the
+// framebuffer only from this goroutine, and ReadRectBGRA takes the read side.
+func (c *Client) dispatchPacket(pktType tpkt.PacketType, actionByte byte, data []byte) (ended bool) {
+	c.frameMu.Lock()
+	defer c.frameMu.Unlock()
+
+	switch pktType {
+	case tpkt.PacketTPKT:
+		mcsPayload, err := x224.DecodeDataTPDU(data)
+		if err != nil {
+			c.logX224.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: bad X.224 DT", slog.Any("err", err))
+			return false
+		}
+		// Check MCS PDU type before dispatching
+		switch mcs.PDUType(mcsPayload) {
+		case mcs.DomainMCSPDUDisconnectProviderUltimatum:
+			reason, _ := mcs.DecodeDisconnectProviderUltimatum(c.logMcs, mcsPayload)
+			c.handleDisconnect(fmt.Errorf("%w: MCS Disconnect Provider Ultimatum (reason=%d)", ErrDisconnected, reason))
+			return true
+		case mcs.DomainMCSPDUSendDataIndication:
+			channelID, userData, err := mcs.DecodeSendDataIndication(c.logMcs, mcsPayload)
+			if err != nil {
+				c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: bad MCS SDI", slog.Any("err", err))
+				return false
+			}
+			if channelID == c.messageChannelID && c.messageChannelID != 0 {
+				if err := c.handleMessageChannel(userData); err != nil {
+					c.handleDisconnect(err)
+					return true
+				}
+				return false
+			}
+			// Centralized security-layer decryption for ALL channels
+			// (MS-RDPBCGR 5.3.6). The RC4 stream must be advanced for
+			// every encrypted packet to stay in sync.
+			userData = c.decryptSlowPath(userData)
+			if err := c.autodetect.received(len(userData)); err != nil {
+				c.handleDisconnect(err)
+				return true
+			}
+			if channelID != c.ioChannelID {
+				c.handleVirtualChannelData(channelID, userData)
+				return false
+			}
+			c.handleSlowPathPDU(userData)
+		default:
+			c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: unhandled MCS PDU type", util.Hex2("type", uint8(mcs.PDUType(mcsPayload))))
+		}
+
+	case tpkt.PacketFastPath:
+		c.handleFastPathPDU(actionByte, data)
+	}
+	return false
 }
 
 // keepAliveLoop periodically sends a RefreshRect PDU to provoke server
@@ -2236,7 +2250,9 @@ func (c *Client) resetForReconnect() {
 	c.orderState = orders.DecoderState{}
 	c.glyphCache = orders.GlyphCache{}
 	c.pointerCache = [128]*PointerUpdate{}
+	c.framebufMu.Lock()
 	c.framebuf = nil
+	c.framebufMu.Unlock()
 	c.bitmapCache.Reset()
 	c.brushCache.Reset()
 	c.scrBltBuf = nil
@@ -5541,31 +5557,45 @@ func (c *Client) FramebufferWriteTopDown(dst []byte) (int, int) {
 	return w, h
 }
 
-// ReadRectBGRA copies the screen rectangle (x, y, w, h), clipped to the screen,
-// into dst as top-down BGRA rows w*4 bytes apart (fourth byte 0xFF), and returns
-// the clipped rectangle; zero width means nothing was copied. Motty addition.
-// It reads the framebuffer without locking, so it may only be called from a
-// display callback (OnBitmap, OnStridedBitmap, OnResize), which run on the
-// goroutine that writes the framebuffer.
-func (c *Client) ReadRectBGRA(dst []byte, x, y, w, h int) (rx, ry, rw, rh int) {
+// ReadRectBGRA reads the screen rectangle (x, y, w, h), clipped to the screen,
+// band by band, and hands each band to emit as top-down BGRA rows stride bytes
+// apart (fourth byte 0xFF). The framebuffer is held still for the whole
+// rectangle, so a decoder cannot write into it between bands. Motty addition.
+//
+// buffer is the caller's reusable scratch and must hold width*bandRows*4 bytes.
+// emit's pixels are valid only during the call.
+func (c *Client) ReadRectBGRA(buffer []byte, x, y, w, h, bandRows int, emit func(x, y, w, h int, pix []byte, stride int)) {
+	if w <= 0 || h <= 0 || bandRows <= 0 || len(buffer) < w*bandRows*4 {
+		return
+	}
+	c.frameMu.RLock()
+	defer c.frameMu.RUnlock()
+	c.framebufMu.RLock()
+	defer c.framebufMu.RUnlock()
 	fb := c.framebuf
 	if fb == nil {
-		return 0, 0, 0, 0
+		return
 	}
-	rx, ry, rw, rh = fb.clipRect(x, y, w, h)
-	if rw <= 0 || rh <= 0 || len(dst) < rw*rh*4 {
-		return 0, 0, 0, 0
-	}
-	for row := 0; row < rh; row++ {
-		// Row row of the rectangle is screen row ry+row, which the bottom-up
-		// framebuffer keeps at index fb.Height-1-(ry+row).
-		src := fb.Pixels[(fb.Height-1-(ry+row))*fb.Stride+rx*4:][:rw*4]
-		out := dst[row*rw*4:][:rw*4]
-		for i := 0; i < len(src); i += 4 {
-			out[i], out[i+1], out[i+2], out[i+3] = src[i+2], src[i+1], src[i], 0xFF
+	for top := 0; top < h; top += bandRows {
+		rows := min(bandRows, h-top)
+		rx, ry, rw, rh := fb.clipRect(x, y+top, w, rows)
+		if rw <= 0 || rh <= 0 {
+			continue
 		}
+		if len(buffer) < rw*rh*4 {
+			return
+		}
+		for row := 0; row < rh; row++ {
+			// Row row of the rectangle is screen row ry+row, which the bottom-up
+			// framebuffer keeps at index fb.Height-1-(ry+row).
+			src := fb.Pixels[(fb.Height-1-(ry+row))*fb.Stride+rx*4:][:rw*4]
+			out := buffer[row*rw*4:][:rw*4]
+			for i := 0; i < len(src); i += 4 {
+				out[i], out[i+1], out[i+2], out[i+3] = src[i+2], src[i+1], src[i], 0xFF
+			}
+		}
+		emit(rx, ry, rw, rh, buffer[:rw*rh*4], rw*4)
 	}
-	return rx, ry, rw, rh
 }
 
 // SetOutputSuppressed asks the server to stop (or resume) sending screen
