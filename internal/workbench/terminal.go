@@ -1941,6 +1941,9 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal == modalToolbarSettings {
 		return state.toolbarSettingsScroll(event)
 	}
+	if state.modal == modalSidebarSettings {
+		return state.sidebarSettingsScroll(event)
+	}
 	if state.modal == modalNewHost && state.editor.tagPicker.control.Open {
 		p := &state.editor.tagPicker
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}

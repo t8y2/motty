@@ -286,6 +286,10 @@ type Messages struct {
 	SettingsTabsAutoHideDescription        string
 	SettingsTabsGrouping                   string
 	SettingsTabsGroupingDescription        string
+	SettingsSidebar                        string
+	SettingsSidebarHint                    string
+	SettingsSidebarShownFmt                string
+	SettingsSidebarShowAll                 string
 	VerticalTabGroupCountFmt               string
 	VerticalTabsPin                        string
 	VerticalTabsAutoHide                   string

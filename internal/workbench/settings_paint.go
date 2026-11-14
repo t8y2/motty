@@ -362,6 +362,7 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 					func() { state.save() }, nil)
 			}
 			state.paintToolbarSettingsRows(page)
+			state.paintSidebarSettingsRow(page)
 		})
 		state.paintDiagnosticsSetting(page)
 	})

@@ -1300,31 +1300,17 @@ type hostToggleBoxes struct {
 
 // declareNavigation declares the sidebar: the name of the application over the
 // pages, and the way to a shell on this computer and to the settings at the bottom.
+// A page the user hid from Settings keeps everything but its row here.
 func (state *State) declareNavigation(c ui.C) {
 	m := state.messages
-
-	items := [...]struct {
-		id     gfx.ID
-		icon   uint8
-		label  string
-		active bool
-	}{
-		{hitHosts, iconHosts, m.NavHosts, state.activeSection == sectionHosts},
-		{hitWorkspaces, iconColumns2, m.NavWorkspaces, state.activeSection == sectionWorkspaces},
-		{hitDashboard, iconActivity, m.Dashboard.Title, state.activeSection == sectionDashboard},
-		{hitSessionLogs, iconFileClock, m.SessionLogs.Title, state.activeSection == sectionSessionLogs},
-		{hitKeychain, iconKey, m.NavKeychain, state.activeSection == sectionKeys},
-		{hitProxies, iconGlobe, m.NavProxies, state.activeSection == sectionProxies},
-		{hitPortForwarding, iconForward, m.NavPortForwarding, state.activeSection == sectionForwards},
-		{hitKnownHosts, iconKnown, m.NavKnownHosts, state.activeSection == sectionKnownHosts},
-		{hitSnippets, iconNote, m.NavSnippets, state.activeSection == sectionSnippets},
-		{hitNotes, iconNotebook, state.noteText("Notes", "笔记"), state.activeSection == sectionNotes},
-	}
 	ui.Column(c).Width(navigationWidth).Shrink(0).Children(func() {
 		// The logo with the name beside it, painted into this slot after layout.
 		state.chrome.lockup = ui.Slot(c).Size(lockupWidth, lockupHeight).MarginSides(15, 0, 20, 0).Self(ui.Center)
-		for _, item := range items {
-			state.navigationItem(c, item.id, item.icon, item.label, item.active, 4)
+		for _, item := range sidebarPages {
+			if state.hiddenNav.has(item.page) {
+				continue
+			}
+			state.navigationItem(c, item.id, item.icon, state.navPageLabel(item.page), state.activeSection == item.section, 4)
 		}
 		if state.tabOrientation == tabsVertical && len(state.workspaceTabs) > 0 {
 			state.declareVerticalTabsNav(c)
@@ -2804,6 +2790,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareAutofillConfirm(c)
 	case modalToolbarSettings:
 		state.declareToolbarSettings(c)
+	case modalSidebarSettings:
+		state.paintSidebarSettings(c.Canvas(), c.Bounds())
 	case modalHighlightRule:
 		state.declareHighlightDialog(c)
 	case modalRuleManager:

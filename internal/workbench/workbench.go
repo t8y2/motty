@@ -480,26 +480,30 @@ type State struct {
 	windowBarScroll        windowBarScroll
 	tabOrientation         tabOrientation
 	tabNumbers             bool // each tab shows its place number next to the name
-	verticalTabs           verticalTabs
-	tabMenu                tabMenu
-	hostMenu               hostMenu
-	hostPrivacy            hostPrivacyState
-	localShellPicker       localShellPicker
-	snippetMenu            snippetMenu
-	sftpMenu               sftpMenu
-	sftpHeaderMenu         sftpHeaderMenuRequest
-	fileProperties         sftpFileProperties
-	popups                 popupMenus
-	selectedHostID         uint32
-	hostRevealID           uint32
-	activeSessionID        uint32
-	nextSessionID          uint32
-	nextHostID             uint32
-	nextIdentityID         uint32
-	nextForwardID          uint32
-	nextForwardStartID     uint64
-	nextProxyID            uint32
-	forwards               []forwardRecord
+	// hiddenNav is the set of page rows the sidebar leaves out. Hiding is the
+	// entry only: the page keeps its section, shortcuts and command entry.
+	hiddenNav          navHidden
+	sidebarEditor      sidebarSettingsUI
+	verticalTabs       verticalTabs
+	tabMenu            tabMenu
+	hostMenu           hostMenu
+	hostPrivacy        hostPrivacyState
+	localShellPicker   localShellPicker
+	snippetMenu        snippetMenu
+	sftpMenu           sftpMenu
+	sftpHeaderMenu     sftpHeaderMenuRequest
+	fileProperties     sftpFileProperties
+	popups             popupMenus
+	selectedHostID     uint32
+	hostRevealID       uint32
+	activeSessionID    uint32
+	nextSessionID      uint32
+	nextHostID         uint32
+	nextIdentityID     uint32
+	nextForwardID      uint32
+	nextForwardStartID uint64
+	nextProxyID        uint32
+	forwards           []forwardRecord
 	// forwardTunnels are the SSH transports forwards use when no open tab
 	// carries one. They have no terminal and are never saved.
 	forwardTunnels     []*forwardTunnel
@@ -1724,6 +1728,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalToolbarSettings:
 		state.clickToolbarSettings(id)
 		return
+	case modalSidebarSettings:
+		state.clickSidebarSettings(id)
+		return
 	case modalSFTPColumns:
 		state.clickSFTPColumnSettings(id)
 		return
@@ -2494,6 +2501,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result := state.toolbarSettingsPointer(event); result.Handled {
 		return result
 	}
+	if result := state.sidebarSettingsPointer(event); result.Handled {
+		return result
+	}
 	if result := state.ruleManagerPointer(event); result.Handled {
 		return result
 	}
@@ -3007,6 +3017,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result := state.toolbarSettingsKey(event); result.Handled {
+		return result
+	}
+	if result := state.sidebarSettingsKey(event); result.Handled {
 		return result
 	}
 	if result := state.sftpColumnSettingsKey(event); result.Handled {

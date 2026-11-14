@@ -406,6 +406,9 @@ func (state *State) clickSettings(id gfx.ID) bool {
 	}
 	changed := false
 	switch id {
+	case hitSidebarSettingsOpen:
+		state.openSidebarSettings()
+		return true
 	case hitSettingsTabNumbers:
 		changed = state.setTabNumbers(!state.tabNumbers)
 	case hitSettingsOutputAlerts:

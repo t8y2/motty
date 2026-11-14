@@ -518,6 +518,7 @@ const (
 	modalDashboard
 	modalDashboardAdd
 	modalToolbarSettings
+	modalSidebarSettings
 	modalSFTPColumns
 	modalSudoSFTP
 	modalTerminalInput
@@ -1304,6 +1305,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalToolbarSettings {
 		state.toolbarEditor.list.Cancel()
+	}
+	if state.modal == modalSidebarSettings {
+		state.sidebarEditor = sidebarSettingsUI{}
 	}
 	if state.modal == modalSFTPColumns {
 		state.sftpColumnEditor.list.Cancel()

@@ -160,6 +160,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	for _, label := range []string{m.Toolbars.Window, m.Toolbars.Terminal, m.Toolbars.SFTP} {
 		row(settingsGeneral, label, m.Toolbars.Description)
 	}
+	row(settingsGeneral, m.SettingsSidebar, m.SettingsSidebarHint)
 	row(settingsGeneral, tools.DiagnosticsRow, tools.DiagnosticsDescription)
 	row(settingsTerminal, m.SettingsTerminalOption, m.SettingsTerminalOptionDescription)
 	row(settingsTerminal, m.SettingsTerminalFontSize, m.SettingsTerminalFontSizeDescription)
