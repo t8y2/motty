@@ -77,6 +77,17 @@ func transferFilterShows(filter int, snapshot sftpclient.TransferSnapshot) bool 
 	return filter == 0 || filter == 1 && transferActive(snapshot) || filter == 2 && !transferActive(snapshot) || filter == 3 && snapshot.State == sftpclient.TransferFailed
 }
 
+// openTransferCenterForQueued shows the center for a transfer just queued, but
+// only when the selected filter lists active work. With a saved Ended or Failed
+// filter the user asked not to watch transfers run; opening an empty popover
+// over that choice is worse than leaving the badge to report progress.
+func (state *State) openTransferCenterForQueued() {
+	if !transferFilterShows(state.transfers.filter, sftpclient.TransferSnapshot{State: sftpclient.TransferQueued}) {
+		return
+	}
+	state.transfers.open, state.transfers.scroll = true, 0
+}
+
 func transferRetryEligible(entry *transferEntry, conflict bool) bool {
 	return !entry.removed && entry.owner != nil && entry.owner.worker != nil && entry.snapshot.State == sftpclient.TransferFailed && entry.snapshot.Retryable && entry.conflict == conflict
 }

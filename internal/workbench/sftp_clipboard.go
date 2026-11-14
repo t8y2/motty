@@ -227,8 +227,8 @@ func (state *State) queueSFTPDownloadFrom(view *sftpView, remoteDir string, entr
 	}
 	view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, entry.Name)
 	view.errorText = ""
-	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
 	state.transfers.host = nil
+	state.openTransferCenterForQueued()
 	state.refreshSFTPTransfers(view)
 }
 

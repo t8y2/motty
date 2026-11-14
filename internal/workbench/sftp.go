@@ -1394,8 +1394,8 @@ func (state *State) queueSFTPUploadTo(view *sftpView, localPath string, recursiv
 	}
 	view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, name)
 	view.errorText = ""
-	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
 	state.transfers.host = nil
+	state.openTransferCenterForQueued()
 	state.refreshSFTPTransfers(view)
 	return id
 }
@@ -1474,8 +1474,8 @@ func (state *State) queueRemoteCopies(dest *sftpView, source remoteCopySource, s
 	}
 	dest.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, targetDir)
 	dest.errorText = ""
-	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
 	state.transfers.host = nil
+	state.openTransferCenterForQueued()
 	state.refreshSFTPTransfers(dest)
 	return len(entries) - rejected, rejected
 }
@@ -2191,7 +2191,12 @@ func (state *State) pumpSFTP(session *Session) {
 						view.status = state.messages.SFTPCanceled
 					} else if errors.Is(result.Err, sftpclient.ErrDestinationExists) {
 						if view.detached == nil {
-							state.transfers.open = true
+							// Opening here asks for a decision, so show every
+							// transfer: a saved Active filter would hide the entry
+							// that needs Replace, Skip or Resume.
+							state.transfers.filter = 0
+							state.transfers.host = nil
+							state.transfers.open, state.transfers.scroll = true, 0
 						}
 					} else {
 						view.errorText = state.formatSFTPError(result.Err)

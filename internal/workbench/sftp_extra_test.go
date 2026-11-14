@@ -75,11 +75,15 @@ func TestConflictDialogCanSkipWhatExists(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "notes.txt")
 	os.WriteFile(target, []byte("mine"), 0o600)
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return target, nil }
+	state.transfers.filter = 1 // a saved Active filter must not hide the blocked transfer
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPDownload)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return state.transfers.open && len(state.transfers.entries) == 1 && state.transfers.entries[0].conflict
 	})
+	if state.transfers.filter != 0 {
+		t.Fatalf("conflict opened with filter %d, want All so the blocked entry is visible", state.transfers.filter)
+	}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&canvas, hitTransfersSkip.At(state.transfers.entries[0].id)); !ok {
