@@ -10,6 +10,19 @@ import (
 // process limit from its size, a resize moves it, and closing the last one
 // removes it.
 func TestDesktopPicturesSetTheHeapLimit(t *testing.T) {
+	// The registry is process-wide, and a test earlier in the package may have
+	// left a picture in it: another window's picture legitimately sets a floor.
+	// Give this test an empty registry and put the others back afterwards.
+	desktopPictures.Lock()
+	previous := desktopPictures.views
+	desktopPictures.views = make(map[*desktopView]memlimit.Size)
+	desktopPictures.Unlock()
+	t.Cleanup(func() {
+		desktopPictures.Lock()
+		desktopPictures.views = previous
+		desktopPictures.Unlock()
+		applyDesktopMemoryLimit()
+	})
 	memlimit.Apply(0)
 	view := &desktopView{}
 	trackDesktopPicture(view)
