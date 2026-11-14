@@ -8,6 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
@@ -47,6 +48,23 @@ type sftpWindow struct {
 	bookmark                    sftpBookmarkEditor
 	fileProperties              sftpFileProperties
 	directoryTree               [2]sftpDirectoryTree
+	// frame and visible let another window find this one while a file drag is
+	// outside its own content area. They are nil for a tab hosted by the main
+	// window, which the drag finds through the tab strip instead.
+	frame   func() (gfx.Rect, bool)
+	visible func() bool
+	// foreign is what another window's drag would drop here, for the highlight.
+	foreign sftpForeignDrag
+}
+
+// sftpForeignDrag is a file drag from another window that would land in this
+// window's pane. The highlight is cleared by the drag's source.
+type sftpForeignDrag struct {
+	active    bool
+	fromLocal bool // the source pane is this computer's
+	local     bool // the target pane is this computer's
+	target    string
+	row       int
 }
 
 func (state *State) openSFTPWindow(source *Session) {
@@ -101,6 +119,8 @@ func (w *sftpWindow) show() {
 		return
 	}
 	w.window = window
+	w.frame = window.Frame
+	w.visible = func() bool { return !window.Closed() && !window.Minimized() }
 	if w.ownsConnection && w.session.relay != nil {
 		w.session.relay.set(func() { window.Invalidate(); state.options.Invalidate() })
 	}
@@ -291,7 +311,14 @@ func (w *sftpWindow) onClosed() {
 	w.deferredListings = [2]func(){}
 	w.view.localSeq++
 	w.view.remoteSeq++
+	w.cancelDrag()
 	w.clearDirectoryTreeRequests()
+	// The copied server files stay available while another terminal keeps the
+	// connection; only a window that takes its own connection away ends them.
+	if w.ownsConnection {
+		w.owner.clearSFTPRemoteClipboardFrom(w.view)
+	}
+	w.owner.cancelRemoteCopiesFrom(w.view)
 	if w.view.cancelExtract != nil {
 		w.view.cancelExtract()
 	}
@@ -401,6 +428,11 @@ func (w *sftpWindow) hasWork() bool {
 		if w.owner.edits.list[i].origin == w {
 			return true
 		}
+	}
+	// A copy this window is the source of still reads through its connection:
+	// closing the window must ask first, and cancel it if the user agrees.
+	if len(w.view.outgoingCopies) > 0 {
+		return true
 	}
 	return w.view.worker != nil && sftpTransfersActive(w.view.worker.Transfers(nil))
 }

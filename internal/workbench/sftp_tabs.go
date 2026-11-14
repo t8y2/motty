@@ -243,6 +243,23 @@ func (state *State) sftpFileTabTitle(tab *sftpWindow) string {
 	return tab.tabTitle
 }
 
+// fileTabAtWindowPoint names the file tab at a point in this window, if any.
+// The tabs' boxes are the ones the last paint declared them with.
+func (state *State) fileTabAtWindowPoint(x, y float32) (uint32, bool) {
+	for index := range state.chrome.bar.tabs {
+		tab := &state.chrome.bar.tabs[index]
+		if tab.fileSession == 0 {
+			continue
+		}
+		box := tab.box.Rect()
+		if box.Width <= 0 || !pointInRect(x, y, box) {
+			continue
+		}
+		return tab.fileSession, true
+	}
+	return 0, false
+}
+
 func (state *State) activeTopTabFocusHit() gfx.ID {
 	if state.activeSection == sectionSFTP {
 		if state.activeSFTPWindow() != nil {

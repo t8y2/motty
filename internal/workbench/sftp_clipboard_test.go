@@ -137,8 +137,9 @@ func TestSFTPWindowPastesServerFilesOntoTheLocalSide(t *testing.T) {
 	if result := w.shortcut(copyKey); !result.Handled {
 		t.Fatalf("copy was not taken: %+v", result)
 	}
-	if len(w.view.clipboard.entries) != 1 || w.view.clipboard.entries[0].Name != "notes.txt" {
-		t.Fatalf("server clipboard holds %+v", w.view.clipboard.entries)
+	clip := state.sftpRemoteClipboard()
+	if len(clip.entries) != 1 || clip.entries[0].Name != "notes.txt" {
+		t.Fatalf("server clipboard holds %+v", clip.entries)
 	}
 	pasteKey := gfx.KeyEvent{Target: dualRow(t, w, true, "中文上传.yml"), Modifiers: keymap.Primary, Text: "v"}
 	if result := w.shortcut(pasteKey); !result.Handled {

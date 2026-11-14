@@ -188,7 +188,6 @@ type sftpView struct {
 	places              sftpPlaceMenu
 	dropping            bool // files are being dragged over the panel
 	dropRow             int  // the folder row they are over, or -1
-	clipboard           sftpClipboard
 	scrollDrag          bool
 	scrollGrab          float32
 	// columnDragging and columnDrag are the divider of this panel the pointer
@@ -213,15 +212,22 @@ type sftpView struct {
 	moveAfterRename       bool
 	transfers             []sftpclient.TransferSnapshot
 	refreshAfterTransfers bool
-	editPath              string
-	editName              string
-	editLocation          string
-	editOriginal          string
-	editRevision          sftpclient.Revision
-	editUTF8BOM           bool
-	editEditor            text.Editor
-	editLayout            components.TextareaLayout // the editor's rows and scroll
-	editRect              gfx.Rect                  // where the editor was painted, for the wheel
+	// remoteCopies names the source of each server-to-server copy this view
+	// owns, so the transfer center can describe both ends.
+	remoteCopies map[uint64]remoteCopyOrigin
+	// outgoingCopies are the server-to-server copies reading from this view, by
+	// the view that owns each task. They keep this connection open and are what
+	// closing this view cancels.
+	outgoingCopies []remoteCopyLink
+	editPath       string
+	editName       string
+	editLocation   string
+	editOriginal   string
+	editRevision   sftpclient.Revision
+	editUTF8BOM    bool
+	editEditor     text.Editor
+	editLayout     components.TextareaLayout // the editor's rows and scroll
+	editRect       gfx.Rect                  // where the editor was painted, for the wheel
 
 	// listings remembers the folders already read, oldest first, so going back
 	// up or into a folder seen before shows at once; prefetching holds folders
@@ -317,6 +323,7 @@ func (state *State) closeSFTP(session *Session) {
 	stopSFTPSearch(&session.files.lfolder)
 	session.files.sftpFolder.stopSizeCalculation()
 	session.files.lfolder.stopSizeCalculation()
+	state.cancelRemoteCopiesFrom(session.files)
 	if session.files.cancelExtract != nil {
 		session.files.cancelExtract()
 	}
@@ -1391,6 +1398,118 @@ func (state *State) refreshSFTPTransfers(view *sftpView) {
 	state.syncTransfers(view)
 }
 
+// remoteCopyOrigin is where one server-to-server copy reads from. source is
+// cleared when the copy settles; the labels stay for the transfer history.
+type remoteCopyOrigin struct {
+	server, address string
+	source          *sftpView
+}
+
+// remoteCopyLink is one outgoing server-to-server copy: the view whose worker
+// owns it, and that worker's transfer id.
+type remoteCopyLink struct {
+	state *State
+	dest  *sftpView
+	id    uint64
+}
+
+// safeSFTPName is a name a listing entry may contribute to a source path: one
+// component, never the folder itself or its parent.
+func safeSFTPName(name string) bool {
+	return name != "" && name != "." && name != ".." &&
+		!strings.ContainsRune(name, '/') && !strings.ContainsRune(name, '\x00')
+}
+
+// queueRemoteCopies copies entries from source's folder sourceDir into dest's
+// folder targetDir without routing them through this computer's disk. The batch
+// is one transfer: one source subsystem and one card in the transfer center.
+func (state *State) queueRemoteCopies(dest *sftpView, source remoteCopySource, sourceDir, targetDir string, entries []sftpclient.Entry) (queued, rejected int) {
+	if dest == nil || dest.worker == nil || source.open == nil ||
+		sourceDir == "" || targetDir == "" || dest.busy {
+		return 0, len(entries)
+	}
+	sources := make([]string, 0, len(entries))
+	recursive := false
+	for _, entry := range entries {
+		if entry.LinkBroken || !safeSFTPName(entry.Name) {
+			rejected++
+			continue
+		}
+		sources = append(sources, path.Join(sourceDir, entry.Name))
+		recursive = recursive || entry.IsDir()
+	}
+	if len(sources) == 0 {
+		return 0, rejected
+	}
+	// One file is described by its own name; a batch by the folder it came from.
+	sourceRoot := sourceDir
+	if len(sources) == 1 {
+		sourceRoot = sources[0]
+	}
+	id, ok := dest.worker.QueueRemoteCopy(sftpclient.RemoteCopyRequest{
+		Source:      source.open,
+		SourceRoot:  sourceRoot,
+		Sources:     sources,
+		Destination: targetDir,
+		Recursive:   recursive,
+		Policy:      sftpclient.ExistingFail,
+	})
+	if !ok {
+		return 0, len(entries)
+	}
+	if dest.remoteCopies == nil {
+		dest.remoteCopies = make(map[uint64]remoteCopyOrigin)
+	}
+	dest.remoteCopies[id] = remoteCopyOrigin{server: source.server, address: source.address, source: source.view}
+	link := remoteCopyLink{state: state, dest: dest, id: id}
+	if source.view != nil {
+		source.view.outgoingCopies = append(source.view.outgoingCopies, link)
+	}
+	dest.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, targetDir)
+	dest.errorText = ""
+	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
+	state.transfers.host = nil
+	state.refreshSFTPTransfers(dest)
+	return len(entries) - rejected, rejected
+}
+
+// releaseRemoteCopySource lets go of the source view of a copy that settled.
+// A source window closed while the copy ran releases its connection now.
+func (state *State) releaseRemoteCopySource(dest *sftpView, id uint64) {
+	origin, ok := dest.remoteCopies[id]
+	if !ok || origin.source == nil {
+		return
+	}
+	src := origin.source
+	for index := range src.outgoingCopies {
+		if link := src.outgoingCopies[index]; link.dest == dest && link.id == id {
+			src.outgoingCopies = append(src.outgoingCopies[:index], src.outgoingCopies[index+1:]...)
+			break
+		}
+	}
+	origin.source = nil
+	dest.remoteCopies[id] = origin
+	if len(src.outgoingCopies) == 0 && src.detached != nil && src.detached.closed {
+		src.detached.releaseConnection()
+	}
+}
+
+// cancelRemoteCopiesFrom cancels every copy still reading from view, for a
+// window that its user agreed to close.
+func (state *State) cancelRemoteCopiesFrom(view *sftpView) {
+	links := append([]remoteCopyLink(nil), view.outgoingCopies...)
+	for _, link := range links {
+		if link.dest == nil || link.dest.worker == nil {
+			continue
+		}
+		link.dest.worker.CancelTransfer(link.id)
+		if link.state != nil {
+			link.state.refreshSFTPTransfers(link.dest)
+		}
+		link.dest.invalidateDetached()
+	}
+}
+
 func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	view.dialogEditor = text.Editor{}
 	view.dialogEntry = sftpclient.Entry{}
@@ -1768,6 +1887,10 @@ func (state *State) pumpSFTP(session *Session) {
 				} else if result.Operation == sftpclient.OperationUpload {
 					view.refreshAfterTransfers = true
 					view.refreshStatus = fmt.Sprintf(state.messages.SFTPUploadedFmt, formatBytes(result.Bytes), result.Path)
+					view.status = view.refreshStatus
+				} else if result.Operation == sftpclient.OperationRemoteCopy {
+					view.refreshAfterTransfers = true
+					view.refreshStatus = fmt.Sprintf(state.messages.SFTPCopiedFmt, formatBytes(result.Bytes), result.Path)
 					view.status = view.refreshStatus
 				} else {
 					view.status = fmt.Sprintf(state.messages.SFTPDownloadedFmt, formatBytes(result.Bytes), result.LocalPath)

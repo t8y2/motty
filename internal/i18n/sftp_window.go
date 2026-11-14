@@ -17,7 +17,7 @@ type SFTPWindowMessages struct {
 	BookmarkInvalid, BookmarkLimit                                                                          string
 	ConnectingFmt                                                                                           string
 	Authenticate, AuthenticationHint                                                                        string
-	DropUploadHint, DropDownloadHint                                                                        string
+	DropUploadHint, DropDownloadHint, DropCopyHint                                                          string
 	QueueRejectedFmt                                                                                        string
 	Open, Title, Local, Remote, Path, Name, Size, Modified                                                  string
 	Upload, Download, DragHint, DropUpload, DropDownload                                                    string

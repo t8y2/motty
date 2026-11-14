@@ -710,7 +710,13 @@ type State struct {
 	// transfers is the file-panel transfer center. A terminal transfer lives on
 	// its session, so several tabs can move files at once.
 	transfers transferCenter
-	xy        xySetup
+	// sftpClip is the copied server files when this window has no Group; with a
+	// Group, the clipboard is shared by every window of the process.
+	sftpClip sftpClipboard
+	// foreignFileTab is the file tab another window's drag would land in, or
+	// zero. It highlights the tab while the drag is over it.
+	foreignFileTab uint32
+	xy             xySetup
 	// Requests from outside to connect (see launch.go), the link being asked
 	// about, and the update check.
 	launchBacklog  [][]string

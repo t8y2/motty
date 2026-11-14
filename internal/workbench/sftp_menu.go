@@ -232,12 +232,12 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 	if count > 0 {
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuCopyFiles, Label: messages.SFTPWindow.CopyFiles, Icon: icon(iconCopy), Disabled: busy || view.active().searching()})
 	}
-	// A local side pastes the server files this panel copied; the server side
-	// pastes the files the system clipboard holds, which is only known once the
-	// paste runs.
+	// A local side pastes the server files copied last, from any server; the
+	// server side pastes them too, or the files the system clipboard holds,
+	// which is only known once the paste runs.
 	paste := view.worker != nil
 	if local {
-		paste = len(view.clipboard.entries) > 0
+		paste = !state.sftpRemoteClipboard().empty()
 	}
 	rows.add(components.ContextMenuItem{ID: hitSFTPMenuPasteFiles, Label: messages.SFTPWindow.PasteFiles, Icon: icon(iconPaste), Disabled: busy || view.busy || view.worker == nil || !paste || view.active().searching()})
 	if count > 0 {

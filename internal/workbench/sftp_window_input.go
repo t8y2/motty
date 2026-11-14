@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"math"
 	"path"
 	"path/filepath"
@@ -19,9 +20,36 @@ type sftpWindowDrag struct {
 	start, at                gfx.Point
 	sourceDir                string
 	entries                  []sftpclient.Entry
+	// screen and outside place the pointer among this process's windows; target
+	// is where the release would land, and the highlights name what is lit.
+	screen         gfx.Point
+	outside        bool
+	target         sftpDragTarget
+	highlighted    *sftpWindow
+	highlightedTab *State
 }
 
+// sftpDragTarget is where a file drag would land: a pane of this or another
+// server window, or the tab of another server. A file tab names a state
+// and a session; the target folder is read when the release happens.
+type sftpDragTarget struct {
+	kind  uint8 // sftpDragNone, sftpDragPeer, sftpDragTab
+	peer  *sftpWindow
+	local bool // the target pane is this computer's
+	dir   string
+	row   int
+	state *State
+	tab   uint32
+}
+
+const (
+	sftpDragNone uint8 = iota
+	sftpDragPeer
+	sftpDragTab
+)
+
 func (w *sftpWindow) cancelDrag() {
+	w.clearDragHighlights()
 	w.drag = sftpWindowDrag{}
 	pending := w.deferredListings
 	w.deferredListings = [2]func(){}
@@ -29,6 +57,164 @@ func (w *sftpWindow) cancelDrag() {
 		if apply != nil && !w.closed {
 			apply()
 		}
+	}
+}
+
+// clearDragHighlights takes the drop picture off every window it lit.
+func (w *sftpWindow) clearDragHighlights() {
+	if peer := w.drag.highlighted; peer != nil {
+		peer.foreign = sftpForeignDrag{}
+		peer.invalidate()
+	}
+	if state := w.drag.highlightedTab; state != nil && state.foreignFileTab != 0 {
+		state.foreignFileTab = 0
+		if state.options.Invalidate != nil {
+			state.options.Invalidate()
+		}
+	}
+	w.drag.highlighted, w.drag.highlightedTab = nil, nil
+}
+
+// trackFileDrag resolves where a file drag would land: a file tab of any main
+// window, this window's own panes, or another server window under the pointer.
+func (w *sftpWindow) trackFileDrag(event gfx.PointerEvent) {
+	w.drag.screen = gfx.Point{X: event.ScreenX, Y: event.ScreenY}
+	w.drag.at = gfx.Point{X: event.X, Y: event.Y}
+	w.drag.outside = event.X < 0 || event.Y < 0 || event.X >= event.Viewport.Width || event.Y >= event.Viewport.Height
+	// A tab's strip is in the same window as its panes; a native window's is
+	// somewhere else, and only a pointer outside its content can be over it.
+	if w.window == nil || w.drag.outside {
+		if state, tab, ok := w.owner.fileDragTabAt(w.drag.screen, w); ok {
+			w.setDragPeerHighlight(nil, false, false, "", -1)
+			w.setDragTabHighlight(state, tab)
+			w.drag.target = sftpDragTarget{kind: sftpDragTab, state: state, tab: tab}
+			return
+		}
+	}
+	w.setDragTabHighlight(nil, 0)
+	if !w.drag.outside || event.Viewport.Width <= 0 {
+		if local, target, row, valid := w.dropTarget(event.X, event.Y, w.drag.fromLocal); valid {
+			w.setDragPeerHighlight(nil, false, false, "", -1)
+			w.drag.target = sftpDragTarget{kind: sftpDragPeer, peer: w, local: local, dir: target, row: row}
+			return
+		}
+	}
+	if !w.drag.outside {
+		w.setDragPeerHighlight(nil, false, false, "", -1)
+		w.drag.target = sftpDragTarget{}
+		return
+	}
+	if peer := w.owner.fileDropWindowAt(w.drag.screen, w); peer != nil {
+		if frame, ok := peer.frame(); ok {
+			if local, target, row, valid := peer.dropTargetAny(w.drag.screen.X-frame.X, w.drag.screen.Y-frame.Y); valid && !(w.drag.fromLocal && local) {
+				w.setDragPeerHighlight(peer, w.drag.fromLocal, local, target, row)
+				w.drag.target = sftpDragTarget{kind: sftpDragPeer, peer: peer, local: local, dir: target, row: row}
+				return
+			}
+		}
+	}
+	w.setDragPeerHighlight(nil, false, false, "", -1)
+	w.drag.target = sftpDragTarget{}
+}
+
+// setDragPeerHighlight lights the pane of the window a drop would land in. The
+// source window paints its own pane itself.
+func (w *sftpWindow) setDragPeerHighlight(peer *sftpWindow, fromLocal, local bool, target string, row int) {
+	if w.drag.highlighted != peer {
+		if old := w.drag.highlighted; old != nil {
+			old.foreign = sftpForeignDrag{}
+			old.invalidate()
+		}
+		w.drag.highlighted = peer
+	}
+	if peer == nil || peer == w {
+		return
+	}
+	peer.foreign = sftpForeignDrag{active: true, fromLocal: fromLocal, local: local, target: target, row: row}
+	peer.invalidate()
+}
+
+// setDragTabHighlight lights the file tab another window's drag would fill.
+func (w *sftpWindow) setDragTabHighlight(state *State, tab uint32) {
+	if w.drag.highlightedTab == state && (state == nil || state.foreignFileTab == tab) {
+		return
+	}
+	if old := w.drag.highlightedTab; old != nil {
+		old.foreignFileTab = 0
+		if old.options.Invalidate != nil {
+			old.options.Invalidate()
+		}
+	}
+	w.drag.highlightedTab = nil
+	if state == nil || tab == 0 {
+		return
+	}
+	state.foreignFileTab = tab
+	w.drag.highlightedTab = state
+	if state.options.Invalidate != nil {
+		state.options.Invalidate()
+	}
+}
+
+// dropFileDrag queues what the release would move: a same-window drop keeps its
+// old path; a peer pane or another server's tab decides the direction by the
+// two sides.
+func (w *sftpWindow) dropFileDrag() {
+	target := w.drag.target
+	switch target.kind {
+	case sftpDragPeer:
+		if target.peer == w {
+			w.queueEntries(w.drag.fromLocal, w.drag.entries, w.drag.sourceDir, target.dir)
+			return
+		}
+		w.dropOnPeer(target)
+	case sftpDragTab:
+		w.dropOnTab(target)
+	}
+}
+
+func (w *sftpWindow) dropOnPeer(target sftpDragTarget) {
+	peer := target.peer
+	switch {
+	case w.drag.fromLocal && !target.local:
+		peer.queueEntries(true, w.drag.entries, w.drag.sourceDir, target.dir)
+	case !w.drag.fromLocal && target.local:
+		w.queueEntries(false, w.drag.entries, w.drag.sourceDir, target.dir)
+		peer.localRefresh = true
+	case !w.drag.fromLocal && !target.local:
+		queued, rejected := peer.owner.queueRemoteCopies(peer.view, copySourceFromView(w.view), w.drag.sourceDir, target.dir, w.drag.entries)
+		w.reportRemoteCopy(queued, rejected, target.dir)
+	}
+}
+
+func (w *sftpWindow) dropOnTab(target sftpDragTarget) {
+	if target.state == nil {
+		return
+	}
+	targetWindow := target.state.sftpWindows[target.tab]
+	if targetWindow == nil || targetWindow.closed || targetWindow.view.worker == nil {
+		return
+	}
+	dir := targetWindow.folder(false).path
+	if dir == "" {
+		return
+	}
+	if w.drag.fromLocal {
+		targetWindow.queueEntries(true, w.drag.entries, w.drag.sourceDir, dir)
+		return
+	}
+	queued, rejected := target.state.queueRemoteCopies(targetWindow.view, copySourceFromView(w.view), w.drag.sourceDir, dir, w.drag.entries)
+	w.reportRemoteCopy(queued, rejected, dir)
+}
+
+func (w *sftpWindow) reportRemoteCopy(queued, rejected int, target string) {
+	if queued > 0 {
+		w.notices.show(w.owner.messages.SFTPWindow.Title,
+			fmt.Sprintf(w.owner.messages.SFTPCopiedCountFmt, queued, target), components.ToastSuccess)
+	}
+	if rejected > 0 {
+		w.notices.show(w.owner.messages.SFTPWindow.Title,
+			fmt.Sprintf(w.owner.messages.SFTPWindow.QueueRejectedFmt, rejected), components.ToastWarning)
 	}
 }
 
@@ -151,7 +337,25 @@ func (w *sftpWindow) setListOffset(side int, offset float32) float32 {
 // Pointer capture retains the source hit during a drag. Resolve destinations
 // from current coordinates, never that captured hit or the active terminal tab.
 func (w *sftpWindow) dropTarget(x, y float32, fromLocal bool) (local bool, target string, row int, valid bool) {
-	local = !fromLocal
+	target, row, valid = w.dropTargetSide(!fromLocal, x, y)
+	return !fromLocal, target, row, valid
+}
+
+// dropTargetAny is the destination from another window's drag: either pane of
+// this window, whichever the pointer is over, since the source pane may be a
+// server as well.
+func (w *sftpWindow) dropTargetAny(x, y float32) (local bool, target string, row int, valid bool) {
+	for side := range 2 {
+		local = side == 0
+		if target, row, valid = w.dropTargetSide(local, x, y); valid {
+			return
+		}
+	}
+	return false, "", -1, false
+}
+
+// dropTargetSide is the folder one pane offers a drop at.
+func (w *sftpWindow) dropTargetSide(local bool, x, y float32) (target string, row int, valid bool) {
 	side := sideIndex(local)
 	row = -1
 	if !w.connected() || w.navigationBusy() || w.bookmark.open || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 || w.view.bookmarksOpen || w.ui.menuOpen || w.headerMenuOpen() || !pointInRect(x, y, w.ui.list[side]) {
@@ -324,13 +528,14 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 					}
 				}
 			}
+			if w.drag.active {
+				w.trackFileDrag(event)
+			}
 			return handled
 		case gfx.PointerUp:
 			if w.drag.active {
-				_, target, _, valid := w.dropTarget(event.X, event.Y, w.drag.fromLocal)
-				if valid {
-					w.queueEntries(w.drag.fromLocal, w.drag.entries, w.drag.sourceDir, target)
-				}
+				w.trackFileDrag(event)
+				w.dropFileDrag()
 			}
 			w.cancelDrag()
 			return handled

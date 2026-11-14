@@ -68,6 +68,10 @@ const (
 	OperationSaveDocument
 	OperationReadDocument
 	OperationMoveSelection
+	// OperationRemoteCopy copies files from another server into this worker's
+	// server. The source is read through its own subsystem opener; the data
+	// never goes through this computer's disk.
+	OperationRemoteCopy
 )
 
 // ExistingPolicy controls what a transfer does when its final destination or
@@ -201,6 +205,23 @@ type linkJob struct {
 	approximate bool
 }
 
+// RemoteSource opens one file subsystem on the server a remote copy reads from.
+// Every attempt opens its own subsystem, so a transfer history never keeps a
+// connection open. Closing it must end a read that is waiting on the network.
+type RemoteSource func() (Remote, error)
+
+// RemoteCopyRequest is one batch of source paths copied into a folder on this
+// worker's server. Sources are absolute paths under SourceRoot, which names the
+// folder the transfer's description speaks of.
+type RemoteCopyRequest struct {
+	Source      RemoteSource
+	SourceRoot  string
+	Sources     []string
+	Destination string
+	Recursive   bool
+	Policy      ExistingPolicy
+}
+
 type request struct {
 	sources     []string
 	listID      uint64
@@ -218,6 +239,11 @@ type request struct {
 	utf8BOM     bool
 	recursive   bool
 	policy      ExistingPolicy
+	// copySource opens a subsystem on the server to read from, and
+	// copySources/copyRoot name the batch copied into destination.
+	copySource  RemoteSource
+	copySources []string
+	copyRoot    string
 }
 
 type transferRecord struct {
@@ -230,6 +256,10 @@ type transferRecord struct {
 	// the transfer up. Cancel and Close end a transfer too, but they are about
 	// the connection, and what the transfer left behind is kept for a retry.
 	canceledByUser bool
+	// source is the live subsystem of a remote copy, so a cancel can close the
+	// read it is waiting on. It is nil for every other operation, and for a
+	// remote copy between attempts.
+	source io.Closer
 	// The speed is measured over at least rateWindow, then smoothed.
 	rateAt    time.Time
 	rateBytes int64
@@ -411,6 +441,20 @@ func (worker *Worker) QueueUpload(localPath, remotePath string, recursive bool, 
 	})
 }
 
+// QueueRemoteCopy queues one batch that reads files from another server and
+// writes them into the destination folder of this worker's server. The data is
+// relayed through memory; no local file is part of the transfer.
+func (worker *Worker) QueueRemoteCopy(copy RemoteCopyRequest) (uint64, bool) {
+	if copy.Source == nil || copy.SourceRoot == "" || len(copy.Sources) == 0 || copy.Destination == "" {
+		return 0, false
+	}
+	return worker.enqueueTransfer(request{
+		operation: OperationRemoteCopy, copySource: copy.Source, copyRoot: copy.SourceRoot,
+		copySources: slices.Clone(copy.Sources), destination: copy.Destination,
+		recursive: copy.Recursive, policy: copy.Policy,
+	})
+}
+
 func (worker *Worker) CreateDirectory(remotePath string) bool {
 	return worker.enqueue(request{operation: OperationCreateDirectory, remote: remotePath})
 }
@@ -506,8 +550,11 @@ func (worker *Worker) enqueueTransfer(next request) (uint64, bool) {
 	worker.nextID++
 	next.id = worker.nextID
 	source, destination := next.remote, next.local
-	if next.operation == OperationUpload {
+	switch next.operation {
+	case OperationUpload:
 		source, destination = next.local, next.remote
+	case OperationRemoteCopy:
+		source, destination = next.copyRoot, next.destination
 	}
 	worker.transfers = append(worker.transfers, transferRecord{
 		request: next,
@@ -821,13 +868,20 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 			others++
 		}
 	}
+	// A remote copy reads from another server: closing that subsystem is what
+	// ends a read waiting on the network.
+	source := worker.takeSourceLocked(id)
 	worker.wakeLocked()
 	worker.mu.Unlock()
-	if active && others == 0 && record.request.operation != OperationUpload {
+	if source != nil {
+		_ = source.Close()
+	}
+	if active && others == 0 && record.request.operation != OperationUpload && record.request.operation != OperationRemoteCopy {
 		// Nothing else is using the subsystem, and a read that is waiting on the
 		// network only ends when it goes. An upload is given a moment to stop on
 		// its own first, because the subsystem is also what removes its partial
-		// file (see uploadPipelined).
+		// file (see uploadPipelined). A remote copy needs the same moment, for the
+		// same partial file, on its destination side.
 		if client := worker.invalidate(); client != nil {
 			_ = client.Close()
 		}
@@ -839,6 +893,7 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 // Cancel interrupts everything under way and discards the current subsystem.
 func (worker *Worker) Cancel() {
 	worker.mu.Lock()
+	var sources []io.Closer
 	for index := range worker.transfers {
 		record := &worker.transfers[index]
 		if record.active && record.snapshot.State != TransferCanceled {
@@ -849,9 +904,16 @@ func (worker *Worker) Cancel() {
 			record.snapshot.BytesPerSecond, record.rate = 0, 0
 			record.paused = false
 		}
+		if record.source != nil {
+			sources = append(sources, record.source)
+			record.source = nil
+		}
 	}
 	worker.wakeLocked()
 	worker.mu.Unlock()
+	for _, source := range sources {
+		_ = source.Close()
+	}
 	if client := worker.invalidate(); client != nil {
 		_ = client.Close()
 	}
@@ -1064,6 +1126,9 @@ func (worker *Worker) execute(next request) Result {
 		result.Files, result.Bytes, result.Resumed, result.Err = worker.download(client, next, generation)
 	case OperationUpload:
 		result.Files, result.Bytes, result.Resumed, result.Err = worker.upload(client, next, generation)
+	case OperationRemoteCopy:
+		result.Files, result.Bytes, result.Resumed, result.Err = worker.remoteCopy(client, next, generation)
+		result.Path = next.destination
 	case OperationCreateDirectory:
 		if next.recursive {
 			result.Err = createDirectories(client, next.remote)
@@ -1438,6 +1503,14 @@ func scanLocal(localPath string, recursive bool) (os.FileInfo, int, int64, error
 }
 
 func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath string, sourceInfo os.FileInfo, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore int64) (written, resumed int64, err error) {
+	return worker.uploadStream(client, func() (io.ReadCloser, error) { return os.Open(localPath) }, sourceInfo, remotePath, policy, generation, transferID, filesDone, bytesBefore)
+}
+
+// uploadStream writes sourceInfo's content into remotePath through a staged
+// partial file, as uploadFile does for a local file. openSource runs once the
+// destination rules are settled, so a conflict costs no read; a remote copy
+// passes the source server's file handle here.
+func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.ReadCloser, error), sourceInfo os.FileInfo, remotePath string, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore int64) (written, resumed int64, err error) {
 	finalInfo, finalExists, err := remoteLstat(client, remotePath)
 	if err != nil {
 		return 0, 0, err
@@ -1466,7 +1539,7 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 	if partialExists && (partialInfo.IsDir() || partialInfo.Mode()&os.ModeSymlink != 0) {
 		return 0, 0, fmt.Errorf("%w: %s", ErrSymbolicLink, partial)
 	}
-	source, err := os.Open(localPath)
+	source, err := openSource()
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1573,6 +1646,168 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 		return written, resumed, err
 	}
 	return written, resumed, nil
+}
+
+// plannedFileInfo is the metadata a remote copy's plan carries for one source
+// file, in the shape uploadStream asks for.
+type plannedFileInfo struct {
+	name    string
+	size    int64
+	mode    os.FileMode
+	modTime time.Time
+}
+
+func (info plannedFileInfo) Name() string       { return info.name }
+func (info plannedFileInfo) Size() int64        { return info.size }
+func (info plannedFileInfo) Mode() os.FileMode  { return info.mode }
+func (info plannedFileInfo) ModTime() time.Time { return info.modTime }
+func (info plannedFileInfo) IsDir() bool        { return info.mode.IsDir() }
+func (info plannedFileInfo) Sys() any           { return nil }
+
+// closeOnce keeps a remote copy's source from being closed twice: a cancel and
+// the transfer's own cleanup both end it.
+type closeOnce struct{ close func() error }
+
+func (source closeOnce) Close() error { return source.close() }
+
+// remoteCopy reads each source from the source server's subsystem and writes it
+// into the destination folder of this worker's server. The source is opened
+// once per attempt; a cancel closes it so a read waiting on the network ends.
+func (worker *Worker) remoteCopy(destination Remote, next request, generation uint64) (files int, bytes, resumed int64, err error) {
+	client, ok := destination.(transferRemote)
+	if !ok || IsSCP(destination) {
+		return 0, 0, 0, fmt.Errorf("sftp: server-to-server copy requires SFTP on both servers")
+	}
+	if next.copySource == nil || len(next.copySources) == 0 || next.destination == "" {
+		return 0, 0, 0, fmt.Errorf("sftp: server-to-server copy requires a source and a destination")
+	}
+	source, err := next.copySource()
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	tracked := closeOnce{close: sync.OnceValue(source.Close)}
+	if !worker.holdSource(next.id, tracked) {
+		_ = tracked.Close()
+		return 0, 0, 0, ErrCanceled
+	}
+	defer func() {
+		worker.releaseSource(next.id)
+		err = errors.Join(err, tracked.Close())
+	}()
+	remoteSource, ok := source.(transferRemote)
+	if !ok || IsSCP(source) {
+		return 0, 0, 0, fmt.Errorf("sftp: server-to-server copy requires SFTP on both servers")
+	}
+	type copyPlan struct {
+		root  string
+		items []remotePlanItem
+	}
+	plans := make([]copyPlan, 0, len(next.copySources))
+	var totalBytes int64
+	var totalFiles, totalItems int
+	for _, root := range next.copySources {
+		items, size, err := scanRemote(remoteSource, root, next.recursive)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		totalItems += len(items)
+		if totalItems > maxTransferItems {
+			return 0, 0, 0, fmt.Errorf("sftp: transfer exceeds %d items", maxTransferItems)
+		}
+		for _, item := range items {
+			if !item.directory {
+				totalFiles++
+			}
+		}
+		totalBytes += size
+		plans = append(plans, copyPlan{root: root, items: items})
+	}
+	worker.setTotals(next.id, totalFiles, totalBytes)
+	for _, plan := range plans {
+		// A name a server made up must not move the target out of the folder
+		// the user chose.
+		name := path.Base(plan.root)
+		if !safeRemoteName(name) {
+			return files, bytes, resumed, fmt.Errorf("%w: %q", ErrPathTraversal, name)
+		}
+		target := path.Join(next.destination, name)
+		if plan.items[0].directory {
+			if err := ensureRemoteRoot(client, target, next.policy); err != nil {
+				return files, bytes, resumed, err
+			}
+		}
+		for _, item := range plan.items {
+			if worker.stopped(generation, next.id) {
+				return files, bytes, resumed, ErrCanceled
+			}
+			targetPath, err := joinRemoteWithin(target, item.relative)
+			if err != nil {
+				return files, bytes, resumed, err
+			}
+			if item.directory {
+				if item.relative != "." {
+					if err := ensureRemoteDirectory(client, targetPath); err != nil {
+						return files, bytes, resumed, err
+					}
+				}
+				continue
+			}
+			sourcePath := item.remote
+			open := func() (io.ReadCloser, error) {
+				return remoteSource.OpenTransferFile(sourcePath, os.O_RDONLY)
+			}
+			info := plannedFileInfo{name: path.Base(sourcePath), size: item.size, mode: item.mode, modTime: item.modTime}
+			written, continued, copyErr := worker.uploadStream(client, open, info, targetPath, next.policy, generation, next.id, files, bytes)
+			bytes += written
+			resumed += continued
+			if copyErr != nil {
+				if worker.canceledByUser(next.id) {
+					copyErr = ErrCanceled
+				}
+				return files, bytes, resumed, copyErr
+			}
+			files++
+			worker.setProgress(next.id, files, bytes, resumed)
+		}
+	}
+	if worker.stopped(generation, next.id) {
+		return files, bytes, resumed, ErrCanceled
+	}
+	return files, bytes, resumed, nil
+}
+
+// holdSource puts a remote copy's live source where a cancel can close it. It
+// reports false when the transfer was already given up, so no read starts.
+func (worker *Worker) holdSource(id uint64, source io.Closer) bool {
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+	record := worker.transferLocked(id)
+	if record == nil || record.settled || record.snapshot.State == TransferCanceled || worker.closedLocked() {
+		return false
+	}
+	record.source = source
+	return true
+}
+
+// releaseSource forgets the source of a remote copy that is finishing itself.
+func (worker *Worker) releaseSource(id uint64) {
+	worker.mu.Lock()
+	if record := worker.transferLocked(id); record != nil {
+		record.source = nil
+	}
+	worker.mu.Unlock()
+}
+
+// takeSourceLocked removes and returns the live source of transfer id. The
+// caller closes it outside the lock.
+func (worker *Worker) takeSourceLocked(id uint64) io.Closer {
+	record := worker.transferLocked(id)
+	if record == nil {
+		return nil
+	}
+	source := record.source
+	record.source = nil
+	return source
 }
 
 // settleCanceled runs the requests that tidy up after a canceled transfer, and

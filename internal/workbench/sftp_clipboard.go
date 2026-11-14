@@ -11,20 +11,79 @@ import (
 	"motty/internal/sftpclient"
 )
 
-// sftpClipboard is the server files a panel copied. A server path cannot name a
-// file on the system clipboard, so the panel keeps the rows itself and pastes
-// them into its local side. Copying local files clears it: a paste follows the
-// copy the user made last, and the system clipboard then holds those files.
+// sftpClipboard is the server files the user copied, from any server. A server
+// path cannot name a file on the system clipboard, so the workbench keeps the
+// rows itself. open is captured at copy time, so a paste can still name the
+// server after its window moved; view is only compared, and read for a worker
+// that may still be alive, never used to open the files. Copying local files
+// clears it: a paste follows the copy the user made last.
 type sftpClipboard struct {
+	view      *sftpView
 	sourceDir string
+	server    string
+	address   string
+	open      func() (sftpclient.Remote, error)
 	entries   []sftpclient.Entry
+}
+
+func (clip sftpClipboard) empty() bool { return len(clip.entries) == 0 }
+
+// remoteCopySource is where a batch of server-to-server copies reads from. view
+// is nil when the clipboard outlived its window.
+type remoteCopySource struct {
+	view    *sftpView
+	open    func() (sftpclient.Remote, error)
+	server  string
+	address string
+}
+
+func copySourceFromView(view *sftpView) remoteCopySource {
+	if view == nil {
+		return remoteCopySource{}
+	}
+	return remoteCopySource{view: view, open: view.openFiles, server: view.transferServer, address: view.transferAddress}
+}
+
+func (clip sftpClipboard) copySource() remoteCopySource {
+	return remoteCopySource{view: clip.view, open: clip.open, server: clip.server, address: clip.address}
+}
+
+// remoteClipboard is the server files the user copied last, shared by every
+// window of the process.
+func (state *State) sftpRemoteClipboard() sftpClipboard {
+	if group := state.options.Group; group != nil {
+		return group.remoteClipboard()
+	}
+	return state.sftpClip
+}
+
+func (state *State) setSFTPRemoteClipboard(clip sftpClipboard) {
+	if group := state.options.Group; group != nil {
+		group.setRemoteClipboard(clip)
+		return
+	}
+	state.sftpClip = clip
+	state.invalidateSFTPWindows()
+}
+
+// clearSFTPRemoteClipboardFrom drops the clipboard when view copied it, so a paste
+// never holds a closed window's files.
+func (state *State) clearSFTPRemoteClipboardFrom(view *sftpView) {
+	if group := state.options.Group; group != nil {
+		group.clearRemoteClipboardFrom(view)
+		return
+	}
+	if state.sftpClip.view == view {
+		state.sftpClip = sftpClipboard{}
+		state.invalidateSFTPWindows()
+	}
 }
 
 // copySFTPSelection copies the active side's selected rows. Local rows go on
 // the system clipboard as files, as a file manager puts them there; server rows
-// stay in the view, since the system clipboard cannot name them. It reports
-// whether the selection could be copied, and the clipboard's error, if any.
-// Search results span folders and are left out until a copy can name them.
+// stay with the workbench, since the system clipboard cannot name them. It
+// reports whether the selection could be copied, and the clipboard's error, if
+// any. Search results span folders and are left out until a copy can name them.
 func (state *State) copySFTPSelection(view *sftpView) (bool, error) {
 	folder := view.active()
 	if folder.searching() {
@@ -40,10 +99,13 @@ func (state *State) copySFTPSelection(view *sftpView) (bool, error) {
 		return false, nil
 	}
 	if !view.local {
-		view.clipboard = sftpClipboard{sourceDir: folder.path, entries: selected}
+		state.setSFTPRemoteClipboard(sftpClipboard{
+			view: view, sourceDir: folder.path, server: view.transferServer, address: view.transferAddress,
+			open: view.openFiles, entries: selected,
+		})
 		return true, nil
 	}
-	view.clipboard = sftpClipboard{}
+	state.setSFTPRemoteClipboard(sftpClipboard{})
 	paths := make([]string, len(selected))
 	for index, entry := range selected {
 		paths[index] = filepath.Join(folder.path, entry.Name)
@@ -66,10 +128,23 @@ func (state *State) sftpClipboardPaths() ([]string, bool) {
 	return paths, true
 }
 
-// pasteSFTPClipboard pastes onto the side the docked panel shows: files the
-// system clipboard holds are uploaded to the server's folder, and files this
-// panel copied from the server are downloaded to the local folder. It reports
-// whether there was anything to paste.
+// pasteRemoteClipboardToLocal queues the clipboard's server files into a local
+// folder, reading from the server they were copied from.
+func (state *State) pasteRemoteClipboardToLocal(clip sftpClipboard, localDir string) bool {
+	if clip.view == nil || clip.view.worker == nil || localDir == "" {
+		return false
+	}
+	for _, entry := range clip.entries {
+		state.queueSFTPDownloadFrom(clip.view, clip.sourceDir, entry, filepath.Join(localDir, safeLocalName(entry.Name)))
+	}
+	return true
+}
+
+// pasteSFTPClipboard pastes onto the side the docked panel shows: server files
+// another panel copied become a server-to-server copy into this server's
+// folder, and files the system clipboard holds are uploaded. On the local side
+// the copied server files are downloaded. It reports whether there was anything
+// to paste.
 func (state *State) pasteSFTPClipboard(view *sftpView) bool {
 	if view.worker == nil || view.busy {
 		return false
@@ -80,15 +155,14 @@ func (state *State) pasteSFTPClipboard(view *sftpView) bool {
 	if folder.searching() || folder.path == "" {
 		return false
 	}
+	clip := state.sftpRemoteClipboard()
 	if view.local {
-		clip := view.clipboard
-		if len(clip.entries) == 0 {
-			return false
+		return state.pasteRemoteClipboardToLocal(clip, folder.path)
+	}
+	if !clip.empty() && clip.open != nil {
+		if queued, _ := state.queueRemoteCopies(view, clip.copySource(), clip.sourceDir, folder.path, clip.entries); queued > 0 {
+			return true
 		}
-		for _, entry := range clip.entries {
-			state.queueSFTPDownloadFrom(view, clip.sourceDir, entry, filepath.Join(folder.path, safeLocalName(entry.Name)))
-		}
-		return true
 	}
 	paths, ok := state.sftpClipboardPaths()
 	if !ok {
@@ -158,23 +232,33 @@ func (state *State) queueSFTPDownloadFrom(view *sftpView, remoteDir string, entr
 	state.refreshSFTPTransfers(view)
 }
 
-// pasteClipboard pastes onto the side the transfer window last worked in: files
-// the system clipboard holds are uploaded to the server's folder, and files this
-// window copied from the server are downloaded to the local folder.
+// pasteClipboard pastes onto the side the transfer window last worked in: server
+// files another window copied become a server-to-server copy, files the system
+// clipboard holds are uploaded, and on the local side the copied server files
+// are downloaded.
 func (w *sftpWindow) pasteClipboard() {
 	view := w.view
+	clip := w.owner.sftpRemoteClipboard()
 	if view.local {
-		clip := view.clipboard
 		target := w.folder(true).path
-		if len(clip.entries) == 0 || target == "" {
+		if clip.empty() || target == "" {
 			return
 		}
-		w.queueEntries(false, clip.entries, clip.sourceDir, target)
+		if w.owner.pasteRemoteClipboardToLocal(clip, target) {
+			w.localRefresh = true
+		}
 		return
 	}
 	target := w.folder(false).path
 	if target == "" {
 		return
+	}
+	if !clip.empty() && clip.open != nil {
+		if queued, _ := w.owner.queueRemoteCopies(view, clip.copySource(), clip.sourceDir, target, clip.entries); queued > 0 {
+			w.notices.show(w.owner.messages.SFTPWindow.Title,
+				fmt.Sprintf(w.owner.messages.SFTPCopiedCountFmt, queued, target), components.ToastSuccess)
+			return
+		}
 	}
 	paths, ok := w.owner.sftpClipboardPaths()
 	if !ok {

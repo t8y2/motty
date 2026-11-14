@@ -186,8 +186,11 @@ func (state *State) declareTransferCard(c ui.C, element ui.Box, entry *transferE
 	pal, m := state.pal, state.messages.Transfers
 	snapshot := entry.snapshot
 	direction, connector := m.Download, m.From
-	if snapshot.Operation == sftpclient.OperationUpload {
+	switch snapshot.Operation {
+	case sftpclient.OperationUpload:
 		direction, connector = m.Upload, m.To
+	case sftpclient.OperationRemoteCopy:
+		direction, connector = m.RemoteCopy, m.To
 	}
 	statusColor := pal.muted
 	switch snapshot.State {

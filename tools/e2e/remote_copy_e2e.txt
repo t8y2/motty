@@ -1,0 +1,49 @@
+# lang: en
+# Two loopback SSH servers, a file copied from A's file panel to B's file panel
+# through Motty's memory. Start two e2esshd instances first:
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && /tmp/e2esshd 2232 &
+#   /tmp/e2esshd 2233 &
+# Write a file named server-copy-demo.txt into the first server's sftp root
+# (printed at startup), then:
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" \
+#     tools/e2e/remote_copy_e2e.txt
+click "Search"
+type tester@127.0.0.1:2232
+click "Connect"
+waitfor "Trust this host" 5000
+click "Connect Once"
+waitfor "Password" 5000
+type secret
+key enter
+settle 2500
+key cmd+shift+s
+waitfor "alpha.txt" 5000
+settle 500
+click "server-copy-demo.txt"
+rightclick "server-copy-demo.txt"
+settle 300
+click "Copy files"
+settle 300
+# The hosts page opens a second connection in a tab of its own.
+click "Hosts"
+settle 600
+click "Search"
+type tester@127.0.0.1:2233
+click "Connect"
+waitfor "Trust this host" 5000
+click "Connect Once"
+waitfor "Password" 5000
+type secret
+key enter
+settle 2500
+key cmd+shift+s
+waitfor "alpha.txt" 5000
+settle 500
+rightclick "alpha.txt"
+settle 300
+click "Paste files"
+waitfor "Remote copy" 5000
+settle 1200
+shot /tmp/motty832-remote-copy.png
+texts

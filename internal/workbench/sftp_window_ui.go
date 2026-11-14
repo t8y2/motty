@@ -261,6 +261,8 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	}
 	if w.drag.active {
 		w.paintDrag(canvas)
+	} else if w.foreign.active {
+		w.paintForeignDrag(canvas)
 	}
 	w.notices.paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
 	if !w.ui.profileHoverOpen {
@@ -895,4 +897,27 @@ func (w *sftpWindow) paintDrag(canvas *gfx.Canvas) {
 		label, glyph = w.owner.messages.SFTPWindow.DropUploadHint, iconUpload
 	}
 	w.owner.paintSFTPTransferDrop(canvas, bounds, label, target, glyph)
+}
+
+// paintForeignDrag paints the pane another window's file drag would land in.
+func (w *sftpWindow) paintForeignDrag(canvas *gfx.Canvas) {
+	side := sideIndex(w.foreign.local)
+	if w.ui.list[side].Width <= 0 {
+		return
+	}
+	bounds := w.ui.list[side]
+	if w.foreign.row >= 0 {
+		bounds.Y += float32(w.foreign.row)*sftpRowHeight - w.ui.offset[side]
+		bounds.Height = sftpRowHeight
+	}
+	label, glyph := w.owner.messages.SFTPWindow.DropUploadHint, uint8(iconUpload)
+	switch {
+	case !w.foreign.fromLocal && w.foreign.local:
+		label, glyph = w.owner.messages.SFTPWindow.DropDownloadHint, iconDownload
+	case !w.foreign.fromLocal && !w.foreign.local:
+		label, glyph = w.owner.messages.SFTPWindow.DropCopyHint, iconCopy
+	}
+	canvas.Clip(w.ui.list[side])
+	defer canvas.Unclip()
+	w.owner.paintSFTPTransferDrop(canvas, bounds, label, w.foreign.target, glyph)
 }

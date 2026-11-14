@@ -1045,6 +1045,8 @@ type Messages struct {
 	SFTPUploadTitle             string
 	SFTPUploadCanceled          string
 	SFTPUploadedFmt             string
+	SFTPCopiedFmt               string
+	SFTPCopiedCountFmt          string
 	SFTPUploadDirectoryTitle    string
 	SFTPDownloadDirectoryTitle  string
 	SFTPTransferQueue           string

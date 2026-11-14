@@ -51,6 +51,7 @@ type transferEntry struct {
 	host                                       *transferHost
 	snapshot                                   sftpclient.TransferSnapshot
 	server, address                            string
+	sourceServer, sourceAddress                string // the other end of a server-to-server copy
 	title, status, amount, speed, clock, paths string
 	removed                                    bool
 	conflict                                   bool
@@ -235,6 +236,11 @@ func (state *State) releaseIdleSFTP(session *Session) {
 			return
 		}
 	}
+	// A copy reading from this view holds its connection without owning a task
+	// on this worker; the last one releases it.
+	if len(view.outgoingCopies) > 0 {
+		return
+	}
 	saved := view.saveHistory()
 	state.closeSFTP(session)
 	session.fileHistory = saved
@@ -256,7 +262,11 @@ func (state *State) syncTransfers(view *sftpView) {
 				view.transferHost = newTransferHost(view.transferServer, view.transferAddress)
 			}
 			center.nextID++
-			center.entries = append(center.entries, transferEntry{id: center.nextID, owner: view, host: view.transferHost, server: view.transferServer, address: view.transferAddress})
+			entry := transferEntry{id: center.nextID, owner: view, host: view.transferHost, server: view.transferServer, address: view.transferAddress}
+			if origin, ok := view.remoteCopies[snapshot.ID]; ok {
+				entry.sourceServer, entry.sourceAddress = origin.server, origin.address
+			}
+			center.entries = append(center.entries, entry)
 			index = len(center.entries) - 1
 			center.byTask[key] = index
 		}
@@ -274,6 +284,9 @@ func (state *State) syncTransfers(view *sftpView) {
 			state.describeTransfer(entry)
 			changed = true
 		}
+		if !transferActive(snapshot) {
+			state.releaseRemoteCopySource(view, snapshot.ID)
+		}
 	}
 	// The worker bounds its own history independently of the global history.
 	for index := range center.entries {
@@ -282,6 +295,7 @@ func (state *State) syncTransfers(view *sftpView) {
 			delete(center.byTask, transferKey{view, entry.snapshot.ID})
 			entry.owner = nil
 			entry.snapshot.Retryable = false
+			state.releaseRemoteCopySource(view, entry.snapshot.ID)
 			changed = true
 		}
 	}
@@ -300,6 +314,7 @@ func (state *State) archiveTransfers(view *sftpView) {
 			entry.owner = nil
 			entry.snapshot.Retryable = false
 			entry.conflict = false
+			state.releaseRemoteCopySource(view, entry.snapshot.ID)
 			state.describeTransfer(entry)
 		}
 	}
@@ -365,7 +380,7 @@ func (state *State) adoptTransfers(entries []transferEntry) {
 func (state *State) describeTransfer(entry *transferEntry) {
 	snapshot, m := entry.snapshot, state.messages.Transfers
 	entry.title = filepath.Base(snapshot.Source)
-	if snapshot.Operation == sftpclient.OperationDownload {
+	if snapshot.Operation == sftpclient.OperationDownload || snapshot.Operation == sftpclient.OperationRemoteCopy {
 		entry.title = path.Base(snapshot.Source)
 	}
 	entry.status = m.Queued
@@ -391,6 +406,9 @@ func (state *State) describeTransfer(entry *transferEntry) {
 	entry.amount = fmt.Sprintf(m.ProgressFmt, formatBytes(snapshot.BytesDone), total)
 	entry.speed = fmt.Sprintf(state.messages.Tools.TransferSpeedFmt, formatBytes(snapshot.BytesPerSecond))
 	entry.paths = snapshot.Source + " → " + snapshot.Destination
+	if snapshot.Operation == sftpclient.OperationRemoteCopy && entry.sourceServer != "" {
+		entry.paths = fmt.Sprintf("%s: %s → %s: %s", entry.sourceServer, snapshot.Source, entry.server, snapshot.Destination)
+	}
 	entry.conflict = entry.owner != nil && transferSnapshotConflict(snapshot)
 	started := snapshot.StartedAt
 	if started.IsZero() {

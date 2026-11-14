@@ -111,6 +111,11 @@ func (w *sftpWindow) releaseConnection() {
 	if !w.closed {
 		return
 	}
+	// A server-to-server copy that started here still reads through this
+	// connection. Its last transfer releases the connection when it settles.
+	if len(w.view.outgoingCopies) > 0 {
+		return
+	}
 	if w.ownsConnection {
 		for _, d := range w.owner.fileWindows.documents {
 			if d.origin == w && !d.local && !d.closed {

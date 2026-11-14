@@ -453,6 +453,7 @@ type windowBar struct {
 
 type barTab struct {
 	badge, light ui.Box
+	box          ui.Box // the tab's place, for a file drag looking for a target
 	pathLabel    string
 	foreground   gfx.Color
 	title        ui.Box
@@ -838,6 +839,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 						}
 						active := state.activeSection == sectionSFTP && state.activeSFTPTab == fileTab.session.ID
 						hovered := c.Canvas().Hovered() == id || c.Canvas().Hovered() == closeID
+						dropped := state.foreignFileTab == fileTab.session.ID
 						foreground := pal.muted
 						fill, edge := pal.tab, pal.line
 						switch {
@@ -852,6 +854,11 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 						fill = tabFill(pal, fill, color, active, hovered)
 						edge = tintHostSurface(edge, color, tabColorBorderTint)
 						foreground = tabInk(pal, color, foreground)
+						if dropped {
+							// A file drag from another window would land in this
+							// tab's server folder.
+							fill, edge, foreground = pal.tabActive, pal.accent, pal.text
+						}
 						entry.background = fill
 						first := float32(0)
 						if state.tabOrientation == tabsVertical {
@@ -862,7 +869,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 							first = -scroll
 						}
 						label := state.sftpFileTabTitle(fileTab)
-						ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
+						entry.box = ui.Row(c).Size(geometry.tabWidth, barTabHeight).Shrink(0).MarginSides(0, barGap, 0, first).
 							HitOutset(barTabReach, 0, barTabReach, 0).PadSides(0, 3, 0, 4).Items(ui.Center).Radius(radius.item).Border(1, edge).Background(fill).
 							HitWith(id, label, gfx.HitOptions{Role: gfx.RoleTab, Selected: active, Hint: label}).Children(func() {
 							entry.badge = ui.Slot(c).Size(20, 20).MarginSides(0, 7, 0, 0)
