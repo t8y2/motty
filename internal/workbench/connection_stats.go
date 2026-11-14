@@ -151,11 +151,24 @@ func (state *State) applyConnectionStats() {
 			}
 			continue
 		}
-		if state.statsKeptByMonitor(session) {
-			continue
-		}
-		state.stopRemoteStats(session)
+		state.stopRemoteStatsIfUnused(session)
 	}
+}
+
+// statsWanted reports whether any surface still needs this session's worker:
+// the terminal bar's setting or the side panel of its workspace.
+func (state *State) statsWanted(session *Session) bool {
+	return state.connectionStatsBarShown(session) || state.statsKeptByMonitor(session)
+}
+
+// stopRemoteStatsIfUnused releases a session's workers only when neither the
+// terminal bar nor the side panel wants them. stopRemoteStats itself stays
+// unconditional for disconnect, close and retries.
+func (state *State) stopRemoteStatsIfUnused(session *Session) {
+	if state.statsWanted(session) {
+		return
+	}
+	state.stopRemoteStats(session)
 }
 
 // statsKeptByMonitor reports whether the side panel still needs this session's
@@ -181,7 +194,7 @@ func (state *State) connectionStatsAddress(session *Session) string {
 // connectionStatsText is the compact reading, or an ellipsis while the first
 // sample is still on its way.
 func (state *State) connectionStatsText(session *Session) string {
-	if session == nil || session.stats == nil || session.stats.state != remoteStatsReady || session.stats.panel.paused {
+	if session == nil || session.stats == nil || session.stats.state != remoteStatsReady {
 		return "…"
 	}
 	latency := ""
