@@ -75,6 +75,9 @@ func (state *State) stopRemoteStats(session *Session) {
 }
 
 func (state *State) pumpRemoteStats(session *Session) {
+	if session.stats == nil && state.connectionStats && state.monitorOffered(session) {
+		state.ensureMonitor(session)
+	}
 	view := session.stats
 	if view == nil {
 		return

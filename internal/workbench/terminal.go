@@ -1566,6 +1566,9 @@ func (state *State) terminalChromeForSession(sessionID uint32) (terminalChrome, 
 	if inSplit || finding {
 		chrome.top = infoBarHeight
 	}
+	if state.connectionStatsBarShown(session) {
+		chrome.top += infoBarHeight
+	}
 	if state.terminalInputNoticeVisibleInWorkspace(session) && (inSplit || !finding) {
 		chrome.top += inputNoticeHeight
 	}

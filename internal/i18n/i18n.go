@@ -363,6 +363,8 @@ type Messages struct {
 	SettingsConnectionReconnectForever     string
 	SettingsShare                          string
 	SettingsShareDescription               string
+	SettingsConnectionStats                string
+	SettingsConnectionStatsDescription     string
 	ConnShareRefusedFmt                    string
 	PasswordSave                           string
 	KeyPassphraseSave                      string
