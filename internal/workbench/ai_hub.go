@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/mcp"
 	"motty/internal/ai/risk"
@@ -40,6 +41,16 @@ type AIHub struct {
 	addr    string
 	token   string
 	mode    gate.Mode
+
+	// The standalone server can edit the note library only with full access.
+	// Once that has been enabled the process watches the configuration
+	// directory so a running window reloads what another process wrote. The
+	// watch is latched: a client started under full access keeps that mode, so
+	// following the setting off could miss its writes.
+	notesExternal    bool
+	notesWatch       *app.DirectoryWatch
+	notesVersion     int64
+	notesVersionSeen bool
 }
 
 type hubWindow struct {
@@ -71,6 +82,7 @@ func (hub *AIHub) Add(state *State, show func()) {
 	addr, token := hub.addr, hub.token
 	hub.mu.Unlock()
 	state.setMCPEndpoint(addr, token)
+	hub.maybeStartNotesWatch()
 }
 
 // Remove stops listing a window.
@@ -95,11 +107,12 @@ func (hub *AIHub) Address() string {
 // Reconfigure reads the settings and starts, restarts or stops the server to
 // match. Call it at startup and whenever an assistant setting changed.
 func (hub *AIHub) Reconfigure() error {
-	enabled, mode, token, port, err := hub.readSettings()
+	enabled, mode, token, port, stdio, err := hub.readSettings()
 	if err != nil {
 		return err
 	}
 	defer hub.publishEndpoint()
+	hub.setExternalNotes(stdio == gate.ModeAllowAll)
 	hub.mu.Lock()
 	running := hub.server != nil
 	same := running && hub.token == token && hub.mode == mode
@@ -117,13 +130,13 @@ func (hub *AIHub) Reconfigure() error {
 
 // readSettings opens the database only if it already exists, so a user who
 // never used the assistant pays nothing.
-func (hub *AIHub) readSettings() (enabled bool, mode gate.Mode, token string, port int, err error) {
+func (hub *AIHub) readSettings() (enabled bool, mode gate.Mode, token string, port int, stdio gate.Mode, err error) {
 	if _, statErr := os.Stat(hub.path); statErr != nil {
-		return false, gate.ModeObserve, "", 0, nil
+		return false, gate.ModeObserve, "", 0, gate.ModeObserve, nil
 	}
 	db, err := store.Open(hub.path)
 	if err != nil {
-		return false, gate.ModeObserve, "", 0, err
+		return false, gate.ModeObserve, "", 0, gate.ModeObserve, err
 	}
 	defer db.Close()
 	read := func(key string) string {
@@ -132,15 +145,16 @@ func (hub *AIHub) readSettings() (enabled bool, mode gate.Mode, token string, po
 	}
 	enabled = read("ai.mcp.enabled") == "on"
 	mode = mcpModeFromSetting(read("ai.mcp.mode"))
+	stdio = mcpModeFromSetting(read(agentModeSetting))
 	port, _ = strconv.Atoi(read("ai.mcp.port"))
 	token = read("ai.mcp.token")
 	if enabled && len(token) < mcp.MinTokenLen {
 		token = mcp.GenerateToken()
 		if err := db.SetSetting("ai.mcp.token", token); err != nil {
-			return false, mode, "", 0, err
+			return false, mode, "", 0, stdio, err
 		}
 	}
-	return enabled, mode, token, port, nil
+	return enabled, mode, token, port, stdio, nil
 }
 
 func mcpModeFromSetting(value string) gate.Mode {
@@ -155,9 +169,11 @@ func mcpModeFromSetting(value string) gate.Mode {
 }
 
 func (hub *AIHub) start(token string, mode gate.Mode, port int) error {
+	catalog := tools.All()
+	catalog = append(catalog, tools.ExternalNotes(mode == gate.ModeAllowAll)...)
 	server, err := mcp.New(mcp.Config{
 		Token: token, Gate: hub.gate, ServerName: "motty", Version: "1",
-		CallTimeout: mcpCallTimeout,
+		CallTimeout: mcpCallTimeout, Tools: catalog,
 	})
 	if err != nil {
 		return err
@@ -204,7 +220,109 @@ func (hub *AIHub) stop() {
 // Close stops the server.
 func (hub *AIHub) Close() {
 	hub.stop()
+	hub.mu.Lock()
+	watch := hub.notesWatch
+	hub.notesWatch = nil
+	hub.mu.Unlock()
+	if watch != nil {
+		watch.Close()
+	}
 	hub.publishEndpoint()
+}
+
+// setExternalNotes turns on the configuration-directory watch once full access
+// to the standalone server has been enabled. It never turns it off: a child
+// started under full access keeps that mode after the setting changes.
+func (hub *AIHub) setExternalNotes(on bool) {
+	if !on {
+		return
+	}
+	hub.mu.Lock()
+	hub.notesExternal = true
+	hub.mu.Unlock()
+	hub.maybeStartNotesWatch()
+}
+
+func (hub *AIHub) maybeStartNotesWatch() {
+	hub.mu.Lock()
+	if !hub.notesExternal || hub.notesWatch != nil || len(hub.windows) == 0 {
+		hub.mu.Unlock()
+		return
+	}
+	statePath := hub.windows[0].state.options.StatePath
+	hub.mu.Unlock()
+	if statePath == "" {
+		return
+	}
+	// Do not hold the hub lock while opening the system watch: a change may
+	// call notesWake from another goroutine as soon as it is registered.
+	watch, err := app.WatchDirectory(filepath.Dir(statePath), hub.notesWake)
+	if err != nil {
+		return
+	}
+	hub.mu.Lock()
+	if hub.notesWatch != nil {
+		hub.mu.Unlock()
+		watch.Close()
+		return
+	}
+	hub.notesWatch = watch
+	hub.mu.Unlock()
+}
+
+// notesWake runs on the directory watch's goroutine. data_version changes only
+// for a commit by another connection, so the app's own writes do not reload
+// anything; a new value means another process (mcp-serve) wrote the library.
+func (hub *AIHub) notesWake() {
+	hub.mu.Lock()
+	state := (*State)(nil)
+	if len(hub.windows) > 0 {
+		state = hub.windows[0].state
+	}
+	hub.mu.Unlock()
+	if state == nil {
+		return
+	}
+	version, err := aiCall(state, context.Background(), func() (int64, error) {
+		if state.config == nil {
+			return 0, errAIClosed
+		}
+		return state.config.DataVersion()
+	})
+	if err != nil {
+		return
+	}
+	hub.mu.Lock()
+	// The first event after the watch opened is not compared with a baseline:
+	// a writer may already have committed between opening the watch and reading
+	// the first version. Reloading once is harmless; missing a write is not.
+	changed := !hub.notesVersionSeen || version != hub.notesVersion
+	hub.notesVersion, hub.notesVersionSeen = version, true
+	hub.mu.Unlock()
+	if changed {
+		hub.reloadWindows()
+	}
+}
+
+// reloadWindows applies the store's records to every window. It posts to each
+// window's inbox because settings and drafts belong to the event-loop thread.
+func (hub *AIHub) reloadWindows() {
+	hub.mu.Lock()
+	windows := append([]*hubWindow(nil), hub.windows...)
+	hub.mu.Unlock()
+	for _, window := range windows {
+		window.state.aiPost(func(s *State) {
+			if s.config == nil || s.callbacksClosed.Load() {
+				return
+			}
+			if err := s.reloadSettings(); err != nil {
+				if s.options.Log != nil {
+					fmt.Fprintf(s.options.Log, "settings reload: %v\n", err)
+				}
+			}
+			s.invalidateWindow()
+		})
+	}
 }
 
 func (hub *AIHub) publishEndpoint() {
@@ -224,11 +342,13 @@ func (hub *AIHub) gate() gate.Gate {
 	mode := hub.mode
 	hub.mu.Unlock()
 	return gate.Gate{
-		Backend:  hubBackend{hub},
-		Outputs:  &hub.outputs,
-		Policy:   risk.Policy{Enabled: true, AutoUpTo: risk.Low},
-		Mode:     mode,
-		Approver: hub.approve,
+		Backend:              hubBackend{hub},
+		Outputs:              &hub.outputs,
+		Policy:               risk.Policy{Enabled: true, AutoUpTo: risk.Low},
+		Mode:                 mode,
+		Approver:             hub.approve,
+		NotesEnabled:         true,
+		NotesWriteFullAccess: true,
 	}
 }
 
@@ -351,6 +471,59 @@ func (b hubBackend) Hosts(ctx context.Context) ([]gate.HostInfo, error) {
 		}
 	}
 	return hosts, nil
+}
+
+// QueryNote and EditNote serve the note library through one of the windows, so
+// an open editor's drafts and conflicts are respected. Notes are library-wide;
+// the window only decides which thread performs the call.
+func (b hubBackend) QueryNote(ctx context.Context, a tools.NoteQueryArgs) (string, error) {
+	window, _, err := b.hub.resolve(ctx, "")
+	if err != nil {
+		return "", err
+	}
+	return aiCall(window.state, ctx, func() (string, error) { return window.state.aiQueryNote(a) })
+}
+
+func (b hubBackend) EditNote(ctx context.Context, a tools.NoteEditArgs) (string, error) {
+	window, _, err := b.hub.resolve(ctx, "")
+	if err != nil {
+		return "", err
+	}
+	var label string
+	value, callErr := aiCall(window.state, ctx, func() (string, error) {
+		label = window.state.noteText("Notes", "笔记")
+		return window.state.aiEditNote(a)
+	})
+	b.hub.auditNoteEdit(a, label, callErr)
+	return value, callErr
+}
+
+// auditNoteEdit records an external edit in the same activity log the
+// standalone server uses; the note body is never part of the summary.
+func (hub *AIHub) auditNoteEdit(a tools.NoteEditArgs, label string, err error) {
+	db, openErr := store.Open(hub.path)
+	if openErr != nil {
+		return
+	}
+	defer db.Close()
+	outcome := store.AuditOK
+	if err != nil {
+		outcome = store.AuditFailed
+	}
+	summary := a.Action
+	if a.ID != "" {
+		summary += " " + a.ID
+	}
+	if a.Title != nil {
+		summary += " " + *a.Title
+	}
+	if a.Name != nil {
+		summary += " " + *a.Name
+	}
+	if label == "" {
+		label = "notes"
+	}
+	_ = db.RecordAudit(store.AuditEntry{Tool: tools.NameNoteEdit, HostLabel: label, Summary: summary, Outcome: outcome})
 }
 
 // target resolves a handle to a window's backend and the local handle.

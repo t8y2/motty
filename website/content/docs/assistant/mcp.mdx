@@ -57,8 +57,21 @@ authorized saved hosts.
 | `sftp_list`, `sftp_read` | List and read remote files. |
 | `sftp_write`, `sftp_remove` | Change remote files. |
 | `rzsz_upload`, `rzsz_download` | Upload or download one file through the visible terminal with `rz` / `sz` (ZMODEM). Desktop HTTP MCP only. |
+| `note_query` | Search and read the local note library, and list its tags, folders, hosts and host groups. |
+| `note_edit` | Create, update and replace notes and manage ordinary folders. Allow all only. |
 
-In Observe mode only the read tools are available.
+In Observe mode only the read tools are available. The note tools act on this
+computer's note library, not remote files: `note_query` is offered in Observe, Ask
+and Allow all, and `note_edit` only with Allow all, because Ask mode has no approval
+path for a local write. Note bodies are the user's data; enabling MCP at an access
+level allows the agent to read them. Edits are versioned: a note changed by another
+window or process after the agent read it returns `version_conflict` and is not
+overwritten. A note linked to a Markdown file also writes that file after the
+library commit; a file changed by another program returns `file_conflict`, keeps its
+disk text to be read, and is never silently overwritten. The external tools expose
+no whole-note deletion, host/group editing, file or directory linking, or moving a
+note into a linked folder. Unsaved drafts are not visible to the agent; if the agent
+and a window edit the same note, the window keeps its draft as a conflict copy.
 
 A jump host configured on the host does not block SFTP: `sftp_upload` on the headless
 server follows that SSH connection to the final host. `rzsz_upload` and `rzsz_download`
@@ -146,7 +159,7 @@ host that syncs in from another device starts closed.
 
 | | |
 | --- | --- |
-| Tools | Depending on the access level: `list_sessions` (authorized saved hosts), `terminal_exec`, `terminal_exec_many`, `sftp_list`, `sftp_read`. Allow all also offers `sftp_write` and `sftp_remove`. There is no terminal screen to read. |
+| Tools | Depending on the access level: `list_sessions` (authorized saved hosts), `terminal_exec`, `terminal_exec_many`, `sftp_list`, `sftp_read`, `note_query`. Allow all also offers `sftp_write`, `sftp_remove` and `note_edit`. There is no terminal screen to read. |
 | Commands | Run through an SSH exec channel: no terminal, and nothing carries over from one call to the next. |
 | Read only | The default. **Commands** lets agents run commands rated low risk. Anything that would need your approval is refused, because nobody is there to ask. |
 | Allow all | Saved and selected only after risk confirmation. Runs commands of any risk level and writes or deletes files on authorized hosts without approval. Configured separately from HTTP; applies the next time the client starts the service. |
@@ -159,6 +172,30 @@ If the audit log cannot be opened, nothing is served.
 The independent service also keeps a full-access warning visible. Restart it
 through the client after changing access: a running child retains the level it
 started with. HTTP changes apply immediately to new calls.
+
+### The note library
+
+`mcp-serve` reads `config.db` under `--data-dir` directly and writes edits through
+the same version checks, without starting synchronization, watches or background
+work. `note_query` is offered in Observe and **Commands**; `note_edit` needs
+**Allow all**.
+
+- Each edit commits against the records read for that call. A window or another
+  MCP process writing at the same time makes it return `version_conflict`; the
+  agent rereads and nothing is overwritten.
+- A note linked to a Markdown file keeps the in-app policy: atomic replace and a
+  baseline check. A file changed by another program returns `file_conflict` and
+  keeps its disk text; it is never silently overwritten.
+- No whole-note deletion, host/group editing, file or directory linking, or
+  management of linked folders is exposed.
+- Every `note_query` / `note_edit` is written to the activity log; the summary
+  carries the action, title or ID, never the body.
+
+While the application is open, notes written by the independent service are read
+after the data directory changes: once full access has been enabled, the app
+watches that directory and uses SQLite `data_version` to confirm the commit came
+from another connection, then reloads each window's notes. An unsaved draft of
+the same note in a window is kept as a conflict copy.
 
 ### Independent-service file tools
 
@@ -237,5 +274,5 @@ retry. Queueing and completion are audited without file contents; if the initial
 audit cannot be written the transfer is not started.
 
 This implements the file/task and single-command portions of issue #133. Separate
-sudo authorization, host/group edits, snippets and notes management are not yet
+sudo authorization, host/group edits and snippets are not yet
 offered; the authorized-host boundary is unchanged.

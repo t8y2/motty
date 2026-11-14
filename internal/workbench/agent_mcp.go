@@ -30,10 +30,12 @@ import (
 
 // This file is the MCP server that runs without a window: `motty mcp-serve`.
 // An MCP client starts it as a child process and talks to it over stdio. It
-// reads what the application saved (the hosts, the vault, the trusted host keys)
-// and works on the hosts the user opened to agents, over connections of its own.
-// It never writes to the application's files except the audit log, never asks a
-// person anything, and ends with its client.
+// reads what the application saved (the hosts, the vault, the trusted host keys,
+// the note library) and works on the hosts the user opened to agents, over
+// connections of its own. It never writes the application's files except the
+// audit log and, under full access, the note records and the Markdown files the
+// user already linked as notes. It never asks a person anything, and ends with
+// its client.
 
 const (
 	// agentModeSetting is the stdio access level in ai.db: observe, ask, or
@@ -132,11 +134,12 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 	}
 	// Only the separately confirmed full-access mode skips approvals. In other
 	// modes nothing can approve a call, so policy requests remain refusals.
-	agentGate := gate.Gate{Backend: backend, Policy: risk.Policy{Enabled: true, AutoUpTo: risk.Low}, Mode: mode}
+	agentGate := gate.Gate{Backend: backend, Policy: risk.Policy{Enabled: true, AutoUpTo: risk.Low}, Mode: mode, NotesEnabled: true, NotesWriteFullAccess: true}
 	instructions := "Tools to work on the saved hosts the user opened to you in Motty. Call list_hosts or list_sessions to get a host id. " +
-		"A host connects when you first use it. Commands run without a terminal and keep no state between calls. "
+		"A host connects when you first use it. Commands run without a terminal and keep no state between calls. " +
+		"note_query searches the user's local note library; note_edit changes it and is offered only with full access."
 	if mode == gate.ModeAllowAll {
-		instructions += "The user enabled full access for these hosts. Commands and file changes run without approval."
+		instructions += "The user enabled full access for these hosts. Commands and file changes run without approval. Note edits also write the Markdown file a linked note points to."
 		if len(backend.transferRoots) == 0 {
 			instructions += " File transfer tools (sftp_upload, sftp_download, transfer_cancel) are off: start the server with --transfer-root <local directory> to offer them."
 		}
@@ -144,7 +147,13 @@ func ServeAgentMCP(ctx context.Context, in io.Reader, out io.Writer, options Age
 		instructions += "Nobody can approve anything here, so a call that would need approval is refused."
 	}
 	return mcp.ServeStdio(ctx, in, out, mcp.Config{
-		Tools:        tools.Headless(mode != gate.ModeObserve, mode == gate.ModeAllowAll, len(backend.transferRoots) > 0),
+		Tools: tools.Headless(tools.HeadlessOptions{
+			Commands:   mode != gate.ModeObserve,
+			WriteFiles: mode == gate.ModeAllowAll,
+			LocalFiles: len(backend.transferRoots) > 0,
+			Notes:      true,
+			NoteWrites: mode == gate.ModeAllowAll,
+		}),
 		Dispatch:     backend.audited(agentGate, log),
 		ServerName:   "motty",
 		Version:      "1",
@@ -193,6 +202,7 @@ type agentBackend struct {
 	transferRoots     []agentTransferRoot
 	transferRootError error
 	auditLog          *store.Store
+	notes             *headlessNotes
 }
 
 var _ gate.Backend = (*agentBackend)(nil)
@@ -210,6 +220,7 @@ func newAgentBackend(catalog hostCatalog, options AgentOptions) *agentBackend {
 		transferPrefix:    rand.Text(),
 		transferRoots:     roots,
 		transferRootError: rootError,
+		notes:             newHeadlessNotes(options.StatePath),
 	}
 }
 
@@ -236,6 +247,7 @@ func (b *agentBackend) Close() {
 	b.mu.Unlock()
 	b.transferCancel()
 	b.transferGroup.Wait()
+	b.notes.Close()
 	for _, entry := range entries {
 		entry.mu.Lock()
 		entry.stopIdle()
@@ -661,12 +673,24 @@ func explainAgentDial(host Host, status sshconn.Status) error {
 	return fmt.Errorf("%s: the connection closed", host.Label)
 }
 
+// QueryNote and EditNote serve the saved note library without a window. They
+// never connect to a host or start synchronization; an edit is a compare-and-
+// swap against the records another process may have changed.
+func (b *agentBackend) QueryNote(ctx context.Context, a tools.NoteQueryArgs) (string, error) {
+	return b.notes.Query(a)
+}
+
+func (b *agentBackend) EditNote(ctx context.Context, a tools.NoteEditArgs) (string, error) {
+	return b.notes.Edit(a)
+}
+
 // audited wraps the gate so that every call, refused ones too, leaves a line in
 // the audit log: when, which host, which tool, the command or path, and how it
 // ended. Never the output.
 func (b *agentBackend) audited(agentGate gate.Gate, log *store.Store) func(context.Context, string, []byte) gate.Result {
 	return func(ctx context.Context, name string, raw []byte) gate.Result {
 		result := agentGate.Run(ctx, name, raw)
+		isNote := name == tools.NameNoteQuery || name == tools.NameNoteEdit
 		var call struct {
 			Session    string   `json:"session"`
 			Sessions   []string `json:"sessions"`
@@ -695,7 +719,7 @@ func (b *agentBackend) audited(agentGate gate.Gate, log *store.Store) func(conte
 				hostIDs, labels = append(hostIDs, id), append(labels, id)
 			}
 		}
-		if len(ids) == 0 && name != tools.NameListSessions && name != tools.NameListHosts {
+		if len(ids) == 0 && !isNote && name != tools.NameListSessions && name != tools.NameListHosts {
 			if host, err := b.resolve(""); err == nil { // the only host there is
 				hostIDs, labels = []string{host.CatalogID}, []string{host.Label}
 			}
@@ -720,10 +744,50 @@ func (b *agentBackend) audited(agentGate gate.Gate, log *store.Store) func(conte
 		if call.TransferID != "" {
 			summary = "transfer " + call.TransferID
 		}
+		if isNote {
+			hostIDs, labels = nil, []string{"notes"}
+			summary = noteAuditSummary(name, raw)
+		}
 		_ = log.RecordAudit(store.AuditEntry{
 			HostID: strings.Join(hostIDs, ","), HostLabel: strings.Join(labels, ", "),
 			Tool: name, Summary: summary, Outcome: outcome,
 		})
 		return result
 	}
+}
+
+// noteAuditSummary names what a note call was about, never its body.
+func noteAuditSummary(name string, raw []byte) string {
+	switch name {
+	case tools.NameNoteQuery:
+		a, err := tools.DecodeNoteQuery(raw)
+		if err != nil {
+			return ""
+		}
+		parts := []string{a.Action}
+		if a.ID != "" {
+			parts = append(parts, a.ID)
+		}
+		if a.Query != "" {
+			parts = append(parts, a.Query)
+		}
+		return strings.Join(parts, " ")
+	case tools.NameNoteEdit:
+		a, err := tools.DecodeNoteEdit(raw)
+		if err != nil {
+			return ""
+		}
+		parts := []string{a.Action}
+		if a.ID != "" {
+			parts = append(parts, a.ID)
+		}
+		if a.Title != nil {
+			parts = append(parts, *a.Title)
+		}
+		if a.Name != nil {
+			parts = append(parts, *a.Name)
+		}
+		return strings.Join(parts, " ")
+	}
+	return ""
 }

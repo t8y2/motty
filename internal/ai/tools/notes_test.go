@@ -2,10 +2,10 @@ package tools
 
 import "testing"
 
-func TestNoteToolsStayOutOfExternalCatalog(t *testing.T) {
+func TestNoteToolsByCatalog(t *testing.T) {
 	for _, spec := range All() {
 		if spec.Name == NameNoteQuery || spec.Name == NameNoteEdit {
-			t.Fatal("notes leaked into MCP catalog")
+			t.Fatal("notes leaked into the window catalog")
 		}
 	}
 	found := 0
@@ -17,11 +17,48 @@ func TestNoteToolsStayOutOfExternalCatalog(t *testing.T) {
 	if found != 2 {
 		t.Fatal("in-app catalog missing notes")
 	}
+	read := ExternalNotes(false)
+	if len(read) != 1 || read[0].Name != NameNoteQuery || read[0].Kind != Read {
+		t.Fatalf("external read-only notes = %+v", read)
+	}
+	full := ExternalNotes(true)
+	if len(full) != 2 || full[1].Name != NameNoteEdit || full[1].Kind != NoteWrite {
+		t.Fatalf("external writable notes = %+v", full)
+	}
+	headless := Headless(HeadlessOptions{Notes: true})
+	if !hasTool(headless, NameNoteQuery) || hasTool(headless, NameNoteEdit) {
+		t.Fatalf("headless read-only notes = %v", toolNames(headless))
+	}
+	headless = Headless(HeadlessOptions{Notes: true, NoteWrites: true})
+	if !hasTool(headless, NameNoteEdit) {
+		t.Fatalf("full-access headless notes = %v", toolNames(headless))
+	}
+	if hasTool(Headless(HeadlessOptions{NoteWrites: true}), NameNoteQuery) {
+		t.Fatal("note_edit was offered without note_query")
+	}
+}
+
+func hasTool(specs []Spec, name string) bool {
+	for _, spec := range specs {
+		if spec.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func toolNames(specs []Spec) []string {
+	names := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		names = append(names, spec.Name)
+	}
+	return names
 }
 
 func TestNoteQueryActionParameters(t *testing.T) {
 	for _, raw := range []string{
 		`{"action":"search","references":[{"kind":"note","id":"n","title":"old","token":"note:old"}]}`,
+		`{"action":"search","references":[{"kind":"note","id":"n","title":"n"}]}`,
 		`{"action":"search","references":[]}`, `{"action":"read","id":"n","offset":1,"expected_version":"v"}`,
 		`{"action":"tags","query":"Docker"}`, `{"action":"folders"}`, `{"action":"hosts"}`, `{"action":"host_groups"}`,
 	} {
@@ -35,7 +72,6 @@ func TestNoteQueryActionParameters(t *testing.T) {
 		`{"action":"search","references":[{"kind":"host","title":"alias"}]}`,
 		`{"action":"search","references":[{"kind":"host_group","title":""}]}`,
 		`{"action":"search","references":[{"kind":"other"}]}`, `{"action":"search","limit":51}`, `{"action":"search","limit":0}`, `{"action":"read","id":"n","max_chars":0}`,
-		`{"action":"search","references":[{"kind":"note","id":"n","title":"n"}]}`,
 		`{"action":"search","references":[{"kind":"tag","title":null,"token":"t"}]}`,
 		`{"action":"search","references":[{"kind":"tag","title":"a","extra":true}]}`,
 	} {

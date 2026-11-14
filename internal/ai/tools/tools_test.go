@@ -247,9 +247,15 @@ func TestEscalationToolIsAskOnlyAndDecodes(t *testing.T) {
 func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 	names := func(commands bool) []string {
 		var names []string
-		for _, spec := range Headless(commands, false, false) {
+		for _, spec := range Headless(HeadlessOptions{Commands: commands}) {
 			names = append(names, spec.Name)
-			if len(spec.Description) == 0 || len(spec.Description) > 400 {
+			limit := 400
+			if spec.Name == NameNoteQuery || spec.Name == NameNoteEdit {
+				// The note tools explain versioning and linked files in one
+				// paragraph; the other headless tools do not need that room.
+				limit = 800
+			}
+			if len(spec.Description) == 0 || len(spec.Description) > limit {
 				t.Errorf("%s: description length %d", spec.Name, len(spec.Description))
 			}
 			if !json.Valid(spec.Schema) {
@@ -281,7 +287,7 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 }
 
 func TestHeadlessFullAccessAddsFileChangesWithoutInventingATerminal(t *testing.T) {
-	full := Headless(true, true, false)
+	full := Headless(HeadlessOptions{Commands: true, WriteFiles: true})
 	// Dropped from the window catalog: terminal_read, tool_output_read, the three
 	// job tools, and the three rz/sz tools. Three host metadata tools are added.
 	if len(full) != len(All())-8+3 {

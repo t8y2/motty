@@ -112,13 +112,19 @@ const (
 
 // Gate decides and runs tool calls.
 type Gate struct {
-	// NotesEnabled is set only by the in-app Agent, never external MCP.
+	// NotesEnabled makes the note tools reachable through a backend that
+	// implements NotesBackend: the in-app agent and the external servers that
+	// offer the library.
 	NotesEnabled bool
-	Backend      Backend
-	Policy       risk.Policy
-	Mode         Mode
-	Approver     Approver // nil means nothing that needs approval can run
-	Outputs      *OutputStore
+	// NotesWriteFullAccess refuses note_edit outside ModeAllowAll. The external
+	// doors set it; the in-app agent leaves it false because its edits follow
+	// the user's explicit request, not the MCP access level.
+	NotesWriteFullAccess bool
+	Backend              Backend
+	Policy               risk.Policy
+	Mode                 Mode
+	Approver             Approver // nil means nothing that needs approval can run
+	Outputs              *OutputStore
 	// Target is an in-app request's immutable default. References contains only
 	// sessions explicitly mentioned in this question. Nil Target retains the
 	// external MCP contract; references never change the default.

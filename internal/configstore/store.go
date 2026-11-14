@@ -199,7 +199,7 @@ func Open(path string, format int) (*Store, error) {
 	}
 	file.Close()
 
-	db, err := sql.Open("sqlite", dsnPath(path)+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(DELETE)&_pragma=secure_delete(1)")
+	db, err := sql.Open("sqlite", dsnPath(path)+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(DELETE)&_pragma=secure_delete(1)&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("config store: open: %w", err)
 	}
@@ -426,6 +426,20 @@ func (s *Store) Close() error {
 		delete(registry.stores, s.shared)
 	}
 	return s.db.Close()
+}
+
+// DataVersion reports SQLite's data_version: it changes when another
+// connection commits, including a connection in another process, and does not
+// change for commits by this store's own connection. A second writer (the
+// headless note server) is detected with it instead of polling the file.
+func (s *Store) DataVersion() (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var version int64
+	if err := s.db.QueryRowContext(context.Background(), `PRAGMA data_version`).Scan(&version); err != nil {
+		return 0, fmt.Errorf("config store: data version: %w", err)
+	}
+	return version, nil
 }
 
 // Device is the id this store puts into the stamps it issues.

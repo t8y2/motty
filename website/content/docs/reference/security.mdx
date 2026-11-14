@@ -10,6 +10,9 @@ description: What Motty protects, what it does not, and how to report a problem.
 - AI provider keys are in the vault. Terminal context is redacted by default, and
   agent commands pass through the approval gate.
 - The MCP server is off by default, loopback-only and bearer-token protected.
+- MCP clients can read the local note library at the access level you chose;
+  **Allow all** also lets them edit notes and write Markdown files already linked
+  as notes.
 - RDP certificates are pinned only after an explicit trust decision.
 - Motty has no analytics. The optional update check contacts GitHub Releases and is
   off by default.

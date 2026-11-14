@@ -63,22 +63,7 @@ func noteReferenceAllowsSlash(word string) bool {
 	return false
 }
 func (s *State) noteFolderReferencePath(id string) (string, bool) {
-	parts := []string{}
-	seen := map[string]bool{}
-	for id != "" {
-		if seen[id] {
-			return "", false
-		}
-		seen[id] = true
-		folder, ok := s.noteFolder(id)
-		if !ok {
-			return "", false
-		}
-		parts = append(parts, folder.Name)
-		id = folder.Parent
-	}
-	slices.Reverse(parts)
-	return strings.Join(parts, "/"), len(parts) > 0
+	return noteFolderPath(s.notes.folders, id)
 }
 
 func (s *State) noteMentionNames() []mentionName {

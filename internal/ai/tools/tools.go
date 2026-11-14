@@ -288,17 +288,33 @@ func Targeted() []Spec {
 
 func SelectedUpload() Spec { return selectedUploadSpec }
 
+// HeadlessOptions says what a server without a terminal window may do. It
+// works on saved hosts over connections of its own, so write tools are offered
+// only after the separately confirmed full access, and local transfers only
+// when explicit transfer roots were granted.
+type HeadlessOptions struct {
+	// Commands offers terminal_exec and terminal_exec_many.
+	Commands bool
+	// WriteFiles offers sftp_write and sftp_remove (full access).
+	WriteFiles bool
+	// LocalFiles offers upload, download and cancel (full access and at least
+	// one transfer root).
+	LocalFiles bool
+	// Notes offers note_query.
+	Notes bool
+	// NoteWrites offers note_edit; it requires Notes and full access.
+	NoteWrites bool
+}
+
 // Headless returns the catalog of a server that has no terminal windows to act
 // in: it works on saved hosts over their own connections. The tools and their
 // arguments are the same, so the same decoders and the same gate serve them;
 // what changes is what the descriptions promise and which tools are offered.
 // There is no screen to read, so terminal_read is absent. A command runs through
 // an SSH exec channel, with no terminal and no shell state kept between calls,
-// and the user does not watch it run; the command tools are offered only when
-// commands is true. File writes are offered only when writeFiles is true, for
-// the separately confirmed full-access mode. Local transfers also require
-// localFiles, granted through explicit transfer roots. The slice is a copy.
-func Headless(commands, writeFiles, localFiles bool) []Spec {
+// and the user does not watch it run. The note tools come from ExternalNotes.
+// The slice is a copy.
+func Headless(options HeadlessOptions) []Spec {
 	const (
 		sessionHint = "Session id from list_sessions. Defaults to the active session."
 		hostHint    = "Host id from list_sessions. May be left out when only one host is available."
@@ -307,7 +323,7 @@ func Headless(commands, writeFiles, localFiles bool) []Spec {
 	out := make([]Spec, 0, len(specs))
 	for _, spec := range specs {
 		switch {
-		case spec.Name == NameTerminalRead, spec.Name == NameToolOutputRead, isJobTool(spec.Name), isRZSZ(spec.Name), spec.Kind == Write && !writeFiles, spec.Kind == Exec && !commands:
+		case spec.Name == NameTerminalRead, spec.Name == NameToolOutputRead, isJobTool(spec.Name), isRZSZ(spec.Name), spec.Kind == Write && !options.WriteFiles, spec.Kind == Exec && !options.Commands:
 			continue
 		}
 		schema := strings.ReplaceAll(string(spec.Schema), sessionHint, hostHint)
@@ -326,13 +342,16 @@ func Headless(commands, writeFiles, localFiles bool) []Spec {
 		case NameSFTPRemove:
 			spec.Description = "Delete one remote file or empty directory on an authorized saved host over SFTP. Full access was enabled, so this does not request approval. Deletion cannot be undone."
 		}
-		out = append(out, hostSchema(spec, writeFiles && localFiles))
+		out = append(out, hostSchema(spec, options.WriteFiles && options.LocalFiles))
 	}
 	for _, spec := range hostFileSpecs {
-		if spec.Kind == Write && (!writeFiles || !localFiles) {
+		if spec.Kind == Write && (!options.WriteFiles || !options.LocalFiles) {
 			continue
 		}
 		out = append(out, spec)
+	}
+	if options.Notes {
+		out = append(out, ExternalNotes(options.NoteWrites)...)
 	}
 	return out
 }

@@ -190,15 +190,7 @@ func (s *State) noteMemoryBody(id string) string {
 }
 
 func (s *State) noteLinkMessage(err error) string {
-	switch {
-	case errors.Is(err, errLinkNotUTF8):
-		return s.noteText("Markdown must be UTF-8.", "Markdown 文件必须使用 UTF-8 编码。")
-	case errors.Is(err, errLinkTooLarge):
-		return s.noteText("The file exceeds 1 MiB.", "文件超过 1 MiB。")
-	case errors.Is(err, errLinkNotRegular):
-		return s.noteText("The linked path is not a regular file.", "链接的路径不是普通文件。")
-	}
-	return err.Error()
+	return noteLinkMessage(err, s.noteText)
 }
 
 // linkNotes links Markdown files chosen by the user as notes.
@@ -430,39 +422,14 @@ func (s *State) noteLinkSetBody(id, body string) {
 
 // noteLinkCheck validates the disk baseline without writing or adopting text.
 func (s *State) noteLinkCheck(note savedNote) bool {
-	st := s.noteLinkInfo(note.ID)
-	if st.conflict || st.missing {
-		return false
-	}
-	disk := readLinkedFile(note.Link.Path)
-	switch {
-	case disk.missing:
-		st.missing = true
-		return false
-	case disk.err != nil:
-		st.problem = s.noteLinkMessage(disk.err)
-		return false
-	case noteHash(disk.body) != st.bodyHash:
-		st.bom, st.conflict = disk.bom, true
-		return false
-	}
-	st.problem = ""
-	return true
+	return noteLinkCheckFile(s.noteLinkInfo(note.ID), note.Link.Path, s.noteLinkMessage)
 }
 
 // noteLinkWrite is the save of a linked note's text to its file. A file that
 // cannot be written, or that changed meanwhile, leaves the text in the note and
 // says so in the note's notice; the user is not held in the note.
 func (s *State) noteLinkWrite(note savedNote) {
-	if !s.noteLinkCheck(note) {
-		return
-	}
-	st := s.noteLinkInfo(note.ID)
-	if err := writeLinkedFile(note.Link.Path, note.Body, st.bom); err != nil {
-		st.problem = s.noteText("Could not write the file: ", "无法写入文件：") + err.Error()
-		return
-	}
-	st.bodyHash, st.problem = noteHash(note.Body), ""
+	noteLinkWriteFile(s.noteLinkInfo(note.ID), note.Link.Path, note.Body, s.noteText, s.noteLinkMessage)
 }
 
 // noteLinkNotice is what a linked note needs the user to know, and can be asked.

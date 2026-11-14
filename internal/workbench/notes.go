@@ -646,22 +646,7 @@ func (s *State) deleteNoteSelection(all bool) {
 	s.save()
 }
 func (s *State) noteFolderWithin(id, ancestor string) bool {
-	seen := map[string]bool{}
-	for id != "" && !seen[id] {
-		if id == ancestor {
-			return true
-		}
-		seen[id] = true
-		parent := ""
-		for _, f := range s.notes.folders {
-			if f.ID == id {
-				parent = f.Parent
-				break
-			}
-		}
-		id = parent
-	}
-	return false
+	return noteFolderWithin(s.notes.folders, id, ancestor)
 }
 func (s *State) moveNote(id, parent, before string, folder bool) bool {
 	if s.notes.query.String() != "" || !s.flushNoteDraft() {

@@ -216,6 +216,9 @@ type noteMutationResult struct {
 	Note                *savedNote
 	Folder              *savedNoteFolder
 	FileStatus, Message string
+	// Version is the committed note's version, for the tool's reply. It is
+	// computed from what was written, not from the caller's view.
+	Version string
 }
 
 func noteMutationFailure(status string, err error) (noteMutationResult, error) {
@@ -290,230 +293,6 @@ func ordinaryNoteFolder(folders []savedNoteFolder, id string) error {
 	return errors.New("folder not found")
 }
 
-func (s *State) commitNoteMutation(a noteMutation) (noteMutationResult, error) {
-	db, err := s.loadNoteStore()
-	if err != nil {
-		return noteStorageFailure(err)
-	}
-	switch a.Action {
-	case "create", "update", "replace", "folder_create", "folder_update", "folder_delete":
-	default:
-		return noteMutationFailure("validation_error", errors.New("unknown note operation"))
-	}
-
-	if strings.HasPrefix(a.Action, "folder_") {
-		return s.commitNoteFolder(a, db)
-	}
-	creating := a.Action == "create"
-	var previous, n savedNote
-	if creating {
-		if a.Title == nil || strings.TrimSpace(*a.Title) == "" || a.Body == nil {
-			return noteMutationFailure("validation_error", errors.New("create requires title and body"))
-		}
-		now := s.options.WallNow().UTC().Format(time.RFC3339Nano)
-		n = savedNote{ID: noteID(), Revision: noteID(), Created: now, Order: len(db.notes)}
-	} else {
-		i := s.noteIndex(a.ID)
-		if i < 0 {
-			return noteMutationFailure("version_conflict", errors.New("note not found; read again"))
-		}
-		n = s.noteBrowserNote(s.notes.list[i])
-		if a.Version == "" || a.Version != noteContentVersion(n, s.noteBaseline(n)) || noteHash(string(db.notePayload(n))) != noteHash(string(s.noteBaseline(n))) {
-			return noteMutationFailure("version_conflict", errors.New("stale note version; read the note again"))
-		}
-		storedIndex := slices.IndexFunc(db.notes, func(x savedNote) bool { return x.ID == n.ID })
-		if storedIndex < 0 {
-			return noteMutationFailure("version_conflict", errors.New("note was deleted; read again"))
-		}
-		previous = db.notes[storedIndex]
-		if d := s.notes.drafts[n.ID]; d != nil && (d.composing() || d.conflictSuffix != "") {
-			return noteMutationFailure("version_conflict", errors.New("note has active composition or conflict"))
-		}
-	}
-	if a.Title != nil {
-		n.Title = *a.Title
-	}
-	if a.Body != nil {
-		n.Body = *a.Body
-	}
-	if a.Action == "replace" {
-		if a.OldText == nil || a.NewText == nil || !uniqueNoteFragment(n.Body, *a.OldText) {
-			return noteMutationFailure("validation_error", errors.New("old_text must match exactly once; read again"))
-		}
-		n.Body = strings.Replace(n.Body, *a.OldText, *a.NewText, 1)
-	}
-	if a.Folder != nil {
-		if n.Link != nil {
-			return noteMutationFailure("validation_error", errors.New("linked notes cannot be moved"))
-		}
-		if err = ordinaryNoteFolder(db.folders, *a.Folder); err != nil {
-			return noteMutationFailure("validation_error", err)
-		}
-		n.Folder = *a.Folder
-	}
-	var catalog []Host
-	var groups []savedHostGroup
-	if a.HostIDs != nil || a.HostGroups != nil {
-		catalog, groups, err = db.catalog()
-		if err != nil {
-			return noteStorageFailure(err)
-		}
-	}
-	groupExists := func(path string) bool {
-		return path != "" && (slices.ContainsFunc(groups, func(g savedHostGroup) bool { return hostGroupWithin(g.Name, path) }) || slices.ContainsFunc(catalog, func(h Host) bool { return hostGroupWithin(h.Group, path) }))
-	}
-	n.Tags = slices.Clone(n.Tags)
-	if a.Tags != nil {
-		tags := []string{}
-		for _, tag := range *a.Tags {
-			tag = strings.TrimSpace(tag)
-			if tag == "" || strings.Contains(tag, ",") || strings.HasPrefix(tag, "{@") {
-				return noteMutationFailure("validation_error", errors.New("invalid ordinary tag"))
-			}
-			if !slices.Contains(tags, tag) {
-				tags = append(tags, tag)
-			}
-		}
-		for _, tag := range n.Tags {
-			if noteSpecialTag(tag) {
-				tags = append(tags, tag)
-			}
-		}
-		n.Tags = tags
-	}
-	if a.HostIDs != nil {
-		n.Tags = slices.DeleteFunc(n.Tags, func(tag string) bool { _, ok := parseNoteHost(tag); return ok })
-		for _, id := range *a.HostIDs {
-			index := slices.IndexFunc(catalog, func(h Host) bool { return h.CatalogID == id })
-			if index < 0 {
-				return noteMutationFailure("validation_error", fmt.Errorf("associated host no longer exists: %s", id))
-			}
-			tag := encodeNoteHost(noteHostFor(catalog[index]))
-			if !slices.Contains(n.Tags, tag) {
-				n.Tags = append(n.Tags, tag)
-			}
-		}
-	}
-	if a.HostGroups != nil {
-		n.Tags = slices.DeleteFunc(n.Tags, func(tag string) bool { _, ok := parseNoteHostGroup(tag); return ok })
-		for _, id := range *a.HostGroups {
-			if !groupExists(id) {
-				return noteMutationFailure("validation_error", fmt.Errorf("unknown host group: %s", id))
-			}
-			tag := encodeNoteHostGroup(id)
-			if !slices.Contains(n.Tags, tag) {
-				n.Tags = append(n.Tags, tag)
-			}
-		}
-	}
-	if n.Link != nil && n.Body != previous.Body {
-		link := *n.Link
-		link.WriteBase = noteHash(previous.Body)
-		if previous.Link != nil && previous.Link.WriteBase != "" {
-			link.WriteBase = previous.Link.WriteBase
-		}
-		if st := s.noteLinks[n.ID]; st != nil && st.bodyHash != "" {
-			link.WriteBase = st.bodyHash
-		}
-		n.Link = &link
-	}
-	n, err = prepareNoteUpdate(previous, n, s.options.WallNow())
-	if err != nil {
-		return noteMutationFailure("validation_error", err)
-	}
-	// Project the committed graph, not a potentially stale UI copy.
-	projected := slices.Clone(db.notes)
-	index := slices.IndexFunc(projected, func(x savedNote) bool { return x.ID == n.ID })
-	if index < 0 {
-		if !creating {
-			return noteMutationFailure("version_conflict", errors.New("note was deleted"))
-		}
-		projected = append(projected, n)
-	} else {
-		projected[index] = n
-	}
-	if err = validateNoteGraph(projected, db.folders); err != nil {
-		return noteMutationFailure("validation_error", err)
-	}
-	change := configstore.Change{Writer: configWriter(), Expected: map[configstore.Key][]byte{}, ExpectedKinds: map[string][]configstore.Entry{}}
-	kinds := []string{"note", "note-folder"}
-	if a.HostIDs != nil || a.HostGroups != nil {
-		kinds = append(kinds, "host", "group")
-	}
-	for _, kind := range kinds {
-		change.ExpectedKinds[kind] = noteKindSnapshot(db.entries, kind)
-	}
-	var payload []byte
-	if n.Link == nil {
-		key := configstore.Key{Kind: "note", ID: n.ID}
-		old := db.payload("note", n.ID)
-		if creating && len(old) > 0 {
-			return noteMutationFailure("version_conflict", errors.New("new note identity already exists"))
-		}
-		payload, err = db.stageRecord(&change, key, mustNoteJSON(n))
-		if err != nil {
-			return noteStorageFailure(err)
-		}
-		if len(payload) > configstore.MaxPayload {
-			return noteMutationFailure("validation_error", errors.New("note exceeds record limit"))
-		}
-	} else {
-		patch := configstore.JSONChange{Before: mustNoteJSON(previous), After: mustNoteJSON(n)}
-		raw, err := patch.Apply(db.notePayload(previous))
-		if err != nil {
-			return noteStorageFailure(err)
-		}
-		if len(raw) > configstore.MaxPayload {
-			return noteMutationFailure("validation_error", errors.New("note exceeds record limit"))
-		}
-		change.Local = map[string][]byte{localKey: setNoteLocalPayload(db.local, n.ID, raw)}
-		change.ExpectedLocal = map[string][]byte{localKey: db.local}
-	}
-
-	// Local linked records also participate in folder membership guards.
-	if change.ExpectedLocal == nil {
-		change.ExpectedLocal = map[string][]byte{localKey: db.local}
-	}
-	if _, err = s.config.Commit(change); err != nil {
-		return noteStorageFailure(err)
-	}
-	s.acceptNoteCommit(n, payload, change.Local[localKey])
-	fileStatus := "not_linked"
-	status := "saved"
-	message := ""
-	if n.Link != nil {
-		if s.noteLinks[n.ID] == nil {
-			st := s.noteLinkInfo(n.ID)
-			st.bodyHash = n.Link.WriteBase
-			if st.bodyHash == "" {
-				st.bodyHash = noteHash(previous.Body)
-			}
-			st.bom = readLinkedFile(n.Link.Path).bom
-		}
-		fileStatus = "saved"
-		if n.Body != previous.Body {
-			s.noteLinkWrite(n)
-		} else if s.noteLinkCheck(n) && noteHash(n.Body) != s.noteLinkInfo(n.ID).bodyHash {
-			s.noteLinkInfo(n.ID).problem = s.noteText("File save is pending; committed note text is retained.", "文件尚未保存，已提交的笔记正文已保留。")
-		}
-		st := s.noteLinkInfo(n.ID)
-		switch {
-		case st.conflict:
-			fileStatus = "conflict"
-		case st.missing:
-			fileStatus = "missing"
-		case st.problem != "":
-			fileStatus = "write_failed"
-			message = st.problem
-		}
-		if fileStatus != "saved" {
-			status = "file_" + fileStatus
-		}
-	}
-	s.noteCommitNotification(n.Link == nil)
-	return noteMutationResult{Status: status, LibrarySaved: true, FileStatus: fileStatus, Note: &n, Message: message}, nil
-}
-
 func (s *State) acceptNoteCommit(n savedNote, payload, local []byte) {
 	i := s.noteIndex(n.ID)
 	if i < 0 {
@@ -550,127 +329,41 @@ func (s *State) acceptLinkedLocal(raw []byte, id string) {
 	s.configBase.local = setNoteLocalPayload(s.configBase.local, id, noteLocalPayload(raw, id))
 }
 
-func (s *State) noteCommitNotification(shared bool) {
-	s.configBase.stored = true
-	if shared {
-		s.scheduleSync()
+// noteLibrary is this window's view of the library. The window owns the drafts,
+// editors and watches; the library owns the records and the file policy.
+func (s *State) noteLibrary() noteLibrary {
+	if s.noteLinks == nil {
+		s.noteLinks = map[string]*noteLinkState{}
 	}
-	if s.options.Group != nil {
-		s.options.Group.settingsChanged(s)
+	return noteLibrary{
+		store:        s.config,
+		base:         s.configBase,
+		notes:        s.notes.list,
+		folders:      s.notes.folders,
+		drafts:       s.notes.drafts,
+		links:        s.noteLinks,
+		now:          s.options.WallNow,
+		browser:      s.noteBrowserNote,
+		baseline:     s.noteBaseline,
+		text:         s.noteText,
+		loadSnapshot: s.loadNoteStore,
+		afterNote:    s.acceptNoteCommit,
+		afterFolder:  s.acceptFolderCommit,
+		notify:       s.noteCommitNotification,
 	}
-	s.invalidateNoteViews()
 }
 
-func (s *State) commitNoteFolder(a noteMutation, db noteStoreSnapshot) (noteMutationResult, error) {
-	folders := slices.Clone(db.folders)
-	var f savedNoteFolder
-	index := -1
-	if a.Action == "folder_create" {
-		f = savedNoteFolder{ID: noteID(), Order: len(folders)}
-	} else {
-		index = slices.IndexFunc(folders, func(f savedNoteFolder) bool { return f.ID == a.ID })
-		if index < 0 {
-			return noteMutationFailure("version_conflict", errors.New("folder no longer exists"))
-		}
-		f = folders[index]
-		old := s.configBase.payloads[configstore.Key{Kind: "note-folder", ID: f.ID}]
-		if noteHash(string(old)) != noteHash(string(db.payload("note-folder", f.ID))) {
-			return noteMutationFailure("version_conflict", errors.New("folder changed; query folders again"))
-		}
-		// Do not replace pending folder edits from another view.
-		if local, ok := s.noteFolder(f.ID); !ok || string(mustNoteJSON(local)) != string(mustNoteJSON(f)) {
-			return noteMutationFailure("version_conflict", errors.New("folder has pending changes"))
-		}
-		if err := ordinaryNoteFolder(folders, a.ID); err != nil {
-			return noteMutationFailure("validation_error", err)
-		}
-	}
-	if a.Name != nil {
-		f.Name = strings.TrimSpace(*a.Name)
-	}
-	if f.Name == "" {
-		return noteMutationFailure("validation_error", errors.New("folder name is required"))
-	}
-	if a.Parent != nil {
-		if err := ordinaryNoteFolder(folders, *a.Parent); err != nil {
-			return noteMutationFailure("validation_error", err)
-		}
-		f.Parent = *a.Parent
-	}
-	deleting := a.Action == "folder_delete"
-	if deleting {
-		for _, n := range db.notes {
-			if n.Folder == f.ID {
-				return noteMutationFailure("validation_error", errors.New("folder is not empty"))
-			}
-		}
-		for _, child := range folders {
-			if child.Parent == f.ID {
-				return noteMutationFailure("validation_error", errors.New("folder is not empty"))
-			}
-		}
-		// Include unsaved local members as well as persisted members.
-		for _, n := range s.notes.list {
-			if n.Folder == f.ID {
-				return noteMutationFailure("validation_error", errors.New("folder contains an unsaved note"))
-			}
-		}
-		for _, child := range s.notes.folders {
-			if child.Parent == f.ID {
-				return noteMutationFailure("validation_error", errors.New("folder contains an unsaved folder"))
-			}
-		}
-		folders = slices.Delete(folders, index, index+1)
-	} else if index < 0 {
-		folders = append(folders, f)
-	} else {
-		folders[index] = f
-	}
-	if err := validateNoteGraph(db.notes, folders); err != nil {
-		return noteMutationFailure("validation_error", err)
-	}
-	// No management of ordinary ancestors may relocate linked directories.
-	if !deleting && index >= 0 {
-		for _, child := range db.folders {
-			if child.Link != nil {
-				parent := child.Parent
-				for parent != "" {
-					if parent == f.ID {
-						return noteMutationFailure("validation_error", errors.New("folder contains a linked directory"))
-					}
-					j := slices.IndexFunc(db.folders, func(x savedNoteFolder) bool { return x.ID == parent })
-					if j < 0 {
-						break
-					}
-					parent = db.folders[j].Parent
-				}
-			}
-		}
-	}
-	key := configstore.Key{Kind: "note-folder", ID: f.ID}
-	change := configstore.Change{Writer: configWriter(), Expected: map[configstore.Key][]byte{key: db.payload(key.Kind, key.ID)}, ExpectedKinds: map[string][]configstore.Entry{}, ExpectedLocal: map[string][]byte{localKey: db.local}}
-	for _, kind := range []string{"note", "note-folder"} {
-		change.ExpectedKinds[kind] = noteKindSnapshot(db.entries, kind)
-	}
-	var payload []byte
-	if deleting {
-		change.Delete = []configstore.Key{key}
-	} else {
-		if a.Action == "folder_create" && len(db.payload(key.Kind, key.ID)) > 0 {
-			return noteMutationFailure("version_conflict", errors.New("new folder identity already exists"))
-		}
-		var err error
-		payload, err = db.stageRecord(&change, key, mustNoteJSON(f))
-		if err != nil {
-			return noteStorageFailure(err)
-		}
-		if len(payload) > configstore.MaxPayload {
-			return noteMutationFailure("validation_error", errors.New("folder exceeds record limit"))
-		}
-	}
-	if _, err := s.config.Commit(change); err != nil {
+func (s *State) commitNoteMutation(a noteMutation) (noteMutationResult, error) {
+	db, err := s.loadNoteStore()
+	if err != nil {
 		return noteStorageFailure(err)
 	}
+	lib := s.noteLibrary()
+	return lib.edit(db, a)
+}
+
+// acceptFolderCommit applies a committed folder to this window's view and base.
+func (s *State) acceptFolderCommit(f savedNoteFolder, payload []byte, deleting bool) {
 	update := func(list []savedNoteFolder) []savedNoteFolder {
 		i := slices.IndexFunc(list, func(x savedNoteFolder) bool { return x.ID == f.ID })
 		if deleting {
@@ -687,21 +380,31 @@ func (s *State) commitNoteFolder(a noteMutation, db noteStoreSnapshot) (noteMuta
 	}
 	s.notes.folders = update(s.notes.folders)
 	s.lastSaved.NoteFolders = update(s.lastSaved.NoteFolders)
+	key := configstore.Key{Kind: "note-folder", ID: f.ID}
 	if deleting {
 		delete(s.configBase.payloads, key)
 		delete(s.configBase.ords, key)
 		if s.notes.folder == f.ID {
 			s.notes.folder = ""
 		}
-	} else {
-		s.configBase.payloads[key] = payload
-		var p recordPayload
-		_ = json.Unmarshal(payload, &p)
-		s.configBase.ords[key] = p.Ord
-		s.configBase.maxOrd = max(s.configBase.maxOrd, p.Ord)
+		return
 	}
-	s.noteCommitNotification(true)
-	return noteMutationResult{Status: "saved", LibrarySaved: true, Folder: &f}, nil
+	s.configBase.payloads[key] = payload
+	var p recordPayload
+	_ = json.Unmarshal(payload, &p)
+	s.configBase.ords[key] = p.Ord
+	s.configBase.maxOrd = max(s.configBase.maxOrd, p.Ord)
+}
+
+func (s *State) noteCommitNotification(shared bool) {
+	s.configBase.stored = true
+	if shared {
+		s.scheduleSync()
+	}
+	if s.options.Group != nil {
+		s.options.Group.settingsChanged(s)
+	}
+	s.invalidateNoteViews()
 }
 
 // Refresh only clean note records for queries. Dirty drafts are never rebased

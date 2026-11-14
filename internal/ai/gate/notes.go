@@ -6,7 +6,8 @@ import (
 	"motty/internal/ai/tools"
 )
 
-// NotesBackend is optional: external MCP backends do not expose a note library.
+// NotesBackend is optional: a backend that has no note library (or was not
+// given access to one) leaves the note tools unavailable.
 type NotesBackend interface {
 	QueryNote(context.Context, tools.NoteQueryArgs) (string, error)
 	EditNote(context.Context, tools.NoteEditArgs) (string, error)
@@ -16,6 +17,9 @@ func (g Gate) runNotesTool(ctx context.Context, name string, raw json.RawMessage
 	b, ok := g.Backend.(NotesBackend)
 	if !g.NotesEnabled || !ok {
 		return Result{Text: "note tools are unavailable", IsError: true}
+	}
+	if name == tools.NameNoteEdit && g.NotesWriteFullAccess && g.Mode != ModeAllowAll {
+		return Result{Text: "note_edit requires full access", IsError: true, Denied: true}
 	}
 	// Local note edits use explicit user intent in the agent instructions, not
 	// the terminal risk classifier or remote-file approval policy.
