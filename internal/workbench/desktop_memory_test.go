@@ -20,12 +20,12 @@ func TestDesktopPicturesSetTheHeapLimit(t *testing.T) {
 	}
 
 	noteDesktopSize(view, 1920, 1080)
-	if got, want := memlimit.Current(), memlimit.ForDesktops([]memlimit.Size{{1920, 1080}}); got != want {
+	if got, want := memlimit.Current(), memlimit.ForDesktops([]memlimit.Size{{Width: 1920, Height: 1080}}); got != want {
 		t.Fatalf("1080p limit = %d, want %d", got, want)
 	}
 
 	noteDesktopSize(view, 5120, 2880)
-	if got, want := memlimit.Current(), memlimit.ForDesktops([]memlimit.Size{{5120, 2880}}); got != want {
+	if got, want := memlimit.Current(), memlimit.ForDesktops([]memlimit.Size{{Width: 5120, Height: 2880}}); got != want {
 		t.Fatalf("5K limit = %d, want %d", got, want)
 	}
 
