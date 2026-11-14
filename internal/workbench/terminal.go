@@ -19,6 +19,7 @@ import (
 	"motty/internal/cmdhistory"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
+	"motty/internal/shellkind"
 	"motty/internal/sshconn"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
@@ -496,10 +497,12 @@ func (t *terminal) say(style, line string) {
 
 // clearScreen empties the terminal: the scrollback and every row above the line
 // the cursor is on, which becomes the first row. The selection goes with the
-// rows it pointed at, and an open find rescans the rows that are left. Nothing
-// is sent to the shell, whose prompt line survives, so the line editor keeps
-// writing where it expects. The assistant's marks go with the rows it ran in:
-// a row that was erased is not the assistant's command when it is written again.
+// rows it pointed at, and an open find rescans the rows that are left. For
+// shells that maintain cursor-dependent input state (such as PowerShell's
+// PSReadLine), form feed (\f / Ctrl+L) is sent so the line editor resets its
+// internal row tracking to the top line instead of continuing at the old row.
+// The assistant's marks go with the rows it ran in: a row that was erased is not
+// the assistant's command when it is written again.
 func (t *terminal) clearScreen(messages i18n.Messages) {
 	if !t.screen.ClearScreen() {
 		return
@@ -515,6 +518,23 @@ func (t *terminal) clearScreen(messages i18n.Messages) {
 			delete(t.aiRows, id)
 		}
 	}
+	if t.shell != nil && !t.transferHoldsInput && t.powerShellLineEditorOwnsInput() {
+		t.writeShellInput([]byte{12})
+	}
+}
+
+// powerShellLineEditorOwnsInput reports whether sending a form feed reaches
+// PowerShell's line editor rather than a program the user started from it. A
+// shell that reports its integration state also reports when a command starts;
+// while one runs, the same bytes would become that program's input, so the
+// clear is left without the reset and the next prompt may still name the old
+// row. Shells that never report integration cannot tell the two apart, and
+// there the form feed is the only way to fix the prompt row.
+func (t *terminal) powerShellLineEditorOwnsInput() bool {
+	if t.shellKind() != shellkind.PowerShell {
+		return false
+	}
+	return !t.folderIntegrationSeen || t.inputLine
 }
 
 // setEncoding chooses the charset of the shell's byte stream. It is called once

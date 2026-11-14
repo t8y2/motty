@@ -8,6 +8,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/shellkind"
 	"motty/internal/term"
 	layoutcore "motty/internal/workspace"
 )
@@ -215,6 +216,24 @@ func TestTheMenuClearsTheScreenAndKeepsThePromptLine(t *testing.T) {
 	state.Click(hitTerminalMenuClearScreen)
 	if session.term.screen.Scrollback() != 0 || !strings.Contains(session.term.screen.RowText(0), "prompt$") {
 		t.Fatalf("scrollback=%d row0=%q", session.term.screen.Scrollback(), session.term.screen.RowText(0))
+	}
+}
+
+func TestTheMenuClearsScreenSendsCtrlLToPowerShell(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	session.term.shell = kindShell{fakeShell: shell, kind: shellkind.PowerShell}
+	shell.say("PS C:\\> ")
+	state.Wake()
+	state.terminalMenu = terminalMenu{open: true, session: session.ID}
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
+	state.Click(hitTerminalMenuClearScreen)
+
+	shell.mu.Lock()
+	input := string(shell.input)
+	shell.mu.Unlock()
+	if !strings.Contains(input, "\x0c") {
+		t.Fatalf("shell input = %q, want form feed (\\x0c) for PowerShell", input)
 	}
 }
 
