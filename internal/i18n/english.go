@@ -326,6 +326,7 @@ var EnglishMessages = Messages{
 	VaultSavedFmt:                          "Saved the password for %s.",
 	VaultSaveFailedFmt:                     "Could not save the password: %v",
 	VaultKeyLost:                           "The key for the saved passwords is gone (not in the system keychain, nor in vault.key in the data folder). Forget all saved passwords to start again.",
+	VaultTooLarge:                          "The saved-passwords file has reached its size limit. Delete passwords you no longer need and try again.",
 	VaultUnavailable:                       "The key file could not be created in the data folder, so passwords cannot be saved.",
 	VaultCorruptFmt:                        "The saved-passwords file could not be read and was set aside as %s.",
 	VaultCleared:                           "All saved passwords were forgotten.",

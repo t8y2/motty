@@ -326,6 +326,7 @@ var ChineseMessages = Messages{
 	VaultSavedFmt:                          "已保存 %s 的密码。",
 	VaultSaveFailedFmt:                     "无法保存密码:%v",
 	VaultKeyLost:                           "已保存密码的密钥丢失了(系统钥匙串和数据目录里的 vault.key 里都没有)。请「全部忘记」后重新开始。",
+	VaultTooLarge:                          "已保存密码的存储文件已达大小上限。请删除不再使用的密码后重试。",
 	VaultUnavailable:                       "无法在数据目录里创建保存密钥的文件,所以不能保存密码。",
 	VaultCorruptFmt:                        "已保存密码的文件无法读取,已改名为 %s。",
 	VaultCleared:                           "已忘记全部已保存的密码。",

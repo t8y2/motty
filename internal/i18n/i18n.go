@@ -362,6 +362,7 @@ type Messages struct {
 	VaultSavedFmt                          string
 	VaultSaveFailedFmt                     string
 	VaultKeyLost                           string
+	VaultTooLarge                          string
 	VaultUnavailable                       string
 	VaultCorruptFmt                        string
 	VaultCleared                           string

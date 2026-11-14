@@ -52,6 +52,9 @@ var (
 	ErrUnavailable = errors.New("vault: no secret store to keep the key in; set a master password")
 	// ErrCorrupt means the file is not a vault, or a record was changed.
 	ErrCorrupt = errors.New("vault: the file is damaged")
+	// ErrTooLarge means the change would grow the file past maxFileSize, which a
+	// later Open would refuse to read. Nothing was written.
+	ErrTooLarge = errors.New("vault: the file would exceed its size limit")
 
 	// ErrKeystoreNotFound, ErrKeystoreUnavailable and ErrKeystoreDenied are what a
 	// Keystore reports for a missing key, a system without a store, and a refusal.
@@ -96,11 +99,13 @@ const (
 	keySize        = 32
 	wrapAssociated = "motty vault data key"
 	idContext      = "motty vault record id\x00"
-	maxFileSize    = 8 << 20
-	maxRecords     = 4096
-	// maxFileRecords bounds the file itself: live secrets are limited to
-	// maxRecords, and tombstones may bring the total up to this.
-	maxFileRecords = 2 * maxRecords
+	// maxFileSize is the one bound on the vault: what it takes to read the whole
+	// file into memory, now and at every later Open. Record counts are not bounded
+	// separately, because a record costs what its name and value cost and a count
+	// would refuse a third of the bytes the file can hold for short passwords. A
+	// write that would pass it fails whole (ErrTooLarge) rather than leaving a file
+	// this same code would refuse to open.
+	maxFileSize = 8 << 20
 )
 
 // Vault is the file and what is known about opening it.
@@ -189,7 +194,7 @@ func Open(path string, keys Keystore) (*Vault, error) {
 	if file.Version != fileVersion {
 		return nil, fmt.Errorf("%w: version %d", ErrCorrupt, file.Version)
 	}
-	if len(file.Records) > maxFileRecords || (file.KDF == nil) != (len(file.WrappedKey) == 0) {
+	if (file.KDF == nil) != (len(file.WrappedKey) == 0) {
 		return nil, fmt.Errorf("%w: inconsistent contents", ErrCorrupt)
 	}
 	if file.KDF != nil && (file.KDF.Name != "argon2id" || file.KDF.Time == 0 || file.KDF.Time > 64 || file.KDF.MemoryKiB < 8 ||
@@ -435,12 +440,8 @@ func (vault *Vault) apply(changes []Change) error {
 	}
 	records := append([]record(nil), vault.file.Records...)
 	positions := make(map[string]int, len(plains))
-	live := 0
 	for index, plain := range plains {
 		positions[plain.Name] = index
-		if !plain.Deleted {
-			live++
-		}
 	}
 	changed := false
 	for _, change := range changes {
@@ -470,17 +471,12 @@ func (vault *Vault) apply(changes []Change) error {
 				}
 				records[position], plains[position] = sealed, plain
 			}
-			live--
 			changed = true
 			continue
 		}
 
 		if known && !plains[position].Deleted && plains[position].Value == change.Value {
 			continue
-		}
-		adding := !known || plains[position].Deleted
-		if adding && live >= maxRecords || !known && len(records) >= maxFileRecords {
-			return errors.New("vault: too many saved secrets")
 		}
 		stamp, err := vault.stamp()
 		if err != nil {
@@ -496,9 +492,6 @@ func (vault *Vault) apply(changes []Change) error {
 		} else {
 			positions[change.Name] = len(records)
 			records, plains = append(records, sealed), append(plains, plain)
-		}
-		if adding {
-			live++
 		}
 		changed = true
 	}
@@ -569,9 +562,10 @@ func (vault *Vault) Export() ([]Secret, error) {
 
 // Merge takes in secrets received from another device. A received entry wins when
 // the name is unknown here or its stamp is greater than the local one; equal or
-// older entries, and entries without a name or a stamp, are ignored, as are
-// entries that would exceed the vault's limits. Everything accepted is written at
-// once, and returned. Merge never makes a stamp.
+// older entries, and entries without a name or a stamp, are ignored. Everything
+// accepted is written at once, and returned; a merge whose result would pass
+// maxFileSize fails whole (ErrTooLarge) instead of dropping what does not fit.
+// Merge never makes a stamp.
 func (vault *Vault) Merge(received []Secret) ([]Secret, error) {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
@@ -584,12 +578,8 @@ func (vault *Vault) Merge(received []Secret) ([]Secret, error) {
 	}
 	records := append([]record(nil), vault.file.Records...)
 	positions := make(map[string]int, len(records))
-	live := 0
 	for index, entry := range records {
 		positions[string(entry.ID)] = index
-		if !plains[index].Deleted {
-			live++
-		}
 	}
 	var applied []Secret
 	for _, secret := range received {
@@ -602,14 +592,7 @@ func (vault *Vault) Merge(received []Secret) ([]Secret, error) {
 		}
 		id := recordID(vault.key, secret.Name)
 		position, known := positions[string(id)]
-		if known {
-			if plains[position].Stamp >= secret.Stamp {
-				continue
-			}
-			if plains[position].Deleted && !plain.Deleted && live >= maxRecords {
-				continue
-			}
-		} else if len(records) >= maxFileRecords || (!plain.Deleted && live >= maxRecords) {
+		if known && plains[position].Stamp >= secret.Stamp {
 			continue
 		}
 		sealed, err := seal(vault.key, plain)
@@ -617,16 +600,10 @@ func (vault *Vault) Merge(received []Secret) ([]Secret, error) {
 			return nil, err
 		}
 		if known {
-			if !plains[position].Deleted {
-				live--
-			}
 			records[position], plains[position] = sealed, plain
 		} else {
 			positions[string(id)] = len(records)
 			records, plains = append(records, sealed), append(plains, plain)
-		}
-		if !plain.Deleted {
-			live++
 		}
 		applied = append(applied, Secret{Name: plain.Name, Value: plain.Value, Stamp: plain.Stamp, Deleted: plain.Deleted})
 	}
@@ -728,7 +705,11 @@ func writeFile(path string, file fileData) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path, append(data, '\n'))
+	data = append(data, '\n')
+	if len(data) > maxFileSize {
+		return fmt.Errorf("%w: %d bytes", ErrTooLarge, len(data))
+	}
+	return writeFileAtomic(path, data)
 }
 
 func writeFileAtomic(path string, data []byte) error {

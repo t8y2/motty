@@ -549,7 +549,7 @@ func (state *State) clickSessionImportPreview(id gfx.ID) {
 		if err != nil {
 			state.sessionImport = pending
 			state.modal = modalSessionImportPreview
-			state.dialogError = fmt.Sprintf(state.messages.Tools.ImportHostSaveFailedFmt, err)
+			state.dialogError = fmt.Sprintf(state.messages.Tools.ImportHostSaveFailedFmt, state.vaultErrorText(err))
 			if errors.Is(err, vault.ErrRollbackFailed) {
 				state.dialogError += " " + state.messages.Tools.ImportHostSaveRollbackFailed
 			}

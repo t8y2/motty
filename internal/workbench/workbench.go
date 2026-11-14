@@ -1173,6 +1173,11 @@ func New(options Options) *State {
 			return string(stamp), err
 		})
 	}
+	if config != nil {
+		// A deletion is remembered for a sync window; start is the right moment to
+		// let the ones past it go, since sync prunes only when it runs.
+		_ = state.pruneTombstones()
+	}
 	if state.options.Blank {
 		// Settings and hosts, but none of the tabs the last session left.
 		saved.Sessions, saved.Deck, saved.ActiveSession, saved.Workspace = nil, nil, 0, ""

@@ -202,13 +202,8 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 	if err := state.mergeKnownHosts(remote.KnownHosts); err != nil {
 		return nil, err
 	}
-	if _, err := state.config.Prune(tombstoneKeep); err != nil {
+	if err := state.pruneTombstones(); err != nil {
 		return nil, err
-	}
-	if opened != nil {
-		if _, err := opened.Prune(string(configstore.CutoffStamp(state.options.WallNow().Add(-tombstoneKeep)))); err != nil {
-			return nil, err
-		}
 	}
 
 	// What goes back is the union of the two, so nothing the server holds is lost
@@ -245,6 +240,23 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 		return nil, nil
 	}
 	return &local, nil
+}
+
+// pruneTombstones drops the deletions older than tombstoneKeep from the saved
+// passwords and from the shared records. A device away for less than that still
+// hears of them; one away for longer was going to resurrect them anyway. Sync
+// prunes on every merge, and starting prunes too, so a computer that never syncs
+// does not carry deletions forever: in the vault they would fill the file.
+func (state *State) pruneTombstones() error {
+	if _, err := state.config.Prune(tombstoneKeep); err != nil {
+		return err
+	}
+	if state.secrets.vault == nil {
+		return nil
+	}
+	cutoff := string(configstore.CutoffStamp(state.options.WallNow().Add(-tombstoneKeep)))
+	_, err := state.secrets.vault.Prune(cutoff)
+	return err
 }
 
 // passedOn are the server's records that this computer would not hold because it

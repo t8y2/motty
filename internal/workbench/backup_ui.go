@@ -233,6 +233,8 @@ func (state *State) backupErrorText(err error) string {
 		return m.BackupErrTooNew
 	case errors.Is(err, vault.ErrNeedsConversion):
 		return m.BackupErrVault
+	case errors.Is(err, vault.ErrTooLarge):
+		return state.messages.VaultTooLarge
 	case errors.Is(err, cloudsync.ErrUnauthorized):
 		// The service's own words (an S3 error code, GitHub's message) follow.
 		if _, detail, found := strings.Cut(err.Error(), " ("); found {

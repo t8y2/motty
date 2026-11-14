@@ -302,6 +302,8 @@ func (state *State) vaultErrorText(err error) string {
 		return state.messages.VaultUnavailable
 	case errors.Is(err, vault.ErrWrongPassword):
 		return state.messages.VaultWrongPassword
+	case errors.Is(err, vault.ErrTooLarge):
+		return state.messages.VaultTooLarge
 	}
 	return err.Error()
 }
