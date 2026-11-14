@@ -62,7 +62,7 @@ need only the libraries they load at run time: Vulkan, XCB and Cairo.
 | Pin viva | Ubuntu | resolves `vivaui/viva` main to one commit |
 | Release draft ready | Ubuntu | checks the tag body is the committed notes, waits for the draft release, and holds its body to those notes |
 | macOS | macOS 15 (arm64) | `.dmg` and `.zip` for arm64 and amd64; signed, notarized and stapled |
-| Linux and Windows | Ubuntu | `.tar.gz` and `.deb` (amd64, arm64), and an NSIS installer for Windows amd64 and arm64; the Windows programs and the installers signed |
+| Linux and Windows | Ubuntu | `.tar.gz` and `.deb` (amd64, arm64), a `PKGBUILD` and `.SRCINFO` for each Linux architecture, and an NSIS installer for Windows amd64 and arm64; the Windows programs and the installers signed |
 | Checksums | Ubuntu | signs every package of the release, writes `SIGNATURES` and `SHA256SUMS`, and verifies the whole release |
 | Publish | Ubuntu | copies the packages to the mirror, publishes the verified draft, then flips `latest.json` |
 
@@ -80,13 +80,42 @@ and where `SHA256SUMS` is written: a build job that signed only its own platform
 would have its manifest replaced by the other job's upload. The Linux packages
 are not code-signed.
 
+## The Viva update feed
+
+Every release publishes two update feeds during the migration:
+
+- `https://dl.motty.page/latest.json`, the existing one read by installed
+  versions, with a minisign signature per package;
+- `https://dl.motty.page/viva/latest.json`, the signed Ed25519 feed
+  `github.com/vivaui/viva/update` reads, with a patch per asset for the previous
+  release (macOS zip, Linux tar.gz, Windows portable zip).
+
+`tools/mirror-release.sh --announce` writes the second one when
+`MOTTY_VIVA_UPDATE_KEY` is set. The key is the base64 64-byte Ed25519 private
+key (`viva update-keygen`); its public half is `VivaPublicKey` in
+`internal/update`. The private key lives only in CI secrets and the owner's
+offline copy. Without the secret only the existing feed is written, which is
+what old versions read.
+
+The Viva feed names the release's own assets and patches at
+`releases/<tag>/`, so a patch URL is immutable. Patches are made from the
+previous published release's matching archives; a first release, or a failed
+download, simply has none and clients download the full archive. The Windows
+portable zip's `motty-data` folder is excluded from its patch, because it is
+the user's data.
+
+Both feeds are published for 12 months after the first version that reads the
+Viva feed ships; then the existing one and `tools/updatesign` are retired. The
+migration stages and decisions are in
+`.private/decisions/0021-updates-converge-on-viva.md`.
+
 ## What the gate checks
 
 The tag is a promise that the artifacts are right, so the *Checksums* job proves
 it before *Publish* runs. `tools/release.sh --sums TAG --expect-viva SHA` stops
 the release unless
 
-- the draft holds exactly the fourteen assets of the matrix and nothing else;
+- the draft holds exactly the eighteen assets of the matrix and nothing else;
 - `SHA256SUMS` lists every package and matches the uploaded bytes;
 - `SIGNATURES` has one line per package and each signature verifies against the
   key compiled into the app, bound to that file name and version;
@@ -300,6 +329,9 @@ What the app downloads is chosen by name, so these must stay as they are:
   `motty-linux-<arch>.tar.gz`, `motty_<arch>.deb`,
   `motty-windows-<arch>-setup.exe`, `motty-windows-<arch>.zip`) match what
   `viva package` produces, after the mirror takes the version out;
+- each Linux architecture also carries `motty-<version>-linux-<arch>.PKGBUILD`
+  and `.SRCINFO`, which install the released `tar.gz` under `/opt` and link it
+  into `/usr/bin`; they are release assets, not packages the app downloads;
 - `latest.json` keeps `version`, `tag` (`v` plus the version) and, per file, `name`,
   `size`, `sha256` and `signature`;
 - the release carries `SIGNATURES`, one `name<TAB>base64` line per package, and
@@ -379,8 +411,8 @@ their data. Scoop-managed copies must use `scoop update motty`; read-only or oth
 unsupported copies still go to the download page.
 
 A signed release also carries `SIGNATURES`, the minisign signature of every
-package. That is 14 release assets: the packages above, `SHA256SUMS` and
-`SIGNATURES`.
+package. That is 18 release assets: the packages above, the two PKGBUILD and
+.SRCINFO files for each Linux architecture, `SHA256SUMS` and `SIGNATURES`.
 
 `tools/release.sh` refuses to upload when one of those is missing, so a run with
 a broken makensis stops instead of publishing a release with a hole in it. The

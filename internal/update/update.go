@@ -30,6 +30,16 @@ const Feed = "https://api.github.com/repos/t8y2/motty/releases/latest"
 // is checked against.
 const MirrorFeed = "https://dl.motty.page/latest.json"
 
+// VivaFeed is the signed Ed25519 feed an installed copy moves to: the same
+// release data as MirrorFeed, in the format github.com/vivaui/viva/update
+// reads, with a patch per asset. It is published beside MirrorFeed while old
+// versions still read that one; see the update ADR.
+const VivaFeed = "https://dl.motty.page/viva/latest.json"
+
+// VivaPublicKey is the base64 Ed25519 public key that signs VivaFeed. Its
+// private half is MOTTY_VIVA_UPDATE_KEY in CI, never in the repository.
+const VivaPublicKey = "nmgLeV6s/EOjzzDOC7G59NotyGPqjTY4/6Ejd4KpcbY="
+
 // ErrNoRelease means the feed has no published release, which is also what a
 // private repository looks like to an anonymous request.
 var ErrNoRelease = errors.New("update: no published release was found")

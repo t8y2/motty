@@ -27,6 +27,10 @@ func checksumsFor(t *testing.T, signatures []byte) (map[string]string, []byte) {
 		strings.Repeat("6", 64) + "  motty-0.1.6-windows-amd64.zip",
 		strings.Repeat("3", 64) + "  motty_0.1.6_arm64.deb",
 		strings.Repeat("4", 64) + "  motty_0.1.6_amd64.deb",
+		strings.Repeat("7", 64) + "  motty-0.1.6-linux-arm64.PKGBUILD",
+		strings.Repeat("8", 64) + "  motty-0.1.6-linux-amd64.PKGBUILD",
+		strings.Repeat("9", 64) + "  motty-0.1.6-linux-arm64.SRCINFO",
+		strings.Repeat("a", 64) + "  motty-0.1.6-linux-amd64.SRCINFO",
 		hex.EncodeToString(sum[:]) + "  SIGNATURES",
 	}
 	body := []byte(strings.Join(lines, "\n") + "\n")
@@ -53,8 +57,8 @@ func TestParseChecksums(t *testing.T) {
 
 func TestExpectedAssetsCoversTheMatrix(t *testing.T) {
 	assets := expectedAssets(testVersion)
-	if len(assets) != 14 {
-		t.Fatalf("expected 14 assets, got %d", len(assets))
+	if len(assets) != 18 {
+		t.Fatalf("expected 18 assets, got %d", len(assets))
 	}
 	for _, asset := range []string{"motty-0.1.6-linux-amd64.tar.gz", "motty_0.1.6_arm64.deb", "motty-0.1.6-windows-amd64.zip", "SHA256SUMS", "SIGNATURES"} {
 		found := false
@@ -72,7 +76,7 @@ func TestExpectedAssetsCoversTheMatrix(t *testing.T) {
 func TestCheckAssets(t *testing.T) {
 	signatures := []byte("one signature line\n")
 	checksums, _ := checksumsFor(t, signatures)
-	assets := make([]githubAsset, 0, 14)
+	assets := make([]githubAsset, 0, 18)
 	for name, digest := range checksums {
 		if name == "SIGNATURES" {
 			continue

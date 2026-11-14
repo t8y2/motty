@@ -32,10 +32,14 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
       - name: Mirror
         env:
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MOTTY_VIVA_UPDATE_KEY: ${{ secrets.MOTTY_VIVA_UPDATE_KEY }}
           TAG: ${{ inputs.tag }}
         run: tools/mirror-release.sh "$TAG"
