@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/rfb"
 	"motty/internal/sshconn"
 )
 
@@ -155,9 +156,10 @@ func TestAFirstDialFailureIsRetriedUnderThePolicy(t *testing.T) {
 
 func TestAutomaticReconnectStopsForCredentialAndHostKeyErrors(t *testing.T) {
 	for name, terminalError := range map[string]error{
-		"authentication":    sshconn.ErrAuthFailed,
-		"changed host key":  sshconn.ErrHostKeyChanged,
-		"rejected host key": sshconn.ErrHostKeyRejected,
+		"authentication":           sshconn.ErrAuthFailed,
+		"changed host key":         sshconn.ErrHostKeyChanged,
+		"rejected host key":        sshconn.ErrHostKeyRejected,
+		"unsupported VNC security": &rfb.UnsupportedSecurityError{Types: []uint32{30}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			state, world, connection, clock := reconnectingSession(t, reconnectForever)

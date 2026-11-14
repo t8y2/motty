@@ -18,6 +18,7 @@ var (
 	hitDialogViaSSH               = tree.ID(hostProtocolUiHits, "dialog-via-ssh")
 	hitDialogClipboard            = tree.ID(hostProtocolUiHits, "dialog-clipboard")
 	hitDialogConsole              = tree.ID(hostProtocolUiHits, "dialog-console")
+	hitDialogVNCAuthOnly          = tree.ID(hostProtocolUiHits, "dialog-vnc-auth-only")
 	hitDialogStandardSecurity     = tree.ID(hostProtocolUiHits, "dialog-standard-security")
 	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
 	hitDialogChromeless           = tree.ID(hostProtocolUiHits, "dialog-chromeless")
@@ -398,6 +399,10 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.chromeless = !editor.chromeless
 	case id == hitDialogConsole:
 		editor.console = !editor.console
+	case id == hitDialogVNCAuthOnly:
+		if editor.protocol == protocolVNC {
+			editor.vncAuthOnly = !editor.vncAuthOnly
+		}
 	case id == hitDialogStandardSecurity:
 		editor.standardSecurity = !editor.standardSecurity
 	case id == hitDialogAdvanced:
@@ -646,7 +651,7 @@ const (
 
 // hostVNCRowsBody is where the desktop switches' body put each checkbox row.
 type hostVNCRowsBody struct {
-	tunnel, clipboard, chromeless, console, standardSecurity, standardSecurityHelp ui.Box
+	tunnel, clipboard, chromeless, console, authOnly, standardSecurity, standardSecurityHelp ui.Box
 }
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
@@ -765,7 +770,11 @@ func (state *State) desktopRowsHeight() float32 {
 	if state.editor.protocol == protocolRDP {
 		return rdpRowsHeight
 	}
-	return vncRowsHeight
+	height := float32(vncRowsHeight + (12 + 20) + 12 + 54)
+	if state.editor.viaSSH {
+		height += 8 + 36
+	}
+	return height
 }
 
 // paintVNCRows paints the switches of a VNC or RDP host in the slots the host
@@ -795,6 +804,8 @@ func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 		// After the checkbox, whose words reach to the end of the row, so that
 		// this is the hit on top where the two meet.
 		state.paintHelpIcon(canvas, hitDialogStandardSecurityHelp, m.StandardSecurityNote, b.standardSecurityHelp.Rect())
+	} else if editor.form.layoutProtocol == protocolVNC {
+		state.paintDialogCheckbox(canvas, hitDialogVNCAuthOnly, m.AllowVNCAuthOnly, editor.vncAuthOnly, b.authOnly)
 	}
 }
 
@@ -821,6 +832,12 @@ func (state *State) declareHostVNCRows(c ui.C) {
 		if editor.protocol == protocolRDP {
 			b.console = state.declareDialogCheckboxC(c, m.ConsoleSession, 12, 0)
 			b.standardSecurity, b.standardSecurityHelp = state.declareDialogCheckboxHelpC(c, m.StandardSecurity, 12, 0)
+		} else if editor.protocol == protocolVNC {
+			b.authOnly = state.declareDialogCheckboxC(c, m.AllowVNCAuthOnly, 12, 0)
+			ui.Paragraph(c, m.VNCNegotiationHint, 3).FontSize(metrics.FontSizeS).LineHeight(18).Color(state.pal.muted).MarginSides(12, 0, 0, 0)
+			if editor.viaSSH {
+				ui.Paragraph(c, m.VNCTunnelCredentialsHint, 2).FontSize(metrics.FontSizeS).LineHeight(18).Color(state.pal.muted).MarginSides(8, 0, 0, 0)
+			}
 		}
 	})
 }

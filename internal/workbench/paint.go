@@ -351,6 +351,8 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintSessionLinkDialog(canvas, viewport)
 	case modalDeleteRule:
 		state.paintDeleteRuleDialog(canvas, viewport)
+	case modalDesktopSecurity:
+		state.paintDesktopSecurity(canvas, viewport)
 	case modalSFTPColumns:
 		state.paintSFTPColumnSettings(canvas, viewport)
 	case modalLocalProxy:

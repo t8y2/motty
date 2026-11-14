@@ -19,7 +19,7 @@ const (
 
 // eaxCipher implements EAX as specified by Bellare, Rogaway and Wagner, using
 // AES-CMAC (NIST SP 800-38B) for its three domain-separated authentications.
-// RA2 uses a 128-bit AES key and the full 128-bit authentication tag.
+// RSA-AES uses the full 128-bit tag with either a 128-bit or a 256-bit AES key.
 type eaxCipher struct {
 	block  cipher.Block
 	k1, k2 [aes.BlockSize]byte

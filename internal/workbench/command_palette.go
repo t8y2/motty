@@ -188,6 +188,9 @@ func (state *State) rebuildCommandPalette() {
 		palette.add(messages.MenuRenameTerminal, hitPaneRename)
 		palette.add(messages.SFTPOpen, hitSFTPOpen)
 		if session, _ := state.sessionByIDPointer(state.activeSessionID); session != nil {
+			if session.desk != nil && session.host.Protocol == protocolVNC {
+				palette.add(messages.Desktop.SecurityDetails, hitDesktopSecurity)
+			}
 			if session.canViewRemoteLogs() {
 				palette.add(messages.RemoteLogs.Title, hitServerLogs)
 			}

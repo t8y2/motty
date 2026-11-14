@@ -2,6 +2,7 @@ package rfb
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -87,7 +88,7 @@ type Sink interface {
 
 // Config describes how to connect.
 type Config struct {
-	// Username is the system account for RSA-AES UserPass authentication.
+	// Username is the account for RSA-AES UserPass or VeNCrypt Plain authentication.
 	// Traditional VNC Authentication ignores it.
 	Username string
 	// Password is the VNC password. Empty means none: a server that asks for one
@@ -99,8 +100,8 @@ type Config struct {
 	// same connection goes on with the answer, as a viewer's password dialog does.
 	// Returning an error ends the connection with it.
 	AskPassword func() (string, error)
-	// AskCredentials supplies the system account and password after RSA-AES
-	// has authenticated the server key. When present, it takes precedence over
+	// AskCredentials supplies the account and password after the encrypted
+	// handshake has authenticated the server identity. It takes precedence over
 	// Username/Password for UserPass, keeping system and VNC passwords separate.
 	// The handshake timeout is paused while the callback waits for the user.
 	AskCredentials func() (username, password string, err error)
@@ -109,6 +110,21 @@ type Config struct {
 	// Nil rejects RSA-AES; a callback error ends the connection without falling
 	// back to a weaker security type. The user may take time to answer.
 	VerifyServerKey func(publicKeyDER []byte) error
+	// AllowUnencrypted explicitly permits RSA-AES authentication-only modes.
+	// Their desktop, input and clipboard traffic remains unencrypted. Full
+	// session encryption is always preferred when the server offers it.
+	AllowUnencrypted bool
+	// VerifyCertificate decides whether the X.509 certificate belongs to the
+	// intended VNC server. When set, it replaces CA verification with an explicit
+	// trust/pinning decision before credentials are sent; nil uses normal TLS
+	// chain and hostname verification. A rejection never triggers a fallback.
+	VerifyCertificate func(der []byte) error
+	// ServerName is the user-entered host used for TLS verification, including
+	// when conn dials an SSH tunnel's loopback address.
+	ServerName string
+	// TLSConfig supplies trusted roots and optional TLS settings. It is cloned;
+	// InsecureSkipVerify does not bypass this client's identity verification.
+	TLSConfig *tls.Config
 	// Exclusive asks the server to disconnect other clients. The default is a
 	// shared session, so connecting does not throw out whoever is already there.
 	Exclusive bool
@@ -130,11 +146,27 @@ type Client struct {
 	// Version is the protocol minor version used: 3, 7 or 8.
 	Version int
 	// Security is the security type used: 1 (None), 2 (VNC Authentication),
-	// or 5 (RSA-AES, with authentication and session encryption).
+	// 5/129 (RSA-AES session encryption), 6/130 (authentication-only encryption),
+	// or 19 (VeNCrypt; see SecuritySubtype).
 	Security int
+	// SecuritySubtype is the negotiated VeNCrypt subtype, or zero otherwise.
+	SecuritySubtype int
 	// Encrypted reports protocol encryption; it does not describe an external
-	// SSH tunnel used by the caller. RSA-AES keeps all subsequent RFB encrypted.
+	// SSH tunnel used by the caller. Authentication-only RSA-AES reports false.
 	Encrypted bool
+	// SecurityMode names the negotiated security type and VeNCrypt subtype.
+	SecurityMode string
+	// Authentication is none, vnc-password or user-password, based on the
+	// authentication actually requested by the server rather than the config.
+	Authentication string
+	// Cipher names the negotiated TLS suite or RSA-AES authentication cipher.
+	// For authentication-only modes it does not protect subsequent RFB traffic.
+	Cipher     string
+	TLSVersion string
+	// SecurityTypes lists the top-level modes offered in this handshake.
+	// SecuritySubtypes is populated only if VeNCrypt was selected and its
+	// subtype list was actually read. Both strings are prepared at connection.
+	SecurityTypes, SecuritySubtypes string
 
 	width, height int
 	timeout       time.Duration
@@ -166,6 +198,10 @@ func Connect(conn net.Conn, config Config) (*Client, error) {
 	if err := client.handshake(config); err != nil {
 		return nil, err
 	}
+	client.SecurityMode = SecurityTypeName(uint32(client.Security))
+	if client.SecuritySubtype != 0 {
+		client.SecurityMode += " " + VeNCryptSubtypeName(uint32(client.SecuritySubtype))
+	}
 	if err := client.init(config); err != nil {
 		return nil, err
 	}
@@ -185,8 +221,8 @@ func (client *Client) handshake(config Config) error {
 		return fmt.Errorf("%w: not an RFB server (%q)", ErrProtocol, printable(banner[:]))
 	}
 	if major == 5 && minor == 0 {
-		// RealVNC announces its proprietary 5.0 version but accepts client 3.8.
-		// Only this known banner is downgraded; other major versions are refused.
+		// RealVNC's known proprietary 5.0 banner accepts client 3.8.
+		// Other major versions remain unsupported.
 		client.Version = 8
 	} else if major != 3 {
 		return fmt.Errorf("%w: protocol version %d.%d", ErrUnsupported, major, minor)
@@ -210,13 +246,16 @@ func (client *Client) handshake(config Config) error {
 		if err := binary.Read(client.r, binary.BigEndian, &value); err != nil {
 			return err
 		}
+		if value != 0 {
+			client.SecurityTypes = formatSecurityTypes([]uint32{value}, false)
+		}
 		switch value {
 		case 0:
 			return client.failure()
 		case 1, 2:
 			security = uint8(value)
 		default:
-			return fmt.Errorf("%w: security type %d", ErrUnsupported, value)
+			return &UnsupportedSecurityError{Types: []uint32{value}}
 		}
 	default:
 		count, err := client.r.ReadByte()
@@ -230,9 +269,18 @@ func (client *Client) handshake(config Config) error {
 		if _, err := io.ReadFull(client.r, types); err != nil {
 			return err
 		}
-		security = chooseSecurity(types, config.Password != "" || config.AskPassword != nil)
+		offered := make([]uint32, len(types))
+		for i, value := range types {
+			offered[i] = uint32(value)
+		}
+		client.SecurityTypes = formatSecurityTypes(offered, false)
+		security = chooseSecurity(types, config.Password != "" || config.AskPassword != nil, config.AllowUnencrypted)
 		if security == 0 {
-			return fmt.Errorf("%w: the server offers %v", ErrUnsupported, types)
+			authOnly := false
+			for _, value := range types {
+				authOnly = authOnly || value == 6 || value == 130
+			}
+			return &UnsupportedSecurityError{Types: offered, AuthenticationOnly: authOnly && !config.AllowUnencrypted}
 		}
 		if _, err := client.conn.Write([]byte{security}); err != nil {
 			return err
@@ -240,14 +288,18 @@ func (client *Client) handshake(config Config) error {
 	}
 	client.Security = int(security)
 	switch security {
-	case 5:
+	case 5, 6, 129, 130:
 		return client.authenticateRA2(config)
+	case 19:
+		return client.authenticateVeNCrypt(config)
 	case 1:
+		client.Authentication = "none"
 		if client.Version == 8 {
 			return client.securityResult()
 		}
 		return nil
 	case 2:
+		client.Authentication = "vnc-password"
 		if config.Password == "" && config.AskPassword == nil {
 			return ErrAuthRequired
 		}
@@ -277,9 +329,10 @@ func (client *Client) handshake(config Config) error {
 	return fmt.Errorf("%w: security type %d", ErrUnsupported, security)
 }
 
-// chooseSecurity prefers RSA-AES, then VNC Authentication when a password is
-// available, then None, then VNC Authentication to ask for the password.
-func chooseSecurity(offered []byte, havePassword bool) uint8 {
+// chooseSecurity prefers full session encryption, then explicitly permitted
+// authentication-only encryption. Legacy-only servers keep their prior password
+// selection; refusing an offered authentication-only mode never chooses legacy.
+func chooseSecurity(offered []byte, havePassword, allowUnencrypted bool) uint8 {
 	has := func(want byte) bool {
 		for _, value := range offered {
 			if value == want {
@@ -289,10 +342,20 @@ func chooseSecurity(offered []byte, havePassword bool) uint8 {
 		return false
 	}
 	switch {
+	case has(129):
+		return 129
 	case has(5):
 		// Choose authenticated encryption before any unencrypted scheme. A
 		// rejected RSA key never causes a fallback on this or a new connection.
 		return 5
+	case has(19):
+		return 19
+	case allowUnencrypted && has(130):
+		return 130
+	case allowUnencrypted && has(6):
+		return 6
+	case has(6) || has(130):
+		return 0
 	case havePassword && has(2):
 		return 2
 	case has(1):

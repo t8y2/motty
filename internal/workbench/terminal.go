@@ -1972,6 +1972,10 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal == modalUpdate {
 		return state.scrollUpdateNotes(event)
 	}
+	if state.modal == modalDesktopSecurity {
+		state.desktopSecurity.layout.ScrollBy(event.StepY(18))
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
 	if state.modal == modalSnippetVariables {
 		return state.scrollSnippetVariables(event)
 	}

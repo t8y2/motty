@@ -13,8 +13,33 @@ type DesktopMessages struct {
 	ErrVNCPassword            string
 	VNCAccountPasswordChanged string
 	VNCSystemUser             string
+	VNCSystemPassword         string
+	VNCPassword               string
+	VNCLoginDescriptionFmt    string
+	VNCNegotiationHint        string
+	VNCTunnelCredentialsHint  string
+	VNCUnsupportedSecurityFmt string
+	VNCUnsupportedVeNCryptFmt string
+	VNCAuthOnlyPermissionFmt  string
+	SecurityDetails           string
+	SecurityMode              string
+	SecurityAuthentication    string
+	SecurityCipher            string
+	SecurityTLSVersion        string
+	SecurityOffered           string
+	SecuritySubtypes          string
+	SecurityEndpoint          string
+	SecurityIdentity          string
+	SecurityProtection        string
+	SecurityAuthNone          string
+	SecurityAuthOnly          string
+	SecurityNotReported       string
+	SecurityCopy              string
+	SecurityCopied            string
 	VNCKeyNewFmt              string
 	VNCKeyChangedFmt          string
+	VNCCertNewFmt             string
+	VNCCertChangedFmt         string
 	StripVNCEncrypted         string
 	FieldRDPUser              string
 	RDPUserHint               string
@@ -25,6 +50,7 @@ type DesktopMessages struct {
 	ViaSSH                    string
 	ViaSSHRouted              string
 	ShareClipboard            string
+	AllowVNCAuthOnly          string
 	HideBars                  string
 	ConsoleSession            string
 	StandardSecurity          string

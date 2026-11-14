@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/binary"
 	"errors"
@@ -32,20 +33,27 @@ func ra2Key(t *testing.T) *rsa.PrivateKey {
 }
 
 type ra2PeerOptions struct {
-	banner          string
-	clientVersion   string
-	subtype         byte
-	badProof        bool
-	splitProof      bool
-	combinedSubtype bool
-	badRandomLength bool
+	banner            string
+	clientVersion     string
+	security          byte
+	rfbTypes          []byte
+	subtype           byte
+	badProof          bool
+	splitProof        bool
+	combinedSubtype   bool
+	badRandomLength   bool
+	extraEncrypted    bool
+	prefetchRawStatus bool
 }
 
-// ra2PeerHash implements the peer's SHA-1 digest independently of the client.
-func ra2PeerHash(parts ...[]byte) []byte {
+func rsaPeerHash(keySize int, parts ...[]byte) []byte {
+	// The peer chooses the digest independently of the client implementation.
 	h := sha1.New()
-	for _, part := range parts {
-		_, _ = h.Write(part)
+	if keySize == 32 {
+		h = sha256.New()
+	}
+	for _, p := range parts {
+		_, _ = h.Write(p)
 	}
 	return h.Sum(nil)
 }
@@ -65,6 +73,14 @@ func ra2Peer(t *testing.T, raw net.Conn, options ra2PeerOptions) (*eaxConn, erro
 	if clientVersion == "" {
 		clientVersion = "RFB 003.008\n"
 	}
+	security := options.security
+	if security == 0 {
+		security = 5
+	}
+	randomSize := 16
+	if security == 129 || security == 130 {
+		randomSize = 32
+	}
 	if _, err := raw.Write([]byte(banner)); err != nil {
 		return nil, err
 	}
@@ -77,14 +93,18 @@ func ra2Peer(t *testing.T, raw net.Conn, options ra2PeerOptions) (*eaxConn, erro
 	}
 	// This matches the Pi offer and also checks that None/DES are not preferred
 	// over available authenticated encryption.
-	if _, err := raw.Write([]byte{4, 13, 5, 1, 2}); err != nil {
+	offered := options.rfbTypes
+	if len(offered) == 0 {
+		offered = []byte{13, security, 1, 2}
+	}
+	if _, err := raw.Write(append([]byte{byte(len(offered))}, offered...)); err != nil {
 		return nil, err
 	}
 	var selection [1]byte
 	if _, err := io.ReadFull(raw, selection[:]); err != nil {
 		return nil, err
 	}
-	if selection[0] != 5 {
+	if selection[0] != security {
 		return nil, fmt.Errorf("client security %d", selection[0])
 	}
 	if _, err := raw.Write(wire); err != nil {
@@ -106,10 +126,10 @@ func ra2Peer(t *testing.T, raw net.Conn, options ra2PeerOptions) (*eaxConn, erro
 		return nil, err
 	}
 	clientRandom, err := rsa.DecryptPKCS1v15(rand.Reader, key, encrypted)
-	if err != nil || len(clientRandom) != 16 {
+	if err != nil || len(clientRandom) != randomSize {
 		return nil, errors.New("invalid client random")
 	}
-	serverRandom := []byte("server random!!!")
+	serverRandom := bytes.Repeat([]byte{0x71}, randomSize)
 	encrypted, err = rsa.EncryptPKCS1v15(rand.Reader, clientKey, serverRandom)
 	if err != nil {
 		return nil, err
@@ -122,23 +142,26 @@ func ra2Peer(t *testing.T, raw net.Conn, options ra2PeerOptions) (*eaxConn, erro
 	if _, err := raw.Write(message); err != nil {
 		return nil, err
 	}
-	secured, err := newEAXConn(raw, ra2PeerHash(serverRandom, clientRandom)[:16], ra2PeerHash(clientRandom, serverRandom)[:16])
+	secured, err := newEAXConn(raw, rsaPeerHash(randomSize, serverRandom, clientRandom)[:randomSize], rsaPeerHash(randomSize, clientRandom, serverRandom)[:randomSize])
 	if err != nil {
 		return nil, err
 	}
-	proof := make([]byte, sha1.Size)
+	proof := make([]byte, len(rsaPeerHash(randomSize)))
 	if _, err := io.ReadFull(secured, proof); err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(proof, ra2PeerHash(clientWire, wire)) {
+	if !bytes.Equal(proof, rsaPeerHash(randomSize, clientWire, wire)) {
 		return nil, errors.New("client public key proof mismatch")
 	}
-	proof = ra2PeerHash(wire, clientWire)
+	proof = rsaPeerHash(randomSize, wire, clientWire)
 	if options.badProof {
 		proof[0] ^= 1
 	}
 	if options.combinedSubtype {
 		proof = append(proof, options.subtype)
+		if options.extraEncrypted {
+			proof = append(proof, u32(0)...)
+		}
 	}
 	if options.splitProof {
 		if _, err := secured.Write(proof[:7]); err != nil {
@@ -146,7 +169,18 @@ func ra2Peer(t *testing.T, raw net.Conn, options ra2PeerOptions) (*eaxConn, erro
 		}
 		proof = proof[7:]
 	}
-	if _, err := secured.Write(proof); err != nil {
+	if options.prefetchRawStatus {
+		// One socket write carries the final EAX record followed by raw status.
+		// This exercises bytes retained by the client's original buffered reader.
+		s := secured.(*eaxConn)
+		header := u16(len(proof))
+		body := s.writeCipher.seal(s.writeNonce[:], proof, header)
+		packet := append(append(header, body...), u32(0)...)
+		if _, err := raw.Write(packet); err != nil {
+			return nil, err
+		}
+		incrementEAXNonce(&s.writeNonce)
+	} else if _, err := secured.Write(proof); err != nil {
 		return nil, err
 	}
 	if !options.badProof && !options.combinedSubtype {
@@ -467,7 +501,7 @@ func TestRA2SecurityOfferOrderAndDuplicatesNeverWeakenKeyRejection(t *testing.T)
 }
 
 func TestRA2UnsupportedSecurityOffersDoNotAskForCredentials(t *testing.T) {
-	for _, offered := range [][]byte{{13}, {6}, {129}, {130}, {18}, {19}, {13, 6, 129, 130, 18, 19}} {
+	for _, offered := range [][]byte{{13}, {6}, {130}, {18}, {13, 6, 130, 18}} {
 		t.Run(fmt.Sprint(offered), func(t *testing.T) {
 			_, err := connect(t, Config{
 				Password: "cached password",
@@ -563,7 +597,7 @@ func TestRealVNCBannerDowngradePreservesLegacyAuthentication(t *testing.T) {
 			}
 		})
 	}
-	for _, banner := range []string{"RFB 004.000\n", "RFB 004.001\n", "RFB 005.001\n", "RFB 006.000\n"} {
+	for _, banner := range []string{"RFB 004.000\n", "RFB 005.001\n", "RFB 006.000\n"} {
 		_, err := connect(t, Config{}, func(s *server) { s.write([]byte(banner)) })
 		if !errors.Is(err, ErrUnsupported) {
 			t.Errorf("%q:error=%v", banner, err)

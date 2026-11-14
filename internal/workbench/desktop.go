@@ -28,13 +28,15 @@ import (
 var desktopHits = tree.Feature("desktop")
 
 var (
-	hitDesktopFit        = tree.ID(desktopHits, "fit")
-	hitDesktopActual     = tree.ID(desktopHits, "actual")
-	hitDesktopCapture    = tree.ID(desktopHits, "capture")
-	hitDesktopCtrlAltDel = tree.ID(desktopHits, "ctrl-alt-del")
-	hitDesktopReconnect  = tree.ID(desktopHits, "reconnect")
-	hitDesktopFullscreen = tree.ID(desktopHits, "fullscreen")
-	hitDesktopLatency    = tree.ID(desktopHits, "latency")
+	hitDesktopFit            = tree.ID(desktopHits, "fit")
+	hitDesktopActual         = tree.ID(desktopHits, "actual")
+	hitDesktopCapture        = tree.ID(desktopHits, "capture")
+	hitDesktopCtrlAltDel     = tree.ID(desktopHits, "ctrl-alt-del")
+	hitDesktopReconnect      = tree.ID(desktopHits, "reconnect")
+	hitDesktopFullscreen     = tree.ID(desktopHits, "fullscreen")
+	hitDesktopLatency        = tree.ID(desktopHits, "latency")
+	hitDesktopSecurity       = tree.ID(desktopHits, "security")
+	hitDesktopSecurityStatus = tree.ID(desktopHits, "security-status")
 )
 
 const (
@@ -104,6 +106,9 @@ type desktopView struct {
 	asked, pending desktopTarget
 	pendingSince   time.Duration
 	settling       bool
+	securityInfo   desktop.Info
+	securityLocale string
+	securityStatus string
 }
 
 // desktopTarget is the desktop a pane wants of a server that follows it: as
@@ -872,6 +877,8 @@ func (state *State) clickDesktop(id gfx.ID) bool {
 		state.toggleDesktopFullscreen(session)
 	case hitDesktopCapture:
 		state.toggleCapture(view)
+	case hitDesktopSecurity, hitDesktopSecurityStatus:
+		state.openDesktopSecurity(session)
 	case hitDesktopCtrlAltDel:
 		if !view.ended {
 			view.tap([]desktop.Key{desktop.KeyControl, desktop.KeyAlt}, desktop.KeyEvent{Key: desktop.KeyDelete})
@@ -920,6 +927,9 @@ func (state *State) declareDesktopBody(c ui.C, session *Session, bounds gfx.Rect
 		}
 		if bounds.Width >= 760 {
 			tools = append([]components.ButtonAction{{ID: state.paneIdentity(session, hitDesktopCtrlAltDel), Label: m.Desktop.CtrlAltDel, Variant: components.ButtonGhost, Disabled: view.ended}}, tools...)
+		}
+		if session.host.Protocol == protocolVNC && bounds.Width >= 640 {
+			tools = append(tools, components.ButtonAction{ID: state.paneIdentity(session, hitDesktopSecurity), Label: m.Desktop.SecurityDetails, Variant: components.ButtonGhost})
 		}
 		s.desktopTools = append(s.desktopTools[:0], tools...)
 	} else {
@@ -1006,6 +1016,10 @@ func (state *State) paintDesktopDetails(canvas *gfx.Canvas, session *Session, bo
 			paintLight(canvas, spot.X+spot.Width/2, spot.Y+spot.Height/2, kind, dot, pal.workspace)
 		}
 		components.BeginButtonRow(canvas, state.theme, s.tools.Rect()).Size(components.ButtonSizeXSmall).Paint(s.desktopTools...)
+		if session.host.Protocol == protocolVNC {
+			strip := geometry.strip
+			canvas.HitWithOptions(state.paneIdentity(session, hitDesktopSecurityStatus), gfx.Rect{X: strip.X + termPadX, Y: strip.Y, Width: max(strip.Width-2*termPadX, 0), Height: strip.Height}, m.Desktop.SecurityDetails, gfx.HitOptions{Role: gfx.RoleButton})
+		}
 	}
 	// The picture, clipped to its area. The area behind it is the terminal's
 	// ground, so a picture that does not fill the pane sits on a quiet surface.
@@ -1154,6 +1168,11 @@ func (state *State) desktopStripLeft(view *desktopView, session *Session) string
 		parts = append(parts, size)
 	}
 	switch {
+	case session.host.Protocol == protocolVNC && view.session.Info().Security != "":
+		parts = append(parts, state.vncSecurityStatus(view))
+		if session.host.tunneled() || session.desktopTunnel {
+			parts = append(parts, m.StripEncrypted)
+		}
 	case session.host.tunneled() || session.desktopTunnel:
 		parts = append(parts, m.StripEncrypted)
 	case view.session.Info().Encrypted:
@@ -1226,4 +1245,12 @@ func (state *State) vncKeyDescription(key sshconn.HostKeyInfo) string {
 		return fmt.Sprintf(m.VNCKeyChangedFmt, key.Address, key.Known[0])
 	}
 	return fmt.Sprintf(m.VNCKeyNewFmt, key.Address)
+}
+
+func (state *State) vncCertificateDescription(key sshconn.HostKeyInfo) string {
+	m := state.messages.Desktop
+	if len(key.Known) > 0 {
+		return fmt.Sprintf(m.VNCCertChangedFmt, key.Address, key.Known[0])
+	}
+	return fmt.Sprintf(m.VNCCertNewFmt, key.Address)
 }
