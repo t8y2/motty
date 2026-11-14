@@ -27,7 +27,7 @@ func TestAIPanelPageReadsItsTitleControls(t *testing.T) {
 	// The title controls no longer go through State.Click: the page's
 	// declaration is where the event pass is read.
 	state.Click(hitAIClose)
-	if !state.ai.open {
+	if !state.aiPanelVisible() {
 		t.Fatal("a click outside the event pass closed the panel")
 	}
 
@@ -41,7 +41,7 @@ func TestAIPanelPageReadsItsTitleControls(t *testing.T) {
 	}
 
 	clickAIPanelPage(t, state, hitAIClose)
-	if state.ai.open {
+	if state.aiPanelVisible() {
 		t.Fatal("the page did not read the close click")
 	}
 
@@ -59,7 +59,7 @@ func TestAIPanelPageReadsItsTitleControls(t *testing.T) {
 func TestAIComposerPageControlsTakeRealPointerClicks(t *testing.T) {
 	state, _ := panelState(t, quietModel{"ok"})
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.mode = agent.ModeAsk
 	view := openAIPanelView(t, state)
 	defer view.Close()
@@ -136,7 +136,7 @@ func openAIPanelView(t testing.TB, state *State) *headless.Session {
 func TestAIPanelEventPassGoesThroughTheWorkbenchPage(t *testing.T) {
 	state, _ := panelState(t, quietModel{"ok"})
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.mode = agent.ModeAgent
 	view := openAIPanelView(t, state)
 	defer view.Close()
@@ -260,7 +260,7 @@ func TestAIListControlTakesRealRowAndListEvents(t *testing.T) {
 	for index := 0; index < 20; index++ {
 		state.ai.items = append(state.ai.items, aiItem{kind: aiAssistant, text: "another answer below the fold"})
 	}
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	// Paint once with the conversation, put the reader at its top, then paint
 	// the frame the headless window will start from.
 	paintAt(state, panelWide)

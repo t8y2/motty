@@ -19,7 +19,7 @@ func TestLastAnswerShowsCopyOnHoverAndUsageAtRest(t *testing.T) {
 	}}
 	state, _ := assistantTestSession(t, model)
 	state.activeSection = sectionTerminal
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	ask(state, "question", agent.ModeAsk)
 	pumpUntil(t, state, "the answer to finish", func() bool { return state.ai.run == nil })
 
@@ -70,7 +70,7 @@ func TestAnswerActionsFollowThePointer(t *testing.T) {
 	}}
 	state, _ := assistantTestSession(t, model)
 	state.activeSection = sectionTerminal
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	ask(state, "question", agent.ModeAsk)
 	pumpUntil(t, state, "the answer to finish", func() bool { return state.ai.run == nil })
 

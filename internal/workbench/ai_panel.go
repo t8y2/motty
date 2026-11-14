@@ -455,7 +455,15 @@ type aiPanel struct {
 // The panel stays available on every page, independently of terminal tabs.
 func (state *State) aiPanelVisible() bool {
 	if state.terminalPage() {
-		if open, ok := state.startupAIVisibility[state.deck.ActiveWorkspace()]; ok {
+		return state.aiPanelVisibleFor(state.deck.ActiveWorkspace())
+	}
+	return state.aiPanelVisibleFor(0)
+}
+
+// A zero workspace names a section page, which retains window-wide visibility.
+func (state *State) aiPanelVisibleFor(workspaceID layoutcore.WorkspaceID) bool {
+	if workspaceID != 0 {
+		if open, ok := state.startupAIVisibility[workspaceID]; ok {
 			return open
 		}
 	}
@@ -480,7 +488,7 @@ func (state *State) aiSectionReserve(size gfx.Size) float32 {
 // divider included, or zero when the panel is closed or the window is too narrow
 // to share (it is then a drawer over the panes).
 func (state *State) aiReserve(workspaceID layoutcore.WorkspaceID, size gfx.Size) float32 {
-	if !state.aiPanelVisible() || size.Width < aiDockAt {
+	if !state.aiPanelVisibleFor(workspaceID) || size.Width < aiDockAt {
 		return 0
 	}
 	panel := state.aiPanelExtent(size) + 1

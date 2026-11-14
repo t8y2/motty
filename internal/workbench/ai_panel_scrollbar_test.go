@@ -12,7 +12,7 @@ func aiScrollbarPanel(t testing.TB) *State {
 	t.Helper()
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	longConversation(state, 40)
 	return state
 }
@@ -277,7 +277,7 @@ func TestAIScrollbarDragEndsOnANewPressElsewhere(t *testing.T) {
 func TestAIMessageScrollbarNeedsOverflow(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "short answer"}}
 	canvas, _ := paintAt(state, panelWide)
 	if _, ok := hitByID(canvas, hitAIMessageBar); ok {

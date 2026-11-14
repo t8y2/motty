@@ -26,7 +26,8 @@ func TestAIRunStatusHeadlessLayoutAndScreenshots(t *testing.T) {
 				withModel(t, state)
 				state.setLanguage(language)
 				state.setAppearance(appearanceLight)
-				state.ai.open, state.ai.panelWidth = true, 300
+				state.setAIPanelOpen(true)
+				state.ai.panelWidth = 300
 				state.ai.items = []aiItem{{kind: aiUser, text: "测试会话"}}
 				state.options.Now = func() time.Duration { return 10 * time.Second }
 				run := &aiRun{cancel: func() {}, open: -1, stats: aiRunStats{startedAt: 2 * time.Second}}
@@ -104,7 +105,8 @@ func TestAIRunUsageWrapReservesSpaceForFontFallback(t *testing.T) {
 			state, _ := panelState(t, nil)
 			withModel(t, state)
 			state.setLanguage(language)
-			state.ai.open, state.ai.panelWidth = true, 300
+			state.setAIPanelOpen(true)
+			state.ai.panelWidth = 300
 			state.ai.items = []aiItem{{kind: aiUser, text: "question"}, {kind: aiAssistant, text: "answer"}}
 			state.ai.lastRun = &aiRunStats{phase: aiRunCompleted, duration: 8 * time.Second,
 				usage: llm.Usage{InputTokens: 12000, OutputTokens: 284, CacheReadTokens: 9800}}

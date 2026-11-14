@@ -80,10 +80,9 @@ func (s *State) initializeTerminalSidebars(id layoutcore.WorkspaceID) {
 	if s.startupAIVisibility == nil {
 		s.startupAIVisibility = make(map[layoutcore.WorkspaceID]bool)
 	}
-	wantAI := slices.Contains(s.terminalSidebars, "ai")
-	if wantAI != s.ai.open {
-		s.startupAIVisibility[id] = wantAI
-	}
+	// Record even defaults matching the global state so later toggles cannot
+	// leak between newly created workspaces.
+	s.startupAIVisibility[id] = slices.Contains(s.terminalSidebars, "ai")
 	if slices.Contains(s.terminalSidebars, "notes") {
 		s.noteSidebarFor(id).open = true
 	}

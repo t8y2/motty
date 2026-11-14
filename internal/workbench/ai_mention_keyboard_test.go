@@ -13,7 +13,7 @@ import (
 
 func TestAIMentionKeyboardWrapFilterEscapeAndNativeAccept(t *testing.T) {
 	state := targetTestWorld(t, quietModel{"ok"})
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.input = *text.NewEditor("compare @")
 	paintAt(state, panelWide)
 	key := func(key gfx.Key) {
@@ -61,7 +61,7 @@ func TestAIMentionKeyboardWrapFilterEscapeAndNativeAccept(t *testing.T) {
 
 func TestAIMentionKeysLeaveChineseCompositionToTheInputMethod(t *testing.T) {
 	state := targetTestWorld(t, quietModel{"ok"})
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.input = *text.NewEditor("@")
 	paintAt(state, panelWide)
 	state.aiPanelText(app.TextEvent{Kind: app.TextSetMarked, Text: "ni", MarkedSelection: app.TextRange{Start: 2, End: 2}})

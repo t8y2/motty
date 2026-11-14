@@ -15,7 +15,7 @@ func agentPanel(t *testing.T) *State {
 	t.Helper()
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.Click(hitAIMode)
 	return state
 }
@@ -23,7 +23,7 @@ func agentPanel(t *testing.T) *State {
 func TestApprovalScopeChipIsAgentOnlyAndNamesTheScope(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	if canvas, _ := paintAt(state, panelWide); hasHit(canvas, hitAIAutoScope) {
 		t.Fatal("Ask mode shows an approval scope")
 	}

@@ -239,13 +239,13 @@ func TestShortcutAndPaletteToggleThePanel(t *testing.T) {
 	}
 	event := gfx.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Char))}
 	result := state.Shortcut(event)
-	if !result.Handled || !state.ai.open || result.Focus != hitAIInput {
-		t.Fatalf("shortcut opened = %+v, open=%v", result, state.ai.open)
+	if !result.Handled || !state.aiPanelVisible() || result.Focus != hitAIInput {
+		t.Fatalf("shortcut opened = %+v, open=%v", result, state.aiPanelVisible())
 	}
 	paintAt(state, panelWide)
 	result = state.Shortcut(event)
-	if !result.Handled || state.ai.open || result.Focus != state.activeTerminalFocusHit() {
-		t.Fatalf("shortcut closed = %+v, open=%v", result, state.ai.open)
+	if !result.Handled || state.aiPanelVisible() || result.Focus != state.activeTerminalFocusHit() {
+		t.Fatalf("shortcut closed = %+v, open=%v", result, state.aiPanelVisible())
 	}
 
 	state.openCommandPalette()
@@ -260,8 +260,8 @@ func TestShortcutAndPaletteToggleThePanel(t *testing.T) {
 		t.Fatal("the command palette has no assistant entry")
 	}
 	state.executeCommandPalette(found)
-	if !state.ai.open || state.modal != modalNone {
-		t.Fatalf("palette entry: open=%v modal=%v", state.ai.open, state.modal)
+	if !state.aiPanelVisible() || state.modal != modalNone {
+		t.Fatalf("palette entry: open=%v modal=%v", state.aiPanelVisible(), state.modal)
 	}
 }
 
@@ -358,9 +358,13 @@ func TestWithoutAModelThePanelOffersSetupAndSettingsOpens(t *testing.T) {
 	if state.activeSection != sectionSettings || state.settingsCategory != settingsAssistant {
 		t.Fatalf("section = %d, category = %d; want settings and settingsAssistant", state.activeSection, state.settingsCategory)
 	}
-	// The panel waits where it was.
-	if !state.ai.open {
-		t.Fatal("going to Settings closed the panel")
+	// Settings retains its global visibility; the terminal panel waits in its scope.
+	if state.aiPanelVisible() || state.ai.open {
+		t.Fatal("the terminal toggle leaked into Settings")
+	}
+	state.activeSection = sectionTerminal
+	if !state.aiPanelVisible() {
+		t.Fatal("going to Settings closed the terminal panel")
 	}
 }
 
@@ -382,7 +386,7 @@ func TestConversationShowsEveryKindOfRowAndToolStatus(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
 	conversationFixture(state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	// A tall window so that everything is on screen.
 	size := gfx.Size{Width: 1400, Height: 2600}
 	state.Resize(size)
@@ -422,7 +426,7 @@ func TestCodeBlocksCopyAndShowIt(t *testing.T) {
 	state, _ := panelState(t, nil)
 	var copied string
 	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "Run:\n```\nls -la\n```"}}
 	canvas, _ := paintAt(state, panelWide)
 	button := panelHit(t, canvas, hitAICopies.At(0))
@@ -439,7 +443,7 @@ func TestLinksInAnswersOpenTheirOwnDestination(t *testing.T) {
 	state, _ := panelState(t, nil)
 	var opened []string
 	state.options.OpenURL = func(url string) error { opened = append(opened, url); return nil }
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{
 		{kind: aiAssistant, text: "See [the first](https://one.example/a) and **bold** text."},
 		{kind: aiAssistant, text: "And [the second](https://two.example/b), or [bad](javascript:alert(1))."},
@@ -469,7 +473,7 @@ func TestLinksInAnswersOpenTheirOwnDestination(t *testing.T) {
 func TestMessageBoxWrapsLongMessagesAndMovesTheCaretByRow(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	value := "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau\n\n中文也要换行,这一行也很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长\n"
 	state.ai.input.Insert(value)
 	canvas, texts := paintAt(state, gfx.Size{Width: 900, Height: 700})
@@ -510,7 +514,7 @@ func TestModelChipSwitchesTheModelThatAnswers(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.aiWrote()
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	canvas, _ := paintAt(state, panelWide)
 	chip := panelHit(t, canvas, hitAIModelChip)
 	if !strings.Contains(chip.Label, "gpt-x") {
@@ -567,7 +571,7 @@ func TestModelMenuScrollsAProviderWithManyModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.aiWrote()
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	paintAt(state, panelWide)
 	state.Click(hitAIModelChip)
 	canvas, _ := paintAt(state, panelWide)
@@ -617,7 +621,7 @@ func TestModelChipListsProvidersFirstWhenThereAreSeveral(t *testing.T) {
 	must(db.SaveProvider(store.Provider{ID: "q", Name: "Home", Kind: store.KindOpenAI, Enabled: true}))
 	must(db.SaveModels("q", []store.Model{{ProviderID: "q", Name: "llama-a", Enabled: true}, {ProviderID: "q", Name: "llama-b", Enabled: true}}))
 	state.aiWrote()
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	paintAt(state, panelWide)
 	state.Click(hitAIModelChip)
 	canvas, texts := paintAt(state, panelWide)
@@ -644,7 +648,7 @@ func approvalFixture(state *State, level risk.Level, needsText bool) *aiApproval
 		Assessment: risk.Assessment{Level: level, Reasons: []string{"deletes everything", "cannot be undone"}, Safer: "ls /"},
 	}}
 	state.ai.approvals = append(state.ai.approvals, approval)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	return approval
 }
 
@@ -722,7 +726,7 @@ func TestApprovalButtonsAndEscapeAnswer(t *testing.T) {
 func TestRunningShowsStopAndStopCancels(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	cancelled := false
 	state.ai.run = &aiRun{cancel: func() { cancelled = true }, open: -1}
 	canvas, _ := paintAt(state, panelWide)
@@ -742,7 +746,7 @@ func TestRunningShowsStopAndStopCancels(t *testing.T) {
 func TestErrorNoticesAreShown(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiUser, text: "hi"}, {kind: aiNotice, text: "provider said: 401 unauthorized"}}
 	state.ai.notice = "could not save"
 	_, texts := paintAt(state, panelWide)
@@ -772,7 +776,7 @@ func TestNarrowWindowsGetADrawerAndTerminalsKeepTheirWidth(t *testing.T) {
 	}
 	clickAIPanelPageAt(t, state, panelNarrow, dismiss.ID)
 	canvas, _ = paintAt(state, panelNarrow)
-	if _, ok := hitByID(canvas, hitAIInput); ok || state.ai.open {
+	if _, ok := hitByID(canvas, hitAIInput); ok || state.aiPanelVisible() {
 		t.Fatal("the drawer did not close")
 	}
 }
@@ -781,7 +785,7 @@ func TestSectionAIDrawerUsesTheWidthWithoutTheBackgroundTerminalRail(t *testing.
 	state, _ := panelState(t, nil)
 	state.terminalToolbarPosition = terminalToolbarRight
 	state.activeSection = sectionSettings
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 
 	canvas, _ := paintAt(state, panelNarrow)
 	input := panelHit(t, canvas, hitAIInput)
@@ -794,7 +798,7 @@ func TestSectionAIDrawerUsesTheWidthWithoutTheBackgroundTerminalRail(t *testing.
 func TestWheelScrollsTheConversationAndFollowingTracksTheEnd(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	for index := 0; index < 40; index++ {
 		state.ai.items = append(state.ai.items, aiItem{kind: aiAssistant, text: "line of an answer that is long enough to be a message number " + string(rune('A'+index%26))})
 	}
@@ -852,7 +856,7 @@ func TestHistoryListsOpensAndDeletes(t *testing.T) {
 	_, _ = db.AppendMessage(one.ID, store.StoredMessage{Role: "user", Text: "hello there"})
 	_, _ = db.AppendMessage(one.ID, store.StoredMessage{Role: "assistant", Text: "hi, how can I help"})
 	_, _ = db.CreateConversation("Second chat", "x")
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	clickAIPanelPage(t, state, hitAIHistory)
 	canvas, texts := paintAt(state, panelWide)
 	if !hasText(texts, "First chat") || !hasText(texts, "Second chat") || !hasText(texts, state.messages.AIPanel.HistoryTitle) {
@@ -962,8 +966,8 @@ func TestTerminalMenuAsksTheAssistantWithoutSending(t *testing.T) {
 	rightClick(state, session, 300, 300)
 	paintAt(state, panelWide)
 	state.Click(hitTerminalMenuAsk)
-	if !state.ai.open || !strings.Contains(state.ai.input.String(), "error: disk full") || !strings.Contains(state.ai.input.String(), "```") {
-		t.Fatalf("open=%v input=%q", state.ai.open, state.ai.input.String())
+	if !state.aiPanelVisible() || !strings.Contains(state.ai.input.String(), "error: disk full") || !strings.Contains(state.ai.input.String(), "```") {
+		t.Fatalf("open=%v input=%q", state.aiPanelVisible(), state.ai.input.String())
 	}
 	if state.ai.run != nil || len(state.ai.items) != 0 {
 		t.Fatal("the question was sent without the user")
@@ -980,12 +984,23 @@ func TestTerminalMenuAsksTheAssistantWithoutSending(t *testing.T) {
 func TestAnApprovalOpensTheClosedPanelAndTheTerminalsFollow(t *testing.T) {
 	state, _ := panelState(t, nil)
 	before := terminalColumns(state)
-	// What aiApprover does from the agent's goroutine, on the window thread.
-	state.aiPost(func(s *State) {
-		s.ai.approvals = append(s.ai.approvals, &aiApproval{reply: make(chan aiAnswer, 1), request: gate.Request{Summary: "ls"}})
-		s.ai.open = true
-	})
-	state.Wake()
+	if state.aiPanelVisible() {
+		t.Fatal("the panel must start closed")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		approved, _, err := state.aiApprover(ctx, gate.Request{Summary: "ls"})
+		if err == nil && !approved {
+			err = fmt.Errorf("the approval was not accepted")
+		}
+		done <- err
+	}()
+	pumpWindow(t, state, func() bool { return len(state.ai.approvals) == 1 })
+	if !state.aiPanelVisible() || state.ai.open {
+		t.Fatal("approval must open the terminal scope without changing global visibility")
+	}
 	if terminalColumns(state) >= before {
 		t.Fatalf("columns %d -> %d: the posted open did not resize the terminals", before, terminalColumns(state))
 	}
@@ -993,10 +1008,23 @@ func TestAnApprovalOpensTheClosedPanelAndTheTerminalsFollow(t *testing.T) {
 	if !hasText(texts, state.messages.AIPanel.ApprovalTitle) {
 		t.Fatalf("the question is not shown: %q", texts)
 	}
+	state.Click(hitAIApprove)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the actual approver did not receive the answer")
+	}
 }
 
 func TestOtherSectionsKeepAssistantVisibleWhileAQuestionWaits(t *testing.T) {
 	state, _ := panelState(t, nil)
+	// Open the global panel first: terminal visibility is intentionally separate.
+	state.activeSection = sectionHosts
+	state.setAIPanelOpen(true)
+	state.activeSection = sectionTerminal
 	approvalFixture(state, risk.Medium, false)
 	state.activeSection = sectionHosts
 	canvas, _ := paintAt(state, panelWide)
@@ -1032,7 +1060,7 @@ func TestPaintingTheOpenPanelAllocatesLittle(t *testing.T) {
 		paint()
 	}
 	closed := testing.AllocsPerRun(20, paint)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.aiPanelSync()
 	for range 3 {
 		paint()
@@ -1060,7 +1088,7 @@ func pumpWindow(t *testing.T, state *State, done func() bool) {
 func TestDraggingTheEdgesResizesThePanelAndTheMessageBox(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	canvas, _ := paintAt(state, panelWide)
 	divider := panelHit(t, canvas, hitAIDivider)
 	before := state.aiPanelExtent(panelWide)
@@ -1103,7 +1131,7 @@ func TestDraggingTheEdgesResizesThePanelAndTheMessageBox(t *testing.T) {
 func TestThePanelWidensToWhatThePanesDoNotNeed(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	wide := gfx.Size{Width: 1920, Height: 1080}
 	canvas, _ := paintAt(state, wide)
 	divider := panelHit(t, canvas, hitAIDivider)
@@ -1146,7 +1174,7 @@ func TestAWidePanelLeavesTheSectionItsRoom(t *testing.T) {
 	state := newTestState(t, options)
 	t.Cleanup(state.Close)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	wide := gfx.Size{Width: 1920, Height: 1080}
 	canvas, _ := paintAt(state, wide)
 	divider := panelHit(t, canvas, hitAIDivider)
@@ -1173,7 +1201,7 @@ func TestAWidePanelLeavesTheSectionItsRoom(t *testing.T) {
 func TestAIPanelRemembersWidthAcrossRestarts(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	wide := gfx.Size{Width: 1920, Height: 1080}
 	canvas, _ := paintAt(state, wide)
 	divider := panelHit(t, canvas, hitAIDivider)
@@ -1221,7 +1249,7 @@ func TestAIPanelRemembersWidthAcrossRestarts(t *testing.T) {
 func TestAIPanelDrawerModeRemembersResizedWidth(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	// Narrow window triggers drawer mode (< aiDockAt = 900)
 	narrow := gfx.Size{Width: 800, Height: 600}
 	canvas, _ := paintAt(state, narrow)
@@ -1255,7 +1283,7 @@ func TestAIPanelDrawerModeRemembersResizedWidth(t *testing.T) {
 func TestAIComposerHeightRemembersAcrossRestarts(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	wide := gfx.Size{Width: 1920, Height: 1080}
 	canvas, _ := paintAt(state, wide)
 
@@ -1290,7 +1318,7 @@ func TestAIComposerHeightRemembersAcrossRestarts(t *testing.T) {
 func TestAThoughtInProgressShowsItIsThinkingAndAFinishedOneDoesNot(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiUser, text: "why"}, {kind: aiReasoning, text: "let me look"}}
 	state.ai.run = &aiRun{cancel: func() {}}
 	canvas, texts := paintAt(state, panelWide)
@@ -1327,7 +1355,7 @@ func TestACopiedCodeBlockShowsItsCheckForAMomentOnly(t *testing.T) {
 	fake.shell(t).say("\x1b[0m")
 	state.Wake()
 	state.terminalCursorSteady = true // nothing else in the window animates
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "```\nls\n```"}}
 	paintAt(state, panelWide)
 	state.Click(hitAICopies.At(0))
@@ -1358,7 +1386,7 @@ func TestModelSubmenuWithTheKeyboard(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.aiWrote()
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	paintAt(state, panelWide)
 	state.Click(hitAIModelChip)
 	canvas, _ := paintAt(state, panelWide)

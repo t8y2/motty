@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 	layoutcore "motty/internal/workspace"
@@ -95,6 +96,111 @@ func TestTerminalSidebarInitializationAndIsolation(t *testing.T) {
 		t.Fatal("defaults reapplied to an existing workspace")
 	}
 }
+func TestTerminalSidebarAIVisibilityDefaultsAndManualIsolation(t *testing.T) {
+	for _, global := range []bool{false, true} {
+		for _, defaultOpen := range []bool{false, true} {
+			t.Run(fmt.Sprintf("global=%t/default=%t", global, defaultOpen), func(t *testing.T) {
+				s := newTestState(t, Options{})
+				s.viewport = gfx.Size{Width: 1600, Height: 900}
+				s.ai.open = global // Window-wide state, not a terminal toggle.
+				s.terminalSidebars = []string{}
+				if defaultOpen {
+					s.terminalSidebars = []string{"ai"}
+				}
+				ids := make([]layoutcore.WorkspaceID, 3)
+				for i := range ids {
+					ids[i], _, _ = s.deck.Create("terminal")
+					s.initializeTerminalSidebars(ids[i])
+					if open, exists := s.startupAIVisibility[ids[i]]; !exists || open != defaultOpen {
+						t.Fatalf("workspace %d default = %t, recorded = %t", ids[i], open, exists)
+					}
+				}
+				s.activeSection = sectionTerminal
+				for i, id := range ids {
+					s.deck.ActivateWorkspace(id)
+					if s.aiPanelVisible() != defaultOpen {
+						t.Fatalf("workspace %d inherited another terminal's toggle", id)
+					}
+					s.setAIPanelOpen(!defaultOpen)
+					if s.aiPanelVisible() == defaultOpen {
+						t.Fatal("manual toggle did not change current terminal")
+					}
+					for j, other := range ids {
+						want := defaultOpen
+						if j <= i {
+							want = !defaultOpen
+						}
+						if s.aiPanelVisibleFor(other) != want {
+							t.Fatalf("workspace %d visibility leaked to %d", id, other)
+						}
+					}
+				}
+				s.activeSection = sectionHosts
+				if s.aiPanelVisible() != global || s.ai.open != global {
+					t.Fatal("terminal toggle changed section visibility")
+				}
+			})
+		}
+	}
+}
+
+func TestTerminalSidebarBackgroundReservesIgnoreActivePage(t *testing.T) {
+	s := newTestState(t, Options{})
+	s.viewport = gfx.Size{Width: 1600, Height: 900}
+	s.terminalSidebars = []string{}
+	a, _, _ := s.deck.Create("AI")
+	b, _, _ := s.deck.Create("monitor")
+	s.initializeTerminalSidebars(a)
+	s.initializeTerminalSidebars(b)
+	s.activeSection = sectionTerminal
+	s.deck.ActivateWorkspace(a)
+	s.setAIPanelOpen(true)
+	c, _ := s.deck.Context(b)
+	c.MonitorOpen = true
+	_ = s.deck.SetContext(b, c)
+	// At this width the monitor docks alone, but cannot dock beside AI.
+	medium := gfx.Size{Width: 1000, Height: 700}
+	if s.monitorAndAICanCoexist(b, medium) {
+		t.Fatal("fixture must not fit both panels")
+	}
+	aiReserve := s.aiReserve(a, s.viewport)
+	monitorReserve := s.independentMonitorReserve(b, medium)
+	if aiReserve <= 0 || monitorReserve <= 0 {
+		t.Fatalf("missing initial reserves: AI=%v monitor=%v", aiReserve, monitorReserve)
+	}
+	for _, active := range []layoutcore.WorkspaceID{a, b} {
+		s.deck.ActivateWorkspace(active)
+		for _, section := range []uint8{sectionTerminal, sectionHosts} {
+			s.activeSection = section
+			if got := s.aiReserve(a, s.viewport); got != aiReserve {
+				t.Fatalf("AI reserve depends on active page: %v, want %v", got, aiReserve)
+			}
+			if s.aiReserve(b, s.viewport) != 0 || s.aiReserve(0, s.viewport) != 0 {
+				t.Fatal("closed workspace or section inherited active terminal AI reserve")
+			}
+			if got := s.independentMonitorReserve(b, medium); got != monitorReserve {
+				t.Fatalf("monitor reserve depends on active page: %v, want %v", got, monitorReserve)
+			}
+		}
+	}
+}
+
+func TestTerminalSidebarHiddenNavigationDoesNotHidePanels(t *testing.T) {
+	s := newTestState(t, Options{})
+	s.hiddenNav = s.hiddenNav.set(navPageNotes, true).set(navPageMonitor, true)
+	s.terminalSidebars = []string{"notes", "monitor"}
+	id, _, _ := s.deck.Create("terminal")
+	s.initializeTerminalSidebars(id)
+	s.deck.ActivateWorkspace(id)
+	s.activeSection = sectionTerminal
+	if !s.noteSidebarVisible() || !s.notesPanelOpenFor(id) || !s.monitorShown(id) {
+		t.Fatal("hidden navigation suppressed terminal startup panels")
+	}
+	if s.independentMonitorReserve(id, gfx.Size{Width: 1600, Height: 900}) <= 0 {
+		t.Fatal("hidden Monitor navigation suppressed terminal monitor layout")
+	}
+}
+
 func TestTerminalSidebarSettingsPicker(t *testing.T) {
 	s := newTestState(t, Options{})
 	s.Click(hitSettings)

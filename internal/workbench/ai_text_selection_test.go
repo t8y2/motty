@@ -21,7 +21,7 @@ func selectAnswerRange(panel *aiPanel, row, start, end int) {
 
 func selectAnswerText(t *testing.T, state *State, start, end int) *aiPanel {
 	t.Helper()
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "alpha beta gamma"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
@@ -44,7 +44,7 @@ func hitIndex(hits []gfx.Hit, id gfx.ID) int {
 
 func TestAnswerBodyIsAFocusableTextRegionBeforeLinksAndButtons(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "See [a link](https://example.com) and\n\n```\nls -la\n```\n"}}
 	canvas, _ := paintAt(state, panelWide)
 	textID, linkID, copyID := hitAIAnswerText.At(0), hitAILinks.At(0), hitAICopies.At(0)
@@ -136,7 +136,7 @@ func TestNamedCopyBindingCopiesTheAnswerSelection(t *testing.T) {
 
 func TestUserMessageDragSelectsAndCopiesWithoutVisualWraps(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	text := strings.Repeat("copy this user question ", 12)
 	state.ai.items = []aiItem{{kind: aiUser, text: text}}
 	canvas, _ := paintAt(state, panelWide)
@@ -158,7 +158,7 @@ func TestUserMessageDragSelectsAndCopiesWithoutVisualWraps(t *testing.T) {
 
 func TestToolCommandAndOutputDragSelectAndCopy(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	command := "cd /dev && pwd"
 	output := "/dev\n[exit status 0]"
 	state.ai.items = []aiItem{{
@@ -198,7 +198,7 @@ func TestToolCommandAndOutputDragSelectAndCopy(t *testing.T) {
 
 func TestToolOutputSelectionCopiesOnlyVisibleLines(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{
 		kind: aiTool, call: llm.ToolCall{ID: "1", Name: "terminal_read"}, status: aiToolDone,
 		result: strings.Repeat("visible\n", aiMaxOutput) + "hidden",
@@ -310,7 +310,7 @@ func TestAnswerLinkOpensAndClearsTheSelection(t *testing.T) {
 	state, _ := panelState(t, nil)
 	var opened []string
 	state.options.OpenURL = func(url string) error { opened = append(opened, url); return nil }
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "See [the first](https://one.example/a) and more text."}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
@@ -333,7 +333,7 @@ func TestCodeCopyButtonCopiesItsBlockAndClearsTheSelection(t *testing.T) {
 	state, _ := panelState(t, nil)
 	var copied string
 	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "Run:\n```\nls -la\n```"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
@@ -354,7 +354,7 @@ func TestAnswerTextDragAcrossALinkStillSelects(t *testing.T) {
 	state, _ := panelState(t, nil)
 	var opened []string
 	state.options.OpenURL = func(url string) error { opened = append(opened, url); return nil }
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "alpha [link](https://example.com) omega"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
@@ -375,7 +375,7 @@ func TestAnswerTextDragAcrossALinkStillSelects(t *testing.T) {
 
 func TestPressesOutsideTextAndCollapsibleHeadersCreateNoSelection(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{
 		{kind: aiUser, text: "a question"},
 		{kind: aiReasoning, text: "thinking about it"},
@@ -406,7 +406,7 @@ func TestPressesOutsideTextAndCollapsibleHeadersCreateNoSelection(t *testing.T) 
 
 func TestAnswerTextDragUpwardKeepsTheAnchorAcrossPaints(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "alpha beta\ngamma delta"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
@@ -441,7 +441,7 @@ func TestAnswerTextDragUpwardKeepsTheAnchorAcrossPaints(t *testing.T) {
 
 func TestAnswerTextDragIgnoresAnUncapturedMove(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "alpha beta gamma"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
@@ -460,7 +460,7 @@ func TestAnswerTextDragIgnoresAnUncapturedMove(t *testing.T) {
 
 func TestAnswerTextDragEndsWhenThePointerLeaves(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "alpha beta gamma"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
@@ -512,7 +512,7 @@ func TestAnswerSelectionSurvivesAnotherRowStreaming(t *testing.T) {
 
 func TestAnswerTextDragSelectsAcrossVisualLines(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "alpha beta\ngamma delta"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
@@ -569,7 +569,7 @@ func TestAnswerTextPressOutsideClearsTheSelectionWithoutSwallowingThePress(t *te
 
 func TestAnswerTextClickWithoutADragLeavesNoSelection(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "alpha beta"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
@@ -585,7 +585,7 @@ func TestAnswerTextClickWithoutADragLeavesNoSelection(t *testing.T) {
 
 func TestAnswerTextDragRunsOnIntoTheNextMessage(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{
 		{kind: aiAssistant, text: "first answer"},
 		{kind: aiAssistant, text: "second answer"},
@@ -608,7 +608,7 @@ func TestAnswerTextDragRunsOnIntoTheNextMessage(t *testing.T) {
 
 func TestAnswerTextDragThroughTheGapBetweenMessagesGoesOn(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{
 		{kind: aiAssistant, text: "first answer"},
 		{kind: aiAssistant, text: "second answer"},
@@ -631,7 +631,7 @@ func TestAnswerTextDragThroughTheGapBetweenMessagesGoesOn(t *testing.T) {
 
 func TestSelectionAcrossMessagesCoversTheBlocksBetween(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{
 		{kind: aiAssistant, text: "alpha beta"},
 		{kind: aiUser, text: "gamma delta"},
@@ -706,7 +706,7 @@ func TestAnswerSelectionSurvivesAStreamedAppend(t *testing.T) {
 // after it. The selection has to go rather than point at other characters.
 func TestAnswerSelectionClearsWhenStreamingChangesTheRendering(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "a `中"}}
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
@@ -760,7 +760,7 @@ func TestAnswerSelectionClampsToTheRenderedText(t *testing.T) {
 // last painted row looked like the end of what the user sent.
 func TestTruncatedUserMessageEndsWithAnEllipsis(t *testing.T) {
 	state, _ := panelState(t, nil)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	var text strings.Builder
 	for range 5000 {
 		text.WriteString("line\n")
