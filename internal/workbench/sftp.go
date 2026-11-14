@@ -1387,7 +1387,7 @@ func (state *State) queueSFTPUploadTo(view *sftpView, localPath string, recursiv
 	}
 	view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, name)
 	view.errorText = ""
-	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
+	state.transfers.open, state.transfers.scroll = true, 0
 	state.transfers.host = nil
 	state.refreshSFTPTransfers(view)
 	return id
@@ -1467,7 +1467,7 @@ func (state *State) queueRemoteCopies(dest *sftpView, source remoteCopySource, s
 	}
 	dest.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, targetDir)
 	dest.errorText = ""
-	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
+	state.transfers.open, state.transfers.scroll = true, 0
 	state.transfers.host = nil
 	state.refreshSFTPTransfers(dest)
 	return len(entries) - rejected, rejected

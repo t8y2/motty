@@ -337,20 +337,63 @@ func TestTransferCenterPauseResumeAndCancelReachTheWorker(t *testing.T) {
 	}
 }
 
-func TestTransferCenterUploadAlsoOpensAndResetsTheFilter(t *testing.T) {
+func TestTransferCenterUploadOpensAndPreservesTheFilter(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	local := filepath.Join(t.TempDir(), "upload.txt")
 	if err := os.WriteFile(local, []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	state.transfers.filter, state.transfers.scroll = 2, 100
+	state.transfers.filter, state.transfers.scroll = 1, 100
 	state.queueSFTPUpload(session.files, local, false)
-	if !state.transfers.open || state.transfers.filter != 0 || state.transfers.scroll != 0 {
-		t.Fatal("upload did not reveal the new transfer")
+	if !state.transfers.open || state.transfers.filter != 1 || state.transfers.scroll != 0 {
+		t.Fatalf("upload did not preserve filter: open=%v filter=%d scroll=%v", state.transfers.open, state.transfers.filter, state.transfers.scroll)
 	}
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferCompleted
 	})
+}
+
+func TestTransferCenterFilterSelectionPreservedAcrossReopenAndSaved(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	local := filepath.Join(t.TempDir(), "upload.txt")
+	if err := os.WriteFile(local, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, chosenFilter := range []int{1, 2, 3, 0} {
+		state.Click(hitTransfersFilter.At(chosenFilter))
+		if state.transfers.filter != chosenFilter {
+			t.Fatalf("clicking filter %d did not update transfers.filter: got %d", chosenFilter, state.transfers.filter)
+		}
+		if snap := state.snapshot(); snap.SFTPTransferFilter != chosenFilter {
+			t.Fatalf("snapshot filter = %d, want %d", snap.SFTPTransferFilter, chosenFilter)
+		}
+
+		// Close transfer center
+		state.Click(hitTransfersClose)
+		if state.transfers.open {
+			t.Fatal("close did not close transfer center")
+		}
+
+		// Reopen transfer center via toggle button
+		state.Click(hitTransferCenter)
+		if !state.transfers.open || state.transfers.filter != chosenFilter {
+			t.Fatalf("reopening transfer center lost filter: open=%v, filter=%d, want %d", state.transfers.open, state.transfers.filter, chosenFilter)
+		}
+
+		// Queue an upload; filter must remain preserved
+		state.queueSFTPUpload(session.files, local, false)
+		if !state.transfers.open || state.transfers.filter != chosenFilter {
+			t.Fatalf("upload lost filter: open=%v, filter=%d, want %d", state.transfers.open, state.transfers.filter, chosenFilter)
+		}
+
+		// Simulate restoring state from saved preferences
+		restoredState := &State{}
+		restoredState.restoreSFTPSettings(savedState{SFTPTransferFilter: chosenFilter})
+		if restoredState.transfers.filter != chosenFilter {
+			t.Fatalf("restoreSFTPSettings did not restore filter: got %d, want %d", restoredState.transfers.filter, chosenFilter)
+		}
+	}
 }
 
 func TestTransferCenterFollowsAMovedTabWithoutCancelingOrDuplicatingTasks(t *testing.T) {
