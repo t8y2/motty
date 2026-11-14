@@ -178,6 +178,10 @@ type Options struct {
 	// Invalidate asks the window to repaint. Connection goroutines call it
 	// when their status changes; the window then calls Wake.
 	Invalidate func()
+	// Post runs work on the window thread, from any goroutine. Nil keeps the
+	// window's own inbox, which Wake drains; a window opened by the application
+	// passes Viva's app.Application.Post.
+	Post func(func())
 	// Invalidator is the same window's invalidator, for a page that declares a
 	// ui.Effect: the effect wakes the window itself when its work finishes. Nil
 	// leaves such a page's results waiting for the next paint.

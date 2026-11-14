@@ -77,3 +77,9 @@ func (h *documentTestHost) Quit() {
 		w.Close()
 	}
 }
+
+func (h *documentTestHost) Post(fn func()) {
+	if fn != nil {
+		fn()
+	}
+}

@@ -47,6 +47,10 @@ func (inbox *aiInbox) close() {
 	inbox.mu.Unlock()
 }
 
+// SetPost gives the window the application's main-thread post. Nil keeps the
+// window's own inbox, which Wake drains.
+func (state *State) SetPost(post func(func())) { state.post = post }
+
 // aiPost runs fn on the window thread soon. It is safe from any goroutine.
 func (state *State) aiPost(fn func(*State)) bool {
 	return state.aiPostWithInvalidator(fn, state.options.Invalidate)
@@ -54,7 +58,27 @@ func (state *State) aiPost(fn func(*State)) bool {
 
 // aiPostWithInvalidator uses the callback captured when work was submitted.
 // Window options may be replaced by tests while a journal write is in flight.
+//
+// With a Post the work runs on the loop as the application accepts it, and the
+// repaint is asked for after it, so a paint cannot read the state the work has
+// not changed yet. The inbox remains for tests and for a headless window, where
+// Wake is the defined point work settles at.
 func (state *State) aiPostWithInvalidator(fn func(*State), invalidate func()) bool {
+	if state.callbacksClosed.Load() {
+		return false
+	}
+	if state.post != nil {
+		state.post(func() {
+			if state.callbacksClosed.Load() {
+				return
+			}
+			fn(state)
+			if invalidate != nil {
+				invalidate()
+			}
+		})
+		return true
+	}
 	if state.ai.inbox == nil || !state.ai.inbox.post(fn) {
 		return false
 	}

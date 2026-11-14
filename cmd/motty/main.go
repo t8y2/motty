@@ -342,6 +342,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 	state = workbench.New(workbench.Options{
 		DevelopmentSource: importSource,
 		Invalidate:        invalidate, Invalidator: &invalidator, NewWindow: newWindow,
+		Post:              application.Post,
 		OpenContentWindow: application.OpenContentWindow,
 		Group:             windowGroup, Blank: place.blank, Log: recentLog,
 		LogDir: logDirectory(), PreviousCrash: crashNoticeFor(place),

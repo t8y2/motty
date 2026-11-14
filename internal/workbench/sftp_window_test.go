@@ -702,3 +702,9 @@ func TestSFTPWindowListDropTargetMapsRows(t *testing.T) {
 		t.Fatalf("folder drop = local %t row %d target %q valid %t", local, row, target, valid)
 	}
 }
+
+func (h *sftpNativeHost) Post(fn func()) {
+	if fn != nil {
+		fn()
+	}
+}

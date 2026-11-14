@@ -823,3 +823,9 @@ func TestRemoteNativeWindowDialogsArePageControls(t *testing.T) {
 		}
 	})
 }
+
+func (h *remoteWindowHost) Post(fn func()) {
+	if fn != nil {
+		fn()
+	}
+}

@@ -685,23 +685,25 @@ type State struct {
 	// search is the box beside Connect: typing narrows the host list, and
 	// Connect opens what it holds. visible lists the indexes into hosts that
 	// match it; it is rebuilt when the text or the host list changes.
-	search              text.Editor
-	visible             []int
-	visibleQuery        string
-	visibleHosts        int
-	status              string
-	language            i18n.Language
-	languageChosen      bool // the user picked it; until then it follows the system
-	messages            i18n.Messages
-	modal               modalKind
-	modalSession        uint32
-	dialogError         string
-	editor              hostEditor
-	forwardEditor       forwardEditor
-	forwardDialogError  string
-	proxyEditor         proxyEditor
-	proxyDialogError    string
-	options             Options
+	search             text.Editor
+	visible            []int
+	visibleQuery       string
+	visibleHosts       int
+	status             string
+	language           i18n.Language
+	languageChosen     bool // the user picked it; until then it follows the system
+	messages           i18n.Messages
+	modal              modalKind
+	modalSession       uint32
+	dialogError        string
+	editor             hostEditor
+	forwardEditor      forwardEditor
+	forwardDialogError string
+	proxyEditor        proxyEditor
+	proxyDialogError   string
+	options            Options
+	// post runs work on the window thread; nil uses ai.inbox, which Wake drains.
+	post                func(func())
 	appearance          appearance
 	appearanceMode      appearanceMode
 	networkProxy        networkProxyMode
@@ -1154,6 +1156,7 @@ func New(options Options) *State {
 	state := &State{
 		notes:              notesUI{noteDraft: &noteDraft{}},
 		options:            options.withDefaults(),
+		post:               options.Post,
 		windowID:           max(1, options.WindowID),
 		revealResults:      make(chan revealResult, 1),
 		nextSessionID:      1,

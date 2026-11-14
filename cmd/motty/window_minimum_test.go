@@ -101,3 +101,9 @@ func TestMainWindowKeepsItsMinimumAndCorrectsARestoredTinyFrame(t *testing.T) {
 		t.Fatalf("restored frame %dx%d opened at %dx%d, want the minimum %dx%d", 400, 300, restored.Width, restored.Height, workbench.MinimumWindowWidth, workbench.MinimumWindowHeight)
 	}
 }
+
+func (h *minSizeHost) Post(fn func()) {
+	if fn != nil {
+		fn()
+	}
+}
