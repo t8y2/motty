@@ -675,3 +675,176 @@ func TestEditorWindowPageRoutesTypingAndFooterClick(t *testing.T) {
 		t.Fatal("a footer button click did not reach the page's action")
 	}
 }
+
+func TestDocumentEditorDoubleClickSelectsWord(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc calculateTotal() int {\n\treturn 42\n}\n")
+	view := openCodeDocumentWindow(t, d, 900, 600, 1)
+
+	// Position caret on "calculateTotal" (line 2, column 8).
+	documentCaretAt(d, 2, 8)
+	view.refresh(t)
+
+	caret, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	if err := view.DoubleClick(caret.X+2, caret.Y+caret.Height/2); err != nil {
+		t.Fatal(err)
+	}
+
+	sel := d.editor.Selection()
+	runes := []rune(d.editor.String())
+	if sel.Start >= sel.End || sel.End > len(runes) {
+		t.Fatalf("invalid selection range: %+v", sel)
+	}
+	selected := string(runes[sel.Start:sel.End])
+	if selected != "calculateTotal" {
+		t.Fatalf("expected selection 'calculateTotal', got %q (%+v)", selected, sel)
+	}
+}
+
+func TestDocumentEditorTripleClickSelectsLine(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc calculateTotal() int {\n\treturn 42\n}\n")
+	view := openCodeDocumentWindow(t, d, 900, 600, 1)
+
+	documentCaretAt(d, 2, 8)
+	view.refresh(t)
+
+	caret, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	driver := view.Driver()
+	if err := driver.ClickCount(caret.X+2, caret.Y+caret.Height/2, 3); err != nil {
+		t.Fatal(err)
+	}
+
+	sel := d.editor.Selection()
+	runes := []rune(d.editor.String())
+	if sel.Start >= sel.End || sel.End > len(runes) {
+		t.Fatalf("invalid selection range: %+v", sel)
+	}
+	selected := string(runes[sel.Start:sel.End])
+	if selected != "func calculateTotal() int {\n" {
+		t.Fatalf("expected line selection, got %q (%+v)", selected, sel)
+	}
+}
+
+func TestDocumentEditorDoubleClickDragExpandsWord(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc calculateTotal() int {\n\treturn 42\n}\n")
+	view := openCodeDocumentWindow(t, d, 900, 600, 1)
+
+	// Caret on "calculateTotal" (line 2, col 8)
+	documentCaretAt(d, 2, 8)
+	view.refresh(t)
+
+	caret1, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	// Caret on "int" (line 2, col 23)
+	documentCaretAt(d, 2, 23)
+	view.refresh(t)
+
+	caret2, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	driver := view.Driver()
+	// Click 1: press and release on calculateTotal
+	if err := driver.PressCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.ReleaseCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 1); err != nil {
+		t.Fatal(err)
+	}
+	// Click 2: press on calculateTotal
+	if err := driver.PressCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 2); err != nil {
+		t.Fatal(err)
+	}
+	// Drag to caret2 ("int")
+	if err := view.Move(caret2.X+2, caret2.Y+caret2.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	// Release at caret2
+	if err := driver.ReleaseCount(caret2.X+2, caret2.Y+caret2.Height/2, gfx.PointerButtonPrimary, 2); err != nil {
+		t.Fatal(err)
+	}
+
+	sel := d.editor.Selection()
+	runes := []rune(d.editor.String())
+	if sel.Start >= sel.End || sel.End > len(runes) {
+		t.Fatalf("invalid selection range: %+v", sel)
+	}
+	selected := string(runes[sel.Start:sel.End])
+	expected := "calculateTotal() int"
+	if selected != expected {
+		t.Fatalf("expected selection %q, got %q (%+v)", expected, selected, sel)
+	}
+}
+
+func TestDocumentEditorTripleClickDragExpandsLine(t *testing.T) {
+	d := newCodeDocument(t, "main.go", "package main\n\nfunc calculateTotal() int {\n\treturn 42\n}\n")
+	view := openCodeDocumentWindow(t, d, 900, 600, 1)
+
+	// Caret on line 2 ("func calculateTotal() int {\n")
+	documentCaretAt(d, 2, 8)
+	view.refresh(t)
+
+	caret1, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	// Caret on line 3 ("\treturn 42\n")
+	documentCaretAt(d, 3, 4)
+	view.refresh(t)
+
+	caret2, ok := d.ui.code.CaretBounds()
+	if !ok {
+		t.Fatal("caret bounds not visible")
+	}
+
+	driver := view.Driver()
+	// Click 1
+	if err := driver.PressCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.ReleaseCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 1); err != nil {
+		t.Fatal(err)
+	}
+	// Click 2
+	if err := driver.PressCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.ReleaseCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 2); err != nil {
+		t.Fatal(err)
+	}
+	// Click 3: press on line 2
+	if err := driver.PressCount(caret1.X+2, caret1.Y+caret1.Height/2, gfx.PointerButtonPrimary, 3); err != nil {
+		t.Fatal(err)
+	}
+	// Drag to line 3
+	if err := view.Move(caret2.X+2, caret2.Y+caret2.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	// Release on line 3
+	if err := driver.ReleaseCount(caret2.X+2, caret2.Y+caret2.Height/2, gfx.PointerButtonPrimary, 3); err != nil {
+		t.Fatal(err)
+	}
+
+	sel := d.editor.Selection()
+	runes := []rune(d.editor.String())
+	if sel.Start >= sel.End || sel.End > len(runes) {
+		t.Fatalf("invalid selection range: %+v", sel)
+	}
+	selected := string(runes[sel.Start:sel.End])
+	expected := "func calculateTotal() int {\n\treturn 42\n"
+	if selected != expected {
+		t.Fatalf("expected selection %q, got %q (%+v)", expected, selected, sel)
+	}
+}
