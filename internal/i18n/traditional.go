@@ -3311,6 +3311,7 @@ var traditionalMonitor = MonitorMessages{
 	HardwareSystem: "系統", HardwareSystemVersion: "系統版本", HardwareKernelVersion: "核心版本",
 	HardwareLogicalProcessors: "邏輯處理器", HardwarePhysicalMemory: "實體記憶體",
 	GPUMemory: "顯存", Utilization: "負載", Power: "功耗", Temperature: "溫度", Processes: "GPU 計算程序 / 顯存", NoProcesses: "目前沒有 GPU 計算程序",
+	CopiedLabel: "已複製", CopyUnavailable: "剪貼簿不可用，請重試。",
 	NoDisks: "沒有可用的磁碟資訊", WaitingDetails: "正在讀取主機資訊…", DetailsUnavailable: "部分主機資訊暫不可用，稍後自動重試",
 	Pause: "暫停監控", Resume: "繼續監控", Paused: "已暫停", Updated: "自動重新整理 · 剛剛更新", Interval: "重新整理間隔", IntervalFmt: "%d 秒", Retry: "重試", NotConnected: "連線到伺服器後可檢視監控。",
 	GPU: "GPU", GPUMetricsUnavailable: "未取得到顯示卡指標",

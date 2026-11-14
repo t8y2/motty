@@ -2,8 +2,10 @@ package remotestats
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"math"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,6 +18,9 @@ const MaxGPUs = 16
 // MaxGPUProcesses bounds the process rows one reading carries per accelerator;
 // a busy card with more is shown its first MaxGPUProcesses.
 const MaxGPUProcesses = 64
+
+// MaxGPUProcessCommandBytes bounds the command line read for one process.
+const MaxGPUProcessCommandBytes = 2048
 
 // GPU is one accelerator in a Sample. A figure the driver did not report is
 // negative (or, for MemoryTotalBytes, zero) so that "not reported" is never
@@ -47,6 +52,7 @@ type GPUProcess struct {
 	UUID            string
 	PID             uint64
 	Name            string
+	Command         string
 	MemoryUsedBytes uint64
 	// MemoryKnown is false when the driver could not report the process's
 	// memory; the row is still listed, without a figure.
@@ -59,6 +65,7 @@ type GPUProcess struct {
 const (
 	gpuNvidiaPrefix        = "gop-gpu-nvidia "
 	gpuNvidiaProcessPrefix = "gop-gpu-nvidia-proc "
+	gpuNvidiaCommandPrefix = "gop-gpu-nvidia-cmd "
 	gpuRocmPrefix          = "gop-gpu-rocm "
 	gpuSysfsPrefix         = "gop-gpu-sysfs "
 	gpuDarwinPrefix        = "gop-gpu-darwin "
@@ -212,6 +219,50 @@ func parseNvidiaProcess(row string) (GPUProcess, bool) {
 	}, true
 }
 
+// parseNvidiaCommand reads one row of the monitor's hex-encoded command probe:
+// "gop-gpu-nvidia-cmd PID 636d64...". Hex carries the command line's argument
+// separators and any bytes the shell cannot print. It is skipped when the PID
+// or bytes do not match, so untrusted output cannot invent a process.
+func parseNvidiaCommand(row string) (uint64, string, bool) {
+	fields := strings.Fields(row)
+	if len(fields) != 2 {
+		return 0, "", false
+	}
+	pid, err := strconv.ParseUint(fields[0], 10, 64)
+	if err != nil || pid == 0 {
+		return 0, "", false
+	}
+	raw, err := hex.DecodeString(fields[1])
+	if err != nil || len(raw) == 0 || len(raw) > MaxGPUProcessCommandBytes {
+		return 0, "", false
+	}
+	args := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
+	redactGPUCommandArgs(args)
+	command := detailText(strings.Join(args, " "), MaxGPUProcessCommandBytes)
+	if command == "" {
+		return 0, "", false
+	}
+	return pid, command, true
+}
+
+var gpuCommandSecretName = regexp.MustCompile(`(?i)(^|[-_])(password|passwd|pwd|pw|passphrase|token|secret|(?:api|access|private|secret)[-_]?key)$`)
+
+func redactGPUCommandArgs(args []string) {
+	redactNext := false
+	for index, arg := range args {
+		name, value, assigned := strings.Cut(arg, "=")
+		if (assigned || strings.HasPrefix(name, "-")) && gpuCommandSecretName.MatchString(name) {
+			redactNext = !assigned
+			if value != "" {
+				args[index] = name + "=***"
+			}
+		} else if redactNext {
+			args[index] = "***"
+			redactNext = false
+		}
+	}
+}
+
 func nvidiaProcessName(value string) string {
 	if index := strings.LastIndexAny(value, "/\\"); index >= 0 {
 		value = value[index+1:]
@@ -221,7 +272,7 @@ func nvidiaProcessName(value string) string {
 
 // attachNvidiaProcesses moves each process row onto the GPU whose UUID matches.
 // Unmatched rows are dropped so untrusted output cannot invent a GPU.
-func attachNvidiaProcesses(gpus []GPU, processes []GPUProcess) []GPU {
+func attachNvidiaProcesses(gpus []GPU, processes []GPUProcess, commands map[uint64]string) []GPU {
 	if len(processes) == 0 {
 		return gpus
 	}
@@ -239,6 +290,11 @@ func attachNvidiaProcesses(gpus []GPU, processes []GPUProcess) []GPU {
 	}
 	for index := range gpus {
 		processes := matched[gpus[index].UUID]
+		for processIndex := range processes {
+			if command, ok := commands[processes[processIndex].PID]; ok {
+				processes[processIndex].Command = command
+			}
+		}
 		gpus[index].Processes = processes[:min(len(processes), MaxGPUProcesses)]
 	}
 	return gpus

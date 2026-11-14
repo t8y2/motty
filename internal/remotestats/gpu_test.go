@@ -2,11 +2,14 @@ package remotestats
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +41,10 @@ func nvidiaProcessLines(output string) []byte {
 		lines = append(lines, gpuNvidiaProcessPrefix+row+"\n"...)
 	}
 	return lines
+}
+
+func nvidiaCommandLine(pid uint64, command string) string {
+	return gpuNvidiaCommandPrefix + strconv.FormatUint(pid, 10) + " " + hex.EncodeToString([]byte(command)) + "\n"
 }
 
 func parseAll(t *testing.T, lines string) []GPU {
@@ -73,7 +80,7 @@ func TestNvidiaRowsOfSeveralGPUsWithPlaceholders(t *testing.T) {
 	if !reflect.DeepEqual(gpus, want) {
 		t.Fatalf("gpus = %+v", gpus)
 	}
-	gpus = attachNvidiaProcesses(gpus, parseProcesses(t, string(nvidiaProcessLines(nvidiaTwoGPUProcesses))))
+	gpus = attachNvidiaProcesses(gpus, parseProcesses(t, string(nvidiaProcessLines(nvidiaTwoGPUProcesses))), nil)
 	if len(gpus[0].Processes) != 2 || gpus[0].Processes[0].PID != 1698741 || gpus[0].Processes[1].MemoryUsedBytes != 5730<<20 {
 		t.Fatalf("processes = %+v", gpus[0].Processes)
 	}
@@ -90,6 +97,53 @@ func TestDarwinGPURowsKeepIdentityWithoutInventingMetrics(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gpus, want) {
 		t.Fatalf("GPUs = %+v, want %+v", gpus, want)
+	}
+}
+
+func TestNvidiaCommandsFollowTheirProcessPIDs(t *testing.T) {
+	gpus := parseAll(t, string(nvidiaLines(nvidiaTwoGPUs)))
+	processes := parseProcesses(t, string(nvidiaProcessLines(nvidiaTwoGPUProcesses)))
+	gpus = attachNvidiaProcesses(gpus, processes, map[uint64]string{
+		1698741: "python in-process.py",
+		1131263: "python attached.py --rank 1",
+	})
+	if got := gpus[0].Processes[0].Command; got != "python in-process.py" {
+		t.Fatalf("first command = %q", got)
+	}
+	if got := gpus[0].Processes[1].Command; got != "" {
+		t.Fatalf("command leaked to another PID: %q", got)
+	}
+	if got := gpus[1].Processes[0].Command; got != "python attached.py --rank 1" {
+		t.Fatalf("second GPU command = %q", got)
+	}
+}
+
+func TestNvidiaCommandRowsDecodeAndRejectJunk(t *testing.T) {
+	pid, command, ok := parseNvidiaCommand("1698741 " + hex.EncodeToString([]byte("python\x00train.py\x00--name\x00模型")))
+	if !ok || pid != 1698741 || command != "python train.py --name 模型" {
+		t.Fatalf("command = %d %q %v", pid, command, ok)
+	}
+	tooLong := hex.EncodeToString(make([]byte, MaxGPUProcessCommandBytes+1))
+	for _, row := range []string{
+		"",
+		"0 6162",
+		"x 6162",
+		"1 zz",
+		"1 ",
+		"1698741 " + tooLong,
+	} {
+		if pid, command, ok := parseNvidiaCommand(row); ok {
+			t.Errorf("%q produced %d %q", row, pid, command)
+		}
+	}
+}
+
+func TestNvidiaCommandRowsRedactNamedCredentials(t *testing.T) {
+	raw := "python\x00train.py\x00--password\x00two words\x00--api-key=secret key\x00HF_TOKEN=secret token\x00--token\x00-prefixed\x00--tokenizer\x00model.json\x00"
+	want := "python train.py --password *** --api-key=*** HF_TOKEN=*** --token *** --tokenizer model.json"
+	_, command, ok := parseNvidiaCommand("1698741 " + hex.EncodeToString([]byte(raw)))
+	if !ok || command != want {
+		t.Fatalf("command = %q, want %q", command, want)
 	}
 }
 
@@ -194,7 +248,7 @@ func TestOnlyTheFirstGPUProcessesAreKeptPerCard(t *testing.T) {
 		processes[index] = GPUProcess{UUID: "GPU-A", PID: uint64(index + 1), Name: "worker", MemoryUsedBytes: 1 << 20}
 	}
 	processes = append(processes, GPUProcess{UUID: "GPU-B", PID: 999, Name: "other", MemoryUsedBytes: 1 << 20})
-	gpus = attachNvidiaProcesses(gpus, processes)
+	gpus = attachNvidiaProcesses(gpus, processes, nil)
 	if len(gpus[0].Processes) != MaxGPUProcesses || len(gpus[1].Processes) != 1 {
 		t.Fatalf("kept %d and %d processes", len(gpus[0].Processes), len(gpus[1].Processes))
 	}
@@ -224,6 +278,11 @@ func TestWorkerAttachesTheGPULinesBeforeACountersLineToThatSample(t *testing.T) 
 	lines := []string{reading(1)}
 	lines = append(lines, strings.SplitAfter(strings.TrimSpace(string(nvidiaLines(nvidiaTwoGPUs))), "\n")...)
 	lines = append(lines, strings.SplitAfter(strings.TrimSpace(string(nvidiaProcessLines(nvidiaTwoGPUProcesses))), "\n")...)
+	lines = append(lines,
+		nvidiaCommandLine(1698741, "python train.py --rank 0"),
+		nvidiaCommandLine(1708478, "python eval.py"),
+		nvidiaCommandLine(1131263, "python serve.py --port 8080"),
+	)
 	lines = append(lines, "gop-gpu-nvidia NVIDIA-SMI has failed\n", reading(2))
 	next := make(chan struct{})
 	worker := start(streamFunc(func(ctx context.Context, _ string, _ int, line func([]byte) bool) error {
@@ -251,18 +310,29 @@ func TestWorkerAttachesTheGPULinesBeforeACountersLineToThatSample(t *testing.T) 
 	if len(first.Sample.GPUs[0].Processes) != 2 || len(first.Sample.GPUs[1].Processes) != 1 {
 		t.Fatalf("GPU processes = %+v", first.Sample.GPUs)
 	}
+	if got := first.Sample.GPUs[0].Processes[0].Command; got != "python train.py --rank 0" {
+		t.Fatalf("command = %q", got)
+	}
+	if got := first.Sample.GPUs[1].Processes[0].Command; got != "python serve.py --port 8080" {
+		t.Fatalf("second GPU command = %q", got)
+	}
 	close(next)
 	if second := nextResult(t, worker); second.Err != nil || len(second.Sample.GPUs) != 0 {
 		t.Fatalf("a reading without GPU lines carried %+v", second.Sample.GPUs)
 	}
 }
 
-// probe runs the shipped GPU section of the monitor under the system shell,
-// with the given directory first on the PATH.
+// probe runs the shipped GPU section in dir, with dir first on PATH and
+// its proc subdirectory in place of the host's procfs.
 func probe(t *testing.T, dir string) string {
 	t.Helper()
+	shell := "/bin/sh"
 	if runtime.GOOS == "windows" {
-		t.Skip("needs a POSIX shell")
+		var err error
+		shell, err = exec.LookPath("sh")
+		if err != nil {
+			t.Skip("GPU probe needs a POSIX shell on PATH")
+		}
 	}
 	begin, end := strings.Index(command, "# gpu-probe-begin"), strings.Index(command, "# gpu-probe-end")
 	if begin < 0 || end < begin {
@@ -270,8 +340,11 @@ func probe(t *testing.T, dir string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	process := exec.CommandContext(ctx, "/bin/sh", "-c", command[begin:end]+"\ngpu_probe")
-	process.Env = append(os.Environ(), "PATH="+dir+":/usr/bin:/bin")
+	process := exec.CommandContext(ctx, shell, "-c", command[begin:end]+`
+PATH="$PWD:/usr/bin:/bin"
+gpu_probe "$PWD/proc"
+`)
+	process.Dir = dir
 	out, err := process.Output()
 	if err != nil {
 		t.Fatalf("probe: %v", err)
@@ -295,5 +368,63 @@ func TestProbePrintsWhatTheInstalledToolsReport(t *testing.T) {
 	gpus := parseAll(t, lines)
 	if len(gpus) != 4 || gpus[0].Vendor != "NVIDIA" || gpus[2].Name != "AMD Instinct MI250X" {
 		t.Fatalf("probe output %q parsed to %+v", lines, gpus)
+	}
+}
+
+func TestProbeReadsTheCommandLineForAComputePID(t *testing.T) {
+	const (
+		pid        = 1234
+		missingPID = 5678
+		want       = "python train.py --rank 1"
+	)
+	dir := t.TempDir()
+	procDir := filepath.Join(dir, "proc", strconv.Itoa(pid))
+	if err := os.MkdirAll(procDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(procDir, "cmdline"), []byte("python\x00train.py\x00--rank\x001\x00"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := fmt.Sprintf(`#!/bin/sh
+case "$*" in
+	*--query-gpu=*)
+		printf '0, GPU-PROBE, NVIDIA Probe, 10, 1024, 2048, 40, 50, 100, 30\n'
+		;;
+	*--query-compute-apps=gpu_uuid,pid,process_name,used_memory*)
+		printf 'GPU-PROBE, %d, /usr/bin/python, 512\n'
+		printf 'GPU-PROBE, %d, /usr/bin/python, 256\n'
+		;;
+esac
+`, pid, missingPID)
+	if err := os.WriteFile(filepath.Join(dir, "nvidia-smi"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeTool(t, dir, "rocm-smi", "{}")
+	lines := probe(t, dir)
+	processes := parseProcesses(t, lines)
+	if len(processes) != 2 || processes[0].PID != pid || processes[1].PID != missingPID {
+		t.Fatalf("processes = %+v from %q", processes, lines)
+	}
+	commands := make(map[uint64]string)
+	for _, line := range strings.Split(lines, "\n") {
+		text, ok := strings.CutPrefix(line, gpuNvidiaCommandPrefix)
+		if !ok {
+			continue
+		}
+		commandPID, command, ok := parseNvidiaCommand(text)
+		if !ok {
+			t.Fatalf("invalid command line: %q", line)
+		}
+		commands[commandPID] = command
+	}
+	if len(commands) != 1 || commands[pid] != want {
+		t.Fatalf("commands = %+v from %q", commands, lines)
+	}
+	gpus := attachNvidiaProcesses(parseAll(t, lines), processes, commands)
+	if len(gpus) != 1 || gpus[0].UUID != "GPU-PROBE" {
+		t.Fatalf("probe GPUs = %+v from %q", gpus, lines)
+	}
+	if got := gpus[0].Processes; len(got) != 2 || got[0].Command != want || got[1].Command != "" {
+		t.Fatalf("probe processes = %+v", got)
 	}
 }

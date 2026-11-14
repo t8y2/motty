@@ -16,6 +16,7 @@ type MonitorMessages struct {
 	HardwareSystem, HardwareSystemVersion, HardwareKernelVersion                      string
 	HardwareLogicalProcessors, HardwarePhysicalMemory                                 string
 	GPUMemory, Utilization, Power, Temperature, Processes, NoProcesses                string
+	CopiedLabel, CopyUnavailable                                                      string
 	NoDisks, WaitingDetails, DetailsUnavailable                                       string
 	Pause, Resume, Paused, Updated, Interval, IntervalFmt, Retry, NotConnected        string
 	GPU, GPUMetricsUnavailable                                                        string
@@ -40,6 +41,7 @@ var chineseMonitor = MonitorMessages{
 	HardwareSystem: "系统", HardwareSystemVersion: "系统版本", HardwareKernelVersion: "内核版本",
 	HardwareLogicalProcessors: "逻辑处理器", HardwarePhysicalMemory: "物理内存",
 	GPUMemory: "显存", Utilization: "负载", Power: "功耗", Temperature: "温度", Processes: "GPU 计算进程 / 显存", NoProcesses: "当前没有 GPU 计算进程",
+	CopiedLabel: "已复制", CopyUnavailable: "剪贴板不可用，请重试。",
 	NoDisks: "没有可用的磁盘信息", WaitingDetails: "正在读取主机信息…", DetailsUnavailable: "部分主机信息暂不可用，稍后自动重试",
 	Pause: "暂停监控", Resume: "继续监控", Paused: "已暂停", Updated: "自动刷新 · 刚刚更新", Interval: "刷新间隔", IntervalFmt: "%d 秒", Retry: "重试", NotConnected: "连接到服务器后可查看监控。",
 	GPU: "GPU", GPUMetricsUnavailable: "未获取到显卡指标",
@@ -64,6 +66,7 @@ var englishMonitor = MonitorMessages{
 	HardwareSystem: "System", HardwareSystemVersion: "System version", HardwareKernelVersion: "Kernel version",
 	HardwareLogicalProcessors: "Logical processors", HardwarePhysicalMemory: "Physical memory",
 	GPUMemory: "VRAM", Utilization: "Load", Power: "Power", Temperature: "Temp", Processes: "GPU compute processes / VRAM", NoProcesses: "No GPU compute processes are running",
+	CopiedLabel: "Copied", CopyUnavailable: "Clipboard is unavailable. Try again.",
 	NoDisks: "No disk information available", WaitingDetails: "Reading host information…", DetailsUnavailable: "Some host information is unavailable. Retrying automatically.",
 	Pause: "Pause monitoring", Resume: "Resume monitoring", Paused: "Paused", Updated: "Auto refresh · just updated", Interval: "Refresh interval", IntervalFmt: "%ds", Retry: "Retry", NotConnected: "Connect to a server to view monitoring.",
 	GPU: "GPU", GPUMetricsUnavailable: "No graphics adapter metrics available",
