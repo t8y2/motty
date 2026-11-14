@@ -186,9 +186,10 @@ win32-input-mode。连字在固定网格内按单元格整形。标签可以重�
 转发给远端 shell，按主机开关，默认关闭。
 
 主机可以分组、打标签、搜索，也可以从 OpenSSH config、PuTTY、Xshell、MobaXterm、
-WindTerm、Electerm、Netcatty 导入。TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
+WindTerm、Electerm、Netcatty、SecureCRT 导入。TOTP/HOTP 种子可以存入保险库并自动填充。密码和私钥口令
 进入 AES-256-GCM 保险库，跟随各自的主机；密钥放在系统密钥存储，没有时（以及便携版）放在保险库旁的密钥文件里。
 Electerm 和 Netcatty 的明文 SSH 密码可在明确确认后导入；重新导入只补齐缺失密码。
+SecureCRT 的保存密码是加密的，导入只包含连接。
 
 OpenSSH 配置导入和同步会保留每台主机的 `ServerAliveInterval`、
 `ServerAliveCountMax`、`IdentitiesOnly` 和指定的身份文件。显式设置间隔为 0

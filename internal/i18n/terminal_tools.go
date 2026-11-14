@@ -334,6 +334,7 @@ type ToolsMessages struct {
 	ImportGuide                  string // the link to the docs on exporting from each client
 	ImportGuideURL               string
 	ImportPickerFmt              string // the client's name
+	ImportFolderPickerFmt        string // the client's name; it keeps sessions in a folder
 	ImportCanceled               string
 	ImportFailedFmt              string
 	ImportSummaryFmt             string // hosts, client, duplicates
@@ -738,6 +739,7 @@ type ToolsMessages struct {
 	S3PathStyle                     string
 	S3LoginTitle                    string
 	S3LoginDescription              string
+	S3Next, S3Back, S3Stop          string
 	S3AccessKey                     string
 	S3Secret                        string
 	S3ErrFields                     string

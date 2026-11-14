@@ -642,11 +642,22 @@ func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view 
 				return
 			}
 			nameText := ui.Text(c, name).FontSize(metrics.FontSizeM).Color(nameColor).Ellipsis().Grow(1)
+			available := rowWidth - 16 - sftpColumnIconWidth - sftpColumnNameGap
 			if state.sftpColumnResizeAvailable() {
-				available := columns.name - sftpColumnIconWidth - sftpColumnNameGap
-				if available > 0 && canvas.TextWidth(name, metrics.FontSizeM) > available {
-					nameText.HitWith(row.ID, name, gfx.HitOptions{Hint: name, SkipFocus: true})
+				available = columns.name - sftpColumnIconWidth - sftpColumnNameGap
+			} else {
+				for _, column := range state.sftpColumns.entries[1:] {
+					if !column.Enabled {
+						continue
+					}
+					available -= sizeWidth + sftpColumnNameGap
+					if column.Key == sftpColumnModified {
+						available += sizeWidth - modifiedWidth
+					}
 				}
+			}
+			if available > 0 && canvas.TextWidth(name, metrics.FontSizeM) > available {
+				nameText.HitWith(row.ID, name, gfx.HitOptions{Hint: name, SkipFocus: true})
 			}
 		})
 		for _, column := range state.sftpColumns.entries[1:] {

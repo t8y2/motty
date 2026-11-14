@@ -585,3 +585,109 @@ func TestDecodingANSIGB18030SessionsAndStillDroppingTheRest(t *testing.T) {
 		t.Fatalf("undecodable bytes = %q, want \"Ho\"", got)
 	}
 }
+
+const secureCRTSession = "S:\"Protocol Name\"=SSH2\r\n" +
+	"S:\"Hostname\"=web.example.com\r\n" +
+	"D:\"[SSH2] Port\"=00000898\r\n" +
+	"S:\"Username\"=\"deploy\"\r\n" +
+	"S:\"Password V2\"=03:7f59810d05b03f8e49b96e091dad49cb\r\n" +
+	"D:\"Session Password Saved\"=00000001\r\n" +
+	"S:\"Identity Filename V2\"=C:\\keys\\prod\r\n"
+
+func TestSecureCRTFolderReadsSessionsWithGroupsAndLeavesPasswordsAlone(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "Sessions")
+	files := map[string]string{
+		"__FolderData__.ini":      "S:\"Name\"=ignored\r\n",
+		"Default.ini":             "S:\"Protocol Name\"=SSH2\r\n",
+		"Production/Web/prod.ini": secureCRTSession,
+		"Production/db.ini": "S:\"Protocol Name\"=Telnet\r\nS:\"Hostname\"=db.example.com\r\n" +
+			"D:\"[Telnet] Port\"=00000017\r\nS:\"Username\"=admin\r\n",
+		"Lab/serial.ini":   "S:\"Protocol Name\"=Serial\r\nS:\"Hostname\"=COM1\r\n",
+		"Lab/notes.txt":    "not a session\r\n",
+		"Lab/readme.ini":   "unrelated text\r\n",
+		"Lab/rdp-host.ini": "S:\"Protocol Name\"=RDP\r\nS:\"Hostname\"=desktop.example.com\r\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := ParseSecureCRT(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 2 {
+		t.Fatalf("entries = %+v warnings %v", result.Entries, result.Warnings)
+	}
+	byName := map[string]Entry{}
+	for _, entry := range result.Entries {
+		byName[entry.Name] = entry
+	}
+	prod := byName["prod"]
+	if prod.Group != "Production/Web" || prod.Protocol != SSH || prod.Host != "web.example.com" ||
+		prod.Port != 2200 || prod.User != "deploy" {
+		t.Errorf("prod = %+v", prod)
+	}
+	if prod.Password != "" {
+		t.Errorf("an encrypted SecureCRT password was taken: %q", prod.Password)
+	}
+	db := byName["db"]
+	if db.Group != "Production" || db.Protocol != Telnet || db.Host != "db.example.com" ||
+		db.Port != 23 || db.User != "" {
+		t.Errorf("db = %+v", db)
+	}
+	if result.Keys != 1 || result.Skipped != 2 || result.PlainSecrets != 0 {
+		t.Errorf("keys %d skipped %d plain %d", result.Keys, result.Skipped, result.PlainSecrets)
+	}
+}
+
+func TestSecureCRTChosenConfigFolderDoesNotPutSessionsInAGroup(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "Config")
+	path := filepath.Join(root, "Sessions", "Clients", "web.ini")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(secureCRTSession), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Global.ini"), []byte("D:\"Single Instance\"=00000001\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ParseSecureCRT(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Entries) != 1 || result.Entries[0].Group != "Clients" {
+		t.Fatalf("entries = %+v", result.Entries)
+	}
+}
+
+func TestSecureCRTSingleFileAndWrongFolder(t *testing.T) {
+	dir := t.TempDir()
+	path := write(t, dir, "web.ini", []byte(secureCRTSession))
+	result, err := ParseSecureCRT(path)
+	if err != nil || len(result.Entries) != 1 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	if got := result.Entries[0]; got.Name != "web" || got.Group != "" || got.Port != 2200 {
+		t.Fatalf("entry = %+v", got)
+	}
+
+	if _, err := ParseSecureCRT(write(t, dir, "other.ini", []byte("just some text\n"))); err == nil {
+		t.Fatal("an unrelated .ini was accepted as a session")
+	}
+	empty := filepath.Join(dir, "Empty")
+	if err := os.Mkdir(empty, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseSecureCRT(empty); err == nil {
+		t.Fatal("an empty folder was accepted as a Sessions folder")
+	}
+}

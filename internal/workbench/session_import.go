@@ -15,10 +15,11 @@ import (
 	"motty/internal/workbench/icons"
 )
 
-// Importing the saved sessions of PuTTY, Xshell, MobaXterm, WindTerm, Electerm
-// and Netcatty. The files are read by internal/sessionimport; this file picks them,
-// turns their sessions into hosts and shows what came of it in the same result
-// dialog as an OpenSSH config.
+// Importing the saved sessions of PuTTY, Xshell, MobaXterm, WindTerm, Electerm,
+// Netcatty and SecureCRT. The files are read by internal/sessionimport; this
+// file picks them, turns their sessions into hosts and shows what came of it in
+// the same result dialog as an OpenSSH config. SecureCRT keeps its sessions as
+// a tree of .ini files, so it asks for the Sessions folder instead of files.
 
 // sessionImportHits is the place of the controls this file paints.
 var sessionImportHits = tree.Feature("session-import")
@@ -38,6 +39,7 @@ var (
 	hitImportWindTerm        = tree.ID(sessionImportHits, "import-wind-term")
 	hitImportElecterm        = tree.ID(sessionImportHits, "import-electerm")
 	hitImportNetcatty        = tree.ID(sessionImportHits, "import-netcatty")
+	hitImportSecureCRT       = tree.ID(sessionImportHits, "import-secure-crt")
 	hitImportGuide           = tree.ID(sessionImportHits, "import-guide")
 	hitImportPreviewCancel   = tree.ID(sessionImportHits, "import-preview-cancel")
 	hitImportPreviewClose    = tree.ID(sessionImportHits, "import-preview-close")
@@ -76,6 +78,8 @@ func importClientName(client sessionimport.Client) string {
 		return "Electerm"
 	case sessionimport.Netcatty:
 		return "Netcatty"
+	case sessionimport.SecureCRT:
+		return "SecureCRT"
 	}
 	return "MobaXterm"
 }
@@ -94,6 +98,8 @@ func (state *State) clickImportSessions(id gfx.ID) {
 		state.importSessions(sessionimport.Electerm)
 	case hitImportNetcatty:
 		state.importSessions(sessionimport.Netcatty)
+	case hitImportSecureCRT:
+		state.importSessions(sessionimport.SecureCRT)
 	case hitImportGuide:
 		state.openExternal(state.messages.Tools.ImportGuideURL)
 	case hitImportSessionsCancel, hitImportSessionsClose, hitImportSessionsDismiss:
@@ -109,6 +115,10 @@ func (state *State) importSessions(client sessionimport.Client) {
 func (state *State) importSessionsWithOptions(client sessionimport.Client, options sessionimport.ParseOptions) {
 	m := state.messages.Tools
 	state.modal = modalNone
+	if client == sessionimport.SecureCRT {
+		state.importSecureCRTFolder(options)
+		return
+	}
 	paths, err := state.options.OpenFiles(app.OpenFileOptions{
 		Title: fmt.Sprintf(m.ImportPickerFmt, importClientName(client)), AllowMultiple: true,
 	})
@@ -121,6 +131,23 @@ func (state *State) importSessionsWithOptions(client sessionimport.Client, optio
 		return
 	}
 	state.readSessionImport(client, paths, options)
+}
+
+// importSecureCRTFolder asks for the folder that holds SecureCRT's sessions.
+// Each folder inside becomes a group, which picking individual files would lose.
+func (state *State) importSecureCRTFolder(options sessionimport.ParseOptions) {
+	m := state.messages.Tools
+	title := fmt.Sprintf(m.ImportFolderPickerFmt, importClientName(sessionimport.SecureCRT))
+	folder, err := state.options.OpenDirectory(app.OpenDirectoryOptions{Title: title})
+	if errors.Is(err, app.ErrCanceled) || err == nil && folder == "" {
+		state.status = m.ImportCanceled
+		return
+	}
+	if err != nil {
+		state.showActionFailure(title, err, state.messages.ActionFeedback.FilePickerFailed)
+		return
+	}
+	state.readSessionImport(sessionimport.SecureCRT, []string{folder}, options)
 }
 
 func (state *State) readSessionImport(client sessionimport.Client, paths []string, options sessionimport.ParseOptions) {
@@ -151,7 +178,11 @@ func (state *State) readSessionImport(client sessionimport.Client, paths []strin
 		return
 	}
 	if err != nil {
-		state.showFileReadFailure(fmt.Sprintf(m.ImportPickerFmt, importClientName(client)), err, fmt.Sprintf(state.messages.ActionFeedback.ImportSessionsFailedFmt, importClientName(client)))
+		fallback := fmt.Sprintf(state.messages.ActionFeedback.ImportSessionsFailedFmt, importClientName(client))
+		if client == sessionimport.SecureCRT {
+			fallback = fmt.Sprintf(state.messages.ActionFeedback.ImportFolderFailedFmt, importClientName(client))
+		}
+		state.showFileReadFailure(fmt.Sprintf(m.ImportPickerFmt, importClientName(client)), err, fallback)
 		return
 	}
 	plan := state.sessionImportPlan(result)
@@ -276,6 +307,7 @@ func (state *State) declareImportSessions(c ui.C) {
 		{hitImportWindTerm, "WindTerm"},
 		{hitImportElecterm, "Electerm"},
 		{hitImportNetcatty, "Netcatty"},
+		{hitImportSecureCRT, "SecureCRT"},
 	}
 	const columns = 2
 	rowHeight := components.BeginButton(nil, theme, gfx.ID{}, gfx.Rect{}).Large().BoundsHeight()
