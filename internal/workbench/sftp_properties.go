@@ -3,13 +3,11 @@ package workbench
 import (
 	"context"
 	"fmt"
-	"math"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -53,11 +51,6 @@ func (properties *sftpFileProperties) close() {
 func canCalculateSFTPFolderSize(view *sftpView) bool {
 	count, entry := selectedSFTP(view)
 	return count == 1 && entry.Mode.Type() == os.ModeDir && (view.local || view.openFiles != nil)
-}
-
-type sftpSizeResult struct {
-	size int64
-	text string
 }
 
 func (folder *sftpFolder) stopSizeCalculation() {
@@ -114,72 +107,6 @@ func (state *State) calculateSFTPFolderSize(view *sftpView, properties *sftpFile
 	properties.cancelSize = state.calculateSFTPSizes(view, properties.local, map[string]string{name: root}, func(results map[string]sftpSizeResult) {
 		properties.folderSize = results[name].text
 	})
-}
-
-func (state *State) calculateSFTPSizes(view *sftpView, local bool, roots map[string]string, apply func(map[string]sftpSizeResult)) context.CancelFunc {
-	ctx, cancel := context.WithCancel(context.Background())
-	open, m, invalidate := view.openFiles, state.messages.SFTPWindow, state.options.Invalidate
-	join := func(dir, name string) string { return filepath.Join(dir, name) }
-	if !local {
-		join = func(dir, name string) string { return path.Join(dir, name) }
-	}
-	go func() {
-		publish := func(results map[string]sftpSizeResult, done bool) {
-			if !state.aiPostWithInvalidator(func(state *State) {
-				if done {
-					defer cancel()
-				}
-				if ctx.Err() == nil {
-					apply(results)
-					view.invalidateDetached()
-				}
-			}, invalidate) {
-				cancel()
-			}
-		}
-		var reader sftpclient.DirReader = sftpclient.LocalReader{}
-		if !local {
-			remote, err := open()
-			if err != nil {
-				results := make(map[string]sftpSizeResult, len(roots))
-				for name := range roots {
-					results[name] = sftpSizeResult{text: err.Error()}
-				}
-				publish(results, true)
-				return
-			}
-			var once sync.Once
-			release := func() { once.Do(func() { _ = remote.Close() }) }
-			defer release()
-			defer context.AfterFunc(ctx, release)()
-			reader = remote
-		}
-		remaining := len(roots)
-		for name, root := range roots {
-			if ctx.Err() != nil {
-				return
-			}
-			var result sftpSizeResult
-			summary := sftpclient.Walk(ctx, reader, root, sftpclient.WalkOptions{
-				Join: join, MaxEntries: math.MaxInt, MaxDepth: math.MaxInt,
-			}, func(found []sftpclient.Found) {
-				for _, item := range found {
-					if item.Entry.Mode.IsRegular() {
-						result.size += item.Entry.Size
-					}
-				}
-			})
-			result.text = formatBytes(result.size)
-			if summary.RootErr != nil {
-				result.text = summary.RootErr.Error()
-			} else if summary.Failed > 0 {
-				result.text = fmt.Sprintf(m.FolderSizeIncompleteFmt, result.text, summary.Failed)
-			}
-			remaining--
-			publish(map[string]sftpSizeResult{name: result}, remaining == 0)
-		}
-	}()
-	return cancel
 }
 
 type sftpPropertyRow struct {

@@ -36,7 +36,7 @@ var ChineseMessages = Messages{
 		PropertiesPermissions: "权限", PropertiesOwner: "所有者", PropertiesGroup: "所属组", PropertiesLinkTarget: "链接目标",
 		PropertiesFolder: "文件夹", PropertiesFile: "文件", PropertiesSymlink: "符号链接", PropertiesOther: "其他", PropertiesUnknown: "—",
 		CalculatingSize: "正在计算…", FolderSizeIncompleteFmt: "%s（不完整，%d 个文件夹无法读取）",
-		CalculateDirectorySize: "计算当前目录大小",
+		CalculateDirectorySize: "计算各子目录大小",
 		Open:                   "文件传输", Title: "文件传输", Local: "本机", Remote: "服务器", Path: "目录路径", Name: "名称", Size: "大小", Modified: "修改时间",
 		Upload: "上传 →", Download: "← 下载", DragHint: "拖动文件或文件夹到另一侧，即可复制传输", DropUpload: "上传到", DropDownload: "下载到",
 		CloseTitle: "仍有任务正在进行", CloseDescription: "关闭此窗口会停止尚未完成的传输、解压和外部编辑同步。", CloseTabDescription: "关闭此页签会停止尚未完成的传输、解压和外部编辑同步。", CloseTransfers: "停止任务并关闭", Disconnected: "原连接已断开，请重新连接后重新打开文件传输窗口。",
