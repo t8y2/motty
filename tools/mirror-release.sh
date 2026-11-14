@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Copies a GitHub release to the motty Cloudflare R2 bucket, which is served from
 # https://dl.motty.page. GitHub Releases stays the source of record; this copy
 # exists so a download does not have to cross a slow link.
@@ -270,6 +270,84 @@ if [ "$mode" != announce ]; then
 	verify_uploaded
 fi
 
+# publish_viva_feed writes the signed Ed25519 feed the Viva update package
+# reads, beside the existing one, and copies its patches to the mirror. It runs
+# only when MOTTY_VIVA_UPDATE_KEY is set; without a key the release keeps the
+# old feed only, which is what old app versions read.
+publish_viva_feed() {
+	[ -n "${MOTTY_VIVA_UPDATE_KEY:-}" ] || {
+		echo "Viva update feed: MOTTY_VIVA_UPDATE_KEY is not set; only the existing feed is published" >&2
+		return 0
+	}
+	command -v go >/dev/null 2>&1 || { echo "Viva update feed: go is not installed" >&2; return 1; }
+	viva_ref=${VIVA_REF:-}
+	if [ -z "$viva_ref" ]; then
+		viva_ref=$(gh release view "$tag" --repo "$repo" --json body --jq .body 2>/dev/null \
+			| sed -n 's/.*Built against vivaui\/viva `\([0-9a-f]\{7,40\}\)`.*/\1/p' | head -1)
+	fi
+	[ -n "$viva_ref" ] || { echo "Viva update feed: the release does not name the Viva commit (set VIVA_REF)" >&2; return 1; }
+	work=$(mktemp -d)
+	trap 'rm -rf "$work"' EXIT INT TERM
+	viva_key=$work/update.key
+	(umask 077 && printf '%s\n' "$MOTTY_VIVA_UPDATE_KEY" >"$viva_key")
+
+	# The previous published release is the base of every patch. A first release,
+	# or a failed download, leaves the feed with full archives only.
+	previous_tag=$(gh release list --exclude-drafts --limit 10 --json tagName --jq '.[].tagName' 2>/dev/null | grep -vx "$tag" | head -1)
+	prevdir=
+	patch_args=()
+	if [ -n "$previous_tag" ]; then
+		prevdir=$work/previous
+		mkdir -p "$prevdir"
+		if gh release download "$previous_tag" --dir "$prevdir" --pattern 'motty-*' 2>/dev/null; then
+			prev_version=${previous_tag#v}
+			for file in "$dir"/motty-*; do
+				[ -f "$file" ] || continue
+				name=$(basename "$file")
+				case $name in
+				motty-"$version"-darwin-arm64.zip | motty-"$version"-darwin-amd64.zip | \
+					motty-"$version"-linux-arm64.tar.gz | motty-"$version"-linux-amd64.tar.gz | \
+					motty-"$version"-windows-arm64.zip | motty-"$version"-windows-amd64.zip) ;;
+				*) continue ;;
+				esac
+				target=$(printf '%s' "$name" | sed -E "s/^motty-${version_re}-//")
+				old=$prevdir/motty-$prev_version-$target
+				[ -f "$old" ] || continue
+				case $name in
+				*-darwin-*) os=darwin ;;
+				*-linux-*) os=linux ;;
+				*-windows-*) os=windows ;;
+				*) continue ;;
+				esac
+				arch=$(printf '%s' "$name" | sed -E "s/^motty-${version_re}-(darwin|linux|windows)-//; s/\.(zip|tar\.gz)$//")
+				patch_args+=(--patch-from "$os/$arch=$prev_version=$old")
+			done
+		else
+			echo "Viva update feed: could not download $previous_tag; patches are skipped" >&2
+			prevdir=
+		fi
+	fi
+
+	viva_dir=$work/viva
+	mkdir -p "$viva_dir"
+	module_dir=$(cd "$(dirname "$0")/.." && pwd)
+	echo "Viva update feed: $tag ($viva_ref)"
+	if ! (cd "$work" && go run "github.com/vivaui/viva/cmd/viva@$viva_ref" feed \
+		-C "$module_dir" -dir "$dir" -base-url "$mirror/releases/$tag" -version "$version" -app "dev.motty.app" \
+		-channel stable -key "$viva_key" -out "$viva_dir/latest.json" \
+		--patch-exclude motty-data "${patch_args[@]}"); then
+		echo "Viva update feed: viva feed failed" >&2
+		return 1
+	fi
+	upload viva/latest.json "$viva_dir/latest.json" application/json 'public, max-age=300'
+	upload viva/latest.json.sig "$viva_dir/latest.json.sig" 'text/plain; charset=utf-8' 'public, max-age=300'
+	for patch in "$dir"/motty-*.patch; do
+		[ -f "$patch" ] || continue
+		name=$(basename "$patch")
+		upload "releases/$tag/$name" "$patch" 'application/octet-stream' 'public, max-age=31536000, immutable'
+	done
+}
+
 if [ "$mode" != copy ]; then
 	# A copy and an announce in one run already confirmed the bytes above; a lone
 	# announce has to confirm them itself before it can point the feed at them.
@@ -310,6 +388,8 @@ if [ "$mode" != copy ]; then
 	} >"$dir/latest.json"
 
 	upload latest.json "$dir/latest.json" "application/json" 'public, max-age=300'
+
+	publish_viva_feed || exit 1
 
 	echo "Done: $mirror/latest.json"
 fi

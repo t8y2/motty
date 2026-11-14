@@ -36,6 +36,7 @@ type sftpRow struct {
 	icon                 *gfx.Icon     // the file-type glyph, chosen when the listing arrives
 	mono                 bool          // the glyph has no colors of its own and is tinted
 	appIcon              *fileIconSlot // the system's icon for a local application bundle, once it has answered
+	typeIcon             *fileIconSlot // the system's icon for this file type, shared by every row with the extension
 	hidden               bool
 	matchStart, matchEnd int // byte range highlighted by the current folder filter
 	// where is the folder a search result is in, relative to where the search
@@ -52,6 +53,7 @@ const (
 	sftpDialogMove
 	sftpDialogDelete
 	sftpDialogChmod
+	sftpDialogChown
 	sftpDialogDiscardEdit
 	sftpDialogReloadEdit
 	sftpDialogRemoteChanged
@@ -62,11 +64,11 @@ const (
 )
 
 // sftpDialogShowsField reports whether the dialog edits a field: a folder, a
-// name, a destination, an octal mode or a link.
+// name, a destination, an octal mode, an owner and a group, or a link.
 func sftpDialogShowsField(kind sftpDialogKind) bool {
 	switch kind {
 	case sftpDialogCreateDirectory, sftpDialogRename, sftpDialogMove, sftpDialogChmod,
-		sftpDialogSymlink, sftpDialogExtract, sftpDialogCompress:
+		sftpDialogChown, sftpDialogSymlink, sftpDialogExtract, sftpDialogCompress:
 		return true
 	}
 	return false
@@ -154,6 +156,7 @@ type sftpView struct {
 	followUpPath        string // a follow-up that arrived before those rows were ready
 	followUpEntries     []sftpclient.Entry
 	busy                bool
+	localBusy           bool // a local deletion is walking the disk; the server side stays usable
 	approximate         bool // the listing came from `ls` over SCP
 	operation           sftpclient.Operation
 	status              string
@@ -173,21 +176,32 @@ type sftpView struct {
 	// beside an application modal, so it does not share the window's footer
 	// scratch. The boxes are where that body laid out the parts painted by hand:
 	// the one or two fields and the permission grid.
-	dialogFieldLabel      string
-	dialogDraw            func(*ui.DrawContext)
-	dialogCancelLabel     string
-	dialogSubmitLabel     string
-	dialogSubmitVariant   components.ButtonVariant
-	dialogFooterDraw      func(*ui.DrawContext)
-	dialogFirst           ui.Box
-	dialogSecond          ui.Box
-	dialogChmod           [9]ui.Box
-	bookmarksOpen         bool
-	places                sftpPlaceMenu
-	dropping              bool // files are being dragged over the panel
-	dropRow               int  // the folder row they are over, or -1
-	scrollDrag            bool
-	scrollGrab            float32
+	dialogFieldLabel    string
+	dialogDraw          func(*ui.DrawContext)
+	dialogCancelLabel   string
+	dialogSubmitLabel   string
+	dialogSubmitVariant components.ButtonVariant
+	dialogFooterDraw    func(*ui.DrawContext)
+	dialogFirst         ui.Box
+	dialogSecond        ui.Box
+	dialogChmod         [9]ui.Box
+	// dialogViewport is the room the owning window gives the open dialog, used
+	// to keep a field's suggestion list on screen.
+	dialogViewport gfx.Rect
+	ownership      sftpOwnershipUI
+	bookmarksOpen  bool
+	places         sftpPlaceMenu
+	dropping       bool // files are being dragged over the panel
+	dropRow        int  // the folder row they are over, or -1
+	scrollDrag     bool
+	scrollGrab     float32
+	// columnDragging and columnDrag are the divider of this panel the pointer
+	// holds; columnFitPending asks the next paint to fit that divider's left
+	// column to its content after a double click.
+	columnDragging        bool
+	columnDrag            int
+	columnFitPending      bool
+	columnFitDivider      int
 	details               sftpDetails
 	extracting            bool
 	archiveSequence       uint64
@@ -203,15 +217,22 @@ type sftpView struct {
 	moveAfterRename       bool
 	transfers             []sftpclient.TransferSnapshot
 	refreshAfterTransfers bool
-	editPath              string
-	editName              string
-	editLocation          string
-	editOriginal          string
-	editRevision          sftpclient.Revision
-	editUTF8BOM           bool
-	editEditor            text.Editor
-	editLayout            components.TextareaLayout // the editor's rows and scroll
-	editRect              gfx.Rect                  // where the editor was painted, for the wheel
+	// remoteCopies names the source of each server-to-server copy this view
+	// owns, so the transfer center can describe both ends.
+	remoteCopies map[uint64]remoteCopyOrigin
+	// outgoingCopies are the server-to-server copies reading from this view, by
+	// the view that owns each task. They keep this connection open and are what
+	// closing this view cancels.
+	outgoingCopies []remoteCopyLink
+	editPath       string
+	editName       string
+	editLocation   string
+	editOriginal   string
+	editRevision   sftpclient.Revision
+	editUTF8BOM    bool
+	editEditor     text.Editor
+	editLayout     components.TextareaLayout // the editor's rows and scroll
+	editRect       gfx.Rect                  // where the editor was painted, for the wheel
 
 	// listings remembers the folders already read, oldest first, so going back
 	// up or into a folder seen before shows at once; prefetching holds folders
@@ -307,6 +328,7 @@ func (state *State) closeSFTP(session *Session) {
 	stopSFTPSearch(&session.files.lfolder)
 	session.files.sftpFolder.stopSizeCalculation()
 	session.files.lfolder.stopSizeCalculation()
+	state.cancelRemoteCopiesFrom(session.files)
 	if session.files.cancelExtract != nil {
 		session.files.cancelExtract()
 	}
@@ -425,6 +447,16 @@ func (state *State) clickSFTP(id gfx.ID) {
 		}
 		return
 	}
+	if id == hitSFTPCopyFiles {
+		if _, err := state.copySFTPSelection(view); err != nil {
+			state.showActionError(state.messages.SFTPWindow.Title, err.Error())
+		}
+		return
+	}
+	if id == hitSFTPPasteFiles {
+		state.pasteSFTPClipboard(view)
+		return
+	}
 	if id == hitSFTPProperties {
 		if state.openSFTPProperties(view.active(), view.local) && canCalculateSFTPFolderSize(view) {
 			state.calculateSFTPFolderSize(view, &state.fileProperties)
@@ -442,11 +474,6 @@ func (state *State) clickSFTP(id gfx.ID) {
 			folder.headerMenuOpen = false
 			return
 		}
-		if column, ok := id.In(sftpHeaderSortHits); ok && column < 3 {
-			folder.headerMenuOpen = false
-			state.toggleSFTPSidebarSort(folder, column)
-			return
-		}
 		switch id {
 		case hitSFTPHeaderFilter:
 			folder.headerMenuOpen = false
@@ -457,6 +484,9 @@ func (state *State) clickSFTP(id gfx.ID) {
 		case hitSFTPHeaderHidden:
 			folder.headerMenuOpen = false
 			state.clickSFTPFilter(view, hitSFTPHiddenToggle)
+		case hitSFTPHeaderFollow:
+			folder.headerMenuOpen = false
+			state.toggleSFTPFollow(session)
 		default:
 			folder.headerMenuOpen = false
 		}
@@ -506,6 +536,8 @@ func (state *State) clickSFTP(id gfx.ID) {
 		state.openSFTPDialog(view, sftpDialogDelete)
 	case id == hitSFTPChmod && !view.busy:
 		state.openSFTPDialog(view, sftpDialogChmod)
+	case id == hitSFTPChown && !view.busy:
+		state.openSFTPDialog(view, sftpDialogChown)
 	case id.Scope() == hitSFTPBreadcrumbList && !view.busy:
 		index := item(id)
 		if index < len(view.crumbs) {
@@ -558,7 +590,7 @@ func (state *State) sftpEditor(hit gfx.ID) *text.Editor {
 	if hit == hitSFTPEditor && session.files.editPath != "" && session.files.dialog == sftpDialogNone {
 		return &session.files.editEditor
 	}
-	if hit == hitSFTPDialogField2 && session.files.dialog == sftpDialogSymlink {
+	if hit == hitSFTPDialogField2 && (session.files.dialog == sftpDialogSymlink || session.files.dialog == sftpDialogChown) {
 		return &session.files.dialogEditor2
 	}
 	if hit != hitSFTPDialogField || session.files.dialog == sftpDialogNone || session.files.dialog == sftpDialogDelete || session.files.dialog == sftpDialogDiscardEdit || session.files.dialog == sftpDialogReloadEdit || session.files.dialog == sftpDialogRemoteChanged || session.files.dialog == sftpDialogBrowseCreateDirectory {
@@ -1106,6 +1138,7 @@ func (state *State) applySFTPListingNavigation(view *sftpView, remotePath string
 		state.refreshSFTPDirectory(view, remotePath)
 	}
 	view.allRows = rows
+	state.loadTypeIcons(view, rows)
 	view.crumbs = prepareSFTPCrumbs(view.crumbs, remotePath)
 	if view.detached != nil {
 		entries := make([]sftpclient.Entry, len(rows))
@@ -1285,26 +1318,7 @@ func (state *State) ensureSFTPDownloadDirectory(view *sftpView) (string, bool) {
 	if directory == "" {
 		return "", false
 	}
-	if !validSFTPDownloadDirectory(directory) {
-		state.fileOpenNotice(
-			view.detached,
-			state.messages.Tools.FilesDownloadDirectory,
-			fmt.Sprintf(state.messages.Tools.FilesDownloadDirectoryUnavailableFmt, directory),
-			components.ToastWarning,
-		)
-		return "", false
-	}
-	if err := os.MkdirAll(directory, 0o755); err != nil {
-		state.fileOpenNotice(
-			view.detached,
-			state.messages.Tools.FilesDownloadDirectory,
-			fmt.Sprintf(state.messages.Tools.FilesDownloadDirectoryUnavailableFmt, directory),
-			components.ToastWarning,
-		)
-		return "", false
-	}
-	info, err := os.Stat(directory)
-	if err != nil || !info.IsDir() {
+	if !validSFTPDownloadDirectory(directory) || prepareDownloadDirectory(directory) != nil {
 		state.fileOpenNotice(
 			view.detached,
 			state.messages.Tools.FilesDownloadDirectory,
@@ -1338,16 +1352,7 @@ func (state *State) handleSFTPPickerError(view *sftpView, err error, canceled st
 }
 
 func (state *State) queueSFTPDownload(view *sftpView, entry sftpclient.Entry, localPath string) {
-	_, queued := view.worker.QueueDownload(path.Join(view.path, entry.Name), localPath, entry.IsDir(), sftpclient.ExistingFail)
-	if !queued {
-		view.errorText = state.messages.SFTPUnavailable
-		return
-	}
-	view.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, entry.Name)
-	view.errorText = ""
-	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
-	state.transfers.host = nil
-	state.refreshSFTPTransfers(view)
+	state.queueSFTPDownloadFrom(view, view.path, entry, localPath)
 }
 
 func (state *State) uploadSFTP(view *sftpView) {
@@ -1400,6 +1405,118 @@ func (state *State) refreshSFTPTransfers(view *sftpView) {
 	state.syncTransfers(view)
 }
 
+// remoteCopyOrigin is where one server-to-server copy reads from. source is
+// cleared when the copy settles; the labels stay for the transfer history.
+type remoteCopyOrigin struct {
+	server, address string
+	source          *sftpView
+}
+
+// remoteCopyLink is one outgoing server-to-server copy: the view whose worker
+// owns it, and that worker's transfer id.
+type remoteCopyLink struct {
+	state *State
+	dest  *sftpView
+	id    uint64
+}
+
+// safeSFTPName is a name a listing entry may contribute to a source path: one
+// component, never the folder itself or its parent.
+func safeSFTPName(name string) bool {
+	return name != "" && name != "." && name != ".." &&
+		!strings.ContainsRune(name, '/') && !strings.ContainsRune(name, '\x00')
+}
+
+// queueRemoteCopies copies entries from source's folder sourceDir into dest's
+// folder targetDir without routing them through this computer's disk. The batch
+// is one transfer: one source subsystem and one card in the transfer center.
+func (state *State) queueRemoteCopies(dest *sftpView, source remoteCopySource, sourceDir, targetDir string, entries []sftpclient.Entry) (queued, rejected int) {
+	if dest == nil || dest.worker == nil || source.open == nil ||
+		sourceDir == "" || targetDir == "" || dest.busy {
+		return 0, len(entries)
+	}
+	sources := make([]string, 0, len(entries))
+	recursive := false
+	for _, entry := range entries {
+		if entry.LinkBroken || !safeSFTPName(entry.Name) {
+			rejected++
+			continue
+		}
+		sources = append(sources, path.Join(sourceDir, entry.Name))
+		recursive = recursive || entry.IsDir()
+	}
+	if len(sources) == 0 {
+		return 0, rejected
+	}
+	// One file is described by its own name; a batch by the folder it came from.
+	sourceRoot := sourceDir
+	if len(sources) == 1 {
+		sourceRoot = sources[0]
+	}
+	id, ok := dest.worker.QueueRemoteCopy(sftpclient.RemoteCopyRequest{
+		Source:      source.open,
+		SourceRoot:  sourceRoot,
+		Sources:     sources,
+		Destination: targetDir,
+		Recursive:   recursive,
+		Policy:      sftpclient.ExistingFail,
+	})
+	if !ok {
+		return 0, len(entries)
+	}
+	if dest.remoteCopies == nil {
+		dest.remoteCopies = make(map[uint64]remoteCopyOrigin)
+	}
+	dest.remoteCopies[id] = remoteCopyOrigin{server: source.server, address: source.address, source: source.view}
+	link := remoteCopyLink{state: state, dest: dest, id: id}
+	if source.view != nil {
+		source.view.outgoingCopies = append(source.view.outgoingCopies, link)
+	}
+	dest.status = fmt.Sprintf(state.messages.SFTPQueuedFmt, targetDir)
+	dest.errorText = ""
+	state.transfers.open, state.transfers.filter, state.transfers.scroll = true, 0, 0
+	state.transfers.host = nil
+	state.refreshSFTPTransfers(dest)
+	return len(entries) - rejected, rejected
+}
+
+// releaseRemoteCopySource lets go of the source view of a copy that settled.
+// A source window closed while the copy ran releases its connection now.
+func (state *State) releaseRemoteCopySource(dest *sftpView, id uint64) {
+	origin, ok := dest.remoteCopies[id]
+	if !ok || origin.source == nil {
+		return
+	}
+	src := origin.source
+	for index := range src.outgoingCopies {
+		if link := src.outgoingCopies[index]; link.dest == dest && link.id == id {
+			src.outgoingCopies = append(src.outgoingCopies[:index], src.outgoingCopies[index+1:]...)
+			break
+		}
+	}
+	origin.source = nil
+	dest.remoteCopies[id] = origin
+	if len(src.outgoingCopies) == 0 && src.detached != nil && src.detached.closed {
+		src.detached.releaseConnection()
+	}
+}
+
+// cancelRemoteCopiesFrom cancels every copy still reading from view, for a
+// window that its user agreed to close.
+func (state *State) cancelRemoteCopiesFrom(view *sftpView) {
+	links := append([]remoteCopyLink(nil), view.outgoingCopies...)
+	for _, link := range links {
+		if link.dest == nil || link.dest.worker == nil {
+			continue
+		}
+		link.dest.worker.CancelTransfer(link.id)
+		if link.state != nil {
+			link.state.refreshSFTPTransfers(link.dest)
+		}
+		link.dest.invalidateDetached()
+	}
+}
+
 func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	view.dialogEditor = text.Editor{}
 	view.dialogEntry = sftpclient.Entry{}
@@ -1429,6 +1546,23 @@ func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	case sftpDialogChmod:
 		view.dialogEditor.Restrict(func(value rune) bool { return value >= '0' && value <= '7' }, 3)
 		view.dialogEditor.Insert(fmt.Sprintf("%03o", view.dialogEntry.Mode.Perm()))
+	case sftpDialogChown:
+		// A name is what the listing shows; the number stands in when the
+		// server's account files did not name the owner. Typing is not filtered
+		// here: submit validates it, so a rejected character is explained
+		// instead of quietly disappearing.
+		view.dialogEditor.Restrict(acceptSFTPOwnershipRune, sftpOwnershipMaxRunes)
+		view.dialogEditor2.Restrict(acceptSFTPOwnershipRune, sftpOwnershipMaxRunes)
+		ids := sftpclient.IDNames{}
+		if view.worker != nil {
+			ids = view.worker.Accounts()
+		}
+		view.ownership.load(ids)
+		owner := sftpOwnershipValue(view.dialogEntry.Owner, view.dialogEntry.UID, view.dialogEntry.HasOwner)
+		group := sftpOwnershipValue(view.dialogEntry.Group, view.dialogEntry.GID, view.dialogEntry.HasOwner)
+		view.dialogEditor.Insert(owner)
+		view.dialogEditor2.Insert(group)
+		view.ownership.lastQuery = [2]string{owner, group}
 	}
 	view.dialog = dialog
 }
@@ -1437,6 +1571,7 @@ func (state *State) closeSFTPDialog(view *sftpView) {
 	if view.dialog == sftpDialogBrowseCreateDirectory && view.detached != nil {
 		view.detached.cancelBrowseDirectoryPrompt()
 	}
+	view.ownership.reset()
 	view.dialog = sftpDialogNone
 	view.dialogEditor, view.dialogEditor2 = text.Editor{}, text.Editor{}
 	view.dialogEntry = sftpclient.Entry{}
@@ -1496,6 +1631,11 @@ func (state *State) finishSFTPDelete(view *sftpView, result sftpclient.Result) {
 }
 
 func (state *State) clickSFTPDialog(view *sftpView, id gfx.ID) {
+	if view.dialog == sftpDialogChown {
+		if state.clickSFTPOwnership(view, id) {
+			return
+		}
+	}
 	if view.dialog == sftpDialogChmod && id.Scope() == hitSFTPChmodBits {
 		// A permission checkbox flips one bit of the octal field, so the typed
 		// value and the checkboxes always agree (issue #392).
@@ -1516,6 +1656,273 @@ func (state *State) clickSFTPDialog(view *sftpView, id gfx.ID) {
 	case hitSFTPDialogSubmit:
 		state.submitSFTPDialog(view)
 	}
+}
+
+// clickSFTPOwnership handles the ownership dialog's fields and suggestion
+// lists. It reports whether it took the click.
+func (state *State) clickSFTPOwnership(view *sftpView, id gfx.ID) bool {
+	switch {
+	case id == hitSFTPChownDismiss:
+		view.ownership.closePopups()
+		return true
+	case id == hitSFTPDialogField || id == hitSFTPDialogField2:
+		field := 0
+		if id == hitSFTPDialogField2 {
+			field = 1
+		}
+		state.openSFTPOwnershipList(view, field)
+		return true
+	}
+	for field := range 2 {
+		if index, ok := id.In(ownershipItemScope(field)); ok {
+			state.chooseSFTPOwnership(view, field, index)
+			return true
+		}
+	}
+	return false
+}
+
+// openSFTPOwnershipList opens one field's suggestions and closes the other's.
+func (state *State) openSFTPOwnershipList(view *sftpView, field int) {
+	view.ownership.open = [2]bool{}
+	view.ownership.open[field] = true
+	view.ownership.highlighted[field] = 0
+	view.ownership.lastQuery[field] = view.ownershipEditor(field).String()
+}
+
+// chooseSFTPOwnership puts one suggested account in the field. The list closes;
+// the text stays editable, so an account the server did not list can still be
+// typed.
+func (state *State) chooseSFTPOwnership(view *sftpView, field, index int) {
+	matches := view.ownership.matches(field, view.ownershipEditor(field).String())
+	if index < 0 || index >= len(matches) {
+		return
+	}
+	account := matches[index]
+	editor := view.ownershipEditor(field)
+	editor.SetSelection(text.Range{Start: 0, End: editor.RuneCount()})
+	editor.Insert(account.name)
+	editor.SetSelection(text.Range{Start: editor.RuneCount(), End: editor.RuneCount()})
+	view.ownership.open[field] = false
+	view.ownership.lastQuery[field] = account.name
+}
+
+// sftpOwnershipKey drives an ownership field's suggestion list before the
+// dialog's own Enter and Escape. handled is false when the key belongs to the
+// dialog.
+func (state *State) sftpOwnershipKey(view *sftpView, event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if view.dialog != sftpDialogChown {
+		return gfx.EventResult{}, false
+	}
+	field := -1
+	switch event.Target {
+	case hitSFTPDialogField:
+		field = 0
+	case hitSFTPDialogField2:
+		field = 1
+	}
+	if field < 0 {
+		return gfx.EventResult{}, false
+	}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
+	text := view.ownershipEditor(field).String()
+	matches := view.ownership.matches(field, text)
+	switch event.Key {
+	case gfx.KeyUp, gfx.KeyDown:
+		if !view.ownership.open[field] {
+			state.openSFTPOwnershipList(view, field)
+			view.ownership.highlighted[field] = 0
+			if event.Key == gfx.KeyUp && len(matches) > 0 {
+				view.ownership.highlighted[field] = len(matches) - 1
+			}
+			return handled, true
+		}
+		if len(matches) == 0 {
+			view.ownership.highlighted[field] = -1
+			return handled, true
+		}
+		index := view.ownership.highlighted[field]
+		if event.Key == gfx.KeyDown {
+			index = min(max(index+1, 0), len(matches)-1)
+		} else {
+			index = min(max(index-1, 0), len(matches)-1)
+		}
+		view.ownership.highlighted[field] = index
+		return handled, true
+	case gfx.KeyEnter:
+		if !view.ownership.open[field] {
+			return gfx.EventResult{}, false
+		}
+		if len(matches) > 0 {
+			index := min(max(view.ownership.highlighted[field], 0), len(matches)-1)
+			state.chooseSFTPOwnership(view, field, index)
+			return handled, true
+		}
+		view.ownership.open[field] = false
+		return handled, true
+	case gfx.KeyEscape:
+		if view.ownership.open[field] {
+			view.ownership.open[field] = false
+			return handled, true
+		}
+	case gfx.KeyTab:
+		view.ownership.closePopups()
+	}
+	return gfx.EventResult{}, false
+}
+
+// sftpOwnershipAvailable reports whether the panel can change an owner and a
+// group: a remote SFTP listing that carries POSIX ids. An SCP listing carries
+// none, and a Windows host has none to carry.
+func sftpOwnershipAvailable(session *Session, view *sftpView) bool {
+	return !view.local && !view.approximate &&
+		session.host.System != sshconn.SystemWindows && session.host.Transfer != transferSCP
+}
+
+// sftpOwnershipValue is what the ownership dialog starts a field with: the name
+// the listing showed, or the number when the account files had no name.
+func sftpOwnershipValue(name string, id uint32, hasOwner bool) string {
+	if !hasOwner {
+		return ""
+	}
+	if name != "" {
+		return name
+	}
+	return strconv.FormatUint(uint64(id), 10)
+}
+
+// sftpOwnershipRune keeps an account field to what can name a user or group.
+func sftpOwnershipRune(value rune) bool {
+	return value > ' ' && value != ':' && value != '\x7f'
+}
+
+const sftpOwnershipMaxRunes = 64
+
+// acceptSFTPOwnershipRune only bounds the field's length. submit checks the
+// characters, so a rejected one is explained instead of quietly dropped.
+func acceptSFTPOwnershipRune(rune) bool { return true }
+
+func validSFTPOwnershipValue(value string) bool {
+	if value == "" || utf8.RuneCountInString(value) > sftpOwnershipMaxRunes {
+		return false
+	}
+	for _, character := range value {
+		if !sftpOwnershipRune(character) {
+			return false
+		}
+	}
+	return true
+}
+
+// sftpAccountOption is one user or group the server's account files name.
+type sftpAccountOption struct {
+	name string
+	id   uint32
+}
+
+// sftpOwnershipMatches is how many suggestions a field shows at once. The
+// query narrows the list; a longer menu would cover the dialog.
+const sftpOwnershipMatches = 8
+
+// sftpOwnershipUI is the ownership dialog's suggestion state: the account
+// files' names, sorted once, and which field's list is open.
+type sftpOwnershipUI struct {
+	users, groups []sftpAccountOption
+	open          [2]bool
+	highlighted   [2]int
+	lastQuery     [2]string
+}
+
+// load replaces the suggestions with the names the worker's listing read.
+func (ui *sftpOwnershipUI) load(ids sftpclient.IDNames) {
+	ui.users = sortedSFTPAccounts(ids.Users)
+	ui.groups = sortedSFTPAccounts(ids.Groups)
+	ui.open = [2]bool{}
+	ui.highlighted = [2]int{}
+	ui.lastQuery = [2]string{}
+}
+
+// reset forgets the suggestions: a closed dialog keeps no account names.
+func (ui *sftpOwnershipUI) reset() {
+	*ui = sftpOwnershipUI{}
+}
+
+func (ui *sftpOwnershipUI) closePopups() {
+	ui.open = [2]bool{}
+}
+
+// matches returns the accounts a field offers for query. Exact names come
+// first, then names that start with the query, then names that contain it;
+// each group keeps name order. A numeric query matches ids the same way. The
+// caller still accepts text that is not in the list.
+func (ui *sftpOwnershipUI) matches(field int, query string) []sftpAccountOption {
+	accounts := ui.users
+	if field == 1 {
+		accounts = ui.groups
+	}
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return accounts[:min(len(accounts), sftpOwnershipMatches)]
+	}
+	var tiers [3][]sftpAccountOption
+	for _, account := range accounts {
+		name := strings.ToLower(account.name)
+		id := strconv.FormatUint(uint64(account.id), 10)
+		tier := -1
+		switch {
+		case name == query || id == query:
+			tier = 0
+		case strings.HasPrefix(name, query) || strings.HasPrefix(id, query):
+			tier = 1
+		case strings.Contains(name, query) || strings.Contains(id, query):
+			tier = 2
+		}
+		if tier >= 0 && len(tiers[tier]) < sftpOwnershipMatches {
+			tiers[tier] = append(tiers[tier], account)
+		}
+	}
+	matches := make([]sftpAccountOption, 0, sftpOwnershipMatches)
+	for _, tier := range tiers {
+		matches = append(matches, tier...)
+		if len(matches) >= sftpOwnershipMatches {
+			return matches[:sftpOwnershipMatches]
+		}
+	}
+	return matches
+}
+
+func sortedSFTPAccounts(names map[uint32]string) []sftpAccountOption {
+	accounts := make([]sftpAccountOption, 0, len(names))
+	for id, name := range names {
+		accounts = append(accounts, sftpAccountOption{name: name, id: id})
+	}
+	slices.SortFunc(accounts, func(left, right sftpAccountOption) int {
+		if order := strings.Compare(left.name, right.name); order != 0 {
+			return order
+		}
+		if left.id < right.id {
+			return -1
+		}
+		if left.id > right.id {
+			return 1
+		}
+		return 0
+	})
+	return accounts
+}
+
+func (view *sftpView) ownershipEditor(field int) *text.Editor {
+	if field == 0 {
+		return &view.dialogEditor
+	}
+	return &view.dialogEditor2
+}
+
+func ownershipItemScope(field int) gfx.Scope {
+	if field == 0 {
+		return hitSFTPChownUserItem
+	}
+	return hitSFTPChownGroupItem
 }
 
 // sftpChmodFromDialog reads the dialog's octal field; ok is false while the
@@ -1636,6 +2043,10 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		status = fmt.Sprintf(state.messages.SFTPMovingFmt, view.dialogEntry.Name)
 		view.moveAfterRename = queued
 	case sftpDialogDelete:
+		if view.local {
+			state.submitLocalDelete(view)
+			return
+		}
 		if len(view.dialogEntries) > 1 {
 			view.deleteRemaining = slices.Clone(view.dialogEntries)
 			view.deleteCompleted = 0
@@ -1669,6 +2080,21 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		queued = view.worker.Chmod(remotePath, os.FileMode(mode))
 		operation = sftpclient.OperationChmod
 		status = fmt.Sprintf(state.messages.SFTPChangingPermissionsFmt, view.dialogEntry.Name)
+	case sftpDialogChown:
+		owner := value
+		group := strings.TrimSpace(view.dialogEditor2.String())
+		if owner == "" || group == "" {
+			view.dialogError = state.messages.SFTPErrOwnershipRequired
+			return
+		}
+		if !validSFTPOwnershipValue(owner) || !validSFTPOwnershipValue(group) {
+			view.dialogError = state.messages.SFTPErrOwnershipInvalid
+			return
+		}
+		remotePath := path.Join(view.path, view.dialogEntry.Name)
+		queued = view.worker.Chown(remotePath, owner, group)
+		operation = sftpclient.OperationChown
+		status = fmt.Sprintf(state.messages.SFTPChangingOwnershipFmt, view.dialogEntry.Name)
 	}
 	if !queued {
 		view.dialogError = state.messages.SFTPUnavailable
@@ -1773,6 +2199,10 @@ func (state *State) pumpSFTP(session *Session) {
 				} else if result.Operation == sftpclient.OperationUpload {
 					view.refreshAfterTransfers = true
 					view.refreshStatus = fmt.Sprintf(state.messages.SFTPUploadedFmt, formatBytes(result.Bytes), result.Path)
+					view.status = view.refreshStatus
+				} else if result.Operation == sftpclient.OperationRemoteCopy {
+					view.refreshAfterTransfers = true
+					view.refreshStatus = fmt.Sprintf(state.messages.SFTPCopiedFmt, formatBytes(result.Bytes), result.Path)
 					view.status = view.refreshStatus
 				} else {
 					view.status = fmt.Sprintf(state.messages.SFTPDownloadedFmt, formatBytes(result.Bytes), result.LocalPath)
@@ -1905,6 +2335,10 @@ func (state *State) pumpSFTP(session *Session) {
 			case sftpclient.OperationChmod:
 				view.forgetListings()
 				view.refreshStatus = fmt.Sprintf(state.messages.SFTPPermissionsChangedFmt, result.Path, result.Mode.Perm())
+				state.listSFTP(view, view.path)
+			case sftpclient.OperationChown:
+				view.forgetListings()
+				view.refreshStatus = fmt.Sprintf(state.messages.SFTPOwnershipChangedFmt, result.Owner, result.Group, result.Path)
 				state.listSFTP(view, view.path)
 			case sftpclient.OperationOpenText:
 				view.editPath = result.Path
@@ -2108,6 +2542,11 @@ func (state *State) formatSFTPError(err error) string {
 }
 
 func (state *State) sftpKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.files != nil && state.modal == modalNone {
+		if result, handled := state.sftpOwnershipKey(session.files, event); handled {
+			return result, true
+		}
+	}
 	if result, handled := state.sftpListActivateKey(event); handled {
 		return result, true
 	}

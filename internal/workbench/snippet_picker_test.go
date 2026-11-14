@@ -42,6 +42,8 @@ func TestTerminalToolbarSendsASnippetToItsTerminal(t *testing.T) {
 		t.Fatalf("a connected terminal's toolbar offers the snippets button = %v, disabled = %v", ok, tool.disabled)
 	}
 	state.Click(hitTerminalSnippets)
+	// The bar's checkbox is chrome above the search field, so the list holds
+	// exactly the saved snippets, even on a terminal page.
 	if state.modal != modalCommandPalette || len(state.commandPalette.visible) != len(state.snippets.list) {
 		t.Fatalf("the button opened modal %d listing %d of %d snippets", state.modal, len(state.commandPalette.visible), len(state.snippets.list))
 	}
@@ -96,6 +98,49 @@ func TestSnippetPickerDoesNotLeakIntoThePalette(t *testing.T) {
 	state.openCommandPalette()
 	if state.commandPalette.snippets {
 		t.Fatal("the command palette opened as the snippet picker")
+	}
+}
+
+// The bar's checkbox is real chrome of the dialog: a painted, clickable hit
+// above the search field, outside the list, whose tick is the bar's state and
+// whose press switches the bar without dismissing the picker.
+func TestCommandBarSwitchIsClickableChrome(t *testing.T) {
+	state := openCommandsDrawerTest(t)
+	state.openSnippetPicker()
+	view := openPickerView(t, state, 1)
+	hit, ok := hitByIDSnapshot(view.Snapshot().Hits, hitCommandsBarToggle)
+	if !ok {
+		t.Fatal("the bar checkbox was not painted as a hit")
+	}
+	if hit.Role != gfx.RoleCheckbox || !hit.Checked {
+		t.Fatalf("the visible bar's switch is role=%v checked=%v", hit.Role, hit.Checked)
+	}
+	search, hasSearch := hitByIDSnapshot(view.Snapshot().Hits, hitCommandPaletteSearch)
+	first, hasFirst := hitByIDSnapshot(view.Snapshot().Hits, hitCommandPaletteItems.At(0))
+	if hasSearch && hit.Bounds.Y >= search.Bounds.Y || hasFirst && hit.Bounds.Y >= first.Bounds.Y {
+		t.Fatal("the bar checkbox was not above the search field and the list")
+	}
+	press := func() {
+		t.Helper()
+		h, ok := hitByIDSnapshot(view.Snapshot().Hits, hitCommandsBarToggle)
+		if !ok {
+			t.Fatal("the bar checkbox vanished after a press")
+		}
+		if err := view.Click(h.Bounds.X+h.Bounds.Width/2, h.Bounds.Y+h.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	press()
+	if state.commands.shown || state.modal != modalCommandPalette {
+		t.Fatalf("a press left shown=%v modal=%v", state.commands.shown, state.modal)
+	}
+	unticked, ok := hitByIDSnapshot(view.Snapshot().Hits, hitCommandsBarToggle)
+	if !ok || unticked.Checked {
+		t.Fatal("the unticked checkbox did not report its new state")
+	}
+	press()
+	if !state.commands.shown {
+		t.Fatal("a second press did not show the bar again")
 	}
 }
 

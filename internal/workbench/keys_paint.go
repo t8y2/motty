@@ -8,12 +8,12 @@ import (
 
 // keysSectionUI is what the keychain page's declaration leaves for its paint.
 type keysSectionUI struct {
-	content, empty, addButton, removeButton, passphraseButton, copyButton ui.Box
-	copyWidth, passphraseWidth, removeWidth, addWidth                     float32
-	copyIcon, passphraseIcon, removeIcon, addIcon                         uint8
-	condensed                                                             bool
-	// draw is the page hook that paints into these slots. It is kept so a paint
-	// does not build a closure for the hook.
+	empty, addButton, removeButton, passphraseButton, copyButton ui.Box
+	copyWidth, passphraseWidth, removeWidth, addWidth            float32
+	copyIcon, passphraseIcon, removeIcon, addIcon                uint8
+	condensed                                                    bool
+	// draw is the page hook that paints the empty state and the Add Key menu. It
+	// is kept so a paint does not build a closure for the hook.
 	draw func(*ui.DrawContext)
 }
 
@@ -23,6 +23,7 @@ type keysSectionUI struct {
 func (state *State) declareKeysWorkspace(c ui.C) {
 	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
+	state.syncKeyTable()
 	bounds := state.catalogSectionBounds()
 	// The title keeps a readable column beside the buttons; a card too narrow for
 	// both shows the buttons as their icons, whose tooltips name them.
@@ -76,7 +77,18 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 		if len(state.identities) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.KeyEmpty, messages.KeyEmptySub, messages.KeyAdd, hitKeysAdd, iconKey, true)
 		} else {
-			view.content = ui.Slot(c).Grow(1).MarginSides(17, 0, 9, 0)
+			state.keysColumns = [...]components.TableColumn{{Width: 210}, {Width: 170}, {Width: 145}, {Width: 0}}
+			state.keysHeadings = [...]string{messages.KeyColumnName, messages.KeyColumnType, messages.KeyColumnProtection, messages.KeyColumnFingerprint}
+			components.FitTableHeadings(canvas, state.Theme(), state.keysColumns[:], state.keysHeadings[:])
+			table := ui.Table(c, &state.keysTable, ui.TableSpec{
+				Rows: hitKeyRowList, Columns: state.keysColumns[:], Headers: state.keysHeadings[:], Source: &state.keysRows,
+				Scrollbar: hitKeysScrollThumb, ScrollbarLabel: messages.KeyListScroll,
+				ScrollbarGutter: catalogBarGutter,
+			}).Grow(1).Shrink(1)
+			if row, ok := table.RowClicked(); ok && state.modal == modalNone && row >= 0 && row < len(state.identities) {
+				state.keysTable.Select(row)
+				state.selectIdentity(state.identities[row].ID)
+			}
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 0, 0).Gap(4).Items(ui.Start).Children(func() {
@@ -89,26 +101,13 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 	body.Clip().DrawOver(view.draw)
 }
 
-// paintKeysWorkspace paints the keychain page's buttons, table and empty state
-// into the slots its declaration left.
+// paintKeysWorkspace paints the keychain page's empty state and Add Key menu into
+// the slots its declaration left. A table is painted by the page itself.
 func (state *State) paintKeysWorkspace(canvas *gfx.Canvas) {
-	view, messages := &state.sectionBodies.keys, state.messages
+	view := &state.sectionBodies.keys
 	state.keysAddButton = view.addButton.Rect()
-
 	if len(state.identities) == 0 {
 		state.drawReservedEmptyPage(canvas, view.empty, iconKey)
-		state.paintKeysMenu(canvas)
-		return
-	}
-	columns := [...]components.TableColumn{{Width: 210}, {Width: 170}, {Width: 145}, {Width: 0}}
-	headings := [...]string{messages.KeyColumnName, messages.KeyColumnType, messages.KeyColumnProtection, messages.KeyColumnFingerprint}
-	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
-	table.Header(headings[:])
-	for _, identity := range state.identities {
-		if table.RowAt(hitKeyRowList, int(identity.ID), identity.cells[:], identity.ID == state.selectedIdentityID) && state.modal == modalNone {
-			state.selectIdentity(identity.ID)
-		}
 	}
 	state.paintKeysMenu(canvas)
 }

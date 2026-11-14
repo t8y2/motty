@@ -184,8 +184,16 @@ func TestCredSSPFallbackDoesNotRetryCredentials(t *testing.T) {
 							return err
 						}
 						auth, err := readNLATestRequest(secured)
-						if err != nil || len(auth.NegoTokens) != 1 || len(auth.PubKeyAuth) == 0 {
+						if err != nil || len(auth.NegoTokens) != 1 {
 							return errors.New("missing Authenticate message")
+						}
+						if len(auth.PubKeyAuth) == 0 {
+							// The challenge carries no request-mic, so this
+							// Authenticate is the client's last SPNEGO token and
+							// MS-CSSP 3.2.5 puts the binding in the same
+							// TSRequest. Windows answers a split with a TLS
+							// internal_error instead of an error code.
+							return errors.New("client did not seal its binding with the last token")
 						}
 						attempts.Add(1)
 						if test.authError == closeAfterAuth {

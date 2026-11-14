@@ -50,7 +50,7 @@ func (state *State) notePasswordPrompt(session *Session) {
 		return
 	}
 	line := t.screen.RowText(cursor.Y)
-	if len(line) < len("[sudo]") || !strings.EqualFold(line[:len("[sudo]")], "[sudo]") || !sudoPromptRe.MatchString(line) {
+	if len(line) < len("[sudo") || !strings.EqualFold(line[:len("[sudo")], "[sudo") || !sudoPromptRe.MatchString(line) {
 		t.passwordHint = ""
 		return
 	}

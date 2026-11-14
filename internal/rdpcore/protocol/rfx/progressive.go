@@ -62,7 +62,7 @@ type DecodedTile struct {
 // Tiles are decoded sequentially, so a single set is safe.
 type tileWorkBuf struct {
 	coeffs [3][]int16 // 3x 4096 for RLGR output (Y, Cb, Cr)
-	sign   [3][]int16 // 3x 4096 for sign buffers
+	sign   [3][]int8  // 3x 4096 for sign buffers
 	dwtTmp []int16    // 4096 for DWT temporary
 }
 
@@ -98,9 +98,9 @@ type tileCoeffs struct {
 	y           []int16   // 4096 Y coefficients (post-dequantize, pre-DWT)
 	cb          []int16   // 4096 Cb coefficients
 	cr          []int16   // 4096 Cr coefficients
-	ySign       []int16   // 4096 sign values (+1, -1, or 0)
-	cbSign      []int16   // 4096 sign values
-	crSign      []int16   // 4096 sign values
+	ySign       []int8    // 4096 sign values (+1, -1, or 0)
+	cbSign      []int8    // 4096 sign values
+	crSign      []int8    // 4096 sign values
 	yBitPos     [10]uint8 // per-subband bit position
 	cbBitPos    [10]uint8
 	crBitPos    [10]uint8
@@ -140,17 +140,20 @@ var extrapolateSubbands = [10]subbandInfo{
 }
 
 // initWorkBuf allocates scratch buffers for tile decoding.
-// Single allocation for all buffers: 3×4096 (coeffs) + 3×4096 (sign) + 3×4096 (dwtTmp) = 36864.
+// One int16 allocation for the coefficients and the DWT scratch, one int8
+// allocation for the signs: signs are +1, -1 or 0, so a byte each is exact and
+// halves what every decoded tile keeps for its lifetime.
 // dwtTmp is 3×4096 to hold per-component L/H during fused level 1 DWT+convert.
 func initWorkBuf(w *tileWorkBuf) {
-	buf := make([]int16, 9*4096)
+	buf := make([]int16, 6*4096)
 	for i := range w.coeffs {
 		w.coeffs[i] = buf[i*4096 : (i+1)*4096]
 	}
+	w.dwtTmp = buf[3*4096 : 6*4096]
+	signs := make([]int8, 3*4096)
 	for i := range w.sign {
-		w.sign[i] = buf[(3+i)*4096 : (4+i)*4096]
+		w.sign[i] = signs[i*4096 : (i+1)*4096]
 	}
-	w.dwtTmp = buf[6*4096 : 9*4096]
 }
 
 // NewDecoder creates a new Progressive codec decoder.
@@ -469,14 +472,15 @@ func (d *Decoder) decodeRegion(data []byte, contextID uint32) (Region, error) {
 func (d *Decoder) ensureTileCoeffs(ctx *contextState, key [2]int) *tileCoeffs {
 	tc := ctx.tiles[key]
 	if tc == nil {
-		buf := make([]int16, 6*4096)
+		coeffs := make([]int16, 3*4096)
+		signs := make([]int8, 3*4096)
 		tc = &tileCoeffs{
-			y:      buf[0:4096],
-			cb:     buf[4096:8192],
-			cr:     buf[8192:12288],
-			ySign:  buf[12288:16384],
-			cbSign: buf[16384:20480],
-			crSign: buf[20480:24576],
+			y:      coeffs[0:4096],
+			cb:     coeffs[4096:8192],
+			cr:     coeffs[8192:12288],
+			ySign:  signs[0:4096],
+			cbSign: signs[4096:8192],
+			crSign: signs[8192:12288],
 		}
 		ctx.tiles[key] = tc
 	}
@@ -828,20 +832,20 @@ func (d *Decoder) decodeTileData(w *tileWorkBuf, tc *tileCoeffs, yData, cbData, 
 // sign[i] = +1 if coeff > 0, -1 if coeff < 0, 0 if coeff == 0.
 // dst must have len >= len(coeffs). Returns dst[:len(coeffs)].
 // Uses branchless bit arithmetic to avoid branch mispredictions.
-func fillSignBuffer(dst, coeffs []int16) []int16 {
+func fillSignBuffer(dst []int8, coeffs []int16) []int8 {
 	sign := dst[:len(coeffs)]
 	n := len(coeffs)
 	i := 0
 	for ; i+3 < n; i += 4 {
 		v0, v1, v2, v3 := coeffs[i], coeffs[i+1], coeffs[i+2], coeffs[i+3]
-		sign[i] = (v0 >> 15) | int16(uint16(-v0)>>15)
-		sign[i+1] = (v1 >> 15) | int16(uint16(-v1)>>15)
-		sign[i+2] = (v2 >> 15) | int16(uint16(-v2)>>15)
-		sign[i+3] = (v3 >> 15) | int16(uint16(-v3)>>15)
+		sign[i] = int8((v0 >> 15) | int16(uint16(-v0)>>15))
+		sign[i+1] = int8((v1 >> 15) | int16(uint16(-v1)>>15))
+		sign[i+2] = int8((v2 >> 15) | int16(uint16(-v2)>>15))
+		sign[i+3] = int8((v3 >> 15) | int16(uint16(-v3)>>15))
 	}
 	for ; i < n; i++ {
 		v := coeffs[i]
-		sign[i] = (v >> 15) | int16(uint16(-v)>>15)
+		sign[i] = int8((v >> 15) | int16(uint16(-v)>>15))
 	}
 	return sign
 }
@@ -988,7 +992,7 @@ func (d *Decoder) decodeTileUpgrade(w *tileWorkBuf, existing *tileCoeffs, data [
 
 // upgradeComponent applies SRL+RAW upgrade data to a component's stored coefficients.
 // Returns (srlConsumed, rawConsumed) byte counts for validation.
-func upgradeComponent(current, sign []int16, srlData, rawData []byte,
+func upgradeComponent(current []int16, sign []int8, srlData, rawData []byte,
 	shift, numBits [10]uint8, extrapolate bool) (int, int) {
 
 	var bands *[10]subbandInfo
@@ -1054,7 +1058,7 @@ type srlState struct {
 }
 
 // upgradeBlock processes one sub-band of upgrade data.
-func upgradeBlock(current, sign []int16, srl, raw *bitReader, state *srlState,
+func upgradeBlock(current []int16, sign []int8, srl, raw *bitReader, state *srlState,
 	shift, numBits uint8, nonLL bool) {
 
 	for i := range current {
@@ -1069,7 +1073,7 @@ func upgradeBlock(current, sign []int16, srl, raw *bitReader, state *srlState,
 		if sign[i] != 0 {
 			// Previously non-zero: read magnitude from RAW, apply stored sign
 			input := rawShift(raw, numBits)
-			current[i] += sign[i] * (int16(input) << shift)
+			current[i] += int16(sign[i]) * (int16(input) << shift)
 		} else {
 			// Previously zero: read sign+magnitude from SRL
 			val := srlRead(srl, state, numBits)

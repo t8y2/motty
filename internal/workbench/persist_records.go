@@ -87,7 +87,9 @@ import (
 // writer would drop the records it does not know.
 // Version 27 preserves the latency readout's docked position and order: older
 // writers would drop the new toolbar key and silently move it back.
-const configFormat = 27
+// Version 28 preserves the device-local interface text size as a pixel number:
+// an older full save would drop the field and reset the size.
+const configFormat = 28
 
 const (
 	kindSetting             = "setting"
@@ -259,8 +261,10 @@ var syncedSettings = map[string]bool{
 	"sftp_panel_auto_open":         true,
 	"sftp_panel_side":              true,
 	"command_history":              true,
+	"command_completion_mode":      true,
 	"command_suggest_off":          true,
 	"command_inline_suggest_off":   true,
+	"command_accept_hint_off":      true,
 }
 
 // stateVersionFields are written back as this build's own on every load.
@@ -1120,6 +1124,9 @@ func writeEntries(store *configstore.Store, base *configBase, entries []configst
 		default:
 			local.state = value
 		}
+	}
+	if err := guardNoteGraphChange(store, &change); err != nil {
+		return false, err
 	}
 	written, err := store.Commit(change)
 	if err != nil {

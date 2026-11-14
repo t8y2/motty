@@ -62,12 +62,19 @@ func NewTap(nonce string, maxOutput int) *Tap {
 	}
 }
 
+// NewStreamTap returns a Tap for output that arrives without a pty and without
+// a completion marker: every byte is recorded and passed through unchanged, and
+// the caller calls [Tap.FinishConsole] when the command ends.
+func NewStreamTap(maxOutput int) *Tap {
+	return &Tap{rec: newRecorder(maxOutput), code: -1, plain: true}
+}
+
 // NewConsoleTap returns a Tap for a command typed into a device console. There
 // is no completion marker to look for: the caller watches the device's prompt
 // and calls [Tap.FinishConsole] when it returns. Every byte passes through to the
 // terminal unchanged.
 func NewConsoleTap(maxOutput int) *Tap {
-	return &Tap{rec: newRecorder(maxOutput), code: -1, plain: true}
+	return NewStreamTap(maxOutput)
 }
 
 // Retain keeps up to maxBytes of normalized output for later paging. The

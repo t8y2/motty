@@ -8,31 +8,123 @@ import (
 	"github.com/vivaui/viva/gfx"
 )
 
-func TestHostSortButtonEntersAndLeavesSortingMode(t *testing.T) {
+// beginHostSortCase enters the transient drag a press drag starts, then
+// finishes the pickup so a test can press the handles directly.
+func beginHostSortCase(t *testing.T, state *State) {
+	t.Helper()
+	if len(state.hosts) == 0 {
+		t.Fatal("no hosts to sort")
+	}
+	state.beginHostPressDrag(state.hosts[0].ID, gfx.Point{})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	state.hostSort.pickup = hostSortPickup{}
+}
+
+func TestAltUpDownMovesTheFocusedHostAndSwitchesToManual(t *testing.T) {
+	state := manyHostsState(t, 3)
+	state.setHostOrder(hostOrderIP)
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	row, ok := hostListHostHit(&canvas, state, state.hosts[0].ID)
+	if !ok {
+		t.Fatal("the first host row is not painted")
+	}
+	result := state.Key(gfx.KeyEvent{
+		Key: gfx.KeyDown, Modifiers: gfx.ModifierAlt, Target: row.ID,
+	})
+	if !result.Handled {
+		t.Fatal("Alt+Down was not handled over a host row")
+	}
+	if state.hostOrder != hostOrderManual {
+		t.Fatal("the keyboard move did not switch to manual order")
+	}
+	if state.hosts[0].Label != "Host 01" || state.hosts[1].Label != "Host 00" {
+		t.Fatalf("keyboard order = %q, %q", state.hosts[0].Label, state.hosts[1].Label)
+	}
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Hosts[0].Label != "Host 01" || saved.Hosts[1].Label != "Host 00" {
+		t.Fatalf("saved keyboard order = %q, %q", saved.Hosts[0].Label, saved.Hosts[1].Label)
+	}
+}
+
+func TestHostOrderButtonKeepsItsMenuAndTheOldSortButtonIsGone(t *testing.T) {
 	state := manyHostsState(t, 4)
 	size := gfx.Size{Width: 1400, Height: 900}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 
-	if hit, ok := hitByID(&canvas, hitHostSort); !ok || hit.Disabled {
-		t.Fatalf("sort button = %+v found=%v", hit, ok)
+	if _, ok := hitByID(&canvas, tree.ID(hostGridHits, "host-sort")); ok {
+		t.Fatal("the old sort button is still painted")
 	}
-	state.Click(hitHostSort)
-	if !state.hostSort.enabled {
-		t.Fatal("sort mode did not start")
+	if _, ok := hitByID(&canvas, hitHostOrder); !ok {
+		t.Fatal("the display-order control is not painted")
 	}
-
+	state.Click(hitHostOrder)
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
-	if _, ok := hitByID(&canvas, hitHostCheckList.At(int(state.hosts[0].ID))); ok {
-		t.Fatal("sorting mode still shows host selection checkboxes")
+	if _, ok := hitByID(&canvas, hitHostOrderManual); !ok {
+		t.Fatal("the display-order menu no longer opens")
 	}
-	if _, ok := hitByID(&canvas, hitHostSortHandles.At(int(state.hosts[0].ID))); !ok {
+}
+
+func TestHostPressDragPicksUpAHostAndDragsIt(t *testing.T) {
+	state := manyHostsState(t, 4)
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+
+	firstID, thirdID := state.hosts[0].ID, state.hosts[2].ID
+	first, ok := hostListHostHit(&canvas, state, firstID)
+	if !ok {
+		t.Fatal("the first host row is not painted")
+	}
+	third, ok := hostListHostHit(&canvas, state, thirdID)
+	if !ok {
+		t.Fatal("the third host row is not painted")
+	}
+	pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: first.ID,
+		X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2, Viewport: size,
+	})
+	if state.hostSort.enabled {
+		t.Fatal("a press alone entered sorting")
+	}
+	// Moving past the slop turns the press into a drag.
+	pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: first.ID, Captured: true,
+		X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2 + hostDragSlop + 2, Viewport: size,
+	})
+	if !state.hostSort.enabled {
+		t.Fatal("dragging the row did not enter sorting")
+	}
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, size) // the handles this drag needs
+	if _, ok := hitByID(&canvas, hitHostSortHandles.At(int(firstID))); !ok {
 		t.Fatal("sorting mode has no drag handle")
 	}
-	state.Click(hitHostSort)
+
+	pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: first.ID, Captured: true,
+		X: third.Bounds.X + third.Bounds.Width/2, Y: third.Bounds.Y + third.Bounds.Height/2, Viewport: size,
+	})
+	pointer(state, gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: first.ID, Captured: true,
+		X: third.Bounds.X + third.Bounds.Width/2, Y: third.Bounds.Y + third.Bounds.Height/2, Viewport: size,
+	})
 	if state.hostSort.enabled {
-		t.Fatal("Done did not leave sort mode")
+		t.Fatal("releasing the drag left sorting mode on")
+	}
+	got := make([]string, len(state.hosts))
+	for index := range state.hosts {
+		got[index] = state.hosts[index].Label
+	}
+	if want := []string{"Host 01", "Host 02", "Host 00", "Host 03"}; !slices.Equal(got, want) {
+		t.Fatalf("long-press order = %v, want %v", got, want)
 	}
 }
 
@@ -50,7 +142,7 @@ func TestHostSortCardHandleUsesCheckboxFootprint(t *testing.T) {
 		t.Fatal("card checkbox is not painted")
 	}
 
-	state.Click(hitHostSort)
+	beginHostSortCase(t, state)
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 
@@ -75,7 +167,7 @@ func TestHostSortCardHandleUsesCheckboxFootprint(t *testing.T) {
 func TestHostSortDragReordersCardsAndPersists(t *testing.T) {
 	state := manyHostsState(t, 5)
 	state.Click(hitHostViewGrid)
-	state.Click(hitHostSort)
+	beginHostSortCase(t, state)
 
 	size := gfx.Size{Width: 1400, Height: 900}
 	var canvas gfx.Canvas
@@ -154,7 +246,7 @@ func TestHostSortListHandleUsesCheckboxFootprint(t *testing.T) {
 		t.Fatal("checkbox is not painted")
 	}
 
-	state.Click(hitHostSort)
+	beginHostSortCase(t, state)
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	handleID := hitHostSortHandles.At(int(state.hosts[0].ID))
@@ -175,7 +267,7 @@ func TestHostSortListHandleUsesCheckboxFootprint(t *testing.T) {
 
 func TestHostSortDisablesSearchWhileActive(t *testing.T) {
 	state := manyHostsState(t, 4)
-	state.Click(hitHostSort)
+	beginHostSortCase(t, state)
 	size := gfx.Size{Width: 1400, Height: 900}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
@@ -191,7 +283,7 @@ func TestHostSortDisablesSearchWhileActive(t *testing.T) {
 
 func TestHostSortKeyboardMovesAndPersists(t *testing.T) {
 	state := manyHostsState(t, 4)
-	state.Click(hitHostSort)
+	beginHostSortCase(t, state)
 	size := gfx.Size{Width: 1400, Height: 900}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
@@ -226,7 +318,7 @@ func TestHostSortKeyboardMovesAndPersists(t *testing.T) {
 
 func TestHostSortDragReordersListRows(t *testing.T) {
 	state := manyHostsState(t, 5)
-	state.Click(hitHostSort)
+	beginHostSortCase(t, state)
 
 	size := gfx.Size{Width: 1400, Height: 900}
 	var canvas gfx.Canvas
@@ -269,7 +361,7 @@ func TestHostSortDragReordersListRows(t *testing.T) {
 
 func TestHostSortDragAutoScrollsNearTheBottomEdge(t *testing.T) {
 	state := manyHostsState(t, 40)
-	state.Click(hitHostSort)
+	beginHostSortCase(t, state)
 	size := gfx.Size{Width: 1400, Height: 700}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
@@ -333,7 +425,7 @@ func TestHostSortDoesNotMoveAcrossGroups(t *testing.T) {
 
 func TestHostSortEscapeDoesNotInterceptOutsideHosts(t *testing.T) {
 	state := manyHostsState(t, 3)
-	state.Click(hitHostSort)
+	beginHostSortCase(t, state)
 	state.activeSection = sectionTerminal
 
 	result, handled := state.hostManagementKey(gfx.KeyEvent{Key: gfx.KeyEscape})
@@ -347,7 +439,7 @@ func TestHostSortEscapeDoesNotInterceptOutsideHosts(t *testing.T) {
 
 func TestHostSortEscapeReleaseAndRepeatDoNotExitAfterCancel(t *testing.T) {
 	state := manyHostsState(t, 3)
-	state.Click(hitHostSort)
+	beginHostSortCase(t, state)
 	size := gfx.Size{Width: 1400, Height: 900}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
@@ -383,12 +475,15 @@ func TestHostSortEscapeReleaseAndRepeatDoNotExitAfterCancel(t *testing.T) {
 	}
 }
 
-func TestHostSortIsUnavailableWhileSearching(t *testing.T) {
+func TestHostPressDragIsUnavailableWhileSearching(t *testing.T) {
 	state := manyHostsState(t, 4)
 	state.search.Insert("Host 0")
 	state.syncVisible()
-	state.Click(hitHostSort)
-	if state.hostSort.enabled {
-		t.Fatal("sorting mode started while search filtering was active")
+	state.hostPressPointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
+		Target: hitHostList.At(int(state.hosts[0].ID)), X: 10, Y: 10,
+	})
+	if state.hostSort.press.active || state.hostSort.enabled {
+		t.Fatal("a filtered list armed the press")
 	}
 }

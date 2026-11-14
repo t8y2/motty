@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -155,6 +156,168 @@ func TestAIReasoningMenuInteractionAndRequestTransmission(t *testing.T) {
 	// 验证请求是否透传了 ReasoningEffort
 	if prov.lastReq.ReasoningEffort != reasoning.LevelHigh {
 		t.Fatalf("expected transmitted ReasoningEffort 'high', got %q", prov.lastReq.ReasoningEffort)
+	}
+}
+
+func TestAIReasoningSettingsRefresh(t *testing.T) {
+	state, _ := panelState(t, &captureProvider{})
+	db, err := state.aiStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveProvider(store.Provider{ID: "p1", Name: "Custom", Kind: "openai", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveModels("p1", []store.Model{{ProviderID: "p1", Name: "custom-model", Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetDefaultModel("p1", "custom-model"); err != nil {
+		t.Fatal(err)
+	}
+	state.reloadAI()
+	if got := state.aiEffectiveReasoningEffort(); got != "" {
+		t.Fatalf("initial effort = %q", got)
+	}
+	for _, tc := range []struct {
+		name     string
+		config   *store.ReasoningConfig
+		disabled bool
+		want     string
+	}{
+		{"enabled", &store.ReasoningConfig{Levels: []string{"low", "high"}, Default: "high"}, false, "high"},
+		{"changed", &store.ReasoningConfig{Levels: []string{"low", "high"}, Default: "low"}, false, "low"},
+		{"disabled", nil, true, ""},
+		{"auto", nil, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := db.SetModelReasoning("p1", "custom-model", tc.config, tc.disabled); err != nil {
+				t.Fatal(err)
+			}
+			state.setMCPEndpoint("", tc.name)
+			pumpSettings(t, state, "reasoning settings", func() bool { return state.ai.mcpToken == tc.name })
+			if got := state.aiEffectiveReasoningEffort(); got != tc.want {
+				t.Fatalf("refreshed effort = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAIReasoningDialogSaveReachesOtherWindows(t *testing.T) {
+	windows, _ := assistantWindowsOnOneStore(t)
+	origin := windows[0]
+	db := origin.ai.store
+	if err := db.SaveProvider(store.Provider{ID: "p", Name: "Test", Kind: store.KindOpenAI, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveModels("p", []store.Model{{Name: "o3-mini", Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetDefaultModel("p", "o3-mini"); err != nil {
+		t.Fatal(err)
+	}
+	origin.aiWrote()
+	for _, state := range windows {
+		state.Wake()
+		state.ai.open = true
+		state.ai.cfg.selected = "p"
+		state.save()
+	}
+	for _, state := range windows {
+		state.Wake()
+		state.aiCurrentModelReasoning()
+	}
+	windows[1].ai.panel.reasoningEffort = reasoning.LevelHigh
+	windows[2].ai.panel.reasoningEffort = reasoning.LevelXHigh
+	m := origin.messages.AISettings
+	for _, tc := range []struct {
+		name, mode, preset string
+		levels             []string
+		disabled, override bool
+	}{
+		{"disabled", m.ModelReasoningDisable, "", nil, true, true},
+		{"enabled", m.ModelReasoningEnable, m.ModelReasoningPreset6, []string{"minimal", "low", "medium", "high", "xhigh", "max"}, false, true},
+		{"changed", m.ModelReasoningEnable, m.ModelReasoningPreset3, []string{"low", "medium", "high"}, false, true},
+		{"auto", m.ModelReasoningAuto, "", []string{"low", "medium", "high"}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			origin.Click(hitAISetModelReasoning.At(0))
+			if origin.ai.cfg.dialog != aiDialogModelReasoning {
+				t.Fatal("reasoning dialog did not open")
+			}
+			clickSettingsChoice(t, origin, tc.mode)
+			if tc.preset != "" {
+				clickSettingsChoice(t, origin, tc.preset)
+			}
+			origin.Click(hitAISetReasoningSave)
+			if origin.ai.cfg.dialog != aiDialogNone {
+				t.Fatalf("save failed: %s", origin.ai.cfg.formErr)
+			}
+			for index, state := range windows {
+				state.Wake()
+				model, levels, supported := state.aiCurrentModelReasoning()
+				if model == nil {
+					t.Fatalf("window %d has no selected model", index)
+				}
+				wantEffort := reasoning.LevelMedium
+				if tc.disabled {
+					wantEffort = ""
+				} else if index == 1 {
+					wantEffort = reasoning.LevelHigh
+				} else if index == 2 && tc.name == "enabled" {
+					wantEffort = reasoning.LevelXHigh
+				}
+				if got := state.aiEffectiveReasoningEffort(); got != wantEffort {
+					t.Errorf("window %d: effort=%q, want %q", index, got, wantEffort)
+				}
+				if want := []string{"", reasoning.LevelHigh, reasoning.LevelXHigh}[index]; state.ai.panel.reasoningEffort != want {
+					t.Errorf("window %d: local effort override changed to %q, want %q", index, state.ai.panel.reasoningEffort, want)
+				}
+				_, _, _, override, disabled := state.aiModelReasoningInfo(model)
+				if !slices.Equal(levels, tc.levels) || supported != (len(tc.levels) > 0) || disabled != tc.disabled || override != tc.override {
+					t.Errorf("window %d: levels=%v supported=%v disabled=%v override=%v; want levels=%v disabled=%v override=%v", index, levels, supported, disabled, override, tc.levels, tc.disabled, tc.override)
+				}
+			}
+		})
+	}
+}
+
+// A refresh that brings in a shorter model list must not leave a window on a
+// page past the end: with too few models for a pager the list draws no page
+// controls, so that window would show nothing and offer no way back.
+func TestAIReasoningRefreshClampsAModelPagePastTheEnd(t *testing.T) {
+	windows, _ := assistantWindowsOnOneStore(t)
+	origin, peer := windows[0], windows[1]
+	db := origin.ai.store
+	if err := db.SaveProvider(store.Provider{ID: "p", Name: "Test", Kind: store.KindOpenAI, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	var models []store.Model
+	for index := 0; index < 3*aiModelPageSize; index++ {
+		models = append(models, store.Model{ProviderID: "p", Name: fmt.Sprintf("model-%02d", index), Enabled: true})
+	}
+	if err := db.SaveModels("p", models); err != nil {
+		t.Fatal(err)
+	}
+	origin.aiWrote()
+	for _, state := range windows {
+		state.Wake()
+		state.ai.cfg.selected = "p"
+	}
+	peer.ai.cfg.page = 2
+	if err := db.SaveModels("p", models[:1]); err != nil {
+		t.Fatal(err)
+	}
+	origin.aiWrote()
+	peer.Wake()
+	provider, ok := peer.aiSelectedProvider()
+	if !ok {
+		t.Fatal("the provider disappeared")
+	}
+	if shown := len(peer.aiFilteredModels(provider.ID)); shown != 1 {
+		t.Fatalf("peer sees %d models, want 1", shown)
+	}
+	if peer.ai.cfg.page != 0 {
+		t.Fatalf("peer kept page %d of a one-model list", peer.ai.cfg.page)
 	}
 }
 

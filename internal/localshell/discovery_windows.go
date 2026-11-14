@@ -64,6 +64,29 @@ func cygwinRecordedRoots() []string {
 	return roots
 }
 
+// storePowerShell is the executable of a PowerShell 7 installed from the
+// Microsoft Store, whose package has no PATH entry of its own: Windows exposes
+// it as an app execution alias under WindowsApps, either at the root or in the
+// folder named for the package (issue #750). The package's own command
+// resolution reports the folder path; the alias launches like the shell.
+// Empty when there is no Store package.
+func storePowerShell() string {
+	local := os.Getenv("LOCALAPPDATA")
+	if local == "" {
+		return ""
+	}
+	root := filepath.Join(local, "Microsoft", "WindowsApps")
+	candidates := []string{filepath.Join(root, "pwsh.exe")}
+	packages, _ := filepath.Glob(filepath.Join(root, "Microsoft.PowerShell_*", "pwsh.exe"))
+	candidates = append(candidates, packages...)
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
 // InstalledWindowsShells looks in PATH and standard machine/per-user install
 // locations. It checks executable files without starting the user's programs.
 func InstalledWindowsShells() []Choice {
@@ -84,6 +107,9 @@ func InstalledWindowsShells() []Choice {
 	if root := os.Getenv("LOCALAPPDATA"); root != "" {
 		versions, _ := filepath.Glob(filepath.Join(root, "Microsoft", "PowerShell", "*", "pwsh.exe"))
 		pwsh = append(pwsh, versions...)
+	}
+	if store := storePowerShell(); store != "" {
+		pwsh = append(pwsh, store)
 	}
 	if home := os.Getenv("USERPROFILE"); home != "" {
 		pwsh = append(pwsh, filepath.Join(home, "scoop", "apps", "pwsh", "current", "pwsh.exe"))

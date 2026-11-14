@@ -90,6 +90,50 @@ func TestAMalformedWorkspaceTemplateDoesNotBlockTheOthers(t *testing.T) {
 	}
 }
 
+// A store from before layouts existed holds a template with only a grid width.
+// Reading it must not make every save fail: a save re-encodes the record it
+// finds, and a template with no layout has no kind to name.
+func TestLegacyWorkspaceTemplateRecordDoesNotBlockSaving(t *testing.T) {
+	path := testConfigPath(t)
+	if err := saveState(path, savedState{Hosts: sampleHosts}); err != nil {
+		t.Fatal(err)
+	}
+	id, err := newWorkspaceTemplateID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := []byte(`{"id":"` + id + `","name":"Legacy","host_ids":["host_a"],"columns":2}`)
+	store, err := configstore.Open(path, configFormat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Commit(configstore.Change{Put: []configstore.Entry{
+		{Kind: kindWorkspaceTemplate, ID: id, Payload: recordPayloadJSON(t, 1, legacy)},
+	}}); err != nil {
+		store.Close()
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.StatePath = path
+	state := newTestState(t, options)
+	if len(state.templates) != 1 || !isGrid(state.templates[0].Layout, 2) {
+		t.Fatalf("a legacy template loaded as %+v", state.templates)
+	}
+	if err := state.saveWithResult(); err != nil {
+		t.Fatalf("the save the legacy record blocked: %v", err)
+	}
+	got, report, err := loadState(path)
+	if err != nil || report.outcome != loadOK {
+		t.Fatalf("load: %+v, %v", report, err)
+	}
+	if len(got.WorkspaceTemplates) != 1 || got.WorkspaceTemplates[0].ID != id || !isGrid(got.WorkspaceTemplates[0].Layout, 2) {
+		t.Fatalf("templates after the save = %+v", got.WorkspaceTemplates)
+	}
+}
+
 func TestLoadedWorkspaceTemplateKeepsItsNormalizedValues(t *testing.T) {
 	_, options := newWorld(t)
 	valid := mustWorkspaceTemplate(t, "Good", []string{"host_a"}, 1)

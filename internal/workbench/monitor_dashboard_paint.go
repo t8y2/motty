@@ -634,7 +634,12 @@ func (s *State) paintDashboardDialog(c *gfx.Canvas, viewport gfx.Rect) {
 	if e.page == 1 {
 		countText = fmt.Sprintf(m.Selected, len(e.selected))
 	}
-	monitorRight(c, countText, gfx.Rect{X: b.X + 270, Y: y, Width: max(0, b.Width-274), Height: 34}, 12, s.pal.muted, gfx.WeightRegular)
+	countWidth := max(0, b.Width-274)
+	if e.page == 0 {
+		countWidth = min(180, max(0, countWidth-150))
+		s.paintDashboardSelectMatches(c, gfx.Rect{X: b.X + 270, Y: y, Width: max(0, b.Width-282-countWidth), Height: 34}, groups)
+	}
+	monitorRight(c, countText, gfx.Rect{X: b.X + b.Width - countWidth - 4, Y: y, Width: countWidth, Height: 34}, 12, s.pal.muted, gfx.WeightRegular)
 	y += 48
 	if e.page == 0 {
 		for _, field := range []struct {
@@ -648,7 +653,7 @@ func (s *State) paintDashboardDialog(c *gfx.Canvas, viewport gfx.Rect) {
 		y += 6
 		s.paintDashboardPickerFilters(c, gfx.Rect{X: b.X + 4, Y: y, Width: b.Width - 8, Height: 34})
 	} else {
-		monitorLabel(c, m.SortHint, gfx.Rect{X: b.X + 4, Y: y, Width: b.Width - 8, Height: 34}, 12, s.pal.muted, gfx.WeightRegular)
+		s.paintDashboardOrderMode(c, gfx.Rect{X: b.X + 4, Y: y, Width: min(220, b.Width-8), Height: 34})
 	}
 	y += 46
 	e.bounds = gfx.Rect{X: b.X + 4, Y: y, Width: b.Width - 8, Height: max(40, b.Y+b.Height-y-56)}

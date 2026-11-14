@@ -12,6 +12,50 @@ import (
 	"motty/internal/sshconn"
 )
 
+// proxyTableSource reads the jump route page's table cells when the table asks
+// for them, one visible cell at a time.
+type proxyTableSource struct {
+	records *[]proxyRecord
+}
+
+func (source *proxyTableSource) Len() int {
+	if source == nil || source.records == nil {
+		return 0
+	}
+	return len(*source.records)
+}
+
+func (source *proxyTableSource) Cell(row, column int) string {
+	if source == nil || source.records == nil {
+		return ""
+	}
+	records := *source.records
+	if row < 0 || row >= len(records) || column < 0 || column >= len(records[row].cells) {
+		return ""
+	}
+	return records[row].cells[column]
+}
+
+// syncProxyTable makes the table show the route the application selected.
+func (state *State) syncProxyTable() {
+	row := -1
+	for index := range state.proxies {
+		if state.proxies[index].ID == state.selectedProxyID {
+			row = index
+			break
+		}
+	}
+	state.proxyTable.Select(row)
+}
+
+// takeProxyTableSelection adopts the row a key moved the table to.
+func (state *State) takeProxyTableSelection() {
+	row := state.proxyTable.Selected()
+	if row >= 0 && row < len(state.proxies) {
+		state.selectProxy(state.proxies[row].ID)
+	}
+}
+
 type proxyRecord struct {
 	ID       uint32
 	TargetID uint32
@@ -103,13 +147,15 @@ func (state *State) syncProxyHostSelects() {
 
 // proxyHostOptions is the closed list of a jump-route host picker: every host
 // is offered, and the ones that cannot be part of this route are disabled
-// rather than hidden so a search can explain the absence.
+// rather than hidden so a search can explain the absence. A target is any host
+// a route can reach; a jump is always an SSH host, the only kind it can sign in
+// to.
 func (state *State) proxyHostOptions(target bool, routeID uint32) []components.SingleSelectOption {
 	options := make([]components.SingleSelectOption, 0, len(state.hosts))
 	for _, host := range state.hosts {
 		disabled := !host.isSSH()
 		if target {
-			disabled = disabled || state.proxyTargetConfiguredExcluding(host.ID, routeID)
+			disabled = !host.isRouteTarget() || state.proxyTargetConfiguredExcluding(host.ID, routeID)
 		}
 		options = append(options, hostSelectOption(host, disabled))
 	}
@@ -121,10 +167,13 @@ func (editor *proxyEditor) relayCommand() string {
 }
 
 func (editor *proxyEditor) validate(state *State) string {
-	if _, ok := state.hostByID(editor.targetID); !ok {
+	target, ok := state.hostByID(editor.targetID)
+	if !ok || !target.isRouteTarget() {
 		return state.messages.ErrProxyTargetRequired
 	}
-	if _, ok := state.hostByID(editor.jumpID); !ok {
+	jump, ok := state.hostByID(editor.jumpID)
+	if !ok || !jump.isSSH() {
+		// Only an SSH host can be a jump: the route signs in to it.
 		return state.messages.ErrProxyJumpRequired
 	}
 	if editor.targetID == editor.jumpID {
@@ -144,16 +193,40 @@ func (editor *proxyEditor) validate(state *State) string {
 	return ""
 }
 
+// hostJumpRouteUsable reports whether a route can be made for host now: it is
+// a host a route can reach, it has none yet, and enough SSH hosts exist to jump
+// through. An SSH target needs a second SSH host for the jump; a remote desktop
+// needs the jump alone.
+func (state *State) hostJumpRouteUsable(host Host) bool {
+	if !host.isRouteTarget() || state.proxyTargetConfigured(host.ID) {
+		return false
+	}
+	if host.isSSH() {
+		return state.sshHostCount() >= 2
+	}
+	return state.sshHostCount() >= 1
+}
+
+// canAddJumpRoute reports whether any host could take a route now.
+func (state *State) canAddJumpRoute() bool {
+	for _, host := range state.hosts {
+		if state.hostJumpRouteUsable(host) {
+			return true
+		}
+	}
+	return false
+}
+
 func (state *State) openProxyDialog() {
-	if state.sshHostCount() < 2 {
+	if !state.canAddJumpRoute() {
 		state.showActionWarning(state.messages.ProxyDialogTitle, state.messages.ErrProxyHostsRequired)
 		return
 	}
 	targetID := state.selectedHostID
-	if host, ok := state.hostByID(targetID); !ok || !host.isSSH() || state.proxyTargetConfigured(targetID) {
+	if host, ok := state.hostByID(targetID); !ok || !state.hostJumpRouteUsable(host) {
 		targetID = 0
 		for _, host := range state.hosts {
-			if host.isSSH() && !state.proxyTargetConfigured(host.ID) {
+			if state.hostJumpRouteUsable(host) {
 				targetID = host.ID
 				break
 			}
@@ -169,13 +242,13 @@ func (state *State) openProxyDialog() {
 // openProxyDialogForHost opens the route dialog on a chosen target. The host
 // form calls it for the host it edits and asks for the dialog to return there.
 func (state *State) openProxyDialogForHost(targetID uint32, fromHostForm bool) {
-	if state.sshHostCount() < 2 {
-		state.showActionWarning(state.messages.ProxyDialogTitle, state.messages.ErrProxyHostsRequired)
+	host, ok := state.hostByID(targetID)
+	if !ok || !host.isRouteTarget() {
+		state.showActionWarning(state.messages.ProxyDialogTitle, state.messages.ErrProxyTargetRequired)
 		return
 	}
-	host, ok := state.hostByID(targetID)
-	if !ok || !host.isSSH() {
-		state.showActionWarning(state.messages.ProxyDialogTitle, state.messages.ErrProxyTargetRequired)
+	if state.sshHostCount() == 0 || (host.isSSH() && state.sshHostCount() < 2) {
+		state.showActionWarning(state.messages.ProxyDialogTitle, state.messages.ErrProxyHostsRequired)
 		return
 	}
 	jumpID := uint32(0)

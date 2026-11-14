@@ -3,6 +3,7 @@
 package sshconn
 
 import (
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -18,75 +19,112 @@ import (
 )
 
 func TestIntegrationRealSSHPTYTracksCD(t *testing.T) {
-	program, err := exec.LookPath("bash")
-	if err != nil {
-		t.Skip("bash unavailable")
-	}
-	home := t.TempDir()
-	target := filepath.Join(home, "ssh dir%#")
-	start := filepath.Join(home, "start dir")
-	for _, directory := range []string{target, start} {
-		if err := os.Mkdir(directory, 0700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	server := startServer(t, func(server *testServer) {
-		server.password, server.shell = "secret", echoShell
-		server.version = "SSH-2.0-OpenSSH_9.6" // probes run only on known implementations
-		server.command = func(command string, channel ssh.Channel) {
-			defer channel.Close()
-			if command == shellIntegrationProbe {
-				io.WriteString(channel, "\x1emotty-shell:"+program+"\x1f")
-				channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
-				return
-			}
-			cmd := exec.Command("/bin/sh", "-c", command)
-			cmd.Dir = home
-			cmd.Env = append(os.Environ(), "HOME="+home, "SHELL="+program)
-			master, err := pty.Start(cmd)
+	for _, name := range []string{"bash", "zsh"} {
+		t.Run(name, func(t *testing.T) {
+			program, err := exec.LookPath(name)
 			if err != nil {
-				t.Errorf("SSH PTY: %v", err)
-				return
+				t.Skipf("%s unavailable", name)
 			}
-			defer master.Close()
-			inputDone := make(chan struct{})
-			go func() {
-				io.Copy(master, channel)
-				master.Close()
-				close(inputDone)
-			}()
-			io.Copy(channel, master)
-			status := uint32(0)
-			if err := cmd.Wait(); err != nil {
-				status = 1
+			home := t.TempDir()
+			target := filepath.Join(home, "ssh dir%#")
+			start := filepath.Join(home, "start dir")
+			for _, directory := range []string{target, start} {
+				if err := os.Mkdir(directory, 0700); err != nil {
+					t.Fatal(err)
+				}
 			}
-			channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
-			channel.Close()
-			<-inputDone
-		}
-	})
-	h := connect(t, server)
-	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, IntegrateShell: true, IntegrationToken: "pty-test-token", StartDirectory: start})
-	screen := term.New(80, 24, 0)
-	screen.SetPromptToken("pty-test-token")
-	ready, consumed := 0, 0
-	screen.SetPromptReady(func() { ready++ })
-	parse := func(output string) {
-		screen.Write([]byte(output[consumed:]))
-		consumed = len(output)
+			server := startServer(t, func(server *testServer) {
+				server.password = "secret"
+				server.version = "SSH-2.0-OpenSSH_9.6"
+				// The shell request starts a real login shell, the way sshd does;
+				// the integration is installed into it afterwards (ADR 0025).
+				server.shell = func(shell *fakeShell) {
+					cmd := exec.Command(program, "-l")
+					cmd.Dir = home
+					cmd.Env = append(os.Environ(), "HOME="+home, "SHELL="+program, "TERM=xterm-256color", "LANG=en_US.UTF-8")
+					master, err := pty.Start(cmd)
+					if err != nil {
+						t.Errorf("real shell: %v", err)
+						shell.exit(1)
+						return
+					}
+					defer master.Close()
+					inputDone := make(chan struct{})
+					go func() {
+						io.Copy(master, shell.Channel)
+						master.Close()
+						close(inputDone)
+					}()
+					io.Copy(shell.Channel, master)
+					cmd.Wait()
+					shell.exit(0)
+					<-inputDone
+				}
+				server.command = func(command string, channel ssh.Channel) {
+					defer channel.Close()
+					if command == shellProbe {
+						io.WriteString(channel, "\x1emotty-shell:"+program+"\x1f\nmotty-shell:\n")
+						channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+						return
+					}
+					// The integration file is written over a command session,
+					// not the pty (ADR 0025).
+					cmd := exec.Command("/bin/sh", "-c", command)
+					cmd.Stdin = channel
+					cmd.Stdout = channel
+					status := uint32(0)
+					if err := cmd.Run(); err != nil {
+						status = 1
+					}
+					channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
+				}
+			})
+			h := connect(t, server)
+			w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24})
+			path, _ := h.conn.ProbeShell(context.Background())
+			if path != program {
+				t.Fatalf("ProbeShell path = %q, want %q", path, program)
+			}
+			line, err := h.conn.UploadIntegration(context.Background(), path, "pty-test-token", start)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.shell.Write([]byte(line))
+			screen := term.New(80, 24, 0)
+			screen.SetPromptToken("pty-test-token")
+			ready, consumed, output := 0, 0, ""
+			screen.SetPromptReady(func() { ready++ })
+			parse := func(out string) {
+				screen.Write([]byte(out[consumed:]))
+				consumed = len(out)
+			}
+			wait := func(what string, done func() bool) {
+				t.Helper()
+				w.until(what, func(out string) bool { output = out; parse(out); return done() })
+			}
+			wait("integrated SSH prompt", func() bool { return ready > 0 })
+			if cwd, ok := screen.WorkingDirectory(); !ok || cwd.Path != start {
+				t.Fatalf("the first prompt reports %q (ok %v), want the start directory %q", cwd.Path, ok, start)
+			}
+			// The activation line must not be in the shell's history. The
+			// pattern is built at run time, so the check command itself cannot
+			// be what it finds.
+			before := ready
+			w.shell.Write([]byte("printf 'HISTORY_MOTTY=%s\\n' \"$(history | grep -c -e \"$(printf motty)-ready\" -e \"$(printf _motty)_hist_on\")\"\r"))
+			wait("history check", func() bool { return ready > before && strings.Contains(output, "HISTORY_MOTTY=") })
+			if !strings.Contains(output, "HISTORY_MOTTY=0") {
+				t.Fatalf("the integration line was recorded in history: %q", output)
+			}
+			before = ready
+			w.shell.Write([]byte("cd -- '" + target + "'\r"))
+			wait("SSH cd report", func() bool {
+				cwd, ok := screen.WorkingDirectory()
+				return ready > before && ok && cwd.Path == target
+			})
+			w.shell.Write([]byte("exit\r"))
+			w.waitDone()
+		})
 	}
-	w.until("integrated SSH prompt", func(output string) bool { parse(output); return ready > 0 })
-	if cwd, ok := screen.WorkingDirectory(); !ok || cwd.Path != start {
-		t.Fatalf("the first prompt reports %q (ok %v), want the start directory %q", cwd.Path, ok, start)
-	}
-	w.shell.Write([]byte("cd -- '" + target + "'\r"))
-	w.until("SSH cd report", func(output string) bool {
-		parse(output)
-		cwd, ok := screen.WorkingDirectory()
-		return ready > 1 && ok && cwd.Path == target
-	})
-	w.shell.Write([]byte("exit\r"))
-	w.waitDone()
 }
 
 func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testing.T) {
@@ -211,6 +249,80 @@ func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testin
 			}
 			if files, err := os.ReadDir(runtimeDir); err != nil || len(files) != 0 {
 				t.Fatalf("session files leaked: %v, %v", files, err)
+			}
+		})
+	}
+}
+
+// A login shell reads ~/.bashrc only through the login profile that sources
+// it. The startup shim must run the user's startup files the way that login
+// shell does: sourcing ~/.bashrc after the profile already did ran the user's
+// interactive startup twice on the distributions whose profiles source it.
+func TestIntegrationBashStartupMatchesALoginShell(t *testing.T) {
+	program, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash unavailable")
+	}
+	for _, test := range []struct {
+		name, profile string
+		want          int
+	}{
+		{
+			// The Debian, Ubuntu and RHEL default: the login profile sources
+			// ~/.bashrc itself.
+			name:    "login-profile-sources-bashrc",
+			profile: "if [ -r \"$HOME/.bashrc\" ]; then . \"$HOME/.bashrc\"; fi\n",
+			want:    1,
+		},
+		{
+			// No login profile: a login shell never reads ~/.bashrc.
+			name: "bashrc-only",
+			want: 0,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			home, runtimeDir := t.TempDir(), t.TempDir()
+			if err := os.WriteFile(filepath.Join(home, ".bashrc"), []byte("printf 'user-bashrc\\n'; PS1='user-prompt> '\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if test.profile != "" {
+				if err := os.WriteFile(filepath.Join(home, ".bash_profile"), []byte(test.profile), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			env := []string{"HOME=" + home, "SHELL=" + program, "TMPDIR=" + runtimeDir, "LANG=en_US.UTF-8"}
+			read := func(name string, cfg localshell.Config) string {
+				t.Helper()
+				shell, err := localshell.Start(cfg)
+				if err != nil {
+					t.Fatalf("start %s: %v", name, err)
+				}
+				t.Cleanup(shell.Close)
+				var output strings.Builder
+				deadline := time.Now().Add(8 * time.Second)
+				quiet := time.Now().Add(500 * time.Millisecond)
+				for time.Now().Before(deadline) {
+					if data := shell.Drain(nil); len(data) > 0 {
+						output.Write(data)
+						quiet = time.Now().Add(500 * time.Millisecond)
+					} else if time.Now().After(quiet) {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				return output.String()
+			}
+			login := read("a login shell", localshell.Config{
+				Shell: program, Args: []string{"-l", "-i"}, Dir: home, Env: env, Cols: 100, Rows: 24,
+			})
+			shim := read("the startup shim", localshell.Config{
+				Shell: "/bin/sh", Args: IntegrationArgs(program, "startup-token"), Dir: home, Env: env, Cols: 100, Rows: 24,
+			})
+			if runs := strings.Count(login, "user-bashrc"); runs != test.want {
+				t.Fatalf("the fixture's login shell ran ~/.bashrc %d time(s), want %d: %q", runs, test.want, login)
+			}
+			if runs := strings.Count(shim, "user-bashrc"); runs != test.want {
+				t.Fatalf("the startup shim ran ~/.bashrc %d time(s); a login shell runs it %d time(s): %q", runs, test.want, shim)
 			}
 		})
 	}

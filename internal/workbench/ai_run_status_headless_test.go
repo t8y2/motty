@@ -115,7 +115,7 @@ func TestAIRunUsageWrapReservesSpaceForFontFallback(t *testing.T) {
 				t.Fatal("finished request has no usage")
 			}
 			for _, line := range state.ai.panel.usageLines {
-				if measured := canvas.TextWidthWeight(line, aiSmallSize, gfx.WeightRegular); measured > width-16 {
+				if measured := canvas.TextWidthWeight(line, aiSizes.small, gfx.WeightRegular); measured > width-16 {
 					t.Fatalf("usage line leaves insufficient cross-platform room: %q measured %.1f, available %.1f", line, measured, width)
 				}
 			}

@@ -128,10 +128,13 @@ func (d *fileDocument) paintNoteWindow(c *gfx.Canvas, size gfx.Size) {
 func (d *fileDocument) declareNoteWindow(c ui.C) {
 	s := d.owner
 	theme := s.Theme()
-	ui.Column(c).Fill().Pad(12).Gap(8).Children(func() {
-		s.fileWindows.declareTabsSection(c, c.Bounds().Width)
-		ui.Divider(c).Background(theme.Border)
-		d.ui.contentBox = ui.Slot(c).Grow(1)
+	ui.Column(c).Fill().Children(func() {
+		declareWindowTitlebar(c, s.pal, d.name, d.source)
+		ui.Column(c).Grow(1).Shrink(1).Pad(12).Gap(8).Children(func() {
+			s.fileWindows.declareTabsSection(c, c.Bounds().Width)
+			ui.Divider(c).Background(theme.Border)
+			d.ui.contentBox = ui.Slot(c).Grow(1)
+		})
 	})
 }
 

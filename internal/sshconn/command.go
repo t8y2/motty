@@ -2,9 +2,11 @@ package sshconn
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 
 	"golang.org/x/crypto/ssh"
@@ -20,6 +22,26 @@ var ErrCommandOutputTooLarge = errors.New("sshconn: command output too large")
 // closes only this command session, not the SSH connection.
 func (conn *Conn) RunCommand(ctx context.Context, command string, maxOutputBytes int) ([]byte, error) {
 	data, exceeded, err := conn.runCommand(ctx, command, maxOutputBytes, false)
+	if exceeded {
+		return data, fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxOutputBytes)
+	}
+	if errors.Is(err, ErrCanceled) || ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		return nil, err
+	}
+	return data, err
+}
+
+// RunCommandInput runs one command with input on its stdin, and returns its
+// stdout. The payload travels over the session channel rather than a pty, so
+// it is not bounded by the terminal input buffer. maxOutputBytes bounds
+// retained output as in RunCommand.
+func (conn *Conn) RunCommandInput(ctx context.Context, command string, input []byte, maxOutputBytes int) ([]byte, error) {
+	if err := commandLimit(maxOutputBytes); err != nil {
+		return nil, err
+	}
+	output := &commandOutput{limit: maxOutputBytes}
+	err := conn.captureCommand(ctx, command, input, output, nil)
+	data, exceeded := output.result()
 	if exceeded {
 		return data, fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxOutputBytes)
 	}
@@ -52,8 +74,11 @@ type ExecResult struct {
 // and what the command had printed by then is still returned. Canceling ctx
 // closes only this command session, not the SSH connection.
 func (conn *Conn) Exec(ctx context.Context, command string, maxOutputBytes int) (ExecResult, error) {
+	if err := commandLimit(maxOutputBytes); err != nil {
+		return ExecResult{}, err
+	}
 	output := &commandOutput{limit: maxOutputBytes, separate: true}
-	_, _, err := conn.captureCommand(ctx, command, maxOutputBytes, true, output)
+	err := conn.captureCommand(ctx, command, nil, output, commandErrorOutput{output})
 	result := output.execResult()
 	var exit *ssh.ExitError
 	if errors.As(err, &exit) && exit.Signal() == "" {
@@ -63,32 +88,68 @@ func (conn *Conn) Exec(ctx context.Context, command string, maxOutputBytes int) 
 	return result, err
 }
 
+// ExecStream runs one command on the authenticated server the way Exec does,
+// but hands its combined stdout and stderr to write as the server delivers
+// them instead of keeping them. write may be called from more than one
+// goroutine; a caller that is not prepared for that must serialise it.
+// ExecStream returns only when the command ends: a non-zero exit status is a
+// result, while a command killed by a signal, a lost connection or a canceled
+// ctx is an error. Canceling ctx closes only this command session, not the SSH
+// connection.
+func (conn *Conn) ExecStream(ctx context.Context, command string, write io.Writer) (ExecResult, error) {
+	err := conn.captureCommand(ctx, command, nil, write, write)
+	var exit *ssh.ExitError
+	if errors.As(err, &exit) && exit.Signal() == "" {
+		return ExecResult{ExitCode: exit.ExitStatus()}, nil
+	}
+	return ExecResult{}, err
+}
+
 // runCommand starts command and waits for it. The output is stdout, plus
 // stderr when withStderr, and is returned even when the command did not finish.
 func (conn *Conn) runCommand(ctx context.Context, command string, maxOutputBytes int, withStderr bool) (data []byte, exceeded bool, err error) {
-	return conn.captureCommand(ctx, command, maxOutputBytes, withStderr, &commandOutput{limit: maxOutputBytes})
+	if err := commandLimit(maxOutputBytes); err != nil {
+		return nil, false, err
+	}
+	output := &commandOutput{limit: maxOutputBytes}
+	var stderr io.Writer
+	if withStderr {
+		stderr = commandErrorOutput{output}
+	}
+	err = conn.captureCommand(ctx, command, nil, output, stderr)
+	data, exceeded = output.result()
+	return data, exceeded, err
 }
 
-func (conn *Conn) captureCommand(ctx context.Context, command string, maxOutputBytes int, withStderr bool, output *commandOutput) (data []byte, exceeded bool, err error) {
-	if command == "" {
-		return nil, false, errors.New("sshconn: empty command")
-	}
+// commandLimit rejects a command output limit that would retain nothing.
+func commandLimit(maxOutputBytes int) error {
 	if maxOutputBytes <= 0 {
-		return nil, false, errors.New("sshconn: command output limit must be positive")
+		return errors.New("sshconn: command output limit must be positive")
+	}
+	return nil
+}
+
+// captureCommand starts command and waits for it, writing its stdout to stdout
+// and, when stderr is not nil, its stderr to stderr. It returns how the command
+// ended: nil, an *ssh.ExitError for a non-zero status or a signal, or the
+// caller's or the connection's error when the attempt was canceled.
+func (conn *Conn) captureCommand(ctx context.Context, command string, input []byte, stdout, stderr io.Writer) error {
+	if command == "" {
+		return errors.New("sshconn: empty command")
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, false, err
+		return err
 	}
 	if conn.ctx != nil {
 		select {
 		case <-conn.ctx.Done():
-			return nil, false, ErrCanceled
+			return ErrCanceled
 		default:
 		}
 	}
 	client := conn.Client()
 	if client == nil {
-		return nil, false, errors.New("sshconn: not connected")
+		return errors.New("sshconn: not connected")
 	}
 	operationCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -105,24 +166,32 @@ func (conn *Conn) captureCommand(ctx context.Context, command string, maxOutputB
 	session, err := openCommandSession(operationCtx, client)
 	if err != nil {
 		if operationCtx.Err() != nil {
-			return nil, false, cancelError()
+			return cancelError()
 		}
-		return nil, false, err
+		return err
 	}
 	defer func() {
 		if operationCtx.Err() != nil {
-			go session.Close()
+			go func() {
+				_ = session.Signal(ssh.SIGTERM)
+				session.Close()
+			}()
 		} else {
 			session.Close()
 		}
 	}()
 
-	session.Stdout = output
-	if withStderr {
-		session.Stderr = commandErrorOutput{output}
+	session.Stdout = stdout
+	if stderr != nil {
+		session.Stderr = stderr
+	}
+	if len(input) > 0 {
+		// The command session carries the payload, not the pty: a pty's
+		// canonical input buffer is a few kilobytes and would drop the rest.
+		session.Stdin = bytes.NewReader(input)
 	}
 	if operationCtx.Err() != nil {
-		return nil, false, cancelError()
+		return cancelError()
 	}
 	started := make(chan error, 1)
 	go func() {
@@ -135,10 +204,10 @@ func (conn *Conn) captureCommand(ctx context.Context, command string, maxOutputB
 	select {
 	case err = <-started:
 	case <-operationCtx.Done():
-		return nil, false, cancelError()
+		return cancelError()
 	}
 	if err != nil {
-		return nil, false, err
+		return err
 	}
 	waited := make(chan error, 1)
 	go func() { waited <- session.Wait() }()
@@ -146,11 +215,9 @@ func (conn *Conn) captureCommand(ctx context.Context, command string, maxOutputB
 	select {
 	case err = <-waited:
 	case <-operationCtx.Done():
-		data, exceeded = output.result()
-		return data, exceeded, cancelError()
+		return cancelError()
 	}
-	data, exceeded = output.result()
-	return data, exceeded, err
+	return err
 }
 
 // SSH channel-open and exec acknowledgments can block independently of command
@@ -243,6 +310,17 @@ func (output *commandOutput) execResult() ExecResult {
 // than maxLineBytes. When the command ends by itself the result is its exit
 // status. Canceling ctx closes only this command session.
 func (conn *Conn) StreamCommand(ctx context.Context, command string, maxLineBytes int, line func([]byte) bool) error {
+	return conn.streamCommand(ctx, command, maxLineBytes, false, line)
+}
+
+// StreamCommandSkippingLongLines drains oversized lines without buffering them
+// or interrupting the command. It delivers only complete in-limit lines and
+// the final in-limit partial line, if any.
+func (conn *Conn) StreamCommandSkippingLongLines(ctx context.Context, command string, maxLineBytes int, line func([]byte) bool) error {
+	return conn.streamCommand(ctx, command, maxLineBytes, true, line)
+}
+
+func (conn *Conn) streamCommand(ctx context.Context, command string, maxLineBytes int, skipLongLines bool, line func([]byte) bool) error {
 	if command == "" {
 		return errors.New("sshconn: empty command")
 	}
@@ -252,64 +330,99 @@ func (conn *Conn) StreamCommand(ctx context.Context, command string, maxLineByte
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	var connDone <-chan struct{}
+	operation, cancel := context.WithCancel(ctx)
+	defer cancel()
 	if conn.ctx != nil {
-		connDone = conn.ctx.Done()
-		select {
-		case <-connDone:
+		if conn.ctx.Err() != nil {
 			return ErrCanceled
-		default:
 		}
+		defer context.AfterFunc(conn.ctx, cancel)()
+	}
+	canceled := func() error {
+		if conn.ctx != nil && conn.ctx.Err() != nil {
+			return ErrCanceled
+		}
+		return ctx.Err()
 	}
 	client := conn.Client()
 	if client == nil {
 		return errors.New("sshconn: not connected")
 	}
-	session, err := client.NewSession()
+	session, err := openCommandSession(operation, client)
 	if err != nil {
+		if operation.Err() != nil {
+			return canceled()
+		}
 		return err
 	}
-	defer session.Close()
+	closeSession := func() {
+		_ = session.Signal(ssh.SIGTERM)
+		_ = session.Close()
+	}
+	stop := context.AfterFunc(operation, closeSession)
+	defer func() {
+		if stop() {
+			go closeSession()
+		}
+	}()
 	stdout, err := session.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	if err := session.Start(command); err != nil {
-		return err
-	}
-	finished := make(chan struct{})
-	defer close(finished)
+	started := make(chan error, 1)
 	go func() {
-		select {
-		case <-ctx.Done():
-		case <-connDone:
-		case <-finished:
+		if err := operation.Err(); err != nil {
+			started <- err
 			return
 		}
-		_ = session.Close()
+		started <- session.Start(command)
 	}()
+	select {
+	case err := <-started:
+		if operation.Err() != nil {
+			return canceled()
+		}
+		if err != nil {
+			return err
+		}
+	case <-operation.Done():
+		return canceled()
+	}
 
 	reader := bufio.NewReaderSize(stdout, max(maxLineBytes, 16))
+	discarding := false
 	for {
 		data, err := reader.ReadSlice('\n')
-		if err == nil {
-			if !line(data) {
-				return nil
+		if operation.Err() != nil {
+			return canceled()
+		}
+		full := errors.Is(err, bufio.ErrBufferFull)
+		if full || len(data) > maxLineBytes {
+			if !skipLongLines {
+				return fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxLineBytes)
 			}
+			discarding = true
+		}
+		if full {
 			continue
 		}
-		if errors.Is(err, bufio.ErrBufferFull) {
-			return fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxLineBytes)
+		if !discarding && len(data) != 0 && !line(data) {
+			return nil
 		}
-		break
+		discarding = false
+		if err != nil {
+			break
+		}
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+	waited := make(chan error, 1)
+	go func() { waited <- session.Wait() }()
 	select {
-	case <-connDone:
-		return ErrCanceled
-	default:
+	case err := <-waited:
+		if operation.Err() != nil {
+			return canceled()
+		}
+		return err
+	case <-operation.Done():
+		return canceled()
 	}
-	return session.Wait()
 }

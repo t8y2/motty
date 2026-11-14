@@ -212,18 +212,18 @@ func TestHostPrivacyAlsoHidesSortHandleSemanticLabel(t *testing.T) {
 	}
 }
 
-func TestHostPrivacyButtonSitsToTheRightOfHostSort(t *testing.T) {
+func TestHostOrderButtonSitsToTheRightOfHostPrivacy(t *testing.T) {
 	state, _ := hostPrivacyStateForTest(t)
 	canvas := hostPrivacyCanvas(t)
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 
-	sortHit, sortOK := hitByID(&canvas, hitHostSort)
+	orderHit, orderOK := hitByID(&canvas, hitHostOrder)
 	privacyHit, privacyOK := hitByID(&canvas, hitHostPrivacy)
-	if !sortOK || !privacyOK {
-		t.Fatalf("sort/privacy hits found = %v/%v", sortOK, privacyOK)
+	if !orderOK || !privacyOK {
+		t.Fatalf("order/privacy hits found = %v/%v", orderOK, privacyOK)
 	}
-	if privacyHit.Bounds.X <= sortHit.Bounds.X+sortHit.Bounds.Width {
-		t.Fatalf("privacy button %v is not to the right of sort button %v", privacyHit.Bounds, sortHit.Bounds)
+	if orderHit.Bounds.X <= privacyHit.Bounds.X+privacyHit.Bounds.Width {
+		t.Fatalf("order button %v is not to the right of the privacy button %v", orderHit.Bounds, privacyHit.Bounds)
 	}
 }
 

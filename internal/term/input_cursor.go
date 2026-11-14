@@ -10,6 +10,22 @@ package term
 // from a huge buffer cannot turn a click into a flood.
 const maxInputMove = 4096
 
+// markPromptStart records the cursor at OSC 133 A as the start of the shell's
+// prompt. The shell's line editor redraws the prompt after a resize from the
+// rows it last drew it on, so reflowing those rows would make it draw a second
+// copy; a resize leaves the prompt and input alone while this is set. Only the
+// owning shell's marker counts, and a cursor with a pending wrap has no settled
+// position yet.
+func (t *Terminal) markPromptStart(own bool) {
+	t.promptActive, t.promptStale = false, false
+	t.dropPromptRows()
+	if !own || t.onAlt || t.pend {
+		return
+	}
+	t.promptLine = t.scrolled + uint64(t.cy) + 1
+	t.promptActive = true
+}
+
 // markInputStart records the cursor at OSC 133 B as the start of the input. Only
 // the owning shell's marker counts: a program that echoes the sequence must not
 // be taken for a prompt. A cursor with a pending wrap has no settled position

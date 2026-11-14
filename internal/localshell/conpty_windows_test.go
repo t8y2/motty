@@ -199,3 +199,56 @@ func TestBundledConPTYIsUnavailableWithoutItsTree(t *testing.T) {
 		t.Fatal("a missing conpty tree was treated as the bundled backend")
 	}
 }
+
+// TestBundledConPTYProbeMouseChild asks for mouse reporting the way a
+// full-screen program does; the parent test reads the request back.
+func TestBundledConPTYProbeMouseChild(t *testing.T) {
+	if os.Getenv("MOTTY_CONPTY_MOUSE_CHILD") != "1" {
+		t.Skip("conpty mouse probe child only")
+	}
+	if _, err := os.Stdout.WriteString("\x1b[?1000h\x1b[?1002h\x1b[?1006hMOTTY-CONPTY-MOUSE\r\n"); err != nil {
+		fmt.Printf("MOTTY-CONPTY-CHILD-ERROR:write: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+// TestBundledConPTYForwardsMouseReporting keeps a program's mouse modes reaching
+// the terminal: the inbox ConPTY consumes them, and a full-screen program's
+// wheel then falls back to arrow keys (issue #425). The bundled one forwards them.
+func TestBundledConPTYForwardsMouseReporting(t *testing.T) {
+	conptyTree(t)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	shell, wakes := startWindows(t, Config{Cols: 100, Rows: 30, Env: []string{"MOTTY_CONPTY_MOUSE_CHILD=1"}})
+	screen := term.New(100, 30, 0)
+
+	command := windows.ComposeCommandLine([]string{executable, "-test.run=^TestBundledConPTYProbeMouseChild$"})
+	if !shell.Write([]byte(command + "\r")) {
+		t.Fatal("the shell refused the probe command")
+	}
+
+	var raw []byte
+	deadline := time.After(20 * time.Second)
+	for !bytes.Contains(raw, []byte("MOTTY-CONPTY-MOUSE")) {
+		if chunk := shell.Drain(nil); len(chunk) > 0 {
+			raw = append(raw, chunk...)
+			screen.Write(chunk)
+		}
+		select {
+		case <-wakes:
+		case <-deadline:
+			t.Fatalf("the probe did not report back; output so far %q", raw)
+		}
+	}
+	for _, sequence := range []string{"\x1b[?1000h", "\x1b[?1002h", "\x1b[?1006h"} {
+		if !bytes.Contains(raw, []byte(sequence)) {
+			t.Errorf("ConPTY swallowed %q", sequence)
+		}
+	}
+	if modes := screen.Modes(); modes.Mouse != term.MouseDrag || modes.MouseEncoding != term.MouseEncodingSGR {
+		t.Errorf("the terminal learned mouse=%v encoding=%v", modes.Mouse, modes.MouseEncoding)
+	}
+}

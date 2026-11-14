@@ -1,6 +1,7 @@
 package egfx
 
 import (
+	"bytes"
 	"encoding/binary"
 	"log/slog"
 	"sync"
@@ -407,6 +408,86 @@ func TestSurfaceToSurfaceOverlap(t *testing.T) {
 		if got != expected {
 			t.Fatalf("pixel[%d] = %d, want %d (overlap corruption)", x, got, expected)
 		}
+	}
+}
+
+// fillColumn gives every row of a one-pixel-wide surface its row number.
+func fillColumn(h *Handler, id uint16, height int) {
+	surf := h.surfaces[id]
+	for y := 0; y < height; y++ {
+		surf.Data[y*4] = byte(y)
+		surf.Data[y*4+3] = 0xFF
+	}
+}
+
+func oneColumnSurface(h *Handler, id uint16, height int) {
+	data := make([]byte, 7)
+	binary.LittleEndian.PutUint16(data[0:2], id)
+	binary.LittleEndian.PutUint16(data[2:4], 1)
+	binary.LittleEndian.PutUint16(data[4:6], uint16(height))
+	data[6] = PixelFormatXRGB8888
+	h.handleCreateSurface(data)
+	fillColumn(h, id, height)
+}
+
+func columnValues(h *Handler, id uint16, height int) []byte {
+	surf := h.surfaces[id]
+	values := make([]byte, height)
+	for y := 0; y < height; y++ {
+		values[y] = surf.Data[y*4]
+	}
+	return values
+}
+
+// TestSurfaceToSurfaceVerticalOverlap moves rows down over themselves: the
+// copy must go bottom-up or each row would read what the previous one wrote.
+func TestSurfaceToSurfaceVerticalOverlap(t *testing.T) {
+	h := newTestHandler()
+	oneColumnSurface(h, 1, 4) // rows 0,1,2,3
+
+	data := make([]byte, 18)
+	binary.LittleEndian.PutUint16(data[0:2], 1)
+	binary.LittleEndian.PutUint16(data[2:4], 1)
+	binary.LittleEndian.PutUint16(data[4:6], 0)  // srcLeft
+	binary.LittleEndian.PutUint16(data[6:8], 0)  // srcTop
+	binary.LittleEndian.PutUint16(data[8:10], 1) // srcRight
+	binary.LittleEndian.PutUint16(data[10:12], 3)
+	binary.LittleEndian.PutUint16(data[12:14], 1) // one destination
+	binary.LittleEndian.PutUint16(data[14:16], 0) // destX
+	binary.LittleEndian.PutUint16(data[16:18], 1) // destY
+	h.handleSurfaceToSurface(data)
+
+	want := []byte{0, 0, 1, 2}
+	if got := columnValues(h, 1, 4); !bytes.Equal(got, want) {
+		t.Fatalf("after moving rows down: %v, want %v", got, want)
+	}
+}
+
+// TestSurfaceToSurfaceSeveralDestinationsMove tests the case a single row-wise
+// copy cannot serve: the first destination writes over the source rows the
+// second still needs, so the source is kept for the PDU.
+func TestSurfaceToSurfaceSeveralDestinationsMove(t *testing.T) {
+	h := newTestHandler()
+	oneColumnSurface(h, 1, 4) // rows 0,1,2,3
+
+	data := make([]byte, 22) // header 14 + two destinations
+	binary.LittleEndian.PutUint16(data[0:2], 1)
+	binary.LittleEndian.PutUint16(data[2:4], 1)
+	binary.LittleEndian.PutUint16(data[4:6], 0)  // srcLeft
+	binary.LittleEndian.PutUint16(data[6:8], 1)  // srcTop
+	binary.LittleEndian.PutUint16(data[8:10], 1) // srcRight
+	binary.LittleEndian.PutUint16(data[10:12], 3)
+	binary.LittleEndian.PutUint16(data[12:14], 2) // two destinations
+	binary.LittleEndian.PutUint16(data[14:16], 0) // first: x
+	binary.LittleEndian.PutUint16(data[16:18], 0) // first: y
+	binary.LittleEndian.PutUint16(data[18:20], 0) // second: x
+	binary.LittleEndian.PutUint16(data[20:22], 1) // second: y
+	h.handleSurfaceToSurface(data)
+
+	// Both destinations must show the original rows 1,2.
+	want := []byte{1, 1, 2, 3}
+	if got := columnValues(h, 1, 4); !bytes.Equal(got, want) {
+		t.Fatalf("after two destinations: %v, want %v", got, want)
 	}
 }
 

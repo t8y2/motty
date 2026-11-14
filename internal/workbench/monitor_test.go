@@ -113,7 +113,7 @@ func TestMonitorUsesTheMacOSSamplerForADarwinServer(t *testing.T) {
 func TestMonitorUnsupportedSystemsDoNotRunLinuxScripts(t *testing.T) {
 	// ESXi answers uname with VMkernel and carries a busybox userland, not a
 	// distribution's: the Linux sampler's /proc reads have nothing to read there.
-	for _, system := range []sshconn.RemoteSystem{sshconn.SystemFreeBSD, sshconn.SystemESXi} {
+	for _, system := range []sshconn.RemoteSystem{sshconn.SystemFreeBSD, sshconn.SystemESXi, sshconn.SystemAIX} {
 		state, _, fake, _ := liveSession(t)
 		session := state.contextSession()
 		session.host.System = system

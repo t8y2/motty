@@ -140,6 +140,14 @@ func TestSchemeQuickPicksAreTwoRows(t *testing.T) {
 	}
 }
 
+// The settings search uses this anchor to reveal the scheme group wherever
+// it sits in the terminal category.
+func scrollToSchemeSettings(state *State) {
+	state.settings.jump = state.messages.Tools.SchemeGroup
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+}
+
 // Opening the browser must not make the settings page taller: the complete
 // collection lives in a drawer over it.
 func TestSchemeDrawerOverlaysThePage(t *testing.T) {
@@ -147,12 +155,8 @@ func TestSchemeDrawerOverlaysThePage(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsTerminal)
 
+	scrollToSchemeSettings(state)
 	var folded gfx.Canvas
-	state.Paint(&folded, gfx.Size{Width: 1400, Height: 900})
-	// The scheme section is at the bottom of the terminal category; scroll to
-	// it the way someone looking for it would.
-	state.settingsScroll = max(state.settingsContent-900, 0)
-	folded = gfx.Canvas{}
 	state.Paint(&folded, gfx.Size{Width: 1400, Height: 900})
 	if _, ok := hitByID(&folded, hitSchemeBrowseAll); !ok {
 		t.Fatalf("the folded section has no control for the complete collection (section %d category %d, %d hits)",
@@ -237,11 +241,7 @@ func TestSchemeDrawerPageTakesPointerAndTyping(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.activeSection = sectionSettings
 	state.selectSettingsCategory(settingsTerminal)
-	// The scheme section is at the bottom of the terminal category; scroll to it
-	// the way someone looking for it would, before the window paints.
-	var folded gfx.Canvas
-	state.Paint(&folded, gfx.Size{Width: 1400, Height: 900})
-	state.settingsScroll = max(state.settingsContent-900, 0)
+	scrollToSchemeSettings(state)
 	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "schemes", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,

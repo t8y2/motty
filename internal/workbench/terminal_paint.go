@@ -55,6 +55,7 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 	if session.term == nil {
 		return
 	}
+	state.settleShellResize(canvas, session)
 	state.wantLatencyProbe(session, canvas)
 	t := session.term
 	canvas.Clip(bounds)
@@ -87,7 +88,7 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 }
 
 func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools]barTool) []barTool {
-	if session == nil || session.term == nil || state.paneIsInactive(session.ID) {
+	if session == nil || session.term == nil {
 		return nil
 	}
 	tools := toolList[:0]
@@ -96,7 +97,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 		notesStyle = iconButtonActive
 	}
 	tools = append(tools, barTool{id: hitNotesPanel, icon: iconNotebook, hint: state.noteText("Notes", "笔记"), style: notesStyle})
-	if session.host.isSSH() && !session.isLocal() {
+	if session.hasServer() {
 		tools = append(tools, barTool{id: hitSFTPDetach, icon: iconSFTPTransfer, hint: state.messages.SFTPWindow.Open, disabled: !session.hasServer() || session.phase != sshconn.PhaseConnected || !state.sftpManagersAvailable(), style: iconButtonQuiet})
 	}
 	filesStyle := iconButtonQuiet
@@ -383,7 +384,12 @@ func (state *State) declarePaneBar(c ui.C, width float32, title, status string, 
 		if active {
 			light = ui.Slot(c).Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0)
 		} else {
-			ui.Icon(c, lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint).MarginSides(0, 7, 0, 0)
+			// The idle marker keeps the light's 16 point box, so the name and the
+			// reading beside it do not move when the pane gains or loses the
+			// keyboard.
+			ui.Row(c).Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0).Center().Children(func() {
+				ui.Icon(c, lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint)
+			})
 		}
 		titleColor := pal.muted
 		if active {
@@ -405,8 +411,19 @@ func (state *State) declarePaneBar(c ui.C, width float32, title, status string, 
 			// Typing goes to this pane too: the one mark an inactive bar carries.
 			ui.Icon(c, lucideIcons[iconRadio]).Size(14, 14).Color(pal.accent).MarginSides(0, 0, 0, 8)
 		}
+		state.declarePaneBarClose(c, session)
 	})
 	return spinner, light
+}
+
+// declarePaneBarClose is the close control at a split pane's bar: every pane
+// carries one, whichever pane has the keyboard, so closing a pane never requires
+// finding it in the shared rail first. The control closes the pane its bar
+// belongs to, not whichever pane has the keyboard; a press on it is a hit of its
+// own, so it neither switches panes nor starts a pane drag.
+func (state *State) declarePaneBarClose(c ui.C, session *Session) {
+	state.declareIconButtonWithOptions(c, hitPaneBarCloseList.At(int(session.ID)), iconClose, state.messages.PaneClose, false, iconButtonQuiet, 14, gfx.HitOptions{}).
+		Size(barToolSize, barToolSize).MarginSides(0, 0, 0, 6)
 }
 
 // paintGrid draws a session's character grid: for each row its background
@@ -427,7 +444,7 @@ func (state *State) paintGridControl(canvas *gfx.Canvas, session *Session, geome
 }
 
 func (state *State) paintGridWithID(canvas *gfx.Canvas, session *Session, geometry terminalGeometry, id gfx.ID, sensitive bool) {
-	state.paintGridBody(canvas, session, geometry, id, sensitive, canvas.Focused() == id, true)
+	state.paintGridBody(canvas, session, geometry, id, sensitive, terminalGridFocused(canvas, session, canvas.Focused() == id), true)
 }
 
 func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry terminalGeometry, id gfx.ID, sensitive, focused, declareHit bool) {
@@ -502,6 +519,11 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		t.rowIDs = t.rowIDs[:rows]
 	}
 	firstFindMatch := 0
+	finding := t.sync == nil && t.find.open && len(t.find.matches) > 0
+	var findInk, findBackground gfx.Color
+	if finding {
+		findInk, findBackground = state.findHighlightColors(false)
+	}
 	for row := 0; row < rows; row++ {
 		column := -1
 		if block && row == cursor.Y {
@@ -516,8 +538,8 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 			to := snap(geometry.left + float32(span.to)*cellWidth)
 			canvas.Fill(gfx.Rect{X: from, Y: y, Width: to - from, Height: cellHeight}, span.color)
 		}
-		if t.sync == nil && t.find.open && len(t.find.matches) > 0 {
-			firstFindMatch = state.paintTerminalFindMatches(canvas, session, geometry, row, t.screen.ViewLine(row), firstFindMatch)
+		if finding {
+			firstFindMatch = state.paintTerminalFindMatches(canvas, &t.find, geometry, row, t.screen.ViewLine(row), firstFindMatch, findInk, findBackground)
 		}
 	}
 	if t.sync == nil {
@@ -528,6 +550,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		edge := geometry.left - gutterRuleGap/2
 		canvas.Fill(gfx.Rect{X: geometry.area.X, Y: geometry.area.Y, Width: edge - geometry.area.X, Height: geometry.area.Height}, withAlpha(pal.termFG, 0.035))
 	}
+	firstFindMatch = 0
 	for row := 0; row < rows; row++ {
 		column := -1
 		if block && row == cursor.Y {
@@ -557,7 +580,14 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 			if t.rowIDs[row] != 0 {
 				identity = gfx.TextIdentity{Owner: session.ID, Item: t.rowIDs[row]}
 			}
-			canvas.LabelRunsWithIdentity(identity, entry.text, gfx.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, entry.runs)
+			runs := entry.runs
+			if finding {
+				t.find.paintRuns, firstFindMatch = terminalFindRuns(t.find.paintRuns, entry, &t.find, t.screen.ViewLine(row), cols, firstFindMatch, findInk)
+				if len(t.find.paintRuns) != 0 {
+					runs = t.find.paintRuns
+				}
+			}
+			canvas.LabelRunsWithIdentity(identity, entry.text, gfx.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, runs)
 		}
 		if t.sync == nil {
 			state.paintTerminalLink(canvas, t, geometry, row)
@@ -615,11 +645,19 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		y := geometry.top + float32(cursor.Y)*cellHeight
 		canvas.Fill(gfx.Rect{X: x, Y: y, Width: float32(covered.to-covered.from) * cellWidth, Height: cellHeight}, pal.terminal)
 	}
-	if !sensitive && focused && !composing && !predicting && t.sync == nil {
+	var hintRect gfx.Rect
+	hintShown := false
+	// The suggestion and its badge stay while their own menu has the keyboard,
+	// as the reference keeps them behind the menu; the other overlays still
+	// need the terminal itself focused.
+	suggesting := focused || state.ghostMenu.open && state.ghostMenu.session == session.ID
+	if !sensitive && suggesting && !composing && !predicting && t.sync == nil {
 		if rest, ok := state.passwordHintGhost(session); ok {
 			state.paintGhost(canvas, t, geometry, cursor, rest, block)
 		} else if rest, ok := state.commandGhost(session); ok {
-			state.paintGhost(canvas, t, geometry, cursor, rest, block)
+			if used, limit, painted := state.paintGhost(canvas, t, geometry, cursor, rest, block); painted {
+				hintRect, hintShown = state.paintGhostHint(canvas, session, geometry, cursor, used, limit)
+			}
 		}
 	}
 	canvas.Unclip()
@@ -628,6 +666,11 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		canvas.HitWithOptions(id, geometry.area, t.accessibleName(state.messages.LabelTerminalFmt, session.Address), gfx.HitOptions{
 			Role: gfx.RoleTerminal, Autofocus: session.ID == state.activeSessionID,
 		})
+	}
+	if hintShown {
+		// Declared after the terminal's own region: hit testing takes the last
+		// region painted, as it does for the scrollbar.
+		state.declareGhostHintHit(canvas, session, hintRect)
 	}
 }
 

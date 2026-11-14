@@ -66,6 +66,7 @@ type AIPanelMessages struct {
 	SetupSummary string
 
 	ModelChooseFmt string // the model chip: the model and what pressing it does
+	ModelSettings  string // the chip menu's shortcut to the settings' model page
 	ResizePanel    string // the name of the edge that changes the panel's width
 	ResizeComposer string // and of the one that changes the message box's height
 
@@ -135,6 +136,8 @@ type AIPanelMessages struct {
 	ToolSFTPRead         string
 	ToolSFTPWrite        string
 	ToolSFTPRemove       string
+	ToolNotesQuery       string
+	ToolNotesEdit        string
 
 	StatusRunning string
 	StatusWaiting string

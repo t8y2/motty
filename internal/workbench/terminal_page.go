@@ -31,9 +31,11 @@ const (
 	terminalBodyPart      = "body"
 )
 
-// terminalPartScrollbar is the scrollbar's part of the terminal control.
+// terminalPartScrollbar is the scrollbar's part of the terminal control, and
+// terminalPartGhostHint the accept-suggestion badge beside an inline suggestion.
 const (
 	terminalPartScrollbar = iota
+	terminalPartGhostHint
 )
 
 // terminalPageRoot names one session's pane container in the window's identity
@@ -133,6 +135,9 @@ func (state *State) terminalControlPointer(session *Session, event gfx.PointerEv
 	if part, ok := event.Target.In(session.term.parts); ok {
 		if part == terminalPartScrollbar {
 			return state.terminalScrollbarPointer(session, event)
+		}
+		if part == terminalPartGhostHint {
+			return state.terminalGhostHintPointer(session, event)
 		}
 		return gfx.EventResult{}
 	}
@@ -320,7 +325,7 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 			c.Part(terminalControlPart)
 			label := t.accessibleName(state.messages.LabelTerminalFmt, session.Address)
 			terminal := ui.Control(c, label, &t.handlers)
-			if session.ID == state.activeSessionID {
+			if session.ID == state.activeSessionID && !t.find.open {
 				terminal.AutoFocus()
 			}
 			terminal.Grow(1).FillWidth().Background(state.ground(state.termPal.terminal)).Draw(t.controlDraw)
@@ -335,5 +340,20 @@ func (state *State) drawTerminalControl(d *ui.DrawContext, sessionID uint32) {
 		return
 	}
 	geometry := terminalGeometryForArea(d.Rect, state.cellWidth, state.cellHeight, state.padding())
-	state.paintGridControl(d.Canvas, session, geometry, d.State.Focused)
+	state.paintGridControl(d.Canvas, session, geometry, terminalGridFocused(d.Canvas, session, d.State.Focused))
+}
+
+// terminalGridFocused reports whether the keyboard is on the terminal control
+// or on one of its parts. The scrollbar and the accept-suggestion badge are
+// parts; pressing one focuses it, and the grid is still what the user is typing
+// at, so the ghost suggestion and its badge keep showing.
+func terminalGridFocused(canvas *gfx.Canvas, session *Session, control bool) bool {
+	if control {
+		return true
+	}
+	if session == nil || session.term == nil {
+		return false
+	}
+	_, ok := canvas.Focused().In(session.term.parts)
+	return ok
 }

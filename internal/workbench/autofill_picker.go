@@ -411,7 +411,8 @@ func (state *State) paintPasswordPickRows(canvas *gfx.Canvas, content gfx.Rect, 
 		}
 		canvas.DrawIcon(icon, iconRect, iconColor)
 		canvas.HitWithOptions(hitAutofillPickItem.At(index), bounds, candidate.name, gfx.HitOptions{
-			Role: gfx.RoleOption, SkipTab: true, Selected: selected, Description: candidate.detail,
+			// The grid keeps the keyboard: a press must not focus the row.
+			Role: gfx.RoleOption, SkipTab: true, SkipFocus: true, Selected: selected, Description: candidate.detail,
 		})
 		metaWidth := min(canvas.TextWidth(candidate.detail, metrics.FontSizeS), max(bounds.Width*0.45, 10))
 		meta := gfx.Rect{

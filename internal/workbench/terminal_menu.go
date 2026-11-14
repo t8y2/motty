@@ -60,6 +60,7 @@ func (state *State) terminalMenuPointer(event gfx.PointerEvent) (gfx.EventResult
 }
 
 func (state *State) openTerminalMenu(session *Session) {
+	state.ghostMenu.open = false
 	state.terminalMenu = terminalMenu{open: true, session: session.ID, at: state.terminalMenu.pointer, pointer: state.terminalMenu.pointer}
 }
 
@@ -221,7 +222,7 @@ func (state *State) paintTerminalMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	}
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuFiles, Label: messages.SFTPFiles, Icon: icon(iconFolderOpen), Kind: components.ContextMenuCheckbox, Checked: state.filesPanelShown(), Disabled: !session.isLocal() && (session.conn == nil || !session.hasServer())})
-	rows.add(components.ContextMenuItem{ID: hitTerminalMenuTransfer, Label: messages.Tools.XYMenu, Icon: icon(iconTransfer), Disabled: !live || state.transfer.phase != transferNone})
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuTransfer, Label: messages.Tools.XYMenu, Icon: icon(iconTransfer), Disabled: !live || session.transferBusy()})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuAsk, Label: messages.AIPanel.MenuAskSelection, Icon: icon(iconBot), Disabled: !hasSelection})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuExplain, Label: messages.AIPanel.MenuExplainOutput, Icon: icon(iconSparkles)})

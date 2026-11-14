@@ -103,13 +103,12 @@ func TestHostFormScrollKeepsFooterAndReachesEveryField(t *testing.T) {
 			must(view.Driver().Resize(900, 600))
 			must(view.Rest())
 			before := state.editor.form.offset
-			state.scrollHostForm(gfx.ScrollEvent{X: b.X + 2, Y: b.Y + 2, DeltaY: 100})
-			if state.editor.form.offset != before {
+			if result := state.Scroll(gfx.ScrollEvent{X: b.X + 2, Y: b.Y + 2, DeltaY: 100}); !result.Handled || state.editor.form.offset != before {
 				t.Fatal("scrolled behind a popup")
 			}
 			must(view.Keys("Escape"))
 			must(view.Rest())
-			if state.modal != modalNewHost || state.editor.iconOpen {
+			if state.modal != modalNewHost || state.editor.iconPicker.control.Open {
 				t.Fatal("Escape closed the parent form")
 			}
 		})
@@ -161,5 +160,32 @@ func TestHostFormRoomierLayoutAndReset(t *testing.T) {
 		if err = view.Screenshot(filepath.Join(dir, "host-form-spacing.png")); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// A wheel over the page behind a dialog must not scroll it. The page hands the
+// wheel to the list under the pointer before the window's own handler, and that
+// list lies behind the dialog too; scrollWindow asks the dialog first.
+func TestWheelBehindADialogKeepsTheHostListStill(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	group := state.hosts[0].Group
+	for i := 0; i < 60; i++ {
+		state.hosts = append(state.hosts, Host{ID: 1000 + uint32(i), Label: fmt.Sprintf("host-%d", i), Address: "192.0.2.1", Port: 22, Group: group})
+	}
+	state.syncVisible()
+	state.WindowConfig(app.Config{OnScroll: state.Scroll})
+	paintedTexts(state)
+	if state.hostList.scroll == nil {
+		t.Fatal("the list did not get a scroll position")
+	}
+	clickHostAction(state, hitAddHost)
+	state.Click(hitDialogIcon)
+	paintedTexts(state)
+	before := state.hostList.scroll.Offset
+	if result := state.scrollWindow(gfx.ScrollEvent{X: 250, Y: 500, DeltaY: 120}); !result.Handled {
+		t.Fatal("the wheel behind the dialog was not handled")
+	}
+	if state.hostList.scroll.Offset != before {
+		t.Fatalf("the host list scrolled behind the dialog: %v -> %v", before, state.hostList.scroll.Offset)
 	}
 }

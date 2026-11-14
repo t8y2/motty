@@ -1,12 +1,13 @@
 // Package sessionimport reads the saved sessions of other clients, PuTTY,
-// Xshell, MobaXterm, WindTerm, Electerm and Netcatty, into the host fields Motty
-// keeps. It reads files the user chose and never executes, resolves or contacts
-// anything in them.
+// Xshell, MobaXterm, WindTerm, Electerm, Netcatty and SecureCRT, into the host
+// fields Motty keeps. It reads files or folders the user chose and never
+// executes, resolves or contacts anything in them.
 //
 // Only connection fields and readable SSH login password candidates from
 // Electerm and Netcatty are taken. The caller decides whether to save those
 // candidates in a vault. Other clients' encrypted credentials and key files
-// are not imported.
+// are not imported; SecureCRT in particular stores every saved password
+// encrypted, so a SecureCRT import never carries one.
 package sessionimport
 
 import (
@@ -17,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/url"
 	"os"
@@ -387,6 +389,8 @@ func ParseWithOptions(client Client, paths []string, options ParseOptions) (Resu
 			part, err = ParseElecterm(path)
 		case Netcatty:
 			part, err = ParseNetcatty(path)
+		case SecureCRT:
+			part, err = ParseSecureCRT(path)
 		default:
 			err = fmt.Errorf("unknown client %d", client)
 		}
@@ -418,6 +422,7 @@ const (
 	WindTerm
 	Electerm
 	Netcatty
+	SecureCRT
 )
 
 // ---- PuTTY ----
@@ -1165,4 +1170,226 @@ func netcattyGroup(path string) (string, bool) {
 		folders = folders[len(folders)-maxGroupDepth:]
 	}
 	return strings.Join(folders, "/"), cut
+}
+
+// ---- SecureCRT ----
+
+// ParseSecureCRT reads a SecureCRT Sessions folder — the tree of .ini files
+// under Config/Sessions — or one session file from it. The folders inside
+// become groups. SecureCRT stores every saved password encrypted, so a session
+// brings its address, login name and port but never a password; the caller
+// warns about that the way it does for any other client whose credentials
+// cannot be read.
+func ParseSecureCRT(path string) (Result, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Result{}, err
+	}
+	if info.IsDir() {
+		return parseSecureCRTFolder(path)
+	}
+	text, err := readFile(path)
+	if err != nil {
+		return Result{}, err
+	}
+	var result Result
+	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if !parseSecureCRTSession(&result, text, name, "", filepath.Base(path)) {
+		return result, errors.New("not a SecureCRT session: it has no Hostname or Protocol Name")
+	}
+	return result, nil
+}
+
+func parseSecureCRTFolder(root string) (Result, error) {
+	var (
+		result    Result
+		sessions  int
+		totalSize uint64
+		shortened bool
+	)
+	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			if path == root {
+				return err
+			}
+			result.warn("%s: %v", filepath.Base(path), err)
+			return nil
+		}
+		if entry.IsDir() || entry.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		base := entry.Name()
+		lower := strings.ToLower(base)
+		// A folder's own marker and the inherited defaults are not sessions.
+		if !strings.HasSuffix(lower, ".ini") || lower == "__folderdata__.ini" || lower == "default.ini" {
+			return nil
+		}
+		if len(result.Entries) >= MaxEntries {
+			result.warn("%s: more than %d sessions; the rest were not read", filepath.Base(root), MaxEntries)
+			return filepath.SkipAll
+		}
+		if info, infoErr := entry.Info(); infoErr == nil {
+			totalSize += uint64(info.Size())
+			if totalSize > maxArchiveSize {
+				result.warn("%s: too large; the rest of the folder was not read", filepath.Base(root))
+				return filepath.SkipAll
+			}
+		}
+		relative, relativeErr := filepath.Rel(root, path)
+		if relativeErr != nil {
+			relative = base
+		}
+		relative = filepath.ToSlash(relative)
+		text, readErr := readFile(path)
+		if readErr != nil {
+			result.warn("%s: %v", relative, readErr)
+			return nil
+		}
+		group, cut := secureCRTGroup(filepath.ToSlash(filepath.Dir(relative)), root)
+		shortened = shortened || cut
+		name := strings.TrimSuffix(base, filepath.Ext(base))
+		if parseSecureCRTSession(&result, text, name, group, relative) {
+			sessions++
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return result, walkErr
+	}
+	if sessions == 0 {
+		return result, errors.New("not a SecureCRT Sessions folder: it holds no session files")
+	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", filepath.Base(root), maxGroupDepth)
+	}
+	return result, nil
+}
+
+// secureCRTGroup turns the folders between the chosen root and a session's file
+// into the "/" path the other imports use. The root may be Config, so the
+// Sessions folder at its top is not a group of the user's.
+func secureCRTGroup(relativeDir, root string) (string, bool) {
+	if relativeDir == "" || relativeDir == "." {
+		return "", false
+	}
+	folders := strings.Split(relativeDir, "/")
+	if !strings.EqualFold(filepath.Base(root), "Sessions") && strings.EqualFold(folders[0], "Sessions") {
+		folders = folders[1:]
+	}
+	titles := make([]string, 0, len(folders))
+	for _, folder := range folders {
+		if folder = clean(folder, maxNameLength); folder != "" {
+			titles = append(titles, folder)
+		}
+	}
+	cut := len(titles) > maxGroupDepth
+	if cut {
+		titles = titles[len(titles)-maxGroupDepth:]
+	}
+	return strings.Join(titles, "/"), cut
+}
+
+// parseSecureCRTSession reads one session file. It reports whether the file
+// described a session at all, so an unrelated .ini in the folder, or a session
+// of a kind that is skipped, is not mistaken for an unreadable folder.
+func parseSecureCRTSession(result *Result, text, name, group, source string) bool {
+	values := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		if key, value, ok := secureCRTLine(line); ok {
+			values[key] = value
+		}
+	}
+	protocol := strings.ToUpper(strings.TrimSpace(values["protocol name"]))
+	host := strings.TrimSpace(values["hostname"])
+	if protocol == "" && host == "" {
+		return false
+	}
+	kind := SSH
+	switch protocol {
+	case "", "SSH", "SSH1", "SSH2", "SSH-1", "SSH-2":
+	case "TELNET":
+		kind = Telnet
+	default:
+		result.Skipped++
+		return true
+	}
+	port := 0
+	for _, key := range secureCRTPortKeys(protocol) {
+		if port = secureCRTPort(values[key]); port > 0 {
+			break
+		}
+	}
+	user := strings.TrimSpace(values["username"])
+	if kind == Telnet {
+		user = ""
+	}
+	identity := strings.TrimSpace(values["identity filename v2"])
+	if identity == "" {
+		identity = strings.TrimSpace(values["identity filename"])
+	}
+	if identity != "" && !strings.EqualFold(identity, "none") && !IsPlaceholderKey(identity) {
+		result.Keys++
+	}
+	if sessionName := strings.TrimSpace(values["session name"]); sessionName != "" {
+		name = sessionName
+	}
+	result.add(Entry{
+		Name: name, Group: group, Protocol: kind, Host: host, Port: port, User: user, Source: source,
+	})
+	return true
+}
+
+// secureCRTPortKeys is the port field a protocol writes, most specific first.
+func secureCRTPortKeys(protocol string) []string {
+	switch protocol {
+	case "SSH1":
+		return []string{"[ssh1] port", "[ssh2] port", "port"}
+	case "TELNET":
+		return []string{"[telnet] port", "port", "[ssh2] port", "[ssh1] port"}
+	default:
+		return []string{"[ssh2] port", "[ssh1] port", "[telnet] port", "port"}
+	}
+}
+
+// secureCRTLine reads one S:"Key"=value, D:"Key"=value or B:"Key"=value line.
+// B values continue on indented lines of hex, which this does not match.
+func secureCRTLine(line string) (key, value string, ok bool) {
+	line = strings.TrimSpace(strings.TrimRight(line, "\r"))
+	if len(line) < 5 || (line[0] != 'S' && line[0] != 'D' && line[0] != 'B') || line[1] != ':' || line[2] != '"' {
+		return "", "", false
+	}
+	end := strings.IndexByte(line[3:], '"')
+	if end < 0 {
+		return "", "", false
+	}
+	key = strings.ToLower(line[3 : 3+end])
+	rest := line[4+end:]
+	if !strings.HasPrefix(rest, "=") {
+		return "", "", false
+	}
+	value = strings.TrimSpace(rest[1:])
+	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+		value = strings.ReplaceAll(value[1:len(value)-1], `\"`, `"`)
+		value = strings.ReplaceAll(value, `\\`, `\`)
+	}
+	return key, value, true
+}
+
+// secureCRTPort reads a port stored either as SecureCRT's eight hex digits or,
+// as some edited files hold it, as decimal text.
+func secureCRTPort(value string) int {
+	value = strings.TrimSpace(value)
+	if len(value) == 8 {
+		if number, err := strconv.ParseUint(value, 16, 32); err == nil {
+			if number > 0 && number <= 65535 {
+				return int(number)
+			}
+			return 0
+		}
+	}
+	number, err := strconv.Atoi(value)
+	if err != nil || number < 0 || number > 65535 {
+		return 0
+	}
+	return number
 }

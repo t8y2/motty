@@ -121,6 +121,12 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 		// The sort switch's change rebuilds the list as it is declared, so the
 		// count is read after it, not before.
 		count := len(palette.visible)
+		if state.commandBarSwitchShown() {
+			// Above the search field, outside the list: this checkbox is a
+			// control of the dialog, never a result of the search below it.
+			state.declareCommandPaletteBarToggle(c)
+			ui.Spacer(c).Height(6).Shrink(0)
+		}
 		ui.TextFieldID(c, hitCommandPaletteSearch, &palette.searchField, palette.searchLabel, palette.searchPlace).
 			Height(36).FillWidth().Shrink(0).NavigationKeys()
 		if count == 0 {
@@ -173,6 +179,46 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 				ui.Text(c, state.messages.Tools.SendRun).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
 			})
 		})
+	})
+}
+
+// declareCommandPaletteBarToggle paints the bar's checkbox above the search
+// field. It is chrome of the dialog, not a choice in its list: never filtered,
+// never a search result, never scrolls away. It stays deliberately quiet — a
+// plain checkbox in the dialog's muted text, with only a hover wash — so the
+// commands below keep the attention. The hidden state lives in the tooltip,
+// where it is available without taking space in the row.
+func (state *State) declareCommandPaletteBarToggle(c ui.C) {
+	pal := state.pal
+	checked := state.commands.shown
+	label := state.messages.Tools.CommandsBarShow
+	hovered := false
+	if canvas := c.Canvas(); canvas != nil && canvas.Hovered() == hitCommandsBarToggle {
+		hovered = true
+	}
+	row := ui.Row(c).Height(26).FillWidth().PadX(8).Gap(8).Items(ui.Center).Shrink(0).Radius(radius.item)
+	if hovered {
+		row.Background(withAlpha(pal.surfaceHot, 0.7))
+	}
+	hint := ""
+	if !checked {
+		hint = state.messages.Tools.CommandsBarHidden
+	}
+	row.HitWith(hitCommandsBarToggle, label, gfx.HitOptions{
+		Role: gfx.RoleCheckbox, Checked: checked, Hint: hint,
+	}).Children(func() {
+		side := float32(14)
+		var fill gfx.Color
+		boxBorder := withAlpha(pal.muted, 0.7)
+		if checked {
+			fill, boxBorder = pal.accent, pal.accent
+		}
+		ui.Stack(c).Size(side, side).Shrink(0).Radius(4).Background(fill).Border(1, boxBorder).Children(func() {
+			if checked {
+				ui.Icon(c, lucideIcons[iconCheck]).Size(10, 10).Color(pal.onAccent)
+			}
+		})
+		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightRegular).Color(pal.muted).Ellipsis().Grow(1)
 	})
 }
 
@@ -292,10 +338,15 @@ func (state *State) paintCommandPaletteChrome(d *ui.DrawContext) {
 }
 
 // commandPaletteHeight is the dialog's height: the snippet picker adds the form
-// that sends a typed command under its list.
+// that sends a typed command under its list, and the command bar's checkbox
+// above its search field when that page has a bar to switch.
 func (state *State) commandPaletteHeight() float32 {
 	if state.commandPalette.snippets {
-		return 474 + 12 + 36 + 8 + 32
+		height := float32(474 + 12 + 36 + 8 + 32)
+		if state.commandBarSwitchShown() {
+			height += 26 + 6
+		}
+		return height
 	}
 	return 474
 }

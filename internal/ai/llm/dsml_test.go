@@ -55,15 +55,32 @@ func TestDSMLRecoversEveryDialect(t *testing.T) {
 		{"v41-calls", dsmlCalls, dsmlWant},
 		{"v32-function_calls", strings.ReplaceAll(dsmlCalls, "calls>", "function_calls>"), dsmlWant},
 		{"v4-tool_calls", strings.ReplaceAll(dsmlCalls, "calls>", "tool_calls>"), dsmlWant},
+		{"corrupted-toolcalls-wrapper", strings.ReplaceAll(dsmlCalls, "calls>", "toolcalls>"), dsmlWant},
+		{"tool-wrapper", strings.ReplaceAll(dsmlCalls, "calls>", "tool>"), dsmlWant},
 		{"ascii-bars", strings.ReplaceAll(dsmlCalls, "｜", "|"), dsmlWant},
 		{"doubled-bars", strings.ReplaceAll(dsmlCalls, "｜", "||"), dsmlWant},
+		{"doubled-fullwidth-bars", strings.ReplaceAll(dsmlCalls, "｜", "｜｜"), dsmlWant},
 		{"spaced-bars", strings.ReplaceAll(dsmlCalls, "｜", " | "), dsmlWant},
 		{"spaced-closers", spacedClosers(dsmlCalls), dsmlWant},
 		{"spaced-tags", spacedClosers(strings.ReplaceAll(dsmlCalls, "<｜DSML｜", "< ｜ ｜ DSML ｜ ｜")), dsmlWant},
+		// A corrupted structural token can drop or misspell a parameter's
+		// closer. The value must end at the next parameter, not swallow it.
+		{"dropped-param-closer", strings.Replace(dsmlCalls, "</｜DSML｜ parameter>", "", 1), dsmlWant},
+		{"renamed-param-closer", strings.Replace(dsmlCalls, "</｜DSML｜ parameter>", "</｜DSML｜ param>", 1), dsmlWant},
+		{"dropped-only-param-closer", "<｜DSML｜ calls><｜DSML｜ invoke name=\"terminal_exec\">" +
+			"<｜DSML｜ parameter name=\"command\" string=\"true\">uptime\n</｜DSML｜ invoke></｜DSML｜ calls>",
+			[]ToolCall{{Name: "terminal_exec", Arguments: `{"command":"uptime"}`}}},
 		{"no-wrapper", "<｜DSML｜ invoke name=\"terminal_exec\">" +
 			"<｜DSML｜ parameter name=\"command\" string=\"true\">uptime</｜DSML｜ parameter>" +
 			"<｜DSML｜ parameter name=\"timeout_seconds\" string=\"false\">30</｜DSML｜ parameter>" +
 			"</｜DSML｜ invoke>", dsmlWant},
+		// A real leak carries parallel invokes in one block, as the DeepSeek
+		// lane does for a web search.
+		{"parallel-invokes", "<｜DSML｜tool_calls>" +
+			"<｜DSML｜invoke name=\"a\"><｜DSML｜parameter name=\"x\" string=\"true\">1</｜DSML｜parameter></｜DSML｜invoke>" +
+			"<｜DSML｜invoke name=\"b\"><｜DSML｜parameter name=\"y\" string=\"true\">2</｜DSML｜parameter></｜DSML｜invoke>" +
+			"</｜DSML｜tool_calls>",
+			[]ToolCall{{Name: "a", Arguments: `{"x":"1"}`}, {Name: "b", Arguments: `{"y":"2"}`}}},
 		{"bare-json", "<｜DSML｜ calls><｜DSML｜ invoke name=\"terminal_exec\">" +
 			`{"command":"uptime"}</｜DSML｜ invoke></｜DSML｜ calls>`,
 			[]ToolCall{{Name: "terminal_exec", Arguments: `{"command":"uptime"}`}}},
@@ -99,8 +116,9 @@ func TestDSMLRecoversEveryDialect(t *testing.T) {
 // A delta boundary can fall anywhere, including inside a bar or an opener.
 func TestDSMLRecoversAcrossAnyDeltaBoundary(t *testing.T) {
 	for name, markup := range map[string]string{
-		"canonical": dsmlCalls,
-		"spaced":    spacedClosers(dsmlCalls),
+		"canonical":         dsmlCalls,
+		"spaced":            spacedClosers(dsmlCalls),
+		"doubled-fullwidth": strings.ReplaceAll(dsmlCalls, "｜", "｜｜"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			wantText, wantCalls, err := feedDSML(t, true, markup)
@@ -158,6 +176,54 @@ func TestDSMLMarkupThatYieldsNoCallIsAnError(t *testing.T) {
 	_, _, err := feedDSML(t, true, "<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"x\">\n</｜DSML｜ calls>")
 	if err == nil {
 		t.Fatal("an unrecoverable block passed as an answer")
+	}
+}
+
+// Leftover markup is protocol noise, not a broken answer: a turn that already
+// wrote prose must finish, or the user loses an answer over a tag the model
+// merely damaged.
+func TestDSMLUnrecoverableBlockDoesNotFailAnAnswer(t *testing.T) {
+	broken := "<｜DSML｜ calls>\n<url>https://x.com</url>\n</｜DSML｜ calls>"
+	body := oaText("The answer is 42.\n", broken) + oaFinish("stop")
+	srv := sseServer(t, body, true, nil)
+	req := Request{Model: "m", Messages: []Message{{Role: RoleUser, Text: "answer"}},
+		Tools: []ToolSpec{{Name: "terminal_exec"}}}
+	ch, err := NewOpenAI(Config{BaseURL: srv.URL, APIKey: testKey}).Stream(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := collect(t, ch)
+	stop := terminal(t, evs)
+	if stop.Kind != EventDone {
+		t.Fatalf("the turn failed over leftover markup: %+v", stop)
+	}
+	if got := text(evs, EventText); !strings.Contains(got, "The answer is 42.") || strings.Contains(got, "DSML") {
+		t.Fatalf("text = %q", got)
+	}
+	if got := toolCalls(evs); got != nil {
+		t.Fatalf("a call was fabricated from a broken block: %#v", got)
+	}
+}
+
+// A block the output limit cut off is a truncation, which the caller reports
+// from StopReason; it must not surface as an unreadable tool call instead.
+func TestDSMLBlockCutOffAtTheLimitReportsTruncation(t *testing.T) {
+	body := oaText("Let me check.\n", "<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"terminal_exec\">\n"+
+		"<｜DSML｜ parameter name=\"command\" string=\"true\">uptime") + oaFinish("length")
+	srv := sseServer(t, body, true, nil)
+	req := Request{Model: "m", Messages: []Message{{Role: RoleUser, Text: "check"}},
+		Tools: []ToolSpec{{Name: "terminal_exec"}}}
+	ch, err := NewOpenAI(Config{BaseURL: srv.URL, APIKey: testKey}).Stream(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := collect(t, ch)
+	stop := terminal(t, evs)
+	if stop.Kind != EventDone || stop.StopReason != "length" {
+		t.Fatalf("terminal event = %+v", stop)
+	}
+	if got := toolCalls(evs); got != nil {
+		t.Fatalf("a call was fabricated from a truncated block: %#v", got)
 	}
 }
 
@@ -346,6 +412,44 @@ func TestDSMLThroughTheResponsesStream(t *testing.T) {
 	}
 	if stop.StopReason != "tool_calls" {
 		t.Fatalf("stop reason = %q", stop.StopReason)
+	}
+}
+
+// The Responses handler applies the same policy: broken markup beside an
+// answer is noise, and a block cut off at the limit is a truncation.
+func TestDSMLUnrecoverableBlockDoesNotFailAnAnswerThroughTheResponsesStream(t *testing.T) {
+	body := rsText("The answer is 42.\n", "<｜DSML｜ calls>\n<url>https://x.com</url>\n</｜DSML｜ calls>") + rsCompleted()
+	srv := sseServer(t, body, true, nil)
+	req := Request{Model: "m", Messages: []Message{{Role: RoleUser, Text: "answer"}},
+		Tools: []ToolSpec{{Name: "terminal_exec"}}}
+	ch, err := NewOpenAIResponses(Config{BaseURL: srv.URL, APIKey: testKey}).Stream(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := collect(t, ch)
+	stop := terminal(t, evs)
+	if stop.Kind != EventDone {
+		t.Fatalf("the turn failed over leftover markup: %+v", stop)
+	}
+	if got := text(evs, EventText); !strings.Contains(got, "The answer is 42.") || strings.Contains(got, "DSML") {
+		t.Fatalf("text = %q", got)
+	}
+}
+
+func TestDSMLBlockCutOffAtTheLimitThroughTheResponsesStream(t *testing.T) {
+	body := rsText("Let me check.\n", "<｜DSML｜ calls>\n<｜DSML｜ invoke name=\"terminal_exec\">") +
+		rsEv("response.incomplete", `"response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":7,"output_tokens":3}}`)
+	srv := sseServer(t, body, true, nil)
+	req := Request{Model: "m", Messages: []Message{{Role: RoleUser, Text: "check"}},
+		Tools: []ToolSpec{{Name: "terminal_exec"}}}
+	ch, err := NewOpenAIResponses(Config{BaseURL: srv.URL, APIKey: testKey}).Stream(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := collect(t, ch)
+	stop := terminal(t, evs)
+	if stop.Kind != EventDone || stop.StopReason != "length" {
+		t.Fatalf("terminal event = %+v", stop)
 	}
 }
 

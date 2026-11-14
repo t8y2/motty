@@ -451,6 +451,62 @@ func TestTunneledVNCAnswersTheSSHQuestionsThenDialsTheServerThroughTheChannel(t 
 	}
 }
 
+func TestDesktopJumpRouteDialsTheDesktopPortFromTheJumpHost(t *testing.T) {
+	for _, relay := range []bool{false, true} {
+		name := "through a forwarded channel"
+		if relay {
+			name = "through the jump host's shell"
+		}
+		t.Run(name, func(t *testing.T) {
+			fixture := startVNCFixture(t, "secret")
+			world, options := newWorld(t)
+			state := newTestState(t, options)
+			state.options.Invalidate = func() {}
+			state.connectionReconnect = reconnectOff
+			_, port, _ := net.SplitHostPort(fixture.listener.Addr().String())
+			number, _ := strconv.Atoi(port)
+			desk := addStreamHost(state, Host{Label: "Desk", Address: "10.0.0.9", User: "ops", Protocol: protocolVNC, Port: uint16(number)})
+			jump := hostByLabel(t, state, "Staging")
+			addProxyRoute(t, state, desk.ID, jump.ID)
+			if relay {
+				state.proxies[0].ViaShell = true
+			}
+			state.Click(hitHosts)
+			state.selectedHostID = desk.ID
+			openHost(state)
+			if len(world.configs) != 1 {
+				t.Fatalf("dials = %d", len(world.configs))
+			}
+			config := world.configs[0]
+			if config.Host != jump.Address || config.Port != jump.Port || config.User != jump.User {
+				t.Fatalf("the route dialed %s@%s:%d, want the jump %s@%s:%d", config.User, config.Host, config.Port, jump.User, jump.Address, jump.Port)
+			}
+			ssh := world.conns[0]
+			to := fixture.listener.Addr().String()
+			ssh.dial = func(context.Context, string, string) (net.Conn, error) { return net.Dial("tcp", to) }
+			ssh.shellDial = func(context.Context, string, string) (net.Conn, error) { return net.Dial("tcp", to) }
+			ssh.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+			config.Notify()
+			session, _ := state.sessionByIDPointer(state.activeSessionID)
+			connectDesktop(t, state, session, "secret")
+			want := net.JoinHostPort(desk.Address, strconv.Itoa(number))
+			if relay {
+				if calls := ssh.shellDialCalls; len(calls) != 1 || calls[0].address != want || calls[0].command != defaultRelayCommand {
+					t.Fatalf("shell relay calls = %+v, want %q to %s", calls, defaultRelayCommand, want)
+				}
+				if len(ssh.dialCalls) != 0 {
+					t.Fatalf("the desktop also dialed a channel: %+v", ssh.dialCalls)
+				}
+			} else if calls := ssh.dialCalls; len(calls) != 1 || calls[0].address != want {
+				t.Fatalf("dialed %+v through the jump, want %s from it", calls, want)
+			}
+			if !session.desktopTunnel {
+				t.Fatal("the desktop does not report the SSH tunnel that carries it")
+			}
+		})
+	}
+}
+
 func TestDesktopPasswordQuestionCanUseTheSavedSecret(t *testing.T) {
 	fixture := startVNCFixture(t, "secret")
 	_, options := newWorld(t)

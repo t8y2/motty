@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -15,6 +16,13 @@ const keepAliveRequest = "keepalive@openssh.com"
 type keepAliveWorker struct {
 	stop chan struct{}
 	done chan struct{}
+	once sync.Once
+}
+
+func (worker *keepAliveWorker) Close() error {
+	worker.once.Do(func() { close(worker.stop) })
+	<-worker.done
+	return nil
 }
 
 func (config Config) validate() error {
@@ -27,9 +35,16 @@ func (config Config) validate() error {
 		return errors.New("sshconn: keepalive timeout must not be negative")
 	case config.KeepAlive.Interval == 0 && config.KeepAlive.Timeout != 0:
 		return errors.New("sshconn: keepalive timeout requires an interval")
-	case config.KeepAlive.Interval > 0 && config.KeepAlive.Timeout == 0:
+	case config.KeepAlive.Interval > 0 && config.KeepAlive.Timeout == 0 && config.KeepAlive.CountMax == nil:
 		return errors.New("sshconn: keepalive timeout must be positive when enabled")
+	case config.KeepAlive.CountMax != nil && (*config.KeepAlive.CountMax < 0 || config.KeepAlive.Timeout != 0):
+		return errors.New("sshconn: keepalive count must be non-negative and cannot be combined with a timeout")
 	default:
+		for _, keepAlive := range config.EndpointKeepAlive {
+			if err := (Config{KeepAlive: keepAlive}).validate(); err != nil {
+				return err
+			}
+		}
 		return config.validateRelays()
 	}
 }
@@ -71,7 +86,7 @@ func (conn *Conn) dialThrough(client *ssh.Client, address string) (net.Conn, err
 }
 
 func (conn *Conn) startKeepAlive(client *ssh.Client) *keepAliveWorker {
-	if conn.config.KeepAlive.Interval == 0 {
+	if conn.config.KeepAlive.Interval == 0 || conn.config.KeepAlive.CountMax != nil {
 		return nil
 	}
 	worker := &keepAliveWorker{stop: make(chan struct{}), done: make(chan struct{})}
@@ -80,6 +95,79 @@ func (conn *Conn) startKeepAlive(client *ssh.Client) *keepAliveWorker {
 		conn.keepAlive(client, worker.stop)
 	}()
 	return worker
+}
+
+type aliveSocket struct {
+	net.Conn
+	received chan struct{}
+}
+
+func (socket *aliveSocket) Read(buffer []byte) (int, error) {
+	count, err := socket.Conn.Read(buffer)
+	if count > 0 {
+		select {
+		case socket.received <- struct{}{}:
+		default:
+		}
+	}
+	return count, err
+}
+
+func (conn *Conn) keepAliveFor(endpoint Endpoint) KeepAliveConfig {
+	if config, ok := conn.config.EndpointKeepAlive[endpoint.normalized()]; ok {
+		return config
+	}
+	if endpoint.normalized() == (Endpoint{Host: conn.config.Host, Port: conn.config.Port, User: conn.config.User}).normalized() {
+		return conn.config.KeepAlive
+	}
+	return KeepAliveConfig{}
+}
+
+func (conn *Conn) startCountKeepAlive(client *ssh.Client, socket *aliveSocket, config KeepAliveConfig) {
+	worker := &keepAliveWorker{stop: make(chan struct{}), done: make(chan struct{})}
+	go func() {
+		defer close(worker.done)
+		timer := time.NewTimer(config.Interval)
+		defer timer.Stop()
+		replies := make(chan error, 1)
+		pending := false
+		missed := 0
+		for {
+			select {
+			case <-conn.ctx.Done():
+				return
+			case <-worker.stop:
+				return
+			case <-socket.received:
+				timer.Reset(config.Interval)
+			case err := <-replies:
+				pending = false
+				if err != nil {
+					return
+				}
+				missed = 0
+				timer.Reset(config.Interval)
+			case <-timer.C:
+				missed++
+				if missed > *config.CountMax {
+					if conn.recordDisconnect(fmt.Errorf("%w: %w", ErrDisconnected, ErrKeepAliveTimeout)) {
+						conn.cancel()
+						_ = client.Close()
+					}
+					return
+				}
+				if !pending {
+					pending = true
+					go func() {
+						_, _, err := client.SendRequest(keepAliveRequest, true, nil)
+						replies <- err
+					}()
+				}
+				timer.Reset(config.Interval)
+			}
+		}
+	}()
+	conn.addCloser(worker)
 }
 
 func (conn *Conn) keepAlive(client *ssh.Client, stop <-chan struct{}) {
@@ -139,14 +227,14 @@ func (conn *Conn) recordDisconnect(err error) bool {
 }
 
 func (conn *Conn) closedError(waitErr error) error {
-	if conn.ctx.Err() != nil {
-		return nil
-	}
 	conn.mu.Lock()
 	err := conn.disconnectErr
 	conn.mu.Unlock()
 	if err != nil {
 		return err
+	}
+	if conn.ctx.Err() != nil {
+		return nil
 	}
 	if waitErr == nil {
 		return ErrDisconnected

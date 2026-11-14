@@ -130,15 +130,21 @@ func TestTabMenuCopiesTheActiveSessionsAddressAndConnectionName(t *testing.T) {
 	workspace := state.deck.ActiveWorkspace()
 
 	rightClickTab(state, hitTabList.At(int(workspace)))
+	state.Click(hitTabMenuCopyHost)
+	if state.tabMenu.open || len(copied) != 1 || copied[0] != session.host.Address {
+		t.Fatalf("Copy Host Address: open=%v copied=%q target=%q", state.tabMenu.open, copied, session.host.Address)
+	}
+
+	rightClickTab(state, hitTabList.At(int(workspace)))
 	state.Click(hitTabMenuCopyAddress)
 	wantAddress := net.JoinHostPort(session.host.Address, strconv.Itoa(int(session.host.Port)))
-	if state.tabMenu.open || len(copied) != 1 || copied[0] != wantAddress {
+	if state.tabMenu.open || len(copied) != 2 || copied[1] != wantAddress {
 		t.Fatalf("Copy Address and Port: open=%v copied=%q target=%q", state.tabMenu.open, copied, wantAddress)
 	}
 
 	rightClickTab(state, hitTabList.At(int(workspace)))
 	state.Click(hitTabMenuCopyName)
-	if state.tabMenu.open || len(copied) != 2 || copied[1] != session.host.Label {
+	if state.tabMenu.open || len(copied) != 3 || copied[2] != session.host.Label {
 		t.Fatalf("Copy Connection Name: open=%v copied=%q target=%q", state.tabMenu.open, copied, session.host.Label)
 	}
 }
@@ -152,13 +158,14 @@ func TestTabMenuPlacesConnectionCopiesBelowDuplicate(t *testing.T) {
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	duplicate, duplicateOK := hitByID(&canvas, hitTabMenuDuplicate)
+	host, hostOK := hitByID(&canvas, hitTabMenuCopyHost)
 	address, addressOK := hitByID(&canvas, hitTabMenuCopyAddress)
 	name, nameOK := hitByID(&canvas, hitTabMenuCopyName)
-	if !duplicateOK || !addressOK || !nameOK {
-		t.Fatalf("menu items: duplicate=%v address=%v name=%v", duplicateOK, addressOK, nameOK)
+	if !duplicateOK || !hostOK || !addressOK || !nameOK {
+		t.Fatalf("menu items: duplicate=%v host=%v address=%v name=%v", duplicateOK, hostOK, addressOK, nameOK)
 	}
-	if !(duplicate.Bounds.Y < address.Bounds.Y && address.Bounds.Y < name.Bounds.Y) {
-		t.Fatalf("row order duplicate=%+v address=%+v name=%+v", duplicate.Bounds, address.Bounds, name.Bounds)
+	if !(duplicate.Bounds.Y < host.Bounds.Y && host.Bounds.Y < address.Bounds.Y && address.Bounds.Y < name.Bounds.Y) {
+		t.Fatalf("row order duplicate=%+v host=%+v address=%+v name=%+v", duplicate.Bounds, host.Bounds, address.Bounds, name.Bounds)
 	}
 }
 
@@ -167,10 +174,25 @@ func TestTabMenuDisablesConnectionCopyOnAnEmptyTab(t *testing.T) {
 	rightClickTab(state, hitTabList.At(int(tabs[0])))
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	for _, id := range []gfx.ID{hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuEditHost} {
+	for _, id := range []gfx.ID{hitTabMenuCopyHost, hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuEditHost} {
 		if hit, ok := hitByID(&canvas, id); !ok || !hit.Disabled {
 			t.Fatalf("item %d: found=%v disabled=%v, want disabled", id, ok, hit.Disabled)
 		}
+	}
+}
+
+func TestHostAddressCopySkipsLocalAndSerialEndpoints(t *testing.T) {
+	local := Host{ID: localHostID, Address: "this-machine"}
+	if got := connectionHostAddress(local); got != "" {
+		t.Fatalf("a local shell offered %q", got)
+	}
+	serial := Host{Address: "/dev/ttyUSB0", Protocol: protocolSerial}
+	if got := connectionHostAddress(serial); got != "" {
+		t.Fatalf("a serial device offered %q", got)
+	}
+	host := Host{Address: "203.0.113.7", Port: 22}
+	if got := connectionHostAddress(host); got != "203.0.113.7" {
+		t.Fatalf("host address = %q", got)
 	}
 }
 

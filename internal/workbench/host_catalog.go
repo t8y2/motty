@@ -215,6 +215,7 @@ type hostMerge struct {
 // and the name, as in sameHost.
 type mergeKey struct {
 	protocol uint8
+	terminal uint8
 	address  string
 	user     string
 	port     uint16
@@ -223,7 +224,7 @@ type mergeKey struct {
 }
 
 func mergeKeyOf(host Host) mergeKey {
-	key := mergeKey{protocol: uint8(host.Protocol), address: host.Address, label: strings.ToLower(strings.TrimSpace(host.Label))}
+	key := mergeKey{protocol: uint8(host.Protocol), terminal: uint8(host.Terminal), address: host.Address, label: strings.ToLower(strings.TrimSpace(host.Label))}
 	if host.Protocol != protocolSerial {
 		key.user, key.port, key.viaSSH = host.User, host.Port, host.ViaSSH
 	}

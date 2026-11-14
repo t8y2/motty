@@ -187,7 +187,7 @@ func TestToolbarCustomOrderAppearsInTheThreeRealToolbars(t *testing.T) {
 	}{
 		{hitWindowSettings, hitTransferCenter, true},
 		{hitSFTPOpen, hitConnExport, false},
-		{contextID(hitSFTPClose), contextID(hitSFTPUpload), true},
+		{contextID(hitSFTPFollowToggle), contextID(hitSFTPUpload), true},
 	} {
 		first, firstOK := hitByID(&canvas, pair.first)
 		second, secondOK := hitByID(&canvas, pair.second)
@@ -219,7 +219,7 @@ func TestTerminalToolbarDefaultOrderMatchesTheRail(t *testing.T) {
 		"notes", "close-pane", "broadcast", "snippets",
 		"split-horizontal", "split-vertical",
 		"record", "export-recording", "save-output", "export-log",
-		"resources", "files", "local-proxy", "file-transfer", "remote-tools",
+		"resources", "files", "local-proxy", "file-transfer", "remote-tools", "remote-logs",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("terminal toolbar order = %v, want %v", got, want)

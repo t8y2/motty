@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/vivaui/viva/app"
@@ -18,6 +19,7 @@ var terminalFindHits = tree.Feature("terminal-find")
 // Terminal find. The field is shared by the active
 // session; the query and matches themselves stay with each terminal.
 var (
+	hitTerminalFindSettings = tree.ID(terminalFindHits, "terminal-find-settings")
 	hitTerminalFindField    = tree.ID(terminalFindHits, "terminal-find-field")
 	hitTerminalFindPrevious = tree.ID(terminalFindHits, "terminal-find-previous")
 	hitTerminalFindNext     = tree.ID(terminalFindHits, "terminal-find-next")
@@ -37,17 +39,22 @@ const (
 )
 
 type terminalFind struct {
-	editor      text.Editor
-	input       app.TextInput
-	open        bool
-	matches     []term.SearchMatch
-	active      int
-	truncated   bool
-	query       string
-	count       string
-	screenState uint64
-	lastScan    time.Duration // when the last automatic scan ran
-	pending     bool          // a version change is waiting for the next scan
+	editor                     text.Editor
+	input                      app.TextInput
+	open                       bool
+	matches                    []term.SearchMatch
+	paintRuns                  []gfx.TextRun
+	active                     int
+	truncated                  bool
+	query                      string
+	count                      string
+	start                      terminalFindOrigin
+	viewTop, viewBottom        uint64
+	matchBase, matchGeneration uint64
+	viewGeneration             uint64
+	screenState                uint64
+	lastScan                   time.Duration // when the last automatic scan ran
+	pending                    bool          // a version change is waiting for the next scan
 }
 
 func newTerminalFind() terminalFind {
@@ -60,34 +67,66 @@ func terminalFindRune(value rune) bool {
 	return value != '\r' && value != '\n'
 }
 
+func (find *terminalFind) captureView(screen *term.Terminal) {
+	_, rows := screen.Size()
+	find.viewTop = screen.LineNumber(0)
+	find.viewBottom = screen.LineNumber(rows - 1)
+	find.viewGeneration = screen.BufferGeneration()
+}
+
+func (find *terminalFind) startLine(screen *term.Terminal) (int, bool) {
+	_, rows := screen.Size()
+	if find.viewGeneration != screen.BufferGeneration() {
+		find.captureView(screen)
+	}
+	base, _ := screen.RetainedFrom()
+	switch find.start {
+	case findSessionTop:
+		return 0, false
+	case findSessionBottom:
+		// ViewLine(0) + ViewOffset() is the first live screen row.
+		return screen.ViewLine(0) + screen.ViewOffset() + rows - 1, true
+	case findViewTop:
+		return int(max(find.viewTop, base) - base), false
+	default:
+		return int(max(find.viewBottom, base) - base), true
+	}
+}
+
 func (find *terminalFind) refresh(screen *term.Terminal, messages i18n.Messages, reveal bool) {
 	find.pending = false
 	query := find.editor.String()
-	oldQuery := find.query
+	queryChanged := query != find.query
 	oldActive := find.active
-	oldMatch := term.SearchMatch{}
+	var oldMatch term.SearchMatch
 	if oldActive >= 0 && oldActive < len(find.matches) {
 		oldMatch = find.matches[oldActive]
 	}
 
-	find.matches, find.truncated = screen.Search(find.matches[:0], query, terminalFindMaxMatches)
+	base, _ := screen.RetainedFrom()
+	generation := screen.BufferGeneration()
+	line, backward := find.startLine(screen)
+	matches, first, truncated := screen.SearchFrom(find.matches[:0], query, terminalFindMaxMatches, line, backward)
+	find.matches, find.active, find.truncated = matches, first, truncated
 	find.query = query
-	switch {
-	case len(find.matches) == 0:
-		find.active = -1
-	case query != oldQuery || oldActive < 0:
-		find.active = 0
-	default:
-		find.active = min(oldActive, len(find.matches)-1)
-		for index, match := range find.matches {
+	if !queryChanged && oldActive >= 0 && first >= 0 && generation == find.matchGeneration {
+		shift := int64(find.matchBase) - int64(base)
+		oldMatch.Start.Line += int(shift)
+		oldMatch.End.Line += int(shift)
+		for index, match := range matches {
 			if match == oldMatch {
 				find.active = index
 				break
 			}
 		}
 	}
-	if reveal {
-		find.reveal(screen)
+	find.matchBase, find.matchGeneration = base, generation
+	if reveal && find.active >= 0 {
+		match := matches[find.active]
+		_, rows := screen.Size()
+		if match.End.Line < screen.ViewLine(0) || match.Start.Line > screen.ViewLine(rows-1) {
+			find.reveal(screen)
+		}
 	}
 	find.describe(messages)
 	find.screenState = screen.Version()
@@ -145,6 +184,7 @@ func (find *terminalFind) close() {
 	find.open = false
 	find.active = -1
 	find.matches = find.matches[:0]
+	find.paintRuns = nil
 	if cap(find.matches) > terminalFindKeep {
 		find.matches = nil
 	}
@@ -158,18 +198,71 @@ func (state *State) activeTerminalFind() (*Session, bool) {
 	return session, ok && state.activeSection == sectionTerminal && state.modal == modalNone && session.term != nil
 }
 
+// terminalFindQuery returns the terminal's selection as a find query, or ""
+// when it is not one that can be searched. Search matches within a line, so a
+// selection crossing a hard line break finds nothing and is left out, as
+// Windows Terminal leaves out a multi-line selection. The result is bounded by
+// the field's own limit, so a whole selected file costs no more than a selected
+// word.
+func terminalFindQuery(selected string) string {
+	if strings.ContainsAny(selected, "\r\n") {
+		return ""
+	}
+	var query strings.Builder
+	query.Grow(min(len(selected), terminalFindMaxQuery*4))
+	kept := 0
+	for _, value := range selected {
+		if kept == terminalFindMaxQuery {
+			break
+		}
+		query.WriteRune(value)
+		kept++
+	}
+	return strings.TrimRight(query.String(), " \t")
+}
+
+// setQuery replaces the field's text through the same restricted edit a paste
+// takes, so terminalFindRune and terminalFindMaxQuery bound it either way.
+func (find *terminalFind) setQuery(value string) {
+	find.editor.SetSelection(text.Range{Start: 0, End: find.editor.RuneCount()})
+	find.editor.Insert(value)
+}
+
+// selectQuery selects the whole field, so the next typed rune or paste
+// replaces the query instead of appending to it.
+func (find *terminalFind) selectQuery() {
+	find.editor.SetSelection(text.Range{Start: 0, End: find.editor.RuneCount()})
+}
+
 // openTerminalFind opens the search bar of a pane. The bar takes a strip above
 // the grid, as a macOS terminal does, and leaves the shared rail its width, so
-// only the row count changes and only the columns stay put.
+// only the row count changes and only the columns stay put. A terminal
+// selection fills the field when it is one line, and the field's text is
+// selected in either case, so pasting a new query replaces what is there.
 func (state *State) openTerminalFind(session *Session) gfx.EventResult {
 	find := &session.term.find
+	opening := !find.open
 	find.open = true
-	find.refresh(session.term.screen, state.messages, true)
+	if opening && session.term.selection.selected {
+		if query := terminalFindQuery(session.term.selection.text(session.term.screen)); query != "" {
+			find.setQuery(query)
+		}
+	}
+	find.selectQuery()
+	// The origin and the view are read before the bar takes its strip: the
+	// resize scans the screen too, and that scan must already start where this
+	// open will start, or the scan after it preserves a match from the old edge.
+	if opening {
+		find.start = state.terminalFindPrefs.Origin
+		find.captureView(session.term.screen)
+	}
 	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
+	find.refresh(session.term.screen, state.messages, true)
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTerminalFindField, FocusVisible: true}
 }
 
 func (state *State) closeTerminalFind(session *Session) gfx.EventResult {
+	state.findSettingsUI.close()
 	session.term.find.close()
 	state.fitWorkspaceTerminals(state.deck.ActiveWorkspace())
 	session.term.pageIdentity(session.ID)
@@ -234,7 +327,9 @@ func (state *State) terminalFindText(sessionID uint32, event app.TextEvent) app.
 	}
 	find := &session.term.find
 	event.Apply(&find.editor)
-	find.refresh(session.term.screen, state.messages, true)
+	if find.editor.String() != find.query {
+		find.refresh(session.term.screen, state.messages, true)
+	}
 	return app.TextStateOf(&find.editor)
 }
 
@@ -272,6 +367,14 @@ func (state *State) clickTerminalFind(id gfx.ID) bool {
 		return true
 	}
 	switch id {
+	case hitTerminalFindSettings:
+		if state.findSettingsUI.open {
+			state.clickFindPreferences(hitFindSettingsDismiss)
+		} else {
+			state.findSettingsUI.open = true
+			state.findSettingsUI.session = session.ID
+			state.findSettingsUI.focus = hitFindForeground
+		}
 	case hitTerminalFindPrevious:
 		session.term.find.move(session.term.screen, state.messages, -1)
 	case hitTerminalFindNext:

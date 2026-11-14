@@ -5,6 +5,7 @@ package localshell
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows/registry"
@@ -33,6 +34,66 @@ func TestWindowsShellDiscoveryFindsInstallationsOutsidePATH(t *testing.T) {
 		}
 	}
 	t.Fatalf("installed PowerShell was not detected: %+v", choices)
+}
+
+// TestWindowsShellDiscoveryFindsTheStorePowerShellAlias covers a Store install,
+// which registers an app execution alias under WindowsApps instead of adding
+// itself to PATH. Windows exposes the alias at the root and in the folder named
+// for the package; the package's own command resolution reports the latter
+// (issue #750).
+func TestWindowsShellDiscoveryFindsTheStorePowerShellAlias(t *testing.T) {
+	for _, family := range []string{"", "Microsoft.PowerShell_8wekyb3d8bbwe"} {
+		t.Run(family, func(t *testing.T) {
+			local := t.TempDir()
+			dir := filepath.Join(local, "Microsoft", "WindowsApps")
+			if family != "" {
+				dir = filepath.Join(dir, family)
+			}
+			path := filepath.Join(dir, "pwsh.exe")
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("test executable location"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", t.TempDir())
+			t.Setenv("LOCALAPPDATA", local)
+			t.Setenv("USERPROFILE", t.TempDir())
+			t.Setenv("ProgramW6432", t.TempDir())
+			t.Setenv("ProgramFiles", t.TempDir())
+			t.Setenv("ProgramFiles(x86)", "")
+			for _, choice := range InstalledWindowsShells() {
+				if choice.Name == "PowerShell 7" {
+					if !strings.EqualFold(choice.Path, path) {
+						t.Fatalf("PowerShell path=%q, want %q", choice.Path, path)
+					}
+					return
+				}
+			}
+			t.Fatalf("the Store PowerShell was not detected: %+v", InstalledWindowsShells())
+		})
+	}
+}
+
+// A Store PowerShell is installed, so it is the default shell even though its
+// alias directory is not on this process's PATH and Windows PowerShell 5.1 is
+// (issue #750).
+func TestWindowsDefaultShellPrefersTheStorePowerShell(t *testing.T) {
+	local := t.TempDir()
+	dir := filepath.Join(local, "Microsoft", "WindowsApps", "Microsoft.PowerShell_8wekyb3d8bbwe")
+	path := filepath.Join(dir, "pwsh.exe")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("test executable location"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("LOCALAPPDATA", local)
+	t.Setenv("COMSPEC", filepath.Join(t.TempDir(), "cmd.exe"))
+	if got := defaultShell(); !strings.EqualFold(got, path) {
+		t.Fatalf("default shell=%q, want the Store PowerShell %q", got, path)
+	}
 }
 
 // TestWindowsShellDiscoveryFindsCygwin covers the setup program's default

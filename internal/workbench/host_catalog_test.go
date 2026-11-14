@@ -66,8 +66,7 @@ func TestHostTagsAndCompactIconEditPersistAndFilter(t *testing.T) {
 		state.Key(gfx.KeyEvent{Target: hitDialogTags, Key: gfx.KeyEnter})
 	}
 	state.Click(hitHostTagsDismiss)
-	state.Click(hitDialogIcon)
-	state.Click(hitDialogIconItemList.At(int(hostIconTerminal)))
+	chooseHostIcon(t, state, "Terminal")
 	state.Click(hitDialogSubmit)
 	host := state.hosts[0]
 	if host.Tags != "prod, critical" || host.Icon != hostIconTerminal {
@@ -222,8 +221,7 @@ func TestHostIconCanBeASystemBadgeAndSurvivesEditingAndRestart(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitHostList.At(int(state.hosts[0].ID)))
 	clickHostAction(state, hitEditHost)
-	state.Click(hitDialogIcon)
-	state.Click(hitDialogIconItemList.At(int(hostIconOf(sshconn.SystemUbuntu))))
+	chooseHostIcon(t, state, "Ubuntu")
 	state.Click(hitDialogSubmit)
 	if got := state.hosts[0].Icon; got != hostIconOf(sshconn.SystemUbuntu) {
 		t.Fatalf("icon after choosing Ubuntu = %v", got)
@@ -238,25 +236,58 @@ func TestHostIconCanBeASystemBadgeAndSurvivesEditingAndRestart(t *testing.T) {
 	}
 }
 
-// The list of icons has more entries than fit, so it scrolls, and an entry far
-// down it can still be reached and chosen.
-func TestHostIconListScrollsToTheEntriesBelow(t *testing.T) {
+// chooseHostIcon opens the icon field, narrows it to the named icon and clicks
+// the row it reaches, the way typing in the field does.
+func chooseHostIcon(t *testing.T, state *State, name string) {
+	t.Helper()
+	state.Click(hitDialogIcon)
+	p := state.hostIconPicker()
+	p.control.Query = text.Editor{}
+	p.control.Query.Insert(name)
+	canvas, _ := paintedTexts(state)
+	for _, hit := range canvas.Hits() {
+		if hit.ID.Scope() == hitHostIconChoices && hit.Role == gfx.RoleOption && hit.Label == name {
+			state.Click(hit.ID)
+			return
+		}
+	}
+	t.Fatalf("no icon row named %q after typing it", name)
+}
+
+// The icon field is a searchable list of fixed choices: a query filters it, and
+// a query that names no icon neither chooses nor creates one.
+func TestHostIconPickerFiltersAndNeverCreates(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	clickHostAction(state, hitAddHost)
 	state.Click(hitDialogIcon)
+	p := state.hostIconPicker()
+	p.control.Query.Insert("mint")
 	canvas, _ := paintedTexts(state)
-	last := hitDialogIconItemList.At(int(hostIconDesktop))
-	if _, ok := hitByID(canvas, last); ok {
-		t.Fatal("the last entry of the icon list is reachable before scrolling")
+	var mint gfx.ID
+	for _, hit := range canvas.Hits() {
+		if hit.ID.Scope() == hitHostIconChoices && hit.Role == gfx.RoleOption && hit.Label == "Linux Mint" {
+			mint = hit.ID
+		}
 	}
-	state.Scroll(gfx.ScrollEvent{X: state.popups.surface.X + 20, Y: state.popups.surface.Y + 20, DeltaY: 100000})
-	canvas, _ = paintedTexts(state)
-	if _, ok := hitByID(canvas, last); !ok {
-		t.Fatal("the last entry of the icon list is out of reach after scrolling to the end")
+	if mint.IsZero() {
+		t.Fatal("typing mint did not offer Linux Mint")
 	}
-	state.Click(last)
-	if state.editor.icon != hostIconDesktop || state.editor.iconOpen {
-		t.Fatalf("after choosing the last entry: icon %v, open %v", state.editor.icon, state.editor.iconOpen)
+	state.Click(mint)
+	if state.editor.icon != hostIconOf(sshconn.SystemMint) || !state.editor.iconChosen || p.control.Open {
+		t.Fatalf("after choosing Linux Mint: icon %v chosen %v open %v", state.editor.icon, state.editor.iconChosen, p.control.Open)
+	}
+
+	state.Click(hitDialogIcon)
+	p.control.Query.Insert("not an icon")
+	paintedTexts(state)
+	for _, choice := range p.control.Choices() {
+		if choice.Create {
+			t.Fatal("an unmatched query offered to create an icon")
+		}
+	}
+	state.Key(gfx.KeyEvent{Target: hitDialogIcon, Key: gfx.KeyEnter})
+	if state.editor.icon != hostIconOf(sshconn.SystemMint) {
+		t.Fatalf("an unmatched query changed the icon to %v", state.editor.icon)
 	}
 }
 

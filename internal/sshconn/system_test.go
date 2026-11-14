@@ -77,6 +77,7 @@ func TestRemoteSystemClassification(t *testing.T) {
 		{"kernel=Darwin\n", SystemDarwin},
 		{"kernel=FreeBSD\n", SystemFreeBSD},
 		{"kernel=VMkernel\n", SystemESXi},
+		{"kernel=AIX\n", SystemAIX},
 		{"kernel=MINGW64_NT-10.0\n", SystemWindows},
 		{"", SystemUnknown},
 	} {
@@ -141,7 +142,7 @@ func TestOnlyDistributionsAndLinuxAreLinux(t *testing.T) {
 	for system, want := range map[RemoteSystem]bool{
 		SystemLinux: true, SystemDebian: true, SystemRaspberryPi: true,
 		SystemWindows: false, SystemDarwin: false, SystemFreeBSD: false, SystemUnknown: false,
-		SystemESXi: false,
+		SystemESXi: false, SystemAIX: false,
 	} {
 		if system.IsLinux() != want {
 			t.Errorf("%v.IsLinux() = %v", system, !want)

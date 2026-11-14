@@ -451,9 +451,15 @@ func (h *oaHandler) reasoningText(delta string, em *emitter) error {
 }
 
 // flushText publishes what the content filter still holds when the model has
-// finished.
+// finished. Leftover markup does not fail a turn that already answered: the
+// markup is protocol noise, and the error would hide the answer and keep it out
+// of the history. A turn the provider cut off at its output limit is a
+// truncation, which StopReason reports; the filter's error would hide that too.
 func (h *oaHandler) flushText(em *emitter) error {
 	text, calls, err := h.dsml.flush()
+	if err != nil && (h.texted || StopsAtLimit(h.stop)) {
+		err = nil
+	}
 	if err != nil {
 		return err
 	}

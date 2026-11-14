@@ -60,6 +60,11 @@ func newTestState(t testing.TB, options Options) *State {
 		// Nor does a test read the files the developer last copied.
 		options.ClipboardFiles = func() ([]string, error) { return nil, app.ErrNoFiles }
 	}
+	if options.SetClipboardFiles == nil {
+		// Nor may a test replace them: the real clipboard belongs to the machine
+		// running the test.
+		options.SetClipboardFiles = func([]string) error { return nil }
+	}
 	if options.Keystore == nil {
 		// Left nil, the vault's key store is the machine's own: a test binary is
 		// not the signed application, so macOS asks for the login keychain's

@@ -43,7 +43,7 @@ func TestCompletionRegressionDeletedHistoryDisappearsFromCompletion(t *testing.T
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("disk history not deleted: %v %v", entries, err)
 	}
-	if got := s.completionCandidates(w.session, "customcmd "); len(got) > 0 {
+	if got, _ := s.completionCandidates(w.session, "customcmd "); len(got) > 0 {
 		t.Fatalf("deleted history remains suggested: %+v", got)
 	}
 }
@@ -55,7 +55,7 @@ func TestCompletionRegressionNewHistoryIsAvailableToCompletion(t *testing.T) {
 	key := historyKey(w.session)
 	s.history.ghost = map[string][]cmdhistory.Entry{key: nil}
 	s.rememberCommand(w.session.ID, "customcmd fresh")
-	if got := s.completionCandidates(w.session, "customcmd "); len(got) == 0 {
+	if got, _ := s.completionCandidates(w.session, "customcmd "); len(got) == 0 {
 		t.Fatal("newly remembered command missing from cached completion")
 	}
 }
@@ -97,7 +97,7 @@ func TestCompletionRegressionClearInvalidatesOtherWindowCompletion(t *testing.T)
 		t.Fatal("clear timeout")
 	}
 	a.state.adoptHistoryClear()
-	if got := b.state.completionCandidates(b.session, "customcmd "); len(got) > 0 {
+	if got, _ := b.state.completionCandidates(b.session, "customcmd "); len(got) > 0 {
 		t.Fatalf("other window still suggests cleared history: %+v", got)
 	}
 }

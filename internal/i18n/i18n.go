@@ -66,6 +66,7 @@ func ChineseVariant(tag string) Language {
 // Messages is the complete set of user-visible workbench strings. Adding a
 // language means adding one field initialization, not touching call sites.
 type Messages struct {
+	RemoteLogs     RemoteLogMessages
 	ActionFeedback ActionFeedbackMessages
 	Monitor        MonitorMessages
 	Dashboard      DashboardMessages
@@ -87,7 +88,8 @@ type Messages struct {
 	// TerminalInput holds the terminal command and character-handling notices.
 	TerminalInput TerminalInputMessages
 	// Autofill holds the autofill rules' texts; see autofill.go.
-	Autofill AutofillMessages
+	Autofill       AutofillMessages
+	RuleManagement RuleManagementMessages
 	// Credentials holds the saved passwords' texts; see credentials.go.
 	Credentials CredentialMessages
 	// HostTags holds the host tag manager's texts; see host_tags.go.
@@ -267,9 +269,6 @@ type Messages struct {
 	SettingsAppearanceLight                string
 	SettingsTextSize                       string
 	SettingsTextSizeDescription            string
-	SettingsTextSizeSmall                  string
-	SettingsTextSizeRegular                string
-	SettingsTextSizeLarge                  string
 	SettingsInterfaceFont                  string
 	SettingsInterfaceFontDefault           string
 	SettingsInterfaceFontUnsupportedFmt    string
@@ -287,6 +286,10 @@ type Messages struct {
 	SettingsTabsAutoHideDescription        string
 	SettingsTabsGrouping                   string
 	SettingsTabsGroupingDescription        string
+	SettingsSidebar                        string
+	SettingsSidebarHint                    string
+	SettingsSidebarShownFmt                string
+	SettingsSidebarShowAll                 string
 	VerticalTabGroupCountFmt               string
 	VerticalTabsPin                        string
 	VerticalTabsAutoHide                   string
@@ -359,6 +362,7 @@ type Messages struct {
 	VaultSavedFmt                          string
 	VaultSaveFailedFmt                     string
 	VaultKeyLost                           string
+	VaultTooLarge                          string
 	VaultUnavailable                       string
 	VaultCorruptFmt                        string
 	VaultCleared                           string
@@ -397,6 +401,7 @@ type Messages struct {
 	TipFilesLocal                          string
 	SFTPInsertPath                         string
 	MenuCopy                               string
+	CopyHostAddress                        string
 	CopyAddressAndPort                     string
 	CopyConnectionName                     string
 	MenuPaste                              string
@@ -424,6 +429,7 @@ type Messages struct {
 	ShortcutsCaptureDescription          string
 	ShortcutsConflictFmt                 string
 	ShortcutsInvalid                     string
+	ShortcutsAcceptInvalid               string
 	ShortcutsTabNumberInvalid            string
 	ShortcutCommandPalette               string
 	ShortcutFind                         string
@@ -483,33 +489,39 @@ type Messages struct {
 	SSHConfigWarningProxyCommandFmt string
 
 	// New Host dialog.
-	DialogTitle                 string
-	EditHostTitle               string
-	CopyHostTitle               string
-	FieldLabel                  string
-	FieldLabelPlaceholder       string
-	FieldAddress                string
-	FieldAddressPlaceholder     string
-	FieldUser                   string
-	FieldUserPlaceholder        string
-	FieldPassword               string
-	FieldPasswordHint           string
-	FieldPasswordKeepHint       string
-	FieldPasswordCopyHint       string
-	FieldAuthentication         string
-	AuthAutomatic               string
-	AuthPassword                string
-	AuthPrivateKey              string
-	AuthAgent                   string
-	FieldIdentity               string
-	AuthAllKeys                 string
-	AuthKeyUnavailable          string
-	AuthImportKey               string
-	FieldVNCPassword            string
-	HostPasswordShared          string
-	HostPasswordNotCarried      string
-	FieldGroup                  string
-	FieldGroupPlaceholder       string
+	DialogTitle             string
+	EditHostTitle           string
+	CopyHostTitle           string
+	FieldLabel              string
+	FieldLabelPlaceholder   string
+	FieldAddress            string
+	FieldAddressPlaceholder string
+	FieldUser               string
+	FieldUserPlaceholder    string
+	FieldPassword           string
+	FieldPasswordHint       string
+	FieldPasswordKeepHint   string
+	FieldPasswordCopyHint   string
+	FieldAuthentication     string
+	AuthAutomatic           string
+	AuthPassword            string
+	AuthPrivateKey          string
+	AuthAgent               string
+	FieldIdentity           string
+	AuthAllKeys             string
+	AuthKeyUnavailable      string
+	AuthImportKey           string
+	FieldVNCPassword        string
+	HostPasswordShared      string
+	HostPasswordNotCarried  string
+	FieldGroup              string
+	FieldGroupPlaceholder   string
+	// Encoding is the remote charset of a connection's shell; see the searchable
+	// picker in the New/Edit Host dialog.
+	FieldEncoding               string
+	FieldEncodingPlaceholder    string
+	HostEncodingsEmpty          string
+	EncodingUTF8Default         string
 	FieldPort                   string
 	FieldTags                   string
 	FieldTagsPlaceholder        string
@@ -519,6 +531,8 @@ type Messages struct {
 	ErrHostGroupInvalid         string
 	HostTagsCreatePrefix        string
 	FieldIcon                   string
+	FieldIconPlaceholder        string
+	IconsEmpty                  string
 	FieldColor                  string
 	FieldColorCustom            string
 	ColorPickerChoose           string
@@ -534,6 +548,8 @@ type Messages struct {
 	ColorRed                    string
 	ColorBlue                   string
 	ColorPurple                 string
+	ColorPink                   string
+	ColorTeal                   string
 	ErrHostColorInvalid         string
 	IconAuto                    string
 	IconServer                  string
@@ -621,6 +637,12 @@ type Messages struct {
 	MenuRenameTerminal     string
 	MenuLockTab            string
 	MenuUnlockTab          string
+
+	MenuOpenSSHBrowser    string
+	MenuCloseSSHBrowser   string
+	SSHBrowserNotFound    string
+	SSHBrowserStartFailed string
+
 	// TabLockedHint is the tab's accessible description while it is protected.
 	TabLockedHint                 string
 	CloseLockedTabTitle           string
@@ -640,7 +662,6 @@ type Messages struct {
 	DisconnectTitleFmt            string
 	DisconnectDescription         string
 	DisconnectConfirm             string
-	RenameTabTitle                string
 	RenameTerminalTitle           string
 	RenameTerminalPlaceholder     string
 	RenameTabField                string
@@ -803,6 +824,7 @@ type Messages struct {
 	KeyEmpty                    string
 	KeyEmptySub                 string
 	KeyCountFmt                 string
+	KeyListScroll               string
 	KeyUnavailable              string
 	KeyUnencrypted              string
 	KeyPassphraseProtected      string
@@ -877,6 +899,7 @@ type Messages struct {
 	ForwardEmpty                  string
 	ForwardEmptySub               string
 	ForwardCountFmt               string
+	ForwardListScroll             string
 	ForwardStopped                string
 	ForwardStoppedError           string
 	ForwardWaiting                string
@@ -911,6 +934,13 @@ type Messages struct {
 	ForwardFieldDestinationPort   string
 	ForwardFieldResume            string
 	ForwardResumeHelp             string
+	ForwardFieldViaShell          string
+	ForwardViaShellHelp           string
+	ForwardFieldRelay             string
+	ForwardRelayPlaceholder       string
+	ForwardRefusedHint            string
+	ForwardRelayRefused           string
+	ErrForwardRelayFmt            string
 	ForwardDestinationPlaceholder string
 	ForwardLocalDestinationHint   string
 	ForwardRemoteListenerFmt      string
@@ -946,6 +976,7 @@ type Messages struct {
 	ProxyEmpty                 string
 	ProxyEmptySub              string
 	ProxyCountFmt              string
+	ProxyListScroll            string
 	ProxySelected              string
 	ProxyAdded                 string
 	ProxyStartedStatus         string
@@ -1019,6 +1050,8 @@ type Messages struct {
 	SFTPUploadTitle             string
 	SFTPUploadCanceled          string
 	SFTPUploadedFmt             string
+	SFTPCopiedFmt               string
+	SFTPCopiedCountFmt          string
 	SFTPUploadDirectoryTitle    string
 	SFTPDownloadDirectoryTitle  string
 	SFTPTransferQueue           string
@@ -1087,6 +1120,14 @@ type Messages struct {
 	SFTPErrModeInvalid          string
 	SFTPChangingPermissionsFmt  string
 	SFTPPermissionsChangedFmt   string
+	SFTPOwnership               string
+	SFTPOwnershipTitle          string
+	SFTPOwnershipDescription    string
+	SFTPOwnershipNoMatches      string
+	SFTPErrOwnershipRequired    string
+	SFTPErrOwnershipInvalid     string
+	SFTPChangingOwnershipFmt    string
+	SFTPOwnershipChangedFmt     string
 	SFTPEditOpeningFmt          string
 	SFTPEditBack                string
 	SFTPEditSave                string
@@ -1121,6 +1162,7 @@ type Messages struct {
 	TerminalFindClose        string
 	TerminalFindNoMatches    string
 	TerminalFindCountFmt     string
+	FindSettings             TerminalFindSettingsMessages
 	TerminalFindTruncatedFmt string
 
 	// The connection page shown until a shell speaks: one row per stage, each
@@ -1171,6 +1213,7 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = chineseAIPanel, chineseAISettings, chineseTools
 		messages.Toolbars = chineseToolbars
 		messages.Autofill = chineseAutofill
+		messages.RuleManagement = chineseRuleManagement
 		messages.Credentials = chineseCredentials
 		messages.HostTags = chineseHostTags
 		messages.History = chineseHistory
@@ -1184,6 +1227,7 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = traditionalAIPanel, traditionalAISettings, traditionalTools
 		messages.Toolbars = traditionalToolbars
 		messages.Autofill = traditionalAutofill
+		messages.RuleManagement = traditionalRuleManagement
 		messages.Credentials = traditionalCredentials
 		messages.HostTags = traditionalHostTags
 		messages.History = traditionalHistory
@@ -1197,6 +1241,7 @@ func For(language Language) Messages {
 		messages.AIPanel, messages.AISettings, messages.Tools = englishAIPanel, englishAISettings, englishTools
 		messages.Toolbars = englishToolbars
 		messages.Autofill = englishAutofill
+		messages.RuleManagement = englishRuleManagement
 		messages.Credentials = englishCredentials
 		messages.HostTags = englishHostTags
 		messages.History = englishHistory

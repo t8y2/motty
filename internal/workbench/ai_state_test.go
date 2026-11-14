@@ -174,7 +174,7 @@ func TestACriticalCommandNeedsTheConfirmationWordTyped(t *testing.T) {
 	}
 }
 
-func TestAskModeOffersOnlyEscalationAndSendsTheTerminalAsContext(t *testing.T) {
+func TestAskModeOffersNotesAndEscalationAndSendsTheTerminalAsContext(t *testing.T) {
 	model := &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("it failed because of X") }}
 	state, shell := assistantSession(t, model)
 	shell.say("connection refused on port 5432\r\n")
@@ -182,7 +182,7 @@ func TestAskModeOffersOnlyEscalationAndSendsTheTerminalAsContext(t *testing.T) {
 	ask(state, "why did it fail?", agent.ModeAsk)
 	pumpUntil(t, state, "the run to end", func() bool { return state.ai.run == nil })
 	request := model.requests[0]
-	if len(request.Tools) != 1 || request.Tools[0].Name != tools.NameRequestAgentMode {
+	if len(request.Tools) != 2 || request.Tools[0].Name != tools.NameRequestAgentMode || request.Tools[1].Name != tools.NameNoteQuery {
 		t.Fatalf("Ask mode tools = %+v", request.Tools)
 	}
 	user := request.Messages[len(request.Messages)-1].Text

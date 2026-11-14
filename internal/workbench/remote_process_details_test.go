@@ -75,8 +75,10 @@ func TestProcessDetailsKeyboardSupportsTraversalAndActions(t *testing.T) {
 	if !ok {
 		t.Fatal("detail dialog has no Close button")
 	}
-	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyTab, Target: closeHit.ID}); !result.Handled || !result.ContinueTraversal {
-		t.Fatalf("Tab did not hand focus traversal back to the dialog: %+v", result)
+	// Tab is the page's: the dialog leaves it unhandled and the runtime traverses
+	// the controls inside its focus trap.
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyTab, Target: closeHit.ID}); result.Handled || result.ContinueTraversal {
+		t.Fatalf("Tab stayed with the dialog instead of the page's focus traversal: %+v", result)
 	}
 
 	clickRemoteToolsButton(t, state, state.messages.Tools.RemoteReniceLower)

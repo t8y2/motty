@@ -245,7 +245,13 @@ func knownHostsPath(dir string) string {
 func stateDatabasePath() string {
 	dir := datadir.Current().Dir
 	if dir == "" {
-		return ""
+		// An empty directory means the platform's usual place, which is what the
+		// windows resolve the store to as well: an empty path here would read no
+		// window records at all and open a single window every time.
+		var err error
+		if dir, err = defaultDataDir(); err != nil {
+			return ""
+		}
 	}
 	return filepath.Join(dir, "config.db")
 }
@@ -402,6 +408,9 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		if input := state.TerminalFindInput(context); input != nil {
 			return input
 		}
+		if input := state.TerminalFindPreferencesInput(context); input != nil {
+			return input
+		}
 		if input := state.TerminalWordInput(context); input != nil {
 			return input
 		}
@@ -477,6 +486,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 			}
 		},
 	}
+	config.WindowBorderColor = state.WindowBorderColor
 	// The workbench page routes the shell's own elements and the application
 	// handlers keep the events it leaves; the workbench's Paint stays its own.
 	mainWindow, err = application.OpenWindow(state.WindowConfig(config), &canvas)

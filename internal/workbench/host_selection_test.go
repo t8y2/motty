@@ -140,7 +140,7 @@ func TestHostBulkKeyboardAndSubsetExport(t *testing.T) {
 
 func TestHostBulkControlsAreUnavailableDuringManualReorder(t *testing.T) {
 	state := nestedHostGroupState(t)
-	state.Click(hitHostSort)
+	beginHostSortCase(t, state)
 	state.Click(bulkAllHit())
 	state.Click(bulkGroupHit(state, "Team"))
 	requireBulkSelection(t, state)

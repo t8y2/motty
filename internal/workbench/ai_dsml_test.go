@@ -113,6 +113,43 @@ func TestAssistantRecoversAToolCallWrittenAsText(t *testing.T) {
 	}
 }
 
+// A malformed block must not end a turn that already wrote an answer: the
+// answer stays visible and joins the history, and the markup disappears.
+func TestAssistantKeepsAnAnswerWrittenBesideAMalformedBlock(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, chatDelta("The load is fine.\n<｜DSML｜ calls>\n<url>https://example.com</url>\n</｜DSML｜ calls>"))
+		io.WriteString(w, chatFinish())
+	}))
+	defer srv.Close()
+
+	state, _ := assistantSession(t, llm.NewOpenAI(llm.Config{BaseURL: srv.URL, APIKey: "test"}))
+	state.Paint(&gfx.Canvas{}, panelWide)
+	state.Click(hitAIToggle)
+	ask(state, "check the load", agent.ModeAgent)
+	pumpUntil(t, state, "the run to end", func() bool { return state.ai.run == nil })
+
+	for _, item := range state.ai.items {
+		if item.kind == aiNotice {
+			t.Fatalf("the run reported an error: %q", item.text)
+		}
+		if strings.Contains(item.text, "DSML") {
+			t.Fatalf("markup reached the conversation: %q", item.text)
+		}
+	}
+	_, texts := paintAt(state, panelWide)
+	if !hasText(texts, "The load is fine.") || hasText(texts, "DSML") {
+		t.Fatalf("the answer is not shown cleanly: %q", texts)
+	}
+	last := llm.Message{}
+	if n := len(state.ai.history); n > 0 {
+		last = state.ai.history[n-1]
+	}
+	if last.Role != llm.RoleAssistant || !strings.Contains(last.Text, "The load is fine.") {
+		t.Fatalf("the answer did not join the history: %+v", state.ai.history)
+	}
+}
+
 // The same lane can write the call into the thinking channel. The answer is
 // then empty, and before recovery the panel showed "the model returned an
 // empty answer" while the tool never ran.

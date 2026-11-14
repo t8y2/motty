@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/tools"
@@ -148,5 +149,97 @@ func TestNativeSessionRequiresTerminalEvent(t *testing.T) {
 	msgs, err := Run(t.Context(), cfg, nil, "hello", nil)
 	if err == nil || len(msgs) != 1 {
 		t.Fatal(msgs, err)
+	}
+}
+
+type nativeNoteBackend struct {
+	fakeBackend
+	edits int
+	query tools.NoteQueryArgs
+}
+
+func (b *nativeNoteBackend) QueryNote(_ context.Context, a tools.NoteQueryArgs) (string, error) {
+	b.query = a
+	return `{"items":[]}`, nil
+}
+func (b *nativeNoteBackend) EditNote(context.Context, tools.NoteEditArgs) (string, error) {
+	b.edits++
+	return `{"status":"saved"}`, nil
+}
+
+func TestNativeSessionRoutesInAppNoteToolsThroughGate(t *testing.T) {
+	b := &nativeNoteBackend{}
+	cfg := Config{Mode: ModeAgent, Tools: tools.InApp(), Gate: gate.Gate{Backend: b, NotesEnabled: true}}
+	cfg.Provider = &nativeTestProvider{run: func(ctx context.Context, r llm.Request, invoke func(context.Context, llm.ToolCall) gate.Result, emit func(llm.Event)) error {
+		for _, call := range []llm.ToolCall{
+			{ID: "query", Name: tools.NameNoteQuery, Arguments: `{"action":"search","references":[{"kind":"host","id":"host_id","title":"alias-2","token":"note:host:alias-2"}]}`},
+			{ID: "edit", Name: tools.NameNoteEdit, Arguments: `{"action":"create","title":"runbook","body":"steps"}`},
+		} {
+			if res := invoke(ctx, call); res.IsError {
+				t.Errorf("native note call failed: %+v", res)
+			}
+		}
+		emit(text("saved"))
+		emit(done(1, 1))
+		return nil
+	}}
+	messages, err := Run(t.Context(), cfg, nil, "save a note", nil)
+	if err != nil || b.edits != 1 {
+		t.Fatalf("native path failed: %v edits=%d", err, b.edits)
+	}
+	if len(b.query.References) != 1 || b.query.References[0].ID != "host_id" {
+		t.Fatalf("native reference lost: %+v", b.query)
+	}
+	results := 0
+	for _, m := range messages {
+		if m.Role == llm.RoleTool {
+			results++
+		}
+	}
+	if results != 2 {
+		t.Fatalf("native tool results not persisted: %+v", messages)
+	}
+}
+
+func TestNativeAskCanQueryNotesButCannotEdit(t *testing.T) {
+	for _, noTools := range []bool{false, true} {
+		t.Run(fmt.Sprint("noTools=", noTools), func(t *testing.T) {
+			b := &nativeNoteBackend{}
+			cfg := Config{Mode: ModeAsk, NoTools: noTools, Tools: tools.InApp(), Gate: gate.Gate{Backend: b, NotesEnabled: true}}
+			cfg.Provider = &nativeTestProvider{run: func(ctx context.Context, r llm.Request, invoke func(context.Context, llm.ToolCall) gate.Result, emit func(llm.Event)) error {
+				for _, s := range r.Tools {
+					if s.Name != tools.NameNoteQuery && s.Name != tools.NameRequestAgentMode {
+						t.Errorf("unexpected Ask tool: %s", s.Name)
+					}
+				}
+				if noTools {
+					if len(r.Tools) != 0 {
+						t.Error("declined run exposed tools")
+					}
+				} else {
+					if len(r.Tools) != 2 {
+						t.Errorf("Ask tools: %+v", r.Tools)
+					}
+					res := invoke(ctx, llm.ToolCall{Name: tools.NameNoteQuery, Arguments: `{"action":"search"}`})
+					if res.IsError {
+						t.Errorf("query failed: %+v", res)
+					}
+				}
+				res := invoke(ctx, llm.ToolCall{Name: tools.NameNoteEdit, Arguments: `{"action":"create","title":"n","body":"b"}`})
+				if !res.IsError {
+					t.Error("Ask edited a note")
+				}
+				emit(text("answer"))
+				emit(done(1, 1))
+				return nil
+			}}
+			messages, err := Run(t.Context(), cfg, nil, "read notes", nil)
+			if err != nil || b.edits != 0 {
+				t.Fatalf("Ask failed: %+v %v", messages, err)
+			}
+			if !noTools && b.query.Action != "search" {
+				t.Fatal("native query did not reach backend")
+			}
+		})
 	}
 }

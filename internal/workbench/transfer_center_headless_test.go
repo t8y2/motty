@@ -50,6 +50,16 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			if box.X < 0 || box.Y < 0 || box.X+box.Width > size.Width || box.Y+box.Height > size.Height {
 				t.Fatalf("popover outside viewport: %+v", box)
 			}
+			// The cards scroll inside the popover: the list ends within the panel and
+			// is shorter than its rows, so the rest is reached by scrolling instead of
+			// being painted past the panel's bottom edge.
+			list := state.transfers.body.list.Rect()
+			if list.Y+list.Height > box.Y+box.Height {
+				t.Fatalf("transfer list %+v spills out of the popover %+v", list, box)
+			}
+			if list.Height >= float32(state.transfers.count)*transferCardHeight {
+				t.Fatalf("list viewport %v is not shorter than its %d rows", list.Height, state.transfers.count)
+			}
 			if hit, ok := findSnapshotHit(view.Snapshot(), hitTransferCenter); !ok || hit.Bounds.X >= state.chrome.bar.assistant.Rect().X {
 				t.Fatal("transfer button is not left of the assistant")
 			}
@@ -66,6 +76,10 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			}
 			if state.transfers.scroll != state.transfers.geometry.MaxOffsetY {
 				t.Fatal("End did not reveal the bottom of history")
+			}
+			// The List applies the offset at its next declaration, which it asks for.
+			if err := view.Wait(16 * time.Millisecond); err != nil {
+				t.Fatal(err)
 			}
 			reveal, ok := findSnapshotHit(view.Snapshot(), hitTransfersReveal.At(1))
 			if !ok {
@@ -93,6 +107,9 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 			click(hitTransfersFilter.At(2))
 			if state.transfers.filter != 2 || state.transfers.count != 2 {
 				t.Fatalf("finished filter=%d count=%d", state.transfers.filter, state.transfers.count)
+			}
+			if err := view.Wait(16 * time.Millisecond); err != nil {
+				t.Fatal(err)
 			}
 			click(hitTransfersRemove.At(2))
 			if len(state.transfers.entries) != 3 {
@@ -128,6 +145,45 @@ func TestTransferCenterPopupRoutesClicksAndFitsSmallWindows(t *testing.T) {
 	}
 }
 
+func TestTransferCenterClipsCardActionsToList(t *testing.T) {
+	state := transferPreviewState(t)
+	// Give each of the four cards manually painted controls.
+	for index := range state.transfers.entries {
+		entry := &state.transfers.entries[index]
+		entry.snapshot.State = sftpclient.TransferRunning
+		entry.owner = &sftpView{}
+		state.describeTransfer(entry)
+	}
+	state.describeTransferSummary()
+
+	view, err := headless.Open(app.Config{
+		Title: "Motty", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+	}, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	last := hitTransfersCancel.At(1)
+	if hit, ok := findSnapshotHit(view.Snapshot(), last); ok {
+		t.Fatalf("offscreen Cancel button has a hit region: %+v", hit.Bounds)
+	}
+	if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(16 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	hit, ok := findSnapshotHit(view.Snapshot(), last)
+	list := state.transfers.list
+	if !ok || hit.Bounds.Y < list.Y || hit.Bounds.Y+hit.Bounds.Height > list.Y+list.Height {
+		t.Fatalf("Cancel button did not scroll into the list viewport: %+v, list %+v", hit.Bounds, list)
+	}
+}
+
 func TestTransferCenterNativeRevealUsesVivaWithoutOpeningTheFile(t *testing.T) {
 	state := transferPreviewState(t)
 	entry := &state.transfers.entries[0]
@@ -150,6 +206,10 @@ func TestTransferCenterNativeRevealUsesVivaWithoutOpeningTheFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := view.Driver().Key(gfx.KeyEnd, 0); err != nil {
+		t.Fatal(err)
+	}
+	// The List applies the offset at its next declaration, which it asks for.
+	if err := view.Wait(16 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	hit, ok := findSnapshotHit(view.Snapshot(), hitTransfersReveal.At(entry.id))

@@ -10,12 +10,12 @@ import (
 
 // proxySectionUI is what the proxies page's declaration leaves for its paint.
 type proxySectionUI struct {
-	content, remove, edit, action, add, empty     ui.Box
+	remove, edit, action, add, empty              ui.Box
 	removeWidth, editWidth, actionWidth, addWidth float32
 	removeIcon, editIcon, actionIcon, addIcon     uint8
 	actionLabel                                   string
 	condensed                                     bool
-	// draw is the page hook that paints into these slots. It is kept so a paint
+	// draw is the page hook that paints the empty state. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
 }
@@ -26,6 +26,7 @@ type proxySectionUI struct {
 func (state *State) declareProxiesWorkspace(c ui.C) {
 	canvas := c.Canvas()
 	pal, messages := state.pal, state.messages
+	state.syncProxyTable()
 	selected, hasSelection := state.proxyByID(state.selectedProxyID)
 	actionLabel := messages.ProxyStart
 	actionIcon := uint8(iconPlay)
@@ -48,7 +49,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 	actionWidth, realActionIcon := toolbarButtonLayout(canvas, actionLabel, 0, actionIcon, condensed)
 	addWidth, addIcon := toolbarButtonLayout(canvas, messages.ProxyAdd, iconPlus, iconPlus, condensed)
 
-	canAdd := state.sshHostCount() >= 2
+	canAdd := state.canAddJumpRoute()
 	view := &state.sectionBodies.proxies
 	draw := view.draw
 	*view = proxySectionUI{
@@ -75,7 +76,18 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 		if len(state.proxies) == 0 {
 			view.empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd, hitProxyAdd, iconGlobe, canAdd)
 		} else {
-			view.content = ui.Slot(c).Grow(1).MarginSides(0, 0, 9, 0)
+			state.proxyColumns = [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 120}, {Width: 0}}
+			state.proxyHeadings = [...]string{messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnStatus, messages.ProxyColumnRoute}
+			components.FitTableHeadings(canvas, state.Theme(), state.proxyColumns[:], state.proxyHeadings[:])
+			table := ui.Table(c, &state.proxyTable, ui.TableSpec{
+				Rows: hitProxyRowList, Columns: state.proxyColumns[:], Headers: state.proxyHeadings[:], Source: &state.proxyRows,
+				Scrollbar: hitProxyScrollThumb, ScrollbarLabel: messages.ProxyListScroll,
+				ScrollbarGutter: catalogBarGutter,
+			}).Grow(1).Shrink(1)
+			if row, ok := table.RowClicked(); ok && state.modal == modalNone && row >= 0 && row < len(state.proxies) {
+				state.proxyTable.Select(row)
+				state.selectProxy(state.proxies[row].ID)
+			}
 		}
 		ui.Divider(c).Background(pal.line)
 		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
@@ -91,21 +103,9 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 // paintProxiesWorkspace paints the proxies page's buttons, table and empty state
 // into the slots its declaration left.
 func (state *State) paintProxiesWorkspace(canvas *gfx.Canvas) {
-	view, messages := &state.sectionBodies.proxies, state.messages
-
+	view := &state.sectionBodies.proxies
 	if len(state.proxies) == 0 {
 		state.drawReservedEmptyPage(canvas, view.empty, iconGlobe)
-		return
-	}
-	columns := [...]components.TableColumn{{Width: 210}, {Width: 210}, {Width: 120}, {Width: 0}}
-	headings := [...]string{messages.ProxyColumnTarget, messages.ProxyColumnJump, messages.ProxyColumnStatus, messages.ProxyColumnRoute}
-	components.FitTableHeadings(canvas, state.Theme(), columns[:], headings[:])
-	table := components.BeginTable(canvas, state.Theme(), view.content.Rect(), columns[:])
-	table.Header(headings[:])
-	for _, route := range state.proxies {
-		if table.RowAt(hitProxyRowList, int(route.ID), route.cells[:], route.ID == state.selectedProxyID) && state.modal == modalNone {
-			state.selectProxy(route.ID)
-		}
 	}
 }
 

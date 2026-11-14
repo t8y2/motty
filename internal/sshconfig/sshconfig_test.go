@@ -98,6 +98,7 @@ Host quoted
 					HostName:     "ssh.example.com",
 					User:         "Jane Doe",
 					IdentityFile: filepath.Join("$HOME", "keys", "id with space"),
+					Options:      &ConnectionOptions{IdentityFiles: []string{filepath.Join("$HOME", "keys", "id with space")}},
 					ProxyJump: []JumpHost{
 						{Host: "jump1", User: "alice", Port: 2200},
 						{Host: "2001:db8::1", Port: 2222},
@@ -157,7 +158,7 @@ Host *
     IdentityFile "~/keys/fallback"
     ProxyJump fallback-jump
 `,
-			wantHosts: []Host{{Alias: "dynamic-first"}},
+			wantHosts: []Host{{Alias: "dynamic-first", Options: &ConnectionOptions{IdentityFiles: []string{filepath.Join("$HOME", "keys", "fallback")}}}},
 			wantWarnings: []WarningCode{
 				WarningDynamicValue,
 				WarningDynamicValue,
@@ -285,6 +286,14 @@ func replaceTestHome(hosts []Host, home string) []Host {
 	result := make([]Host, len(hosts))
 	copy(result, hosts)
 	for index := range result {
+		result[index].Options = result[index].Options.Clone()
+		if result[index].Options != nil {
+			for pathIndex, path := range result[index].Options.IdentityFiles {
+				if stringsHasTestHome(path) {
+					result[index].Options.IdentityFiles[pathIndex] = filepath.Join(home, path[len("$HOME")+1:])
+				}
+			}
+		}
 		if stringsHasTestHome(result[index].IdentityFile) {
 			result[index].IdentityFile = filepath.Join(home, result[index].IdentityFile[len("$HOME")+1:])
 		}

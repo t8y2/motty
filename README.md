@@ -58,7 +58,7 @@ the project, the packages and how to build it.
   <tr>
     <td width="50%" valign="top">
       <p><strong>Hosts stay organised.</strong> Groups, tags, colours and icons, importable from
-      OpenSSH config, PuTTY, MobaXterm and four more. Passwords go to an
+      OpenSSH config, PuTTY, MobaXterm and five more. Passwords go to an
       AES-256-GCM vault; the key lives in the system secret store.</p>
     </td>
     <td width="50%" valign="top">
@@ -80,7 +80,11 @@ the project, the packages and how to build it.
 </table>
 
 **Keyboard first.** Tabs, splits, SFTP, forwarding and the assistant are
-commands in the palette; the mouse is optional. **Honest about limits:**
+commands in the palette; the mouse is optional. **Mosh when the network
+moves:** an SSH host can carry its terminal over Mosh, keeping the session
+through Wi-Fi, hotspot and VPN changes and drawing slow-link typing before the
+echo; [docs/mosh.md](docs/mosh.md) lists what such a session does not carry.
+**Honest about limits:**
 [docs/remote-desktop.md](docs/remote-desktop.md) lists what the VNC and RDP
 implementations do not do, and the release notes say which platforms were
 tested on real hardware. **Nothing phones home:** no analytics, and the update
@@ -96,6 +100,8 @@ Download the package for your platform from the
 | macOS (arm64, amd64) | `.dmg`, `.zip` |
 | Windows (amd64, arm64) | `.exe` installer, portable `.zip` (data kept in `motty-data` beside `motty.exe`) |
 | Linux (amd64, arm64) | `.deb`, `.tar.gz` |
+
+Windows packages require Windows 10 or Windows Server 2016 or later.
 
 macOS builds are signed and notarized when the release has the credentials.
 Windows builds are signed when a certificate is configured. Linux packages are
@@ -147,11 +153,14 @@ all of them are configurable.
 On Windows, choose the local shell from the dropdown in **Settings → Terminal
 → Local shell**, below **Inline suggestions**. Motty detects installed shells
 such as PowerShell, CMD and Git Bash from PATH and common installation folders,
-and lists each installed WSL distribution as its own entry. The file panel
-follows a WSL terminal's folder too, through the distribution's `\\wsl.localhost`
-share. Choose the distribution here, rather than typing `wsl` into PowerShell:
-only a shell Motty starts itself can report its folder. The choice stays on this
-computer and applies to new or reconnected local terminals.
+and lists each installed WSL distribution as its own entry. A tab or side-bar
+row shows the shell's own mark, and a distribution shows its logo. The file
+panel opens inside a WSL terminal's distribution, through the distribution's
+`\\wsl.localhost` share, and follows the folder the shell reports; the resource
+monitor samples the distribution itself. Choose the distribution here, rather
+than typing `wsl` into PowerShell: only a shell Motty starts itself can report
+its folder. The choice stays on this computer and applies to new or reconnected
+local terminals.
 
 ## Features
 
@@ -216,18 +225,25 @@ A host can also forward the local ssh-agent to its shells, per host and off by
 default.
 
 Hosts can be grouped, tagged, searched and imported from OpenSSH config, PuTTY,
-Xshell, MobaXterm, WindTerm, Electerm or Netcatty. TOTP/HOTP seeds can be stored in the
+Xshell, MobaXterm, WindTerm, Electerm, Netcatty or SecureCRT. TOTP/HOTP seeds can be stored in the
 vault and filled automatically. Saved passwords and key passphrases go into an
 AES-256-GCM vault, kept under the host they belong to; the vault key lives in the
 system secret store, or in a key file beside the vault where there is none (and
 in a portable copy).
 Electerm and Netcatty imports can save readable SSH passwords with explicit
-consent; re-import only fills missing passwords.
+consent; re-import only fills missing passwords. SecureCRT stores its saved
+passwords encrypted, so its import carries connections only.
+
+OpenSSH config import and sync retain per-host `ServerAliveInterval`,
+`ServerAliveCountMax`, `IdentitiesOnly` and configured identity files. An explicit
+zero interval disables keepalive for that host; restricted identities still use
+matching keys from the SSH agent, without offering unrelated agent keys.
 
 ### Files
 
-SFTP browsing with multi-select, recursive upload/download, a bounded transfer
-queue, resume, cancel/retry, rename, delete, permissions and bookmarks.
+SFTP browsing with multi-select, recursive upload/download, copy and paste
+between the local and server sides, a bounded transfer queue, resume,
+cancel/retry, rename, delete, permissions and bookmarks.
 Replacing a file stages a partial copy, verifies resumed prefixes and renames
 atomically only after a complete synced copy. The previous file stays intact on
 failure.
@@ -312,7 +328,9 @@ An optional MCP server exposes the same tools to external agents. It is off by
 default, loopback-only, bearer-token protected, and supports observe and ask
 modes. `motty mcp-serve` is the same idea without the window: an agent starts it
 over stdio and it works on the hosts you opened to agents, with no port and no
-token.
+token. Both MCP servers offer background jobs: `terminal_start` returns a job id
+at once, `terminal_poll` reads what it printed by offset, and `terminal_stop`
+ends the command, so a long command does not hold up the conversation.
 `list_hosts` lists saved SSH hosts explicitly opened to agents, without connecting,
 and returns stable host IDs, names and addresses. Both HTTP and stdio MCP omit
 unauthorized hosts. In windowed HTTP MCP, `list_sessions` lists only open terminals
@@ -332,6 +350,14 @@ service over HTTP, check **Allow insecure remote HTTP** at the bottom of its
 configuration form. The connection is unencrypted and authentication details may
 be intercepted; the backup file is still encrypted before upload. This choice
 stays on this computer.
+
+WebDAV downloads support AList/OpenList's **302 redirect** policy. At most five
+redirects are followed; another origin receives no WebDAV credentials, cookies
+or referrer, and HTTPS downloads never redirect to HTTP. Uploads and connection
+checks still refuse cross-host redirects. The WebDAV file's ETag, not the cloud
+drive's, protects concurrent updates; when it is absent from the redirect,
+WebDAV properties are checked before and after downloading. If the server cannot
+provide that version, select **native proxy** in its WebDAV policy instead.
 
 ## Build from source
 

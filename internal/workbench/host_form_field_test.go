@@ -28,7 +28,7 @@ func TestHostFormProxyAndJumpRowsKeepTheFormFieldLayout(t *testing.T) {
 			rows := []rowBoxes{
 				{"proxy", state.messages.Tools.HostProxyRow, body.proxy, body.proxyRow},
 			}
-			if protocol == protocolSSH {
+			if protocol == protocolSSH || protocol == protocolVNC || protocol == protocolRDP {
 				rows = append(rows, rowBoxes{"jump", state.messages.Tools.HostJumpRow, body.jump, body.jumpRow})
 			}
 			for _, row := range rows {
@@ -46,7 +46,7 @@ func TestHostFormProxyAndJumpRowsKeepTheFormFieldLayout(t *testing.T) {
 			}
 			for _, id := range []gfx.ID{hitHostProxyConfigure, hitHostJumpConfigure} {
 				hit, ok := hitByID(canvas, id)
-				if protocol != protocolSSH && id == hitHostJumpConfigure {
+				if protocol != protocolSSH && protocol != protocolVNC && protocol != protocolRDP && id == hitHostJumpConfigure {
 					continue
 				}
 				if !ok {

@@ -2,6 +2,8 @@ package sshconn
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"errors"
 	"io"
 	"net"
@@ -484,19 +486,81 @@ func TestEncryptedIdentityPromptsAfterHostTrustAndAuthenticates(t *testing.T) {
 	}
 }
 
-func TestSkippingEncryptedIdentityFallsBackToPassword(t *testing.T) {
+// An encrypted identity file must not preempt the ssh-agent: the agent can
+// authenticate without unlocking a key the server never asks a signature for.
+func TestAgentAuthenticatesWithoutUnlockingAnUnrelatedIdentity(t *testing.T) {
+	path := encryptedIdentity(t, "locked")
+	agentPath, public := startAgent(t, "manager-key")
+	server := startServer(t, func(s *testServer) { s.authorized = []ssh.PublicKey{public} })
+	h := dial(t, server, func(c *Config) {
+		c.IdentityFiles = []string{path}
+		c.Agent = true
+		c.AgentAddress = agentPath
+	})
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	connected := h.until("the agent to authenticate", func(status Status) bool {
+		return status.Phase == PhaseConnected || status.Phase == PhaseFailed
+	})
+	if connected.Phase != PhaseConnected || connected.Method != "publickey" || len(connected.Skipped) != 0 {
+		t.Fatalf("connected = %+v", connected)
+	}
+}
+
+// A key Motty keeps for itself follows the same rule.
+func TestAgentAuthenticatesWithoutUnlockingAStoredIdentity(t *testing.T) {
 	_, private := newPrivate(t)
 	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte("locked"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "id_ed25519")
-	if err := os.WriteFile(path, pemEncode(block), 0o600); err != nil {
-		t.Fatal(err)
+	const ref = StoredKeyPrefix + "work"
+	agentPath, public := startAgent(t, "manager-key")
+	server := startServer(t, func(s *testServer) { s.authorized = []ssh.PublicKey{public} })
+	h := dial(t, server, func(c *Config) {
+		c.IdentityFiles = []string{}
+		c.AdditionalIdentityFiles = []string{ref}
+		c.Agent = true
+		c.AgentAddress = agentPath
+		c.StoredKey = func(string) ([]byte, error) { return pemEncode(block), nil }
+	})
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	connected := h.until("the agent to authenticate", func(status Status) bool {
+		return status.Phase == PhaseConnected || status.Phase == PhaseFailed
+	})
+	if connected.Phase != PhaseConnected || connected.Method != "publickey" || len(connected.Skipped) != 0 {
+		t.Fatalf("connected = %+v", connected)
 	}
+}
+
+// The server decides whether a key is worth a signature before the client asks
+// for its passphrase: a key the server does not accept must not be unlocked,
+// the way OpenSSH leaves an unrelated encrypted identity alone.
+func TestUnauthorizedEncryptedIdentityIsNotUnlocked(t *testing.T) {
+	path := encryptedIdentity(t, "locked")
 	other := newSigner(t)
 	server := startServer(t, func(s *testServer) {
 		s.authorized = []ssh.PublicKey{other.PublicKey()}
+		s.password = "pw"
+	})
+	h := dial(t, server, func(c *Config) { c.IdentityFiles = []string{path} })
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	status := h.phase(PhasePasswordPrompt)
+	if len(status.Skipped) != 0 {
+		t.Fatalf("skipped = %v, want the refused encrypted key left alone", status.Skipped)
+	}
+	h.conn.SubmitPassword("pw")
+	if connected := h.phase(PhaseConnected); connected.Method != "password" {
+		t.Fatalf("connected = %+v", connected)
+	}
+}
+
+func TestSkippingEncryptedIdentityFallsBackToPassword(t *testing.T) {
+	path := encryptedIdentity(t, "locked")
+	server := startServer(t, func(s *testServer) {
+		s.authorized = []ssh.PublicKey{publicOf(t, path)}
 		s.password = "pw"
 	})
 	h := dial(t, server, func(c *Config) { c.IdentityFiles = []string{path} })
@@ -510,6 +574,40 @@ func TestSkippingEncryptedIdentityFallsBackToPassword(t *testing.T) {
 	}
 	h.conn.SubmitPassword("pw")
 	if connected := h.phase(PhaseConnected); connected.Method != "password" {
+		t.Fatalf("connected = %+v", connected)
+	}
+}
+
+// An encrypted RSA identity still offers SHA-2 signatures: which algorithms the
+// key can sign with is known from its public half, before it is unlocked.
+func TestEncryptedRSAIdentitySignsWithSHA2(t *testing.T) {
+	private, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte("locked"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "id_rsa")
+	if err := os.WriteFile(path, pemEncode(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := startServer(t, func(s *testServer) {
+		s.authorized = []ssh.PublicKey{signer.PublicKey()}
+		s.pubKeyAuths = []string{ssh.KeyAlgoRSASHA256}
+	})
+	h := dial(t, server, func(c *Config) { c.IdentityFiles = []string{path} })
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhaseKeyPassphrasePrompt)
+	h.conn.SubmitKeyPassphrase("locked")
+	connected := h.phase(PhaseConnected)
+	if connected.Method != "publickey" {
 		t.Fatalf("connected = %+v", connected)
 	}
 }

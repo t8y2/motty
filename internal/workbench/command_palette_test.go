@@ -131,6 +131,49 @@ func TestCommandPaletteFiltersAndExecutesCommands(t *testing.T) {
 	}
 }
 
+// TestCommandPaletteListsEverySidebarPage guards the promise the sidebar's
+// settings row makes: hiding a page takes away only its row, never its way in
+// from the command palette. The monitor page once had no entry here, so typing
+// its name found nothing.
+func TestCommandPaletteListsEverySidebarPage(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitCommandPalette)
+	palette := &state.commandPalette
+	for _, page := range sidebarPages {
+		label := state.navPageLabel(page.page)
+		listed := false
+		for _, entry := range palette.entries {
+			if entry.target == page.id {
+				listed = true
+				break
+			}
+		}
+		if !listed {
+			t.Fatalf("the command palette does not list the %q page", label)
+		}
+		// Typing the name the sidebar shows finds the same page here.
+		palette.search = text.Editor{}
+		app.TextEvent{Kind: app.TextInsert, Text: label}.Apply(state.EditorFor(hitCommandPaletteSearch))
+		state.refreshCommandPalette()
+		found := false
+		for _, index := range palette.visible {
+			if palette.entries[index].target == page.id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("typing %q does not find its page", label)
+		}
+	}
+	palette.search = text.Editor{}
+	state.refreshCommandPalette()
+	state.Click(hitCommandPaletteItems.At(commandPaletteRow(t, state, hitDashboard)))
+	if state.modal != modalNone || state.activeSection != sectionDashboard {
+		t.Fatalf("the monitor command left modal=%d section=%d", state.modal, state.activeSection)
+	}
+}
+
 func TestCommandPaletteKeyboardNavigationAndSessionSwitch(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.sessions = append(state.sessions,

@@ -358,6 +358,9 @@ func (m *fileWindowManager) configWithClosed(onClosed func()) app.Config {
 		Height:         760,
 		MinWidth:       fileWindowMinWidth,
 		MinHeight:      fileWindowMinHeight,
+		WindowMode:     app.WindowCustomTitlebar,
+		TitlebarHeight: TitlebarHeight,
+		ClearColor:     windowClearColor(m.ownerTheme()),
 		Tree:           Tree(),
 		Paint:          m.paint,
 		TextInput:      m.textInput,
@@ -368,6 +371,7 @@ func (m *fileWindowManager) configWithClosed(onClosed func()) app.Config {
 		OnCloseRequest: m.requestClose,
 		OnClosed:       onClosed,
 	}
+	base.WindowBorderColor = func() app.Color { return windowClearColor(m.ownerTheme()) }
 	config := m.editPage(m.pageTheme()).Config(base)
 	config.Paint = base.Paint
 	return config
@@ -573,14 +577,9 @@ func (m *fileWindowManager) declareDocumentTabRows(c ui.C, activeDocument *fileD
 			fill, foreground = pal.tabHover, pal.text
 		}
 		if color := d.hostColor(); color != "" {
-			amount := float32(.08)
-			if active {
-				amount = .18
-			} else if hovered {
-				amount = .12
-			}
-			fill = tintHostSurface(fill, color, amount)
-			edge = tintHostSurface(edge, color, .35)
+			fill = tabFill(pal, fill, color, active, hovered)
+			edge = tintHostSurface(edge, color, tabColorBorderTint)
+			foreground = tabInk(pal, color, foreground)
 		}
 		label := m.tabLabel(d)
 		hint, icon := d.source+" · "+d.location, lucideIcons[iconFile]

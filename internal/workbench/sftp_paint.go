@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,9 +45,9 @@ type sftpPanelScratch struct {
 	bounds gfx.Rect
 
 	// headerTools is where orderToolbarTools builds the header's actions.
-	headerTools [8]barTool
+	headerTools [12]barTool
 	// buttons are the icon buttons, in the order they were declared.
-	buttons           [24]sftpIconButton
+	buttons           [32]sftpIconButton
 	buttonCount       int
 	headerButtonCount int
 
@@ -55,6 +56,14 @@ type sftpPanelScratch struct {
 	// width of a row, which the header shares.
 	sizeWidth, modifiedWidth float32
 	rowWidth                 float32
+	// columnArea is where the header's columns lie, and columnWidths the three
+	// widths painted there. The divider geometry the pointer reads and the
+	// rectangles painted over the header are kept here so a repaint reuses them.
+	columnArea     gfx.Rect
+	columnWidths   [3]float32
+	columnColumns  [3]gfx.Rect
+	columnDividers [2]gfx.Rect
+	columnHits     [2]gfx.Rect
 }
 
 // sftpEditorScratch is the room the editor page leaves for its text area and
@@ -116,12 +125,13 @@ func (state *State) paintSFTPPanelDetails(canvas *gfx.Canvas) {
 		state.paintSFTPBreadcrumbs(canvas, s.crumbs.Rect(), folder.crumbs)
 	}
 	state.paintSFTPList(canvas, s, session, view)
+	state.paintSFTPPanelColumnDividers(canvas)
 	view.places.anchors[sideIndex(local)] = s.crumbs.Rect()
 	if view.bookmarksOpen {
 		places := sftpPlaceBrowser{owner: state, session: session, view: view}
 		places.paintDirectoryPlaces(canvas, state.contextRect)
 	}
-	if view.busy {
+	if view.busy || local && view.localBusy {
 		components.PaintSpinner(canvas, state.Theme(), s.spinnerSlot.Rect(), components.SpinnerPhase(canvas.Now()/(125*time.Millisecond)))
 		canvas.RequestFrame()
 	}
@@ -167,11 +177,15 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	}
 
 	headerTools := s.headerTools[:0]
-	addHeader := func(id gfx.ID, glyph uint8, hint string, disabled bool) {
-		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled})
+	addHeader := func(id gfx.ID, glyph uint8, hint string, disabled bool, style ...iconButtonStyle) {
+		toolStyle := iconButtonQuiet
+		if len(style) > 0 {
+			toolStyle = style[0]
+		}
+		headerTools = append(headerTools, barTool{id: id, icon: glyph, hint: hint, disabled: disabled, style: toolStyle})
 	}
 	if local {
-		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, false)
+		addHeader(hitSFTPNewDirectory, iconFolderPlus, messages.SFTPNewDirectory, view.localBusy)
 	} else {
 		addHeader(hitSFTPUpload, iconUpload, messages.SFTPUpload, view.busy)
 		addHeader(hitSFTPUploadDirectory, iconFolderUp, messages.SFTPUploadDirectory, view.busy)
@@ -181,10 +195,13 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	if !view.localOnly {
 		addHeader(hitSFTPPaneToggle, paneIcon, paneHint, false)
 	}
-	addHeader(hitSFTPRefresh, iconRefresh, messages.SFTPRefresh, view.busy && !local)
+	addHeader(hitSFTPRefresh, iconRefresh, messages.SFTPRefresh, view.busy && !local || local && view.localBusy)
+	followStyle := iconButtonQuiet
+	if !state.sftpFollowOff {
+		followStyle = iconButtonActive
+	}
+	addHeader(hitSFTPFollowToggle, iconFollowFolder, messages.Tools.FilesFollow, false, followStyle)
 	moveIcon, moveHint := state.sftpPanelMoveAction()
-	addHeader(hitSFTPPanelSide, moveIcon, moveHint, false)
-	addHeader(hitSFTPClose, iconClose, messages.TipSFTPClose, false)
 	headerTools = state.orderToolbarTools(toolbarSFTP, headerTools, false)
 
 	// icon declares an icon button where it goes; it is painted after Draw.
@@ -193,24 +210,31 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		s.buttonCount++
 	}
 	ui.Column(c).Fill().PadSides(0, sftpPad, 6, sftpPad).Background(pal.workspace).Children(func() {
-		// One row for the panel: its name, then the actions on the folder and
-		// refresh and close, from the right. The words "Files" and the address say
-		// nothing the tab does not already; the room goes to the list.
+		// Keep the panel's title, docking and close buttons on their own row, with the
+		// folder actions below so they do not compete with the title for space.
 		s.header = ui.Row(c).FillWidth().Height(infoBarHeight).Shrink(0).MarginSides(0, -sftpPad, 0, -sftpPad).PadX(sftpPad).Background(pal.workspace).Items(ui.Center)
 		s.header.Children(func() {
 			ui.Text(c, title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).MarginSides(0, 8, 0, 0)
 			ui.Row(c).Gap(4).Shrink(0).Children(func() {
-				for _, tool := range headerTools {
-					icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, iconButtonQuiet)
+				if state.toolbarVisible(toolbarSFTP, hitSFTPPanelSide) {
+					icon(sftpHeaderButton, hitSFTPPanelSide, moveIcon, moveHint, false, iconButtonQuiet)
 				}
-				// Filtering and turning hidden entries on are secondary actions. Keep
-				// the header stable at the narrow default width; once hidden entries are
-				// enabled, the Eye control remains visible as their status affordance.
-				if folder.showHidden {
-					icon(sftpHeaderButton, hitSFTPHiddenToggle, iconEye, messages.Tools.FilesHideHidden, false, iconButtonActive)
+				if state.toolbarVisible(toolbarSFTP, hitSFTPClose) {
+					icon(sftpHeaderButton, hitSFTPClose, iconClose, messages.TipSFTPClose, false, iconButtonQuiet)
 				}
-				icon(sftpHeaderButton, hitSFTPHeaderMore, iconEllipsis, messages.Tools.FilesMore, false, iconButtonQuiet)
 			})
+		})
+		ui.Row(c).FillWidth().Height(sftpButton).Shrink(0).Gap(4).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
+			for _, tool := range headerTools {
+				icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, tool.style)
+			}
+			// Once hidden entries are enabled, the Eye control remains visible
+			// as their status affordance beside the secondary actions menu.
+			if folder.showHidden {
+				icon(sftpHeaderButton, hitSFTPHiddenToggle, iconEye, messages.Tools.FilesHideHidden, false, iconButtonActive)
+			}
+			ui.Spacer(c)
+			icon(sftpHeaderButton, hitSFTPHeaderMore, iconEllipsis, messages.Tools.FilesMore, false, iconButtonQuiet)
 		})
 		s.headerButtonCount = s.buttonCount
 
@@ -262,10 +286,23 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			rowWidth = max(rowWidth-10, 0)
 		}
 		s.rowWidth = rowWidth
-		s.sizeWidth, s.modifiedWidth = sftpColumnWidths(rowWidth)
+		resizable := state.sftpColumnResizeAvailable()
+		var columns sftpColumnMetrics
+		if resizable {
+			columnAreaWidth := max(rowWidth-16, 0)
+			columns = state.pendingSFTPColumnMetrics(view, folder, c.Canvas(), columnAreaWidth, 0)
+			s.sizeWidth, s.modifiedWidth = columns.size, columns.modified
+			s.columnWidths = [3]float32{columns.name, columns.size, columns.modified}
+		} else {
+			s.sizeWidth, s.modifiedWidth = sftpColumnWidths(rowWidth)
+		}
 		if !searching {
 			s.listHeader = ui.Row(c).Width(rowWidth).Height(sftpListHeaderHeight).Shrink(0).PadX(8).Items(ui.Center).Children(func() {
-				state.declareSFTPColumnHeader(c, folder, 0, state.messages.SFTPWindow.Name, 0, true)
+				if resizable {
+					state.declareSFTPColumnHeader(c, folder, 0, state.messages.SFTPWindow.Name, columns.name, false)
+				} else {
+					state.declareSFTPColumnHeader(c, folder, 0, state.messages.SFTPWindow.Name, 0, true)
+				}
 				for _, entry := range state.sftpColumns.entries[1:] {
 					if !entry.Enabled {
 						continue
@@ -285,7 +322,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			folder.listPendingFirst = -1
 		}
 		s.listSlot = ui.List(c, &folder.list, len(rows), func(row ui.ListRow) {
-			state.declareSFTPListRow(row, folder, view, searching, s.sizeWidth, s.modifiedWidth, rowWidth)
+			state.declareSFTPListRow(row, folder, view, searching, s.sizeWidth, s.modifiedWidth, rowWidth, columns)
 		}).Grow(1).HitWith(hitSFTPListBackground, messages.SFTPFiles, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
 		folder.seedSFTPListCurrent()
 		if folder.list.Changed() {
@@ -293,22 +330,21 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			state.afterSFTPListChoice(view, folder)
 		}
 
-		if selectedCount > 0 {
-			// What can be done with the selection, under the list so the rows above
-			// do not move when one is picked.
-			rowBottom := float32(2)
-			if one {
-				rowBottom = 0 // the details line keeps that room
-			}
+		{
+			// Reserve the same space for empty, single and multiple selections.
 			ui.Column(c).Shrink(0).Children(func() {
 				ui.Divider(c).Background(pal.line)
-				ui.Row(c).Gap(2).Height(sftpButton).Shrink(0).MarginSides(5, 0, rowBottom, 0).Children(func() {
+				ui.Row(c).Gap(2).Height(sftpButton).Shrink(0).MarginSides(5, 0, 0, 0).Children(func() {
+					if selectedCount == 0 {
+						return
+					}
+					opBusy := view.busy && !local || local && view.localBusy
 					add := func(id gfx.ID, glyph uint8, label string, danger bool) {
 						style := iconButtonQuiet
 						if danger {
 							style = iconButtonDanger
 						}
-						icon(sftpButton, id, glyph, label, view.busy, style)
+						icon(sftpButton, id, glyph, label, opBusy, style)
 					}
 					if one {
 						add(hitSFTPOpenEntry, iconFolderOpen, messages.SFTPOpen, false)
@@ -329,18 +365,23 @@ func (state *State) declareSFTPPanel(c ui.C) {
 						}
 						add(hitSFTPRename, iconPencil, messages.SFTPRename, false)
 						add(hitSFTPChmod, iconLock, messages.SFTPPermissions, false)
+						if sftpOwnershipAvailable(session, view) {
+							add(hitSFTPChown, iconWrench, messages.SFTPOwnership, false)
+						}
 						if _, archive := state.selectedArchive(session, view); archive {
 							add(hitSFTPExtract, iconArchive, messages.Tools.Extract, false)
 						}
 					}
 					if !local {
 						add(hitSFTPMove, iconFolderOpen, messages.SFTPMove, false)
-						add(hitSFTPDelete, iconTrash, messages.SFTPDelete, true)
 					}
+					add(hitSFTPDelete, iconTrash, messages.SFTPDelete, true)
 				})
+				details := ""
 				if one {
-					ui.Text(c, state.sftpDetailsLine(view, selected)).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(18).Shrink(0).MarginSides(2, 0, 2, 2)
+					details = state.sftpDetailsLine(view, selected)
 				}
+				ui.Text(c, details).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(18).Shrink(0).MarginSides(2, 0, 2, 2)
 			})
 		}
 
@@ -358,7 +399,7 @@ func (state *State) declareSFTPPanel(c ui.C) {
 			statusRow = statusRow.Height(28)
 		}
 		statusRow.Children(func() {
-			if view.busy {
+			if view.busy || local && view.localBusy {
 				s.spinnerSlot = ui.Slot(c).Size(16, 16)
 			}
 			if folder.searching() {
@@ -384,6 +425,26 @@ func (state *State) declareSFTPPanel(c ui.C) {
 // header, the scroll bar, the empty or loading message and the place dropped
 // files would go. The rows themselves are declared as elements by
 // declareSFTPListRow, and the header by declareSFTPColumnHeader.
+// paintSFTPPanelColumnDividers draws the drag handles over the docked list's
+// header and keeps the geometry the pointer reads.
+func (state *State) paintSFTPPanelColumnDividers(canvas *gfx.Canvas) {
+	if !state.sftpColumnResizeAvailable() {
+		return
+	}
+	s := &state.chrome.sftpPanel
+	if s.view == nil || !s.listHeader.Valid() {
+		return
+	}
+	header := s.listHeader.Rect()
+	if header.Width <= 16 || header.Height <= 0 {
+		return
+	}
+	s.columnArea = gfx.Rect{X: header.X + 8, Y: header.Y, Width: header.Width - 16, Height: header.Height}
+	ids := [2]gfx.ID{hitSFTPPanelColumnDivider.At(0), hitSFTPPanelColumnDivider.At(1)}
+	paintSFTPColumnResize(canvas, state.Theme(), s.columnArea, s.columnWidths, 0, ids,
+		state.messages.Tools.FilesResizeColumn, s.columnColumns[:], s.columnDividers[:], s.columnHits[:])
+}
+
 func (state *State) paintSFTPList(canvas *gfx.Canvas, s *sftpPanelScratch, session *Session, view *sftpView) {
 	pal := state.pal
 	folder, local := view.active(), view.local
@@ -515,7 +576,13 @@ func (state *State) declareSFTPColumnHeader(c ui.C, folder *sftpFolder, column i
 		if grow {
 			textBox = textBox.Grow(1)
 		} else {
-			textBox = textBox.Width(width - 4).TextEnd()
+			// The name starts at the list's left edge, like the rows under it
+			// and the detached window's header; the numeric columns end at
+			// their right edge.
+			textBox = textBox.Width(width - 4)
+			if column > 0 {
+				textBox = textBox.TextEnd()
+			}
 		}
 	})
 }
@@ -524,7 +591,7 @@ func (state *State) declareSFTPColumnHeader(c ui.C, folder *sftpFolder, column i
 // which takes the room and ends with an ellipsis, and, when there is room, its
 // modification time. A selected row is tinted; the pointer lightens one. A
 // search result has its folder after the name, where the columns would be.
-func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view *sftpView, result bool, sizeWidth, modifiedWidth, rowWidth float32) {
+func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view *sftpView, result bool, sizeWidth, modifiedWidth, rowWidth float32, columns sftpColumnMetrics) {
 	rows := folder.shownRows()
 	if row.Index < 0 || row.Index >= len(rows) {
 		return
@@ -578,7 +645,24 @@ func (state *State) declareSFTPListRow(row ui.ListRow, folder *sftpFolder, view 
 				ui.Text(c, suffix).FontSize(metrics.FontSizeM).Color(nameColor).Ellipsis().Grow(1)
 				return
 			}
-			ui.Text(c, name).FontSize(metrics.FontSizeM).Color(nameColor).Ellipsis().Grow(1)
+			nameText := ui.Text(c, name).FontSize(metrics.FontSizeM).Color(nameColor).Ellipsis().Grow(1)
+			available := rowWidth - 16 - sftpColumnIconWidth - sftpColumnNameGap
+			if state.sftpColumnResizeAvailable() {
+				available = columns.name - sftpColumnIconWidth - sftpColumnNameGap
+			} else {
+				for _, column := range state.sftpColumns.entries[1:] {
+					if !column.Enabled {
+						continue
+					}
+					available -= sizeWidth + sftpColumnNameGap
+					if column.Key == sftpColumnModified {
+						available += sizeWidth - modifiedWidth
+					}
+				}
+			}
+			if available > 0 && canvas.TextWidth(name, metrics.FontSizeM) > available {
+				nameText.HitWith(row.ID, name, gfx.HitOptions{Hint: name, SkipFocus: true})
+			}
 		})
 		for _, column := range state.sftpColumns.entries[1:] {
 			if !column.Enabled || result {
@@ -857,6 +941,11 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		description = messages.SFTPPermissionsDescription
 		fieldLabel = messages.SFTPPermissionsMode
 		submitLabel = messages.SFTPPermissionsSubmit
+	case sftpDialogChown:
+		title = messages.SFTPOwnershipTitle
+		description = messages.SFTPOwnershipDescription
+		fieldLabel = messages.SFTPPermissionsOwner
+		submitLabel = messages.SFTPPermissionsSubmit
 	case sftpDialogSymlink:
 		title = messages.Tools.LinkTitle
 		fieldLabel = messages.Tools.LinkName
@@ -893,8 +982,8 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 	showError := view.dialog == sftpDialogDelete && view.dialogError != ""
 	body := float32(0) // a confirmation is only its text
 	switch {
-	case view.dialog == sftpDialogSymlink:
-		body = 6 + 64 + 8 + 64 // the link's name and where it points
+	case view.dialog == sftpDialogSymlink, view.dialog == sftpDialogChown:
+		body = 6 + 64 + 8 + 64 // two fields: the link's name and target, or the owner and group
 	case view.dialog == sftpDialogChmod:
 		// The octal field, then the permission grid: a 16px header row and
 		// three 24px rows, with a 4px gap between them.
@@ -906,6 +995,7 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 	}
 	view.dialogFieldLabel = fieldLabel
 	view.dialogCancelLabel, view.dialogSubmitLabel, view.dialogSubmitVariant = cancelLabel, submitLabel, submitVariant
+	view.dialogViewport = viewport
 	// No scrim dismiss: a press beside the form must not discard its input.
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 520, description, body)
 	dialog := ui.Dialog(c, ui.DialogSpec{
@@ -939,6 +1029,10 @@ func (state *State) paintSFTPDialogDetails(canvas *gfx.Canvas, view *sftpView) {
 	if !sftpDialogShowsField(view.dialog) {
 		return
 	}
+	if view.dialog == sftpDialogChown {
+		state.paintSFTPOwnership(canvas, view)
+		return
+	}
 	messages, theme := state.messages, state.Theme()
 	fieldLabel := view.dialogFieldLabel
 	field := components.BeginField(canvas, theme, view.dialogFirst.Rect())
@@ -969,6 +1063,94 @@ func (state *State) paintSFTPDialogDetails(canvas *gfx.Canvas, view *sftpView) {
 	}
 }
 
+// paintSFTPOwnership paints the ownership dialog's two editable suggestion
+// fields. Each opens a filtered list of the accounts the server's files name;
+// the text stays free, so an account those files do not list can still be
+// typed as a name or a numeric id.
+func (state *State) paintSFTPOwnership(canvas *gfx.Canvas, view *sftpView) {
+	messages, theme := state.messages, state.Theme()
+	labels := [2]string{messages.SFTPPermissionsOwner, messages.SFTPPermissionsGroup}
+	boxes := [2]ui.Box{view.dialogFirst, view.dialogSecond}
+	for field := range 2 {
+		id := hitSFTPDialogField
+		if field == 1 {
+			id = hitSFTPDialogField2
+		}
+		editor := view.ownershipEditor(field)
+		// A typed change opens the suggestions. The query is kept because the
+		// docked window edits the field through EditorFor, which has no event
+		// callback; the field comparison is what a text event would tell us.
+		if canvas.Focused() == id && editor.String() != view.ownership.lastQuery[field] {
+			view.ownership.open[field] = true
+			view.ownership.highlighted[field] = 0
+			view.ownership.lastQuery[field] = editor.String()
+		}
+		group := components.BeginField(canvas, theme, boxes[field].Rect())
+		if view.dialogError != "" {
+			group = group.Invalid()
+		}
+		errorText := ""
+		if field == 0 {
+			errorText = view.dialogError
+		}
+		input := group.Paint(labels[field], "", errorText)
+		open := view.ownership.open[field]
+		query := editor.String()
+		options := components.ComboboxOptions{
+			InputID: id, Label: labels[field], Value: query, Query: query,
+			Placeholder: labels[field], Open: open, Invalid: view.dialogError != "",
+			ShowTrigger: true, Layer: dialogLayer + 1, Scope: dialogScope,
+			DismissID: hitSFTPChownDismiss, Viewport: view.dialogViewport,
+		}
+		var matches []sftpAccountOption
+		if open {
+			matches = view.ownership.matches(field, query)
+			options.Content = sftpOwnershipPopupRect(input, len(matches), view.dialogViewport)
+			options.MatchInputWidth = true
+		}
+		combo := components.BeginCombobox(canvas, theme, input, options)
+		if open {
+			if len(matches) == 0 {
+				combo.AddEmpty(messages.SFTPOwnershipNoMatches)
+			}
+			for index, account := range matches {
+				combo.AddItem(components.ComboboxItem{
+					ID:          ownershipItemScope(field).At(index),
+					Label:       account.name,
+					Detail:      strconv.FormatUint(uint64(account.id), 10),
+					Selected:    query == account.name,
+					Highlighted: index == view.ownership.highlighted[field],
+				})
+			}
+		}
+		combo.End()
+	}
+}
+
+// sftpOwnershipPopupRect places the suggestion list under its field, or above
+// it when the bottom of the window is closer.
+func sftpOwnershipPopupRect(input gfx.Rect, rows int, viewport gfx.Rect) gfx.Rect {
+	height := float32(8 + 36) // the empty result
+	if rows > 0 {
+		height = float32(8 + rows*32)
+	}
+	x := input.X
+	if right := viewport.X + viewport.Width; x+input.Width > right {
+		x = right - input.Width
+	}
+	if x < viewport.X {
+		x = viewport.X
+	}
+	y := input.Y + input.Height + 8
+	if bottom := viewport.Y + viewport.Height - 8; y+height > bottom {
+		y = input.Y - 8 - height
+	}
+	if y < viewport.Y+8 {
+		y = viewport.Y + 8
+	}
+	return gfx.Rect{X: x, Y: y, Width: input.Width, Height: height}
+}
+
 // declareSFTPDialogBody lays out the dialog's body: one labelled input, two for
 // a link, the permission grid under a chmod field, or the error of a failed
 // move when that is what the dialog says. The parts painted by hand are kept in
@@ -989,7 +1171,7 @@ func (state *State) declareSFTPDialogBody(c ui.C, view *sftpView) {
 		case sftpDialogShowsField(view.dialog):
 			ui.Column(c).Shrink(0).Gap(8).PadSides(6, 4, 0, 4).Children(func() {
 				view.dialogFirst = ui.Slot(c).Height(64).Shrink(0)
-				if view.dialog == sftpDialogSymlink {
+				if view.dialog == sftpDialogSymlink || view.dialog == sftpDialogChown {
 					view.dialogSecond = ui.Slot(c).Height(64).Shrink(0)
 				}
 				if view.dialog == sftpDialogChmod {

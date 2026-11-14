@@ -7,7 +7,7 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
-func TestTabMenuRenamesTheTabAndKeepsTheNameAcrossRestarts(t *testing.T) {
+func TestTabMenuRenamesTheTabInPlaceAndKeepsTheNameAcrossRestarts(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	connect(t, state, world)
@@ -15,18 +15,21 @@ func TestTabMenuRenamesTheTabAndKeepsTheNameAcrossRestarts(t *testing.T) {
 
 	openTabMenu(state, workspace)
 	state.Click(hitTabMenuRename)
-	if state.modal != modalRenameTab {
-		t.Fatalf("modal = %v, want the rename dialog", state.modal)
+	if !state.tabInlineActive() || state.tabInline.workspace != workspace {
+		t.Fatalf("the name field is not open on the tab: %+v", state.tabInline)
 	}
-	if got := state.tabRename.editor.String(); got != state.workspaceTabs[0].Title {
+	if got := state.tabInline.editor.String(); got != state.workspaceTabs[0].Title {
 		t.Fatalf("the field starts with %q, want the current name %q", got, state.workspaceTabs[0].Title)
 	}
+	if sel := state.tabInline.editor.Selection(); sel.Start != 0 || sel.End != state.tabInline.editor.RuneCount() {
+		t.Fatalf("the current name is not selected: %+v", sel)
+	}
 
-	// Typing replaces the selected name; Enter submits.
-	state.tabRename.editor.Insert("Build box")
-	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitTabRenameField})
-	if state.modal != modalNone {
-		t.Fatal("Enter did not close the dialog")
+	// Typing replaces the selected name; Enter applies it on the spot.
+	state.tabInline.editor.Insert("Build box")
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitTabInline})
+	if state.tabInlineActive() {
+		t.Fatal("Enter did not close the field")
 	}
 	if got := state.workspaceTabs[0].Title; got != "Build box" {
 		t.Fatalf("tab title = %q", got)
@@ -44,7 +47,7 @@ func TestTabMenuRenamesTheTabAndKeepsTheNameAcrossRestarts(t *testing.T) {
 	}
 }
 
-func TestTabRenameRefusesAnEmptyNameAndCancelKeepsTheOldOne(t *testing.T) {
+func TestTabRenameEmptyNameKeepsTheOldOne(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	connect(t, state, world)
@@ -53,14 +56,13 @@ func TestTabRenameRefusesAnEmptyNameAndCancelKeepsTheOldOne(t *testing.T) {
 
 	openTabMenu(state, workspace)
 	state.Click(hitTabMenuRename)
-	state.tabRename.editor.Insert("   ")
-	state.Click(hitTabRenameSubmit)
-	if state.modal != modalRenameTab || state.dialogError != state.messages.ErrTabNameRequired {
-		t.Fatalf("an empty name was accepted: modal=%v error=%q", state.modal, state.dialogError)
+	state.tabInline.editor.Insert("   ")
+	state.commitTabInline()
+	if state.tabInlineActive() {
+		t.Fatal("an emptied name left the field open")
 	}
-	state.Click(hitTabRenameCancel)
-	if state.modal != modalNone || state.workspaceTabs[0].Title != before {
-		t.Fatalf("cancel changed the tab: modal=%v title=%q", state.modal, state.workspaceTabs[0].Title)
+	if state.workspaceTabs[0].Title != before {
+		t.Fatalf("an emptied name changed the tab: %q, want %q", state.workspaceTabs[0].Title, before)
 	}
 }
 

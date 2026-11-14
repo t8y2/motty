@@ -38,7 +38,7 @@ func TestTerminalPredictionNeedsVerifiedEchoAndReconcilesRemoteOutput(t *testing
 	now := time.Second
 
 	for _, input := range []string{"a", "b", "c"} {
-		prediction.input(screen, []byte(input), now, false)
+		prediction.input(screen, []byte(input), now, false, 0)
 		if _, visible := visibleAt(&prediction, now); visible {
 			t.Fatalf("unverified input %q became visible", input)
 		}
@@ -46,7 +46,7 @@ func TestTerminalPredictionNeedsVerifiedEchoAndReconcilesRemoteOutput(t *testing
 		now += time.Millisecond
 	}
 
-	prediction.input(screen, []byte("世界x"), now, false)
+	prediction.input(screen, []byte("世界x"), now, false, 0)
 	text, visible := visibleAt(&prediction, now)
 	if _, _, cells, _ := prediction.overlay(now); !visible || text != "世界x" || cells != 5 {
 		t.Fatalf("verified prediction = %q, %d cells, visible=%v", text, cells, visible)
@@ -77,10 +77,10 @@ func TestTerminalPredictionTrustExpiresWithoutBackgroundWork(t *testing.T) {
 	screen := term.New(80, 24, 0)
 	var prediction terminalPrediction
 	for _, input := range []byte("abc") {
-		prediction.input(screen, []byte{input}, 0, false)
+		prediction.input(screen, []byte{input}, 0, false, 0)
 		echoed(screen, &prediction, string(input), 0)
 	}
-	prediction.input(screen, []byte("visible"), terminalPredictionTrust+time.Nanosecond, false)
+	prediction.input(screen, []byte("visible"), terminalPredictionTrust+time.Nanosecond, false, 0)
 	if _, visible := visibleAt(&prediction, terminalPredictionTrust+time.Nanosecond); visible {
 		t.Fatal("expired echo trust still predicted input")
 	}
@@ -100,14 +100,14 @@ func TestTerminalPredictionConfirmsEchoThatColorsOrRedrawsTheLine(t *testing.T) 
 	typed := ""
 	const suggestion = " rest of a history line"
 	for _, r := range "abc" {
-		prediction.input(screen, []byte(string(r)), now, false)
+		prediction.input(screen, []byte(string(r)), now, false, 0)
 		typed += string(r)
 		// The whole line is drawn again, colored, with a suggestion behind it.
 		line := fmt.Sprintf("\r\x1b[2K$ \x1b[32m%s\x1b[90m%s\x1b[39m\x1b[%dD", typed, suggestion, len(suggestion))
 		echoed(screen, &prediction, line, now+60*time.Millisecond)
 		now += 150 * time.Millisecond
 	}
-	prediction.input(screen, []byte("d"), now, false)
+	prediction.input(screen, []byte("d"), now, false, 0)
 	if text, visible := visibleAt(&prediction, now); !visible || text != "d" {
 		t.Fatalf("after three colored echoes the guess = %q (visible %v)", text, visible)
 	}
@@ -137,7 +137,7 @@ func TestTerminalPredictionActivatesWhileTypingFasterThanTheEchoReturns(t *testi
 	shown := 0
 	for _, e := range events {
 		if e.typed != "" {
-			prediction.input(screen, []byte(e.typed), e.at, false)
+			prediction.input(screen, []byte(e.typed), e.at, false, 0)
 			if _, visible := visibleAt(&prediction, e.at); visible {
 				shown++
 			}
@@ -156,13 +156,13 @@ func TestTerminalPredictionProofShowsTheFirstCharacterAndOnlyOnThatLine(t *testi
 	var prediction terminalPrediction
 	now := time.Second
 
-	prediction.input(screen, []byte("l"), now, false)
+	prediction.input(screen, []byte("l"), now, false, 0)
 	if _, visible := visibleAt(&prediction, now); visible {
 		t.Fatal("a first character without proof was shown")
 	}
 	prediction.reset()
 
-	prediction.input(screen, []byte("l"), now, true)
+	prediction.input(screen, []byte("l"), now, true, 0)
 	if text, visible := visibleAt(&prediction, now); !visible || text != "l" {
 		t.Fatalf("with a prompt proof the first character = %q (visible %v)", text, visible)
 	}
@@ -173,14 +173,14 @@ func TestTerminalPredictionProofShowsTheFirstCharacterAndOnlyOnThatLine(t *testi
 	if _, visible := visibleAt(&prediction, now); visible {
 		t.Fatal("a mismatch left the guess visible")
 	}
-	prediction.input(screen, []byte("m"), now+100*time.Millisecond, true)
+	prediction.input(screen, []byte("m"), now+100*time.Millisecond, true, 0)
 	if _, visible := visibleAt(&prediction, now); visible {
 		t.Fatal("a failed line was trusted again before the next prompt")
 	}
 	prediction.reset()
 	prediction.newPrompt()
 	screen.Write([]byte("\r\n$ "))
-	prediction.input(screen, []byte("n"), now+200*time.Millisecond, true)
+	prediction.input(screen, []byte("n"), now+200*time.Millisecond, true, 0)
 	if _, visible := visibleAt(&prediction, now+200*time.Millisecond); !visible {
 		t.Fatal("the next prompt did not restore the proof")
 	}
@@ -193,7 +193,7 @@ func TestTerminalPredictionTakesBackAGuessNobodyEchoes(t *testing.T) {
 	screen.Write([]byte("$ "))
 	var prediction terminalPrediction
 	now := time.Second
-	prediction.input(screen, []byte("h"), now, true)
+	prediction.input(screen, []byte("h"), now, true, 0)
 	remaining, ok := prediction.expiry(now)
 	if !ok || remaining <= 0 {
 		t.Fatalf("a shown guess has no deadline: %v %v", remaining, ok)
@@ -201,7 +201,7 @@ func TestTerminalPredictionTakesBackAGuessNobodyEchoes(t *testing.T) {
 	if _, visible := visibleAt(&prediction, now+remaining+time.Millisecond); visible {
 		t.Fatal("a guess nobody echoed outlived its deadline")
 	}
-	prediction.input(screen, []byte("j"), now+remaining+time.Millisecond, true)
+	prediction.input(screen, []byte("j"), now+remaining+time.Millisecond, true, 0)
 	if _, visible := visibleAt(&prediction, now+remaining+time.Millisecond); visible {
 		t.Fatal("a line whose guess went unanswered was trusted again")
 	}
@@ -224,11 +224,11 @@ func TestTerminalPredictionStaysHiddenOnLinksFasterThanAFrame(t *testing.T) {
 			var prediction terminalPrediction
 			now := time.Second
 			for _, r := range "ab" {
-				prediction.input(screen, []byte(string(r)), now, true)
+				prediction.input(screen, []byte(string(r)), now, true, 0)
 				echoed(screen, &prediction, string(r), now+testCase.echo)
 				now += time.Second / 5
 			}
-			prediction.input(screen, []byte("c"), now, true)
+			prediction.input(screen, []byte("c"), now, true, 0)
 			if _, visible := visibleAt(&prediction, now); visible != testCase.want {
 				t.Fatalf("visible = %v after echoes of %v, want %v", visible, testCase.echo, testCase.want)
 			}
@@ -264,11 +264,11 @@ func TestTerminalPredictionDropsTrustOnUnsolicitedOutput(t *testing.T) {
 	var prediction terminalPrediction
 	now := time.Second
 	for _, r := range "abc" {
-		prediction.input(screen, []byte(string(r)), now, false)
+		prediction.input(screen, []byte(string(r)), now, false, 0)
 		echoed(screen, &prediction, string(r), now)
 	}
 	echoed(screen, &prediction, "\r\nPassword: ", now)
-	prediction.input(screen, []byte("secret"), now, false)
+	prediction.input(screen, []byte("secret"), now, false, 0)
 	if _, visible := visibleAt(&prediction, now); visible {
 		t.Fatal("text typed at a prompt that followed unsolicited output was shown")
 	}
@@ -451,9 +451,35 @@ func BenchmarkTerminalPredictionRoundTrip(b *testing.B) {
 	for b.Loop() {
 		screen.Write([]byte("\r\n$ "))
 		var prediction terminalPrediction
-		prediction.input(screen, []byte("abc"), 0, false)
+		prediction.input(screen, []byte("abc"), 0, false, 0)
 		echoed(screen, &prediction, "abc", 0)
-		prediction.input(screen, []byte("deploy"), 0, false)
+		prediction.input(screen, []byte("deploy"), 0, false, 0)
 		echoed(screen, &prediction, "deploy", 0)
+	}
+}
+
+// A mosh guess must survive a round trip longer than the SSH echo bounds while
+// the server has not applied its input, and must be withdrawn once the input is
+// acknowledged but nothing echoes it — the password-prompt case.
+func TestTerminalPredictionKeepsUnacknowledgedMoshInput(t *testing.T) {
+	prediction := terminalPrediction{
+		phase: terminalPredictionActive, length: 1, cells: 1, chunks: 1,
+		chunkEnd: [maxTerminalPredictionChunks]uint16{1},
+		echo:     40 * time.Millisecond, shown: true,
+		inputID: 1,
+	}
+	prediction.data[0] = 'a'
+	prediction.observe(0, true)
+
+	if !prediction.visibleAt(time.Second) {
+		t.Fatal("an unacknowledged guess was withdrawn inside the hard bound")
+	}
+	if prediction.visibleAt(terminalPredictionUnconfirmedStale + time.Second) {
+		t.Fatal("an unacknowledged guess outlived the hard bound")
+	}
+
+	prediction.observe(1, true)
+	if prediction.visibleAt(time.Second) {
+		t.Fatal("an acknowledged guess that never echoed stayed on screen")
 	}
 }

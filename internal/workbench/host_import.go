@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"motty/internal/i18n"
+	"motty/internal/keyidentity"
 	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 )
@@ -116,7 +117,15 @@ func (builder *hostImportBuilder) build(sources []sshconfig.Host) hostImportPlan
 		builder.addSourceHost(source)
 	}
 	for _, source := range sources {
-		builder.addIdentity(source.IdentityFile)
+		if source.Options != nil {
+			for _, path := range source.Options.IdentityFiles {
+				if path != "none" {
+					builder.addIdentity(path)
+				}
+			}
+		} else {
+			builder.addIdentity(source.IdentityFile)
+		}
 	}
 	for _, source := range sources {
 		if len(source.ProxyJump) != 0 {
@@ -141,9 +150,24 @@ func (builder *hostImportBuilder) addSourceHost(source sshconfig.Host) {
 		builder.plan.duplicateHosts++
 		return
 	}
+	builder.plan.hosts[len(builder.plan.hosts)-1].SSHOptions = importedSSHOptions(source.Options)
 	if source.ProxyCommand != "" {
 		builder.addProxyCommand(source)
 	}
+}
+
+func importedSSHOptions(source *sshconfig.ConnectionOptions) *sshconfig.ConnectionOptions {
+	options := source.Clone()
+	if options != nil {
+		for index, path := range options.IdentityFiles {
+			if path != "none" {
+				if absolute, err := filepath.Abs(path); err == nil {
+					options.IdentityFiles[index] = absolute
+				}
+			}
+		}
+	}
+	return options
 }
 
 // addProxyCommand gives the host just added the source's ProxyCommand as its
@@ -179,6 +203,9 @@ func (builder *hostImportBuilder) addIdentity(path string) {
 	}
 	record := inspectIdentity(builder.plan.nextIdentityID, absolute, builder.state.keyMessages())
 	if record.Error != "" {
+		if _, err := keyidentity.PublicKey(absolute); err == nil {
+			return
+		}
 		builder.warn(fmt.Sprintf(builder.state.messages.SSHConfigWarningIdentityFmt, filepath.Base(path), record.Error))
 		return
 	}
@@ -355,6 +382,32 @@ func connectionKey(address, user string, port uint16) hostConnection {
 
 func validImportedAddress(address string) bool {
 	return address != "" && !strings.ContainsAny(address, " \t\r\n\x00")
+}
+
+// gitHostingHosts are the public forges a Git remote reaches over SSH. They
+// offer no shell, so a block that points at one is a Git alias even when the
+// remote URL, not the block, names the "git" user.
+var gitHostingHosts = map[string]bool{
+	"github.com":              true,
+	"ssh.github.com":          true,
+	"gitlab.com":              true,
+	"altssh.gitlab.com":       true,
+	"gitee.com":               true,
+	"bitbucket.org":           true,
+	"codeberg.org":            true,
+	"git.sr.ht":               true,
+	"ssh.dev.azure.com":       true,
+	"vs-ssh.visualstudio.com": true,
+}
+
+// gitRemoteAlias reports whether a config block is an alias for a Git remote
+// rather than a host to open: a Git server is asked to run Git as the user
+// "git", and the public forges have no shell to offer either way.
+func gitRemoteAlias(host sshconfig.Host) bool {
+	if strings.EqualFold(strings.TrimSpace(host.User), "git") {
+		return true
+	}
+	return gitHostingHosts[strings.ToLower(strings.TrimSpace(host.HostName))]
 }
 
 func proxyRouteWouldCycle(routes map[uint32]uint32, target, jump uint32) bool {

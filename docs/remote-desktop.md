@@ -16,7 +16,7 @@ entry, the certificate question and the pin store.
 | Showing such a bitmap one pixel to one device pixel at any display scale | Viva: `gfx.Surface.DrawPixels` and `gfx.Image.DevicePixels`; the painter keeps those images on device pixels instead of rounding them to logical pixels |
 | Pointer with buttons and positions, wheel, raw keys, committed IME text, focus | Viva (already: `RoleTerminal` focus gives raw keys and text events) |
 | RFB wire protocol, decoders, security types | `internal/rfb` (pure Go, no UI, no cgo) |
-| What every desktop backend offers (`Session`, `Frame`, key/button vocabulary) | `internal/desktop` |
+| What every desktop backend offers (`Session`, `Presenter`, key/button vocabulary) | `internal/desktop` |
 | Tab, scaling, focus capture, status line, reconnect, host editor, vault | `internal/workbench` (`desktop.go`, `desktop_conn.go`) |
 
 ## The interface (`internal/desktop/desktop.go`)
@@ -38,12 +38,15 @@ type Session interface {
 }
 ```
 
-* A backend draws into a `desktop.Frame` (BGRA back buffer + a short list of
-  dirty rectangles; `Update`, `Fill`, `Copy` for the decoders) and returns
-  `frame.Present` from `Present`. The workbench passes a `gfx.Surface`, which
-  satisfies `Presenter`, so a changed 64x64 patch of a 1080p desktop uploads
-  64 KB, not 8 MB. Pixels are BGRA with an undefined fourth byte; `Surface`
-  makes it opaque.
+* A backend presents the picture through `Presenter`. `desktop.Frame` is the
+  shared implementation for a backend whose decoders need their own back buffer
+  (VNC): BGRA pixels plus a short list of dirty rectangles, with `Update`,
+  `Fill` and `Copy` for the decoders. An RDP session keeps only the dirty list
+  and reads the changed rectangles from the client library's framebuffer, so an
+  RDP picture is held once, not twice. The workbench passes a `gfx.Surface`,
+  which satisfies `Presenter`, so a changed 64x64 patch of a 1080p desktop
+  uploads 64 KB, not 8 MB. Pixels are BGRA with an undefined fourth byte;
+  `Surface` makes it opaque.
 * Everything the network goroutine produces ends in `Options.Notify`, which wakes
   the window; `Present` runs on the UI goroutine from `State.Wake` and from the
   page's paint. Nothing polls and an idle desktop schedules no frame.
@@ -124,6 +127,16 @@ type Session interface {
   Enter; the reconnect policy of Settings applies (the session reports
   `sshconn.ErrDisconnected`).
 
+A remote desktop is normally added as a host (the New Host form's RDP or VNC
+protocol). It can also be typed in the host list's search box:
+`rdp://user@host:port`, `vnc://user@host:port`, and the `+ssh` forms
+`rdp+ssh://user@host` and `vnc+ssh://host` for a server reached through SSH.
+Ports default to 3389 and 5900. An RDP target needs its Windows account
+(`rdp://alice@host`), because the server never asks for the login itself; a VNC
+target may leave it out. An address typed without a scheme opens the saved host
+at that address and port whatever its protocol; with no host saved there it is
+an SSH target, as before.
+
 To add a backend: implement `Session`, add a protocol to the host model
 (`protocol.go`: `protocolRDP`, saved transport, default port) and the editor,
 and return it from `openDesktopSession`. The host editor's VNC rows
@@ -158,6 +171,14 @@ DesktopSize; pointer, key and cut-text messages.
   saved SSH host with the same address and account (its port, algorithms and
   jump route) or plain SSH on port 22, asks the SSH questions first, and dials
   `127.0.0.1:<port>` from the SSH server through a `direct-tcpip` channel.
+* **A jump route reaches a desktop too**: a route whose target is a VNC or RDP
+  host signs in to the route's nearest jump host (that host's own route still
+  applies) and dials the desktop's address and port from there, with a
+  forwarded channel or the route's shell relay. The desktop machine therefore
+  needs no SSH server. A route owns the connection: while one is configured,
+  **Connect through SSH** is dimmed, because that switch is the same-machine
+  tunnel to the server's loopback. Only an SSH host can be a jump, since the
+  route has to sign in to it.
 * Limits on a server: every length is checked before allocating (desktop at most
   7680x4320 pixels, names, reasons, clipboard 256 KB, ZRLE data in proportion to
   the rectangle, RRE sub-rectangles at most the pixels), every rectangle and copy
@@ -170,11 +191,15 @@ DesktopSize; pointer, key and cut-text messages.
   once; local to remote is sent when the pointer is pressed or a paste chord is
   typed, if it changed. RFB carries Latin-1: other characters go as `?`. Pasting
   with the system paste shortcut types the clipboard on the remote instead.
-* Not supported: RA256, RA2ne/RA256ne, VeNCrypt/TLS, Apple Remote Desktop
-  authentication (macOS Screen Sharing needs "VNC viewers may control screen with
-  password"), Tight/JPEG,
-  extended clipboard, images in the clipboard, audio, file transfer, changing the
-  remote resolution, multiple screens.
+* Not supported: RA256, RA2ne/RA256ne, VeNCrypt/TLS, Tight/JPEG,
+  extended clipboard, images in the clipboard, audio, file transfer, changing
+  the remote resolution, multiple screens.
+* macOS Screen Sharing: Apple Remote Desktop authentication (security type 30)
+  signs in with the Mac's own account and password, so the server needs no
+  legacy VNC password. That exchange encrypts the credentials only; the desktop
+  stream itself stays in the clear, so route the connection through SSH when the
+  network is not trusted. The server's Diffie-Hellman parameters are bounded
+  (512-bit to 4096-bit) and validated before the client computes anything.
 * Key releases reach the remote on macOS, Windows and X11; they were exercised
   with synthetic key events on the Windows and Linux machines (xdotool,
   `keybd_event`), not with a physical keyboard or an input method. Viva's web
@@ -203,8 +228,11 @@ desktop display, and clipboard sharing. See
 The latest password and server-key persistence changes still need a real-server
 retest.
 Physical keyboard and pointer interaction in a native window, IME composition,
-hidden or covered windows, macOS Screen Sharing, and a Windows server still need
-manual testing.
+hidden or covered windows, and a Windows server still need
+manual testing. Apple Remote Desktop authentication (macOS Screen Sharing) is
+covered by the protocol tests in `internal/rfb/ard_test.go`; a run against a
+real Mac still needs `MOTTY_VNC_ADDR`, `MOTTY_VNC_USERNAME` and
+`MOTTY_VNC_PASSWORD`.
 
 ## RDP
 
@@ -239,11 +267,28 @@ module in `go.mod`.
 
 TLS (1.0-1.3; TLS 1.2 for CredSSP) with NLA (CredSSP + NTLMv2) preferred, TLS
 without NLA if the server allows it; standard RDP Security (RC4 without TLS) is
-refused. NLA starts with SPNEGO; if token negotiation fails before credentials
+refused unless the host's **Use standard RDP security** switch asks for it. That
+switch makes the client offer Standard RDP Security only, for a server that
+offers nothing else or whose administrator chose the RDP security layer. Its
+keys come from a server key that is never authenticated, so anyone on the path
+can read and alter the session, including the password: the switch states that,
+and the status line reports the connection as **Not encrypted** (a tunneled host
+still reports the SSH protection). NLA starts with SPNEGO; if token negotiation fails before credentials
 are sent, it reconnects once using raw NTLM tokens for older WinPR servers such
 as GNOME Remote Desktop on Ubuntu 22.04. Both paths keep certificate checks,
-NTLMv2 MIC/channel binding and CredSSP public-key verification. After sending an
-Authenticate message, failures stop automatic retries and TLS-only fallback.
+NTLMv2 MIC/channel binding and CredSSP public-key verification. The client
+always signs the SPNEGO mechanism list it offered; Windows 11 24H2 and Server
+2025 reject the public-key binding when that MIC is absent, even though their
+challenge does not request it. The MIC exchange counts as a signed message, so
+both directions seal the binding at sequence one, not zero. When the server asks
+for the MIC, the client verifies the acceptor's MIC and sends its public-key
+binding in a later TSRequest; that is what libfreerdp 3.x (GNOME Remote Desktop
+on Ubuntu 24.04 and later) requires, and sending both in one message makes it
+echo the client's own binding back. When it does not ask, the Authenticate token
+is the client's last SPNEGO token, and MS-CSSP 3.2.5 requires the binding in
+that same TSRequest; Windows tears the TLS session down with an internal_error
+when the two are split. After sending an Authenticate
+message, failures stop automatic retries and TLS-only fallback.
 Bitmap updates (RLE, Planar, NSCodec, drawing orders) and the RDPGFX
 pipeline (ClearCodec, progressive RemoteFX, uncompressed; H.264 is not offered),
 fast-path updates, 32-bit colour. Input: keys as scancodes of a US keyboard (the
@@ -290,7 +335,8 @@ counts every failed NLA logon towards the account lockout (10 on the test machin
 Motty reports the refusal and asks again. xrdp checks the password after the
 handshake and shows its own login screen, so a wrong one there is not detected by the
 client. "Connect through SSH" uses the first saved SSH host with the same address
-(or plain SSH on port 22), as VNC does.
+(or plain SSH on port 22), as VNC does; a jump route reaches the RDP port from
+the route's jump host instead and leaves the Windows machine without SSH.
 
 **Console session.** An RDP host can ask Windows for its console session instead
 of a new one, which is what `mstsc /admin` does: the client sets
@@ -373,7 +419,14 @@ that finds the user signed in elsewhere asks the usual "sign out the other user?
 question inside the picture, and a console session is disconnected when the same
 user signs in remotely (that is Windows policy, `fSingleSessionPerUser`).
 Server-controlled lengths are capped (a segmented ZGFX message at 64 MB, history
-distances, MPPC history, Planar runs); the decoders are fuzzed (`fuzz_test.go`,
+distances, MPPC history, Planar runs); the RDPGFX bitmap cache is held to its
+100 MB protocol ceiling and surfaces to a budget of their own. While remote
+desktops are shown the process also sets a soft heap limit derived from their
+pictures (32 bytes per pixel plus a fixed base and the bitmap cache, with
+headroom; 512 MiB floor, 4 GiB ceiling), so Go's doubling of a large live heap
+does not turn a 5K desktop into a gigabyte. It is removed when the last desktop
+closes; `MOTTY_MEMORY_LIMIT_MIB` overrides it for measurements. The decoders are
+fuzzed (`fuzz_test.go`,
 `go test ./internal/rdpcore -run '^$' -fuzz FuzzZGFX -parallel 3`; fuzzing found
 several faults in the upstream decoders, all fixed with their inputs kept in
 `testdata/fuzz`), and the receive loop recovers from a decoder panic and ends only
@@ -402,7 +455,14 @@ file-list writer's result read back by PowerShell's
 path, keys typed as scancodes with Shift (`echo Key-Typed_1` shown in the xterm),
 and the headless Motty application end to end (`tools/e2e/rdp_e2e.txt`: add the host,
 certificate dialog, password dialog, the picture, click and typing, status line
-"TLS"). The workbench's certificate question (new, trusted, changed, rejected) is
+"TLS"). On a **FreeRDP 3.5 shadow server** in a container (`freerdp3-shadow-x11`
+on Ubuntu 24.04, NLA with a SAM file, which is the libfreerdp the GNOME Remote
+Desktop server on Ubuntu 24.04 links): the CredSSP handshake with SPNEGO tokens
+and with raw NTLM (`TestLiveCredSSPTokenLegs`, `MOTTY_RDP_NLA_ADDR`,
+`MOTTY_RDP_NLA_USER`, `MOTTY_RDP_NLA_PASSWORD`). The shadow server cannot carry
+the rest of the session — it answers the network auto-detect PDU with
+`unsupported security flags` — so the full desktop on Ubuntu was not retested.
+The workbench's certificate question (new, trusted, changed, rejected) is
 covered by a unit test with a fake server. Not exercised: a domain-joined server,
 Windows Server editions, Windows 10, an RD Gateway, Kerberos, a real window,
 physical keyboards and input-method composition, the macOS and Linux builds of the

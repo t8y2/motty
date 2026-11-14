@@ -231,18 +231,37 @@ func (state *State) hasSyncSecret(name string) bool {
 
 // --- S3 ------------------------------------------------------------------
 
-// openS3Configure asks for the bucket, then (a second form) for the access key.
+type s3Setup struct {
+	settings                          s3Settings
+	allowInsecureHTTP                 bool
+	accessKey, secret, backupPassword string
+}
+
 func (state *State) openS3Configure() {
-	m := state.messages.Tools
 	current := state.sync.s3
 	if state.sync.kind != syncS3 {
 		current = s3Settings{pathStyle: true}
 	}
+	state.openS3Bucket(&s3Setup{
+		settings: current, accessKey: current.accessKey,
+		allowInsecureHTTP: state.sync.kind == syncS3 && state.sync.allowInsecureHTTP,
+	})
+}
+
+func (state *State) openS3Bucket(draft *s3Setup) {
+	m := state.messages.Tools
+	current := draft.settings
 	form := state.openForm(formDialog{
-		title: m.S3DialogTitle, description: m.S3DialogDescription, submit: m.SyncSave,
-		run:        (*State).runS3Bucket,
+		title: m.S3DialogTitle, description: m.S3DialogDescription, submit: m.S3Next,
+		submitLabel: func(form *formDialog) string {
+			if strings.TrimSpace(form.value(0)) == "" {
+				return m.S3Stop
+			}
+			return m.S3Next
+		},
+		run:        func(state *State, form *formDialog) string { return state.runS3Bucket(form, draft) },
 		checkLabel: m.SyncAllowInsecureHTTP, checkDescription: m.SyncInsecureHTTPDescription,
-		checked: state.sync.kind == syncS3 && state.sync.allowInsecureHTTP,
+		checked: draft.allowInsecureHTTP,
 	},
 		formField{label: m.S3Endpoint, placeholder: "https://s3.eu-west-1.amazonaws.com"},
 		formField{label: m.S3Region, placeholder: "us-east-1"},
@@ -259,7 +278,7 @@ func (state *State) openS3Configure() {
 	}
 }
 
-func (state *State) runS3Bucket(form *formDialog) string {
+func (state *State) runS3Bucket(form *formDialog, draft *s3Setup) string {
 	m := state.messages.Tools
 	endpoint := strings.TrimSpace(form.value(0))
 	if endpoint == "" {
@@ -268,7 +287,7 @@ func (state *State) runS3Bucket(form *formDialog) string {
 	}
 	settings := s3Settings{
 		endpoint: endpoint, region: strings.TrimSpace(form.value(1)), bucket: strings.TrimSpace(form.value(2)),
-		key: strings.TrimSpace(form.value(3)), accessKey: state.sync.s3.accessKey,
+		key: strings.TrimSpace(form.value(3)), accessKey: draft.accessKey,
 	}
 	if settings.key == "" {
 		settings.key = s3.DefaultKey
@@ -294,24 +313,31 @@ func (state *State) runS3Bucket(form *formDialog) string {
 	}
 	// The second form opens once this one has closed, in a frame of its own, so
 	// that its first field takes the focus like any newly opened dialog.
-	allowInsecureHTTP := form.checked
-	state.aiPost(func(state *State) { state.openS3Login(settings, allowInsecureHTTP) })
+	draft.settings, draft.allowInsecureHTTP = settings, form.checked
+	state.aiPost(func(state *State) { state.openS3Login(draft) })
 	return ""
 }
 
-func (state *State) openS3Login(settings s3Settings, allowInsecureHTTP bool) {
+func (state *State) openS3Login(draft *s3Setup) {
 	m := state.messages.Tools
 	form := state.openForm(formDialog{
 		title: m.S3LoginTitle, description: m.S3LoginDescription, submit: m.SyncSave,
 		run: func(state *State, form *formDialog) string {
-			return state.runS3Login(form, settings, allowInsecureHTTP)
+			return state.runS3Login(form, draft.settings, draft.allowInsecureHTTP)
+		},
+		backLabel: m.S3Back,
+		back: func(state *State, form *formDialog) {
+			draft.accessKey, draft.secret, draft.backupPassword = form.value(0), form.value(1), form.value(2)
+			state.aiPost(func(state *State) { state.openS3Bucket(draft) })
 		},
 	},
 		formField{label: m.S3AccessKey},
 		formField{label: m.S3Secret, secure: true},
 		formField{label: m.BackupPassword, placeholder: m.BackupPasswordPlaceholder, secure: true},
 	)
-	form.set(0, settings.accessKey)
+	form.set(0, draft.accessKey)
+	form.set(1, draft.secret)
+	form.set(2, draft.backupPassword)
 }
 
 func (state *State) runS3Login(form *formDialog, settings s3Settings, allowInsecureHTTP bool) string {

@@ -252,3 +252,34 @@ func TestTheStatusOfTheFirstPromptIsNotACommandCompletion(t *testing.T) {
 		t.Fatalf("a failed command after the prompt left alert %v", kind)
 	}
 }
+
+func TestColouredTabBacksTheAlertTitleWithItsUntintedFill(t *testing.T) {
+	s := threeVisiblePaneState(t)
+	s.backgroundOutputAlerts = true
+	s.activeSection = sectionSettings
+	s.sessions[0].outputAlert.kind = outputAlertRunning
+	var layout gfx.Canvas
+	s.Paint(&layout, gfx.Size{Width: 1400, Height: 900})
+	tab := s.chrome.bar.tabs[0]
+	tab.output = outputAlertRunning
+	tab.tint = tabColors[1]
+	tab.base = gfx.RGB(31, 36, 44)
+	var canvas gfx.Canvas
+	canvas.SetClock(func() time.Duration { return 0 })
+	canvas.BeginFrame()
+	s.paintOutputAlertTitle(&canvas, &tab, gfx.Rect{Width: 1400, Height: 900})
+	canvas.EndFrame()
+	found := false
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Color == tab.base && rectangle.Bounds == tab.title.Rect() {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the coloured tab's alert title is not backed by its untinted fill")
+	}
+	// The alert ink keeps the contrast it was designed for on that fill.
+	if inkContrast(tab.base, s.pal.success) < tabColorInkFloor {
+		t.Fatal("the alert backing does not keep its ink readable")
+	}
+}

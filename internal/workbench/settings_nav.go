@@ -168,6 +168,6 @@ func (page *settingsPage) navEntry(id gfx.ID, icon uint8, label string, active b
 	page.hitOn(entry, id, label, gfx.HitOptions{Role: gfx.RoleMenuItem, Selected: active})
 	entry.Children(func() {
 		ui.Icon(c, lucideIcons[icon]).IconTransform(page.state.iconMotion(page.canvas(), id, icon)).Color(foreground)
-		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(foreground).LineHeight(22).Grow(1)
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(foreground).LineHeight(22).Grow(1).Ellipsis()
 	})
 }

@@ -261,6 +261,31 @@ func TestHeadlessNeedsAnExplicitNonDefaultDataDirectory(t *testing.T) {
 	}
 }
 
+// The window records the windows write and the ones the launcher reads must be
+// the same file, including when the data directory is the platform default. An
+// empty path reads nothing and quietly opens one window per launch.
+func TestStateDatabasePathFallsBackToTheDefaultDataDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		t.Setenv("HOME", dir)
+	}
+	t.Setenv("MOTTY_DATA_DIR", "")
+	explicit := filepath.Join(dir, "explicit")
+	t.Setenv("MOTTY_DATA_DIR", explicit)
+	if got := stateDatabasePath(); got != filepath.Join(explicit, "config.db") {
+		t.Fatalf("explicit data directory: got %q", got)
+	}
+	t.Setenv("MOTTY_DATA_DIR", "")
+	defaultDir, err := defaultDataDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stateDatabasePath(); got != filepath.Join(defaultDir, "config.db") {
+		t.Fatalf("default data directory: got %q, want %q", got, filepath.Join(defaultDir, "config.db"))
+	}
+}
+
 func relativePathFrom(t *testing.T, base, target string) string {
 	t.Helper()
 	current, err := os.Getwd()

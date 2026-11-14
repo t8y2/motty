@@ -22,8 +22,8 @@ import (
 	"motty/internal/webdav"
 )
 
-// Backup and sync. A backup is the hosts, settings, trusted host keys and saved
-// passwords sealed in one file under a password the user chooses (package
+// Backup and sync. A backup is the shared configuration, trusted host keys and
+// saved passwords sealed in one file under a password the user chooses (package
 // backup). It can be written to a file, or kept in the cloud (a WebDAV server,
 // S3-compatible storage, a GitHub Gist or a Gitee snippet, all behind
 // cloudsync.Store) and
@@ -43,6 +43,9 @@ var (
 	hitSyncNow            = tree.ID(backupUiHits, "sync-now")
 	hitSyncRestore        = tree.ID(backupUiHits, "sync-restore")
 	hitSyncAuto           = tree.ID(backupUiHits, "sync-auto")
+	// hitSyncCategories is the list of content switches; an item is its index in
+	// syncCategories.
+	hitSyncCategories = tree.Sub(backupUiHits, tree.Name("sync-category"))
 )
 
 const (
@@ -233,6 +236,8 @@ func (state *State) backupErrorText(err error) string {
 		return m.BackupErrTooNew
 	case errors.Is(err, vault.ErrNeedsConversion):
 		return m.BackupErrVault
+	case errors.Is(err, vault.ErrTooLarge):
+		return state.messages.VaultTooLarge
 	case errors.Is(err, cloudsync.ErrUnauthorized):
 		// The service's own words (an S3 error code, GitHub's message) follow.
 		if _, detail, found := strings.Cut(err.Error(), " ("); found {
@@ -241,6 +246,8 @@ func (state *State) backupErrorText(err error) string {
 		return m.SyncErrUnauthorized
 	case errors.Is(err, cloudsync.ErrNotFound):
 		return m.SyncErrNotFound
+	case errors.Is(err, cloudsync.ErrChanged):
+		return m.SyncErrChanged
 	case errors.Is(err, cloudsync.ErrInsecure):
 		return m.SyncErrInsecure
 	case errors.Is(err, cloudsync.ErrTooLarge):
@@ -262,11 +269,18 @@ type partialRestoreError struct{ message string }
 
 func (err *partialRestoreError) Error() string { return err.message }
 
-// applyBackup replaces the hosts, settings, host keys and saved passwords with a
-// backup's, keeping what was there in a safety copy. It returns an error before
-// changing anything when the restore cannot go through, and a
+// applyBackup replaces the shared configuration, host keys and saved passwords
+// with a backup's, keeping what was there in a safety copy. It returns an error
+// before changing anything when the restore cannot go through, and a
 // *partialRestoreError, with the hosts restored, when part of it could not.
 func (state *State) applyBackup(document backup.Document) (hosts int, err error) {
+	return state.applyBackupScope(document, syncScope{})
+}
+
+// applyBackupScope is applyBackup for a selection of what to restore: the
+// records, passwords and host keys of a closed category are left as they are.
+// A zero scope restores everything, which is what a backup file does.
+func (state *State) applyBackupScope(document backup.Document, scope syncScope) (hosts int, err error) {
 	m := state.messages.Tools
 	if len(state.sessions) > 0 {
 		return 0, errors.New(m.BackupErrSessions)
@@ -285,7 +299,7 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 	if _, refused := holdableRecords(document.Records); refused > 0 {
 		return 0, backup.ErrNotBackup
 	}
-	var entries []configstore.Entry
+	var entries, applied []configstore.Entry
 	seen := map[configstore.Key]bool{}
 	hasCLICollection := false
 	for _, record := range document.Records {
@@ -296,7 +310,11 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 		}
 		seen[key] = true
 		if !record.Deleted {
-			entries = append(entries, configstore.Entry{Kind: record.Kind, ID: record.ID, Payload: record.Payload})
+			entry := configstore.Entry{Kind: record.Kind, ID: record.ID, Payload: record.Payload}
+			entries = append(entries, entry)
+			if scope.allowsRecord(record.Kind) {
+				applied = append(applied, entry)
+			}
 		}
 	}
 	_, _, err = joinState(entries, state.configBase.local)
@@ -315,12 +333,15 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 		return 0, err
 	}
 	live := map[configstore.Key]bool{}
-	for _, entry := range entries {
+	for _, entry := range applied {
 		live[configstore.Key{Kind: entry.Kind, ID: entry.ID}] = true
 	}
-	change := configstore.Change{Writer: configWriter(), Put: entries}
+	change := configstore.Change{Writer: configWriter(), Put: applied}
 	for _, entry := range current {
 		key := configstore.Key{Kind: entry.Kind, ID: entry.ID}
+		if !scope.allowsRecord(key.Kind) {
+			continue // a closed category is not this restore's to replace
+		}
 		if key.Kind == kindAICLIProvider && !hasCLICollection {
 			continue // legacy backups predate the independent CLI collection
 		}
@@ -350,20 +371,28 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 	state.reloadOtherWindows()
 
 	var incomplete error
-	if err := state.mergeKnownHosts(document.KnownHosts); err != nil {
-		incomplete = &partialRestoreError{fmt.Sprintf(state.messages.Tools.BackupFailedFmt, err)}
+	if scope.allowsKnownHosts() {
+		if err := state.mergeKnownHosts(document.KnownHosts); err != nil {
+			incomplete = &partialRestoreError{fmt.Sprintf(state.messages.Tools.BackupFailedFmt, err)}
+		}
 	}
 	if opened != nil {
+		secretsSet := false
 		for _, secret := range document.Secrets {
-			if secret.Deleted || excludedFromBackup(secret.Name) {
+			if secret.Deleted || excludedFromBackup(secret.Name) || !scope.allowsSecret(secret.Name) {
 				continue
 			}
 			if err := opened.Set(secret.Name, secret.Value); err != nil {
 				return len(state.hosts), &partialRestoreError{fmt.Sprintf(state.messages.Tools.BackupSecretsFailedFmt, state.vaultErrorText(err))}
 			}
+			secretsSet = true
 		}
-		// A backup made before secrets were kept under hosts has them under logins.
-		state.migrateSecretsToHosts(true)
+		if secretsSet || len(scope.excluded) == 0 {
+			// A backup made before secrets were kept under hosts has them under logins.
+			// A restore of everything keeps doing this even when the backup carries no
+			// password; a partial restore only when it actually wrote one.
+			state.migrateSecretsToHosts(true)
+		}
 	}
 	return len(state.hosts), incomplete
 }
@@ -738,6 +767,10 @@ func (state *State) openSyncRestore() {
 		state.showActionWarning(m.SyncRestoreTitle, m.BackupErrSessions)
 		return
 	}
+	if state.syncScope.empty() {
+		state.status = m.SyncErrNothingSelected
+		return
+	}
 	store, password, ok := state.syncLogin(func() { state.openSyncRestore() }, false)
 	if !ok {
 		return
@@ -761,6 +794,8 @@ func (state *State) runSyncRestore(store cloudsync.Store, password string, epoch
 		return m.SyncRestoreChanged
 	case state.sync.working:
 		return m.SyncWorking
+	case state.syncScope.empty():
+		return m.SyncErrNothingSelected
 	case len(state.sessions) > 0:
 		return m.BackupErrSessions
 	}
@@ -812,10 +847,14 @@ func (state *State) finishSyncRestore(epoch uint32, remote backup.Document, tag 
 		fail(state.messages.Tools.BackupErrSessions)
 		return
 	}
+	if state.syncScope.empty() {
+		fail(state.messages.Tools.SyncErrNothingSelected)
+		return
+	}
 
 	state.stopSyncTimer()
 	state.sync.holdBack = true
-	_, err = state.applyBackup(remote)
+	_, err = state.applyBackupScope(remote, state.syncScope)
 	// What the restore itself asks of the sync engine (a saved password changed
 	// by the vault is posted from the vault) is queued ahead of this.
 	if !state.aiPost(func(state *State) { state.sync.holdBack = false }) {
@@ -871,9 +910,27 @@ func (state *State) clickBackupSettings(id gfx.ID) bool {
 			}
 		}
 	default:
+		if index, ok := id.In(hitSyncCategories); ok && index >= 0 && index < len(syncCategories) {
+			state.toggleSyncCategory(syncCategories[index])
+			return true
+		}
 		return false
 	}
 	return true
+}
+
+// toggleSyncCategory opens or closes one kind of content for this computer. The
+// choice is local: closing never deletes anything here or on the server, and
+// opening asks for a sync so that what was held back is exchanged soon.
+func (state *State) toggleSyncCategory(category syncCategory) {
+	state.syncScope = state.syncScope.toggled(category)
+	if state.syncScope.allows(category) {
+		state.sync.err, state.sync.retries, state.sync.runText = "", 0, ""
+	}
+	state.save()
+	if state.syncScope.allows(category) {
+		state.scheduleSync()
+	}
 }
 
 // syncTexts keeps the two descriptions of the cloud rows up to date; they are
@@ -924,5 +981,44 @@ func (state *State) paintBackupSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitSyncRestore, Label: m.SyncRestore, Variant: components.ButtonOutline},
 			)
 		})
+		page.group(m.SyncScopeGroup, func() {
+			page.hintRow(m.SyncScopeDescription)
+			for index, category := range syncCategories {
+				label, description := state.syncCategoryText(category)
+				page.toggleRow(label, description, state.syncScope.allows(category), hitSyncCategories.At(index))
+			}
+		})
 	})
+}
+
+// syncCategoryText is the settings page's words for one kind of content.
+func (state *State) syncCategoryText(category syncCategory) (label, description string) {
+	m := state.messages.Tools
+	switch category {
+	case syncCategoryHosts:
+		return m.SyncScopeHosts, m.SyncScopeHostsDescription
+	case syncCategorySettings:
+		return m.SyncScopeSettings, m.SyncScopeSettingsDescription
+	case syncCategoryNotes:
+		return m.SyncScopeNotes, m.SyncScopeNotesDescription
+	case syncCategorySnippets:
+		return m.SyncScopeSnippets, m.SyncScopeSnippetsDescription
+	case syncCategoryRoutes:
+		return m.SyncScopeRoutes, m.SyncScopeRoutesDescription
+	case syncCategoryForwards:
+		return m.SyncScopeForwards, m.SyncScopeForwardsDescription
+	case syncCategoryWorkspaces:
+		return m.SyncScopeWorkspaces, m.SyncScopeWorkspacesDescription
+	case syncCategoryCredentials:
+		return m.SyncScopeCredentials, m.SyncScopeCredentialsDescription
+	case syncCategoryKeys:
+		return m.SyncScopeKeys, m.SyncScopeKeysDescription
+	case syncCategoryAI:
+		return m.SyncScopeAI, m.SyncScopeAIDescription
+	case syncCategoryRules:
+		return m.SyncScopeRules, m.SyncScopeRulesDescription
+	case syncCategoryKnownHosts:
+		return m.SyncScopeKnownHosts, m.SyncScopeKnownHostsDescription
+	}
+	return "", ""
 }

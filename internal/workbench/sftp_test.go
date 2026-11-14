@@ -1381,7 +1381,11 @@ func TestLeavingSFTPStopsItsWorker(t *testing.T) {
 func TestSFTPSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	clickSFTPRow(t, state, session.files, "notes.txt")
+	// The completion catalog loads on a background wake. Settle it before
+	// measuring the allocations of an otherwise idle paint.
+	waitFor(t, state, func() bool { return !state.completion.catalogLoading })
 	var canvas gfx.Canvas
+	canvas.SetClock(func() time.Duration { return time.Second })
 	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {

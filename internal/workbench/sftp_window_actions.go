@@ -5,7 +5,7 @@ import (
 	"motty/internal/sshconn"
 )
 
-var sftpWindowActionIDs = [...]gfx.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPMove, hitSFTPChmod, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties, hitSFTPCalculateDirectorySize}
+var sftpWindowActionIDs = [...]gfx.ID{hitSFTPOpenEntry, hitSFTPDownload, hitSFTPDownloadHere, hitSFTPSend, hitSFTPEditExternal, hitSFTPRename, hitSFTPMove, hitSFTPChmod, hitSFTPChown, hitSFTPExtract, hitSFTPCompress, hitSFTPDelete, hitSFTPNewDirectory, hitSFTPUpload, hitSFTPUploadDirectory, hitSFTPNewLink, hitSFTPProperties, hitSFTPCalculateDirectorySize}
 
 func sftpWindowActionIndex(id gfx.ID) int {
 	for i, action := range sftpWindowActionIDs {
@@ -62,6 +62,9 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 			add(hitSFTPEditExternal, iconExternal, m.Tools.ExtEditButton)
 		}
 		add(hitSFTPSend, iconUpload, m.Tools.SendToServer)
+		if count > 0 {
+			add(hitSFTPDelete, iconTrash, m.SFTPDelete)
+		}
 		return actions
 	}
 	add(hitSFTPDownload, iconDownload, m.SFTPDownload)
@@ -73,6 +76,9 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 		}
 		add(hitSFTPRename, iconPencil, m.SFTPRename)
 		add(hitSFTPChmod, iconLock, m.SFTPPermissions)
+		if sftpOwnershipAvailable(&w.session, w.view) {
+			add(hitSFTPChown, iconWrench, m.SFTPOwnership)
+		}
 		if !entry.IsDir() && archiveKindOf(entry.Name) != archiveNone && w.session.host.System != sshconn.SystemWindows {
 			add(hitSFTPExtract, iconArchive, m.Tools.Extract)
 		}
@@ -105,7 +111,7 @@ func (w *sftpWindow) fileAction(local bool, id gfx.ID) {
 		}
 		return
 	}
-	if w.browse.pending != nil || w.pendingLocal != "" || !local && (w.view.busy || !w.connected()) {
+	if w.browse.pending != nil || w.pendingLocal != "" || local && w.view.localBusy || !local && (w.view.busy || !w.connected()) {
 		return
 	}
 	w.cancelDrag()
@@ -158,10 +164,12 @@ func (w *sftpWindow) fileAction(local bool, id gfx.ID) {
 		if !local {
 			w.owner.openSFTPDialog(w.view, sftpDialogChmod)
 		}
-	case hitSFTPDelete:
-		if !local {
-			w.owner.openSFTPDialog(w.view, sftpDialogDelete)
+	case hitSFTPChown:
+		if !local && sftpOwnershipAvailable(&w.session, w.view) {
+			w.owner.openSFTPDialog(w.view, sftpDialogChown)
 		}
+	case hitSFTPDelete:
+		w.owner.openSFTPDialog(w.view, sftpDialogDelete)
 	case hitSFTPExtract:
 		if !local {
 			w.owner.openSFTPExtractDialog(w.view)

@@ -8,7 +8,7 @@ import (
 // A host-menu connection has no terminal, pane or persisted session. SSH's
 // existing authentication dialogs and vault still own host trust and secrets.
 func (state *State) openHostSFTPWindow(host Host) {
-	if !host.isSSH() || host.ID == localHostID || !state.sftpManagersAvailable() {
+	if !host.isSSH() || host.mosh() || host.ID == localHostID || !state.sftpManagersAvailable() {
 		return
 	}
 	for _, w := range state.sftpWindows {
@@ -109,6 +109,11 @@ func (state *State) pumpSFTPConnections() {
 // after its file browser closes. Local documents do not hold the connection.
 func (w *sftpWindow) releaseConnection() {
 	if !w.closed {
+		return
+	}
+	// A server-to-server copy that started here still reads through this
+	// connection. Its last transfer releases the connection when it settles.
+	if len(w.view.outgoingCopies) > 0 {
 		return
 	}
 	if w.ownsConnection {

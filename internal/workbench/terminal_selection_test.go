@@ -870,3 +870,85 @@ func TestAPlainClickAfterAWordSelectionGoesBackToCells(t *testing.T) {
 		t.Fatalf("a cell drag after a word selection selected %q", got)
 	}
 }
+
+// blockGesture drags from down to the last move with modifiers held and
+// releases there, the way a block selection is drawn.
+func blockGesture(state *State, session *Session, geometry terminalGeometry, modifiers gfx.Modifiers, down [2]int, moves ...[2]int) {
+	hit := terminalTestHit(state, session)
+	at := func(cell [2]int) (float32, float32) {
+		return cellPoint(geometry, cell[0], cell[1], state.cellWidth, state.cellHeight)
+	}
+	x, y := at(down)
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1, Modifiers: modifiers,
+		Target: hit, X: x, Y: y, Viewport: state.viewport,
+	})
+	last := down
+	for _, cell := range moves {
+		x, y = at(cell)
+		state.Pointer(gfx.PointerEvent{
+			Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Captured: true, Modifiers: modifiers,
+			Target: hit, X: x, Y: y, Viewport: state.viewport,
+		})
+		last = cell
+	}
+	x, y = at(last)
+	state.Pointer(gfx.PointerEvent{
+		Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Captured: true, Modifiers: modifiers,
+		Target: hit, X: x, Y: y, Viewport: state.viewport,
+	})
+}
+
+func TestBlockDragSelectsTheRectangleAndCopiesIt(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.write([]byte("name    value\r\nalpha   1234\r\nbeta    5678\r\n"))
+	blockGesture(state, session, geometry, terminalBlockModifiers(), [2]int{0, 8}, [2]int{1, 10}, [2]int{2, 12})
+
+	hit := terminalTestHit(state, session)
+	result := state.Key(gfx.KeyEvent{Target: hit, Modifiers: gfx.ModifierControl | gfx.ModifierShift, Text: "c"})
+	if result.ClipboardText != "value\n1234\n5678" {
+		t.Fatalf("copy = %q (%+v)", result.ClipboardText, result)
+	}
+
+	cols, _ := session.term.screen.Size()
+	for row := 0; row < 3; row++ {
+		from, to, selected := session.term.selection.span(
+			session.term.screen.LineNumber(row), session.term.screen.Row(row), cols)
+		if !selected || from != 8 || to != 13 {
+			t.Fatalf("row %d span %d..%d, %v", row, from, to, selected)
+		}
+	}
+	if _, _, selected := session.term.selection.span(
+		session.term.screen.LineNumber(3), session.term.screen.Row(3), cols); selected {
+		t.Fatal("a row below the rectangle is painted as selected")
+	}
+}
+
+func TestBlockPressWithoutADragStaysAClick(t *testing.T) {
+	state, session, geometry := selectionState()
+	blockGesture(state, session, geometry, terminalBlockModifiers(), [2]int{1, 2})
+	if session.term.selection.selected || session.term.selection.dragging || session.term.selection.block {
+		t.Fatalf("click left %+v", session.term.selection)
+	}
+}
+
+func TestBlockSelectionYieldsToProgramsUsingTheMouse(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("\x1b[?1000h"))
+	session.term.write([]byte("name    value\r\nalpha   1234\r\nbeta    5678\r\n"))
+
+	blockGesture(state, session, geometry, terminalBlockModifiers(), [2]int{0, 8}, [2]int{2, 12})
+	if session.term.selection.selected {
+		t.Fatal("the terminal took a drag the program had the mouse for")
+	}
+	if shell.typed() == "" {
+		t.Fatal("the program using the mouse received nothing")
+	}
+	// Shift takes the press back, and the block chord then selects the rectangle.
+	blockGesture(state, session, geometry, gfx.ModifierShift|terminalBlockModifiers(), [2]int{0, 8}, [2]int{2, 12})
+	if got := selectedText(session); got != "value\n1234\n5678" {
+		t.Fatalf("Shift+block drag selected %q", got)
+	}
+}

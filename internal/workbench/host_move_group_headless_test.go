@@ -308,3 +308,53 @@ func TestMoveHostGroupScrollStaysModalAndCanReachLastAction(t *testing.T) {
 		t.Fatal("the last fixed action was not reachable after scrolling")
 	}
 }
+
+func TestMoveHostGroupWheelOwnsWindowScroll(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	for index := range state.hosts {
+		state.hosts[index].Group = ""
+	}
+	for index := range 50 {
+		state.hostGroups = append(state.hostGroups, hostGroup{Name: fmt.Sprintf("Group %02d", index), Explicit: true})
+	}
+	state.hostDataChanged()
+	view := openCatalogWindow(t, state)
+	hostFilterContextClick(t, view, hitHostCheckList.At(int(state.hosts[0].ID)), false)
+	hostFilterContextClick(t, view, hitMoveHostGroup, false)
+
+	list := state.hostList.scroll
+	if list == nil || state.hostsContent <= state.hostList.viewport.Height {
+		t.Fatal("the host list must overflow behind the picker")
+	}
+	before := list.Offset
+	first := hostFilterContextHit(t, view, hitHostGroupNone)
+	x, y := first.Bounds.X+first.Bounds.Width/2, first.Bounds.Y+first.Bounds.Height/2
+	if !pointInRect(x, y, state.hostList.viewport) {
+		t.Fatal("the picker must overlap the scrollable host list")
+	}
+	if _, ok := findSnapshotHit(view.Snapshot(), hitHostGroupNew); ok {
+		t.Fatal("the last action should require scrolling")
+	}
+	wheel := func(x, y, delta float32) {
+		t.Helper()
+		if err := view.Scroll(gfx.ScrollEvent{X: x, Y: y, DeltaY: delta}); err != nil {
+			t.Fatal(err)
+		}
+		if list.Offset != before || !state.hostGroupMenu {
+			t.Fatal("the wheel scrolled the host list or dismissed the picker")
+		}
+	}
+	wheel(x, y, 2000)
+	hostFilterContextHit(t, view, hitHostGroupNew)
+	wheel(x, y, 2000) // At the end, the wheel still belongs to the picker.
+	wheel(x, y, -2000)
+	hostFilterContextHit(t, view, hitHostGroupNone)
+
+	backdropX := state.hostList.viewport.X + state.hostList.viewport.Width - 8
+	hit, ok := view.Driver().HitTest(backdropX, y)
+	if !ok || hit != hitHostGroupDismiss {
+		t.Fatal("the test point must hit the backdrop over the host list")
+	}
+	wheel(backdropX, y, 2000)
+	hostFilterContextHit(t, view, hitHostGroupNone)
+}

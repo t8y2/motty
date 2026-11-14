@@ -65,6 +65,9 @@ func (state *State) rebuildSnippetPicker() {
 		return
 	}
 	palette := &state.commandPalette
+	// The bar's show/hide checkbox is chrome of the picker, declared above the
+	// search field. Nothing here belongs to the searchable list: the entries
+	// are snippets only, so a query never has to account for a setting.
 	// folded is set while a group is closed: its snippets then answer a search
 	// without being listed.
 	folded := false

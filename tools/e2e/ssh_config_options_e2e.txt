@@ -1,0 +1,35 @@
+# lang: zh-CN
+# Import a real SSH config and authenticate using its restricted identity.
+# Start tools/e2esshd on loopback port 47490 with E2E_EXTRA_PUBKEY pointing to
+# /tmp/motty-749-identity.pub; this disables password authentication.
+# Generate that unencrypted identity with ssh-keygen, then write this config
+# to /tmp/motty-749-ssh-config before driving the script from a fresh home:
+#
+# Host issue749
+#     HostName 127.0.0.1
+#     Port 47490
+#     User tester
+#     IdentityFile /tmp/motty-749-identity
+#     IdentitiesOnly yes
+#     ServerAliveInterval 1
+#     ServerAliveCountMax 2
+#
+# The marker contains a substitution so echoed input cannot satisfy the check.
+openfiles /tmp/motty-749-ssh-config
+click "导入/导出"
+click "导入 SSH Config"
+expect text "SSH 配置已导入" within 3000
+expect text "所有受支持的设置均已导入,没有警告。" within 3000
+expect layout clean
+shot /tmp/motty-749-import.png
+click "完成"
+dblclick "button:issue749"
+waitfor "信任" 5000
+click "信任并保存"
+waitfor "tester@e2e" 8000
+type printf 'MOTTY_%d_OK\n' 749
+key enter
+waitfor "MOTTY_749_OK" 5000
+settle 3500
+expect text "tester@e2e" within 1000
+shot /tmp/motty-749-connected.png

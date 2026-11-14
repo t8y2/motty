@@ -68,7 +68,7 @@ func runSession(parent context.Context, cfg Config, provider SessionProvider, ms
 		if done || !offered[call.Name] {
 			return deny("unknown tool " + call.Name)
 		}
-		if cfg.Mode != ModeAgent {
+		if cfg.Mode != ModeAgent && call.Name == tools.NameRequestAgentMode {
 			if _, err := tools.DecodeRequestAgentMode([]byte(call.Arguments)); err != nil {
 				return deny("invalid mode-switch arguments")
 			}

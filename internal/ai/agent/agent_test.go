@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
@@ -710,5 +711,48 @@ func TestDoneCarriesTheStopReason(t *testing.T) {
 	}
 	if done.StopReason != "length" {
 		t.Fatalf("stop reason = %q", done.StopReason)
+	}
+}
+
+func TestAskNoteQueryExecutesAndCannotEdit(t *testing.T) {
+	for _, editing := range []bool{false, true} {
+		t.Run(fmt.Sprint("editing=", editing), func(t *testing.T) {
+			name := tools.NameNoteQuery
+			args := `{"action":"search","references":[{"kind":"tag","title":"Docker","token":"note:tag:Docker"}]}`
+			if editing {
+				name = tools.NameNoteEdit
+				args = `{"action":"create","title":"n","body":"b"}`
+			}
+			p := &fakeProvider{turns: []turn{{events: []llm.Event{call("q", name, args), done(1, 1)}}, {events: []llm.Event{text("answer"), done(1, 1)}}}}
+			b := &nativeNoteBackend{}
+			cfg := newCfg(p, &b.fakeBackend, true)
+			cfg.Mode = ModeAsk
+			cfg.Tools = tools.InApp()
+			cfg.Gate.Backend = b
+			cfg.Gate.NotesEnabled = true
+			escalated := false
+			messages, err := Run(context.Background(), cfg, nil, "read notes", func(e Event) {
+				if e.Kind == EventAgentModeRequest {
+					escalated = true
+				}
+			})
+			for _, s := range p.reqs[0].Tools {
+				if s.Name != tools.NameNoteQuery && s.Name != tools.NameRequestAgentMode {
+					t.Fatalf("unexpected Ask tool: %s", s.Name)
+				}
+			}
+			if b.edits != 0 || escalated {
+				t.Fatal("Ask edited or escalated")
+			}
+			if editing {
+				if err == nil {
+					t.Fatal("unoffered edit accepted")
+				}
+				return
+			}
+			if err != nil || len(b.query.References) != 1 || len(messages) != 4 || messages[2].Role != llm.RoleTool {
+				t.Fatalf("Ask query failed: %+v %v", messages, err)
+			}
+		})
 	}
 }

@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"motty/internal/localshell"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
 )
@@ -29,9 +30,22 @@ func (state *State) monitorOffered(session *Session) bool {
 	return session.isLocal() || session.hasServer()
 }
 
+// monitorSystem is the system a session's monitor samples. A WSL shell is a
+// distribution running on this computer, not the computer itself: its readings
+// come from inside the distribution, so it is Linux whatever Windows reports.
+func monitorSystem(session *Session) sshconn.RemoteSystem {
+	if session.wslDistro() != "" {
+		return sshconn.SystemLinux
+	}
+	return session.host.System
+}
+
 // monitorRunnerFor is where a session's monitor commands run.
 func monitorRunnerFor(session *Session) monitorRunner {
 	if session.isLocal() {
+		if distro := session.wslDistro(); distro != "" {
+			return remotestats.WSL{Exe: localshell.WSLExecutable(), Distro: distro}
+		}
 		return remotestats.Local{}
 	}
 	return commandRunnerFor(session)

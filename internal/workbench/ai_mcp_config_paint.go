@@ -180,15 +180,15 @@ func (state *State) paintMCPConfigBlock(page *settingsPage, view aiMCPConfigView
 			})
 			ui.Column(c).MarginSides(0, 14, 14, 14).Children(func() {
 				if !view.ready {
-					ui.Wrap(c, view.preview).FontSize(12).LineHeight(19).Color(pal.muted)
+					ui.Wrap(c, view.preview).FontSize(aiSizes.mono).LineHeight(aiSizes.monoLine).Color(pal.muted)
 					return
 				}
 				// Wrap by monospace cells, preserving JSON indentation and newlines.
-				cell, _ := c.Canvas().MonoCellSize(12, 0)
+				cell, _ := c.Canvas().MonoCellSize(aiSizes.mono, 0)
 				cols := max(1, int((page.width-36-28-2)/max(cell, 1)))
 				*view.lines, _ = aiMonoWrap((*view.lines)[:0], view.preview, cols, len(view.preview)+1)
 				for _, line := range *view.lines {
-					ui.Text(c, line).Mono().FontSize(12).LineHeight(19).Color(pal.text)
+					ui.Text(c, line).Mono().FontSize(aiSizes.mono).LineHeight(aiSizes.monoLine).Color(pal.text)
 				}
 			})
 		})

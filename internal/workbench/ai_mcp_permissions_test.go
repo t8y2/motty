@@ -86,7 +86,7 @@ func TestMCPUnknownAccessSettingStaysReadOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 		world.state.reloadAI()
-		_, mode, _, _, err := NewAIHub(world.options.AIStorePath).readSettings()
+		_, mode, _, _, _, err := NewAIHub(world.options.AIStorePath).readSettings()
 		if err != nil || mode != gate.ModeObserve || world.state.ai.settings.mcpMode != gate.ModeObserve {
 			t.Fatalf("unknown setting %q escalated access: mode=%v err=%v", value, mode, err)
 		}

@@ -14,6 +14,7 @@ type ActionFeedbackMessages struct {
 	ImportHostCatalogFailed   string
 	ImportUpdateRequired      string
 	ImportSessionsFailedFmt   string
+	ImportFolderFailedFmt     string
 	ImportPrivateKeyFailedFmt string
 	BackupTooLarge            string
 	NewWindowFailed           string
@@ -32,6 +33,7 @@ var chineseActionFeedback = ActionFeedbackMessages{
 	ImportHostCatalogFailed:   "无法导入此文件，请选择 Motty 导出的主机文件。",
 	ImportUpdateRequired:      "此文件由更新版本的 Motty 导出，请更新 Motty 后再试。",
 	ImportSessionsFailedFmt:   "无法导入这些连接，请选择 %s 导出的连接文件。",
+	ImportFolderFailedFmt:     "无法导入这些会话，请选择保存 %s 会话的文件夹。",
 	ImportPrivateKeyFailedFmt: "无法导入“%s”，请重新选择可读取的 SSH 私钥文件。",
 	BackupTooLarge:            "备份文件过大，请选择其他备份。",
 	NewWindowFailed:           "暂时无法打开新窗口，请稍后重试。",
@@ -50,6 +52,7 @@ var englishActionFeedback = ActionFeedbackMessages{
 	ImportHostCatalogFailed:   "Could not import this file. Choose a host file exported by Motty.",
 	ImportUpdateRequired:      "This file was exported by a newer Motty version. Update Motty and try again.",
 	ImportSessionsFailedFmt:   "Could not import these connections. Choose connection files exported by %s.",
+	ImportFolderFailedFmt:     "Could not import these sessions. Choose the folder that holds your %s sessions.",
 	ImportPrivateKeyFailedFmt: "Could not import “%s”. Select a readable SSH private key file.",
 	BackupTooLarge:            "This backup file is too large. Choose another backup.",
 	NewWindowFailed:           "Could not open a new window. Please try again shortly.",

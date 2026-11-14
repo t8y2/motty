@@ -11,7 +11,7 @@ import (
 // another matching host or a new login. The command is constructed by remotetools.
 func (state *State) openContainerTab(sourceID uint32, name, command string) error {
 	source, ok := state.sessionByIDPointer(sourceID)
-	if !ok || !state.remoteToolsOffered(source) || !source.host.isSSH() {
+	if !ok || !state.remoteToolsOffered(source) || !source.hasServer() {
 		return errors.New("the SSH host is no longer connected")
 	}
 	if source.host.System == sshconn.SystemWindows {

@@ -329,7 +329,7 @@ func (state *State) openAutofillDialog(rule *autofill.Rule) {
 // that preset sends a fixed text. Both are anchored at the start of the line, so
 // a program that only mentions a password is not taken for the prompt.
 const (
-	sudoPromptPattern = `(?i)^\[sudo\][^\n]*(?:password|密码|密碼)[^\n]*[:：]\s*$`
+	sudoPromptPattern = `(?i)^\[sudo(?::[^\]]*)?\][^\n]*(?:password|密码|密碼)[^\n]*[:：]\s*$`
 	suPromptPattern   = `(?i)^(?:password|密码|密碼|口令)\s*[:：]\s*$`
 )
 
@@ -659,24 +659,8 @@ func (state *State) paintAutofillSettings(page *settingsPage) {
 	m := state.messages.Autofill
 	rules := state.autofillRules.rules
 	page.group(m.Group, func() {
-		for index, rule := range rules {
-			scope := m.ScopeAll
-			if len(rule.Scope) > 0 {
-				scope = fmt.Sprintf(m.ScopeFmt, strings.Join(rule.Scope, ", "))
-			}
-			send := state.sendKindName(rule.Send)
-			if rule.Enter {
-				send += " + " + m.WithEnter
-			}
-			status, toggle := m.StateOff, m.TurnOn
-			if rule.Enabled {
-				status, toggle = m.StateOn, m.TurnOff
-			}
-			page.actionRow(rule.Name, status+" · "+send+" · "+scope+" · "+rule.Pattern, false,
-				components.ButtonAction{ID: hitAutofillToggleList.At(index), Label: toggle, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitAutofillEditList.At(index), Label: m.Edit, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitAutofillDeleteList.At(index), Label: m.Delete, Variant: components.ButtonOutline})
-		}
+		page.actionRow(m.Row, fmt.Sprintf(state.messages.RuleManagement.CountFmt, len(rules)), false,
+			components.ButtonAction{ID: hitSettingsAutofillManage, Label: state.messages.RuleManagement.Manage, Variant: components.ButtonOutline})
 		full := len(rules) >= autofill.MaxRules
 		page.actionRow(m.Row, m.RowDescription, full,
 			components.ButtonAction{ID: hitSettingsAutofillSudo, Label: m.PresetSudo, Variant: components.ButtonOutline},

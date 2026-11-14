@@ -5,6 +5,7 @@ package update
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -13,14 +14,17 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	vivaupdate "github.com/vivaui/viva/update"
 )
 
 // Current is the version of this build. A test keeps it equal to viva.toml's.
-const Current = "0.4.1"
+const Current = "0.4.8"
 
 // Feed is the GitHub release the project publishes its builds to.
 const Feed = "https://api.github.com/repos/t8y2/motty/releases/latest"
@@ -29,6 +33,16 @@ const Feed = "https://api.github.com/repos/t8y2/motty/releases/latest"
 // Feed it names every file with its size and SHA-256, which is what a download
 // is checked against.
 const MirrorFeed = "https://dl.motty.page/latest.json"
+
+// VivaFeed is the signed Ed25519 feed an installed copy moves to: the same
+// release data as MirrorFeed, in the format github.com/vivaui/viva/update
+// reads, with a patch per asset. It is published beside MirrorFeed while old
+// versions still read that one; see the update ADR.
+const VivaFeed = "https://dl.motty.page/viva/latest.json"
+
+// VivaPublicKey is the base64 Ed25519 public key that signs VivaFeed. Its
+// private half is MOTTY_VIVA_UPDATE_KEY in CI, never in the repository.
+const VivaPublicKey = "nmgLeV6s/EOjzzDOC7G59NotyGPqjTY4/6Ejd4KpcbY="
 
 // ErrNoRelease means the feed has no published release, which is also what a
 // private repository looks like to an anonymous request.
@@ -59,13 +73,41 @@ type Asset struct {
 	// version and file. An empty signature means the release cannot be
 	// installed in place, only downloaded by hand.
 	Signature string
+	// FeedVerified marks a package whose size and digest were read from the
+	// signed Viva feed. The feed's Ed25519 signature is its authenticity, so
+	// there is no per-package minisign signature to check.
+	FeedVerified bool
+	// Format is the Viva feed's format for the asset: zip, nsis or tar.gz.
+	Format string
+	// Patches are the deltas the feed offers from earlier versions to this
+	// one. Only a feed-verified package has them.
+	Patches []Patch
+}
+
+// Patch is one delta update from an installed version to this release.
+type Patch struct {
+	FromVersion string
+	URL         string
+	Size        int64
+	SHA256      string
+}
+
+// PatchFrom returns the patch that applies to version, if the feed offers one.
+func (asset Asset) PatchFrom(version string) (Patch, bool) {
+	for _, patch := range asset.Patches {
+		if patch.FromVersion == version {
+			return patch, true
+		}
+	}
+	return Patch{}, false
 }
 
 // Has reports whether the release carries a package for the asking platform.
 func (asset Asset) Has() bool { return asset.URL != "" }
 
-// Signed reports whether the package can be checked against the release key.
-func (asset Asset) Signed() bool { return asset.Signature != "" }
+// Signed reports whether the package's authenticity can be checked: a minisign
+// signature, or the signed feed that named it.
+func (asset Asset) Signed() bool { return asset.Signature != "" || asset.FeedVerified }
 
 const (
 	maxFeedBytes  = 1 << 20
@@ -147,8 +189,171 @@ const (
 )
 
 // CheckPackage selects the package matching the installation on this machine.
+// It prefers the signed Viva feed, which is where patches and the one trust
+// root live; the mirror feed stays for a .deb (the Viva feed has no Debian
+// asset) and for the migration window, when the Viva feed is not published yet
+// or cannot be reached.
 func CheckPackage(ctx context.Context, client *http.Client, goos, goarch string, pkg Package) (Release, error) {
+	if pkg != PackageDeb {
+		if release, err := checkVivaPackageAt(ctx, client, VivaFeed, []string{VivaPublicKey}, goos, goarch, pkg); err == nil {
+			return release, nil
+		}
+	}
 	return checkFeedsPackage(ctx, client, MirrorFeed, Feed, goos, goarch, pkg)
+}
+
+// checkVivaPackageAt reads a Viva feed. The feed URL and keys are parameters so
+// a test can sign a feed of its own.
+func checkVivaPackageAt(ctx context.Context, client *http.Client, feedURL string, keys []string, goos, goarch string, pkg Package) (Release, error) {
+	publicKeys := make([]ed25519.PublicKey, 0, len(keys))
+	for _, encoded := range keys {
+		key, err := vivaupdate.ParsePublicKey(encoded)
+		if err != nil {
+			return Release{}, fmt.Errorf("update: the Viva feed key: %w", err)
+		}
+		publicKeys = append(publicKeys, key)
+	}
+	vivaClient, err := vivaupdate.New(vivaupdate.Config{
+		FeedURL: feedURL, PublicKeys: publicKeys, Current: Current, HTTP: client,
+	})
+	if err != nil {
+		return Release{}, err
+	}
+	feed, err := vivaClient.Check(ctx)
+	if err != nil {
+		return Release{}, err
+	}
+	if feed == nil {
+		// The feed is reachable and has nothing newer: the running version is
+		// the latest, which is what the caller compares against.
+		return Release{Version: Current, PlatformPackageChecked: true}, nil
+	}
+	asset, err := selectVivaAsset(feed, goos, goarch, pkg)
+	if err != nil {
+		return Release{}, err
+	}
+	release := Release{
+		Version:                feed.Latest.Version,
+		URL:                    feed.Latest.NotesURL,
+		Notes:                  fetchReleaseNotes(ctx, client, feed.Latest.Version),
+		PlatformPackageChecked: true,
+		Asset: Asset{
+			Name: StableNamePackage(goos, goarch, pkg), URL: asset.URL,
+			SHA256: asset.SHA256, Size: asset.Size, FeedVerified: true,
+			Format: asset.Format, Patches: mapVivaPatches(patchesFor(feed, goos, goarch, asset)),
+		},
+	}
+	if release.URL == "" {
+		release.URL = "https://github.com/t8y2/motty/releases/tag/v" + feed.Latest.Version
+	}
+	return release, nil
+}
+
+// patchesFor returns the patches an installation can use. The Windows feed
+// lists a patch on the portable zip because that is the payload; an NSIS
+// installation holds the same application files, so it may use that patch too.
+func patchesFor(feed *vivaupdate.Feed, goos, goarch string, selected vivaupdate.Asset) []vivaupdate.Patch {
+	if len(selected.Patches) > 0 {
+		return selected.Patches
+	}
+	for _, candidate := range feed.Latest.Assets {
+		if candidate.OS == goos && candidate.Arch == goarch && candidate.Format == vivaupdate.FormatZIP {
+			return candidate.Patches
+		}
+	}
+	return nil
+}
+
+// mapVivaPatches copies the feed's patch list into the application's type.
+func mapVivaPatches(patches []vivaupdate.Patch) []Patch {
+	if len(patches) == 0 {
+		return nil
+	}
+	out := make([]Patch, len(patches))
+	for index, patch := range patches {
+		out[index] = Patch{FromVersion: patch.FromVersion, URL: patch.URL, Size: patch.Size, SHA256: patch.SHA256}
+	}
+	return out
+}
+
+// AppID is the application identifier the update feed names.
+const AppID = "dev.motty.app"
+
+// DownloadPatch fetches a delta listed by the signed feed and verifies its size
+// and digest. The caller applies it with ApplyPatch.
+func DownloadPatch(ctx context.Context, client *http.Client, asset Asset, patch Patch, dir string, progress func(done, total int64)) (string, error) {
+	vivaClient, err := newVivaClient(client)
+	if err != nil {
+		return "", err
+	}
+	return vivaClient.DownloadPatch(ctx,
+		vivaupdate.Asset{OS: runtime.GOOS, Arch: runtime.GOARCH, Format: asset.Format, URL: asset.URL, Size: asset.Size, SHA256: asset.SHA256},
+		vivaupdate.Patch{FromVersion: patch.FromVersion, URL: patch.URL, Size: patch.Size, SHA256: patch.SHA256},
+		dir, progress)
+}
+
+// ApplyPatch applies a downloaded patch to the running installation and returns
+// a directory holding the new payload. The platform installer then replaces the
+// application from it.
+func ApplyPatch(patchPath, fromVersion, toVersion string) (string, error) {
+	return vivaupdate.ApplyPatch(patchPath, AppID, fromVersion, toVersion)
+}
+
+// newVivaClient is the Viva feed client with the embedded key.
+func newVivaClient(client *http.Client) (*vivaupdate.Client, error) {
+	key, err := vivaupdate.ParsePublicKey(VivaPublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("update: the Viva feed key: %w", err)
+	}
+	return vivaupdate.New(vivaupdate.Config{FeedURL: VivaFeed, PublicKeys: []ed25519.PublicKey{key}, Current: Current, HTTP: client})
+}
+
+// selectVivaAsset picks the archive the installation kind needs. The feed's
+// own choice prefers the NSIS setup on Windows; a portable copy needs the zip.
+func selectVivaAsset(feed *vivaupdate.Feed, goos, goarch string, pkg Package) (vivaupdate.Asset, error) {
+	if pkg == PackagePortable {
+		for _, asset := range feed.Latest.Assets {
+			if asset.OS == goos && asset.Arch == goarch && asset.Format == vivaupdate.FormatZIP {
+				return asset, nil
+			}
+		}
+		return vivaupdate.Asset{}, fmt.Errorf("%w: the feed has no portable zip for %s/%s", ErrNoRelease, goos, goarch)
+	}
+	return feed.Asset(goos, goarch)
+}
+
+// fetchReleaseNotes is releaseNotes, replaceable by tests.
+var fetchReleaseNotes = releaseNotes
+
+// releaseNotes reads the GitHub release body for the update dialog. The Viva
+// feed names the release page but not its text; a failed lookup leaves the
+// dialog saying there are no notes.
+func releaseNotes(ctx context.Context, client *http.Client, version string) string {
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
+	url := "https://api.github.com/repos/t8y2/motty/releases/tags/v" + version
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return ""
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("User-Agent", "motty/"+Current)
+	response, err := client.Do(request)
+	if err != nil {
+		return ""
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return ""
+	}
+	var body struct {
+		Body string `json:"body"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxNotesBytes*2)).Decode(&body); err != nil {
+		return ""
+	}
+	return cutUTF8(body.Body, maxNotesBytes)
 }
 
 func checkFeeds(ctx context.Context, client *http.Client, mirrorFeed, githubFeed, goos, goarch string) (Release, error) {

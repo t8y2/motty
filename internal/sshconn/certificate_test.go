@@ -68,6 +68,50 @@ func TestUserCertificateAuthenticates(t *testing.T) {
 	}
 }
 
+// TestEncryptedCertifiedIdentityUnlocksOnDemand proves an encrypted identity
+// with a certificate still offers the certificate, and unlocks on demand.
+func TestEncryptedCertifiedIdentityUnlocksOnDemand(t *testing.T) {
+	_, private := newPrivate(t)
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte("locked"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(identity, pemEncode(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caSigner := newSigner(t)
+	certificate := certificateFor(t, caSigner, plain.PublicKey(), ssh.UserCert, []string{"tester"})
+	writeCertificate(t, identity+"-cert.pub", certificate)
+	certifiedSigner, err := certificateSigner(identity, plain)
+	if err != nil {
+		t.Fatalf("certify: %v", err)
+	}
+
+	server := startServer(t, func(server *testServer) {
+		server.authorized = []ssh.PublicKey{certifiedSigner.PublicKey()}
+	})
+	harness := dial(t, server, func(config *Config) {
+		config.IdentityFiles = []string{identity}
+	})
+	harness.phase(PhaseHostKeyPrompt)
+	harness.conn.TrustHostKey(false)
+	if prompt := harness.phase(PhaseKeyPassphrasePrompt); prompt.IdentityPath != identity {
+		t.Fatalf("prompt = %+v", prompt)
+	}
+	harness.conn.SubmitKeyPassphrase("locked")
+	status := harness.until("the certificate to authenticate", func(status Status) bool {
+		return status.Phase == PhaseConnected || status.Phase == PhaseFailed
+	})
+	if status.Phase != PhaseConnected || status.Method != "publickey" {
+		t.Fatalf("encrypted certificate authentication failed: %+v", status)
+	}
+}
+
 // TestCertificateMismatchIsSkipped proves a certificate that belongs to
 // another key is reported as skipped instead of silently authenticating with
 // the bare key.

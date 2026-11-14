@@ -13,10 +13,12 @@ import (
 func sftpPathFocusDriver(t *testing.T, state *State) *app.Driver {
 	t.Helper()
 	var fallback app.TextInput
+	invalidator := new(app.Invalidator)
+	state.options.Invalidate = invalidator.Invalidate
 	driver, err := app.NewDriver(state.WindowConfig(app.Config{
 		Title: "SFTP path focus", Width: 1400, Height: 900, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
-		OnScroll: state.Scroll, OnResize: state.Resize, OnWake: state.Wake,
+		OnScroll: state.Scroll, OnResize: state.Resize, OnWake: state.Wake, Invalidator: invalidator,
 		TextInput: func(context app.TextInputContext) *app.TextInput {
 			if context.Terminal {
 				return state.TerminalInput(context)

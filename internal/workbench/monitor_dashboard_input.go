@@ -60,7 +60,7 @@ func (s *State) dashboardScroll(e gfx.ScrollEvent) gfx.EventResult {
 		return gfx.EventResult{}
 	}
 	if s.modal == modalDashboard {
-		if d.editor.groupOpen {
+		if d.editor.groupOpen || d.editor.orderOpen {
 			return gfx.EventResult{}
 		}
 		if pointInRect(e.X, e.Y, d.editor.bounds) {
@@ -91,6 +91,19 @@ func (s *State) dashboardKey(e gfx.KeyEvent) gfx.EventResult {
 		return gfx.EventResult{}
 	}
 	if s.modal == modalDashboard {
+		if s.dashboard.editor.orderOpen {
+			if e.Key == gfx.KeyEscape {
+				s.dashboard.editor.orderOpen = false
+				return gfx.EventResult{Handled: true, Repaint: true, Focus: hitDashboardOrderMode, FocusVisible: true}
+			}
+			if next, ok := s.selectScroll(true, hitDashboardOrderDismiss).Navigate(e.Key, e.Target, true); ok {
+				return gfx.EventResult{Handled: true, Repaint: true, Focus: next, FocusVisible: true}
+			}
+		}
+		if e.Target == hitDashboardOrderMode && e.Key == gfx.KeyDown {
+			s.dashboard.editor.orderOpen = true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitDashboardOrderModes.At(int(s.dashboard.editor.orderMode)), FocusVisible: true}
+		}
 		if s.dashboard.editor.groupOpen && e.Key == gfx.KeyEscape {
 			s.dashboard.editor.groupOpen = false
 			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitDashboardGroupFilter, FocusVisible: true}

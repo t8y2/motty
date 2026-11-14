@@ -50,11 +50,12 @@ func TestHostFileArgumentBoundaries(t *testing.T) {
 func TestHeadlessSchemasMatchTheirExtendedArguments(t *testing.T) {
 	arguments := map[string]any{
 		NameListSessions: ListSessionsArgs{}, NameListHosts: ListHostsArgs{}, NameTerminalExec: HostExecArgs{}, NameTerminalExecMany: TerminalExecManyArgs{},
+		NameTerminalStart: TerminalStartArgs{}, NameTerminalPoll: TerminalPollArgs{}, NameTerminalStop: TerminalStopArgs{},
 		NameSFTPList: FileListArgs{}, NameSFTPRead: FileReadArgs{}, NameSFTPWrite: SFTPWriteArgs{}, NameSFTPRemove: SFTPRemoveArgs{},
 		NameSFTPStat: SFTPListArgs{}, NameSFTPChecksum: FileChecksumArgs{}, NameSFTPUpload: TransferArgs{}, NameSFTPDownload: TransferArgs{},
 		NameTransferStatus: TransferQuery{}, NameTransferCancel: TransferQuery{},
 	}
-	for _, spec := range Headless(true, true, true) {
+	for _, spec := range Headless(HeadlessOptions{Commands: true, WriteFiles: true, LocalFiles: true}) {
 		var schema struct {
 			Properties           map[string]json.RawMessage
 			AdditionalProperties bool
@@ -76,7 +77,7 @@ func TestHeadlessSchemasMatchTheirExtendedArguments(t *testing.T) {
 func TestTransfersRequireBothFullAccessAndLocalFileAuthorization(t *testing.T) {
 	for _, test := range []struct{ full, local bool }{{false, false}, {false, true}, {true, false}, {true, true}} {
 		names := make(map[string]bool)
-		for _, spec := range Headless(true, test.full, test.local) {
+		for _, spec := range Headless(HeadlessOptions{Commands: true, WriteFiles: test.full, LocalFiles: test.local}) {
 			names[spec.Name] = true
 			if !json.Valid(spec.Schema) {
 				t.Fatalf("invalid schema %s", spec.Name)

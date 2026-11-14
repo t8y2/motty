@@ -15,6 +15,31 @@ func inputGuardPrompt(state *State, session *Session, shell *fakeShell, charset,
 	state.Wake()
 }
 
+func TestPromptRedrawCannotRestoreRevokedShellInputOwnership(t *testing.T) {
+	for _, transition := range []string{"submitted", "command-start", "new-prompt-with-typeahead"} {
+		t.Run(transition, func(t *testing.T) {
+			w := newCompletionWorld(t)
+			w.type_("cat ")
+			switch transition {
+			case "submitted":
+				w.type_("\r")
+			case "command-start":
+				w.shell.say(folderSyncMarker(w.session, "C"))
+			case "new-prompt-with-typeahead":
+				w.shell.say(folderSyncMarker(w.session, "A") + "$ ")
+			}
+			w.shell.say(folderSyncMarker(w.session, "B"))
+			w.state.Wake()
+			if w.session.term.inputGuard.active || w.state.inputGuardAvailable(w.session) {
+				t.Fatal("a repeated prompt end restored revoked shell input ownership")
+			}
+			if w.session.term.promptReady || w.state.terminalDirectoryReady(w.session) {
+				t.Fatal("a repeated prompt end authorized automatic directory changes")
+			}
+		})
+	}
+}
+
 func TestTerminalIMEConfirmEnterNeverReachesShell(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	session := &state.sessions[0]

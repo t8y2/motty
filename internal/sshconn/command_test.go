@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -233,5 +235,168 @@ func TestExecBoundsOutputAndKeepsWhatWasPrintedWhenCanceled(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Exec did not return after cancel")
+	}
+}
+
+func TestStreamCommandCancellationWhileExecAcknowledgmentIsWithheld(t *testing.T) {
+	started, release := make(chan struct{}), make(chan struct{})
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.command = func(_ string, channel ssh.Channel) { _ = channel.Close() }
+		server.beforeExecReply = func(command string) {
+			if command == "follow" {
+				close(started)
+				<-release
+			}
+		}
+	})
+	defer close(release)
+	h := connect(t, server)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		result <- h.conn.StreamCommand(ctx, "follow", 4096, func([]byte) bool { return true })
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream did not reach the exec request")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled establishment returned %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancellation waited for the withheld acknowledgment")
+	}
+	if h.conn.Status().Phase != PhaseConnected {
+		t.Fatal("canceling the stream disconnected the SSH client")
+	}
+}
+
+func TestStreamCommandDeliversFinalPartialLine(t *testing.T) {
+	h := connectedCommandHarness(t, func(_ string, channel ssh.Channel) {
+		defer channel.Close()
+		io.WriteString(channel, "last line")
+		channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+	})
+	var got string
+	err := h.conn.StreamCommand(context.Background(), "read", 32, func(line []byte) bool {
+		got += string(line)
+		return true
+	})
+	if err != nil || got != "last line" {
+		t.Fatalf("got %q, error %v", got, err)
+	}
+}
+
+func TestStreamCommandSkipsOversizedLinesAndKeepsReading(t *testing.T) {
+	h := connectedCommandHarness(t, func(_ string, channel ssh.Channel) {
+		defer channel.Close()
+		_, _ = io.WriteString(channel, "before\n"+strings.Repeat("x", 128)+"\nafter\n"+strings.Repeat("y", 70))
+		channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+	})
+	var got string
+	err := h.conn.StreamCommandSkippingLongLines(context.Background(), "read", 32, func(line []byte) bool {
+		got += string(line)
+		return true
+	})
+	if err != nil || got != "before\nafter\n" {
+		t.Fatalf("got %q, error %v", got, err)
+	}
+}
+
+// streamRecorder keeps what ExecStream delivers and reports the first chunk.
+type streamRecorder struct {
+	mu     sync.Mutex
+	text   strings.Builder
+	seen   chan struct{}
+	once   sync.Once
+	needle string
+}
+
+func (r *streamRecorder) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	r.text.Write(p)
+	reached := strings.Contains(r.text.String(), r.needle)
+	r.mu.Unlock()
+	if reached {
+		r.once.Do(func() { close(r.seen) })
+	}
+	return len(p), nil
+}
+
+func (r *streamRecorder) String() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.text.String()
+}
+
+func TestExecStreamDeliversOutputWhileTheCommandRuns(t *testing.T) {
+	release := make(chan struct{})
+	harness := connectedCommandHarness(t, func(_ string, channel ssh.Channel) {
+		_, _ = io.WriteString(channel, "first\n")
+		<-release
+		_, _ = io.WriteString(channel, "second\n")
+		channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{3}))
+		_ = channel.Close()
+	})
+	recorder := &streamRecorder{seen: make(chan struct{}), needle: "first\n"}
+	done := make(chan ExecResult, 1)
+	errs := make(chan error, 1)
+	go func() {
+		result, err := harness.conn.ExecStream(context.Background(), "stream", recorder)
+		done <- result
+		errs <- err
+	}()
+	select {
+	case <-recorder.seen:
+	case <-time.After(time.Second):
+		t.Fatal("output did not arrive while the command was still running")
+	}
+	if got := recorder.String(); got != "first\n" {
+		t.Fatalf("output before the command ended = %q", got)
+	}
+	close(release)
+	select {
+	case result := <-done:
+		if err := <-errs; err != nil || result.ExitCode != 3 {
+			t.Fatalf("result = %+v, err = %v", result, err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ExecStream did not return")
+	}
+	if got := recorder.String(); got != "first\nsecond\n" {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+func TestExecStreamCancellationClosesOnlyItsSession(t *testing.T) {
+	started := make(chan struct{})
+	harness := connectedCommandHarness(t, func(_ string, channel ssh.Channel) {
+		close(started)
+		_, _ = io.Copy(io.Discard, channel)
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := harness.conn.ExecStream(ctx, "wait", io.Discard)
+		result <- err
+	}()
+	<-started
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled stream did not return")
+	}
+	if harness.conn.Status().Phase != PhaseConnected {
+		t.Fatalf("connection phase = %v", harness.conn.Status().Phase)
 	}
 }

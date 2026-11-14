@@ -59,6 +59,10 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 		return messages.ShortcutClearScreen
 	case shortcutCompletion:
 		return messages.Completion.Open
+	case shortcutSnippetPicker:
+		return messages.Tools.SnippetsTitle
+	case shortcutAcceptSuggestion:
+		return messages.Completion.AcceptHintAction
 	default:
 		return ""
 	}
@@ -96,10 +100,12 @@ type completionKeyHelp struct {
 
 // The list navigation keys are fixed terminal behavior, shared by the page and
 // its search index so each result leads to the explanation the user can see.
+// The whole-line key is the configurable binding, so its row is asked for each
+// time rather than written out here.
 func (state *State) completionKeys() [6]completionKeyHelp {
 	m := state.messages.Completion
 	return [6]completionKeyHelp{
-		{m.KeysAccept, "", "→ / End"},
+		{m.KeysAccept, "", state.acceptSuggestionKeyLabel()},
 		{m.KeysAcceptWord, "", "Alt+→ / Ctrl+→"},
 		{m.KeysSelect, "", "↑/↓ · PgUp/PgDn · Home/End"},
 		{m.KeysInsert, m.KeysInsertDescription, "Enter"},
@@ -107,6 +113,12 @@ func (state *State) completionKeys() [6]completionKeyHelp {
 		{m.KeysShell, m.KeysShellDescription, "Tab"},
 	}
 }
+
+// acceptSuggestionKeyLabel is the keys column of the accept row: the configured
+// chord, End while the default arrow keeps its alias, or a dash when the user
+// removed the binding. The text is kept with the shortcut labels, so painting
+// the page joins no strings.
+func (state *State) acceptSuggestionKeyLabel() string { return state.shortcuts.acceptKeys }
 
 // paintShortcutSettings is the Keyboard shortcuts category: one row per action
 // with its chord on a button that opens the capture dialog. The page header

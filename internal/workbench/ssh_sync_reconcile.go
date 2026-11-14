@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"motty/internal/i18n"
+	"motty/internal/keyidentity"
 	"motty/internal/sshconfig"
 )
 
@@ -116,12 +117,14 @@ func (state *State) finishSSHSync(out sshSyncOutcome, manual bool) {
 }
 
 type sshHostPull struct {
-	id       string
-	label    string
-	address  *string
-	user     *string
-	port     *uint16
-	conflict bool
+	options        *sshconfig.ConnectionOptions
+	optionsChanged bool
+	id             string
+	label          string
+	address        *string
+	user           *string
+	port           *uint16
+	conflict       bool
 }
 
 type sshJumpPull struct {
@@ -218,6 +221,12 @@ func (r *sshReconciler) loadLinks() {
 		link := link
 		r.work = append(r.work, &link)
 		r.byID[link.ID] = &link
+		if link.live() && r.gitAlias(link.Alias) {
+			// An earlier version could link a host to a Git remote alias; the
+			// block is not a host, so the link stops carrying changes into it.
+			link.Detached = true
+			r.warn(r.m.WarnGitAliasFmt, link.Alias)
+		}
 		if link.live() {
 			r.owners[lower(link.Alias)] = &link
 		}
@@ -225,6 +234,12 @@ func (r *sshReconciler) loadLinks() {
 	for _, alias := range file.Ignored {
 		r.ignored[lower(alias)] = true
 	}
+}
+
+// gitAlias reports whether the file's block for alias is a Git remote alias.
+func (r *sshReconciler) gitAlias(alias string) bool {
+	fileHost, ok := r.cfg.Host(alias)
+	return ok && gitRemoteAlias(fileHost)
 }
 
 func (r *sshReconciler) link(id string) *sshSyncLink {
@@ -318,6 +333,12 @@ func (r *sshReconciler) linkHosts() {
 			continue
 		}
 		if alias, ok := byEndpoint[connectionKey(host.Address, host.User, host.Port)]; ok && r.owners[lower(alias)] == nil {
+			if r.gitAlias(alias) {
+				// Linking the host to a Git alias would bring the alias's key
+				// along and carry the host's changes into the Git block.
+				r.warn(r.m.WarnGitAliasFmt, alias)
+				continue
+			}
 			link = r.link(host.CatalogID)
 			link.Alias, link.Detached = alias, false
 			link.Base = fieldsOf(host)
@@ -429,6 +450,10 @@ func (r *sshReconciler) mergeHost(host Host, link *sshSyncLink, fileHost sshconf
 	}
 	base := &link.Base
 	pull := sshHostPull{id: host.CatalogID, label: host.Label}
+	options := importedSSHOptions(fileHost.Options)
+	if !host.SSHOptions.Equal(options) {
+		pull.options, pull.optionsChanged = options, true
+	}
 	edit := sshconfig.Edit{Alias: link.Alias}
 	hereAddress, hereUser, herePort := host.Address, host.User, port22(host.Port)
 	thereAddress, thereUser, therePort := fileHost.HostName, fileHost.User, port22(fileHost.Port)
@@ -471,7 +496,7 @@ func (r *sshReconciler) mergeHost(host Host, link *sshSyncLink, fileHost sshconf
 	case sshToHere:
 		pull.port = &therePort
 	}
-	if pull.address != nil || pull.user != nil || pull.port != nil {
+	if pull.address != nil || pull.user != nil || pull.port != nil || pull.optionsChanged {
 		r.pulls = append(r.pulls, pull)
 	}
 	if edit.HostName != nil || edit.User != nil || edit.Port != nil {
@@ -581,6 +606,10 @@ func (r *sshReconciler) pickImports() {
 		}
 		if !validImportedAddress(fileHost.HostName) {
 			r.warn(r.state.messages.SSHConfigWarningHostFmt, fileHost.Alias)
+			continue
+		}
+		if gitRemoteAlias(fileHost) {
+			r.warn(r.m.WarnGitAliasFmt, fileHost.Alias)
 			continue
 		}
 		candidate := Host{Label: fileHost.Alias, Address: fileHost.HostName, User: fileHost.User, Port: port22(fileHost.Port)}
@@ -772,6 +801,9 @@ func (r *sshReconciler) applyPull(pull sshHostPull) {
 	}
 	previous := state.hosts[index]
 	updated := previous
+	if pull.optionsChanged {
+		updated.SSHOptions = pull.options
+	}
 	if pull.address != nil {
 		updated.Address = *pull.address
 	}
@@ -820,7 +852,7 @@ func (r *sshReconciler) addHost(host Host) Host {
 }
 
 func (r *sshReconciler) importHost(fileHost sshconfig.Host) {
-	host := Host{Label: fileHost.Alias, Address: fileHost.HostName, User: fileHost.User, Port: port22(fileHost.Port)}
+	host := Host{Label: fileHost.Alias, Address: fileHost.HostName, User: fileHost.User, Port: port22(fileHost.Port), SSHOptions: importedSSHOptions(fileHost.Options)}
 	if r.state.hostIndexByEndpoint(host) >= 0 {
 		r.warn(r.m.WarnEndpointFmt, fileHost.Alias)
 		return
@@ -889,7 +921,7 @@ func (r *sshReconciler) applyJump(pull sshJumpPull) {
 func (r *sshReconciler) offerIdentities() {
 	state := r.state
 	for _, link := range r.work {
-		if !r.live(link) {
+		if !r.live(link) || r.gitAlias(link.Alias) {
 			continue
 		}
 		fileHost, ok := r.cfg.Host(link.Alias)
@@ -906,6 +938,9 @@ func (r *sshReconciler) offerIdentities() {
 		}
 		record := inspectIdentity(state.nextIdentityID, path, state.keyMessages())
 		if record.Error != "" {
+			if _, err := keyidentity.PublicKey(path); err == nil {
+				continue
+			}
 			r.warn(state.messages.SSHConfigWarningIdentityFmt, filepath.Base(path), record.Error)
 			continue
 		}

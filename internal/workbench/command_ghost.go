@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/cmdhistory"
 	"motty/internal/term"
 )
@@ -102,12 +103,26 @@ func (state *State) commandGhostSource(session *Session) (rest string, fromCatal
 	if t.suggestionPending != nil || t.preedit.Composing || !t.screen.Cursor().Visible {
 		return "", false, false
 	}
+	// The completion list already names the candidates; a ghost beside it would
+	// repeat them and make Tab ambiguous when it is the accept key.
+	if state.completion.list.active {
+		return "", false, false
+	}
 	if _, _, _, predicting := t.prediction.overlay(state.now()); predicting {
 		return "", false, false
 	}
 	line, ok := t.recorder.Line(cmdhistory.TermScreen{Term: t.screen})
 	if !ok {
 		return "", false, false
+	}
+	// Without the shell's own marker the line may be a program's, not a shell
+	// prompt; the ghost stays out of programs just as the list does (#783). The
+	// prompt text is read only when there is no marker to trust: the integrated
+	// path paints on every frame and must not allocate for it.
+	if !t.inputGuard.active {
+		if _, prompt, ok := t.recorder.LinePrompt(cmdhistory.TermScreen{Term: t.screen}); !ok || cmdhistory.ProgramPrompt(prompt) {
+			return "", false, false
+		}
 	}
 	if h.on && state.historyAvailable(session) && !session.host.NoHistory {
 		if rest, ok := cmdhistory.Suggest(state.commandGhostEntries(session), line); ok {
@@ -171,15 +186,27 @@ func firstWord(text string) string {
 	return text[:end]
 }
 
-// ghostKey takes the keys that accept a suggestion.
+// ghostKey takes the keys that accept a suggestion. The whole-line key is the
+// user's binding (Right until they choose another); End stays an alias of the
+// shipped default, and Alt or Control with Right takes one word whatever the
+// binding is.
 func (state *State) ghostKey(session *Session, event gfx.KeyEvent) bool {
-	if event.Modifiers&^(gfx.ModifierAlt|gfx.ModifierControl) != 0 {
+	if event.Release || event.Repeat {
 		return false
 	}
-	switch {
-	case event.Key == gfx.KeyRight && event.Modifiers == 0, event.Key == gfx.KeyEnd && event.Modifiers == 0:
+	chord, ok := keymap.FromEvent(event)
+	if !ok {
+		return false
+	}
+	accept := state.shortcuts.chords.Chord(shortcutAcceptSuggestion)
+	if accept.Valid() && chord == accept {
 		return state.acceptGhost(session, false)
-	case event.Key == gfx.KeyRight:
+	}
+	if accept == (keymap.Chord{Key: gfx.KeyRight}) && chord == (keymap.Chord{Key: gfx.KeyEnd}) {
+		return state.acceptGhost(session, false)
+	}
+	if event.Key == gfx.KeyRight && event.Modifiers != 0 &&
+		event.Modifiers&^(gfx.ModifierAlt|gfx.ModifierControl) == 0 {
 		return state.acceptGhost(session, true)
 	}
 	return false
@@ -187,9 +214,11 @@ func (state *State) ghostKey(session *Session, event gfx.KeyEvent) bool {
 
 // paintGhost draws the suggestion after the cursor, clipped before whatever
 // the shell has drawn further along the row (a right-hand prompt) and the edge.
-func (state *State) paintGhost(canvas *gfx.Canvas, t *terminal, geometry terminalGeometry, cursor term.Cursor, rest string, cursorShown bool) {
+// It returns the cells it painted and the first column the badge beside it must
+// not cross, or painted false when nothing was drawn.
+func (state *State) paintGhost(canvas *gfx.Canvas, t *terminal, geometry terminalGeometry, cursor term.Cursor, rest string, cursorShown bool) (used, limit int, painted bool) {
 	cols, _ := t.screen.Size()
-	limit := cols
+	limit = cols
 	cells := t.screen.Row(cursor.Y).Cells
 	for column := cursor.X; column < len(cells) && column < cols; column++ {
 		if r := cells[column].R; r != 0 && r != ' ' {
@@ -199,11 +228,10 @@ func (state *State) paintGhost(canvas *gfx.Canvas, t *terminal, geometry termina
 	}
 	available := limit - cursor.X
 	if available <= 0 {
-		return
+		return 0, 0, false
 	}
 	var runs []gfx.TextRun
 	var shown strings.Builder
-	used := 0
 	for _, r := range rest {
 		width := term.Width(r)
 		if width <= 0 || r < 0x20 || r == 0x7f {
@@ -217,7 +245,7 @@ func (state *State) paintGhost(canvas *gfx.Canvas, t *terminal, geometry termina
 		used += width
 	}
 	if used == 0 {
-		return
+		return 0, 0, false
 	}
 	if cursorShown {
 		// A block cursor covers the first cell: its character takes the cursor's
@@ -228,4 +256,5 @@ func (state *State) paintGhost(canvas *gfx.Canvas, t *terminal, geometry termina
 	x := geometry.left + float32(cursor.X)*state.cellWidth
 	y := geometry.top + float32(cursor.Y)*state.cellHeight
 	canvas.LabelRuns(shown.String(), gfx.Rect{X: x, Y: y, Width: float32(used) * state.cellWidth, Height: state.cellHeight}, style, state.cellWidth, runs)
+	return used, limit, true
 }

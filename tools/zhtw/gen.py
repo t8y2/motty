@@ -24,6 +24,7 @@ SIDE_CATALOGS = [
     "dashboard.go",
     "local_proxy.go",
     "monitor.go",
+    "remote_logs.go",
     "session_logs.go",
     "ssh_sync.go",
 ]

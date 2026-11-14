@@ -160,8 +160,8 @@ func TestSFTPHistoryMoreMenusExposeRecentFullPathHints(t *testing.T) {
 	if err := driver.Key(gfx.KeyEnd, 0); err != nil {
 		t.Fatal(err)
 	}
-	if driver.Snapshot().Focused != contextID(sftpHeaderSortHits.At(2)) {
-		t.Fatalf("sidebar history More menu lost native keyboard scrolling/focus: got %v want %v owner %v", driver.Snapshot().Focused, contextID(sftpHeaderSortHits.At(2)), state.popups.owner)
+	if driver.Snapshot().Focused != contextID(hitSFTPCalculateDirectorySize) {
+		t.Fatalf("sidebar history More menu lost native keyboard scrolling/focus: got %v want %v owner %v", driver.Snapshot().Focused, contextID(hitSFTPCalculateDirectorySize), state.popups.owner)
 	}
 }
 

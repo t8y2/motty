@@ -20,7 +20,6 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"motty/internal/shellkind"
 	"motty/internal/x11fwd"
 )
 
@@ -100,7 +99,8 @@ type Authentication struct {
 	// default identities when IdentityFiles is nil.
 	AdditionalIdentityFiles []string
 	// Agent controls whether the running ssh-agent is offered.
-	Agent bool
+	Agent          bool
+	IdentitiesOnly bool
 }
 
 // StoredKeyPrefix starts the name of a private key that is not a file but is
@@ -199,7 +199,8 @@ type KeepAliveConfig struct {
 	// keepalive; zero disables it.
 	Interval time.Duration
 	// Timeout bounds each probe response. It must be positive when Interval is.
-	Timeout time.Duration
+	Timeout  time.Duration
+	CountMax *int
 }
 
 // Config describes one connection attempt.
@@ -249,7 +250,8 @@ type Config struct {
 	// hosts. Zero disables the timeout.
 	DialTimeout time.Duration
 	// KeepAlive optionally detects an unresponsive established connection.
-	KeepAlive KeepAliveConfig
+	KeepAlive         KeepAliveConfig
+	EndpointKeepAlive map[Endpoint]KeepAliveConfig
 	// InteractiveOnly keeps the connection to the interactive session alone:
 	// the client asks for the pty and the shell, and for nothing else. A
 	// gateway that permits only an interactive login ends the whole connection
@@ -257,6 +259,13 @@ type Config struct {
 	// none of those may be sent to one. The cost is that the host's system and
 	// default shell stay unknown, and that directories cannot be followed.
 	InteractiveOnly bool
+	// PrimaryShell says this connection will carry an interactive shell, so the
+	// optional command sessions must not open before it. sshd sends the
+	// connection's login message (PAM's MOTD, pam_lastlog) to the first session
+	// channel and drops it for a command session: a probe that opens first
+	// consumes the user's login banner. With PrimaryShell the probes wait for
+	// OpenShell to accept its shell request (see ADR 0025).
+	PrimaryShell bool
 	// Algorithms sets what each endpoint negotiates, keyed by "host:port" as
 	// Endpoint formats it. An endpoint without an entry keeps the defaults.
 	Algorithms map[string]Algorithms
@@ -317,11 +326,12 @@ type Conn struct {
 	// answer to one is about the connection, not the tab.
 	probes *auxiliaryProbes
 
-	// kind is the family of the server's default shell, learned once per client
-	// by defaultShellKind.
-	kindMu     sync.Mutex
-	kindClient *ssh.Client
-	kind       shellkind.Kind
+	// primary is closed once the interactive shell this connection is for has
+	// been accepted, or the connection ends without one. The optional probes
+	// wait on it so the login message reaches the shell, not a command session
+	// that sshd prints nothing for.
+	primary     chan struct{}
+	primaryOnce sync.Once
 }
 
 // finish closes the done channel once, whichever of the goroutine ending and
@@ -346,9 +356,34 @@ func Dial(config Config) *Conn {
 	ctx, cancel := context.WithCancel(context.Background())
 	generation := nextConnectionGeneration.Add(1)
 	conn := &Conn{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), probes: newAuxiliaryProbes()}
+	if config.PrimaryShell {
+		conn.primary = make(chan struct{})
+	}
 	conn.status.ConnectionGeneration = generation
 	go conn.run()
 	return conn
+}
+
+// releasePrimaryShell lets the optional command sessions run. The interactive
+// shell has been accepted (or can no longer come), so the connection's login
+// message has already reached the session that was going to display it.
+func (conn *Conn) releasePrimaryShell() {
+	if conn.primary == nil {
+		return
+	}
+	conn.primaryOnce.Do(func() { close(conn.primary) })
+}
+
+// waitPrimaryShell blocks until the shell this connection is for has been
+// accepted. A connection that never asked for one is not delayed.
+func (conn *Conn) waitPrimaryShell() {
+	if conn.primary == nil {
+		return
+	}
+	select {
+	case <-conn.primary:
+	case <-conn.ctx.Done():
+	}
 }
 
 // Status returns the current snapshot.
@@ -377,6 +412,14 @@ func (conn *Conn) DialContext(ctx context.Context, network, address string) (net
 		return nil, errors.New("sshconn: not connected")
 	}
 	return client.DialContext(ctx, network, address)
+}
+
+// IsChannelRefused reports whether err is the server declining to open an SSH
+// channel, which is how a server that disallows forwarding answers a forwarded
+// connection: administratively prohibited.
+func IsChannelRefused(err error) bool {
+	var refused *ssh.OpenChannelError
+	return errors.As(err, &refused) && refused.Reason == ssh.Prohibited
 }
 
 // Listen asks the authenticated SSH server to open one remote listener.
@@ -510,6 +553,10 @@ func (endpoint Endpoint) address() string {
 func (conn *Conn) run() {
 	defer conn.finish()
 	defer conn.closeAuxiliary()
+	// A connection that ends before its shell opened (or one that never opens
+	// one) must not leave the optional probes waiting for a session that will
+	// not come.
+	defer conn.releasePrimaryShell()
 	err := conn.connect()
 	conn.mu.Lock()
 	client := conn.client
@@ -540,6 +587,11 @@ func (conn *Conn) run() {
 	}
 	if conn.ctx.Err() != nil && !errors.Is(err, ErrHostKeyChanged) {
 		err = ErrCanceled
+		conn.mu.Lock()
+		if conn.disconnectErr != nil {
+			err = conn.disconnectErr
+		}
+		conn.mu.Unlock()
 	}
 	conn.update(func(status *Status) {
 		status.Phase = PhaseFailed
@@ -706,6 +758,12 @@ func (conn *Conn) beginEndpoint(endpoint Endpoint, role EndpointRole) {
 }
 
 func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys) (*ssh.Client, string, error) {
+	keepAlive := conn.keepAliveFor(endpoint)
+	var monitored *aliveSocket
+	if keepAlive.Interval > 0 && keepAlive.CountMax != nil {
+		monitored = &aliveSocket{Conn: socket, received: make(chan struct{}, 1)}
+		socket = monitored
+	}
 	address := endpoint.address()
 	wanted := conn.config.Algorithms[address]
 	authentication := conn.authentication(endpoint)
@@ -737,7 +795,11 @@ func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys)
 	if negotiated, ok := negotiatedFrom(sshConn); ok {
 		conn.update(func(status *Status) { status.Negotiated = negotiated })
 	}
-	return ssh.NewClient(sshConn, channels, requests), string(sshConn.ServerVersion()), nil
+	client := ssh.NewClient(sshConn, channels, requests)
+	if monitored != nil {
+		conn.startCountKeepAlive(client, monitored, keepAlive)
+	}
+	return client, string(sshConn.ServerVersion()), nil
 }
 
 func (conn *Conn) authentication(endpoint Endpoint) Authentication {

@@ -115,6 +115,9 @@ type Change struct {
 	// Expected guards replacements and deletions against concurrent edits.
 	// A nil payload requires that the record is absent or deleted.
 	Expected map[Key][]byte
+	// ExpectedKinds guards the complete live membership and payloads of a kind,
+	// including records inserted after a caller checked an empty collection.
+	ExpectedKinds map[string][]Entry
 	// Local sets values of this device; an empty value removes the key.
 	Local      map[string][]byte
 	LocalPatch map[string]JSONChange
@@ -196,7 +199,7 @@ func Open(path string, format int) (*Store, error) {
 	}
 	file.Close()
 
-	db, err := sql.Open("sqlite", dsnPath(path)+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(DELETE)&_pragma=secure_delete(1)")
+	db, err := sql.Open("sqlite", dsnPath(path)+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_pragma=journal_mode(DELETE)&_pragma=secure_delete(1)&_txlock=immediate")
 	if err != nil {
 		return nil, fmt.Errorf("config store: open: %w", err)
 	}
@@ -425,6 +428,20 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+// DataVersion reports SQLite's data_version: it changes when another
+// connection commits, including a connection in another process, and does not
+// change for commits by this store's own connection. A second writer (the
+// headless note server) is detected with it instead of polling the file.
+func (s *Store) DataVersion() (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var version int64
+	if err := s.db.QueryRowContext(context.Background(), `PRAGMA data_version`).Scan(&version); err != nil {
+		return 0, fmt.Errorf("config store: data version: %w", err)
+	}
+	return version, nil
+}
+
 // Device is the id this store puts into the stamps it issues.
 func (s *Store) Device() string { return s.clock.device }
 
@@ -633,6 +650,42 @@ func (s *Store) Commit(change Change) (written int, err error) {
 		}
 		if !sameJSON(payload, expected) {
 			return 0, fmt.Errorf("%s %s: %w", key.Kind, key.ID, ErrConflict)
+		}
+	}
+	for kind, expected := range change.ExpectedKinds {
+		rows, e := tx.QueryContext(ctx, `SELECT id,payload FROM records WHERE kind=? AND deleted=0`, kind)
+		if e != nil {
+			return 0, e
+		}
+		want := make(map[string][]byte, len(expected))
+		for _, entry := range expected {
+			if entry.Kind != kind {
+				rows.Close()
+				return 0, errors.New("expected kind mismatch")
+			}
+			want[entry.ID] = entry.Payload
+		}
+		matches := true
+		for rows.Next() {
+			var id string
+			var payload []byte
+			if e = rows.Scan(&id, &payload); e != nil {
+				rows.Close()
+				return 0, e
+			}
+			v, ok := want[id]
+			if !ok || !sameJSON(v, payload) {
+				matches = false
+			}
+			delete(want, id)
+		}
+		e = rows.Err()
+		rows.Close()
+		if e != nil {
+			return 0, e
+		}
+		if !matches || len(want) > 0 {
+			return 0, fmt.Errorf("%s collection: %w", kind, ErrConflict)
 		}
 	}
 	now := s.now()

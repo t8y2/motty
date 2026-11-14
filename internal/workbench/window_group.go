@@ -23,6 +23,9 @@ type Group struct {
 	historyClears    map[string]*historyClearJob
 	shareOnce        sync.Once
 	shares           *localProxyManager
+	// remoteClip is the server files the user copied, from any window. The
+	// system clipboard cannot name a server path, so the process keeps them.
+	remoteClip sftpClipboard
 	// reportProgress is what the desktop is told about the work the windows are
 	// doing, and progressStep is the hundredth of the whole it was last told,
 	// with -1 for no bar; progressReported says it was told anything at all.
@@ -33,6 +36,42 @@ type Group struct {
 
 // NewGroup returns an empty group.
 func NewGroup() *Group { return &Group{} }
+
+// remoteClipboard returns the server files the user copied last.
+func (group *Group) remoteClipboard() sftpClipboard {
+	group.mu.Lock()
+	defer group.mu.Unlock()
+	return group.remoteClip
+}
+
+// setRemoteClipboard replaces the copied server files and repaints every window
+// whose paste would now do something different.
+func (group *Group) setRemoteClipboard(clip sftpClipboard) {
+	group.mu.Lock()
+	group.remoteClip = clip
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		member.invalidateSFTPWindows()
+	}
+}
+
+// clearRemoteClipboardFrom drops the clipboard when view copied it.
+func (group *Group) clearRemoteClipboardFrom(view *sftpView) {
+	group.mu.Lock()
+	if group.remoteClip.view != view {
+		group.mu.Unlock()
+		return
+	}
+	group.remoteClip = sftpClipboard{}
+	members := make([]*State, len(group.members))
+	copy(members, group.members)
+	group.mu.Unlock()
+	for _, member := range members {
+		member.invalidateSFTPWindows()
+	}
+}
 
 // ClipboardChanged tells every window the system clipboard changed. The
 // watcher callback runs on an unspecified thread, so each State's own flag
@@ -177,6 +216,64 @@ func (state *State) SetWindow(frame func() (gfx.Rect, bool), visible func() bool
 	state.frame, state.windowVisible = frame, visible
 }
 
+// dropStates are this window and the group's other windows, this one first.
+func (state *State) dropStates() []*State {
+	states := []*State{state}
+	group := state.options.Group
+	if group == nil {
+		return states
+	}
+	group.mu.Lock()
+	members := append([]*State(nil), group.members...)
+	group.mu.Unlock()
+	for _, member := range members {
+		if member != state {
+			states = append(states, member)
+		}
+	}
+	return states
+}
+
+// fileDropWindowAt is the server window under a screen point, other than the
+// drag's source. Only a window of its own can be found this way; a file tab is
+// found through the tab strip.
+func (state *State) fileDropWindowAt(at gfx.Point, exclude *sftpWindow) *sftpWindow {
+	for _, member := range state.dropStates() {
+		for _, w := range member.sftpWindows {
+			if w == nil || w == exclude || w.closed || w.window == nil || w.frame == nil {
+				continue
+			}
+			if w.visible != nil && !w.visible() {
+				continue
+			}
+			if frame, ok := w.frame(); ok && pointInRect(at.X, at.Y, frame) {
+				return w
+			}
+		}
+	}
+	return nil
+}
+
+// fileDragTabAt is the file tab under a screen point, other than the drag's
+// source: any main window of the process, including this one.
+func (state *State) fileDragTabAt(at gfx.Point, exclude *sftpWindow) (*State, uint32, bool) {
+	for _, member := range state.dropStates() {
+		if member.closed || member.frame == nil || (member.windowVisible != nil && !member.windowVisible()) {
+			continue
+		}
+		frame, ok := member.frame()
+		if !ok || !pointInRect(at.X, at.Y, frame) {
+			continue
+		}
+		if id, ok := member.fileTabAtWindowPoint(at.X-frame.X, at.Y-frame.Y); ok {
+			if w := member.sftpWindows[id]; w != nil && w != exclude {
+				return member, id, true
+			}
+		}
+	}
+	return nil, 0, false
+}
+
 // SetShortcutCapture gives the state the window's way of taking the system's shortcuts (the
 // Windows key and its chords, Alt+Tab, Ctrl+Esc) for itself while it has the keyboard focus. The
 // state asks for them only while a remote desktop holds the keyboard.
@@ -207,13 +304,12 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 	if !ok {
 		return nil, false
 	}
-	// A transfer in progress belongs to this window's dialog and cannot follow.
-	if state.transfer.phase != transferNone {
-		for _, pane := range dto.Panes {
-			if uint32(pane.SessionID) == state.transfer.sessionID {
-				state.status = state.messages.Tools.TabMoveBusy
-				return nil, false
-			}
+	// A transfer in progress owns that terminal's stream and cannot follow the tab.
+	for _, pane := range dto.Panes {
+		session, ok := state.sessionByIDPointer(uint32(pane.SessionID))
+		if ok && session.transferBusy() {
+			state.status = state.messages.Tools.TabMoveBusy
+			return nil, false
 		}
 	}
 	payload := &tabPayload{title: dto.Title, dto: dto}

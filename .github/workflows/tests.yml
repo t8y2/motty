@@ -149,6 +149,8 @@ jobs:
         with:
           go-version-file: motty/go.mod
           cache-dependency-path: motty/go.sum
+      - name: Install mosh for the interop test
+        run: sudo apt-get update && sudo apt-get install -y mosh
       - name: Test release build
         working-directory: motty
         run: go test ./... -count=1

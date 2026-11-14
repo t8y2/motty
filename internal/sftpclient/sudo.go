@@ -34,7 +34,7 @@ func (client sudoRemote) preserveEditOwner(path string, original os.FileInfo) er
 	if !ok || stat == nil {
 		return errors.New("sftp: privileged edit cannot determine the original owner")
 	}
-	return client.Chown(path, int(stat.UID), int(stat.GID))
+	return client.Chown(path, stat.UID, stat.GID)
 }
 
 func OpenSudo(ctx context.Context, client *ssh.Client, password string) (Remote, error) {

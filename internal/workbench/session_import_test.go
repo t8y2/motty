@@ -638,3 +638,47 @@ func TestSessionImportDialogsReadTheirButtonsInThePage(t *testing.T) {
 		t.Fatalf("the preview stayed open as modal %d", state.modal)
 	}
 }
+
+func TestImportingSecureCRTSessionsAsksForItsSessionsFolder(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "Sessions")
+	session := filepath.Join(root, "Clients", "Acme", "prod.ini")
+	if err := os.MkdirAll(filepath.Dir(session), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := "S:\"Protocol Name\"=SSH2\r\nS:\"Hostname\"=prod.example.test\r\n" +
+		"D:\"[SSH2] Port\"=00000898\r\nS:\"Username\"=deploy\r\n" +
+		"S:\"Password V2\"=03:7f59810d05b03f8e49b96e091dad49cb\r\n"
+	if err := os.WriteFile(session, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "state.json")
+	var request app.OpenDirectoryOptions
+	options.OpenDirectory = func(asked app.OpenDirectoryOptions) (string, error) {
+		request = asked
+		return root, nil
+	}
+	state := newTestState(t, options)
+
+	state.Click(hitImportSessions)
+	state.Click(hitImportSecureCRT)
+	if !strings.Contains(request.Title, "SecureCRT") || !strings.Contains(request.Title, "Sessions") {
+		t.Fatalf("OpenDirectory request = %+v", request)
+	}
+	if state.modal != modalHostImportResult || len(state.hosts) != 1 {
+		t.Fatalf("modal %d, hosts %d", state.modal, len(state.hosts))
+	}
+	host := state.hosts[0]
+	if host.Label != "prod" || host.Group != "Clients/Acme" || host.Address != "prod.example.test" ||
+		host.User != "deploy" || host.Port != 2200 {
+		t.Fatalf("host = %+v", host)
+	}
+	result := state.hostImportResult
+	if !strings.Contains(result.summary, "SecureCRT") {
+		t.Fatalf("summary = %q", result.summary)
+	}
+	warnings := strings.Join(result.warnings[:result.visible], "\n")
+	if !strings.Contains(warnings, "No readable SSH passwords") {
+		t.Fatalf("warnings = %q", warnings)
+	}
+}

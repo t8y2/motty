@@ -22,6 +22,16 @@ func connectionAddressAndPort(host Host) string {
 	return net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))
 }
 
+// connectionHostAddress is the endpoint text without its port: what a user
+// pastes where only the host matters. A local shell has no network address and
+// a serial device is not one, so neither copies anything.
+func connectionHostAddress(host Host) string {
+	if host.ID == localHostID || host.Protocol == protocolSerial {
+		return ""
+	}
+	return host.Address
+}
+
 // copyConnectionText places what a connection copy row offers on the clipboard.
 // A failure goes to the status line, where the terminal's own Copy reports it,
 // instead of being dropped along with the menu that asked for it.

@@ -145,6 +145,12 @@ func (state *State) switchSudoSFTP(session *Session, view *sftpView, password st
 	view.worker.Close()
 	state.refreshSFTPTransfers(view)
 	state.archiveTransfers(view)
+	// The new worker numbers its transfers from one again; the old source
+	// labels belong to ids that no longer exist. Their leases end first.
+	for id := range view.remoteCopies {
+		state.releaseRemoteCopySource(view, id)
+	}
+	view.remoteCopies = nil
 	view.sudo = elevated
 	connection, mode := session.conn, session.host.Transfer
 	view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }

@@ -45,20 +45,37 @@ func aiSessionInfo(session *Session) gate.SessionInfo {
 		Ready: session.term != nil && session.term.shell != nil && session.term.live && !session.term.ended}
 }
 
+// Resolve identity through the current catalog, never a session alias or address.
+// The request backend captures this result so it remains fixed for that run.
+func (state *State) aiSessionInfo(session *Session) gate.SessionInfo {
+	info := aiSessionInfo(session)
+	id := session.savedCatalogID()
+	if id == "" || session.isLocal() {
+		return info
+	}
+	for _, host := range state.hosts {
+		if host.CatalogID == id {
+			info.HostID, info.HostName, info.HostGroup = id, host.Label, strings.TrimSpace(host.Group)
+			break
+		}
+	}
+	return info
+}
+
 // Until the first send/explicit choice only the visible terminal is a default.
 // A home/settings page never silently falls back to a background connection.
 func (state *State) aiTarget() gate.SessionInfo {
 	if state.ai.targetSet {
 		if state.ai.target.ID != "" {
 			if session, err := state.aiSession(state.ai.target.ID); err == nil {
-				return aiSessionInfo(session)
+				return state.aiSessionInfo(session)
 			}
 		}
 		return state.ai.target
 	}
 	if state.activeSection == sectionTerminal {
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.term != nil {
-			return aiSessionInfo(session)
+			return state.aiSessionInfo(session)
 		}
 	}
 	return gate.SessionInfo{}
@@ -109,7 +126,7 @@ func (state *State) aiExtraTargets() []gate.SessionInfo {
 			continue
 		}
 		if session, err := state.aiSession(extra.ID); err == nil && session.term != nil {
-			live = append(live, aiSessionInfo(session))
+			live = append(live, state.aiSessionInfo(session))
 		}
 	}
 	return live
@@ -159,9 +176,9 @@ func (state *State) aiSetSelected(ids []uint32) {
 			continue
 		}
 		if state.ai.target.ID == "" {
-			state.ai.target = aiSessionInfo(session)
+			state.ai.target = state.aiSessionInfo(session)
 		} else {
-			state.ai.extras = append(state.ai.extras, aiSessionInfo(session))
+			state.ai.extras = append(state.ai.extras, state.aiSessionInfo(session))
 		}
 	}
 	state.ai.targetSet = true
@@ -197,7 +214,7 @@ func (state *State) aiRequestReferences(question string) []gate.SessionInfo {
 		if !ok || session.term == nil {
 			continue
 		}
-		info := aiSessionInfo(session)
+		info := state.aiSessionInfo(session)
 		if !slices.ContainsFunc(references, func(have gate.SessionInfo) bool { return have.ID == info.ID }) {
 			references = append(references, info)
 		}

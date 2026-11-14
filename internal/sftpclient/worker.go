@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -61,6 +62,7 @@ const (
 	OperationRemoveFile
 	OperationRemoveDirectory
 	OperationChmod
+	OperationChown
 	OperationOpenText
 	OperationSaveText
 	OperationSymlink
@@ -68,6 +70,10 @@ const (
 	OperationSaveDocument
 	OperationReadDocument
 	OperationMoveSelection
+	// OperationRemoteCopy copies files from another server into this worker's
+	// server. The source is read through its own subsystem opener; the data
+	// never goes through this computer's disk.
+	OperationRemoteCopy
 )
 
 // ExistingPolicy controls what a transfer does when its final destination or
@@ -157,7 +163,10 @@ type Result struct {
 	// Background marks the result of Prefetch: a listing the caller asked for in
 	// advance. It is the caller's to cache, not to show as the outcome of an
 	// action, and its failure is not worth reporting.
-	Background  bool
+	Background bool
+	// NamesOnly marks a listing made by ListNames: owner names and link targets
+	// were not resolved.
+	NamesOnly   bool
 	Operation   Operation
 	TransferID  uint64
 	Path        string
@@ -165,10 +174,13 @@ type Result struct {
 	LocalPath   string
 	Destination string
 	Mode        os.FileMode
-	Bytes       int64
-	Files       int
-	Resumed     int64
-	Document    TextDocument
+	// Owner and Group echo the user and group an ownership change was asked
+	// for, as the caller named them.
+	Owner, Group string
+	Bytes        int64
+	Files        int
+	Resumed      int64
+	Document     TextDocument
 	// Approximate marks a listing read from `ls` output because the server has
 	// no SFTP: names are exact, times and link details may not be.
 	Approximate bool
@@ -198,22 +210,47 @@ type linkJob struct {
 	approximate bool
 }
 
+// RemoteSource opens one file subsystem on the server a remote copy reads from.
+// Every attempt opens its own subsystem, so a transfer history never keeps a
+// connection open. Closing it must end a read that is waiting on the network.
+type RemoteSource func() (Remote, error)
+
+// RemoteCopyRequest is one batch of source paths copied into a folder on this
+// worker's server. Sources are absolute paths under SourceRoot, which names the
+// folder the transfer's description speaks of.
+type RemoteCopyRequest struct {
+	Source      RemoteSource
+	SourceRoot  string
+	Sources     []string
+	Destination string
+	Recursive   bool
+	Policy      ExistingPolicy
+}
+
 type request struct {
 	sources     []string
 	listID      uint64
 	data        []byte
 	id          uint64
 	background  bool // a listing nobody is waiting on: its Result says so
+	namesOnly   bool // a listing for path completion: names and the directory bit
 	operation   Operation
 	remote      string
 	local       string
 	destination string
 	mode        os.FileMode
+	owner       string
+	group       string
 	text        string
 	revision    Revision
 	utf8BOM     bool
 	recursive   bool
 	policy      ExistingPolicy
+	// copySource opens a subsystem on the server to read from, and
+	// copySources/copyRoot name the batch copied into destination.
+	copySource  RemoteSource
+	copySources []string
+	copyRoot    string
 }
 
 type transferRecord struct {
@@ -226,6 +263,10 @@ type transferRecord struct {
 	// the transfer up. Cancel and Close end a transfer too, but they are about
 	// the connection, and what the transfer left behind is kept for a retry.
 	canceledByUser bool
+	// source is the live subsystem of a remote copy, so a cancel can close the
+	// read it is waiting on. It is nil for every other operation, and for a
+	// remote copy between attempts.
+	source io.Closer
 	// The speed is measured over at least rateWindow, then smoothed.
 	rateAt    time.Time
 	rateBytes int64
@@ -279,6 +320,10 @@ type remoteLinker interface {
 
 type remoteChmod interface {
 	Chmod(path string, mode os.FileMode) error
+}
+
+type remoteChown interface {
+	Chown(path string, uid, gid uint32) error
 }
 
 type remoteLinks interface {
@@ -356,6 +401,14 @@ func (worker *Worker) List(remotePath string) bool {
 	return worker.ListWithID(remotePath, 0)
 }
 
+// ListNames asks for a directory listing for path completion: names and the
+// directory bit only. Owner names and symbolic-link targets are not resolved,
+// so the listing costs one round trip however many links the directory holds.
+// Its Result says NamesOnly.
+func (worker *Worker) ListNames(remotePath string) bool {
+	return worker.enqueue(request{operation: OperationList, remote: remotePath, namesOnly: true})
+}
+
 func (worker *Worker) ListWithID(remotePath string, id uint64) bool {
 	return worker.enqueue(request{operation: OperationList, remote: remotePath, listID: id})
 }
@@ -396,6 +449,20 @@ func (worker *Worker) QueueUpload(localPath, remotePath string, recursive bool, 
 	return worker.enqueueTransfer(request{
 		operation: OperationUpload, local: localPath, remote: remotePath,
 		recursive: recursive, policy: policy,
+	})
+}
+
+// QueueRemoteCopy queues one batch that reads files from another server and
+// writes them into the destination folder of this worker's server. The data is
+// relayed through memory; no local file is part of the transfer.
+func (worker *Worker) QueueRemoteCopy(copy RemoteCopyRequest) (uint64, bool) {
+	if copy.Source == nil || copy.SourceRoot == "" || len(copy.Sources) == 0 || copy.Destination == "" {
+		return 0, false
+	}
+	return worker.enqueueTransfer(request{
+		operation: OperationRemoteCopy, copySource: copy.Source, copyRoot: copy.SourceRoot,
+		copySources: slices.Clone(copy.Sources), destination: copy.Destination,
+		recursive: copy.Recursive, policy: copy.Policy,
 	})
 }
 
@@ -449,6 +516,13 @@ func (worker *Worker) Chmod(remotePath string, mode os.FileMode) bool {
 	return worker.enqueue(request{operation: OperationChmod, remote: remotePath, mode: mode})
 }
 
+// Chown changes a remote path's owner and group. owner and group are names the
+// server's account files list or numeric ids; names are resolved on the worker,
+// where reading those files costs no round trip the caller has to wait for.
+func (worker *Worker) Chown(remotePath, owner, group string) bool {
+	return worker.enqueue(request{operation: OperationChown, remote: remotePath, owner: owner, group: group})
+}
+
 // OpenText reads one explicitly selected remote file into the bounded UTF-8
 // editor path. It does not start work until called.
 func (worker *Worker) OpenText(remotePath string) bool {
@@ -494,8 +568,11 @@ func (worker *Worker) enqueueTransfer(next request) (uint64, bool) {
 	worker.nextID++
 	next.id = worker.nextID
 	source, destination := next.remote, next.local
-	if next.operation == OperationUpload {
+	switch next.operation {
+	case OperationUpload:
 		source, destination = next.local, next.remote
+	case OperationRemoteCopy:
+		source, destination = next.copyRoot, next.destination
 	}
 	worker.transfers = append(worker.transfers, transferRecord{
 		request: next,
@@ -809,13 +886,20 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 			others++
 		}
 	}
+	// A remote copy reads from another server: closing that subsystem is what
+	// ends a read waiting on the network.
+	source := worker.takeSourceLocked(id)
 	worker.wakeLocked()
 	worker.mu.Unlock()
-	if active && others == 0 && record.request.operation != OperationUpload {
+	if source != nil {
+		_ = source.Close()
+	}
+	if active && others == 0 && record.request.operation != OperationUpload && record.request.operation != OperationRemoteCopy {
 		// Nothing else is using the subsystem, and a read that is waiting on the
 		// network only ends when it goes. An upload is given a moment to stop on
 		// its own first, because the subsystem is also what removes its partial
-		// file (see uploadPipelined).
+		// file (see uploadPipelined). A remote copy needs the same moment, for the
+		// same partial file, on its destination side.
 		if client := worker.invalidate(); client != nil {
 			_ = client.Close()
 		}
@@ -827,6 +911,7 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 // Cancel interrupts everything under way and discards the current subsystem.
 func (worker *Worker) Cancel() {
 	worker.mu.Lock()
+	var sources []io.Closer
 	for index := range worker.transfers {
 		record := &worker.transfers[index]
 		if record.active && record.snapshot.State != TransferCanceled {
@@ -837,9 +922,16 @@ func (worker *Worker) Cancel() {
 			record.snapshot.BytesPerSecond, record.rate = 0, 0
 			record.paused = false
 		}
+		if record.source != nil {
+			sources = append(sources, record.source)
+			record.source = nil
+		}
 	}
 	worker.wakeLocked()
 	worker.mu.Unlock()
+	for _, source := range sources {
+		_ = source.Close()
+	}
 	if client := worker.invalidate(); client != nil {
 		_ = client.Close()
 	}
@@ -1022,6 +1114,7 @@ func (worker *Worker) execute(next request) Result {
 		Background: next.background,
 		Operation:  next.operation, TransferID: next.id, Path: next.remote,
 		LocalPath: next.local, Destination: next.destination, Mode: next.mode,
+		Owner: next.owner, Group: next.group,
 	}
 	generation := worker.snapshot()
 	client, err := worker.remote(generation)
@@ -1031,9 +1124,14 @@ func (worker *Worker) execute(next request) Result {
 	}
 	switch next.operation {
 	case OperationList:
-		result.Path, result.Entries, result.Err = worker.list(client, next.remote, generation)
+		result.NamesOnly = next.namesOnly
+		if next.namesOnly {
+			result.Path, result.Entries, result.Err = worker.listNames(client, next.remote, generation)
+		} else {
+			result.Path, result.Entries, result.Err = worker.list(client, next.remote, generation)
+		}
 		result.Approximate = IsSCP(client)
-		if result.Err == nil && hasLinks(result.Entries) {
+		if result.Err == nil && !next.namesOnly && hasLinks(result.Entries) {
 			if _, ok := client.(remoteLinks); ok {
 				result.LinksPending = true
 				result.links = &linkJob{
@@ -1047,6 +1145,9 @@ func (worker *Worker) execute(next request) Result {
 		result.Files, result.Bytes, result.Resumed, result.Err = worker.download(client, next, generation)
 	case OperationUpload:
 		result.Files, result.Bytes, result.Resumed, result.Err = worker.upload(client, next, generation)
+	case OperationRemoteCopy:
+		result.Files, result.Bytes, result.Resumed, result.Err = worker.remoteCopy(client, next, generation)
+		result.Path = next.destination
 	case OperationCreateDirectory:
 		if next.recursive {
 			result.Err = createDirectories(client, next.remote)
@@ -1075,6 +1176,8 @@ func (worker *Worker) execute(next request) Result {
 		result.Err = worker.removeDirectory(client, next.remote, generation)
 	case OperationChmod:
 		result.Err = chmod(client, next.remote, next.mode)
+	case OperationChown:
+		result.Err = worker.chown(client, next.remote, next.owner, next.group, generation)
 	case OperationSymlink:
 		result.Err = symlink(client, next.remote, next.destination)
 	case OperationOpenText:
@@ -1146,27 +1249,77 @@ func (worker *Worker) list(client Remote, remotePath string, generation uint64) 
 	return remotePath, entries, nil
 }
 
+// maxNameEntries bounds a names-only listing. Completion holds a bounded set of
+// rows, and a directory past this is not worth the memory.
+const maxNameEntries = 2048
+
+// listNames is list for path completion. It reads the directory once and keeps
+// only what a candidate row needs: a name and whether it is a folder. A
+// symbolic link is not followed, so it is offered as a name without a trailing
+// slash; opening it after typing the slash still works.
+func (worker *Worker) listNames(client Remote, remotePath string, generation uint64) (string, []Entry, error) {
+	if remotePath == "" {
+		resolved, err := client.Getwd()
+		if err != nil {
+			return "", nil, err
+		}
+		remotePath = resolved
+	}
+	infos, err := client.ReadDir(remotePath)
+	if err != nil {
+		return remotePath, nil, err
+	}
+	if worker.canceled(generation) {
+		return remotePath, nil, ErrCanceled
+	}
+	entries := entriesFrom(infos)
+	if len(entries) > maxNameEntries {
+		entries = entries[:maxNameEntries]
+	}
+	for index := range entries {
+		entries[index].UID, entries[index].GID, entries[index].HasOwner = 0, 0, false
+		entries[index].Owner, entries[index].Group = "", ""
+		entries[index].LinkTarget, entries[index].LinkDir, entries[index].LinkBroken = "", false, false
+	}
+	return remotePath, entries, nil
+}
+
 // describeOwners fills in the names of the owners and groups a listing carries
 // as numbers. It reads the account files once, on the first listing.
 func (worker *Worker) describeOwners(client Remote, entries []Entry) {
-	worker.mu.Lock()
-	tried := worker.idsTried
-	worker.idsTried = true
-	worker.mu.Unlock()
-	if !tried {
-		ids := loadIDNames(client)
-		worker.mu.Lock()
-		worker.ids = ids
-		worker.mu.Unlock()
-	}
-	worker.mu.Lock()
-	ids := worker.ids
-	worker.mu.Unlock()
+	ids := worker.idNames(client)
 	for index := range entries {
 		if entry := &entries[index]; entry.HasOwner {
 			entry.Owner, entry.Group = ids.Users[entry.UID], ids.Groups[entry.GID]
 		}
 	}
+}
+
+// Accounts returns the user and group names the server's account files gave,
+// for a picker that offers them. It is the same snapshot the listing used for
+// displaying owners; the maps are read-only and empty until a listing read the
+// files.
+func (worker *Worker) Accounts() IDNames {
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+	return worker.ids
+}
+
+// idNames returns the account files' user and group names, reading them on
+// first use. A server that does not expose them leaves the maps empty, and
+// numeric ids keep working.
+func (worker *Worker) idNames(client Remote) IDNames {
+	worker.mu.Lock()
+	tried, ids := worker.idsTried, worker.ids
+	worker.mu.Unlock()
+	if tried {
+		return ids
+	}
+	ids = loadIDNames(client)
+	worker.mu.Lock()
+	worker.ids, worker.idsTried = ids, true
+	worker.mu.Unlock()
+	return ids
 }
 
 // resolveLinks resolves the symbolic links of a published listing and then
@@ -1386,6 +1539,14 @@ func scanLocal(localPath string, recursive bool) (os.FileInfo, int, int64, error
 }
 
 func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath string, sourceInfo os.FileInfo, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore int64) (written, resumed int64, err error) {
+	return worker.uploadStream(client, func() (io.ReadCloser, error) { return os.Open(localPath) }, sourceInfo, remotePath, policy, generation, transferID, filesDone, bytesBefore)
+}
+
+// uploadStream writes sourceInfo's content into remotePath through a staged
+// partial file, as uploadFile does for a local file. openSource runs once the
+// destination rules are settled, so a conflict costs no read; a remote copy
+// passes the source server's file handle here.
+func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.ReadCloser, error), sourceInfo os.FileInfo, remotePath string, policy ExistingPolicy, generation, transferID uint64, filesDone int, bytesBefore int64) (written, resumed int64, err error) {
 	finalInfo, finalExists, err := remoteLstat(client, remotePath)
 	if err != nil {
 		return 0, 0, err
@@ -1414,7 +1575,7 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 	if partialExists && (partialInfo.IsDir() || partialInfo.Mode()&os.ModeSymlink != 0) {
 		return 0, 0, fmt.Errorf("%w: %s", ErrSymbolicLink, partial)
 	}
-	source, err := os.Open(localPath)
+	source, err := openSource()
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1521,6 +1682,168 @@ func (worker *Worker) uploadFile(client transferRemote, localPath, remotePath st
 		return written, resumed, err
 	}
 	return written, resumed, nil
+}
+
+// plannedFileInfo is the metadata a remote copy's plan carries for one source
+// file, in the shape uploadStream asks for.
+type plannedFileInfo struct {
+	name    string
+	size    int64
+	mode    os.FileMode
+	modTime time.Time
+}
+
+func (info plannedFileInfo) Name() string       { return info.name }
+func (info plannedFileInfo) Size() int64        { return info.size }
+func (info plannedFileInfo) Mode() os.FileMode  { return info.mode }
+func (info plannedFileInfo) ModTime() time.Time { return info.modTime }
+func (info plannedFileInfo) IsDir() bool        { return info.mode.IsDir() }
+func (info plannedFileInfo) Sys() any           { return nil }
+
+// closeOnce keeps a remote copy's source from being closed twice: a cancel and
+// the transfer's own cleanup both end it.
+type closeOnce struct{ close func() error }
+
+func (source closeOnce) Close() error { return source.close() }
+
+// remoteCopy reads each source from the source server's subsystem and writes it
+// into the destination folder of this worker's server. The source is opened
+// once per attempt; a cancel closes it so a read waiting on the network ends.
+func (worker *Worker) remoteCopy(destination Remote, next request, generation uint64) (files int, bytes, resumed int64, err error) {
+	client, ok := destination.(transferRemote)
+	if !ok || IsSCP(destination) {
+		return 0, 0, 0, fmt.Errorf("sftp: server-to-server copy requires SFTP on both servers")
+	}
+	if next.copySource == nil || len(next.copySources) == 0 || next.destination == "" {
+		return 0, 0, 0, fmt.Errorf("sftp: server-to-server copy requires a source and a destination")
+	}
+	source, err := next.copySource()
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	tracked := closeOnce{close: sync.OnceValue(source.Close)}
+	if !worker.holdSource(next.id, tracked) {
+		_ = tracked.Close()
+		return 0, 0, 0, ErrCanceled
+	}
+	defer func() {
+		worker.releaseSource(next.id)
+		err = errors.Join(err, tracked.Close())
+	}()
+	remoteSource, ok := source.(transferRemote)
+	if !ok || IsSCP(source) {
+		return 0, 0, 0, fmt.Errorf("sftp: server-to-server copy requires SFTP on both servers")
+	}
+	type copyPlan struct {
+		root  string
+		items []remotePlanItem
+	}
+	plans := make([]copyPlan, 0, len(next.copySources))
+	var totalBytes int64
+	var totalFiles, totalItems int
+	for _, root := range next.copySources {
+		items, size, err := scanRemote(remoteSource, root, next.recursive)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		totalItems += len(items)
+		if totalItems > maxTransferItems {
+			return 0, 0, 0, fmt.Errorf("sftp: transfer exceeds %d items", maxTransferItems)
+		}
+		for _, item := range items {
+			if !item.directory {
+				totalFiles++
+			}
+		}
+		totalBytes += size
+		plans = append(plans, copyPlan{root: root, items: items})
+	}
+	worker.setTotals(next.id, totalFiles, totalBytes)
+	for _, plan := range plans {
+		// A name a server made up must not move the target out of the folder
+		// the user chose.
+		name := path.Base(plan.root)
+		if !safeRemoteName(name) {
+			return files, bytes, resumed, fmt.Errorf("%w: %q", ErrPathTraversal, name)
+		}
+		target := path.Join(next.destination, name)
+		if plan.items[0].directory {
+			if err := ensureRemoteRoot(client, target, next.policy); err != nil {
+				return files, bytes, resumed, err
+			}
+		}
+		for _, item := range plan.items {
+			if worker.stopped(generation, next.id) {
+				return files, bytes, resumed, ErrCanceled
+			}
+			targetPath, err := joinRemoteWithin(target, item.relative)
+			if err != nil {
+				return files, bytes, resumed, err
+			}
+			if item.directory {
+				if item.relative != "." {
+					if err := ensureRemoteDirectory(client, targetPath); err != nil {
+						return files, bytes, resumed, err
+					}
+				}
+				continue
+			}
+			sourcePath := item.remote
+			open := func() (io.ReadCloser, error) {
+				return remoteSource.OpenTransferFile(sourcePath, os.O_RDONLY)
+			}
+			info := plannedFileInfo{name: path.Base(sourcePath), size: item.size, mode: item.mode, modTime: item.modTime}
+			written, continued, copyErr := worker.uploadStream(client, open, info, targetPath, next.policy, generation, next.id, files, bytes)
+			bytes += written
+			resumed += continued
+			if copyErr != nil {
+				if worker.canceledByUser(next.id) {
+					copyErr = ErrCanceled
+				}
+				return files, bytes, resumed, copyErr
+			}
+			files++
+			worker.setProgress(next.id, files, bytes, resumed)
+		}
+	}
+	if worker.stopped(generation, next.id) {
+		return files, bytes, resumed, ErrCanceled
+	}
+	return files, bytes, resumed, nil
+}
+
+// holdSource puts a remote copy's live source where a cancel can close it. It
+// reports false when the transfer was already given up, so no read starts.
+func (worker *Worker) holdSource(id uint64, source io.Closer) bool {
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+	record := worker.transferLocked(id)
+	if record == nil || record.settled || record.snapshot.State == TransferCanceled || worker.closedLocked() {
+		return false
+	}
+	record.source = source
+	return true
+}
+
+// releaseSource forgets the source of a remote copy that is finishing itself.
+func (worker *Worker) releaseSource(id uint64) {
+	worker.mu.Lock()
+	if record := worker.transferLocked(id); record != nil {
+		record.source = nil
+	}
+	worker.mu.Unlock()
+}
+
+// takeSourceLocked removes and returns the live source of transfer id. The
+// caller closes it outside the lock.
+func (worker *Worker) takeSourceLocked(id uint64) io.Closer {
+	record := worker.transferLocked(id)
+	if record == nil {
+		return nil
+	}
+	source := record.source
+	record.source = nil
+	return source
 }
 
 // settleCanceled runs the requests that tidy up after a canceled transfer, and
@@ -2751,6 +3074,49 @@ func chmod(client Remote, remotePath string, mode os.FileMode) error {
 		return fmt.Errorf("sftp: chmod is not supported by the remote")
 	}
 	return changer.Chmod(remotePath, mode)
+}
+
+// chown resolves the user and group the caller named and changes one path's
+// owner. SFTP carries ids, not names, so a name is looked up in the account
+// files the listing already read; a numeric id needs no lookup.
+func (worker *Worker) chown(client Remote, remotePath, owner, group string, generation uint64) error {
+	if remotePath == "" {
+		return fmt.Errorf("sftp: chown requires a remote path")
+	}
+	if owner == "" || group == "" {
+		return fmt.Errorf("sftp: chown requires an owner and a group")
+	}
+	changer, ok := client.(remoteChown)
+	if !ok {
+		return fmt.Errorf("sftp: ownership is not supported by the remote")
+	}
+	ids := worker.idNames(client)
+	uid, err := namedRequestID(ids.Users, owner, "user")
+	if err != nil {
+		return err
+	}
+	gid, err := namedRequestID(ids.Groups, group, "group")
+	if err != nil {
+		return err
+	}
+	if worker.canceled(generation) {
+		return ErrCanceled
+	}
+	return changer.Chown(remotePath, uid, gid)
+}
+
+// namedRequestID accepts a numeric id as typed, or the name the account file
+// lists for it.
+func namedRequestID(names map[uint32]string, value, kind string) (uint32, error) {
+	if id, err := strconv.ParseUint(value, 10, 32); err == nil {
+		return uint32(id), nil
+	}
+	for id, name := range names {
+		if name == value {
+			return id, nil
+		}
+	}
+	return 0, fmt.Errorf("sftp: the server has no %s named %q", kind, value)
 }
 
 func symlink(client Remote, linkPath, target string) error {

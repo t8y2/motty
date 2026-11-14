@@ -17,16 +17,24 @@ func decodeNoteRecord(r configstore.Record) (savedNote, bool) {
 	return n, true
 }
 
-// Preserve the losing concurrent body before the ordinary stamped merge. The
-// deterministic identity makes repeated and reversed exchanges idempotent.
-func (s *State) preserveNoteConflicts(remote []configstore.Record) (bool, error) {
+// flushNotesForSync saves what the note editors hold, so that a sync's reload
+// of the shared data compares against what this computer actually has. It runs
+// even when the notes category is closed: the reload still replaces the shared
+// state, and an unsaved draft must not turn into a conflict copy on the way.
+func (s *State) flushNotesForSync() error {
 	if !s.flushNoteDraft() {
-		return false, fmt.Errorf("%s", s.noteText("Finish composing or resolve the note save error before syncing.", "请完成输入法输入或处理笔记保存错误后再同步。"))
+		return fmt.Errorf("%s", s.noteText("Finish composing or resolve the note save error before syncing.", "请完成输入法输入或处理笔记保存错误后再同步。"))
 	}
 	s.save()
 	if s.hasUnsavedNotes() {
-		return false, fmt.Errorf("notes could not be saved; draft retained")
+		return fmt.Errorf("notes could not be saved; draft retained")
 	}
+	return nil
+}
+
+// Preserve the losing concurrent body before the ordinary stamped merge. The
+// deterministic identity makes repeated and reversed exchanges idempotent.
+func (s *State) preserveNoteConflicts(remote []configstore.Record) (bool, error) {
 	local, err := s.config.Records()
 	if err != nil {
 		return false, err

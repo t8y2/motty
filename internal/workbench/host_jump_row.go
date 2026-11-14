@@ -18,7 +18,7 @@ var hitHostJumpConfigure = tree.ID(hostJumpHits, "host-jump-configure")
 func (state *State) hostJumpDescription() string {
 	messages := state.messages.Tools
 	host, ok := state.hostByID(state.hostDialogID)
-	if state.hostDialogMode != hostDialogEdit || !ok || !host.isSSH() {
+	if state.hostDialogMode != hostDialogEdit || !ok || !host.isRouteTarget() {
 		return messages.HostJumpDescriptionUnsaved
 	}
 	if route, ok := state.proxyRouteForTarget(host.ID); ok {
@@ -28,24 +28,42 @@ func (state *State) hostJumpDescription() string {
 		}
 		return fmt.Sprintf(messages.HostJumpDescriptionFmt, jump.Label)
 	}
-	if state.sshHostCount() < 2 {
-		return messages.HostJumpDescriptionUnavailable
+	if host.isSSH() {
+		if state.sshHostCount() < 2 {
+			return messages.HostJumpDescriptionUnavailable
+		}
+	} else if state.sshHostCount() == 0 {
+		// A remote desktop needs only the jump host the route signs in to.
+		return messages.HostJumpDescriptionUnavailableDesktop
 	}
 	return messages.HostJumpDescriptionDirect
 }
 
 // hostJumpConfigureEnabled reports whether the row's button can open a route:
-// the host must be saved, SSH, and either already routed or accompanied by
-// another SSH host to route through.
+// the host must be saved and reachable by a route, with a jump host available.
 func (state *State) hostJumpConfigureEnabled() bool {
 	host, ok := state.hostByID(state.hostDialogID)
-	if state.hostDialogMode != hostDialogEdit || !ok || !host.isSSH() {
+	if state.hostDialogMode != hostDialogEdit || !ok || !host.isRouteTarget() {
 		return false
 	}
 	if _, ok := state.proxyRouteForTarget(host.ID); ok {
 		return true
 	}
-	return state.sshHostCount() >= 2
+	if host.isSSH() {
+		return state.sshHostCount() >= 2
+	}
+	return state.sshHostCount() >= 1
+}
+
+// desktopRouteConfigured reports whether the desktop form's saved host has a
+// route: the route then owns its connection, and the same-machine ViaSSH switch
+// cannot also apply.
+func (state *State) desktopRouteConfigured() bool {
+	if state.hostDialogMode != hostDialogEdit {
+		return false
+	}
+	_, ok := state.proxyRouteForTarget(state.hostDialogID)
+	return ok
 }
 
 // openHostJumpRoute opens the route dialog for the host the form edits, and

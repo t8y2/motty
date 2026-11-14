@@ -22,6 +22,10 @@ const (
 	KindCommand Kind = iota
 	KindOption
 	KindValue
+	// KindPath marks a filesystem entry the workbench read from the session's
+	// own host. The catalog never produces it: it is the application's answer,
+	// not a command's syntax, and only its own escaping is valid for it.
+	KindPath
 )
 
 // Candidate is one possible continuation. Text is the complete token; Insert is
@@ -35,6 +39,9 @@ type Candidate struct {
 	// revalidates exactly those insertions before typing them; suggestions
 	// learned from the user's own history are not restricted this way.
 	FromCatalog bool
+	// Dir marks a KindPath candidate that names a folder. It has no meaning for
+	// the other kinds and is used only to choose the row's glyph.
+	Dir bool
 }
 
 // Result is the answer for one line. Suppressed reports syntax this package

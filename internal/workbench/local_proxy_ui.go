@@ -131,7 +131,7 @@ func (state *State) localProxyUIPortLocked() bool {
 }
 
 func (state *State) localProxyActionVisible(session *Session) bool {
-	if session == nil || !session.host.isSSH() || session.isLocal() || session.host.isDesktop() {
+	if session == nil || !session.host.isSSH() || session.host.mosh() || session.isLocal() || session.host.isDesktop() {
 		return false
 	}
 	_, ok := state.localProxyTarget(session)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 type toolbarDockHit struct {
@@ -255,6 +256,9 @@ func (state *State) paintToolbarDockTop(canvas *gfx.Canvas) {
 				continue
 			}
 		}
+		if tool.disabled {
+			canvas.Block(bounds)
+		}
 		state.registerToolbarDockTool(canvas, tool, toolbarDockTop, bounds)
 	}
 }
@@ -262,11 +266,11 @@ func (state *State) paintToolbarDockTop(canvas *gfx.Canvas) {
 // Reserve each physical side independently. Background terminals keep their
 // eventual tool widths; ordinary pages only reserve globally available actions.
 func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float32 {
-	session, hasTerminal := state.terminalToolbarSession()
+	_, hasTerminal := state.terminalToolbarSession()
 	if !hasTerminal && state.noteSidebarVisible() && (state.terminalToolbarPosition == terminalToolbarLeft) == left {
 		return state.terminalToolbarMetrics().railExtent
 	}
-	if includeTerminal && hasTerminal && state.terminalToolbarShowsOnSide(session, left) {
+	if includeTerminal && state.toolbarRailReservedOnSide(left) {
 		return state.terminalToolbarMetrics().railExtent
 	}
 	if state.toolbars.dock == nil {
@@ -288,6 +292,76 @@ func (state *State) toolbarDockSideReserveFor(left, includeTerminal bool) float3
 	return 0
 }
 
+// toolbarRailReservedOnSide reports whether the shared terminal rail owns room
+// on one side of the active workspace. The room belongs to the workspace, not to
+// the pane that happens to have the keyboard: a restored pane beside a live one
+// must not take the rail's width away, and resize both PTYs, when focus moves.
+// The active terminal answers first; otherwise any live terminal of the
+// workspace stands for it.
+func (state *State) toolbarRailReservedOnSide(left bool) bool {
+	active, activeLive := state.terminalToolbarSession()
+	if activeLive && state.terminalToolbarShowsOnSide(active, left) {
+		return true
+	}
+	workspaceID := state.deck.ActiveWorkspace()
+	if workspaceID == 0 {
+		return false
+	}
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.ID == state.activeSessionID || session.term == nil || session.restored || session.desk != nil {
+			continue
+		}
+		workspace, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+		if ok && workspace == workspaceID && state.terminalToolbarShowsOnSide(session, left) {
+			return true
+		}
+	}
+	return false
+}
+
+// toolbarRailSession reports the terminal whose tools the shared rail shows and
+// whether that terminal is the pane with the keyboard. While the workspace has a
+// terminal, the rail keeps its tools even when focus rests on a pane without one
+// of its own or the shell is still coming up: they are drawn disabled rather
+// than vanishing with the rail's room. Another section owns its chrome and gets
+// no rail.
+func (state *State) toolbarRailSession() (session *Session, active bool) {
+	if state.activeSection != sectionTerminal {
+		return nil, false
+	}
+	if rail, ok := state.terminalSideRailSession(); ok {
+		return rail, true
+	}
+	if own, ok := state.terminalToolbarSession(); ok {
+		// The connection page owns the pane while the shell comes up, but the
+		// terminal object already exists: keep the rail's tools in place,
+		// disabled, instead of leaving the room they reserved blank.
+		return own, false
+	}
+	return state.firstLiveWorkspaceSession(), false
+}
+
+// firstLiveWorkspaceSession finds a pane of the active workspace that has a
+// terminal, even though another pane holds the keyboard.
+func (state *State) firstLiveWorkspaceSession() *Session {
+	workspaceID := state.deck.ActiveWorkspace()
+	if workspaceID == 0 {
+		return nil
+	}
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.term == nil || session.restored || session.desk != nil {
+			continue
+		}
+		workspace, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+		if ok && workspace == workspaceID {
+			return session
+		}
+	}
+	return nil
+}
+
 // terminalToolbarShowsOnSide reports whether this physical side has actual
 // content: a tool the bar paints there, or a latency badge backed by an RTT
 // sample. It runs on the steady-state paint path, so it scans preferences
@@ -303,6 +377,12 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 	compactMenu := false
 	entries := state.toolbars.entries(toolbarTerminal)
 	for _, preference := range entries {
+		if preference.Key == "remote-logs" {
+			if !left && preference.Enabled && session.remoteLogHost() {
+				return true
+			}
+			continue
+		}
 		spec, ok := toolbarSpecFor(toolbarTerminal, preference.Key)
 		if !ok {
 			continue
@@ -359,7 +439,7 @@ func (state *State) terminalToolbarShowsOnSide(session *Session, left bool) bool
 func (state *State) terminalToolbarOffers(session *Session, id gfx.ID) bool {
 	switch id {
 	case hitSFTPDetach:
-		return session.host.isSSH() && !session.isLocal()
+		return session.hasServer()
 	case hitSFTPOpen, hitConnExport, hitTerminalRecordingExport, hitTerminalRecord,
 		hitTerminalSaveOutput, hitProcessToolsOpen, hitPaneSplitVertical, hitPaneSplitHorizontal,
 		hitTerminalSnippets:
@@ -545,16 +625,17 @@ func (state *State) toolbarDockSideReserve() float32 {
 // page. Each rail's upper and lower groups scroll in viewports of their own;
 // their heights were measured here, since they decide the split.
 func (state *State) declareToolbarDockSides(c ui.C) {
-	session, terminalVisible := state.terminalSideRailSession()
+	session, active := state.toolbarRailSession()
+	_, footer := state.serverLogsRailTool(session, active)
 	for _, left := range []bool{false, true} {
-		state.declareToolbarDockSide(c, left, session, terminalVisible)
+		state.declareToolbarDockSide(c, left, session != nil, !left && footer)
 	}
 }
 
 // declareToolbarDockSide declares one side rail: its upper and lower groups
 // scroll in viewports of their own. A side the shell holds no room for declares
 // nothing and leaves no boxes behind.
-func (state *State) declareToolbarDockSide(c ui.C, left bool, session *Session, terminalVisible bool) {
+func (state *State) declareToolbarDockSide(c ui.C, left, terminalVisible, footer bool) {
 	dock := &state.toolbarDock
 	side := toolbarDockSideAt(left)
 	scratch := &dock.sideScratch[side]
@@ -571,6 +652,11 @@ func (state *State) declareToolbarDockSide(c ui.C, left bool, session *Session, 
 	top := state.toolbarDockTools(topZone, &topBuffer)
 	bottom := state.toolbarDockTools(bottomZone, &bottomBuffer)
 	viewport := bounds.Inset(gfx.All(4))
+	footerHeight := float32(0)
+	if footer {
+		footerHeight = state.terminalToolbarMetrics().toolSize + 4
+		viewport.Height = max(0, viewport.Height-footerHeight)
+	}
 	bottomHeight := min(state.terminalRailContentExtent(bottom), viewport.Height/2)
 	if len(top) == 0 {
 		bottomHeight = min(state.terminalRailContentExtent(bottom), viewport.Height)
@@ -587,7 +673,9 @@ func (state *State) declareToolbarDockSide(c ui.C, left bool, session *Session, 
 }
 
 func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
-	session, terminalVisible := state.terminalSideRailSession()
+	session, active := state.toolbarRailSession()
+	terminalVisible := session != nil
+	logTool, hasLogTool := state.serverLogsRailTool(session, active)
 	for _, left := range []bool{false, true} {
 		primary := (state.terminalToolbarPosition == terminalToolbarLeft) == left
 		if state.toolbarDockSideReserveFor(left, terminalVisible) == 0 {
@@ -612,11 +700,17 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 		// strip below, so it takes the frame's surface rather than a color of its
 		// own: on a full-page pane that is the workspace it borders. No divider is
 		// drawn beside it: the frame and the pane are one surface, and the tools
-		// read as a column of that surface.
+		// read as a column of that surface. A docked panel that takes the same
+		// workspace draws its own line against the rail instead.
 		background := state.windowFrameColor()
+		footer := !left && hasLogTool
 		if terminalVisible && primary {
-			state.setTerminalRailTools(session, append(top, bottom...))
-			if len(bottom) == 0 {
+			tools := append(top, bottom...)
+			if footer {
+				tools = append(tools, logTool)
+			}
+			state.setTerminalRailTools(session, tools)
+			if len(bottom) == 0 && !footer {
 				state.paintTerminalSideRail(canvas, bounds, session, top, background)
 				continue
 			}
@@ -626,12 +720,24 @@ func (state *State) paintToolbarDockSide(canvas *gfx.Canvas, size gfx.Size) {
 			session.term.railBounds = bounds
 		}
 		scratch := &dock.sideScratch[side]
+		// An input event can switch sections after the page declared its rail.
+		// The repaint will lay out the rail for the new section.
+		if !scratch.top.Valid() || !scratch.bottom.Valid() {
+			continue
+		}
 		var owner *Session
 		if terminalVisible && primary {
 			owner = session
 		}
 		state.paintToolbarDockSideGroup(canvas, top, topZone, scratch.top.Rect(), background, owner)
 		state.paintToolbarDockSideGroup(canvas, bottom, bottomZone, scratch.bottom.Rect(), background, owner)
+		if footer {
+			metrics := state.terminalToolbarMetrics()
+			rect := bounds.Inset(gfx.All(4))
+			rect.Y += max(rect.Height-metrics.toolSize, 0)
+			rect.Height = min(rect.Height, metrics.toolSize)
+			state.paintIconButtonSized(canvas, logTool.id, logTool.icon, rect, logTool.hint, logTool.disabled, logTool.style, background, metrics.iconSize)
+		}
 	}
 }
 
@@ -788,7 +894,15 @@ func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 	case gfx.PointerDown:
 		*drag = toolbarDockDrag{}
 		for _, hit := range dock.hits[:dock.count] {
-			if event.Target != hit.tool.id {
+			matches := event.Target == hit.tool.id
+			// A disabled tool is skipped by the hit-tester, so its presses fall
+			// through with no target of their own; a press that does carry one —
+			// an open menu's dismiss layer, one of its rows — belongs to that
+			// control even when the disabled tool's bounds lie under it.
+			if !matches && hit.tool.disabled && event.Target.IsZero() && pointInRect(event.X, event.Y, hit.bounds) {
+				matches = true
+			}
+			if !matches {
 				continue
 			}
 			if event.Button == gfx.PointerButtonSecondary {
@@ -797,6 +911,9 @@ func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 			}
 			if event.Button == gfx.PointerButtonPrimary {
 				*drag = toolbarDockDrag{pressed: true, tool: hit.tool, start: gfx.Point{X: event.X, Y: event.Y}}
+				if hit.tool.disabled {
+					return gfx.EventResult{Handled: true}
+				}
 			}
 			break
 		}
@@ -828,6 +945,9 @@ func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 			return gfx.EventResult{Handled: true, Repaint: true}
 		}
 		if !finished.active {
+			if finished.tool.disabled {
+				return gfx.EventResult{Handled: true}
+			}
 			return gfx.EventResult{}
 		}
 		// Keep the source identity available while resolving the final insertion.

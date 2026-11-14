@@ -231,10 +231,20 @@ func TestDevelopmentImportReadOnlyKeysRejectWrites(t *testing.T) {
 // the advance of its missing-glyph boxes, narrower than the one em the metrics
 // give a CJK character, so the dialog reports a spill the product does not have.
 func TestDevelopmentImportNativeDialog(t *testing.T) {
-	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 900, Height: 600}} {
+	for _, tc := range []struct {
+		size    gfx.Size
+		failing bool
+	}{
+		{size: gfx.Size{Width: 1400, Height: 900}},
+		// The smallest window the product allows must still show the dialog
+		// whole while a failed import asks to be retried. Opening below the
+		// minimum tests a size the application never has.
+		{size: gfx.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight}, failing: true},
+	} {
+		size := tc.size
 		options, sourceKeys := developmentImportFixture(t)
 		state := newTestState(t, options)
-		if size.Width == 900 {
+		if tc.failing {
 			sourceKeys.unavailable = true
 			state.Click(hitDevelopmentImport)
 			sourceKeys.unavailable = false

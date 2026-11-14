@@ -10,7 +10,7 @@
 # step simply does not sign.
 #
 # The tag is the approval: *Checksums* refuses the release unless it is exactly
-# the fourteen assets, its SHA256SUMS matches the files, every signature verifies
+# the eighteen assets, its SHA256SUMS matches the files, every signature verifies
 # against the key compiled into the app, and the notes name the Viva frame that
 # was built. *Publish* then copies the packages to the mirror, publishes that
 # verified draft, and flips the update feed last, so nothing public ever points
@@ -289,7 +289,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: checksums
+    needs: [checksums, viva]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -301,6 +301,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
 
       - name: Fetch the verified packages
         env:
@@ -341,6 +344,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # The Viva feed is published beside the existing one; without the key
+          # only the existing feed is written, which is what old versions read.
+          MOTTY_VIVA_UPDATE_KEY: ${{ secrets.MOTTY_VIVA_UPDATE_KEY }}
+          VIVA_REF: ${{ needs.viva.outputs.commit }}
         run: tools/mirror-release.sh "$GITHUB_REF_NAME" --announce --dir "$RUNNER_TEMP/release"
 
       # The tap and the Scoop bucket are what `brew` and `scoop` hand out, so

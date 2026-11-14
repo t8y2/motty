@@ -4,7 +4,7 @@
 // comes from Skill Icons (https://github.com/tandpfun/skill-icons), MIT. The Linux
 // glyph comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, and is
 // split into theme-aware color layers. The Apple glyph comes from Devicon
-// (https://devicon.dev), MIT. The Linux distribution and FreeBSD glyphs come from Simple Icons (https://simpleicons.org), CC0-1.0, except the fnOS glyph, which comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, the QNAP box mark, which comes from dashboard-icons (https://github.com/homarr-labs/dashboard-icons), Apache-2.0, the UOS mark, which is redrawn as vector paths from the icon UnionTech publishes on the UOS website (https://www.chinauos.com), and the Kylin glyph, which was supplied as SVG from Kylin's own icon set (https://www.kylinos.cn). The cloud vendors' distributions carry the vendor's own mark: AWS and Microsoft Azure from SVG Logos (https://github.com/gilbarbara/logos), CC0-1.0, and Tencent Cloud and Oracle from theSVG (https://thesvg.org), MIT. The Anolis OS and VMware glyphs were supplied as SVG for those badges. The mit-* file-type glyphs come from Material Icon Theme (https://github.com/material-extensions/vscode-material-icon-theme), MIT, through Iconify. The WeChat, Discord and GitHub marks come from Simple Icons (https://simpleicons.org), CC0-1.0. The QQ mark is Tencent's penguin, as drawn for the community card of the author's DBX project, and is used only to link to this project's QQ group under Tencent's trademark policy. The ai-* provider marks come from LobeHub Icons (https://github.com/lobehub/lobe-icons), MIT (Claude, Gemini, DeepSeek, Kimi, Qwen, MiniMax, Z.ai), Iconify (OpenAI) and Simple Icons (https://simpleicons.org), CC0-1.0 (Ollama); the plug glyph is Lucide's. The magpie mark comes from magpie (https://github.com/yetone/magpie), MIT, and the cc-switch mark from cc-switch (https://github.com/farion1231/cc-switch), MIT. Brand names and logos remain subject to their
+// (https://devicon.dev), MIT. The Linux distribution and FreeBSD glyphs come from Simple Icons (https://simpleicons.org), CC0-1.0, except the fnOS glyph, which comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, the QNAP box mark, which comes from dashboard-icons (https://github.com/homarr-labs/dashboard-icons), Apache-2.0, the UOS mark, which is redrawn as vector paths from the icon UnionTech publishes on the UOS website (https://www.chinauos.com), and the Kylin glyph, which was supplied as SVG from Kylin's own icon set (https://www.kylinos.cn). The cloud vendors' distributions carry the vendor's own mark: AWS and Microsoft Azure from SVG Logos (https://github.com/gilbarbara/logos), CC0-1.0, and Tencent Cloud and Oracle from theSVG (https://thesvg.org), MIT. The Anolis OS and VMware glyphs were supplied as SVG for those badges. The AIX glyph is redrawn as vector paths from the AIX badge IBM publishes. The mit-* file-type glyphs come from Material Icon Theme (https://github.com/material-extensions/vscode-material-icon-theme), MIT, through Iconify. The WeChat, Discord and GitHub marks come from Simple Icons (https://simpleicons.org), CC0-1.0. The QQ mark is Tencent's penguin, as drawn for the community card of the author's DBX project, and is used only to link to this project's QQ group under Tencent's trademark policy. The ai-* provider marks come from LobeHub Icons (https://github.com/lobehub/lobe-icons), MIT (Claude, Gemini, DeepSeek, Kimi, Qwen, MiniMax, Z.ai), Iconify (OpenAI) and Simple Icons (https://simpleicons.org), CC0-1.0 (Ollama); the plug glyph is Lucide's. The magpie mark comes from magpie (https://github.com/yetone/magpie), MIT, and the cc-switch mark from cc-switch (https://github.com/farion1231/cc-switch), MIT. Brand names and logos remain subject to their
 // respective trademark policies. SVG sources are compiled at build time with
 // `viva icons`; no SVG parser links into the app.
 // The sftp-* action glyphs were supplied with the SFTP interface design and
@@ -987,6 +987,65 @@ var AiZai = gfx.Icon{
 		gfx.LineTo(0.0, 22.0),
 		gfx.LineTo(14.736, 2.0),
 		gfx.LineTo(24.0, 2.0),
+		gfx.ClosePath(),
+	},
+}
+
+// aix is a compiled vector icon.
+var Aix = gfx.Icon{
+	ViewBox: 24.0,
+	Stroke:  2.0,
+	Cap:     gfx.CapRound,
+	Join:    gfx.JoinRound,
+	Commands: []gfx.PathCommand{
+		gfx.MoveTo(12.0, 0.4),
+		gfx.CubicTo(18.407, 0.4, 23.6, 5.593, 23.6, 12.0),
+		gfx.CubicTo(23.6, 18.407, 18.407, 23.6, 12.0, 23.6),
+		gfx.CubicTo(5.593, 23.6, 0.4, 18.407, 0.4, 12.0),
+		gfx.CubicTo(0.4, 5.593, 5.593, 0.4, 12.0, 0.4),
+		gfx.ClosePath(),
+		gfx.MoveTo(12.0, 1.7),
+		gfx.CubicTo(6.311, 1.7, 1.7, 6.311, 1.7, 12.0),
+		gfx.CubicTo(1.7, 17.689, 6.311, 22.3, 12.0, 22.3),
+		gfx.CubicTo(17.689, 22.3, 22.3, 17.689, 22.3, 12.0),
+		gfx.CubicTo(22.3, 6.311, 17.689, 1.7, 12.0, 1.7),
+		gfx.ClosePath(),
+		gfx.MoveTo(12.0, 3.0),
+		gfx.CubicTo(16.971, 3.0, 21.0, 7.029, 21.0, 12.0),
+		gfx.CubicTo(21.0, 16.971, 16.971, 21.0, 12.0, 21.0),
+		gfx.CubicTo(7.029, 21.0, 3.0, 16.971, 3.0, 12.0),
+		gfx.CubicTo(3.0, 7.029, 7.029, 3.0, 12.0, 3.0),
+		gfx.ClosePath(),
+		gfx.MoveTo(5.85, 16.0),
+		gfx.LineTo(6.95, 16.0),
+		gfx.LineTo(7.366, 14.1),
+		gfx.LineTo(8.934, 14.1),
+		gfx.LineTo(9.35, 16.0),
+		gfx.LineTo(10.45, 16.0),
+		gfx.LineTo(8.7, 8.0),
+		gfx.LineTo(7.6, 8.0),
+		gfx.ClosePath(),
+		gfx.MoveTo(8.15, 10.51),
+		gfx.LineTo(8.694, 13.0),
+		gfx.LineTo(7.606, 13.0),
+		gfx.ClosePath(),
+		gfx.MoveTo(11.35, 8.0),
+		gfx.LineTo(11.35, 16.0),
+		gfx.LineTo(12.65, 16.0),
+		gfx.LineTo(12.65, 8.0),
+		gfx.ClosePath(),
+		gfx.MoveTo(13.55, 8.0),
+		gfx.LineTo(15.225, 12.0),
+		gfx.LineTo(13.55, 16.0),
+		gfx.LineTo(14.8, 16.0),
+		gfx.LineTo(15.85, 13.493),
+		gfx.LineTo(16.9, 16.0),
+		gfx.LineTo(18.15, 16.0),
+		gfx.LineTo(16.475, 12.0),
+		gfx.LineTo(18.15, 8.0),
+		gfx.LineTo(16.9, 8.0),
+		gfx.LineTo(15.85, 10.507),
+		gfx.LineTo(14.8, 8.0),
 		gfx.ClosePath(),
 	},
 }

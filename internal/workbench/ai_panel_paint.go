@@ -20,18 +20,40 @@ import (
 
 // Metrics of the panel, in logical pixels.
 const (
-	aiPad          = float32(14) // the margin around everything in the column
-	aiGap          = float32(10) // between two messages
-	aiAnswerAction = float32(26) // the last answer's copy and usage row
-	aiBodySize     = float32(13)
-	aiBodyLine     = float32(19)
-	aiSmallSize    = float32(12)
-	aiSmallLine    = float32(17)
-	aiMonoSize     = float32(12)
+	aiPad          = float32(14)       // the margin around everything in the column
+	aiGap          = float32(10)       // between two messages
+	aiAnswerAction = float32(26)       // the last answer's copy and usage row
 	aiTitleRow     = infoBarHeight - 1 // with the divider under it, as tall as the terminal's info bar beside it, whose last pixel is its line
 	aiButton       = float32(28)
 	aiMaxLines     = 4096 // the most lines one message is laid out in
 )
+
+// aiTextMetrics are the panel's text sizes at the interface text size in
+// effect. The panel is window text, not a terminal grid: its body is the
+// window's body size and its smaller runs the window's caption size, so the
+// size the user chooses reaches the panel like every other page. The line
+// heights keep the panel's own leading over each size.
+type aiTextMetrics struct {
+	body, bodyLine         float32
+	title, titleLine       float32
+	small, smallLine       float32
+	mono, monoLine         float32
+	approval, approvalLine float32
+}
+
+// aiSizes is the panel's text at the current metrics; applyTextMetrics rebuilds
+// it together with the metrics it was derived from.
+var aiSizes = aiTextMetricsAt(metrics)
+
+func aiTextMetricsAt(m gfx.Metrics) aiTextMetrics {
+	return aiTextMetrics{
+		body: m.FontSizeM, bodyLine: m.FontSizeM + 6,
+		title: m.FontSizeM + 1, titleLine: m.FontSizeM + 10,
+		small: m.FontSizeS, smallLine: m.FontSizeS + 5,
+		mono: m.FontSizeS, monoLine: m.FontSizeS + 7,
+		approval: m.FontSizeS, approvalLine: m.FontSizeS + 3,
+	}
+}
 
 // aiPanelPart names the assistant's container in the workbench page. The page
 // declares one Part-named, window-filling box for the panel, and the panel's
@@ -49,6 +71,8 @@ func aiPanelScope() gfx.Scope {
 // its body, so the body's view reads the values instead of measuring them again.
 type aiPanelPageScratch struct {
 	boxHeight, setupWidth    float32
+	composerBarHeight        float32
+	wrapComposerOptions      bool
 	showSetup                bool
 	setupLabel, setupSummary string
 }
@@ -67,6 +91,7 @@ type aiRowView struct {
 	status   aiToolStatus
 	width    float32
 	cell     float32
+	size     float32 // the body size the lines were laid out at
 	title    string
 	textData *byte
 	textLen  int
@@ -102,6 +127,7 @@ type aiRowView struct {
 
 func (v *aiRowView) current(item *aiItem, width, cell float32, title string) bool {
 	return v.valid && v.kind == item.kind && v.status == item.status && v.width == width && v.cell == cell &&
+		v.size == aiSizes.body &&
 		v.targetLabel == item.targetLabel &&
 		v.built == v.expanded && v.title == title &&
 		v.textData == unsafe.StringData(item.text) && v.textLen == len(item.text) &&
@@ -218,6 +244,10 @@ func aiExcerpt(result string) string {
 // aiToolTitle is the localized name of a tool.
 func aiToolTitle(m i18n.AIPanelMessages, name string) string {
 	switch name {
+	case tools.NameNoteQuery:
+		return m.ToolNotesQuery
+	case tools.NameNoteEdit:
+		return m.ToolNotesEdit
 	case tools.NameListSessions:
 		return m.ToolListSessions
 	case tools.NameTerminalRead:
@@ -326,7 +356,7 @@ func (state *State) aiBuild(canvas *gfx.Canvas, view *aiRowView, item *aiItem, w
 	}
 	*view = aiRowView{
 		targetLabel: item.targetLabel,
-		valid:       true, built: view.expanded, kind: item.kind, status: item.status, width: width, cell: cell, title: title,
+		valid:       true, built: view.expanded, kind: item.kind, status: item.status, width: width, cell: cell, size: aiSizes.body, title: title,
 		textData: unsafe.StringData(item.text), textLen: len(item.text),
 		resData: unsafe.StringData(item.result), resLen: len(item.result),
 		argData: unsafe.StringData(item.call.Arguments), argLen: len(item.call.Arguments),
@@ -336,9 +366,9 @@ func (state *State) aiBuild(canvas *gfx.Canvas, view *aiRowView, item *aiItem, w
 	switch item.kind {
 	case aiUser:
 		inner := max(width*0.9-2*aiUserPadX, 40)
-		view.plain[aiTextPrimary].layoutBody(canvas, item.text, aiBodySize, aiBodyLine, inner, aiMaxLines)
+		view.plain[aiTextPrimary].layoutBody(canvas, item.text, aiSizes.body, aiSizes.bodyLine, inner, aiMaxLines)
 		view.lines = view.plain[aiTextPrimary].appendLines(view.lines)
-		view.height = 2*aiUserPadY + float32(len(view.lines))*aiBodyLine
+		view.height = 2*aiUserPadY + float32(len(view.lines))*aiSizes.bodyLine
 		if len(item.attachments) > 0 {
 			view.detail = aiAttachmentNames(item.attachments)
 			view.height += aiAttachedLine
@@ -349,17 +379,17 @@ func (state *State) aiBuild(canvas *gfx.Canvas, view *aiRowView, item *aiItem, w
 	case aiAssistant:
 		view.doc.Parse(item.text)
 		view.height = view.md.Layout(canvas, components.MarkdownStyle{
-			Size: aiBodySize, LineHeight: aiBodyLine, MonoFace: state.terminalFontFace, CodeInset: 28, Highlight: highlightCode,
+			Size: aiSizes.body, LineHeight: aiSizes.bodyLine, MonoFace: state.terminalFontFace, CodeInset: 28, Highlight: highlightCode,
 		}, &view.doc, width)
 	case aiReasoning:
 		view.height = aiReasonHeader
 		if view.expanded {
-			count := state.aiWrap(canvas, view, item.text, aiSmallSize, width-14)
-			view.height += aiReasonBody + float32(count)*aiSmallLine
+			count := state.aiWrap(canvas, view, item.text, aiSizes.small, width-14)
+			view.height += aiReasonBody + float32(count)*aiSizes.smallLine
 		}
 	case aiNotice:
-		count := state.aiWrap(canvas, view, item.text, aiSmallSize, width-2*aiNoticePadX)
-		view.height = 2*aiNoticePadY + float32(count)*aiSmallLine
+		count := state.aiWrap(canvas, view, item.text, aiSizes.small, width-2*aiNoticePadX)
+		view.height = 2*aiNoticePadY + float32(count)*aiSizes.smallLine
 	case aiTool:
 		state.aiLayoutTool(view, item, width, cell, cellHeight)
 	}
@@ -439,6 +469,7 @@ func (state *State) aiPanelBeginPaint() {
 	panel.rect, panel.list, panel.listing = gfx.Rect{}, gfx.Rect{}, false
 	panel.scrollbar.geometry = components.MessageScrollerGeometry{}
 	panel.messageScroll, panel.historyScroll = nil, nil
+	panel.approvalLay.bounds, panel.approvalLay.scroll = gfx.Rect{}, nil
 	panel.paintedRows = panel.paintedRows[:0]
 	panel.paintedHistory = panel.paintedHistory[:0]
 	panel.copySlots = panel.copySlots[:0]
@@ -446,7 +477,6 @@ func (state *State) aiPanelBeginPaint() {
 	panel.statusPainted = false
 	if !state.aiPanelVisible() {
 		panel.scrollbar.dragging = false
-		panel.drawerOpen = false
 	}
 	panel.declared = false
 	panel.menusShown = false
@@ -484,9 +514,8 @@ func (state *State) declareAIPanel(c ui.C) {
 	}
 	panel.declared = true
 	size := gfx.Size{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	if panel.contentDraw == nil {
-		panel.contentDraw = state.paintAIPanelContent
-		panel.overDraw = state.paintAIPanelChrome
+	if panel.overDraw == nil {
+		panel.overDraw = state.paintAIPanelOver
 	}
 	c.Part(aiPanelPart)
 	ui.Stack(c).Absolute().Inset(0).Children(func() {
@@ -543,10 +572,7 @@ func (state *State) declareAIDockedPanel(c ui.C, size gfx.Size) {
 	})
 }
 
-// declareAIDrawer declares the panel as a drawer over the window, as Viva's page
-// Drawer: it paints its scrim and surface on a layer above the page's content
-// and declares the body inside that layer, so a section painted after the page
-// does not cover it.
+// Use the workspace viewport so the drawer never covers the native title bar.
 func (state *State) declareAIDrawer(c ui.C, size gfx.Size) {
 	panel := &state.ai.panel
 	viewport := state.visibleWorkspacePixelBounds(size)
@@ -556,16 +582,21 @@ func (state *State) declareAIDrawer(c ui.C, size gfx.Size) {
 	bounds := gfx.Rect{X: viewport.X + viewport.Width - contentWidth, Y: viewport.Y, Width: contentWidth, Height: viewport.Height}
 	panel.rect = bounds
 	panel.resize = aiPanelResize{window: viewport, ratio: (bounds.X - viewport.X) / max(viewport.Width-1, 1), handle: 8}
-	panel.drawerOpen = true
-	dismissed := ui.Drawer(c, &panel.drawerOpen, "", ui.DrawerSpec{
-		Side: ui.DrawerRight, Size: drawerExtent, NonModal: true,
-	}, func() {
-		state.declareAIPanelBody(c)
-	}, nil)
-	if dismissed || !panel.drawerOpen {
-		panel.drawerOpen = true // closing now; the next open starts open
+	dismiss := ui.ID(c)
+	if canvas := c.Canvas(); canvas != nil && canvas.Clicked(dismiss) {
 		c.After(state.closeAIPanel)
 	}
+	drawer := components.BeginDrawer(c.Canvas(), state.Theme(), viewport, components.DrawerOptions{
+		Layer: drawerLayer, DismissID: dismiss,
+		Side: components.DrawerRight, ContentExtent: contentWidth,
+	})
+	ui.Stack(c).Absolute().Left(viewport.X).Top(viewport.Y).Size(viewport.Width, viewport.Height).
+		Draw(func(*ui.DrawContext) { drawer.Begin("", "") }).Children(func() {
+		ui.Column(c).Absolute().Left(bounds.X-viewport.X).Top(0).Size(bounds.Width, bounds.Height).Children(func() {
+			state.declareAIPanelBody(c)
+		})
+		ui.Slot(c).Absolute().Size(0, 0).Draw(func(*ui.DrawContext) { drawer.End() })
+	})
 }
 
 // paintAIPanel paints what the declared panel needs outside the page: its resize
@@ -583,21 +614,40 @@ func (state *State) paintAIPanel(canvas *gfx.Canvas, size gfx.Size) {
 		// composer explicitly so typing reaches the assistant. The runtime applies
 		// one request once, so later frames leave the focus the user chose alone.
 		canvas.RequestFocus(hitAIInput)
+	case aiPanelDocked:
+		state.paintAIDockEdge(canvas)
+		state.paintAIResize(canvas)
+		state.paintAIDrop(canvas)
 	default:
 		state.paintAIResize(canvas)
 		state.paintAIDrop(canvas)
 	}
 }
 
-// paintAIResize paints the panel's resize edge: only hover, press and focus show
-// it, since the cards already carry their own border.
+// paintAIDockEdge draws the docked column's boundary beside the window frame's
+// side rail. The frame takes the panel's workspace surface, so without the line
+// the panel and the empty rail below its tools read as one column. The pane
+// divider draws the same line on the panel's other side, and a panel that ends
+// at the window's own edge keeps the window's edge.
+func (state *State) paintAIDockEdge(canvas *gfx.Canvas) {
+	if state.toolbarDockSideReserveFor(false, true) > 0 {
+		state.paintPanelSideEdge(canvas, state.ai.panel.rect, false)
+	}
+}
+
+// paintAIResize paints the panel's resize edge. Its resting 1px line is the
+// boundary between the docked column and the panes, as the files panel's
+// divider is; the section card keeps its own border instead, so only the handle
+// that shows hover, press and focus is painted there.
 func (state *State) paintAIResize(canvas *gfx.Canvas) {
 	panel := &state.ai.panel
 	if panel.resize.window.Width <= 0 {
 		return
 	}
 	theme := state.Theme()
-	theme.Border = gfx.Color{}
+	if panel.mode != aiPanelDocked {
+		theme.Border = gfx.Color{}
+	}
 	components.BeginResizable(canvas, theme, hitAIDivider, panel.resize.window, panel.resize.ratio).
 		Limits(0, 1).HandleSize(panel.resize.handle).Paint(state.messages.AIPanel.ResizePanel)
 }
@@ -641,9 +691,9 @@ func aiMenuWidth(text float32) float32 { return min(max(text+56, 140), 320) }
 const aiMenuContextWidth = float32(144)
 
 // paintAIPanelContent paints the parts the declaration left for the last pass,
-// once the page has laid the body out: the title buttons and setup card in their
-// slots and the bottom's field and buttons. The lists paint their own rows; their
-// chrome is painted over them (paintAIMessageChrome, paintAIHistoryChrome).
+// once the page has laid the body out: the setup card's button and the bottom's
+// field and buttons. The lists paint their own rows; their chrome is painted
+// over them (paintAIMessageChrome, paintAIHistoryChrome).
 func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
 	s := &panel.pageScratch
@@ -658,6 +708,16 @@ func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	// list paints rows at all: the empty state has no Draw to do it later.
 	panel.textSelect.Clamp(len(ai.items)*int(aiTextPartCount), panel.textLength)
 	state.paintAIBottom(canvas, &panel.body)
+}
+
+// paintAIPanelOver paints the hand-painted controls and then the chrome that
+// must sit over them. Both belong on the page's DrawOver, after its children:
+// the pinned question is declared inside a card whose own background is a
+// child, so a control painted from Draw is under that background — only its
+// label survives, and the button reads as bare text on the card.
+func (state *State) paintAIPanelOver(d *ui.DrawContext) {
+	state.paintAIPanelContent(d)
+	state.paintAIPanelChrome(d)
 }
 
 // paintAIPanelChrome paints what must come over the body's controls: the
@@ -695,7 +755,7 @@ func (state *State) declareAIPanelBody(c ui.C) {
 	}
 	if canvas := c.Canvas(); canvas != nil {
 		s.boxHeight = state.aiPrepareBottom(canvas, width)
-		s.setupWidth = min(max(canvas.TextWidthWeight(s.setupLabel, aiSmallSize, gfx.WeightMedium)+32, 110), width*0.5)
+		s.setupWidth = min(max(canvas.TextWidthWeight(s.setupLabel, aiSizes.small, gfx.WeightMedium)+32, 110), width*0.5)
 	}
 	if panel.composerDraw == nil {
 		panel.composerDraw = state.paintAIComposerTextarea
@@ -708,7 +768,7 @@ func (state *State) declareAIPanelBody(c ui.C) {
 	}
 
 	panel.body = aiBody{}
-	ui.Column(c).Fill().Draw(panel.contentDraw).DrawOver(panel.overDraw).Children(func() {
+	ui.Column(c).Fill().DrawOver(panel.overDraw).Children(func() {
 		// The title row: the name, a new conversation, the history, and the way out.
 		ui.Row(c).Height(aiTitleRow).PadX(aiPad).Gap(4).Items(ui.Center).Children(func() {
 			ui.Icon(c, lucideIcons[iconBot]).Color(pal.accent).MarginSides(0, 4, 0, 0)
@@ -720,7 +780,7 @@ func (state *State) declareAIPanelBody(c ui.C) {
 		// The way to get a model; once there is one, the message box names it.
 		if s.showSetup {
 			ui.Row(c).Height(56).MarginSides(0, aiPad, 8, aiPad).PadX(12).Gap(12).Items(ui.Center).Background(pal.surface).Border(1, pal.line).Radius(radius.control).Children(func() {
-				ui.Paragraph(c, s.setupSummary, 3).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).Grow(1)
+				ui.Paragraph(c, s.setupSummary, 3).FontSize(aiSizes.small).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSizes.smallLine).Grow(1)
 				panel.body.setup = ui.Slot(c).Size(s.setupWidth, 30)
 			})
 		}
@@ -738,6 +798,9 @@ func (state *State) declareAIPanelBody(c ui.C) {
 			})
 		} else {
 			panel.body.list = state.declareAIEmpty(c)
+			if len(ai.approvals) > 0 {
+				panel.body.list.Shrink(1)
+			}
 		}
 		state.declareAIBottom(c, &panel.body, s.boxHeight)
 	})
@@ -760,17 +823,17 @@ func (state *State) declareAIPanelBody(c ui.C) {
 // aiModelText is the line naming the model that answers, and whether there is one.
 func (state *State) aiModelText() (string, bool) {
 	ai, panel := &state.ai, &state.ai.panel
-	if ai.settings.defaultModel == "" {
+	if ai.modelName == "" {
 		return "", false
 	}
 	for index := range ai.providers {
 		provider := &ai.providers[index]
-		if provider.ID != ai.settings.defaultProvider || !provider.Enabled {
+		if provider.ID != ai.modelProvider || !provider.Enabled {
 			continue
 		}
-		if panel.modelName != provider.Name || panel.modelID != ai.settings.defaultModel {
-			panel.modelName, panel.modelID = provider.Name, ai.settings.defaultModel
-			panel.modelText = provider.Name + " · " + ai.settings.defaultModel
+		if panel.modelName != provider.Name || panel.modelID != ai.modelName {
+			panel.modelName, panel.modelID = provider.Name, ai.modelName
+			panel.modelText = provider.Name + " · " + ai.modelName
 		}
 		return panel.modelText, true
 	}
@@ -794,8 +857,8 @@ func (state *State) declareAIEmpty(c ui.C) ui.Box {
 		ui.Spacer(c).MinHeight(8)
 		ui.Column(c).Shrink(0).Children(func() {
 			ui.Icon(c, lucideIcons[iconBot]).Size(26, 26).Color(pal.accent).Self(ui.Center)
-			ui.Text(c, title).FontSize(15).Bold().Color(pal.text).LineHeight(24).TextCenter().MarginSides(14, 0, 0, 0)
-			ui.Paragraph(c, hint, 4).FontSize(aiSmallSize).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSmallLine).TextCenter().MarginSides(8, 12, 0, 12)
+			ui.Text(c, title).FontSize(aiSizes.title).Bold().Color(pal.text).LineHeight(aiSizes.titleLine).TextCenter().MarginSides(14, 0, 0, 0)
+			ui.Paragraph(c, hint, 4).FontSize(aiSizes.small).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSizes.smallLine).TextCenter().MarginSides(8, 12, 0, 12)
 			ui.Column(c).Gap(6).MarginSides(16, 0, 6, 0).Children(func() {
 				for index, example := range texts {
 					state.declareAIExample(c, index, example)
@@ -821,7 +884,7 @@ func (state *State) declareAIExample(c ui.C, index int, example string) {
 	}
 	ui.Row(c).Height(36).PadSides(0, 10, 0, 12).Gap(8).Items(ui.Center).Background(background).Radius(radius.control).
 		HitWith(id, example, gfx.HitOptions{Role: gfx.RoleButton}).Children(func() {
-		ui.Text(c, example).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSmallLine).Ellipsis().Grow(1)
+		ui.Text(c, example).FontSize(aiSizes.small).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(aiSizes.smallLine).Ellipsis().Grow(1)
 		ui.Icon(c, lucideIcons[iconChevronRight]).Size(14, 14).Color(pal.muted).Shrink(0)
 	})
 }
@@ -855,7 +918,7 @@ func (state *State) declareAIHistory(c ui.C) {
 	if len(ai.conversations) == 0 {
 		panel.maxTop = 0
 		ui.Column(c).Grow(1).PadSides(24, aiPad, 0, aiPad).Children(func() {
-			ui.Text(c, m.HistoryEmpty).FontSize(aiSmallSize).Color(pal.muted).LineHeight(22).TextCenter()
+			ui.Text(c, m.HistoryEmpty).FontSize(aiSizes.small).Color(pal.muted).LineHeight(22).TextCenter()
 		})
 		return
 	}
@@ -957,13 +1020,13 @@ func (state *State) declareAIMessages(c ui.C) {
 	panel.rowWidth = panel.rect.Width - 2*aiPad
 	panel.statusLabel, panel.statusPainted = "", false
 	if canvas := c.Canvas(); canvas != nil {
-		panel.cell, panel.cellHeight = canvas.MonoCellSize(aiMonoSize, state.terminalFontFace)
+		panel.cell, panel.cellHeight = canvas.MonoCellSize(aiSizes.mono, state.terminalFontFace)
 		status, usage := state.aiRunStatusText()
 		if status != "" {
-			panel.statusLines = canvas.WrapLines(panel.statusLines[:0], status, aiSmallSize, gfx.WeightRegular, max(panel.rowWidth-20, 1), 4)
+			panel.statusLines = canvas.WrapLines(panel.statusLines[:0], status, aiSizes.small, gfx.WeightRegular, max(panel.rowWidth-20, 1), 4)
 			panel.usageLines = panel.usageLines[:0]
 			if usage != "" {
-				panel.usageLines = canvas.WrapLines(panel.usageLines, usage, aiSmallSize, gfx.WeightRegular, max(panel.rowWidth-20, 1), 8)
+				panel.usageLines = canvas.WrapLines(panel.usageLines, usage, aiSizes.small, gfx.WeightRegular, max(panel.rowWidth-20, 1), 8)
 			}
 			panel.statusLabel = status
 			if usage != "" {
@@ -1072,12 +1135,12 @@ func (state *State) declareAIRunStatusRow(row ui.ListRow) {
 			ui.Row(row.C).Gap(8).Children(func() {
 				activity = ui.Slot(row.C).Size(12, 12).Shrink(0).MarginSides(2, 0, 0, 0)
 				ui.Column(row.C).Grow(1).Children(func() {
-					aiTextLines(f, panel.statusLines, aiSmallSize, aiSmallLine, pal.muted)
+					aiTextLines(f, panel.statusLines, aiSizes.small, aiSizes.smallLine, pal.muted)
 				})
 			})
 			if len(panel.usageLines) > 0 {
 				ui.Column(row.C).Children(func() {
-					aiTextLines(f, panel.usageLines, aiSmallSize, aiSmallLine, pal.muted)
+					aiTextLines(f, panel.usageLines, aiSizes.small, aiSizes.smallLine, pal.muted)
 				})
 			}
 		})
@@ -1199,7 +1262,7 @@ func aiTextLines(f aiRowFrame, lines []string, size, lineHeight float32, color g
 // aiMonoLines declares lines in the terminal's font.
 func (state *State) aiMonoLines(f aiRowFrame, lines []string, color gfx.Color) {
 	for _, line := range lines {
-		f.Text(line).FontSize(aiMonoSize).MonoFace(state.terminalFontFace).Color(color)
+		f.Text(line).FontSize(aiSizes.mono).MonoFace(state.terminalFontFace).Color(color)
 	}
 }
 
@@ -1218,7 +1281,7 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 		root.Items(ui.End).Children(func() {
 			f.Column().MaxWidth(view.width).PadSides(aiUserPadY, aiUserPadX, aiUserPadY, aiUserPadX).Background(pal.accentSoft).Radius(radius.popup).Children(func() {
 				text := f.Column().Children(func() {
-					aiTextLines(f, view.lines, aiBodySize, aiBodyLine, pal.text)
+					aiTextLines(f, view.lines, aiSizes.body, aiSizes.bodyLine, pal.text)
 				})
 				view.textSlots[aiTextPrimary] = text
 				view.textSlotSet[aiTextPrimary] = true
@@ -1229,7 +1292,7 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 					// What the question was sent with, under its words.
 					f.Row().Height(aiAttachedLine).Gap(5).Items(ui.Center).Children(func() {
 						f.Icon(lucideIcons[iconPaperclip]).Size(12, 12).Color(pal.muted).Shrink(0)
-						f.Text(view.detail).FontSize(aiSmallSize).Color(pal.muted).LineHeight(aiSmallLine).Ellipsis().Shrink(1)
+						f.Text(view.detail).FontSize(aiSizes.small).Color(pal.muted).LineHeight(aiSizes.smallLine).Ellipsis().Shrink(1)
 					})
 				}
 			})
@@ -1238,7 +1301,7 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 		root.Items(ui.Center).Children(func() {
 			f.Row().Height(view.height).Fill().Gap(10).Items(ui.Center).Children(func() {
 				f.Column().Grow(1).Height(1).Background(pal.line)
-				f.Text(view.detail).FontSize(aiSmallSize).Color(pal.faint).LineHeight(aiSmallLine).MaxWidth(max(view.width-48, 0)).Ellipsis()
+				f.Text(view.detail).FontSize(aiSizes.small).Color(pal.faint).LineHeight(aiSizes.smallLine).MaxWidth(max(view.width-48, 0)).Ellipsis()
 				f.Column().Grow(1).Height(1).Background(pal.line)
 			})
 		})
@@ -1272,7 +1335,7 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 				} else {
 					f.Icon(lucideIcons[icon]).Size(12, 12).Color(pal.muted)
 				}
-				f.Text(view.title).FontSize(aiSmallSize).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18)
+				f.Text(view.title).FontSize(aiSizes.small).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18)
 			})
 			if index < aiMaxRowHits {
 				header.Hover(ui.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, gfx.HitOptions{Role: gfx.RoleButton, Expanded: view.expanded})
@@ -1282,7 +1345,7 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 				f.Row().MarginSides(2, 0, 0, 0).Children(func() {
 					f.Column().Width(1).MarginSides(0, 0, 4, 7).Background(pal.line)
 					f.Column().Grow(1).MarginSides(2, 0, 6, 6).Children(func() {
-						aiTextLines(f, view.lines, aiSmallSize, aiSmallLine, pal.muted)
+						aiTextLines(f, view.lines, aiSizes.small, aiSizes.smallLine, pal.muted)
 					})
 				})
 			}
@@ -1290,7 +1353,7 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 	case aiNotice:
 		root.Children(func() {
 			f.Column().PadSides(aiNoticePadY, aiNoticePadX, aiNoticePadY, aiNoticePadX).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
-				aiTextLines(f, view.lines, aiSmallSize, aiSmallLine, pal.danger)
+				aiTextLines(f, view.lines, aiSizes.small, aiSizes.smallLine, pal.danger)
 			})
 		})
 	case aiTool:
@@ -1304,7 +1367,7 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 				// The name and the risk at the left, the status at the right.
 				f.Row().Height(aiToolHeader).Items(ui.Center).Children(func() {
 					f.Icon(lucideIcons[aiToolIcon(item.call.Name)]).Size(14, 14).Color(pal.muted).MarginSides(0, 8, 0, 0)
-					f.Text(view.title).FontSize(aiSmallSize).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Ellipsis()
+					f.Text(view.title).FontSize(aiSizes.small).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Ellipsis()
 					if item.call.Name == tools.NameTerminalExec || item.call.Name == tools.NameTerminalExecMany {
 						foreground, fill := state.aiRiskColors(item.risk)
 						f.Row().Height(16).PadX(6).Center().Shrink(0).MarginSides(0, 0, 0, 8).Background(fill).Radius(radius.control).Children(func() {

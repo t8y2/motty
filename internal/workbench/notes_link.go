@@ -190,15 +190,7 @@ func (s *State) noteMemoryBody(id string) string {
 }
 
 func (s *State) noteLinkMessage(err error) string {
-	switch {
-	case errors.Is(err, errLinkNotUTF8):
-		return s.noteText("Markdown must be UTF-8.", "Markdown 文件必须使用 UTF-8 编码。")
-	case errors.Is(err, errLinkTooLarge):
-		return s.noteText("The file exceeds 1 MiB.", "文件超过 1 MiB。")
-	case errors.Is(err, errLinkNotRegular):
-		return s.noteText("The linked path is not a regular file.", "链接的路径不是普通文件。")
-	}
-	return err.Error()
+	return noteLinkMessage(err, s.noteText)
 }
 
 // linkNotes links Markdown files chosen by the user as notes.
@@ -309,6 +301,9 @@ func (s *State) noteLinksRestored() {
 		live[n.ID] = true
 		if _, known := s.noteLinks[n.ID]; !known {
 			s.noteLinkInfo(n.ID).bodyHash = noteHash(n.Body)
+			if n.Link.WriteBase != "" {
+				s.noteLinkInfo(n.ID).bodyHash = n.Link.WriteBase
+			}
 			if n.Link.Tree == "" {
 				s.noteLinkRefresh(n.ID)
 			}
@@ -386,6 +381,9 @@ func (s *State) noteLinkAdopt(id, path string, file linkedFile) {
 		// note's own just wrote: nothing to do, and a conflict that came from a
 		// change since undone is over.
 		st.conflict = false
+		if i := s.noteIndex(id); i >= 0 && s.notes.list[i].Link.WriteBase != "" && noteHash(s.notes.list[i].Body) != disk {
+			st.problem = s.noteText("File save is pending; committed note text is retained.", "文件尚未保存，已提交的笔记正文已保留。")
+		}
 		return
 	}
 	memory := s.noteMemoryBody(id)
@@ -422,31 +420,16 @@ func (s *State) noteLinkSetBody(id, body string) {
 	s.save()
 }
 
+// noteLinkCheck validates the disk baseline without writing or adopting text.
+func (s *State) noteLinkCheck(note savedNote) bool {
+	return noteLinkCheckFile(s.noteLinkInfo(note.ID), note.Link.Path, s.noteLinkMessage)
+}
+
 // noteLinkWrite is the save of a linked note's text to its file. A file that
 // cannot be written, or that changed meanwhile, leaves the text in the note and
 // says so in the note's notice; the user is not held in the note.
 func (s *State) noteLinkWrite(note savedNote) {
-	st := s.noteLinkInfo(note.ID)
-	if st.conflict || st.missing {
-		return
-	}
-	disk := readLinkedFile(note.Link.Path)
-	switch {
-	case disk.missing:
-		st.missing = true
-		return
-	case disk.err != nil:
-		st.problem = s.noteLinkMessage(disk.err)
-		return
-	case noteHash(disk.body) != st.bodyHash:
-		st.bom, st.conflict = disk.bom, true
-		return
-	}
-	if err := writeLinkedFile(note.Link.Path, note.Body, st.bom); err != nil {
-		st.problem = s.noteText("Could not write the file: ", "无法写入文件：") + err.Error()
-		return
-	}
-	st.bodyHash, st.problem = noteHash(note.Body), ""
+	noteLinkWriteFile(s.noteLinkInfo(note.ID), note.Link.Path, note.Body, s.noteText, s.noteLinkMessage)
 }
 
 // noteLinkNotice is what a linked note needs the user to know, and can be asked.

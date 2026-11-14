@@ -624,7 +624,7 @@ func TestServeAgentMCPOffersReadingUntilTheUserAllowsCommands(t *testing.T) {
 	listHosts := `{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"list_hosts","arguments":{}}}`
 
 	replies := serveAgent(t, world.options, initialize, list, hosts, run, listHosts)
-	if strings.Contains(replies[2], "terminal_exec") || strings.Contains(replies[2], "terminal_read") || strings.Contains(replies[2], "sftp_write") || !strings.Contains(replies[2], "sftp_list") {
+	if strings.Contains(replies[2], `"name":"terminal_exec"`) || strings.Contains(replies[2], `"name":"terminal_read"`) || strings.Contains(replies[2], `"name":"sftp_write"`) || !strings.Contains(replies[2], `"name":"sftp_list"`) {
 		t.Errorf("the read-only catalog = %s", replies[2])
 	}
 	if !strings.Contains(replies[3], "host_web") || !strings.Contains(replies[3], "ops@127.0.0.1") {
@@ -703,7 +703,7 @@ func TestServeAgentMCPFullAccessRunsCommandsAndChangesFilesOnlyOnAuthorizedHosts
 	// The fixture SSH server records this command; it never executes a shell.
 	run := `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"terminal_exec","arguments":{"session":"host_web","command":"rm -rf /tmp/motty-test-only"}}}`
 	replies := serveAgent(t, world.options, list, write, run)
-	if !strings.Contains(replies[1], "sftp_write") || !strings.Contains(replies[1], "sftp_remove") || strings.Contains(replies[1], "terminal_read") {
+	if !strings.Contains(replies[1], `"name":"sftp_write"`) || !strings.Contains(replies[1], `"name":"sftp_remove"`) || strings.Contains(replies[1], `"name":"terminal_read"`) {
 		t.Fatalf("wrong full-access tool catalog: %s", replies[1])
 	}
 	if strings.Contains(replies[2], `"isError":true`) || strings.Contains(replies[4], `"isError":true`) {

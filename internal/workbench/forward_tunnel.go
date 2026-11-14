@@ -81,7 +81,7 @@ func (state *State) dialForwardTunnel(tunnel *forwardTunnel) {
 	session.endpoint = sshconn.Endpoint{Host: tunnel.host.Address, Port: tunnel.host.Port, User: state.login(tunnel.host)}
 	tunnel.connected = false
 	tunnel.retryDue = 0
-	if !tunnel.host.isSSH() {
+	if !tunnel.host.isSSH() || tunnel.host.mosh() {
 		state.failForwardTunnel(tunnel, errors.New(state.messages.ForwardHostUnavailable))
 		return
 	}

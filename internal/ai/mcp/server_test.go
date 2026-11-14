@@ -715,6 +715,38 @@ func TestHTTPSessionsAreIndependentAndUnknownSessionsAreRejected(t *testing.T) {
 	}
 }
 
+func TestHTTPSessionsKeepTheMostRecentlyUsedWhenFull(t *testing.T) {
+	_, server := newServer(t, okGate(&fakeBackend{}), nil)
+	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`
+	request := `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`
+	ids := make([]string, 0, maxSessions)
+	for range maxSessions {
+		resp, _ := post(t, server.URL, initialize, nil)
+		id := resp.Header.Get("Mcp-Session-Id")
+		if id == "" {
+			t.Fatalf("session %d has no id", len(ids))
+		}
+		ids = append(ids, id)
+	}
+	// The oldest session is used again, so the next one becomes the least
+	// recently used.
+	if resp, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", ids[0]) }); resp.StatusCode != http.StatusOK {
+		t.Fatalf("reused oldest session returned %d", resp.StatusCode)
+	}
+	fresh, _ := post(t, server.URL, initialize, nil)
+	if fresh.StatusCode != http.StatusOK || fresh.Header.Get("Mcp-Session-Id") == "" {
+		t.Fatalf("a full table did not make room: %d", fresh.StatusCode)
+	}
+	evicted, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", ids[1]) })
+	if evicted.StatusCode != http.StatusNotFound {
+		t.Fatalf("least recently used session returned %d", evicted.StatusCode)
+	}
+	kept, _ := post(t, server.URL, request, func(req *http.Request) { req.Header.Set("Mcp-Session-Id", ids[0]) })
+	if kept.StatusCode != http.StatusOK {
+		t.Fatalf("recently used session returned %d", kept.StatusCode)
+	}
+}
+
 func BenchmarkToolsCall(b *testing.B) {
 	s, _ := New(Config{Token: testToken, Gate: func() gate.Gate { return okGate(&fakeBackend{}) }})
 	h := s.Handler()

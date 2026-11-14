@@ -45,6 +45,10 @@ type Connection interface {
 	OpenSFTP() (sftpclient.Remote, error)
 	// DialContext opens a remote stream through the authenticated connection.
 	DialContext(context.Context, string, string) (net.Conn, error)
+	// DialShellContext runs a relay command in a shell on the server and returns
+	// its input and output as a remote stream, for a server that refuses
+	// forwarded channels.
+	DialShellContext(context.Context, string, string) (net.Conn, error)
 	// Listen asks the authenticated server to open a remote listener.
 	Listen(string, string) (net.Listener, error)
 	ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error)
@@ -489,8 +493,10 @@ const (
 	modalVaultUnlock
 	modalVaultForget
 	modalHighlightRule
+	modalRuleManager
 	modalSnippet
 	modalSnippetDelete
+	modalSnippetVariables
 	modalImportSessions
 	modalFontPicker
 	modalOutboundProxy
@@ -512,6 +518,7 @@ const (
 	modalDashboard
 	modalDashboardAdd
 	modalToolbarSettings
+	modalSidebarSettings
 	modalSFTPColumns
 	modalSudoSFTP
 	modalTerminalInput
@@ -557,7 +564,10 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.resetLatency()
 	avoidShare := session.avoidShare || loopbackTunnel(host)
 	session.avoidShare = false
+	session.closeSSHBrowser()
+	session.stopRemoteLogs()
 	state.redialSessionForwards(session.ID)
+	state.closeCompletionPath(session)
 	state.closeSFTP(session)
 	state.stopRemoteStats(session)
 	session.sudoCommands, session.sudoPassword = false, ""
@@ -588,9 +598,16 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.endpoint = sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)}
 	session.role = sshconn.EndpointTarget
 	session.jumpPath = ""
+	session.desktopTunnel = false
 	if host.ID == localHostID {
 		// A shell on this machine: nothing to dial, so it is connected at once.
 		conn := newLocalConn(state.resolveLocalShell(host), state.networkProxy)
+		if _, wsl := localshell.WSLDistro(conn.shell); wsl {
+			// A distribution is the Linux system the shell runs in, not the
+			// Windows that hosts it. The monitor and the tooling that reads the
+			// session's system follow the distribution.
+			session.host.System = sshconn.SystemLinux
+		}
 		conn.dir = localStartupDirectory(session.localDirectory, conn.shell)
 		session.conn = conn
 		state.finishStartingConnection(session, automatic)
@@ -612,6 +629,15 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		state.finishStartingConnection(session, automatic)
 		return
 	}
+	if host.mosh() {
+		// An SSH host whose terminal runs over mosh: the SSH connection is the
+		// bootstrap, and the session has no SSH server once it is up.
+		config, _ := state.sshConfigFor(session, host)
+		session.sshOptions = host.SSHOptions.Clone()
+		session.conn = state.newMoshConn(session, host, config)
+		state.finishStartingConnection(session, automatic)
+		return
+	}
 	if !host.isSSH() {
 		// Telnet and serial: a stream, dialed in the background.
 		session.conn = state.newStreamConn(host, state.notifyFor(session))
@@ -619,6 +645,11 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		return
 	}
 	config, valid := state.sshConfigFor(session, host)
+	session.sshOptions = host.SSHOptions.Clone()
+	// This connection is for a terminal: its first session must be the shell,
+	// so the probes wait for it and the server's login message reaches the
+	// terminal (ADR 0025).
+	config.PrimaryShell = true
 	if valid && state.shareConnections == shareConnectionsOn && !avoidShare {
 		if shared, _ := state.shareFrom(session, host); shared != nil {
 			session.conn, session.shared = shared, true
@@ -672,7 +703,7 @@ func (state *State) shareFrom(session *Session, host Host) (Connection, *Session
 		// The saved host may have been edited since this transport was opened.
 		// Compare its dialed account/address, not the next connection's settings.
 		if other.ID == session.ID || other.conn == nil || other.Address != address ||
-			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute {
+			other.jumpPath != session.jumpPath || other.proxyRoute != session.proxyRoute || !other.sshOptions.Equal(session.sshOptions) {
 			continue
 		}
 		lender, ok := other.conn.(sharer)
@@ -733,6 +764,7 @@ func (state *State) finishStartingConnection(session *Session, automatic bool) {
 // nothing for sessions whose status is unchanged and whose shell is quiet.
 func (state *State) Wake() {
 	defer state.syncDesktopFullscreen()
+	defer state.syncDesktopSleep()
 	defer state.flushTerminalDirectories()
 	defer state.syncLocalProxySessions()
 	state.adoptHistoryClear()
@@ -770,7 +802,10 @@ func (state *State) Wake() {
 		state.pumpRemoteStats(session)
 		state.pumpDesktop(session)
 		state.pump(session)
+		state.pumpCompletionPath(session)
+		state.advanceInjection(session, findNow)
 		state.runLoginCommand(session)
+		state.runIdleKeepAlive(session, findNow)
 		// A session-local charset notice changes the available character grid.
 		// Resize after parsing output, never reentrantly from an OSC callback.
 		state.fitTerminal(session)
@@ -908,10 +943,13 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 			state.ensureContextSFTP()
 		}
 	case sshconn.PhaseClosed:
+		session.closeSSHBrowser()
+		session.stopRemoteLogs()
 		session.sudoCommands, session.sudoPassword = false, ""
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
+		state.closeCompletionPath(session)
 		state.closeSFTP(session)
 		state.closeDisconnectedShell(session)
 		if status.Err != nil && !session.disconnected {
@@ -922,10 +960,13 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		}
 		state.tell(session, toldEnded, status)
 	case sshconn.PhaseFailed:
+		session.closeSSHBrowser()
+		session.stopRemoteLogs()
 		session.sudoCommands, session.sudoPassword = false, ""
 		state.endDesktop(session)
 		session.pendingSecretName, session.pendingSecretValue = "", ""
 		state.stopSessionForwards(session.ID, true)
+		state.closeCompletionPath(session)
 		state.closeSFTP(session)
 		session.tone = toneFail
 		state.tell(session, toldEnded, status)
@@ -967,13 +1008,21 @@ func (state *State) closeDisconnectedShell(session *Session) {
 		return
 	}
 	terminal.rx = terminal.shell.Drain(terminal.rx[:0])
-	if len(terminal.rx) > 0 {
-		terminal.recording.append(state.now(), terminalRecordingOutput, terminal.rx)
-		terminal.write(terminal.rx)
-		state.goLive(session)
+	if len(terminal.rx) > 0 || terminal.decoder != nil {
+		// The last read may end mid-character; decode and flush it before the
+		// shell goes away, so a trailing GB18030 character is not lost.
+		output := terminal.decodeRemote(terminal.rx)
+		output = append(output, terminal.flushRemoteDecoder()...)
+		terminal.rx = terminal.rx[:0]
+		if len(output) > 0 {
+			terminal.recording.append(state.now(), terminalRecordingOutput, output)
+			terminal.write(output)
+			state.goLive(session)
+		}
 	}
 	releaseShell(terminal.shell)
 	terminal.shell = nil
+	terminal.stopIdleKeepAlive()
 	terminal.login = loginCommand{}
 	terminal.recording.stop()
 	terminal.ended = true
@@ -1227,9 +1276,12 @@ func (state *State) showNextPrompt() {
 		state.modalSession = state.clipboardRequest.sessionID
 		return
 	}
-	if state.transfer.phase == transferOffered {
+	for index := range state.sessions {
+		if state.sessions[index].transfer.phase != transferOffered {
+			continue
+		}
 		state.modal = modalFileTransfer
-		state.modalSession = state.transfer.sessionID
+		state.modalSession = state.sessions[index].ID
 		return
 	}
 	if state.update.offer {
@@ -1241,6 +1293,13 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
+	if state.modal == modalRuleManager {
+		state.ruleManager = ruleManagerUI{}
+	}
+	if state.modal == modalSnippetVariables {
+		state.snippetPrompt = snippetPromptState{}
+	}
 	if state.modal == modalTerminalInput {
 		state.inputConfirmation = terminalInputConfirmation{}
 	}
@@ -1252,6 +1311,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalToolbarSettings {
 		state.toolbarEditor.list.Cancel()
+	}
+	if state.modal == modalSidebarSettings {
+		state.sidebarEditor = sidebarSettingsUI{}
 	}
 	if state.modal == modalSFTPColumns {
 		state.sftpColumnEditor.list.Cancel()
@@ -1287,6 +1349,11 @@ func (state *State) closeModal() {
 		state.localProxyUI = localProxyUI{}
 	}
 	state.modal = modalNone
+	if returnToRules {
+		state.modal = modalRuleManager
+		state.ruleManager.returning = false
+		state.ruleManager.list = nil
+	}
 	state.modalSession = 0
 	state.reveal.reset()
 	state.passwordFields = nil

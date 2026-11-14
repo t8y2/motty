@@ -12,7 +12,7 @@ would be needed, files over SFTP, a refused unknown host key that is never writt
 to the trusted keys, and that the process ends when its client goes away. Every
 line it writes to stdout must be protocol.
 """
-import json, os, shutil, subprocess, sys, tempfile
+import json, os, shutil, subprocess, sys, tempfile, time
 
 binary, home, data = sys.argv[1:4]
 failures = []
@@ -41,11 +41,15 @@ class Server:
         return json.loads(line)
 
     def call(self, name, arguments):
+        error, text, _ = self.call_full(name, arguments)
+        return error, text
+
+    def call_full(self, name, arguments):
         reply = self.rpc("tools/call", {"name": name, "arguments": arguments})
         if "error" in reply:
-            return True, reply["error"]["message"]
+            return True, reply["error"]["message"], {}
         result = reply["result"]
-        return result.get("isError", False), "".join(part["text"] for part in result["content"])
+        return result.get("isError", False), "".join(part["text"] for part in result["content"]), result.get("structuredContent") or {}
 
     def close(self):
         self.process.stdin.close()
@@ -63,9 +67,10 @@ check("initialize", reply["result"]["protocolVersion"] == "2025-06-18", reply)
 server.process.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
 
 names = {tool["name"] for tool in server.rpc("tools/list")["result"]["tools"]}
-check("tools: commands and reading, no screen, no writing",
-      names == {"list_sessions", "list_hosts", "terminal_exec", "terminal_exec_many", "sftp_list", "sftp_read",
-                "sftp_stat", "sftp_checksum", "transfer_status"}, names)
+check("tools: commands, background jobs and reading, no screen, no writing",
+      names == {"list_sessions", "list_hosts", "terminal_exec", "terminal_start", "terminal_poll", "terminal_stop",
+                "terminal_exec_many", "sftp_list", "sftp_read", "sftp_stat", "sftp_checksum", "transfer_status",
+                "note_query"}, names)
 
 error, text = server.call("list_sessions", {})
 check("only the host opened to agents is listed", not error and "agent-host" in text and "closed-host" not in text, text)
@@ -108,6 +113,44 @@ server.rpc("initialize", {"protocolVersion": "2025-06-18"})
 error, text = server.call("terminal_exec", {"command": "echo should-not-run"})
 check("an untrusted host key is refused with what to do", error and "connect to it once from the Motty window" in text and "should-not-run" not in text, text)
 check("it did not trust the key by itself", open(os.path.join(fresh, "known_hosts")).read().strip() == "")
+server.close()
+
+# A long command runs in the background: start returns at once, polling reads
+# what it printed by offset, and the job keeps its exit status. This server works
+# on a copy of the data, so its calls leave the activity log the window side
+# checks next untouched.
+jobs = tempfile.mkdtemp()
+shutil.copytree(data, jobs, dirs_exist_ok=True)
+server = Server(jobs)
+server.rpc("initialize", {"protocolVersion": "2025-06-18"})
+error, text, job = server.call_full("terminal_start", {"command": "echo job-begin; sleep 2; echo job-end; exit 3"})
+job_id = job.get("job_id", "")
+check("a background job starts and returns an id at once", not error and job.get("state") == "running" and job_id, (text, job))
+
+deadline, offset, seen, stage = time.time() + 10, 0, "", None
+while time.time() < deadline:
+    error, text, poll = server.call_full("terminal_poll", {"job_id": job_id, "offset": offset})
+    seen += poll.get("data", "")
+    offset = poll.get("next_offset", offset)
+    stage = poll.get("state")
+    if stage != "running":
+        break
+    time.sleep(0.2)
+check("polling reads the running job's output", not error and "job-begin" in seen, (text, seen))
+check("the job completes with its exit status", stage == "completed" and poll.get("exit_code") == 3, (text, poll))
+check("the rest of its output is there", "job-end" in seen, seen)
+
+error, text, job = server.call_full("terminal_start", {"command": "echo stop-begin; sleep 5; echo never"})
+stop_id = job.get("job_id", "")
+time.sleep(0.3)
+error, text, job = server.call_full("terminal_stop", {"job_id": stop_id})
+check("a running job is stopped", not error and job.get("interrupt_sent") is True and job.get("state") == "cancelled", (text, job))
+time.sleep(0.3)
+error, text, poll = server.call_full("terminal_poll", {"job_id": stop_id, "offset": 0})
+check("the stopped job stays cancelled and stops printing", poll.get("state") == "cancelled" and "never" not in poll.get("data", ""), (text, poll))
+
+error, text, _ = server.call_full("terminal_poll", {"job_id": "not-a-job", "offset": 0})
+check("an unknown job is refused", error and "job not found" in text, text)
 server.close()
 
 print("FAILED: " + ", ".join(failures) if failures else "all agent MCP checks passed")

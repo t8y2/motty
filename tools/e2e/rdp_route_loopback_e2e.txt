@@ -1,0 +1,69 @@
+# End to end: an RDP host reached through a jump route, with a real SSH server
+# (tools/e2esshd) and a real RDP server (tools/live/rdp). The route signs in to
+# the SSH fixture and dials the RDP port from there; the RDP host has no SSH
+# server of its own, so the picture can only appear if the route carried it.
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   docker build --platform linux/amd64 -t motty-e2e-rdp:latest tools/live/rdp
+#   docker run -d --name motty-e2e-rdp -p 127.0.0.1:3389:3389 motty-e2e-rdp:latest
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .) && /tmp/e2esshd 2222 127.0.0.1:3389 &
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/rdp_route_loopback_e2e.txt
+#
+# The SSH fixture's password is "secret"; the RDP account is motty / motty-pw.
+
+click "新建主机"
+settle 400
+click 500 230
+type jump
+click 500 300
+type 127.0.0.1
+click 960 300
+key cmd+a
+type 2222
+click 500 370
+type tester
+click 900 370
+type secret
+click "添加主机"
+settle 400
+
+click "新建主机"
+settle 300
+click "RDP"
+settle 300
+click 500 170
+type xrdp
+click 500 245
+type 127.0.0.1
+click 500 310
+type motty
+click "添加主机"
+settle 400
+
+click "跳板路由"
+settle 400
+click id:proxies/proxy-add
+settle 400
+click "添加路由"
+settle 500
+
+click "主机"
+settle 400
+click 400 60
+type xrdp
+settle 300
+dblclick 500 160
+# The SSH jump's key is trusted first; the RDP server's certificate follows it
+# on the same page, and its own button is reached by identity.
+waitfor "信任此主机" 15000
+click "信任并保存"
+waitfor "RDP certificate" 15000
+settle 500
+click id:shell/host-key-trust
+waitfor "密码" 15000
+type motty-pw
+key enter
+waitfor "经 SSH" 30000
+settle 2000
+expect layout clean
+shot /tmp/rdp-route-loopback.png

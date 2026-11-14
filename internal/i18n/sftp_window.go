@@ -17,12 +17,12 @@ type SFTPWindowMessages struct {
 	BookmarkInvalid, BookmarkLimit                                                                          string
 	ConnectingFmt                                                                                           string
 	Authenticate, AuthenticationHint                                                                        string
-	DropUploadHint, DropDownloadHint                                                                        string
+	DropUploadHint, DropDownloadHint, DropCopyHint                                                          string
 	QueueRejectedFmt                                                                                        string
 	Open, Title, Local, Remote, Path, Name, Size, Modified                                                  string
 	Upload, Download, DragHint, DropUpload, DropDownload                                                    string
-	SelectedFmt, CopyPath                                                                                   string
-	CalculatingSize, FolderSizeIncompleteFmt                                                                string
+	SelectedFmt, CopyPath, CopyFiles, PasteFiles                                                            string
+	CalculatingSize, FolderSizeIncompleteFmt, FolderSizePartialFmt                                          string
 	CalculateDirectorySize                                                                                  string
 	PropertiesTitle, PropertiesName, PropertiesPath, PropertiesType, PropertiesSize, PropertiesModified     string
 	PropertiesPermissions, PropertiesOwner, PropertiesGroup, PropertiesLinkTarget                           string

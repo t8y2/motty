@@ -21,8 +21,9 @@ type Updater interface {
 	Package() update.Package
 	// Prepare downloads the release's package and checks it; it changes nothing.
 	Prepare(ctx context.Context, release update.Release, progress func(selfupdate.Progress), phase func(selfupdate.Phase)) (selfupdate.Staged, error)
-	// Launch starts what replaces the program once it has quit.
-	Launch(staged selfupdate.Staged) error
+	// Launch starts what replaces the program once it has quit. quit ends the
+	// application, which a payload install hands to the installer.
+	Launch(staged selfupdate.Staged, quit func()) error
 	// TakeFailure is why the last update did not finish, if it did not, and forgets it.
 	TakeFailure() string
 }
@@ -174,7 +175,7 @@ func (state *State) finishInstall(serial int, staged selfupdate.Staged, err erro
 		return
 	}
 	if err == nil {
-		err = state.options.Updater.Launch(staged)
+		err = state.options.Updater.Launch(staged, state.options.Quit)
 	}
 	if err != nil {
 		install.phase, install.err = installFailed, err

@@ -134,22 +134,34 @@ func nextResult(t *testing.T, worker *Worker) Result {
 
 func TestWorkerRunsOneFixedCommandAndSamplesFromTheSecondReading(t *testing.T) {
 	var commands atomic.Int32
-	notified := make(chan struct{}, 4)
+	firstSampleRead := make(chan struct{})
 	worker := start(streamFunc(func(ctx context.Context, got string, limit int, line func([]byte) bool) error {
 		commands.Add(1)
 		if !strings.Contains(got, "# motty-stats-v2") || limit != maxLineBytes {
 			t.Errorf("command marker=%v limit=%d", strings.Contains(got, "# motty-stats-v2"), limit)
 		}
-		return feed(reading(1), reading(2), reading(3))(ctx, got, limit, line)
-	}), func() { notified <- struct{}{} }, statsWait(), statsWait())
+		if !line([]byte(reading(1))) || !line([]byte(reading(2))) {
+			return nil
+		}
+		// Unread samples are coalesced, so let the test consume the first one
+		// before feeding the reading that produces the second.
+		select {
+		case <-firstSampleRead:
+			return feed(reading(3))(ctx, got, limit, line)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}), nil, statsWait(), statsWait())
 	defer worker.Close()
 
 	// Three readings make two samples: the first only sets the baseline.
-	var last Result
-	for range 2 {
-		last = nextResult(t, worker)
-		if last.Err != nil || last.Sample.CPUPercent != 37.5 {
-			t.Fatalf("result = %+v", last)
+	for index := range 2 {
+		result := nextResult(t, worker)
+		if result.Err != nil || result.Sample.CPUPercent != 37.5 {
+			t.Fatalf("result = %+v", result)
+		}
+		if index == 0 {
+			close(firstSampleRead)
 		}
 	}
 	if commands.Load() != 1 {

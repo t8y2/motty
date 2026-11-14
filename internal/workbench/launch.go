@@ -84,7 +84,9 @@ func launchText(args []string) (text string, link bool) {
 	text = strings.Join(words, " ")
 	lower := strings.ToLower(text)
 	link = strings.HasPrefix(lower, "ssh://") || strings.HasPrefix(lower, "telnet://") ||
-		strings.HasPrefix(lower, "sftp://") || strings.HasPrefix(lower, "xshell://") ||
+		strings.HasPrefix(lower, "sftp://") || strings.HasPrefix(lower, "rdp://") ||
+		strings.HasPrefix(lower, "vnc://") || strings.HasPrefix(lower, "rdp+ssh://") ||
+		strings.HasPrefix(lower, "vnc+ssh://") || strings.HasPrefix(lower, "xshell://") ||
 		strings.HasPrefix(lower, "xftp://")
 	return text, link
 }
@@ -265,7 +267,7 @@ func (state *State) clickUpdateDialog(id gfx.ID) {
 	state.showNextPrompt()
 }
 
-// ---- the General settings: starting at login and updates ----
+// ---- updates, and the General settings about starting at login ----
 
 // updateState is what the updates row shows.
 // The automatic check: a first look shortly after a window wakes, then one every
@@ -305,24 +307,30 @@ func (state *State) paintLoginSetting(page *settingsPage) {
 	page.toggleRow(m.GeneralLogin, m.GeneralLoginDescription, state.loginOn, hitSettingsLoginToggle)
 }
 
-func (state *State) paintUpdateSettings(page *settingsPage) {
+// paintUpdateRows declares the update controls as rows of a settings card. They
+// are the About page's, beside the version facts they act on.
+func (state *State) paintUpdateRows(page *settingsPage) {
 	m := state.messages.Tools
-	page.group("", func() {
-		page.toggleRow(m.GeneralUpdateStartup, m.GeneralUpdateStartupDescription, state.updateAtStart, hitSettingsUpdateStartToggle)
-		description := m.GeneralUpdateDescription
-		if state.update.text != "" {
-			description = state.update.text
+	page.toggleRow(m.GeneralUpdateStartup, m.GeneralUpdateStartupDescription, state.updateAtStart, hitSettingsUpdateStartToggle)
+	description := m.GeneralUpdateDescription
+	if state.update.text != "" {
+		description = state.update.text
+	}
+	actions := []components.ButtonAction{{ID: hitSettingsUpdateCheck, Label: m.GeneralUpdateCheck, Variant: components.ButtonOutline, Disabled: state.update.checking}}
+	if state.update.available {
+		label := m.GeneralUpdateDownload
+		if state.canInstallUpdate() {
+			label = m.GeneralUpdateInstall
 		}
-		actions := []components.ButtonAction{{ID: hitSettingsUpdateCheck, Label: m.GeneralUpdateCheck, Variant: components.ButtonOutline, Disabled: state.update.checking}}
-		if state.update.available {
-			label := m.GeneralUpdateDownload
-			if state.canInstallUpdate() {
-				label = m.GeneralUpdateInstall
-			}
-			actions = append(actions, components.ButtonAction{ID: hitSettingsUpdateDownload, Label: label})
-		}
-		page.actionRow(m.GeneralUpdate, description, false, actions...)
-	})
+		actions = append(actions, components.ButtonAction{ID: hitSettingsUpdateDownload, Label: label})
+	}
+	page.actionRow(m.GeneralUpdate, description, false, actions...)
+}
+
+// paintDiagnosticsSetting is the exported report of what this copy is doing,
+// among the other General page rows about how the application runs.
+func (state *State) paintDiagnosticsSetting(page *settingsPage) {
+	m := state.messages.Tools
 	page.group("", func() {
 		page.actionRow(m.DiagnosticsRow, m.DiagnosticsDescription, false, components.ButtonAction{ID: hitSettingsDiagnostics, Label: m.DiagnosticsExport, Variant: components.ButtonOutline})
 	})

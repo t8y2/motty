@@ -340,6 +340,13 @@ type Options struct {
 	// happens when someone is already at the console is its decision, not the
 	// client's. VNC has no such session.
 	Console bool
+	// StandardSecurity makes an RDP connection use Standard RDP Security only,
+	// with no TLS and no NLA, for a server that offers nothing else or whose
+	// administrator chose that layer. Its traffic is encrypted from a server key
+	// that is never authenticated, so anyone on the path can read and alter the
+	// session; the backend reports the connection as not encrypted. VNC chooses
+	// its security types with the server and ignores this.
+	StandardSecurity bool
 	// Username and Domain are the account a protocol with accounts signs in as.
 	// VNC account authentication uses Username; Domain belongs to RDP.
 	Username, Domain string

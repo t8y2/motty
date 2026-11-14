@@ -56,15 +56,19 @@ func (g *terminalInputGuard) start() {
 }
 
 func (g *terminalInputGuard) observe(input []byte) {
+	// The epoch names the input line, so the key that ends one starts a new
+	// epoch even where no shell marker will announce the next prompt: a nested
+	// shell does not run the startup hooks. A dismissal, a pending suggestion
+	// and a path listing scoped to the last line must not outlive it.
+	if strings.ContainsAny(string(input), "\r\n\x03\x04") {
+		g.start()
+		return
+	}
 	if !g.active {
 		return
 	}
 	if len(input) >= 12 && bytes.HasPrefix(input, []byte("\x1b[200~")) && bytes.HasSuffix(input, []byte("\x1b[201~")) {
 		input = input[6 : len(input)-6]
-	}
-	if strings.ContainsAny(string(input), "\r\n\x03\x04") {
-		g.start()
-		return
 	}
 	if !g.known {
 		return
@@ -183,12 +187,27 @@ func commandGlyphFix(prefix, value string, smart rune) (fixed, detail string, ne
 	return out.String(), detail, nextSmart
 }
 
-func (state *State) inputGuardAvailable(session *Session) bool {
+// terminalOwnedByShell reports whether the session's live terminal is the
+// window's own idle shell: the active terminal, with no dialog, menu, broadcast,
+// transfer or app-run command holding the keys, and no alternate-screen program.
+// Every proof that the cursor is at a shell prompt is read only here.
+func (state *State) terminalOwnedByShell(session *Session) bool {
+	if session == nil || session.term == nil {
+		return false
+	}
 	t := session.term
 	return state.modal == modalNone && state.activeSection == sectionTerminal && state.activeSessionID == session.ID && state.broadcast == 0 && !state.transfers.open && state.knownHosts.action == knownHostsActionNone &&
-		t != nil && t.shell != nil && !t.ended && t.exec == nil && len(t.rx) == 0 && t.inputGuard.active && t.inputGuard.environment.Charset != "" && t.commandReporting && t.folderToken != "" &&
+		t.shell != nil && !t.ended && t.exec == nil && len(t.rx) == 0 &&
 		session.desk == nil && session.containerCommand == "" && !t.screen.Modes().AltScreen && t.screen.KeyboardFlags() == 0 && !t.screen.Modes().Win32Input &&
-		!(state.transfer.phase != transferNone && state.transfer.sessionID == session.ID)
+		!session.transferBusy()
+}
+
+func (state *State) inputGuardAvailable(session *Session) bool {
+	if !state.terminalOwnedByShell(session) {
+		return false
+	}
+	t := session.term
+	return t.inputGuard.active && t.inputGuard.environment.Charset != "" && t.commandReporting && t.folderToken != ""
 }
 
 func (state *State) guardTerminalText(session *Session, event app.TextEvent) bool {
