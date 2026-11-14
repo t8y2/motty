@@ -368,6 +368,10 @@ func (state *State) reloadAISettings() {
 	// Model reasoning settings can change in another window while this panel stays open.
 	if models, err := ai.store.Models(); err == nil {
 		ai.models = models
+		// The set can shrink under a page the user left open: the same clamp
+		// every write from this window makes, or the page would show nothing
+		// and, with too few models for a pager, offer no way back.
+		state.aiClampModelPage()
 	}
 	state.aiSyncModel()
 }

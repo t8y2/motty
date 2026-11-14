@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -277,6 +278,46 @@ func TestAIReasoningDialogSaveReachesOtherWindows(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A refresh that brings in a shorter model list must not leave a window on a
+// page past the end: with too few models for a pager the list draws no page
+// controls, so that window would show nothing and offer no way back.
+func TestAIReasoningRefreshClampsAModelPagePastTheEnd(t *testing.T) {
+	windows, _ := assistantWindowsOnOneStore(t)
+	origin, peer := windows[0], windows[1]
+	db := origin.ai.store
+	if err := db.SaveProvider(store.Provider{ID: "p", Name: "Test", Kind: store.KindOpenAI, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	var models []store.Model
+	for index := 0; index < 3*aiModelPageSize; index++ {
+		models = append(models, store.Model{ProviderID: "p", Name: fmt.Sprintf("model-%02d", index), Enabled: true})
+	}
+	if err := db.SaveModels("p", models); err != nil {
+		t.Fatal(err)
+	}
+	origin.aiWrote()
+	for _, state := range windows {
+		state.Wake()
+		state.ai.cfg.selected = "p"
+	}
+	peer.ai.cfg.page = 2
+	if err := db.SaveModels("p", models[:1]); err != nil {
+		t.Fatal(err)
+	}
+	origin.aiWrote()
+	peer.Wake()
+	provider, ok := peer.aiSelectedProvider()
+	if !ok {
+		t.Fatal("the provider disappeared")
+	}
+	if shown := len(peer.aiFilteredModels(provider.ID)); shown != 1 {
+		t.Fatalf("peer sees %d models, want 1", shown)
+	}
+	if peer.ai.cfg.page != 0 {
+		t.Fatalf("peer kept page %d of a one-model list", peer.ai.cfg.page)
 	}
 }
 
