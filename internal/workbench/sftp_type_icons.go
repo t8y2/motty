@@ -88,6 +88,7 @@ func (state *State) loadTypeIcons(view *sftpView, rows []sftpRow) {
 		return
 	}
 	load := state.options.FileIcon
+	invalidate := state.options.Invalidate
 	go func() {
 		for _, slot := range pending {
 			slot := slot
@@ -95,32 +96,32 @@ func (state *State) loadTypeIcons(view *sftpView, rows []sftpRow) {
 			if errors.Is(err, app.ErrUnsupported) {
 				// The platform has no system icons: every later answer would be
 				// the same, so stop asking for the whole group.
-				state.aiPost(func(*State) {
+				state.aiPostWithInvalidator(func(*State) {
 					for _, slot := range pending {
 						slot.loading, slot.failed = false, true
 					}
 					if view != nil {
 						view.invalidateDetached()
 					}
-				})
+				}, invalidate)
 				return
 			}
 			if err != nil {
-				state.aiPost(func(*State) {
+				state.aiPostWithInvalidator(func(*State) {
 					slot.loading, slot.failed = false, true
 					if view != nil {
 						view.invalidateDetached()
 					}
-				})
+				}, invalidate)
 				continue
 			}
 			bitmap.ID = 1<<60 | appIconIDs.Add(1)
-			if !state.aiPost(func(*State) {
+			if !state.aiPostWithInvalidator(func(*State) {
 				slot.bitmap, slot.loading = bitmap, false
 				if view != nil {
 					view.invalidateDetached()
 				}
-			}) {
+			}, invalidate) {
 				return
 			}
 		}
