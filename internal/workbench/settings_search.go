@@ -162,6 +162,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	}
 	row(settingsGeneral, m.SettingsSidebar, m.SettingsSidebarHint)
 	row(settingsGeneral, tools.DiagnosticsRow, tools.DiagnosticsDescription)
+	row(settingsTerminal, m.SettingsTerminalSidebars, m.SettingsTerminalSidebarsDescription)
 	row(settingsTerminal, m.SettingsTerminalOption, m.SettingsTerminalOptionDescription)
 	row(settingsTerminal, m.SettingsTerminalFontSize, m.SettingsTerminalFontSizeDescription)
 	row(settingsTerminal, m.SettingsTerminalFontFamily, tools.FontPickerDescription)
@@ -226,7 +227,6 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsConnection, state.messages.SSHSync.NowRow, "")
 	group(settingsConnection, m.HostTags.Group, m.HostTags.Group, "")
 
-	row(settingsFiles, tools.FilesPanelAutoOpen, tools.FilesPanelAutoOpenDescription)
 	row(settingsFiles, tools.FilesPanelPosition, tools.FilesPanelPositionDescription)
 	row(settingsFiles, tools.FilesPathStyle, tools.FilesPathDescription)
 	row(settingsFiles, tools.FilesWindowOrder, tools.FilesWindowOrderDescription)

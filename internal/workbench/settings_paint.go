@@ -40,7 +40,8 @@ const (
 	controlAgentSelect      // independent stdio client configuration
 	controlLocalShellSelect // detected Windows shells
 	controlEditorSelect     // installed editors
-	controlStartupHosts     // the hosts a launch connects
+	controlTerminalSidebars
+	controlStartupHosts // the hosts a launch connects
 )
 
 // settingsControl is one control of the page, recorded while the page is
@@ -225,6 +226,8 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 			state.localShellMenu.bounds = rect
 		case controlEditorSelect:
 			state.editorMenu.bounds = rect
+		case controlTerminalSidebars:
+			state.terminalSidebarPicker.bounds = rect
 		case controlStartupHosts:
 			state.startupPicker.bounds = rect
 		case controlSwitch:
@@ -384,6 +387,7 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitSettingsHistoryClear, Label: messages.History.Clear, Variant: components.ButtonOutline})
 		})
 		page.group("", func() {
+			page.add(settingsControl{kind: controlTerminalSidebars, slot: page.rowFrame(messages.SettingsTerminalSidebars, messages.SettingsTerminalSidebarsDescription)})
 			settingsChoiceRow(page, messages.SettingsTerminalOption, messages.SettingsTerminalOptionDescription, &state.terminalOption, settingsOptionChoices[:], state.settingsOptionLabel,
 				func() { state.save() }, nil)
 			page.actionRow(messages.SettingsTerminalFontSize, messages.SettingsTerminalFontSizeDescription, false,

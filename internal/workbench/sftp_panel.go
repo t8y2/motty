@@ -26,7 +26,7 @@ func (state *State) initializeSFTPPanel(id layoutcore.WorkspaceID, restoring boo
 	pane, _ := state.deck.Pane(id, state.deck.ActivePane(id))
 	session, capable := state.sessionByIDPointer(uint32(pane.SessionID))
 	capable = capable && session.canBrowseFiles()
-	if !capable && context.Kind == layoutcore.ContextNone {
+	if session == nil && context.Kind == layoutcore.ContextNone {
 		return // an empty tab can initialize when a file-capable host is bound
 	}
 	context.Kind, context.Open, context.Side = layoutcore.ContextSFTP, capable && state.sftpPanelAutoOpen, state.sftpPanelSide
@@ -39,6 +39,9 @@ func (state *State) initializeSFTPPanel(id layoutcore.WorkspaceID, restoring boo
 		}
 	}
 	_ = state.deck.SetContext(id, context)
+	if !restoring {
+		state.initializeTerminalSidebars(id)
+	}
 }
 
 func (state *State) sftpPanelMoveAction() (uint8, string) {
