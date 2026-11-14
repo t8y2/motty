@@ -32,6 +32,11 @@ import (
 type AIHub struct {
 	path    string // the AI database
 	outputs gate.OutputStore
+	// lifetime ends when the hub closes. A watch callback that asks a window
+	// for data must stop waiting then: Close waits for the watch to stop, and
+	// the window thread may be the goroutine doing the closing.
+	lifetime context.Context
+	cancel   context.CancelFunc
 
 	mu      sync.Mutex
 	windows []*hubWindow
@@ -70,7 +75,8 @@ func NewAIHub(path string) *AIHub {
 		}
 		path = filepath.Join(dir, buildinfo.DataName, "ai.db")
 	}
-	return &AIHub{path: path}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &AIHub{path: path, lifetime: ctx, cancel: cancel}
 }
 
 // Add lists a window's sessions to external agents. show brings the window
@@ -219,6 +225,7 @@ func (hub *AIHub) stop() {
 
 // Close stops the server.
 func (hub *AIHub) Close() {
+	hub.cancel()
 	hub.stop()
 	hub.mu.Lock()
 	watch := hub.notesWatch
@@ -283,7 +290,7 @@ func (hub *AIHub) notesWake() {
 	if state == nil {
 		return
 	}
-	version, err := aiCall(state, context.Background(), func() (int64, error) {
+	version, err := aiCall(state, hub.lifetime, func() (int64, error) {
 		if state.config == nil {
 			return 0, errAIClosed
 		}
