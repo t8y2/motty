@@ -228,8 +228,11 @@ desktop display, and clipboard sharing. See
 The latest password and server-key persistence changes still need a real-server
 retest.
 Physical keyboard and pointer interaction in a native window, IME composition,
-hidden or covered windows, macOS Screen Sharing, and a Windows server still need
-manual testing.
+hidden or covered windows, and a Windows server still need
+manual testing. Apple Remote Desktop authentication (macOS Screen Sharing) is
+covered by the protocol tests in `internal/rfb/ard_test.go`; a run against a
+real Mac still needs `MOTTY_VNC_ADDR`, `MOTTY_VNC_USERNAME` and
+`MOTTY_VNC_PASSWORD`.
 
 ## RDP
 

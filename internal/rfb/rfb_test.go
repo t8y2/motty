@@ -405,7 +405,7 @@ func TestVendorMinorRejectsPrivateSecurity(t *testing.T) {
 		if got := s.read(12); string(got) != "RFB 003.008\n" {
 			t.Errorf("client version=%q want 3.8", got)
 		}
-		s.write([]byte{1, 30})
+		s.write([]byte{1, 33})
 	})
 	if !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("error=%v want unsupported security", err)

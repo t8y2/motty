@@ -87,8 +87,8 @@ type Sink interface {
 
 // Config describes how to connect.
 type Config struct {
-	// Username is the system account for RSA-AES UserPass authentication.
-	// Traditional VNC Authentication ignores it.
+	// Username is the system account for RSA-AES UserPass and Apple Remote
+	// Desktop (ARD) authentication. Traditional VNC Authentication ignores it.
 	Username string
 	// Password is the VNC password. Empty means none: a server that asks for one
 	// then fails the connection with ErrAuthRequired.
@@ -130,10 +130,13 @@ type Client struct {
 	// Version is the protocol minor version used: 3, 7 or 8.
 	Version int
 	// Security is the security type used: 1 (None), 2 (VNC Authentication),
-	// or 5 (RSA-AES, with authentication and session encryption).
+	// 5 (RSA-AES, with authentication and session encryption), or 30 (Apple
+	// Remote Desktop authentication, which encrypts only the credentials).
 	Security int
 	// Encrypted reports protocol encryption; it does not describe an external
 	// SSH tunnel used by the caller. RSA-AES keeps all subsequent RFB encrypted.
+	// Apple Remote Desktop authentication encrypts the credentials only, so a
+	// session that used it is not reported as encrypted.
 	Encrypted bool
 
 	width, height int
@@ -230,7 +233,7 @@ func (client *Client) handshake(config Config) error {
 		if _, err := io.ReadFull(client.r, types); err != nil {
 			return err
 		}
-		security = chooseSecurity(types, config.Password != "" || config.AskPassword != nil)
+		security = chooseSecurity(types, config.Password != "" || config.AskPassword != nil, accountCredentials(config))
 		if security == 0 {
 			return fmt.Errorf("%w: the server offers %v", ErrUnsupported, types)
 		}
@@ -240,6 +243,8 @@ func (client *Client) handshake(config Config) error {
 	}
 	client.Security = int(security)
 	switch security {
+	case 30:
+		return client.authenticateARD(config)
 	case 5:
 		return client.authenticateRA2(config)
 	case 1:
@@ -277,9 +282,19 @@ func (client *Client) handshake(config Config) error {
 	return fmt.Errorf("%w: security type %d", ErrUnsupported, security)
 }
 
-// chooseSecurity prefers RSA-AES, then VNC Authentication when a password is
-// available, then None, then VNC Authentication to ask for the password.
-func chooseSecurity(offered []byte, havePassword bool) uint8 {
+// accountCredentials reports whether Apple Remote Desktop authentication can
+// name an account: one is stored, or the caller can ask for both fields.
+func accountCredentials(config Config) bool {
+	return config.Username != "" || config.AskCredentials != nil
+}
+
+// chooseSecurity prefers RSA-AES, then Apple Remote Desktop when an account
+// can be named, then VNC Authentication when a password is available, then
+// None, then VNC Authentication to ask for the password. ARD comes before
+// legacy VNC Authentication because it encrypts the credentials and needs no
+// server-side legacy password; when the caller has only a VNC password, a
+// server that offers both still gets VNC Authentication.
+func chooseSecurity(offered []byte, havePassword, haveAccount bool) uint8 {
 	has := func(want byte) bool {
 		for _, value := range offered {
 			if value == want {
@@ -293,12 +308,18 @@ func chooseSecurity(offered []byte, havePassword bool) uint8 {
 		// Choose authenticated encryption before any unencrypted scheme. A
 		// rejected RSA key never causes a fallback on this or a new connection.
 		return 5
+	case haveAccount && has(30):
+		return 30
 	case havePassword && has(2):
 		return 2
 	case has(1):
 		return 1
 	case has(2):
 		return 2
+	case has(30):
+		// Select it even without a stored account so the caller hears
+		// ErrAuthRequired and can ask, as it does for VNC Authentication.
+		return 30
 	}
 	return 0
 }
