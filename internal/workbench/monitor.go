@@ -308,13 +308,17 @@ func (state *State) clickMonitor(id gfx.ID) bool {
 		v.panel.refreshReset = true
 		v.panel.paused = !v.panel.paused
 		if v.panel.paused {
-			if v.worker != nil {
-				v.worker.Close()
-				v.worker = nil
-			}
-			if v.panel.worker != nil {
-				v.panel.worker.Close()
-				v.panel.worker = nil
+			// Pausing the side panel does not pause the terminal bar: if it
+			// still shows this session, its worker keeps sampling.
+			if !state.connectionStatsBarShown(s) {
+				if v.worker != nil {
+					v.worker.Close()
+					v.worker = nil
+				}
+				if v.panel.worker != nil {
+					v.panel.worker.Close()
+					v.panel.worker = nil
+				}
 			}
 		} else {
 			v.state = remoteStatsMeasuring

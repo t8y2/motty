@@ -2,6 +2,35 @@ package workbench
 
 import "testing"
 
+// The terminal bar and the side panel share one worker, so closing or pausing
+// the panel must not stop the bar. The worker goes only when both let go.
+func TestConnectionStatsWorkerOutlivesTheSidePanel(t *testing.T) {
+	state, _ := panelState(t, nil)
+	session := &state.sessions[0]
+	state.connectionStats = true
+	state.showMonitor()
+	if session.stats == nil || session.stats.worker == nil {
+		t.Fatal("the side panel did not start the worker")
+	}
+	state.closeMonitor()
+	if session.stats == nil || session.stats.worker == nil {
+		t.Fatal("closing the side panel stopped the terminal bar")
+	}
+	state.showMonitor()
+	state.clickMonitor(hitMonitorPause)
+	if session.stats == nil || session.stats.worker == nil {
+		t.Fatal("pausing the side panel stopped the terminal bar")
+	}
+	if !session.stats.panel.paused {
+		t.Fatal("the side panel did not pause")
+	}
+	state.connectionStats = false
+	state.closeMonitor()
+	if session.stats != nil {
+		t.Fatal("the worker kept running after both surfaces let go")
+	}
+}
+
 // The switch is a saved preference, so a restart keeps the bars.
 func TestConnectionStatsSettingPersists(t *testing.T) {
 	options := testOptions(t)
