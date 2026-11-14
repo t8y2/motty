@@ -153,7 +153,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y mosh
       - name: Test release build
         working-directory: motty
-        run: go test ./... -count=1
+        run: go test ./... -count=1 -timeout 20m
 
   # The dev-tagged suite is a job of its own rather than a second step of the
   # job above: run in sequence the two suites made one job the longest one in

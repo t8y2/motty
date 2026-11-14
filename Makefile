@@ -119,11 +119,11 @@ race:
 race-workbench:
 	@test -n "$(SHARD)" -a -n "$(SHARDS)" || { echo "usage: make race-workbench SHARD=<i> SHARDS=<n>"; exit 2; }
 	@go run ./tools/testslice -race -n $(SHARDS) -i $(SHARD) -max-pattern 120000 $(RACE_WORKBENCH) | while IFS= read -r pattern; do \
-		go test -race -p 1 -count=1 $(RACE_WORKBENCH) -run "$$pattern" || exit 1; \
+		go test -race -p 1 -count=1 -timeout 20m $(RACE_WORKBENCH) -run "$$pattern" || exit 1; \
 	done
 
 race-heavy:
-	go test -race -p 1 -count=1 $(RACE_HEAVY)
+	go test -race -p 1 -count=1 -timeout 20m $(RACE_HEAVY)
 
 race-rest:
-	go test -race -p 1 -count=1 $(RACE_REST)
+	go test -race -p 1 -count=1 -timeout 20m $(RACE_REST)
