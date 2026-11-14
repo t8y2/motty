@@ -162,8 +162,12 @@ func TestPathCompletionWithFilePanelThroughWindowInput(t *testing.T) {
 	if err := driver.Advance(0); err != nil {
 		t.Fatal(err)
 	}
-	waitCompletionList(t, w)
-	if err := driver.Advance(0); err != nil {
+	// The rows are painted, not just resolved: a frame has to reach the
+	// driver for the list to be in its snapshot. Advance(0) does not run one.
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Advance(time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	hitOf(t, driver, hitCompletionList.At(0))
