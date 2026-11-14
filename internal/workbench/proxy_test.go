@@ -95,11 +95,11 @@ func TestJumpRouteStopsPersistsAndRestarts(t *testing.T) {
 		t.Fatalf("running route config = %+v, valid=%t", config.ProxyJumps, valid)
 	}
 	canvas, texts := paintedTexts(state)
-	if !hasHit(canvas, hitProxyStartStop) || !contains(texts, state.messages.ProxyStop) || !contains(texts, state.messages.ProxyRunning) {
+	if !hasHit(canvas, hitProxyRowSwitchList.At(int(route.ID))) || hasHit(canvas, hitProxyStartStop) || !contains(texts, state.messages.ProxyRunning) {
 		t.Fatalf("running route page texts=%v hits=%+v", texts, canvas.Hits())
 	}
 
-	state.Click(hitProxyStartStop)
+	state.Click(hitProxyRowSwitchList.At(int(route.ID)))
 	stopped := state.proxies[0]
 	if !stopped.Stopped || stopped.cells[2] != state.messages.ProxyStopped || stopped.label != route.label {
 		t.Fatalf("stopped route = %+v", stopped)
@@ -119,7 +119,7 @@ func TestJumpRouteStopsPersistsAndRestarts(t *testing.T) {
 		t.Fatalf("restored stopped route config = %+v, valid=%t", config.ProxyJumps, valid)
 	}
 
-	state.Click(hitProxyStartStop)
+	state.Click(hitProxyRowSwitchList.At(int(state.proxies[0].ID)))
 	if state.proxies[0].Stopped || state.proxies[0].cells[2] != state.messages.ProxyRunning {
 		t.Fatalf("restarted route = %+v", state.proxies[0])
 	}
@@ -137,7 +137,7 @@ func TestStoppedOuterJumpShortensTheConnectionButKeepsTheConfiguredRoute(t *test
 	state := newTestState(t, testOptions(t))
 	addProxyRoute(t, state, state.hosts[0].ID, state.hosts[1].ID)
 	addProxyRoute(t, state, state.hosts[1].ID, state.hosts[2].ID)
-	state.Click(hitProxyStartStop)
+	state.Click(hitProxyRowSwitchList.At(int(state.proxies[1].ID)))
 
 	chain, valid := state.proxyChainFor(state.hosts[0])
 	if !valid || len(chain) != 1 || chain[0].ID != state.hosts[1].ID {
@@ -147,7 +147,7 @@ func TestStoppedOuterJumpShortensTheConnectionButKeepsTheConfiguredRoute(t *test
 		t.Fatalf("configured routes = %+v", state.proxies)
 	}
 
-	state.Click(hitProxyStartStop)
+	state.Click(hitProxyRowSwitchList.At(int(state.proxies[1].ID)))
 	chain, valid = state.proxyChainFor(state.hosts[0])
 	if !valid || len(chain) != 2 {
 		t.Fatalf("restarted chain = %+v, valid=%t", chain, valid)
@@ -157,7 +157,7 @@ func TestStoppedOuterJumpShortensTheConnectionButKeepsTheConfiguredRoute(t *test
 func TestStoppedJumpRouteStillRejectsCycles(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addProxyRoute(t, state, state.hosts[0].ID, state.hosts[1].ID)
-	state.Click(hitProxyStartStop)
+	state.Click(hitProxyRowSwitchList.At(int(state.proxies[0].ID)))
 	state.Click(hitProxyAdd)
 	state.proxyEditor.targetID = state.hosts[1].ID
 	state.proxyEditor.jumpID = state.hosts[0].ID
@@ -387,7 +387,7 @@ func TestJumpRoutePageAndHostSelectorsAreInteractive(t *testing.T) {
 	state.Click(hitProxyDialogSubmit)
 	canvas, texts = paintedTexts(state)
 	if !contains(texts, "Production") || !contains(texts, "Router") || !contains(texts, state.messages.ProxyRunning) ||
-		!hasHit(canvas, hitProxyRowList.At(0)) || !hasHit(canvas, hitProxyStartStop) {
+		!hasHit(canvas, hitProxyRowList.At(0)) || !hasHit(canvas, hitProxyRowSwitchList.At(int(state.proxies[0].ID))) {
 		t.Fatalf("route page texts=%v hits=%+v", texts, canvas.Hits())
 	}
 }
@@ -614,7 +614,7 @@ func BenchmarkProxyChainFor(b *testing.B) {
 func TestSyncingAStoppedRouteKeepsItStopped(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addProxyRoute(t, state, state.hosts[0].ID, state.hosts[1].ID)
-	state.Click(hitProxyStartStop)
+	state.Click(hitProxyRowSwitchList.At(int(state.proxies[0].ID)))
 
 	if !state.setProxyChain(state.hosts[0].ID, []uint32{state.hosts[1].ID}) {
 		t.Fatal("the same chain was refused")

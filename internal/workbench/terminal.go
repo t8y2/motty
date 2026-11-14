@@ -1918,6 +1918,9 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if result := state.scrollProxyDialog(event); result.Handled {
 		return result
 	}
+	if result := state.scrollProxyBatchDialog(event); result.Handled {
+		return result
+	}
 	if result := state.scrollForwardDialog(event); result.Handled {
 		return result
 	}

@@ -12,47 +12,118 @@ import (
 	"motty/internal/sshconn"
 )
 
+type proxyHop struct {
+	ID      uint32
+	Label   string
+	Address string
+}
+
 // proxyTableSource reads the jump route page's table cells when the table asks
 // for them, one visible cell at a time.
 type proxyTableSource struct {
 	records *[]proxyRecord
+	indices *[]int
+	jumpID  *uint32
 }
 
 func (source *proxyTableSource) Len() int {
 	if source == nil || source.records == nil {
 		return 0
 	}
+	if source.jumpID != nil && *source.jumpID != 0 && source.indices != nil {
+		return len(*source.indices)
+	}
 	return len(*source.records)
 }
 
-func (source *proxyTableSource) Cell(row, column int) string {
-	if source == nil || source.records == nil {
-		return ""
+func (source *proxyTableSource) recordAt(row int) (*proxyRecord, bool) {
+	if source == nil || source.records == nil || row < 0 {
+		return nil, false
 	}
 	records := *source.records
-	if row < 0 || row >= len(records) || column < 0 || column >= len(records[row].cells) {
-		return ""
+	if source.jumpID != nil && *source.jumpID != 0 && source.indices != nil {
+		indices := *source.indices
+		if row >= len(indices) {
+			return nil, false
+		}
+		idx := indices[row]
+		if idx < 0 || idx >= len(records) {
+			return nil, false
+		}
+		return &records[idx], true
 	}
-	return records[row].cells[column]
+	if row >= len(records) {
+		return nil, false
+	}
+	return &records[row], true
 }
 
-// syncProxyTable makes the table show the route the application selected.
-func (state *State) syncProxyTable() {
-	row := -1
-	for index := range state.proxies {
-		if state.proxies[index].ID == state.selectedProxyID {
-			row = index
-			break
+func (source *proxyTableSource) Cell(row, column int) string {
+	route, ok := source.recordAt(row)
+	if !ok {
+		return ""
+	}
+	switch column {
+	case 1:
+		return route.cells[0]
+	case 2:
+		return route.cells[1]
+	default:
+		return ""
+	}
+}
+
+// rebuildProxyFilter 依据当前选中的跳板中枢重新构建可见路由索引切片（复用底层数组，零额外分配）
+func (state *State) rebuildProxyFilter() {
+	state.proxyFilteredIndices = state.proxyFilteredIndices[:0]
+	for i := range state.proxies {
+		if state.selectedBastionJumpID == 0 || state.proxies[i].JumpID == state.selectedBastionJumpID {
+			state.proxyFilteredIndices = append(state.proxyFilteredIndices, i)
 		}
 	}
-	state.proxyTable.Select(row)
+}
+
+// visibleProxyCount 返回当前中枢过滤视图下的路由总数
+func (state *State) visibleProxyCount() int {
+	if state.selectedBastionJumpID == 0 {
+		return len(state.proxies)
+	}
+	return len(state.proxyFilteredIndices)
+}
+
+// visibleProxyAt 返回当前中枢过滤视图中第 row 行的实际路由指针
+func (state *State) visibleProxyAt(row int) (*proxyRecord, bool) {
+	if row < 0 {
+		return nil, false
+	}
+	if state.selectedBastionJumpID == 0 {
+		if row >= len(state.proxies) {
+			return nil, false
+		}
+		return &state.proxies[row], true
+	}
+	if row >= len(state.proxyFilteredIndices) {
+		return nil, false
+	}
+	idx := state.proxyFilteredIndices[row]
+	if idx < 0 || idx >= len(state.proxies) {
+		return nil, false
+	}
+	return &state.proxies[idx], true
+}
+
+// syncProxyTable keeps table selection within visible bounds without highlighting clicked rows.
+func (state *State) syncProxyTable() {
+	if state.proxyTable.Selected() >= state.visibleProxyCount() {
+		state.proxyTable.Select(-1)
+	}
 }
 
 // takeProxyTableSelection adopts the row a key moved the table to.
 func (state *State) takeProxyTableSelection() {
 	row := state.proxyTable.Selected()
-	if row >= 0 && row < len(state.proxies) {
-		state.selectProxy(state.proxies[row].ID)
+	if route, ok := state.visibleProxyAt(row); ok {
+		state.selectProxy(route.ID)
 	}
 }
 
@@ -75,6 +146,7 @@ type proxyRecord struct {
 	Relay string
 	label string
 	cells [4]string
+	hops  []proxyHop
 }
 
 // defaultRelayCommand connects its standard input and output to the target.
@@ -401,9 +473,21 @@ func (state *State) scrollProxyDialog(event gfx.ScrollEvent) gfx.EventResult {
 	editor := &state.proxyEditor
 	switch {
 	case editor.targetSelect.Open:
-		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.targetPopup) && editor.targetSelect.Wheel(event)}
+		inside := pointInRect(event.X, event.Y, editor.targetPopup) ||
+			event.Target == hitProxyDialogTarget || event.Target == hitProxyTargetTrigger ||
+			event.Target == hitProxyTargetScroll || event.Target.Scope() == hitProxyTargetItemList
+		if inside {
+			return gfx.EventResult{Handled: true, Repaint: editor.targetSelect.Wheel(event)}
+		}
+		return gfx.EventResult{Handled: true}
 	case editor.jumpSelect.Open:
-		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, editor.jumpPopup) && editor.jumpSelect.Wheel(event)}
+		inside := pointInRect(event.X, event.Y, editor.jumpPopup) ||
+			event.Target == hitProxyDialogJump || event.Target == hitProxyJumpTrigger ||
+			event.Target == hitProxyJumpScroll || event.Target.Scope() == hitProxyJumpItemList
+		if inside {
+			return gfx.EventResult{Handled: true, Repaint: editor.jumpSelect.Wheel(event)}
+		}
+		return gfx.EventResult{Handled: true}
 	}
 	return gfx.EventResult{}
 }
@@ -516,18 +600,96 @@ func (state *State) closeProxyDialog() {
 }
 
 func (state *State) clickProxies(id gfx.ID) {
-	if state.activeSection != sectionProxies || state.modal != modalNone {
+	if state.activeSection != sectionProxies {
 		return
 	}
+	// 二次确认弹窗的处理
+	if state.modal == modalProxyDeleteConfirm {
+		switch id {
+		case hitProxyDeleteConfirmSubmit:
+			state.removeProxyByID(state.proxyPendingDeleteID)
+			state.modal = modalNone
+			state.proxyPendingDeleteID = 0
+		case hitProxyDeleteConfirmClose, hitProxyDeleteConfirmCancel:
+			state.modal = modalNone
+			state.proxyPendingDeleteID = 0
+		}
+		return
+	}
+	if state.modal == modalProxyBatchDeleteConfirm {
+		switch id {
+		case hitProxyBatchDeleteConfirmSubmit:
+			state.batchDeleteCheckedProxies()
+		case hitProxyBatchDeleteConfirmClose, hitProxyBatchDeleteConfirmCancel:
+			state.modal = modalNone
+		}
+		return
+	}
+
+	if state.modal != modalNone {
+		return
+	}
+
 	switch {
 	case id == hitProxyAdd:
 		state.openProxyDialog()
+	case id == hitProxyBatchAdd:
+		state.openProxyBatchAssociate(state.selectedBastionJumpID)
 	case id == hitProxyEdit:
 		state.openEditProxy()
 	case id == hitProxyStartStop:
 		state.toggleSelectedProxy()
 	case id == hitProxyRemove:
 		state.removeSelectedProxy()
+	case id == hitProxyCheckAll:
+		state.toggleProxyCheckAll()
+	case id == hitProxyBatchDelete:
+		state.openProxyBatchDeleteConfirm()
+	case id == hitProxyBatchStartAll:
+		state.batchToggleCheckedProxies(false)
+	case id == hitProxyBatchStopAll:
+		state.batchToggleCheckedProxies(true)
+	case id == hitProxyBatchClearSel:
+		state.clearProxyChecked()
+	case id.Scope() == hitProxyRowList:
+		if index, ok := id.In(hitProxyRowList); ok {
+			if route, found := state.visibleProxyAt(index); found {
+				state.selectProxy(route.ID)
+			}
+		}
+	case id.Scope() == hitProxyRowCheckList:
+		if index, ok := id.In(hitProxyRowCheckList); ok {
+			state.toggleProxyCheck(uint32(index))
+		}
+	case id.Scope() == hitProxyRowSwitchList:
+		if index, ok := id.In(hitProxyRowSwitchList); ok {
+			state.toggleProxyByID(uint32(index))
+		}
+	case id.Scope() == hitProxyRowEditList:
+		if index, ok := id.In(hitProxyRowEditList); ok {
+			state.openEditProxyID(uint32(index))
+		}
+	case id.Scope() == hitProxyRowDeleteList:
+		if index, ok := id.In(hitProxyRowDeleteList); ok {
+			state.openProxyDeleteConfirm(uint32(index))
+		}
+	case id.Scope() == hitProxyHubTabList:
+		if index, ok := id.In(hitProxyHubTabList); ok {
+			hubs := state.bastionHubList()
+			if index == 0 {
+				state.selectedBastionJumpID = 0
+			} else if index-1 < len(hubs) {
+				state.selectedBastionJumpID = hubs[index-1].JumpHost.ID
+			}
+			state.rebuildProxyFilter()
+			state.proxyTable.Scroll.Offset = 0
+			state.proxyTable.Select(-1)
+			if state.visibleProxyCount() > 0 {
+				if first, found := state.visibleProxyAt(0); found {
+					state.selectedProxyID = first.ID
+				}
+			}
+		}
 	}
 }
 
@@ -541,15 +703,27 @@ func (state *State) selectProxy(id uint32) {
 }
 
 func (state *State) removeSelectedProxy() {
+	if state.selectedProxyID != 0 {
+		state.removeProxyByID(state.selectedProxyID)
+	}
+}
+
+// removeProxyByID 删除指定跳板路由
+func (state *State) removeProxyByID(routeID uint32) {
 	for index := range state.proxies {
-		if state.proxies[index].ID != state.selectedProxyID {
+		if state.proxies[index].ID != routeID {
 			continue
 		}
 		removed := state.proxies[index]
 		state.proxies = slices.Delete(state.proxies, index, index+1)
-		state.selectedProxyID = 0
-		if len(state.proxies) > 0 {
-			state.selectedProxyID = state.proxies[min(index, len(state.proxies)-1)].ID
+		if state.proxyChecked != nil {
+			delete(state.proxyChecked, routeID)
+		}
+		if state.selectedProxyID == routeID {
+			state.selectedProxyID = 0
+			if len(state.proxies) > 0 {
+				state.selectedProxyID = state.proxies[min(index, len(state.proxies)-1)].ID
+			}
 		}
 		state.sshSyncMark()
 		state.refreshProxies()
@@ -559,10 +733,11 @@ func (state *State) removeSelectedProxy() {
 	}
 }
 
-func (state *State) toggleSelectedProxy() {
+// toggleProxyByID 就地启停指定跳板路由
+func (state *State) toggleProxyByID(routeID uint32) {
 	for index := range state.proxies {
 		route := &state.proxies[index]
-		if route.ID != state.selectedProxyID {
+		if route.ID != routeID {
 			continue
 		}
 		route.Stopped = !route.Stopped
@@ -573,6 +748,141 @@ func (state *State) toggleSelectedProxy() {
 		}
 		state.save()
 		return
+	}
+}
+
+func (state *State) toggleSelectedProxy() {
+	if state.selectedProxyID != 0 {
+		state.toggleProxyByID(state.selectedProxyID)
+	}
+}
+
+// openProxyDeleteConfirm 打开单条路由删除确认弹窗
+func (state *State) openProxyDeleteConfirm(routeID uint32) {
+	if _, ok := state.proxyByID(routeID); !ok {
+		return
+	}
+	state.proxyPendingDeleteID = routeID
+	state.modal = modalProxyDeleteConfirm
+}
+
+// openProxyBatchDeleteConfirm 打开批量删除确认弹窗
+func (state *State) openProxyBatchDeleteConfirm() {
+	if state.proxyCheckedCount() == 0 {
+		return
+	}
+	state.modal = modalProxyBatchDeleteConfirm
+}
+
+// batchDeleteCheckedProxies 批量删除所有已勾选的跳板路由
+func (state *State) batchDeleteCheckedProxies() int {
+	if len(state.proxyChecked) == 0 {
+		state.modal = modalNone
+		return 0
+	}
+	var remaining []proxyRecord
+	deleted := 0
+	for _, route := range state.proxies {
+		if state.proxyChecked[route.ID] {
+			deleted++
+			if state.selectedProxyID == route.ID {
+				state.selectedProxyID = 0
+			}
+			continue
+		}
+		remaining = append(remaining, route)
+	}
+	if deleted > 0 {
+		state.proxies = remaining
+		clear(state.proxyChecked)
+		if len(state.proxies) > 0 && state.selectedProxyID == 0 {
+			state.selectedProxyID = state.proxies[0].ID
+		}
+		state.sshSyncMark()
+		state.refreshProxies()
+		state.status = fmt.Sprintf(state.messages.ProxyBatchUnboundCountFmt, deleted)
+		state.save()
+	}
+	state.modal = modalNone
+	return deleted
+}
+
+// batchToggleCheckedProxies 批量启动/停止已勾选的跳板路由
+func (state *State) batchToggleCheckedProxies(stopped bool) {
+	if len(state.proxyChecked) == 0 {
+		return
+	}
+	changed := 0
+	for index := range state.proxies {
+		route := &state.proxies[index]
+		if state.proxyChecked[route.ID] && route.Stopped != stopped {
+			route.Stopped = stopped
+			changed++
+		}
+	}
+	if changed > 0 {
+		state.refreshProxies()
+		state.save()
+	}
+}
+
+// toggleProxyCheck 切换单行勾选状态
+func (state *State) toggleProxyCheck(routeID uint32) {
+	if state.proxyChecked == nil {
+		state.proxyChecked = make(map[uint32]bool)
+	}
+	if state.proxyChecked[routeID] {
+		delete(state.proxyChecked, routeID)
+	} else {
+		state.proxyChecked[routeID] = true
+	}
+}
+
+// clearProxyChecked 清空所有勾选
+func (state *State) clearProxyChecked() {
+	if state.proxyChecked != nil {
+		clear(state.proxyChecked)
+	}
+}
+
+// proxyCheckedCount 返回当前已勾选的数量
+func (state *State) proxyCheckedCount() int {
+	return len(state.proxyChecked)
+}
+
+// proxyVisibleStats 统计当前中枢过滤视图下的路由总数与已勾选数（零堆内存分配）
+func (state *State) proxyVisibleStats() (total int, checked int) {
+	for _, r := range state.proxies {
+		if state.selectedBastionJumpID != 0 && r.JumpID != state.selectedBastionJumpID {
+			continue
+		}
+		total++
+		if state.proxyChecked != nil && state.proxyChecked[r.ID] {
+			checked++
+		}
+	}
+	return total, checked
+}
+
+// toggleProxyCheckAll 切换当前可见视图全选/反选（零堆内存分配）
+func (state *State) toggleProxyCheckAll() {
+	if state.proxyChecked == nil {
+		state.proxyChecked = make(map[uint32]bool)
+	}
+	total, checked := state.proxyVisibleStats()
+	if total == 0 {
+		return
+	}
+	allChecked := total == checked
+	for _, r := range state.proxies {
+		if state.selectedBastionJumpID != 0 && r.JumpID != state.selectedBastionJumpID {
+			continue
+		}
+		if allChecked {
+			delete(state.proxyChecked, r.ID)
+		} else {
+			state.proxyChecked[r.ID] = true
+		}
 	}
 }
 
@@ -595,25 +905,39 @@ func (state *State) refreshProxy(route *proxyRecord) {
 	if !targetOK || !jumpOK {
 		route.label = ""
 		route.cells = [4]string{}
+		route.hops = nil
 		return
 	}
 	chain, valid := state.proxyChain(target, false)
 	if !valid || len(chain) == 0 {
 		route.label = ""
 		route.cells = [4]string{}
+		route.hops = nil
 		return
 	}
 	var labels strings.Builder
 	var targets strings.Builder
+	var hops []proxyHop
 	for index := len(chain) - 1; index >= 0; index-- {
 		hop := chain[index]
 		labels.WriteString(hop.Label)
 		labels.WriteString(" → ")
 		targets.WriteString(hop.target)
 		targets.WriteString(" → ")
+		addr := hop.target
+		if addr == "" {
+			addr = hop.Address
+		}
+		hops = append(hops, proxyHop{ID: hop.ID, Label: hop.Label, Address: addr})
 	}
 	labels.WriteString(target.Label)
 	targets.WriteString(target.target)
+	targetAddr := target.target
+	if targetAddr == "" {
+		targetAddr = target.Address
+	}
+	hops = append(hops, proxyHop{ID: target.ID, Label: target.Label, Address: targetAddr})
+	route.hops = hops
 	status := state.messages.ProxyStopped
 	if !route.Stopped {
 		status = state.messages.ProxyRunning
@@ -631,8 +955,203 @@ func (state *State) refreshProxies() {
 		state.refreshProxy(&state.proxies[index])
 	}
 	state.refreshProxyCount()
+	state.refreshBastionHubs()
+	state.rebuildProxyFilter()
 }
 
 func (state *State) refreshProxyCount() {
 	state.proxyCountText = fmt.Sprintf(state.messages.ProxyCountFmt, len(state.proxies))
+}
+
+// bastionHub 代表一个跳板机中枢及其管辖的路由与目标设备集合
+type bastionHub struct {
+	JumpHost  Host
+	Routes    []proxyRecord
+	Targets   []Host
+	Active    int
+	Total     int
+	ChipLabel string
+}
+
+func (state *State) refreshBastionHubs() {
+	state.bastionAllChipText = fmt.Sprintf("%s (%d)", state.messages.HostFilterAll, len(state.proxies))
+	if len(state.proxies) == 0 {
+		state.bastionHubs = nil
+		return
+	}
+	jumpMap := make(map[uint32]*bastionHub)
+	var orderedJumps []uint32
+
+	for _, route := range state.proxies {
+		hub, exists := jumpMap[route.JumpID]
+		if !exists {
+			jumpHost, ok := state.hostByID(route.JumpID)
+			if !ok {
+				continue
+			}
+			hub = &bastionHub{JumpHost: jumpHost}
+			jumpMap[route.JumpID] = hub
+			orderedJumps = append(orderedJumps, route.JumpID)
+		}
+		targetHost, ok := state.hostByID(route.TargetID)
+		if !ok {
+			continue
+		}
+		hub.Routes = append(hub.Routes, route)
+		hub.Targets = append(hub.Targets, targetHost)
+		hub.Total++
+		if !route.Stopped {
+			hub.Active++
+		}
+	}
+
+	result := make([]bastionHub, 0, len(orderedJumps))
+	for _, jid := range orderedJumps {
+		hub := *jumpMap[jid]
+		hub.ChipLabel = fmt.Sprintf("%s (%d)", hub.JumpHost.Label, hub.Total)
+		result = append(result, hub)
+	}
+	state.bastionHubs = result
+}
+
+// bastionHubList 返回已缓存的跳板机中枢集合，保证渲染过程零分配
+func (state *State) bastionHubList() []bastionHub {
+	return state.bastionHubs
+}
+
+// selectedBastionHub 获取当前选中的跳板机中枢，若未指定或失效则返回 false（无副作用）
+func (state *State) selectedBastionHub() (bastionHub, bool) {
+	hubs := state.bastionHubs
+	if len(hubs) == 0 {
+		return bastionHub{}, false
+	}
+	if state.selectedBastionJumpID != 0 {
+		for _, hub := range hubs {
+			if hub.JumpHost.ID == state.selectedBastionJumpID {
+				return hub, true
+			}
+		}
+	}
+	return bastionHub{}, false
+}
+
+// batchAssociateProxies 批量将多台目标设备关联至指定跳板机
+func (state *State) batchAssociateProxies(jumpID uint32, targetIDs []uint32, overwrite bool, viaShell bool, relay string) (added int, updated int) {
+	jumpHost, ok := state.hostByID(jumpID)
+	if !ok || !jumpHost.isSSH() {
+		return 0, 0
+	}
+
+	for _, targetID := range targetIDs {
+		if targetID == jumpID {
+			continue
+		}
+		targetHost, ok := state.hostByID(targetID)
+		if !ok || !targetHost.isSSH() {
+			continue
+		}
+
+		// 环路检查
+		if state.proxyWouldCycle(targetID, jumpID) {
+			continue
+		}
+
+		// 检查目标是否已有路由
+		existingRoute, hasExisting := state.proxyRouteForTarget(targetID)
+		if hasExisting {
+			if !overwrite {
+				continue
+			}
+			// 覆盖现有路由时仅更新跳板机，保留原有的 ViaShell 与 Relay 配置，避免静默清空造成断连
+			for i := range state.proxies {
+				if state.proxies[i].ID == existingRoute.ID {
+					state.proxies[i].JumpID = jumpID
+					updated++
+					break
+				}
+			}
+		} else {
+			// 新增跳板路由
+			route := proxyRecord{
+				ID:       state.nextProxyID,
+				TargetID: targetID,
+				JumpID:   jumpID,
+				ViaShell: viaShell,
+				Relay:    relay,
+			}
+			state.nextProxyID++
+			state.proxies = append(state.proxies, route)
+			added++
+		}
+	}
+
+	if added > 0 || updated > 0 {
+		if state.selectedBastionJumpID != 0 {
+			state.selectedBastionJumpID = jumpID
+		}
+		state.sshSyncMark()
+		state.refreshProxies()
+		state.status = fmt.Sprintf(state.messages.ProxyBatchAssociatedCountFmt, added+updated, jumpHost.Label)
+		state.save()
+	}
+	return added, updated
+}
+
+// batchRemoveProxiesForTargets 批量移除指定目标设备的跳板路由
+func (state *State) batchRemoveProxiesForTargets(targetIDs []uint32) int {
+	if len(targetIDs) == 0 {
+		return 0
+	}
+	targets := make(map[uint32]bool, len(targetIDs))
+	for _, id := range targetIDs {
+		targets[id] = true
+	}
+
+	kept := state.proxies[:0]
+	removed := 0
+	for _, route := range state.proxies {
+		if targets[route.TargetID] {
+			removed++
+			continue
+		}
+		kept = append(kept, route)
+	}
+	if removed > 0 {
+		state.proxies = kept
+		state.selectedProxyID = 0
+		if len(state.proxies) > 0 {
+			state.selectedProxyID = state.proxies[0].ID
+		}
+		state.sshSyncMark()
+		state.refreshProxies()
+		state.status = fmt.Sprintf(state.messages.ProxyBatchUnboundCountFmt, removed)
+		state.save()
+	}
+	return removed
+}
+
+// toggleBastionHub 批量切换某个跳板机下所有路由的生效/暂停状态
+func (state *State) toggleBastionHub(jumpID uint32) {
+	hub, found := func() (bastionHub, bool) {
+		for _, h := range state.bastionHubList() {
+			if h.JumpHost.ID == jumpID {
+				return h, true
+			}
+		}
+		return bastionHub{}, false
+	}()
+	if !found || len(hub.Routes) == 0 {
+		return
+	}
+
+	// 若当前有任何运行中的，则全部暂停；否则全部恢复运行
+	newStopped := hub.Active > 0
+
+	for i := range state.proxies {
+		if state.proxies[i].JumpID == jumpID {
+			state.proxies[i].Stopped = newStopped
+		}
+	}
+	state.refreshProxies()
+	state.save()
 }
