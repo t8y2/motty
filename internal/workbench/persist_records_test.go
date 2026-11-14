@@ -35,12 +35,13 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,
-		"tab_numbers":            true,
+		"tab_numbers":            true, "hidden_nav": true,
 		"vertical_tabs_grouping": true,
 		"workspace_layouts":      true,
 		"sftp_local_bookmarks":   true,
 		"sftp_columns":           true, "sftp_download_directory": true, "default_editor": true,
 		"sftp_window_order": true, "sftp_open_mode": true, "sftp_directory_tree": true, "custom_editor_path": true,
+		"sftp_transfer_filter": true,
 		"toolbars":    true,
 		"local_shell": true, "local_start": true, "last_local_directory": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
 		// Whether the command bar shows, which groups it filters and how it
@@ -81,7 +82,7 @@ func richState() savedState {
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
 		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/", HiddenHostTags: []string{"dev", "prod"},
 		RecentConnectSort: true, RecentConnections: map[string]time.Time{"host_b": time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
-		SFTPParallel: 2, SFTPTerminalFollow: true, CommandHistory: true,
+		SFTPParallel: 2, SFTPTerminalFollow: true, SFTPTransferFilter: 1, CommandHistory: true,
 		Hosts: []savedHost{
 			{ID: "host_b", Label: "Beta", Address: "b.example.com", User: "me", Port: 22, Group: "prod"},
 			{ID: "host_a", Label: "Alpha", Address: "a.example.com", User: "me", Port: 2222, Group: "dev"},

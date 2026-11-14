@@ -540,8 +540,9 @@ func (state *State) clickTransferCenter(id gfx.ID) bool {
 		return true
 	}
 	if filter, ok := id.In(hitTransfersFilter); ok {
-		center.filter, center.scroll = min(filter, 3), 0
+		center.filter, center.scroll = min(max(filter, 0), 3), 0
 		state.describeTransferScope()
+		state.save()
 		return true
 	}
 	return state.clickTransferTask(id)

@@ -130,6 +130,7 @@ type savedState struct {
 	SFTPOpenMode            string              `json:"sftp_open_mode,omitempty"`
 	SFTPColumns             string              `json:"sftp_columns,omitempty"`
 	SFTPDownloadDirectory   string              `json:"sftp_download_directory,omitempty"`
+	SFTPTransferFilter      int                 `json:"sftp_transfer_filter,omitempty"`
 	DefaultEditor           string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
 	CustomEditorPath        string              `json:"custom_editor_path,omitempty"`
 	Toolbars                *savedToolbars      `json:"toolbars,omitempty"`
@@ -583,6 +584,7 @@ func (state *State) snapshot() savedState {
 		SFTPOpenMode:               state.sftpOpenMode.String(),
 		SFTPColumns:                state.sftpColumns.String(),
 		SFTPDownloadDirectory:      savedSFTPDownloadDirectory(state.sftpDownloadDirectory),
+		SFTPTransferFilter:         state.transfers.filter,
 		DefaultEditor:              string(state.defaultEditor),
 		CustomEditorPath:           state.customEditorPath,
 		Toolbars:                   state.toolbars.snapshot(),
