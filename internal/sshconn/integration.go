@@ -319,14 +319,12 @@ func bashIntegration(report string, forceTrap bool) string {
 
 const bashIntegrationHead = `_motty_runtime=$MOTTY_SHELL_DIR
 unset MOTTY_SHELL_DIR
+# A login shell reads /etc/profile and the first of these login profiles, and
+# ~/.bashrc only when that profile sources it. Sourcing ~/.bashrc here as well
+# would run the user's interactive startup twice.
 [[ -r /etc/profile ]] && source /etc/profile
 for _motty_profile in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
     if [[ -r $_motty_profile ]]; then source "$_motty_profile"; break; fi
-done
-# The login profiles only reach ~/.bashrc when they source it themselves; a
-# server whose interactive setup lives there must still get it.
-for _motty_bashrc in /etc/bash.bashrc "$HOME/.bashrc"; do
-    if [[ -r $_motty_bashrc ]]; then source "$_motty_bashrc"; fi
 done
 `
 

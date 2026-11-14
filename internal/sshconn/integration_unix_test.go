@@ -216,6 +216,80 @@ func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testin
 	}
 }
 
+// A login shell reads ~/.bashrc only through the login profile that sources
+// it. The startup shim must run the user's startup files the way that login
+// shell does: sourcing ~/.bashrc after the profile already did ran the user's
+// interactive startup twice on the distributions whose profiles source it.
+func TestIntegrationBashStartupMatchesALoginShell(t *testing.T) {
+	program, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash unavailable")
+	}
+	for _, test := range []struct {
+		name, profile string
+		want          int
+	}{
+		{
+			// The Debian, Ubuntu and RHEL default: the login profile sources
+			// ~/.bashrc itself.
+			name:    "login-profile-sources-bashrc",
+			profile: "if [ -r \"$HOME/.bashrc\" ]; then . \"$HOME/.bashrc\"; fi\n",
+			want:    1,
+		},
+		{
+			// No login profile: a login shell never reads ~/.bashrc.
+			name: "bashrc-only",
+			want: 0,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			home, runtimeDir := t.TempDir(), t.TempDir()
+			if err := os.WriteFile(filepath.Join(home, ".bashrc"), []byte("printf 'user-bashrc\\n'; PS1='user-prompt> '\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if test.profile != "" {
+				if err := os.WriteFile(filepath.Join(home, ".bash_profile"), []byte(test.profile), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			env := []string{"HOME=" + home, "SHELL=" + program, "TMPDIR=" + runtimeDir, "LANG=en_US.UTF-8"}
+			read := func(name string, cfg localshell.Config) string {
+				t.Helper()
+				shell, err := localshell.Start(cfg)
+				if err != nil {
+					t.Fatalf("start %s: %v", name, err)
+				}
+				t.Cleanup(shell.Close)
+				var output strings.Builder
+				deadline := time.Now().Add(8 * time.Second)
+				quiet := time.Now().Add(500 * time.Millisecond)
+				for time.Now().Before(deadline) {
+					if data := shell.Drain(nil); len(data) > 0 {
+						output.Write(data)
+						quiet = time.Now().Add(500 * time.Millisecond)
+					} else if time.Now().After(quiet) {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				return output.String()
+			}
+			login := read("a login shell", localshell.Config{
+				Shell: program, Args: []string{"-l", "-i"}, Dir: home, Env: env, Cols: 100, Rows: 24,
+			})
+			shim := read("the startup shim", localshell.Config{
+				Shell: "/bin/sh", Args: IntegrationArgs(program, "startup-token"), Dir: home, Env: env, Cols: 100, Rows: 24,
+			})
+			if runs := strings.Count(login, "user-bashrc"); runs != test.want {
+				t.Fatalf("the fixture's login shell ran ~/.bashrc %d time(s), want %d: %q", runs, test.want, login)
+			}
+			if runs := strings.Count(shim, "user-bashrc"); runs != test.want {
+				t.Fatalf("the startup shim ran ~/.bashrc %d time(s); a login shell runs it %d time(s): %q", runs, test.want, shim)
+			}
+		})
+	}
+}
+
 func TestIntegrationZshHistorySurvivesSessions(t *testing.T) {
 	program, err := exec.LookPath("zsh")
 	if err != nil {

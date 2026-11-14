@@ -68,8 +68,9 @@ the last folder stay on this device rather than in synced settings.
 
 - Bash uses a private runtime rc file that sources `/etc/profile` and the first
   readable user login profile, then appends to the existing string or array
-  `PROMPT_COMMAND`. It runs interactively, but Bash's `login_shell` flag and
-  automatic `.bash_logout` processing differ from a true login shell.
+  `PROMPT_COMMAND`. `~/.bashrc` is reached only when that login profile sources
+  it, as in a login shell. It runs interactively, but Bash's `login_shell` flag
+  and automatic `.bash_logout` processing differ from a true login shell.
 - Zsh uses a private runtime ZDOTDIR, sources the user's startup files in order,
   restores ZDOTDIR, and adds a `precmd_functions` entry without replacing
   `precmd`. A `.zsh_history` default derived from the private directory is
