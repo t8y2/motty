@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"slices"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
@@ -18,6 +20,7 @@ var (
 	hitHostMenuEdit    = tree.ID(hostMenuHits, "host-menu-edit")
 	hitHostMenuCopy    = tree.ID(hostMenuHits, "host-menu-copy")
 	hitHostMenuMove    = tree.ID(hostMenuHits, "host-menu-move")
+	hitHostMenuSetJump = tree.ID(hostMenuHits, "host-menu-set-jump")
 	hitHostMenuDelete  = tree.ID(hostMenuHits, "host-menu-delete")
 )
 
@@ -113,6 +116,7 @@ func (state *State) paintHostMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHostTitle, Icon: icon(iconCopy), Disabled: several})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitHostMenuEdit, Label: messages.EditHost, Icon: icon(iconPencil), Disabled: several})
+	rows.add(components.ContextMenuItem{ID: hitHostMenuSetJump, Label: messages.HostMenuSetJump, Icon: icon(iconGlobe)})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuMove, Label: messages.MoveHostGroup, Icon: icon(iconFolderOpen)})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuDelete, Label: messages.DeleteHost, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 	width, height := rows.size(canvas, state.contextMenuTheme())
@@ -157,6 +161,10 @@ func (state *State) clickHostMenu(id gfx.ID) bool {
 		// not under the action row the host list may not even be showing.
 		state.groupMenu = groupMenuAnchor{point: state.hostMenu.at, menu: true}
 		state.openMoveHostGroupMenu()
+	case hitHostMenuSetJump:
+		state.captureHostMenuActionIDs(host.ID)
+		targets := slices.Clone(state.hostActionIDs)
+		state.openProxyBatchAssignForSelectedHosts(targets)
 	case hitHostMenuDelete:
 		state.captureHostMenuActionIDs(host.ID)
 		state.openDeleteCapturedHosts()

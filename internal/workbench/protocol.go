@@ -70,6 +70,18 @@ func (state *State) sshHostCount() int {
 	return count
 }
 
+// routeTargetCount is how many hosts a jump route can reach: SSH hosts and
+// remote desktops.
+func (state *State) routeTargetCount() int {
+	count := 0
+	for _, host := range state.hosts {
+		if host.isRouteTarget() {
+			count++
+		}
+	}
+	return count
+}
+
 // defaultPort is the port a host of its protocol uses when it names none.
 func (host Host) defaultPort() uint16 {
 	switch host.Protocol {

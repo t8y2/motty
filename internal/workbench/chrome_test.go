@@ -290,7 +290,7 @@ func TestTheSectionToolbarsCondenseIntoIcons(t *testing.T) {
 		ids  []gfx.ID
 	}{
 		{"keys", sectionKeys, []gfx.ID{hitKeysAdd, hitKeysCopyPublic, hitKeysRemove}},
-		{"proxies", sectionProxies, []gfx.ID{hitProxyAdd, hitProxyEdit, hitProxyStartStop, hitProxyRemove}},
+		{"proxies", sectionProxies, []gfx.ID{hitProxyBatchAdd, hitProxyAdd}},
 		{"forwards", sectionForwards, []gfx.ID{hitForwardAdd, hitForwardEdit, hitForwardStartStop, hitForwardRemove}},
 		{"known hosts", sectionKnownHosts, []gfx.ID{hitKnownHostsRefresh, hitKnownHostsRetrust, hitKnownHostsDelete}},
 	}

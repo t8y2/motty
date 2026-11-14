@@ -482,6 +482,9 @@ const (
 	modalMobaEncoding
 	modalNewForward
 	modalNewProxy
+	modalProxyBatchAssociate
+	modalProxyDeleteConfirm
+	modalProxyBatchDeleteConfirm
 	modalHostKey
 	modalKeyPassphrase
 	modalPassword
