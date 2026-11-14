@@ -60,6 +60,9 @@ func (state *State) paintTerminalPaneDetails(canvas *gfx.Canvas, session *Sessio
 	t := session.term
 	canvas.Clip(bounds)
 	defer canvas.Unclip()
+	if t.paintConnectionBar.Valid() {
+		state.paintConnectionTopBar(canvas, t.paintConnectionBar.Rect(), session)
+	}
 	switch {
 	case t.paintFinding:
 		state.paintFindBarSlots(canvas, session, t.paintFind)
@@ -370,33 +373,26 @@ func (state *State) paintAIMarking(canvas *gfx.Canvas, geometry terminalGeometry
 // remains a reliable focus marker. Both show the name and connection state, and
 // the active bar is the only one that can carry a busy spinner in that slot.
 // Resource readings stay in the dedicated monitor surface.
-func (state *State) declarePaneBar(c ui.C, width float32, title, status string, session *Session, active bool) (spinner, light ui.Box) {
+func (state *State) declarePaneBar(c ui.C, width float32, status string, session *Session, active bool) (spinner, light ui.Box) {
 	pal := state.pal
 	readout := status
 	if state.workspaceManaged(state.deck.ActiveWorkspace()) && session.quietOK() {
 		readout = ""
 	}
-	gap := float32(29) // from the name to the reading
-	if session.busy {
-		gap = 6
-	}
 	ui.Row(c).Fill().PadX(termPadX).Items(ui.Center).Children(func() {
 		if active {
 			light = ui.Slot(c).Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0)
 		} else {
-			// The idle marker keeps the light's 16 point box, so the name and the
-			// reading beside it do not move when the pane gains or loses the
+			// The idle marker keeps the light's 16 point box, so the connection
+			// bar beside it does not move when the pane gains or loses the
 			// keyboard.
 			ui.Row(c).Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0).Center().Children(func() {
 				ui.Icon(c, lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint)
 			})
 		}
-		titleColor := pal.muted
-		if active {
-			titleColor = pal.text
-		}
-		ui.Text(c, title).FontSize(barTitleSize).Weight(gfx.WeightSemibold).Color(titleColor).LineHeight(22).
-			Ellipsis().Grow(1).Shrink(1).MinWidth(0).MarginSides(0, gap, 0, 0)
+		// The pane's own bar is the connection bar: address, actions and, when
+		// the setting is on, the six figures.
+		session.term.paintConnectionBar = ui.Slot(c).Grow(1).Shrink(1).MinWidth(0).FillHeight()
 		if !state.connectionStatsBarShown(session) {
 			state.declareLatencyTag(c, session)
 		}

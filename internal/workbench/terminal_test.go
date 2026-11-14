@@ -111,7 +111,7 @@ func TestShellOutputReachesTheScreenWithItsColors(t *testing.T) {
 	var prompt, files gfx.Text
 	for _, text := range canvas.Texts() {
 		switch {
-		case strings.HasPrefix(text.Value, "deploy@prod"):
+		case text.Style.Mono && strings.HasPrefix(text.Value, "deploy@prod"):
 			prompt = text
 		case strings.HasPrefix(text.Value, "red.txt"):
 			files = text

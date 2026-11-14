@@ -270,22 +270,13 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 	}, state.cellWidth, state.cellHeight, state.padding())
 	inactive := state.paneIsInactive(session.ID)
 	inSplit := state.paneInSplit(session.ID)
-	barBackground, barBorder := state.pal.workspace, state.pal.line
-	if state.workspaceManaged(state.deck.ActiveWorkspace()) && !inactive {
-		barBackground = barBackground.Mix(state.pal.accent, .045)
-		barBorder = state.activePaneRimColor()
-	}
+	barBackground, barBorder := state.connectionBarColor(session), state.pal.windowStroke
 	finding := !inactive && session.term.find.open
 	showingInputNotice := !inactive && !finding && state.terminalInputNoticeVisible(session)
 	status, _ := state.sessionStatus(session)
 	if inactive {
 		state.clearTerminalRail(session)
 	}
-	title := session.Title
-	if title == "" {
-		title = session.Address
-	}
-
 	t.paintFinding, t.paintInSplit, t.paintInactive = finding, inSplit, inactive
 	t.paintNoticeShown = showingInputNotice
 	t.paintCommandNoticeShown = state.workspaceCommandNoticeInWorkspace(session) && (inSplit || !finding)
@@ -294,6 +285,7 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 	t.paintGeometry = geometry
 	t.paintFind = findBarSlots{}
 	t.paintSpinner, t.paintLight, t.paintNotice = ui.Box{}, ui.Box{}, ui.Box{}
+	t.paintConnectionBar = ui.Box{}
 
 	// Each notice reserves its own strip across a split, including panes that
 	// do not own the notice, so changing focus does not resize the terminal.
@@ -301,15 +293,20 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 
 	c.Part(terminalPanePart)
 	ui.Column(c).Fill().Children(func() {
-		if state.connectionStatsBarShown(session) {
-			state.declareConnectionStatsSection(c, session, bounds.Width, barBackground, barBorder)
+		// A single terminal gets the connection bar below the tab bar. A split
+		// pane merges it into its own pane bar, so there is only one strip.
+		if !inSplit {
+			ui.Stack(c).Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
+				t.paintConnectionBar = ui.Slot(c).Fill()
+				ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(barBorder)
+			})
 		}
 		if inSplit || finding {
 			ui.Stack(c).Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
 				if finding {
 					t.paintFind = state.declareFindBar(c, session)
 				} else {
-					t.paintSpinner, t.paintLight = state.declarePaneBar(c, bounds.Width, title, status, session, !inactive)
+					t.paintSpinner, t.paintLight = state.declarePaneBar(c, bounds.Width, status, session, !inactive)
 				}
 				ui.Row(c).FillWidth().Height(1).Self(ui.End).Background(barBorder)
 			})

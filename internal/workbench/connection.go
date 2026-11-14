@@ -572,6 +572,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 		session.recordRecent = false
 	}
 	session.resetLatency()
+	session.barAddress = ""
 	avoidShare := session.avoidShare || loopbackTunnel(host)
 	session.avoidShare = false
 	session.closeSSHBrowser()
