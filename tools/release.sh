@@ -11,7 +11,7 @@
 #
 # --sums is the last step of a release, and the gate in front of publishing it:
 # it signs the whole matrix, writes SHA256SUMS, and then refuses the release
-# unless it carries exactly the fourteen assets of the matrix, SHA256SUMS matches
+# unless it carries exactly the eighteen assets of the matrix, SHA256SUMS matches
 # the files, every signature verifies against the key compiled into the app, the
 # title is "Motty <tag>", the release is still a draft, and its notes name the
 # expected Viva commit. --verify runs the same checks on a release without
@@ -108,6 +108,10 @@ release_assets() {
 	motty-$1-windows-amd64.zip
 	motty_$1_arm64.deb
 	motty_$1_amd64.deb
+	motty-$1-linux-arm64.PKGBUILD
+	motty-$1-linux-amd64.PKGBUILD
+	motty-$1-linux-arm64.SRCINFO
+	motty-$1-linux-amd64.SRCINFO
 	SHA256SUMS
 	SIGNATURES
 	EOF
