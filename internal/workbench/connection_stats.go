@@ -15,7 +15,10 @@ import (
 )
 
 var connectionStatsHits = tree.Feature("connection-stats")
-var hitConnectionStatsAddress = tree.Sub(connectionStatsHits, tree.Name("address"))
+var (
+	hitConnectionStatsAddress = tree.Sub(connectionStatsHits, tree.Name("address"))
+	hitConnectionStatsStatus  = tree.Sub(connectionStatsHits, tree.Name("status"))
+)
 
 // connectionCopyText is what the connection bar puts on the clipboard: the
 // account and address, with the port only when it is not SSH's default. A local
@@ -244,23 +247,31 @@ func (state *State) declareConnectionStatsBar(c ui.C, session *Session, width fl
 		address = state.sessionAddress(session.host)
 	}
 	stats := state.connectionStatsText(session)
+	statsReady := stats != "…"
 	addressWidth := canvas.TextWidthWeight(address, metrics.FontSizeS, gfx.WeightMedium) + 16
 	addressMax := min(addressWidth, max(width*.55, 0))
 	available := width - 24 - addressMax - 8
-	if available < canvas.TextWidthWeight("…", metrics.FontSizeS, gfx.WeightMedium) ||
-		canvas.TextWidthWeight(stats, metrics.FontSizeS, gfx.WeightMedium) > available {
-		stats = "…"
+	statusIcon := !statsReady || canvas.TextWidthWeight(stats, metrics.FontSizeS, gfx.WeightMedium) > available
+	const minAddressWidth = float32(48)
+	showAddress := width-24-8 >= minAddressWidth
+	if statusIcon {
+		showAddress = showAddress && width-24-16-8 >= minAddressWidth
 	}
 	id := hitConnectionStatsAddress.At(int(session.ID))
+	statusID := hitConnectionStatsStatus.At(int(session.ID))
+	statusLabel := stats
+	if !statsReady {
+		statusLabel = state.messages.StatsMeasuring
+	}
 	copied, left := false, time.Duration(0)
-	if session.stats != nil && session.stats.panel.copiedAddress == address {
+	if showAddress && session.stats != nil && session.stats.panel.copiedAddress == address {
 		if left = session.stats.panel.addressCopiedUntil - state.now(); left > 0 {
 			copied = true
 			canvas.RequestFrameIn(left)
 		}
 	}
 	fill := gfx.Color{}
-	if canvas.Hovered() == id || canvas.Pressed() == id {
+	if showAddress && (canvas.Hovered() == id || canvas.Pressed() == id) {
 		fill = pal.surfaceSoft
 	}
 	color := pal.muted
@@ -268,14 +279,29 @@ func (state *State) declareConnectionStatsBar(c ui.C, session *Session, width fl
 		fill = withAlpha(pal.success, 0.12)
 		color = pal.success
 	}
-	ui.Row(c).Fill().Height(infoBarHeight).PadX(12).Gap(8).Items(ui.Center).Children(func() {
-		addressRow := ui.Row(c).Height(22).Width(addressMax).Shrink(0).PadX(6).Radius(4).Items(ui.Center)
-		if fill.Alpha > 0 {
-			addressRow = addressRow.Background(fill)
+	bar := ui.Row(c).Fill().Height(infoBarHeight).PadX(12).Gap(8).Items(ui.Center)
+	if !showAddress {
+		bar = bar.Justify(ui.Center)
+	}
+	bar.Children(func() {
+		if showAddress {
+			addressRow := ui.Row(c).Height(22).Width(addressMax).Shrink(0).PadX(6).Radius(4).Items(ui.Center)
+			if fill.Alpha > 0 {
+				addressRow = addressRow.Background(fill)
+			}
+			addressRow.HitWith(id, address, gfx.HitOptions{Role: gfx.RoleButton, Value: address, Hint: state.messages.Monitor.AddressCopy}).Children(func() {
+				ui.Text(c, address).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color).Width(max(addressMax-12, 0)).Ellipsis()
+			})
 		}
-		addressRow.HitWith(id, address, gfx.HitOptions{Role: gfx.RoleButton, Value: address, Hint: state.messages.Monitor.AddressCopy}).Children(func() {
-			ui.Text(c, address).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(color).Width(max(addressMax-12, 0)).Ellipsis()
-		})
+		if statusIcon {
+			// The narrowest bar keeps a status mark with the full reading as
+			// its hint, instead of an ellipsis that names nothing.
+			ui.Row(c).Size(16, 18).Shrink(0).Items(ui.Center).
+				HitWith(statusID, statusLabel, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: statusLabel}).Children(func() {
+				ui.Icon(c, lucideIcons[iconActivity]).Size(14, 14).Color(pal.muted)
+			})
+			return
+		}
 		ui.Text(c, stats).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Ellipsis().Shrink(1)
 	})
 }

@@ -65,21 +65,6 @@ func TestConnectionStatsBarShowsTheCopyableAddressAndReading(t *testing.T) {
 		t.Fatalf("the bar does not show the reading %q: %v", reading, texts)
 	}
 
-	state.connectionStats = false
-	_, texts = paintAt(state, panelWide)
-	if contains(texts, reading) {
-		t.Fatalf("the reading is painted while the setting is off: %v", texts)
-	}
-
-	state.connectionStats = true
-	_, texts = paintAt(state, gfx.Size{Width: 520, Height: 700})
-	if contains(texts, "CPU 1%") {
-		t.Fatalf("a narrow bar painted the detailed reading: %v", texts)
-	}
-	if !contains(texts, "…") {
-		t.Fatalf("a narrow bar did not paint the ellipsis: %v", texts)
-	}
-
 	copied := ""
 	state.options.SetClipboardText = func(value string) error {
 		copied = value
@@ -88,5 +73,34 @@ func TestConnectionStatsBarShowsTheCopyableAddressAndReading(t *testing.T) {
 	state.Click(hitConnectionStatsAddress.At(int(session.ID)))
 	if copied != address {
 		t.Fatalf("copy wrote %q, want %q", copied, address)
+	}
+
+	state.connectionStats = false
+	_, texts = paintAt(state, panelWide)
+	if contains(texts, reading) {
+		t.Fatalf("the reading is painted while the setting is off: %v", texts)
+	}
+
+	state.connectionStats = true
+	canvas, texts := paintAt(state, gfx.Size{Width: 520, Height: 700})
+	if contains(texts, "CPU 1%") {
+		t.Fatalf("a narrow bar painted the detailed reading: %v", texts)
+	}
+	if contains(texts, "…") {
+		t.Fatalf("a narrow bar still painted an ellipsis: %v", texts)
+	}
+	if !contains(texts, address) {
+		t.Fatalf("a narrow bar lost its address: %v", texts)
+	}
+	if _, ok := hitByID(canvas, hitConnectionStatsStatus.At(int(session.ID))); !ok {
+		t.Fatal("a narrow bar has no resource status mark")
+	}
+
+	canvas, texts = paintAt(state, gfx.Size{Width: 80, Height: 700})
+	if contains(texts, address) {
+		t.Fatalf("the narrowest bar kept the address: %v", texts)
+	}
+	if _, ok := hitByID(canvas, hitConnectionStatsStatus.At(int(session.ID))); !ok {
+		t.Fatal("the narrowest bar has no resource status mark")
 	}
 }
