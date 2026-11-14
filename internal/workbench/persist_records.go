@@ -259,6 +259,7 @@ var syncedSettings = map[string]bool{
 	"terminal_tab_title":           true, // read legacy shared preference
 	"tab_title_mode":               true,
 	"terminal_show_latency":        true,
+	"connection_stats":             true,
 	"toolbars":                     true,
 	"terminal_bell_off":            true,
 	"terminal_link_plain_click":    true,
