@@ -732,16 +732,22 @@ type State struct {
 	closeAction    closeAction
 	relaunchAction relaunchAction
 	// The file panel's settings and the folders kept for each host.
-	sftpParallel       int
-	sftpKeepTimesOff   bool
-	sftpFollowOff      bool
-	sftpTerminalFollow bool
-	sftpPathInput      bool
-	sftpPanelAutoOpen  bool
-	sftpDirectoryTree  bool
-	sftpWindowOrder    sftpWindowOrder
-	sftpOpenMode       sftpOpenMode
-	sftpColumns        sftpColumnPreferences
+	sftpParallel          int
+	sftpKeepTimesOff      bool
+	sftpFollowOff         bool
+	sftpTerminalFollow    bool
+	sftpPathInput         bool
+	terminalSidebars      []string
+	terminalSidebarPicker struct {
+		open   bool
+		bounds gfx.Rect
+	}
+	startupAIVisibility map[layoutcore.WorkspaceID]bool
+	sftpPanelAutoOpen   bool
+	sftpDirectoryTree   bool
+	sftpWindowOrder     sftpWindowOrder
+	sftpOpenMode        sftpOpenMode
+	sftpColumns         sftpColumnPreferences
 	// sftpTypeIcons is the system icon of each file extension, shared by every
 	// row and every listing. A nil map means none has been asked for yet.
 	sftpTypeIcons map[string]*fileIconSlot
@@ -2191,6 +2197,7 @@ func (state *State) closeWorkspaceNow(id layoutcore.WorkspaceID) {
 		return
 	}
 	state.closeNoteSidebar(id)
+	delete(state.startupAIVisibility, id)
 	delete(state.temporaryWorkspaceLayouts, id)
 	delete(state.managedWorkspaceLayouts, id)
 	state.clearWorkspaceBroadcast(id)

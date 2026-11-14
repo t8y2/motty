@@ -395,7 +395,7 @@ func (state *State) clickSettings(id gfx.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
-	if state.clickLocalShell(id) || state.clickEditorSelect(id) || state.clickStartupHosts(id) {
+	if state.clickTerminalSidebars(id) || state.clickLocalShell(id) || state.clickEditorSelect(id) || state.clickStartupHosts(id) {
 		return true
 	}
 	for group, hit := range hitToolbarSettingsOpen {

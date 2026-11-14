@@ -126,7 +126,8 @@ func TestMonitorSideWithFilesClosedAndAIDocked(t *testing.T) {
 	state, _ := monitorFixture(t)
 	id := state.deck.ActiveWorkspace()
 	size := gfx.Size{Width: 2000, Height: 900}
-	state.ai.open = true
+	state.Resize(size)
+	state.setAIPanelOpen(true)
 	for _, side := range []layoutcore.ContextSide{layoutcore.ContextLeft, layoutcore.ContextRight} {
 		c, _ := state.deck.Context(id)
 		c.Side = side

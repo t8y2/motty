@@ -18,7 +18,7 @@ func TestAIRunShowsActivityBeforeFirstOutputAndSchedulesRepaint(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
 	state.setLanguage(i18n.English)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiUser, text: "test conversation"}}
 	state.ai.run = &aiRun{cancel: func() {}, open: -1, stats: aiRunStats{startedAt: 2 * time.Second}}
 	state.options.Now = func() time.Duration { return 10 * time.Second }
@@ -50,7 +50,7 @@ func TestAIRunShowsFinalTimeAndTokensWithoutHover(t *testing.T) {
 			state, _ := panelState(t, nil)
 			withModel(t, state)
 			state.setLanguage(i18n.English)
-			state.ai.open = true
+			state.setAIPanelOpen(true)
 			state.ai.items = []aiItem{{kind: aiUser, text: "question"}, {kind: aiAssistant, text: "answer"}}
 			run := &aiRun{cancel: func() {}, open: -1, stats: aiRunStats{startedAt: 2 * time.Second}}
 			state.ai.run = run
@@ -119,7 +119,7 @@ func clockedEscalationState(t *testing.T) (*State, *scriptedModel, *time.Duratio
 	}}
 	state, _ := assistantTestSession(t, model)
 	state.setLanguage(i18n.English)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	now := 2 * time.Second
 	state.options.Now = func() time.Duration { return now }
 	ask(state, "inspect host", agent.ModeAsk)
