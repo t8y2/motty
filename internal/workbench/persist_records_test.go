@@ -56,6 +56,10 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// The session journal switch belongs to this computer: another device
 		// keeps its own choice, and an older build must not silently drop it.
 		"session_logs_off": true, "session_logs_view": true,
+		// Which navigation entries and cloud-sync categories this computer
+		// hides or excludes: restoreLocal applies both, and the sync scope test
+		// holds that one computer's selection never reaches another.
+		"hidden_nav": true, "sync_excluded": true,
 	}
 	entity := map[string]bool{}
 	for _, field := range entityFields {
