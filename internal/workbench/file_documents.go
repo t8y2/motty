@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/document"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/filecontent"
@@ -1065,12 +1065,7 @@ func (state *State) fileOpenPathReason(origin *sftpWindow, title, format, locati
 }
 
 func readLocalDocument(location string) ([]byte, error) {
-	source, err := os.Open(location)
-	if err != nil {
-		return nil, err
-	}
-	defer source.Close()
-	info, err := source.Stat()
+	info, err := os.Lstat(location)
 	if err != nil {
 		return nil, err
 	}
@@ -1080,55 +1075,22 @@ func readLocalDocument(location string) ([]byte, error) {
 	if info.Size() > sftpclient.MaxPreviewFileBytes {
 		return nil, sftpclient.ErrPreviewFileTooLarge
 	}
-	data, err := io.ReadAll(io.LimitReader(source, sftpclient.MaxPreviewFileBytes+1))
-	if len(data) > sftpclient.MaxPreviewFileBytes {
-		return nil, sftpclient.ErrPreviewFileTooLarge
+	data, _, err := document.Read(location)
+	if errors.Is(err, document.ErrNotRegular) {
+		return nil, filecontent.ErrBinary
 	}
 	return data, err
 }
 
 func saveLocalDocument(location string, data []byte, revision sftpclient.Revision) error {
-	info, err := os.Lstat(location)
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
+	_, err := document.Save(location, data, document.Revision(revision))
+	switch {
+	case errors.Is(err, document.ErrChanged):
+		return sftpclient.ErrRemoteChanged
+	case errors.Is(err, document.ErrNotRegular):
 		return filecontent.ErrBinary
 	}
-	current, err := readLocalDocument(location)
-	if err != nil {
-		return err
-	}
-	if sftpclient.Revision(sha256.Sum256(current)) != revision {
-		return sftpclient.ErrRemoteChanged
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(location), ".motty-edit-*")
-	if err != nil {
-		return err
-	}
-	name := temporary.Name()
-	defer os.Remove(name)
-	if err = temporary.Chmod(info.Mode().Perm()); err == nil {
-		_, err = temporary.Write(data)
-	}
-	if err == nil {
-		err = temporary.Sync()
-	}
-	closeErr := temporary.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	current, err = readLocalDocument(location)
-	if err != nil {
-		return err
-	}
-	if sftpclient.Revision(sha256.Sum256(current)) != revision {
-		return sftpclient.ErrRemoteChanged
-	}
-	return os.Rename(name, location)
+	return err
 }
 
 // config is a document's own window. Its page routes the window's controls;
