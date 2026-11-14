@@ -269,7 +269,11 @@ func (state *State) closeMonitor() {
 	c.MonitorOpen = false
 	state.monitorResizing = false
 	_ = state.deck.SetContext(id, c)
-	state.stopRemoteStats(state.contextSession())
+	if !state.connectionStats {
+		// Every pane of this workspace may have taken a worker while the panel
+		// was open; none of them keeps it once the panel is gone.
+		state.applyConnectionStats()
+	}
 	state.monitorMenu = false
 	state.monitorRect = gfx.Rect{}
 	state.fitWorkspaceTerminals(id)

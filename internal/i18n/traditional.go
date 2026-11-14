@@ -301,6 +301,8 @@ var TraditionalMessages = Messages{
 	SettingsConnectionReconnectForever:     "持續重試",
 	SettingsShare:                          "共享連線",
 	SettingsShareDescription:               "分割畫面或開新分頁時重複使用連線，不再握手或確認主機金鑰。",
+	SettingsConnectionStats:                "在終端列顯示資源監控",
+	SettingsConnectionStatsDescription:     "為每個已連線的終端顯示 CPU、記憶體、磁碟、網路和延遲；視窗較窄時只顯示省略號。",
 	ConnShareRefusedFmt:                    "伺服器不再為共享連線開啟新的 shell(%v),改為單獨連線。",
 	PasswordSave:                           "儲存密碼",
 	KeyPassphraseSave:                      "儲存密碼",

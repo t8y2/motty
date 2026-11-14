@@ -301,6 +301,9 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 
 	c.Part(terminalPanePart)
 	ui.Column(c).Fill().Children(func() {
+		if state.connectionStatsBarShown(session) {
+			state.declareConnectionStatsSection(c, session, bounds.Width, barBackground, barBorder)
+		}
 		if inSplit || finding {
 			ui.Stack(c).Height(infoBarHeight).Shrink(0).Background(barBackground).Children(func() {
 				if finding {

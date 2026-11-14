@@ -301,6 +301,8 @@ var EnglishMessages = Messages{
 	SettingsConnectionReconnectForever:     "Forever",
 	SettingsShare:                          "Share connections",
 	SettingsShareDescription:               "A split or new tab reuses the connection: no handshake or host-key check.",
+	SettingsConnectionStats:                "Show connection resource usage",
+	SettingsConnectionStatsDescription:     "Show CPU, memory, disk, network and latency above every connected terminal. A narrow bar shows an ellipsis.",
 	ConnShareRefusedFmt:                    "The server would not open another shell on the shared connection (%v). Connecting separately.",
 	PasswordSave:                           "Save password",
 	KeyPassphraseSave:                      "Save passphrase",

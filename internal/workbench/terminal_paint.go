@@ -397,7 +397,9 @@ func (state *State) declarePaneBar(c ui.C, width float32, title, status string, 
 		}
 		ui.Text(c, title).FontSize(barTitleSize).Weight(gfx.WeightSemibold).Color(titleColor).LineHeight(22).
 			Ellipsis().Grow(1).Shrink(1).MinWidth(0).MarginSides(0, gap, 0, 0)
-		state.declareLatencyTag(c, session)
+		if !state.connectionStatsBarShown(session) {
+			state.declareLatencyTag(c, session)
+		}
 		if session.busy {
 			spinner = ui.Slot(c).Size(14, 14).MarginSides(0, 9, 0, 0)
 		}

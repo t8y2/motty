@@ -460,6 +460,9 @@ func (state *State) paintConnectionSettings(page *settingsPage) {
 		})
 		state.paintSSHSyncSettings(page)
 		state.paintHostTagSettings(page)
+		page.group("", func() {
+			page.toggleRow(messages.SettingsConnectionStats, messages.SettingsConnectionStatsDescription, state.connectionStats, hitSettingsConnectionStatsToggle)
+		})
 	})
 }
 

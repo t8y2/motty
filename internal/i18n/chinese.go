@@ -301,6 +301,8 @@ var ChineseMessages = Messages{
 	SettingsConnectionReconnectForever:     "持续重试",
 	SettingsShare:                          "共享连接",
 	SettingsShareDescription:               "分屏或新开标签时复用连接，不再握手或确认主机密钥。",
+	SettingsConnectionStats:                "在终端栏显示资源监控",
+	SettingsConnectionStatsDescription:     "为每个已连接的终端显示 CPU、内存、磁盘、网络和延迟；窗口较窄时只显示省略号。",
 	ConnShareRefusedFmt:                    "服务器不再为共享连接打开新的 shell(%v),改为单独连接。",
 	PasswordSave:                           "保存密码",
 	KeyPassphraseSave:                      "保存口令",
