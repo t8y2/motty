@@ -107,6 +107,12 @@ func StartDetailsDarwin(runner DetailRunner, notify func(), seconds int) *Detail
 // one), read from the <Link#> rows of netstat, which lose their address column
 // when the interface has none.
 //
+// The page size vm_stat's counters are in comes from vm_stat's own header, not
+// from hw.pagesize: a translated process (Rosetta) is told 4096 there while the
+// counters are still in the Mac's own pages, 16384 on Apple Silicon, which read
+// memory as a quarter of what it is. vm.pagesize is the fallback for an output
+// whose header cannot be read.
+//
 // Nothing here relies on word splitting of unquoted variables: the command may
 // be run by zsh, bash or dash as the login shell.
 const darwinCommand = `# motty-stats-darwin-v1
@@ -117,21 +123,13 @@ if [ "$(uname -s 2>/dev/null)" != Darwin ]; then
 	exit 0
 fi
 memsize=$(sysctl -n hw.memsize 2>/dev/null)
-pagesize=$(sysctl -n hw.pagesize 2>/dev/null)
+pagesize=$(sysctl -n vm.pagesize 2>/dev/null)
+[ -n "$pagesize" ] || pagesize=$(sysctl -n hw.pagesize 2>/dev/null)
 boot=$(sysctl -n kern.boottime 2>/dev/null | sed -n 's/.*{ sec = \([0-9]*\),.*/\1/p')
-[ -n "$memsize" ] && [ -n "$pagesize" ] && [ -n "$boot" ] || exit 1
+[ -n "$memsize" ] && [ -n "$boot" ] || exit 1
 emit() {
-	avail=$(vm_stat 2>/dev/null | awk -v ps="$pagesize" -v total="$memsize" '
-		/^Pages wired down:/ { wired = $4 + 0 }
-		/^Pages purgeable:/ { purgeable = $3 + 0 }
-		/^Anonymous pages:/ { anonymous = $3 + 0 }
-		/^Pages occupied by compressor:/ { compressed = $5 + 0 }
-		END {
-			used = (anonymous - purgeable + wired + compressed) * ps
-			if (used < 0) used = 0
-			if (used > total) used = total
-			printf "%d", (total - used) / 1024
-		}')
+	avail=$(vm_stat 2>/dev/null | awk -v ps="$pagesize" -v total="$memsize" '` + darwinMemoryAwk + `')
+	[ -n "$avail" ] || return 1
 	primary=$(route -n get default 2>/dev/null | awk '/interface:/ { print $2; exit }')
 	traffic=$(netstat -ibn 2>/dev/null | awk -v primary="$primary" '` + darwinTrafficAwk + `')
 	now=$(date +%s)
@@ -157,6 +155,29 @@ loop() {
 }
 top -l 2 -s 1 -n 0 2>/dev/null | loop warm
 top -l 0 -s __INTERVAL__ -n 0 2>/dev/null | loop skip`
+
+// darwinMemoryAwk prints vm_stat's free bytes as KiB. The first line is where
+// vm_stat states the size of its own counters, and that is the page size to
+// multiply by; ps, the value sysctl reported, is only the fallback for an output
+// without one. Output that is missing a counter or a page size prints nothing,
+// so the caller reports no reading rather than a made-up one.
+const darwinMemoryAwk = `
+	NR == 1 {
+		for (i = 1; i < NF; i++) if ($i == "of" && $(i + 1) ~ /^[0-9]+$/) ps = $(i + 1) + 0
+		next
+	}
+	/^Pages wired down:/ { wired = $4 + 0; seen++ }
+	/^Pages purgeable:/ { purgeable = $3 + 0; seen++ }
+	/^Anonymous pages:/ { anonymous = $3 + 0; seen++ }
+	/^Pages occupied by compressor:/ { compressed = $5 + 0; seen++ }
+	END {
+		if (ps > 0 && seen == 4) {
+			used = (anonymous - purgeable + wired + compressed) * ps
+			if (used < 0) used = 0
+			if (used > total) used = total
+			printf "%d", (total - used) / 1024
+		}
+	}`
 
 // darwinTrafficAwk sums the received and sent bytes of the default route's
 // interface (primary), or of the ordinary network interfaces without one.
