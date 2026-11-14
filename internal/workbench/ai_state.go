@@ -283,7 +283,6 @@ func (state *State) reloadAI() {
 	}
 	ai.providers, _ = ai.store.Providers()
 	state.aiAdoptKeys()
-	ai.models, _ = ai.store.Models()
 	state.reloadAISettings()
 	read := func(key string, apply func(string)) {
 		if value, ok, err := ai.store.Setting(key); err == nil && ok {
@@ -365,6 +364,14 @@ func (state *State) reloadAISettings() {
 	}
 	if !failed {
 		ai.settings = settings
+	}
+	// Model reasoning settings can change in another window while this panel stays open.
+	if models, err := ai.store.Models(); err == nil {
+		ai.models = models
+		// The set can shrink under a page the user left open: the same clamp
+		// every write from this window makes, or the page would show nothing
+		// and, with too few models for a pager, offer no way back.
+		state.aiClampModelPage()
 	}
 	state.aiSyncModel()
 }
