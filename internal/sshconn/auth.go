@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"golang.org/x/crypto/ssh"
 
@@ -146,10 +148,11 @@ func (conn *Conn) askPassword(question string) (string, error) {
 	return answers[0], nil
 }
 
-// loadIdentities reads configured private keys and asks for encrypted-key
-// passphrases one at a time. A declined key is skipped without canceling the
-// connection, so agent and password authentication can still proceed. A key
-// that is present but unusable is skipped too, with the reason in skipped.
+// loadIdentities reads configured private keys and offers encrypted ones as
+// identities that ask for their passphrase only when the server accepts the
+// key. A key the user declines is skipped without canceling the connection, so
+// agent and password authentication can still proceed. A key that is present
+// but unusable is skipped too, with the reason in skipped.
 func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Signer) (signers []ssh.Signer, skipped []string, err error) {
 	paths := authentication.IdentityFiles
 	if paths == nil {
@@ -169,7 +172,8 @@ func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Sig
 			continue
 		}
 		var public ssh.PublicKey
-		if len(agents) > 0 {
+		publicRead := len(agents) > 0
+		if publicRead {
 			public = conn.identityPublicKey(path)
 		}
 		matched := false
@@ -203,14 +207,23 @@ func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Sig
 				}
 				continue
 			}
-			var accepted bool
-			signer, accepted, err = conn.unlockIdentity(path)
-			if err != nil {
-				return nil, skipped, err
+			if !publicRead {
+				public = conn.identityPublicKey(path)
 			}
-			if !accepted {
-				skipped = append(skipped, path)
-				continue
+			if public == nil {
+				// Without the public half the key cannot be offered until it
+				// is unlocked, so the passphrase is needed now.
+				var accepted bool
+				signer, accepted, err = conn.unlockIdentity(path)
+				if err != nil {
+					return nil, skipped, err
+				}
+				if !accepted {
+					skipped = append(skipped, path)
+					continue
+				}
+			} else {
+				signer = &lockedIdentity{conn: conn, path: path, public: public}
 			}
 		}
 		if IsStoredKey(path) {
@@ -239,16 +252,32 @@ func (conn *Conn) loadIdentities(authentication Authentication, agents []ssh.Sig
 	return signers, skipped, nil
 }
 
+// identityPublicKey reads the public half of an identity without unlocking it,
+// so the key can be offered to the server and matched against the agent. nil
+// means the key cannot be named until its passphrase arrives, which is the case
+// for an encrypted PEM block that carries no public key.
 func (conn *Conn) identityPublicKey(path string) ssh.PublicKey {
 	if !IsStoredKey(path) {
 		public, _ := keyidentity.PublicKey(path)
 		return public
 	}
-	signer, err := conn.loadKey(path, nil)
-	if err == nil {
-		return signer.PublicKey()
+	if conn.config.StoredKey == nil {
+		return nil
 	}
-	return nil
+	data, err := conn.config.StoredKey(path)
+	if err != nil {
+		return nil
+	}
+	defer clear(data)
+	info, err := keyidentity.InspectData(path, data)
+	if err != nil || info.PublicKey == "" {
+		return nil
+	}
+	public, _, _, _, err := ssh.ParseAuthorizedKey([]byte(info.PublicKey))
+	if err != nil {
+		return nil
+	}
+	return public
 }
 
 // loadKey reads one entry of an identity list: a file, or a key the application
@@ -296,6 +325,86 @@ func (conn *Conn) unlockIdentity(path string) (ssh.Signer, bool, error) {
 	}
 	conn.update(func(status *Status) { status.Phase = PhaseAuthenticating })
 	return nil, false, nil
+}
+
+// errKeyLocked ends public-key authentication for a key the user declined to
+// unlock. It is deliberately not ErrCanceled: the connection is not canceled,
+// and password authentication may still follow.
+var errKeyLocked = errors.New("the private key's passphrase was not supplied")
+
+// lockedIdentity is an encrypted identity whose public half is known but whose
+// private half needs a passphrase. The passphrase is requested from Sign, once
+// the server has accepted the key and a signature is actually needed — the
+// point at which OpenSSH asks too. Asking while the identity list is collected
+// would demand a passphrase for a key the server never asks about, even when an
+// ssh-agent key authenticates first.
+type lockedIdentity struct {
+	conn   *Conn
+	path   string
+	public ssh.PublicKey
+
+	mu     sync.Mutex
+	signer ssh.Signer
+}
+
+func (identity *lockedIdentity) PublicKey() ssh.PublicKey { return identity.public }
+
+func (identity *lockedIdentity) Sign(rand io.Reader, data []byte) (*ssh.Signature, error) {
+	signer, err := identity.unlock()
+	if err != nil {
+		return nil, err
+	}
+	return signer.Sign(rand, data)
+}
+
+func (identity *lockedIdentity) SignWithAlgorithm(rand io.Reader, data []byte, algorithm string) (*ssh.Signature, error) {
+	signer, err := identity.unlock()
+	if err != nil {
+		return nil, err
+	}
+	if algorithmSigner, ok := signer.(ssh.AlgorithmSigner); ok {
+		return algorithmSigner.SignWithAlgorithm(rand, data, algorithm)
+	}
+	return signer.Sign(rand, data)
+}
+
+// Algorithms names what the key will sign with once unlocked. It cannot ask the
+// key itself, so it reports what its format allows, in the order x/crypto uses
+// (see algorithmsForKeyFormat): RSA keys offer the SHA-2 variants, every other
+// format only its own name.
+func (identity *lockedIdentity) Algorithms() []string {
+	identity.mu.Lock()
+	signer := identity.signer
+	identity.mu.Unlock()
+	if multi, ok := signer.(ssh.MultiAlgorithmSigner); ok {
+		return multi.Algorithms()
+	}
+	switch identity.public.Type() {
+	case ssh.KeyAlgoRSA:
+		return []string{ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSA}
+	case ssh.CertAlgoRSAv01:
+		return []string{ssh.CertAlgoRSASHA256v01, ssh.CertAlgoRSASHA512v01, ssh.CertAlgoRSAv01}
+	default:
+		return []string{identity.public.Type()}
+	}
+}
+
+func (identity *lockedIdentity) unlock() (ssh.Signer, error) {
+	identity.mu.Lock()
+	defer identity.mu.Unlock()
+	if identity.signer != nil {
+		return identity.signer, nil
+	}
+	signer, accepted, err := identity.conn.unlockIdentity(identity.path)
+	if err != nil {
+		return nil, err
+	}
+	if !accepted {
+		identity.conn.update(func(status *Status) { status.Skipped = append(status.Skipped, identity.path) })
+		return nil, errKeyLocked
+	}
+	identity.signer = signer
+	return signer, nil
 }
 
 // agentSigners offers the keys of the running ssh-agent. The link is shared

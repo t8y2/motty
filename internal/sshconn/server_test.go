@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"motty/internal/keyidentity"
 )
 
 // testServer is a real SSH server on the loopback interface: it performs the
@@ -56,6 +58,9 @@ type testServer struct {
 	// algorithms, when set, restricts what the server will negotiate, to stand
 	// in for an old device.
 	algorithms *ssh.Config
+	// pubKeyAuths, when set, restricts the public-key authentication algorithms
+	// the server accepts, to stand in for a server that refuses SHA-1 RSA.
+	pubKeyAuths []string
 
 	// shell, when set, runs for every session that asks for a shell, with the
 	// pty it requested. command handles exec requests. Without either every
@@ -111,6 +116,9 @@ func startServer(t *testing.T, configure func(*testServer)) *testServer {
 	config := &ssh.ServerConfig{ServerVersion: version}
 	if server.algorithms != nil {
 		config.Config = *server.algorithms
+	}
+	if len(server.pubKeyAuths) > 0 {
+		config.PublicKeyAuthAlgorithms = server.pubKeyAuths
 	}
 	config.AddHostKey(server.hostKey)
 	if server.banner != "" {
@@ -475,6 +483,32 @@ func (h *harness) phase(phase Phase) Status {
 func (h *harness) knownHosts() string {
 	data, _ := os.ReadFile(h.conn.config.KnownHostsPath)
 	return string(data)
+}
+
+// encryptedIdentity writes an OpenSSH private key locked with passphrase,
+// without the .pub file, and returns its path.
+func encryptedIdentity(t *testing.T, passphrase string) string {
+	t.Helper()
+	_, private := newPrivate(t)
+	block, err := ssh.MarshalPrivateKeyWithPassphrase(private, "", []byte(passphrase))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(path, pemEncode(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// publicOf reads an identity file's public key without unlocking it.
+func publicOf(t *testing.T, path string) ssh.PublicKey {
+	t.Helper()
+	public, err := keyidentity.PublicKey(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return public
 }
 
 func writeKey(t *testing.T, dir string) (string, ssh.Signer) {
