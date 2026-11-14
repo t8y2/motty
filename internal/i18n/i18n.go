@@ -559,6 +559,8 @@ type Messages struct {
 	IconKey                     string
 	IconDesktop                 string
 	ErrLabelRequired            string
+	ErrAddressRequired          string
+	ErrDeviceRequired           string
 	ErrGroupRequired            string
 	ErrAddressTaken             string
 	ErrPortInvalid              string

@@ -216,8 +216,14 @@ func (editor *hostEditor) portNumber() (uint16, bool) {
 // the same name as an existing one (see sameHost): the same machine under another
 // account, or reached through a bastion under another name, is a different host.
 func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.Messages) string {
-	if editor.value(fieldLabel) == "" || editor.value(fieldAddress) == "" {
+	if editor.value(fieldLabel) == "" {
 		return messages.ErrLabelRequired
+	}
+	if editor.value(fieldAddress) == "" {
+		if editor.protocol == protocolSerial {
+			return messages.ErrDeviceRequired
+		}
+		return messages.ErrAddressRequired
 	}
 	if editor.protocol == protocolSerial {
 		if !validEndpoint(protocolSerial, editor.value(fieldAddress)) {

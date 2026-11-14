@@ -524,6 +524,8 @@ var TraditionalMessages = Messages{
 	IconKey:                     "鑰匙",
 	IconDesktop:                 "桌面",
 	ErrLabelRequired:            "請填寫名稱",
+	ErrAddressRequired:          "請填寫位址",
+	ErrDeviceRequired:           "請填寫裝置",
 	ErrGroupRequired:            "請填寫群組",
 	ErrAddressTaken:             "該主機已存在",
 	ErrPortInvalid:              "連接埠範圍 1-65535",

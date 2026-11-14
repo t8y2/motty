@@ -524,6 +524,8 @@ var EnglishMessages = Messages{
 	IconKey:                     "Key",
 	IconDesktop:                 "Desktop",
 	ErrLabelRequired:            "Label is required",
+	ErrAddressRequired:          "Address is required",
+	ErrDeviceRequired:           "Device is required",
 	ErrGroupRequired:            "Group is required",
 	ErrAddressTaken:             "This host already exists",
 	ErrPortInvalid:              "Port must be 1-65535",

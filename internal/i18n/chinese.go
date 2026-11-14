@@ -524,6 +524,8 @@ var ChineseMessages = Messages{
 	IconKey:                     "钥匙",
 	IconDesktop:                 "桌面",
 	ErrLabelRequired:            "请填写名称",
+	ErrAddressRequired:          "请填写地址",
+	ErrDeviceRequired:           "请填写设备",
 	ErrGroupRequired:            "请填写分组",
 	ErrAddressTaken:             "该主机已存在",
 	ErrPortInvalid:              "端口范围 1-65535",

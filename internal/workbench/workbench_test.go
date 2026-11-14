@@ -118,6 +118,41 @@ func TestLanguageSwitchRetargetsCatalog(t *testing.T) {
 	}
 }
 
+func TestHostDialogValidationRequiresLabelAndAddress(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	useChinese(t, state)
+
+	state.Click(hitAddHost)
+	state.Click(hitDialogSubmit)
+	if state.dialogError != state.messages.ErrLabelRequired {
+		t.Fatalf("empty label error = %q, want %q", state.dialogError, state.messages.ErrLabelRequired)
+	}
+
+	typeInto(state, hitDialogLabel, "qa-test")
+	state.Click(hitDialogSubmit)
+	if state.dialogError != state.messages.ErrAddressRequired {
+		t.Fatalf("empty address error = %q, want %q", state.dialogError, state.messages.ErrAddressRequired)
+	}
+
+	typeInto(state, hitDialogAddress, "192.168.1.100")
+	state.Click(hitDialogSubmit)
+	if state.dialogError != "" {
+		t.Fatalf("valid form error = %q, want empty", state.dialogError)
+	}
+}
+
+func TestHostEditorAsksForADeviceWhenSerialIsSelected(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	editor := &state.editor
+	editor.reset()
+	editor.setProtocol(protocolSerial)
+	editor.label.Insert("serial")
+	editor.address = text.Editor{} // the form may have offered the first local device
+	if got := editor.validate(nil, 0, state.messages); got != state.messages.ErrDeviceRequired {
+		t.Fatalf("empty serial device error = %q, want %q", got, state.messages.ErrDeviceRequired)
+	}
+}
+
 // typeInto delivers text the way the runtime does: it asks which editor backs
 // the focused hit, then applies a native insert event to it.
 func typeInto(state *State, hit gfx.ID, value string) {
