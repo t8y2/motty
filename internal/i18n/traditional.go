@@ -302,7 +302,7 @@ var TraditionalMessages = Messages{
 	SettingsShare:                          "共享連線",
 	SettingsShareDescription:               "分割畫面或開新分頁時重複使用連線，不再握手或確認主機金鑰。",
 	SettingsConnectionStats:                "在終端列顯示資源指標",
-	SettingsConnectionStatsDescription:     "開啟後在終端列顯示 CPU、記憶體、磁碟、網路速率和 PING；關閉時只保留位址和連線操作。不支援的連線顯示 --。",
+	SettingsConnectionStatsDescription:     "開啟後在終端列顯示 CPU、記憶體、磁碟、網路速率和 PING；關閉時只保留位址和連線操作。",
 	ConnShareRefusedFmt:                    "伺服器不再為共享連線開啟新的 shell(%v),改為單獨連線。",
 	PasswordSave:                           "儲存密碼",
 	KeyPassphraseSave:                      "儲存密碼",
