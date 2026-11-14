@@ -118,9 +118,6 @@ func primaryDisk(details remotestats.Details) (remotestats.Disk, bool) {
 			return disk, true
 		}
 	}
-	if len(details.Disks) > 0 {
-		return details.Disks[0], true
-	}
 	return remotestats.Disk{}, false
 }
 
