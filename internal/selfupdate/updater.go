@@ -118,9 +118,13 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 		return Staged{}, err
 	}
 	// A signature that is missing, malformed or from another key cannot pass
-	// the check after the download, so stop before spending the bandwidth.
-	if err := updatesign.UsableWith(releaseKey(), release.Asset.Signature); err != nil {
-		return Staged{}, err
+	// the check after the download, so stop before spending the bandwidth. A
+	// package named by the signed Viva feed has no per-package signature: the
+	// feed's Ed25519 signature and the digest it carries are the check.
+	if !release.Asset.FeedVerified {
+		if err := updatesign.UsableWith(releaseKey(), release.Asset.Signature); err != nil {
+			return Staged{}, err
+		}
 	}
 
 	if install.Kind != KindLinuxDeb {
@@ -203,6 +207,9 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 // carries: the bytes, the version and the file name all have to be the ones the
 // release key signed. The package is streamed, not read into memory.
 func verifyReleasePackage(path string, release update.Release) error {
+	if release.Asset.FeedVerified {
+		return nil
+	}
 	return updatesign.VerifyFile(releaseKey(), path, release.Asset.Signature, release.Version, release.Asset.Name)
 }
 
