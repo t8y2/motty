@@ -172,7 +172,9 @@ type terminal struct {
 	paintBarBackground                        gfx.Color
 	paintGeometry                             terminalGeometry
 	paintFind                                 findBarSlots
-	paintSpinner, paintLight                  ui.Box
+	paintSpinner, paintLight ui.Box
+	// paintConnectionBar is the connection bar's hand-painted content slot.
+	paintConnectionBar ui.Box
 
 	// preedit is the input-method composition, shown at the cursor.
 	preedit      app.TextState
@@ -1566,7 +1568,9 @@ func (state *State) terminalChromeForSession(sessionID uint32) (terminalChrome, 
 	if inSplit || finding {
 		chrome.top = infoBarHeight
 	}
-	if state.connectionStatsBarShown(session) {
+	// A single terminal gets the connection bar below the tab bar. A split pane
+	// merges it into its own pane bar, so the pane keeps one strip there.
+	if !inSplit {
 		chrome.top += infoBarHeight
 	}
 	if state.terminalInputNoticeVisibleInWorkspace(session) && (inSplit || !finding) {

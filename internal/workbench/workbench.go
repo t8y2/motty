@@ -2157,9 +2157,22 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		if index < len(state.panes) && state.activatePane(state.deck.ActiveWorkspace(), state.panes[index].ID) {
 			state.save()
 		}
-	case id.Scope() == hitConnectionStatsAddress:
+	case id.Scope() == hitConnectionStatsAddress, id.Scope() == hitConnectionStatsCopy:
 		if session, ok := state.sessionByIDPointer(uint32(item(id))); ok {
 			state.copyConnectionStatsAddress(session)
+		}
+	case id.Scope() == hitConnectionStatsDisconnect:
+		if session, ok := state.sessionByIDPointer(uint32(item(id))); ok && state.canDisconnect(session) {
+			state.askSessionLink(session, true)
+		}
+	case id.Scope() == hitConnectionStatsRestart:
+		if session, ok := state.sessionByIDPointer(uint32(item(id))); ok {
+			if state.canReconnect(session) {
+				state.reconnect(session)
+				state.save()
+			} else if state.canReconnectLive(session) {
+				state.askSessionLink(session, false)
+			}
 		}
 	case id.Scope() == hitHostList:
 		if state.hostSort.enabled {

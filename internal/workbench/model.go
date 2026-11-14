@@ -197,9 +197,14 @@ type Session struct {
 	Title  string
 	// Mention is this session's unique @ name. Titles may repeat; the mention
 	// stays distinct so a message names exactly one terminal.
-	Mention  string
-	Address  string // dialed address; changes to a saved host take effect on reconnect
-	paneSlot uint8
+	Mention string
+	Address string // dialed address; changes to a saved host take effect on reconnect
+	// barAddress caches the copyable connection bar address; it is reset when
+	// the session dials again.
+	barAddress       string
+	barCopiedAddress string
+	barCopiedUntil   time.Duration
+	paneSlot         uint8
 	// localDirectory is this shell's last reported directory, independent of
 	// the files panel and of other sessions on the same machine.
 	localDirectory string
