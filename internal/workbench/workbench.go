@@ -559,15 +559,18 @@ type State struct {
 	windowVisible      func() bool
 	systemKeys         systemKeyCapture
 	winChrome          windowChrome
-	hostView           hostViewMode
-	hostOrder          hostOrderMode
-	hostOrderMenu      bool
-	hostOrderButton    gfx.Rect
-	hostSort           hostSortState
-	bg                 backgroundState
-	hostsContent       float32
-	hostGroupMenu      bool
-	importMenu         bool
+	// desktopAwake says this window already holds the sleep request for a visible
+	// remote desktop; see keepAwakeForDesktop.
+	desktopAwake    bool
+	hostView        hostViewMode
+	hostOrder       hostOrderMode
+	hostOrderMenu   bool
+	hostOrderButton gfx.Rect
+	hostSort        hostSortState
+	bg              backgroundState
+	hostsContent    float32
+	hostGroupMenu   bool
+	importMenu      bool
 	// keysMenu is the open menu under the Keychain page's Add Key button, and
 	// keysAddButton where that button was painted.
 	keysMenu          bool
@@ -1024,6 +1027,7 @@ func (state *State) Close() {
 	if state == nil || state.closed {
 		return
 	}
+	state.keepAwakeForDesktop(false)
 	state.flushNoteDraft()
 	state.noteActiveLocalDirectory()
 	state.save()
