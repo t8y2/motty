@@ -35,7 +35,7 @@ var ChineseMessages = Messages{
 		PropertiesTitle: "文件属性", PropertiesName: "名称", PropertiesPath: "完整路径", PropertiesType: "类型", PropertiesSize: "大小", PropertiesModified: "修改时间",
 		PropertiesPermissions: "权限", PropertiesOwner: "所有者", PropertiesGroup: "所属组", PropertiesLinkTarget: "链接目标",
 		PropertiesFolder: "文件夹", PropertiesFile: "文件", PropertiesSymlink: "符号链接", PropertiesOther: "其他", PropertiesUnknown: "—",
-		CalculatingSize: "正在计算…", FolderSizeIncompleteFmt: "%s（不完整，%d 个文件夹无法读取）",
+		CalculatingSize: "正在计算…", FolderSizeIncompleteFmt: "%s（不完整，%d 个文件夹无法读取）", FolderSizePartialFmt: "%s（不完整，部分文件夹无法读取）",
 		CalculateDirectorySize: "计算各子目录大小",
 		Open:                   "文件传输", Title: "文件传输", Local: "本机", Remote: "服务器", Path: "目录路径", Name: "名称", Size: "大小", Modified: "修改时间",
 		Upload: "上传 →", Download: "← 下载", DragHint: "拖动文件或文件夹到另一侧，即可复制传输", DropUpload: "上传到", DropDownload: "下载到",
