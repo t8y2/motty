@@ -20,7 +20,6 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"motty/internal/shellkind"
 	"motty/internal/x11fwd"
 )
 
@@ -260,6 +259,13 @@ type Config struct {
 	// none of those may be sent to one. The cost is that the host's system and
 	// default shell stay unknown, and that directories cannot be followed.
 	InteractiveOnly bool
+	// PrimaryShell says this connection will carry an interactive shell, so the
+	// optional command sessions must not open before it. sshd sends the
+	// connection's login message (PAM's MOTD, pam_lastlog) to the first session
+	// channel and drops it for a command session: a probe that opens first
+	// consumes the user's login banner. With PrimaryShell the probes wait for
+	// OpenShell to accept its shell request (see ADR 0025).
+	PrimaryShell bool
 	// Algorithms sets what each endpoint negotiates, keyed by "host:port" as
 	// Endpoint formats it. An endpoint without an entry keeps the defaults.
 	Algorithms map[string]Algorithms
@@ -320,11 +326,12 @@ type Conn struct {
 	// answer to one is about the connection, not the tab.
 	probes *auxiliaryProbes
 
-	// kind is the family of the server's default shell, learned once per client
-	// by defaultShellKind.
-	kindMu     sync.Mutex
-	kindClient *ssh.Client
-	kind       shellkind.Kind
+	// primary is closed once the interactive shell this connection is for has
+	// been accepted, or the connection ends without one. The optional probes
+	// wait on it so the login message reaches the shell, not a command session
+	// that sshd prints nothing for.
+	primary     chan struct{}
+	primaryOnce sync.Once
 }
 
 // finish closes the done channel once, whichever of the goroutine ending and
@@ -349,9 +356,34 @@ func Dial(config Config) *Conn {
 	ctx, cancel := context.WithCancel(context.Background())
 	generation := nextConnectionGeneration.Add(1)
 	conn := &Conn{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), probes: newAuxiliaryProbes()}
+	if config.PrimaryShell {
+		conn.primary = make(chan struct{})
+	}
 	conn.status.ConnectionGeneration = generation
 	go conn.run()
 	return conn
+}
+
+// releasePrimaryShell lets the optional command sessions run. The interactive
+// shell has been accepted (or can no longer come), so the connection's login
+// message has already reached the session that was going to display it.
+func (conn *Conn) releasePrimaryShell() {
+	if conn.primary == nil {
+		return
+	}
+	conn.primaryOnce.Do(func() { close(conn.primary) })
+}
+
+// waitPrimaryShell blocks until the shell this connection is for has been
+// accepted. A connection that never asked for one is not delayed.
+func (conn *Conn) waitPrimaryShell() {
+	if conn.primary == nil {
+		return
+	}
+	select {
+	case <-conn.primary:
+	case <-conn.ctx.Done():
+	}
 }
 
 // Status returns the current snapshot.
@@ -521,6 +553,10 @@ func (endpoint Endpoint) address() string {
 func (conn *Conn) run() {
 	defer conn.finish()
 	defer conn.closeAuxiliary()
+	// A connection that ends before its shell opened (or one that never opens
+	// one) must not leave the optional probes waiting for a session that will
+	// not come.
+	defer conn.releasePrimaryShell()
 	err := conn.connect()
 	conn.mu.Lock()
 	client := conn.client

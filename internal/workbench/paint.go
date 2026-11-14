@@ -373,6 +373,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
+	state.requestInjectionFrames(canvas)
 	state.requestIdleKeepAliveFrames(canvas)
 	state.paintLocalProxyFocus(canvas)
 	state.paintTransferProgressCard(canvas)

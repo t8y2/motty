@@ -646,6 +646,10 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	}
 	config, valid := state.sshConfigFor(session, host)
 	session.sshOptions = host.SSHOptions.Clone()
+	// This connection is for a terminal: its first session must be the shell,
+	// so the probes wait for it and the server's login message reaches the
+	// terminal (ADR 0025).
+	config.PrimaryShell = true
 	if valid && state.shareConnections == shareConnectionsOn && !avoidShare {
 		if shared, _ := state.shareFrom(session, host); shared != nil {
 			session.conn, session.shared = shared, true
@@ -798,6 +802,7 @@ func (state *State) Wake() {
 		state.pumpDesktop(session)
 		state.pump(session)
 		state.pumpCompletionPath(session)
+		state.advanceInjection(session, findNow)
 		state.runLoginCommand(session)
 		state.runIdleKeepAlive(session, findNow)
 		// A session-local charset notice changes the available character grid.

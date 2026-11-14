@@ -87,6 +87,11 @@ func (state *State) runLoginCommand(session *Session) {
 	if t == nil || t.login.line == "" || t.shell == nil || t.ended || t.screen.Modes().AltScreen {
 		return
 	}
+	if t.injection.holding() {
+		// The shell is still receiving its integration; the login command
+		// follows it, in order.
+		return
+	}
 	if t.login.paused {
 		return
 	}

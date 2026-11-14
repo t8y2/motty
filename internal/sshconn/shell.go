@@ -32,8 +32,11 @@ type ShellConfig struct {
 	Term string
 	// Command starts in this PTY instead of the remote login shell when nonempty.
 	Command string
-	// IntegrateShell enables session-local Bash/Zsh directory reporting. An
-	// unsupported shell keeps the ordinary shell request; Command takes priority.
+	// IntegrateShell asks the caller to install folder and prompt reporting in
+	// this shell. A local shell receives a startup wrapper; an SSH shell starts
+	// as a plain login session and the caller injects the hooks afterwards
+	// (UploadIntegration), because a wrapped shell would lose the server's login
+	// message (ADR 0025).
 	IntegrateShell bool
 	// IntegrationToken binds prompt readiness to this shell, not nested logins.
 	IntegrationToken string
@@ -83,31 +86,26 @@ type Shell struct {
 
 // OpenShell starts the user's login shell on a pty. The connection must be
 // connected (see Status). It returns once the shell is running.
+//
+// The shell is always started with a shell request, never as a command
+// wrapped in a startup script: OpenSSH prints the connection's login message
+// (PAM's MOTD, last login) only to a session that is not a command, and only
+// on the first session of the connection. Shell integration is installed
+// afterwards, into the running shell; see UploadIntegration.
 func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 	client := conn.Client()
 	if client == nil {
 		return nil, errors.New("sshconn: not connected")
 	}
+	// The optional probes wait for this: the login message belongs to the
+	// interactive session, not to a command session that sshd prints nothing
+	// for (ADR 0025).
+	defer conn.releasePrimaryShell()
 	command := config.Command
-	// The integration probe opens a command channel of its own before the
-	// shell, and a gateway that refuses a second channel ends the whole
-	// connection, so only an implementation the banner names is probed, and
-	// never on a host that was told to keep to the interactive session.
-	if command == "" && config.IntegrateShell && !conn.config.InteractiveOnly && standardImplementation(conn.Status().ServerVersion) {
-		command = conn.shellIntegrationCommand(config.IntegrationToken, config.StartDirectory)
-	}
-	// What the shell is decides how a command can be typed into it. The
-	// integration command starts Bash or Zsh; a command of the user's own starts
-	// something nobody can name from here; otherwise the server's default shell
-	// answers a probe, which only an implementation the banner names gets.
+	// What the shell is decides how a command can be typed into it. A command
+	// of the user's own starts something nobody can name from here; otherwise
+	// the family is learned after the shell starts, by ProbeShell.
 	kind := shellkind.Unknown
-	switch {
-	case config.Command != "":
-	case command != "":
-		kind = shellkind.POSIX
-	case !conn.config.InteractiveOnly && standardImplementation(conn.Status().ServerVersion):
-		kind = conn.defaultShellKind(client)
-	}
 	session, err := client.NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("open session: %w", err)
@@ -161,10 +159,6 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 	if startErr != nil {
 		shell.releaseX11()
 		session.Close()
-		if config.Command == "" && command != "" {
-			config.IntegrateShell = false
-			return conn.OpenShell(config)
-		}
 		if command == "" {
 			return nil, fmt.Errorf("start shell: %w", startErr)
 		}
@@ -201,8 +195,13 @@ func (shell *Shell) wake() {
 }
 
 // Kind is the family of the shell the session runs, Unknown when it could not be
-// learned.
+// learned. A shell started over SSH is classified after it starts (ProbeShell);
+// the caller records the answer with SetKind.
 func (shell *Shell) Kind() shellkind.Kind { return shell.kind }
+
+// SetKind records what ProbeShell learned about this shell. It is safe to call
+// from the goroutine that owns the shell.
+func (shell *Shell) SetKind(kind shellkind.Kind) { shell.kind = kind }
 
 // Done is closed once the remote shell has ended and its output is complete in
 // the buffer Drain reads from.

@@ -294,6 +294,10 @@ func (conn *Conn) detectRemoteSystem(client *ssh.Client, banner string) (RemoteS
 	if guess == SystemWindows || guess == SystemDarwin || guess == SystemFreeBSD {
 		return guess, true
 	}
+	// An interactive shell owns the first session on a terminal connection: its
+	// login message is delivered there and nowhere else, so this probe must not
+	// take that place (ADR 0025).
+	conn.waitPrimaryShell()
 	probes := conn.probeState()
 	probes.begin()
 	session, err := client.NewSession()

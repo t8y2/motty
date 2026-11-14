@@ -2,6 +2,7 @@ package sshconn
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,6 +21,21 @@ var ErrCommandOutputTooLarge = errors.New("sshconn: command output too large")
 // closes only this command session, not the SSH connection.
 func (conn *Conn) RunCommand(ctx context.Context, command string, maxOutputBytes int) ([]byte, error) {
 	data, exceeded, err := conn.runCommand(ctx, command, maxOutputBytes, false)
+	if exceeded {
+		return data, fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxOutputBytes)
+	}
+	if errors.Is(err, ErrCanceled) || ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		return nil, err
+	}
+	return data, err
+}
+
+// RunCommandInput runs one command with input on its stdin, and returns its
+// stdout. The payload travels over the session channel rather than a pty, so
+// it is not bounded by the terminal input buffer. maxOutputBytes bounds
+// retained output as in RunCommand.
+func (conn *Conn) RunCommandInput(ctx context.Context, command string, input []byte, maxOutputBytes int) ([]byte, error) {
+	data, exceeded, err := conn.captureCommand(ctx, command, input, maxOutputBytes, false, &commandOutput{limit: maxOutputBytes})
 	if exceeded {
 		return data, fmt.Errorf("%w: limit %d bytes", ErrCommandOutputTooLarge, maxOutputBytes)
 	}
@@ -53,7 +69,7 @@ type ExecResult struct {
 // closes only this command session, not the SSH connection.
 func (conn *Conn) Exec(ctx context.Context, command string, maxOutputBytes int) (ExecResult, error) {
 	output := &commandOutput{limit: maxOutputBytes, separate: true}
-	_, _, err := conn.captureCommand(ctx, command, maxOutputBytes, true, output)
+	_, _, err := conn.captureCommand(ctx, command, nil, maxOutputBytes, true, output)
 	result := output.execResult()
 	var exit *ssh.ExitError
 	if errors.As(err, &exit) && exit.Signal() == "" {
@@ -66,10 +82,10 @@ func (conn *Conn) Exec(ctx context.Context, command string, maxOutputBytes int) 
 // runCommand starts command and waits for it. The output is stdout, plus
 // stderr when withStderr, and is returned even when the command did not finish.
 func (conn *Conn) runCommand(ctx context.Context, command string, maxOutputBytes int, withStderr bool) (data []byte, exceeded bool, err error) {
-	return conn.captureCommand(ctx, command, maxOutputBytes, withStderr, &commandOutput{limit: maxOutputBytes})
+	return conn.captureCommand(ctx, command, nil, maxOutputBytes, withStderr, &commandOutput{limit: maxOutputBytes})
 }
 
-func (conn *Conn) captureCommand(ctx context.Context, command string, maxOutputBytes int, withStderr bool, output *commandOutput) (data []byte, exceeded bool, err error) {
+func (conn *Conn) captureCommand(ctx context.Context, command string, input []byte, maxOutputBytes int, withStderr bool, output *commandOutput) (data []byte, exceeded bool, err error) {
 	if command == "" {
 		return nil, false, errors.New("sshconn: empty command")
 	}
@@ -120,6 +136,11 @@ func (conn *Conn) captureCommand(ctx context.Context, command string, maxOutputB
 	session.Stdout = output
 	if withStderr {
 		session.Stderr = commandErrorOutput{output}
+	}
+	if len(input) > 0 {
+		// The command session carries the payload, not the pty: a pty's
+		// canonical input buffer is a few kilobytes and would drop the rest.
+		session.Stdin = bytes.NewReader(input)
 	}
 	if operationCtx.Err() != nil {
 		return nil, false, cancelError()

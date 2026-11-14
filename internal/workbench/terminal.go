@@ -188,6 +188,9 @@ type terminal struct {
 	// prompt reporting, which will announce when it is ready.
 	login      loginCommand
 	integrated bool
+	// injection installs the shell integration into a login shell after it
+	// starts; see terminal_injection.go.
+	injection terminalInjection
 	// prediction draws typed text before the server echoes it; see terminalPrediction.
 	prediction terminalPrediction
 	// lastInputID is the transport's id for the newest input written to the
@@ -462,6 +465,7 @@ func (state *State) configureTerminal(session *Session) {
 
 func (t *terminal) resetFolderSync() {
 	t.login = loginCommand{}
+	t.injection = terminalInjection{}
 	t.inputGuard = terminalInputGuard{}
 	t.suggestionPending = nil
 	t.folderToken = rand.Text()
@@ -601,6 +605,13 @@ func (t *terminal) reconcileSelection(generation uint64) {
 // control sequences are ASCII and survive unchanged; a UTF-8 shell is a plain
 // write. zmodem and other binary protocols call shell.Write directly instead.
 func (t *terminal) writeShellInput(p []byte) bool {
+	if t.injection.holding() {
+		// The shell is being handed its integration; anything typed now would
+		// land in the middle of that line. Keep it in order and write it when
+		// the window closes (terminal_injection.go).
+		t.injection.queue(p)
+		return true
+	}
 	if t.encoding == "" || t.encoding == charset.UTF8 {
 		return t.shell.Write(p)
 	}
@@ -973,6 +984,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 		t.sendProtocol(reply)
 	})
 	t.armInitialization(session)
+	state.startInjection(session, shell)
 	state.describe(session)
 }
 
@@ -1085,6 +1097,16 @@ func (state *State) pumpFor(session *Session, budget time.Duration) {
 // the screen and whatever watches the output.
 func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 	t := session.term
+	if !wasExec && t.injection.phase == injectionSuppressing {
+		rest, applied := state.applyInjection(session, data)
+		if !applied {
+			return
+		}
+		data = rest
+		if len(data) == 0 {
+			return
+		}
+	}
 	if wasExec && len(data) > 0 {
 		data = append(data[:0], t.feedExec(data)...)
 	}
@@ -1114,6 +1136,9 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 	}
 	state.notePasswordPrompt(session)
 	t.login.output(state.now())
+	if t.injection.phase == injectionWaiting {
+		t.injection.lastOutput, t.injection.outputSeen = state.now(), true
+	}
 	state.goLive(session)
 }
 
@@ -1140,6 +1165,7 @@ func (state *State) shellEnded(session *Session) {
 	t.shell = nil
 	t.stopIdleKeepAlive()
 	t.login = loginCommand{}
+	t.injection = terminalInjection{}
 	t.finishExec(endShell)
 	t.releasePromptWait()
 	t.recording.stop()
