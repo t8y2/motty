@@ -269,6 +269,8 @@ type Messages struct {
 	SettingsAppearanceLight                string
 	SettingsTextSize                       string
 	SettingsTextSizeDescription            string
+	SettingsThickerText                    string
+	SettingsThickerTextDescription         string
 	SettingsInterfaceFont                  string
 	SettingsInterfaceFontDefault           string
 	SettingsInterfaceFontUnsupportedFmt    string

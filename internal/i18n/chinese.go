@@ -233,6 +233,8 @@ var ChineseMessages = Messages{
 	SettingsAppearanceLight:                "浅色",
 	SettingsTextSize:                       "界面文字大小",
 	SettingsTextSizeDescription:            "窗口和设置页的正文大小，标题与说明按比例跟随；终端的字号单独设置。",
+	SettingsThickerText:                    "字体加粗",
+	SettingsThickerTextDescription:         "以较粗的笔画绘制字形，与系统文字一致。",
 	SettingsInterfaceFont:                  "界面字体",
 	SettingsInterfaceFontDefault:           "默认",
 	SettingsInterfaceFontUnsupportedFmt:    "“%s”未生效：当前平台不支持更改界面字体。",
