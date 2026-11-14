@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -76,6 +77,29 @@ type Asset struct {
 	// signed Viva feed. The feed's Ed25519 signature is its authenticity, so
 	// there is no per-package minisign signature to check.
 	FeedVerified bool
+	// Format is the Viva feed's format for the asset: zip, nsis or tar.gz.
+	Format string
+	// Patches are the deltas the feed offers from earlier versions to this
+	// one. Only a feed-verified package has them.
+	Patches []Patch
+}
+
+// Patch is one delta update from an installed version to this release.
+type Patch struct {
+	FromVersion string
+	URL         string
+	Size        int64
+	SHA256      string
+}
+
+// PatchFrom returns the patch that applies to version, if the feed offers one.
+func (asset Asset) PatchFrom(version string) (Patch, bool) {
+	for _, patch := range asset.Patches {
+		if patch.FromVersion == version {
+			return patch, true
+		}
+	}
+	return Patch{}, false
 }
 
 // Has reports whether the release carries a package for the asking platform.
@@ -216,12 +240,72 @@ func checkVivaPackageAt(ctx context.Context, client *http.Client, feedURL string
 		Asset: Asset{
 			Name: StableNamePackage(goos, goarch, pkg), URL: asset.URL,
 			SHA256: asset.SHA256, Size: asset.Size, FeedVerified: true,
+			Format: asset.Format, Patches: mapVivaPatches(patchesFor(feed, goos, goarch, asset)),
 		},
 	}
 	if release.URL == "" {
 		release.URL = "https://github.com/t8y2/motty/releases/tag/v" + feed.Latest.Version
 	}
 	return release, nil
+}
+
+// patchesFor returns the patches an installation can use. The Windows feed
+// lists a patch on the portable zip because that is the payload; an NSIS
+// installation holds the same application files, so it may use that patch too.
+func patchesFor(feed *vivaupdate.Feed, goos, goarch string, selected vivaupdate.Asset) []vivaupdate.Patch {
+	if len(selected.Patches) > 0 {
+		return selected.Patches
+	}
+	for _, candidate := range feed.Latest.Assets {
+		if candidate.OS == goos && candidate.Arch == goarch && candidate.Format == vivaupdate.FormatZIP {
+			return candidate.Patches
+		}
+	}
+	return nil
+}
+
+// mapVivaPatches copies the feed's patch list into the application's type.
+func mapVivaPatches(patches []vivaupdate.Patch) []Patch {
+	if len(patches) == 0 {
+		return nil
+	}
+	out := make([]Patch, len(patches))
+	for index, patch := range patches {
+		out[index] = Patch{FromVersion: patch.FromVersion, URL: patch.URL, Size: patch.Size, SHA256: patch.SHA256}
+	}
+	return out
+}
+
+// AppID is the application identifier the update feed names.
+const AppID = "dev.motty.app"
+
+// DownloadPatch fetches a delta listed by the signed feed and verifies its size
+// and digest. The caller applies it with ApplyPatch.
+func DownloadPatch(ctx context.Context, client *http.Client, asset Asset, patch Patch, dir string, progress func(done, total int64)) (string, error) {
+	vivaClient, err := newVivaClient(client)
+	if err != nil {
+		return "", err
+	}
+	return vivaClient.DownloadPatch(ctx,
+		vivaupdate.Asset{OS: runtime.GOOS, Arch: runtime.GOARCH, Format: asset.Format, URL: asset.URL, Size: asset.Size, SHA256: asset.SHA256},
+		vivaupdate.Patch{FromVersion: patch.FromVersion, URL: patch.URL, Size: patch.Size, SHA256: patch.SHA256},
+		dir, progress)
+}
+
+// ApplyPatch applies a downloaded patch to the running installation and returns
+// a directory holding the new payload. The platform installer then replaces the
+// application from it.
+func ApplyPatch(patchPath, fromVersion, toVersion string) (string, error) {
+	return vivaupdate.ApplyPatch(patchPath, AppID, fromVersion, toVersion)
+}
+
+// newVivaClient is the Viva feed client with the embedded key.
+func newVivaClient(client *http.Client) (*vivaupdate.Client, error) {
+	key, err := vivaupdate.ParsePublicKey(VivaPublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("update: the Viva feed key: %w", err)
+	}
+	return vivaupdate.New(vivaupdate.Config{FeedURL: VivaFeed, PublicKeys: []ed25519.PublicKey{key}, Current: Current, HTTP: client})
 }
 
 // selectVivaAsset picks the archive the installation kind needs. The feed's

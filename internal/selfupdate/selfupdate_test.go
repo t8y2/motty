@@ -482,7 +482,7 @@ func TestAHelperThatDiesAtOnceIsReportedAndOneThatIsReadyIsNot(t *testing.T) {
 			t.Fatal(err)
 		}
 		install := Install{Kind: KindLinuxPrefix, Exe: exe, Root: dir}
-		return (&Updater{Dir: filepath.Join(dir, "updates")}).Launch(Staged{Install: install, Path: dir})
+		return (&Updater{Dir: filepath.Join(dir, "updates")}).Launch(Staged{Install: install, Path: dir}, func() {})
 	}
 	if err := launch("exit 3"); err == nil || !strings.Contains(err.Error(), "exit status 3") {
 		t.Fatalf("a helper that exited at once was accepted: %v", err)

@@ -37,7 +37,7 @@ func (updater *fakeUpdater) Prepare(ctx context.Context, _ update.Release, progr
 	return selfupdate.Staged{Version: "99.0.0"}, nil
 }
 
-func (updater *fakeUpdater) Launch(selfupdate.Staged) error {
+func (updater *fakeUpdater) Launch(selfupdate.Staged, func()) error {
 	updater.mu.Lock()
 	defer updater.mu.Unlock()
 	updater.launched++

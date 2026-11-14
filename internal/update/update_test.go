@@ -280,9 +280,9 @@ func TestCheckVivaFeedMapsTheReleaseAndTrustsTheSignedFeed(t *testing.T) {
 		Latest: vivaupdate.Release{
 			Version: "99.0.0", Date: time.Now().UTC(),
 			Assets: []vivaupdate.Asset{
-				{OS: "darwin", Arch: "arm64", Format: vivaupdate.FormatZIP, URL: "https://example.com/motty-99.0.0-darwin-arm64.zip", Size: 10, SHA256: strings.Repeat("a", 64)},
+				{OS: "darwin", Arch: "arm64", Format: vivaupdate.FormatZIP, URL: "https://example.com/motty-99.0.0-darwin-arm64.zip", Size: 10, SHA256: strings.Repeat("a", 64), Patches: []vivaupdate.Patch{{FromVersion: "0.4.7", URL: "https://example.com/motty-darwin-arm64.patch", Size: 5, SHA256: strings.Repeat("d", 64)}}},
 				{OS: "windows", Arch: "amd64", Format: vivaupdate.FormatNSIS, URL: "https://example.com/motty-99.0.0-windows-amd64-setup.exe", Size: 20, SHA256: strings.Repeat("b", 64)},
-				{OS: "windows", Arch: "amd64", Format: vivaupdate.FormatZIP, URL: "https://example.com/motty-99.0.0-windows-amd64.zip", Size: 30, SHA256: strings.Repeat("c", 64)},
+				{OS: "windows", Arch: "amd64", Format: vivaupdate.FormatZIP, URL: "https://example.com/motty-99.0.0-windows-amd64.zip", Size: 30, SHA256: strings.Repeat("c", 64), Patches: []vivaupdate.Patch{{FromVersion: "0.4.7", URL: "https://example.com/motty-windows-amd64.patch", Size: 6, SHA256: strings.Repeat("e", 64)}}},
 			},
 		},
 	}
@@ -318,6 +318,17 @@ func TestCheckVivaFeedMapsTheReleaseAndTrustsTheSignedFeed(t *testing.T) {
 	}
 	if release.Asset.URL != "https://example.com/motty-99.0.0-darwin-arm64.zip" || release.Asset.Size != 10 {
 		t.Fatalf("asset = %+v", release.Asset)
+	}
+	if patch, ok := release.Asset.PatchFrom("0.4.7"); !ok || patch.URL != "https://example.com/motty-darwin-arm64.patch" {
+		t.Fatalf("darwin patch = %+v, %v", patch, ok)
+	}
+	setup, err := checkVivaPackageAt(context.Background(), server.Client(), server.URL+"/latest.json",
+		[]string{base64.StdEncoding.EncodeToString(public)}, "windows", "amd64", PackageArchive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := setup.Asset.PatchFrom("0.4.7"); !ok {
+		t.Fatalf("the NSIS asset did not take the portable zip's patch: %+v", setup.Asset)
 	}
 
 	portable, err := checkVivaPackageAt(context.Background(), server.Client(), server.URL+"/latest.json",

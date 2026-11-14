@@ -9,12 +9,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
+	vivaupdate "github.com/vivaui/viva/update"
 	"motty/internal/update"
 	"motty/internal/updatesign"
 )
+
+// vivaAsset is the Viva package type for a feed-verified asset.
+func vivaAsset(asset update.Asset) vivaupdate.Asset {
+	return vivaupdate.Asset{OS: runtime.GOOS, Arch: runtime.GOARCH, Format: asset.Format, URL: asset.URL, Size: asset.Size, SHA256: asset.SHA256}
+}
 
 // Phase is what Prepare is doing, for the progress it shows.
 type Phase uint8
@@ -40,6 +47,12 @@ type Staged struct {
 	// Path is the new .app, the installer, or the directory of the unpacked
 	// archive, depending on the installation's Kind.
 	Path string
+	// Payload marks Path as a directory a patch applied: the application's
+	// files, ready for the platform installer, not an archive to unpack.
+	Payload bool
+	// Asset and App are what Install needs when Payload is set.
+	Asset update.Asset
+	App   string
 }
 
 // Updater replaces the program it runs in.
@@ -126,6 +139,16 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 			return Staged{}, err
 		}
 	}
+	// A delta is tried first when the signed feed lists one for the running
+	// version. A patch that does not fit, or cannot be applied, is not a failed
+	// update: the full archive is downloaded instead.
+	if release.Asset.FeedVerified {
+		if patch, ok := release.Asset.PatchFrom(update.Current); ok {
+			if staged, err := updater.preparePatch(ctx, release, patch, progress, phase); err == nil {
+				return staged, nil
+			}
+		}
+	}
 
 	if install.Kind != KindLinuxDeb {
 		updater.clean()
@@ -203,6 +226,43 @@ func (updater *Updater) Prepare(ctx context.Context, release update.Release, pro
 	return staged, nil
 }
 
+// preparePatch downloads a delta and applies it to the running installation in
+// a staging directory. Nothing installed is changed; the platform installer
+// swaps the payload in when the application quits.
+func (updater *Updater) preparePatch(ctx context.Context, release update.Release, patch update.Patch, progress func(Progress), phase func(Phase)) (Staged, error) {
+	dir := filepath.Join(updater.Dir, release.Version+".patch")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return Staged{}, err
+	}
+	if phase != nil {
+		phase(PhaseDownloading)
+	}
+	if progress != nil {
+		progress(Progress{Done: 0, Size: patch.Size})
+	}
+	path, err := update.DownloadPatch(ctx, updater.Client, release.Asset, patch, dir, func(done, total int64) {
+		if progress != nil {
+			progress(Progress{Done: done, Size: total})
+		}
+	})
+	if err != nil {
+		os.RemoveAll(dir)
+		return Staged{}, err
+	}
+	if phase != nil {
+		phase(PhaseVerifying)
+	}
+	payload, err := update.ApplyPatch(path, patch.FromVersion, release.Version)
+	if err != nil {
+		os.RemoveAll(dir)
+		return Staged{}, err
+	}
+	return Staged{
+		Install: updater.install, Version: release.Version, Path: payload,
+		Payload: true, Asset: release.Asset, App: update.AppID,
+	}, nil
+}
+
 // verifyReleasePackage holds the downloaded package to the signature the feed
 // carries: the bytes, the version and the file name all have to be the ones the
 // release key signed. The package is streamed, not read into memory.
@@ -244,7 +304,18 @@ const helperStartTimeout = 10 * time.Second
 // it holds no file of the installation that is being replaced. Launch returns
 // only once the helper has started: one the system refuses to run, or that
 // cannot read its job, is an error and the caller keeps running.
-func (updater *Updater) Launch(staged Staged) error {
+func (updater *Updater) Launch(staged Staged, quit func()) error {
+	if staged.Payload {
+		err := vivaupdate.Install(vivaupdate.InstallOptions{
+			Payload: staged.Path, Asset: vivaAsset(staged.Asset),
+			Version: staged.Version, App: staged.App,
+		}, quit)
+		if err != nil {
+			os.RemoveAll(staged.Path)
+			return fmt.Errorf("selfupdate: %w", err)
+		}
+		return nil
+	}
 	exe := staged.Install.Exe
 	helper, err := stageHelper(staged.Install, filepath.Join(updater.Dir, "helper"))
 	if err != nil {
