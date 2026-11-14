@@ -302,7 +302,7 @@ var ChineseMessages = Messages{
 	SettingsShare:                          "共享连接",
 	SettingsShareDescription:               "分屏或新开标签时复用连接，不再握手或确认主机密钥。",
 	SettingsConnectionStats:                "在终端栏显示资源指标",
-	SettingsConnectionStatsDescription:     "开启后在终端栏显示 CPU、内存、磁盘、网速和 PING；关闭时只保留地址和连接操作。窄窗口下指标收起为图标，不支持的连接显示 --。",
+	SettingsConnectionStatsDescription:     "开启后在终端栏显示 CPU、内存、磁盘、网速和 PING；关闭时只保留地址和连接操作。不支持的连接显示 --。",
 	ConnShareRefusedFmt:                    "服务器不再为共享连接打开新的 shell(%v),改为单独连接。",
 	PasswordSave:                           "保存密码",
 	KeyPassphraseSave:                      "保存口令",

@@ -302,7 +302,7 @@ var EnglishMessages = Messages{
 	SettingsShare:                          "Share connections",
 	SettingsShareDescription:               "A split or new tab reuses the connection: no handshake or host-key check.",
 	SettingsConnectionStats:                "Show terminal resource metrics",
-	SettingsConnectionStatsDescription:     "Show CPU, memory, disk, network rates and PING in the terminal bar. Off keeps the address and connection actions. A narrow bar collapses the figures to icons, and unsupported connections show --.",
+	SettingsConnectionStatsDescription:     "Show CPU, memory, disk, network rates and PING in the terminal bar. Off keeps the address and connection actions. Unsupported connections show --.",
 	ConnShareRefusedFmt:                    "The server would not open another shell on the shared connection (%v). Connecting separately.",
 	PasswordSave:                           "Save password",
 	KeyPassphraseSave:                      "Save passphrase",
