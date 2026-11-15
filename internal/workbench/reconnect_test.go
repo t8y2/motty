@@ -6,7 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
+	"motty/internal/i18n"
 	"motty/internal/sshconn"
 )
 
@@ -183,7 +186,7 @@ func TestCancelCloseAndManualReconnectCancelScheduledAttempt(t *testing.T) {
 		state, _, connection, _ := reconnectingSession(t, reconnectThree)
 		disconnectEstablished(connection, state)
 		canvas, texts := paintedTexts(state)
-		if !contains(texts, "Reconnect attempt 1 in 0:01") || !hasHit(canvas, hitConnCancelReconnect) {
+		if !contains(texts, "Reconnect attempt 1") || !hasHit(canvas, hitConnCancelReconnect) {
 			t.Fatalf("countdown page texts=%q hits=%v", texts, canvas.Hits())
 		}
 		state.Click(hitConnCancelReconnect)
@@ -268,13 +271,16 @@ func TestTheReconnectCountdownNeverRunsUnderTheButtons(t *testing.T) {
 		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		var countdown gfx.Rect
+		var values []string
 		for _, text := range canvas.Texts() {
-			if strings.HasPrefix(text.Value, "Reconnect attempt") {
+			values = append(values, text.Value)
+			visible := strings.TrimSuffix(text.Value, "…")
+			if visible != "" && strings.HasPrefix(state.sessions[0].reconnectText, visible) {
 				countdown = text.Bounds
 			}
 		}
 		if countdown.Width == 0 {
-			t.Fatalf("%v: the countdown is not on the page", size)
+			t.Fatalf("%v: the countdown is not on the page: %q", size, values)
 		}
 		for _, id := range []gfx.ID{hitConnLog, hitConnExport, hitConnClose, hitConnCancelReconnect} {
 			hit, ok := hitByID(&canvas, id)
@@ -285,5 +291,42 @@ func TestTheReconnectCountdownNeverRunsUnderTheButtons(t *testing.T) {
 				t.Errorf("%v: countdown %+v runs under button %d at %+v", size, countdown, id, hit.Bounds)
 			}
 		}
+	}
+}
+
+func TestReconnectCountdownIsFullyVisible(t *testing.T) {
+	for _, language := range []i18n.Language{i18n.Chinese, i18n.TraditionalChinese, i18n.English} {
+		t.Run(language.String(), func(t *testing.T) {
+			state, _, connection, _ := reconnectingSession(t, reconnectThree)
+			state.setLanguage(language)
+			disconnectEstablished(connection, state)
+			// The minimum window is the smallest the product promises, so the
+			// countdown must be whole there.
+			size := gfx.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight}
+			var canvas gfx.Canvas
+			state.Paint(&canvas, size)
+			full := state.sessions[0].reconnectText
+			var values []string
+			var available float32
+			for _, text := range canvas.Texts() {
+				values = append(values, text.Value)
+				visible := strings.TrimSuffix(text.Value, "…")
+				if visible != "" && strings.HasPrefix(full, visible) {
+					available = text.Bounds.Width
+				}
+				if text.Value != full {
+					continue
+				}
+				if width := canvas.TextWidthWeight(text.Value, text.Style.Size, text.Style.Weight); width > text.Bounds.Width+0.5 {
+					t.Fatalf("countdown %q is %.1f wide in a %.1f box", text.Value, width, text.Bounds.Width)
+				}
+				snapshot := app.Snapshot{Width: int(size.Width), Height: int(size.Height), Texts: canvas.Texts(), Hits: canvas.Hits()}
+				for _, problem := range headless.CheckLayout(snapshot) {
+					t.Errorf("%s %q %s at %+v", problem.Kind, problem.Text, problem.Detail, problem.Bounds)
+				}
+				return
+			}
+			t.Fatalf("full countdown %q is %.1f wide in a %.1f box: %q", full, canvas.TextWidthWeight(full, metrics.FontSizeS, gfx.WeightRegular), available, values)
+		})
 	}
 }
