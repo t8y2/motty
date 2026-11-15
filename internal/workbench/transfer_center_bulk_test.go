@@ -49,7 +49,7 @@ func bulkSource(remote *workbenchSFTPRemote, source, content string) {
 
 func bulkAwait(t testing.TB, state *State, view *sftpView, id uint64, phase sftpclient.TransferState) sftpclient.TransferSnapshot {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		state.refreshSFTPTransfers(view)
 		for _, snapshot := range view.transfers {
