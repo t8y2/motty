@@ -86,7 +86,7 @@ func (conn *Conn) dialThrough(client *ssh.Client, address string) (net.Conn, err
 }
 
 func (conn *Conn) startKeepAlive(client *ssh.Client) *keepAliveWorker {
-	if conn.config.KeepAlive.Interval == 0 || conn.config.KeepAlive.CountMax != nil {
+	if conn.config.KeepAlive.Interval == 0 || conn.config.KeepAlive.CountMax != nil || conn.tcpKeepAlive {
 		return nil
 	}
 	worker := &keepAliveWorker{stop: make(chan struct{}), done: make(chan struct{})}
@@ -95,6 +95,26 @@ func (conn *Conn) startKeepAlive(client *ssh.Client) *keepAliveWorker {
 		conn.keepAlive(client, worker.stop)
 	}()
 	return worker
+}
+
+func configureTCPKeepAlive(socket net.Conn, config KeepAliveConfig) bool {
+	if config.Interval <= 0 {
+		return false
+	}
+	tcp, ok := socket.(interface {
+		SetKeepAliveConfig(net.KeepAliveConfig) error
+	})
+	if !ok {
+		return false
+	}
+	settings := net.KeepAliveConfig{Enable: true, Idle: config.Interval, Interval: config.Interval, Count: 1}
+	if config.Timeout > 0 {
+		settings.Interval = config.Timeout
+	}
+	if config.CountMax != nil {
+		settings.Count = max(1, *config.CountMax)
+	}
+	return tcp.SetKeepAliveConfig(settings) == nil
 }
 
 type aliveSocket struct {

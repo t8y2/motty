@@ -207,6 +207,9 @@ type KeepAliveConfig struct {
 	// Timeout bounds each probe response. It must be positive when Interval is.
 	Timeout  time.Duration
 	CountMax *int
+	// UseTCP avoids SSH global requests on gateways that accept interactive
+	// traffic only. Non-TCP streams retain the request-based probe as a fallback.
+	UseTCP bool
 }
 
 // Config describes one connection attempt.
@@ -301,6 +304,7 @@ type Conn struct {
 	closersClosed bool
 	// disconnectErr records why an established connection was force-closed.
 	disconnectErr error
+	tcpKeepAlive  bool
 
 	// x11 serves the X11 channels of the current client for every tab on it.
 	x11mu     sync.Mutex
@@ -765,8 +769,16 @@ func (conn *Conn) beginEndpoint(endpoint Endpoint, role EndpointRole) {
 
 func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys) (*ssh.Client, string, error) {
 	keepAlive := conn.keepAliveFor(endpoint)
+	target := (Endpoint{Host: conn.config.Host, Port: conn.config.Port, User: conn.config.User}).normalized()
+	// Restricted gateways can end the transport on a global keepalive request;
+	// TCP probes detect a lost network path without sending SSH protocol traffic.
+	useTCP := keepAlive.UseTCP || conn.config.InteractiveOnly && endpoint.normalized() == target
+	tcpKeepAlive := useTCP && configureTCPKeepAlive(socket, keepAlive)
+	if endpoint.normalized() == target {
+		conn.tcpKeepAlive = tcpKeepAlive
+	}
 	var monitored *aliveSocket
-	if keepAlive.Interval > 0 && keepAlive.CountMax != nil {
+	if !tcpKeepAlive && keepAlive.Interval > 0 && keepAlive.CountMax != nil {
 		monitored = &aliveSocket{Conn: socket, received: make(chan struct{}, 1)}
 		socket = monitored
 	}
