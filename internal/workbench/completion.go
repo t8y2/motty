@@ -79,8 +79,8 @@ func (state *State) setCompletionMode(mode completionMode) bool {
 		return true
 	}
 	state.loadCompletionCatalog()
-	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && state.history.on {
-		state.completionHistory(session)
+	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+		state.requestCompletionHistory(session)
 	}
 	return true
 }
@@ -117,8 +117,8 @@ const (
 	// completionRows is how many candidates the popover lists at once; the rest
 	// scroll with the arrow keys.
 	completionRows = 10
-	// completionHistoryRows caps how many history matches join the host's
-	// commands in the popover.
+	// completionHistoryRows caps how many history matches each source joins in
+	// the popover: the host's own history and the merged history of every host.
 	completionHistoryRows = 5
 	// completionRowHeight is one candidate row.
 	completionRowHeight = float32(24)
@@ -304,16 +304,11 @@ func (state *State) adoptCompletion() {
 	state.adoptCompletionCatalog()
 	state.adoptCompletionUpdate()
 	state.adoptCompletionHistory()
-	if state.history.on && !state.historyClearing() {
-		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && state.historyAvailable(session) && !session.host.NoHistory {
-			state.completionHistory(session)
-			// The merged history of every host feeds the inline suggestion's
-			// fallback, so it is requested here beside the host's own: a frame
-			// only reads what has landed (#219).
-			if !state.history.inlineOff {
-				state.suggestionHistory("")
-			}
-		}
+	// The merged history of every host feeds the inline suggestion's fallback
+	// and the list's tail, so it is requested here beside the host's own: a
+	// frame only reads what has landed (#219, #862).
+	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+		state.requestCompletionHistory(session)
 	}
 }
 
@@ -402,13 +397,22 @@ func (state *State) adoptCompletionHistory() {
 	}
 }
 
+// historySuggestionsAvailable reports whether the suggestion caches may be
+// read for this session: learning is on and this host keeps a history. The
+// completion mode is checked separately, because the shortcut still asks for
+// the list when the automatic modes are off.
+func (state *State) historySuggestionsAvailable(session *Session) bool {
+	return session != nil && state.history.on && !state.historyClearing() &&
+		state.historyAvailable(session) && !session.host.NoHistory
+}
+
 // completionHistory is shared by the list and ghost text. Reads are requested
 // by Wake/input handlers, while painting reads this cache without doing I/O.
 func (state *State) completionHistory(session *Session) []cmdhistory.Entry {
 	if state.history.suggestOff && !state.completion.manual {
 		return nil
 	}
-	if !state.history.on || state.historyClearing() || !state.historyAvailable(session) || session.host.NoHistory {
+	if !state.historySuggestionsAvailable(session) {
 		return nil
 	}
 	return state.suggestionHistory(historyKey(session))
@@ -451,6 +455,22 @@ func (state *State) suggestionHistory(key string) []cmdhistory.Entry {
 		}
 	}()
 	return nil
+}
+
+// requestCompletionHistory asks for the caches the popover and the ghost read:
+// the host's own history and the merged history of every host. The list draws
+// from the same cross-host commands as the inline suggestion (#862), so both
+// are requested together. Only a wake-up or an input handler calls this; a
+// frame reads the caches without doing I/O.
+func (state *State) requestCompletionHistory(session *Session) {
+	if state.history.suggestOff && !state.completion.manual {
+		return
+	}
+	if !state.historySuggestionsAvailable(session) {
+		return
+	}
+	state.completionHistory(session)
+	state.suggestionHistory("")
 }
 
 func (state *State) forgetCompletionHistory() {
@@ -664,9 +684,7 @@ func (state *State) attachCompletion(session *Session) {
 		}
 		state.closeCompletionList()
 	}
-	if state.history.on {
-		state.completionHistory(session)
-	}
+	state.requestCompletionHistory(session)
 }
 
 // completionSession is the session the list belongs to, if it still exists.
@@ -694,7 +712,7 @@ func (state *State) openCompletions() {
 	state.completion.manual = state.history.suggestOff
 	if state.completion.manual {
 		state.loadCompletionCatalog()
-		state.completionHistory(session)
+		state.requestCompletionHistory(session)
 	}
 	state.openCompletionList(session)
 	if !state.completion.list.active {
@@ -956,9 +974,30 @@ func (state *State) completionCandidates(session *Session, line string) ([]compl
 	for _, candidate := range pathRows {
 		add(candidate)
 	}
-	if state.history.on && state.historyAvailable(session) && !session.host.NoHistory {
-		// Get full commands entries from history
+	if state.historySuggestionsAvailable(session) {
+		// The host's own commands come first; the merged history of every host
+		// fills in after them, so the list offers the commands the inline
+		// suggestion already draws from (#862). The merged read holds this
+		// host's commands too, so it is asked for twice the rows and whatever
+		// the host already matched is skipped, leaving a full cap for the other
+		// hosts' commands.
 		fullEntries := cmdhistory.SuggestAllFull(state.completionHistory(session), line, completionHistoryRows)
+		seenCommand := make(map[string]struct{}, len(fullEntries)+completionHistoryRows)
+		for _, entry := range fullEntries {
+			seenCommand[entry.Command] = struct{}{}
+		}
+		merged := 0
+		for _, entry := range cmdhistory.SuggestAllFull(state.everyGhostEntries(), line, completionHistoryRows*2) {
+			if merged >= completionHistoryRows {
+				break
+			}
+			if _, ok := seenCommand[entry.Command]; ok {
+				continue
+			}
+			seenCommand[entry.Command] = struct{}{}
+			fullEntries = append(fullEntries, entry)
+			merged++
+		}
 
 		// If we have 2+ matches, calculate common prefix and add it first.
 		// Exclude commands that are a prefix of another command, so the

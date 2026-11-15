@@ -217,7 +217,7 @@ func (state *State) toggleHistory() {
 	}
 	if state.history.on {
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-			state.completionHistory(session)
+			state.requestCompletionHistory(session)
 		}
 	} else {
 		// Turning learning off stops reads as well as writes: drop what the list
