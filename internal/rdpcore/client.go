@@ -279,6 +279,10 @@ type Client struct {
 
 	// Heartbeat: last time we received any data from server (unix nanos)
 	lastReceived atomic.Int64
+	// outputSuppressed says the server was told to stop sending picture
+	// updates because nobody is looking at the desktop. Silence then proves
+	// nothing: the server is doing what it was asked.
+	outputSuppressed atomic.Bool
 
 	// Control
 	done            chan struct{}
@@ -2159,9 +2163,19 @@ func (c *Client) keepAliveLoop() {
 			if c.State() != StateConnected {
 				return
 			}
-			_ = c.RefreshRect(0, 0, 0, 0)
+			c.sendKeepAlive()
 		}
 	}
+}
+
+// sendKeepAlive asks the server to repaint a single pixel, which proves it is
+// still reading. While output is suppressed the server was told not to send
+// picture data, so the request would have nothing to prove and nothing to show.
+func (c *Client) sendKeepAlive() {
+	if c.outputSuppressed.Load() {
+		return
+	}
+	_ = c.RefreshRect(0, 0, 0, 0)
 }
 
 // heartbeatLoop monitors lastReceived and triggers disconnect if the server
@@ -2177,6 +2191,12 @@ func (c *Client) heartbeatLoop() {
 		case <-done:
 			return
 		case <-ticker.C:
+			if c.outputSuppressed.Load() {
+				// The server was told to stop sending picture updates, so its
+				// silence is expected and says nothing about the link. The
+				// window starts again when output resumes.
+				continue
+			}
 			last := time.Unix(0, c.lastReceived.Load())
 			if time.Since(last) > c.opts.HeartbeatTimeout {
 				c.log.LogAttrs(context.Background(), slog.LevelWarn, "heartbeat timeout", slog.Duration("silence", time.Since(last)))
@@ -5600,17 +5620,30 @@ func (c *Client) ReadRectBGRA(buffer []byte, x, y, w, h, bandRows int, emit func
 
 // SetOutputSuppressed asks the server to stop (or resume) sending screen
 // updates, as a minimized window does (MS-RDPBCGR 2.2.11.3). Resuming makes the
-// server repaint the whole desktop. Motty addition.
+// server repaint the whole desktop. While updates are suppressed the heartbeat
+// waits instead of reading the expected silence as a dead link. Motty addition.
 func (c *Client) SetOutputSuppressed(suppressed bool) error {
 	if c.State() != StateConnected {
 		return ErrNotConnected
 	}
 	if suppressed {
-		return c.sendDataPDU(pdu.PDUType2SuppressOutput, pdu.EncodeSuppressOutput(false, 0, 0, 0, 0))
+		if err := c.sendDataPDU(pdu.PDUType2SuppressOutput, pdu.EncodeSuppressOutput(false, 0, 0, 0, 0)); err != nil {
+			return err
+		}
+		c.outputSuppressed.Store(true)
+		return nil
 	}
 	w, h := c.FramebufferDims()
 	if w < 1 || h < 1 {
 		return nil
 	}
-	return c.sendDataPDU(pdu.PDUType2SuppressOutput, pdu.EncodeSuppressOutput(true, 0, 0, uint16(w-1), uint16(h-1)))
+	if err := c.sendDataPDU(pdu.PDUType2SuppressOutput, pdu.EncodeSuppressOutput(true, 0, 0, uint16(w-1), uint16(h-1))); err != nil {
+		return err
+	}
+	// The server owes no updates until it is allowed to paint again: the
+	// silence the heartbeat measures starts now, and the repaint that follows
+	// is what proves the link is still there.
+	c.lastReceived.Store(time.Now().UnixNano())
+	c.outputSuppressed.Store(false)
+	return nil
 }

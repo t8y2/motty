@@ -73,6 +73,16 @@ Changed:
   repeat a held key: `SendKeyboard` and `SendUnicode` take a `repeat` argument
   and a repeat press carries `KBD_FLAGS_DOWN` (`0x4000`), the flag FreeRDP and
   mstsc set on a key the server already has down.
+* The heartbeat pauses while output is suppressed and starts a fresh window on
+  resume. A hidden tab tells the server to stop sending picture updates, so the
+  expected silence was being read as a dead link and ended the connection about
+  ten seconds after switching away; the keepalive is skipped meanwhile because
+  a suppressed server must not answer it.
+* A 32bpp pointer's alpha channel decides transparency, with the AND mask able
+  only to hide a pixel; 32bpp data with no alpha at all still falls back to the
+  masks. xrdp sends X cursors at 32bpp with per-pixel alpha and a zero AND
+  mask, which upstream's rule rendered as an opaque black square around the
+  pointer.
 * The EGFX `ResetGraphics` PDU clears surfaces, output maps and frame state but
   keeps the progressive-codec decoder. Its tile context (SYNC, CONTEXT and
   simple tiles) is not part of the graphics output; Windows sends only UPGRADE

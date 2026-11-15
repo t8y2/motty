@@ -154,7 +154,9 @@ func decodeColorFields(log *slog.Logger, buf, data []byte, xorBpp int, large boo
 // screen, so we render these as opaque black and then paint a 1-pixel white
 // halo into surrounding transparent pixels. This keeps cursors like the
 // Windows I-beam visible on both light and dark backgrounds.
-// 32bpp special: when AND=0 and XOR alpha != 0, use XOR alpha directly.
+// 32bpp special: when the XOR mask carries an alpha channel it is the
+// authority on transparency, with the AND mask able only to hide a pixel; a
+// server that sends 32bpp with no alpha channel at all falls back to the masks.
 func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgba []byte, outBuf []byte) {
 	needed := w * h * 4
 	if cap(buf) < needed {
@@ -165,6 +167,21 @@ func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgb
 	// Track XOR-invert pixel positions so the halo pass can distinguish them
 	// from legitimate opaque-black cursor pixels (e.g. the arrow outline).
 	invertMask := make([]bool, w*h)
+
+	// xrdp sends an X cursor at 32bpp with per-pixel alpha and an all-zero AND
+	// mask; reading alpha only where it is nonzero turns the transparent
+	// border into an opaque black square. Any alpha at all means the channel
+	// is present, so every zero is a transparent pixel. (Motty divergence:
+	// upstream trusted alpha only where it was nonzero.)
+	alphaData := false
+	if bpp == 32 {
+		for i := 3; i < len(xorMask); i += 4 {
+			if xorMask[i] != 0 {
+				alphaData = true
+				break
+			}
+		}
+	}
 
 	// AND mask stride: 1bpp, rows 2-byte aligned
 	andStride := ((w + 7) / 8)
@@ -215,19 +232,29 @@ func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgb
 
 			var r, g, b, a byte
 			switch {
-			case bpp == 32 && xorRow != nil && x*4+3 < len(xorRow):
+			case bpp == 32 && alphaData && xorRow != nil && x*4+3 < len(xorRow):
 				b = xorRow[x*4]
 				g = xorRow[x*4+1]
 				r = xorRow[x*4+2]
-				xa := xorRow[x*4+3]
 				if andBit == 0 {
-					if xa != 0 {
-						a = xa // per-pixel alpha
-					} else {
-						a = 0xFF
-					}
+					a = xorRow[x*4+3] // per-pixel alpha
 				} else {
 					a = 0 // transparent
+				}
+			case bpp == 32 && xorRow != nil && x*4+3 < len(xorRow):
+				// 32bpp data without an alpha channel: the masks decide, as a
+				// 24bpp cursor's do.
+				b = xorRow[x*4]
+				g = xorRow[x*4+1]
+				r = xorRow[x*4+2]
+				if andBit == 0 {
+					a = 0xFF
+				} else if r == 0 && g == 0 && b == 0 {
+					a = 0
+				} else {
+					// XOR-invert pixel → opaque black, halo pass adds the white outline
+					r, g, b, a = 0, 0, 0, 0xFF
+					invertMask[y*w+x] = true
 				}
 			case bpp == 24 && xorRow != nil && x*3+2 < len(xorRow):
 				b = xorRow[x*3]
