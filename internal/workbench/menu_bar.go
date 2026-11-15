@@ -78,6 +78,14 @@ func (state *State) runMenuAction(action shortcutAction) {
 		return
 	}
 	result := state.executeShortcut(action)
+	// Native menu key equivalents invoke OnSelect without the window's key
+	// event handler, so its clipboard result must be applied here as well.
+	if result.ClipboardText != "" && state.options.SetClipboardText != nil {
+		if err := state.options.SetClipboardText(result.ClipboardText); err != nil {
+			state.status = err.Error()
+			result.Repaint = true
+		}
+	}
 	if result.Repaint && state.options.Invalidate != nil {
 		state.options.Invalidate()
 	}
