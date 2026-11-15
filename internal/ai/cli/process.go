@@ -19,6 +19,7 @@ const maxStderr = 64 << 10
 type command struct {
 	program   string
 	version   string
+	flavor    string
 	args, env []string
 	dir       string
 	input     string
@@ -97,11 +98,19 @@ func capture(ctx context.Context, spec command, limit int) ([]byte, error) {
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
 	out := &boundedWriter{limit: limit, strict: true, cancel: cancel}
-	_, err := runCommand(child, spec, out)
+	stderr, err := runCommand(child, spec, out)
 	if len(out.data) >= limit {
 		return nil, errors.New("cli: output_limit")
 	}
-	return out.data, err
+	if err != nil {
+		return nil, err
+	}
+	// Some CLIs print help on stderr. Machine-readable output stays on stdout,
+	// so only an otherwise empty capture falls back.
+	if len(bytes.TrimSpace(out.data)) == 0 {
+		return stderr, nil
+	}
+	return out.data, nil
 }
 
 type jsonLines struct {

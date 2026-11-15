@@ -51,7 +51,7 @@ func ExecutablePath(kind, path string) (string, error) {
 	resolved, err := exec.LookPath(path)
 	if err != nil && !strings.ContainsAny(path, `/\`) {
 		home, _ := os.UserHomeDir()
-		for _, dir := range []string{filepath.Join(home, ".local", "bin"), filepath.Join(home, ".npm-global", "bin"), filepath.Join(home, ".bun", "bin"), "/opt/homebrew/bin", "/usr/local/bin"} {
+		for _, dir := range []string{filepath.Join(home, ".opencode", "bin"), filepath.Join(home, ".local", "bin"), filepath.Join(home, ".npm-global", "bin"), filepath.Join(home, ".bun", "bin"), "/opt/homebrew/bin", "/usr/local/bin"} {
 			if candidate, e := exec.LookPath(filepath.Join(dir, path)); e == nil {
 				resolved, err = candidate, nil
 				break
@@ -77,10 +77,15 @@ func resolve(kind, path string) (command, error) {
 	if runtime.GOOS == "windows" && (strings.EqualFold(filepath.Ext(resolved), ".cmd") || strings.EqualFold(filepath.Ext(resolved), ".bat")) {
 		dir := filepath.Dir(resolved)
 		if kind == store.KindOpenCodeCLI {
-			exe := filepath.Join(dir, "node_modules", "opencode-ai", "bin", "opencode.exe")
-			if st, e := os.Stat(exe); e == nil && !st.IsDir() {
-				c.program = exe
-				return c, nil
+			for _, relative := range []string{
+				filepath.Join("node_modules", "opencode-ai", "bin", "opencode.exe"),
+				filepath.Join("node_modules", "@opencode", "cli", "bin", "opencode.exe"),
+			} {
+				exe := filepath.Join(dir, relative)
+				if st, e := os.Stat(exe); e == nil && !st.IsDir() {
+					c.program = exe
+					return c, nil
+				}
 			}
 		}
 		packages := map[string]string{store.KindCodexCLI: filepath.Join("@openai", "codex", "bin", "codex.js"), store.KindClaudeCLI: filepath.Join("@anthropic-ai", "claude-code", "cli.js"), store.KindPiCLI: filepath.Join("@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js")}

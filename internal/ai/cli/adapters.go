@@ -8,6 +8,7 @@ import (
 	"motty/internal/ai/store"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +27,36 @@ var codexControls = []string{
 	`features.code_mode=false`, `web_search="disabled"`, `notify=[]`, `hooks={}`,
 }
 
+const (
+	openCodeV1 = "v1"
+	openCodeV2 = "v2"
+
+	openCodeProbeAgent = "motty_probe"
+	openCodeProbeAllow = "motty_probe_allow"
+)
+
+// OpenCode 2 removed --pure, replaced the V1 permission map with ordered
+// permission rules, and routes every command through a shared background server
+// unless --standalone is passed. The V2 profile keeps scoped tool permissions
+// and project-config isolation through native V2 config and a private server.
+// It cannot match V1's --pure suppression of user-installed global plugins:
+// OpenCode 2 has no equivalent, so those plugins still load.
+var openCodeV2Adapter = adapter{
+	program:  "opencode",
+	flavor:   openCodeV2,
+	required: []string{"--standalone"},
+	checks: []capabilityCheck{
+		{label: "run --help", args: []string{"run", "--help"}, validate: validateOpenCodeV2Run},
+		{
+			label:    "debug agents",
+			args:     []string{"--standalone", "debug", "agents"},
+			env:      openCodeV2Env(openCodeV2ProbeConfig()),
+			isolate:  true,
+			validate: validateOpenCodeV2Permissions,
+		},
+	},
+}
+
 var adapters = map[string]adapter{
 	store.KindClaudeCLI: {
 		program: "claude",
@@ -39,13 +70,14 @@ var adapters = map[string]adapter{
 		checks: []capabilityCheck{{label: "features list", args: withOverrides([]string{"features", "list"}, codexControls), validate: validateCodexControls}},
 	},
 	store.KindOpenCodeCLI: {
-		program: "opencode", required: []string{"--pure"},
+		program: "opencode", flavor: openCodeV1, required: []string{"--pure"},
 		checks: []capabilityCheck{{
 			label:    "debug config --pure",
 			args:     []string{"debug", "config", "--pure"},
 			env:      []string{"OPENCODE_DISABLE_PROJECT_CONFIG=1", "OPENCODE_DB=:memory:", `OPENCODE_CONFIG_CONTENT={"permission":"deny"}`},
 			validate: validateOpenCodePermission,
 		}},
+		alternate: &openCodeV2Adapter,
 	},
 	// Pi's built-in read, bash, edit, and write tools run with the permissions of
 	// its own process, and its user-level MCP servers would bypass Motty's gate.
@@ -117,6 +149,163 @@ func validateOpenCodePermission(raw []byte) checkFailure {
 	return checkFailure{}
 }
 
+// OpenCode 2 replaced --pure with --standalone and moved run's required output
+// and isolation switches into the run subcommand.
+func validateOpenCodeV2Run(raw []byte) checkFailure {
+	flags := helpFlags(raw)
+	for _, flag := range []string{"--format", "--agent", "--file", "--title", "--thinking"} {
+		if !flags[flag] {
+			return checkFailure{reason: "missing_capability", detail: "run " + flag}
+		}
+	}
+	return checkFailure{}
+}
+
+// validateOpenCodeV2Permissions proves the installed V2 build applies the
+// ordered permission config that scopes its agent. The resolved agent is read
+// from debug agents because OpenCode 2's debug config lists sources, not the
+// merged result.
+func validateOpenCodeV2Permissions(raw []byte) checkFailure {
+	var agents []struct {
+		ID          string                   `json:"id"`
+		Permissions []openCodePermissionRule `json:"permissions"`
+	}
+	if json.Unmarshal(raw, &agents) != nil {
+		return checkFailure{reason: "invalid_output"}
+	}
+	var rules []openCodePermissionRule
+	found := false
+	for _, agent := range agents {
+		if agent.ID == openCodeProbeAgent {
+			rules, found = agent.Permissions, true
+			break
+		}
+	}
+	if !found {
+		return checkFailure{reason: "not_applied", detail: "agent=" + openCodeProbeAgent}
+	}
+	for _, action := range []string{"read", "edit", "glob", "grep", "shell", "subagent",
+		"skill", "question", "webfetch", "websearch", "external_directory"} {
+		if effect := openCodePermissionEffect(rules, action, "*"); effect != "deny" {
+			return checkFailure{reason: "not_applied", detail: action + "=deny"}
+		}
+	}
+	if effect := openCodePermissionEffect(rules, openCodeProbeAllow, "*"); effect != "allow" {
+		return checkFailure{reason: "not_applied", detail: openCodeProbeAllow + "=allow"}
+	}
+	return checkFailure{}
+}
+
+type openCodePermissionRule struct {
+	Action   string `json:"action"`
+	Resource string `json:"resource"`
+	Effect   string `json:"effect"`
+}
+
+// openCodePermissionEffect applies OpenCode's ordered rules: the last rule whose
+// action and resource match decides, and no match defaults to ask.
+func openCodePermissionEffect(rules []openCodePermissionRule, action, resource string) string {
+	effect := "ask"
+	for _, rule := range rules {
+		if openCodeWildcard(rule.Action, action) && openCodeWildcard(rule.Resource, resource) {
+			effect = rule.Effect
+		}
+	}
+	return effect
+}
+
+// openCodeWildcard implements the permission pattern language: * matches any
+// run of characters including '/', ? matches one, everything else is literal.
+func openCodeWildcard(pattern, value string) bool {
+	p, v := 0, 0
+	star, mark := -1, 0
+	for v < len(value) {
+		switch {
+		case p < len(pattern) && (pattern[p] == '?' || pattern[p] == value[v]):
+			p++
+			v++
+		case p < len(pattern) && pattern[p] == '*':
+			star, mark = p, v
+			p++
+		case star >= 0:
+			p = star + 1
+			mark++
+			v = mark
+		default:
+			return false
+		}
+	}
+	for p < len(pattern) && pattern[p] == '*' {
+		p++
+	}
+	return p == len(pattern)
+}
+
+func openCodeV2ProbeConfig() map[string]any {
+	deny := map[string]any{"action": "*", "resource": "*", "effect": "deny"}
+	return map[string]any{
+		"permissions": []any{deny},
+		"agents": map[string]any{openCodeProbeAgent: map[string]any{
+			"description": "Motty capability probe",
+			"mode":        "primary",
+			"permissions": []any{
+				deny,
+				map[string]any{"action": openCodeProbeAllow, "resource": "*", "effect": "allow"},
+			},
+		}},
+	}
+}
+
+// openCodeV2ForeignServers reads the merged servers from OpenCode 2's config
+// sources. A source may carry native mcp.servers or the V1 mcp map; both are
+// normalized later by OpenCode, but the source listing keeps the raw shape.
+func openCodeV2ForeignServers(raw []byte) ([]string, bool) {
+	var sources []struct {
+		Info struct {
+			MCP json.RawMessage `json:"mcp"`
+		} `json:"info"`
+	}
+	if json.Unmarshal(raw, &sources) != nil {
+		return nil, false
+	}
+	seen := make(map[string]bool)
+	var names []string
+	add := func(name string) {
+		if name != "" && !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	for _, source := range sources {
+		if len(source.Info.MCP) == 0 {
+			continue
+		}
+		var mcp map[string]json.RawMessage
+		if json.Unmarshal(source.Info.MCP, &mcp) != nil {
+			continue
+		}
+		if servers, ok := mcp["servers"]; ok {
+			var native map[string]json.RawMessage
+			if json.Unmarshal(servers, &native) == nil {
+				for name := range native {
+					add(name)
+				}
+				continue
+			}
+		}
+		for name, entry := range mcp {
+			var keyed struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(entry, &keyed) == nil && keyed.Type != "" {
+				add(name)
+			}
+		}
+	}
+	sort.Strings(names)
+	return names, true
+}
+
 func withOverrides(args, overrides []string) []string {
 	for _, v := range overrides {
 		args = append(args, "-c", v)
@@ -140,6 +329,16 @@ func openCodeEnv(config any) []string {
 		"OPENCODE_CONFIG_CONTENT=" + jsonString(config), "OPENCODE_DB=:memory:", "OPENCODE_DISABLE_PROJECT_CONFIG=1",
 		"OPENCODE_DISABLE_EXTERNAL_SKILLS=1", "OPENCODE_DISABLE_CLAUDE_CODE=1", "OPENCODE_DISABLE_AUTOUPDATE=1",
 		"OPENCODE_DISABLE_LSP_DOWNLOAD=1", "OPENCODE_DISABLE_DEFAULT_PLUGINS=1", "OPENCODE_PERMISSION=", "OPENCODE_PURE=1",
+	}
+}
+
+// OpenCode 2 ignores the V1-only isolation variables. Project plugins and
+// Claude compatibility discovery are still suppressible; --standalone keeps the
+// private server from inheriting a running background server's config.
+func openCodeV2Env(config any) []string {
+	return []string{
+		"OPENCODE_CONFIG_CONTENT=" + jsonString(config), "OPENCODE_DB=:memory:", "OPENCODE_DISABLE_PROJECT_CONFIG=1",
+		"OPENCODE_DISABLE_CLAUDE_CODE=1", "OPENCODE_DISABLE_AUTOUPDATE=1",
 	}
 }
 func foreignMCP(parent context.Context, kind string, c command, dir string) ([]string, error) {
@@ -187,6 +386,20 @@ func foreignMCP(parent context.Context, kind string, c command, dir string) ([]s
 			}
 		}
 	case store.KindOpenCodeCLI:
+		if c.flavor == openCodeV2 {
+			c.args = append(c.args, "--standalone", "debug", "config")
+			c.env = append(c.env, "OPENCODE_CONFIG_CONTENT={}", "OPENCODE_DB=:memory:", "OPENCODE_DISABLE_PROJECT_CONFIG=1",
+				"OPENCODE_DISABLE_CLAUDE_CODE=1", "OPENCODE_DISABLE_AUTOUPDATE=1")
+			raw, err := capture(ctx, c, 4<<20)
+			if err != nil {
+				return nil, compatibilityFailure(adapters[kind].program, c, "debug config", "unavailable", "")
+			}
+			names, ok := openCodeV2ForeignServers(raw)
+			if !ok {
+				return nil, compatibilityFailure(adapters[kind].program, c, "debug config", "invalid_output", "")
+			}
+			return names, nil
+		}
 		c.args = append(c.args, "debug", "config", "--pure")
 		c.env = openCodeEnv(map[string]any{"permission": "deny"})
 		raw, err := capture(ctx, c, 4<<20)
@@ -263,6 +476,43 @@ func buildCommand(kind string, c command, req llm.Request, dir, url, token strin
 		}
 		c.args = append(c.args, "-")
 	case store.KindOpenCodeCLI:
+		if c.flavor == openCodeV2 {
+			permissions := []any{map[string]any{"action": "*", "resource": "*", "effect": "deny"}}
+			for _, n := range names {
+				permissions = append(permissions, map[string]any{"action": server + "_" + n, "resource": "*", "effect": "allow"})
+			}
+			servers := map[string]any{
+				server: map[string]any{"type": "remote", "url": url, "headers": map[string]string{"Authorization": "Bearer " + token}, "oauth": false, "codemode": false},
+			}
+			for _, n := range foreign {
+				if n != server {
+					// A disabled remote entry needs no credential or inherited
+					// command, and replaces any same-named server in lower config.
+					servers[n] = map[string]any{"type": "remote", "url": "http://127.0.0.1:1/", "disabled": true}
+				}
+			}
+			config := map[string]any{
+				"permissions": []any{map[string]any{"action": "*", "resource": "*", "effect": "deny"}},
+				"agents": map[string]any{server: map[string]any{
+					"description": "Motty scoped assistant",
+					"mode":        "primary",
+					"permissions": permissions,
+				}},
+				"mcp": map[string]any{"servers": servers},
+			}
+			c.env = append(c.env, openCodeV2Env(config)...)
+			// The private server keeps a running shared daemon from supplying
+			// its own config and database; --title skips the title agent's
+			// extra model call.
+			c.args = append(c.args, "--standalone", "run", "--format", "json", "--agent", server, "--title", "motty", "--thinking")
+			if req.Model != "" && req.Model != "default" {
+				c.args = append(c.args, "--model", req.Model)
+			}
+			for _, file := range images {
+				c.args = append(c.args, "--file="+file)
+			}
+			return c, nil
+		}
 		mcps := map[string]any{}
 		for _, n := range foreign {
 			mcps[n] = map[string]any{"enabled": false}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"motty/internal/ai/llm"
@@ -206,5 +207,108 @@ func TestOpenCodeCapabilityProbeRequiresAppliedPermission(t *testing.T) {
 				t.Fatalf("openCodeConfigDenied = %t, want %t", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestOpenCodeV2BuilderUsesPrivateServerAndNativeConfig(t *testing.T) {
+	dir := t.TempDir()
+	req := llm.Request{Model: "default", Tools: []llm.ToolSpec{{Name: "list_sessions"}}}
+	cmd, err := buildCommand("opencode-cli", command{program: "agent", flavor: openCodeV2}, req, dir,
+		"http://127.0.0.1:1234/mcp", "PRIVATE_TOKEN_123456789012345678901234", []string{"foreign.server"}, "motty_session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(cmd.args, " ")
+	for _, want := range []string{"--standalone", "run", "--format json", "--agent motty_session", "--title motty", "--thinking"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("missing %q in %q", want, args)
+		}
+	}
+	if strings.Contains(args, "--pure") || strings.Contains(args, "PRIVATE_TOKEN") {
+		t.Fatalf("V1 or credential argument leaked into V2 run: %q", args)
+	}
+	var rawConfig string
+	for _, env := range cmd.env {
+		if value, ok := strings.CutPrefix(env, "OPENCODE_CONFIG_CONTENT="); ok {
+			rawConfig = value
+		}
+	}
+	if rawConfig == "" {
+		t.Fatal("inline V2 config missing")
+	}
+	var config struct {
+		Permissions []openCodePermissionRule `json:"permissions"`
+		Agents      map[string]struct {
+			Permissions []openCodePermissionRule `json:"permissions"`
+		} `json:"agents"`
+		MCP struct {
+			Servers map[string]struct {
+				Disabled bool              `json:"disabled"`
+				OAuth    *bool             `json:"oauth"`
+				Codemode *bool             `json:"codemode"`
+				Headers  map[string]string `json:"headers"`
+			} `json:"servers"`
+		} `json:"mcp"`
+	}
+	if err := json.Unmarshal([]byte(rawConfig), &config); err != nil {
+		t.Fatal(err)
+	}
+	agent, ok := config.Agents["motty_session"]
+	if !ok {
+		t.Fatal("scoped agent missing")
+	}
+	if effect := openCodePermissionEffect(config.Permissions, "read", "*"); effect != "deny" {
+		t.Errorf("global read effect = %q", effect)
+	}
+	if effect := openCodePermissionEffect(agent.Permissions, "read", "*"); effect != "deny" {
+		t.Errorf("agent read effect = %q", effect)
+	}
+	if effect := openCodePermissionEffect(agent.Permissions, "motty_session_list_sessions", "*"); effect != "allow" {
+		t.Errorf("scoped tool effect = %q", effect)
+	}
+	server, ok := config.MCP.Servers["motty_session"]
+	if !ok || server.OAuth == nil || *server.OAuth || server.Codemode == nil || *server.Codemode {
+		t.Fatalf("scoped MCP server = %+v", server)
+	}
+	if server.Headers["Authorization"] != "Bearer PRIVATE_TOKEN_123456789012345678901234" {
+		t.Fatalf("MCP authorization missing: %+v", server.Headers)
+	}
+	foreign, ok := config.MCP.Servers["foreign.server"]
+	if !ok || !foreign.Disabled || len(foreign.Headers) != 0 {
+		t.Fatalf("foreign server not inert: %+v", foreign)
+	}
+	for _, want := range []string{"OPENCODE_DB=:memory:", "OPENCODE_DISABLE_PROJECT_CONFIG=1"} {
+		if !strings.Contains(strings.Join(cmd.env, " "), want) {
+			t.Errorf("missing V2 isolation env %q", want)
+		}
+	}
+	if strings.Contains(strings.Join(cmd.env, " "), "OPENCODE_PURE") {
+		t.Error("removed V2 variable still set")
+	}
+}
+
+func TestOpenCodeV2EventStreamUsesTheSameParserContract(t *testing.T) {
+	p := newParser("opencode-cli")
+	var text string
+	for _, line := range []string{
+		`{"type":"step_start","part":{"type":"step-start"}}`,
+		`{"type":"tool_use","part":{"type":"tool","tool":"motty_session_echo"}}`,
+		`{"type":"step_finish","part":{"reason":"tool-calls","tokens":{"input":3,"output":1}}}`,
+		`{"type":"text","part":{"type":"text","text":"hello"}}`,
+		`{"type":"text","part":{"type":"text","text":" world"}}`,
+		`{"type":"step_finish","part":{"reason":"stop","tokens":{"input":4,"output":2}}}`,
+	} {
+		events, err := p.line([]byte(line))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, event := range events {
+			if event.Kind == llm.EventText {
+				text += event.Text
+			}
+		}
+	}
+	if text != "hello world" || !p.done || p.usage.InputTokens != 7 || p.usage.OutputTokens != 3 {
+		t.Fatalf("V2 stream = %q done=%t usage=%+v", text, p.done, p.usage)
 	}
 }
