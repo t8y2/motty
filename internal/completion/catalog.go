@@ -102,8 +102,9 @@ type Catalog struct {
 	Commit  string
 	License string
 
-	roots []*Node
-	index map[string]*Node // eager catalogs: every node; decoded ones: the roots
+	roots   []*Node
+	index   map[string]*Node           // eager catalogs: every node; decoded ones: the roots
+	plugins map[string][]PluginCommand // roots "<host>-<name>" grouped by host
 
 	nodeCount  int
 	flagCount  int
@@ -136,6 +137,7 @@ func NewCatalog(source, release, commit, license string, roots []*Node) (*Catalo
 		return nil, errors.New("completion: catalog has no root commands")
 	}
 	c.count()
+	c.plugins = buildPlugins(c.roots)
 	return c, nil
 }
 
@@ -462,6 +464,7 @@ func Decode(data []byte) (*Catalog, error) {
 		return nil, errors.New("completion: catalog has no root commands")
 	}
 	c.nodeCount, c.flagCount, c.valueCount = nodes, flags, values
+	c.plugins = buildPlugins(c.roots)
 	shape := AuditReport{}
 	auditShape(&shape, c)
 	c.auditWarnings = soft + shape.SoftCount

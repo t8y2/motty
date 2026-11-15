@@ -446,6 +446,31 @@ func TestCompletionGhostUsesTheCatalogOnlyWhenUnique(t *testing.T) {
 	}
 }
 
+// docker compose is a CLI plugin, so the catalog imports it as its own
+// docker-compose root; it must still be reachable below docker, including the
+// ghost that is the only offer in inline mode (#857).
+func TestCompletionReachesPluginSubcommands(t *testing.T) {
+	w := newCompletionWorld(t)
+	w.type_("docker comp")
+	rest, ok := w.state.commandGhost(w.session)
+	if !ok || rest != "ose" {
+		t.Fatalf("ghost %q ok=%v", rest, ok)
+	}
+
+	w.type_("ose up --de")
+	w.state.openCompletions()
+	list := &w.state.completion.list
+	if !list.active {
+		t.Fatal("no list for docker compose up")
+	}
+	for _, candidate := range list.candidates {
+		if candidate.Text == "--detach" {
+			return
+		}
+	}
+	t.Fatalf("docker compose up --de = %+v", list.candidates)
+}
+
 func TestCompletionHistoryMergesFirstOnlyWhileLearning(t *testing.T) {
 	w := newCompletionWorld(t)
 	key := historyKey(w.session)

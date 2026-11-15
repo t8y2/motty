@@ -160,6 +160,17 @@ func Complete(catalog *Catalog, line string) Result {
 			node = child
 			continue
 		}
+		// A host's subcommands are not all in the snapshot: carapace finds
+		// docker/git/gh/cargo plugins by running the host at completion time.
+		// The offline catalog keeps them as "<host>-<name>" roots, so the
+		// second token falls back to that root. node == root keeps this to the
+		// position directly below the host.
+		if node == root {
+			if plugin := pluginCommand(catalog, root.Token, token); plugin != nil {
+				node = plugin
+				continue
+			}
+		}
 		positional = true
 	}
 	if expect != nil {
@@ -173,7 +184,7 @@ func Complete(catalog *Catalog, line string) Result {
 		if positional {
 			return result
 		}
-		addChildren(node, "", &result)
+		addChildren(catalog, node, root, "", &result)
 		addLongFlags(catalog, node, "", used, &result)
 		return result
 	}
@@ -200,7 +211,7 @@ func Complete(catalog *Catalog, line string) Result {
 	if positional {
 		return result
 	}
-	addChildren(node, word, &result)
+	addChildren(catalog, node, root, word, &result)
 	return result
 }
 
@@ -241,15 +252,41 @@ func addRoots(catalog *Catalog, prefix string, result *Result) {
 	}
 }
 
-func addChildren(node *Node, prefix string, result *Result) {
+// addChildren lists a node's subcommands and, directly below a plugin host,
+// the subcommands that host resolves from PATH. Both sets are in name order and
+// merged so the list stays alphabetical; a real subcommand wins over a plugin
+// of the same name because that is what the token resolves to.
+func addChildren(catalog *Catalog, node, root *Node, prefix string, result *Result) {
 	node.load()
-	for _, child := range node.Children {
-		if child.Hidden {
-			continue
+	var plugins []PluginCommand
+	if node == root {
+		plugins = catalog.Plugins(root.Token)
+	}
+	children := node.Children
+	child, plugin := 0, 0
+	for {
+		for child < len(children) && children[child].Hidden {
+			child++
 		}
-		addCandidate(result, child.Token, prefix, child.Desc, KindCommand)
-		for _, alias := range child.Aliases {
-			addCandidate(result, alias, prefix, child.Desc, KindCommand)
+		switch {
+		case child >= len(children) && plugin >= len(plugins):
+			return
+		case plugin >= len(plugins) || (child < len(children) && children[child].Token < plugins[plugin].Name):
+			current := children[child]
+			addCandidate(result, current.Token, prefix, current.Desc, KindCommand)
+			for _, alias := range current.Aliases {
+				addCandidate(result, alias, prefix, current.Desc, KindCommand)
+			}
+			child++
+		default:
+			current := plugins[plugin]
+			plugin++
+			if childByToken(node, current.Name) != nil {
+				// A real subcommand, visible or not, or one of its aliases
+				// claims the token; the plugin of that name is unreachable.
+				continue
+			}
+			addCandidate(result, current.Name, prefix, current.Node.Desc, KindCommand)
 		}
 	}
 }
