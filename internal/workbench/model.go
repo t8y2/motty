@@ -41,6 +41,11 @@ type Host struct {
 	Auth       hostAuth
 	Identity   string
 	SSHOptions *sshconfig.ConnectionOptions
+	// IdentitiesOnly keeps automatic authentication to the identities
+	// configured here: the ssh-agent is offered only the keys that match a
+	// default, imported or host-specific identity, so an agent holding many
+	// keys cannot spend the server's authentication budget first.
+	IdentitiesOnly bool
 	// Credential is the id of the saved password (see credentials.go) the host
 	// takes its password from; empty keeps the host's own. An id that no saved
 	// password has is treated as empty.

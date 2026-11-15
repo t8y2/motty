@@ -194,6 +194,8 @@ SecureCRT 的保存密码是加密的，导入只包含连接。
 OpenSSH 配置导入和同步会保留每台主机的 `ServerAliveInterval`、
 `ServerAliveCountMax`、`IdentitiesOnly` 和指定的身份文件。显式设置间隔为 0
 会关闭该主机的保活；限制身份时仍可使用 SSH agent 中匹配的密钥，但不会尝试其他 agent 密钥。
+使用自动认证的主机也可以在编辑器的“高级选项”里开启同样的限制：agent 只提供与已配置
+身份匹配的密钥，避免 agent 中密钥过多时在本地密钥之前耗尽服务器的认证次数。
 
 ### 文件不用另开应用
 

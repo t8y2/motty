@@ -228,6 +228,8 @@ func (state *State) failureLine(session *Session) string {
 		return m.ConnRejected
 	case errors.Is(err, sshconn.ErrCanceled):
 		return m.ConnCanceled
+	case errors.Is(err, sshconn.ErrTooManyAuthAttempts):
+		return m.ConnTooManyAuthAttempts
 	case errors.Is(err, sshconn.ErrAuthFailed):
 		return m.ConnAuthFailed
 	}

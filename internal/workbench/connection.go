@@ -1167,6 +1167,8 @@ func (state *State) tellFailure(session *Session, status sshconn.Status) {
 		t.say(sgrFail, m.ConnRejected)
 	case errors.Is(status.Err, sshconn.ErrCanceled):
 		t.say(sgrFail, m.ConnCanceled)
+	case errors.Is(status.Err, sshconn.ErrTooManyAuthAttempts):
+		t.say(sgrFail, m.ConnTooManyAuthAttempts)
 	case errors.Is(status.Err, sshconn.ErrAuthFailed):
 		t.say(sgrFail, m.ConnAuthFailed)
 	default:

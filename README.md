@@ -237,7 +237,11 @@ passwords encrypted, so its import carries connections only.
 OpenSSH config import and sync retain per-host `ServerAliveInterval`,
 `ServerAliveCountMax`, `IdentitiesOnly` and configured identity files. An explicit
 zero interval disables keepalive for that host; restricted identities still use
-matching keys from the SSH agent, without offering unrelated agent keys.
+matching keys from the SSH agent, without offering unrelated agent keys. A host
+that uses automatic authentication can set the same restriction in the host
+editor's Advanced section: the agent then offers only the keys matching the
+configured identities, so a large agent key set cannot spend the server's
+authentication budget before the local keys are tried.
 
 ### Files
 

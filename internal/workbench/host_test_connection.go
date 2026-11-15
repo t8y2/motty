@@ -197,6 +197,8 @@ func (state *State) finishFailedHostTest(status sshconn.Status) {
 	switch {
 	case errors.Is(err, sshconn.ErrHostKeyChanged):
 		test.finish(hostTestFailed, m.ConnChangedShort)
+	case errors.Is(err, sshconn.ErrTooManyAuthAttempts):
+		test.finish(hostTestFailed, m.ConnTooManyAuthAttempts)
 	case errors.Is(err, sshconn.ErrAuthFailed) && test.skipped > 0:
 		test.finish(hostTestReachable, m.HostTestKeyLocked)
 	case errors.Is(err, sshconn.ErrAuthFailed):

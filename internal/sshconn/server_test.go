@@ -61,6 +61,10 @@ type testServer struct {
 	// pubKeyAuths, when set, restricts the public-key authentication algorithms
 	// the server accepts, to stand in for a server that refuses SHA-1 RSA.
 	pubKeyAuths []string
+	// maxAuthTries overrides the server's failed-authentication budget, to
+	// stand in for a server that gives up before every key is offered. Zero
+	// keeps the library's default.
+	maxAuthTries int
 
 	// shell, when set, runs for every session that asks for a shell, with the
 	// pty it requested. command handles exec requests. Without either every
@@ -119,6 +123,9 @@ func startServer(t *testing.T, configure func(*testServer)) *testServer {
 	}
 	if len(server.pubKeyAuths) > 0 {
 		config.PublicKeyAuthAlgorithms = server.pubKeyAuths
+	}
+	if server.maxAuthTries > 0 {
+		config.MaxAuthTries = server.maxAuthTries
 	}
 	config.AddHostKey(server.hostKey)
 	if server.banner != "" {

@@ -725,18 +725,19 @@ type Messages struct {
 	// SessionNoShellInput is shown when someone types into a tab whose shell is
 	// gone: the keys go nowhere, so saying so is what keeps the keyboard from
 	// looking broken.
-	SessionNoShellInput   string
-	ConnClosed            string
-	ConnCanceled          string
-	ConnRejected          string
-	ConnFailedFmt         string
-	ConnAuthFailed        string
-	ConnSkippedKeyFmt     string
-	ConnChangedTitle      string
-	ConnChangedBodyFmt    string
-	ConnChangedTrustedFmt string
-	ConnChangedPresented  string
-	ConnChangedHintFmt    string
+	SessionNoShellInput     string
+	ConnClosed              string
+	ConnCanceled            string
+	ConnRejected            string
+	ConnFailedFmt           string
+	ConnAuthFailed          string
+	ConnTooManyAuthAttempts string
+	ConnSkippedKeyFmt       string
+	ConnChangedTitle        string
+	ConnChangedBodyFmt      string
+	ConnChangedTrustedFmt   string
+	ConnChangedPresented    string
+	ConnChangedHintFmt      string
 	// ConnProbeRefused explains a close that the client's own optional probes
 	// caused: the server permits only an interactive session, so the host was
 	// kept to one and the retry can connect.

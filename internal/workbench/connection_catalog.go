@@ -158,16 +158,25 @@ func (catalog *hostCatalog) identityForFingerprint(fingerprint string) (identity
 }
 
 func (catalog *hostCatalog) authenticationFor(host Host) sshconn.Authentication {
-	if host.Auth == authAutomatic && host.SSHOptions != nil {
-		options := host.SSHOptions
+	if host.Auth == authAutomatic {
 		authentication := sshconn.Authentication{Methods: sshconn.AuthAll, Agent: true}
-		if len(options.IdentityFiles) > 0 {
+		options := host.SSHOptions
+		if options != nil && len(options.IdentityFiles) > 0 {
 			authentication.IdentityFiles = options.IdentityFiles
 		}
-		if options.IdentitiesOnly != nil {
-			authentication.IdentitiesOnly = *options.IdentitiesOnly
-		}
-		if !authentication.IdentitiesOnly {
+		importedOnly := options != nil && options.IdentitiesOnly != nil && *options.IdentitiesOnly
+		switch {
+		case host.IdentitiesOnly:
+			// The app's own switch. Every identity configured here stays
+			// eligible — the host's files, the key library and the defaults —
+			// while the agent may only supply the keys matching one of them.
+			authentication.IdentitiesOnly = true
+			authentication.AdditionalIdentityFiles = catalog.identityPaths()
+		case importedOnly:
+			// An imported ssh_config said so: follow it exactly, without
+			// adding keys the file does not name.
+			authentication.IdentitiesOnly = true
+		default:
 			authentication.AdditionalIdentityFiles = catalog.identityPaths()
 		}
 		return authentication

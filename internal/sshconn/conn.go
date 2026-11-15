@@ -54,6 +54,12 @@ var (
 	ErrAuthFailed       = errors.New("sshconn: authentication failed")
 	ErrDisconnected     = errors.New("sshconn: disconnected")
 	ErrKeepAliveTimeout = errors.New("sshconn: keepalive timed out")
+	// ErrTooManyAuthAttempts is the authentication failure of a server that
+	// ended the connection because the client offered too many keys. It is also
+	// ErrAuthFailed, so callers that only distinguish refused credentials keep
+	// working; a caller that can name the setting which avoids it tests this
+	// error first.
+	ErrTooManyAuthAttempts = errors.New("sshconn: too many authentication attempts")
 )
 
 // maxPasswordAttempts is how many passwords the user may try per method.
@@ -823,15 +829,38 @@ func (conn *Conn) explain(err error) error {
 	switch {
 	case errors.Is(err, ErrCanceled), errors.Is(err, ErrHostKeyRejected), errors.Is(err, ErrHostKeyChanged):
 		return err
+	case containsTooManyAuthAttempts(err):
+		return &tooManyAuthAttemptsError{cause: err}
 	case status.Attempt >= maxPasswordAttempts || containsAuthFailure(err):
 		return fmt.Errorf("%w: %v", ErrAuthFailed, err)
 	}
 	return err
 }
 
+// tooManyAuthAttemptsError keeps the server's own message while matching both
+// ErrTooManyAuthAttempts and ErrAuthFailed.
+type tooManyAuthAttemptsError struct{ cause error }
+
+func (err *tooManyAuthAttemptsError) Error() string { return err.cause.Error() }
+
+func (err *tooManyAuthAttemptsError) Unwrap() error { return err.cause }
+
+func (err *tooManyAuthAttemptsError) Is(target error) bool {
+	return target == ErrTooManyAuthAttempts || target == ErrAuthFailed
+}
+
 func containsAuthFailure(err error) bool {
 	message := err.Error()
-	return strings.Contains(message, "unable to authenticate") || strings.Contains(message, "no supported methods remain")
+	return strings.Contains(message, "unable to authenticate") ||
+		strings.Contains(message, "no supported methods remain") ||
+		containsTooManyAuthAttempts(err)
+}
+
+// containsTooManyAuthAttempts reports the disconnect OpenSSH servers send once
+// refused key offers reach MaxAuthTries. The message is the only signal: SSH has
+// no error code for it, and servers differ in capitalization.
+func containsTooManyAuthAttempts(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "too many authentication failures")
 }
 
 func (conn *Conn) addCloser(closer io.Closer) {

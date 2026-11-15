@@ -30,6 +30,8 @@ var (
 	hitDialogAgentForward         = tree.ID(hostProtocolUiHits, "dialog-agent-forward")
 	hitDialogInteractiveOnly      = tree.ID(hostProtocolUiHits, "dialog-interactive-only")
 	hitDialogNoHistory            = tree.ID(hostProtocolUiHits, "dialog-no-history")
+	hitDialogIdentitiesOnly       = tree.ID(hostProtocolUiHits, "dialog-identities-only")
+	hitDialogIdentitiesOnlyHelp   = tree.ID(hostProtocolUiHits, "dialog-identities-only-help")
 	hitDialogAgentAccess          = tree.ID(hostProtocolUiHits, "dialog-agent-access")
 	hitDialogAgentAccessHelp      = tree.ID(hostProtocolUiHits, "dialog-agent-access-help")
 	hitDialogOTP                  = tree.ID(hostProtocolUiHits, "dialog-otp")
@@ -408,6 +410,8 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.agentForward = !editor.agentForward
 	case id == hitDialogInteractiveOnly:
 		editor.interactiveOnly = !editor.interactiveOnly
+	case id == hitDialogIdentitiesOnly:
+		editor.identitiesOnly = !editor.identitiesOnly
 	case id == hitDialogNoHistory:
 		editor.noHistory = !editor.noHistory
 	case id == hitDialogAgentAccess:
@@ -528,10 +532,20 @@ const (
 	otpFieldHeight = 58
 	// groupHeadingHeight is a rule and the small heading under it.
 	groupHeadingHeight = 40
-	// sshSwitchRowsHeight is both groups: the first row sits 4px under its
-	// heading, the others 12px under the row above, and 16px are left at the end.
-	sshSwitchRowsHeight = groupHeadingHeight + (4 + 20) + 3*(12+20) + groupHeadingHeight + (4 + 20) + 16
 )
+
+// sshSwitchRowsHeight is the room of the Advanced section's two switch groups:
+// the session switches and the AI-agent switch. The first row sits 4px under its
+// heading, the others 12px under the row above, and 16px are left at the end.
+// Automatic authentication brings one session switch more: the agent-identity
+// restriction.
+func (state *State) sshSwitchRowsHeight() float32 {
+	height := float32(groupHeadingHeight + (4 + 20) + 3*(12+20) + groupHeadingHeight + (4 + 20) + 16)
+	if state.editor.auth == authAutomatic {
+		height += 12 + 20
+	}
+	return height
+}
 
 // advancedHeaderHeight is the row that opens the Advanced section of an SSH
 // host, with the gap above it.
@@ -552,7 +566,7 @@ func (state *State) sshAdvancedRowsHeight() float32 {
 	if state.editor.algoMode == algoCustom {
 		rows++
 	}
-	return rows*hostFormRowHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + sshSwitchRowsHeight
+	return rows*hostFormRowHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + state.sshSwitchRowsHeight()
 }
 
 // idleAdvancedRowsHeight is the room of the idle keepalive rows: a heading, the
@@ -653,6 +667,7 @@ type hostVNCRowsBody struct {
 type hostAlgoRowsBody struct {
 	algo, custom, login, otp, scan, paste, remove ui.Box
 	x11, agentFwd, noHistory, interactive         ui.Box
+	identitiesOnly, identitiesOnlyHelp            ui.Box
 	agentAccess, agentHelp                        ui.Box
 }
 
@@ -680,6 +695,10 @@ func (state *State) paintAlgorithmRows(canvas *gfx.Canvas) {
 	state.paintDialogCheckbox(canvas, hitDialogAgentForward, m.AgentForward, editor.agentForward, b.agentFwd)
 	state.paintDialogCheckbox(canvas, hitDialogNoHistory, state.messages.History.HostNoRecord, editor.noHistory, b.noHistory)
 	state.paintDialogCheckbox(canvas, hitDialogInteractiveOnly, m.InteractiveOnly, editor.interactiveOnly, b.interactive)
+	if editor.auth == authAutomatic {
+		state.paintDialogCheckbox(canvas, hitDialogIdentitiesOnly, m.IdentitiesOnly, editor.identitiesOnly, b.identitiesOnly)
+		state.paintHelpIcon(canvas, hitDialogIdentitiesOnlyHelp, m.IdentitiesOnlyNote, b.identitiesOnlyHelp.Rect())
+	}
 	state.paintDialogCheckbox(canvas, hitDialogAgentAccess, m.AgentAccess, editor.agentAccess, b.agentAccess)
 	// After the checkbox, whose words reach to the end of the row, so that this is
 	// the hit on top where the two meet.
@@ -719,6 +738,9 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 		b.agentFwd = state.declareDialogCheckboxC(c, m.AgentForward, 12, 0)
 		b.noHistory = state.declareDialogCheckboxC(c, state.messages.History.HostNoRecord, 12, 0)
 		b.interactive = state.declareDialogCheckboxC(c, m.InteractiveOnly, 12, 0)
+		if editor.auth == authAutomatic {
+			b.identitiesOnly, b.identitiesOnlyHelp = state.declareDialogCheckboxHelpC(c, m.IdentitiesOnly, 12, 0)
+		}
 		heading(m.AdvancedAgents)
 		b.agentAccess, b.agentHelp = state.declareDialogCheckboxHelpC(c, m.AgentAccess, 4, 0)
 		state.declareHostIdleKeepAliveRows(c)

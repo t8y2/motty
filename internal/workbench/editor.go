@@ -65,6 +65,9 @@ type hostEditor struct {
 	sshOptions   *sshconfig.ConnectionOptions
 	authOpen     bool
 	identityOpen bool
+	// identitiesOnly is the automatic-authentication switch that offers the
+	// ssh-agent only keys matching the configured identities.
+	identitiesOnly bool
 	// credential is the saved password the host takes its password from, and
 	// credentialOpen its list being open.
 	credential     string
@@ -330,6 +333,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.algoMode = host.algoMode()
 	editor.auth, editor.identity, editor.credential = host.Auth, host.Identity, host.Credential
 	editor.sshOptions = host.SSHOptions.Clone()
+	editor.identitiesOnly = host.IdentitiesOnly
 	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11 = host.ForwardX11
 	editor.agentForward = host.AgentForward
@@ -337,7 +341,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.noHistory = host.NoHistory
 	editor.proxy, editor.proxyPassword = cloneOutboundProxy(host.Proxy), ""
 	editor.transfer = host.Transfer
-	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.InteractiveOnly || host.NoHistory || host.LoginCommand != "")
+	editor.advancedOpen = host.isSSH() && (host.Algo != nil || host.ForwardX11 || host.AgentForward || host.InteractiveOnly || host.NoHistory || host.IdentitiesOnly || host.LoginCommand != "")
 	if idleKeepAliveProtocol(host.Protocol) && (host.IdleKeepAlive > 0 || host.IdleInput != idleInputProtocolDefault) {
 		editor.advancedOpen = true
 	}
@@ -393,6 +397,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	if editor.protocol == protocolSSH {
 		host.SSHOptions = editor.sshOptions.Clone()
 		host.Auth, host.Identity = editor.auth, editor.identity
+		host.IdentitiesOnly = editor.identitiesOnly
 		host.Terminal = editor.terminal
 		if host.Auth != authPrivateKey {
 			host.Identity = ""
@@ -457,6 +462,7 @@ func (editor *hostEditor) reset() {
 	editor.otp, editor.otpSaved, editor.otpRemove = text.Editor{}, false, false
 	editor.algoMode, editor.auth, editor.identity, editor.credential = algoDefault, authAutomatic, "", ""
 	editor.sshOptions = nil
+	editor.identitiesOnly = false
 	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11, editor.agentForward, editor.noHistory, editor.transfer = false, false, false, transferAuto
 	editor.agentAccess = false
