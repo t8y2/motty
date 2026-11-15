@@ -183,13 +183,14 @@ type savedState struct {
 	WorkspaceTemplates         []WorkspaceTemplate `json:"workspace_templates,omitempty"`
 	IdentityFiles              []string            `json:"identity_files,omitempty"`
 	// AgentHosts are the catalog ids of the hosts an agent may use without a
-	// window. It belongs to this computer, not to the hosts that sync, so a host
-	// that arrives from another device starts out closed to agents.
-	AgentHosts []string            `json:"agent_hosts,omitempty"`
-	Forwards   []savedForward      `json:"forwards,omitempty"`
-	Proxies    []savedProxy        `json:"proxies,omitempty"`
-	Sessions   []savedSession      `json:"sessions,omitempty"`
-	Deck       *layoutcore.DeckDTO `json:"deck,omitempty"`
+	// window. AgentHostMode records the last bulk choice and the default for new
+	// hosts. Both belong to this computer, not to the hosts that sync.
+	AgentHosts    []string            `json:"agent_hosts,omitempty"`
+	AgentHostMode string              `json:"agent_host_mode,omitempty"`
+	Forwards      []savedForward      `json:"forwards,omitempty"`
+	Proxies       []savedProxy        `json:"proxies,omitempty"`
+	Sessions      []savedSession      `json:"sessions,omitempty"`
+	Deck          *layoutcore.DeckDTO `json:"deck,omitempty"`
 	// An empty array distinguishes a new snapshot with no managed workspaces
 	// from an older snapshot that never recorded workspace identity.
 	WorkspaceLayouts []savedWorkspaceLayout `json:"workspace_layouts,omitzero"`
@@ -661,6 +662,7 @@ func (state *State) snapshot() savedState {
 			Action: action.String(), Key: chord.Name(), Modifiers: uint8(chord.Modifiers),
 		})
 	}
+	saved.AgentHostMode = state.agentHostMode.saved()
 	for _, host := range state.hosts {
 		saved.Hosts = append(saved.Hosts, savedHost{
 			ID: host.CatalogID, Label: host.Label, Group: host.Group, Tags: splitHostTags(host), Icon: host.Icon.String(), Color: host.Color,
@@ -1104,6 +1106,7 @@ func (state *State) restoreLocal(saved savedState) {
 	}
 	state.restoreIdentities(saved.IdentityFiles)
 	state.agentHosts = agentHostSet(saved.AgentHosts)
+	state.agentHostMode = agentHostModeFromSaved(saved.AgentHostMode)
 	state.restoreSync(saved.Sync)
 	state.syncScope = newSyncScope(saved.SyncExcluded)
 	state.hostView = hostViewFromString(saved.HostView)

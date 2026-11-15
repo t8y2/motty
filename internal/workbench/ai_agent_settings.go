@@ -32,6 +32,23 @@ var (
 // agentAuditShown is how many of the latest calls the page lists.
 const agentAuditShown = 5
 
+var agentHostModeChoices = [...]agentHostMode{agentHostModeNone, agentHostModeFollow, agentHostModeAll}
+
+func (state *State) agentHostModeLabel(mode agentHostMode) string {
+	switch mode {
+	case agentHostModeNone:
+		return state.messages.AISettings.AgentHostsNone
+	case agentHostModeAll:
+		return state.messages.AISettings.AgentHostsAll
+	}
+	return state.messages.AISettings.AgentHostsFollow
+}
+
+func (state *State) applyAgentHostMode(mode agentHostMode) {
+	state.setAgentHostMode(mode)
+	state.save()
+}
+
 // aiAgentClick handles the controls of the group that are not its mode choice.
 func (state *State) aiAgentClick(id gfx.ID) bool {
 	switch id {
@@ -168,7 +185,16 @@ func (state *State) paintAIAgents(page *settingsPage) {
 		if state.ai.settings.agentMode == gate.ModeAllowAll {
 			page.mcpAccessWarning(m.AgentAllowAllWarning)
 		}
-		page.mcpFrame(m.AgentHosts, hosts, pal.muted, func() {})
+		hostMode := state.agentHostMode
+		choices := agentHostModeChoices[:]
+		controlWidth := max(min(float32(300), max(float32(190), page.width*0.40)), settingsChoiceWidth(page, choices, state.agentHostModeLabel))
+		controlWidth = min(controlWidth, max(page.width-60, 0))
+		page.mcpFrame(m.AgentHosts, hosts, pal.muted, func() {
+			choice := ui.Choice(c, &hostMode, choices, state.agentHostModeLabel).Width(controlWidth)
+			if choice.Changed() {
+				state.applyAgentHostMode(hostMode)
+			}
+		})
 		page.separator()
 		state.paintMCPConfigBlock(page, aiMCPConfigView{
 			title: m.AgentConfig, description: m.AgentConfigDesc,

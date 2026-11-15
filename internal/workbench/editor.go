@@ -99,7 +99,8 @@ type hostEditor struct {
 	interactiveOnly bool
 	// agentAccess is the "Allow MCP agents to use this host" switch. It is not
 	// part of the host: it is kept for this computer (see savedState.AgentHosts).
-	agentAccess bool
+	agentAccess        bool
+	agentAccessChanged bool
 	// noHistory is the host's "Don't record commands" switch.
 	noHistory bool
 	// proxy is nil to inherit the global proxy, ProxyNone to force a direct
@@ -307,6 +308,7 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 }
 
 func (editor *hostEditor) load(host Host) {
+	editor.agentAccessChanged = false
 	editor.form = hostFormScroll{}
 	editor.colorPicker = hostColorPicker{}
 	editor.color = text.Editor{}
@@ -466,6 +468,7 @@ func (editor *hostEditor) reset() {
 	editor.authOpen, editor.identityOpen, editor.credentialOpen = false, false, false
 	editor.forwardX11, editor.agentForward, editor.noHistory, editor.transfer = false, false, false, transferAuto
 	editor.agentAccess = false
+	editor.agentAccessChanged = false
 	editor.proxy, editor.proxyPassword = nil, ""
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))

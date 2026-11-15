@@ -63,7 +63,7 @@ func TestAgentAllowAllWaitsForConfirmationAndKeepsHTTPIndependent(t *testing.T) 
 				}
 			}
 			m := state.messages.AISettings
-			allowAll := func() { clickSettingsChoice(t, state, m.MCPModeAllowAll) }
+			allowAll := func() { clickSettingsChoiceInRow(t, state, m.AgentMode, m.MCPModeAllowAll) }
 			allowAll()
 			check(before, initial)
 			if state.ai.cfg.dialog != aiDialogAgentAllowAll {

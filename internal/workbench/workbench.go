@@ -2346,6 +2346,7 @@ func (state *State) clickHostDialog(id gfx.ID) {
 func (state *State) openHostDialog() {
 	state.cancelHostTest()
 	state.editor.reset()
+	state.editor.agentAccess = state.agentHostMode == agentHostModeAll
 	state.hostDialogMode = hostDialogAdd
 	state.hostDialogID = 0
 	state.dialogError = ""
