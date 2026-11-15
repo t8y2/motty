@@ -82,7 +82,8 @@ type commandPalette struct {
 	connect    bool
 	workspaces bool
 	// localShells expands the Local Terminal row into the shells this computer
-	// can run, inside the same searchable new-tab list.
+	// can run, inside the same searchable new-tab list. It is opened from the
+	// saved preference and written back through setLocalShellsExpanded.
 	localShells bool
 	// snippets makes the list a picker of the saved snippets to send to the
 	// active terminal, opened from the terminal toolbar.
@@ -355,7 +356,7 @@ func (state *State) clickCommandPalette(id gfx.ID) {
 			return
 		}
 		if id == hitConnectPickShellPicker {
-			state.commandPalette.localShells = !state.commandPalette.localShells
+			state.setLocalShellsExpanded(!state.commandPalette.localShells)
 			state.rebuildCommandPalette()
 			return
 		}
@@ -520,7 +521,7 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			if palette.localShells == expand {
 				return gfx.EventResult{}, false
 			}
-			palette.localShells = expand
+			state.setLocalShellsExpanded(expand)
 			state.rebuildCommandPalette()
 			first := palette.choiceAt(0, 1)
 			if first < 0 {

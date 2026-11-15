@@ -719,6 +719,11 @@ type State struct {
 	linkUp              atomic.Bool
 	terminalOption      terminalOptionMode
 	recentConnectSort   bool
+	// localShellsExpanded is whether the new-tab picker lists every shell under
+	// the Local Terminal row instead of folding them behind its arrow. Like the
+	// sort beside it, it is the user's choice and the picker opens the way they
+	// left it.
+	localShellsExpanded bool
 	recentConnections   map[string]time.Time
 	localShell          string // executable on this computer; empty uses the platform default
 	localStart          localStartPolicy

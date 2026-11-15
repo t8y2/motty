@@ -34,6 +34,9 @@ const shortcutSchemaVersion = 1
 type savedState struct {
 	RecentConnectSort bool                 `json:"recent_connect_sort,omitempty"`
 	RecentConnections map[string]time.Time `json:"recent_connections,omitempty"`
+	// LocalShellsExpanded keeps the new-tab picker listing the shells under the
+	// Local Terminal row once the user has opened it there.
+	LocalShellsExpanded bool `json:"local_shells_expanded,omitempty"`
 
 	MonitorPanels              []monitoring.Panel      `json:"monitor_panels,omitempty"`
 	MonitorActive              string                  `json:"monitor_active,omitempty"`
@@ -519,6 +522,7 @@ func (state *State) snapshot() savedState {
 		LocalStart:                 state.localStart.String(),
 		LastLocalDirectory:         state.lastLocalDirectory,
 		RecentConnectSort:          state.recentConnectSort,
+		LocalShellsExpanded:        state.localShellsExpanded,
 		RecentConnections:          maps.Clone(state.recentConnections),
 		SSHAgent:                   savedAgent,
 		SSHAgentPath:               savedAgentPath,
@@ -1021,6 +1025,7 @@ func (state *State) restoreLocal(saved savedState) {
 	state.localShell = saved.LocalShell
 	state.hiddenShells = cleanShellPaths(saved.HiddenShells)
 	state.recentConnectSort = saved.RecentConnectSort
+	state.localShellsExpanded = saved.LocalShellsExpanded
 	state.recentConnections = maps.Clone(saved.RecentConnections)
 	state.sessionLogsOff = saved.SessionLogsOff
 	state.restoreSessionLogsView(saved.SessionLogsView)

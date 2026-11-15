@@ -34,11 +34,24 @@ func (state *State) openConnectPicker() {
 		state.refreshLocalShells()
 	}
 	state.commandPalette.connect, state.commandPalette.snippets = true, false
-	state.commandPalette.workspaces, state.commandPalette.localShells = false, false
+	state.commandPalette.workspaces = false
+	// The shells list opens the way the user left it: expanding it is a choice
+	// that outlives one opening of the picker.
+	state.commandPalette.localShells = state.localShellsExpanded
 	state.modal = modalCommandPalette
 	state.commandPalette.search = text.Editor{}
 	state.commandPalette.filtered = false
 	state.rebuildCommandPalette()
+}
+
+// setLocalShellsExpanded opens or folds the shells under the picker's Local
+// Terminal row and keeps that choice for the next opening, as the sort switch
+// keeps its own. The caller rebuilds the list, since only it knows where the
+// keyboard belongs after the rows change.
+func (state *State) setLocalShellsExpanded(expanded bool) {
+	state.commandPalette.localShells = expanded
+	state.localShellsExpanded = expanded
+	state.save()
 }
 
 func (state *State) rebuildConnectPicker() {

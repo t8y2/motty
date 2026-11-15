@@ -233,6 +233,39 @@ func TestNewTabPickerExpandsShellsInsideTheSearchableList(t *testing.T) {
 	}
 }
 
+func TestNewTabPickerKeepsTheShellListOpenForTheNextOpening(t *testing.T) {
+	skipWithoutUnixShell(t)
+	options := testOptions(t)
+	state := newTestState(t, options)
+	closeLocalShells(t, state)
+	withShellChoices(t, state, []localshell.Choice{{Name: "Alpha", Path: "/bin/sh", Default: true}, {Name: "Beta", Path: "/bin/bash"}}, nil)
+	state.localShell = "/bin/sh"
+	shell := state.messages.LocalTerminal + " · Beta"
+
+	state.openConnectPicker()
+	paintedTexts(state)
+	state.Click(hitConnectPickShellPicker)
+	state.closeCommandPalette()
+
+	// Opening the picker again lists the shells where the arrow left them.
+	state.openConnectPicker()
+	if _, texts := paintedTexts(state); !contains(texts, shell) {
+		t.Fatalf("the reopened picker folded the shells: %q", texts)
+	}
+	// Folding is remembered the same way, across a restart too.
+	state.Click(hitConnectPickShellPicker)
+	state.closeCommandPalette()
+	state.Close()
+
+	again := newTestState(t, options)
+	closeLocalShells(t, again)
+	withShellChoices(t, again, []localshell.Choice{{Name: "Alpha", Path: "/bin/sh", Default: true}, {Name: "Beta", Path: "/bin/bash"}}, nil)
+	again.openConnectPicker()
+	if _, texts := paintedTexts(again); contains(texts, shell) {
+		t.Fatalf("the restart reopened the shells the user folded: %q", texts)
+	}
+}
+
 func TestNewTabPickerHasNoShellArrowWhenThereIsOneShell(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	withShellChoices(t, state, []localshell.Choice{{Name: "Alpha", Path: "/bin/sh", Default: true}}, nil)
