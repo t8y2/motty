@@ -300,8 +300,11 @@ func TestReconnectCountdownIsFullyVisible(t *testing.T) {
 			state, _, connection, _ := reconnectingSession(t, reconnectThree)
 			state.setLanguage(language)
 			disconnectEstablished(connection, state)
+			// The minimum window is the smallest the product promises, so the
+			// countdown must be whole there.
+			size := gfx.Size{Width: MinimumWindowWidth, Height: MinimumWindowHeight}
 			var canvas gfx.Canvas
-			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+			state.Paint(&canvas, size)
 			full := state.sessions[0].reconnectText
 			var values []string
 			var available float32
@@ -317,7 +320,7 @@ func TestReconnectCountdownIsFullyVisible(t *testing.T) {
 				if width := canvas.TextWidthWeight(text.Value, text.Style.Size, text.Style.Weight); width > text.Bounds.Width+0.5 {
 					t.Fatalf("countdown %q is %.1f wide in a %.1f box", text.Value, width, text.Bounds.Width)
 				}
-				snapshot := app.Snapshot{Width: 1400, Height: 900, Texts: canvas.Texts(), Hits: canvas.Hits()}
+				snapshot := app.Snapshot{Width: int(size.Width), Height: int(size.Height), Texts: canvas.Texts(), Hits: canvas.Hits()}
 				for _, problem := range headless.CheckLayout(snapshot) {
 					t.Errorf("%s %q %s at %+v", problem.Kind, problem.Text, problem.Detail, problem.Bounds)
 				}

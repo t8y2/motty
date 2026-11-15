@@ -236,7 +236,9 @@ func (state *State) failureLine(session *Session) string {
 	return err.Error()
 }
 
-// Card metrics, in logical pixels.
+// Card metrics, in logical pixels. The width sizes the card for its widest
+// footer: a reconnect's localized countdown beside its four actions, whole in
+// every supported language.
 const (
 	cardWidth  = float32(560)
 	cardPad    = float32(28)
