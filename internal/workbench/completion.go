@@ -1343,9 +1343,11 @@ func (state *State) paintCompletionRows(canvas *gfx.Canvas, body gfx.Rect, visib
 				canvas.Label(candidate.Desc, detail, detailStyle)
 			}
 		}
-		canvas.Clip(text)
-		canvas.Label(candidate.Text, text, textStyle)
-		canvas.Unclip()
+		// A row is a candidate's whole text, and a path can name a directory far
+		// wider than the list is allowed to be. Cut its middle rather than its
+		// end: what tells one candidate from its neighbours is the last name,
+		// not the parent they share.
+		canvas.Label(canvas.FitLineMiddle(candidate.Text, textStyle.Size, textStyle.Weight, text.Width), text, textStyle)
 	}
 }
 
