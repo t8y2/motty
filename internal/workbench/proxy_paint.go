@@ -130,12 +130,12 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 					// 全部路由
 					allSelected := state.selectedBastionJumpID == 0
 					allLabel := messages.HostFilterAll
-					state.declareSegmentedHubTab(c, hitProxyHubTabList.At(0), allLabel, len(state.proxies), allSelected, false, 0)
+					state.declareSegmentedHubTab(c, hitProxyHubTabList.At(0), allLabel, state.bastionAllCountText, allSelected, false, 0)
 
 					for idx := range hubs {
 						hub := &hubs[idx]
 						isSelected := state.selectedBastionJumpID == hub.JumpHost.ID
-						state.declareSegmentedHubTab(c, hitProxyHubTabList.At(idx+1), hub.JumpHost.Label, hub.Total, isSelected, true, hub.Active)
+						state.declareSegmentedHubTab(c, hitProxyHubTabList.At(idx+1), hub.JumpHost.Label, hub.CountLabel, isSelected, true, hub.Active)
 					}
 				})
 			}
@@ -195,7 +195,7 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 	body.Clip().DrawOver(view.draw)
 }
 
-func (state *State) declareSegmentedHubTab(c ui.C, id gfx.ID, label string, count int, selected bool, isHub bool, active int) ui.Box {
+func (state *State) declareSegmentedHubTab(c ui.C, id gfx.ID, label, countLabel string, selected bool, isHub bool, active int) ui.Box {
 	pal := state.pal
 	foreground := pal.muted
 	var fill gfx.Color
@@ -222,10 +222,9 @@ func (state *State) declareSegmentedHubTab(c ui.C, id gfx.ID, label string, coun
 		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground)
 
 		// 数量小胶囊
-		countStr := fmt.Sprintf("%d", count)
 		ui.Row(c).Height(18).PadSides(0, 6, 0, 6).Items(ui.Center).
 			Background(pal.workspace.WithAlpha(0.4)).Radius(999).Children(func() {
-			ui.Text(c, countStr).FontSize(metrics.FontSizeS).Color(pal.muted)
+			ui.Text(c, countLabel).FontSize(metrics.FontSizeS).Color(pal.muted)
 		})
 	})
 	return tabBox

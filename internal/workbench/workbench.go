@@ -568,6 +568,7 @@ type State struct {
 	proxyPendingDeleteID   uint32
 	bastionHubs            []bastionHub
 	bastionAllChipText     string
+	bastionAllCountText    string
 	proxyBatch             proxyBatchAssociateDialog
 	activeSection          uint8
 	hostFilterOn           bool   // only the group named hostFilter is listed

@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/vivaui/viva/components"
@@ -1014,10 +1015,14 @@ type bastionHub struct {
 	Active    int
 	Total     int
 	ChipLabel string
+	// CountLabel is the total as the segmented tab's badge shows it. It is
+	// formatted when the hub is rebuilt, so painting formats nothing.
+	CountLabel string
 }
 
 func (state *State) refreshBastionHubs() {
 	state.bastionAllChipText = fmt.Sprintf("%s (%d)", state.messages.HostFilterAll, len(state.proxies))
+	state.bastionAllCountText = strconv.Itoa(len(state.proxies))
 	if len(state.proxies) == 0 {
 		state.bastionHubs = nil
 		return
@@ -1052,6 +1057,7 @@ func (state *State) refreshBastionHubs() {
 	for _, jid := range orderedJumps {
 		hub := *jumpMap[jid]
 		hub.ChipLabel = fmt.Sprintf("%s (%d)", hub.JumpHost.Label, hub.Total)
+		hub.CountLabel = strconv.Itoa(hub.Total)
 		result = append(result, hub)
 	}
 	state.bastionHubs = result
