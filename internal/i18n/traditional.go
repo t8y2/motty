@@ -2092,6 +2092,8 @@ var traditionalTools = ToolsMessages{
 	FilesKeepTimes:                  "保留修改時間",
 	FilesKeepTimesDescription:       "傳輸後的檔案沿用原檔案的修改時間。權限始終保留。",
 	FilesFollow:                     "跟隨終端機所在目錄",
+	FilesLocateTerminal:             "定位終端機到目前目錄",
+	FilesLocateTerminalSkipped:      "終端機目錄未切換。請回到 Shell 的空提示符後，重新點選定位按鈕。",
 	FilesFollowDescription:          "檔案面板跟隨 SSH 與本機終端機 shell 所在目錄（OSC 7）。新啟動的 bash / zsh 會自動啟用上報。",
 	FilesTerminalFollow:             "終端機跟隨檔案欄目錄",
 	FilesTerminalFollowDescription:  "預設關閉。進入遠端資料夾時，僅在已驗證的空提示符下同步終端機目錄。需要 Motty 自動啟用的 Bash / zsh 整合。",
