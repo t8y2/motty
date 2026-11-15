@@ -116,6 +116,7 @@ type terminal struct {
 	promptStarted         bool
 	promptDirty           bool
 	promptVersion         uint64 // invalidates a reverse navigation while its directory is being listed
+	inputScreenVersion    uint64 // screen before the latest input; a plain prompt needs a later echo
 	folderToken           string
 	folderIntegrationSeen bool
 	commandReporting      bool
@@ -771,6 +772,7 @@ func (t *terminal) adoptIdleClock() {
 }
 
 func (t *terminal) noteShellInput(p []byte) {
+	t.inputScreenVersion = t.screen.Version()
 	t.noteInput()
 	t.passwordHint = ""
 	if bytes.ContainsFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) {

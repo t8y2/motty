@@ -292,7 +292,7 @@ func (state *State) cancelSFTPNavigation(view *sftpView) {
 	}
 	view.waiting, view.pathRequest = "", ""
 	view.waitingID, view.preparingID = 0, 0
-	view.terminalPath = ""
+	view.terminalPath, view.terminalLocate = "", false
 	if view.operation == sftpclient.OperationList {
 		view.busy = false
 	}

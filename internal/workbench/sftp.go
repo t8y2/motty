@@ -247,7 +247,9 @@ type sftpView struct {
 	abandonedPath         string // a path request the user canceled while it was in flight
 	terminalPath          string // an explicit navigation, never a shell report or background refresh
 	terminalPromptVersion uint64
+	terminalScreenVersion uint64 // plain-shell locate must keep the same visible prompt during the read
 	terminalSyncSkipped   bool
+	terminalLocate        bool // one explicit toolbar request, independent of automatic following
 }
 
 // sftpListing is one folder as it was last read.
@@ -1187,7 +1189,7 @@ func (state *State) finishSFTPPrefetch(view *sftpView, result sftpclient.Result)
 	if result.Err != nil {
 		if waited {
 			view.navigation = sftpNavigation{}
-			view.terminalPath = ""
+			view.terminalPath, view.terminalLocate = "", false
 			if errors.Is(result.Err, sftpclient.ErrCanceled) {
 				view.status = state.messages.SFTPCanceled
 			} else {
@@ -2246,7 +2248,7 @@ func (state *State) pumpSFTP(session *Session) {
 				continue
 			}
 			if result.Operation == sftpclient.OperationList && result.Err != nil && result.Path == view.terminalPath {
-				view.terminalPath = ""
+				view.terminalPath, view.terminalLocate = "", false
 			}
 			if result.Operation == sftpclient.OperationList && result.Err != nil && view.detached != nil && view.detached.browseListingFailed(false, result.Path, result.Err) {
 				continue

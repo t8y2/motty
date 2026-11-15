@@ -2092,6 +2092,8 @@ var englishTools = ToolsMessages{
 	FilesKeepTimes:                  "Keep modification times",
 	FilesKeepTimesDescription:       "A copied file gets the time of the original. Permissions are always kept.",
 	FilesFollow:                     "Follow the terminal's folder",
+	FilesLocateTerminal:             "Go to this folder in the terminal",
+	FilesLocateTerminalSkipped:      "Terminal folder unchanged. Return to an empty shell prompt, then click the button again.",
 	FilesFollowDescription:          "The file panel follows the folder the terminal reports (OSC 7), over SSH and on this computer. Bash and zsh are set up automatically when they start.",
 	FilesTerminalFollow:             "Terminal follows file navigation",
 	FilesTerminalFollowDescription:  "Off by default. Entering a remote folder also changes the same terminal's folder at a verified empty prompt. Requires the Bash or zsh integration Motty starts automatically.",
