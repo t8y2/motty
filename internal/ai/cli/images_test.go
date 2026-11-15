@@ -21,8 +21,8 @@ func imageConversation() llm.Request {
 	}}
 }
 
-func TestCodexAndOpenCodeReadPicturesFromPrivateFiles(t *testing.T) {
-	for kind, flag := range map[string]string{"codex-cli": "--image=", "opencode-cli": "--file="} {
+func TestCodexOpenCodeAndQoderReadPicturesFromPrivateFiles(t *testing.T) {
+	for kind, flag := range map[string]string{"codex-cli": "--image=", "opencode-cli": "--file=", "qoder-cli": "--attachment="} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
 			cmd, err := buildCommand(kind, command{program: "agent"}, imageConversation(), dir, "http://127.0.0.1:1/mcp", "token", nil, "motty_session")
@@ -58,13 +58,13 @@ func TestCodexAndOpenCodeReadPicturesFromPrivateFiles(t *testing.T) {
 
 func TestNoPicturesAddNoFlags(t *testing.T) {
 	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
-	for _, kind := range []string{"claude-code-cli", "codex-cli", "opencode-cli", "pi-cli"} {
+	for _, kind := range []string{"claude-code-cli", "codex-cli", "opencode-cli", "pi-cli", "qoder-cli"} {
 		cmd, err := buildCommand(kind, command{program: "agent"}, llm.Request{Model: "default"}, t.TempDir(), "http://127.0.0.1:1/mcp", "token", nil, "motty_session")
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, arg := range cmd.args {
-			if strings.HasPrefix(arg, "--image") || strings.HasPrefix(arg, "--file") || arg == "--input-format" {
+			if strings.HasPrefix(arg, "--image") || strings.HasPrefix(arg, "--file") || strings.HasPrefix(arg, "--attachment") || arg == "--input-format" {
 				t.Fatalf("%s: unexpected %s", kind, arg)
 			}
 		}

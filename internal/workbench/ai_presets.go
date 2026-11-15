@@ -38,6 +38,7 @@ var aiPresets = [...]aiPreset{
 	{label: "Codex CLI", icon: icons.AiOpenai, kind: store.KindCodexCLI},
 	{label: "OpenCode CLI", icon: icons.Terminal, kind: store.KindOpenCodeCLI},
 	{label: "Pi CLI", icon: icons.Bot, kind: store.KindPiCLI},
+	{label: "Qoder CLI", icon: icons.Terminal, kind: store.KindQoderCLI},
 	{icon: icons.Plug, kind: store.KindOpenAI}, // custom
 }
 

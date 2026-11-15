@@ -32,7 +32,7 @@ func (p *parser) line(line []byte) ([]llm.Event, error) {
 	}
 	relevant := false
 	switch p.kind {
-	case "claude-code-cli":
+	case "claude-code-cli", "qoder-cli":
 		relevant = header.Type == "stream_event" || header.Type == "assistant" || header.Type == "result"
 	case "codex-cli":
 		relevant = header.Type == "item.completed" || header.Type == "turn.completed"
@@ -114,7 +114,7 @@ func (p *parser) line(line []byte) ([]llm.Event, error) {
 		}
 	}
 	switch p.kind {
-	case "claude-code-cli":
+	case "claude-code-cli", "qoder-cli":
 		switch v.Type {
 		case "stream_event":
 			if v.Event.Type == "message_start" {

@@ -323,6 +323,7 @@ const (
 	KindCodexCLI    = "codex-cli"
 	KindOpenCodeCLI = "opencode-cli"
 	KindPiCLI       = "pi-cli"
+	KindQoderCLI    = "qoder-cli"
 )
 
 // Authentication styles of an Anthropic provider. The empty value means the
@@ -351,7 +352,7 @@ func ValidAPIFormat(format string) bool {
 }
 
 func IsCLIKind(kind string) bool {
-	return kind == KindClaudeCLI || kind == KindCodexCLI || kind == KindOpenCodeCLI || kind == KindPiCLI
+	return kind == KindClaudeCLI || kind == KindCodexCLI || kind == KindOpenCodeCLI || kind == KindPiCLI || kind == KindQoderCLI
 }
 
 func ValidProviderKind(kind string) bool {

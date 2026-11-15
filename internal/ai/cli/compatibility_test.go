@@ -12,11 +12,11 @@ import (
 )
 
 type probeFixture struct {
-	Version, Help, Features, Config, RunHelp, Agents string
-	Extra                                            map[string]string
-	VersionExit                                      int
-	VersionDelay                                     time.Duration
-	StderrHelp                                       bool
+	Version, Help, Features, Config, RunHelp, Agents, Plugins string
+	Extra                                                     map[string]string
+	VersionExit                                               int
+	VersionDelay                                              time.Duration
+	StderrHelp                                                bool
 }
 
 func TestProbeCLIHelper(t *testing.T) {
@@ -53,6 +53,8 @@ func TestProbeCLIHelper(t *testing.T) {
 		fmt.Println(fixture.Config)
 	case strings.Contains(joined, "debug agents"):
 		fmt.Println(fixture.Agents)
+	case strings.Contains(joined, "plugins list"):
+		fmt.Println(fixture.Plugins)
 	case strings.HasSuffix(joined, "run --help"):
 		fmt.Println(fixture.RunHelp)
 	case strings.HasSuffix(joined, "--help"):
@@ -235,6 +237,41 @@ func TestProbeRejectsOpenCodeV2WithoutAppliedPermissions(t *testing.T) {
 				t.Fatalf("unapplied V2 permission accepted: %v", err)
 			}
 		})
+	}
+}
+
+func TestProbeAcceptsQoderWithScopedPluginListing(t *testing.T) {
+	fixture := probeFixture{
+		Version: "1.1.89",
+		Help: "--print --output-format --permission-mode --allowed-tools --mcp-config --strict-mcp-config " +
+			"--setting-sources --settings --no-session-persistence --tools --attachment --model",
+		Plugins: "[]",
+	}
+	c := probeCommand(t, fixture)
+	if err := probe(t.Context(), "qoder-cli", &c); err != nil {
+		t.Fatalf("capable Qoder build rejected: %v", err)
+	}
+	if c.version != "1.1.89" {
+		t.Fatalf("version = %q", c.version)
+	}
+}
+
+func TestProbeRejectsQoderPluginListWithoutIDs(t *testing.T) {
+	fixture := probeFixture{
+		Version: "1.1.89",
+		Help: "--print --output-format --permission-mode --allowed-tools --mcp-config --strict-mcp-config " +
+			"--setting-sources --settings --no-session-persistence --tools --attachment --model",
+		Plugins: "not json",
+	}
+	if err := probeFixtureError(t, "qoder-cli", fixture); err == nil || !strings.Contains(err.Error(), "invalid_output") {
+		t.Fatalf("invalid plugin list accepted: %v", err)
+	}
+}
+
+func TestProbeRejectsQoderWithoutCLIIsolationFlags(t *testing.T) {
+	fixture := probeFixture{Version: "1.1.89", Help: "--print --output-format", Plugins: "[]"}
+	if err := probeFixtureError(t, "qoder-cli", fixture); err == nil || !strings.Contains(err.Error(), "missing_capability") {
+		t.Fatalf("incomplete Qoder isolation surface accepted: %v", err)
 	}
 }
 

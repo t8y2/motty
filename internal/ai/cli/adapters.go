@@ -91,6 +91,17 @@ var adapters = map[string]adapter{
 		// isolation flags precede it: no installed extension runs from probe.
 		help: []string{"--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-approve", "--offline", "--help"},
 	},
+	store.KindQoderCLI: {
+		program: "qoder",
+		required: []string{"--print", "--output-format", "--permission-mode", "--allowed-tools", "--mcp-config",
+			"--strict-mcp-config", "--setting-sources", "--settings", "--no-session-persistence", "--tools",
+			"--attachment", "--model"},
+		checks: []capabilityCheck{{
+			label:    "plugins list --json",
+			args:     []string{"--setting-sources", "user", "plugins", "list", "--json"},
+			validate: validateQoderPlugins,
+		}},
+	},
 }
 
 // Check the installed binary's effective feature state, not a version allowlist.
@@ -306,6 +317,35 @@ func openCodeV2ForeignServers(raw []byte) ([]string, bool) {
 	return names, true
 }
 
+// validateQoderPlugins proves the installed build lists installed plugins in
+// the JSON shape used to disable them for the scoped session.
+func validateQoderPlugins(raw []byte) checkFailure {
+	if _, ok := qoderPluginIDs(raw); !ok {
+		return checkFailure{reason: "invalid_output"}
+	}
+	return checkFailure{}
+}
+
+// qoderPluginIDs reads the installed plugin IDs the inline settings disable
+// with enabledPlugins[id]=false. A listed entry without an ID cannot be
+// disabled, so the whole list is rejected rather than left enabled.
+func qoderPluginIDs(raw []byte) ([]string, bool) {
+	var plugins []struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(raw, &plugins) != nil {
+		return nil, false
+	}
+	ids := make([]string, 0, len(plugins))
+	for _, plugin := range plugins {
+		if plugin.ID == "" {
+			return nil, false
+		}
+		ids = append(ids, plugin.ID)
+	}
+	return ids, true
+}
+
 func withOverrides(args, overrides []string) []string {
 	for _, v := range overrides {
 		args = append(args, "-c", v)
@@ -341,6 +381,26 @@ func openCodeV2Env(config any) []string {
 		"OPENCODE_DISABLE_CLAUDE_CODE=1", "OPENCODE_DISABLE_AUTOUPDATE=1",
 	}
 }
+
+// foreignQoderPlugins lists the user-scope plugins the session must disable.
+// Project and local scopes are excluded by the same --setting-sources user used
+// for the run, so only user plugins need an explicit false entry.
+func foreignQoderPlugins(parent context.Context, c command, dir string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
+	defer cancel()
+	c.dir = dir
+	c.args = append(c.args, "--setting-sources", "user", "plugins", "list", "--json")
+	raw, err := capture(ctx, c, 4<<20)
+	if err != nil {
+		return nil, compatibilityFailure(adapters[store.KindQoderCLI].program, c, "plugins list --json", "unavailable", "")
+	}
+	ids, ok := qoderPluginIDs(raw)
+	if !ok {
+		return nil, compatibilityFailure(adapters[store.KindQoderCLI].program, c, "plugins list --json", "invalid_output", "")
+	}
+	return ids, nil
+}
+
 func foreignMCP(parent context.Context, kind string, c command, dir string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
@@ -535,6 +595,34 @@ func buildCommand(kind string, c command, req llm.Request, dir, url, token strin
 		}
 		for _, file := range images {
 			c.args = append(c.args, "--file="+file)
+		}
+	case store.KindQoderCLI:
+		disabledPlugins := make(map[string]bool, len(foreign))
+		for _, id := range foreign {
+			disabledPlugins[id] = false
+		}
+		settings, err := writePrivate(dir, "settings.json", map[string]any{"disableAllHooks": true, "enabledPlugins": disabledPlugins})
+		if err != nil {
+			return command{}, err
+		}
+		mcpConfig, err := writePrivate(dir, "mcp.json", map[string]any{"mcpServers": map[string]any{
+			server: map[string]any{"type": "http", "url": url, "headers": map[string]string{"Authorization": "Bearer " + token}},
+		}})
+		if err != nil {
+			return command{}, err
+		}
+		c.args = append(c.args, "--print", "--output-format", "stream-json",
+			"--permission-mode", "dont_ask", "--no-session-persistence",
+			"--setting-sources", "user", "--settings", settings,
+			"--strict-mcp-config", "--mcp-config", mcpConfig, "--tools", "")
+		for _, n := range names {
+			c.args = append(c.args, "--allowed-tools", "mcp__"+server+"__"+n)
+		}
+		if req.Model != "" && req.Model != "default" {
+			c.args = append(c.args, "--model", req.Model)
+		}
+		for _, file := range images {
+			c.args = append(c.args, "--attachment="+file)
 		}
 	case store.KindPiCLI:
 		agent, err := piAgentDir(dir)

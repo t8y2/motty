@@ -47,7 +47,7 @@ func ReserveLogin(kind, path string) (func(), error) {
 	if canonical, err := filepath.EvalSymlinks(program); err == nil {
 		program = canonical
 	}
-	key := jsonString([]string{kind, program, jsonString(c.args), os.Getenv("HOME"), os.Getenv("CODEX_HOME"), os.Getenv("CLAUDE_CONFIG_DIR"), os.Getenv("XDG_CONFIG_HOME"), os.Getenv("XDG_DATA_HOME")})
+	key := jsonString([]string{kind, program, jsonString(c.args), os.Getenv("HOME"), os.Getenv("CODEX_HOME"), os.Getenv("CLAUDE_CONFIG_DIR"), os.Getenv("QODER_CONFIG_DIR"), os.Getenv("XDG_CONFIG_HOME"), os.Getenv("XDG_DATA_HOME")})
 	loginReservations.Lock()
 	defer loginReservations.Unlock()
 	if loginReservations.active[key] {
@@ -66,7 +66,7 @@ func LoginCommand(kind, path string, device bool) (AuthCommand, error) {
 		return AuthCommand{}, err
 	}
 	args := []string{"auth", "login"}
-	if kind == store.KindCodexCLI {
+	if kind == store.KindCodexCLI || kind == store.KindQoderCLI {
 		args = []string{"login"}
 	}
 	if device {
@@ -96,6 +96,8 @@ func CheckAuth(parent context.Context, kind, path string) (AuthState, error) {
 		c.args = append(c.args, "auth", "status", "--json")
 	case store.KindCodexCLI:
 		c.args = append(c.args, "login", "status")
+	case store.KindQoderCLI:
+		c.args = append(c.args, "status", "-o", "json")
 	case store.KindOpenCodeCLI:
 		// An auth-list entry is not proof that the selected provider is usable.
 		return AuthUnknown, nil
@@ -139,6 +141,19 @@ func classifyAuth(kind string, stdout, stderr []byte, failed bool) AuthState {
 		}
 		if !failed && strings.Contains(text, "logged in using") {
 			return AuthConfigured
+		}
+	}
+	if kind == store.KindQoderCLI {
+		var status struct {
+			LoggedIn *bool `json:"logged_in"`
+		}
+		if json.Unmarshal(stdout, &status) == nil && status.LoggedIn != nil {
+			if *status.LoggedIn && !failed {
+				return AuthConfigured
+			}
+			if !*status.LoggedIn {
+				return AuthSignedOut
+			}
 		}
 	}
 	return AuthUnknown

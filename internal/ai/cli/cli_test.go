@@ -99,6 +99,7 @@ func TestParsersDeduplicateFinalSnapshotsAndClassifyErrors(t *testing.T) {
 		{"claude-code-cli", []string{`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}}`, `{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}`, `{"type":"result","subtype":"success","result":"hello","usage":{"input_tokens":3,"output_tokens":2}}`}, "hello"},
 		{"codex-cli", []string{`{"type":"item.completed","item":{"type":"agent_message","text":"hello"}}`, `{"type":"turn.completed","usage":{"input_tokens":3,"output_tokens":2}}`}, "hello"},
 		{"opencode-cli", []string{`{"type":"text","part":{"text":"hello"}}`, `{"type":"step_finish","part":{"reason":"stop","tokens":{"input":3,"output":2}}}`}, "hello"},
+		{"qoder-cli", []string{`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"hello"}}}`, `{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}`, `{"type":"result","subtype":"success","result":"hello","usage":{"input_tokens":3,"output_tokens":2}}`}, "hello"},
 		{"pi-cli", []string{
 			`{"type":"session","version":3,"id":"s"}`,
 			`{"type":"message_start","message":{"role":"assistant","content":[]}}`,
@@ -150,7 +151,7 @@ func TestClaudeInformationalEventHasItsOwnFieldTypes(t *testing.T) {
 	}
 }
 func TestBuildersNeverPutTokenInArguments(t *testing.T) {
-	for _, kind := range []string{"claude-code-cli", "codex-cli", "opencode-cli", "pi-cli"} {
+	for _, kind := range []string{"claude-code-cli", "codex-cli", "opencode-cli", "pi-cli", "qoder-cli"} {
 		t.Run(kind, func(t *testing.T) {
 			t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
 			dir := t.TempDir()
@@ -284,6 +285,76 @@ func TestOpenCodeV2BuilderUsesPrivateServerAndNativeConfig(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(cmd.env, " "), "OPENCODE_PURE") {
 		t.Error("removed V2 variable still set")
+	}
+}
+
+func TestQoderBuilderScopesMCPAndDisablesPluginsAndHooks(t *testing.T) {
+	dir := t.TempDir()
+	req := llm.Request{Model: "default", Tools: []llm.ToolSpec{{Name: "list_sessions"}}}
+	cmd, err := buildCommand("qoder-cli", command{program: "agent"}, req, dir,
+		"http://127.0.0.1:1234/mcp", "PRIVATE_TOKEN_123456789012345678901234", []string{"acme@market"}, "motty_session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(cmd.args, " ")
+	for _, want := range []string{"--print", "--output-format stream-json", "--permission-mode dont_ask",
+		"--strict-mcp-config", "--setting-sources user", "--tools", "--allowed-tools mcp__motty_session__list_sessions"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("missing %q in %q", want, args)
+		}
+	}
+	if strings.Contains(args, "PRIVATE_TOKEN") {
+		t.Fatalf("token in arguments: %q", args)
+	}
+	var settingsPath, mcpPath string
+	for index, arg := range cmd.args {
+		switch arg {
+		case "--settings":
+			settingsPath = cmd.args[index+1]
+		case "--mcp-config":
+			mcpPath = cmd.args[index+1]
+		}
+	}
+	if settingsPath == "" || mcpPath == "" {
+		t.Fatalf("private config paths missing: %q", cmd.args)
+	}
+	var settings struct {
+		DisableAllHooks bool            `json:"disableAllHooks"`
+		EnabledPlugins  map[string]bool `json:"enabledPlugins"`
+	}
+	raw, err := os.ReadFile(settingsPath)
+	if err != nil || json.Unmarshal(raw, &settings) != nil {
+		t.Fatalf("settings = %s: %v", raw, err)
+	}
+	if !settings.DisableAllHooks || settings.EnabledPlugins["acme@market"] {
+		t.Fatalf("isolating settings = %+v", settings)
+	}
+	var mcp struct {
+		Servers map[string]struct {
+			Type    string            `json:"type"`
+			URL     string            `json:"url"`
+			Headers map[string]string `json:"headers"`
+		} `json:"mcpServers"`
+	}
+	raw, err = os.ReadFile(mcpPath)
+	if err != nil || json.Unmarshal(raw, &mcp) != nil {
+		t.Fatalf("mcp config = %s: %v", raw, err)
+	}
+	server, ok := mcp.Servers["motty_session"]
+	if !ok || server.Type != "http" || server.URL != "http://127.0.0.1:1234/mcp" ||
+		server.Headers["Authorization"] != "Bearer PRIVATE_TOKEN_123456789012345678901234" {
+		t.Fatalf("scoped MCP server = %+v", server)
+	}
+}
+
+func TestQoderPluginIDsRejectUnlistableEntries(t *testing.T) {
+	if ids, ok := qoderPluginIDs([]byte(`[{"id":"one@market"},{"id":"two@market"}]`)); !ok || strings.Join(ids, ",") != "one@market,two@market" {
+		t.Fatalf("plugin IDs = %v, %t", ids, ok)
+	}
+	for _, raw := range []string{`not json`, `[{"name":"one@market"}]`, `{}`} {
+		if _, ok := qoderPluginIDs([]byte(raw)); ok {
+			t.Fatalf("unlistable plugin accepted: %s", raw)
+		}
 	}
 }
 
