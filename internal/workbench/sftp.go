@@ -2234,12 +2234,9 @@ func (state *State) pumpSFTP(session *Session) {
 						view.status = state.messages.SFTPCanceled
 					} else if errors.Is(result.Err, sftpclient.ErrDestinationExists) {
 						if view.detached == nil {
-							// Opening here asks for a decision, so show every
-							// transfer: a saved Active filter would hide the entry
-							// that needs Replace, Skip or Resume.
-							state.transfers.filter = 0
-							state.transfers.host = nil
-							state.transfers.open, state.transfers.scroll = true, 0
+							// Open failures directly so long active or completed
+							// groups cannot push the conflict out of sight.
+							state.showTransferConflict()
 						}
 					} else {
 						view.errorText = state.formatSFTPError(result.Err)

@@ -126,9 +126,13 @@ type TransferSnapshot struct {
 	Error          string
 	Retryable      bool
 	QueuedAt       time.Time
-	StartedAt      time.Time
-	FinishedAt     time.Time
+	// QueueOrder breaks timestamp ties across workers. A retry enters again.
+	QueueOrder uint64
+	StartedAt  time.Time
+	FinishedAt time.Time
 }
+
+var transferQueueOrder atomic.Uint64
 
 // Entry is one remote directory item prepared for presentation.
 type Entry struct {
@@ -592,7 +596,7 @@ func (worker *Worker) enqueueTransfer(next request) (uint64, bool) {
 		snapshot: TransferSnapshot{
 			ID: next.id, Operation: next.operation, Source: source,
 			Destination: destination, Recursive: next.recursive, State: TransferQueued,
-			QueuedAt: worker.clock(),
+			QueuedAt: worker.clock(), QueueOrder: transferQueueOrder.Add(1),
 		},
 	})
 	worker.mu.Unlock()
@@ -850,8 +854,13 @@ func (worker *Worker) Transfers(dst []TransferSnapshot) []TransferSnapshot {
 // Retry requeues a failed or canceled transfer with an explicit destination policy.
 func (worker *Worker) Retry(id uint64, policy ExistingPolicy) bool {
 	worker.mu.Lock()
-	record := worker.transferLocked(id)
-	if record == nil || !record.settled || (record.snapshot.State != TransferFailed && record.snapshot.State != TransferCanceled) {
+	index := worker.transferIndexLocked(id)
+	if index < 0 {
+		worker.mu.Unlock()
+		return false
+	}
+	record := &worker.transfers[index]
+	if worker.closedLocked() || !record.settled || (record.snapshot.State != TransferFailed && record.snapshot.State != TransferCanceled) {
 		worker.mu.Unlock()
 		return false
 	}
@@ -863,12 +872,18 @@ func (worker *Worker) Retry(id uint64, policy ExistingPolicy) bool {
 	record.snapshot.Resumed = 0
 	record.snapshot.Retryable = false
 	record.snapshot.QueuedAt = worker.clock()
+	record.snapshot.QueueOrder = transferQueueOrder.Add(1)
 	record.snapshot.StartedAt, record.snapshot.FinishedAt = time.Time{}, time.Time{}
 	record.snapshot.BytesPerSecond, record.rate = 0, 0
 	record.settled = false
 	record.paused = false
 	record.canceledByUser = false
 	record.conflict = false
+	// schedule walks this slice in order. Keep a retry behind tasks that
+	// were already waiting rather than letting its old slot cut the queue.
+	retried := *record
+	copy(worker.transfers[index:], worker.transfers[index+1:])
+	worker.transfers[len(worker.transfers)-1] = retried
 	worker.mu.Unlock()
 	worker.schedule()
 	worker.changed()
@@ -889,7 +904,7 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 	record.snapshot.BytesPerSecond, record.rate = 0, 0
 	record.paused = false
 	record.canceledByUser = true
-	active := record.active
+	active, operation := record.active, record.request.operation
 	if !active {
 		// A queued task has no copy goroutine to finish its cancellation.
 		record.settled, record.snapshot.Retryable = true, true
@@ -908,7 +923,7 @@ func (worker *Worker) CancelTransfer(id uint64) bool {
 	if source != nil {
 		_ = source.Close()
 	}
-	if active && others == 0 && record.request.operation != OperationUpload && record.request.operation != OperationRemoteCopy {
+	if active && others == 0 && operation != OperationUpload && operation != OperationRemoteCopy {
 		// Nothing else is using the subsystem, and a read that is waiting on the
 		// network only ends when it goes. An upload is given a moment to stop on
 		// its own first, because the subsystem is also what removes its partial
@@ -1016,12 +1031,19 @@ func (worker *Worker) Close() {
 }
 
 func (worker *Worker) transferLocked(id uint64) *transferRecord {
-	for index := range worker.transfers {
-		if worker.transfers[index].snapshot.ID == id {
-			return &worker.transfers[index]
-		}
+	if index := worker.transferIndexLocked(id); index >= 0 {
+		return &worker.transfers[index]
 	}
 	return nil
+}
+
+func (worker *Worker) transferIndexLocked(id uint64) int {
+	for index := range worker.transfers {
+		if worker.transfers[index].snapshot.ID == id {
+			return index
+		}
+	}
+	return -1
 }
 
 func (worker *Worker) closedLocked() bool {

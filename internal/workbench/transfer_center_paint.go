@@ -29,116 +29,7 @@ func (state *State) paintTransferBadge(canvas *gfx.Canvas) {
 	}
 }
 
-// declareTransferCenter declares the transfer popover in the workbench page: the
-// page's Popover gives it the same 640x680 panel and header the hand-painted
-// popover had, and its body is a List of the cards.
-func (state *State) declareTransferCenter(c ui.C) {
-	center := &state.transfers
-	if !center.open || !state.transferCenterAvailable() {
-		return
-	}
-	viewport := c.Bounds()
-	anchorRect := center.anchor
-	if anchorRect.Width <= 0 {
-		anchorRect = gfx.Rect{X: max(viewport.Width-16, 0), Y: windowBarHeight, Width: 1, Height: 1}
-	}
-	theme := state.Theme()
-	m := state.messages.Transfers
-	width := min(640, viewport.Width-24)
-	total := min(680, viewport.Height-windowBarHeight-16)
-	pad, gap := theme.Metrics.PadSurface, theme.Metrics.GapItem
-	center.headerLines = c.Canvas().WrapLines(center.headerLines[:0], m.Description, theme.Metrics.FontSizeM, gfx.WeightRegular, width-2*pad, 1<<20)
-	center.headerHeight = theme.Metrics.FontSizeM + 7
-	if m.Description != "" {
-		center.headerHeight += 4 + float32(len(center.headerLines))*(theme.Metrics.FontSizeM+7)
-	}
-	// The page Popover gives its header a bottom margin of PadSurface-GapItem,
-	// so the header-to-body space is the old PadSurface. The body keeps the old
-	// rectangle; only the panel's own padding and the header take height.
-	center.headerMargin = max(pad-gap, 0)
-	center.bodyHeight = max(total-2*pad-center.headerHeight-gap-center.headerMargin, 0)
-	initialFocus := hitTransfersList
-	if len(center.batch.targets) > 0 {
-		initialFocus = hitTransfersBulkCancel
-	}
-	anchor := ui.Slot(c).Absolute().Left(anchorRect.X).Top(anchorRect.Y).Width(max(anchorRect.Width, 1)).Height(max(anchorRect.Height, 1))
-	spec := ui.PopoverSpec{
-		Scope: hitTransfersScope, DismissID: hitTransfersDismiss, InitialFocusID: initialFocus,
-		Side: components.PopoverBottom, Align: ui.End, Offset: 8, Width: width,
-		Title: m.Title, Description: m.Description, TitleWeight: gfx.WeightBold,
-	}
-	dismissed := ui.PopoverWith(c, anchor, spec, &center.open, func() {
-		state.declareTransferPopoverBody(c, width, center.bodyHeight)
-	})
-	if dismissed {
-		center.dragging, center.hostOpen, center.batch = false, false, transferBatch{}
-	}
-}
-
-// declareTransferPopoverBody declares the popover's body: the cards or the bulk
-// confirmation, the summary and filters over them, and the close control in the
-// header.
-func (state *State) declareTransferPopoverBody(c ui.C, width, height float32) {
-	center := &state.transfers
-	m, pal, theme := state.messages.Transfers, state.pal, *c.Theme()
-	innerWidth := width - 2*theme.Metrics.PadSurface
-	center.listWidth = innerWidth
-	body := ui.Column(c).FillWidth().Height(height)
-	body.Children(func() {
-		// The close control sits in the header's top right, outside the body.
-		state.declareIconButton(c, hitTransfersClose, iconClose, m.Close, false, iconButtonQuiet).
-			Absolute().Right(0).Top(-center.headerHeight-theme.Metrics.GapItem-center.headerMargin-2).Size(24, 24)
-		if len(center.batch.targets) > 0 {
-			state.declareTransferBatchBody(c)
-			return
-		}
-		column := ui.Column(c).Fill().Gap(10)
-		column.Children(func() {
-			ui.Column(c).Height(48).Shrink(0).PadX(12).Center().Radius(radius.control).Background(pal.accentSoft).Children(func() {
-				ui.Text(c, center.summary).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(22)
-				center.body.summaryBar = ui.Slot(c).Height(3).Width(max(0, innerWidth-24))
-			})
-			ui.Row(c).Height(28).Shrink(0).Gap(4).Items(ui.Center).Children(func() {
-				for index, label := range [4]string{m.All, m.Active, m.Ended, m.Failed} {
-					center.body.filter[index] = pageButtonSlot(c, label, true)
-				}
-			})
-			ui.Row(c).Height(28).Shrink(0).Gap(4).Items(ui.Center).Children(func() {
-				center.body.hostBox = ui.Slot(c).Grow(1).MinWidth(100).Height(28)
-				center.body.cancelAll = pageButtonSlot(c, center.cancelLabel, true)
-				center.body.clear = pageButtonSlot(c, center.clearLabel, true)
-			})
-			ui.Text(c, center.scopeLabel).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(16).Shrink(0).
-				HitWith(hitTransfersScopeLabel, center.scopeLabel, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: center.scopeLabel})
-			ui.Row(c).Height(28).Shrink(0).Gap(4).Items(ui.Center).Children(func() {
-				center.body.retryFailed = pageButtonSlot(c, center.retryLabel, true)
-				ui.Spacer(c)
-				ui.Text(c, center.conflictLabel).FontSize(metrics.FontSizeS).Color(pal.muted)
-				center.body.skip = pageButtonSlot(c, m.Skip, true)
-				center.body.replace = pageButtonSlot(c, m.Replace, true)
-				center.body.resume = pageButtonSlot(c, m.Resume, true)
-			})
-			// The List is the body's flexible child: a scroll area is what gives way
-			// in a column, so it takes the room the rows above leave and scrolls the
-			// rest instead of painting its whole height past the panel.
-			state.prepareTransferCards()
-			center.listBox = ui.List(c, &center.listState, center.count, center.rowDecl).Grow(1).Label(m.Title).
-				HitWith(hitTransfersList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
-			center.body.list = center.listBox
-			if scroll := center.listBox.ScrollState(); scroll != nil && center.scroll != center.scrollSynced {
-				scroll.ScrollTo(center.scroll)
-				center.scrollSynced = center.scroll
-				// The List places its rows from the offset it is declared at, so the
-				// paint that moved the offset still shows the old one: ask for the
-				// paint that follows, as a List asking for a scroll it applied does.
-				c.Canvas().RequestFrame()
-			}
-		})
-	})
-	body.DrawOver(center.bodyDraw)
-}
-
-// transferSection is the group a transfer card sits in, top to bottom: the
+// transferSection is the group an SFTP window's queue card sits in: the
 // failures that need a decision, the transfers moving bytes, the ones waiting
 // or paused, and the finished ones.
 func transferSection(snapshot sftpclient.TransferSnapshot) int {
@@ -154,9 +45,7 @@ func transferSection(snapshot sftpclient.TransferSnapshot) int {
 	}
 }
 
-// appendTransferOrder appends the entries keep accepts in the order every
-// transfer list shows them: by transferSection, and the newest first within a
-// section. The transfer center and a window's queue both use it, so they agree.
+// appendTransferOrder keeps the SFTP window queue's failure-first order.
 func appendTransferOrder(dst []*transferEntry, entries []transferEntry, keep func(*transferEntry) bool) []*transferEntry {
 	for section := range 4 {
 		for index := len(entries) - 1; index >= 0; index-- {
@@ -167,39 +56,6 @@ func appendTransferOrder(dst []*transferEntry, entries []transferEntry, keep fun
 		}
 	}
 	return dst
-}
-
-// prepareTransferCards fills the visible entries in the order the popover shows
-// them and the scratch each card's row uses.
-func (state *State) prepareTransferCards() {
-	center := &state.transfers
-	center.visible = appendTransferOrder(center.visible[:0], center.entries, center.shows)
-	center.count = len(center.visible)
-	if cap(center.cards) < len(center.visible) {
-		center.cards = make([]transferCard, len(center.visible))
-	} else {
-		center.cards = center.cards[:len(center.visible)]
-		for index := range center.cards {
-			center.cards[index] = transferCard{}
-		}
-	}
-	center.handlers(state)
-}
-
-// declareTransferCardRow declares one card as a List row. Only the rows the List
-// shows are declared.
-func (state *State) declareTransferCardRow(row ui.ListRow) {
-	center := &state.transfers
-	if row.Index < 0 || row.Index >= len(center.visible) {
-		return
-	}
-	entry := center.visible[row.Index]
-	card := &center.cards[row.Index]
-	*card = transferCard{entry: entry}
-	row.Element.Width(center.listWidth-12).Height(transferCardHeight-8).MarginSides(0, 0, 8, 0)
-	// A List row is a Row; the card itself is a Column inside it.
-	column := ui.Column(row.C).Fill()
-	row.Element.Children(func() { state.declareTransferCard(row.C, column, entry, card) })
 }
 
 // declareTransferCard declares a card's contents. Its buttons and progress bar
@@ -295,7 +151,7 @@ func (state *State) declareTransferCard(c ui.C, element ui.Box, entry *transferE
 // declareTransferBatch declares the confirmation shown before a bulk action.
 func (state *State) declareTransferBatchBody(c ui.C) {
 	center, pal := &state.transfers, state.pal
-	ui.Column(c).Fill().Gap(16).Children(func() {
+	ui.Column(c).Grow(1).FillWidth().Gap(16).Children(func() {
 		ui.Wrap(c, center.batch.title).FontSize(metrics.FontSizeL).Weight(gfx.WeightSemibold).Color(pal.text)
 		ui.Wrap(c, center.batch.description).FontSize(metrics.FontSizeS).Color(pal.muted).
 			HitWith(hitTransfersBulkDescription, center.batch.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: center.batch.description})
@@ -306,87 +162,6 @@ func (state *State) declareTransferBatchBody(c ui.C) {
 			center.batchBody.confirm = pageButtonSlot(c, center.batch.action, false)
 		})
 	})
-}
-
-// paintTransferCenterBody paints what the popover body's page only lays out.
-func (state *State) paintTransferCenterBody(d *ui.DrawContext) {
-	center, m, pal, theme := &state.transfers, state.messages.Transfers, state.pal, *d.Theme
-	canvas := d.Canvas
-	pad, gap := theme.Metrics.PadSurface, theme.Metrics.GapItem
-	center.surface = gfx.Rect{
-		X: d.Rect.X - pad, Y: d.Rect.Y - center.headerHeight - gap - center.headerMargin - pad,
-		Width: d.Rect.Width + 2*pad, Height: d.Rect.Height + center.headerHeight + gap + center.headerMargin + 2*pad,
-	}
-	if len(center.batch.targets) > 0 {
-		state.paintTransferBatchControls(canvas, theme)
-		return
-	}
-	center.list = center.body.list.Rect()
-	if scroll := center.listBox.ScrollState(); scroll != nil {
-		center.scroll = scroll.Offset
-		center.scrollSynced = scroll.Offset
-	}
-	paintTransferProgress(canvas, center.body.summaryBar.Rect(), center.fraction, pal.accent, pal.line)
-	state.paintTransferBodyControls(canvas, theme)
-	area := components.BeginScrollArea(canvas, theme, center.list, gfx.Size{Height: float32(center.count) * transferCardHeight}).
-		Offset(0, center.scroll).VerticalScrollbar(hitTransfersBar, m.Title, "")
-	// The body's DrawOver runs outside the declarative List's clip.
-	if center.list.Width > 0 && center.list.Height > 0 {
-		area.BeginContent()
-		state.paintTransferCardsFor(canvas, theme, center.cards)
-		if center.count == 0 {
-			state.paintTransferEmpty(canvas, center.list, theme)
-		}
-	}
-	center.geometry = area.EndContent()
-	center.hostBounds = center.body.hostBox.Rect()
-	state.paintTransferHosts(canvas)
-}
-
-// paintTransferBodyControls paints the body's summary progress and buttons into
-// the slots its page left.
-func (state *State) paintTransferBodyControls(canvas *gfx.Canvas, theme gfx.Theme) {
-	center, m := &state.transfers, state.messages.Transfers
-	body := &center.body
-	for index, label := range [4]string{m.All, m.Active, m.Ended, m.Failed} {
-		button := components.BeginButton(canvas, theme, hitTransfersFilter.At(index), body.filter[index].Rect()).Small()
-		if center.filter == index {
-			button.Secondary(label)
-		} else {
-			button.Ghost(label)
-		}
-	}
-	cancelAll := components.BeginButton(canvas, theme, hitTransfersCancelAll, body.cancelAll.Rect()).Small()
-	if center.visibleActive == 0 {
-		cancelAll = cancelAll.Disabled()
-	}
-	cancelAll.Ghost(center.cancelLabel)
-	clear := components.BeginButton(canvas, theme, hitTransfersClear, body.clear.Rect()).Small()
-	if center.visibleEnded == 0 {
-		clear = clear.Disabled()
-	}
-	clear.Ghost(center.clearLabel)
-	retry := components.BeginButton(canvas, theme, hitTransfersRetryFailed, body.retryFailed.Rect()).Small()
-	if center.retryCount == 0 {
-		retry = retry.Disabled()
-	}
-	retry.Ghost(center.retryLabel)
-	disabled := center.conflictCount == 0
-	skip := components.BeginButton(canvas, theme, hitTransfersSkipVisible, body.skip.Rect()).Small()
-	if disabled {
-		skip = skip.Disabled()
-	}
-	skip.Ghost(m.Skip)
-	replace := components.BeginButton(canvas, theme, hitTransfersReplaceVisible, body.replace.Rect()).Small()
-	if disabled {
-		replace = replace.Disabled()
-	}
-	replace.Outline(m.Replace)
-	resume := components.BeginButton(canvas, theme, hitTransfersResumeVisible, body.resume.Rect()).Small()
-	if disabled {
-		resume = resume.Disabled()
-	}
-	resume.Ghost(m.Resume)
 }
 
 // paintTransferBatchControls paints the confirmation's buttons into the slots
@@ -435,56 +210,19 @@ func (state *State) paintTransferCardsFor(canvas *gfx.Canvas, theme gfx.Theme, c
 // paintTransferEmpty paints the message shown when no transfer matches, in the
 // room the List leaves.
 func (state *State) paintTransferEmpty(canvas *gfx.Canvas, list gfx.Rect, theme gfx.Theme) {
-	center, m, pal := &state.transfers, state.messages.Transfers, state.pal
-	empty := m.EmptyFiltered
-	if len(center.entries) == 0 {
-		empty = m.Empty
-	}
-	line := theme.Metrics.FontSizeS + 7
-	height := 28 + 12 + line
-	top := list.Y + (list.Height-height)/2
-	canvas.DrawIcon(lucideIcons[iconTransfer], gfx.Rect{X: list.X + (list.Width-28)/2, Y: top, Width: 28, Height: 28}, pal.muted)
-	canvas.LabelCenter(empty, gfx.Rect{X: list.X, Y: top + 28 + 12, Width: list.Width, Height: line}, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Color: pal.muted})
-}
-
-func (state *State) paintTransferHosts(canvas *gfx.Canvas) {
 	center, m := &state.transfers, state.messages.Transfers
-	bounds := center.hostBounds
-	viewport := state.windowRect()
-	height := min(float32(8+(len(center.hosts)+1)*32), min(264, viewport.Height-32))
-	content := gfx.Rect{X: bounds.X, Y: bounds.Y + bounds.Height + 4, Width: max(bounds.Width, min(400, viewport.Width-32)), Height: height}
-	content.X = min(content.X, viewport.Width-content.Width-12)
-	if content.Y+height > viewport.Height-12 {
-		content.Y = max(12, bounds.Y-height-4)
+	title, hint := m.EmptyFiltered, m.EmptyFilteredHint
+	if !center.hasEntries {
+		title, hint = m.Empty, m.EmptyHint
 	}
-	opening := center.hostOpen && state.popups.owner != hitTransfersHostDismiss
-	scroll := state.selectScroll(center.hostOpen, hitTransfersHostDismiss)
-	if opening {
-		selected := 0
-		for index, host := range center.hosts {
-			if sameTransferHost(center.host, host) {
-				selected = index + 1
-				break
-			}
-		}
-		scroll.Offset = max(0, min(float32(selected)*32, float32((len(center.hosts)+1)*32)+8-height))
-		canvas.SetInitialFocus(hitTransfersHostItems.At(selected))
+	data := components.EmptyData{Title: title}
+	if list.Height >= 136 {
+		data.Description = hint
+		data.Icon, data.Media = lucideIcons[iconTransfer], components.EmptyMediaIcon
 	}
-	control := components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
-		TriggerID: hitTransfersHost, Label: m.Hosts, Value: center.hostLabel, Hint: center.hostLabel,
-		Open: center.hostOpen, Content: content, Size: components.SelectSizeSmall,
-		Layer: dialogLayer + 1, Scope: hitTransfersHostDismiss, DismissID: hitTransfersHostDismiss,
-		Viewport: viewport, Scroll: scroll,
-	})
-	defer control.End()
-	if !center.hostOpen {
-		return
-	}
-	state.menuPlaced(control.ContentBounds())
-	control.AddItem(components.SelectItem{ID: hitTransfersHostItems.At(0), Label: m.AllHosts, Selected: center.host == nil})
-	for index, host := range center.hosts {
-		control.AddItem(components.SelectItem{ID: hitTransfersHostItems.At(index + 1), Label: host.label, Hint: host.label, Selected: sameTransferHost(center.host, host)})
-	}
+	canvas.Clip(list)
+	components.Empty(canvas, theme, list, data)
+	canvas.Unclip()
 }
 
 func paintTransferProgress(canvas *gfx.Canvas, box gfx.Rect, fraction float32, fill, background gfx.Color) {
@@ -510,8 +248,14 @@ func (state *State) transferCenterScroll(event gfx.ScrollEvent) (gfx.EventResult
 	if !center.open || !state.transferCenterAvailable() || !pointInRect(event.X, event.Y, center.surface) {
 		return gfx.EventResult{}, false
 	}
+	if len(center.batch.targets) > 0 || !pointInRect(event.X, event.Y, center.list) {
+		return gfx.EventResult{Handled: true}, true
+	}
 	before, step := center.scroll, event.StepY(36)
 	center.scroll = min(max(center.scroll+step, 0), center.geometry.MaxOffsetY)
+	if before != center.scroll {
+		center.details.dismiss()
+	}
 	return gfx.EventResult{Handled: true, Repaint: before != center.scroll}, true
 }
 
@@ -522,6 +266,7 @@ func (state *State) transferCenterPointer(event gfx.PointerEvent) (gfx.EventResu
 	}
 	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary {
 		center.dragging = true
+		center.details.dismiss()
 		center.dragOffset = center.geometry.VerticalThumb.Height / 2
 		if pointInRect(event.X, event.Y, center.geometry.VerticalThumb) {
 			center.dragOffset = event.Y - center.geometry.VerticalThumb.Y
@@ -542,22 +287,24 @@ func (state *State) transferCenterKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		return gfx.EventResult{}, false
 	}
 	if event.Key == gfx.KeyEscape {
-		if center.hostOpen {
-			center.hostOpen = false
+		if !center.selectOpen.IsZero() {
+			center.selectOpen = gfx.ID{}
 		} else if len(center.batch.targets) > 0 {
 			center.batch = transferBatch{}
+		} else if center.details.showing != 0 || center.details.pinned != 0 {
+			center.details.dismiss()
 		} else {
-			center.open, center.dragging = false, false
+			center.close()
 		}
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	if center.hostOpen {
+	if !center.selectOpen.IsZero() {
 		if result, handled := state.menuKey(event); handled {
 			return result, true
 		}
 	}
-	if event.Target == hitTransfersHost && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
-		center.hostOpen = true
+	if (event.Target == hitTransfersHost || event.Target == hitTransfersDirection) && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
+		center.selectOpen = event.Target
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if len(center.batch.targets) > 0 {
@@ -568,9 +315,10 @@ func (state *State) transferCenterKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		return gfx.EventResult{}, false
 	}
 	if event.Target == hitTransfersList {
-		area := components.BeginScrollArea(nil, state.Theme(), center.list, gfx.Size{Height: float32(center.count) * transferCardHeight})
+		area := components.BeginScrollArea(nil, state.Theme(), center.list, gfx.Size{Height: float32(len(center.rows)) * transferRowHeight})
 		if _, offset, ok := area.ScrollForKey(0, center.scroll, event.Key, 36); ok {
 			center.scroll = offset
+			center.details.dismiss()
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 	}
