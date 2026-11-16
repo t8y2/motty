@@ -95,7 +95,7 @@ const (
 	iconDiscord
 	iconGitHub
 	iconChevronLeft
-	iconNote
+	iconSnippets
 	iconNotebook
 	iconSFTPTransfer
 	iconSFTPBrowseSync
@@ -114,6 +114,7 @@ const (
 	iconFollowFolder
 	// iconArrowUpDown is the command bar's order button.
 	iconArrowUpDown
+	iconLocalProxy
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -2741,8 +2742,9 @@ var lucideIcons = [...]gfx.Icon{
 	iconWeChat:           icons.Wechat,
 	iconDiscord:          icons.Discord,
 	iconGitHub:           icons.Github,
-	iconNote:             icons.StickyNote,
 	iconNotebook:         icons.Notebook,
+	iconSnippets:         icons.Zap,
+	iconLocalProxy:       icons.Waypoints,
 	iconSFTPTransfer:     icons.SftpTransfer,
 	iconSFTPBrowseSync:   icons.SftpSync,
 	iconSFTPProfiles:     icons.SftpProfiles,

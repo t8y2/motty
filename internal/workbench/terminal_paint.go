@@ -110,7 +110,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	}
 	tools = append(tools, barTool{id: hitSFTPOpen, icon: iconFolderOpen, hint: filesHint, disabled: !session.canBrowseFiles(), style: filesStyle})
 	if state.localProxyActionVisible(session) {
-		tool := barTool{id: hitLocalProxyOpen, icon: iconGlobe, hint: state.messages.LocalProxy.Title}
+		tool := barTool{id: hitLocalProxyOpen, icon: iconLocalProxy, hint: state.messages.LocalProxy.Title}
 		if snapshot := state.localProxySnapshot(session); snapshot.Phase != localProxyDisconnected {
 			tool.style = iconButtonActive
 			if snapshot.Phase == localProxyConnected && snapshot.RemotePort != 0 {
@@ -138,7 +138,7 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 	managed := state.workspaceManaged(state.deck.ActiveWorkspace())
 	verticalDisabled := managed && !state.canSplitActivePane(layoutcore.Vertical)
 	horizontalDisabled := managed && !state.canSplitActivePane(layoutcore.Horizontal)
-	tools = append(tools, barTool{id: hitTerminalSnippets, icon: iconNote, hint: state.messages.Tools.SnippetTip, disabled: session.term.shell == nil, style: iconButtonQuiet})
+	tools = append(tools, barTool{id: hitTerminalSnippets, icon: iconSnippets, hint: state.messages.Tools.SnippetTip, disabled: session.term.shell == nil, style: iconButtonQuiet})
 	tools = append(tools, barTool{id: hitPaneSplitVertical, icon: iconRows2, hint: state.messages.PaneSplitVertical, disabled: verticalDisabled, style: iconButtonQuiet, groupEnd: !inSplit})
 	tools = append(tools, barTool{id: hitPaneSplitHorizontal, icon: iconColumns2, hint: state.messages.PaneSplitHorizontal, disabled: horizontalDisabled, style: iconButtonQuiet})
 	if inSplit && !managed {

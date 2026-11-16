@@ -174,7 +174,7 @@ func (state *State) declareSnippetsWorkspace(c ui.C) {
 			view.add = state.declareButtonSized(c, hitSnippetAdd, m.SnippetAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
 		})
 		if len(form.list) == 0 {
-			view.empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd, hitSnippetAdd, iconNote, canAdd)
+			view.empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd, hitSnippetAdd, iconSnippets, canAdd)
 		} else {
 			if len(form.groups) > 0 {
 				ui.Row(c).Height(toolbarHeight).MarginSides(0, 0, 9, 0).Children(func() {
@@ -246,7 +246,7 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 	form.sendAt = gfx.Point{X: view.send.Rect().X, Y: view.send.Rect().Y + toolbarHeight + 4}
 
 	if len(form.list) == 0 {
-		state.drawReservedEmptyPage(canvas, view.empty, iconNote)
+		state.drawReservedEmptyPage(canvas, view.empty, iconSnippets)
 		return
 	}
 	head := components.BeginTable(canvas, state.Theme(), view.header.Rect(), view.columns[:])

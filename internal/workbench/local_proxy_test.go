@@ -545,6 +545,7 @@ func TestLocalProxyPanelKeyboardAndHiddenActiveEntry(t *testing.T) {
 	world, options := newSharingWorld(t)
 	options.Invalidate = func() {}
 	state := newTestState(t, options)
+	state.lookupSystemProxy = nil
 	world.connectFirst(t, state)
 	state.Wake()
 	state.sessions[0].term.shell.(*fakeShell).say("ready")
