@@ -244,9 +244,7 @@ func (state *State) releaseIdleSFTP(session *Session) {
 	if len(view.outgoingCopies) > 0 {
 		return
 	}
-	saved := view.saveHistory()
 	state.closeSFTP(session)
-	session.fileHistory = saved
 	state.releaseKeptConnection(session)
 }
 

@@ -40,6 +40,25 @@ type sftpHistory struct {
 type sftpSavedHistory struct {
 	history sftpHistory
 	path    string
+	// endpoint is the session address the folders were browsed on. A host whose
+	// address, user or port changed while its tab stayed open connects somewhere
+	// else, and the old server's folders are not the new one's to restore.
+	endpoint string
+}
+
+// savedHistoryFor returns the history that belongs to the endpoint this session
+// is about to browse. A record made on another endpoint reads as empty.
+func savedHistoryFor(session *Session) [2]sftpSavedHistory {
+	if session == nil {
+		return [2]sftpSavedHistory{}
+	}
+	saved := session.fileHistory
+	for side := range saved {
+		if saved[side].endpoint != session.Address {
+			saved[side] = sftpSavedHistory{}
+		}
+	}
+	return saved
 }
 
 func (view *sftpView) saveHistory() [2]sftpSavedHistory {
