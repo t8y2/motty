@@ -8,6 +8,40 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
+// An action that cannot run right now keeps that state when the narrow panel
+// moves it into the More menu.
+func TestSFTPToolbarOverflowKeepsDisabledActionsDisabled(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	// Put an action that can be unavailable at the end, where narrowing sends it.
+	entries := state.toolbars.customize(toolbarSFTP)
+	for index, entry := range entries {
+		if entry.Key == "upload-file" {
+			copy(entries[index:], entries[index+1:])
+			entries[len(entries)-1] = entry
+			break
+		}
+	}
+	context, _ := state.deck.Context(state.deck.ActiveWorkspace())
+	context.Width = 280
+	if err := state.deck.SetContext(state.deck.ActiveWorkspace(), context); err != nil {
+		t.Fatal(err)
+	}
+	session.files.local = false
+	session.files.busy = true
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if _, ok := hitByID(&canvas, contextID(hitSFTPUpload)); ok {
+		t.Fatal("the unavailable upload action stayed in the toolbar")
+	}
+	state.Click(contextID(hitSFTPHeaderMore))
+	canvas.Reset()
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	hit, ok := hitByID(&canvas, contextID(hitSFTPUpload))
+	if !ok || !hit.Disabled {
+		t.Fatalf("overflowed upload action: %+v, painted=%t want disabled", hit, ok)
+	}
+}
+
 func TestSFTPToolbarKeepsMoreAtRightAndMovesOverflowIntoMenu(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	workspace := state.deck.ActiveWorkspace()
@@ -22,6 +56,13 @@ func TestSFTPToolbarKeepsMoreAtRightAndMovesOverflowIntoMenu(t *testing.T) {
 				session.files.active().showHidden = hidden
 				var canvas gfx.Canvas
 				state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+				if hidden {
+					// The eye is the status affordance for hidden entries on
+					// screen; narrowing must not take it away with the actions.
+					if _, ok := hitByID(&canvas, contextID(hitSFTPHiddenToggle)); !ok {
+						t.Fatalf("side=%v width=%v: the hidden-files indicator left the toolbar", side, width)
+					}
+				}
 				more, ok := hitByID(&canvas, contextID(hitSFTPHeaderMore))
 				if !ok {
 					t.Fatalf("side=%v width=%v hidden=%v: More is missing", side, width, hidden)
@@ -55,6 +96,9 @@ func TestSFTPToolbarKeepsMoreAtRightAndMovesOverflowIntoMenu(t *testing.T) {
 					if hit, ok := hitByID(&canvas, contextID(id)); !ok || hit.Disabled != tool.disabled {
 						t.Fatalf("side=%v width=%v: overflow action %s missing or has wrong availability: %+v", side, width, tree.Text(id), hit)
 					}
+				}
+				if hit, ok := hitByID(&canvas, contextID(hitSFTPHeaderHidden)); !ok || hit.Checked != hidden {
+					t.Fatalf("side=%v width=%v hidden=%v: hidden-files menu entry checked=%t", side, width, hidden, hit.Checked)
 				}
 				state.Click(contextID(hitSFTPHeaderMenuDismiss))
 			}

@@ -67,8 +67,8 @@ func TestSFTPToolbarOverflowActionsAfterNativeResize(t *testing.T) {
 			must(view.Move(x, y))
 			must(view.Release(x, y))
 			must(view.Rest())
-			if _, ok := hitByIDSnapshot(view.Snapshot().Hits, contextID(hitSFTPHiddenToggle)); ok {
-				t.Fatal("hidden-files button did not move into overflow after narrowing")
+			if _, ok := hitByIDSnapshot(view.Snapshot().Hits, contextID(hitSFTPHiddenToggle)); !ok {
+				t.Fatal("the hidden-files indicator left the toolbar after narrowing")
 			}
 			click(contextID(hitSFTPHeaderMore))
 			click(contextID(hitSFTPHeaderHidden))

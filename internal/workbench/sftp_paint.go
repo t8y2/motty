@@ -47,6 +47,10 @@ type sftpPanelScratch struct {
 	// headerTools is where orderToolbarTools builds the header's actions.
 	headerTools   [12]barTool
 	overflowTools []barTool
+	// overflow is the storage overflowTools reads. It is a copy because the eye
+	// appended to the visible roster would otherwise overwrite the first action
+	// that the same backing array made overflow.
+	overflow [maxBarTools]barTool
 	// buttons are the icon buttons, in the order they were declared.
 	buttons           [32]sftpIconButton
 	buttonCount       int
@@ -207,16 +211,26 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	}
 	moveIcon, moveHint := state.sftpPanelMoveAction()
 	headerTools = state.orderToolbarTools(toolbarSFTP, headerTools, false)
-	if folder.showHidden {
+	// Reserve More and the gaps on either side of the flexible spacer before
+	// fitting actions. The eye that reports hidden entries on screen keeps its
+	// slot too: it is their status affordance, not just another action.
+	const gap = float32(4)
+	hidden := folder.showHidden
+	width := max(s.bounds.Width-2*sftpPad, 0)
+	capacity := max(int((width-sftpHeaderButton-gap)/(sftpHeaderButton+gap)), 0)
+	if hidden {
+		capacity = max(capacity-1, 0)
+	}
+	visible := min(len(headerTools), capacity)
+	count := len(headerTools) - visible
+	for i := 0; i < count; i++ {
+		s.overflow[i] = headerTools[visible+i]
+	}
+	s.overflowTools = s.overflow[:count]
+	headerTools = headerTools[:visible]
+	if hidden {
 		headerTools = append(headerTools, barTool{id: hitSFTPHiddenToggle, icon: iconEye, hint: messages.Tools.FilesHideHidden, style: iconButtonActive})
 	}
-	// Reserve More and the gaps on either side of the flexible spacer before
-	// fitting actions. Fixed-size buttons must never push More out of the panel.
-	const gap = float32(4)
-	width := max(s.bounds.Width-2*sftpPad, 0)
-	visible := min(len(headerTools), max(int((width-sftpHeaderButton-gap)/(sftpHeaderButton+gap)), 0))
-	s.overflowTools = headerTools[visible:]
-	headerTools = headerTools[:visible]
 
 	// icon declares an icon button where it goes; it is painted after Draw.
 	icon := func(side float32, id gfx.ID, glyph uint8, hint string, disabled bool, style iconButtonStyle) {
