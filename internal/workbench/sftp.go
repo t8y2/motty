@@ -245,6 +245,7 @@ type sftpView struct {
 	waiting               string
 	pathRequest           string // the directory submitted through the path input, awaiting its listing
 	abandonedPath         string // a path request the user canceled while it was in flight
+	restorePath           string
 	terminalPath          string // an explicit navigation, never a shell report or background refresh
 	terminalPromptVersion uint64
 	terminalScreenVersion uint64 // plain-shell locate must keep the same visible prompt during the read
@@ -305,7 +306,8 @@ func (state *State) openSFTP(session *Session) {
 			state.terminalDirectory(session.ID, cwd)
 		}
 	}
-	state.listSFTP(view, session.fileHistory[1].path)
+	view.restorePath = session.fileHistory[1].path
+	state.listSFTP(view, view.restorePath)
 	if !view.busy {
 		view.busy = false
 		view.errorText = state.messages.SFTPUnavailable
@@ -316,9 +318,13 @@ func (state *State) closeSFTP(session *Session) {
 	if session == nil {
 		return
 	}
-	session.fileHistory = [2]sftpSavedHistory{}
 	if session.files == nil {
 		return
+	}
+	for side, saved := range session.files.saveHistory() {
+		if saved.path != "" {
+			session.fileHistory[side] = saved
+		}
 	}
 	if state.modal == modalFileProperties && session.ID == state.activeSessionID {
 		state.clickFileProperties(hitFilePropertiesClose)
@@ -2225,6 +2231,18 @@ func (state *State) pumpSFTP(session *Session) {
 				continue
 			}
 			view.busy = false
+			if result.Operation == sftpclient.OperationList && view.restorePath != "" {
+				restoring := result.Path == view.restorePath
+				view.restorePath = ""
+				var status *sftp.StatusError
+				if restoring && (sftpclient.IsPathNotFound(result.Err) || errors.Is(result.Err, os.ErrPermission) ||
+					errors.As(result.Err, &status) && status.FxCode() == sftp.ErrSSHFxPermissionDenied) {
+					state.showSFTPPathErrorAt(view, result.Path, result.Err)
+					view.sftpFolder.history = sftpHistory{}
+					state.listSFTP(view, "")
+					continue
+				}
+			}
 			if result.Operation == sftpclient.OperationMoveSelection {
 				if result.Err != nil {
 					detail := fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
