@@ -10,6 +10,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/completion"
 	"motty/internal/pathcomp"
+	"motty/internal/sshconn"
 )
 
 // pathWorld is a live session with a trusted prompt, a known directory and a
@@ -447,5 +448,25 @@ func TestPathCandidatesKeepWhatTheTypedBaseMatches(t *testing.T) {
 	candidates := pathcomp.Candidates(ctx, []pathcomp.Entry{{Name: "notes.txt"}, {Name: "other"}})
 	if len(candidates) != 1 || candidates[0].Insert != "tes.txt" || candidates[0].Text != "~/notes.txt" {
 		t.Fatalf("candidates = %+v", candidates)
+	}
+}
+
+func TestPathCompletionOnTheFirstInjectedPrompt(t *testing.T) {
+	w, _ := newPathWorld(t)
+	terminal := w.session.term
+	terminal.resetFolderSync()
+	w.session.startDirectory = ""
+	token := terminal.folderToken
+	ready := sshconn.IntegrationReadyMarker(token)
+	terminal.injection = terminalInjection{phase: injectionSuppressing, marker: ready}
+	w.shell.say(folderSyncMarker(w.session, "C") + string(ready) +
+		folderSyncMarker(w.session, "A") +
+		"\x1b]777;motty-input;" + token + ";utf8;\x07\x1b]7;file://box/home/test\x07$ " +
+		folderSyncMarker(w.session, "B"))
+	w.state.Wake()
+	w.type_("cd ")
+	waitCompletionList(t, w)
+	if got := strings.Join(listTexts(w), ","); got != "docs/" {
+		t.Fatalf("first prompt candidates = %q, want docs/", got)
 	}
 }

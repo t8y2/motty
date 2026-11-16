@@ -134,6 +134,25 @@ func TestWSLIntegrationScriptRefusesWhatCouldBeInjected(t *testing.T) {
 	}
 }
 
+// The command-start marker the terminal matches must be the one the integration
+// scripts print. The scripts spell ESC and BEL as printf escapes.
+func TestIntegrationCommandStartMarkerMatchesScripts(t *testing.T) {
+	const token = "marker-token"
+	marker := string(IntegrationCommandStartMarker(token))
+	printed := strings.NewReplacer("\x1b", `\033`, "\x07", `\007`).Replace(marker)
+	if printed == marker {
+		t.Fatal("the marker has no byte the scripts would spell as an escape")
+	}
+	for _, shell := range []string{"/bin/bash", "/bin/zsh"} {
+		if script := integrationScriptWith(shell, false, token); !strings.Contains(script, printed) {
+			t.Errorf("%s integration does not print %q", shell, printed)
+		}
+	}
+	if script := WSLIntegrationScript(token, "MOTTY_CD"); !strings.Contains(script, printed) {
+		t.Errorf("WSL integration does not print %q", printed)
+	}
+}
+
 // The shell family decides how the assistant may type a command. It is asked
 // after the interactive shell is open, over a command channel that therefore
 // cannot consume the connection's login message (ADR 0025).
