@@ -185,7 +185,7 @@ func (state *State) paintCommandsDrawer(canvas *gfx.Canvas, size gfx.Size) {
 		state.commands.maxOffset = 0
 		return
 	}
-	wb := state.workspacePixelBounds(size)
+	wb := state.workspaceBoundsAboveLogs(state.deck.ActiveWorkspace(), size)
 	bar := gfx.Rect{X: wb.X, Y: wb.Y + wb.Height, Width: wb.Width, Height: height}
 	state.commands.bar = bar
 	// A faint fill and a top hairline set the strip apart from the terminal.
