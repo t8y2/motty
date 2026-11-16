@@ -772,14 +772,15 @@ type Messages struct {
 	ClipboardAlwaysAllow           string
 
 	// Status bar.
-	StatusReadyIdle    string
-	StatusSelected     string // prefix: host name follows
-	StatusOpened       string // prefix: session title follows
-	StatusReused       string // prefix: session title follows
-	StatusHostAdded    string
-	HostSaveFailedFmt  string
-	HostSaveMissing    string
-	StatusEditCanceled string
+	StatusReadyIdle       string
+	StatusSelected        string // prefix: host name follows
+	StatusOpened          string // prefix: session title follows
+	StatusReused          string // prefix: session title follows
+	StatusHostAdded       string
+	HostSaveFailedFmt     string
+	HostSaveMissing       string
+	HostEditSaveFailedFmt string
+	StatusEditCanceled    string
 
 	// OpenSSH known_hosts management.
 	KnownHostsTitle                 string
