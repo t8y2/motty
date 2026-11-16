@@ -95,8 +95,6 @@ const (
 	iconDiscord
 	iconGitHub
 	iconChevronLeft
-	// iconSnippets is the quick-command bolt: a stored command the terminal sends
-	// the moment it is picked. A sticky note said "reminder"; the bolt says "run".
 	iconSnippets
 	iconNotebook
 	iconSFTPTransfer
@@ -116,10 +114,6 @@ const (
 	iconFollowFolder
 	// iconArrowUpDown is the command bar's order button.
 	iconArrowUpDown
-	// iconLocalProxy is the rail row that hands a session's downloads to the
-	// machine's own HTTP proxy through the SSH connection. Waypoints: traffic
-	// leaves through a point that is not the destination. The globe it replaced
-	// is the SSH browser's glyph.
 	iconLocalProxy
 )
 

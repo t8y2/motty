@@ -32,11 +32,6 @@ func sidebarPageIcon(t *testing.T, page navPage) uint8 {
 	return 0
 }
 
-// A rail row has to read as what pressing it does. The quick-command row wore a
-// sticky note, which says "a reminder" rather than "send this now", and the
-// local-proxy row wore the same globe as the SSH browser, so two different
-// actions looked like one. Each now has a glyph of its own and the browser
-// keeps the globe.
 func TestTheRailRowsThatWereHardToReadHaveTheirOwnGlyphs(t *testing.T) {
 	snippets := terminalRailSpec(t, hitTerminalSnippets)
 	if !reflect.DeepEqual(lucideIcons[snippets.icon], icons.Zap) {
@@ -136,9 +131,7 @@ func TestTheDockedLocalProxyRowWearsTheSameGlyphAsTheRailRow(t *testing.T) {
 	t.Fatalf("hiding the rail row left no docked local-proxy entry: progress=%v", state.showsProgress(session))
 }
 
-// One feature is one glyph wherever it is offered: the sidebar row, the rail row
-// and the empty page all name quick commands with the bolt.
-func TestOneFeaturePaintsWithOneGlyphEverywhereItAppears(t *testing.T) {
+func TestSnippetSidebarAndToolbarUseTheSameGlyph(t *testing.T) {
 	if got, want := sidebarPageIcon(t, navPageSnippets), terminalRailSpec(t, hitTerminalSnippets).icon; got != want {
 		t.Errorf("the snippets sidebar row wears %v and the rail row wears %v", got, want)
 	}
