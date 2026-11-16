@@ -9,6 +9,7 @@ import (
 	"motty/internal/ai/store"
 	"motty/internal/localshell"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -30,10 +31,19 @@ func waitForCLILoginStart(t *testing.T, s *State) {
 	t.Fatal("CLI login did not start")
 }
 
+func cliAuthTestExecutable(t *testing.T) string {
+	t.Helper()
+	executable := filepath.Join(t.TempDir(), "cli-auth.exe")
+	if err := os.WriteFile(executable, nil, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return executable
+}
+
 func TestCLILoginIsExplicitLocalSensitiveAndCancelable(t *testing.T) {
 	w := newSettingsWorld(t, newLister("default"))
 	s := w.state
-	path, _ := os.Executable()
+	path := cliAuthTestExecutable(t)
 	db, _ := s.aiStore()
 	if err := db.SaveProvider(store.Provider{ID: "auth", Name: "Auth", Kind: "codex-cli", CLIPath: path, Enabled: true}); err != nil {
 		t.Fatal(err)
@@ -87,7 +97,7 @@ func TestCLILoginIsExplicitLocalSensitiveAndCancelable(t *testing.T) {
 func TestDeletingProviderCancelsSensitiveLogin(t *testing.T) {
 	w := newSettingsWorld(t, newLister())
 	s := w.state
-	path, _ := os.Executable()
+	path := cliAuthTestExecutable(t)
 	db, _ := s.aiStore()
 	db.SaveProvider(store.Provider{ID: "auth", Kind: "codex-cli", CLIPath: path, Enabled: true})
 	s.reloadAI()
@@ -129,7 +139,7 @@ func TestLoginPasteShortcutCannotReachActiveSSHSession(t *testing.T) {
 func TestCLILoginErrorProvidesExplicitProviderActionWithoutAutoLogin(t *testing.T) {
 	w := newSettingsWorld(t, newLister("default"))
 	s := w.state
-	path, _ := os.Executable()
+	path := cliAuthTestExecutable(t)
 	db, _ := s.aiStore()
 	p := store.Provider{ID: "auth", Name: "CLI", Kind: "codex-cli", CLIPath: path, Enabled: true}
 	db.SaveProvider(p)
@@ -158,7 +168,7 @@ func TestCLILoginErrorProvidesExplicitProviderActionWithoutAutoLogin(t *testing.
 func TestSyncDeletionCancelsLoginWhileLocalProcessIsStarting(t *testing.T) {
 	w := newSettingsWorld(t, newLister())
 	s := w.state
-	path, _ := os.Executable()
+	path := cliAuthTestExecutable(t)
 	db, _ := s.aiStore()
 	db.SaveProvider(store.Provider{ID: "pending", Kind: "codex-cli", CLIPath: path, Enabled: true})
 	s.reloadAI()
@@ -184,7 +194,7 @@ func TestSyncDeletionCancelsLoginWhileLocalProcessIsStarting(t *testing.T) {
 func TestWindowCloseReclaimsQueuedLoginProcess(t *testing.T) {
 	w := newSettingsWorld(t, newLister())
 	s := w.state
-	path, _ := os.Executable()
+	path := cliAuthTestExecutable(t)
 	db, _ := s.aiStore()
 	db.SaveProvider(store.Provider{ID: "queued", Kind: "codex-cli", CLIPath: path, Enabled: true})
 	s.reloadAI()
@@ -217,7 +227,7 @@ func TestWindowCloseReclaimsQueuedLoginProcess(t *testing.T) {
 func TestAuthTimeoutStopsProcessWithoutUIWake(t *testing.T) {
 	w := newSettingsWorld(t, newLister())
 	s := w.state
-	path, _ := os.Executable()
+	path := cliAuthTestExecutable(t)
 	db, _ := s.aiStore()
 	db.SaveProvider(store.Provider{ID: "timeout", Kind: "codex-cli", CLIPath: path, Enabled: true})
 	s.reloadAI()
@@ -242,7 +252,7 @@ func TestAuthTimeoutStopsProcessWithoutUIWake(t *testing.T) {
 func TestCLILoginAnswersTerminalQueries(t *testing.T) {
 	w := newSettingsWorld(t, newLister())
 	s := w.state
-	path, _ := os.Executable()
+	path := cliAuthTestExecutable(t)
 	db, _ := s.aiStore()
 	if err := db.SaveProvider(store.Provider{ID: "auth", Name: "Auth", Kind: "codex-cli", CLIPath: path, Enabled: true}); err != nil {
 		t.Fatal(err)
@@ -270,7 +280,7 @@ func TestCLILoginAnswersTerminalQueries(t *testing.T) {
 func TestCLIAuthActionsStayReachableInNarrowSettings(t *testing.T) {
 	w := newSettingsWorld(t, newLister())
 	s := w.state
-	path, _ := os.Executable()
+	path := cliAuthTestExecutable(t)
 	db, _ := s.aiStore()
 	if err := db.SaveProvider(store.Provider{ID: "auth", Name: "Auth", Kind: "codex-cli", CLIPath: path, Enabled: true}); err != nil {
 		t.Fatal(err)
@@ -307,7 +317,7 @@ func TestResetCLIAuthClearsACheckingState(t *testing.T) {
 func TestClosingCLILoginDialogDoesNotPaintReleasedTerminal(t *testing.T) {
 	w := newSettingsWorld(t, newLister("default"))
 	s := w.state
-	path, _ := os.Executable()
+	path := cliAuthTestExecutable(t)
 	db, _ := s.aiStore()
 	if err := db.SaveProvider(store.Provider{ID: "auth", Name: "Auth", Kind: "codex-cli", CLIPath: path, Enabled: true}); err != nil {
 		t.Fatal(err)
