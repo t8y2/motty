@@ -237,6 +237,13 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		s.buttons[s.buttonCount] = sftpIconButton{box: state.declareIconButton(c, id, glyph, hint, disabled, style).Size(side, side), id: id}
 		s.buttonCount++
 	}
+	// A header button stays the target of a secondary press while disabled, so its
+	// visibility menu still opens; the other icons keep ordinary disabled hits.
+	headerIcon := func(id gfx.ID, glyph uint8, hint string, disabled bool, style iconButtonStyle) {
+		box := state.declareIconButtonWithOptions(c, id, glyph, hint, disabled, style, 0, gfx.HitOptions{SecondaryWhenDisabled: true})
+		s.buttons[s.buttonCount] = sftpIconButton{box: box.Size(sftpHeaderButton, sftpHeaderButton), id: id}
+		s.buttonCount++
+	}
 	ui.Column(c).Fill().PadSides(0, sftpPad, 6, sftpPad).Background(pal.workspace).Children(func() {
 		// Keep the panel's title, docking and close buttons on their own row, with the
 		// folder actions below so they do not compete with the title for space.
@@ -244,16 +251,16 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		s.header.Children(func() {
 			ui.Text(c, title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).MarginSides(0, 8, 0, 0)
 			ui.Row(c).Gap(4).Shrink(0).Children(func() {
-				icon(sftpHeaderButton, hitSFTPPanelSide, moveIcon, moveHint, false, iconButtonQuiet)
-				icon(sftpHeaderButton, hitSFTPClose, iconClose, messages.TipSFTPClose, false, iconButtonQuiet)
+				headerIcon(hitSFTPPanelSide, moveIcon, moveHint, false, iconButtonQuiet)
+				headerIcon(hitSFTPClose, iconClose, messages.TipSFTPClose, false, iconButtonQuiet)
 			})
 		})
 		ui.Row(c).FillWidth().Height(sftpButton).Shrink(0).Gap(gap).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
 			for _, tool := range headerTools {
-				icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, tool.style)
+				headerIcon(tool.id, tool.icon, tool.hint, tool.disabled, tool.style)
 			}
 			ui.Spacer(c)
-			icon(sftpHeaderButton, hitSFTPHeaderMore, iconEllipsis, messages.Tools.FilesMore, false, iconButtonQuiet)
+			headerIcon(hitSFTPHeaderMore, iconEllipsis, messages.Tools.FilesMore, false, iconButtonQuiet)
 		})
 		s.headerButtonCount = s.buttonCount
 

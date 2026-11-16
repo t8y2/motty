@@ -29,12 +29,11 @@ func (state *State) sftpToolbarPointer(event gfx.PointerEvent) gfx.EventResult {
 	if !ok || s.view != session.files || !state.sftpHeaderMenuAvailable(s.view) || s.view.active().headerMenuOpen || state.sftpMenu.open {
 		return gfx.EventResult{}
 	}
+	// The hit under the press decides. A disabled header button is still that
+	// hit for a secondary press (see headerIcon), and a header button covered by
+	// an overlay or a block has no target here, so no geometry is consulted.
 	for _, button := range s.buttons[:s.headerButtonCount] {
-		if !sftpToolbarMenuSource(button.id) || !pointInRect(event.X, event.Y, button.box.Rect()) {
-			continue
-		}
-		// Disabled buttons have no target, but still allow customization.
-		if !event.Target.IsZero() && event.Target != button.id {
+		if button.id != event.Target || !sftpToolbarMenuSource(button.id) {
 			continue
 		}
 		dock := &state.toolbarDock

@@ -259,10 +259,6 @@ func (state *State) toolbarLabel(id gfx.ID) string {
 		return m.Tools.FilesFollow
 	case hitSFTPLocateTerminal:
 		return m.Tools.FilesLocateTerminal
-	case hitSFTPPanelSide:
-		return m.Toolbars.PanelSide
-	case hitSFTPClose:
-		return m.TipSFTPClose
 	}
 	return ""
 }
