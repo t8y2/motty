@@ -78,6 +78,16 @@ func (state *State) runMenuAction(action shortcutAction) {
 		return
 	}
 	result := state.executeShortcut(action)
+	// Native menu key equivalents invoke OnSelect without the window's key
+	// event handler, so its clipboard result must be applied here as well.
+	if result.ClipboardText != "" && state.options.SetClipboardText != nil {
+		if err := state.options.SetClipboardText(result.ClipboardText); err != nil {
+			// The main window does not paint state.status, so the failure has to
+			// reach the user through the action notice, which asks for its own
+			// repaint.
+			state.showActionFailure(state.messages.MenuCopy, err, state.messages.ActionFeedback.ClipboardFailed)
+		}
+	}
 	if result.Repaint && state.options.Invalidate != nil {
 		state.options.Invalidate()
 	}
