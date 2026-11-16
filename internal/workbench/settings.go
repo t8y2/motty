@@ -411,6 +411,8 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		return true
 	case hitSettingsTabNumbers:
 		changed = state.setTabNumbers(!state.tabNumbers)
+	case hitSettingsThickenToggle:
+		changed = state.setFontThickening(!state.fontThickening)
 	case hitSettingsOutputAlerts:
 		state.backgroundOutputAlerts = !state.backgroundOutputAlerts
 		state.clearOutputAlerts()

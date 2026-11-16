@@ -333,6 +333,9 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 				components.ButtonAction{ID: hitSettingsTextSizeDown, Label: "−", Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSettingsTextSizeReset, Label: state.interfaceTextSizeLabel(), Variant: components.ButtonGhost},
 				components.ButtonAction{ID: hitSettingsTextSizeUp, Label: "+", Variant: components.ButtonOutline})
+			if state.fontThickeningSupported {
+				page.toggleRow(messages.SettingsThickerText, messages.SettingsThickerTextDescription, state.fontThickening, hitSettingsThickenToggle)
+			}
 			settingsChoiceRow(page, messages.SettingsToolbarPosition, messages.SettingsToolbarPositionDescription, &state.terminalToolbarPosition, settingsToolbarPositionChoices[:], state.settingsToolbarPositionLabel,
 				func() { state.applyTerminalToolbarPosition(); state.save() }, nil)
 			settingsChoiceRow(page, messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, &state.tabOrientation, settingsTabOrientationChoices[:], state.settingsTabOrientationLabel,
