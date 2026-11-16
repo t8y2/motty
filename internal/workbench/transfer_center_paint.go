@@ -143,7 +143,7 @@ func (state *State) declareTransferPopoverBody(c ui.C, width, height float32) {
 // or paused, and the finished ones.
 func transferSection(snapshot sftpclient.TransferSnapshot) int {
 	switch {
-	case snapshot.State == sftpclient.TransferFailed:
+	case snapshot.State == sftpclient.TransferFailed, snapshot.State == sftpclient.TransferInterrupted:
 		return 0
 	case snapshot.State == sftpclient.TransferRunning:
 		return 1
@@ -222,8 +222,14 @@ func (state *State) declareTransferCard(c ui.C, element ui.Box, entry *transferE
 		statusColor = pal.success
 	case sftpclient.TransferFailed:
 		statusColor = pal.danger
+	case sftpclient.TransferInterrupted:
+		statusColor = pal.warning
 	}
 	card.statusColor = statusColor
+	statusHint := snapshot.Error
+	if snapshot.State == sftpclient.TransferInterrupted {
+		statusHint = m.InterruptedHint
+	}
 	element.Pad(10).Gap(3).Radius(radius.control).Border(1, pal.line).Background(pal.surface).Children(func() {
 		ui.Row(c).Height(22).Shrink(0).Gap(6).Items(ui.Center).Children(func() {
 			ui.Text(c, direction).FontSize(metrics.FontSizeS).Color(pal.muted)
@@ -231,7 +237,7 @@ func (state *State) declareTransferCard(c ui.C, element ui.Box, entry *transferE
 			ui.Text(c, connector).FontSize(metrics.FontSizeS).Color(pal.muted)
 			ui.Text(c, entry.server).FontSize(metrics.FontSizeS).Color(pal.text).Ellipsis().MaxWidth(96)
 			ui.Text(c, entry.address).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().MaxWidth(180)
-			ui.Text(c, entry.status).FontSize(metrics.FontSizeS).Color(statusColor).HitWith(hitTransfersStatus.At(entry.id), entry.status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: snapshot.Error})
+			ui.Text(c, entry.status).FontSize(metrics.FontSizeS).Color(statusColor).HitWith(hitTransfersStatus.At(entry.id), entry.status, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: statusHint})
 		})
 		card.bar = ui.Slot(c).FillWidth().Height(3).Shrink(0).MarginSides(2, 0, 2, 0)
 		ui.Text(c, entry.paths).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().Height(16).Shrink(0).HitWith(hitTransfersPaths.At(entry.id), entry.paths, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: entry.paths})
@@ -254,6 +260,11 @@ func (state *State) declareTransferCard(c ui.C, element ui.Box, entry *transferE
 						card.skip = pageButtonSlot(c, m.Skip, true).Height(22)
 					} else {
 						card.retry = pageButtonSlot(c, m.Retry, true).Height(22)
+						if snapshot.Operation == sftpclient.OperationUpload || snapshot.Operation == sftpclient.OperationDownload {
+							// Retry continues the kept partial; Replace starts the file again
+							// for a source that changed since then.
+							card.replace = pageButtonSlot(c, m.Replace, true).Height(22)
+						}
 					}
 				}
 				if transferCanReveal(snapshot) {
@@ -411,8 +422,12 @@ func (state *State) paintTransferCardsFor(canvas *gfx.Canvas, theme gfx.Theme, c
 		}
 		if card.replace.Valid() {
 			components.BeginButton(canvas, theme, hitTransfersReplace.At(entry.id), card.replace.Rect()).Small().Height(22).Outline(m.Replace)
-			components.BeginButton(canvas, theme, hitTransfersResume.At(entry.id), card.resume.Rect()).Small().Height(22).Ghost(m.Resume)
-			components.BeginButton(canvas, theme, hitTransfersSkip.At(entry.id), card.skip.Rect()).Small().Height(22).Ghost(m.Skip)
+			if card.resume.Valid() {
+				components.BeginButton(canvas, theme, hitTransfersResume.At(entry.id), card.resume.Rect()).Small().Height(22).Ghost(m.Resume)
+			}
+			if card.skip.Valid() {
+				components.BeginButton(canvas, theme, hitTransfersSkip.At(entry.id), card.skip.Rect()).Small().Height(22).Ghost(m.Skip)
+			}
 		}
 	}
 }

@@ -184,6 +184,47 @@ func TestTransferCenterClipsCardActionsToList(t *testing.T) {
 	}
 }
 
+// An interrupted transfer is visible as such, explains that it continues when
+// the host's files come back, and offers no action that pretends it is a
+// failure or a user cancellation (ADR 0028).
+func TestTransferCenterShowsAnInterruptedTransfer(t *testing.T) {
+	state := transferPreviewState(t)
+	entry := &state.transfers.entries[1]
+	entry.snapshot.State = sftpclient.TransferInterrupted
+	entry.snapshot.Error = sftpclient.ErrInterrupted.Error()
+	entry.snapshot.Retryable = false
+	entry.owner = nil
+	state.describeTransfer(entry)
+	state.describeTransferSummary()
+
+	view, err := headless.Open(app.Config{
+		Title: "Motty", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+	}, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	status, ok := findSnapshotHit(view.Snapshot(), hitTransfersStatus.At(entry.id))
+	if !ok || status.Label != state.messages.Transfers.Interrupted || status.Hint != state.messages.Transfers.InterruptedHint {
+		t.Fatalf("interrupted status = %+v, want %q with its hint", status, state.messages.Transfers.Interrupted)
+	}
+	for _, id := range []gfx.ID{
+		hitTransfersRetry.At(entry.id), hitTransfersReplace.At(entry.id),
+		hitTransfersResume.At(entry.id), hitTransfersSkip.At(entry.id),
+	} {
+		if _, ok := findSnapshotHit(view.Snapshot(), id); ok {
+			t.Fatalf("interrupted transfer offers %v", id)
+		}
+	}
+	if _, ok := findSnapshotHit(view.Snapshot(), hitTransfersRemove.At(entry.id)); !ok {
+		t.Fatal("interrupted transfer cannot be removed")
+	}
+}
+
 func TestTransferCenterNativeRevealUsesVivaWithoutOpeningTheFile(t *testing.T) {
 	state := transferPreviewState(t)
 	entry := &state.transfers.entries[0]

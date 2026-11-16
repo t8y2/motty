@@ -73,6 +73,9 @@ type transferCenter struct {
 	badge         string
 	buttonLabel   string
 	active, ended int
+	// interrupted counts rows a lost connection stopped, so a view that comes
+	// back does not scan the history when there is nothing to continue.
+	interrupted int
 	// done and total are the bytes the running transfers have moved and the
 	// bytes they announced, summed the way the summary bar draws them. They
 	// are kept beside fraction because a fraction cannot be added up across
@@ -163,6 +166,18 @@ func (center *transferCenter) keyOf(index int) int {
 
 func transferActive(snapshot sftpclient.TransferSnapshot) bool {
 	return snapshot.State == sftpclient.TransferQueued || snapshot.State == sftpclient.TransferRunning || snapshot.State == sftpclient.TransferPaused
+}
+
+// transferRetryPolicy is what "Retry" means for a failed transfer. An upload or
+// download continues from the partial file it kept, so a network failure does
+// not send the whole file again; anything else asks for the request again.
+func transferRetryPolicy(snapshot sftpclient.TransferSnapshot) sftpclient.ExistingPolicy {
+	switch snapshot.Operation {
+	case sftpclient.OperationUpload, sftpclient.OperationDownload:
+		return sftpclient.ExistingResume
+	default:
+		return sftpclient.ExistingFail
+	}
 }
 
 func transferCanReveal(snapshot sftpclient.TransferSnapshot) bool {
@@ -322,6 +337,55 @@ func (state *State) archiveTransfers(view *sftpView) {
 	state.describeTransferSummary()
 }
 
+// resumeInterruptedTransfers continues the uploads and downloads a lost
+// connection stopped. A view for the same host is the connection they were
+// waiting for: the partial files stayed, so the new worker verifies them and
+// goes on from their end. The row keeps its identity and moves to the new
+// worker's task; server-to-server copies are not continued.
+func (state *State) resumeInterruptedTransfers(view *sftpView) {
+	if view == nil || view.worker == nil || view.transferHost == nil {
+		return
+	}
+	center := &state.transfers
+	if center.interrupted == 0 {
+		return
+	}
+	resumed := false
+	for index := range center.entries {
+		entry := &center.entries[index]
+		if entry.removed || entry.owner != nil || entry.snapshot.State != sftpclient.TransferInterrupted {
+			continue
+		}
+		if !sameTransferHost(entry.host, view.transferHost) {
+			continue
+		}
+		snapshot := entry.snapshot
+		var id uint64
+		var queued bool
+		switch snapshot.Operation {
+		case sftpclient.OperationUpload:
+			id, queued = view.worker.QueueUpload(snapshot.Source, snapshot.Destination, snapshot.Recursive, sftpclient.ExistingResume)
+		case sftpclient.OperationDownload:
+			id, queued = view.worker.QueueDownload(snapshot.Source, snapshot.Destination, snapshot.Recursive, sftpclient.ExistingResume)
+		default:
+			continue
+		}
+		if !queued {
+			continue
+		}
+		if center.byTask == nil {
+			center.byTask = make(map[transferKey]int)
+		}
+		center.byTask[transferKey{view, id}] = index
+		entry.owner = view
+		entry.seen = view.transferScan
+		resumed = true
+	}
+	if resumed {
+		state.describeTransferSummary()
+	}
+}
+
 func (state *State) trimTransferHistory() {
 	center := &state.transfers
 	for len(center.entries) > maxTransferHistory {
@@ -399,6 +463,8 @@ func (state *State) describeTransfer(entry *transferEntry) {
 		entry.status = m.Failed
 	case sftpclient.TransferCanceled:
 		entry.status = m.Canceled
+	case sftpclient.TransferInterrupted:
+		entry.status = m.Interrupted
 	}
 	total := "—"
 	if snapshot.BytesTotal > 0 || snapshot.State == sftpclient.TransferCompleted {
@@ -432,12 +498,15 @@ func (state *State) rebuildTransferCenter() {
 
 func (state *State) describeTransferSummary() {
 	center := &state.transfers
-	center.active, center.ended = 0, 0
+	center.active, center.ended, center.interrupted = 0, 0, 0
 	var rate, done, total int64
 	running := 0
 	for _, entry := range center.entries {
 		if entry.removed {
 			continue
+		}
+		if entry.snapshot.State == sftpclient.TransferInterrupted {
+			center.interrupted++
 		}
 		if transferActive(entry.snapshot) {
 			center.active++
@@ -592,7 +661,7 @@ func (state *State) clickTransferTask(id gfx.ID) bool {
 				worker.Pause(snapshot.ID)
 			}
 		case hitTransfersRetry:
-			retrying = worker.Retry(snapshot.ID, sftpclient.ExistingFail)
+			retrying = worker.Retry(snapshot.ID, transferRetryPolicy(snapshot))
 		case hitTransfersReplace:
 			retrying = worker.Retry(snapshot.ID, sftpclient.ExistingReplace)
 		case hitTransfersResume:

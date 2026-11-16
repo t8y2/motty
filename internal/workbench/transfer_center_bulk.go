@@ -74,7 +74,8 @@ type transferBatch struct {
 }
 
 func transferFilterShows(filter int, snapshot sftpclient.TransferSnapshot) bool {
-	return filter == 0 || filter == 1 && transferActive(snapshot) || filter == 2 && !transferActive(snapshot) || filter == 3 && snapshot.State == sftpclient.TransferFailed
+	return filter == 0 || filter == 1 && transferActive(snapshot) || filter == 2 && !transferActive(snapshot) ||
+		filter == 3 && (snapshot.State == sftpclient.TransferFailed || snapshot.State == sftpclient.TransferInterrupted)
 }
 
 // openTransferCenterForQueued shows the center for a transfer just queued, but
@@ -172,7 +173,11 @@ func (state *State) dispatchTransferBatch(batch transferBatch) {
 			!transferRetryEligible(entry, batch.policy != sftpclient.ExistingFail) {
 			continue
 		}
-		if target.worker.Retry(target.id, batch.policy) {
+		policy := batch.policy
+		if policy == sftpclient.ExistingFail {
+			policy = transferRetryPolicy(entry.snapshot)
+		}
+		if target.worker.Retry(target.id, policy) {
 			target.owner.errorText = ""
 			if target.owner.detached != nil && entry.snapshot.Operation == sftpclient.OperationDownload {
 				target.owner.detached.localRefresh = true
