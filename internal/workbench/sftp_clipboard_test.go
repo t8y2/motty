@@ -156,3 +156,39 @@ func TestSFTPWindowPastesServerFilesOntoTheLocalSide(t *testing.T) {
 		t.Fatalf("local file holds %q", body)
 	}
 }
+
+// The issue this covers: with the docked panel open, clicking the list's empty
+// background makes the file list the keyboard surface, as a file manager's
+// folder view is, so Ctrl+V uploads the files the system clipboard holds. The
+// press used to clear the focus, which sent the chord to the terminal instead
+// and left the right-click menu as the only way to paste.
+func TestSFTPPanelPasteShortcutUploadsAfterBackgroundClick(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	dir := t.TempDir()
+	name := "background-paste.txt"
+	file := filepath.Join(dir, name)
+	if err := os.WriteFile(file, []byte("pasted"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state.options.ClipboardFiles = func() ([]string, error) { return []string{file}, nil }
+	driver := sftpPathFocusDriver(t, state)
+	background := hitOf(t, driver, hitSFTPListBackground)
+	if err := driver.Click(background.Bounds.X+24, background.Bounds.Y+background.Bounds.Height-12); err != nil {
+		t.Fatal(err)
+	}
+	if got := driver.Snapshot().Focused; got != hitSFTPListBackground {
+		t.Fatalf("focus after clicking the list background = %v, want the file list", tree.Text(got))
+	}
+	if err := driver.Chord(keymap.Primary, "v"); err != nil {
+		t.Fatalf("paste shortcut on the list background: %v", err)
+	}
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferCompleted
+	})
+	remote.mu.Lock()
+	body := string(remote.files["/home/test/"+name])
+	remote.mu.Unlock()
+	if body != "pasted" {
+		t.Fatalf("uploaded file = %q", body)
+	}
+}

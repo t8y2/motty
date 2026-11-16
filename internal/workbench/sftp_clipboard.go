@@ -196,7 +196,9 @@ func (state *State) sftpClipboardShortcut(event gfx.KeyEvent, action shortcutAct
 	folder := view.active()
 	// The scopes the rows had before they were a List still name them: the
 	// panel's tests and its own focus results that predate the List speak in them.
-	if !folder.onListRow(event.Target) && event.Target.Scope() != hitSFTPEntryList {
+	// The list's background is the folder's own surface: a press focuses it, and
+	// the clipboard bindings act on the folder it shows.
+	if !folder.onListRow(event.Target) && event.Target.Scope() != hitSFTPEntryList && event.Target != hitSFTPListBackground {
 		return gfx.EventResult{}, false
 	}
 	if view.dialog != sftpDialogNone || view.bookmarksOpen || view.editPath != "" || folder.headerMenuOpen {
