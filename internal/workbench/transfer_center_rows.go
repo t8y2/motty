@@ -122,14 +122,18 @@ func (state *State) declareTransferDirection(c ui.C, direction transferDirection
 
 func (state *State) declareTransferResult(c ui.C, entry *transferEntry, width float32) {
 	pal := state.pal
+	snapshot := entry.snapshot
+	statusHint := snapshot.Error
+	if snapshot.State == sftpclient.TransferInterrupted {
+		statusHint = state.messages.Transfers.InterruptedHint
+	}
 	rowWidth := min(375, width*0.35)
 	if width < 630 {
 		rowWidth = min(140, width*0.28)
 	}
 	ui.Row(c).Width(rowWidth).Height(26).Gap(8).Items(ui.Center).Shrink(0).MinWidth(0).
-		HitWith(hitTransfersStatus.At(entry.id), entry.outcome, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true}).
+		HitWith(hitTransfersStatus.At(entry.id), entry.outcome, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: statusHint}).
 		Children(func() {
-			snapshot := entry.snapshot
 			if snapshot.State == sftpclient.TransferRunning {
 				state.declareTransferProgress(c, transferFraction(snapshot), 7, 12)
 				ui.Text(c, entry.percent).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).Width(32).TextEnd().Shrink(0)
