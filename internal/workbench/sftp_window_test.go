@@ -254,7 +254,7 @@ func TestSFTPWindowConflictNeedsConfirmation(t *testing.T) {
 		t.Fatal("conflict overwrote without confirmation")
 	}
 	index := state.transfers.byTask[transferKey{w.view, w.view.transfers[0].ID}]
-	w.click(hitTransfersReplace.At(state.transfers.entries[index].id))
+	dualClickID(t, view, tree.MountID(sftpWindowQueueActions, hitTransfersReplace.At(state.transfers.entries[index].id)))
 	dualWait(t, state, w, view, func() bool { return len(w.view.transfers) == 1 && !sftpTransfersActive(w.view.transfers) })
 	remote.mu.Lock()
 	after := string(remote.files["/home/test/notes.txt"])
@@ -423,7 +423,8 @@ func TestSFTPWindowMultiSelectQueueScrollAndSystemDrop(t *testing.T) {
 	if w.ui.queueOffset != w.ui.queueBar.MaxOffsetY {
 		t.Fatal("queue failed to reach older/later items")
 	}
-	dualHit(t, view, sftpWindowQueueRows.At(20))
+	oldest := w.ui.queueEntries[len(w.ui.queueEntries)-1]
+	dualHit(t, view, sftpWindowQueueRows.At(state.transfers.entries[oldest].id))
 	for _, bounds := range w.ui.list {
 		if bounds.Y+bounds.Height > w.ui.size.Height {
 			t.Fatal("queue pushed file list outside the window")

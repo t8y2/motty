@@ -715,8 +715,11 @@ func (w *sftpWindow) click(id gfx.ID) {
 			return
 		}
 	}
-	if w.owner.clickTransferTask(id) {
-		w.invalidate()
+	if w.clickQueueDetails(id) {
+		return
+	}
+	if action, ok := tree.Local(sftpWindowQueueActions, id); ok {
+		w.owner.clickTransferTask(action, w.view)
 		return
 	}
 	if id == hitSFTPBookmarkList {
@@ -960,6 +963,8 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			w.owner.closeSFTPDialog(w.view)
 		} else if w.headerMenuOpen() {
 			w.closeHeaderMenu()
+		} else if w.ui.queueDetails.pinned != 0 || w.ui.queueDetails.showing != 0 {
+			w.ui.queueDetails.dismiss()
 		} else if result, ok := w.filterEscape(event); ok {
 			return result
 		} else {
@@ -1284,6 +1289,9 @@ func (w *sftpWindow) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if pointInRect(event.X, event.Y, w.ui.queueBounds) {
 		before := w.ui.queueOffset
 		w.ui.queueOffset = max(0, min(w.ui.queueBar.MaxOffsetY, w.ui.queueOffset+event.DeltaY))
+		if before != w.ui.queueOffset {
+			w.ui.queueDetails.dismiss()
+		}
 		return gfx.EventResult{Handled: true, Repaint: before != w.ui.queueOffset}
 	}
 	return gfx.EventResult{}

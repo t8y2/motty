@@ -57,8 +57,8 @@ func TestTransferCenterUsesReadableUnitsAndKeepsOtherConnections(t *testing.T) {
 	if !strings.Contains(entry.amount, "MB") || !strings.Contains(entry.amount, "GB") || entry.speed != "12.0 MB/秒" {
 		t.Fatalf("size=%q speed=%q", entry.amount, entry.speed)
 	}
-	if !strings.Contains(entry.clock, "10:30:00") || !strings.Contains(entry.clock, "32s") {
-		t.Fatalf("clock=%q", entry.clock)
+	if entry.elapsed != "32s" {
+		t.Fatalf("elapsed=%q", entry.elapsed)
 	}
 	if state.transfers.badge != "2" {
 		t.Fatalf("badge=%q, want 2", state.transfers.badge)
