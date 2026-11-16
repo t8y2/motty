@@ -452,7 +452,7 @@ func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (
 func (catalog *hostCatalog) keepAliveFor(host Host) sshconn.KeepAliveConfig {
 	options := host.SSHOptions
 	if options != nil && (options.ServerAliveInterval != nil || options.ServerAliveCountMax != nil) {
-		config := sshconn.KeepAliveConfig{}
+		config := sshconn.KeepAliveConfig{UseTCP: host.InteractiveOnly}
 		if options.ServerAliveInterval != nil {
 			config.Interval = time.Duration(*options.ServerAliveInterval) * time.Second
 		} else {
@@ -468,7 +468,7 @@ func (catalog *hostCatalog) keepAliveFor(host Host) sshconn.KeepAliveConfig {
 		return config
 	}
 	if catalog.connectionKeepAlive > 0 {
-		return sshconn.KeepAliveConfig{Interval: catalog.connectionKeepAlive, Timeout: 10 * time.Second}
+		return sshconn.KeepAliveConfig{Interval: catalog.connectionKeepAlive, Timeout: 10 * time.Second, UseTCP: host.InteractiveOnly}
 	}
 	return sshconn.KeepAliveConfig{}
 }
