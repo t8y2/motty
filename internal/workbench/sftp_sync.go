@@ -3,8 +3,10 @@ package workbench
 import (
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
+	"motty/internal/shellkind"
 	"motty/internal/sshconn"
 	"motty/internal/term"
 )
@@ -90,27 +92,105 @@ func validSyncDirectory(directory string) bool {
 	return path.IsAbs(directory) && strings.IndexFunc(directory, func(r rune) bool { return r < 0x20 || r == 0x7f }) < 0
 }
 
-// Only an explicit navigation owns a reverse request. Listing refreshes and
-// shell reports use openSFTPDirectory directly and cannot form a feedback loop.
+// Only explicit navigation or the locate action owns a reverse request.
+// Refreshes and shell reports cannot form a feedback loop.
 func (state *State) requestTerminalDirectory(view *sftpView, directory string) {
-	view.terminalPath, view.terminalSyncSkipped = "", false
+	state.prepareTerminalDirectory(view, directory, false)
+}
+
+func (state *State) prepareTerminalDirectory(view *sftpView, directory string, locate bool) {
+	view.terminalPath, view.terminalSyncSkipped, view.terminalLocate = "", false, false
 	session, ok := state.sftpSession(view)
 	if !ok || view.local || view.detached != nil || session.term == nil || session.containerCommand != "" || !session.hasServer() {
 		return
 	}
 	t := session.term
 	t.followPath = ""
-	if !state.sftpTerminalFollow {
+	if !state.sftpTerminalFollow && !locate {
 		return
 	}
 	if t.takeOutput != nil {
 		t.takeOutput()
 	}
-	if !validSyncDirectory(directory) || !state.terminalDirectoryReady(session) {
+	ready := state.terminalDirectoryReady(session)
+	if locate {
+		ready = state.terminalLocateReady(session)
+	}
+	if !validSyncDirectory(directory) || !ready {
 		view.terminalSyncSkipped = true
 		return
 	}
 	view.terminalPath, view.terminalPromptVersion = path.Clean(directory), t.promptVersion
+	view.terminalLocate = locate
+	view.terminalScreenVersion = t.screen.Version()
+}
+
+// A manual click can also target an ordinary POSIX shell, including a host
+// confined to its interactive session. Unlike automatic sync this is the
+// user's explicit command. Accept only a familiar empty shell prompt; never
+// use this fallback after this session's integration has taken ownership.
+//
+// Bash-family prompts end in `$` or `#`, optionally behind a known user/host
+// shape. zsh's default prompt ends in `%` after the host name (`#` for root),
+// so those bare-word forms accept only `%` or `#`; a word followed by `$` is
+// still not a prompt. The terminator is required and trailing spaces are
+// anchored, so an echoed command line cannot match.
+var locateShellPrompt = regexp.MustCompile(
+	`^(?:(?:[^\s@]+@[^\s:]+:[^\r\n#$]*|\[[^\r\n]*@[^\r\n]*\]|(?:ba|z|da|k)?sh(?:-[0-9.]+)?)?[#$]|[A-Za-z][A-Za-z0-9._-]*[%#])[ \t]*$`)
+
+func (state *State) terminalLocateReady(session *Session) bool {
+	if state.terminalDirectoryReady(session) {
+		return true
+	}
+	t := session.term
+	if !session.hasServer() || session.containerCommand != "" || session.phase != sshconn.PhaseConnected ||
+		t == nil || t.shell == nil || t.ended || t.folderIntegrationSeen || t.commandReporting || t.promptDirty ||
+		t.exec != nil || t.transferHoldsInput || session.transferBusy() || t.injection.holding() || len(t.rx) != 0 ||
+		t.screen.Modes().AltScreen || t.screen.ViewOffset() != 0 || t.screen.KeyboardFlags() != 0 || t.screen.Modes().Win32Input ||
+		session.host.System == sshconn.SystemWindows {
+		return false
+	}
+	if kind := t.shellKind(); kind != shellkind.Unknown && kind != shellkind.POSIX {
+		return false
+	}
+	// Input without a subsequent remote echo must not reuse the old prompt.
+	if t.screen.Version() <= t.inputScreenVersion {
+		return false
+	}
+	cursor := t.screen.Cursor()
+	prompt, ok := t.screen.AppendCellText(nil, cursor.Y, 0, cursor.X)
+	return ok && strings.TrimSpace(t.screen.RowText(cursor.Y)) == strings.TrimSpace(string(prompt)) &&
+		locateShellPrompt.Match(prompt)
+}
+
+// The toolbar targets the displayed remote folder, not a selected child or an
+// unfinished path draft. A fresh read validates even a previously cached path.
+func (state *State) canLocateSFTPTerminal(view *sftpView) bool {
+	if view == nil || view.local || view.localOnly || view.detached != nil || view.worker == nil || view.busy || !validSyncDirectory(view.path) {
+		return false
+	}
+	session, ok := state.sftpSession(view)
+	return ok && session.hasServer() && session.host.System != sshconn.SystemWindows &&
+		session.containerCommand == "" && session.phase == sshconn.PhaseConnected &&
+		session.term != nil && session.term.shell != nil && !session.term.ended
+}
+
+func (state *State) locateSFTPTerminal(view *sftpView) {
+	if !state.canLocateSFTPTerminal(view) {
+		return
+	}
+	state.prepareTerminalDirectory(view, view.path, true)
+	if view.terminalPath == "" {
+		view.terminalSyncSkipped = false
+		view.status = state.messages.Tools.FilesLocateTerminalSkipped
+		return
+	}
+	nav := state.beginSFTPNavigation(view, false, view.terminalPath, sftpNavigationPassive, 0)
+	state.queueSFTPListing(view, view.terminalPath, nav)
+	if !view.busy {
+		view.terminalPath, view.terminalLocate = "", false
+		view.status = state.messages.Tools.FilesLocateTerminalSkipped
+	}
 }
 
 func (state *State) terminalDirectoryReady(session *Session) bool {
@@ -132,18 +212,35 @@ func (state *State) syncTerminalDirectory(view *sftpView) {
 	if view.terminalPath == "" || path.Clean(view.path) != view.terminalPath {
 		return
 	}
-	directory, version := view.terminalPath, view.terminalPromptVersion
-	view.terminalPath = ""
-	if !state.sftpTerminalFollow || view.local || view.detached != nil {
+	directory, version, locate := view.terminalPath, view.terminalPromptVersion, view.terminalLocate
+	view.terminalPath, view.terminalLocate = "", false
+	if !state.sftpTerminalFollow && !locate || view.local || view.detached != nil {
 		return
 	}
 	session, ok := state.sftpSession(view)
 	if ok && session.term != nil && session.term.takeOutput != nil {
 		session.term.takeOutput()
 	}
-	if !ok || !state.terminalDirectoryReady(session) || session.term.promptVersion != version ||
-		!session.term.send([]byte("builtin cd -- "+shellQuote(directory)+"\r")) {
+	ready, command := false, "builtin cd -- "+shellQuote(directory)+"\r"
+	if ok && session.term != nil {
+		ready = state.terminalDirectoryReady(session)
+		if locate {
+			ready = state.terminalLocateReady(session)
+			if !session.term.folderIntegrationSeen {
+				// POSIX sh/dash do not have Bash's `builtin` command.
+				command = "command cd -- " + shellQuote(directory) + "\r"
+				ready = ready && session.term.screen.Version() == view.terminalScreenVersion
+			}
+		}
+	}
+	// Output was drained above; a second drain after validating the snapshot
+	// could change the prompt between checking and sending the command.
+	if !ready || session.term.promptVersion != version || session.term.transferHoldsInput ||
+		!session.term.sendInput([]byte(command), false) {
 		view.status = state.terminalFollowSkippedText(view)
+		if locate {
+			view.status = state.messages.Tools.FilesLocateTerminalSkipped
+		}
 	}
 }
 

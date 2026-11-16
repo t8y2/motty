@@ -201,6 +201,9 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		followStyle = iconButtonActive
 	}
 	addHeader(hitSFTPFollowToggle, iconFollowFolder, messages.Tools.FilesFollow, false, followStyle)
+	if !local && !view.localOnly {
+		addHeader(hitSFTPLocateTerminal, iconTerminal, messages.Tools.FilesLocateTerminal, !state.canLocateSFTPTerminal(view))
+	}
 	moveIcon, moveHint := state.sftpPanelMoveAction()
 	headerTools = state.orderToolbarTools(toolbarSFTP, headerTools, false)
 

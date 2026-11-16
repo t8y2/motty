@@ -11,6 +11,16 @@ In **Settings > Files**, the two directions are independent:
 - **Terminal follows file navigation** is off by default. Turn it on to also
   change the owning terminal's folder after entering a remote directory.
 
+The attached remote file panel also has **Go to this folder in the terminal**
+beside the follow button. It changes the owning terminal to the displayed folder
+once, independently of either follow preference. It validates the folder with a
+fresh directory read. Integrated shells use the same empty-prompt checks as
+reverse sync. An ordinary POSIX shell, including an **Interactive session only**
+connection, can also receive this explicit action at a recognized empty shell
+prompt. The prompt must stay unchanged during the directory read. This fallback
+does not enable automatic reverse sync. A skipped or canceled request is never
+retried automatically.
+
 Reverse sync requires a fresh successful directory read and an untouched,
 ready shell prompt belonging to the same session, with command-start reporting
 (Bash 4.4+ PS0, a DEBUG trap on older Bash, or Zsh preexec). It skips partial command
