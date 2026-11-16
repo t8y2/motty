@@ -92,6 +92,13 @@ func (state *State) paintSecretInput(canvas *gfx.Canvas, bounds gfx.Rect, snapsh
 // paintSecretInputStart is paintSecretInput with an addon at the start of a
 // secret field, such as the button that chooses a shared password.
 func (state *State) paintSecretInputStart(canvas *gfx.Canvas, bounds gfx.Rect, snapshot components.InputSnapshot, start components.InputGroupSlot) {
+	state.paintSecretInputSlots(canvas, bounds, snapshot, start, false)
+}
+
+// paintSecretInputSlots is paintSecretInput with another addon beside the reveal
+// button. The reveal button takes the start when revealFirst is set, so the addon
+// sits at the end, as a select's arrow does.
+func (state *State) paintSecretInputSlots(canvas *gfx.Canvas, bounds gfx.Rect, snapshot components.InputSnapshot, other components.InputGroupSlot, revealFirst bool) {
 	theme := state.Theme()
 	if !snapshot.Secure || snapshot.ID.IsZero() {
 		components.PaintInput(canvas, theme, bounds, snapshot)
@@ -114,6 +121,14 @@ func (state *State) paintSecretInputStart(canvas *gfx.Canvas, bounds gfx.Rect, s
 	if revealed {
 		icon, label = lucideIcons[iconEyeOff], state.messages.HideSecret
 	}
+	reveal := components.InputGroupSlot{
+		Kind: components.InputGroupSlotButton, ID: button, Icon: icon, Label: label,
+		ButtonSize: components.InputGroupButtonIconXS, Disabled: snapshot.Disabled,
+	}
+	start, end := other, reveal
+	if revealFirst {
+		start, end = reveal, other
+	}
 	components.PaintInputGroup(canvas, theme, bounds, components.InputGroupSnapshot{
 		ID: snapshot.ID, Label: snapshot.Label, Value: snapshot.Value, DisplayValue: snapshot.DisplayValue,
 		Placeholder: snapshot.Placeholder, Hint: snapshot.Hint,
@@ -123,9 +138,6 @@ func (state *State) paintSecretInputStart(canvas *gfx.Canvas, bounds gfx.Rect, s
 		SelectionStart: snapshot.SelectionStart, SelectionEnd: snapshot.SelectionEnd,
 		CompositionStart: snapshot.CompositionStart, CompositionEnd: snapshot.CompositionEnd,
 		InlineStart: start,
-		InlineEnd: components.InputGroupSlot{
-			Kind: components.InputGroupSlotButton, ID: button, Icon: icon, Label: label,
-			ButtonSize: components.InputGroupButtonIconXS, Disabled: snapshot.Disabled,
-		},
+		InlineEnd:   end,
 	})
 }

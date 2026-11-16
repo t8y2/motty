@@ -475,35 +475,37 @@ func (state *State) hostUserHint(hint string) string {
 }
 
 // paintHostPasswordWithCredential is the password field of a form that has
-// shared passwords to choose from. The key button at its start opens the list.
-// With a shared password chosen the field is a read-only line naming it, and a
-// button at its end goes back to this host's own.
+// shared passwords to choose from. Clicking the field types this host's own
+// password; the arrow at its end opens the list. The reveal button moves to the
+// start to make room. With a shared password chosen the field is a read-only
+// line naming it: a button at its start goes back to this host's own, and the
+// arrow stays at its end.
 func (state *State) paintHostPasswordWithCredential(canvas *gfx.Canvas, content gfx.Rect, title, placeholder string) {
 	editor, theme, m := &state.editor, state.Theme(), state.messages.Credentials
 	state.revealHostField(canvas, hitDialogPassword, content)
 	editor.credentialAnchor = content
-	key := components.InputGroupSlot{
-		Kind: components.InputGroupSlotButton, ID: hitDialogCredential, Icon: lucideIcons[iconKey], Label: m.FieldSource,
+	arrow := components.InputGroupSlot{
+		Kind: components.InputGroupSlotButton, ID: hitDialogCredential, Icon: lucideIcons[iconChevronDown], Label: m.FieldSource,
 		ButtonSize: components.InputGroupButtonIconXS,
 	}
 	entry, taken := state.credentialByID(editor.credential)
 	if !state.hostTakesCredential() {
 		focused := canvas.Focused() == hitDialogPassword
 		value := editor.password.String()
-		state.paintSecretInputStart(canvas, content, components.InputSnapshot{
+		state.paintSecretInputSlots(canvas, content, components.InputSnapshot{
 			ID: hitDialogPassword, Label: title, Value: value, Placeholder: placeholder, Secure: true,
 			Focused: focused, PlatformEditing: focused && value != "",
-		}, key)
+		}, arrow, true)
 		return
 	}
 	_ = taken
 	components.PaintInputGroup(canvas, theme, content, components.InputGroupSnapshot{
 		ID: hitDialogCredentialValue, Label: title, Value: entry.Name, ReadOnly: true,
-		InlineStart: key,
-		InlineEnd: components.InputGroupSlot{
+		InlineStart: components.InputGroupSlot{
 			Kind: components.InputGroupSlotButton, ID: hitDialogCredentialOwn, Icon: lucideIcons[iconClose], Label: m.SourceOwn,
 			ButtonSize: components.InputGroupButtonIconXS,
 		},
+		InlineEnd: arrow,
 	})
 }
 
