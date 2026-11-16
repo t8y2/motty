@@ -220,6 +220,10 @@ func TestLocalNewFolderIsMadeOnThisComputer(t *testing.T) {
 
 func TestLocalPaneSteadyPaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
+	// This test measures painting, not the platform icon service. A failed
+	// shared slot gives every .txt row the built-in fallback without a
+	// background request that could land during the allocation check.
+	state.sftpTypeIcons = map[string]*fileIconSlot{".txt": {failed: true}}
 	view := openLocalPane(t, state, session, localFixture(t))
 	clickSFTPLocalRow(t, state, view, "report.txt")
 	// The completion catalog loads on a background wake. Settle it before

@@ -83,6 +83,7 @@ type transferEntry struct {
 	title, status, amount, speed, clock, paths        string // also used by the SFTP window's cards
 	searchTitle, size, percent, eta, elapsed, outcome string
 	fileIcon                                          *gfx.Icon
+	typeIcon                                          *fileIconSlot
 	monoIcon                                          bool
 	removed                                           bool
 	conflict                                          bool
@@ -494,6 +495,7 @@ func (state *State) describeTransfer(entry *transferEntry) {
 		mode = fs.ModeDir
 	}
 	entry.fileIcon, entry.monoIcon = sftpFileIcon(entry.title, mode)
+	entry.typeIcon = state.attachTypeIcon(entry.title, mode.IsDir())
 	entry.searchTitle = strings.ToLower(entry.title)
 	entry.status = m.Queued
 	switch snapshot.State {

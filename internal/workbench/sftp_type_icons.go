@@ -64,26 +64,63 @@ func (state *State) loadTypeIcons(view *sftpView, rows []sftpRow) {
 		if row.entry.IsDir() || row.appIcon != nil {
 			continue
 		}
-		ext := strings.ToLower(path.Ext(row.entry.Name))
-		// An application bundle has its own icon from its bundle path; a file
-		// that merely ends in .app keeps the built-in glyph.
-		if ext == ".app" || !validTypeIconExtension(row.entry.Name, ext) {
+		slot, load := state.typeIconSlot(row.entry.Name)
+		if slot == nil {
 			continue
 		}
-		slot := state.sftpTypeIcons[ext]
-		if slot == nil {
-			if len(state.sftpTypeIcons) >= maxTypeIcons {
-				continue
-			}
-			slot = &fileIconSlot{path: sftpTypeIconPath(ext)}
-			state.sftpTypeIcons[ext] = slot
-		}
 		row.typeIcon = slot
-		if !slot.ready() && !slot.loading && !slot.failed {
-			slot.loading = true
+		if load {
 			pending = append(pending, slot)
 		}
 	}
+	state.loadTypeIconSlots(view, pending)
+}
+
+// typeIconSlot returns the shared system-icon slot for a file name. The bool
+// says a new request must be started; an in-flight or answered slot is reused.
+func (state *State) typeIconSlot(name string) (*fileIconSlot, bool) {
+	if state.sftpTypeIcons == nil {
+		state.sftpTypeIcons = make(map[string]*fileIconSlot)
+	}
+	ext := strings.ToLower(path.Ext(name))
+	// An application bundle has its own icon from its bundle path; a file that
+	// merely ends in .app keeps the built-in glyph.
+	if ext == ".app" || !validTypeIconExtension(name, ext) {
+		return nil, false
+	}
+	slot := state.sftpTypeIcons[ext]
+	if slot == nil {
+		if len(state.sftpTypeIcons) >= maxTypeIcons {
+			return nil, false
+		}
+		slot = &fileIconSlot{path: sftpTypeIconPath(ext)}
+		state.sftpTypeIcons[ext] = slot
+	}
+	if slot.ready() || slot.loading || slot.failed {
+		return slot, false
+	}
+	slot.loading = true
+	return slot, true
+}
+
+// attachTypeIcon gives the transfer center the same system icon slot the SFTP
+// file list uses. Both surfaces therefore follow the operating system's icon
+// database together, or keep the same built-in fallback where it has none.
+func (state *State) attachTypeIcon(name string, directory bool) *fileIconSlot {
+	if directory {
+		return nil
+	}
+	slot, load := state.typeIconSlot(name)
+	if slot == nil {
+		return nil
+	}
+	if load {
+		state.loadTypeIconSlots(nil, []*fileIconSlot{slot})
+	}
+	return slot
+}
+
+func (state *State) loadTypeIconSlots(view *sftpView, pending []*fileIconSlot) {
 	if len(pending) == 0 {
 		return
 	}

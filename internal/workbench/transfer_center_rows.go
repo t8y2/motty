@@ -32,15 +32,19 @@ func (state *State) declareTransferRow(row ui.ListRow) {
 			Focus(ui.Look{}.Ring(1.5, withAlpha(pal.accent, 0.55))).
 			HitWith(id, entry.title, gfx.HitOptions{Role: gfx.RoleButton, Description: state.messages.Transfers.Details})
 		name.Children(func() {
-			glyph, mono := entry.fileIcon, entry.monoIcon
-			if glyph == nil {
-				glyph, mono = &icons.File, true
+			if entry.typeIcon.ready() {
+				ui.Image(c, entry.typeIcon.bitmap).Size(20, 20).Shrink(0)
+			} else {
+				glyph, mono := entry.fileIcon, entry.monoIcon
+				if glyph == nil {
+					glyph, mono = &icons.File, true
+				}
+				tint := pal.text
+				if mono {
+					tint = pal.muted
+				}
+				ui.Icon(c, *glyph).Size(20, 20).Color(tint).Shrink(0)
 			}
-			tint := pal.text
-			if mono {
-				tint = pal.muted
-			}
-			ui.Icon(c, *glyph).Size(20, 20).Color(tint).Shrink(0)
 			ui.Text(c, entry.title).Color(pal.text).Weight(gfx.WeightSemibold).FontSize(metrics.FontSizeM).Ellipsis().Grow(1).MinWidth(0)
 		})
 		ref := transferDetailRow{entry: item.entry, id: entry.id, box: name}
