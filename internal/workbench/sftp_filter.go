@@ -212,7 +212,15 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, a
 	}
 	dismiss := hitSFTPHeaderMenuDismiss
 	const menuWidth = float32(280)
+	// Hidden-files and Follow already have permanent entries below.
+	var overflow []barTool
+	for _, tool := range state.chrome.sftpPanel.overflowTools {
+		if tool.id != hitSFTPHiddenToggle && tool.id != hitSFTPFollowToggle {
+			overflow = append(overflow, tool)
+		}
+	}
 	rows := 7 + len(folder.history.recent)
+	rows += len(overflow)
 	if label, _ := state.sftpEditorItem(view, folder); label != "" {
 		rows++
 	}
@@ -223,6 +231,15 @@ func (state *State) paintSFTPHeaderMenu(canvas *gfx.Canvas, viewport gfx.Rect, a
 		Viewport: viewport, Scroll: state.menuScrollFor(dismiss),
 	})
 	state.menuPlaced(menu.Bounds())
+	for _, tool := range overflow {
+		menu.AddItem(components.DropdownMenuItem{
+			ID: tool.id, Label: tool.hint, Icon: lucideIcons[tool.icon], Disabled: tool.disabled,
+			Selected: tool.style == iconButtonActive,
+		})
+	}
+	if len(overflow) > 0 {
+		menu.AddSeparator()
+	}
 	state.paintSFTPHistoryMenu(&menu, view, view.local, hitSFTPHistoryBack, hitSFTPHistoryForward, sftpRecentHits)
 	menu.AddItem(components.DropdownMenuItem{
 		ID: hitSFTPHeaderFilter, Label: state.messages.Tools.FilesFilterLabel, Icon: lucideIcons[iconSearch],

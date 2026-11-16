@@ -45,7 +45,8 @@ type sftpPanelScratch struct {
 	bounds gfx.Rect
 
 	// headerTools is where orderToolbarTools builds the header's actions.
-	headerTools [12]barTool
+	headerTools   [12]barTool
+	overflowTools []barTool
 	// buttons are the icon buttons, in the order they were declared.
 	buttons           [32]sftpIconButton
 	buttonCount       int
@@ -206,6 +207,16 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	}
 	moveIcon, moveHint := state.sftpPanelMoveAction()
 	headerTools = state.orderToolbarTools(toolbarSFTP, headerTools, false)
+	if folder.showHidden {
+		headerTools = append(headerTools, barTool{id: hitSFTPHiddenToggle, icon: iconEye, hint: messages.Tools.FilesHideHidden, style: iconButtonActive})
+	}
+	// Reserve More and the gaps on either side of the flexible spacer before
+	// fitting actions. Fixed-size buttons must never push More out of the panel.
+	const gap = float32(4)
+	width := max(s.bounds.Width-2*sftpPad, 0)
+	visible := min(len(headerTools), max(int((width-sftpHeaderButton-gap)/(sftpHeaderButton+gap)), 0))
+	s.overflowTools = headerTools[visible:]
+	headerTools = headerTools[:visible]
 
 	// icon declares an icon button where it goes; it is painted after Draw.
 	icon := func(side float32, id gfx.ID, glyph uint8, hint string, disabled bool, style iconButtonStyle) {
@@ -227,14 +238,9 @@ func (state *State) declareSFTPPanel(c ui.C) {
 				}
 			})
 		})
-		ui.Row(c).FillWidth().Height(sftpButton).Shrink(0).Gap(4).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
+		ui.Row(c).FillWidth().Height(sftpButton).Shrink(0).Gap(gap).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
 			for _, tool := range headerTools {
 				icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, tool.style)
-			}
-			// Once hidden entries are enabled, the Eye control remains visible
-			// as their status affordance beside the secondary actions menu.
-			if folder.showHidden {
-				icon(sftpHeaderButton, hitSFTPHiddenToggle, iconEye, messages.Tools.FilesHideHidden, false, iconButtonActive)
 			}
 			ui.Spacer(c)
 			icon(sftpHeaderButton, hitSFTPHeaderMore, iconEllipsis, messages.Tools.FilesMore, false, iconButtonQuiet)
