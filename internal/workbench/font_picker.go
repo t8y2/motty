@@ -147,6 +147,11 @@ type fontsUI struct {
 	// weightMain and weightBold are the picker's pending weights: what Confirm
 	// applies, once the sample's family is taken.
 	weightMain, weightBold int
+	// weightChoices and weightName feed the weight drop-downs. They are kept
+	// across paints, so a repaint of the open picker makes no new slice or
+	// method value.
+	weightChoices []int
+	weightName    func(int) string
 	// weights is what each family is installed with, read off the window thread
 	// the first time a picker shows the family; weightsReading marks a read that
 	// has not come back yet. Both pickers share them: a family's weights are the
@@ -487,6 +492,17 @@ func (state *State) canConfirmFont() bool {
 	return !state.pickerList().loading && fonts.selected >= 0 && fonts.selected < len(fonts.filtered)
 }
 
+// pendingWeights is the weight pair Confirm applies to family. The pair is only
+// the user's while the drop-downs that show it are there: a family whose weights
+// are not known, or that the platform cannot report, gets the platform's own, so a
+// pair chosen for another family is never applied unseen.
+func (state *State) pendingWeights(family string) (main, bold int) {
+	if len(state.familyWeights(family)) == 0 {
+		return 0, 0
+	}
+	return state.fonts.weightMain, state.fonts.weightBold
+}
+
 // confirmFont applies the highlighted row and closes the picker.
 func (state *State) confirmFont() {
 	if !state.canConfirmFont() {
@@ -501,9 +517,11 @@ func (state *State) confirmFont() {
 	case pickFallbackFont:
 		changed = state.addFallbackFont(entry.family)
 	case pickInterfaceFont:
-		changed = state.setInterfaceFont(entry.family, fonts.weightMain, fonts.weightBold)
+		main, bold := state.pendingWeights(entry.family)
+		changed = state.setInterfaceFont(entry.family, main, bold)
 	default:
-		changed = state.useTerminalFontWeights(entry, fonts.weightMain, fonts.weightBold)
+		main, bold := state.pendingWeights(entry.family)
+		changed = state.useTerminalFontWeights(entry, main, bold)
 	}
 	if changed {
 		state.save()
@@ -864,18 +882,23 @@ func (state *State) declareFontPickerWeightRows(c ui.C, entry fontEntry) {
 	fonts.weightBold = nearestWeight(fonts.weightBold, weights)
 	// The platform's own weight is a choice as well, so a family's weight can be
 	// chosen explicitly and taken away again.
-	choices := make([]int, 0, len(weights)+1)
-	choices = append(choices, 0)
-	choices = append(choices, weights...)
-	pal, m := state.pal, state.messages.Tools
-	row := func(label string, value *int) {
-		ui.Row(c).Height(fontPickerWeightRowHeight).Shrink(0).MarginSides(8, 0, 0, 10).Items(ui.Center).Children(func() {
-			ui.Text(c, label).FontSize(metrics.FontSizeM).Color(pal.muted).Grow(1)
-			ui.Select(c, value, choices, state.fontWeightChoiceName).Width(fontPickerWeightChoiceWidth)
-		})
+	fonts.weightChoices = append(append(fonts.weightChoices[:0], 0), weights...)
+	if fonts.weightName == nil {
+		fonts.weightName = state.fontWeightChoiceName
 	}
-	row(m.FontWeightMain, &fonts.weightMain)
-	row(m.FontWeightBold, &fonts.weightBold)
+	m := state.messages.Tools
+	state.declareFontWeightRow(c, m.FontWeightMain, &fonts.weightMain)
+	state.declareFontWeightRow(c, m.FontWeightBold, &fonts.weightBold)
+}
+
+// declareFontWeightRow declares one weight drop-down row of the picker, over the
+// choices declareFontPickerWeightRows has kept.
+func (state *State) declareFontWeightRow(c ui.C, label string, value *int) {
+	fonts, pal := &state.fonts, state.pal
+	ui.Row(c).Height(fontPickerWeightRowHeight).Shrink(0).MarginSides(8, 0, 0, 10).Items(ui.Center).Children(func() {
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Color(pal.muted).Grow(1)
+		ui.Select(c, value, fonts.weightChoices, fonts.weightName).Width(fontPickerWeightChoiceWidth)
+	})
 }
 
 // familyWeights is the weights family is installed with, or nil while the read is
@@ -910,7 +933,7 @@ func (state *State) familyWeights(family string) []int {
 // them to fn on it.
 func (state *State) listWeights(family string, fn func(*State, string, []int)) {
 	read := state.options.FontWeights
-	if read == nil || !state.aiPost(func(*State) {}) { // none, or the window is closing
+	if read == nil || state.callbacksClosed.Load() { // none, or the window is closing
 		return
 	}
 	go func() {

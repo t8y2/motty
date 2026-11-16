@@ -80,6 +80,11 @@ func (state *State) interfaceFontInEffect() string {
 	if fonts.applied == "" {
 		return state.messages.SettingsInterfaceFontDefault
 	}
+	if len(state.familyWeights(fonts.applied)) == 0 {
+		// The platform draws the family at its own weights: naming the ones it
+		// was told would describe a choice it ignores.
+		return fonts.applied
+	}
 	main, bold := fontWeightName(fonts.appliedMain), fontWeightName(fonts.appliedBold)
 	switch {
 	case main == "" || bold == "":

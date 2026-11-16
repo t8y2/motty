@@ -126,6 +126,47 @@ func TestAWeightTheFamilyDoesNotHaveSnapsToItsNearest(t *testing.T) {
 	}
 }
 
+// A family with no weights listed shows no drop-downs, so Confirm gives it the
+// platform's own weights rather than the pair chosen for the family highlighted
+// before it.
+func TestAFamilyWithNoWeightsIsNotGivenAnotherFamilysPair(t *testing.T) {
+	options, told := interfaceFontOptions(t, testInterfaceFonts)
+	options.FontWeights = func(family string) []int {
+		if family == "Microsoft YaHei UI" {
+			return []int{300, 400, 700}
+		}
+		return nil
+	}
+	state := newTestState(t, options)
+	openInterfaceFontPickerFor(t, state)
+	clickFontPickerRow(t, state, 2) // Microsoft YaHei UI
+	waitForPicker(t, state, func() bool { return len(state.fonts.weights["Microsoft YaHei UI"]) > 0 })
+	state.fonts.weightMain, state.fonts.weightBold = 300, 700
+	typeInto(state, hitFontPickerSearch, "segoe") // the platform lists no weights for it
+	paintedTexts(state)
+	clickFontPickerRow(t, state, 0)
+	state.Click(hitFontPickerConfirm)
+	if last := (*told)[len(*told)-1]; last != (interfaceFontChoice{"Segoe UI", 0, 0}) {
+		t.Fatalf("the engine was told %+v for a family with no weights", last)
+	}
+	if state.uiFont.main != 0 || state.uiFont.bold != 0 {
+		t.Fatalf("the family kept the weights %d/%d", state.uiFont.main, state.uiFont.bold)
+	}
+	state.Close()
+}
+
+// A platform that cannot choose a family's weights ignores the ones it is told, so
+// the row names the family alone rather than weights it does not draw the text at.
+func TestAnInterfaceFontWeightsThePlatformIgnoresAreNotNamed(t *testing.T) {
+	options, _ := interfaceFontOptions(t, testInterfaceFonts)
+	state := newTestState(t, options)
+	state.setInterfaceFont("Microsoft YaHei UI", 300, 700)
+	if got := state.interfaceFontInEffect(); got != "Microsoft YaHei UI" {
+		t.Fatalf("the row names %q for weights the platform does not draw", got)
+	}
+	state.Close()
+}
+
 func TestTheInterfaceFontIsPreviewedConfirmedKeptAndRestored(t *testing.T) {
 	options, told := interfaceFontOptions(t, testInterfaceFonts)
 	state := newTestState(t, options)
