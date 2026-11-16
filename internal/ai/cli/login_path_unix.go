@@ -12,10 +12,6 @@ import (
 	"time"
 )
 
-// LoginPathTimeout bounds how long the first CLI process waits for the user's
-// login shell to report PATH. Later processes reuse the value read once.
-const LoginPathTimeout = 5 * time.Second
-
 // loginPath is the PATH the user's login shell builds. An app started from the
 // Finder or the Dock inherits launchd's minimal PATH, which lacks Homebrew and
 // the version-manager directories, so a CLI installed there cannot run its own
