@@ -357,6 +357,7 @@ func (state *State) setLanguage(language i18n.Language) bool {
 // catalog and everything built from it.
 func (state *State) applyLanguage() {
 	state.messages = i18n.For(state.language)
+	state.refreshOpenCompletion()
 	state.invalidateRemoteToolsWindows()
 	state.rebuildTransferCenter()
 	state.status = state.messages.StatusReadyIdle

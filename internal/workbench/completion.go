@@ -149,7 +149,10 @@ type completionUI struct {
 	catalogReady   chan completionCatalogLoad
 	// catalogGeneration belongs to the per-directory store; another window
 	// can notice an install without reading files.
-	catalogGeneration uint64
+	catalogGeneration   uint64
+	descriptions        *completion.Descriptions
+	descriptionsReady   chan *completion.Descriptions
+	descriptionsStarted bool
 
 	// updating is a user-requested download. Its result arrives through
 	// updateReady; checked is when the feed was last asked.
@@ -302,6 +305,7 @@ func (state *State) adoptCompletion() {
 	}
 	state.loadCompletionCatalog()
 	state.adoptCompletionCatalog()
+	state.adoptCompletionDescriptions()
 	state.adoptCompletionUpdate()
 	state.adoptCompletionHistory()
 	// The merged history of every host feeds the inline suggestion's fallback
@@ -1025,7 +1029,7 @@ func (state *State) completionCandidates(session *Session, line string) ([]compl
 	if catalog := state.completionCatalog(); catalog != nil {
 		if result := completion.Complete(catalog, line); !result.Suppressed {
 			for _, candidate := range result.Candidates {
-				add(candidate)
+				add(state.localizeCompletionCandidate(candidate))
 			}
 		}
 	}
