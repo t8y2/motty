@@ -152,7 +152,7 @@ func (s *State) aiStartCLILogin(id string, device bool) {
 			dir, err = os.MkdirTemp("", "motty-cli-login-")
 		}
 		if err == nil && ctx.Err() == nil {
-			config := localshell.Config{Shell: command.Program, Args: command.Args, Dir: dir, Cols: 90, Rows: 16, Notify: func() { s.aiPost(func(s *State) { s.aiPumpCLILogin() }) }}
+			config := localshell.Config{Shell: command.Program, Args: command.Args, Dir: dir, Env: cli.PathEnv(), Cols: 90, Rows: 16, Notify: func() { s.aiPost(func(s *State) { s.aiPumpCLILogin() }) }}
 			if start != nil {
 				shell, err = start(config)
 			} else {
@@ -343,18 +343,25 @@ func (s *State) declareAICLILogin(c ui.C) {
 	})
 	dialog.Body(func() {
 		ui.Slot(c).Fill().Draw(func(d *ui.DrawContext) {
+			// Dismissing the dialog stops the login, and the body is painted
+			// after that decision in the same pass. A stopped login has released
+			// its terminal, so there is nothing left to draw.
+			term := login.term
+			if term == nil {
+				return
+			}
 			area := d.Rect
 			cols := max(20, int(area.Width/max(s.cellWidth, 1)))
 			rows := max(5, int(area.Height/max(s.cellHeight, 1)))
-			if columns, lines := login.term.screen.Size(); columns != cols || lines != rows {
-				login.term.screen.Resize(cols, rows)
-				if login.term.shell != nil {
-					login.term.shell.Resize(cols, rows)
+			if columns, lines := term.screen.Size(); columns != cols || lines != rows {
+				term.screen.Resize(cols, rows)
+				if term.shell != nil {
+					term.shell.Resize(cols, rows)
 				}
 			}
 			login.geometry = terminalGeometry{area: area, left: area.X, top: area.Y, cols: cols, rows: rows}
 			d.Canvas.Fill(area, s.termPal.terminal)
-			s.paintGridWithID(d.Canvas, &Session{Title: m.CLIAuthTitle, Address: m.CLIAuthTitle, term: login.term}, login.geometry, hitAICLILoginTerminal, true)
+			s.paintGridWithID(d.Canvas, &Session{Title: m.CLIAuthTitle, Address: m.CLIAuthTitle, term: term}, login.geometry, hitAICLILoginTerminal, true)
 		})
 	})
 	dialog.Footer(func() {
