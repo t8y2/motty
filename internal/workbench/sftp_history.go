@@ -344,11 +344,14 @@ func sftpHistoryChord(event gfx.KeyEvent) (int, bool) {
 
 func (state *State) sftpHistoryKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	delta, chord := sftpHistoryChord(event)
-	if !chord || state.activeSection != sectionTerminal || state.modal != modalNone || state.transfers.open {
+	if !chord || state.activeSection != sectionTerminal || state.modal != modalNone || state.transfers.open || !state.filesPanelShown() {
 		return gfx.EventResult{}, false
 	}
 	target := event.Target
-	if target.Scope() != hitSFTPEntryList && target.Scope() != hitSFTPBreadcrumbList && target != hitSFTPPathEdit && target != hitSFTPHeaderMore && target != hitSFTPUp && target != hitSFTPRefresh && !state.onSFTPListRow(target) {
+	if target == hitSFTPPath || target == hitSFTPFilter || target == hitSFTPEditor {
+		return gfx.EventResult{}, false
+	}
+	if !state.contextPanelHit(target) && !state.onSFTPListRow(target) && target.Scope() != hitSFTPEntryList {
 		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)

@@ -102,6 +102,111 @@ func TestSFTPHistoryNativeListAltAndTextPassThrough(t *testing.T) {
 	}
 }
 
+func historyDriverDoubleClick(t *testing.T, driver *app.Driver, id gfx.ID) {
+	t.Helper()
+	hit := hitOf(t, driver, id)
+	if err := driver.DoubleClick(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSFTPHistoryUnselectedAndBackgroundAltShortcuts(t *testing.T) {
+	state, session, fake, _ := openTestSFTP(t)
+	view := session.files
+	fake.mu.Lock()
+	remote := fake.sftp.(*workbenchSFTPRemote)
+	remote.entries["/home/test/empty"] = nil
+	remote.entries["/home/test"] = append(remote.entries["/home/test"], workbenchFileInfo{name: "empty", mode: os.ModeDir | 0o755})
+	fake.mu.Unlock()
+
+	driver := sftpPathFocusDriver(t, state)
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Double click "docs" folder row to navigate into /home/test/docs
+	docsIndex := sftpRowIndex(t, view, "docs")
+	docsRowID := sftpListRowID(t, view.active(), docsIndex)
+	historyDriverDoubleClick(t, driver, docsRowID)
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Immediately press Alt+Left without any intermediate click
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3. Double click "docs" again, then click list background (whitespace, unselecting rows)
+	docsIndex = sftpRowIndex(t, view, "docs")
+	docsRowID = sftpListRowID(t, view.active(), docsIndex)
+	historyDriverDoubleClick(t, driver, docsRowID)
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	historyDriverClick(t, driver, contextID(hitSFTPListBackground))
+
+	// Alt+Left navigates Back to /home/test
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. Click column header and Alt+Right navigates Forward to /home/test/docs
+	historyDriverClick(t, driver, contextID(hitSFTPColumnList.At(0)))
+	if err := driver.Key(gfx.KeyRight, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 5. Navigate to empty directory where there are no rows to select
+	state.navigateSFTPDirectory(view, "/home/test/empty")
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/empty" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.active().rows) != 0 {
+		t.Fatalf("expected empty directory, got %d rows", len(view.active().rows))
+	}
+	historyDriverClick(t, driver, contextID(hitSFTPListBackground))
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	waitSFTP(t, state, session, func(v *sftpView) bool { return !v.busy && v.path == "/home/test/docs" })
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 6. Local directory panel history with background click
+	state.toggleSFTPPane(view)
+	localDirA, localDirB := t.TempDir(), t.TempDir()
+	state.navigateLocalDirectory(view, localDirA)
+	state.navigateLocalDirectory(view, localDirB)
+	if err := driver.Pump(); err != nil {
+		t.Fatal(err)
+	}
+	historyDriverClick(t, driver, contextID(hitSFTPListBackground))
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	if view.lfolder.path != localDirA {
+		t.Fatalf("local pane history back failed: got %q want %q", view.lfolder.path, localDirA)
+	}
+}
+
 func TestSFTPHistoryNativeHideReopenSessionLifetime(t *testing.T) {
 	for _, transferred := range []bool{false, true} {
 		t.Run(map[bool]string{false: "idle", true: "transfer-kept"}[transferred], func(t *testing.T) {
