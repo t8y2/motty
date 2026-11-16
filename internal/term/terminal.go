@@ -1151,6 +1151,19 @@ func (t *Terminal) SetClock(now func() int64) {
 // screen.
 func (t *Terminal) LineNumber(i int) uint64 { return t.scrolled - uint64(t.view) + uint64(i) + 1 }
 
+// LineID returns the ID of the retained line numbered line, in the numbering
+// LineNumber and RetainedFrom use. Unlike Row it finds lines in the history as
+// well as on the screen, so an owner can follow a run of lines it wrote while
+// the reader looks somewhere else. ok is false for a line number the retained
+// buffer no longer holds.
+func (t *Terminal) LineID(line uint64) (uint64, bool) {
+	base := t.lineBase()
+	if line < base || line-base >= uint64(t.bufferLineCount()) {
+		return 0, false
+	}
+	return t.bufferLine(int(line - base)).id, true
+}
+
 // clockNow is the time stamped on lines written by the current Write. Asking
 // the clock once keeps a burst of lines on the same second and keeps the clock
 // out of the per-character paths, which call stamp for every rune they print.

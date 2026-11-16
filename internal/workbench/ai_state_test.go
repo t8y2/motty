@@ -3,8 +3,10 @@
 package workbench
 
 import (
+	"bytes"
 	"encoding/json"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -241,7 +243,8 @@ func TestThePromptAfterAnAICommandIsNotMarkedAsAI(t *testing.T) {
 	term.screen.Write([]byte("$ "))
 	start := term.screen.Row(term.screen.Cursor().Y).ID
 	term.aiRows = map[uint64]struct{}{start: {}}
-	term.aiStartID = start
+	term.aiFront = term.cursorLine()
+	term.aiGeneration = term.screen.BufferGeneration()
 	term.screen.Write([]byte("ai-command\r\nresult\r\nPROMPT $ "))
 	term.markAIBlock(true)
 	prompt := term.screen.Row(term.screen.Cursor().Y).ID
@@ -253,6 +256,83 @@ func TestThePromptAfterAnAICommandIsNotMarkedAsAI(t *testing.T) {
 	}
 }
 
+// A reader who scrolls back while the command is printing must not cost the
+// command its mark: the block comes from the lines the command wrote, not from
+// what the view showed when the output arrived.
+func TestTheGutterMarkDoesNotDependOnTheView(t *testing.T) {
+	term := newTerminal(80, 24)
+	term.screen.Write([]byte("$ "))
+	start := term.screen.Row(term.screen.Cursor().Y).ID
+	term.aiRows = map[uint64]struct{}{start: {}}
+	term.aiFront = term.cursorLine()
+	term.aiGeneration = term.screen.BufferGeneration()
+	term.screen.Write(bytes.Repeat([]byte("earlier output\r\n"), 100))
+	term.screen.Scroll(10)
+	term.screen.Write([]byte("assistant output\r\n"))
+	term.markAIBlock(true)
+	term.screen.ScrollToBottom()
+	row := term.screen.Cursor().Y - 1
+	if text := term.screen.RowText(row); !strings.Contains(text, "assistant output") {
+		t.Fatalf("row above the prompt = %q", text)
+	}
+	if _, ok := term.aiRows[term.screen.Row(row).ID]; !ok {
+		t.Fatal("the output written while the view was scrolled back lost its mark")
+	}
+}
+
+// The mark used to be taken from the rows still on screen after each write, so
+// output that scrolled past between two writes was left unmarked: only the part
+// of the command's output that happened to be in view carried it.
+func TestEveryLineOfAnAssistantCommandKeepsItsGutterMark(t *testing.T) {
+	command := `i=1; while [ $i -le 300 ]; do echo $i; i=$((i+1)); done`
+	model := &scriptedModel{turn: func(index int, request llm.Request) []llm.Event {
+		if index == 0 {
+			return toolTurn("terminal_exec", `{"command":"`+command+`"}`)
+		}
+		return textTurn("printed 300 lines")
+	}}
+	state, _ := assistantSession(t, model)
+	term := state.sessions[0].term
+	ask(state, "print 300 lines", agent.ModeAgent)
+	pumpUntil(t, state, "the run to end", func() bool { return state.ai.run == nil })
+	term.screen.ScrollToBottom()
+
+	_, rows := term.screen.Size()
+	output := make(map[int]bool, 300)
+	commandSeen := false
+	for {
+		for row := 0; row < rows; row++ {
+			text := term.screen.RowText(row)
+			_, marked := term.aiRows[term.screen.Row(row).ID]
+			if strings.Contains(text, "echo $i") {
+				commandSeen = true
+				if !marked {
+					t.Fatal("the assistant's command line lost its gutter mark")
+				}
+				continue
+			}
+			number, err := strconv.Atoi(strings.TrimSpace(text))
+			if err != nil || number < 1 || number > 300 {
+				continue
+			}
+			output[number] = true
+			if !marked {
+				t.Fatalf("line %d of the command's output lost its gutter mark", number)
+			}
+		}
+		offset := term.screen.ViewOffset()
+		term.screen.Scroll(rows)
+		if term.screen.ViewOffset() == offset {
+			break
+		}
+	}
+	// Every output line is somewhere in the scrollback, not only the last
+	// screenful that the command left behind.
+	if len(output) != 300 || !commandSeen {
+		t.Fatalf("walked %d of the 300 output lines, command line seen: %v", len(output), commandSeen)
+	}
+}
+
 func TestClearingTheScreenDropsTheAssistantMarksOfTheRowsItErased(t *testing.T) {
 	term := newTerminal(80, 24)
 	term.screen.Write([]byte("$ ai-command\r\nresult\r\nPROMPT $ "))
@@ -261,13 +341,14 @@ func TestClearingTheScreenDropsTheAssistantMarksOfTheRowsItErased(t *testing.T) 
 	for row := 0; row < 3; row++ {
 		term.aiRows[term.screen.Row(row).ID] = struct{}{}
 	}
-	term.aiStartID = term.screen.Row(0).ID
+	term.aiFront = term.cursorLine()
+	term.aiGeneration = term.screen.BufferGeneration()
 	term.clearScreen(i18n.EnglishMessages)
 	if _, ok := term.aiRows[prompt]; !ok {
 		t.Fatal("the prompt line lost its mark")
 	}
-	if len(term.aiRows) != 1 || term.aiStartID != 0 {
-		t.Fatalf("marks = %d, start = %d; want only the prompt line, with no start row", len(term.aiRows), term.aiStartID)
+	if len(term.aiRows) != 1 {
+		t.Fatalf("marks = %d; want only the prompt line", len(term.aiRows))
 	}
 }
 

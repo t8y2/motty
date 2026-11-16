@@ -138,7 +138,8 @@ func (state *State) beginExec(args tools.TerminalExecArgs) (*aiExec, error) {
 		tap.SetDisplay(capture.DisplayCommandFor(kind, args.Command))
 	}
 	// The prompt row is where the assistant's command will be shown, so mark it
-	// before the shell echoes anything. A line ID survives scrolling.
+	// before the shell echoes anything, and let the block continue from its line
+	// number. A line ID survives scrolling.
 	line := t.screen.Row(t.screen.Cursor().Y).ID
 	t.exec = &aiExec{
 		t: t, tap: tap, done: make(chan gate.ExecResult, 1),
@@ -147,8 +148,11 @@ func (state *State) beginExec(args tools.TerminalExecArgs) (*aiExec, error) {
 	if t.aiRows == nil {
 		t.aiRows = map[uint64]struct{}{}
 	}
-	t.aiStartID = line
-	t.aiRows[line] = struct{}{}
+	if line != 0 {
+		t.aiRows[line] = struct{}{}
+	}
+	t.aiFront = t.cursorLine()
+	t.aiGeneration = t.screen.BufferGeneration()
 	if !t.sendAssistant(wrapped) {
 		delete(t.aiRows, line)
 		t.exec = nil
@@ -157,33 +161,49 @@ func (state *State) beginExec(args tools.TerminalExecArgs) (*aiExec, error) {
 	return t.exec, nil
 }
 
+// cursorLine is the number of the screen line the cursor is on, in the numbering
+// that survives output and scrolling.
+func (t *terminal) cursorLine() uint64 {
+	return t.screen.LineNumber(t.screen.Cursor().Y)
+}
+
 // markAIBlock gives the assistant's command and its output rows the AI gutter
-// mark. While the command runs, a line that is still being written is included;
-// the final write ends before the shell prompt, which belongs to the next user
-// action. Scrolling back leaves the visible rows untouched.
+// mark. Rows are taken from the line numbers the command wrote, not from what is
+// in view: output can scroll past between two writes, and the user may be
+// reading scrollback while it arrives, so neither may leave a hole in the mark.
+// The block is stored as line IDs, which survive resizing, so the mark stays
+// with the text in scrollback.
 func (t *terminal) markAIBlock(final bool) {
-	if t.aiRows == nil || t.aiStartID == 0 || t.screen.ViewOffset() > 0 {
+	if t.aiRows == nil || t.screen.Modes().AltScreen {
+		// A full-screen program owns the alternate screen and paints over it;
+		// the mark belongs to the main screen and resumes when the program ends.
 		return
 	}
-	_, rows := t.screen.Size()
-	cursor := t.screen.Cursor()
-	end := cursor.Y
-	if final && end > 0 {
-		// The prompt is written before this method runs, in the same chunk or a
-		// later one. Never leave its row marked as the assistant's command; the
-		// next thing typed there is the user's.
-		delete(t.aiRows, t.screen.Row(end).ID)
+	if generation := t.screen.BufferGeneration(); generation != t.aiGeneration {
+		// The screen was cleared: line numbers no longer name what they did.
+		// Everything before the cursor was already marked, so the block goes on
+		// from the line the command is writing now.
+		t.aiGeneration = generation
+		t.aiFront = t.cursorLine()
+	}
+	end := t.cursorLine()
+	if final && end > 1 {
+		// The prompt written after the marker owns the cursor's line: the next
+		// thing typed there is the user's, not the command's output.
 		end--
 	}
-	start := 0
-	for row := 0; row < rows; row++ {
-		if t.screen.Row(row).ID == t.aiStartID {
-			start = row
-			break
+	for line := t.aiFront; line <= end; line++ {
+		if id, ok := t.screen.LineID(line); ok {
+			t.aiRows[id] = struct{}{}
 		}
 	}
-	for row := start; row <= end && row < rows; row++ {
-		t.aiRows[t.screen.Row(row).ID] = struct{}{}
+	if end >= t.aiFront {
+		t.aiFront = end + 1
+	}
+	if final {
+		// Take the prompt line's mark even when an earlier write had given it
+		// one: the line was already on screen when the marker was removed.
+		delete(t.aiRows, t.screen.Row(t.screen.Cursor().Y).ID)
 	}
 }
 

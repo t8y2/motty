@@ -252,8 +252,13 @@ type terminal struct {
 	// aiRows holds the screen line IDs whose command was started by the
 	// assistant. The line ID survives scrolling and resizing, so its gutter mark
 	// stays with the command in scrollback.
-	aiRows    map[uint64]struct{}
-	aiStartID uint64
+	aiRows map[uint64]struct{}
+	// aiFront is the first line the open AI block has not marked yet, and
+	// aiGeneration the buffer generation it was counted in. Lines are marked by
+	// number rather than by what is on screen, so output that scrolled past
+	// between two writes keeps its mark.
+	aiFront      uint64
+	aiGeneration uint64
 
 	mouseReport        [64]byte
 	mouseButton        term.MouseEventButton
@@ -511,9 +516,6 @@ func (t *terminal) clearScreen(messages i18n.Messages) {
 	t.selection.clear()
 	t.find.refreshIfChanged(t.screen, messages, 0)
 	kept := t.screen.Row(0).ID
-	if t.aiStartID != kept {
-		t.aiStartID = 0
-	}
 	for id := range t.aiRows {
 		if id != kept {
 			delete(t.aiRows, id)
@@ -1446,6 +1448,11 @@ func (state *State) fitTerminal(session *Session) {
 	t.prediction.reset()
 	t.sync = nil
 	t.screen.Resize(geometry.cols, geometry.rows)
+	if t.exec != nil {
+		// Reflow moves the lines above the cursor, so the command's block goes on
+		// from the line it last wrote; everything before that is already marked.
+		t.aiFront = t.cursorLine()
+	}
 	t.selection.clear()
 	t.find.refreshIfChanged(t.screen, state.messages, 0)
 	if t.shell != nil {
