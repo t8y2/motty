@@ -97,6 +97,7 @@ type savedState struct {
 	TabTitleMode            tabTitleMode        `json:"tab_title_mode,omitempty"`
 	TerminalTabTitle        bool                `json:"terminal_tab_title,omitempty"`
 	TerminalShowLatency     bool                `json:"terminal_show_latency,omitempty"`
+	ConnectionStats         bool                `json:"connection_stats,omitempty"`
 	TerminalToolbarPosition string              `json:"terminal_toolbar_position,omitempty"`
 	TerminalToolbarSize     string              `json:"terminal_toolbar_size,omitempty"`
 	TerminalBellOff         bool                `json:"terminal_bell_off,omitempty"`
@@ -555,6 +556,7 @@ func (state *State) snapshot() savedState {
 		TerminalRightClickPaste:    state.terminalRightClickPaste,
 		TabTitleMode:               state.tabTitleMode,
 		TerminalShowLatency:        state.terminalShowLatency,
+		ConnectionStats:            state.connectionStats,
 		TerminalToolbarPosition:    state.terminalToolbarPosition.String(),
 		TerminalToolbarSize:        state.terminalToolbarSize.String(),
 		TerminalBellOff:            state.terminalBellOff,
@@ -1160,6 +1162,7 @@ func (state *State) restoreShared(saved savedState) {
 		state.tabTitleMode = tabTitleConnection
 	}
 	state.terminalShowLatency = saved.TerminalShowLatency
+	state.connectionStats = saved.ConnectionStats
 	state.terminalBellOff = saved.TerminalBellOff
 	state.terminalInputClickOff = saved.TerminalInputClickOff
 	state.terminalLinkPlainClick = saved.TerminalLinkPlainClick

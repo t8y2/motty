@@ -115,8 +115,9 @@ func TestConnectionHeaderColorPreservesTerminalPalette(t *testing.T) {
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	headers := 0
+	headerFill := tabFill(state.pal, state.pal.tabActive, "#ef4444", true, false)
 	for _, rectangle := range canvas.Rectangles() {
-		if rectangle.Bounds.Height == infoBarHeight && rectangle.Color == state.pal.workspace {
+		if rectangle.Bounds.Height == infoBarHeight && rectangle.Color == headerFill {
 			headers++
 		}
 	}

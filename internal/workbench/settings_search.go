@@ -217,6 +217,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	rowSearch(settingsConnection, m.SettingsConnectionKeepAlive, m.SettingsConnectionKeepAliveDescription, keepAliveAlias)
 	row(settingsConnection, m.SettingsConnectionReconnect, m.SettingsConnectionReconnectDescription)
 	row(settingsConnection, m.SettingsShare, m.SettingsShareDescription)
+	row(settingsConnection, m.SettingsConnectionStats, m.SettingsConnectionStatsDescription)
 	row(settingsConnection, m.SettingsRestore, m.SettingsRestoreDescription)
 	row(settingsConnection, m.SettingsSSHAgent, m.SettingsSSHAgentDescription)
 	row(settingsConnection, m.SettingsNetworkProxy, m.SettingsNetworkProxyDescription)
