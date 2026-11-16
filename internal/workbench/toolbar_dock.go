@@ -127,9 +127,6 @@ func (prefs *toolbarPreferences) restoreDock(saved []toolbarDockEntry) {
 }
 
 func toolbarDockIdentity(id gfx.ID) (toolbarDockEntry, bool) {
-	if id == hitServerLogs {
-		return toolbarDockEntry{}, false
-	}
 	for group := toolbarWindow; group <= toolbarTerminal; group++ {
 		for _, spec := range toolbarCatalog[group] {
 			if spec.id == id {
@@ -314,9 +311,6 @@ func (state *State) toolbarTopLimit() int {
 }
 
 func (state *State) toolbarDockZoneFor(group toolbarGroup, key string) toolbarDockZone {
-	if group == toolbarTerminal && key == "remote-logs" {
-		return toolbarDockSideBottom
-	}
 	for _, entry := range state.toolbars.dock {
 		if entry.Group == group && entry.Key == key {
 			return entry.Zone
