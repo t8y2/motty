@@ -63,6 +63,17 @@ func IntegrationReadyMarker(token string) []byte {
 	return []byte("\x1b]7777;motty-ready;" + token + "\x07")
 }
 
+// integrationSuffix binds an OSC 133 report to the shell this connection
+// started. The terminal parser accepts a report only with this suffix.
+const integrationSuffix = ";motty="
+
+// IntegrationCommandStartMarker reports the start of a command line, as the
+// injected Bash and Zsh integration scripts print it. The token binds the
+// report to the shell this connection started, so a program cannot fake it.
+func IntegrationCommandStartMarker(token string) []byte {
+	return []byte("\x1b]133;C" + integrationSuffix + token + "\x07")
+}
+
 // UploadIntegration writes the shell integration to a private temporary file
 // on the server and returns the short line that activates it in the running
 // shell. The file goes over a command session, not the pty: a terminal's
@@ -93,7 +104,7 @@ func (conn *Conn) UploadIntegration(ctx context.Context, shellPath, token, direc
 		body = start + zshIntegration(directoryReportFunction) + "\n"
 	}
 	body = strings.ReplaceAll(body, "__MOTTY_INPUT_TOKEN__", token)
-	body = strings.ReplaceAll(body, "__MOTTY_SUFFIX__", ";motty="+token)
+	body = strings.ReplaceAll(body, "__MOTTY_SUFFIX__", integrationSuffix+token)
 	// One command: create a private directory, print its path, and write the
 	// script from stdin. The path is the only output.
 	upload := `d=$(mktemp -d "${TMPDIR:-/tmp}/motty-shell.XXXXXXXX") || exit 1; chmod 700 "$d"; printf '%s\n' "$d"; umask 077; cat > "$d/init"`
@@ -182,7 +193,7 @@ func integrationScriptWith(shell string, forceTrap bool, tokens ...string) strin
 		if !validIntegrationToken(tokens[0]) {
 			return ""
 		}
-		suffix = ";motty=" + tokens[0]
+		suffix = integrationSuffix + tokens[0]
 	}
 	if !strings.HasPrefix(shell, "/") || strings.IndexFunc(shell, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
 		return ""
@@ -255,7 +266,7 @@ MOTTY_USER_ZDOTDIR=${ZDOTDIR-$HOME} MOTTY_USER_ZDOTDIR_SET=${ZDOTDIR+x} ZDOTDIR=
 `
 	}
 	script += "_motty_status=$?\nexit \"$_motty_status\"\n"
-	script = strings.ReplaceAll(script, "__MOTTY_INPUT_TOKEN__", strings.TrimPrefix(suffix, ";motty="))
+	script = strings.ReplaceAll(script, "__MOTTY_INPUT_TOKEN__", strings.TrimPrefix(suffix, integrationSuffix))
 	return strings.ReplaceAll(script, "__MOTTY_SUFFIX__", suffix)
 }
 
@@ -271,7 +282,7 @@ func WSLIntegrationScript(token, startDirectory string) string {
 	if token == "" || !validIntegrationToken(token) || !validVariableName(startDirectory) {
 		return ""
 	}
-	suffix := ";motty=" + token
+	suffix := integrationSuffix + token
 	return `_motty_cd=${` + startDirectory + `-}
 unset ` + startDirectory + `
 if [ -n "$_motty_cd" ]; then
