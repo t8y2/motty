@@ -27,6 +27,7 @@ func (state *State) paintToolbarDockMenu(canvas *gfx.Canvas, viewport gfx.Rect) 
 		return
 	}
 	var rows menuRows
+	sftp := !dock.overflow && sftpToolbarMenuSource(dock.menuTool)
 	if dock.overflow {
 		var buffer [maxBarTools]barTool
 		tools := state.toolbarDockTools(toolbarDockTop, &buffer)
@@ -43,6 +44,10 @@ func (state *State) paintToolbarDockMenu(canvas *gfx.Canvas, viewport gfx.Rect) 
 				}
 			}
 			rows.add(components.ContextMenuItem{ID: tool.id, Label: label, Icon: lucideIcons[tool.icon], Disabled: disabled})
+		}
+	} else if sftp {
+		if _, ok := sftpToolbarSpec(dock.menuTool); ok {
+			rows.add(components.ContextMenuItem{ID: hitToolbarDockHide, Label: m.Hide, Icon: lucideIcons[iconEyeOff]})
 		}
 	} else {
 		rows.add(components.ContextMenuItem{ID: hitToolbarDockTop, Label: m.MoveTop, Icon: lucideIcons[iconRows2]})
@@ -78,6 +83,7 @@ func (state *State) clickToolbarDockMenu(id gfx.ID) bool {
 	}
 	dock.menu = false
 	source := dock.menuTool
+	sftp := !dock.overflow && sftpToolbarMenuSource(source)
 	switch id {
 	case hitToolbarDockTop:
 		state.moveToolbarDockTool(source, toolbarDockTop, gfx.ID{})
@@ -94,7 +100,13 @@ func (state *State) clickToolbarDockMenu(id gfx.ID) bool {
 	case hitToolbarDockBottomRight:
 		state.moveToolbarDockTool(source, toolbarDockBottomRight, gfx.ID{})
 	case hitToolbarDockHide:
-		if entry, ok := toolbarDockIdentity(source); ok {
+		entry, ok := toolbarDockIdentity(source)
+		if sftp {
+			if spec, found := sftpToolbarSpec(source); found {
+				entry, ok = toolbarDockEntry{Group: toolbarSFTP, Key: spec.key}, true
+			}
+		}
+		if ok {
 			for i := range state.toolbars.customize(entry.Group) {
 				if state.toolbars.layouts[entry.Group][i].Key == entry.Key {
 					state.toolbars.layouts[entry.Group][i].Enabled = false
@@ -108,11 +120,18 @@ func (state *State) clickToolbarDockMenu(id gfx.ID) bool {
 		}
 	case hitToolbarDockCustomize:
 		group := toolbarWindow
-		if entry, ok := toolbarDockIdentity(source); ok && !dock.overflow {
+		if sftp {
+			group = toolbarSFTP
+		} else if entry, ok := toolbarDockIdentity(source); ok && !dock.overflow {
 			group = entry.Group
 		}
 		state.openToolbarSettings(group)
 	case hitToolbarDockReset:
+		if sftp {
+			state.toolbars.layouts[toolbarSFTP] = nil
+			state.toolbarDockChanged()
+			break
+		}
 		state.toolbars.dock = nil
 		state.toolbars.layouts[toolbarWindow], state.toolbars.layouts[toolbarTerminal] = nil, nil
 		state.terminalToolbarSize = terminalToolbarSmall

@@ -889,6 +889,9 @@ func (state *State) toolbarDockPointer(event gfx.PointerEvent) gfx.EventResult {
 		dock.drag = toolbarDockDrag{}
 		return gfx.EventResult{}
 	}
+	if result := state.sftpToolbarPointer(event); result.Handled {
+		return result
+	}
 	drag := &dock.drag
 	switch event.Kind {
 	case gfx.PointerDown:
