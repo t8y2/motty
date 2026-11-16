@@ -763,6 +763,10 @@ func elideSFTPFolder(dir string, fits func(string) bool) string {
 // current one and folding the rest into an ellipsis when the path is wider than
 // the panel.
 func (state *State) paintSFTPBreadcrumbs(canvas *gfx.Canvas, bounds gfx.Rect, crumbList []sftpCrumb) {
+	state.paintSFTPFolderBreadcrumbs(canvas, bounds, crumbList, hitSFTPPathEdit, hitSFTPBreadcrumbList)
+}
+
+func (state *State) paintSFTPFolderBreadcrumbs(canvas *gfx.Canvas, bounds gfx.Rect, crumbList []sftpCrumb, edit gfx.ID, links gfx.Scope) {
 	// The path reads at the size of the list under it, not the theme's caption.
 	// A separator is a chevron the size of the text with gap-2.5 (10) on each side.
 	const size, separator = float32(13), float32(33)
@@ -776,7 +780,7 @@ func (state *State) paintSFTPBreadcrumbs(canvas *gfx.Canvas, bounds gfx.Rect, cr
 		}
 		total = next
 	}
-	canvas.HitWithOptions(hitSFTPPathEdit, bounds, state.messages.Tools.FilesPathLabel, gfx.HitOptions{Role: gfx.RoleButton, Hint: state.messages.Tools.FilesPathPlaceholder})
+	canvas.HitWithOptions(edit, bounds, state.messages.Tools.FilesPathLabel, gfx.HitOptions{Role: gfx.RoleButton, Hint: state.messages.Tools.FilesPathPlaceholder})
 	breadcrumb := components.BeginBreadcrumb(canvas, state.Theme(), bounds).FontSize(size)
 	if first > 0 {
 		breadcrumb.AddEllipsis(gfx.ID{})
@@ -785,7 +789,7 @@ func (state *State) paintSFTPBreadcrumbs(canvas *gfx.Canvas, bounds gfx.Rect, cr
 		if index == len(crumbList)-1 {
 			breadcrumb.AddCurrent(crumbList[index].label)
 		} else {
-			breadcrumb.AddLink(hitSFTPBreadcrumbList.At(index), crumbList[index].label)
+			breadcrumb.AddLink(links.At(index), crumbList[index].label)
 		}
 	}
 }

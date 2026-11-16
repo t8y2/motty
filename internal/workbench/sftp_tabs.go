@@ -262,7 +262,12 @@ func (state *State) fileTabAtWindowPoint(x, y float32) (uint32, bool) {
 
 func (state *State) activeTopTabFocusHit() gfx.ID {
 	if state.activeSection == sectionSFTP {
-		if state.activeSFTPWindow() != nil {
+		if window := state.activeSFTPWindow(); window != nil {
+			// Breadcrumbs mode paints the edit button, not the path field, so the
+			// focus target must be the control that is actually there.
+			if !state.sftpPathVisible(window.folder(true)) {
+				return sftpWindowPathEdit[0]
+			}
 			return sftpWindowPath[0]
 		}
 	}
@@ -485,6 +490,10 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 	w.notices.paint(canvas, state.Theme(), bounds)
 	if !w.ui.profileHoverOpen {
 		w.ui.tooltip.Paint(canvas, state.Theme(), bounds, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
+	}
+	if !w.pendingFocus.IsZero() {
+		canvas.RequestFocus(w.pendingFocus)
+		w.pendingFocus = gfx.ID{}
 	}
 }
 
