@@ -14,6 +14,22 @@ import (
 	"time"
 )
 
+// waitForCLILoginStart waits for the login terminal to adopt its shell. The
+// first CLI process of the test process reads the login shell's PATH before it
+// starts, and the cli package bounds that read by cli.LoginPathTimeout.
+func waitForCLILoginStart(t *testing.T, s *State) {
+	t.Helper()
+	deadline := time.Now().Add(cli.LoginPathTimeout + waitBudget())
+	for time.Now().Before(deadline) {
+		s.Wake()
+		if s.ai.login != nil && s.ai.login.term.shell != nil {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("CLI login did not start")
+}
+
 func TestCLILoginIsExplicitLocalSensitiveAndCancelable(t *testing.T) {
 	w := newSettingsWorld(t, newLister("default"))
 	s := w.state
@@ -39,14 +55,7 @@ func TestCLILoginIsExplicitLocalSensitiveAndCancelable(t *testing.T) {
 	before := len(s.sessions)
 	s.aiStartCLILogin("auth", false)
 	s.aiStartCLILogin("auth", false)
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		s.Wake()
-		if s.ai.login != nil && s.ai.login.term.shell != nil {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
+	waitForCLILoginStart(t, s)
 	if starts != 1 || len(s.sessions) != before || s.ai.login == nil {
 		t.Fatal("not isolated/duplicate login", starts)
 	}
@@ -85,13 +94,7 @@ func TestDeletingProviderCancelsSensitiveLogin(t *testing.T) {
 	shell := &fakeShell{done: make(chan struct{})}
 	s.options.CLIAuthStart = func(localshell.Config) (Shell, error) { return shell, nil }
 	s.aiStartCLILogin("auth", false)
-	for i := 0; i < 1000; i++ {
-		s.Wake()
-		if s.ai.login != nil && s.ai.login.term.shell != nil {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
+	waitForCLILoginStart(t, s)
 	s.aiDeleteProvider("auth")
 	s.Wake()
 	if s.ai.login != nil || !shell.closed {
@@ -167,7 +170,7 @@ func TestSyncDeletionCancelsLoginWhileLocalProcessIsStarting(t *testing.T) {
 	s.aiStartCLILogin("pending", false)
 	select {
 	case <-entered:
-	case <-time.After(time.Second):
+	case <-time.After(cli.LoginPathTimeout + waitBudget()):
 		t.Fatal("auth did not start")
 	}
 	db.DeleteProvider("pending")
@@ -188,7 +191,7 @@ func TestWindowCloseReclaimsQueuedLoginProcess(t *testing.T) {
 	shell := &fakeShell{done: make(chan struct{})}
 	s.options.CLIAuthStart = func(localshell.Config) (Shell, error) { return shell, nil }
 	s.aiStartCLILogin("queued", false)
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(cli.LoginPathTimeout + waitBudget())
 	for time.Now().Before(deadline) {
 		s.ai.inbox.mu.Lock()
 		queued := len(s.ai.inbox.queue) > 0
@@ -221,18 +224,9 @@ func TestAuthTimeoutStopsProcessWithoutUIWake(t *testing.T) {
 	shell := &fakeShell{done: make(chan struct{})}
 	s.options.CLIAuthStart = func(localshell.Config) (Shell, error) { return shell, nil }
 	s.aiStartCLILogin("timeout", false)
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		s.Wake()
-		if s.ai.login != nil && s.ai.login.term.shell != nil {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	if s.ai.login == nil || s.ai.login.term.shell == nil {
-		t.Fatal("auth not adopted")
-	}
+	waitForCLILoginStart(t, s)
 	s.ai.login.timer.Reset(time.Millisecond)
+	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		shell.mu.Lock()
 		closed := shell.closed
@@ -257,19 +251,9 @@ func TestCLILoginAnswersTerminalQueries(t *testing.T) {
 	shell := &fakeShell{done: make(chan struct{})}
 	s.options.CLIAuthStart = func(localshell.Config) (Shell, error) { return shell, nil }
 	s.aiStartCLILogin("auth", false)
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		s.Wake()
-		if s.ai.login != nil && s.ai.login.term.shell != nil {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	if s.ai.login == nil || s.ai.login.term.shell == nil {
-		t.Fatal("login did not start")
-	}
+	waitForCLILoginStart(t, s)
 	shell.say("\x1b[c")
-	deadline = time.Now().Add(time.Second)
+	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		s.Wake()
 		if shell.typed() != "" {
@@ -333,11 +317,7 @@ func TestClosingCLILoginDialogDoesNotPaintReleasedTerminal(t *testing.T) {
 	s.Click(hitSettings)
 	s.selectSettingsCategory(settingsAssistant)
 	s.aiStartCLILogin("auth", false)
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) && (s.ai.login == nil || s.ai.login.term.shell == nil) {
-		s.Wake()
-		time.Sleep(time.Millisecond)
-	}
+	waitForCLILoginStart(t, s)
 	driver := modalEventDriver(t, s)
 	clickPaintedHit(t, driver, hitAISetFormClose)
 	if s.ai.login != nil {

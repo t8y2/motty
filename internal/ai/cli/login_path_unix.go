@@ -12,6 +12,10 @@ import (
 	"time"
 )
 
+// LoginPathTimeout bounds how long the first CLI process waits for the user's
+// login shell to report PATH. Later processes reuse the value read once.
+const LoginPathTimeout = 5 * time.Second
+
 // loginPath is the PATH the user's login shell builds. An app started from the
 // Finder or the Dock inherits launchd's minimal PATH, which lacks Homebrew and
 // the version-manager directories, so a CLI installed there cannot run its own
@@ -22,7 +26,7 @@ var loginPath = sync.OnceValue(func() string { return readLoginPath(loginShell()
 // and login, so the profile and rc files that export PATH are sourced. Shell
 // startup may print anything, so only the PATH line is taken.
 func readLoginPath(shell string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), LoginPathTimeout)
 	defer cancel()
 	var out bytes.Buffer
 	cmd := exec.CommandContext(ctx, shell, "-ilc", "env")
