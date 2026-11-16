@@ -1,0 +1,5 @@
+# Open a local terminal. Set Settings > Terminal > Local shell to Git Bash first (once).
+place
+newlocal
+sleep 4000
+shot local-terminal

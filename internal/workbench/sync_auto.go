@@ -28,9 +28,17 @@ const (
 // scheduleSync asks for a sync soon. Windows of one process share the work: the
 // first one does it, and the others hand their changes to it.
 func (state *State) scheduleSync() {
+	if state.sync.holdBack {
+		return
+	}
 	leader := state.syncLeader()
 	if leader != state {
 		leader.scheduleSync()
+		return
+	}
+	if state.syncScope.empty() {
+		// Every category is closed: there is nothing to send or receive, so a
+		// change here must not open a request or keep a timer.
 		return
 	}
 	switch {
@@ -113,7 +121,7 @@ func syncRetryable(err error) bool {
 	switch {
 	case errors.Is(err, cloudsync.ErrUnauthorized), errors.Is(err, cloudsync.ErrInsecure), errors.Is(err, cloudsync.ErrTooLarge),
 		errors.Is(err, backup.ErrWrongPassword), errors.Is(err, backup.ErrNotBackup), errors.Is(err, backup.ErrTooNew),
-		errors.Is(err, backup.ErrWeakPassword), errors.Is(err, vault.ErrLocked):
+		errors.Is(err, backup.ErrWeakPassword), errors.Is(err, vault.ErrNeedsConversion), errors.Is(err, vault.ErrTooLarge):
 		return false
 	}
 	return true

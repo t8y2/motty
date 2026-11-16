@@ -27,6 +27,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -53,7 +54,7 @@ var (
 
 // Limits.
 const (
-	MaxTextBytes  = 1 << 20 // per message text, reasoning and tool JSON
+	MaxTextBytes  = 16 << 20 // per message text, reasoning and tool JSON
 	MaxTitleBytes = 256
 	// DefaultListLimit applies when Conversations gets limit <= 0.
 	DefaultListLimit = 200
@@ -75,7 +76,7 @@ func (e *LimitError) Error() string {
 // Is makes errors.Is(err, ErrTooLarge) true.
 func (e *LimitError) Is(target error) bool { return target == ErrTooLarge }
 
-const schemaVersion = 2
+const schemaVersion = 8
 
 var migrations = [...]string{
 	// version 1
@@ -119,6 +120,33 @@ var migrations = [...]string{
 	// The legacy api_key column stays until its value has been moved.
 	`ALTER TABLE providers ADD COLUMN has_key INTEGER NOT NULL DEFAULT 0;
 	UPDATE providers SET has_key = (api_key <> '');`,
+	// Executable paths belong to this machine, not provider sync records.
+	`ALTER TABLE providers ADD COLUMN cli_path TEXT NOT NULL DEFAULT '';`,
+	// version 4: an Anthropic provider may send its key as a bearer token
+	// instead of x-api-key. The empty value keeps the pre-existing behavior.
+	`ALTER TABLE providers ADD COLUMN auth_style TEXT NOT NULL DEFAULT '';`,
+	// version 5: what an agent did through the stdio MCP server, which runs no
+	// window to show it in. A summary of each call, never its output.
+	`CREATE TABLE agent_audit (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		at         INTEGER NOT NULL,
+		host_id    TEXT NOT NULL,
+		host_label TEXT NOT NULL,
+		tool       TEXT NOT NULL,
+		summary    TEXT NOT NULL,
+		outcome    TEXT NOT NULL
+	);
+	CREATE INDEX agent_audit_at ON agent_audit(at DESC, id DESC);`,
+	// version 6: an OpenAI-compatible provider may speak the Responses API
+	// instead of Chat Completions. The empty value keeps Chat Completions.
+	`ALTER TABLE providers ADD COLUMN api_format TEXT NOT NULL DEFAULT '';`,
+	// version 7: an optional models_url for providers where model listing is at
+	// a different path than completion requests.
+	`ALTER TABLE providers ADD COLUMN models_url TEXT NOT NULL DEFAULT '';`,
+	// version 8: reasoning effort configuration per model.
+	`ALTER TABLE models ADD COLUMN reasoning_enabled INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE models ADD COLUMN reasoning_levels TEXT NOT NULL DEFAULT '';
+	ALTER TABLE models ADD COLUMN reasoning_default TEXT NOT NULL DEFAULT '';`,
 }
 
 const sqliteMagic = "SQLite format 3\x00"
@@ -289,21 +317,67 @@ func toTime(ns int64) time.Time { return time.Unix(0, ns) }
 
 // Provider kinds.
 const (
-	KindOpenAI    = "openai"
-	KindAnthropic = "anthropic"
+	KindOpenAI      = "openai"
+	KindAnthropic   = "anthropic"
+	KindClaudeCLI   = "claude-code-cli"
+	KindCodexCLI    = "codex-cli"
+	KindOpenCodeCLI = "opencode-cli"
+	KindPiCLI       = "pi-cli"
+	KindQoderCLI    = "qoder-cli"
 )
+
+// Authentication styles of an Anthropic provider. The empty value means the
+// kind's historical default, which is an API key for Anthropic and a bearer
+// token for OpenAI-compatible endpoints.
+const (
+	AuthStyleAPIKey = "api_key"
+	AuthStyleBearer = "bearer"
+)
+
+// ValidAuthStyle reports whether style is one a provider may store.
+func ValidAuthStyle(style string) bool {
+	return style == "" || style == AuthStyleAPIKey || style == AuthStyleBearer
+}
+
+// API formats of an OpenAI-compatible provider. The empty value means Chat
+// Completions, which nearly every compatible endpoint implements.
+const (
+	APIFormatChat      = "chat"
+	APIFormatResponses = "responses"
+)
+
+// ValidAPIFormat reports whether format is one a provider may store.
+func ValidAPIFormat(format string) bool {
+	return format == "" || format == APIFormatChat || format == APIFormatResponses
+}
+
+func IsCLIKind(kind string) bool {
+	return kind == KindClaudeCLI || kind == KindCodexCLI || kind == KindOpenCodeCLI || kind == KindPiCLI || kind == KindQoderCLI
+}
+
+func ValidProviderKind(kind string) bool {
+	return kind == KindOpenAI || kind == KindAnthropic || IsCLIKind(kind)
+}
 
 // Provider is a configured model endpoint. The API key is not persisted by
 // the store: HasKey says a key exists in the vault, and APIKey is an in-memory
 // field the caller fills from the vault (Providers always leaves it empty).
 type Provider struct {
-	ID      string
-	Name    string
-	Kind    string // "openai" or "anthropic"
-	BaseURL string
-	APIKey  string
-	HasKey  bool
-	Enabled bool
+	ID        string
+	Name      string
+	Kind      string
+	BaseURL   string
+	ModelsURL string
+	CLIPath   string // Machine-local; never included in provider sync records.
+	APIKey    string
+	HasKey    bool
+	Enabled   bool
+	// AuthStyle selects the Anthropic request header. Empty has the historical
+	// meaning: x-api-key for Anthropic, bearer for OpenAI-compatible endpoints.
+	AuthStyle string
+	// APIFormat selects the OpenAI-compatible request protocol. Empty has the
+	// historical meaning: Chat Completions. Anthropic providers have none.
+	APIFormat string
 }
 
 func (p Provider) redacted() string {
@@ -311,8 +385,8 @@ func (p Provider) redacted() string {
 	if p.APIKey != "" {
 		key = "<redacted>"
 	}
-	return fmt.Sprintf("Provider{ID:%q Name:%q Kind:%q BaseURL:%q APIKey:%q HasKey:%t Enabled:%t}",
-		p.ID, p.Name, p.Kind, p.BaseURL, key, p.HasKey, p.Enabled)
+	return fmt.Sprintf("Provider{ID:%q Name:%q Kind:%q BaseURL:%q ModelsURL:%q AuthStyle:%q APIFormat:%q APIKey:%q HasKey:%t Enabled:%t}",
+		p.ID, p.Name, p.Kind, p.BaseURL, p.ModelsURL, p.AuthStyle, p.APIFormat, key, p.HasKey, p.Enabled)
 }
 
 // String implements fmt.Stringer and hides the API key.
@@ -324,19 +398,41 @@ func (p Provider) GoString() string { return p.redacted() }
 // SaveProvider inserts or updates a provider by ID. It never writes the API
 // key; a legacy plaintext key already in the row is left for ClearLegacyKey.
 func (s *Store) SaveProvider(p Provider) error {
-	if p.ID == "" || (p.Kind != KindOpenAI && p.Kind != KindAnthropic) {
-		return fmt.Errorf("%w: provider needs an id and kind openai|anthropic", ErrInvalid)
+	if p.ID == "" || !ValidProviderKind(p.Kind) {
+		return fmt.Errorf("%w: provider needs an id and a supported kind", ErrInvalid)
 	}
-	_, err := s.db.Exec(`INSERT INTO providers(id,name,kind,base_url,api_key,has_key,enabled) VALUES(?,?,?,?,'',?,?)
+	if IsCLIKind(p.Kind) && (p.BaseURL != "" || p.ModelsURL != "" || p.APIKey != "" || p.HasKey || p.AuthStyle != "" || p.APIFormat != "") {
+		return fmt.Errorf("%w: CLI providers use their own authentication", ErrInvalid)
+	}
+	if !ValidAuthStyle(p.AuthStyle) {
+		return fmt.Errorf("%w: unsupported authentication style", ErrInvalid)
+	}
+	if !ValidAPIFormat(p.APIFormat) {
+		return fmt.Errorf("%w: unsupported API format", ErrInvalid)
+	}
+	// Only Anthropic has a choice of header. OpenAI-compatible requests always
+	// use bearer authentication, so keeping a style there would be misleading.
+	// The API format is the mirror image: only OpenAI-compatible providers
+	// have one. The default is stored as the empty value, never as "chat", so
+	// there is exactly one spelling of it.
+	authStyle, apiFormat := p.AuthStyle, p.APIFormat
+	if p.Kind != KindAnthropic {
+		authStyle = ""
+	}
+	if p.Kind != KindOpenAI || apiFormat == APIFormatChat {
+		apiFormat = ""
+	}
+	_, err := s.db.Exec(`INSERT INTO providers(id,name,kind,base_url,models_url,api_key,has_key,enabled,cli_path,auth_style,api_format) VALUES(?,?,?,?,?,'',?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind,
-		base_url=excluded.base_url, has_key=excluded.has_key, enabled=excluded.enabled`,
-		p.ID, p.Name, p.Kind, p.BaseURL, b2i(p.HasKey), b2i(p.Enabled))
+		base_url=excluded.base_url, models_url=excluded.models_url, has_key=excluded.has_key, enabled=excluded.enabled,
+		cli_path=excluded.cli_path, auth_style=excluded.auth_style, api_format=excluded.api_format`,
+		p.ID, p.Name, p.Kind, p.BaseURL, p.ModelsURL, b2i(p.HasKey), b2i(p.Enabled), p.CLIPath, authStyle, apiFormat)
 	return wrapDB(err)
 }
 
 // Providers lists all providers ordered by name then ID.
 func (s *Store) Providers() ([]Provider, error) {
-	rows, err := s.db.Query(`SELECT id,name,kind,base_url,has_key,enabled FROM providers ORDER BY name, id`)
+	rows, err := s.db.Query(`SELECT id,name,kind,base_url,models_url,has_key,enabled,cli_path,auth_style,api_format FROM providers ORDER BY name, id`)
 	if err != nil {
 		return nil, wrapDB(err)
 	}
@@ -345,7 +441,7 @@ func (s *Store) Providers() ([]Provider, error) {
 	for rows.Next() {
 		var p Provider
 		var hk, en int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Kind, &p.BaseURL, &hk, &en); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Kind, &p.BaseURL, &p.ModelsURL, &hk, &en, &p.CLIPath, &p.AuthStyle, &p.APIFormat); err != nil {
 			return nil, wrapDB(err)
 		}
 		p.HasKey = hk != 0
@@ -389,11 +485,76 @@ func (s *Store) DeleteProvider(id string) error {
 
 // ---- models ----
 
+// ReasoningConfig defines the reasoning effort levels supported by a model.
+type ReasoningConfig struct {
+	Levels  []string `json:"levels"`
+	Default string   `json:"default"`
+}
+
+func (rc *ReasoningConfig) validate() error {
+	if rc == nil {
+		return nil
+	}
+	if len(rc.Levels) == 0 {
+		return fmt.Errorf("%w: reasoning levels cannot be empty when enabled", ErrInvalid)
+	}
+	for _, l := range rc.Levels {
+		if l == "" {
+			return fmt.Errorf("%w: reasoning level cannot be empty", ErrInvalid)
+		}
+	}
+	if rc.Default != "" && !slices.Contains(rc.Levels, rc.Default) {
+		return fmt.Errorf("%w: default reasoning level %q not in levels", ErrInvalid, rc.Default)
+	}
+	return nil
+}
+
+// EffectiveLevel resolves the reasoning level given an optional user override.
+func (rc *ReasoningConfig) EffectiveLevel(override string) (string, bool) {
+	if rc == nil || len(rc.Levels) == 0 {
+		return "", false
+	}
+	if override != "" && slices.Contains(rc.Levels, override) {
+		return override, true
+	}
+	if rc.Default != "" {
+		return rc.Default, true
+	}
+	return rc.Levels[0], true
+}
+
+func decodeReasoningConfig(levels, def string) (*ReasoningConfig, error) {
+	if levels == "" {
+		return nil, nil
+	}
+	parts := strings.Split(levels, ",")
+	var cleaned []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			cleaned = append(cleaned, p)
+		}
+	}
+	if len(cleaned) == 0 {
+		return nil, nil
+	}
+	cfg := &ReasoningConfig{
+		Levels:  cleaned,
+		Default: strings.TrimSpace(def),
+	}
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
 // Model is a model offered by a provider.
 type Model struct {
-	ProviderID string
-	Name       string
-	Enabled    bool
+	ProviderID        string
+	Name              string
+	Enabled           bool
+	Reasoning         *ReasoningConfig
+	ReasoningDisabled bool
 }
 
 // SaveModels replaces the model set of a provider.
@@ -403,6 +564,41 @@ func (s *Store) SaveModels(providerID string, models []Model) error {
 		if err := tx.QueryRow(`SELECT 1 FROM providers WHERE id=?`, providerID).Scan(&one); err != nil {
 			return wrapDB(err)
 		}
+		// The reasoning declaration belongs to the user or cached configuration,
+		// keep it for every model still in the new set if not explicitly passed.
+		type oldReasoning struct {
+			cfg      *ReasoningConfig
+			disabled bool
+		}
+		old := map[string]oldReasoning{}
+		rows, rerr := tx.Query(`SELECT name, reasoning_enabled, reasoning_levels, reasoning_default
+			FROM models WHERE provider_id=? AND reasoning_enabled<>0`, providerID)
+		if rerr != nil {
+			return wrapDB(rerr)
+		}
+		for rows.Next() {
+			var name, levels, def string
+			var rEn int
+			if err := rows.Scan(&name, &rEn, &levels, &def); err != nil {
+				rows.Close()
+				return wrapDB(err)
+			}
+			if rEn == -1 {
+				old[name] = oldReasoning{disabled: true}
+			} else if rEn == 1 {
+				cfg, err := decodeReasoningConfig(levels, def)
+				if err != nil {
+					rows.Close()
+					return err
+				}
+				old[name] = oldReasoning{cfg: cfg}
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return wrapDB(err)
+		}
+
 		if _, err := tx.Exec(`DELETE FROM models WHERE provider_id=?`, providerID); err != nil {
 			return wrapDB(err)
 		}
@@ -410,8 +606,21 @@ func (s *Store) SaveModels(providerID string, models []Model) error {
 			if m.Name == "" {
 				return fmt.Errorf("%w: empty model name", ErrInvalid)
 			}
-			if _, err := tx.Exec(`INSERT OR REPLACE INTO models(provider_id,name,enabled) VALUES(?,?,?)`,
-				providerID, m.Name, b2i(m.Enabled)); err != nil {
+			if r, ok := old[m.Name]; ok && m.Reasoning == nil && !m.ReasoningDisabled {
+				m.Reasoning = r.cfg
+				m.ReasoningDisabled = r.disabled
+			}
+			reasoningEnabled, levels, def := 0, "", ""
+			if m.ReasoningDisabled {
+				reasoningEnabled = -1
+			} else if m.Reasoning != nil {
+				if err := m.Reasoning.validate(); err != nil {
+					return err
+				}
+				reasoningEnabled, levels, def = 1, strings.Join(m.Reasoning.Levels, ","), m.Reasoning.Default
+			}
+			if _, err := tx.Exec(`INSERT OR REPLACE INTO models(provider_id,name,enabled,reasoning_enabled,reasoning_levels,reasoning_default) VALUES(?,?,?,?,?,?)`,
+				providerID, m.Name, b2i(m.Enabled), reasoningEnabled, levels, def); err != nil {
 				return wrapDB(err)
 			}
 		}
@@ -421,7 +630,7 @@ func (s *Store) SaveModels(providerID string, models []Model) error {
 
 // Models lists all models ordered by provider then name.
 func (s *Store) Models() ([]Model, error) {
-	rows, err := s.db.Query(`SELECT provider_id,name,enabled FROM models ORDER BY provider_id, name`)
+	rows, err := s.db.Query(`SELECT provider_id,name,enabled,reasoning_enabled,reasoning_levels,reasoning_default FROM models ORDER BY provider_id, name`)
 	if err != nil {
 		return nil, wrapDB(err)
 	}
@@ -429,11 +638,17 @@ func (s *Store) Models() ([]Model, error) {
 	var out []Model
 	for rows.Next() {
 		var m Model
-		var en int
-		if err := rows.Scan(&m.ProviderID, &m.Name, &en); err != nil {
+		var en, rEn int
+		var levels, def string
+		if err := rows.Scan(&m.ProviderID, &m.Name, &en, &rEn, &levels, &def); err != nil {
 			return nil, wrapDB(err)
 		}
 		m.Enabled = en != 0
+		if rEn == 1 {
+			m.Reasoning, _ = decodeReasoningConfig(levels, def)
+		} else if rEn == -1 {
+			m.ReasoningDisabled = true
+		}
 		out = append(out, m)
 	}
 	return out, wrapDB(rows.Err())
@@ -442,6 +657,35 @@ func (s *Store) Models() ([]Model, error) {
 // SetModelEnabled toggles one model; ErrNotFound if it does not exist.
 func (s *Store) SetModelEnabled(providerID, name string, enabled bool) error {
 	res, err := s.db.Exec(`UPDATE models SET enabled=? WHERE provider_id=? AND name=?`, b2i(enabled), providerID, name)
+	if err != nil {
+		return wrapDB(err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetModelReasoning updates reasoning configuration for one model; ErrNotFound if it does not exist.
+// disabled=true forces the model not to use reasoning.
+// disabled=false and cfg!=nil sets custom reasoning levels.
+// disabled=false and cfg==nil resets the model to auto detection.
+func (s *Store) SetModelReasoning(providerID, name string, cfg *ReasoningConfig, disabled bool) error {
+	if !disabled && cfg != nil {
+		if err := cfg.validate(); err != nil {
+			return err
+		}
+	}
+	enabled, levels, def := 0, "", ""
+	if disabled {
+		enabled = -1
+	} else if cfg != nil {
+		enabled = 1
+		levels = strings.Join(cfg.Levels, ",")
+		def = cfg.Default
+	}
+	res, err := s.db.Exec(`UPDATE models SET reasoning_enabled=?, reasoning_levels=?, reasoning_default=? WHERE provider_id=? AND name=?`,
+		enabled, levels, def, providerID, name)
 	if err != nil {
 		return wrapDB(err)
 	}

@@ -1,0 +1,38 @@
+# End to end: the terminal's shared rail stays while a search is open.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/terminal_find_keeps_rail.txt
+#
+# Before the fix, opening find removed both side rails: the bar took the rail's
+# room, which also resized the PTY and cleared the selection. Here the rail's
+# own controls must still be reachable with the search open, and the find
+# controls must be reachable with it closed (the bar is gone).
+
+# lang: en
+resize 1200 800
+click "Local Terminal"
+settle 1200
+
+# The rail's Files action is on the rail, not in the window bar.
+expect exists id:sftp/sftp-open
+hits sftp-open
+hits terminal-find
+layout
+
+# Open the terminal search: the rail keeps every control it had.
+key cmd+f
+settle 600
+expect exists id:terminal-find/terminal-find-field
+expect exists id:sftp/sftp-open
+hits terminal-find
+hits sftp-open
+layout
+shot /tmp/motty-find-rail-open.png
+
+# Closing puts the keyboard back on the terminal and leaves the rail as it was.
+key esc
+settle 600
+expect absent id:terminal-find/terminal-find-field
+expect exists id:sftp/sftp-open
+layout
+shot /tmp/motty-find-rail-closed.png

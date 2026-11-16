@@ -31,6 +31,12 @@ type Notification struct {
 // Write and must not block.
 func (t *Terminal) SetNotify(notify func(Notification)) { t.notifyFn = notify }
 
+// SetBell installs the receiver of the bell, BEL (0x07) outside a control
+// string, where it ends the string instead. The callback runs during Write
+// and must not block; a program that rings in a loop calls it for every BEL,
+// so the owner limits how often it sounds.
+func (t *Terminal) SetBell(bell func()) { t.bellFn = bell }
+
 // kittyPending is an OSC 99 notification whose chunks have not all arrived.
 type kittyPending struct {
 	id          string
@@ -70,6 +76,10 @@ func cleanNotifyText(value string, limit int) string {
 // start with a number and a semicolon (9;4 sets a progress bar, 9;9 the working
 // directory): those are not messages.
 func (t *Terminal) osc9(text []byte) {
+	if bytes.HasPrefix(text, []byte("9;")) {
+		t.oscWindowsDirectory(string(text[2:]))
+		return
+	}
 	if i := bytes.IndexByte(text, ';'); i > 0 && allDigits(text[:i]) {
 		return
 	}

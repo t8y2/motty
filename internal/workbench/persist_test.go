@@ -7,14 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
 )
 
 // requirePrivateFile checks that a file is readable by its owner alone. Windows
@@ -41,11 +42,69 @@ func freshOptions(t testing.TB) Options {
 	return Options{
 		KnownHostsPath: filepath.Join(dir, "known_hosts"),
 		Dial:           func(sshconn.Config) Connection { return &fakeConn{} },
+		// Like newTestState, a test never opens the machine's keychain, including
+		// the options a test hands to New itself.
+		Keystore: &memKeys{},
 		// The tests read English; the machine running them may not speak it.
 		PreferredLanguages:    func() []string { return nil },
 		SystemAppearance:      func() app.Appearance { return app.AppearanceUnknown },
 		WatchSystemAppearance: func(func()) func() { return func() {} },
 		SetNativeAppearance:   func(app.Appearance) {},
+	}
+}
+
+func TestTwoWindowsSavingSideBySideBothPersist(t *testing.T) {
+	_, options := newWorld(t)
+	first := newTestState(t, options)
+	second := newTestState(t, options)
+	first.terminalFontSize = 15
+	first.save()
+	// The second window read the store before the first one wrote it.
+	second.terminalFontSize = 16
+	second.save()
+	if strings.Contains(second.status, "Could not save") {
+		t.Fatalf("the second window could not save: %q", second.status)
+	}
+	restarted := newTestState(t, options)
+	if int(restarted.terminalFontSize) != 16 {
+		t.Fatalf("terminalFontSize after restart = %v, want 16", restarted.terminalFontSize)
+	}
+}
+
+func TestAStaleWindowDoesNotOverwriteTheOtherWindowsSharedEdit(t *testing.T) {
+	_, options := newWorld(t)
+	first := newTestState(t, options)
+	second := newTestState(t, options)
+	first.hosts[0].Label = "Edited elsewhere"
+	first.save()
+	// The second window still holds the old label; its own save must not put it
+	// back, and its device-local choice must still be stored.
+	second.terminalFontSize = 17
+	second.save()
+	restarted := newTestState(t, options)
+	if restarted.hosts[0].Label != "Edited elsewhere" {
+		t.Fatalf("a stale window overwrote the shared host: %q", restarted.hosts[0].Label)
+	}
+	if int(restarted.terminalFontSize) != 17 {
+		t.Fatalf("the stale window's own change was lost: %v", restarted.terminalFontSize)
+	}
+}
+
+func TestAStaleWindowKeepsTheTimesBothWindowsRecorded(t *testing.T) {
+	_, options := newWorld(t)
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	options.WallNow = func() time.Time { return now }
+	first := newTestState(t, options)
+	second := newTestState(t, options)
+	first.rememberRecentConnection(&Session{host: first.hosts[0], recordRecent: true})
+	now = now.Add(time.Hour)
+	// The second window read the store before the first one recorded its success.
+	second.rememberRecentConnection(&Session{host: second.hosts[1], recordRecent: true})
+	restarted := newTestState(t, options)
+	for _, id := range []string{first.hosts[0].CatalogID, second.hosts[1].CatalogID} {
+		if _, ok := restarted.recentConnections[id]; !ok {
+			t.Fatalf("recent time for %s missing: %v", id, restarted.recentConnections)
+		}
 	}
 }
 
@@ -93,7 +152,7 @@ func TestAddedHostsAndChoicesSurviveARestart(t *testing.T) {
 	if len(first.hosts) != 1 {
 		t.Fatalf("host was not added: %q", first.dialogError)
 	}
-	first.Click(hitLanguage)
+	useChinese(t, first)
 	first.Click(hitTheme)
 
 	second := newTestState(t, options)
@@ -158,8 +217,8 @@ func TestUnreadableStateIsKeptAndTheAppStartsEmpty(t *testing.T) {
 	if len(state.hosts) != 0 || state.modal != modalStateNotice || state.stateNotice.tooNew || state.saveBlocked {
 		t.Fatalf("hosts=%v modal=%d notice=%+v blocked=%t", state.hosts, state.modal, state.stateNotice, state.saveBlocked)
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if !strings.Contains(state.stateNotice.body, "state.json.corrupt") {
 		t.Fatalf("the dialog does not say where the copy is: %q", state.stateNotice.body)
 	}
@@ -172,6 +231,29 @@ func TestUnreadableStateIsKeptAndTheAppStartsEmpty(t *testing.T) {
 	state.Click(hitTheme)
 	if _, err := os.Stat(options.StatePath + ".corrupt"); err != nil {
 		t.Fatal("saving removed the kept copy")
+	}
+}
+
+func TestDamagedLocalStateIsSetAsideInsteadOfPanicking(t *testing.T) {
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "config.db")
+	saveReleaseState(t, options.StatePath, savedState{
+		Version: stateFileVersion,
+		Hosts:   []savedHost{{Label: "Kept", Address: "kept.example.com"}},
+	})
+	setLocalConfigValue(t, options.StatePath, localKey, []byte(`{"hosts":[`))
+
+	state := newTestState(t, options)
+	if len(state.hosts) != 0 || state.modal != modalStateNotice || state.saveBlocked {
+		t.Fatalf("hosts=%v modal=%d blocked=%t", state.hosts, state.modal, state.saveBlocked)
+	}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	if !strings.Contains(state.stateNotice.body, filepath.Base(options.StatePath)+".corrupt") {
+		t.Fatalf("the dialog does not say where the copy is: %q", state.stateNotice.body)
+	}
+	if _, err := os.Stat(options.StatePath + ".corrupt"); err != nil {
+		t.Fatalf("damaged configuration was not kept: %v", err)
 	}
 }
 
@@ -234,7 +316,6 @@ func TestStateFromANewerBuildIsLeftAloneAndNeverSavedOver(t *testing.T) {
 			// The user can dismiss the dialog and carry on; nothing they do changes the file.
 			state.Click(hitStateNoticeOK)
 			state.Click(hitTheme)
-			state.Click(hitLanguage)
 			if got, err := os.ReadFile(options.StatePath); err != nil || !bytes.Equal(got, content) {
 				t.Fatalf("the newer build's file was changed (%v)", err)
 			}
@@ -251,6 +332,59 @@ func TestStateFromANewerBuildIsLeftAloneAndNeverSavedOver(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestHoveringTheStateNoticeBackdropLeavesItsCloseButtonAlone keeps the two
+// targets of the dialog apart. The backdrop is the window-wide dismiss region
+// and the corner button a control, so the pointer anywhere over the page must
+// not paint the button as hovered; once both were one hit ID, it did.
+func TestHoveringTheStateNoticeBackdropLeavesItsCloseButtonAlone(t *testing.T) {
+	options := freshOptions(t)
+	options.StatePath = filepath.Join(filepath.Dir(options.KnownHostsPath), "config.db")
+	if err := os.WriteFile(options.StatePath, []byte("not a store"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := newTestState(t, options)
+	if state.modal != modalStateNotice {
+		t.Fatalf("modal = %d, want the state notice", state.modal)
+	}
+	size := gfx.Size{Width: 1200, Height: 800}
+	var quiet gfx.Canvas
+	state.Paint(&quiet, size)
+	dismiss := gfx.ID{}
+	for _, hit := range quiet.Hits() {
+		if hit.Backdrop {
+			dismiss = hit.ID
+			break
+		}
+	}
+	if dismiss.IsZero() {
+		t.Fatal("the dialog has no backdrop to hover")
+	}
+	paintedWith := func(hovered gfx.ID) []gfx.Rectangle {
+		var canvas gfx.Canvas
+		canvas.SetInteraction(hovered, gfx.ID{}, gfx.ID{}, false)
+		state.Paint(&canvas, size)
+		return dialogLayerRectangles(&canvas)
+	}
+	if !slices.Equal(paintedWith(gfx.ID{}), paintedWith(dismiss)) {
+		t.Fatal("hovering the backdrop paints the dialog's controls as hovered")
+	}
+	if slices.Equal(paintedWith(gfx.ID{}), paintedWith(hitStateNoticeClose)) {
+		t.Fatal("the close button paints no hover look of its own")
+	}
+}
+
+// dialogLayerRectangles is what the dialog painted: the page behind it is not
+// part of the comparison.
+func dialogLayerRectangles(canvas *gfx.Canvas) []gfx.Rectangle {
+	rectangles := make([]gfx.Rectangle, 0, len(canvas.Rectangles()))
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Layer == dialogLayer {
+			rectangles = append(rectangles, rectangle)
+		}
+	}
+	return rectangles
 }
 
 func TestTheLastGoodStateIsKeptBesideTheFile(t *testing.T) {

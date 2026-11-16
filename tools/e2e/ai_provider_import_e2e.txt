@@ -1,0 +1,66 @@
+# End to end: import a provider from a magpie providers.json copy through
+# Settings > AI assistant > Import. The copy is a fixture, not a real user file;
+# its key is a fake that the result must never show.
+#
+#   make head
+#   mkdir -p /tmp/motty-e2e-ai
+#   cp tools/e2e/fixtures/ai_provider_import.json /tmp/motty-e2e-ai/providers.json
+#   sqlite3 /tmp/motty-e2e-ai/cc-switch.db "CREATE TABLE providers (id TEXT PRIMARY KEY, app_type TEXT, name TEXT, settings_config TEXT, meta TEXT, sort_index INTEGER, created_at INTEGER); INSERT INTO providers(id,app_type,name,settings_config,meta,sort_index,created_at) VALUES('cc','claude','CC Relay','{\"env\":{\"ANTHROPIC_BASE_URL\":\"https://cc.example.com/anthropic\",\"ANTHROPIC_AUTH_TOKEN\":\"e2e-cc-key\",\"ANTHROPIC_MODEL\":\"cc-model\"}}','{\"apiKeyField\":\"ANTHROPIC_AUTH_TOKEN\"}',1,1);"
+#   XDG_CONFIG_HOME= MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/ai_provider_import_e2e.txt
+#
+# The preview lists the magpie gateway and the upstream Relay entry. Import
+# creates both; the final texts list Relay and magpie, the model e2e-model, the
+# summary "Created 2, updated 0, skipped 0." and never either fixture key. A
+# second import from a scratch cc-switch database adds CC Relay. The last edit
+# switches CC Relay's imported Bearer header to API key; its saved key survives.
+
+click "Settings"
+settle 400
+click "AI assistant"
+settle 500
+click "Import"
+settle 400
+waitfor "Import providers" 2000
+shot /tmp/ai-import-sources.png
+openfiles /tmp/motty-e2e-ai/providers.json
+click "Choose file..."
+settle 500
+waitfor "Choose what to import" 2000
+shot /tmp/ai-import-preview.png
+click "Import"
+settle 800
+waitfor "Import finished" 3000
+shot /tmp/ai-import-result.png
+texts
+click "Close"
+settle 500
+texts
+
+# A scratch cc-switch database with one Claude provider.
+click "Import"
+settle 400
+openfiles /tmp/motty-e2e-ai/cc-switch.db
+click "Choose file..."
+settle 500
+waitfor "Choose what to import" 2000
+shot /tmp/ai-import-ccswitch-preview.png
+click "Import"
+settle 800
+waitfor "Import finished" 3000
+texts
+click "Close"
+settle 500
+texts
+
+# Edit CC Relay, the first provider row. Click its Edit button by position:
+# the label lookup resolves a repeated "Edit" to the gateway's row, not this
+# one. The button and the API-key choice belong to the default 1400x900 window.
+click 1180 181
+settle 400
+waitfor "Edit provider" 2000
+shot /tmp/ai-import-edit.png
+click 584 455
+settle 300
+click "Save"
+settle 600
+texts

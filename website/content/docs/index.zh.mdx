@@ -7,6 +7,8 @@ Motty 是一个原生桌面 SSH 工作区。它用 Go 编写，构建在
 [Viva](https://github.com/vivaui/viva) 上：应用里没有 Electron、没有内嵌浏览器，
 也没有 JavaScript 层。
 
+## 指南
+
 <Cards>
   <Card title="快速开始" href="/zh/docs/guides/getting-started">
     添加主机、核对主机密钥并打开第一个会话。
@@ -14,10 +16,72 @@ Motty 是一个原生桌面 SSH 工作区。它用 Go 编写，构建在
   <Card title="安装" href="/zh/docs/guides/install">
     macOS、Windows 和 Linux 的安装包。
   </Card>
+</Cards>
+
+## 连接与文件
+
+<Cards>
   <Card title="主机与认证" href="/zh/docs/connections/hosts-and-authentication">
     主机密钥、agent、密钥、密码、一次性验证码和保险库。
   </Card>
-  <Card title="AI 助手" href="/zh/docs/assistant/ask-and-agent">
-    Ask 与 Agent 模式、审批门和 MCP 服务器。
+  <Card title="串口、Telnet 与本地 Shell" href="/zh/docs/connections/other-protocols">
+    Motty 支持的其他传输方式，以及各自适用的场景。
+  </Card>
+  <Card title="终端" href="/zh/docs/terminal/terminal">
+    PTY 会话、真彩色、回滚、分屏、搜索与录制。
+  </Card>
+  <Card title="SFTP 与 SCP" href="/zh/docs/files/sftp-and-scp">
+    文件面板、可续传队列与原子替换。
+  </Card>
+  <Card title="ZMODEM、XMODEM 与 YMODEM" href="/zh/docs/files/zmodem-xmodem">
+    在已有的终端会话里传输文件。
+  </Card>
+</Cards>
+
+## 网络与远程桌面
+
+<Cards>
+  <Card title="端口转发" href="/zh/docs/network/port-forwarding">
+    本地、远程、SOCKS5 与 HTTP CONNECT 规则，X11 与跳板链。
+  </Card>
+  <Card title="VNC" href="/zh/docs/remote-desktop/vnc">
+    证书固定，以及经 SSH 中转访问只监听回环的服务器。
+  </Card>
+  <Card title="RDP" href="/zh/docs/remote-desktop/rdp">
+    标签页里的远程桌面，主机校验与 SSH 一致。
+  </Card>
+</Cards>
+
+## 助手
+
+<Cards>
+  <Card title="Ask 与 Agent" href="/zh/docs/assistant/ask-and-agent">
+    两种模式，以及命令前的审批门。
+  </Card>
+  <Card title="MCP 服务器" href="/zh/docs/assistant/mcp">
+    让外部 agent 驱动会话：仅回环、token、审计日志。
+  </Card>
+</Cards>
+
+## 数据、参考与开发
+
+<Cards>
+  <Card title="备份与同步" href="/zh/docs/data/backup-and-sync">
+    主机、密钥与设置的加密本地与远程备份。
+  </Card>
+  <Card title="快捷键" href="/zh/docs/reference/shortcuts">
+    用键盘操作标签页、分屏、文件面板与助手。
+  </Card>
+  <Card title="安全" href="/zh/docs/reference/security">
+    哪些被校验、哪些被加密，以及哪些没有防护。
+  </Card>
+  <Card title="服务器工具" href="/zh/docs/reference/server-tools">
+    Motty 能在会话远端运行的辅助工具。
+  </Card>
+  <Card title="架构" href="/zh/docs/development/architecture">
+    Go 应用与 Viva 框架如何分工。
+  </Card>
+  <Card title="从源码构建" href="/zh/docs/development/build-from-source">
+    工具链、构建标签，以及产出本地构建的命令。
   </Card>
 </Cards>

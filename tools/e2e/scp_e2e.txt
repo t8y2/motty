@@ -55,8 +55,8 @@ click "Rename / Move"
 settle 1500
 click "renamed-by-scp"
 click "Delete"
-waitfor "Delete Empty Folder" 2000
-click 920 545
+waitfor "Delete Folder" 2000
+click "Delete"
 settle 1500
 texts
 shot /tmp/scp-panel.png

@@ -42,6 +42,7 @@ func TestSampleIsTheDifferenceBetweenTwoReadings(t *testing.T) {
 	want := Sample{
 		CPUPercent: 37.5, MemoryUsedBytes: 3 << 30, MemoryTotalBytes: 8 << 30,
 		ReceiveBytesPerSecond: 128 << 10, SendBytesPerSecond: 64 << 10,
+		UptimeSeconds: 11,
 	}
 	if got, ok := sample(before, after); !ok || !reflect.DeepEqual(got, want) {
 		t.Fatalf("sample = %+v ok=%v", got, ok)
@@ -108,12 +109,24 @@ func feed(lines ...string) streamFunc {
 	}
 }
 
+// statsWait is how long a test waits for the worker goroutine to publish a
+// result or stop. It reports a program the test cannot see, never a performance
+// budget, so a slow machine must not turn it into a failure. Windows is the
+// slow case: a hosted runner can take seconds to schedule the goroutine after
+// the process starts.
+func statsWait() time.Duration {
+	if runtime.GOOS == "windows" {
+		return 30 * time.Second
+	}
+	return 5 * time.Second
+}
+
 func nextResult(t *testing.T, worker *Worker) Result {
 	t.Helper()
 	select {
 	case result := <-worker.Results():
 		return result
-	case <-time.After(time.Second):
+	case <-time.After(statsWait()):
 		t.Fatal("worker produced no result")
 		return Result{}
 	}
@@ -121,22 +134,34 @@ func nextResult(t *testing.T, worker *Worker) Result {
 
 func TestWorkerRunsOneFixedCommandAndSamplesFromTheSecondReading(t *testing.T) {
 	var commands atomic.Int32
-	notified := make(chan struct{}, 4)
+	firstSampleRead := make(chan struct{})
 	worker := start(streamFunc(func(ctx context.Context, got string, limit int, line func([]byte) bool) error {
 		commands.Add(1)
 		if !strings.Contains(got, "# motty-stats-v2") || limit != maxLineBytes {
 			t.Errorf("command marker=%v limit=%d", strings.Contains(got, "# motty-stats-v2"), limit)
 		}
-		return feed(reading(1), reading(2), reading(3))(ctx, got, limit, line)
-	}), func() { notified <- struct{}{} }, time.Second, time.Second)
+		if !line([]byte(reading(1))) || !line([]byte(reading(2))) {
+			return nil
+		}
+		// Unread samples are coalesced, so let the test consume the first one
+		// before feeding the reading that produces the second.
+		select {
+		case <-firstSampleRead:
+			return feed(reading(3))(ctx, got, limit, line)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}), nil, statsWait(), statsWait())
 	defer worker.Close()
 
 	// Three readings make two samples: the first only sets the baseline.
-	var last Result
-	for range 2 {
-		last = nextResult(t, worker)
-		if last.Err != nil || last.Sample.CPUPercent != 37.5 {
-			t.Fatalf("result = %+v", last)
+	for index := range 2 {
+		result := nextResult(t, worker)
+		if result.Err != nil || result.Sample.CPUPercent != 37.5 {
+			t.Fatalf("result = %+v", result)
+		}
+		if index == 0 {
+			close(firstSampleRead)
 		}
 	}
 	if commands.Load() != 1 {
@@ -145,7 +170,7 @@ func TestWorkerRunsOneFixedCommandAndSamplesFromTheSecondReading(t *testing.T) {
 	worker.Close()
 	select {
 	case <-worker.Done():
-	case <-time.After(time.Second):
+	case <-time.After(statsWait()):
 		t.Fatal("worker did not stop")
 	}
 }
@@ -270,7 +295,7 @@ func TestCommandPrintsReadingsOnThisHost(t *testing.T) {
 	var readings []counters
 	started := time.Now()
 	for len(readings) < 3 && lines.Scan() {
-		if isGPULine(lines.Bytes()) {
+		if isGPULine(lines.Bytes()) || strings.HasPrefix(lines.Text(), "gop-net-primary ") || strings.HasPrefix(lines.Text(), "gop-core ") {
 			continue
 		}
 		got, err := parse(append(lines.Bytes(), '\n'))

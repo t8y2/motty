@@ -3,10 +3,11 @@ package workbench
 import (
 	"strings"
 
-	"motty/internal/i18n"
 	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/i18n"
 )
 
 // Searching the settings. The search box above the category list looks through
@@ -21,15 +22,20 @@ var (
 	hitSettingsResultList = tree.Sub(settingsSearchHits, tree.Name("settings-result"))
 )
 
-// maxSettingsEntries bounds the index: the settings, the assistant's groups and
-// one entry per keyboard shortcut.
-const maxSettingsEntries = 80
+// maxSettingsEntries bounds the index: the settings, the assistant's groups,
+// one entry per keyboard shortcut and what the About page holds. The test keeps
+// a quarter of it free, so adding entries fails loudly here instead of becoming
+// silently unsearchable when the array fills.
+const maxSettingsEntries = 256
 
 // settingsEntry is one thing a user may look for.
 type settingsEntry struct {
 	category    settingsCategory
 	label       string
 	description string
+	// search is wording a user may know a setting by although the page no longer
+	// shows it, such as the old name of a renamed setting.
+	search string
 	// anchor is the text the page paints where the entry lives (a row's name or
 	// a group's title), which is what a result scrolls to.
 	anchor string
@@ -53,12 +59,33 @@ type settingsUI struct {
 	jump   string
 	jumped bool
 
+	// The category list scrolls on its own when there are more categories than
+	// the window can show: navScroll is its offset, navContent and navView how
+	// tall its rows and its window were when last painted, and navRect where the
+	// pointer has to be for the wheel to move it rather than the page.
+	navScroll  float32
+	navContent float32
+	navView    float32
+	navRect    gfx.Rect
+
+	// pageView is how tall the page's own window was when it was last painted:
+	// the workspace content box, inside the slot's border. The wheel and the
+	// paint both clamp to it, so the end of the page is reachable either way.
+	pageView float32
+
+	// aboutCopied says the About page's build facts have been put on the
+	// clipboard in this visit, so its button says so.
+	aboutCopied bool
+
 	// controls are the page's controls, recorded while it is declared and
 	// painted once it is laid out.
 	controls []settingsControl
-	options  []components.SegmentOption
 	actions  []components.ButtonAction
-	colors   []ui.Color
+	colors   []gfx.Color
+
+	// declared is what the last declaration laid out: its scrolling column, the
+	// navigation list and the search anchor, read once the page has ended.
+	declared settingsPage
 }
 
 // settingsSearching reports whether the page shows search results, and brings
@@ -80,7 +107,7 @@ func (state *State) settingsSearching() bool {
 		if view.count == len(view.results) {
 			return
 		}
-		haystack := strings.ToLower(entry.label + " " + entry.description + " " + state.settingsCategoryName(entry.category))
+		haystack := strings.ToLower(entry.label + " " + entry.description + " " + entry.search + " " + state.settingsCategoryName(entry.category))
 		for _, term := range terms {
 			if !strings.Contains(haystack, term) {
 				return
@@ -101,57 +128,148 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row := func(category settingsCategory, label, description string) {
 		add(settingsEntry{category: category, label: label, description: description, anchor: label})
 	}
+	rowSearch := func(category settingsCategory, label, description, search string) {
+		add(settingsEntry{category: category, label: label, description: description, search: search, anchor: label})
+	}
 	group := func(category settingsCategory, anchor, label, description string) {
 		add(settingsEntry{category: category, label: label, description: description, anchor: anchor})
 	}
 	row(settingsGeneral, m.SettingsLanguage, "")
 	row(settingsGeneral, m.SettingsAppearance, "")
+	row(settingsGeneral, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
+	row(settingsGeneral, m.SettingsTabNumbers, m.SettingsTabNumbersDescription)
+	row(settingsGeneral, m.SettingsTabNumberKeys, m.SettingsTabNumberKeysDescription)
+	row(settingsGeneral, m.SettingsOutputAlerts, m.SettingsOutputAlertsDescription)
+	if state.tabOrientation == tabsVertical {
+		row(settingsGeneral, m.SettingsTabsAutoHide, m.SettingsTabsAutoHideDescription)
+		row(settingsGeneral, m.SettingsTabsGrouping, m.SettingsTabsGroupingDescription)
+	}
+	if state.interfaceFontRowVisible() {
+		row(settingsGeneral, m.SettingsInterfaceFont, "")
+	}
 
 	if state.options.StartAtLogin != nil {
 		row(settingsGeneral, tools.GeneralLogin, tools.GeneralLoginDescription)
 	}
-	row(settingsGeneral, tools.GeneralUpdateStartup, tools.GeneralUpdateStartupDescription)
-	row(settingsGeneral, tools.GeneralUpdate, tools.GeneralUpdateDescription)
+	if state.closeActionVisible() {
+		row(settingsGeneral, tools.GeneralClose, tools.GeneralCloseDescription)
+	}
+	if state.options.NewWindow != nil {
+		row(settingsGeneral, tools.GeneralRelaunch, tools.GeneralRelaunchDescription)
+	}
+	for _, label := range []string{m.Toolbars.Window, m.Toolbars.Terminal, m.Toolbars.SFTP} {
+		row(settingsGeneral, label, m.Toolbars.Description)
+	}
+	row(settingsGeneral, m.SettingsSidebar, m.SettingsSidebarHint)
 	row(settingsGeneral, tools.DiagnosticsRow, tools.DiagnosticsDescription)
 	row(settingsTerminal, m.SettingsTerminalOption, m.SettingsTerminalOptionDescription)
 	row(settingsTerminal, m.SettingsTerminalFontSize, m.SettingsTerminalFontSizeDescription)
 	row(settingsTerminal, m.SettingsTerminalFontFamily, tools.FontPickerDescription)
+	row(settingsTerminal, tools.FontFallbackRow, tools.FontFallbackEmpty)
 	row(settingsTerminal, tools.PaddingRow, "")
+	row(settingsTerminal, tools.LineHeightRow, "")
 	row(settingsTerminal, tools.GutterRow, tools.GutterDescription)
 	row(settingsTerminal, tools.CursorRow, tools.CursorDescription)
+	row(settingsTerminal, tools.IntenseRow, tools.IntenseDescription)
 	row(settingsTerminal, m.SettingsTerminalScrollback, m.SettingsTerminalScrollbackDescription)
 	row(settingsTerminal, m.SettingsTerminalClipboard, m.SettingsTerminalClipboardDescription)
+	row(settingsTerminal, tools.CopyOnSelectRow, tools.CopyOnSelectDescription)
+	row(settingsTerminal, tools.WordSeparatorsRow, tools.WordSeparatorsDescription)
+	row(settingsTerminal, tools.RightClickPasteRow, tools.RightClickPasteDescription)
+	row(settingsTerminal, tools.InputClickRow, tools.InputClickDescription)
+	row(settingsTerminal, tools.LinkPlainClickRow, tools.LinkPlainClickDescription)
+	row(settingsTerminal, tools.BellRow, tools.BellDescription)
+	row(settingsTerminal, tools.TabTitleRow, tools.TabTitleDescription)
+	row(settingsTerminal, tools.PasteImageRow, tools.PasteImageDescription)
+	row(settingsTerminal, tools.CloseConfirmRow, tools.CloseConfirmDescription)
+	row(settingsTerminal, tools.PasswordHintRow, tools.PasswordHintDescription)
 	row(settingsTerminal, tools.NotifyRow, tools.NotifyDescription)
-	row(settingsTerminal, state.messages.History.SettingsRow, state.messages.History.SettingsDescription)
+	group(settingsTerminal, m.FindSettings.Title, m.FindSettings.Title, "")
+	row(settingsTerminal, m.FindSettings.Foreground, "")
+	row(settingsTerminal, m.FindSettings.Background, "")
+	row(settingsTerminal, m.FindSettings.Opacity, "")
+	row(settingsTerminal, m.FindSettings.Origin, "")
+	group(settingsTerminal, m.Completion.Group, m.Completion.Group, "")
+	row(settingsTerminal, m.Completion.CatalogRow, "")
 	row(settingsTerminal, state.messages.History.SuggestRow, state.messages.History.SuggestDescription)
+	row(settingsTerminal, m.Completion.AcceptHintRow, m.Completion.AcceptHintDescription)
+	row(settingsTerminal, state.messages.History.SettingsRow, state.messages.History.SettingsDescription)
 	row(settingsTerminal, state.messages.History.ClearRow, state.messages.History.ClearDescription)
+	row(settingsTerminal, m.SettingsLocalStart, m.SettingsLocalStartDescription)
+	if localShellSettingVisible() {
+		row(settingsTerminal, m.SettingsLocalShell, m.SettingsLocalShellDescription)
+	}
 	group(settingsTerminal, tools.SchemeGroup, tools.SchemeGroup, tools.SchemeDescription)
 	row(settingsTerminal, tools.HighlightBuiltin, tools.HighlightBuiltinDescription)
 	row(settingsTerminal, tools.HighlightCustom, tools.HighlightCustomDescription)
 	row(settingsTerminal, m2.Row, m2.RowDescription)
-	row(settingsTerminal, tools.SnippetsRow, tools.SnippetsDescription)
 	row(settingsTerminal, tools.BgRow, tools.BgRowNone)
 	row(settingsTerminal, tools.BgVisibility, "")
 
 	row(settingsConnection, m.SettingsConnectionTimeout, m.SettingsConnectionTimeoutDescription)
-	row(settingsConnection, m.SettingsConnectionKeepAlive, m.SettingsConnectionKeepAliveDescription)
+	// The setting is called "SSH liveness probe" now, but the wording users know
+	// it by still finds it. The alias follows the language, as the rest of the
+	// index does.
+	keepAliveAlias := "SSH keepalive"
+	if state.language != i18n.English {
+		keepAliveAlias = "SSH 保活"
+	}
+	rowSearch(settingsConnection, m.SettingsConnectionKeepAlive, m.SettingsConnectionKeepAliveDescription, keepAliveAlias)
 	row(settingsConnection, m.SettingsConnectionReconnect, m.SettingsConnectionReconnectDescription)
 	row(settingsConnection, m.SettingsShare, m.SettingsShareDescription)
 	row(settingsConnection, m.SettingsRestore, m.SettingsRestoreDescription)
+	row(settingsConnection, m.SettingsSSHAgent, m.SettingsSSHAgentDescription)
+	row(settingsConnection, m.SettingsNetworkProxy, m.SettingsNetworkProxyDescription)
 	row(settingsConnection, tools.ProxyRow, tools.ProxyDescriptionNone)
+	row(settingsConnection, state.messages.SSHSync.ToggleRow, state.messages.SSHSync.ToggleDescription)
+	row(settingsConnection, state.messages.SSHSync.FileRow, "")
+	row(settingsConnection, state.messages.SSHSync.NowRow, "")
+	group(settingsConnection, m.HostTags.Group, m.HostTags.Group, "")
 
+	row(settingsFiles, tools.FilesPanelAutoOpen, tools.FilesPanelAutoOpenDescription)
+	row(settingsFiles, tools.FilesPanelPosition, tools.FilesPanelPositionDescription)
+	row(settingsFiles, tools.FilesPathStyle, tools.FilesPathDescription)
+	row(settingsFiles, tools.FilesWindowOrder, tools.FilesWindowOrderDescription)
+	row(settingsFiles, tools.FilesOpenMode, tools.FilesOpenModeDescription)
+	row(settingsFiles, tools.FilesDirectoryTree, tools.FilesDirectoryTreeDescription)
 	row(settingsFiles, tools.FilesParallel, "")
+	row(settingsFiles, tools.FilesColumns, tools.FilesColumnsDescription)
+	row(settingsFiles, tools.FilesDownloadDirectory, tools.FilesDownloadAskDescription)
+	row(settingsFiles, tools.FilesEditor, tools.FilesEditorDescription)
+	if state.customEditorSettingVisible() {
+		row(settingsFiles, tools.FilesCustomEditor, tools.FilesEditorCustomDescription)
+	}
 	row(settingsFiles, tools.FilesKeepTimes, tools.FilesKeepTimesDescription)
 	row(settingsFiles, tools.FilesFollow, tools.FilesFollowDescription)
+	row(settingsFiles, tools.FilesTerminalFollow, tools.FilesTerminalFollowDescription)
 	row(settingsFiles, tools.FilesFollowSetup, tools.FilesFollowSetupDescription)
 
+	row(settingsSecurity, m.SessionLogs.SettingsCaptureRow, m.SessionLogs.SettingsCaptureDescription)
+	row(settingsSecurity, m.SessionLogs.SettingsStorageRow, m.SessionLogs.SettingsStorageDescription)
+	row(settingsSecurity, m.SessionLogs.ClearUnfavorited, m.SessionLogs.ClearUnfavoritedPrompt)
+	row(settingsSecurity, m.SessionLogs.ClearAll, m.SessionLogs.ClearAllPrompt)
 	row(settingsSecurity, m.SettingsVault, m.SettingsVaultEmpty)
-	row(settingsSecurity, m.SettingsMasterPassword, m.SettingsMasterPasswordDescription)
 
 	row(settingsBackup, tools.BackupExportRow, tools.BackupExportDescription)
 	row(settingsBackup, tools.SyncRow, tools.SyncRowNone)
 	row(settingsBackup, tools.SyncAuto, tools.SyncAutoDescription)
 	row(settingsBackup, tools.SyncRunRow, tools.SyncRunNever)
+	for _, entry := range [...]struct{ label, description string }{
+		{tools.SyncScopeHosts, tools.SyncScopeHostsDescription},
+		{tools.SyncScopeSettings, tools.SyncScopeSettingsDescription},
+		{tools.SyncScopeNotes, tools.SyncScopeNotesDescription},
+		{tools.SyncScopeSnippets, tools.SyncScopeSnippetsDescription},
+		{tools.SyncScopeRoutes, tools.SyncScopeRoutesDescription},
+		{tools.SyncScopeForwards, tools.SyncScopeForwardsDescription},
+		{tools.SyncScopeWorkspaces, tools.SyncScopeWorkspacesDescription},
+		{tools.SyncScopeCredentials, tools.SyncScopeCredentialsDescription},
+		{tools.SyncScopeKeys, tools.SyncScopeKeysDescription},
+		{tools.SyncScopeAI, tools.SyncScopeAIDescription},
+		{tools.SyncScopeRules, tools.SyncScopeRulesDescription},
+		{tools.SyncScopeKnownHosts, tools.SyncScopeKnownHostsDescription},
+	} {
+		row(settingsBackup, entry.label, entry.description)
+	}
 
 	row(settingsAssistant, ai.ProvidersTitle, ai.Description)
 	row(settingsAssistant, ai.ModelsTitle, "")
@@ -163,13 +281,40 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	group(settingsAssistant, ai.BehaviourTitle, ai.ClearHistory, ai.ClearHistoryDesc)
 
 	row(settingsMCP, ai.MCPEnable, ai.MCPEnableDesc)
+	group(settingsMCP, ai.MCPHTTPTitle, ai.MCPHTTPTitle, ai.MCPHTTPDescription)
 	row(settingsMCP, ai.MCPMode, ai.MCPModeDesc)
 	row(settingsMCP, ai.MCPEndpoint, "")
 	row(settingsMCP, ai.MCPToken, ai.MCPTokenDesc)
+	row(settingsMCP, ai.AgentMode, ai.AgentModeDesc)
+	group(settingsMCP, ai.AgentsTitle, ai.AgentsTitle, ai.AgentsDescription)
+	row(settingsMCP, ai.AgentHosts, ai.AgentHostsNoneDesc)
+	row(settingsMCP, ai.AgentConfig, "")
+	row(settingsMCP, ai.AgentActivity, ai.AgentActivityNone)
 
 	for action := shortcutAction(1); action < shortcutActionCount; action++ {
 		row(settingsShortcuts, state.shortcutActionLabel(action), state.shortcuts.labels[action])
 	}
+	for _, help := range state.completionKeys() {
+		row(settingsShortcuts, help.label, help.keys+" "+help.description)
+	}
+
+	about := m.About
+	facts := aboutFacts()
+	row(settingsAbout, about.Version, facts.versionText)
+	row(settingsAbout, about.Platform, facts.platform)
+	row(settingsAbout, about.Build, facts.buildText(about))
+	row(settingsAbout, about.Runtime, facts.runtime)
+	group(settingsAbout, about.InfoTitle, about.CopyRow, about.CopyDescription)
+	group(settingsAbout, about.UpdateTitle, about.UpdateTitle, "")
+	row(settingsAbout, tools.GeneralUpdateStartup, tools.GeneralUpdateStartupDescription)
+	row(settingsAbout, tools.GeneralUpdate, tools.GeneralUpdateDescription)
+	row(settingsAbout, about.QQ, about.QQDescription)
+	row(settingsAbout, about.WeChat, about.WeChatDescription)
+	row(settingsAbout, about.Discord, about.DiscordDescription)
+	row(settingsAbout, about.Issues, about.IssuesDescription)
+	row(settingsAbout, about.Repo, about.RepoDescription)
+	row(settingsAbout, about.Docs, about.DocsDescription)
+	row(settingsAbout, about.Viva, about.VivaDescription)
 }
 
 // openSettingsResult leaves the search and opens the category of a result,
@@ -189,7 +334,7 @@ func (state *State) openSettingsResult(index int) {
 
 // clickSettingsCategory handles the presses that belong to the category list and
 // the search box. It reports whether the id was one of them.
-func (state *State) clickSettingsCategory(id ui.ID) bool {
+func (state *State) clickSettingsCategory(id gfx.ID) bool {
 	switch {
 	case id == hitSettingsSearch:
 		return true // pressing the box only focuses it
@@ -209,24 +354,24 @@ func (state *State) clickSettingsCategory(id ui.ID) bool {
 
 // settingsSearchKey handles the keys of the search box: Escape empties it, and Enter
 // opens the first result. It reports whether it took the key.
-func (state *State) settingsSearchKey(event ui.KeyEvent) (ui.EventResult, bool) {
+func (state *State) settingsSearchKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionSettings || event.Target != hitSettingsSearch || event.Repeat {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
-	handled := ui.EventResult{Handled: true, Repaint: true}
+	handled := gfx.EventResult{Handled: true, Repaint: true}
 	switch event.Key {
-	case ui.KeyEscape:
+	case gfx.KeyEscape:
 		if state.settings.search.RuneCount() > 0 {
 			state.settings.search = text.Editor{}
 			return handled, true
 		}
-	case ui.KeyEnter:
+	case gfx.KeyEnter:
 		if state.settingsSearching() && state.settings.count > 0 {
 			state.openSettingsResult(0)
 			return handled, true
 		}
 	}
-	return ui.EventResult{}, false
+	return gfx.EventResult{}, false
 }
 
 // paintSettingsResults lists what the query found, each row with the name of its
@@ -234,7 +379,7 @@ func (state *State) settingsSearchKey(event ui.KeyEvent) (ui.EventResult, bool) 
 func (state *State) paintSettingsResults(page *settingsPage) {
 	view := &state.settings
 	if view.count == 0 {
-		page.f.Text(view.empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(22).MarginSides(6, 4, 0, 4)
+		ui.Text(page.c, view.empty).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(22).MarginSides(6, 4, 0, 4)
 		return
 	}
 	page.controlWidth = 150 // room for the explanation; the button only names a category
@@ -251,7 +396,7 @@ func (state *State) paintSettingsResults(page *settingsPage) {
 }
 
 // paintSettingsSearchBox paints the search box at the top of the category list.
-func (state *State) paintSettingsSearchBox(canvas *ui.Canvas, box ui.Rect) {
+func (state *State) paintSettingsSearchBox(canvas *gfx.Canvas, box gfx.Rect) {
 	value := state.settings.search.String()
 	components.PaintInputGroup(canvas, state.Theme(), box, components.InputGroupSnapshot{
 		ID: hitSettingsSearch, Label: state.messages.Tools.SearchPlaceholder, Value: value, Placeholder: state.messages.Tools.SearchPlaceholder,

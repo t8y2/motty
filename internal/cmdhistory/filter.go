@@ -22,10 +22,34 @@ const MaxCommand = 2000
 // promptWords match the text before the cursor when a program asks for
 // something that must not be kept. The wording of the prompt is the only thing
 // a client can read about what the program will do with the reply.
-var promptWords = regexp.MustCompile(`(?i)password|passphrase|passcode|passwd|\bpass\b|\bpin\b|verification code|security code|auth(?:entication)? code|\botp\b|\bmfa\b|\b2fa\b|token|secret|credential|api key|\[sudo\]|密码|口令|验证码|动态码|安全码|令牌|密钥`)
+var promptWords = regexp.MustCompile(`(?i)password|passphrase|passcode|passwd|\bpass\b|\bpin\b|verification code|security code|auth(?:entication)? code|\botp\b|\bmfa\b|\b2fa\b|token|secret|credential|api key|\[sudo\]|密码|口令|验证码|动态码|安全码|令牌|密钥|密碼|驗證碼|動態碼|安全碼|權杖|金鑰|密鑰`)
 
 // PasswordPrompt reports whether text reads like a prompt for a secret.
 func PasswordPrompt(text string) bool { return promptWords.MatchString(text) }
+
+// programPrompt matches the prompt of a line-editing program — a REPL, a
+// database client, a debugger, a pager — rather than a shell prompt. A
+// terminal that has lost its shell's own prompt marker cannot tell a nested
+// shell from such a program (#783), so completion reads this before offering
+// anything. The shapes listed are the ones whose prompt is a complete line of
+// its own; a shell prompt that names a host or a path does not match.
+var programPrompt = regexp.MustCompile(`(?i)` + strings.Join([]string{
+	`^\s*(?:--+\s*more\s*--+|\(end\))$`, // less / more
+	`^\s*:{1,2}$`,                       // vim command line, ed
+	`^\s*>{1,3}(?:\s|$)`,                // bash PS2, Python / Node
+	`^\s*\.{3}>(?:\s|$)`,                // continuation prompts
+	`^\s*in \[\d+\]:(?:\s|$)`,           // IPython
+	`^\s*(?:mysql|mariadb|sqlite3?|psql|redis-cli|redis|mongo|mongosh|node|deno|irb|pry|julia|scala|ghci|gdb|lldb|cqlsh|hive|spark-sql|jshell|trino|presto|duckdb|lftp|ftp|sftp)\s*>(?:\s|$)`,
+	`^\s*irb\([^)]*\)[^>]*>(?:\s|$)`,                        // irb
+	`^\s*(?:\[\d+\]\s+)?pry\([^)]*\)[^>]*>(?:\s|$)`,         // pry
+	`^\s*mariadb\s*\[[^\]]*\]>(?:\s|$)`,                     // mariadb
+	`^\s*sql>(?:\s|$)`,                                      // sqlplus
+	`^\s*[a-z_][\w.-]*(?:\([^)]*\))?[=*!^#]?['"-]?[#>]\s*$`, // postgres=# ...
+}, "|"))
+
+// ProgramPrompt reports whether text reads like a line-editing program's own
+// prompt rather than a shell prompt.
+func ProgramPrompt(text string) bool { return programPrompt.MatchString(strings.TrimSpace(text)) }
 
 // secretText matches commands that carry a secret in their own text. Only
 // shapes that are unambiguous are listed: a filter that guessed at every "-p"

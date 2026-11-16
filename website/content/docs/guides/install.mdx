@@ -3,15 +3,55 @@ title: Install
 description: Packages for macOS, Windows and Linux.
 ---
 Download the package for your platform from the
-[releases page](https://github.com/t8y2/motty/releases).
+[releases page](https://github.com/t8y2/motty/releases), or from the
+[download page](/en/download) on motty.page, which serves the same files through
+Cloudflare R2.
 
 | Platform | Packages |
 | --- | --- |
-| macOS (arm64, amd64) | `.dmg`, `.zip` |
-| Windows (amd64, arm64) | installer, `.zip` |
+| macOS (arm64, amd64) | `.dmg` |
+| Windows (amd64, arm64) | `.exe` installer, portable `.zip` |
 | Linux (amd64, arm64) | `.deb`, `.tar.gz` |
 
+Windows packages require Windows 10 or Windows Server 2016 or later.
+
 Each release also carries a `SHA256SUMS` file.
+
+## Package managers
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+If Homebrew asks you to trust the tap first, run `brew trust t8y2/tap` once.
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+The cask installs the notarized disk image and is marked as self-updating, so an
+installed copy updates itself. Scoop installs the portable copy: `motty-data` is
+persisted across versions and `scoop update motty` is how it updates.
+
+## Portable copy on Windows
+
+The portable `.zip` holds `motty.exe` and a `motty-data` folder. Unpack it anywhere,
+including a USB drive. While `motty-data` sits next to `motty.exe`, Motty keeps its
+hosts, settings, known hosts and saved passwords there, and leaves nothing else on the
+computer. Copy or move the two together to take your setup with you.
+
+- Saved passwords are protected by a master password alone, not by Windows
+  Credential Manager, so they stay readable on another computer. Set one in
+  Settings, Security, before saving a password.
+- To bring an installed copy's data along, set the master password in that copy first,
+  then copy its data folder into `motty-data`. Otherwise the key stays in the old
+  computer's Credential Manager and the saved passwords cannot be opened.
+- A portable copy does not update itself. To update, replace `motty.exe` with the one in
+  the new zip and keep `motty-data`.
+- Without the `motty-data` folder, or when the folder is read-only, Motty runs as an
+  ordinary copy and uses its usual location.
+- Starting at login, if you turn it on, registers the program's path with Windows.
 
 ## Signing
 
@@ -19,12 +59,17 @@ Each release also carries a `SHA256SUMS` file.
 - Windows builds are signed when a certificate is configured.
 - Linux packages are not signed.
 
-Homebrew, AUR and `.AppImage` are not available yet.
+AUR and `.AppImage` are not available yet.
 
 ## Updates
 
 Motty has no analytics. The optional update check contacts GitHub Releases and is
 off by default.
+
+Per-user Windows installations can update in place in either the default or a
+custom directory, with a valid installation record, uninstaller and write access.
+Updates keep the existing directory. If an older version only opens the download
+page for a custom installation, manually install a version containing this fix once.
 
 ## Build from source
 

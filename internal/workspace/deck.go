@@ -15,12 +15,15 @@ type PaneID uint32
 // Deck limits keep accidental splits and corrupted persistence bounded.
 const (
 	MaxWorkspaces       = 32
-	MaxPanes            = 8
+	MaxPanes            = 12
 	MinPaneRatio        = float32(0.15)
 	MaxPaneRatio        = float32(0.85)
 	DefaultContextWidth = float32(340)
 	MinContextWidth     = float32(280)
 	MaxContextWidth     = float32(480)
+	DefaultMonitorWidth = float32(320)
+	MinMonitorWidth     = float32(280)
+	MaxMonitorWidth     = float32(640)
 )
 
 // ContextKind identifies the one shared panel attached to a workspace.
@@ -34,12 +37,25 @@ const (
 	ContextSessionDetails
 )
 
+// ContextSide is the edge at which a workspace's context panel is docked.
+// The zero value preserves the original left-docked layout.
+type ContextSide uint8
+
+const (
+	ContextLeft ContextSide = iota
+	ContextRight
+)
+
 // ContextState is workspace-owned panel presentation state. Session-specific
 // content remains with the session selected by ActivePane.
 type ContextState struct {
-	Kind  ContextKind
-	Open  bool
-	Width float32
+	MonitorOpen  bool    // independent monitor, alongside the shared context panel
+	MonitorWidth float32 // zero uses DefaultMonitorWidth
+	MonitorLeft  bool    // false preserves the original right-docked monitor
+	Kind         ContextKind
+	Open         bool
+	Width        float32
+	Side         ContextSide
 }
 
 var (
@@ -58,8 +74,15 @@ type Pane struct {
 
 // WorkspaceInfo is the stable metadata needed to paint workspace tabs.
 type WorkspaceInfo struct {
-	ID         WorkspaceID
-	Title      string
+	ID    WorkspaceID
+	Title string
+	// An empty Color inherits the connection's colour; "none" means the user
+	// explicitly cleared the tab's colour.
+	Color  string
+	Locked bool
+	// Named is set once the user chose Title; a title the terminal reports then
+	// no longer takes its place on the tab.
+	Named      bool
 	ActivePane PaneID
 	PaneCount  int
 }
@@ -67,6 +90,9 @@ type WorkspaceInfo struct {
 type workspaceRecord struct {
 	id         WorkspaceID
 	title      string
+	color      string
+	locked     bool
+	named      bool
 	layout     Layout
 	panes      []Pane
 	activePane PaneID
@@ -108,7 +134,7 @@ func (deck *Deck) Workspaces(dst []WorkspaceInfo) []WorkspaceInfo {
 	for index := range deck.workspaces {
 		workspace := &deck.workspaces[index]
 		dst = append(dst, WorkspaceInfo{
-			ID: workspace.id, Title: workspace.title,
+			ID: workspace.id, Title: workspace.title, Color: workspace.color, Locked: workspace.locked, Named: workspace.named,
 			ActivePane: workspace.activePane, PaneCount: len(workspace.panes),
 		})
 	}
@@ -117,6 +143,32 @@ func (deck *Deck) Workspaces(dst []WorkspaceInfo) []WorkspaceInfo {
 
 // ActiveWorkspace returns the selected workspace tab, or zero when empty.
 func (deck *Deck) ActiveWorkspace() WorkspaceID { return deck.activeWorkspace }
+
+// Locked reports whether closing this tab requires confirmation from its owner.
+func (deck *Deck) Locked(id WorkspaceID) bool {
+	workspace, ok := deck.workspace(id)
+	return ok && workspace.locked
+}
+
+// SetLocked changes tab protection without changing its layout or sessions.
+func (deck *Deck) SetLocked(id WorkspaceID, locked bool) error {
+	workspace, ok := deck.workspace(id)
+	if !ok {
+		return ErrWorkspaceNotFound
+	}
+	workspace.locked = locked
+	return nil
+}
+
+// SetNamed records whether the user chose this workspace's title.
+func (deck *Deck) SetNamed(id WorkspaceID, named bool) error {
+	workspace, ok := deck.workspace(id)
+	if !ok {
+		return ErrWorkspaceNotFound
+	}
+	workspace.named = named
+	return nil
+}
 
 // ActivateWorkspace selects an existing workspace without changing its panes.
 func (deck *Deck) ActivateWorkspace(id WorkspaceID) bool {
@@ -134,6 +186,17 @@ func (deck *Deck) Rename(id WorkspaceID, title string) error {
 		return ErrWorkspaceNotFound
 	}
 	workspace.title = title
+	return nil
+}
+
+// SetColor sets a tab's own colour without touching the connection's
+// configuration or any other tab.
+func (deck *Deck) SetColor(id WorkspaceID, color string) error {
+	workspace, ok := deck.workspace(id)
+	if !ok {
+		return ErrWorkspaceNotFound
+	}
+	workspace.color = color
 	return nil
 }
 
@@ -169,7 +232,8 @@ func (deck *Deck) Panes(workspaceID WorkspaceID, dst []Pane) []Pane {
 	if !ok {
 		return dst
 	}
-	order := workspace.layout.Sessions(nil)
+	var scratch [MaxPanes]SessionID
+	order := workspace.layout.Sessions(scratch[:0])
 	for _, item := range order {
 		if pane, ok := workspace.pane(PaneID(item)); ok {
 			dst = append(dst, *pane)
@@ -507,12 +571,21 @@ func normalizeContext(context ContextState) ContextState {
 	if context.Width == 0 {
 		context.Width = DefaultContextWidth
 	}
+	// Migrate the experimental shared monitor to an independent panel. Files
+	// retain their own defaults on a cold restore, without an extra tab header.
+	if context.Kind == ContextMonitor {
+		context.MonitorOpen = context.MonitorOpen || context.Open
+		context.Kind, context.Open = ContextSFTP, false
+	}
 	return context
 }
 
 func validateContext(context ContextState) error {
-	if context.Kind > ContextSessionDetails || context.Open && context.Kind == ContextNone ||
+	if context.Kind > ContextSessionDetails || context.Side > ContextRight || context.Open && context.Kind == ContextNone ||
 		context.Width != context.Width || context.Width != 0 && (context.Width < MinContextWidth || context.Width > MaxContextWidth) {
+		return ErrInvalidLayout
+	}
+	if context.MonitorWidth != context.MonitorWidth || context.MonitorWidth != 0 && (context.MonitorWidth < MinMonitorWidth || context.MonitorWidth > MaxMonitorWidth) {
 		return ErrInvalidLayout
 	}
 	return nil

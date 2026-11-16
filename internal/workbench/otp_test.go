@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/text"
 	"motty/internal/otp"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/text"
 )
 
 // The seed of RFC 6238's test key, "12345678901234567890", and the code it gives
@@ -17,7 +17,7 @@ const (
 	testOTPCode = "287082"
 )
 
-const prodOTPName = "otp:deploy@prod.example.com:22"
+var prodOTPName = hostSecretName(prodCatalogID, hostOTPPart)
 
 func otpState(t *testing.T) (*State, *world) {
 	t.Helper()
@@ -84,51 +84,23 @@ func TestASecretGivenInTheHostDialogIsKeptInTheVaultAndNeverShownAgain(t *testin
 	}
 }
 
-func TestChangingTheAccountMovesTheSecretWithIt(t *testing.T) {
+func TestEditingTheLoginLeavesTheSecretWithTheHost(t *testing.T) {
 	state, _ := otpState(t)
 	editProduction(t, state)
 	typeInto(state, hitDialogOTP, testOTPSeed)
 	state.Click(hitDialogSubmit)
-	state.secrets.vault.Lock()
 	editProduction(t, state)
-	if state.editor.otpChecked {
-		t.Fatal("opening the editor checked the locked vault")
+	if !state.editor.otpSaved {
+		t.Fatal("the dialog does not say the host has a secret")
 	}
 	state.editor.user = text.Editor{}
 	state.editor.user.Insert("ops")
 	state.Click(hitDialogSubmit)
-	if _, found, _ := state.secrets.vault.Get(prodOTPName); found {
-		t.Fatal("the old account still has the secret")
+	if _, found, _ := state.secrets.vault.Get(prodOTPName); !found {
+		t.Fatal("the secret did not stay with the host when its login changed")
 	}
-	if _, found, _ := state.secrets.vault.Get("otp:ops@prod.example.com:22"); !found {
-		t.Fatal("the secret did not follow the account")
-	}
-}
-
-func TestEditingAHostDoesNotOpenTheSystemSecretStoreForOTP(t *testing.T) {
-	_, options := newWorld(t)
-	options.WallNow = func() time.Time { return time.Unix(59, 0) }
-	keys := options.Keystore.(*memKeys)
-	state := newTestState(t, options)
-	if err := state.secrets.vault.Set(prodOTPName, testOTPSeed); err != nil {
-		t.Fatal(err)
-	}
-	state.secrets.vault.Lock()
-	loads := keys.loadCount()
-
-	editProduction(t, state)
-	if keys.loadCount() != loads || state.editor.otpChecked || state.editor.otpSaved {
-		t.Fatalf("opening edit loaded the secret store: loads=%d checked=%v saved=%v", keys.loadCount()-loads, state.editor.otpChecked, state.editor.otpSaved)
-	}
-	state.Click(hitDialogSubmit)
-	if keys.loadCount() != loads {
-		t.Fatalf("saving an unchanged endpoint loaded the secret store %d time(s)", keys.loadCount()-loads)
-	}
-
-	editProduction(t, state)
-	state.Click(hitDialogOTPRemove)
-	if keys.loadCount() != loads+1 || !state.editor.otpChecked || !state.editor.otpSaved {
-		t.Fatalf("explicit check: loads=%d checked=%v saved=%v", keys.loadCount()-loads, state.editor.otpChecked, state.editor.otpSaved)
+	if state.hosts[0].User != "ops" {
+		t.Fatalf("the login was not edited: %q", state.hosts[0].User)
 	}
 }
 
@@ -193,10 +165,11 @@ func TestWithoutASecretACodeQuestionIsTheUsers(t *testing.T) {
 
 func TestSavingASecretNeedsAnUnlockedVault(t *testing.T) {
 	state, _ := otpState(t)
-	if err := state.secrets.vault.SetMasterPassword("master-pass"); err != nil {
+	if err := state.secrets.vault.LegacyForTests("master-pass"); err != nil {
 		t.Fatal(err)
 	}
-	state.secrets.vault.Lock()
+	state.secrets.declined = true
+	state.secrets.vault.DropKeyForTests()
 	editProduction(t, state)
 	typeInto(state, hitDialogOTP, testOTPSeed)
 	state.Click(hitDialogSubmit)

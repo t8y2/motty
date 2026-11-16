@@ -65,6 +65,33 @@ type file struct {
 	argonPasses uint32
 	argonThread uint32
 	argonSalt   []byte
+	// derived is the Argon2 output of the one passphrase this file is parsed
+	// with, kept so the cipher key and the MAC key cost one derivation.
+	derived []byte
+}
+
+// The Argon2 parameters come from the file, so a damaged or hostile one could
+// ask for terabytes or hours. These bound them well above what PuTTYgen writes
+// (8 MiB, 13 passes, 1 lane by default).
+const (
+	maxArgonMemoryKiB = 512 << 10
+	maxArgonPasses    = 4096
+	maxArgonLanes     = 64
+)
+
+// argonMaterial derives the 80 bytes version 3 splits into the cipher key, the
+// IV and the MAC key: Argon2's output length is part of its input, so deriving
+// parts separately would give different keys. PuTTY's memory parameter is in KiB,
+// as argon2.IDKey takes it.
+func (f *file) argonMaterial(passphrase []byte) ([]byte, error) {
+	if f.derived != nil {
+		return f.derived, nil
+	}
+	if f.argonMemory > maxArgonMemoryKiB || f.argonPasses > maxArgonPasses || f.argonThread > maxArgonLanes {
+		return nil, fmt.Errorf("ppk: Argon2 parameters (memory %d KiB, %d passes, %d lanes) are beyond what is supported", f.argonMemory, f.argonPasses, f.argonThread)
+	}
+	f.derived = argon2.IDKey(passphrase, f.argonSalt, f.argonPasses, f.argonMemory, uint8(f.argonThread), 32+16+32)
+	return f.derived, nil
 }
 
 // LooksLikePPK reports whether data starts like a PPK file.
@@ -331,12 +358,10 @@ func (f *file) cipherKeys(passphrase []byte) (key, iv []byte, err error) {
 		if f.argonMemory == 0 || f.argonPasses == 0 || f.argonThread == 0 || len(f.argonSalt) == 0 {
 			return nil, nil, errors.New("ppk: incomplete Argon2 parameters")
 		}
-		// PuTTY's memory parameter is in KiB, as argon2.IDKey takes it.
-		// PuTTY's memory parameter is in KiB, as argon2.IDKey takes it. The
-		// cipher and MAC keys are one 80-byte derivation: Argon2's output
-		// length is part of its input, so deriving parts separately yields
-		// different keys.
-		material := argon2.IDKey(passphrase, f.argonSalt, f.argonPasses, f.argonMemory, uint8(min(f.argonThread, 255)), 32+16+32)
+		material, err := f.argonMaterial(passphrase)
+		if err != nil {
+			return nil, nil, err
+		}
 		return material[:32], material[32:48], nil
 	}
 	// Version 2: SHA-1 of a counter and the passphrase, concatenated, plus a
@@ -360,7 +385,10 @@ func (f *file) verifyMAC(passphrase, private []byte) error {
 	var key []byte
 	switch {
 	case f.version >= 3 && f.encrypted():
-		material := argon2.IDKey(passphrase, f.argonSalt, f.argonPasses, f.argonMemory, uint8(min(f.argonThread, 255)), 32+16+32)
+		material, err := f.argonMaterial(passphrase)
+		if err != nil {
+			return err
+		}
 		key = material[48:80]
 	case f.version >= 3:
 		key = nil // unencrypted version 3 MACs with an empty key
@@ -381,13 +409,13 @@ func (f *file) verifyMAC(passphrase, private []byte) error {
 	if f.version >= 3 {
 		mac := hmac.New(sha256.New, key)
 		mac.Write(input)
-		if len(expected) != sha256.Size || hmac.Equal(mac.Sum(nil), expected) {
+		if len(expected) == sha256.Size && hmac.Equal(mac.Sum(nil), expected) {
 			return nil
 		}
 	} else {
 		mac := hmac.New(sha1.New, key)
 		mac.Write(input)
-		if len(expected) != sha1.Size || hmac.Equal(mac.Sum(nil), expected) {
+		if len(expected) == sha1.Size && hmac.Equal(mac.Sum(nil), expected) {
 			return nil
 		}
 	}

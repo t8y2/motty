@@ -1,0 +1,40 @@
+# End to end: a private key pasted into Motty (never a file) signs in. The fixture
+# accepts only the public key in E2E_EXTRA_PUBKEY and refuses passwords.
+#
+#   ssh-keygen -q -t ed25519 -N "" -f /tmp/e2e-paste
+#   E2E_EXTRA_PUBKEY=/tmp/e2e-paste.pub /tmp/motty-e2esshd 2251
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/paste_key_e2e.txt
+
+click "Keychain"
+settle 300
+click "Add Key"
+click "Paste Private Key"
+settle 300
+type -----BEGIN OPENSSH PRIVATE KEY-----
+key enter
+type b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+key enter
+type QyNTUxOQAAACAwkhSpAVaoBwyStIj8e+A5IMlqD6RdMjQ/9n5au2mlqAAAAJDBQ+USwUPl
+key enter
+type EgAAAAtzc2gtZWQyNTUxOQAAACAwkhSpAVaoBwyStIj8e+A5IMlqD6RdMjQ/9n5au2mlqA
+key enter
+type AAAECalp/u8g6u0e09J/z7aZ+8gmdO0HW++911+VNxIsFwQDCSFKkBVqgHDJK0iPx74Dkg
+key enter
+type yWoPpF0yND/2flq7aaWoAAAACnBhc3RlZEBlMmUBAgM=
+key enter
+type -----END OPENSSH PRIVATE KEY-----
+key enter
+key tab
+type pasted e2e
+click "Add"
+settle 400
+texts "pasted e2e"
+click "Hosts"
+settle 300
+click "Search"
+type tester@127.0.0.1:2251
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "tester@e2e" 8000
+texts

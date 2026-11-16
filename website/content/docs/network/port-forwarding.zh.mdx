@@ -20,9 +20,46 @@ description: 本地、远程、SOCKS5 和 HTTP CONNECT 规则，跳板路由、�
 
 ## 出站代理
 
-出站 SOCKS5 或 HTTP 代理用来承载最初的连接。
+全局出站 SOCKS5 或 HTTP CONNECT 代理可以承载最初的连接。在**新建主机**或
+**编辑主机**中，每台网络主机可以继承全局设置、强制直连，或配置自己的代理地址、
+可选登录信息和直连列表。主机专属的代理密码只保存在加密密码保险库中，不会进入
+主机目录导出文件。
+
+主机也可以通过**代理命令**连接，和 OpenSSH 的 `ProxyCommand` 一样：连接时 Motty
+启动这个程序，用它的标准输入输出承载连接。`cloudflared access ssh` 后面的主机、
+经网关用 `nc` 才能到达的主机都这样连接。命令里的 `%h`、`%p`、`%r` 和 `%%` 会被
+替换，主机密钥仍按主机本身校验。代理命令只能设在单台主机上，不能作为全局代理。
+
+- 从 SSH 配置导入的 `ProxyCommand` 会随主机保存，但要打开主机的代理设置并保存后
+  才会运行。
+- 通过 `motty mcp-serve` 连接的智能体不会启动代理命令。
+- 从程序坞或访达启动的应用，看到的是图形应用的精简 `PATH`，不是你 shell 里的。
+  请写程序的完整路径，例如 `/opt/homebrew/bin/cloudflared`。
+- 以 `-` 开头的主机名或用户名会被拒绝，避免被程序当作选项。
 
 ## X11 转发
 
-X11 转发会先校验远端客户端使用的每会话伪造 cookie，再把它替换成本地的 Xauthority
-cookie，因此真正的 cookie 不会交给远端。
+X11 转发可以把远端的图形程序显示在本机窗口里。Motty 负责转发连接，窗口本身由
+**运行在你电脑上的 X 服务端**绘制，Motty 不自带 X 服务端，需要先装一次：
+
+| 系统 | X 服务端 | 设置 |
+| --- | --- | --- |
+| macOS | [XQuartz](https://www.xquartz.org) | 安装并启动即可。Motty 会自动找到它，即使它在 Motty 之后才启动。 |
+| Windows | [VcXsrv](https://sourceforge.net/projects/vcxsrv/) 或 X410 | 安装并启动。未设置 `DISPLAY` 时，Motty 使用 `127.0.0.1` 上的显示 `:0`。 |
+| Linux | Xorg 或 Xwayland | 图形会话自带，无需安装。 |
+
+然后在主机设置的「高级」里打开「转发 X11」，新开一个标签页。服务器需要在
+`sshd_config` 里设置 `X11Forwarding yes`，并安装 `xauth`。可以运行 `xclock`
+之类的程序验证。
+
+转发无法启动时，终端仍会正常打开，并打印原因，例如没有找到 X 服务端，或服务器
+拒绝了请求。处理后新开一个标签页即可，这项设置在标签页连接时读取。
+
+要使用其他 X 服务端（比如另一台机器上的），启动 Motty 时把 `DISPLAY` 设为它
+（`host:0`）。`DISPLAY` 始终优先于上面的自动选择。
+
+远端程序拿不到你真实的 X 授权。Motty 为每个会话生成随机 cookie，对每个连接先校验，
+再替换成本地 Xauthority 文件里的 cookie。
+
+如果只需要一个桌面而不是单个窗口，[VNC](/zh/docs/remote-desktop/vnc) 不需要在你的
+电脑上安装任何东西。

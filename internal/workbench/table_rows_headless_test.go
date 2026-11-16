@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
-	"github.com/vivaui/viva/ui"
 )
 
 // The tables of the Keys, Forwards and Proxies pages select a row where the row
@@ -81,6 +81,34 @@ func TestProxyRowIsSelectedByClickingIt(t *testing.T) {
 	}
 }
 
+func TestForwardEditButtonOpensDialogInHeadless(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	addForwardRule(t, state, "Web", 9000, "127.0.0.1", 80)
+	session := openWorkbenchSession(t, state)
+
+	if err := session.ClickLabel(state.messages.ForwardEdit); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNewForward || !state.forwardEditor.editing {
+		t.Fatalf("forward modal = %d, editing = %v", state.modal, state.forwardEditor.editing)
+	}
+}
+
+func TestProxyEditButtonOpensDialogInHeadless(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	addProxyRoute(t, state, state.hosts[0].ID, state.hosts[1].ID)
+	session := openWorkbenchSession(t, state)
+
+	if err := session.ClickLabel(state.messages.ProxyEdit); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNewProxy || !state.proxyEditor.editing {
+		t.Fatalf("proxy modal = %d, editing = %v", state.modal, state.proxyEditor.editing)
+	}
+}
+
 // A secondary press on a host row opens its menu, and a double click connects it,
 // through the window's own path: the row's paint takes the event (the event pass).
 func TestHostRowTakesRightClickAndDoubleClickThroughTheWindowPath(t *testing.T) {
@@ -91,22 +119,17 @@ func TestHostRowTakesRightClickAndDoubleClickThroughTheWindowPath(t *testing.T) 
 	session := openWorkbenchSession(t, state)
 	target := state.hosts[1]
 	// The row, not its checkbox: both carry the host's name.
-	var row ui.Hit
-	for _, hit := range session.Snapshot().Hits {
-		if hit.ID == hitHostList.At(int(target.ID)) {
-			row = hit
-		}
-	}
-	if row.ID.IsZero() {
+	row, ok := hostListHostHitIn(session.Snapshot().Hits, state, target.ID)
+	if !ok {
 		t.Fatalf("no row for %q", target.Label)
 	}
 	x, y := row.Bounds.X+row.Bounds.Width/4, row.Bounds.Y+row.Bounds.Height/2
 
 	driver := session.Driver()
-	if err := driver.Press(x, y, ui.PointerButtonSecondary); err != nil {
+	if err := driver.Press(x, y, gfx.PointerButtonSecondary); err != nil {
 		t.Fatal(err)
 	}
-	if err := driver.Release(x, y, ui.PointerButtonSecondary); err != nil {
+	if err := driver.Release(x, y, gfx.PointerButtonSecondary); err != nil {
 		t.Fatal(err)
 	}
 	if !state.hostMenu.open || state.hostMenu.host != target.ID {

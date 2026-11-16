@@ -5,8 +5,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	layoutcore "motty/internal/workspace"
 	"github.com/vivaui/viva/app"
+	"motty/internal/buildinfo"
+	"motty/internal/i18n"
+	"motty/internal/update"
+	layoutcore "motty/internal/workspace"
 )
 
 type fakeTrayWindow struct {
@@ -79,7 +82,7 @@ func TestTrayMenuListsEverySessionOfEveryWindowGroupingSplitWorkspaces(t *testin
 	// A split workspace is a submenu of its sessions; a workspace of one session
 	// is a single entry; windows keep the order they were added in. The status
 	// of each session follows its name.
-	if len(lines) != 10 || lines[0] != "Sessions · 3" || lines[1] != "Production (2)" || !strings.HasPrefix(lines[4], "Router · ") {
+	if len(lines) != 11 || lines[0] != "Sessions · 3" || lines[1] != "Production (2)" || !strings.HasPrefix(lines[4], "Router · ") {
 		t.Fatalf("menu = %q", lines)
 	}
 	if !menu[0].Disabled || menu[1].Disabled || len(menu[1].Submenu) != 2 {
@@ -91,7 +94,7 @@ func TestTrayMenuListsEverySessionOfEveryWindowGroupingSplitWorkspaces(t *testin
 		}
 	}
 	tail := lines[5:]
-	want := []string{"---", "New local terminal", "Show Motty", "---", "Quit Motty"}
+	want := []string{"---", "New local terminal", "Show " + buildinfo.ProductName, "Check for Updates…", "---", "Quit " + buildinfo.ProductName}
 	for index := range want {
 		if tail[index] != want[index] {
 			t.Fatalf("footer = %q, want %q", tail, want)
@@ -120,26 +123,57 @@ func TestTrayMenuOfNoSessionsSaysSoAndOfNoWindowsIsEmpty(t *testing.T) {
 	}
 	tray.Add(state, &fakeTrayWindow{})
 	lines := menuTitles(tray.Menu(), "")
-	if lines[0] != "No open sessions" || len(lines) != 6 {
+	if lines[0] != "No open sessions" || len(lines) != 7 {
 		t.Fatalf("menu = %q", lines)
 	}
 }
 
 func TestTrayTooltipChangesOnlyWhenTheCountDoes(t *testing.T) {
 	fixture := newTrayFixture(t)
+	name := buildinfo.ProductName + " " + update.Current
 	text, changed := fixture.tray.Tooltip()
-	if !changed || text != "Motty (3 open)" {
+	if !changed || text != name+" (3 open)" {
 		t.Fatalf("first tooltip = %q, %t", text, changed)
 	}
 	if _, changed := fixture.tray.Tooltip(); changed {
 		t.Fatal("an unchanged count reported a change")
 	}
 	fixture.second.closeSession(fixture.second.sessions[0].ID)
-	if text, changed := fixture.tray.Tooltip(); !changed || text != "Motty (2 open)" {
+	if text, changed := fixture.tray.Tooltip(); !changed || text != name+" (2 open)" {
 		t.Fatalf("after closing a session: %q, %t", text, changed)
 	}
 	if _, changed := NewTray(nil).Tooltip(); changed {
 		t.Fatal("a tray with no windows has a tooltip")
+	}
+}
+
+func TestTrayUsesTheBuildProductNameInBothLanguages(t *testing.T) {
+	tests := []struct {
+		language i18n.Language
+		show     string
+		quit     string
+	}{
+		{language: i18n.English, show: "Show " + buildinfo.ProductName, quit: "Quit " + buildinfo.ProductName},
+		{language: i18n.Chinese, show: "显示 " + buildinfo.ProductName, quit: "退出 " + buildinfo.ProductName},
+	}
+	for _, test := range tests {
+		t.Run(test.language.String(), func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			state.language = test.language
+			state.messages = i18n.For(test.language)
+			tray := NewTray(nil)
+			tray.Add(state, &fakeTrayWindow{})
+			if text, changed := tray.Tooltip(); !changed || text != buildinfo.ProductName+" "+update.Current {
+				t.Fatalf("empty tooltip = %q, %t", text, changed)
+			}
+			menu := tray.Menu()
+			if findItem(menu, test.show) == nil {
+				t.Fatalf("menu does not show %q: %q", test.show, menuTitles(menu, ""))
+			}
+			if findItem(menu, test.quit) == nil {
+				t.Fatalf("menu does not quit with %q: %q", test.quit, menuTitles(menu, ""))
+			}
+		})
 	}
 }
 
@@ -178,9 +212,28 @@ func TestChoosingASessionBringsItsWindowToThatSession(t *testing.T) {
 	}
 }
 
+func TestChoosingCheckForUpdatesAsksInAVisibleWindowAndOffersTheRelease(t *testing.T) {
+	fixture := newTrayFixture(t)
+	fixture.firstView.hidden, fixture.secondView.hidden = true, true
+	release := update.Release{Version: "99.0.0", URL: "https://example.com/release"}
+	fixture.first.options.CheckUpdate = func() (update.Release, error) { return release, nil }
+	item := findItem(fixture.tray.Menu(), "Check for Updates…")
+	if item == nil || item.OnSelect == nil || item.Disabled {
+		t.Fatalf("item = %+v", item)
+	}
+	item.OnSelect()
+	if fixture.firstView.shows != 1 {
+		t.Fatalf("shows = %d, want the hidden window brought forward", fixture.firstView.shows)
+	}
+	waitUpdate(t, fixture.first, func() bool { return fixture.first.update.available })
+	if fixture.first.update.release.Version != "99.0.0" {
+		t.Fatalf("release = %+v", fixture.first.update.release)
+	}
+}
+
 func TestChoosingQuitQuits(t *testing.T) {
 	fixture := newTrayFixture(t)
-	findItem(fixture.tray.Menu(), "Quit Motty").OnSelect()
+	findItem(fixture.tray.Menu(), "Quit "+buildinfo.ProductName).OnSelect()
 	if fixture.quits != 1 {
 		t.Fatalf("quits = %d", fixture.quits)
 	}
@@ -206,12 +259,12 @@ func TestChoosingLocalTerminalOpensAShellInAWindowAndShowsIt(t *testing.T) {
 func TestShowWindowBringsBackAHiddenWindowOnlyWhenNoneIsVisible(t *testing.T) {
 	fixture := newTrayFixture(t)
 	fixture.firstView.hidden, fixture.secondView.hidden = true, true
-	findItem(fixture.tray.Menu(), "Show Motty").OnSelect()
+	findItem(fixture.tray.Menu(), "Show "+buildinfo.ProductName).OnSelect()
 	if fixture.firstView.shows != 1 || fixture.secondView.shows != 0 {
 		t.Fatalf("with every window hidden: first %d, second %d", fixture.firstView.shows, fixture.secondView.shows)
 	}
 	fixture.firstView.hidden, fixture.secondView.hidden = true, false
-	findItem(fixture.tray.Menu(), "Show Motty").OnSelect()
+	findItem(fixture.tray.Menu(), "Show "+buildinfo.ProductName).OnSelect()
 	if fixture.firstView.shows != 1 || fixture.secondView.shows != 1 || !fixture.firstView.hidden {
 		t.Fatalf("with a visible window: first %d, second %d, first hidden %t", fixture.firstView.shows, fixture.secondView.shows, fixture.firstView.hidden)
 	}
@@ -296,5 +349,27 @@ func TestClosingAnEmptyWindowDoesNotAsk(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	if state.ConfirmClose(func() {}) || state.modal != modalNone {
 		t.Fatalf("an empty window asked: modal %d", state.modal)
+	}
+}
+
+func TestHidingToTrayIsExplainedOnce(t *testing.T) {
+	w := newNotifyWorld(t)
+	state := newTestState(t, w.options)
+	w.session(t, state)
+	state.NoteHiddenToTray()
+	if len(w.shown) != 1 {
+		t.Fatalf("shown = %+v, want one explanation", w.shown)
+	}
+	// The notification names the running product, which a development build
+	// spells differently, so compare through the same substitution it uses.
+	if w.shown[0].Title != productText(state.messages.TrayHintTitle) || w.shown[0].Body != productText(state.messages.TrayHintBody) {
+		t.Fatalf("shown = %+v", w.shown[0])
+	}
+	state.NoteHiddenToTray()
+	if len(w.shown) != 1 {
+		t.Fatalf("shown = %+v, want the second hide to stay silent", w.shown)
+	}
+	if again := newTestState(t, w.options); !again.trayHintShown {
+		t.Fatal("the explanation was not remembered on this device")
 	}
 }

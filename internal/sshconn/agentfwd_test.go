@@ -22,7 +22,19 @@ import (
 // SSH_AUTH_SOCK at it.
 func startTestAgent(t *testing.T, comment string) {
 	t.Helper()
+	path, _ := startAgent(t, comment)
+	t.Setenv("SSH_AUTH_SOCK", path)
+}
+
+// startAgent is startTestAgent without touching the environment: it returns the
+// socket and the public half of the key it holds.
+func startAgent(t *testing.T, comment string) (string, ssh.PublicKey) {
+	t.Helper()
 	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(private)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +68,7 @@ func startTestAgent(t *testing.T, comment string) {
 			}()
 		}
 	}()
-	t.Setenv("SSH_AUTH_SOCK", path)
+	return path, signer.PublicKey()
 }
 
 // queryForwardedAgent opens the agent channel of a session that asked for

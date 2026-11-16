@@ -3,13 +3,16 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
+	"motty/internal/localshell"
 	"motty/internal/sftpclient"
-	"github.com/vivaui/viva/ui"
 )
 
 // The file panel can show this computer's files in place of the server's, to
@@ -32,8 +35,22 @@ const maxLocalEntries = 20000
 // pays tens of milliseconds in stat calls, sorting and row preparation.
 const localListingInlineEntries = 512
 
-// localStart is where the local side opens: Downloads if there is one, else home.
-func localStart() string {
+// localSideStart is where the local side opens: the download folder the
+// settings name, when it is set and on disk, so the folder holding received
+// files is the one on show. Without a usable setting it is the system Downloads
+// folder, then home.
+func (state *State) localSideStart() string {
+	if directory := state.sftpDownloadDirectory; validSFTPDownloadDirectory(directory) {
+		if info, err := os.Stat(directory); err == nil && info.IsDir() {
+			return filepath.Clean(directory)
+		}
+	}
+	return localDefaultStart()
+}
+
+// localDefaultStart is where a local side opens when no configured download
+// folder applies: Downloads if there is one, else home.
+func localDefaultStart() string {
 	if dir := downloadsDirectory(); dir != "" {
 		return dir
 	}
@@ -51,7 +68,34 @@ func localHome() string {
 	if home, err := os.UserHomeDir(); err == nil {
 		return home
 	}
-	return localStart()
+	return localDefaultStart()
+}
+
+// localPanelStart is the folder a local terminal's panel opens in: the one its
+// shell last reported, if that is still a folder, else the shell's own home
+// folder. A WSL shell's home is the distribution's root, not this computer's
+// home: the panel then shows the files the terminal is working on, and the
+// shell's reported folder takes over once it arrives.
+func (state *State) localPanelStart(session *Session) string {
+	home := localHome()
+	if distro := session.wslDistro(); distro != "" {
+		if root, ok := localshell.WSLWindowsPath("/", distro); ok {
+			home = root
+		}
+	}
+	t := session.term
+	if t == nil {
+		return home
+	}
+	if cwd, ok := t.screen.WorkingDirectory(); ok {
+		state.terminalDirectory(session.ID, cwd)
+	}
+	directory := t.followPath
+	t.followPath = ""
+	if info, err := os.Stat(directory); directory == "" || err != nil || !info.IsDir() {
+		return home
+	}
+	return directory
 }
 
 // toggleSFTPPane switches the panel between the server's files and this
@@ -61,12 +105,21 @@ func (state *State) toggleSFTPPane(view *sftpView) {
 	view.bookmarksOpen = false
 	view.errorText = ""
 	if !view.local {
-		view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(view.rows))
+		if view.detached != nil {
+			view.setItemCountStatus(state.messages.SFTPItemsFmt, len(view.rows))
+		} else {
+			state.refreshSFTPFilterStatus(view, &view.sftpFolder)
+		}
 		return
 	}
 	dir := view.lfolder.path
 	if dir == "" {
-		dir = localStart()
+		if session, ok := state.sftpSession(view); ok {
+			dir = session.fileHistory[0].path
+		}
+	}
+	if dir == "" {
+		dir = state.localSideStart()
 	}
 	state.listLocal(view, dir)
 }
@@ -75,7 +128,29 @@ func (state *State) toggleSFTPPane(view *sftpView) {
 // place; a large one is scanned, sorted and prepared on a goroutine and applied
 // on the window thread when it arrives. localSeq drops an answer that a newer
 // listing has overtaken.
-func (state *State) listLocal(view *sftpView, dir string) {
+func (state *State) listLocal(view *sftpView, dir string) error {
+	return state.listLocalNavigation(view, dir, sftpNavigationPassive, 0)
+}
+
+func (state *State) listLocalNavigation(view *sftpView, dir string, kind sftpNavigationKind, index int) error {
+	dir = filepath.Clean(dir)
+	nav := state.beginSFTPNavigation(view, true, dir, kind, index)
+	if view.detached != nil {
+		view.detached.pendingLocal = dir
+	}
+	succeeded := false
+	defer func() {
+		if !succeeded && view.lfolder.navigation.id == nav.id {
+			view.lfolder.navigation = sftpNavigation{}
+			if view.detached != nil {
+				view.detached.pendingLocal = ""
+			}
+		}
+	}()
+	// Even a failed newer request retires older background/deferred answers.
+	view.localSeq++
+	seq := view.localSeq
+	state.retireLocalListingStatus(view)
 	folder := &view.lfolder
 	dir = filepath.Clean(dir)
 	file, err := os.Open(dir)
@@ -84,42 +159,40 @@ func (state *State) listLocal(view *sftpView, dir string) {
 		if folder.path == "" {
 			folder.path = dir // an empty list is better than none on a first visit
 		}
-		return
+		return err
 	}
 	// Read just past the inline limit on this thread. A folder that ends before
 	// it is small enough to finish now; a larger one continues on a goroutine,
 	// so even the directory enumeration leaves the window thread. os.File keeps
 	// the read position across that goroutine.
 	first, readErr := file.ReadDir(localListingInlineEntries + 1)
-	if readErr != nil && len(first) == 0 {
+	// ReadDir reports io.EOF when a directory has no more entries. That is a
+	// successful empty listing when the first read returns no rows, not a
+	// filesystem failure.
+	if readErr != nil && len(first) == 0 && !errors.Is(readErr, io.EOF) {
 		file.Close()
 		view.errorText = fmt.Sprintf(state.messages.SFTPErrorFmt, readErr)
 		if folder.path == "" {
 			folder.path = dir
 		}
-		return
+		return readErr
 	}
-	view.localSeq++
-	seq := view.localSeq
 	if len(first) <= localListingInlineEntries {
+		listing := readLocalListing(dir, file, first, readErr)
 		file.Close()
-		state.applyLocalListing(view, scanLocalListing(dir, first), seq)
-		return
+		listing.navigation = nav
+		succeeded = true
+		state.applyLocalListing(view, listing, seq)
+		return nil
 	}
 	view.errorText = ""
-	view.status = state.messages.SFTPLoading
+	view.startListingStatus(state.messages.SFTPLoading)
+	view.localListingStatus = true
+	succeeded = true
 	go func() {
 		defer file.Close()
-		items := first
-		for len(items) < maxLocalEntries {
-			want := min(4096, maxLocalEntries-len(items))
-			more, err := file.ReadDir(want)
-			items = append(items, more...)
-			if err != nil || len(more) == 0 {
-				break
-			}
-		}
-		listing := scanLocalListing(dir, items)
+		listing := readLocalListing(dir, file, first, readErr)
+		listing.navigation = nav
 		state.aiPost(func(*State) {
 			if seq != view.localSeq {
 				return
@@ -127,25 +200,69 @@ func (state *State) listLocal(view *sftpView, dir string) {
 			state.applyLocalListing(view, listing, seq)
 		})
 	}()
+	return nil
+}
+
+// A superseded local read has no reply left to retire its loading message.
+// Remote listings share the same wording but retain their own ownership.
+func (state *State) retireLocalListingStatus(view *sftpView) {
+	if !view.localListingStatus {
+		return
+	}
+	if view.listingStatus != "" && view.status == view.listingStatus {
+		state.refreshSFTPFilterStatus(view, view.active())
+	}
+	view.listingStatus = ""
+	view.localListingStatus = false
 }
 
 // localListing is a local folder scanned away from the window thread.
 type localListing struct {
-	dir     string
-	entries []sftpclient.Entry
-	rows    []sftpRow
+	navigation sftpNavigation
+	dir        string
+	entries    []sftpclient.Entry
+	rows       []sftpRow
+	coverage   localListingCoverage
 }
 
-// localListing scans, sorts and prepares one local folder. It touches no State
-// so a goroutine may run it while the window keeps painting.
-func scanLocalListing(dir string, items []os.DirEntry) localListing {
-	entries := make([]sftpclient.Entry, 0, min(len(items), maxLocalEntries))
-	for _, item := range items {
-		if len(entries) == maxLocalEntries {
+type localListingCoverage struct {
+	truncated bool
+	skipped   int
+	readError string
+}
+
+func (coverage localListingCoverage) incomplete() bool {
+	return coverage.truncated || coverage.skipped > 0 || coverage.readError != ""
+}
+
+// One lookahead distinguishes a complete, exactly capped directory from one
+// with more entries. Only the first maxLocalEntries raw entries are statted.
+func readLocalListing(dir string, file *os.File, items []os.DirEntry, readErr error) localListing {
+	for len(items) > localListingInlineEntries && len(items) <= maxLocalEntries && readErr == nil {
+		more, err := file.ReadDir(min(4096, maxLocalEntries+1-len(items)))
+		items = append(items, more...)
+		readErr = err
+		if len(more) == 0 {
 			break
 		}
+	}
+	listing := scanLocalListing(dir, items)
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		listing.coverage.readError = readErr.Error()
+	}
+	return listing
+}
+
+// scanLocalListing scans, sorts and prepares one local folder. It touches no State
+// so a goroutine may run it while the window keeps painting.
+func scanLocalListing(dir string, items []os.DirEntry) localListing {
+	coverage := localListingCoverage{truncated: len(items) > maxLocalEntries}
+	entries := make([]sftpclient.Entry, 0, min(len(items), maxLocalEntries))
+	hidden := make([]bool, 0, min(len(items), maxLocalEntries))
+	for _, item := range items[:min(len(items), maxLocalEntries)] {
 		info, err := item.Info()
 		if err != nil {
+			coverage.skipped++
 			continue
 		}
 		entry := sftpclient.Entry{Name: item.Name(), Size: info.Size(), Mode: info.Mode(), ModTime: info.ModTime()}
@@ -160,6 +277,7 @@ func scanLocalListing(dir string, items []os.DirEntry) localListing {
 			}
 		}
 		entries = append(entries, entry)
+		hidden = append(hidden, localFileHidden(item.Name(), info))
 	}
 	// Sort indices by a name folded once: lowering both names in every
 	// comparison allocated a string pair per comparison, which a large folder
@@ -181,25 +299,56 @@ func scanLocalListing(dir string, items []os.DirEntry) localListing {
 		return strings.Compare(folded[left], folded[right])
 	})
 	sorted := make([]sftpclient.Entry, len(entries))
+	sortedHidden := make([]bool, len(entries))
 	for index, source := range order {
 		sorted[index] = entries[source]
+		sortedHidden[index] = hidden[source]
 	}
-	return localListing{dir: dir, entries: sorted, rows: prepareSFTPRows(nil, sorted)}
+	rows := prepareSFTPRows(nil, sorted)
+	for index := range rows {
+		rows[index].hidden = sortedHidden[index]
+	}
+	attachAppIconSlots(dir, rows)
+	return localListing{dir: dir, entries: sorted, rows: rows, coverage: coverage}
 }
 
 // applyLocalListing puts a finished local listing on screen. seq must still be
 // the view's current one.
 func (state *State) applyLocalListing(view *sftpView, listing localListing, seq uint64) {
+	defer view.invalidateDetached()
 	if seq != view.localSeq {
 		return
 	}
+	if view.deferDraggedListing(true, func() { state.applyLocalListing(view, listing, seq) }) {
+		return
+	}
+	if listing.navigation.id != 0 && listing.navigation.id != view.lfolder.navigation.id {
+		return
+	}
+	if view.detached != nil {
+		view.detached.pendingLocal = ""
+	}
 	folder := &view.lfolder
+	place, restore := folder.acceptNavigation(listing.dir, listing.navigation)
 	folder.path = listing.dir
-	folder.rows = listing.rows
+	previousRows := folder.allRows
+	folder.allRows = listing.rows
+	state.loadAppIcons(view, previousRows, listing.rows)
+	state.loadTypeIcons(view, listing.rows)
+	folder.localCoverage = listing.coverage
 	folder.crumbs = prepareLocalCrumbs(folder.crumbs, listing.dir)
-	folder.selected, folder.first = -1, 0
+	if view.detached != nil {
+		view.detached.observeDirectoryTreeListing(true, listing.dir, listing.entries)
+		view.detached.syncDirectoryTreeToPath(true, listing.dir)
+	}
+	state.applySFTPFilter(view, folder, true)
+	state.finishSFTPNavigation(view, true, place, restore, listing.navigation)
+	state.retireLocalListingStatus(view)
 	view.errorText = ""
-	view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, len(folder.rows))
+	if view.detached != nil {
+		view.setItemCountStatus(state.messages.SFTPItemsFmt, len(folder.rows))
+		view.detached.browseListingCommitted(true, listing.dir)
+	}
 }
 
 // prepareLocalCrumbs splits a local path into the links of a breadcrumb.
@@ -226,36 +375,50 @@ func prepareLocalCrumbs(crumbs []sftpCrumb, dir string) []sftpCrumb {
 
 // clickSFTPLocal handles the presses of the panel while it shows local files. It
 // reports whether the press was one of its own.
-func (state *State) clickSFTPLocal(session *Session, view *sftpView, id ui.ID) bool {
+func (state *State) clickSFTPLocal(session *Session, view *sftpView, id gfx.ID) bool {
 	folder := &view.lfolder
 	switch {
 	case id == hitSFTPPaneToggle:
 		state.toggleSFTPPane(view)
 	case id == hitSFTPRefresh:
+		stopSFTPSearch(folder)
 		state.listLocal(view, folder.path)
 	case id == hitSFTPUp:
 		if parent := filepath.Dir(folder.path); parent != folder.path {
-			state.listLocal(view, parent)
+			state.navigateLocalDirectory(view, parent)
 		}
 	case id == hitSFTPNewDirectory:
 		state.openSFTPDialog(view, sftpDialogCreateDirectory)
 	case id == hitSFTPOpenEntry:
 		state.openLocalSelected(view)
+	case id == hitSFTPEditExternal:
+		state.openLocalExternal(view)
+	case id == hitSFTPDelete:
+		// The press belongs to the local side whatever its state: falling
+		// through would run the server's delete on this computer's panel.
+		if !view.localBusy {
+			state.openSFTPDialog(view, sftpDialogDelete)
+		}
 	case id == hitSFTPSend && !view.localOnly:
-		state.sendLocalSelection(view)
+		if !view.localBusy {
+			state.sendLocalSelection(view)
+		}
 	case id == hitSFTPInsertPath && view.localOnly:
 		state.insertLocalPaths(session, view)
 	case id.Scope() == hitSFTPBreadcrumbList:
 		if index := item(id); index < len(folder.crumbs) {
-			state.listLocal(view, folder.crumbs[index].path)
+			state.navigateLocalDirectory(view, folder.crumbs[index].path)
 		}
+	case id.Scope() == hitSFTPEntryList && folder.searching():
+		state.pressSFTPSearchResult(view, folder, folder.first+item(id), 1)
 	case id.Scope() == hitSFTPEntryList:
 		index := folder.first + item(id)
 		if index < len(folder.rows) {
 			folder.selected = index
 			folder.rows[index].selected = !folder.rows[index].selected
 			folder.rows[index].cells[0] = sftpSelectionCell(folder.rows[index].selected)
-			view.status = fmt.Sprintf(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
+			view.setItemCountStatus(state.messages.SFTPItemsFmt, selectedSFTPCount(view))
+			folder.listNeedsSeed = true
 		}
 	default:
 		return false
@@ -266,10 +429,38 @@ func (state *State) clickSFTPLocal(session *Session, view *sftpView, id ui.ID) b
 // openLocalSelected goes into the selected local folder.
 func (state *State) openLocalSelected(view *sftpView) {
 	entry, ok := state.selectedSFTPEntry(view)
-	if !ok || !entry.IsDir() {
+	if !ok {
 		return
 	}
-	state.listLocal(view, filepath.Join(view.lfolder.path, entry.Name))
+	if !entry.IsDir() {
+		state.openFileWindow(view, filepath.Join(view.lfolder.path, entry.Name), true)
+		return
+	}
+	state.navigateLocalDirectory(view, filepath.Join(view.lfolder.path, entry.Name))
+}
+
+// Local files already live at their final path. Opening one in the system's
+// application must not download a copy or start remote edit synchronization.
+func (state *State) openLocalExternal(view *sftpView) {
+	count, entry := selectedSFTP(view)
+	if !view.local || count != 1 || entry.IsDir() || view.lfolder.path == "" {
+		return
+	}
+	location := filepath.Join(view.lfolder.path, entry.Name)
+	info, err := os.Lstat(location)
+	if err == nil && !info.Mode().IsRegular() {
+		err = errors.New(state.messages.SFTPWindow.LocalEditNotFile)
+	}
+	if err == nil {
+		err = state.openWithConfiguredEditor(location)
+	}
+	if err != nil {
+		if isExecutablePathError(err) {
+			state.fileOpenNotice(view.detached, state.messages.Tools.ExtEditButton, state.messages.Tools.ExtEditRefused, components.ToastError)
+		} else {
+			state.fileOpenPathReason(view.detached, state.messages.Tools.ExtEditButton, state.messages.Tools.ExtEditOpenFailedFmt, location, err.Error(), components.ToastError)
+		}
+	}
 }
 
 // insertLocalPaths types the selected items' paths into the local shell, quoted
@@ -283,7 +474,7 @@ func (state *State) insertLocalPaths(session *Session, view *sftpView) {
 		paths = append(paths, filepath.Join(view.lfolder.path, row.entry.Name))
 	}
 	if len(paths) > 0 {
-		session.term.send([]byte(quotedPaths(paths) + " "))
+		session.term.send([]byte(quotedPaths(paths, session.wslDistro()) + " "))
 	}
 }
 
@@ -305,7 +496,7 @@ func (state *State) downloadHere(view *sftpView) {
 		return
 	}
 	for _, row := range selectedSFTPRows(view) {
-		state.queueSFTPDownload(view, row.entry, filepath.Join(view.lfolder.path, row.entry.Name))
+		state.queueSFTPDownload(view, row.entry, filepath.Join(view.lfolder.path, safeLocalName(row.entry.Name)))
 	}
 }
 
@@ -319,11 +510,16 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 		view.dialogError = state.messages.Tools.ExtractErrorFolder
 		return false
 	}
+	if view.lfolder.hasEntry(name) {
+		view.dialogError = state.messages.SFTPErrDirectoryExists
+		return false
+	}
 	target := filepath.Join(view.lfolder.path, name)
 	if err := os.Mkdir(target, 0o755); err != nil {
-		view.dialogError = err.Error()
 		if errors.Is(err, os.ErrExist) {
-			view.dialogError = fmt.Sprintf(state.messages.SFTPErrorFmt, err)
+			view.dialogError = state.messages.SFTPErrDirectoryExists
+		} else {
+			view.dialogError = err.Error()
 		}
 		return false
 	}
@@ -333,21 +529,107 @@ func (state *State) submitLocalDirectory(view *sftpView, name string) bool {
 	return true
 }
 
-// scrollFolder is scrollSFTP for whichever folder is on show.
-func scrollFolder(folder *sftpFolder, event ui.ScrollEvent) ui.EventResult {
-	if folder.visibleRows <= 0 || len(folder.rows) <= folder.visibleRows {
-		return ui.EventResult{Handled: true}
+// submitLocalDelete removes the local entries the confirmation dialog named. A
+// folder may hold a whole tree, so the walk runs on a goroutine and the folder
+// is read again when it finishes.
+func (state *State) submitLocalDelete(view *sftpView) {
+	entries := slices.Clone(view.dialogEntries)
+	if len(entries) == 0 || view.localBusy {
+		return
 	}
-	folder.wheel += event.DeltaY / sftpRowHeight
+	dir := view.lfolder.path
+	state.closeSFTPDialog(view)
+	view.errorText = ""
+	view.localBusy = true
+	view.status = fmt.Sprintf(state.messages.SFTPDeletingFmt, entries[0].Name)
+	go func() {
+		result := removeLocalEntries(dir, entries)
+		state.aiPost(func(*State) { state.finishLocalDelete(view, result) })
+	}()
+}
+
+// localDeleteResult is what removing a set of local entries did. The walk stops
+// at the first failure: what it already removed cannot be restored.
+type localDeleteResult struct {
+	dir     string
+	total   int
+	removed []string
+	failed  string // the path that stopped the walk
+	err     error  // why it stopped
+}
+
+// removeLocalEntries removes entries of dir in the order the list showed them.
+// It touches no State, so a goroutine may run it while the window keeps painting.
+func removeLocalEntries(dir string, entries []sftpclient.Entry) localDeleteResult {
+	result := localDeleteResult{dir: dir, total: len(entries)}
+	for _, entry := range entries {
+		location := filepath.Join(dir, entry.Name)
+		if err := removeLocalEntry(location); err != nil {
+			result.failed, result.err = location, err
+			return result
+		}
+		result.removed = append(result.removed, location)
+	}
+	return result
+}
+
+// removeLocalEntry removes one entry, looking at the disk again rather than at
+// the listing it came from. A link is only the link: what it points at is not
+// ours to empty.
+func removeLocalEntry(location string) error {
+	info, err := os.Lstat(location)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return os.RemoveAll(location)
+	}
+	return os.Remove(location)
+}
+
+// finishLocalDelete puts a finished local deletion on screen: the folder on show
+// is read again when it is the one the entries were in, and a failure says that
+// what was removed is gone for good.
+func (state *State) finishLocalDelete(view *sftpView, result localDeleteResult) {
+	session, ok := state.sftpSession(view)
+	if !ok || session.files != view || !view.localBusy {
+		return
+	}
+	view.localBusy = false
+	// The window shows both sides, so its local pane needs the new listing
+	// whatever side is active; the panel only shows the local side when it is.
+	if (view.local || view.detached != nil) && filepath.Clean(view.lfolder.path) == filepath.Clean(result.dir) {
+		state.listLocal(view, result.dir)
+	}
+	messages := state.messages
+	if result.err != nil {
+		view.status = fmt.Sprintf(messages.SFTPErrorFmt, result.err)
+		detail := fmt.Sprintf("%s: %s %s", result.failed, fmt.Sprintf(messages.SFTPErrorFmt, result.err), messages.SFTPDeleteSelectionPartial)
+		state.fileOpenNotice(view.detached, messages.SFTPDeleteSelectionTitle, detail, components.ToastError)
+	} else if result.total > 1 {
+		view.status = fmt.Sprintf(messages.SFTPDeletedCountFmt, len(result.removed))
+	} else {
+		view.status = fmt.Sprintf(messages.SFTPDeletedFmt, result.removed[0])
+	}
+	view.invalidateDetached()
+}
+
+// scrollFolder is scrollSFTP for whichever folder is on show.
+func scrollFolder(folder *sftpFolder, event gfx.ScrollEvent) gfx.EventResult {
+	rows := len(folder.shownRows())
+	if folder.visibleRows <= 0 || rows <= folder.visibleRows {
+		return gfx.EventResult{Handled: true}
+	}
+	folder.wheel += event.StepY(sftpRowHeight) / sftpRowHeight
 	lines := int(folder.wheel)
 	if lines == 0 {
-		return ui.EventResult{Handled: true}
+		return gfx.EventResult{Handled: true}
 	}
 	folder.wheel -= float32(lines)
 	before := folder.first
-	folder.first = min(max(0, folder.first+lines), len(folder.rows)-folder.visibleRows)
+	folder.first = min(max(0, folder.first+lines), rows-folder.visibleRows)
 	if folder.first == before {
 		folder.wheel = 0
 	}
-	return ui.EventResult{Handled: true, Repaint: folder.first != before}
+	return gfx.EventResult{Handled: true, Repaint: folder.first != before}
 }

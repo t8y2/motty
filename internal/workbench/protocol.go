@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"motty/internal/charset"
 	"motty/internal/serial"
 	"motty/internal/sftpclient"
+	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
 	"motty/internal/telnet"
 )
@@ -30,6 +33,16 @@ const (
 	protocolRDP
 )
 
+// hostTerminal is how an SSH host's interactive session is carried. Mosh is
+// not a protocol of its own: it is bootstrapped and authenticated over SSH and
+// then carries the terminal over UDP, so the host keeps every SSH setting.
+type hostTerminal uint8
+
+const (
+	terminalSSH hostTerminal = iota
+	terminalMosh
+)
+
 // defaultTelnetPort is the port a Telnet host without an explicit one uses,
 // defaultVNCPort the one of a VNC server (display :0) and defaultRDPPort the one
 // of Remote Desktop.
@@ -41,6 +54,33 @@ const (
 
 // isSSH reports whether the host is reached over SSH.
 func (host Host) isSSH() bool { return host.Protocol == protocolSSH }
+
+// mosh reports whether this SSH host's interactive terminal runs over mosh.
+// The SSH connection is used only for the bootstrap; the session has no SSH
+// server once the terminal is up.
+func (host Host) mosh() bool { return host.Protocol == protocolSSH && host.Terminal == terminalMosh }
+
+func (state *State) sshHostCount() int {
+	count := 0
+	for _, host := range state.hosts {
+		if host.isSSH() {
+			count++
+		}
+	}
+	return count
+}
+
+// routeTargetCount is how many hosts a jump route can reach: SSH hosts and
+// remote desktops.
+func (state *State) routeTargetCount() int {
+	count := 0
+	for _, host := range state.hosts {
+		if host.isRouteTarget() {
+			count++
+		}
+	}
+	return count
+}
 
 // defaultPort is the port a host of its protocol uses when it names none.
 func (host Host) defaultPort() uint16 {
@@ -61,15 +101,21 @@ func (host Host) isDesktop() bool {
 	return host.Protocol == protocolVNC || host.Protocol == protocolRDP
 }
 
+// isRouteTarget reports whether a jump route can reach the host as its target:
+// an SSH host, whose connection the route extends, or a remote desktop, whose
+// port the route's jump host forwards. A jump itself is always an SSH host.
+func (host Host) isRouteTarget() bool { return host.isSSH() || host.isDesktop() }
+
 // tunneled reports whether the host is reached through an SSH connection of its
 // own: a remote desktop whose server is only listening on the SSH server's own
 // loopback.
 func (host Host) tunneled() bool { return host.isDesktop() && host.ViaSSH }
 
 // hasServer reports whether the session talks to an SSH server: the only kind
-// that can list files, forward ports and run commands.
+// that can list files, forward ports and run commands. A mosh host keeps no SSH
+// connection after its bootstrap, so it has none of those.
 func (session *Session) hasServer() bool {
-	return !session.isLocal() && session.host.isSSH()
+	return !session.isLocal() && session.host.isSSH() && !session.host.mosh()
 }
 
 // canBrowseFiles reports whether the session has files to show: the server's
@@ -83,40 +129,102 @@ func (session *Session) canBrowseFiles() bool {
 // without any of them describes an SSH host as before.
 type savedTransport struct {
 	Protocol string `json:"protocol,omitempty"` // "telnet", "serial", "vnc" or "rdp"
-	Line     string `json:"line,omitempty"`     // serial: "115200 8N1"
-	Flow     string `json:"flow,omitempty"`     // serial: "rtscts" or "xonxoff"
+	// Terminal is "mosh" for an SSH host whose interactive session runs over
+	// mosh. Empty is SSH, and a file without it describes the host as before.
+	Terminal string `json:"terminal,omitempty"`
+	// Encoding is the charset of the remote shell's byte stream. Empty (or
+	// "UTF-8") is the default; any other value names a charset.Encodings entry.
+	Encoding string `json:"encoding,omitempty"`
+	Line     string `json:"line,omitempty"` // serial: "115200 8N1"
+	Flow     string `json:"flow,omitempty"` // serial: "rtscts" or "xonxoff"
+	// Proxy is nil when this host inherits the global outbound proxy. An entry
+	// whose kind is "direct" explicitly bypasses it.
+	Proxy *savedOutboundProxy `json:"proxy,omitempty"`
 	// Algorithms is "compatible" or "custom" for an SSH host that does not use
 	// the default algorithms; AlgorithmList is the custom list.
 	Algorithms    string `json:"algorithms,omitempty"`
 	AlgorithmList string `json:"algorithm_list,omitempty"`
+	// Authentication is "password", "key" or "agent" when an SSH host does
+	// not use the automatic authentication order. Identity optionally selects
+	// one imported key fingerprint for the key policy.
+	Authentication string                       `json:"authentication,omitempty"`
+	Identity       string                       `json:"identity,omitempty"`
+	SSHOptions     *sshconfig.ConnectionOptions `json:"ssh_options,omitempty"`
+	// IdentitiesOnly is set for an automatic SSH host that offers the
+	// ssh-agent only the keys matching its configured identities.
+	IdentitiesOnly bool `json:"identities_only,omitempty"`
+	// Credential is the id of the saved password an SSH, VNC or RDP host takes
+	// its password from (see credentials.go).
+	Credential string `json:"credential,omitempty"`
 	// ForwardX11 is set for an SSH host that forwards X11.
 	ForwardX11 bool `json:"forward_x11,omitempty"`
 	// AgentForward is set for an SSH host whose shells may use the local
 	// ssh-agent.
 	AgentForward bool `json:"agent_forward,omitempty"`
+	// InteractiveOnly is set for an SSH host that must be sent only the pty and
+	// shell requests, the way a gateway that permits only an interactive login
+	// requires. A host that refused the client's probes is saved this way.
+	InteractiveOnly bool `json:"interactive_only,omitempty"`
 	// NoHistory is set for an SSH host whose commands are not remembered.
 	NoHistory bool `json:"no_history,omitempty"`
+	// LoginCommand is the line an SSH host types into its shell after login.
+	LoginCommand string `json:"login_command,omitempty"`
+	// IdleKeepAliveSeconds is how often an idle terminal is sent input; zero is
+	// off. IdleInput is "cr", "nul" or "custom" (empty follows the protocol),
+	// and IdleInputCustom is the escaped text for "custom".
+	IdleKeepAliveSeconds int             `json:"idle_keepalive_seconds,omitempty"`
+	IdleInput            string          `json:"idle_keepalive_input,omitempty"`
+	IdleInputCustom      string          `json:"idle_keepalive_custom,omitempty"`
+	RemoteLogPaths       []remoteLogPath `json:"remote_log_paths,omitempty"`
 	// Transfer is "sftp" or "scp" for an SSH host whose file panel does not
 	// choose by itself.
 	Transfer string `json:"transfer,omitempty"`
 	// ViaSSH and Clipboard are a remote desktop host's (VNC or RDP): reached
 	// through an SSH connection to the same machine, and sharing the clipboard
-	// with the remote desktop. The password is never here: it is asked for, and
-	// kept in the vault only if the user says so.
-	ViaSSH    bool `json:"via_ssh,omitempty"`
-	Clipboard bool `json:"clipboard,omitempty"`
+	// with the remote desktop. Console is an RDP host's: connect to the server's
+	// console session instead of a new one, as mstsc /admin does.
+	// StandardSecurity is an RDP host's too: use Standard RDP Security alone,
+	// with no TLS or NLA. Chromeless is a desktop host's: its page shows the
+	// picture without the bars around it.
+	// The password is never here: it is asked for, and kept in the vault only if
+	// the user says so.
+	ViaSSH           bool `json:"via_ssh,omitempty"`
+	Clipboard        bool `json:"clipboard,omitempty"`
+	Console          bool `json:"console,omitempty"`
+	StandardSecurity bool `json:"standard_security,omitempty"`
+	Chromeless       bool `json:"chromeless,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
+	transport := savedTransport{Proxy: savedHostProxy(host.Proxy), Credential: host.Credential}
+	// UTF-8 is the empty value, so a host that never chose a charset keeps its
+	// old record byte-for-byte.
+	if host.Encoding != "" && host.Encoding != charset.UTF8 {
+		transport.Encoding = host.Encoding
+	}
+	// Every terminal protocol keeps this setting, so it is written before the
+	// switch that gives the rest of the transport its protocol-specific shape.
+	if validIdleKeepAliveInterval(host.IdleKeepAlive) {
+		transport.IdleKeepAliveSeconds = int(host.IdleKeepAlive / time.Second)
+	}
+	transport.IdleInput = host.savedIdleInput()
+	if host.IdleInput == idleInputCustom {
+		transport.IdleInputCustom = host.IdleInputCustom
+	}
 	switch host.Protocol {
 	case protocolTelnet:
-		return savedTransport{Protocol: "telnet"}
+		transport.Protocol = "telnet"
+		return transport
 	case protocolVNC:
-		return savedTransport{Protocol: "vnc", ViaSSH: host.ViaSSH, Clipboard: host.Clipboard}
+		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "vnc", host.ViaSSH, host.Clipboard, host.Chromeless
+		return transport
 	case protocolRDP:
-		return savedTransport{Protocol: "rdp", ViaSSH: host.ViaSSH, Clipboard: host.Clipboard}
+		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
+		transport.Console = host.Console
+		transport.StandardSecurity = host.StandardSecurity
+		return transport
 	case protocolSerial:
-		transport := savedTransport{Protocol: "serial", Line: host.Line.String()}
+		transport.Proxy, transport.Protocol, transport.Line = nil, "serial", host.Line.String()
 		switch host.Line.Flow {
 		case serial.FlowHardware:
 			transport.Flow = "rtscts"
@@ -126,27 +234,87 @@ func (host Host) transport() savedTransport {
 		return transport
 	}
 	mode, list := host.savedAlgo()
-	return savedTransport{Algorithms: mode, AlgorithmList: list, ForwardX11: host.ForwardX11, AgentForward: host.AgentForward, NoHistory: host.NoHistory, Transfer: host.savedTransfer()}
+	if host.mosh() {
+		transport.Terminal = "mosh"
+	}
+	transport.Algorithms, transport.AlgorithmList = mode, list
+	transport.Authentication, transport.Identity = host.Auth.saved(), host.Identity
+	transport.SSHOptions = host.SSHOptions.Clone()
+	transport.IdentitiesOnly = host.IdentitiesOnly
+	transport.ForwardX11, transport.AgentForward, transport.NoHistory, transport.Transfer = host.ForwardX11, host.AgentForward, host.NoHistory, host.savedTransfer()
+	transport.InteractiveOnly = host.InteractiveOnly
+	transport.LoginCommand = host.LoginCommand
+	transport.RemoteLogPaths = host.RemoteLogPaths
+	return transport
 }
 
 // applyTransport reads a saved transport into the host. It reports false for a
 // serial line that cannot be used, so a damaged entry is dropped rather than
 // opened with a guess.
 func (host *Host) applyTransport(transport savedTransport) bool {
+	host.Proxy = restoredHostProxy(transport.Proxy)
+	host.Credential = strings.TrimSpace(transport.Credential)
+	// An unknown charset is a damaged record: drop it rather than opening a
+	// session that would show replacement characters.
+	encoding, ok := charset.Normalize(strings.TrimSpace(transport.Encoding))
+	if !ok {
+		return false
+	}
+	if encoding == charset.UTF8 {
+		encoding = "" // keep the zero value as the UTF-8 default
+	}
+	host.Encoding = encoding
+	host.Terminal = terminalSSH
+	host.applyIdleKeepAlive(transport)
 	switch transport.Protocol {
 	case "", "ssh":
 		host.Protocol = protocolSSH
+		if !transport.SSHOptions.Valid() {
+			return false
+		}
+		host.SSHOptions = transport.SSHOptions.Clone()
+		var ok bool
+		if host.Auth, ok = parseHostAuth(transport.Authentication); !ok {
+			return false
+		}
+		host.Identity = strings.TrimSpace(transport.Identity)
+		if host.Auth != authPrivateKey {
+			host.Identity = ""
+		}
+		host.IdentitiesOnly = transport.IdentitiesOnly
 		host.ForwardX11 = transport.ForwardX11
 		host.AgentForward = transport.AgentForward
+		host.InteractiveOnly = transport.InteractiveOnly
 		host.NoHistory = transport.NoHistory
+		host.LoginCommand = restoredLoginCommand(transport.LoginCommand)
+		host.RemoteLogPaths = restoreRemoteLogPaths(transport.RemoteLogPaths)
+		switch transport.Terminal {
+		case "", "ssh":
+			host.Terminal = terminalSSH
+		case "mosh":
+			// mosh-server needs a UTF-8 locale and a command session to start;
+			// X11, agent forwarding and an interactive-only gateway belong to
+			// an SSH session, not to a mosh one.
+			if host.Encoding != "" {
+				return false
+			}
+			host.Terminal = terminalMosh
+			host.ForwardX11, host.AgentForward = false, false
+			host.InteractiveOnly = false
+		default:
+			return false
+		}
 		return host.applyTransfer(transport.Transfer) && host.applyAlgo(transport.Algorithms, transport.AlgorithmList)
 	case "telnet":
-		host.Protocol = protocolTelnet
+		host.Protocol, host.Credential = protocolTelnet, ""
 	case "vnc":
-		host.Protocol, host.ViaSSH, host.Clipboard = protocolVNC, transport.ViaSSH, transport.Clipboard
+		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolVNC, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 	case "rdp":
-		host.Protocol, host.ViaSSH, host.Clipboard = protocolRDP, transport.ViaSSH, transport.Clipboard
+		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
+		host.Console = transport.Console
+		host.StandardSecurity = transport.StandardSecurity
 	case "serial":
+		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone
 		switch transport.Flow {
 		case "rtscts":
@@ -183,9 +351,11 @@ func validEndpoint(protocol hostProtocol, address string) bool {
 }
 
 // sameEndpoint reports whether two hosts are the same destination: for SSH and
-// Telnet the address, account and port, for a serial port the device.
+// Telnet the address, account and port, for a serial port the device. The
+// terminal transport is part of an SSH destination: typing its SSH address must
+// not silently open the mosh host saved for it.
 func sameEndpoint(a Host, b Host) bool {
-	if a.Protocol != b.Protocol || a.Address != b.Address {
+	if a.Protocol != b.Protocol || a.Terminal != b.Terminal || a.Address != b.Address {
 		return false
 	}
 	return a.Protocol == protocolSerial || a.User == b.User && a.Port == b.Port && a.ViaSSH == b.ViaSSH
@@ -209,7 +379,7 @@ func openStream(ctx context.Context, request streamRequest) (Shell, error) {
 		var dialer telnet.Dialer
 		if request.Proxy.Uses(address) {
 			dialer = func(ctx context.Context, address string) (net.Conn, error) {
-				return request.Proxy.Dial(ctx, request.Timeout, address)
+				return request.Proxy.DialAs(ctx, request.Timeout, address, host.User)
 			}
 		}
 		session, err := telnet.Dial(ctx, address, request.Timeout, dialer, telnet.Config{Cols: 80, Rows: 24, Notify: request.Notify})
@@ -253,7 +423,7 @@ func (state *State) newStreamConn(host Host, notify func()) *streamConn {
 		conn.method = "serial"
 	}
 	conn.status = sshconn.Status{Version: 1, Phase: sshconn.PhaseConnecting}
-	request := streamRequest{Host: host, Timeout: state.connectionTimeout, Proxy: state.currentProxy(), Notify: notify}
+	request := streamRequest{Host: host, Timeout: state.connectionTimeout, Proxy: state.proxyForHost(host), Notify: notify}
 	open := state.openStream
 	if open == nil {
 		open = openStream
@@ -333,10 +503,22 @@ func (conn *streamConn) DialContext(context.Context, string, string) (net.Conn, 
 	return nil, errNoServer
 }
 
+func (conn *streamConn) DialShellContext(context.Context, string, string) (net.Conn, error) {
+	return nil, errNoServer
+}
+
 func (conn *streamConn) Listen(string, string) (net.Listener, error) { return nil, errNoServer }
+
+func (conn *streamConn) ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error) {
+	return nil, errNoServer
+}
 
 func (conn *streamConn) RunCommand(context.Context, string, int) ([]byte, error) {
 	return nil, errNoServer
+}
+
+func (conn *streamConn) Exec(context.Context, string, int) (sshconn.ExecResult, error) {
+	return sshconn.ExecResult{}, errNoServer
 }
 
 func (conn *streamConn) StreamCommand(context.Context, string, int, func([]byte) bool) error {
@@ -404,16 +586,25 @@ func (host *Host) normalizeEndpoint() {
 		host.User, host.Port = "", 0
 		return
 	}
-	if host.Protocol == protocolVNC && !host.ViaSSH {
-		host.User = "" // the account is the SSH tunnel's
-	}
 	if host.Port == 0 {
 		host.Port = host.defaultPort()
 	}
 }
 
+// sameHost reports whether two hosts are one entry as the user sees it: the same
+// destination under the same name. A host is identified by its catalog ID, not
+// by where it connects, so several hosts may share a destination as long as they
+// are named apart: a bastion host is reached at one address, and each target
+// behind it is its own host. This is only the test for an accidental repeat, such
+// as adding or importing the same entry twice.
+func sameHost(a Host, b Host) bool {
+	return sameEndpoint(a, b) && strings.EqualFold(strings.TrimSpace(a.Label), strings.TrimSpace(b.Label))
+}
+
 // hostIndexByEndpoint is where the list has a host that is the same destination
-// as host, or -1.
+// as host, or -1. It is what an import from another program is checked against:
+// an entry that is only a name for a server already saved is not worth a second
+// host, and a program's own names say little about it.
 func (state *State) hostIndexByEndpoint(host Host) int {
 	for index, saved := range state.hosts {
 		if sameEndpoint(saved, host) {
@@ -421,6 +612,27 @@ func (state *State) hostIndexByEndpoint(host Host) int {
 		}
 	}
 	return -1
+}
+
+// hostIndexSame is where the list has the same host as host (see sameHost), or -1.
+func (state *State) hostIndexSame(host Host) int {
+	for index, saved := range state.hosts {
+		if sameHost(saved, host) {
+			return index
+		}
+	}
+	return -1
+}
+
+// endpointShared reports whether a host of the list other than those with the
+// given IDs connects to the destination of host.
+func (state *State) endpointShared(host Host, except ...uint32) bool {
+	for _, other := range state.hosts {
+		if !slices.Contains(except, other.ID) && sameEndpoint(other, host) {
+			return true
+		}
+	}
+	return false
 }
 
 // sayStreamOpened writes the one line a Telnet or serial tab starts with: that
@@ -431,7 +643,11 @@ func (state *State) sayStreamOpened(session *Session) {
 	case protocolTelnet:
 		session.term.say(sgrWarn, m.TelnetPlaintext)
 	case protocolVNC:
-		if !session.host.tunneled() {
+		protected := session.host.tunneled() || session.desktopTunnel
+		if source, ok := session.conn.(desktopSource); ok && source.Desktop() != nil {
+			protected = protected || source.Desktop().Info().Encrypted
+		}
+		if !protected {
 			session.term.say(sgrWarn, state.messages.Desktop.VNCPlaintext)
 		}
 	case protocolSerial:

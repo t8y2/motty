@@ -1,0 +1,12 @@
+{
+  "providers": [
+    {
+      "id": "relay",
+      "name": "Relay",
+      "key": "e2e-import-key",
+      "anthropic": "https://relay.example.com/anthropic",
+      "authHeader": "bearer",
+      "models": ["e2e-model"]
+    }
+  ]
+}

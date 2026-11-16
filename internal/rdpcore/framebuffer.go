@@ -1,5 +1,12 @@
 package rdp
 
+// MaxDesktopSize bounds one side of a desktop and of a surface. RDP carries
+// sizes in 16 bits, so a server can name 65535; a client only has to hold what
+// a display can show, and 7680 is the 8K width (7680x4320) the frame buffer is
+// built for. Callers that ask for a larger desktop, and servers that send one,
+// are held to this.
+const MaxDesktopSize = 7680
+
 // Framebuffer holds the client-side screen buffer in bottom-up RGBA 32bpp format.
 type Framebuffer struct {
 	Width   int

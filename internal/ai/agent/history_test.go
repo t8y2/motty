@@ -77,3 +77,26 @@ func firstText(messages []llm.Message) string {
 	}
 	return messages[0].Text
 }
+
+func TestRunSendsUserImagesAndHistoryKeepsThem(t *testing.T) {
+	picture := llm.Image{MediaType: llm.ImagePNG, Data: []byte("\x89PNG\r\n\x1a\nxxxx")}
+	provider := &fakeProvider{turns: []turn{{events: []llm.Event{text("a red square"), done(1, 1)}}}}
+	messages, err := Run(t.Context(), Config{Provider: provider, Model: "m", UserImages: []llm.Image{picture}}, nil, "what is this", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := provider.reqs[0].Messages
+	if len(sent) != 1 || len(sent[0].Images) != 1 || sent[0].Images[0].MediaType != llm.ImagePNG {
+		t.Fatalf("request messages = %+v", sent)
+	}
+	if len(messages) == 0 || len(messages[0].Images) != 1 {
+		t.Fatalf("the returned history lost the picture: %+v", messages)
+	}
+}
+
+func TestAPictureCostsAFixedShareOfTheHistoryBudget(t *testing.T) {
+	huge := llm.Message{Role: llm.RoleUser, Text: "q", Images: []llm.Image{{MediaType: llm.ImagePNG, Data: make([]byte, 4<<20)}}}
+	if got := messageBytes(huge); got != len("q")+8+imageCost {
+		t.Fatalf("messageBytes = %d", got)
+	}
+}

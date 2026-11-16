@@ -53,13 +53,53 @@ func TestOSC52RejectsMalformedAndOversizedPayloads(t *testing.T) {
 		"\x1b]52;c;" + invalidUTF8 + "\x07",
 		"\x1b]52;c;" + withNUL + "\x07",
 		"\x1b]52;ccccccccccccccccc;QQ==\x07",
-		"\x1b]52;c;" + strings.Repeat("A", maxOSC+1) + "\x07",
+		"\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("a", maxClipboardText+1))) + "\x07",
 	} {
 		terminal.Write([]byte(sequence))
 	}
 	if writes != 0 {
 		t.Fatalf("malformed OSC 52 produced %d writes", writes)
 	}
+}
+
+// TestOSC52CarriesASelectionLongerThanAnyOtherOSC checks that a copy of more
+// than a screen, or of a table drawn with box characters (three bytes each),
+// reaches the clipboard whole, whether it arrives in one Write or a byte at a
+// time, and that an ordinary OSC string keeps the short limit after it.
+func TestOSC52CarriesASelectionLongerThanAnyOtherOSC(t *testing.T) {
+	var table strings.Builder
+	table.WriteString("┌──────────┬──────────┐\n")
+	for row := range 400 {
+		table.WriteString("│ 第 " + strings.Repeat("行", row%5) + " │ value    │\n")
+	}
+	table.WriteString("└──────────┴──────────┘")
+	text := table.String()
+	sequence := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(text)) + "\x1b\\"
+	if len(sequence) <= 4*maxOSC {
+		t.Fatalf("the test selection is only %d bytes encoded", len(sequence))
+	}
+	for _, chunk := range []int{len(sequence), 1, 7, 4093} {
+		terminal := New(20, 2, 0)
+		var writes []ClipboardWrite
+		terminal.SetClipboardWrite(func(write ClipboardWrite) { writes = append(writes, write) })
+		for start := 0; start < len(sequence); start += chunk {
+			terminal.Write([]byte(sequence[start:min(start+chunk, len(sequence))]))
+		}
+		if len(writes) != 1 || writes[0].Text != text {
+			t.Fatalf("chunk %d: %d writes, first %d bytes of %d", chunk, len(writes), len(firstText(writes)), len(text))
+		}
+		terminal.Write([]byte("\x1b]0;" + strings.Repeat("t", maxOSC+1) + "\x07\x1b]0;ok\x07"))
+		if terminal.Title() != "ok" {
+			t.Fatalf("chunk %d: title after an overlong one = %q", chunk, terminal.Title())
+		}
+	}
+}
+
+func firstText(writes []ClipboardWrite) string {
+	if len(writes) == 0 {
+		return ""
+	}
+	return writes[0].Text
 }
 
 func FuzzOSC52(f *testing.F) {

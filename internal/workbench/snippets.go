@@ -3,109 +3,354 @@ package workbench
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
 )
 
 // Snippets are commands the user keeps to send to a terminal later: from the
-// command palette, as if typed. They live in the state file, and are managed in
-// Settings.
+// command palette or a shortcut, as if typed. They live in the state file, and
+// are managed on their own page of the sidebar.
 
 type snippet struct {
 	Name    string
 	Command string
+	// Group names the group the snippet is listed under; "" is none.
+	Group string
 	// Run presses Enter after sending, so the command runs at once.
 	Run bool
+	// Shortcut sends the snippet from the terminal; the zero chord is none. It is
+	// kept on this device only: the modifier that is free differs by platform.
+	Shortcut keymap.Chord
+
+	// cells is what the page's table shows of it, made by refreshSnippets.
+	cells [4]string
 }
 
 const (
-	maxSnippets       = 48
+	// maxSnippets bounds the list a damaged state file could carry, not a
+	// working set: users migrating from other tools arrive with hundreds of
+	// commands (#211), and a list of this size costs the page's table and
+	// the command palette nothing noticeable.
+	maxSnippets       = 512
 	maxSnippetName    = 80
-	maxSnippetCommand = 1000
+	maxSnippetCommand = 4096
 )
 
 // snippetsHits is the place of the controls this file paints.
 var snippetsHits = tree.Feature("snippets")
 
 var (
-	hitSettingsSnippetAdd = tree.ID(snippetsHits, "settings-snippet-add")
+	hitSnippetAdd         = tree.ID(snippetsHits, "snippet-add")
+	hitSnippetEdit        = tree.ID(snippetsHits, "snippet-edit")
+	hitSnippetSend        = tree.ID(snippetsHits, "snippet-send")
+	hitSnippetRemove      = tree.ID(snippetsHits, "snippet-remove")
 	hitSnippetName        = tree.ID(snippetsHits, "snippet-name")
 	hitSnippetCommand     = tree.ID(snippetsHits, "snippet-command")
 	hitSnippetRun         = tree.ID(snippetsHits, "snippet-run")
+	hitSnippetShortcut    = tree.ID(snippetsHits, "snippet-shortcut")
+	hitSnippetShortcutOff = tree.ID(snippetsHits, "snippet-shortcut-clear")
 	hitSnippetSubmit      = tree.ID(snippetsHits, "snippet-submit")
 	hitSnippetCancel      = tree.ID(snippetsHits, "snippet-cancel")
 	hitSnippetClose       = tree.ID(snippetsHits, "snippet-close")
-	hitSnippetDismiss     = tree.ID(snippetsHits, "snippet-dismiss")
+	// The delete confirmation's buttons.
+	hitSnippetDeleteDismiss = tree.ID(snippetsHits, "snippet-delete-dismiss")
+	hitSnippetDeleteClose   = tree.ID(snippetsHits, "snippet-delete-close")
+	hitSnippetDeleteCancel  = tree.ID(snippetsHits, "snippet-delete-cancel")
+	hitSnippetDeleteConfirm = tree.ID(snippetsHits, "snippet-delete-confirm")
+	// hitTerminalSnippets is the terminal toolbar's button that lists the
+	// snippets to send to that terminal.
+	hitTerminalSnippets = tree.ID(snippetsHits, "terminal-snippets")
 )
 
 var (
-	hitSnippetEditList   = tree.Sub(snippetsHits, tree.Name("snippet-edit")) // + snippet index
-	hitSnippetDeleteList = tree.Sub(snippetsHits, tree.Name("snippet-delete"))
-	hitSnippetSendList   = tree.Sub(snippetsHits, tree.Name("snippet-send")) // the command palette's entries
+	hitSnippetRowList    = tree.Sub(snippetsHits, tree.Name("snippet-row")) // + snippet index
+	hitSnippetHandles    = tree.Sub(snippetsHits, tree.Name("snippet-handle"))
+	hitSnippetExpandList = tree.Sub(snippetsHits, tree.Name("snippet-expand")) // + snippet index
+	hitSnippetSort       = tree.Sub(snippetsHits, tree.Name("snippet-sort"))   // + column index
+	hitSnippetSendList   = tree.Sub(snippetsHits, tree.Name("snippet-send"))   // the command palette's entries
+	hitSnippetPickList   = tree.Sub(snippetsHits, tree.Name("snippet-pick"))   // + session ID: the terminals to send to
+	// hitSnippetHoverCard is the preview card the pointer rests on to keep open.
+	hitSnippetHoverCard = tree.ID(snippetsHits, "snippet-hover-card")
 )
 
 type snippetsUI struct {
 	list []snippet
 
+	// The page's group filter: the groups there are, the list indices it shows
+	// in the order it shows them, and the filter's popup.
+	groups       []string
+	hasUngrouped bool
+	visible      []int
+	filter       snippetFilter
+	filterOpen   bool
+
 	// The dialog: which snippet it edits (-1 adds one) and the fields.
-	editing     int
-	name        text.Editor
-	command     text.Editor
-	run         bool
-	dialogError string
+	editing       int
+	name          text.Editor
+	command       text.Editor
+	commandLayout components.TextareaLayout
+	run           bool
+	groupPicker   components.SingleSelectState
+	shortcut      keymap.Chord
+	capturing     bool // the next chord pressed becomes shortcut
+	dialogError   string
+
+	// The boxes are the slots the dialog body's controls are painted in.
+	dialogFields   [2]ui.Box
+	dialogGroup    ui.Box
+	dialogRun      ui.Box
+	dialogShortcut ui.Box
+
+	// The page: the selected row and the count under the table.
+	selected  int
+	sort      components.TableSortState
+	grid      components.ReorderGridState
+	countText string
+	// detailHeight and detailLineHeight are the band the expanded command takes,
+	// measured when the page declares the scroll area.
+	detailHeight     float32
+	detailLineHeight float32
+	// sendAt is where the menu of terminals opens from the Send button.
+	sendAt gfx.Point
+	// deleting is the snippet index plus one the delete confirmation asks about;
+	// zero means no confirmation is open.
+	deleting int
+
+	// expanded is the snippet index plus one whose command shows below its row;
+	// zero hides every detail. detailLines and detailCache are the wrapped
+	// command, reused across paints.
+	expanded    int
+	detailLines []string
+	detailCache gfx.EllipsisCache
+
+	// The command preview that opens after the pointer rests on a multi-line
+	// row: hoverTarget and hoverSince time the rest, while hoverOpen, hoverRow
+	// and hoverAnchor keep the card painted when the pointer moves onto it.
+	hoverTarget gfx.ID
+	hoverSince  time.Duration
+	hoverOpen   bool
+	hoverRow    int
+	hoverAnchor gfx.Rect
+	cardLines   []string
+	cardCache   gfx.EllipsisCache
+}
+
+// resetSnippetPreview closes the expanded row and the command preview after the
+// list changed, so neither still points at a command the user no longer has.
+func (form *snippetsUI) resetSnippetPreview() {
+	form.expanded = 0
+	form.hoverTarget, form.hoverOpen, form.hoverRow = gfx.ID{}, false, 0
+	form.hoverAnchor = gfx.Rect{}
 }
 
 // cleanSnippetText makes one line of what was typed: a snippet is sent as
 // keystrokes, so a control character in it would be a key the user never meant.
+// Surrounding space is not part of a name.
 func cleanSnippetText(value string, limit int) string {
+	return strings.TrimSpace(cleanSnippetLine(value, limit))
+}
+
+// cleanSnippetCommand is cleanSnippetText for a command, which keeps its
+// surrounding space: "cd " or "ssh " is sent to be finished by hand, and a
+// leading space keeps a command out of the shell's history. A command of nothing
+// but space is empty.
+func cleanSnippetCommand(value string, limit int) string {
+	value = strings.ReplaceAll(strings.ReplaceAll(value, "\r\n", "\n"), "\r", "\n")
+	value = strings.Map(func(character rune) rune {
+		if character < 0x20 && character != '\n' || character == 0x7f {
+			return -1
+		}
+		return character
+	}, value)
+	if len(value) > limit {
+		value = strings.ToValidUTF8(value[:limit], "")
+	}
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return value
+}
+
+func cleanSnippetLine(value string, limit int) string {
 	value = strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
 			return -1
 		}
 		return r
 	}, value)
-	value = strings.TrimSpace(value)
 	if len(value) > limit {
 		value = strings.ToValidUTF8(value[:limit], "")
 	}
 	return value
 }
 
+// snippetFor is the snippet a chord sends, or -1; skip is one that does not count
+// (the one being edited).
+func (state *State) snippetFor(chord keymap.Chord, skip int) int {
+	if !chord.Valid() {
+		return -1
+	}
+	for index := range state.snippets.list {
+		if index != skip && state.snippets.list[index].Shortcut == chord {
+			return index
+		}
+	}
+	return -1
+}
+
+// snippetNamed is the name of the snippet a chord sends, or "".
+func (state *State) snippetNamed(chord keymap.Chord) string {
+	if index := state.snippetFor(chord, -1); index >= 0 {
+		return state.snippets.list[index].Name
+	}
+	return ""
+}
+
+// chordOwner says what already uses a chord: a built-in action, or a snippet
+// other than the one at skip. It is "" when the chord is free.
+func (state *State) chordOwner(chord keymap.Chord, skip int) string {
+	if action := state.shortcuts.actionFor(chord); action != shortcutNone {
+		return state.shortcutActionLabel(action)
+	}
+	if index := state.snippetFor(chord, skip); index >= 0 {
+		return state.snippets.list[index].Name
+	}
+	return ""
+}
+
+// dropSnippetChordsTaken unbinds the snippets whose chord a built-in action now
+// uses, which is what resetting the shortcuts to their defaults can cause.
+func (state *State) dropSnippetChordsTaken() {
+	for index := range state.snippets.list {
+		if chord := state.snippets.list[index].Shortcut; state.shortcuts.actionFor(chord) != shortcutNone {
+			state.snippets.list[index].Shortcut = keymap.Chord{}
+		}
+	}
+	state.refreshSnippets()
+}
+
 func (state *State) openSnippetDialog(index int) {
 	form := &state.snippets
 	form.editing = index
 	form.name, form.command = text.Editor{}, text.Editor{}
+	form.commandLayout = components.TextareaLayout{}
 	form.run = true
+	group := ""
+	form.shortcut, form.capturing = keymap.Chord{}, false
 	form.dialogError = ""
 	if index >= 0 && index < len(form.list) {
 		form.name.Insert(form.list[index].Name)
 		form.command.Insert(form.list[index].Command)
 		form.run = form.list[index].Run
+		form.shortcut = form.list[index].Shortcut
+		group = form.list[index].Group
 	}
+	state.snippetGroupPicker(group)
 	state.modal = modalSnippet
 }
 
-func (state *State) clickSnippetDialog(id ui.ID) {
+func (state *State) clickSnippetDialog(id gfx.ID) {
 	form := &state.snippets
+	if state.clickSnippetGroup(id) {
+		return
+	}
 	switch id {
 	case hitSnippetSubmit:
 		state.submitSnippet()
-	case hitSnippetCancel, hitSnippetClose, hitSnippetDismiss:
+	case hitSnippetCancel, hitSnippetClose:
 		state.closeModal()
 	case hitSnippetRun:
 		form.run = !form.run
+		form.groupPicker.Open = false
+	case hitSnippetShortcut:
+		form.capturing = !form.capturing
+		form.dialogError = ""
+	case hitSnippetShortcutOff:
+		form.shortcut, form.capturing = keymap.Chord{}, false
+		form.dialogError = ""
+	}
+}
+
+// captureSnippetShortcut takes the chord pressed while the dialog waits for one.
+// ok is false for a key that is no chord at all, which is refused the same way
+// as a chord a snippet may not use.
+func (state *State) captureSnippetShortcut(event gfx.KeyEvent, chord keymap.Chord, ok bool) gfx.EventResult {
+	form, m := &state.snippets, state.messages
+	result := gfx.EventResult{Handled: true, Repaint: true}
+	if event.Repeat {
+		return gfx.EventResult{Handled: true}
+	}
+	if !ok || !validForSnippet(chord) {
+		form.dialogError = m.Tools.SnippetShortcutInvalid
+		return result
+	}
+	if owner := state.chordOwner(chord, form.editing); owner != "" {
+		form.dialogError = fmt.Sprintf(m.ShortcutsConflictFmt, owner)
+		return result
+	}
+	form.shortcut, form.capturing = chord, false
+	form.dialogError = ""
+	return result
+}
+
+// composingTarget returns the field whose input method still holds marked
+// text. Saving then would persist the preedit verbatim, so the dialog waits for
+// the input method to commit it; an empty range marks nothing to protect.
+func (form *snippetsUI) composingTarget() gfx.ID {
+	fields := [...]struct {
+		id     gfx.ID
+		editor *text.Editor
+	}{{hitSnippetName, &form.name}, {hitSnippetCommand, &form.command}, {hitSnippetGroup, &form.groupPicker.Query}}
+	for _, field := range fields {
+		if marked, composing := field.editor.Composition(); composing && marked.Start != marked.End {
+			return field.id
+		}
+	}
+	return gfx.ID{}
+}
+
+func (form *snippetsUI) composing() bool {
+	return form.composingTarget() != gfx.ID{}
+}
+
+// abandonOther ends the composition of the field the pointer is leaving. The
+// input method drops its marked text when the text input moves; the editor has
+// to drop it too, or the field the user left keeps composing and blocks every
+// later save. Unmark keeps the text, which is what the user already sees.
+func (form *snippetsUI) abandonOther(target gfx.ID) {
+	switch target {
+	case hitSnippetName, hitSnippetCommand, hitSnippetGroup:
+	default:
+		return
+	}
+	if target != hitSnippetName {
+		form.name.Unmark()
+	}
+	if target != hitSnippetCommand {
+		form.command.Unmark()
+	}
+	if target != hitSnippetGroup {
+		form.groupPicker.Query.Unmark()
 	}
 }
 
 func (state *State) submitSnippet() {
 	form, m := &state.snippets, state.messages.Tools
+	if form.composing() || !state.commitSnippetGroupQuery() {
+		return
+	}
 	entry := snippet{
-		Name:    cleanSnippetText(form.name.String(), maxSnippetName),
-		Command: cleanSnippetText(form.command.String(), maxSnippetCommand),
-		Run:     form.run,
+		Group:    cleanSnippetGroup(form.groupPicker.Value()),
+		Name:     cleanSnippetText(form.name.String(), maxSnippetName),
+		Command:  cleanSnippetCommand(form.command.String(), maxSnippetCommand),
+		Run:      form.run,
+		Shortcut: form.shortcut,
 	}
 	switch {
 	case entry.Name == "":
@@ -117,12 +362,17 @@ func (state *State) submitSnippet() {
 	}
 	if form.editing >= 0 && form.editing < len(form.list) {
 		form.list[form.editing] = entry
+		form.selected = form.editing
 	} else if len(form.list) >= maxSnippets {
 		form.dialogError = m.SnippetErrorTooMany
 		return
 	} else {
 		form.list = append(form.list, entry)
+		form.selected = len(form.list) - 1
 	}
+	form.showSnippet(form.selected)
+	form.resetSnippetPreview()
+	state.refreshSnippets()
 	state.closeModal()
 	state.save()
 }
@@ -133,49 +383,290 @@ func (state *State) deleteSnippet(index int) {
 		return
 	}
 	state.snippets.list = append(list[:index:index], list[index+1:]...)
+	state.snippets.resetSnippetPreview()
+	state.refreshSnippets()
+	state.status = fmt.Sprintf(state.messages.Tools.StatusSnippetRemovedFmt, list[index].Name)
 	state.save()
+}
+
+// openSnippetDelete asks before deleting a snippet: a saved command may be the
+// only copy the user has.
+func (state *State) openSnippetDelete(index int) {
+	if index < 0 || index >= len(state.snippets.list) {
+		return
+	}
+	state.snippets.deleting = index + 1
+	state.modal = modalSnippetDelete
+}
+
+// clickSnippetDeleteDialog runs the delete confirmation.
+func (state *State) clickSnippetDeleteDialog(id gfx.ID) {
+	switch id {
+	case hitSnippetDeleteDismiss, hitSnippetDeleteClose, hitSnippetDeleteCancel:
+		state.snippets.deleting = 0
+		state.closeModal()
+	case hitSnippetDeleteConfirm:
+		index := state.snippets.deleting - 1
+		state.snippets.deleting = 0
+		state.closeModal()
+		state.deleteSnippet(index)
+	}
+}
+
+func (state *State) snippetNeighbor(index, direction int) int {
+	form := &state.snippets
+	if index < 0 || index >= len(form.list) {
+		return -1
+	}
+	for target := index + direction; target >= 0 && target < len(form.list); target += direction {
+		if form.filter.matches(&form.list[target]) {
+			return target
+		}
+	}
+	return -1
+}
+
+func (state *State) moveSnippet(index, direction int) bool {
+	target := state.snippetNeighbor(index, direction)
+	if target < 0 {
+		return false
+	}
+	form := &state.snippets
+	form.list[index], form.list[target] = form.list[target], form.list[index]
+	form.selected = target
+	form.sort = components.TableSortState{}
+	form.resetSnippetPreview()
+	state.refreshSnippets()
+	state.save()
+	return true
+}
+
+func (state *State) moveSnippetTo(source, target int) bool {
+	form := &state.snippets
+	if source < 0 || target < 0 || source >= len(form.list) || target >= len(form.list) || source == target ||
+		form.sort.Direction != components.TableSortNone || !form.filter.all() {
+		return false
+	}
+	entry := form.list[source]
+	if source < target {
+		copy(form.list[source:target], form.list[source+1:target+1])
+	} else {
+		copy(form.list[target+1:source+1], form.list[target:source])
+	}
+	form.list[target] = entry
+	form.selected = target
+	form.resetSnippetPreview()
+	state.refreshSnippets()
+	state.save()
+	return true
+}
+
+func (state *State) snippetReorderPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	form := &state.snippets
+	if state.activeSection != sectionSnippets || state.modal != modalNone || form.sort.Direction != components.TableSortNone || !form.filter.all() {
+		form.grid.Cancel()
+		return gfx.EventResult{}, false
+	}
+	move, result := form.grid.Pointer(event)
+	if move.Valid() && move.ID.Scope() == hitSnippetHandles && move.Target.Scope() == hitSnippetHandles {
+		if state.moveSnippetTo(item(move.ID), item(move.Target)) {
+			result.Focus = hitSnippetHandles.At(item(move.Target))
+		}
+	}
+	return result, result.Handled
+}
+
+func (state *State) snippetReorderKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	form := &state.snippets
+	if state.activeSection != sectionSnippets || state.modal != modalNone || form.sort.Direction != components.TableSortNone || !form.filter.all() {
+		return gfx.EventResult{}, false
+	}
+	move, result := form.grid.Key(event)
+	if move.Valid() && move.ID.Scope() == hitSnippetHandles && move.Target.Scope() == hitSnippetHandles {
+		if state.moveSnippetTo(item(move.ID), item(move.Target)) {
+			result.Focus = hitSnippetHandles.At(item(move.Target))
+		}
+	}
+	return result, result.Handled
 }
 
 // sendSnippet types a snippet into the active terminal, and into the other panes
 // of its tab while the tab is broadcasting.
-func (state *State) sendSnippet(index int) {
-	m := state.messages.Tools
-	if index < 0 || index >= len(state.snippets.list) {
-		return
-	}
-	entry := state.snippets.list[index]
+func (state *State) sendSnippet(index int) bool {
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || session.term == nil {
-		state.status = m.StatusSnippetNoTerminal
-		return
+		state.showActionWarning(state.messages.Tools.SnippetsTitle, state.messages.Tools.StatusSnippetNoTerminal)
+		return false
 	}
-	input := make([]byte, 0, len(entry.Command)+1)
-	input = append(input, entry.Command...)
+	return state.sendSnippetTo(index, session)
+}
+
+// sendResolvedSnippet types command into session, and into the other panes of its tab
+// while the tab is broadcasting.
+func (state *State) sendResolvedSnippet(entry snippet, command string, session *Session) bool {
+	m := state.messages.Tools
+	input := term.EncodePaste(command, session.term.screen.Modes().BracketedPaste && strings.Contains(command, "\n"))
 	if entry.Run {
 		input = append(input, '\r')
 	}
 	if !state.typed(session, input) {
-		state.status = m.StatusSnippetNotConnected
-		return
+		state.showActionWarning(m.SnippetsTitle, m.StatusSnippetNotConnected)
+		return false
 	}
-	state.status = fmt.Sprintf(m.StatusSnippetSentFmt, entry.Name)
+	state.status = fmt.Sprintf(m.StatusSnippetSentFmt, entry.Name, session.Title)
+	return true
 }
 
-func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
-	m, theme := state.messages.Tools, state.Theme()
+// sendSnippetTo types a snippet into session, and into the other panes of its tab
+// while the tab is broadcasting. If dynamic variables are present, it opens the
+// variable input dialog instead.
+func (state *State) sendSnippetTo(index int, session *Session) bool {
+	if index < 0 || index >= len(state.snippets.list) {
+		return false
+	}
+	entry := state.snippets.list[index]
+	if snippetHasVariables(entry.Command) {
+		state.openSnippetVariablesDialog(index, session.ID, false)
+		return true
+	}
+	return state.sendResolvedSnippet(entry, entry.Command, session)
+}
+
+// sendSnippetFromPage sends a snippet picked on the Snippets page. The page has
+// no terminal of its own, so with one terminal open that is the target; with
+// several, the menu of terminals opens at `at` and the user says which. The
+// terminal it went to is shown; when nothing can be sent the page stays, with the
+// reason in a global notice.
+func (state *State) sendSnippetFromPage(index int, at gfx.Point) {
+	if index < 0 || index >= len(state.snippets.list) {
+		return
+	}
+	var only *Session
+	terminals := 0
+	for i := range state.sessions {
+		if state.sessions[i].term != nil {
+			only = &state.sessions[i]
+			terminals++
+		}
+	}
+	switch {
+	case terminals == 0:
+		state.showActionWarning(state.messages.Tools.SnippetsTitle, state.messages.Tools.StatusSnippetNoTerminal)
+	case terminals == 1:
+		state.sendSnippetPicked(index, only)
+	default:
+		state.snippetMenu = snippetMenu{open: true, pick: true, index: index, at: at}
+	}
+}
+
+// sendSnippetPicked sends to session and shows its terminal.
+func (state *State) sendSnippetPicked(index int, session *Session) {
+	if index < 0 || index >= len(state.snippets.list) {
+		return
+	}
+	entry := state.snippets.list[index]
+	if snippetHasVariables(entry.Command) {
+		state.openSnippetVariablesDialog(index, session.ID, true)
+		return
+	}
+	if state.sendResolvedSnippet(entry, entry.Command, session) {
+		state.ActivatePane(session.ID)
+		state.activeSection = sectionTerminal
+	}
+}
+
+// sendSnippetOn is called while painting a snippet row: when this paint is the
+// event pass of a double click on it, the snippet is sent. Consuming the press
+// keeps its release from clicking whatever the terminal put under the pointer.
+func (state *State) sendSnippetOn(canvas *gfx.Canvas, id gfx.ID, index int) {
+	event, ok := canvas.PointerOn(id)
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonPrimary || event.ClickCount != 2 || state.modal != modalNone || state.activeSection != sectionSnippets {
+		return
+	}
+	state.snippets.selected = index
+	state.sendSnippetFromPage(index, gfx.Point{X: event.X, Y: event.Y})
+	canvas.Consume()
+}
+
+// declareSnippetDeleteDialog asks before the page deletes a snippet.
+func (state *State) declareSnippetDeleteDialog(c ui.C) {
+	m, form := state.messages.Tools, &state.snippets
+	name := ""
+	if form.deleting > 0 && form.deleting <= len(form.list) {
+		name = form.list[form.deleting-1].Name
+	}
+	description := fmt.Sprintf(m.SnippetDeleteBodyFmt, name)
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, 0)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.SnippetDeleteTitle, Description: description,
+		Width: 480, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitSnippetDeleteDismiss, CloseID: hitSnippetDeleteClose,
+		InitialFocusID: hitSnippetDeleteCancel,
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitSnippetDeleteCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitSnippetDeleteConfirm, Label: m.SnippetDeleteConfirm, Variant: components.ButtonDestructive},
+		)
+	})
+}
+
+// declareSnippetDialog declares the snippet editor as a dialog of the workbench
+// page.
+func (state *State) declareSnippetDialog(c ui.C) {
+	m := state.messages.Tools
 	form := &state.snippets
 	title := m.SnippetDialogAddTitle
 	if form.editing >= 0 {
 		title = m.SnippetDialogEditTitle
 	}
-	dialog := components.BeginDialog(canvas, theme, viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitSnippetDismiss, CloseID: hitSnippetClose, InitialFocusID: hitSnippetName,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: withError(170, form.dialogError), // two fields and a box
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, "", withError(350, form.dialogError))
+	// No scrim dismiss: a press beside the form must not discard its input.
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Width: 560, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, CloseID: hitSnippetClose, InitialFocusID: hitSnippetName,
 	})
-	layout := dialog.Begin(title, "")
+	dialog.Body(func() { state.declareSnippetDialogBody(c) })
+	dialog.Footer(func() {
+		if dialogButton(c, state.messages.Cancel, components.ButtonSecondary, false).Clicked() {
+			c.After(func() { state.clickSnippetDialog(hitSnippetCancel) })
+		}
+		if dialogButton(c, m.SnippetSave, components.ButtonDefault, false).Clicked() {
+			c.After(func() { state.clickSnippetDialog(hitSnippetSubmit) })
+		}
+	})
+}
+
+// declareSnippetDialogBody lays out the snippet editor: name, command, group,
+// the run box and the shortcut row, and paints the fields into their slots.
+func (state *State) declareSnippetDialogBody(c ui.C) {
+	form, m := &state.snippets, state.messages.Tools
+	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
+	column.Children(func() {
+		form.dialogFields[0] = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		form.dialogFields[1] = ui.Slot(c).Height(140).MarginSides(0, 0, 6, 0)
+		form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
+		form.dialogRun = state.declareDialogCheckboxC(c, m.SnippetRun, 7, 0)
+		ui.Row(c).Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
+			ui.Text(c, m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
+			form.dialogShortcut = ui.Slot(c).Size(240, 32).Shrink(0)
+		})
+		if form.dialogError != "" {
+			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+		}
+	})
+	column.DrawOver(func(d *ui.DrawContext) { state.paintSnippetDialogFields(d.Canvas) })
+}
+
+// paintSnippetDialogFields paints the snippet editor's controls into the slots
+// the body laid out.
+func (state *State) paintSnippetDialogFields(canvas *gfx.Canvas) {
+	m, theme := state.messages.Tools, state.Theme()
+	form := &state.snippets
 	entries := [...]struct {
-		id          ui.ID
+		id          gfx.ID
 		label       string
 		placeholder string
 		value       string
@@ -183,50 +674,41 @@ func (state *State) paintSnippetDialog(canvas *ui.Canvas, viewport ui.Rect) {
 		{hitSnippetName, m.SnippetName, m.SnippetNamePlaceholder, form.name.String()},
 		{hitSnippetCommand, m.SnippetCommand, m.SnippetCommandPlaceholder, form.command.String()},
 	}
-	var fields [len(entries)]flex.Box
-	var run flex.Box
-	f := state.settingsRow.Begin(canvas, theme, layout.Body)
-	f.Column().Fill().PadSides(2, 4, 0, 4).Children(func() {
-		for index := range fields {
-			fields[index] = f.Slot().Height(62).MarginSides(0, 0, 6, 0)
-		}
-		run = state.declareDialogCheckbox(f, m.SnippetRun, 7, 0)
-		if form.dialogError != "" {
-			f.Text(form.dialogError).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
-		}
-	})
-	f.End()
 	for index, entry := range entries {
-		content := components.BeginField(canvas, theme, fields[index].Rect()).Paint(entry.label, "", "")
+		content := components.BeginField(canvas, theme, form.dialogFields[index].Rect()).Paint(entry.label, "", "")
 		focused := canvas.Focused() == entry.id
+		if entry.id == hitSnippetCommand {
+			selection := form.command.Selection()
+			snapshot := components.TextareaSnapshot{
+				ID: entry.id, Label: entry.label, Value: entry.value, Placeholder: entry.placeholder,
+				Focused: focused, HideEditorText: true, ShowCaret: selection.Start == selection.End,
+				Layout: &form.commandLayout, SelectionStart: aiByteOffset(entry.value, selection.Start),
+				SelectionEnd: aiByteOffset(entry.value, selection.End), Caret: aiByteOffset(entry.value, form.command.Caret()),
+			}
+			if marked, composing := form.command.Composition(); composing {
+				snapshot.CompositionStart = aiByteOffset(entry.value, marked.Start)
+				snapshot.CompositionEnd = aiByteOffset(entry.value, marked.End)
+			}
+			components.PaintTextarea(canvas, theme, content, snapshot)
+			continue
+		}
 		components.PaintInput(canvas, theme, content, components.InputSnapshot{
 			ID: entry.id, Label: entry.label, Value: entry.value, Placeholder: entry.placeholder,
 			Focused: focused, PlatformEditing: focused && entry.value != "", Invalid: form.dialogError != "",
 		})
 	}
-	state.paintDialogCheckbox(canvas, hitSnippetRun, m.SnippetRun, form.run, run)
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitSnippetCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitSnippetSubmit, Label: m.SnippetSave},
-	)
-	dialog.End()
-}
-
-// paintSnippetSettings is the Snippets group of Settings.
-func (state *State) paintSnippetSettings(page *settingsPage) {
-	m := state.messages.Tools
-	list := state.snippets.list
-	page.group(m.SnippetsGroup, func() {
-		for index, entry := range list {
-			command := entry.Command
-			if entry.Run {
-				command = "⏎ " + command
-			}
-			page.actionRow(entry.Name, command, false,
-				components.ButtonAction{ID: hitSnippetEditList.At(index), Label: m.SnippetEdit, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitSnippetDeleteList.At(index), Label: m.SnippetDelete, Variant: components.ButtonOutline})
-		}
-		page.actionRow(m.SnippetsRow, m.SnippetsDescription, len(list) >= maxSnippets,
-			components.ButtonAction{ID: hitSettingsSnippetAdd, Label: m.SnippetAdd, Variant: components.ButtonOutline})
-	})
+	state.paintSnippetGroupField(canvas, form.dialogGroup.Rect())
+	state.paintDialogCheckbox(canvas, hitSnippetRun, m.SnippetRun, form.run, form.dialogRun)
+	label := m.SnippetShortcutNone
+	switch {
+	case form.capturing:
+		label = m.SnippetShortcutRecording
+	case form.shortcut.Valid():
+		label = chordLabel(form.shortcut)
+	}
+	buttons := [...]components.ButtonAction{
+		{ID: hitSnippetShortcut, Label: label, Variant: components.ButtonOutline},
+		{ID: hitSnippetShortcutOff, Label: m.SnippetShortcutClear, Variant: components.ButtonGhost, Disabled: !form.shortcut.Valid() && !form.capturing},
+	}
+	components.BeginButtonRow(canvas, theme, form.dialogShortcut.Rect()).Paint(buttons[:]...)
 }

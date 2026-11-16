@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
+	"motty/internal/sshconn"
 )
 
 type hostCatalogDocument struct {
@@ -19,9 +19,11 @@ type hostCatalogDocument struct {
 	Groups  []savedHostGroup `json:"groups,omitempty"`
 }
 
+var errHostCatalogTooNew = errors.New("unsupported catalog version")
+
 func (state *State) exportHostCatalog() {
 	hosts := state.exportedHosts()
-	if len(hosts) == 0 {
+	if len(hosts) == 0 && len(state.hostGroups) == 0 {
 		return
 	}
 	path, err := state.options.SaveFile(app.SaveFileOptions{
@@ -34,7 +36,7 @@ func (state *State) exportHostCatalog() {
 		return
 	}
 	if err != nil {
-		state.status = fmt.Sprintf(state.messages.HostCatalogExportFailedFmt, err)
+		state.showActionFailure(state.messages.ExportHosts, err, state.messages.ActionFeedback.FilePickerFailed)
 		return
 	}
 	document := hostCatalogDocument{
@@ -45,8 +47,8 @@ func (state *State) exportHostCatalog() {
 		document.Hosts = append(document.Hosts, savedHostFromHost(host))
 	}
 	for _, group := range state.hostGroups {
-		if catalogContainsGroup(hosts, group.Name) {
-			document.Groups = append(document.Groups, savedHostGroup{Name: group.Name, Collapsed: !group.Expanded})
+		if len(state.hostSelections) == 0 || catalogContainsGroup(hosts, group.Name) {
+			document.Groups = append(document.Groups, savedHostGroup{Name: group.Name, Collapsed: !group.Expanded, Explicit: group.Explicit, Pinned: group.Pinned, Order: group.Order})
 		}
 	}
 	data, err := json.MarshalIndent(document, "", "  ")
@@ -55,7 +57,7 @@ func (state *State) exportHostCatalog() {
 		err = writePrivateAtomic(path, data)
 	}
 	if err != nil {
-		state.status = fmt.Sprintf(state.messages.HostCatalogExportFailedFmt, err)
+		state.showFileSaveFailure(state.messages.ExportHosts, err)
 		return
 	}
 	state.status = fmt.Sprintf(state.messages.HostCatalogExportedFmt, len(document.Hosts), path)
@@ -77,7 +79,7 @@ func (state *State) exportedHosts() []Host {
 func savedHostFromHost(host Host) savedHost {
 	return savedHost{
 		ID: host.CatalogID, Label: host.Label, Group: host.Group,
-		Tags: splitHostTags(host), Icon: host.Icon.String(),
+		Tags: splitHostTags(host), Icon: host.Icon.String(), Color: host.Color,
 		Address: host.Address, User: host.User, Port: host.Port, System: host.System.String(),
 		savedTransport: host.transport(),
 	}
@@ -85,7 +87,7 @@ func savedHostFromHost(host Host) savedHost {
 
 func catalogContainsGroup(hosts []Host, name string) bool {
 	for _, host := range hosts {
-		if strings.TrimSpace(host.Group) == name {
+		if hostGroupWithin(strings.TrimSpace(host.Group), name) {
 			return true
 		}
 	}
@@ -101,17 +103,21 @@ func (state *State) importHostCatalog() {
 		return
 	}
 	if err != nil {
-		state.status = fmt.Sprintf(state.messages.HostCatalogImportFailedFmt, err)
+		state.showActionFailure(state.messages.HostCatalogPickerTitle, err, state.messages.ActionFeedback.FilePickerFailed)
 		return
 	}
 	document, err := readHostCatalog(paths[0])
 	if err != nil {
-		state.status = fmt.Sprintf(state.messages.HostCatalogImportFailedFmt, err)
+		detail := state.messages.ActionFeedback.ImportHostCatalogFailed
+		if errors.Is(err, errHostCatalogTooNew) {
+			detail = state.messages.ActionFeedback.ImportUpdateRequired
+		}
+		state.showFileReadFailure(state.messages.HostCatalogPickerTitle, err, detail)
 		return
 	}
 	added, duplicates := state.applyHostCatalog(document)
 	state.status = fmt.Sprintf(state.messages.HostCatalogImportedFmt, added, duplicates)
-	if added > 0 {
+	if added > 0 || len(document.Groups) > 0 {
 		state.save()
 	}
 }
@@ -128,7 +134,10 @@ func readHostCatalog(path string) (hostCatalogDocument, error) {
 	if document.Format != hostCatalogFormat {
 		return hostCatalogDocument{}, fmt.Errorf("unsupported format %q", document.Format)
 	}
-	if document.Version != hostCatalogSchemaVersion {
+	if document.Version > hostCatalogSchemaVersion {
+		return hostCatalogDocument{}, fmt.Errorf("%w %d", errHostCatalogTooNew, document.Version)
+	}
+	if document.Version < 1 {
 		return hostCatalogDocument{}, fmt.Errorf("unsupported catalog version %d", document.Version)
 	}
 	return document, nil
@@ -142,9 +151,11 @@ func (state *State) applyHostCatalog(document hostCatalogDocument) (added, dupli
 		}
 	}
 	for _, group := range document.Groups {
-		name := strings.TrimSpace(group.Name)
-		if state.hostGroupIndex(name) < 0 {
-			state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: !group.Collapsed})
+		name := normalizeHostGroupPath(group.Name)
+		if index := state.hostGroupIndex(name); index >= 0 {
+			state.hostGroups[index].Explicit = state.hostGroups[index].Explicit || group.Explicit
+		} else {
+			state.hostGroups = append(state.hostGroups, hostGroup{Name: name, Expanded: !group.Collapsed, Explicit: group.Explicit, Pinned: group.Pinned, Order: max(0, group.Order)})
 		}
 	}
 	for _, entry := range document.Hosts {
@@ -152,7 +163,7 @@ func (state *State) applyHostCatalog(document hostCatalogDocument) (added, dupli
 		if !ok {
 			continue
 		}
-		if state.hostIndexByEndpoint(host) >= 0 {
+		if state.hostIndexSame(host) >= 0 {
 			duplicates++
 			continue
 		}
@@ -163,7 +174,7 @@ func (state *State) applyHostCatalog(document hostCatalogDocument) (added, dupli
 		state.selectedHostID = host.ID
 		added++
 	}
-	if added > 0 {
+	if added > 0 || len(document.Groups) > 0 {
 		state.hostDataChanged()
 	}
 	return added, duplicates
@@ -181,11 +192,13 @@ func (state *State) hostFromCatalogEntry(entry savedHost) (Host, bool) {
 		return Host{}, false
 	}
 	icon, iconOK := parseHostIcon(entry.Icon)
+	color, colorOK := normalizeHostColor(entry.Color)
 	tags, tagsOK := normalizeHostTags(entry.Tags)
-	if !iconOK || !tagsOK {
+	if !iconOK || !tagsOK || !colorOK {
 		return Host{}, false
 	}
 	host.CatalogID, host.Label, host.Group, host.Icon = entry.ID, entry.Label, strings.TrimSpace(entry.Group), icon
+	host.Color = color
 	host.Address, host.User, host.Port, host.System = entry.Address, entry.User, entry.Port, sshconn.ParseRemoteSystem(entry.System)
 	host.normalizeEndpoint()
 	setHostTags(&host, tags)

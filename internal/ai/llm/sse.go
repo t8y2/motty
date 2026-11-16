@@ -169,14 +169,21 @@ func (b *base) pump(ctx context.Context, body io.ReadCloser, h sseHandler) <-cha
 		defer close(ch)
 		defer body.Close()
 		em := &emitter{ctx: ctx, ch: ch}
-		if err := consume(body, b.max, h, em); err != nil && ctx.Err() == nil {
-			_ = em.send(Event{Kind: EventError, Err: b.scrubErr(err)})
+		watch := newStallWatch(b.idle, func() { _ = body.Close() })
+		defer watch.stop()
+		err := consume(body, b.max, h, em, watch)
+		if err == nil || ctx.Err() != nil {
+			return
 		}
+		if watch.fired() {
+			err = watch.err()
+		}
+		_ = em.send(Event{Kind: EventError, Err: b.scrubErr(err)})
 	}()
 	return ch
 }
 
-func consume(body io.Reader, max int64, h sseHandler, em *emitter) error {
+func consume(body io.Reader, max int64, h sseHandler, em *emitter, watch *stallWatch) error {
 	r := &limitReader{r: body, left: max}
 	p := newSSEParser(maxLineBytes)
 	done := false
@@ -192,6 +199,9 @@ func consume(body io.Reader, max int64, h sseHandler, em *emitter) error {
 	for !done {
 		n, err := r.Read(buf)
 		if n > 0 {
+			if watch != nil {
+				watch.touch()
+			}
 			if perr := p.Write(buf[:n], emit); perr != nil {
 				return perr
 			}

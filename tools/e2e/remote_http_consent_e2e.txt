@@ -1,0 +1,24 @@
+# Use an isolated MOTTY_DATA_DIR and MOTTY_LANG=en with a vivahead build.
+# Check the remote-HTTP error and checkbox through the real form/input path.
+# No remote connection is made: the checked draft is canceled before saving.
+
+click "Settings"
+click "Backup & sync"
+click "WebDAV"
+type http://backup.lan/dav
+key tab
+type alice
+key tab
+type test-server-password
+key tab
+type motty/backup.mottybak
+key tab
+type test-backup-password
+click "Save"
+waitfor "Use HTTPS"
+click "Allow insecure remote HTTP"
+key space
+key space
+click "Cancel"
+click "WebDAV"
+waitfor "Allow insecure remote HTTP"

@@ -125,7 +125,7 @@ func BenchmarkOpenAIStream1MiB(b *testing.B) {
 			}
 		}()
 		em := &emitter{ctx: bg, ch: ch}
-		if err := consume(strings.NewReader(data), 1<<30, &oaHandler{}, em); err != nil {
+		if err := consume(strings.NewReader(data), 1<<30, &oaHandler{}, em, nil); err != nil {
 			b.Fatal(err)
 		}
 		close(ch)

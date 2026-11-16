@@ -18,7 +18,8 @@ func TestFirstRunFollowsTheSystemLanguage(t *testing.T) {
 		want      i18n.Language
 	}{
 		{"simplified Chinese", []string{"zh-Hans-CN", "en-US"}, i18n.Chinese},
-		{"traditional Chinese uses the Chinese catalog", []string{"zh-TW"}, i18n.Chinese},
+		{"traditional Chinese uses its own catalog", []string{"zh-TW"}, i18n.TraditionalChinese},
+		{"traditional script", []string{"zh-Hant-HK", "en-US"}, i18n.TraditionalChinese},
 		{"English first", []string{"en-GB", "zh-CN"}, i18n.English},
 		{"the first language with a catalog wins", []string{"fr-FR", "zh-CN"}, i18n.Chinese},
 		{"none with a catalog", []string{"fr-FR", "de-DE"}, i18n.English},
@@ -52,7 +53,7 @@ func TestAChosenLanguageStaysWhateverTheSystemSays(t *testing.T) {
 	options := withSystemLanguages(freshOptions(t), "zh-CN")
 	first := newTestState(t, options)
 	first.Click(hitSettings)
-	first.Click(hitSettingsLanguageEnglish) // English on a Chinese system
+	clickSettingsChoice(t, first, first.messages.SettingsLanguageEnglish) // English on a Chinese system
 	if first.language != i18n.English || !first.languageChosen {
 		t.Fatalf("language %v chosen %v", first.language, first.languageChosen)
 	}
@@ -66,7 +67,7 @@ func TestChoosingTheLanguageAlreadyShowingStillCountsAsAChoice(t *testing.T) {
 	options := withSystemLanguages(freshOptions(t), "zh-CN")
 	first := newTestState(t, options)
 	first.Click(hitSettings)
-	first.Click(hitSettingsLanguageChinese) // already Chinese, and now deliberately
+	clickSettingsChoice(t, first, first.messages.SettingsLanguageChinese) // already Chinese, and now deliberately
 	if !first.languageChosen {
 		t.Fatal("the choice was not recorded")
 	}
@@ -76,11 +77,30 @@ func TestChoosingTheLanguageAlreadyShowingStillCountsAsAChoice(t *testing.T) {
 	}
 }
 
-func TestTheLanguageButtonIsAChoiceToo(t *testing.T) {
+func TestChoosingTraditionalChineseSurvivesARestart(t *testing.T) {
 	options := withSystemLanguages(freshOptions(t), "en-US")
 	first := newTestState(t, options)
-	first.Click(hitLanguage)
-	if first.language != i18n.Chinese || !first.languageChosen {
+	first.Click(hitSettings)
+	clickSettingsChoice(t, first, first.messages.SettingsLanguageTraditionalChinese)
+	if first.language != i18n.TraditionalChinese || !first.languageChosen {
 		t.Fatalf("language %v chosen %v", first.language, first.languageChosen)
 	}
+	if first.messages.NavHosts != i18n.For(i18n.TraditionalChinese).NavHosts {
+		t.Fatal("the catalog did not follow the choice")
+	}
+	second := newTestState(t, options)
+	if second.language != i18n.TraditionalChinese || !second.languageChosen {
+		t.Fatalf("after a restart: language %v chosen %v", second.language, second.languageChosen)
+	}
+}
+
+// useChinese switches the catalog the way a user does: the window bar no longer
+// has a language button, so Settings is where the choice is made. The page the
+// caller was on is put back so the test carries on where it was.
+func useChinese(t testing.TB, state *State) {
+	t.Helper()
+	section := state.activeSection
+	state.Click(hitSettings)
+	clickSettingsChoice(t, state, state.messages.SettingsLanguageChinese)
+	state.activeSection = section
 }

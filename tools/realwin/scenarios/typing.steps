@@ -1,0 +1,9 @@
+# Type a line one key at a time, as a person does, then clear it.
+# Needs a focused local terminal sitting at a prompt.
+focus
+sleep 500
+mark typing-begin
+type abcdefghijklmnopqrst
+mark typing-end
+keys ^u
+sleep 500

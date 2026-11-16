@@ -61,11 +61,20 @@ func TestOSC99ChunksComeTogetherAndASingleBodyIsTheMessage(t *testing.T) {
 }
 
 func TestNotificationsSurviveBeingSplitAcrossWrites(t *testing.T) {
-	sequence := "\x1b]777;notify;Title;Body text\x07"
-	for cut := 1; cut < len(sequence); cut++ {
-		got := notifications(t, sequence[:cut], sequence[cut:])
-		if len(got) != 1 || got[0] != (Notification{Title: "Title", Body: "Body text"}) {
-			t.Fatalf("cut at %d: got %+v", cut, got)
+	want := Notification{Title: "✳ АМНП 😀", Body: "中文 АМНП 😀"}
+	for _, end := range []string{"\x07", "\x1b\\"} {
+		sequence := "a\x1b]777;notify;" + want.Title + ";" + want.Body + end + "b"
+		for cut := 0; cut <= len(sequence); cut++ {
+			screen := newTerm(40, 3)
+			var got []Notification
+			screen.SetNotify(func(n Notification) { got = append(got, n) })
+			feed(screen, sequence[:cut])
+			feed(screen, sequence[cut:])
+			if len(got) != 1 || got[0] != want {
+				t.Fatalf("end %x cut %d: got %+v, want %+v", end, cut, got, want)
+			}
+			expectText(t, screen, "ab")
+			expectCursor(t, screen, 2, 0)
 		}
 	}
 }

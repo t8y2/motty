@@ -1,0 +1,45 @@
+# End to end: dragging files from the system onto an SSH terminal uploads them
+# into the folder its shell is in. Needs the e2esshd fixture, which shares this
+# machine's file system, so the upload can be read back with `ls -l`.
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd-drop .)
+#   go build -tags vivahead,dev -o /tmp/motty-head-drop ./cmd/motty
+#   /tmp/e2esshd-drop 2261 &
+#   rm -rf /tmp/drop-dest && echo dropped > /tmp/drop-me.txt
+#   MOTTY_LANG=en MOTTY_HEAD=/tmp/motty-head-drop \
+#     python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/terminal_drop_upload_e2e.txt
+#
+# What to look for: the hover reports ok accepted, the screenshot taken while
+# hovering shows "Drop here to upload to /tmp/drop-dest", and after the drop
+# `ls -l` lists drop-me.txt (8 bytes) in that folder, and a toast says
+# "Uploaded 1 items to /tmp/drop-dest" (the screenshot /tmp/terminal-drop-notice.png).
+
+click "Search"
+type tester@127.0.0.1:2261
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+type mkdir -p /tmp/drop-dest && cd /tmp/drop-dest
+key enter
+waitfor "drop-dest" 5000
+# The fixture's bash 3.2 has no folder reporting of its own, so report it as a
+# prompt hook would.
+type printf '\033]7;file://localhost/tmp/drop-dest\007'
+key enter
+settle 800
+
+dragover 400 300 /tmp/drop-me.txt
+settle 300
+shot /tmp/terminal-drop-hover.png
+drop 400 300 /tmp/drop-me.txt
+waitfor "Uploaded 1 items" 5000
+shot /tmp/terminal-drop-notice.png
+type ls -l
+key enter
+waitfor "drop-me.txt" 8000
+texts
+shot /tmp/terminal-drop-done.png

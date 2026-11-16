@@ -1,11 +1,13 @@
 package sftpclient
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -66,19 +68,20 @@ func TestAccountFilesParseToNames(t *testing.T) {
 }
 
 func TestSymbolicLinksAreCreatedAndResolved(t *testing.T) {
+	requireSymlinkSupport(t)
 	worker, root := newProtocolWorker(t)
 	os.Mkdir(filepath.Join(root, "real"), 0o755)
 	os.WriteFile(filepath.Join(root, "file.txt"), []byte("x"), 0o644)
-	if result := requireQueuedResult(t, worker.Symlink(filepath.Join(root, "to-dir"), "real"), worker, OperationSymlink); result.Err != nil {
-		t.Skipf("the server or system cannot make links: %v", result.Err)
+	if result := requireQueuedResult(t, worker.Symlink("to-dir", "real"), worker, OperationSymlink); result.Err != nil {
+		t.Fatal(result.Err)
 	}
-	requireQueuedResult(t, worker.Symlink(filepath.Join(root, "to-file"), "file.txt"), worker, OperationSymlink)
-	requireQueuedResult(t, worker.Symlink(filepath.Join(root, "dangling"), "nowhere"), worker, OperationSymlink)
+	requireQueuedResult(t, worker.Symlink("to-file", "file.txt"), worker, OperationSymlink)
+	requireQueuedResult(t, worker.Symlink("dangling", "nowhere"), worker, OperationSymlink)
 	if target, err := os.Readlink(filepath.Join(root, "to-dir")); err != nil || !strings.HasSuffix(target, "real") {
 		t.Fatalf("link target = %q, %v", target, err)
 	}
 
-	entries := listAll(t, worker, root)
+	entries := listAll(t, worker, ".")
 	dir := entryNamed(t, entries, "to-dir")
 	if !dir.IsLink() || !dir.LinkDir || !dir.IsDir() || !strings.HasSuffix(dir.LinkTarget, "real") || dir.LinkBroken {
 		t.Fatalf("link to a folder = %+v", dir)
@@ -178,14 +181,15 @@ func TestSkippingExistingFilesMergesFoldersWithoutOverwriting(t *testing.T) {
 }
 
 func TestAListingArrivesBeforeItsLinksResolve(t *testing.T) {
+	requireSymlinkSupport(t)
 	worker, root := newProtocolWorker(t)
 	os.Mkdir(filepath.Join(root, "real"), 0o755)
 	os.WriteFile(filepath.Join(root, "file.txt"), []byte("x"), 0o644)
-	if result := requireQueuedResult(t, worker.Symlink(filepath.Join(root, "to-dir"), "real"), worker, OperationSymlink); result.Err != nil {
-		t.Skipf("the server or system cannot make links: %v", result.Err)
+	if result := requireQueuedResult(t, worker.Symlink("to-dir", "real"), worker, OperationSymlink); result.Err != nil {
+		t.Fatal(result.Err)
 	}
 
-	if !worker.List(root) {
+	if !worker.List(".") {
 		t.Fatal("list was not queued")
 	}
 	first := waitResult(t, worker)
@@ -204,10 +208,21 @@ func TestAListingArrivesBeforeItsLinksResolve(t *testing.T) {
 	}
 }
 
+func requireSymlinkSupport(t *testing.T) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.Symlink(root, filepath.Join(root, "probe")); err != nil {
+		if runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(1314)) {
+			t.Skipf("Windows account lacks symbolic-link privilege: %v", err)
+		}
+		t.Fatal(err)
+	}
+}
+
 func TestAListingWithoutLinksHasNoFollowUp(t *testing.T) {
 	worker, root := newProtocolWorker(t)
 	os.WriteFile(filepath.Join(root, "plain.txt"), []byte("x"), 0o644)
-	result := requireQueuedResult(t, worker.List(root), worker, OperationList)
+	result := requireQueuedResult(t, worker.List("."), worker, OperationList)
 	if result.Err != nil || result.LinksPending {
 		t.Fatalf("result = %+v", result)
 	}

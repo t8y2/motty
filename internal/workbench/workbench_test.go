@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestSelectingAndConnectingHostCreatesTab(t *testing.T) {
@@ -26,8 +26,8 @@ func TestSelectingAndConnectingHostCreatesTab(t *testing.T) {
 
 func TestSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 
 	allocations := testing.AllocsPerRun(100, func() {
@@ -41,8 +41,8 @@ func TestSteadyStatePaintDoesNotAllocate(t *testing.T) {
 
 func BenchmarkPaintWorkspace(b *testing.B) {
 	state := newTestState(b, testOptions(b))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	b.ReportAllocs()
 	for b.Loop() {
 		canvas.Reset()
@@ -64,8 +64,8 @@ func TestHostDialogValidationAndSubmit(t *testing.T) {
 		t.Fatalf("empty form submitted: open=%v error=%q", (state.modal == modalNewHost), state.dialogError)
 	}
 
-	// Duplicate address must not submit.
-	typeInto(state, hitDialogLabel, "Edge")
+	// The same destination under the same name must not submit.
+	typeInto(state, hitDialogLabel, "Production")
 	typeInto(state, hitDialogAddress, "prod.example.com")
 	typeInto(state, hitDialogUser, "deploy")
 	state.Click(hitDialogSubmit)
@@ -74,6 +74,8 @@ func TestHostDialogValidationAndSubmit(t *testing.T) {
 	}
 
 	// A valid form appends the host and closes.
+	state.editor.label.SetSelection(text.Range{Start: 0, End: len("Production")})
+	typeInto(state, hitDialogLabel, "Edge")
 	state.editor.address.SetSelection(text.Range{Start: 0, End: len("prod.example.com")})
 	typeInto(state, hitDialogAddress, "edge.example.com")
 	state.editor.user.SetSelection(text.Range{Start: 0, End: len("deploy")})
@@ -104,7 +106,7 @@ func TestLanguageSwitchRetargetsCatalog(t *testing.T) {
 	if state.messages.ColumnName != "NAME" {
 		t.Fatalf("default language = %q", state.messages.ColumnName)
 	}
-	state.Click(hitLanguage)
+	useChinese(t, state)
 	if state.messages.ColumnName != "名称" {
 		t.Fatalf("after switch = %q", state.messages.ColumnName)
 	}
@@ -116,22 +118,57 @@ func TestLanguageSwitchRetargetsCatalog(t *testing.T) {
 	}
 }
 
+func TestHostDialogValidationRequiresLabelAndAddress(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	useChinese(t, state)
+
+	state.Click(hitAddHost)
+	state.Click(hitDialogSubmit)
+	if state.dialogError != state.messages.ErrLabelRequired {
+		t.Fatalf("empty label error = %q, want %q", state.dialogError, state.messages.ErrLabelRequired)
+	}
+
+	typeInto(state, hitDialogLabel, "qa-test")
+	state.Click(hitDialogSubmit)
+	if state.dialogError != state.messages.ErrAddressRequired {
+		t.Fatalf("empty address error = %q, want %q", state.dialogError, state.messages.ErrAddressRequired)
+	}
+
+	typeInto(state, hitDialogAddress, "192.168.1.100")
+	state.Click(hitDialogSubmit)
+	if state.dialogError != "" {
+		t.Fatalf("valid form error = %q, want empty", state.dialogError)
+	}
+}
+
+func TestHostEditorAsksForADeviceWhenSerialIsSelected(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	editor := &state.editor
+	editor.reset()
+	editor.setProtocol(protocolSerial)
+	editor.label.Insert("serial")
+	editor.address = text.Editor{} // the form may have offered the first local device
+	if got := editor.validate(nil, 0, state.messages); got != state.messages.ErrDeviceRequired {
+		t.Fatalf("empty serial device error = %q, want %q", got, state.messages.ErrDeviceRequired)
+	}
+}
+
 // typeInto delivers text the way the runtime does: it asks which editor backs
 // the focused hit, then applies a native insert event to it.
-func typeInto(state *State, hit ui.ID, value string) {
+func typeInto(state *State, hit gfx.ID, value string) {
 	app.TextEvent{Kind: app.TextInsert, Text: value}.Apply(state.EditorFor(hit))
 }
 
 func TestHostDialogDeclaresInitialFocusAndFieldEditors(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 
 	state.Paint(&canvas, size)
 	if !canvas.TrappedFocusScope().IsZero() || !canvas.InitialFocus().IsZero() {
 		t.Fatal("closed dialog must not trap focus")
 	}
-	for _, hit := range []ui.ID{hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogGroup, hitDialogPort} {
+	for _, hit := range []gfx.ID{hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogGroup, hitDialogPort} {
 		if state.EditorFor(hit) != nil {
 			t.Fatalf("hit %d has an editor while the dialog is closed", hit)
 		}
@@ -145,7 +182,7 @@ func TestHostDialogDeclaresInitialFocusAndFieldEditors(t *testing.T) {
 			canvas.TrappedFocusScope(), canvas.InitialFocus(), dialogScope, hitDialogLabel)
 	}
 	seen := map[*text.Editor]bool{}
-	for _, hit := range []ui.ID{hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogGroup, hitDialogPort} {
+	for _, hit := range []gfx.ID{hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogGroup, hitDialogPort} {
 		editor := state.EditorFor(hit)
 		if editor == nil || seen[editor] {
 			t.Fatalf("hit %d editor = %p (nil or shared)", hit, editor)

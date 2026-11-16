@@ -207,6 +207,54 @@ func TestHTTPConnectConfigurationDoesNotNeedDestination(t *testing.T) {
 	forward.Close()
 }
 
+func TestForwardRejectsStreamsBeyondItsLimit(t *testing.T) {
+	dialed := make(chan struct{})
+	release := make(chan struct{})
+	forward, err := Start(Config{
+		ListenAddress: "127.0.0.1:0",
+		Destination:   "example.invalid:80",
+		MaxStreams:    1,
+		Dial: func(context.Context, string, string) (net.Conn, error) {
+			close(dialed)
+			<-release
+			near, far := net.Pipe()
+			go func() {
+				defer far.Close()
+				_, _ = io.Copy(io.Discard, far)
+			}()
+			return near, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		close(release)
+		forward.Close()
+	}()
+
+	first, err := net.Dial("tcp", forward.Status().ListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	<-dialed
+
+	second, err := net.Dial("tcp", forward.Status().ListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	_ = second.SetReadDeadline(time.Now().Add(time.Second))
+	var buffer [1]byte
+	if _, err := second.Read(buffer[:]); err == nil {
+		t.Fatal("a stream beyond the limit stayed open")
+	}
+	if status := forward.Status(); status.Active != 1 || status.Accepted != 1 {
+		t.Fatalf("limited status = %+v", status)
+	}
+}
+
 func TestCloseCancelsRemoteDial(t *testing.T) {
 	started := make(chan struct{})
 	forward, err := Start(Config{
@@ -402,4 +450,73 @@ func TestCloseAsyncFreesThePortWithoutWaitingForStuckStreams(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the forward never finished closing once its stream let go")
 	}
+}
+
+type delayedCloseListener struct {
+	net.Listener
+	release <-chan struct{}
+}
+
+func (listener *delayedCloseListener) Close() error {
+	<-listener.release
+	return listener.Listener.Close()
+}
+
+func TestRemoteCloseAsyncDoesNotWaitForTheServer(t *testing.T) {
+	release := make(chan struct{})
+	opened := make(chan struct{})
+	destinationClosed := make(chan struct{})
+	forward, err := Start(Config{
+		Mode: ModeRemote, ListenAddress: "127.0.0.1:0", Destination: "127.0.0.1:7897",
+		Listen: func(network, address string) (net.Listener, error) {
+			listener, err := net.Listen(network, address)
+			if err != nil {
+				return nil, err
+			}
+			return &delayedCloseListener{Listener: listener, release: release}, nil
+		},
+		Dial: func(context.Context, string, string) (net.Conn, error) {
+			near, far := net.Pipe()
+			t.Cleanup(func() { _ = far.Close() })
+			go func() {
+				_, _ = far.Read(make([]byte, 1))
+				close(destinationClosed)
+			}()
+			close(opened)
+			return near, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := net.Dial("tcp", forward.Status().ListenAddress)
+	if err != nil {
+		close(release)
+		forward.Close()
+		t.Fatal(err)
+	}
+	defer client.Close()
+	<-opened
+	returned := make(chan struct{})
+	go func() {
+		forward.CloseAsync()
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(200 * time.Millisecond):
+		close(release)
+		<-returned
+		forward.Close()
+		t.Fatal("closing a remote forward waited for the server")
+	}
+	select {
+	case <-destinationClosed:
+	case <-time.After(200 * time.Millisecond):
+		close(release)
+		forward.Close()
+		t.Fatal("an existing proxy stream stayed open while the server delayed cancellation")
+	}
+	close(release)
+	forward.Close()
 }

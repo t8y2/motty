@@ -4,11 +4,11 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 	"motty/internal/ai/store"
 	"motty/internal/i18n"
 	"motty/internal/workbench/icons"
-	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 // aiPreset is a provider the add dialog can fill in: its name, which API it
@@ -16,7 +16,7 @@ import (
 // nothing.
 type aiPreset struct {
 	label string
-	icon  ui.Icon
+	icon  gfx.Icon
 	kind  string
 	url   string
 	// urlZH is the address for the Chinese interface when the vendor runs a
@@ -34,6 +34,11 @@ var aiPresets = [...]aiPreset{
 	{label: "Zhipu", icon: icons.AiZai, kind: store.KindOpenAI, url: "https://api.z.ai/api/paas/v4", urlZH: "https://open.bigmodel.cn/api/paas/v4"},
 	{label: "MiniMax", icon: icons.AiMinimax, kind: store.KindOpenAI, url: "https://api.minimax.io/v1", urlZH: "https://api.minimaxi.com/v1"},
 	{label: "Ollama", icon: icons.AiOllama, kind: store.KindOpenAI, url: "http://localhost:11434/v1"},
+	{label: "Claude Code CLI", icon: icons.AiClaude, kind: store.KindClaudeCLI},
+	{label: "Codex CLI", icon: icons.AiOpenai, kind: store.KindCodexCLI},
+	{label: "OpenCode CLI", icon: icons.Terminal, kind: store.KindOpenCodeCLI},
+	{label: "Pi CLI", icon: icons.Bot, kind: store.KindPiCLI},
+	{label: "Qoder CLI", icon: icons.Terminal, kind: store.KindQoderCLI},
 	{icon: icons.Plug, kind: store.KindOpenAI}, // custom
 }
 
@@ -69,7 +74,20 @@ func (state *State) aiChoosePreset(index int) {
 	}
 	cfg.baseURL.SetSelection(text.Range{Start: 0, End: cfg.baseURL.RuneCount()})
 	cfg.baseURL.Insert(preset.address(state.language))
+	cfg.modelsURL.SetSelection(text.Range{Start: 0, End: cfg.modelsURL.RuneCount()})
+	cfg.modelsURL.Insert("")
+	if store.IsCLIKind(preset.kind) {
+		if cfg.preset != index {
+			// A path belongs to one CLI executable, not to the preset slot.
+			cfg.cliPath = text.Editor{}
+			cfg.cliPath.Restrict(printableLine, 4096)
+			cfg.cliAutoPath, cfg.cliPathMissing = "", false
+		}
+		cfg.apiKey = text.Editor{}
+		cfg.hadKey = false
+	}
 	cfg.kind, cfg.preset, cfg.presetOpen = preset.kind, index, false
+	state.aiDiscoverCLIPath()
 }
 
 // aiPresetName is the name a preset gives a provider: none for the custom one.
@@ -85,6 +103,14 @@ func (state *State) aiPresetName(index int) string {
 // the name is the user's to change, so the address decides: a preset's host, in
 // either of its regions. No address is the official one of the provider's kind.
 func aiPresetOf(provider store.Provider) int {
+	if store.IsCLIKind(provider.Kind) {
+		for index, preset := range aiPresets {
+			if preset.kind == provider.Kind {
+				return index
+			}
+		}
+		return aiPresetCustom
+	}
 	if strings.TrimSpace(provider.BaseURL) == "" {
 		if provider.Kind == store.KindAnthropic {
 			return 0
@@ -123,6 +149,6 @@ func aiHost(address string) string {
 
 // aiProviderIcon is the mark shown for a saved provider: its preset's, or the
 // gear of the custom entry.
-func aiProviderIcon(provider store.Provider) ui.Icon {
+func aiProviderIcon(provider store.Provider) gfx.Icon {
 	return aiPresets[aiPresetOf(provider)].icon
 }

@@ -13,8 +13,8 @@ import (
 const maxLineBytes = 16384
 
 var (
-	// ErrUnsupported reports a server without the Linux procfs counters the
-	// sampler requires.
+	// ErrUnsupported reports a host whose system the monitor has no command
+	// for: neither Linux procfs, macOS nor Windows.
 	ErrUnsupported = errors.New("remote stats: unsupported server")
 	// ErrMalformed reports output that does not match the bounded stats protocol.
 	ErrMalformed = errors.New("remote stats: malformed response")
@@ -32,14 +32,26 @@ type Runner interface {
 
 // Sample is one view of aggregate server resource use over the last interval.
 type Sample struct {
+	CPUUnavailable        bool
+	NetworkUnavailable    bool
+	Cores                 []Core
 	CPUPercent            float64
 	MemoryUsedBytes       uint64
 	MemoryTotalBytes      uint64
 	ReceiveBytesPerSecond uint64
 	SendBytesPerSecond    uint64
+	UptimeSeconds         float64
+	NetworkInterface      string
 	// GPUs lists the accelerators the server reported at this reading, and is
 	// empty on a server without any (or without their tools).
 	GPUs []GPU
+}
+
+// Core is a logical CPU, identified by the server (including processor groups
+// on Windows). Missing counters are omitted rather than represented as 0%.
+type Core struct {
+	ID      string
+	Percent float64
 }
 
 // counters is one line of the monitor's output: the kernel's running totals, so
@@ -60,12 +72,15 @@ type counters struct {
 // helper process per reading beyond sleep. The first reading comes at once and
 // the second after a quarter second where sleep takes fractions, so the first
 // figures appear almost immediately. It reads only Linux procfs and sums the
-// non-loopback interfaces. The loop ends when its output is closed.
+// non-loopback interfaces. The loop ends when its output is closed. Process
+// rows are bounded by what MaxGPUs cards at MaxGPUProcesses each can carry.
 const command = `# motty-stats-v2
 LC_ALL=C
 export LC_ALL
 gpu_timeout=
+gpu_proc_timeout=
 if command -v timeout >/dev/null 2>&1; then gpu_timeout='timeout 3'; fi
+if command -v timeout >/dev/null 2>&1; then gpu_proc_timeout='timeout 2'; fi
 # gpu-probe-begin
 gpu_read() {
 	v=-
@@ -74,8 +89,11 @@ gpu_read() {
 }
 gpu_probe() {
 	if command -v nvidia-smi >/dev/null 2>&1; then
-		$gpu_timeout nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,fan.speed --format=csv,noheader,nounits 2>&1 | head -n 16 | while IFS= read -r row; do
+		$gpu_timeout nvidia-smi --query-gpu=index,gpu_uuid,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed --format=csv,noheader,nounits 2>&1 | head -n 16 | while IFS= read -r row; do
 			printf 'gop-gpu-nvidia %s\n' "$row"
+		done
+		$gpu_proc_timeout nvidia-smi --query-compute-apps=gpu_uuid,pid,process_name,used_memory --format=csv,noheader,nounits 2>&1 | head -n 1024 | while IFS= read -r row; do
+			printf 'gop-gpu-nvidia-proc %s\n' "$row"
 		done
 	fi
 	amd=
@@ -113,28 +131,57 @@ if [ ! -r /proc/stat ] || [ ! -r /proc/meminfo ] || [ ! -r /proc/net/dev ] || [ 
 fi
 sample() {
 	gpu_probe
+	core_count=0
+	while read -r name cu cn cs ci cw cq csq cst _; do
+		case $name in cpu[0-9]*)
+			cb=$((cu + cn + cs + ${cq:-0} + ${csq:-0} + ${cst:-0}))
+			ct=$((cb + ci + ${cw:-0}))
+			printf 'gop-core %s %s %s\n' "${name#cpu}" "$cb" "$ct"
+			core_count=$((core_count + 1))
+			[ "$core_count" -ge 256 ] && break
+		;; esac
+	done </proc/stat
 	read -r _ u n s i w q sq st _ </proc/stat
 	busy=$((u + n + s + ${q:-0} + ${sq:-0} + ${st:-0}))
 	total=$((busy + i + ${w:-0}))
 	rx=0
 	tx=0
+	primary=
+	if [ -r /proc/net/route ]; then
+		while read -r device destination _; do
+			if [ "$destination" = 00000000 ]; then primary=$device; break; fi
+		done </proc/net/route
+	fi
 	while IFS=': ' read -r name r _ _ _ _ _ _ _ t _; do
 		case $name in lo | '') continue ;; esac
+		if [ -n "$primary" ] && [ "$name" != "$primary" ]; then continue; fi
 		case $r in '' | *[!0-9]*) continue ;; esac
 		rx=$((rx + r))
 		tx=$((tx + ${t:-0}))
 	done </proc/net/dev
 	mt=
 	ma=
+	mf=0; mb=0; mc=0; mr=0; ms=0
 	while read -r key value _; do
 		case $key in
 		MemTotal:) mt=$value ;;
 		MemAvailable:) ma=$value ;;
+		MemFree:) mf=$value ;;
+		Buffers:) mb=$value ;;
+		Cached:) mc=$value ;;
+		SReclaimable:) mr=$value ;;
+		Shmem:) ms=$value ;;
 		esac
 		if [ -n "$mt" ] && [ -n "$ma" ]; then break; fi
 	done </proc/meminfo
+	if [ -z "$ma" ] && [ -n "$mt" ]; then
+		ma=$((mf + mb + mc + mr - ms))
+		[ "$ma" -lt 0 ] && ma=0
+		[ "$ma" -gt "$mt" ] && ma=$mt
+	fi
 	[ -n "$ma" ] && [ -n "$mt" ] || return 1
 	read -r up _ </proc/uptime
+	printf 'gop-net-primary %s\n' "${primary:--}"
 	printf 'gop-stats-v2 %s %s %s %s %s %s %s\n' "$busy" "$total" "$rx" "$tx" "$mt" "$ma" "$up" || exit 0
 }
 sample || exit 1
@@ -197,6 +244,7 @@ func sample(before, after counters) (Sample, bool) {
 		MemoryTotalBytes:      after.memTotalKiB << 10,
 		ReceiveBytesPerSecond: rate(before.receive, after.receive, seconds),
 		SendBytesPerSecond:    rate(before.send, after.send, seconds),
+		UptimeSeconds:         after.uptime,
 	}, true
 }
 

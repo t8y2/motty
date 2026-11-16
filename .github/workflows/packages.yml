@@ -1,0 +1,150 @@
+# Publishes the Homebrew cask and the Scoop manifest for a release that is
+# already public.
+#
+# The release is the approval: this refuses to run unless the tag names a
+# published release carrying every package the manifests point at, and the
+# digests come from that release's SHA256SUMS, which Checksums built and signed.
+# Release dispatches it once the packages are on the mirror, and it can be run
+# again for any tag without rebuilding anything.
+#
+# The cask installs the notarized and stapled .dmg: the bundle inside the .zip
+# was notarized as part of the image and has no ticket of its own. The Scoop
+# manifest installs the portable .zip with motty-data persisted, because a
+# portable copy keeps everything next to the program and leaves updating to
+# scoop.
+name: Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.2.9"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish Homebrew and Scoop
+    # The tap and the bucket are fixed to the upstream repositories; a fork must
+    # never publish there, even with the secret mirrored.
+    if: github.repository == 't8y2/motty'
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Check the release and its packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$TAG is not a release tag like v0.2.9"
+            exit 1
+          fi
+          # GITHUB_ENV only reaches the next step, so the checks below need it
+          # here as well as the render and publish steps after this one.
+          VERSION="${TAG#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          draft=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          if [ "$draft" != "false" ]; then
+            echo "::error::$TAG is still a draft; publish it before the package managers follow it"
+            exit 1
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/assets"
+          for asset in \
+            "motty-${VERSION}-darwin-arm64.dmg" \
+            "motty-${VERSION}-darwin-amd64.dmg" \
+            "motty-${VERSION}-windows-arm64.zip" \
+            "motty-${VERSION}-windows-amd64.zip" \
+            SHA256SUMS; do
+            if ! grep -qxF "$asset" "$RUNNER_TEMP/assets"; then
+              echo "::error::$TAG has no $asset"
+              exit 1
+            fi
+          done
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP"
+
+      - name: Render the cask and the manifest
+        run: |
+          set -euo pipefail
+          go run ./tools/packages -version "$VERSION" -sums "$RUNNER_TEMP/SHA256SUMS" -out "$RUNNER_TEMP/packages"
+          ruby -c "$RUNNER_TEMP/packages/Casks/motty.rb"
+          jq -e 'type == "object" and .version != null' "$RUNNER_TEMP/packages/motty.json" > /dev/null
+
+      - name: Publish the cask
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAP_GITHUB_TOKEN" ]; then
+            echo "::error::TAP_GITHUB_TOKEN is not set: it needs write access to t8y2/homebrew-tap"
+            exit 1
+          fi
+          dir="$RUNNER_TEMP/homebrew-tap"
+          git clone --depth 1 "https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/t8y2/homebrew-tap.git" "$dir"
+          mkdir -p "$dir/Casks"
+          # A cask that is already newer than this tag must not be moved back:
+          # new installs would follow it.
+          existing=$(sed -n 's/^  version "\([^"]*\)"$/\1/p' "$dir/Casks/motty.rb" || true)
+          if [ -n "$existing" ] && [ "$existing" != "$VERSION" ] && ! printf '%s\n%s\n' "$existing" "$VERSION" | sort -V -C; then
+            echo "::error::the tap is at $existing, newer than $VERSION; refusing to move it back"
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/packages/Casks/motty.rb" "$dir/Casks/motty.rb"
+          git -C "$dir" config user.name "github-actions[bot]"
+          git -C "$dir" config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C "$dir" add Casks/motty.rb
+          if git -C "$dir" diff --cached --quiet; then
+            echo "the tap already has the $TAG cask"
+            exit 0
+          fi
+          git -C "$dir" commit -m "motty ${VERSION}"
+          if ! git -C "$dir" push; then
+            echo "::error::the tap refused the push: TAP_GITHUB_TOKEN needs Contents: Read and write on t8y2/homebrew-tap"
+            exit 1
+          fi
+          echo "::notice::homebrew-tap Casks/motty.rb is at $TAG"
+
+      - name: Publish the Scoop manifest
+        env:
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAP_GITHUB_TOKEN" ]; then
+            echo "::error::TAP_GITHUB_TOKEN is not set: it needs write access to t8y2/scoop-bucket"
+            exit 1
+          fi
+          dir="$RUNNER_TEMP/scoop-bucket"
+          git clone --depth 1 "https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/t8y2/scoop-bucket.git" "$dir"
+          existing=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' "$dir/motty.json" 2>/dev/null || true)
+          if [ -n "$existing" ] && [ "$existing" != "$VERSION" ] && ! printf '%s\n%s\n' "$existing" "$VERSION" | sort -V -C; then
+            echo "::error::the bucket is at $existing, newer than $VERSION; refusing to move it back"
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/packages/motty.json" "$dir/motty.json"
+          git -C "$dir" config user.name "github-actions[bot]"
+          git -C "$dir" config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C "$dir" add motty.json
+          if git -C "$dir" diff --cached --quiet; then
+            echo "the bucket already has the $TAG manifest"
+            exit 0
+          fi
+          git -C "$dir" commit -m "motty ${VERSION}"
+          if ! git -C "$dir" push; then
+            echo "::error::the bucket refused the push: TAP_GITHUB_TOKEN needs Contents: Read and write on t8y2/scoop-bucket"
+            exit 1
+          fi
+          echo "::notice::scoop-bucket motty.json is at $TAG"

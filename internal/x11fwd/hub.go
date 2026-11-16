@@ -42,10 +42,13 @@ type Grant struct {
 }
 
 // Register creates a grant for the display in env. It fails when there is no
-// display to forward to.
+// display to forward to or nothing is listening on it.
 func (hub *Hub) Register(env Environ) (*Grant, error) {
 	local, err := Resolve(env)
 	if err != nil {
+		return nil, err
+	}
+	if err := local.Display.Probe(); err != nil {
 		return nil, err
 	}
 	return hub.registerLocal(local)

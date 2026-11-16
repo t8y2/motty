@@ -1,0 +1,58 @@
+# End to end: OSC 52 clipboard writes from a real loopback SSH pty. Needs a
+# headless Viva build and the e2esshd fixture on port 2248:
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head-clip ./cmd/motty
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd-clip .) && /tmp/e2esshd-clip 2248 &
+#   MOTTY_LANG=en MOTTY_HEAD=/tmp/motty-head-clip \
+#     python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/clipboard_osc52_e2e.txt
+#
+# What to look for:
+# - The first `clip` after the write reports "from-remote" and its texts dump has
+#   no "Remote clipboard request": writes are allowed by default, so a program
+#   that copies on selection (Claude Code's copyOnSelect) never opens a modal.
+# - Switching Settings > Terminal > Remote clipboard (OSC 52) to Ask makes the
+#   next write ask; "Always allow" writes the text, and the last screenshot shows
+#   the setting left on Allow.
+
+click "Search"
+type tester@127.0.0.1:2248
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+
+# The default: the write lands without asking.
+clip
+type printf '\033]52;c;ZnJvbS1yZW1vdGU=\007'; echo osc52-sent
+key enter
+waitfor "osc52-sent" 5000
+settle 800
+clip
+texts
+
+# Ask, then allow every write from the dialog itself.
+click "Settings"
+settle 600
+click "Terminal"
+settle 700
+click "Ask"
+settle 500
+click "127.0.0.1:2248"
+settle 700
+type printf '\033]52;c;YXNrLW1vZGU=\007'; echo ask-sent
+key enter
+waitfor "ask-sent" 5000
+settle 900
+texts
+layout
+shot /tmp/clipboard-ask.png
+click "Always allow"
+settle 700
+clip
+click "Settings"
+settle 600
+shot /tmp/clipboard-allow.png

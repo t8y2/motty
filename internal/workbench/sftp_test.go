@@ -13,11 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 type workbenchSFTPRemote struct {
@@ -31,6 +32,11 @@ type workbenchSFTPRemote struct {
 	readDelay    time.Duration     // how long a listing takes
 	linkDelay    time.Duration     // how long resolving one link takes
 	links        map[string]string // symbolic links: path to target
+	renameErrAt  map[string]error  // refuses a particular rename source
+	removeErr    error             // refuses every removal while set
+	removeErrAt  map[string]error  // refuses a particular path
+	unreadable   map[string]bool   // folders whose listing is refused
+	onRead       func(dir string)  // runs before a folder is listed, outside the lock
 }
 
 func (remote *workbenchSFTPRemote) Symlink(target, link string) error {
@@ -75,14 +81,22 @@ func (remote *workbenchSFTPRemote) Getwd() (string, error) { return remote.cwd, 
 func (remote *workbenchSFTPRemote) ReadDir(path string) ([]os.FileInfo, error) {
 	remote.mu.Lock()
 	remote.reads = append(remote.reads, path)
-	delay := remote.readDelay
+	delay, onRead := remote.readDelay, remote.onRead
 	remote.mu.Unlock()
+	if onRead != nil {
+		onRead(path)
+	}
 	if delay > 0 {
 		time.Sleep(delay) // a network round trip
 	}
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
-	return remote.entries[path], nil
+	if remote.unreadable[path] {
+		return nil, os.ErrPermission
+	}
+	// A listing is a snapshot: the caller may delete from the folder while it
+	// reads what the folder held, as it does when removing a tree.
+	return append([]os.FileInfo(nil), remote.entries[path]...), nil
 }
 
 // readCount is how many times a folder has been listed.
@@ -280,6 +294,9 @@ func (remote *workbenchSFTPRemote) Mkdir(remotePath string) error {
 func (remote *workbenchSFTPRemote) Rename(oldPath, newPath string) error {
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if err := remote.renameErrAt[oldPath]; err != nil {
+		return err
+	}
 	entry, ok := remote.removeEntryLocked(path.Dir(oldPath), path.Base(oldPath))
 	if !ok {
 		return os.ErrNotExist
@@ -304,6 +321,18 @@ func (remote *workbenchSFTPRemote) Rename(oldPath, newPath string) error {
 func (remote *workbenchSFTPRemote) Remove(remotePath string) error {
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if err := remote.removeErrAt[remotePath]; err != nil {
+		return err
+	}
+	if remote.removeErr != nil {
+		return remote.removeErr
+	}
+	if _, ok := remote.links[remotePath]; ok {
+		// A link is unlinked; whatever it points at is left alone.
+		delete(remote.links, remotePath)
+		remote.removeEntryLocked(path.Dir(remotePath), path.Base(remotePath))
+		return nil
+	}
 	if _, ok := remote.files[remotePath]; !ok {
 		return os.ErrNotExist
 	}
@@ -315,6 +344,12 @@ func (remote *workbenchSFTPRemote) Remove(remotePath string) error {
 func (remote *workbenchSFTPRemote) RemoveDirectory(remotePath string) error {
 	remote.mu.Lock()
 	defer remote.mu.Unlock()
+	if err := remote.removeErrAt[remotePath]; err != nil {
+		return err
+	}
+	if remote.removeErr != nil {
+		return remote.removeErr
+	}
 	children, ok := remote.entries[remotePath]
 	if !ok {
 		return os.ErrNotExist
@@ -420,7 +455,7 @@ func openTestSFTP(t testing.TB) (*State, *Session, *fakeConn, *workbenchSFTPRemo
 
 func waitSFTP(t testing.TB, state *State, session *Session, ready func(*sftpView) bool) {
 	t.Helper()
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(waitBudget())
 	for time.Now().Before(deadline) {
 		state.Wake()
 		if session.files != nil && ready(session.files) {
@@ -428,7 +463,12 @@ func waitSFTP(t testing.TB, state *State, session *Session, ready func(*sftpView
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("SFTP state did not settle: %+v", session.files)
+	if session.files == nil {
+		t.Fatal("SFTP state did not settle: no file view")
+	}
+	t.Fatalf("SFTP state did not settle: path=%q rows=%d busy=%t operation=%v status=%q error=%q waiting=%q prefetching=%d",
+		session.files.path, len(session.files.rows), session.files.busy, session.files.operation,
+		session.files.status, session.files.errorText, session.files.waiting, len(session.files.prefetching))
 }
 
 func sftpRowIndex(t testing.TB, view *sftpView, name string) int {
@@ -442,12 +482,23 @@ func sftpRowIndex(t testing.TB, view *sftpView, name string) int {
 	return -1
 }
 
-func clickSFTPRow(t testing.TB, state *State, view *sftpView, name string) ui.ID {
+func clickSFTPRow(t testing.TB, state *State, view *sftpView, name string) gfx.ID {
 	t.Helper()
 	index := sftpRowIndex(t, view, name)
 	id := hitSFTPEntryList.At(index - view.first)
 	state.Click(id)
 	return id
+}
+
+// sftpListRowID is the window identity of a painted row of the folder's Viva
+// List. The List names its rows itself, so a test that finds one in a painted
+// snapshot asks the last paint for it.
+func sftpListRowID(t testing.TB, folder *sftpFolder, index int) gfx.ID {
+	t.Helper()
+	if folder.listRowsScope.IsZero() {
+		t.Fatal("the file list has not been painted")
+	}
+	return contextID(folder.listRowsScope.At(index))
 }
 
 func replaceSFTPDialogText(t testing.TB, state *State, value string) {
@@ -479,15 +530,62 @@ func replaceSFTPText(t testing.TB, state *State, value string) {
 	editor.Insert(value)
 }
 
+// sftpPageButtonHit finds the page control with this accessible label.
+func sftpPageButtonHit(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Label == label && hit.Role == gfx.RoleButton {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// clickSFTPPageButton paints the window and delivers a click's event pass to
+// the files page control with this label, which acts while it is declared.
+func clickSFTPPageButton(t testing.TB, state *State, label string) {
+	t.Helper()
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	hit, ok := sftpPageButtonHit(&canvas, label)
+	if !ok {
+		t.Fatalf("no files control labeled %q", label)
+	}
+	if hit.Disabled || hit.Block {
+		t.Fatalf("files control %q is not actionable (disabled=%v blocked=%v)", label, hit.Disabled, hit.Block)
+	}
+	var pass gfx.Canvas
+	pass.BeginEventPass(hit.ID, gfx.ClickInfo{})
+	state.Paint(&pass, size)
+	pass.EndEventPass()
+}
+
+// clickSFTPWindowButton is clickSFTPPageButton for a file window's own canvas.
+func clickSFTPWindowButton(t testing.TB, w *sftpWindow, label string) {
+	t.Helper()
+	size := gfx.Size{Width: 640, Height: 400}
+	var canvas gfx.Canvas
+	w.paint(&canvas, size)
+	hit, ok := sftpPageButtonHit(&canvas, label)
+	if !ok {
+		t.Fatalf("no window control labeled %q", label)
+	}
+	var pass gfx.Canvas
+	pass.BeginEventPass(hit.ID, gfx.ClickInfo{})
+	w.paint(&pass, size)
+	pass.EndEventPass()
+}
+
 func TestSFTPBrowseAndDownload(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
+	state.sftpDownloadDirectory = "" // exercise the ask-each-time picker path
 	if view.path != "/home/test" || view.rows[0].entry.Name != "docs" || view.rows[1].entry.Name != "notes.txt" {
 		t.Fatalf("initial listing = %q %+v", view.path, view.rows)
 	}
 
 	rowID := clickSFTPRow(t, state, view, "docs")
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: rowID}); !result.Handled || !result.Repaint {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: rowID}); !result.Handled || !result.Repaint {
 		t.Fatalf("open directory key result = %+v", result)
 	}
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
@@ -523,13 +621,13 @@ func TestSFTPTextEditorWrapsLongLinesAndMovesByRow(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := openSFTPTextEditor(t, state, session, "notes.txt")
 	replaceSFTPText(t, state, strings.Repeat("a long line of configuration that wraps ", 12)+"\nshort")
-	canvas, _ := paintAt(state, ui.Size{Width: 1400, Height: 900})
+	canvas, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	box := panelHit(t, canvas, contextID(hitSFTPEditor))
 	rows := 0
 	for _, text := range canvas.Texts() {
 		if text.Bounds.Y > box.Bounds.Y && text.Bounds.Y < box.Bounds.Y+box.Bounds.Height && text.Bounds.X >= box.Bounds.X && text.Bounds.X < box.Bounds.X+box.Bounds.Width {
 			rows++
-			if got := canvas.TextWidthWeight(text.Value, 13, ui.WeightRegular); got > box.Bounds.Width {
+			if got := canvas.TextWidthWeight(text.Value, 13, gfx.WeightRegular); got > box.Bounds.Width {
 				t.Errorf("row %q is %v wide in an editor %v wide", text.Value, got, box.Bounds.Width)
 			}
 		}
@@ -538,7 +636,7 @@ func TestSFTPTextEditorWrapsLongLinesAndMovesByRow(t *testing.T) {
 		t.Fatalf("the file's long line took %d rows", rows)
 	}
 	end := view.editEditor.Caret()
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyUp, Target: contextID(hitSFTPEditor)}); !result.Handled || view.editEditor.Caret() >= end {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyUp, Target: contextID(hitSFTPEditor)}); !result.Handled || view.editEditor.Caret() >= end {
 		t.Fatalf("Up from the end: caret %d -> %d, %+v", end, view.editEditor.Caret(), result)
 	}
 }
@@ -554,7 +652,10 @@ func TestSFTPRemoteTextEditorOpensAndSavesAtomically(t *testing.T) {
 	}
 
 	replaceSFTPText(t, state, "saved remotely\n中文\n")
-	state.Click(hitSFTPEditSave)
+	if !sftpEditorDirty(view) {
+		t.Fatal("typing did not make the editor dirty")
+	}
+	clickSFTPPageButton(t, state, state.messages.SFTPEditSave)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return !view.busy && !sftpEditorDirty(view) && view.status == state.messages.SFTPEditSaved
 	})
@@ -571,7 +672,7 @@ func TestSFTPRemoteTextEditorOpensAndSavesAtomically(t *testing.T) {
 		t.Fatalf("remote content = %q, temporaries = %d", content, temporaryCount)
 	}
 
-	state.Click(hitSFTPEditBack)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditBack)
 	if view.editPath != "" || state.EditorFor(hitSFTPEditor) != nil {
 		t.Fatalf("editor stayed open: %+v", view)
 	}
@@ -588,7 +689,7 @@ func TestSFTPRemoteTextEditorPreservesLocalEditsOnConflict(t *testing.T) {
 	})
 	remote.mu.Unlock()
 
-	state.Click(hitSFTPEditSave)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditSave)
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.dialog == sftpDialogRemoteChanged })
 	if view.editEditor.String() != "my local edits\n" || view.errorText != state.messages.SFTPEditConflict {
 		t.Fatalf("conflict editor = %q error = %q", view.editEditor.String(), view.errorText)
@@ -598,7 +699,7 @@ func TestSFTPRemoteTextEditorPreservesLocalEditsOnConflict(t *testing.T) {
 		t.Fatalf("keeping edits changed state: %+v", view)
 	}
 
-	state.Click(hitSFTPEditReload)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditReload)
 	if view.dialog != sftpDialogReloadEdit {
 		t.Fatalf("reload confirmation = %v", view.dialog)
 	}
@@ -612,7 +713,7 @@ func TestSFTPRemoteTextEditorConfirmsDiscard(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := openSFTPTextEditor(t, state, session, "notes.txt")
 	replaceSFTPText(t, state, "unsaved")
-	state.Click(hitSFTPEditBack)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditBack)
 	if view.dialog != sftpDialogDiscardEdit || view.editPath == "" {
 		t.Fatalf("discard confirmation = %+v", view)
 	}
@@ -620,7 +721,7 @@ func TestSFTPRemoteTextEditorConfirmsDiscard(t *testing.T) {
 	if view.editEditor.String() != "unsaved" {
 		t.Fatalf("cancel discard lost edits: %q", view.editEditor.String())
 	}
-	state.Click(hitSFTPEditBack)
+	clickSFTPPageButton(t, state, state.messages.SFTPEditBack)
 	state.Click(hitSFTPDialogSubmit)
 	if view.editPath != "" || view.dialog != sftpDialogNone {
 		t.Fatalf("discard did not close editor: %+v", view)
@@ -666,15 +767,18 @@ func TestSFTPRemoteTextEditorIsDestroyedWhenSessionCloses(t *testing.T) {
 func TestSFTPRemoteTextEditorPaintsStableControls(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	openSFTPTextEditor(t, state, session, "notes.txt")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if _, ok := canvas.NextFrame(); ok {
 		t.Fatal("idle SFTP editor requested another frame")
 	}
-	for _, id := range []ui.ID{hitSFTPEditor, hitSFTPEditSave, hitSFTPEditBack, hitSFTPEditReload} {
-		if _, ok := hitByID(&canvas, contextID(id)); !ok {
-			t.Fatalf("missing editor hit %d", id)
+	if _, ok := hitByID(&canvas, contextID(hitSFTPEditor)); !ok {
+		t.Fatal("missing editor hit")
+	}
+	for _, label := range []string{state.messages.SFTPEditSave, state.messages.SFTPEditBack, state.messages.SFTPEditReload} {
+		if _, ok := sftpPageButtonHit(&canvas, label); !ok {
+			t.Fatalf("missing editor control %q", label)
 		}
 	}
 	state.Paint(&canvas, size)
@@ -724,6 +828,7 @@ func TestSFTPUploadUsesOpenFilesAndRefreshesDirectory(t *testing.T) {
 func TestSFTPMultiSelectDownloadsFilesAndDirectories(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
+	state.sftpDownloadDirectory = "" // exercise the ask-each-time picker path
 	destination := t.TempDir()
 	state.options.OpenDirectory = func(options app.OpenDirectoryOptions) (string, error) {
 		if options.Title != state.messages.SFTPDownloadDirectoryTitle {
@@ -799,6 +904,7 @@ func TestSFTPUploadsMultipleFilesAndDirectory(t *testing.T) {
 func TestSFTPOverwriteRequiresConfirmationThenResumes(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
+	state.sftpDownloadDirectory = "" // exercise the ask-each-time picker path
 	target := filepath.Join(t.TempDir(), "notes.txt")
 	if err := os.WriteFile(target, []byte("do not replace yet"), 0o600); err != nil {
 		t.Fatal(err)
@@ -807,12 +913,16 @@ func TestSFTPOverwriteRequiresConfirmationThenResumes(t *testing.T) {
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPDownload)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
-		return view.dialog == sftpDialogOverwrite && len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferFailed
+		return state.transfers.open && len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferFailed
 	})
 	if content, err := os.ReadFile(target); err != nil || string(content) != "do not replace yet" {
 		t.Fatalf("destination changed before confirmation: %q, %v", content, err)
 	}
-	state.Click(hitSFTPDialogSubmit)
+	state.Click(hitSFTPClose)
+	if session.files != view {
+		t.Fatal("closing the browser detached a retryable transfer")
+	}
+	state.Click(hitTransfersReplace.At(state.transfers.entries[0].id))
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return view.dialog == sftpDialogNone && view.transfers[0].State == sftpclient.TransferCompleted
 	})
@@ -839,7 +949,7 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 		t.Fatalf("create dialog = %+v", view)
 	}
 	replaceSFTPDialogText(t, state, "drafts")
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitSFTPDialogField}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitSFTPDialogField}); !result.Handled {
 		t.Fatalf("create Enter = %+v", result)
 	}
 	waitSFTP(t, state, session, func(view *sftpView) bool {
@@ -854,8 +964,13 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 
 	clickSFTPRow(t, state, view, "notes.txt")
 	state.Click(hitSFTPRename)
-	if view.dialog != sftpDialogRename || view.dialogEditor.String() != "/home/test/notes.txt" {
+	if view.dialog != sftpDialogRename || view.dialogEditor.String() != "notes.txt" {
 		t.Fatalf("rename dialog = %+v", view)
+	}
+	replaceSFTPDialogText(t, state, "docs/renamed.txt")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogRename || view.dialogError != state.messages.SFTPErrRenameInvalid {
+		t.Fatalf("rename accepted a path: dialog=%d error=%q", view.dialog, view.dialogError)
 	}
 	replaceSFTPDialogText(t, state, "renamed.txt")
 	state.Click(hitSFTPDialogSubmit)
@@ -889,6 +1004,179 @@ func TestSFTPCreateRenameChmodAndRefresh(t *testing.T) {
 	if !strings.Contains(view.status, "600") {
 		t.Fatalf("chmod completion status = %q", view.status)
 	}
+
+	// The permission grid mirrors the octal field in both directions
+	// (issue #392): nine boxes, a tap flips one bit, and a typed value moves
+	// the boxes.
+	clickSFTPRow(t, state, view, "renamed.txt")
+	state.Click(hitSFTPChmod)
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("chmod reopen value = %q", view.dialogEditor.String())
+	}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	var boxes [9]gfx.Rect
+	for index := 0; index < 9; index++ {
+		hit, ok := hitByID(&canvas, hitSFTPChmodBits.At(index))
+		if !ok {
+			t.Fatalf("permission checkbox %d is not painted", index)
+		}
+		// 600 checks owner read and write only: the boxes are drawn from the
+		// field, not from a state of their own.
+		if want := index < 2; hit.Checked != want {
+			t.Fatalf("permission checkbox %d checked = %v, want %v for 600", index, hit.Checked, want)
+		}
+		boxes[index] = hit.Bounds
+	}
+	// Tapping the gap between two boxes must not reach a neighbour.
+	for first := 0; first < 9; first++ {
+		for second := first + 1; second < 9; second++ {
+			a, b := boxes[first], boxes[second]
+			if a.X < b.X+b.Width && b.X < a.X+a.Width && a.Y < b.Y+b.Height && b.Y < a.Y+a.Height {
+				t.Fatalf("permission checkboxes %d and %d overlap: %+v %+v", first, second, a, b)
+			}
+		}
+	}
+	// An empty field is not a mode: every box stands down instead of showing
+	// stale bits.
+	replaceSFTPDialogText(t, state, "")
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for index := 0; index < 9; index++ {
+		hit, ok := hitByID(&canvas, hitSFTPChmodBits.At(index))
+		if !ok || !hit.Disabled {
+			t.Fatalf("permission checkbox %d enabled with an empty field: %+v %t", index, hit, ok)
+		}
+	}
+	replaceSFTPDialogText(t, state, "600")
+	// 600: owner rw. Tapping group write (index 4) sets that one bit: 620.
+	state.Click(hitSFTPChmodBits.At(4))
+	if view.dialogEditor.String() != "620" {
+		t.Fatalf("after group-write tap = %q, want 620", view.dialogEditor.String())
+	}
+	// Tapping it again takes the bit back.
+	state.Click(hitSFTPChmodBits.At(4))
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("after second tap = %q, want 600", view.dialogEditor.String())
+	}
+	// Typing in the field moves the boxes: 700 has owner execute; tapping it
+	// clears the bit back to 600.
+	replaceSFTPDialogText(t, state, "700")
+	state.Click(hitSFTPChmodBits.At(2))
+	if view.dialogEditor.String() != "600" {
+		t.Fatalf("after owner-exec tap on 700 = %q, want 600", view.dialogEditor.String())
+	}
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		index := sftpRowIndexOrNegative(view, "renamed.txt")
+		return !view.busy && index >= 0 && view.rows[index].entry.Mode.Perm() == 0o600
+	})
+	clickSFTPRow(t, state, view, "renamed.txt")
+	state.Click(hitSFTPMove)
+	if view.dialog != sftpDialogMove || view.dialogEditor.String() != "/home/test" {
+		t.Fatalf("move dialog = dialog %d, value %q", view.dialog, view.dialogEditor.String())
+	}
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveSame {
+		t.Fatalf("move to the current folder was accepted: dialog=%d error=%q", view.dialog, view.dialogError)
+	}
+	replaceSFTPDialogText(t, state, "docs")
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "renamed.txt") < 0
+	})
+	remote.mu.Lock()
+	_, moved := remote.files["/home/test/docs/renamed.txt"]
+	_, oldLocation := remote.files["/home/test/renamed.txt"]
+	remote.mu.Unlock()
+	if !moved || oldLocation {
+		t.Fatalf("move state: moved=%v old=%v", moved, oldLocation)
+	}
+}
+
+func TestRemoteRenameAcceptsOnlyBaseNames(t *testing.T) {
+	for _, value := range []string{"renamed.txt", "配置.yaml", ".env", "with space"} {
+		if !validRemoteBaseName(value) {
+			t.Errorf("valid base name %q was rejected", value)
+		}
+	}
+	for _, value := range []string{"", ".", "..", "folder/file", `folder\file`, "nul\x00name"} {
+		if validRemoteBaseName(value) {
+			t.Errorf("path-like name %q was accepted", value)
+		}
+	}
+}
+
+func TestRemoteMoveRejectsItsOwnDirectory(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "docs")
+	state.Click(hitSFTPMove)
+	replaceSFTPDialogText(t, state, "docs")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveInside {
+		t.Fatalf("moving a folder into itself = dialog %d, error %q", view.dialog, view.dialogError)
+	}
+	replaceSFTPDialogText(t, state, "/home/test/docs/deep")
+	state.Click(hitSFTPDialogSubmit)
+	if view.dialog != sftpDialogMove || view.dialogError != state.messages.SFTPErrMoveInside {
+		t.Fatalf("moving a folder into its descendant = dialog %d, error %q", view.dialog, view.dialogError)
+	}
+}
+
+func TestSFTPMultiDeleteConfirmsSelectionAndRemovesFilesAndFolders(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "notes.txt")
+	clickSFTPRow(t, state, view, "docs")
+	if !sftpMenuRowIDs(state.sftpMenuRows(session, view))[hitSFTPMenuDelete] {
+		t.Fatal("multi-selection has no delete action")
+	}
+	state.Click(hitSFTPDelete)
+	if view.dialog != sftpDialogDelete || len(view.dialogEntries) != 2 {
+		t.Fatalf("delete confirmation lost the selection: dialog=%v entries=%v", view.dialog, view.dialogEntries)
+	}
+	state.Click(hitSFTPDialogCancel)
+	remote.mu.Lock()
+	_, untouched := remote.files["/home/test/notes.txt"]
+	remote.mu.Unlock()
+	if !untouched || view.dialog != sftpDialogNone {
+		t.Fatal("canceling the multi-delete changed files")
+	}
+	state.Click(hitSFTPDelete)
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "notes.txt") < 0 && sftpRowIndexOrNegative(view, "docs") < 0
+	})
+	remote.mu.Lock()
+	_, fileLeft := remote.files["/home/test/notes.txt"]
+	_, childLeft := remote.files["/home/test/docs/guide.md"]
+	remote.mu.Unlock()
+	if fileLeft || childLeft {
+		t.Fatalf("confirmed selection remains: file=%v child=%v", fileLeft, childLeft)
+	}
+}
+
+func TestSFTPMultiDeleteStopsAfterFailureAndRefreshes(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "notes.txt")
+	clickSFTPRow(t, state, view, "docs")
+	state.Click(hitSFTPDelete)
+	remote.mu.Lock()
+	remote.removeErrAt = map[string]error{"/home/test/notes.txt": os.ErrPermission}
+	remote.mu.Unlock()
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && view.dialog == sftpDialogNone && len(view.deleteRemaining) == 0 && sftpRowIndexOrNegative(view, "notes.txt") >= 0
+	})
+	remote.mu.Lock()
+	_, untouched := remote.files["/home/test/notes.txt"]
+	remote.mu.Unlock()
+	if !untouched || sftpRowIndexOrNegative(view, "docs") >= 0 || len(state.fileNotices.items) == 0 ||
+		!strings.Contains(state.fileNotices.items[0].detail, "/home/test/notes.txt") {
+		t.Fatal("failure deleted another selected item or lacked partial-failure notice")
+	}
 }
 
 func TestSFTPDeleteRequiresConfirmationAndDistinguishesDirectories(t *testing.T) {
@@ -900,8 +1188,8 @@ func TestSFTPDeleteRequiresConfirmationAndDistinguishesDirectories(t *testing.T)
 	if view.dialog != sftpDialogDelete || view.dialogEntry.IsDir() {
 		t.Fatalf("file delete dialog = %+v", view)
 	}
-	var dialogCanvas ui.Canvas
-	state.Paint(&dialogCanvas, ui.Size{Width: 1400, Height: 900})
+	var dialogCanvas gfx.Canvas
+	state.Paint(&dialogCanvas, gfx.Size{Width: 1400, Height: 900})
 	if dialogCanvas.InitialFocus() != hitSFTPDialogCancel || dialogCanvas.TrappedFocusScope() != dialogScope {
 		t.Fatalf("delete dialog focus=%d scope=%d", dialogCanvas.InitialFocus(), dialogCanvas.TrappedFocusScope())
 	}
@@ -911,7 +1199,7 @@ func TestSFTPDeleteRequiresConfirmationAndDistinguishesDirectories(t *testing.T)
 	if !existsBeforeConfirm {
 		t.Fatal("one click deleted the file")
 	}
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape}); !result.Handled || view.dialog != sftpDialogNone {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape}); !result.Handled || view.dialog != sftpDialogNone {
 		t.Fatalf("delete Escape = %+v dialog=%d", result, view.dialog)
 	}
 	remote.mu.Lock()
@@ -963,10 +1251,14 @@ func TestSFTPWriteErrorsRemainVisible(t *testing.T) {
 	replaceSFTPDialogText(t, state, "docs")
 	state.Click(hitSFTPDialogSubmit)
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.errorText != "" })
-	if view.errorText == "" {
-		t.Fatalf("create error = %q", view.errorText)
+	if !strings.Contains(view.errorText, state.messages.SFTPErrDirectoryExists) {
+		t.Fatalf("create error = %q, want containing %q", view.errorText, state.messages.SFTPErrDirectoryExists)
 	}
 
+	// A removal the server refuses stays visible instead of passing for done.
+	remote.mu.Lock()
+	remote.removeErr = os.ErrPermission
+	remote.mu.Unlock()
 	clickSFTPRow(t, state, view, "docs")
 	state.Click(hitSFTPDelete)
 	state.Click(hitSFTPDialogSubmit)
@@ -975,13 +1267,77 @@ func TestSFTPWriteErrorsRemainVisible(t *testing.T) {
 	_, stillExists := remote.entries["/home/test/docs"]
 	remote.mu.Unlock()
 	if !stillExists || view.errorText == "" {
-		t.Fatalf("nonempty delete: exists=%v error=%q", stillExists, view.errorText)
+		t.Fatalf("refused delete: exists=%v error=%q", stillExists, view.errorText)
+	}
+	// The walk may have deleted part of the folder before it was refused: say so
+	// in a notice that is not cut off, and drop what was remembered of it.
+	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].kind != components.ToastError ||
+		!strings.Contains(state.fileNotices.items[0].detail, state.messages.SFTPDeletePartialHint) || len(view.listings) != 0 {
+		t.Fatalf("refused delete: notices=%+v listings=%d", state.fileNotices.items, len(view.listings))
+	}
+}
+
+// A folder is deleted with everything in it: SFTP's own remove refuses a folder
+// that is not empty, so the panel walks the tree. What a link inside points at is
+// left alone.
+func TestSFTPDeletingAFolderTakesItsContents(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	view := session.files
+	remote.mu.Lock()
+	remote.entries["/home/test/docs"] = append(remote.entries["/home/test/docs"],
+		workbenchFileInfo{name: "deep", mode: os.ModeDir | 0o755, when: time.Unix(1_700_000_400, 0)},
+		workbenchFileInfo{name: "outside", mode: os.ModeSymlink | 0o777, when: time.Unix(1_700_000_600, 0)},
+	)
+	remote.entries["/home/test/docs/deep"] = []os.FileInfo{
+		workbenchFileInfo{name: "inner.txt", size: 3, mode: 0o644, when: time.Unix(1_700_000_500, 0)},
+	}
+	remote.files["/home/test/docs/deep/inner.txt"] = []byte("in\n")
+	if remote.links == nil {
+		remote.links = map[string]string{}
+	}
+	remote.links["/home/test/docs/outside"] = "/home/test/notes.txt"
+	remote.mu.Unlock()
+
+	clickSFTPRow(t, state, view, "docs")
+	state.Click(hitSFTPDelete)
+	if view.dialog != sftpDialogDelete || !view.dialogEntry.IsDir() {
+		t.Fatalf("folder delete dialog = %+v", view)
+	}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	// The description wraps, so the painted lines are read back together.
+	want := fmt.Sprintf(state.messages.SFTPDeleteFolderContentsFmt, "docs")
+	var said strings.Builder
+	for _, painted := range canvas.Texts() {
+		said.WriteString(painted.Value)
+		said.WriteString(" ")
+	}
+	if !strings.Contains(said.String(), want) {
+		t.Fatalf("the confirmation does not say the contents go too: %q in %q", want, said.String())
+	}
+
+	state.Click(hitSFTPDialogSubmit)
+	waitSFTP(t, state, session, func(view *sftpView) bool {
+		return !view.busy && sftpRowIndexOrNegative(view, "docs") < 0
+	})
+	remote.mu.Lock()
+	_, folder := remote.entries["/home/test/docs"]
+	_, nested := remote.entries["/home/test/docs/deep"]
+	_, inner := remote.files["/home/test/docs/deep/inner.txt"]
+	_, link := remote.links["/home/test/docs/outside"]
+	notes := remote.files["/home/test/notes.txt"]
+	remote.mu.Unlock()
+	if folder || nested || inner || link {
+		t.Fatalf("the folder's contents remain: folder=%v nested=%v file=%v link=%v", folder, nested, inner, link)
+	}
+	if len(notes) == 0 {
+		t.Fatal("the link's target was deleted with the folder")
 	}
 }
 
 func TestSFTPWorkerStartsOnlyWhenFilesPageOpens(t *testing.T) {
 	state, _, fake, _ := liveSession(t)
-	state.Paint(&ui.Canvas{}, ui.Size{Width: 1400, Height: 900})
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	state.Wake()
 	fake.mu.Lock()
 	opens := fake.sftpOpens
@@ -993,6 +1349,7 @@ func TestSFTPWorkerStartsOnlyWhenFilesPageOpens(t *testing.T) {
 
 func TestSFTPSaveCancelDoesNotTransfer(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
+	state.sftpDownloadDirectory = "" // exercise the ask-each-time picker path
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return "", app.ErrCanceled }
 	state.Click(hitSFTPEntryList.At(1))
 	state.Click(hitSFTPDownload)
@@ -1024,8 +1381,12 @@ func TestLeavingSFTPStopsItsWorker(t *testing.T) {
 func TestSFTPSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	clickSFTPRow(t, state, session.files, "notes.txt")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	// The completion catalog loads on a background wake. Settle it before
+	// measuring the allocations of an otherwise idle paint.
+	waitFor(t, state, func() bool { return !state.completion.catalogLoading })
+	var canvas gfx.Canvas
+	canvas.SetClock(func() time.Duration { return time.Second })
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -1036,52 +1397,11 @@ func TestSFTPSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	}
 }
 
-func TestSFTPTransferQueueSteadyPaintDoesNotAllocate(t *testing.T) {
-	state, session, _, _ := openTestSFTP(t)
-	session.files.transferRows = []sftpTransferRow{{
-		snapshot: sftpclient.TransferSnapshot{
-			ID: 1, Operation: sftpclient.OperationDownload, State: sftpclient.TransferRunning,
-			BytesDone: 32 * 1024, BytesTotal: 64 * 1024, FilesTotal: 1,
-		},
-		title: "large.bin", status: "32768 / 65536 bytes · 0 / 1 files",
-	}}
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
-	state.Paint(&canvas, size)
-	allocations := testing.AllocsPerRun(100, func() {
-		canvas.Reset()
-		state.Paint(&canvas, size)
-	})
-	if allocations != 0 {
-		t.Fatalf("SFTP transfer-queue steady paint allocations = %v", allocations)
-	}
-}
-
 func BenchmarkPaintSFTPPage(b *testing.B) {
 	state, session, _, _ := openTestSFTP(b)
 	clickSFTPRow(b, state, session.files, "notes.txt")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
-	state.Paint(&canvas, size)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		canvas.Reset()
-		state.Paint(&canvas, size)
-	}
-}
-
-func BenchmarkPaintSFTPTransferQueue(b *testing.B) {
-	state, session, _, _ := openTestSFTP(b)
-	session.files.transferRows = []sftpTransferRow{{
-		snapshot: sftpclient.TransferSnapshot{
-			ID: 1, Operation: sftpclient.OperationDownload, State: sftpclient.TransferRunning,
-			BytesDone: 32 * 1024, BytesTotal: 64 * 1024, FilesTotal: 1,
-		},
-		title: "large.bin", status: "32768 / 65536 bytes · 0 / 1 files",
-	}}
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -1094,8 +1414,8 @@ func BenchmarkPaintSFTPTransferQueue(b *testing.B) {
 func BenchmarkPaintSFTPTextEditor(b *testing.B) {
 	state, session, _, _ := openTestSFTP(b)
 	openSFTPTextEditor(b, state, session, "notes.txt")
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -1116,8 +1436,8 @@ func TestSFTPListScrollsDownWithPositiveDeltaOnlyOverThePanel(t *testing.T) {
 	}
 	view.rows = prepareSFTPRows(view.rows, entries)
 	view.first = 0
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if view.visibleRows <= 0 || view.visibleRows >= len(view.rows) {
 		t.Fatalf("visible rows = %d of %d", view.visibleRows, len(view.rows))
@@ -1128,10 +1448,12 @@ func TestSFTPListScrollsDownWithPositiveDeltaOnlyOverThePanel(t *testing.T) {
 	}
 
 	// Over empty space of the panel the wheel event names no control; over a
-	// row or a button it names that control. Both must reach the list.
-	var over ui.ID
+	// row or a button it names that control. Both must reach the list. The List
+	// scrolls by pixels, so a sub-row delta moves the view and the first row is
+	// the row the offset falls in.
+	var over gfx.ID
 	scroll := func(x, delta float32) {
-		state.Scroll(ui.ScrollEvent{X: x, Y: panel.Y + 100, DeltaY: delta, Precise: true, Viewport: size, Target: over})
+		state.Scroll(gfx.ScrollEvent{X: x, Y: panel.Y + 100, DeltaY: delta, Precise: true, Viewport: size, Target: over})
 	}
 	scroll(panel.X+panel.Width/2, 3*sftpRowHeight)
 	if view.first != 3 {
@@ -1141,28 +1463,108 @@ func TestSFTPListScrollsDownWithPositiveDeltaOnlyOverThePanel(t *testing.T) {
 	if view.first != 2 {
 		t.Fatalf("a negative wheel moved the first row to %d, want 2", view.first)
 	}
-	scroll(panel.X+panel.Width/2, sftpRowHeight/3) // less than a row
-	if view.first != 2 {
-		t.Fatalf("a third of a row moved the list to %d", view.first)
+	before := view.scrollOffset
+	scroll(panel.X+panel.Width/2, sftpRowHeight/3)
+	if view.first != 2 || view.scrollOffset != before+sftpRowHeight/3 {
+		t.Fatalf("a third of a row did not move the pixel offset: %f -> %f", before, view.scrollOffset)
 	}
-	scroll(panel.X+panel.Width/2, 2*sftpRowHeight/3+1) // the rest of it
+	scroll(panel.X+panel.Width/2, 2*sftpRowHeight/3+1)
 	if view.first != 3 {
-		t.Fatalf("banked travel did not add up to a row: first = %d", view.first)
+		t.Fatalf("the rest of a row did not reach row 3: first = %d", view.first)
 	}
 	over = contextID(hitSFTPEntryList.At(0)) // over a row of the list
-	scroll(panel.X+panel.Width/2, -1.1*sftpRowHeight)
-	if view.first != 2 {
-		t.Fatalf("a wheel over a row moved the first row to %d, want 2", view.first)
+	before = view.scrollOffset
+	scroll(panel.X+panel.Width/2, -sftpRowHeight)
+	if view.first != 2 || view.scrollOffset != before-sftpRowHeight {
+		t.Fatalf("a wheel over a row moved the list to first=%d offset=%f", view.first, view.scrollOffset)
 	}
-	scroll(panel.X+panel.Width/2, 1.1*sftpRowHeight)
-	over = ui.ID{}
+	over = gfx.ID{}
+	before = view.scrollOffset
 	scroll(panel.X+panel.Width+200, 5*sftpRowHeight) // over the terminal
-	if view.first != 3 {
-		t.Fatalf("a wheel over the terminal moved the file list to %d", view.first)
+	if view.scrollOffset != before {
+		t.Fatalf("a wheel over the terminal moved the file list: %f -> %f", before, view.scrollOffset)
 	}
 	scroll(panel.X+panel.Width/2, 1000*sftpRowHeight)
-	if want := len(view.rows) - view.visibleRows; view.first != want {
-		t.Fatalf("scrolling far down left the first row at %d, want the last page at %d", view.first, want)
+	state.Paint(&canvas, size)
+	if view.first != int(view.scrollOffset/sftpRowHeight) || view.scrollOffset != view.scroll.MaxOffsetY {
+		t.Fatalf("scrolling far down left offset %f first %d, max %f", view.scrollOffset, view.first, view.scroll.MaxOffsetY)
+	}
+
+	// Scrolling far down and painting anchors the list at the bottom. Further
+	// downward wheels must not repaint or jitter the offset.
+	state.Paint(&canvas, size)
+	bottomOffset := view.scrollOffset
+	bottomFirst := view.first
+	if bottomOffset == float32(bottomFirst)*sftpRowHeight {
+		// The jitter lives in the remainder between the pixel offset and the row
+		// grid; a row-aligned fixture could not fail, so it must not pass silently.
+		t.Fatalf("the fixture's bottom offset %f is row aligned", bottomOffset)
+	}
+	for i := 0; i < 10; i++ {
+		res := state.Scroll(gfx.ScrollEvent{X: panel.X + panel.Width/2, Y: panel.Y + 100, DeltaY: sftpRowHeight, Viewport: size})
+		if res.Repaint {
+			t.Fatalf("scroll at bottom requested repaint on iteration %d", i)
+		}
+		state.Paint(&canvas, size)
+		if view.scrollOffset != bottomOffset || view.first != bottomFirst {
+			t.Fatalf("scroll at bottom jittered: offset %f -> %f, first %d -> %d", bottomOffset, view.scrollOffset, bottomFirst, view.first)
+		}
+	}
+
+	// Scrolling upward from the bottom must move and repaint smoothly.
+	upRes := state.Scroll(gfx.ScrollEvent{X: panel.X + panel.Width/2, Y: panel.Y + 100, DeltaY: -sftpRowHeight, Viewport: size})
+	if !upRes.Repaint {
+		t.Fatal("scrolling upward from bottom did not request repaint")
+	}
+	if view.first >= bottomFirst && view.scrollOffset >= bottomOffset {
+		t.Fatalf("scrolling upward from bottom did not decrease position: offset=%f first=%d", view.scrollOffset, view.first)
+	}
+}
+
+// A drag released inside a row keeps the offset it left, and scrolling up from
+// there returns the list to its top instead of stalling on whole rows.
+func TestSFTPDragReleaseKeepsASubRowOffsetAndWheelUpReturnsToTheTop(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	entries := make([]sftpclient.Entry, 100)
+	for index := range entries {
+		entries[index] = sftpclient.Entry{Name: fmt.Sprintf("file-%03d.txt", index), Mode: 0o644}
+	}
+	view.rows = prepareSFTPRows(view.rows, entries)
+	view.first = 0
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	panel := state.contextRect
+	if panel.Width == 0 {
+		t.Fatal("the paint reported no files panel")
+	}
+	folder := view.active()
+
+	// As a scrollbar drag would leave it: released 17 pixels into the first row,
+	// past the half-row mark that used to round the row up and snap back.
+	folder.listScroll.ScrollTo(17)
+	folder.scrollOffset = 17
+	view.scrollDrag = true
+	if result, handled := state.sftpListPointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Captured: true}); !handled || !result.Repaint {
+		t.Fatal("releasing the scrollbar drag was not handled")
+	}
+	if folder.first != 0 {
+		t.Fatalf("release 17 pixels into the first row put the first row at %d, want 0", folder.first)
+	}
+	state.Paint(&canvas, size)
+	if folder.scrollOffset != 17 {
+		t.Fatalf("release over a partial row snapped the offset to %f, want 17", folder.scrollOffset)
+	}
+
+	// Scrolling up from that offset must show the top, not stall on row 0.
+	up := state.Scroll(gfx.ScrollEvent{X: panel.X + panel.Width/2, Y: panel.Y + 100, DeltaY: -sftpRowHeight, Viewport: size})
+	if !up.Repaint {
+		t.Fatal("scrolling up from a sub-row offset did not request repaint")
+	}
+	state.Paint(&canvas, size)
+	if folder.scrollOffset != 0 || folder.first != 0 {
+		t.Fatalf("scrolling up left the list at offset %f, first %d, want 0/0", folder.scrollOffset, folder.first)
 	}
 }
 
@@ -1184,9 +1586,9 @@ func TestOpenFilesPanelListsAConnectedSessionWithoutAClick(t *testing.T) {
 
 func TestInfoBarOffersSplitsBesideTheTools(t *testing.T) {
 	state, _, _, _ := liveSession(t)
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	for _, id := range []ui.ID{hitPaneSplitHorizontal, hitPaneSplitVertical} {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	for _, id := range []gfx.ID{hitPaneSplitHorizontal, hitPaneSplitVertical} {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Fatalf("no split button %d in the bar", id)
 		}
@@ -1215,8 +1617,8 @@ func TestSFTPDoubleClickEntersFoldersAndOpensFiles(t *testing.T) {
 		t.Fatalf("rows = %+v", view.rows)
 	}
 	press := func(index, clicks int) {
-		state.Pointer(ui.PointerEvent{
-			Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: clicks,
+		state.Pointer(gfx.PointerEvent{
+			Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: clicks,
 			Target: contextID(hitSFTPEntryList.At(index - view.first)),
 		})
 	}
@@ -1242,53 +1644,144 @@ func TestSFTPDoubleClickEntersFoldersAndOpensFiles(t *testing.T) {
 // done or under way instead of starting it; a folder seen before comes back at
 // once, and refresh reads again.
 func TestSFTPEnteringAFolderUsesWhatTheFirstClickStarted(t *testing.T) {
-	state, session, _, remote := openTestSFTP(t)
-	view := session.files
-	remote.mu.Lock()
-	remote.readDelay = 80 * time.Millisecond
-	remote.mu.Unlock()
-	docs := sftpRowIndex(t, view, "docs")
-	target := contextID(hitSFTPEntryList.At(docs - view.first))
-	press := func(clicks int) {
-		// As the runtime delivers a click: the press, then the click on release.
-		result := state.Pointer(ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: clicks, Target: target})
-		if !result.Handled {
-			state.Click(target)
+	for _, completed := range []bool{false, true} {
+		name := "prefetch_in_flight"
+		if completed {
+			name = "prefetch_completed"
 		}
-	}
+		t.Run(name, func(t *testing.T) {
+			const directory = "/home/test/docs"
+			state, session, _, remote := openTestSFTP(t)
+			view := session.files
+			reads := make(chan chan struct{}, 1)
+			stop := make(chan struct{})
+			// Registered after openTestSFTP: release every blocked read before
+			// its cleanup closes the worker, including when an assertion fails.
+			t.Cleanup(func() { close(stop) })
+			remote.mu.Lock()
+			remote.onRead = func(dir string) {
+				if dir != directory {
+					return
+				}
+				release := make(chan struct{})
+				select {
+				case reads <- release:
+				case <-stop:
+					return
+				}
+				select {
+				case <-release:
+				case <-stop:
+				}
+			}
+			remote.mu.Unlock()
+			nextRead := func() chan struct{} {
+				t.Helper()
+				var release chan struct{}
+				waitSFTP(t, state, session, func(*sftpView) bool {
+					select {
+					case release = <-reads:
+						return true
+					default:
+						return false
+					}
+				})
+				return release
+			}
+			assertShown := func() {
+				t.Helper()
+				if view.path != directory || view.busy || view.waiting != "" {
+					t.Fatalf("folder not shown: path=%q busy=%v waiting=%q", view.path, view.busy, view.waiting)
+				}
+				if len(view.rows) != 1 || view.rows[0].entry.Name != "guide.md" {
+					t.Fatalf("folder rows = %+v, want guide.md", view.rows)
+				}
+			}
+			waitAccepted := func(id uint64) {
+				t.Helper()
+				waitSFTP(t, state, session, func(view *sftpView) bool {
+					_, inFlight := view.prefetching[directory]
+					return !inFlight && view.acceptedListID == id && !view.busy && view.path == directory
+				})
+				assertShown()
+			}
+			docs := sftpRowIndex(t, view, "docs")
+			target := contextID(hitSFTPEntryList.At(docs - view.first))
+			press := func(clicks int) {
+				// As the runtime delivers a click: the press, then the click on release.
+				result := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: clicks, Target: target})
+				if !result.Handled {
+					state.Click(target)
+				}
+			}
 
-	press(1)
-	time.Sleep(100 * time.Millisecond) // the gap between the two presses of a double-click
-	started := time.Now()
-	press(2)
-	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
-	if waited := time.Since(started); waited > 30*time.Millisecond {
-		t.Fatalf("entering the folder took %v after the double-click; the first click should have started the read", waited)
-	}
-	if got := remote.readCount("/home/test/docs"); got != 1 {
-		t.Fatalf("the folder was listed %d times, want once", got)
-	}
+			press(1)
+			firstRead := nextRead()
+			firstID := view.prefetching[directory]
+			if firstID == 0 || view.path != "/home/test" || view.busy || remote.readCount(directory) != 1 {
+				t.Fatalf("single click did not prefetch without entering: id=%d path=%q busy=%v reads=%d", firstID, view.path, view.busy, remote.readCount(directory))
+			}
+			if completed {
+				close(firstRead)
+				waitSFTP(t, state, session, func(view *sftpView) bool {
+					_, inFlight := view.prefetching[directory]
+					_, remembered := view.listing(directory)
+					return !inFlight && remembered
+				})
+				press(2)
+				assertShown() // The completed prefetch is shown before the new read returns.
+				reread := nextRead()
+				id := view.prefetching[directory]
+				assertShown()
+				if remote.readCount(directory) != 2 {
+					t.Fatal("entering the prefetched folder did not start exactly one background reread")
+				}
+				close(reread)
+				waitAccepted(id)
+			} else {
+				press(2)
+				if !view.busy || view.waiting != directory || view.waitingID != firstID || view.prefetching[directory] != firstID {
+					t.Fatalf("double-click did not join the first read: busy=%v waiting=%q id=%d, want %d", view.busy, view.waiting, view.waitingID, firstID)
+				}
+				close(firstRead)
+				waitAccepted(firstID)
+				if remote.readCount(directory) != 1 {
+					t.Fatal("double-click listed the folder again instead of joining the first read")
+				}
+			}
 
-	// Back up, and in again: the folder is remembered, so it shows without
-	// waiting, and is read once more behind the scenes to stay true.
-	state.Click(hitSFTPUp)
-	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test" })
-	started = time.Now()
-	press(2)
-	if view.path != "/home/test/docs" || view.busy {
-		t.Fatalf("a remembered folder did not open at once: path=%q busy=%v", view.path, view.busy)
-	}
-	if time.Since(started) > 20*time.Millisecond {
-		t.Fatalf("a remembered folder took %v to show", time.Since(started))
-	}
-	waitSFTP(t, state, session, func(view *sftpView) bool { return remote.readCount("/home/test/docs") == 2 })
+			// A remembered folder is shown while its background reread is held.
+			state.Click(hitSFTPUp)
+			waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test" })
+			before := remote.readCount(directory)
+			press(2)
+			assertShown()
+			reread := nextRead()
+			rereadID := view.prefetching[directory]
+			assertShown()
+			if remote.readCount(directory) != before+1 {
+				t.Fatal("entering a remembered folder did not start exactly one background reread")
+			}
+			close(reread)
+			waitAccepted(rereadID)
 
-	// Refresh trusts nothing remembered.
-	before := remote.readCount("/home/test/docs")
-	state.Click(hitSFTPRefresh)
-	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy })
-	if remote.readCount("/home/test/docs") != before+1 {
-		t.Fatal("refresh did not list the folder again")
+			// Refresh waits for a new server result instead of using the cache.
+			before = remote.readCount(directory)
+			state.Click(hitSFTPRefresh)
+			if !view.busy {
+				t.Fatal("refresh did not wait for a new listing")
+			}
+			refreshID := view.navigation.id
+			refresh := nextRead()
+			if !view.busy || remote.readCount(directory) != before+1 {
+				t.Fatal("refresh did not start exactly one new listing")
+			}
+			close(refresh)
+			waitAccepted(refreshID)
+			if remote.readCount(directory) != before+1 {
+				t.Fatal("refresh listed the folder more than once")
+			}
+		})
 	}
 }
 
@@ -1299,8 +1792,8 @@ func TestSFTPRememberedFolderIsCorrectedByItsReread(t *testing.T) {
 	view := session.files
 	docs := sftpRowIndex(t, view, "docs")
 	enter := func() {
-		state.Pointer(ui.PointerEvent{
-			Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2,
+		state.Pointer(gfx.PointerEvent{
+			Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2,
 			Target: contextID(hitSFTPEntryList.At(docs - view.first)),
 		})
 	}
@@ -1471,4 +1964,74 @@ func TestALargeLinkedListingResolvesAfterItIsShown(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// The terminal pane is painted shifted by the files panel, so a wheel over its
+// left part lands on window coordinates that are also inside the panel's
+// width. That wheel is the terminal's: the panel only owns what is over it.
+func TestTheWheelOverTheTerminalBesideTheFilesPanelScrollsTheTerminal(t *testing.T) {
+	state, session, fake, _ := openTestSFTP(t)
+	shell := fake.shell(t)
+	var output strings.Builder
+	for line := 1; line <= 200; line++ {
+		output.WriteString("line\r\n")
+	}
+	shell.say(output.String())
+	state.Wake()
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	panel := state.contextRect
+	if panel.Width == 0 {
+		t.Fatal("the paint reported no files panel")
+	}
+	rows := len(session.files.rows)
+	first := session.files.first
+	over := pagedIdentity(state, session, terminalTestHit(state, session))
+	x, y := panel.X+panel.Width+panel.Width/2, panel.Y+200
+	result := state.Scroll(gfx.ScrollEvent{X: x, Y: y, DeltaY: -3 * state.cellHeight, Precise: true, Viewport: size, Target: over})
+	if got := session.term.screen.ViewOffset(); got != 3 || !result.Repaint {
+		t.Fatalf("a wheel over the terminal beside the panel: offset %d, %+v", got, result)
+	}
+	if session.files.first != first || len(session.files.rows) != rows {
+		t.Fatal("the wheel over the terminal moved the file list")
+	}
+}
+
+// TestSFTPChmodGridTransitionsThroughTheEventPass drives the permission grid
+// through the driver's real pointer event pass, not the test-only Click: the
+// dialog body is a page now, and its hand-painted checkbox hits must still
+// reach the central dispatcher and flip one bit of the octal field.
+func TestSFTPChmodGridTransitionsThroughTheEventPass(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	clickSFTPRow(t, state, view, "notes.txt")
+	state.Click(hitSFTPChmod)
+	if view.dialog != sftpDialogChmod || view.dialogEditor.String() != "644" {
+		t.Fatalf("chmod dialog = %d, value %q", view.dialog, view.dialogEditor.String())
+	}
+	driver := modalEventDriver(t, state)
+	if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitSFTPChmodBits.At(4)); !ok {
+		t.Fatal("the permission grid is not painted")
+	}
+	// Group write on 644: 664. The click goes through the event pass to the
+	// central dispatcher, which flips the bit of the field's value.
+	clickPaintedHit(t, driver, hitSFTPChmodBits.At(4))
+	if got := view.dialogEditor.String(); got != "664" {
+		t.Fatalf("after group-write click = %q, want 664", got)
+	}
+	if hit, ok := hitByIDInSnapshot(driver.Snapshot(), hitSFTPChmodBits.At(4)); !ok || !hit.Checked {
+		t.Fatalf("group-write box after the click = %+v, painted %v", hit, ok)
+	}
+	clickPaintedHit(t, driver, hitSFTPChmodBits.At(4))
+	if got := view.dialogEditor.String(); got != "644" {
+		t.Fatalf("after second click = %q, want 644", got)
+	}
+	// The field still moves the boxes: 700 has owner execute, and a click on
+	// that box clears it back to 600.
+	replaceSFTPDialogText(t, state, "700")
+	clickPaintedHit(t, driver, hitSFTPChmodBits.At(2))
+	if got := view.dialogEditor.String(); got != "600" {
+		t.Fatalf("after owner-exec click on 700 = %q, want 600", got)
+	}
 }

@@ -1,0 +1,194 @@
+/* A scroll-pinned product tour. The window stands up as the section enters,
+   then sticks under the site header while each step reveals one state of the
+   same capture in place. The step images must be the same size and the same
+   session as the base: the reveal only masks, so a different layout would show
+   through. Scroll progress is written to custom properties by
+   landing-showcase.tsx; nothing here polls or animates on its own. */
+
+.section {
+  --showcase-nav: 3.5rem; /* replaced with the measured header height */
+  --showcase-enter: 1;
+  --showcase-steps: 3;
+  position: relative;
+  margin-inline: auto;
+  max-width: 80rem;
+  padding-inline: 1rem;
+}
+
+.stage {
+  padding-top: 2rem;
+}
+
+.window {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-fd-border);
+  border-radius: 1rem;
+  background: var(--color-fd-card);
+  padding: 0.375rem;
+  box-shadow: 0 28px 70px -24px rgb(0 0 0 / 0.45);
+}
+
+.screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.75rem;
+}
+
+.screen img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Static fallback: one screenshot, no layers and no captions, until the
+   component decides it may run. Keep it that way for print, no-JS and
+   prefers-reduced-motion. */
+.step,
+.captions {
+  display: none;
+}
+
+.section[data-live] {
+  height: calc(100vh - var(--showcase-nav) + var(--showcase-steps) * 60vh);
+  height: calc(100svh - var(--showcase-nav) + var(--showcase-steps) * 60svh);
+}
+
+.section[data-live] .stage {
+  position: sticky;
+  top: var(--showcase-nav);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.75rem;
+  height: calc(100vh - var(--showcase-nav));
+  height: calc(100svh - var(--showcase-nav));
+  padding-top: 0;
+  perspective: 2000px;
+  perspective-origin: 50% 30%;
+}
+
+.section[data-live] .window {
+  width: min(100%, calc((100vh - var(--showcase-nav) - 200px) * 1.6));
+  width: min(100%, calc((100svh - var(--showcase-nav) - 200px) * 1.6));
+  flex-shrink: 0;
+  transform-origin: 50% 100%;
+  transform: translateY(calc((1 - var(--showcase-enter)) * -20%))
+    rotateX(calc((1 - var(--showcase-enter)) * 24deg))
+    scale(calc(0.88 + 0.12 * var(--showcase-enter)));
+  will-change: transform;
+}
+
+.section[data-live] .step {
+  position: absolute;
+  inset: 0;
+  display: block;
+  visibility: hidden;
+}
+
+.section[data-live] .step[data-on] {
+  visibility: visible;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+}
+
+/* The old screen leaves to the left while the new one arrives from the right.
+   Both fill the window, so the previous step never shows through. */
+.step[data-reveal='push'] .pushOld {
+  transform: translateX(calc(var(--showcase-t) * -100%));
+}
+
+.step[data-reveal='push'] .pushNew {
+  transform: translateX(calc((1 - var(--showcase-t)) * 100%));
+}
+
+.step[data-reveal='circle'] .reveal {
+  /* The centre is the theme button in the title bar of the capture. */
+  clip-path: circle(calc(var(--showcase-t) * 145%) at 94.5% 1.8%);
+}
+
+.section[data-live] .captions {
+  display: grid;
+  width: 100%;
+  max-width: 42rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: center;
+}
+
+.captions li {
+  display: flex;
+  grid-area: 1 / 1;
+  flex-direction: column;
+  gap: 0.5rem;
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 0.4s,
+    transform 0.4s;
+}
+
+.captions li[data-current] {
+  opacity: 1;
+  transform: none;
+}
+
+.captions strong {
+  color: var(--color-fd-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: clamp(1.1875rem, 1.8vw, 1.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.captions span {
+  color: var(--color-fd-muted-foreground);
+  font-size: 1rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+@media (width <= 720px) {
+  .stage {
+    padding-top: 1.5rem;
+  }
+
+  .section[data-live] {
+    height: calc(100vh - var(--showcase-nav) + var(--showcase-steps) * 50vh);
+    height: calc(100svh - var(--showcase-nav) + var(--showcase-steps) * 50svh);
+  }
+
+  .section[data-live] .stage {
+    gap: 1.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section[data-live] {
+    height: auto;
+  }
+
+  .section[data-live] .stage {
+    position: static;
+    height: auto;
+    display: block;
+    padding-top: 2rem;
+  }
+
+  .section[data-live] .window {
+    width: 100%;
+    transform: none;
+  }
+
+  .section[data-live] .step,
+  .section[data-live] .captions {
+    display: none;
+  }
+}

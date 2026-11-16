@@ -1,6 +1,14 @@
 package workbench
 
-import "testing"
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	"motty/internal/sshconn"
+	"motty/internal/x11fwd"
+)
 
 func TestForwardX11IsOffUntilSwitchedOnAndSurvivesARestart(t *testing.T) {
 	state := newTestState(t, testOptions(t))
@@ -35,5 +43,29 @@ func TestForwardX11IsOffUntilSwitchedOnAndSurvivesARestart(t *testing.T) {
 	defer again.Close()
 	if !find(again).ForwardX11 {
 		t.Fatal("the choice did not survive a restart")
+	}
+}
+
+func TestX11ReasonTellsTheUserWhatToInstallOnTheirSystem(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	tools := state.messages.Tools
+	unreachable := &x11fwd.UnreachableError{Address: "127.0.0.1:6000", Err: errors.New("refused")}
+	cases := []struct {
+		err  error
+		goos string
+		want []string
+	}{
+		{x11fwd.ErrNoDisplay, "darwin", []string{tools.X11HintMac}},
+		{unreachable, "windows", []string{"127.0.0.1:6000", tools.X11HintWindows}},
+		{unreachable, "linux", []string{tools.X11HintOther}},
+		{fmt.Errorf("wrapped: %w", sshconn.ErrX11Refused), "linux", []string{"xauth"}},
+	}
+	for _, c := range cases {
+		got := state.x11Reason(c.err, c.goos)
+		for _, want := range c.want {
+			if !strings.Contains(got, want) {
+				t.Errorf("%v on %s = %q, want it to contain %q", c.err, c.goos, got, want)
+			}
+		}
 	}
 }

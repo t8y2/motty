@@ -1,0 +1,102 @@
+# lang: zh-CN
+# 端到端:同一本地端口可以保存在多条转发上,同一时间只有一条能运行。
+# 第二条启动时被明确拒绝(已有转发使用该本地端口),停掉第一条后它可以启动。
+#
+# 需要先起 e2esshd,步骤与 tools/e2e/forward_tunnel_e2e.txt 头部相同:
+#   python3 -m http.server 28080 --bind 127.0.0.1 &
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .)
+#   /tmp/e2esshd 2222 127.0.0.1:28080 &
+#   python3 tools/headless_drive.py --build "$(mktemp -d)" tools/e2e/forward_dup_port_e2e.txt
+resize 1400 900
+settle 400
+click id:shell/import-menu
+settle 600
+openfiles tools/e2e/fixtures/readme_hosts_catalog.json
+click "导入目录"
+settle 1500
+click "端口转发"
+settle 900
+
+# 第一条:本地 18080 → staging-web → 127.0.0.1:28080
+click "新建转发"
+settle 600
+click id:forwards/forward-dialog-label
+type 开发环境
+click id:forwards/forward-dialog-host
+settle 300
+type staging
+settle 400
+click "staging-web"
+settle 300
+click id:forwards/forward-dialog-local-port
+key cmd+a
+type 18080
+click id:forwards/forward-dialog-destination
+type 127.0.0.1
+click id:forwards/forward-dialog-destination-port
+key cmd+a
+type 28080
+settle 300
+click "添加转发"
+settle 1000
+
+# 第二条:同一个本地端口 18080。修复前这里会被“已有转发使用该本地端口”挡住。
+click "新建转发"
+settle 600
+click id:forwards/forward-dialog-label
+type 测试环境
+click id:forwards/forward-dialog-host
+settle 300
+type staging
+settle 400
+click "staging-web"
+settle 300
+click id:forwards/forward-dialog-local-port
+key cmd+a
+type 18080
+click id:forwards/forward-dialog-destination
+type 127.0.0.1
+click id:forwards/forward-dialog-destination-port
+key cmd+a
+type 28080
+settle 300
+click "添加转发"
+settle 1000
+expect count role:tab 0
+shot /tmp/motty-641-two-rules.png
+
+# 启动第一条:后台隧道完成主机密钥与密码,行状态到运行中。
+click id:forwards/forward-row/#1
+click "启动"
+waitfor "信任" 5000
+click "信任并保存"
+waitfor "需要密码" 5000
+type secret
+key enter
+waitfor "运行中" 8000
+expect count role:tab 0
+settle 800
+
+# 启动第二条:同端口已被占用,明确拒绝,不开新的连接。
+click id:forwards/forward-row/#2
+click "启动"
+waitfor "已有转发使用该本地端口" 5000
+expect count role:tab 0
+settle 800
+shot /tmp/motty-641-conflict.png
+
+# 停掉第一条,第二条即可启动,同一端口换它监听。密码未选择保存,所以
+# 第二条的后台隧道会再次询问。
+click id:forwards/forward-row/#1
+click "停止"
+settle 800
+click id:forwards/forward-row/#2
+click "启动"
+waitfor "需要密码" 5000
+type secret
+key enter
+waitfor "运行中" 8000
+expect count role:tab 0
+settle 800
+shot /tmp/motty-641-swapped.png
+layout

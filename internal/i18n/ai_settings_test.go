@@ -21,7 +21,9 @@ func TestAISettingsCatalogIsCompleteInBothLanguages(t *testing.T) {
 		if strings.Count(en, "%") != strings.Count(zh, "%") {
 			t.Errorf("%s: format verbs differ between %q and %q", name, en, zh)
 		}
-		if !hasHan(zh) && !strings.HasPrefix(name, "FormBaseURL") && name != "ProviderKindClaude" {
+		// Product and protocol names stay as the vendors write them.
+		keepsName := strings.HasPrefix(name, "FormBaseURL") || name == "ProviderKindClaude" || name == "FormFormatChat" || name == "FormFormatResponses"
+		if !hasHan(zh) && !keepsName {
 			t.Errorf("%s: %q has no Chinese text", name, zh)
 		}
 	}

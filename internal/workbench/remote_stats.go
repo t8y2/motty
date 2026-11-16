@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/vivaui/viva/flex"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 
 	"motty/internal/remotestats"
-	"motty/internal/sshconn"
 )
 
 type remoteStatsState uint8
@@ -22,16 +20,16 @@ const (
 )
 
 // remoteStatsView holds the monitor and its latest reading. The reading is kept
-// as one preformatted piece per metric so that painting it, each in its own
-// color, formats and allocates nothing.
+// as preformatted metric and GPU pieces so monitor sections do not reformat it.
 type remoteStatsView struct {
+	panel  monitorView
 	worker *remotestats.Worker
 	state  remoteStatsState
 	text   string   // the whole reading as one line, for accessibility and tests
 	parts  []string // the four metrics, then one piece per GPU when the server has any
 }
 
-// remoteStatsMetric is one figure of the reading; each has its own color.
+// remoteStatsMetric identifies one figure of the reading.
 type remoteStatsMetric uint8
 
 const (
@@ -40,26 +38,26 @@ const (
 	statsDown
 	statsUp
 	statsMetricCount
-	// Every GPU piece after the four metrics is colored statsGPU.
-	statsGPU = statsMetricCount
 )
 
-func (state *State) clickRemoteStats(id ui.ID) bool {
+func (state *State) clickRemoteStats(id gfx.ID) bool {
 	if id != hitRemoteStats {
 		return false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
-	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone ||
-		!session.hasServer() || session.conn == nil || session.phase != sshconn.PhaseConnected || session.term == nil || !session.term.live {
+	if !ok || state.activeSection != sectionTerminal || state.modal != modalNone || !state.monitorOffered(session) {
 		return true
 	}
 	if session.stats == nil || session.stats.worker == nil && session.stats.state >= remoteStatsUnsupported {
 		state.stopRemoteStats(session)
-		session.stats = &remoteStatsView{state: remoteStatsMeasuring}
-		session.stats.worker = remotestats.Start(session.conn, state.notifyFor(session))
+		state.showMonitor()
 		return true
 	}
-	state.stopRemoteStats(session)
+	if state.monitorShown(state.deck.ActiveWorkspace()) {
+		state.closeMonitor()
+	} else {
+		state.showMonitor()
+	}
 	return true
 }
 
@@ -70,12 +68,38 @@ func (state *State) stopRemoteStats(session *Session) {
 	if session.stats.worker != nil {
 		session.stats.worker.Close()
 	}
+	if session.stats.panel.worker != nil {
+		session.stats.panel.worker.Close()
+	}
 	session.stats = nil
 }
 
 func (state *State) pumpRemoteStats(session *Session) {
 	view := session.stats
-	if view == nil || view.worker == nil {
+	if view == nil {
+		return
+	}
+	if view.panel.worker != nil {
+		for reading := true; reading; {
+			select {
+			case result, ok := <-view.panel.worker.Results():
+				if !ok {
+					view.panel.worker = nil
+					reading = false
+					break
+				}
+				view.panel.detailsFailed = result.Err != nil
+				if result.Err == nil {
+					view.panel.data = result.Details
+					view.panel.haveDetails = true
+				}
+				state.formatMonitor(view)
+			default:
+				reading = false
+			}
+		}
+	}
+	if view.worker == nil {
 		return
 	}
 	for {
@@ -83,6 +107,10 @@ func (state *State) pumpRemoteStats(session *Session) {
 		case result, ok := <-view.worker.Results():
 			if !ok {
 				view.worker = nil
+				if view.panel.worker != nil {
+					view.panel.worker.Close()
+					view.panel.worker = nil
+				}
 				return
 			}
 			if result.Err != nil {
@@ -94,11 +122,20 @@ func (state *State) pumpRemoteStats(session *Session) {
 				view.text = ""
 				view.worker.Close()
 				view.worker = nil
+				if view.panel.worker != nil {
+					view.panel.worker.Close()
+					view.panel.worker = nil
+				}
 				return
 			}
 			view.state = remoteStatsReady
+			if result.Details != nil {
+				view.panel.data = *result.Details
+				view.panel.haveDetails = true
+			}
 			view.text = formatRemoteStats(result.Sample)
 			view.parts = remoteStatsParts(result.Sample)
+			state.sampleMonitor(view, result.Sample)
 		default:
 			return
 		}
@@ -122,10 +159,10 @@ func (state *State) remoteStatsText(view *remoteStatsView) string {
 }
 
 // remoteStatsToggle describes the explicit opt-in beside Files: whether it is
-// offered at all (only on a live, connected shell), what its tooltip says and
+// offered at all (only on a live, connected shell, a server's or this computer's), what its tooltip says and
 // whether the monitor is running.
 func (state *State) remoteStatsToggle(session *Session) (hint string, style iconButtonStyle, offered bool) {
-	if !session.hasServer() || session.conn == nil || session.phase != sshconn.PhaseConnected || session.term == nil || !session.term.live {
+	if !state.monitorOffered(session) {
 		return "", iconButtonQuiet, false
 	}
 	switch {
@@ -142,9 +179,15 @@ func (state *State) remoteStatsToggle(session *Session) (hint string, style icon
 func remoteStatsParts(sample remotestats.Sample) []string {
 	parts := make([]string, statsMetricCount, int(statsMetricCount)+len(sample.GPUs))
 	parts[statsCPU] = fmt.Sprintf("CPU %.0f%%", sample.CPUPercent)
+	if sample.CPUUnavailable {
+		parts[statsCPU] = "CPU —"
+	}
 	parts[statsMemory] = "RAM " + formatMemory(sample.MemoryUsedBytes, sample.MemoryTotalBytes)
 	parts[statsDown] = "↓" + formatRate(sample.ReceiveBytesPerSecond)
 	parts[statsUp] = "↑" + formatRate(sample.SendBytesPerSecond)
+	if sample.NetworkUnavailable {
+		parts[statsDown], parts[statsUp] = "↓—", "↑—"
+	}
 	for index := range sample.GPUs {
 		parts = append(parts, formatGPU(&sample.GPUs[index], len(sample.GPUs) > 1))
 	}
@@ -155,6 +198,15 @@ func formatRemoteStats(sample remotestats.Sample) string {
 	text := fmt.Sprintf("CPU %.0f%%  RAM %s  ↓%s ↑%s", sample.CPUPercent,
 		formatMemory(sample.MemoryUsedBytes, sample.MemoryTotalBytes),
 		formatRate(sample.ReceiveBytesPerSecond), formatRate(sample.SendBytesPerSecond))
+	if sample.CPUUnavailable || sample.NetworkUnavailable {
+		text = ""
+		for i, p := range remoteStatsParts(sample)[:statsMetricCount] {
+			if i > 0 {
+				text += "  "
+			}
+			text += p
+		}
+	}
 	for index := range sample.GPUs {
 		text += "  " + formatGPU(&sample.GPUs[index], len(sample.GPUs) > 1)
 	}
@@ -210,60 +262,4 @@ func byteUnit(value uint64) (string, float64) {
 	default:
 		return "B", 1
 	}
-}
-
-// paintRemoteStatsReadout draws the reading from x, each metric in its own
-// color, and returns where the next thing may start. While there is no reading
-// it draws the one-line state ("measuring", "unavailable") in the quiet color.
-// Nothing is drawn that does not fit before limit.
-func (state *State) paintRemoteStatsReadout(canvas *ui.Canvas, view *remoteStatsView, x, y, limit float32) float32 {
-	pal := state.pal
-	const gap = 14
-	var widths [int(statsMetricCount) + remotestats.MaxGPUs]float32
-	count := 0
-	text := ""
-	if view.state != remoteStatsReady {
-		text = state.remoteStatsText(view)
-		widths[0] = min(canvas.TextWidthWeight(text, metrics.FontSizeS, ui.WeightMedium)+2, max(limit-x, 0))
-		count = 1
-	} else {
-		// As many metrics as fit before the limit.
-		end := x
-		for _, part := range view.parts[:min(len(view.parts), len(widths))] {
-			width := canvas.TextWidthWeight(part, metrics.FontSizeS, ui.WeightMedium) + 2
-			if end+width > limit {
-				break
-			}
-			widths[count] = width
-			count++
-			end += width + gap
-		}
-	}
-	// CPU in the accent, memory in blue, the two directions of traffic in green
-	// and violet: the palette's own terminal colors, so both themes stay legible.
-	blue, violet := pal.ansi[4], pal.ansi[5]
-	colors := [statsMetricCount + 1]ui.Color{
-		statsCPU: pal.accent, statsMemory: ui.RGB(blue[0], blue[1], blue[2]),
-		statsDown: pal.success, statsUp: ui.RGB(violet[0], violet[1], violet[2]),
-		statsGPU: pal.warning,
-	}
-	var last flex.Box
-	trailing := float32(0)
-	f := state.statsLayout.Begin(canvas, state.Theme(), ui.Rect{X: x, Y: y, Width: max(limit-x, 0), Height: infoBarHeight})
-	f.Row().Fill().Items(flex.Center).Children(func() {
-		for metric := range count {
-			label, color := text, pal.muted
-			gapAfter := float32(12)
-			if view.state == remoteStatsReady {
-				label, color, gapAfter = view.parts[metric], colors[min(metric, int(statsGPU))], gap
-			}
-			last, trailing = f.Text(label).FontSize(metrics.FontSizeS).Weight(ui.WeightMedium).Color(color).Width(widths[metric]).Shrink(0).MarginSides(0, gapAfter, 0, 0), gapAfter
-		}
-	})
-	f.End()
-	if count == 0 {
-		return x
-	}
-	// Where the next thing may start: after the last metric and its gap.
-	return last.Rect().X + last.Rect().Width + trailing
 }

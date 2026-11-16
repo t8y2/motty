@@ -2,7 +2,7 @@ package workbench
 
 import (
 	"fmt"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 
 	layoutcore "motty/internal/workspace"
 )
@@ -39,9 +39,22 @@ func (state *State) broadcastInput(source uint32, input []byte) {
 		if uint32(pane.SessionID) == source {
 			continue
 		}
-		if peer, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && peer.term != nil && peer.term.shell != nil {
+		if peer, ok := state.sessionByIDPointer(uint32(pane.SessionID)); ok && workspaceSessionState(peer) == workspacePaneConnected {
 			peer.term.send(input)
 		}
+	}
+}
+
+// clearBroadcast stops input from reaching other panes. Callers use it before
+// a connection can change who is typing to whom.
+func (state *State) clearBroadcast() {
+	state.broadcast = 0
+}
+
+// clearWorkspaceBroadcast closes broadcast when workspaceID is its target.
+func (state *State) clearWorkspaceBroadcast(workspaceID layoutcore.WorkspaceID) {
+	if state.broadcast == workspaceID {
+		state.broadcast = 0
 	}
 }
 
@@ -59,33 +72,45 @@ func (state *State) broadcasting(sessionID uint32) bool {
 func (state *State) toggleBroadcast() {
 	m := state.messages.Tools
 	workspaceID := state.deck.ActiveWorkspace()
-	if state.broadcast == workspaceID {
+	if workspaceID != 0 && state.broadcast == workspaceID {
 		state.broadcast = 0
 		state.status = m.StatusBroadcastOff
 		return
 	}
-	panes := len(state.deck.Panes(workspaceID, nil))
-	if workspaceID == 0 || panes < 2 {
-		state.status = m.StatusBroadcastNeedsSplit
+	status := state.workspaceConnectionState(workspaceID)
+	if workspaceID == 0 || status.Panes < 2 {
+		state.showActionWarning(m.BroadcastStart, m.StatusBroadcastNeedsSplit)
+		return
+	}
+	if status.Pending > 0 {
+		state.showActionWarning(m.BroadcastStart, m.StatusBroadcastWait)
+		return
+	}
+	if status.Connected < 2 {
+		state.showActionWarning(m.BroadcastStart, m.StatusBroadcastNeedsTwo)
 		return
 	}
 	state.broadcast = workspaceID
-	state.status = fmt.Sprintf(m.StatusBroadcastOnFmt, panes)
+	state.status = fmt.Sprintf(m.StatusBroadcastOnFmt, status.Connected)
 }
 
 // clickTerminalTools handles the controls of the terminal's tools: color
 // scheme cards, highlight rules, snippets and broadcast. It reports whether the
 // id was one of them.
-func (state *State) clickTerminalTools(id ui.ID) bool {
+func (state *State) clickTerminalTools(id gfx.ID) bool {
 	switch {
 	case id == hitBroadcast:
 		state.toggleBroadcast()
-	case id.Scope() == hitSettingsSchemeList:
+	case id.Scope() == hitSettingsSchemeList || id.Scope() == hitSchemeDrawerList:
 		index := item(id)
-		schemeID, _, _ := state.schemeAt(index)
-		if state.setTerminalScheme(schemeID) {
-			state.save()
+		if index < state.schemeTotal() {
+			schemeID, _, _ := state.schemeAt(index)
+			if state.setTerminalScheme(schemeID) {
+				state.save()
+			}
 		}
+	case id == hitSchemeBrowseAll:
+		state.openSchemeBrowser()
 	case id == hitSettingsHighlightToggle:
 		if state.setBuiltinHighlight(state.highlighting.builtinOff) {
 			state.save()
@@ -93,18 +118,62 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 	case id == hitSettingsCursorToggle:
 		state.terminalCursorSteady = !state.terminalCursorSteady
 		state.save()
+	case id == hitSettingsCopyOnSelect:
+		state.terminalCopyOnSelect = !state.terminalCopyOnSelect
+		state.save()
+	case id == hitSettingsLatencyToggle:
+		state.terminalShowLatency = !state.terminalShowLatency
+		state.syncLatencyToolbarEntry()
+		state.save()
+	case id == hitSettingsRightClickPaste:
+		state.terminalRightClickPaste = !state.terminalRightClickPaste
+		state.save()
+	case id == hitSettingsInputClick:
+		state.terminalInputClickOff = !state.terminalInputClickOff
+		state.save()
+	case id == hitSettingsBellToggle:
+		state.terminalBellOff = !state.terminalBellOff
+		state.save()
+	case id == hitSettingsLinkPlainClick:
+		state.terminalLinkPlainClick = !state.terminalLinkPlainClick
+		state.save()
 	case id == hitSettingsNotifyToggle:
 		if state.setNotifications(state.notifyOff) {
+			state.save()
+		}
+	case id == hitSettingsPasteImageToggle:
+		if state.setPasteImage(state.pasteImageOff) {
+			state.save()
+		}
+	case id == hitSettingsCloseConfirmToggle:
+		state.closeConfirmOff = !state.closeConfirmOff
+		state.save()
+	case id == hitSettingsPasswordHintToggle:
+		if state.setPasswordHint(state.passwordHintOff) {
 			state.save()
 		}
 	case id == hitSettingsProxyConfigure:
 		state.openOutboundProxyDialog()
 	case id == hitSettingsFontPick:
-		state.openFontPicker()
+		state.openFontPicker(false)
+	case id == hitSettingsFallbackAdd:
+		state.openFontPicker(true)
+	case id == hitSettingsFallbackClear:
+		if state.clearFallbackFonts() {
+			state.save()
+		}
 	case id == hitImportSessions:
 		state.modal = modalImportSessions
+	case state.clickCredentialSettings(id):
+	case state.clickHostTagSettings(id):
+	case id == hitSettingsHighlightManage:
+		state.openRuleManager(ruleDeleteHighlight)
+	case id == hitSettingsAutofillManage:
+		state.openRuleManager(ruleDeleteAutofill)
 	case id == hitSettingsAutofillAdd:
 		state.openAutofillDialog(nil)
+	case id == hitSettingsAutofillSudo:
+		state.openAutofillSudoPreset()
 	case id.Scope() == hitAutofillToggleList:
 		state.toggleAutofillRule(item(id))
 	case id.Scope() == hitAutofillEditList:
@@ -112,17 +181,13 @@ func (state *State) clickTerminalTools(id ui.ID) bool {
 			state.openAutofillDialog(state.autofillRules.rules[index])
 		}
 	case id.Scope() == hitAutofillDeleteList:
-		state.deleteAutofillRule(item(id))
+		state.askDeleteAutofillRule(item(id))
 	case id == hitSettingsHighlightAdd:
 		state.openHighlightDialog()
+	case id == hitSettingsHighlightImport:
+		state.importHighlightRules()
 	case id.Scope() == hitHighlightDeleteList:
-		state.deleteHighlightRule(item(id))
-	case id == hitSettingsSnippetAdd:
-		state.openSnippetDialog(-1)
-	case id.Scope() == hitSnippetEditList:
-		state.openSnippetDialog(item(id))
-	case id.Scope() == hitSnippetDeleteList:
-		state.deleteSnippet(item(id))
+		state.askDeleteHighlightRule(item(id))
 	case id.Scope() == hitSnippetSendList:
 		state.sendSnippet(item(id))
 	default:

@@ -1,0 +1,11 @@
+# Settings > Terminal > Local shell > Git Bash. Run once after `start` (the probe starts with an
+# empty data directory). Clicks are logical pixels inside the window at the default `place`
+# size; they depend on the layout, so `shot` is taken after every click to make a miss visible.
+# The settings gear is the last icon of the title bar's right group (logical 836,18).
+place
+focus
+sleep 500
+keys {ESC}
+clickw 836 18
+sleep 1000
+shot gb-1

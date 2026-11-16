@@ -21,7 +21,7 @@ import (
 type Mode uint8
 
 const (
-	// ModeAsk offers only request_agent_mode: the model answers, and can ask the
+	// ModeAsk offers request_agent_mode and explicitly configured note_query: the model answers, and can ask the
 	// user to switch to Agent when the request needs a tool.
 	ModeAsk Mode = iota
 	// ModeAgent offers Config.Tools (all tools when nil).
@@ -36,19 +36,23 @@ const (
 	EventReasoning                         // Text is a reasoning delta (never sent back to the model)
 	EventToolStart                         // Call is about to run
 	EventToolDone                          // Call finished; Result is what the model will see (before truncation)
-	EventAgentModeRequest                  // Ask mode's one tool: the user may switch to Agent
+	EventAgentModeRequest                  // The user may switch from Ask to Agent
 	EventDone                              // the run finished; Usage is the sum over all turns
 	EventError                             // Text describes the failure; the run ends
 )
 
 // Event is one item reported to the caller.
 type Event struct {
-	Kind   EventKind
-	Text   string
-	Call   llm.ToolCall
-	Result gate.Result
-	Step   int // 1-based model turn the event belongs to
-	Usage  llm.Usage
+	Kind            EventKind
+	Text            string
+	Call            llm.ToolCall
+	Result          gate.Result
+	Step            int // 1-based model turn the event belongs to
+	Usage           llm.Usage
+	UsageIncomplete bool
+	// StopReason is why the provider ended the turn EventDone reports, such as
+	// "stop", "length" or "tool_calls".
+	StopReason string
 }
 
 // Config configures one Run.
@@ -57,13 +61,16 @@ type Config struct {
 	Model    string
 	System   string
 	Mode     Mode
-	Tools    []tools.Spec // offered in ModeAgent; nil means tools.All()
+	Tools    []tools.Spec // Agent: nil means tools.All(); Ask: only note_query is eligible.
 	Gate     gate.Gate
 
 	// UserInHistory says history already ends with the user message to answer;
 	// Run then returns only the new assistant and tool messages. It is used when
 	// an Ask run hands the same request to a new Agent run.
 	UserInHistory bool
+	// UserImages go with the user message Run adds, before its text. They are
+	// ignored when UserInHistory is set: that message already has its own.
+	UserImages []llm.Image
 	// NoTools answers without even the escalation tool. It is used after the
 	// user declines Ask mode's request to switch to Agent.
 	NoTools bool
@@ -72,8 +79,9 @@ type Config struct {
 	MaxSteps int
 	// StepTimeout is the deadline of one tool call, approval time included
 	// (default 90s).
-	StepTimeout time.Duration
-	MaxTokens   int
+	StepTimeout     time.Duration
+	MaxTokens       int
+	ReasoningEffort string
 	// MaxToolResultBytes cuts longer tool output, keeping head and tail
 	// (default 32 KiB).
 	MaxToolResultBytes int
@@ -99,7 +107,7 @@ const (
 	// askNote overrides the system prompt's description of running commands:
 	// a model told it can run them, with no tool definitions in the request, emits
 	// its native call markup as plain text (DeepSeek's DSML).
-	askNote           = "\n\nAsk mode is active. The only tool available is request_agent_mode; it runs nothing. Call it when the user asks you to run, change, inspect a session, or otherwise use a tool. The application will ask the user to switch to Agent mode and retry. Do not claim you lack permission, do not write tool-call markup as text, and do not ask the user to run commands themselves when request_agent_mode can ask for the switch."
+	askNote           = "\n\nAsk mode is active. If note_query is offered, use it directly to search and read the note library without switching modes. All edits and terminal operations require switching to Agent. request_agent_mode runs nothing; call it when the user asks for an operation this mode withholds. The application will ask the user to switch to Agent mode and retry. Do not claim you lack permission, do not write tool-call markup as text, and do not ask the user to run commands themselves when request_agent_mode can ask for the switch."
 	noToolsAnswerNote = "\n\nAsk mode is active and the user declined switching to Agent. No tools are available. Answer from the attached terminal text and the conversation; do not claim a permission problem, do not write a tool call, and do not ask the user to run commands unless the answer genuinely cannot be given otherwise."
 )
 
@@ -144,9 +152,14 @@ func trimHistory(history []llm.Message, budget int) []llm.Message {
 	return history[starts[kept]:]
 }
 
+// imageCost is what a picture counts for in the history budget. Models price a
+// picture by its dimensions, about a thousand tokens whatever the file size, so
+// its bytes would charge a photo far more than the room it takes in the context.
+const imageCost = 8 << 10
+
 // messageBytes is the wire size a message roughly costs.
 func messageBytes(message llm.Message) int {
-	size := len(message.Text) + len(message.ToolCallID) + 8
+	size := len(message.Text) + len(message.ToolCallID) + 8 + len(message.Images)*imageCost
 	for _, call := range message.ToolCalls {
 		size += len(call.ID) + len(call.Name) + len(call.Arguments) + 8
 	}
@@ -160,8 +173,10 @@ func messageBytes(message llm.Message) int {
 // It returns the NEW messages of this run (the user message, assistant
 // messages with their tool calls, RoleTool results, the final answer) for the
 // caller to append to its history. They always form a valid history: on
-// failure or cancellation only the complete rounds are returned. On
-// cancellation the error is ctx.Err() and no event is emitted.
+// failure or cancellation only the complete rounds are returned, and a turn cut
+// off at the output limit before any prose ends the run without an assistant
+// message, leaving an unanswered round. On cancellation the error is ctx.Err()
+// and no event is emitted.
 func Run(ctx context.Context, cfg Config, history []llm.Message, userText string, emit func(Event)) ([]llm.Message, error) {
 	if emit == nil {
 		emit = func(Event) {}
@@ -194,12 +209,19 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			offered[t.Name] = true
 		}
 	default:
-		// Ask mode normally gets exactly one meta-tool. After a decline it gets
-		// none, so the model can answer without starting another escalation.
+		// Ask mode allows only explicitly configured note queries plus escalation.
+		// After a decline it gets no tools, preventing repeated escalation.
 		if !cfg.NoTools {
 			t := tools.RequestAgentModeSpec()
 			specs = append(specs, llm.ToolSpec{Name: t.Name, Description: t.Description, Schema: t.Schema})
 			offered[t.Name] = true
+			for _, t := range cfg.Tools {
+				if t.Name != tools.NameNoteQuery {
+					continue
+				}
+				specs = append(specs, llm.ToolSpec{Name: t.Name, Description: t.Description, Schema: t.Schema})
+				offered[t.Name] = true
+			}
 		}
 	}
 
@@ -209,23 +231,34 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 	base := len(history)
 	safe := base // msgs[:safe] is a valid history
 	if !cfg.UserInHistory {
-		user := llm.Message{Role: llm.RoleUser, Text: userText}
+		user := llm.Message{Role: llm.RoleUser, Text: userText, Images: cfg.UserImages}
 		msgs = append(msgs, user)
 		safe++
 	}
+	if session, ok := cfg.Provider.(SessionProvider); ok {
+		return runSession(ctx, cfg, session, msgs, base, specs, emit)
+	}
 
 	var (
-		usage     llm.Usage
-		nextID    int
-		lastKey   string
-		streak    int
-		toolSteps int
+		usage           llm.Usage
+		usageIncomplete bool
+		nextID          int
+		lastKey         string
+		streak          int
+		toolSteps       int
 	)
 	newMsgs := func() []llm.Message { return append([]llm.Message(nil), msgs[base:safe]...) }
 
 	for turn := 1; ; turn++ {
 		final := toolSteps >= cfg.MaxSteps
-		req := llm.Request{Model: cfg.Model, System: cfg.System, Messages: msgs, MaxTokens: cfg.MaxTokens, Temperature: cfg.Temperature}
+		req := llm.Request{
+			Model:           cfg.Model,
+			System:          cfg.System,
+			Messages:        msgs,
+			MaxTokens:       cfg.MaxTokens,
+			Temperature:     cfg.Temperature,
+			ReasoningEffort: cfg.ReasoningEffort,
+		}
 		switch {
 		case final:
 			req.System += summariseNote
@@ -237,20 +270,18 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 		default:
 			req.Tools = specs
 		}
-		text, calls, u, err := stream(ctx, cfg.Provider, req, turn, emit)
-		usage.InputTokens += u.InputTokens
-		usage.OutputTokens += u.OutputTokens
+		text, calls, thinking, u, stop, err := stream(ctx, cfg.Provider, req, turn, emit)
+		usage = usage.Add(u)
+		usageIncomplete = usageIncomplete || u == (llm.Usage{})
 		if ctx.Err() != nil {
 			return newMsgs(), ctx.Err()
 		}
 		if err != nil {
-			emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage})
+			emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 			return newMsgs(), err
 		}
 		if cfg.Mode != ModeAgent {
-			// The only call Ask mode can act on is the escalation request. It
-			// never reaches the gate; it ends this run and leaves the approval
-			// card to the caller.
+			// Escalation ends the run before any operations in this batch execute.
 			var escalation *llm.ToolCall
 			for index := range calls {
 				if calls[index].Name == tools.NameRequestAgentMode {
@@ -258,16 +289,41 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 					break
 				}
 			}
-			if escalation != nil && !final {
-				emit(Event{Kind: EventAgentModeRequest, Call: *escalation, Step: turn, Usage: usage})
+			if escalation != nil && !final && offered[tools.NameRequestAgentMode] {
+				emit(Event{Kind: EventAgentModeRequest, Call: *escalation, Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				return newMsgs(), nil
 			}
-			calls = nil // nothing else was offered, so nothing is run
+			allowed := make([]llm.ToolCall, 0, len(calls))
+			for _, call := range calls {
+				if call.Name == tools.NameNoteQuery && offered[call.Name] {
+					allowed = append(allowed, call)
+					continue
+				}
+				if strings.TrimSpace(text) == "" {
+					err := fmt.Errorf("agent: the model called %q, which this mode does not offer", call.Name)
+					emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
+					return newMsgs(), err
+				}
+			}
+			calls = allowed
 		}
 		if final || len(calls) == 0 {
-			msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Text: text})
+			// A turn with no prose and no calls is never a real answer: say so
+			// instead of ending on an empty bubble. The exception is an answer
+			// the provider cut off at its output limit before any prose
+			// arrived: report that as the truncation it is.
+			if strings.TrimSpace(text) == "" {
+				if llm.StopsAtLimit(stop) {
+					emit(Event{Kind: EventDone, Step: turn, Usage: usage, StopReason: stop, UsageIncomplete: usageIncomplete})
+					return newMsgs(), nil
+				}
+				err := errors.New("agent: the model returned an empty answer")
+				emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
+				return newMsgs(), err
+			}
+			msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Text: text, Thinking: thinking})
 			safe = len(msgs)
-			emit(Event{Kind: EventDone, Step: turn, Usage: usage})
+			emit(Event{Kind: EventDone, Step: turn, Usage: usage, StopReason: stop, UsageIncomplete: usageIncomplete})
 			return newMsgs(), nil
 		}
 		toolSteps++
@@ -292,7 +348,7 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			}
 			seen[calls[i].ID] = true
 		}
-		msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Text: text, ToolCalls: calls})
+		msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Text: text, ToolCalls: calls, Thinking: thinking})
 
 		stuck := false
 		for _, call := range calls {
@@ -301,12 +357,12 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			case stuck:
 				res = gate.Result{Text: "not executed: the run was stopped", IsError: true}
 			default:
-				emit(Event{Kind: EventToolStart, Call: call, Step: turn})
+				emit(Event{Kind: EventToolStart, Call: call, Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				res = runTool(ctx, cfg, offered, call)
 				if ctx.Err() != nil {
 					return newMsgs(), ctx.Err()
 				}
-				emit(Event{Kind: EventToolDone, Call: call, Result: res, Step: turn})
+				emit(Event{Kind: EventToolDone, Call: call, Result: res, Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 				key := call.Name + "\x00" + call.Arguments
 				switch {
 				case !res.IsError:
@@ -331,7 +387,7 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 		safe = len(msgs)
 		if stuck {
 			err := fmt.Errorf("agent: the model repeated the same failing call %d times", stuckLimit)
-			emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage})
+			emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 			return newMsgs(), err
 		}
 	}
@@ -343,23 +399,24 @@ func fail(emit func(Event), _ []llm.Message, step int, u llm.Usage, err error) (
 }
 
 // stream runs one model turn. On context cancellation it returns promptly.
-func stream(ctx context.Context, p llm.Provider, req llm.Request, turn int, emit func(Event)) (string, []llm.ToolCall, llm.Usage, error) {
+func stream(ctx context.Context, p llm.Provider, req llm.Request, turn int, emit func(Event)) (string, []llm.ToolCall, []llm.ThinkingBlock, llm.Usage, string, error) {
 	var (
-		sb    strings.Builder
-		calls []llm.ToolCall
-		usage llm.Usage
+		sb       strings.Builder
+		calls    []llm.ToolCall
+		thinking []llm.ThinkingBlock
+		usage    llm.Usage
 	)
 	ch, err := p.Stream(ctx, req)
 	if err != nil {
-		return "", nil, usage, err
+		return "", nil, nil, usage, "", err
 	}
 	for {
 		select {
 		case <-ctx.Done():
-			return "", nil, usage, ctx.Err()
+			return "", nil, nil, usage, "", ctx.Err()
 		case ev, ok := <-ch:
 			if !ok {
-				return "", nil, usage, errors.New("agent: the model stream ended unexpectedly")
+				return "", nil, nil, usage, "", errors.New("agent: the model stream ended unexpectedly")
 			}
 			switch ev.Kind {
 			case llm.EventText:
@@ -367,25 +424,29 @@ func stream(ctx context.Context, p llm.Provider, req llm.Request, turn int, emit
 				emit(Event{Kind: EventText, Text: ev.Text, Step: turn})
 			case llm.EventReasoning:
 				emit(Event{Kind: EventReasoning, Text: ev.Text, Step: turn})
+			case llm.EventThinking:
+				if ev.Thinking != nil {
+					thinking = append(thinking, *ev.Thinking)
+				}
 			case llm.EventToolCall:
 				if ev.ToolCall != nil {
 					calls = append(calls, *ev.ToolCall)
 				}
 			case llm.EventDone:
 				usage = ev.Usage
-				return sb.String(), calls, usage, nil
+				return sb.String(), calls, thinking, usage, ev.StopReason, nil
 			case llm.EventError:
 				if ev.Err == nil {
-					return "", nil, usage, errors.New("agent: model error")
+					return "", nil, nil, usage, "", errors.New("agent: model error")
 				}
-				return "", nil, usage, ev.Err
+				return "", nil, nil, usage, "", ev.Err
 			}
 		}
 	}
 }
 
 func runTool(ctx context.Context, cfg Config, offered map[string]bool, call llm.ToolCall) gate.Result {
-	if cfg.Mode != ModeAgent || !offered[call.Name] {
+	if !offered[call.Name] || cfg.Mode != ModeAgent && call.Name != tools.NameNoteQuery {
 		return gate.Result{Text: "unknown tool " + call.Name, IsError: true}
 	}
 	tctx, cancel := context.WithTimeout(ctx, cfg.StepTimeout)
@@ -424,7 +485,7 @@ func DefaultSystem(sessionSummary string) string {
 	b.WriteString(`You are an SSH operations assistant built into Motty, a native SSH client.
 
 How you work:
-- Commands you run execute in the user's visible terminal, so the user sees everything you do.
+- Commands execute in the addressed terminal session and remain visible in that session's tab, even when another tab is active.
 - Start with read-only inspection before changing anything. Run one command at a time and look at its result before the next.
 - Explain what a command does and why before any risky or state-changing action (deleting, overwriting, restarting services, changing permissions, installing software).
 - Never invent command output, file contents or system state. If you did not see it, say so.

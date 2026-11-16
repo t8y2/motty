@@ -1,30 +1,168 @@
 # Releasing Motty
 
-A release is a version tag. Pushing `v0.1.2` runs `.github/workflows/release.yml`,
-which builds every package, signs what it has the secrets to sign, and uploads
-everything to a **draft** release. You read the draft and publish it.
+A release is a version tag. The commit the tag points at carries the version bump
+and the release notes in `docs/releases/<version>.md`; the tag's body is those
+same notes. Pushing `v<version>` starts the release: a draft is created from the
+committed notes, the workflow waits for it, builds every package, signs what it
+has the secrets to sign, verifies the finished matrix, and publishes it. The tag
+is the approval — the notes were read in the commit, and the workflow checks the
+artifacts before anything goes public.
 
 ```sh
-# 1. bump version in viva.toml, commit, push the branch
-# 2. tag exactly v<version> and push the tag
-git tag v0.1.2 && git push origin v0.1.2
-# 3. when the workflow is green, review the draft on GitHub and publish it
-gh release edit v0.1.2 --draft=false
+# 1. write docs/releases/<version>.md, then bump both version files and run the
+#    preflight (clean main, tag free, last release, exact-head tests):
+go run ./tools/releaseprep -version 0.1.7
+# 2. commit, and tag with the notes as the tag body. --cleanup=verbatim keeps
+#    the "## " headings that git tag would otherwise strip as comments:
+git commit -am "chore(release): 0.1.7"
+git push origin main
+git tag -a --cleanup=verbatim v0.1.7 -F docs/releases/0.1.7.md
+git push origin refs/tags/v0.1.7
+# 3. create the draft the workflow is waiting for, from the same notes:
+gh release create v0.1.7 --repo t8y2/motty --draft --verify-tag \
+  --title "Motty v0.1.7" --notes-file docs/releases/0.1.7.md
+# 4. when the workflow is green the packages are on the mirror, the release is
+#    public and the update feed names it; check it end to end:
+go run ./tools/releaseverify -tag v0.1.7
 ```
 
-`tools/release.sh` refuses a tag that is not `v` plus the version in `viva.toml`.
+`tools/releaseprep` refuses a dirty or non-main checkout, a tag that already
+exists, a version that is not newer than the last published release, and an
+exact-head `tests.yml` that is not green (`-allow-ci-pending` only skips queued or
+running tests, never a failure). It never commits, tags or creates anything.
+`tools/release.sh` still refuses a tag that is not `v` plus the version in
+`viva.toml`, and the *Release draft ready* job refuses a tag whose commit or body
+does not carry the committed notes.
+
+The application is built from a clean local clone with a real `.git` directory.
+Go 1.26 does not automatically stamp Git metadata from the `.git` file of a
+linked worktree. Before each generated executable is packaged, `tools/checkbuild`
+reads its Go build information and checks the exact commit, commit time, clean
+source status and target OS/architecture; for Linux and Windows it also refuses
+an executable built with cgo, so a package cannot silently take the build
+machine's C library. Viva packages that checked executable
+through `--program`, so the Windows executable is Authenticode-signed with the
+configured options before the check reads it: Viva uses a supplied program as it
+is and would otherwise package it unsigned. The check also works for
+cross-compiled Windows binaries.
+The optional `--installer` input is an externally built installer and is not
+covered by this executable check; the automated release workflow does not use it.
+
+Linux and Windows programs are built without cgo: Viva reaches those systems
+through purego and their own system calls, so `viva build` pins `CGO_ENABLED=0`
+for both targets. The Linux packages therefore do not link the C library of the
+runner that built them (a cgo build would take that runner's glibc, and an
+Ubuntu 24.04 binary refuses to start on a distribution with glibc 2.28). They
+need only the libraries they load at run time: Vulkan, XCB and Cairo.
 
 ## What each job does
 
-| Job | Runs on | Builds |
+| Job | Runs on | Does |
 | --- | --- | --- |
-| Draft release | Ubuntu | creates the draft if there is none |
-| macOS | macOS 15 (arm64) | `.zip` and `.dmg` for arm64 and amd64; signed, notarized and stapled |
-| Linux and Windows | Ubuntu | `.tar.gz` and `.deb` (amd64, arm64), Windows `.zip` (amd64, arm64) and the amd64 installer; the Windows programs and the installer signed |
-| Checksums | Ubuntu | `SHA256SUMS` of everything the release then holds |
+| Pin viva | Ubuntu | resolves `vivaui/viva` main to one commit |
+| Release draft ready | Ubuntu | checks the tag body is the committed notes, waits for the draft release, and holds its body to those notes |
+| macOS | macOS 15 (arm64) | `.dmg` and `.zip` for arm64 and amd64; signed, notarized and stapled |
+| Linux and Windows | Ubuntu | `.tar.gz` and `.deb` (amd64, arm64), a `PKGBUILD` and `.SRCINFO` for each Linux architecture, and an NSIS installer for Windows amd64 and arm64; the Windows programs and the installers signed |
+| Checksums | Ubuntu | signs every package of the release, writes `SIGNATURES` and `SHA256SUMS`, and verifies the whole release |
+| Publish | Ubuntu | copies the packages to the mirror, publishes the verified draft, then flips `latest.json` |
+
+The *Publish* job runs in that order on purpose: the bytes go to the mirror while
+the release is still a draft, the release page goes public only once they are
+confirmed there, and `latest.json` — the file an installed copy updates from —
+changes last. Nothing public ever names a file the mirror does not hold, and a
+release that fails at any step before the last leaves the update feed on the
+previous version.
 
 The two build jobs run at the same time and upload to the same draft. Re-running
-a failed job replaces its files. The Linux packages are not signed.
+a failed job replaces its files. The *Checksums* job is the only one that sees
+the whole matrix, so it is where the packages are signed into one `SIGNATURES`
+and where `SHA256SUMS` is written: a build job that signed only its own platform
+would have its manifest replaced by the other job's upload. The Linux packages
+are not code-signed.
+
+## The Viva update feed
+
+Every release publishes two update feeds during the migration:
+
+- `https://dl.motty.page/latest.json`, the existing one read by installed
+  versions, with a minisign signature per package;
+- `https://dl.motty.page/viva/latest.json`, the signed Ed25519 feed
+  `github.com/vivaui/viva/update` reads, with a patch per asset for the previous
+  release (macOS zip, Linux tar.gz, Windows portable zip).
+
+`tools/mirror-release.sh --announce` writes the second one when
+`MOTTY_VIVA_UPDATE_KEY` is set. The key is the base64 64-byte Ed25519 private
+key (`viva update-keygen`); its public half is `VivaPublicKey` in
+`internal/update`. The private key lives only in CI secrets and the owner's
+offline copy. Without the secret only the existing feed is written, which is
+what old versions read.
+
+The Viva feed names the release's own assets and patches at
+`releases/<tag>/`, so a patch URL is immutable. Patches are made from the
+previous published release's matching archives; a first release, or a failed
+download, simply has none and clients download the full archive. The Windows
+portable zip's `motty-data` folder is excluded from its patch, because it is
+the user's data.
+
+Both feeds are published for 12 months after the first version that reads the
+Viva feed ships; then the existing one and `tools/updatesign` are retired. The
+migration stages and decisions are in
+`.private/decisions/0021-updates-converge-on-viva.md`.
+
+## What the gate checks
+
+The tag is a promise that the artifacts are right, so the *Checksums* job proves
+it before *Publish* runs. `tools/release.sh --sums TAG --expect-viva SHA` stops
+the release unless
+
+- the draft holds exactly the eighteen assets of the matrix and nothing else;
+- `SHA256SUMS` lists every package and matches the uploaded bytes;
+- `SIGNATURES` has one line per package and each signature verifies against the
+  key compiled into the app, bound to that file name and version;
+- the title is `Motty <tag>` and the notes name the Viva commit that was built;
+- the release is still a draft (a published release is never rewritten).
+
+`--verify TAG --expect-viva SHA` runs the same checks on a release without
+signing or uploading anything, and `--check-dir DIR --version V` runs the file
+checks on a build directory. What the gate cannot see is the app itself: tests
+and, when a change touches windows, input or updates, a headless run are still
+what keeps a release worth publishing.
+
+If a job fails, the draft stays and nothing is published. Fix the cause, delete
+the draft and the tag, and tag again. A missing draft is not a failure in the
+build: create it from the notes and rerun the workflow. Once the *Publish* job
+has published the release a fix is a new patch version, not an edit. The one step with a different
+recovery is *Announce*: if the copy and the publish went through but `latest.json`
+did not, the release is public on the previous feed — run *Actions → Mirror
+release → Run workflow* with the tag to finish it without touching the release.
+
+## The release notes
+
+`docs/releases/<version>.md` is the text of the GitHub release, in the same
+commit as the version bump; the annotated tag carries the same text verbatim, so
+the notes are what was reviewed, and the draft release is created from the file.
+The checksums job appends the `Built against vivaui/viva <sha>.` line, so the file
+itself never carries that line. Write it for the people who read the update
+dialog — what they can do now that they could not before — in Chinese. Use the
+`## 新功能`, `## 改进` and `## 修复` headings with one short sentence per `- ` item
+and no bold lead-in, followed by a `## 安装` table of platforms and packages; keep
+the summary paragraph, signer and log boilerplate out (the download page and
+README carry that). The notes in the update dialog are the `notes` field of
+`latest.json`, copied from this body.
+
+## The framework commit
+
+Motty is built against the sibling Viva checkout, so a release has to name which
+frame it was built on. The *Pin viva* job runs first and asks GitHub for
+`vivaui/viva` main's commit; both build jobs then check out that exact commit and
+pass it to `tools/release.sh --viva-ref`, and the checksums job writes a
+`Built against vivaui/viva <sha>.` line into the release notes. Main's tip at the
+start of the release is what gets used: a push to Viva while the release runs
+cannot hand the Mac job and the Linux job different frames, and the commit stays
+readable from the release afterwards.
+
+A local run uses whatever `../viva` holds unless told otherwise, so pass the same
+commit to compare with CI: `tools/release.sh --platforms linux --viva-ref <sha>`.
 
 The macOS runner's architecture does not decide the output architecture: the
 release script builds both arm64 and amd64, and Viva cross-builds the cgo/Metal
@@ -34,9 +172,23 @@ builds a cgo program for the other Mac architecture and checks its Mach-O slice.
 
 ## Secrets
 
-All optional: a platform without its secrets is built unsigned and the log says so
-in a warning. Set them in the repository's *Settings > Secrets and variables >
-Actions*, or with `gh secret set NAME`.
+The platform certificates are optional: a platform without its secrets is built
+unsigned and the log says so in a warning. The update signing key is not — a
+release is not finalized without it. Set them in the repository's *Settings >
+Secrets and variables > Actions*, or with `gh secret set NAME`.
+
+**Update signing**
+
+| Secret | What |
+| --- | --- |
+| `MOTTY_UPDATE_SIGNING_KEY` | the contents of the file `tools/updatesign generate` writes (for example `~/.motty/updater-signing.key`), a minisign private key. The matching public key is compiled into `internal/updatesign` |
+
+Keep the private key in a password manager or on an offline medium as well as in
+the secret. It is the trust root for every 0.1.2-or-later installation: if it is
+lost, those installations can no longer update in place. Rotating it is a
+migration — the release that carries the new public key has to be signed with the
+old key — not a quiet secret replacement. The decision is
+0001 (`.private/decisions/0001-updater-signing.md`, not in the repository).
 
 **macOS**
 
@@ -78,9 +230,194 @@ APPLE_SIGNING_IDENTITY="Developer ID Application: Name (TEAMID)" \
 APPLE_NOTARY_PROFILE=motty tools/release.sh --platforms mac
 ```
 
+A by-hand run only ever leaves a draft. Sign and verify it with
+`tools/release.sh --sums v<version> --expect-viva <sha>` when every platform is
+uploaded, and check a release at any time — including one that shipped — with
+`tools/release.sh --verify v<version> --expect-viva <sha>`.
+
 On a Mac that is signed in to a keychain with the certificate, `APPLE_SIGNING_IDENTITY`
 and a profile made once with `xcrun notarytool store-credentials motty` are enough;
 no `.p12` is needed. See `viva help package` for every variable.
+
+## The changelog page
+
+The website's `/en/changelog` and `/zh/changelog` are built from
+`docs/releases/<version>.md`: no release writes the page separately, and there
+is no second copy to fall out of step. `website.yml` watches `docs/releases/**`,
+so the release commit itself rebuilds the page. `website/lib/releases.ts` parses the
+`## 新功能`, `## 改进` and `## 修复` sections at build time and takes each
+release's date from GitHub, falling back to the notes' commit date when the
+build has no network.
+
+`docs/releases/<version>.en.md` is optional. It carries the same three sections
+in English and is used for the English page; without it that page shows the
+Chinese notes. Write it in the release commit when the English changelog should
+read as English — there is no post-release website commit either way.
+
+The release title carries the tag as-is (`Motty v0.1.2`, not `Motty 0.1.2`), so
+the version on GitHub reads the same as in the app and in the changelog.
+
+## The Cloudflare mirror
+
+The *Publish* job is what puts a release on the `motty` R2 bucket on Cloudflare,
+in three steps: `--copy` uploads every asset while the release is still a draft,
+then the draft is published, then `--announce` writes `latest.json`. Splitting it
+that way is what keeps the public release page, the website's download links and
+the update feed from ever pointing at a file the mirror does not hold yet, and it
+keeps the feed — the one thing installed copies act on — as the last thing that
+changes. `--announce` also refuses unless the copied bytes are on the mirror: the
+versioned URL has to answer with the size the file has locally.
+
+The bucket answers on `https://dl.motty.page`; the GitHub release stays the source
+of record and the copy is only a faster path to the same bytes. `.github/workflows/mirror.yml`
+is the repair path, not the trigger: *Actions → Mirror release → Run workflow*
+with the tag does the copy and the announce again for a release that is already
+public.
+
+`tools/mirror-release.sh TAG` does the work and can be run locally:
+
+```sh
+tools/mirror-release.sh v0.1.2                          # copy and announce (repair)
+tools/mirror-release.sh v0.1.2 --copy                   # copy only, feed untouched
+tools/mirror-release.sh v0.1.2 --announce               # feed only, refuses a missing copy
+tools/mirror-release.sh v0.1.2 --dir build/release-0.1.2   # work on what is already there
+```
+
+Object layout:
+
+| Key | Cache | What |
+| --- | --- | --- |
+| `latest.json` | five minutes | version, tag, and every file's name, size and SHA-256; the only file at the bucket root besides `robots.txt` |
+| `releases/<tag>/<asset>` | a year, immutable | the exact release asset |
+| `releases/latest/<stable>` | five minutes | the same bytes, version out of the name (`motty-0.1.2-darwin-arm64.dmg` → `motty-darwin-arm64.dmg`) |
+
+Everything a release is made of lives under `releases/`; the root only carries
+the feed and `robots.txt`. `releases/latest` is not a tag: it is the projection
+of `latest.json`, and the uploader deletes the alias of a name the new release no
+longer ships, so an old format cannot keep serving stale bytes.
+
+The website's download page links at `/releases/latest/<stable>`, so it needs no
+rebuild per version; `latest.json` is what a script should read. The page also
+lists only what `latest.json` holds, so adding or dropping a package format with
+a release shows up on the next site build without editing the page. The uploader
+runs `sha256sum -c SHA256SUMS` first and refuses to mirror a release whose files
+do not match it; `--announce` in turn refuses while any package is missing from
+the bucket, so the feed cannot name bytes that were never uploaded.
+
+The mirror steps need `CLOUDFLARE_API_TOKEN` with *Workers R2 Storage: Edit* (the
+Pages token from docs/website.md covers the site only) and `CLOUDFLARE_ACCOUNT_ID`
+(the same value the website workflow uses).
+
+## In-app updates
+
+The app updates itself from the mirror: it reads `https://dl.motty.page/latest.json`
+(GitHub's latest release is only the fallback, and carries no checksums, so it can
+send the user to the page but cannot install). The release notes in the update
+dialog are the `notes` field of that file, which `tools/mirror-release.sh` copies
+from the GitHub release body.
+
+Every package carries a minisign signature from the release key, and the feed
+copies it into the `signature` field of that file. The signature's signed comment
+names the version and the file, so verification holds the bytes, the version the
+feed announced and the file the app resolved together; a changed feed cannot pass
+an older package off as a newer one. The app verifies this before it replaces
+anything and refuses a release without a signature.
+
+What the app downloads is chosen by name, so these must stay as they are:
+
+- the stable asset names in `update.StableNamePackage` (`motty-darwin-<arch>.zip`,
+  `motty-linux-<arch>.tar.gz`, `motty_<arch>.deb`,
+  `motty-windows-<arch>-setup.exe`, `motty-windows-<arch>.zip`) match what
+  `viva package` produces, after the mirror takes the version out;
+- each Linux architecture also carries `motty-<version>-linux-<arch>.PKGBUILD`
+  and `.SRCINFO`, which install the released `tar.gz` under `/opt` and link it
+  into `/usr/bin`; they are release assets, not packages the app downloads;
+- `latest.json` keeps `version`, `tag` (`v` plus the version) and, per file, `name`,
+  `size`, `sha256` and `signature`;
+- the release carries `SIGNATURES`, one `name<TAB>base64` line per package, and
+  the mirror only folds a signature in for a file it names.
+
+The operating system check stays as a second layer: the program in the macOS zip
+must be signed with the same Developer ID team as the copy it replaces, and a
+Windows installer that is signed must have the same subject as a signed running
+copy. An unsigned Windows installer is accepted on the strength of the update
+signature alone, which is what lets Windows update without a code-signing
+certificate.
+
+Only a user-owned installation replaces its own files (an app bundle in a writable folder,
+the per-user Windows installer, a self-managed portable ZIP, a Linux `install.sh` prefix). On Windows, custom
+directories are recognised from the application's per-user uninstall registration
+and still require the uninstaller and write access. The helper passes that exact
+directory to the installer. A dpkg-registered `/usr/bin/motty` selects the signed
+DEB for the installed architecture. After checksum and release-signature checks,
+Motty quits and its unprivileged helper requests administrator authorization via
+`pkexec /usr/bin/motty install-deb`. The privileged entrypoint copies the user-owned
+package to a private root-owned directory and verifies the copy against the embedded
+release key before invoking `dpkg --install`. The helper starts Motty again as the
+original user, even after authorization is cancelled or installation fails. Failed
+attempts keep the downloaded package for a checked retry. This does not make dpkg
+transactional: a failure during package unpacking or maintainer scripts may require
+repair with the system package manager. Missing Polkit, unregistered system installs,
+Snap, Flatpak, and all-users Windows installations use the manual update path.
+An unregistered writable Windows copy with a writable `motty-data` marker selects
+the signed portable ZIP. The updater extracts and checks its executable before
+the helper replaces `motty.exe` and the `conpty` runtime folder; the data folder,
+vault key and every other file are untouched.
+Scoop's version directories remain externally managed and use `scoop update motty`.
+
+The replacement is made by a helper that outlives the app and waits for the
+desktop process to exit. On Windows, stdio MCP servers may still be using the
+installed executable. The helper first renames that image into a private backup
+directory on the installation's volume, then runs the installer at the original
+path. Existing MCP connections continue on the retired image; later launches use
+the new version. A failed installation restores the previous executable (not a
+transactional rollback of every installer change). Retired images still held by
+processes are left in place and cleaned on a later successful update.
+
+On macOS the helper is a copy of the whole bundle,
+not of the executable: a Developer ID signature covers the bundle's `Info.plist`,
+and the executable on its own no longer verifies, so the system kills it as it
+starts (exit 137, `amfid` logs `Code=-420`) and nothing is replaced. The app
+watches the helper for a moment after starting it and, if it dies at once, shows
+the failure instead of quitting. A development build signed with `--identifier`
+alone does not bind the `Info.plist`, so it cannot show this failure.
+
+## The package matrix
+
+Every release carries the packages below for every platform and architecture:
+
+| Platform | arm64 | amd64 |
+| --- | --- | --- |
+| macOS | `.dmg`, `.zip` | `.dmg`, `.zip` |
+| Windows | `.exe` installer, portable `.zip` | `.exe` installer, portable `.zip` |
+| Linux | `.deb`, `.tar.gz` | `.deb`, `.tar.gz` |
+
+The macOS `.zip` holds the same signed bundle; it is what the
+in-app updater downloads, so a release without it would leave macOS unable to
+update in place. `viva package` notarizes the bundle and staples its ticket
+before the zip is written, so the app that comes out of the zip is accepted
+without asking Apple, which is what the updater's Gatekeeper check needs on a
+machine that is offline or cannot reach the notarization service; the `.dmg` is
+notarized and stapled separately, because the system judges the image itself
+when it is opened.
+
+The Windows `.zip` is the portable copy, made by `tools/portablezip` from the same
+signed program the installer carries: `motty.exe` beside the `conpty` runtime
+folder and a `motty-data` folder, which is what switches Motty to keeping its data
+next to itself (`internal/datadir`). The `conpty` folder is the Windows local
+terminal's ConPTY pair; the installer carries the same tree.
+Self-managed copies can update in place using this signed ZIP, without overwriting
+their data. Scoop-managed copies must use `scoop update motty`; read-only or otherwise
+unsupported copies still go to the download page.
+
+A signed release also carries `SIGNATURES`, the minisign signature of every
+package. That is 18 release assets: the packages above, the two PKGBUILD and
+.SRCINFO files for each Linux architecture, `SHA256SUMS` and `SIGNATURES`.
+
+`tools/release.sh` refuses to upload when one of those is missing, so a run with
+a broken makensis stops instead of publishing a release with a hole in it. The
+installers are built on Linux; makensis on Apple Silicon crashes (NSIS issue
+#1333), which is why `--platforms windows` on a Mac only warns.
 
 ## What has been checked
 
@@ -91,3 +428,10 @@ for real with `osslsigncode` and a self-signed certificate, including the
 installer and a DigiCert timestamp, and the signed installer installed. Not run: the
 workflow itself on GitHub, the import of a `.p12` for a certificate Apple trusts,
 `signtool`, and a certificate from a Windows certificate authority.
+
+The update signature was checked against a real build: `tools/release.sh
+--platforms linux` signed a release directory with the key, `tools/updatesign
+verify` accepted every package, and a changed byte, another version and another
+file name were each refused. Not run: the signing step on GitHub's runners, a
+Windows installation replacing itself in place, and the update dialog against a
+signed feed.

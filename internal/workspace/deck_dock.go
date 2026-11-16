@@ -126,3 +126,52 @@ func (deck *Deck) Dock(dst, src WorkspaceID, target PaneID, axis Axis, placement
 	}
 	return moved, nil
 }
+
+// ErrUndockOnly means the pane is the last one of its tab, so there is no tab
+// left behind to take it out of.
+var ErrUndockOnly = errors.New("workspace: the only pane of a tab cannot be undocked")
+
+// Undock takes one pane out of its tab and makes it a tab of its own at index
+// among the tabs (past the last is the last), titled title. It is the reverse of
+// Dock for a single pane: the session stays bound to the pane, now in the new
+// tab, and the tab it left keeps its other panes. The new tab becomes active.
+func (deck *Deck) Undock(workspaceID WorkspaceID, paneID PaneID, title string, index int) (WorkspaceID, error) {
+	source, ok := deck.workspace(workspaceID)
+	if !ok {
+		return 0, ErrWorkspaceNotFound
+	}
+	pane, ok := source.pane(paneID)
+	if !ok {
+		return 0, ErrPaneNotFound
+	}
+	if len(source.panes) < 2 {
+		return 0, ErrUndockOnly
+	}
+	if len(deck.workspaces) >= MaxWorkspaces {
+		return 0, ErrWorkspaceFull
+	}
+	sessionID := pane.SessionID
+	if sessionID != 0 {
+		_, _ = deck.Unbind(workspaceID, paneID)
+	}
+	if _, err := deck.ClosePane(workspaceID, paneID); err != nil {
+		if sessionID != 0 {
+			_ = deck.Bind(workspaceID, paneID, sessionID)
+		}
+		return 0, err
+	}
+	id, newPane, err := deck.Create(title)
+	if err != nil {
+		return 0, err
+	}
+	if sessionID != 0 {
+		if err := deck.Bind(id, newPane, sessionID); err != nil {
+			return id, err
+		}
+	}
+	if err := deck.MoveWorkspace(id, index); err != nil {
+		return id, err
+	}
+	deck.ActivateWorkspace(id)
+	return id, nil
+}

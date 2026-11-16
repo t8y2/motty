@@ -157,17 +157,20 @@ type Client struct {
 	tlsMinVersion    uint16 // override for TLS version probing; 0 = default
 	tlsMaxVersion    uint16 // override for TLS version probing; 0 = default
 	credsspVersion   int    // CredSSP version to advertise; 0 = use MaxCredSSPVersion
+	rawNTLM          bool   // learned before credentials are sent; retained across version probes
 
 	// MCS/GCC parameters
-	userChannelID   uint16
-	ioChannelID     uint16
-	channelIDs      []uint16
-	channelNames    []string                        // ordered, matching channelIDs indices
-	channelMap      map[uint16]string               // channelID → name (built after MCS Connect)
-	channelOpts     map[uint16]uint32               // channelID → channel options
-	channelHandlers map[string]func(uint16, []byte) // name → handler
-	serverCore      *mcs.ServerCoreData
-	serverSec       *mcs.ServerSecurityData
+	userChannelID    uint16
+	ioChannelID      uint16
+	messageChannelID uint16
+	autodetect       networkAutodetect
+	channelIDs       []uint16
+	channelNames     []string                        // ordered, matching channelIDs indices
+	channelMap       map[uint16]string               // channelID → name (built after MCS Connect)
+	channelOpts      map[uint16]uint32               // channelID → channel options
+	channelHandlers  map[string]func(uint16, []byte) // name → handler
+	serverCore       *mcs.ServerCoreData
+	serverSec        *mcs.ServerSecurityData
 
 	// Standard RDP Security (nil when using TLS)
 	crypto *sec.RDPCrypto
@@ -187,7 +190,14 @@ type Client struct {
 	egfxHandler *egfx.Handler
 
 	// Display control (MS-RDPEDISP)
-	dispHandler     *disp.Handler
+	dispHandler *disp.Handler
+	// dispReady is set once the server's display control capabilities have
+	// arrived: from then on Resize changes the desktop without reconnecting.
+	dispReady atomic.Bool
+	// displayMu guards the desktop size and scale in opts and the queued resize
+	// against the receive goroutine, which reads and writes them when the server
+	// resets its graphics or reactivates the session.
+	displayMu       sync.Mutex
 	pendingResizeW  uint16               // queued resize width (0 = none)
 	pendingResizeH  uint16               // queued resize height
 	pendingMonitors []disp.MonitorLayout // queued multi-monitor resize (nil = none)
@@ -228,6 +238,7 @@ type Client struct {
 
 	// Framebuffer and bitmap cache
 	framebufMu     sync.RWMutex             // protects framebuf during resize vs external reads
+	frameMu        sync.RWMutex             // a packet's framebuffer writes against ReadRectBGRA
 	framebuf       *Framebuffer             // client-side screen buffer (bottom-up BGRX)
 	scrBltBuf      []byte                   // reusable scratch for ScrBlt overlap
 	clipBuf        []byte                   // reusable buffer for sub-rect extraction during clipping
@@ -249,6 +260,7 @@ type Client struct {
 
 	// Callbacks (protected by cbMu — use load*/On* methods, not direct access)
 	cbMu              sync.RWMutex
+	onNetworkRTT      func()
 	onBitmap          func(*BitmapUpdate)
 	onStridedBitmap   func(x, y, w, h int, data []byte, stride int)
 	onH264Frame       func(*egfx.H264Frame) // H.264 pass-through callback
@@ -260,12 +272,17 @@ type Client struct {
 	onDisconnect      func(error)
 	onReconnecting    func()
 	onReconnected     func()
-	onClipboardUpdate func(hasText, hasImage bool)
+	onClipboardUpdate func(hasText, hasImage, hasFiles bool)
 	onClipboardText   func(text string)
 	onClipboardImage  func(pngData []byte)
+	onClipboardFiles  func(files cliprdr.RemoteFiles, err error)
 
 	// Heartbeat: last time we received any data from server (unix nanos)
 	lastReceived atomic.Int64
+	// outputSuppressed says the server was told to stop sending picture
+	// updates because nobody is looking at the desktop. Silence then proves
+	// nothing: the server is doing what it was asked.
+	outputSuppressed atomic.Bool
 
 	// Control
 	done            chan struct{}
@@ -329,15 +346,18 @@ func (c *Client) Connect() error {
 	c.tpktConn = tpkt.NewConn(conn, c.logTpkt)
 
 	// Step 2: X.224 Connection Request with RDP negotiation.
-	// Auto-fallback: try TLS+NLA first, then TLS-only, then legacy RDP Security.
 	c.setState(StateX224Negotiation)
 	if err := c.negotiateX224WithFallback(); err != nil {
 		c.Close()
 		return err
 	}
-	if c.selectedProtocol == x224.ProtocolRDP && !c.opts.AllowLegacySecurity {
+	if c.selectedProtocol == x224.ProtocolRDP && c.opts.Security != SecurityStandard {
 		c.Close()
-		return fmt.Errorf("%w: the server only offers standard RDP security, which is not encrypted against an attacker on the path", ErrNegotiationFailed)
+		return fmt.Errorf("%w: the server only offers standard RDP security, which is not protected against an attacker on the path", ErrNegotiationFailed)
+	}
+	if c.selectedProtocol != x224.ProtocolRDP && c.opts.Security == SecurityStandard {
+		c.Close()
+		return fmt.Errorf("%w: standard RDP security was requested, but the server selected %s", ErrNegotiationFailed, x224.ProtocolName(c.selectedProtocol))
 	}
 
 	// Step 3: TLS handshake (if TLS/CredSSP selected)
@@ -368,7 +388,7 @@ func (c *Client) Connect() error {
 		} else {
 			credsspErr = c.tryCredSSP()
 		}
-		if credsspErr != nil && !errors.Is(credsspErr, nla.ErrCredentialsFatal) {
+		if canRetryCredSSP(credsspErr) {
 			credsspVersions := []int{6, 3, 2}
 		probeLoop:
 			for i, tlsVer := range tlsVersions {
@@ -389,17 +409,18 @@ func (c *Client) Connect() error {
 					if credsspErr == nil {
 						break probeLoop
 					}
-					if errors.Is(credsspErr, nla.ErrCredentialsFatal) {
+					if !canRetryCredSSP(credsspErr) {
 						break probeLoop
 					}
 				}
 			}
 			c.credsspVersion = 0 // reset
 		}
-		if credsspErr != nil && errors.Is(credsspErr, nla.ErrCredentialsFatal) {
-			// Credentials are definitively wrong — no point retrying or falling back.
+		if credsspErr != nil && !canRetryCredSSP(credsspErr) {
+			// Do not repeat a logon attempt, bypass NLA after submitting
+			// credentials, or retry a certificate the user rejected.
 			c.Close()
-			return fmt.Errorf("%w: %w", ErrAuthFailed, credsspErr)
+			return credsspErr
 		}
 		if credsspErr != nil {
 			// All NLA attempts failed. Try TLS-only fallback, probing versions.
@@ -505,26 +526,26 @@ func (c *Client) Connect() error {
 	return nil
 }
 
-// negotiateX224WithFallback tries progressively weaker security protocols:
-// TLS+NLA → TLS-only → legacy RDP Security. Each downgrade requires a fresh
-// TCP connection because the server closes the socket on negotiation failure.
+// negotiateX224WithFallback negotiates the security protocol. The default asks
+// for TLS+NLA, then TLS alone; a server that offers neither is refused. Standard
+// RDP Security is asked for only when Options.Security selects it: its keys come
+// from an unauthenticated server key, so anyone on the path can read the session.
+// Each downgrade requires a fresh TCP connection because the server closes the
+// socket on negotiation failure.
 func (c *Client) negotiateX224WithFallback() error {
-	// Protocol sets to try, in order of preference.
-	attempts := []struct {
+	type attempt struct {
 		protos uint32
 		label  string
-	}{
-		{x224.ProtocolSSL | x224.ProtocolHybrid, "TLS+NLA"},
-		{x224.ProtocolSSL, "TLS"},
 	}
-	// Motty divergence: standard RDP Security (RC4 keyed from an unauthenticated
-	// server key) lets anyone on the path read the password, and the negotiation
-	// that selects it is itself unauthenticated, so it is only tried on request.
-	if c.opts.AllowLegacySecurity {
-		attempts = append(attempts, struct {
-			protos uint32
-			label  string
-		}{x224.ProtocolRDP, "RDP Security"})
+	// Protocol sets to try, in order of preference.
+	var attempts []attempt
+	if c.opts.Security == SecurityStandard {
+		attempts = []attempt{{x224.ProtocolRDP, "RDP Security"}}
+	} else {
+		attempts = []attempt{
+			{x224.ProtocolSSL | x224.ProtocolHybrid, "TLS+NLA"},
+			{x224.ProtocolSSL, "TLS"},
+		}
 	}
 
 	var lastErr error
@@ -660,11 +681,31 @@ func (c *Client) upgradeTLS() error {
 	return nil
 }
 
-// credsspAuth performs CredSSP/NLA authentication using NTLM over SPNEGO.
 // tryCredSSP attempts CredSSP authentication on the current TLS connection.
 func (c *Client) tryCredSSP() error {
 	c.setState(StateCredSSPAuth)
+	err := c.credsspAuth()
+	if c.rawNTLM || !errors.Is(err, nla.ErrNegotiateToken) {
+		return err
+	}
+	// Motty compatibility: WinPR 2.x treats SPNEGO as an NTLM header. Retry
+	// with raw NTLM on a fresh NLA/TLS connection, only before credentials
+	// were sent.
+	c.rawNTLM = true
+	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "retrying CredSSP with raw NTLM tokens")
+	if err := c.reconnectWithTLS(x224.ProtocolSSL|x224.ProtocolHybrid, c.tlsMinVersion, c.tlsMaxVersion); err != nil {
+		return err
+	}
+	if c.selectedProtocol != x224.ProtocolHybrid {
+		return fmt.Errorf("%w: the server did not select NLA for raw NTLM", ErrNegotiationFailed)
+	}
+	c.setState(StateCredSSPAuth)
 	return c.credsspAuth()
+}
+
+func canRetryCredSSP(err error) bool {
+	return err != nil && !errors.Is(err, nla.ErrCredentialsFatal) &&
+		!errors.Is(err, nla.ErrCredentialsSent) && !errors.Is(err, ErrCertificateRejected)
 }
 
 // reconnectWithTLS tears down the current connection and establishes a new
@@ -701,12 +742,19 @@ func (c *Client) credsspAuth() error {
 		ver = nla.MaxCredSSPVersion
 	}
 	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "CredSSP/NLA authentication", slog.Int("advertiseVersion", ver))
-	if err := nla.Authenticate(c.tlsConn, c.logNla, c.opts.Host, c.opts.Domain, c.opts.Username, c.opts.Password, ver); err != nil {
+	authenticate := nla.Authenticate
+	if c.rawNTLM {
+		authenticate = nla.AuthenticateRawNTLM
+	}
+	if err := authenticate(c.tlsConn, c.logNla, c.opts.Host, c.opts.Domain, c.opts.Username, c.opts.Password, ver); err != nil {
 		// Motty divergence: %w, so that nla.ErrCredentialsFatal survives and the
 		// caller stops at the first refusal. Upstream wrapped with %v, which hid it
 		// and made one wrong password into 14 logon attempts (an account lockout
 		// threshold of 10 is common).
-		return fmt.Errorf("%w: %w", ErrAuthFailed, err)
+		if errors.Is(err, nla.ErrCredentialsFatal) {
+			return fmt.Errorf("%w: %w", ErrAuthFailed, err)
+		}
+		return fmt.Errorf("%w: CredSSP: %w", ErrNegotiationFailed, err)
 	}
 	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "CredSSP authentication successful")
 	return nil
@@ -723,6 +771,8 @@ func (c *Client) mcsConnect() error {
 	// open the RDPEDISP dynamic channel, enabling mid-session resize.
 	coreData.Version = mcs.VersionRDP10
 	coreData.EarlyCapabilityFlags |= mcs.EarlyCapSupportMonitorLayout
+	coreData.EarlyCapabilityFlags |= mcs.EarlyCapSupportNetCharAutodetect | mcs.EarlyCapValidConnectionType
+	coreData.ConnectionType = mcs.ConnectionTypeAutoDetect
 	if c.opts.GFX {
 		coreData.EarlyCapabilityFlags |= mcs.EarlyCapSupportDynvcGfxProtocol
 	}
@@ -825,6 +875,8 @@ func (c *Client) mcsConnect() error {
 	if monitorBlock != nil {
 		clientData = append(clientData, monitorBlock...)
 	}
+	// TS_UD_CS_MCS_MSGCHANNEL: flags are reserved and must be zero.
+	clientData = append(clientData, 0x06, 0xC0, 0x08, 0x00, 0, 0, 0, 0)
 
 	// Build GCC Conference Create Request
 	gccRequest := mcs.EncodeGCCConferenceCreateRequest(clientData)
@@ -911,6 +963,7 @@ func (c *Client) mcsConnect() error {
 	c.serverCore = serverCore
 	c.serverSec = serverSec
 	c.ioChannelID = serverNet.IOChannelID
+	c.messageChannelID = serverNet.MessageChannelID
 	c.channelIDs = serverNet.ChannelIDs
 
 	// Build channel ID → name map and channel ID → options map
@@ -963,6 +1016,9 @@ func (c *Client) mcsConnect() error {
 				if c.dispHandler == nil {
 					return
 				}
+				c.dispReady.Store(true)
+				c.displayMu.Lock()
+				defer c.displayMu.Unlock()
 				if c.pendingMonitors != nil {
 					monitors := c.pendingMonitors
 					c.pendingMonitors = nil
@@ -1026,9 +1082,23 @@ func (c *Client) mcsConnect() error {
 				c.endPaint()
 			})
 			c.egfxHandler.OnResetGraphics(func(w, h int) {
+				// The server picks this size, so hold it to what a display can
+				// show rather than letting one PDU allocate the frame buffer.
+				if w <= 0 || h <= 0 {
+					c.log.LogAttrs(context.Background(), slog.LevelWarn, "ResetGraphics with an empty desktop, ignoring",
+						slog.Int("width", w), slog.Int("height", h))
+					return
+				}
+				if w > MaxDesktopSize || h > MaxDesktopSize {
+					c.log.LogAttrs(context.Background(), slog.LevelWarn, "ResetGraphics desktop larger than the client can show, clamping",
+						slog.Int("width", w), slog.Int("height", h), slog.Int("limit", MaxDesktopSize))
+					w, h = min(w, MaxDesktopSize), min(h, MaxDesktopSize)
+				}
 				c.log.LogAttrs(context.Background(), slog.LevelDebug, "EGFX ResetGraphics callback", slog.Int("width", w), slog.Int("height", h), slog.Bool("hasFramebuf", c.framebuf != nil))
+				c.displayMu.Lock()
 				c.opts.Width = uint16(w)
 				c.opts.Height = uint16(h)
+				c.displayMu.Unlock()
 				c.framebufMu.Lock()
 				if c.framebuf != nil {
 					c.framebuf.Resize(w, h)
@@ -1080,9 +1150,9 @@ func (c *Client) mcsConnect() error {
 		c.clipHandler = cliprdr.NewHandler(func(data []byte) error {
 			return c.sendChannelData("cliprdr", data)
 		}, c.log.With("component", "CLIPRDR"))
-		c.clipHandler.OnRemoteCopy(func(hasText, hasImage bool) {
+		c.clipHandler.OnRemoteCopy(func(hasText, hasImage, hasFiles bool) {
 			if fn := c.loadOnClipboardUpdate(); fn != nil {
-				fn(hasText, hasImage)
+				fn(hasText, hasImage, hasFiles)
 			}
 		})
 		c.clipHandler.OnTextData(func(text string) {
@@ -1093,6 +1163,11 @@ func (c *Client) mcsConnect() error {
 		c.clipHandler.OnImageData(func(pngData []byte) {
 			if fn := c.loadOnClipboardImage(); fn != nil {
 				fn(pngData)
+			}
+		})
+		c.clipHandler.OnRemoteFiles(func(files cliprdr.RemoteFiles, err error) {
+			if fn := c.loadOnClipboardFiles(); fn != nil {
+				fn(files, err)
 			}
 		})
 		c.registerChannelHandler("cliprdr", func(_ uint16, data []byte) {
@@ -1150,6 +1225,9 @@ func (c *Client) mcsJoinChannels() error {
 	// Build the list of channels to join
 	channels := []uint16{c.userChannelID, c.ioChannelID}
 	channels = append(channels, c.channelIDs...)
+	if c.messageChannelID != 0 {
+		channels = append(channels, c.messageChannelID)
+	}
 
 	for _, chID := range channels {
 		if err := c.mcsJoinChannel(chID); err != nil {
@@ -1357,11 +1435,20 @@ func (c *Client) readDecryptedPDU() (channelID uint16, payload []byte, err error
 		if err != nil {
 			return 0, nil, fmt.Errorf("decoding MCS SDI: %w", err)
 		}
+		if channelID == c.messageChannelID && c.messageChannelID != 0 {
+			if err := c.handleMessageChannel(userData); err != nil {
+				return 0, nil, err
+			}
+			continue
+		}
 
 		// Decrypt (centralized, matching receiveLoop)
 		userData = c.decryptSlowPath(userData)
 		if userData == nil {
 			return 0, nil, fmt.Errorf("decryption failed")
+		}
+		if err := c.autodetect.received(len(userData)); err != nil {
+			return 0, nil, err
 		}
 
 		return channelID, userData, nil
@@ -1371,7 +1458,7 @@ func (c *Client) readDecryptedPDU() (channelID uint16, payload []byte, err error
 // readLicensingPDU reads an MCS Send Data Indication, validates the channel
 // and SEC_LICENSE_PKT flag, and returns the licensing preamble and body data.
 func (c *Client) readLicensingPDU() (lic.Preamble, []byte, error) {
-	channelID, userData, err := c.readDataPDU()
+	channelID, userData, err := c.readLicensingDataPDU()
 	if err != nil {
 		return lic.Preamble{}, nil, fmt.Errorf("%w: %v", ErrLicensingFailed, err)
 	}
@@ -1995,43 +2082,67 @@ func (c *Client) receiveLoop() {
 			return
 		}
 		c.lastReceived.Store(time.Now().UnixNano())
-
-		switch pktType {
-		case tpkt.PacketTPKT:
-			mcsPayload, err := x224.DecodeDataTPDU(data)
-			if err != nil {
-				c.logX224.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: bad X.224 DT", slog.Any("err", err))
-				continue
-			}
-			// Check MCS PDU type before dispatching
-			switch mcs.PDUType(mcsPayload) {
-			case mcs.DomainMCSPDUDisconnectProviderUltimatum:
-				reason, _ := mcs.DecodeDisconnectProviderUltimatum(c.logMcs, mcsPayload)
-				c.handleDisconnect(fmt.Errorf("%w: MCS Disconnect Provider Ultimatum (reason=%d)", ErrDisconnected, reason))
-				return
-			case mcs.DomainMCSPDUSendDataIndication:
-				channelID, userData, err := mcs.DecodeSendDataIndication(c.logMcs, mcsPayload)
-				if err != nil {
-					c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: bad MCS SDI", slog.Any("err", err))
-					continue
-				}
-				// Centralized security-layer decryption for ALL channels
-				// (MS-RDPBCGR 5.3.6). The RC4 stream must be advanced for
-				// every encrypted packet to stay in sync.
-				userData = c.decryptSlowPath(userData)
-				if channelID != c.ioChannelID {
-					c.handleVirtualChannelData(channelID, userData)
-					continue
-				}
-				c.handleSlowPathPDU(userData)
-			default:
-				c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: unhandled MCS PDU type", util.Hex2("type", uint8(mcs.PDUType(mcsPayload))))
-			}
-
-		case tpkt.PacketFastPath:
-			c.handleFastPathPDU(actionByte, data)
+		if c.dispatchPacket(pktType, actionByte, data) {
+			return
 		}
 	}
+}
+
+// dispatchPacket handles one received packet. It returns whether the packet
+// ended the connection. The framebuffer lock is held for the whole packet so a
+// rectangle a viewer reads cannot change halfway through: the decoders write the
+// framebuffer only from this goroutine, and ReadRectBGRA takes the read side.
+func (c *Client) dispatchPacket(pktType tpkt.PacketType, actionByte byte, data []byte) (ended bool) {
+	c.frameMu.Lock()
+	defer c.frameMu.Unlock()
+
+	switch pktType {
+	case tpkt.PacketTPKT:
+		mcsPayload, err := x224.DecodeDataTPDU(data)
+		if err != nil {
+			c.logX224.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: bad X.224 DT", slog.Any("err", err))
+			return false
+		}
+		// Check MCS PDU type before dispatching
+		switch mcs.PDUType(mcsPayload) {
+		case mcs.DomainMCSPDUDisconnectProviderUltimatum:
+			reason, _ := mcs.DecodeDisconnectProviderUltimatum(c.logMcs, mcsPayload)
+			c.handleDisconnect(fmt.Errorf("%w: MCS Disconnect Provider Ultimatum (reason=%d)", ErrDisconnected, reason))
+			return true
+		case mcs.DomainMCSPDUSendDataIndication:
+			channelID, userData, err := mcs.DecodeSendDataIndication(c.logMcs, mcsPayload)
+			if err != nil {
+				c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: bad MCS SDI", slog.Any("err", err))
+				return false
+			}
+			if channelID == c.messageChannelID && c.messageChannelID != 0 {
+				if err := c.handleMessageChannel(userData); err != nil {
+					c.handleDisconnect(err)
+					return true
+				}
+				return false
+			}
+			// Centralized security-layer decryption for ALL channels
+			// (MS-RDPBCGR 5.3.6). The RC4 stream must be advanced for
+			// every encrypted packet to stay in sync.
+			userData = c.decryptSlowPath(userData)
+			if err := c.autodetect.received(len(userData)); err != nil {
+				c.handleDisconnect(err)
+				return true
+			}
+			if channelID != c.ioChannelID {
+				c.handleVirtualChannelData(channelID, userData)
+				return false
+			}
+			c.handleSlowPathPDU(userData)
+		default:
+			c.logMcs.LogAttrs(context.Background(), slog.LevelWarn, "receiveLoop: unhandled MCS PDU type", util.Hex2("type", uint8(mcs.PDUType(mcsPayload))))
+		}
+
+	case tpkt.PacketFastPath:
+		c.handleFastPathPDU(actionByte, data)
+	}
+	return false
 }
 
 // keepAliveLoop periodically sends a RefreshRect PDU to provoke server
@@ -2052,9 +2163,19 @@ func (c *Client) keepAliveLoop() {
 			if c.State() != StateConnected {
 				return
 			}
-			_ = c.RefreshRect(0, 0, 0, 0)
+			c.sendKeepAlive()
 		}
 	}
+}
+
+// sendKeepAlive asks the server to repaint a single pixel, which proves it is
+// still reading. While output is suppressed the server was told not to send
+// picture data, so the request would have nothing to prove and nothing to show.
+func (c *Client) sendKeepAlive() {
+	if c.outputSuppressed.Load() {
+		return
+	}
+	_ = c.RefreshRect(0, 0, 0, 0)
 }
 
 // heartbeatLoop monitors lastReceived and triggers disconnect if the server
@@ -2070,6 +2191,12 @@ func (c *Client) heartbeatLoop() {
 		case <-done:
 			return
 		case <-ticker.C:
+			if c.outputSuppressed.Load() {
+				// The server was told to stop sending picture updates, so its
+				// silence is expected and says nothing about the link. The
+				// window starts again when output resumes.
+				continue
+			}
 			last := time.Unix(0, c.lastReceived.Load())
 			if time.Since(last) > c.opts.HeartbeatTimeout {
 				c.log.LogAttrs(context.Background(), slog.LevelWarn, "heartbeat timeout", slog.Duration("silence", time.Since(last)))
@@ -2111,6 +2238,7 @@ func (c *Client) resetForReconnect() {
 	c.tlsMinVersion = 0
 	c.tlsMaxVersion = 0
 	c.credsspVersion = 0
+	c.rawNTLM = false
 	c.channelIDs = nil
 	c.channelNames = nil
 	c.channelHandlers = nil
@@ -2119,8 +2247,12 @@ func (c *Client) resetForReconnect() {
 		c.egfxHandler.Close()
 	}
 	c.egfxHandler = nil
+	if c.clipHandler != nil {
+		c.clipHandler.Close()
+	}
 	c.clipHandler = nil
 	c.dispHandler = nil
+	c.dispReady.Store(false)
 	c.vcReassembly = nil
 	c.vcReassemblyTotal = 0
 	c.pendingResizeW = 0
@@ -2138,7 +2270,9 @@ func (c *Client) resetForReconnect() {
 	c.orderState = orders.DecoderState{}
 	c.glyphCache = orders.GlyphCache{}
 	c.pointerCache = [128]*PointerUpdate{}
+	c.framebufMu.Lock()
 	c.framebuf = nil
+	c.framebufMu.Unlock()
 	c.bitmapCache.Reset()
 	c.brushCache.Reset()
 	c.scrBltBuf = nil
@@ -2477,13 +2611,16 @@ func (c *Client) handleReactivation() {
 	// AFTER finalization, the clear() in Resize wipes everything the server just
 	// drew, and the server won't resend it (it thinks the client already has it).
 	c.orderState = orders.DecoderState{}
+	c.displayMu.Lock()
+	width, height := int(c.opts.Width), int(c.opts.Height)
+	c.displayMu.Unlock()
 	c.framebufMu.Lock()
 	if c.framebuf != nil {
-		c.framebuf.Resize(int(c.opts.Width), int(c.opts.Height))
+		c.framebuf.Resize(width, height)
 	}
 	c.framebufMu.Unlock()
 	if fn := c.loadOnResize(); fn != nil {
-		fn(int(c.opts.Width), int(c.opts.Height))
+		fn(width, height)
 	}
 
 	// Read the new Demand Active from the server
@@ -2499,7 +2636,7 @@ func (c *Client) handleReactivation() {
 		return
 	}
 
-	c.log.LogAttrs(context.Background(), slog.LevelInfo, "reactivation complete", slog.Int("width", int(c.opts.Width)), slog.Int("height", int(c.opts.Height)))
+	c.log.LogAttrs(context.Background(), slog.LevelInfo, "reactivation complete", slog.Int("width", width), slog.Int("height", height))
 }
 
 // sendInputSynchronize sends a TS_INPUT_EVENT with messageType=INPUT_SYNCHRONIZE.
@@ -2560,6 +2697,10 @@ func (c *Client) handleFastPathPDU(actionByte byte, data []byte) {
 		}
 	}
 
+	if err := c.autodetect.received(len(data)); err != nil {
+		c.handleDisconnect(err)
+		return
+	}
 	updates, err := fastpath.DecodeUpdates(c.logFp, data)
 	if err != nil {
 		c.logFp.LogAttrs(context.Background(), slog.LevelError, "fast-path decode error", slog.Any("err", err))
@@ -4824,9 +4965,16 @@ func (c *Client) loadOnReconnected() func() {
 	return fn
 }
 
-func (c *Client) loadOnClipboardUpdate() func(hasText, hasImage bool) {
+func (c *Client) loadOnClipboardUpdate() func(hasText, hasImage, hasFiles bool) {
 	c.cbMu.RLock()
 	fn := c.onClipboardUpdate
+	c.cbMu.RUnlock()
+	return fn
+}
+
+func (c *Client) loadOnClipboardFiles() func(cliprdr.RemoteFiles, error) {
+	c.cbMu.RLock()
+	fn := c.onClipboardFiles
 	c.cbMu.RUnlock()
 	return fn
 }
@@ -4964,9 +5112,10 @@ func (c *Client) GetOnReconnected() func() { return c.loadOnReconnected() }
 
 // OnClipboardUpdate sets the callback invoked when the remote clipboard changes.
 // hasText is true if the server advertises CF_UNICODETEXT; hasImage is true if
-// the server advertises CF_DIB. Call RequestClipboard / RequestClipboardImage
-// to fetch the data.
-func (c *Client) OnClipboardUpdate(fn func(hasText, hasImage bool)) {
+// the server advertises CF_DIB; hasFiles is true if it advertises file transfer.
+// Call RequestClipboard, RequestClipboardImage or RequestClipboardFiles to
+// fetch the data.
+func (c *Client) OnClipboardUpdate(fn func(hasText, hasImage, hasFiles bool)) {
 	c.cbMu.Lock()
 	c.onClipboardUpdate = fn
 	c.cbMu.Unlock()
@@ -4985,6 +5134,15 @@ func (c *Client) OnClipboardText(fn func(text string)) {
 func (c *Client) OnClipboardImage(fn func(pngData []byte)) {
 	c.cbMu.Lock()
 	c.onClipboardImage = fn
+	c.cbMu.Unlock()
+}
+
+// OnClipboardFiles sets the callback invoked when the files the server put on
+// its clipboard have arrived, or could not be read. The paths are in files.Dir;
+// the callback runs on a goroutine of its own.
+func (c *Client) OnClipboardFiles(fn func(files cliprdr.RemoteFiles, err error)) {
+	c.cbMu.Lock()
+	c.onClipboardFiles = fn
 	c.cbMu.Unlock()
 }
 
@@ -5017,6 +5175,42 @@ func (c *Client) SetClipboardImage(pngData []byte) error {
 	return c.clipHandler.SetLocalImage(pngData)
 }
 
+// ClipboardFileOffer says what SetClipboardFiles put on the clipboard.
+type ClipboardFileOffer = cliprdr.Offer
+
+// ClipboardFiles are files the server put on its clipboard, saved on this
+// computer (see OnClipboardFiles).
+type ClipboardFiles = cliprdr.RemoteFiles
+
+// Why SetClipboardFiles may refuse; a caller tells the user which.
+var (
+	ErrClipboardFilesUnsupported = cliprdr.ErrFileClipUnsupported
+	ErrClipboardNotReady         = cliprdr.ErrNotReady
+	ErrClipboardOff              = cliprdr.ErrClipboardDisabled
+	ErrNothingToOffer            = cliprdr.ErrNothingToOffer
+	ErrTooManyFiles              = cliprdr.ErrTooManyFiles
+	ErrFileNameTooLong           = cliprdr.ErrNameTooLong
+)
+
+// SetClipboardFiles makes the files and folders at paths what this side's
+// clipboard holds, and tells the server, which pastes them when its user does
+// and reads their contents from this computer then. The list is made before it
+// returns and walks the folders, so a caller does not call it from its UI
+// goroutine. It fails when the server did not negotiate file transfer.
+func (c *Client) SetClipboardFiles(paths []string) (ClipboardFileOffer, error) {
+	handler := c.clipHandler
+	if handler == nil {
+		return ClipboardFileOffer{}, ErrNotConnected
+	}
+	return handler.SetLocalFiles(paths)
+}
+
+// ClipboardFilesInForce reports whether the server negotiated file transfer.
+func (c *Client) ClipboardFilesInForce() bool {
+	handler := c.clipHandler
+	return handler != nil && handler.FileClipboardInForce()
+}
+
 // RequestClipboard sends a request to the server for its clipboard text.
 // The result is delivered asynchronously via the OnClipboardText callback.
 func (c *Client) RequestClipboard() error {
@@ -5035,6 +5229,15 @@ func (c *Client) RequestClipboardImage() error {
 	return c.clipHandler.RequestRemoteImage()
 }
 
+// RequestClipboardFiles asks the server for its clipboard's file list, then
+// reads the files. OnClipboardFiles receives the result.
+func (c *Client) RequestClipboardFiles() error {
+	if c.clipHandler == nil {
+		return ErrNotConnected
+	}
+	return c.clipHandler.RequestRemoteFiles()
+}
+
 // Done returns a channel that is closed when the connection ends,
 // whether by explicit Close() or unexpected disconnect.
 func (c *Client) Done() <-chan struct{} {
@@ -5044,14 +5247,18 @@ func (c *Client) Done() <-chan struct{} {
 	return done
 }
 
-// SendKeyboard sends a keyboard event
-func (c *Client) SendKeyboard(scancode uint16, pressed bool) error {
+// SendKeyboard sends a keyboard event. repeat marks a press of a key the server
+// already has down, the client's auto-repeat: a server does not repeat a held
+// key by itself, so every repeat is sent again with that flag.
+func (c *Client) SendKeyboard(scancode uint16, pressed, repeat bool) error {
 	if c.State() != StateConnected {
 		return ErrNotConnected
 	}
 	flags := uint16(0)
 	if !pressed {
 		flags |= pdu.KbdFlagsRelease
+	} else if repeat {
+		flags |= pdu.KbdFlagsDown
 	}
 	// Motty divergence: a scancode of the form 0xE0xx is the extended key xx
 	// (arrows, Home, the Windows key); upstream dropped the extended flag.
@@ -5068,14 +5275,17 @@ func (c *Client) SendKeyboard(scancode uint16, pressed bool) error {
 
 // SendUnicode sends a Unicode keyboard event (TS_UNICODE_KEYBOARD_EVENT,
 // MS-RDPBCGR 2.2.8.1.1.3.1.1.1). Use this for characters that don't map
-// to a physical scancode (e.g. accented characters, CJK, emoji).
-func (c *Client) SendUnicode(codepoint uint16, pressed bool) error {
+// to a physical scancode (e.g. accented characters, CJK, emoji). repeat marks a
+// press of a character the server already has down.
+func (c *Client) SendUnicode(codepoint uint16, pressed, repeat bool) error {
 	if c.State() != StateConnected {
 		return ErrNotConnected
 	}
 	flags := uint16(0)
 	if !pressed {
 		flags |= pdu.KbdFlagsRelease
+	} else if repeat {
+		flags |= pdu.KbdFlagsDown
 	}
 	var buf [pdu.InputPDUHeaderSize + pdu.UnicodeEventSize]byte
 	payload := pdu.AppendInputPDUHeader(buf[:0], 1)
@@ -5129,6 +5339,40 @@ func (c *Client) SendMouseWheel(x, y int, delta int, horizontal bool) error {
 // via MS-RDPEDISP. If the display control channel isn't ready yet, the
 // resize is queued and sent automatically when the channel opens.
 func (c *Client) Resize(width, height int) error {
+	c.displayMu.Lock()
+	defer c.displayMu.Unlock()
+	return c.resizeLocked(width, height)
+}
+
+// CanResize reports whether the server has opened its display control channel,
+// so that ResizeDisplay changes the desktop's size at once and keeps the
+// session. A server that has not (Windows before 8, or one that is still
+// starting the channel) would only reconnect.
+func (c *Client) CanResize() bool { return c.dispReady.Load() }
+
+// ErrResizeUnsupported is returned by ResizeDisplay when the server does not
+// support changing the desktop's size in a running session.
+var ErrResizeUnsupported = errors.New("rdp: the server cannot change the desktop size in a running session")
+
+// ResizeDisplay asks the server for a width x height desktop whose interface is
+// drawn at scale percent (one of the Windows scale levels: 100, 125, 150 ...),
+// in the running session. Unlike Resize it never reconnects: it returns
+// ErrResizeUnsupported when CanResize is false.
+func (c *Client) ResizeDisplay(width, height int, scale uint32) error {
+	if c.State() != StateConnected {
+		return ErrNotConnected
+	}
+	if !c.CanResize() {
+		return ErrResizeUnsupported
+	}
+	c.displayMu.Lock()
+	defer c.displayMu.Unlock()
+	c.opts.DesktopScaleFactor = scale
+	return c.resizeLocked(width, height)
+}
+
+// resizeLocked is Resize with displayMu held.
+func (c *Client) resizeLocked(width, height int) error {
 	if c.State() != StateConnected {
 		return ErrNotConnected
 	}
@@ -5333,46 +5577,73 @@ func (c *Client) FramebufferWriteTopDown(dst []byte) (int, int) {
 	return w, h
 }
 
-// ReadRectBGRA copies the screen rectangle (x, y, w, h), clipped to the screen,
-// into dst as top-down BGRA rows w*4 bytes apart (fourth byte 0xFF), and returns
-// the clipped rectangle; zero width means nothing was copied. Motty addition.
-// It reads the framebuffer without locking, so it may only be called from a
-// display callback (OnBitmap, OnStridedBitmap, OnResize), which run on the
-// goroutine that writes the framebuffer.
-func (c *Client) ReadRectBGRA(dst []byte, x, y, w, h int) (rx, ry, rw, rh int) {
+// ReadRectBGRA reads the screen rectangle (x, y, w, h), clipped to the screen,
+// band by band, and hands each band to emit as top-down BGRA rows stride bytes
+// apart (fourth byte 0xFF). The framebuffer is held still for the whole
+// rectangle, so a decoder cannot write into it between bands. Motty addition.
+//
+// buffer is the caller's reusable scratch and must hold width*bandRows*4 bytes.
+// emit's pixels are valid only during the call.
+func (c *Client) ReadRectBGRA(buffer []byte, x, y, w, h, bandRows int, emit func(x, y, w, h int, pix []byte, stride int)) {
+	if w <= 0 || h <= 0 || bandRows <= 0 || len(buffer) < w*bandRows*4 {
+		return
+	}
+	c.frameMu.RLock()
+	defer c.frameMu.RUnlock()
+	c.framebufMu.RLock()
+	defer c.framebufMu.RUnlock()
 	fb := c.framebuf
 	if fb == nil {
-		return 0, 0, 0, 0
+		return
 	}
-	rx, ry, rw, rh = fb.clipRect(x, y, w, h)
-	if rw <= 0 || rh <= 0 || len(dst) < rw*rh*4 {
-		return 0, 0, 0, 0
-	}
-	for row := 0; row < rh; row++ {
-		// Row row of the rectangle is screen row ry+row, which the bottom-up
-		// framebuffer keeps at index fb.Height-1-(ry+row).
-		src := fb.Pixels[(fb.Height-1-(ry+row))*fb.Stride+rx*4:][:rw*4]
-		out := dst[row*rw*4:][:rw*4]
-		for i := 0; i < len(src); i += 4 {
-			out[i], out[i+1], out[i+2], out[i+3] = src[i+2], src[i+1], src[i], 0xFF
+	for top := 0; top < h; top += bandRows {
+		rows := min(bandRows, h-top)
+		rx, ry, rw, rh := fb.clipRect(x, y+top, w, rows)
+		if rw <= 0 || rh <= 0 {
+			continue
 		}
+		if len(buffer) < rw*rh*4 {
+			return
+		}
+		for row := 0; row < rh; row++ {
+			// Row row of the rectangle is screen row ry+row, which the bottom-up
+			// framebuffer keeps at index fb.Height-1-(ry+row).
+			src := fb.Pixels[(fb.Height-1-(ry+row))*fb.Stride+rx*4:][:rw*4]
+			out := buffer[row*rw*4:][:rw*4]
+			for i := 0; i < len(src); i += 4 {
+				out[i], out[i+1], out[i+2], out[i+3] = src[i+2], src[i+1], src[i], 0xFF
+			}
+		}
+		emit(rx, ry, rw, rh, buffer[:rw*rh*4], rw*4)
 	}
-	return rx, ry, rw, rh
 }
 
 // SetOutputSuppressed asks the server to stop (or resume) sending screen
 // updates, as a minimized window does (MS-RDPBCGR 2.2.11.3). Resuming makes the
-// server repaint the whole desktop. Motty addition.
+// server repaint the whole desktop. While updates are suppressed the heartbeat
+// waits instead of reading the expected silence as a dead link. Motty addition.
 func (c *Client) SetOutputSuppressed(suppressed bool) error {
 	if c.State() != StateConnected {
 		return ErrNotConnected
 	}
 	if suppressed {
-		return c.sendDataPDU(pdu.PDUType2SuppressOutput, pdu.EncodeSuppressOutput(false, 0, 0, 0, 0))
+		if err := c.sendDataPDU(pdu.PDUType2SuppressOutput, pdu.EncodeSuppressOutput(false, 0, 0, 0, 0)); err != nil {
+			return err
+		}
+		c.outputSuppressed.Store(true)
+		return nil
 	}
 	w, h := c.FramebufferDims()
 	if w < 1 || h < 1 {
 		return nil
 	}
-	return c.sendDataPDU(pdu.PDUType2SuppressOutput, pdu.EncodeSuppressOutput(true, 0, 0, uint16(w-1), uint16(h-1)))
+	if err := c.sendDataPDU(pdu.PDUType2SuppressOutput, pdu.EncodeSuppressOutput(true, 0, 0, uint16(w-1), uint16(h-1))); err != nil {
+		return err
+	}
+	// The server owes no updates until it is allowed to paint again: the
+	// silence the heartbeat measures starts now, and the repaint that follows
+	// is what proves the link is still there.
+	c.lastReceived.Store(time.Now().UnixNano())
+	c.outputSuppressed.Store(false)
+	return nil
 }

@@ -121,7 +121,11 @@ const (
 // Keyboard flags
 const (
 	KbdFlagsExtended uint16 = 0x0100
-	KbdFlagsRelease  uint16 = 0x8000
+	// KbdFlagsDown marks a press of a key the server already has down: the
+	// client's auto-repeat. A server does not repeat a held key by itself, so
+	// every repeat carries this flag (MS-RDPBCGR 2.2.8.1.1.3.1.1.1).
+	KbdFlagsDown    uint16 = 0x4000
+	KbdFlagsRelease uint16 = 0x8000
 )
 
 // Mouse pointer flags (TS_POINTER_EVENT, InputMouse 0x8001)

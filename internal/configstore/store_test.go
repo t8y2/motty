@@ -428,3 +428,117 @@ func TestADataDirectoryWithQueryCharactersInItsNameStillWorks(t *testing.T) {
 		t.Fatalf("loaded %v", entries)
 	}
 }
+
+func TestReadOnlyReadsWhatTheApplicationSavedAndChangesNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.db")
+	store, err := Open(path, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Commit(Change{
+		Put:   []Entry{put("host", "a", `{"label":"one"}`), put("host", "b", `{"label":"two"}`)},
+		Local: map[string][]byte{"state": []byte(`{"x":1}`)},
+	})
+	store.Commit(Change{Delete: []Key{{"host", "b"}}})
+	store.Close()
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries, local, err := ReadOnly(path, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].ID != "a" || string(local["state"]) != `{"x":1}` {
+		t.Fatalf("read %v and %v", entries, local)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("reading changed the file")
+	}
+	if matches, _ := filepath.Glob(path + "*"); len(matches) != 1 {
+		t.Fatalf("reading left side files: %v", matches)
+	}
+}
+
+func TestReadOnlyDoesNotCreateAFileAndRefusesWhatItCannotRead(t *testing.T) {
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "none.db")
+	if _, _, err := ReadOnly(missing, 1); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a missing file gave %v", err)
+	}
+	if _, err := os.Stat(missing); err == nil {
+		t.Fatal("reading created the file")
+	}
+
+	notStore := filepath.Join(dir, "text.db")
+	os.WriteFile(notStore, []byte(strings.Repeat("this is not a database ", 10)), 0o600)
+	if _, _, err := ReadOnly(notStore, 1); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("a file that is not a store gave %v", err)
+	}
+
+	newer := filepath.Join(dir, "newer.db")
+	store, err := Open(newer, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Close()
+	if _, _, err := ReadOnly(newer, 1); !errors.Is(err, ErrTooNew) {
+		t.Fatalf("payloads newer than this build gave %v", err)
+	}
+}
+
+func TestReadOnlySeesWhatAnotherProcessCommittedWhileItWasOpen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.db")
+	store, err := Open(path, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	store.Commit(Change{Put: []Entry{put("host", "a", `1`)}})
+	if entries, _, err := ReadOnly(path, 1); err != nil || len(entries) != 1 {
+		t.Fatalf("first read %v, %v", entries, err)
+	}
+	store.Commit(Change{Put: []Entry{put("host", "b", `2`)}})
+	if entries, _, err := ReadOnly(path, 1); err != nil || len(entries) != 2 {
+		t.Fatalf("second read %v, %v", entries, err)
+	}
+}
+
+func TestExpectedKindsRejectsPhantomMembersAtomically(t *testing.T) {
+	store := open(t)
+	if _, err := store.Commit(Change{Put: []Entry{put("note-folder", "f", `{"name":"folder"}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	folders := []Entry{}
+	for _, e := range entries {
+		if e.Kind == "note-folder" {
+			folders = append(folders, e)
+		}
+	}
+	// A new member appeared after an empty-directory check.
+	if _, err = store.Commit(Change{Put: []Entry{put("note", "child", `{"folder":"f"}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := store.Records()
+	_, err = store.Commit(Change{Delete: []Key{{Kind: "note-folder", ID: "f"}}, ExpectedKinds: map[string][]Entry{"note": {}, "note-folder": folders}, Local: map[string][]byte{"probe": []byte(`"must not write"`)}})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("phantom insert was not rejected: %v", err)
+	}
+	after, _ := store.Records()
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("failed transaction changed records")
+	}
+	_, local, _ := store.Load()
+	if local["probe"] != nil {
+		t.Fatal("failed transaction changed local values")
+	}
+}

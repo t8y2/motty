@@ -1,0 +1,49 @@
+# End to end: "Terminal follows file navigation" on a server whose login shell is
+# Bash before 4.4 (CentOS 7 has 4.2, which has no PS0). Entering a folder in the
+# file panel must make the terminal run `builtin cd`; the shell reports command
+# starts from a DEBUG trap instead. Needs a real old Bash (build one from the GNU
+# source, or point at one on a CentOS 7 host) and the loopback SSH fixture. The
+# shell's prompt must not use \w, which crashes a Bash 4.2.0 built on arm macOS.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .)
+#   mkdir /tmp/rs-home && printf 'PS1="tester@e2e> "\n' > /tmp/rs-home/.bash_profile
+#   HOME=/tmp/rs-home E2E_ALLOW_EXEC=1 E2E_LOGIN_SHELL=/path/to/bash-4.2/bash /tmp/e2esshd 2255 > /tmp/e2esshd.log &
+#   root=$(awk '/sftp root/ {print $3}' /tmp/e2esshd.log)
+#   sed "s#__SFTP_ROOT__#$root#" tools/e2e/reverse_sync_old_bash_e2e.txt > /tmp/rs.txt
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" /tmp/rs.txt
+#
+# Passes when `builtin cd -- '<root>/docs'` appears in the terminal after docs is
+# opened in the panel (waitfor below). The shell is a real one on a real pty.
+
+click "Search"
+type tester@127.0.0.1:2255
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 1500
+
+click "Settings"
+click "Files"
+settle 300
+click "Terminal follows file navigation"
+settle 300
+click "127.0.0.1:2255"
+settle 800
+key cmd+shift+s
+settle 1500
+
+click 1000 400
+settle 300
+type cd __SFTP_ROOT__
+key enter
+waitfor "alpha.txt" 8000
+settle 600
+dblclick "docs"
+waitfor "builtin cd --" 8000
+waitfor "guide.txt" 8000
+shot /tmp/reverse-sync-old-bash.png

@@ -327,3 +327,30 @@ func TestMalformedFilesRejected(t *testing.T) {
 		t.Fatal("garbage private blob must not parse")
 	}
 }
+
+func TestArgonParametersBeyondTheLimitsAreRefusedBeforeAnyWork(t *testing.T) {
+	data := string(writePPK(ed25519PPK(t, 3, "aes256-cbc", []byte("pass"))))
+	hostile := strings.Replace(data, "Argon2-Memory: 64", "Argon2-Memory: 4294967295", 1)
+	if hostile == data {
+		t.Fatal("the fixture does not carry the memory parameter the test rewrites")
+	}
+	_, err := Parse([]byte(hostile), []byte("pass"))
+	if err == nil || !strings.Contains(err.Error(), "beyond what is supported") {
+		t.Fatalf("a 4 TiB Argon2 request was not refused: %v", err)
+	}
+}
+
+func TestAMACOfTheWrongLengthDoesNotVerify(t *testing.T) {
+	for _, version := range []int{2, 3} {
+		data := string(writePPK(ed25519PPK(t, version, "none", nil)))
+		lines := strings.Split(data, "\n")
+		for index, line := range lines {
+			if strings.HasPrefix(line, "Private-MAC: ") {
+				lines[index] = "Private-MAC: 00"
+			}
+		}
+		if _, err := Parse([]byte(strings.Join(lines, "\n")), nil); err == nil {
+			t.Fatalf("version %d: a one-byte MAC was accepted", version)
+		}
+	}
+}

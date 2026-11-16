@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"motty/internal/desktop"
+	rdpcore "motty/internal/rdpcore"
 )
 
 // The live tests talk to a real RDP server and are skipped without it:
@@ -201,28 +202,14 @@ func TestLiveSessionPaintsAndTakesInput(t *testing.T) {
 	// Let the first paint settle.
 	pump(t, session, view, 3*time.Second, func() bool { return false })
 	save("first")
+	// What the server said about its pointer, which the workbench shows as the system cursor:
+	// a server that names none leaves the kind unset, which is not a failure.
+	_ = session.SendPointer(width/2, height/2, 0)
+	pump(t, session, view, 2*time.Second, func() bool { return false })
+	kind, shape, version := session.PointerShape()
+	t.Logf("pointer: kind %d, %dx%d, hotspot %d,%d, %d statement(s)", kind, shape.Width, shape.Height, shape.HotX, shape.HotY, version)
 
-	if keys, click := os.Getenv("MOTTY_RDP_PRESS"), os.Getenv("MOTTY_RDP_CLICK"); keys != "" || click != "" {
-		before := view.snapshot()
-		if click != "" {
-			var x, y int
-			if _, err := fmt.Sscanf(click, "%d,%d", &x, &y); err != nil {
-				t.Fatalf("MOTTY_RDP_CLICK %q: %v", click, err)
-			}
-			for _, buttons := range []desktop.Buttons{0, desktop.ButtonLeft, 0} {
-				if err := session.SendPointer(x, y, buttons); err != nil {
-					t.Fatal(err)
-				}
-				time.Sleep(150 * time.Millisecond)
-			}
-		}
-		pressNamed(t, session, keys)
-		// A first sign-in builds the profile and takes a while to show the desktop.
-		pump(t, session, view, 120*time.Second, func() bool { return view.colors(400) >= 400 })
-		pump(t, session, view, 8*time.Second, func() bool { return false })
-		save("answered")
-		t.Logf("after the keys %q: %d pixels changed, %d+ colours", keys, changed(before, view.snapshot()), view.colors(1000))
-	}
+	liveAnswerFirstPrompt(t, session, view, config, save)
 
 	// The pointer and a key must have a visible effect: the Windows key opens the
 	// Start menu of a desktop, and moving over the taskbar highlights it.
@@ -285,6 +272,41 @@ func TestLiveSessionPaintsAndTakesInput(t *testing.T) {
 	}
 }
 
+// liveAnswerFirstPrompt answers a question the server asks before the desktop
+// (typically "the user is already signed in elsewhere; sign them out?") with
+// MOTTY_RDP_CLICK or MOTTY_RDP_PRESS, then waits for the desktop behind it. It
+// reports whether there was anything to answer; without either variable a
+// server that shows no such question continues unchanged.
+func liveAnswerFirstPrompt(t *testing.T, session *Session, view *screen, config liveConfig, save func(string)) bool {
+	t.Helper()
+	keys, click := os.Getenv("MOTTY_RDP_PRESS"), os.Getenv("MOTTY_RDP_CLICK")
+	if keys == "" && click == "" {
+		return false
+	}
+	before := view.snapshot()
+	if click != "" {
+		var x, y int
+		if _, err := fmt.Sscanf(click, "%d,%d", &x, &y); err != nil {
+			t.Fatalf("MOTTY_RDP_CLICK %q: %v", click, err)
+		}
+		for _, buttons := range []desktop.Buttons{0, desktop.ButtonLeft, 0} {
+			if err := session.SendPointer(x, y, buttons); err != nil {
+				t.Fatal(err)
+			}
+			time.Sleep(150 * time.Millisecond)
+		}
+	}
+	pressNamed(t, session, keys)
+	// A first sign-in builds the profile and takes a while to show the desktop.
+	pump(t, session, view, 120*time.Second, func() bool { return view.colors(400) >= 400 })
+	pump(t, session, view, 8*time.Second, func() bool { return false })
+	if save != nil {
+		save("answered")
+	}
+	t.Logf("after the keys %q: %d pixels changed, %d+ colours", keys, changed(before, view.snapshot()), view.colors(1000))
+	return true
+}
+
 func TestLiveRefusedCertificateStopsAtOnce(t *testing.T) {
 	config := liveEnv(t)
 	var dials atomic.Int32
@@ -304,6 +326,41 @@ func TestLiveRefusedCertificateStopsAtOnce(t *testing.T) {
 		t.Errorf("a refused certificate made %d connections", got)
 	}
 	t.Logf("a refused certificate: %v after %d connection(s)", err, dials.Load())
+}
+
+// The standard RDP security switch is what reaches a server whose RDP security
+// layer offers no TLS. Without it the same server is refused before any
+// credential is sent.
+//
+// MOTTY_RDP_SECURITY=rdp says the server was started that way; see
+// tools/live/rdp_live.sh.
+func TestLiveStandardSecurity(t *testing.T) {
+	config := liveEnv(t)
+	if os.Getenv("MOTTY_RDP_SECURITY") != "rdp" {
+		t.Skip("MOTTY_RDP_SECURITY is not rdp: the server offers TLS")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	options := desktop.Options{Username: config.user, Domain: config.domain, Password: config.password}
+	if _, err := Open(ctx, direct, config.address, options); !errors.Is(err, rdpcore.ErrNegotiationFailed) {
+		t.Fatalf("default security against a standard-only server = %v, want a negotiation failure", err)
+	}
+	options.StandardSecurity = true
+	session, err := Open(ctx, direct, config.address, options)
+	if err != nil {
+		t.Fatalf("standard security: %v", err)
+	}
+	defer session.Close()
+	if session.Info().Encrypted {
+		t.Fatal("a standard-security session reported encryption")
+	}
+	view := &screen{}
+	if !pump(t, session, view, 60*time.Second, func() bool { return view.colors(64) >= 16 }) {
+		t.Fatalf("no picture: %d colours (session ended: %v)", view.colors(64), session.Err())
+	}
+	if config.png != "" {
+		view.savePNG(t, config.png+"-standard-security.png")
+	}
 }
 
 func TestLiveWrongPasswordIsRefusedOnce(t *testing.T) {

@@ -3,8 +3,8 @@ package workbench
 import (
 	"time"
 
-	"motty/internal/term"
 	"github.com/vivaui/viva/app"
+	"motty/internal/term"
 )
 
 // Desktop notifications a program in a terminal asks for (OSC 9, 777 and 99).

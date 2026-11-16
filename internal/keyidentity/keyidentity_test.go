@@ -45,6 +45,26 @@ func writeIdentity(t testing.TB, passphrase string) (string, ssh.Signer) {
 	return path, signer
 }
 
+func TestPublicIdentityNeedsNoPrivateKeyOrPassphrase(t *testing.T) {
+	path, signer := writeIdentity(t, "locked")
+	public, err := PublicKey(path)
+	if err != nil || ssh.FingerprintSHA256(public) != ssh.FingerprintSHA256(signer.PublicKey()) {
+		t.Fatalf("encrypted identity public key = %v, %v", public, err)
+	}
+	if err := os.WriteFile(path+".pub", ssh.MarshalAuthorizedKey(signer.PublicKey()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []string{path, path + ".pub"} {
+		public, err := PublicKey(candidate)
+		if err != nil || ssh.FingerprintSHA256(public) != ssh.FingerprintSHA256(signer.PublicKey()) {
+			t.Fatalf("public-only identity = %v, %v", public, err)
+		}
+	}
+}
+
 func TestInspectAndLoadPrivateKeys(t *testing.T) {
 	for _, test := range []struct {
 		name       string
@@ -211,5 +231,70 @@ func TestLoadNamesSecurityKeys(t *testing.T) {
 	_, err := Load(path, nil)
 	if err == nil || !strings.Contains(err.Error(), "hardware security keys") {
 		t.Fatalf("want a named security-key error, got %v", err)
+	}
+}
+
+func TestLoadEncryptedPKCS8(t *testing.T) {
+	// Produced by OpenSSL 3 and ssh-keygen; each covers a different cipher and
+	// PBKDF2 hash, and all use the passphrase "correct horse".
+	for _, name := range []string{
+		"pkcs8_ed25519_aes256_sha256",
+		"pkcs8_rsa_aes128_sha1",
+		"pkcs8_ecdsa_des3_sha256",
+		"ssh_keygen_pkcs8_rsa",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join("testdata", name+".pem")
+			publicText, err := os.ReadFile(filepath.Join("testdata", name+".pub"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, _, _, _, err := ssh.ParseAuthorizedKey(publicText)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			info, err := Inspect(path)
+			if err != nil || !info.Encrypted {
+				t.Fatalf("Inspect = %+v, %v; want an encrypted key", info, err)
+			}
+			_, err = Load(path, nil)
+			var missing *ssh.PassphraseMissingError
+			if !errors.As(err, &missing) {
+				t.Fatalf("Load without a passphrase = %v, want ssh.PassphraseMissingError", err)
+			}
+			if _, err := Load(path, []byte("wrong horse")); err == nil {
+				t.Fatal("Load accepted a wrong passphrase")
+			}
+			signer, err := Load(path, []byte("correct horse"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := ssh.FingerprintSHA256(signer.PublicKey()); got != ssh.FingerprintSHA256(want) {
+				t.Fatalf("loaded key %s, want %s", got, ssh.FingerprintSHA256(want))
+			}
+			signature := sign(t, signer, []byte("probe"))
+			if err := want.Verify([]byte("probe"), signature); err != nil {
+				t.Fatalf("signature did not verify against the file's public key: %v", err)
+			}
+		})
+	}
+}
+
+func TestInspectNamesUnsupportedPKCS8Schemes(t *testing.T) {
+	// The legacy PBES1 scheme of `openssl pkcs8 -topk8 -v1`: re-export is the
+	// only way forward, and the message must say so rather than looking like a
+	// corrupt file.
+	der, err := base64.StdEncoding.DecodeString("MFgwHAYKKoZIhvcNAQwBAzAOBAib6sVjTeUhlQICCAAEODfkXOA0FGQvBSdX6VhUONvBCNPN6LSNZm3Tw7wIvDX/1acoYZr7HO3CcLUVn3fTlB/8e9dpcpMi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := &pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: der}
+	path := filepath.Join(t.TempDir(), "legacy")
+	if err := os.WriteFile(path, pem.EncodeToMemory(block), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Inspect(path); err == nil || !strings.Contains(err.Error(), "legacy scheme") {
+		t.Fatalf("Inspect = %v, want the legacy scheme named", err)
 	}
 }

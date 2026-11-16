@@ -1,0 +1,121 @@
+# End to end: open the local proxy panel from the command palette, start a real
+# SSH reverse tunnel through e2esshd, run Git HTTPS, pip and npm downloads with
+# the copied activation command, restore the shell, and stop the tunnel. The
+# fixture must execute the listener inspection with E2E_ALLOW_EXEC=1, and PATH
+# must lead with a fake `ss` that verifies and reports the actual loopback
+# listener. recording_http_proxy.py on 48997 forwards to the user's HTTP proxy
+# on 7897 and logs every CONNECT target.
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .)
+#   mkdir -p /tmp/motty-proxy-e2e-bin
+#   printf '#!/bin/sh\nfor arg do last=$arg; done\nport=${last##*:}\nlsof -nP -a -iTCP:$port -sTCP:LISTEN >/tmp/motty-ss-listeners || exit 1\nif grep -Eq "TCP [^ ]+->" /tmp/motty-ss-listeners || ! grep -Eq "TCP 127[.]0[.]0[.]1:$port " /tmp/motty-ss-listeners; then exit 1; fi\nprintf "LISTEN 0 128 127.0.0.1:%%s 0.0.0.0:*\\n" "$port"\n' > /tmp/motty-proxy-e2e-bin/ss
+#   chmod +x /tmp/motty-proxy-e2e-bin/ss
+#   E2E_ALLOW_EXEC=1 PATH=/tmp/motty-proxy-e2e-bin:$PATH /tmp/e2esshd 2222 &
+#   python3 tools/e2e/recording_http_proxy.py --listen-port 48997 --upstream 127.0.0.1:7897 --log /tmp/motty-proxy.log &
+#   make head
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/local_proxy_e2e.txt
+
+click "Search"
+type tester@127.0.0.1:2222
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+
+key cmd+shift+p
+settle 400
+waitfor "Command Palette" 2000
+type Use local proxy
+key enter
+settle 500
+waitfor "Local HTTP proxy" 2000
+type 48997
+click "Start & copy command"
+waitfor "Setup command copied" 5000
+settle 300
+key cmd+v enter
+settle 300
+type printf "PROXY_ACTIVE=%s\n" "$MOTTY_PROXY_ACTIVE"
+key enter
+waitfor "PROXY_ACTIVE=1" 3000
+
+key cmd+shift+p
+settle 400
+type Use local proxy
+key enter
+waitfor "Proxy tunnel is on" 5000
+settle 500
+layout
+shot /tmp/local-proxy-connected.png
+click "More options"
+click "Test connection"
+waitfor "Connection test succeeded for this attempt" 30000
+layout
+click "Docker setup"
+waitfor "Systemd-managed Linux Docker" 2000
+settle 300
+layout
+shot /tmp/local-proxy-docker.png
+click "Proxy settings"
+key escape
+settle 300
+
+type download_dir=$(mktemp -d /tmp/motty-local-proxy-downloads.XXXXXX) && route_before=$(route -n get default | awk '/gateway:/{print $2}') && printf "DOWNLOAD_%s=%s ROUTE_BEFORE=%s\n" DIR "$download_dir" "$route_before"
+key enter
+waitfor "DOWNLOAD_DIR=" 3000
+type GIT_CONFIG_GLOBAL=/dev/null git -c http.proxy=http://127.0.0.1:1 ls-remote https://github.com/mattn/go-isatty.git >/dev/null 2>&1 || printf "UNREACHABLE_PROXY_%s\n" GIT_FAILED
+key enter
+waitfor "UNREACHABLE_PROXY_GIT_FAILED" 5000
+type GIT_CONFIG_GLOBAL=/dev/null git -c http.proxy="$https_proxy" clone --depth 1 https://github.com/mattn/go-isatty.git "$download_dir/go-isatty" && printf "GIT_DOWNLOAD_%s\n" OK
+key enter
+waitfor "GIT_DOWNLOAD_OK" 30000
+
+type pip3 download --disable-pip-version-check --no-cache-dir --no-deps --dest "$download_dir" idna==3.10 && printf "PIP_DOWNLOAD_%s\n" OK
+key enter
+waitfor "PIP_DOWNLOAD_OK" 60000
+type npm pack --ignore-scripts is-number@7.0.0 --registry=https://registry.npmjs.org --cache "$download_dir/npm-cache" --pack-destination "$download_dir" && printf "NPM_DOWNLOAD_%s\n" OK
+key enter
+waitfor "NPM_DOWNLOAD_OK" 60000
+type test -d "$download_dir/go-isatty/.git" && test -f "$download_dir/idna-3.10-py3-none-any.whl" && test -f "$download_dir/is-number-7.0.0.tgz" && test "$(shasum -a 256 "$download_dir/idna-3.10-py3-none-any.whl" | awk '{print $1}')" = 946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3 && test "$(shasum -a 256 "$download_dir/is-number-7.0.0.tgz" | awk '{print $1}')" = 7b75c1057198cf97696909a9bee176c9c5e9bcb5b03bf3ecef2f484defadd51e && route_now=$(route -n get default | awk '/gateway:/{print $2}') && test "$route_now" = "$route_before" && printf "ARTIFACT_SHA_%s\nROUTE_%s\n" OK UNCHANGED
+key enter
+waitfor "ARTIFACT_SHA_OK" 10000
+waitfor "ROUTE_UNCHANGED" 3000
+
+click 700 820
+settle 300
+key cmd+shift+p
+settle 400
+waitfor "Command Palette" 2000
+type Use local proxy
+key enter
+waitfor "Local HTTP proxy" 15000
+click "More options"
+waitfor "Copy restore command" 5000
+settle 300
+click "Copy restore command"
+waitfor "Restore command copied" 2000
+settle 300
+key cmd+v enter
+settle 300
+type printf "PROXY_RESTORED=%s HTTP=%s\n" "${MOTTY_PROXY_ACTIVE-unset}" "${http_proxy-unset}"
+key enter
+waitfor "PROXY_RESTORED=unset HTTP=unset" 3000
+
+key cmd+shift+p
+settle 400
+waitfor "Command Palette" 2000
+type Use local proxy
+key enter
+waitfor "Local HTTP proxy" 15000
+settle 300
+click "Stop & copy restore"
+waitfor "Proxy tunnel stopped" 2000
+layout
+shot /tmp/local-proxy-stopped.png
+settle 300
+type route_after=$(route -n get default | awk '/gateway:/{print $2}') && test "$route_after" = "$route_before" && printf "SESSION_ALIVE_%s ROUTE_UNCHANGED\n" POST_STOP
+key enter
+waitfor "SESSION_ALIVE_POST_STOP ROUTE_UNCHANGED" 3000

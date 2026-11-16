@@ -2,6 +2,7 @@ package sshconn
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"strings"
@@ -106,8 +107,118 @@ func passwordServer(t *testing.T, shell func(*fakeShell)) *testServer {
 	})
 }
 
+// A restricted gateway ends the connection when it is asked for a second
+// channel, so neither the system probe nor the shell-integration probe may
+// run on one.
+func TestARestrictedGatewayIsAskedForNoChannelBeyondItsShell(t *testing.T) {
+	for _, banner := range []string{"SSH-2.0-BHostSSH_7.0", "SSH-2.0-SSHD_0.7.6"} {
+		t.Run(banner, func(t *testing.T) {
+			server := startServer(t, func(server *testServer) {
+				server.password = "secret"
+				server.version = banner
+				server.oneChannel = true
+				server.shell = echoShell
+			})
+			h := connect(t, server)
+			w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, IntegrateShell: true, IntegrationToken: "integration"})
+			w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome\r\n$ ") })
+			if system := h.conn.Status().System; system != SystemUnknown {
+				t.Fatalf("the gateway was probed for its system anyway: %v", system)
+			}
+			if !w.shell.Write([]byte("exit\r")) {
+				t.Fatal("writing to the shell failed")
+			}
+			w.waitDone()
+		})
+	}
+}
+
+// A gateway with a menu of its own may end the connection on an env request it
+// does not implement, before the shell starts. An unrecognized banner must be
+// sent only the pty and shell requests that Xshell and ssh send.
+func TestAGatewayThatRejectsLocaleRequestsStillStartsAShell(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.version = "SSH-2.0-Erlang"
+		server.envFatal = true
+		server.shell = echoShell
+	})
+	h := connect(t, server)
+	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, IntegrateShell: true, IntegrationToken: "integration"})
+	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome\r\n$ ") })
+	_, _, _, env, _ := fakeShellState(server)
+	if locale, ok := env["LANG"]; ok {
+		t.Fatalf("the gateway was sent LANG=%q", locale)
+	}
+	if !w.shell.Write([]byte("exit\r")) {
+		t.Fatal("writing to the shell failed")
+	}
+	w.waitDone()
+}
+
+// A gateway may advertise an OpenSSH banner and still permit only an
+// interactive login. The probe that makes it end the connection is then the
+// only sign that the probes were what it refused, and the connection must say
+// so: the host can only be reached again without them.
+func TestAGatewayThatLooksLikeOpenSSHIsRecognizedByItsProbeRefusal(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.version = "SSH-2.0-OpenSSH_8.9p1"
+		server.execFatal = true
+		server.shell = echoShell
+	})
+	h := dial(t, server, nil)
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("secret")
+	status := h.phase(PhaseClosed)
+	if !status.ProbeRefused {
+		t.Fatalf("the refused probe was not reported: %+v", status)
+	}
+	if !errors.Is(status.Err, ErrDisconnected) {
+		t.Fatalf("close error = %v, want a disconnect", status.Err)
+	}
+}
+
+// A host confined to the interactive session is sent the pty and shell requests
+// only, as Xshell and ssh are, even when its banner names an implementation the
+// probes usually trust.
+func TestAnInteractiveOnlyHostGetsOnlyPtyAndShell(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.version = "SSH-2.0-OpenSSH_8.9p1"
+		server.execFatal = true
+		server.shell = echoShell
+	})
+	h := dial(t, server, func(config *Config) { config.InteractiveOnly = true })
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("secret")
+	h.phase(PhaseConnected)
+	if system := h.conn.Status().System; system != SystemUnknown {
+		t.Fatalf("an interactive-only host was probed for its system: %v", system)
+	}
+	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, IntegrateShell: true, IntegrationToken: "integration"})
+	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome\r\n$ ") })
+	_, _, _, env, _ := fakeShellState(server)
+	if locale, ok := env["LANG"]; ok {
+		t.Fatalf("an interactive-only host was sent LANG=%q", locale)
+	}
+	if !w.shell.Write([]byte("exit\r")) {
+		t.Fatal("writing to the shell failed")
+	}
+	w.waitDone()
+}
+
 func TestShellRunsOnAPtyAndCarriesDataBothWays(t *testing.T) {
-	server := passwordServer(t, echoShell)
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		// A Windows banner keeps the system probe away from this test.
+		server.version = "SSH-2.0-OpenSSH_for_Windows_9.5"
+		server.shell = echoShell
+	})
 	h := connect(t, server)
 	w := openShell(t, h, 80, 24)
 
@@ -146,6 +257,65 @@ func TestShellRunsOnAPtyAndCarriesDataBothWays(t *testing.T) {
 	}
 	if w.shell.Write([]byte("x")) {
 		t.Error("Write succeeded after the shell ended")
+	}
+}
+
+func TestCommandShellUsesItsOwnPTYAndCarriesInteractiveInput(t *testing.T) {
+	const command = "docker exec -it 0f1e2d3c4b5a /bin/sh"
+	seen := make(chan string, 1)
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		// A Windows banner keeps the system probe away from this test.
+		server.version = "SSH-2.0-OpenSSH_for_Windows_9.5"
+	})
+	server.command = func(got string, channel ssh.Channel) {
+		seen <- got
+		_, _ = channel.Write([]byte("inside$ "))
+		buffer := make([]byte, 64)
+		n, _ := channel.Read(buffer)
+		_, _ = channel.Write(buffer[:n])
+		_ = channel.Close()
+	}
+	h := connect(t, server)
+	w := openShellWith(t, h, ShellConfig{Cols: 92, Rows: 30, Command: command})
+	w.until("container prompt", func(output string) bool { return strings.Contains(output, "inside$ ") })
+	if got := <-seen; got != command {
+		t.Fatalf("executed %q, want %q", got, command)
+	}
+	term, cols, rows, env, _ := fakeShellState(server)
+	if term != "xterm-256color" || cols != 92 || rows != 30 || !strings.Contains(strings.ToLower(env["LANG"]), "utf") {
+		t.Fatalf("PTY=%s %dx%d environment=%v", term, cols, rows, env)
+	}
+	if !w.shell.Write([]byte("echo ok\r")) {
+		t.Fatal("command PTY rejected input")
+	}
+	w.until("interactive echo", func(output string) bool { return strings.Contains(output, "echo ok\r") })
+}
+
+// A server whose terminals erase with Control+H by default, AIX for one, echoes
+// Backspace as ^? unless the pty request says which byte erases.
+func TestPtyRequestNamesTheByteBackspaceSends(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.version = "SSH-2.0-OpenSSH_for_Windows_9.5"
+		server.shell = echoShell
+	})
+	w := openShell(t, connect(t, server), 80, 24)
+	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome") })
+	server.mu.Lock()
+	shell := server.lastShell
+	server.mu.Unlock()
+	shell.mu.Lock()
+	modes := []byte(shell.modes)
+	shell.mu.Unlock()
+	erase := uint32(0)
+	for ; len(modes) >= 5 && modes[0] != 0; modes = modes[5:] {
+		if modes[0] == ssh.VERASE {
+			erase = binary.BigEndian.Uint32(modes[1:5])
+		}
+	}
+	if erase != 0x7f {
+		t.Fatalf("pty erase = %#x, want the DEL that Backspace sends", erase)
 	}
 }
 

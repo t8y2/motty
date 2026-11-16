@@ -1,0 +1,13 @@
+# The window side of what an agent did without it: Settings > MCP lists the latest
+# calls from the audit log, without any output, and Clear empties it. Runs after
+# tools/e2e/agent_mcp_e2e.py has made calls (see run_agent_mcp_e2e.sh).
+click "Settings"
+settle 400
+click "MCP"
+settle 600
+texts
+scroll 700 600 0 2000
+settle 300
+click "Clear"
+settle 400
+texts

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/text"
+	"motty/internal/sshconn"
 )
 
 func liveRecordingSession(t testing.TB, now *time.Duration) (*State, *fakeConn, *fakeShell) {

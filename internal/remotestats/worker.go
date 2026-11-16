@@ -2,6 +2,8 @@ package remotestats
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -16,9 +18,20 @@ const (
 // Result is one completed sample. An error is terminal for the worker so a
 // refused or unsupported command is never retried in the background.
 type Result struct {
-	Sample Sample
-	Err    error
+	Sample  Sample
+	Details *Details
+	Err     error
 }
+
+// commandKind is which output protocol a worker's command speaks. The POSIX
+// one reads Linux procfs; the other two each have their own line.
+type commandKind uint8
+
+const (
+	kindPOSIX commandKind = iota
+	kindWindows
+	kindDarwin
+)
 
 // Worker owns one goroutine and one remote command only while the user has
 // monitoring enabled.
@@ -30,6 +43,10 @@ type Worker struct {
 	results chan Result
 	done    chan struct{}
 	close   sync.Once
+	command string
+	kind    commandKind
+	// now is the receiver's clock, which times the macOS interface counters.
+	now func() time.Time
 }
 
 // Start begins sampling immediately. It is intentionally the constructor:
@@ -39,13 +56,36 @@ func Start(runner Runner, notify func()) *Worker {
 }
 
 func start(runner Runner, notify func(), first, next time.Duration) *Worker {
-	ctx, cancel := context.WithCancel(context.Background())
-	worker := &Worker{
-		runner: runner, notify: notify, ctx: ctx, cancel: cancel,
-		results: make(chan Result, 1), done: make(chan struct{}),
+	return startCommand(runner, notify, first, next, command, kindPOSIX)
+}
+
+// StartWithInterval changes the remote sampling interval without adding a
+// second timer or SSH stream. The initial quarter-second warmup stays fast.
+func StartWithInterval(runner Runner, notify func(), seconds int) *Worker {
+	if !validInterval(seconds) {
+		seconds = 2
 	}
+	script := strings.TrimSuffix(command, "sleep 1\ndone") + "sleep " + strconv.Itoa(seconds) + "\ndone"
+	return startCommand(runner, notify, firstReadingTimeout, time.Duration(seconds)*time.Second+readingTimeout, script, kindPOSIX)
+}
+
+func startCommand(runner Runner, notify func(), first, next time.Duration, script string, kind commandKind) *Worker {
+	worker := newWorker(runner, notify, script, kind)
 	go worker.run(first, next)
 	return worker
+}
+
+func newWorker(runner Runner, notify func(), script string, kind commandKind) *Worker {
+	ctx, cancel := context.WithCancel(context.Background())
+	worker := &Worker{
+		runner: runner, notify: notify, ctx: ctx, cancel: cancel, command: script, kind: kind, now: time.Now,
+		results: make(chan Result, 1), done: make(chan struct{}),
+	}
+	return worker
+}
+
+func validInterval(seconds int) bool {
+	return seconds == 1 || seconds == 2 || seconds == 5 || seconds == 10 || seconds == 30 || seconds == 60
 }
 
 // Results is the completion stream drained by the window thread. It holds only
@@ -71,14 +111,89 @@ func (worker *Worker) run(first, next time.Duration) {
 	defer watchdog.Stop()
 
 	var (
-		previous counters
-		have     bool
-		fault    error
-		pending  []GPU // the GPU lines that came before the counters line they belong to
+		previous             counters
+		have                 bool
+		fault                error
+		pending              []GPU // the GPU lines that came before the counters line they belong to
+		pendingGPUProcesses  []GPUProcess
+		primary              string
+		previousPrimary      string
+		cores, previousCores []coreCounters
+		windowsRead          bool
+		startupLines         int
+		darwinPrevious       darwinReading
+		darwinAt             time.Time
+		darwinHave           bool
 	)
-	err := worker.runner.StreamCommand(ctx, command, maxLineBytes, func(line []byte) bool {
+	limit := maxLineBytes
+	if worker.kind == kindWindows {
+		limit = maxWindowsLineBytes
+	}
+	err := worker.runner.StreamCommand(ctx, worker.command, limit, func(line []byte) bool {
+		if strings.HasPrefix(string(line), "gop-stats-win-v1 ") {
+			result, err := parseWindows(line)
+			if err != nil {
+				fault = err
+				return false
+			}
+			watchdog.Reset(next)
+			worker.publish(result)
+			windowsRead = true
+			return true
+		}
+		if strings.HasPrefix(string(line), darwinPrefix) {
+			reading, err := parseDarwin(line)
+			if err != nil {
+				fault = err
+				return false
+			}
+			at := worker.now()
+			watchdog.Reset(next)
+			if darwinHave && !reading.warm {
+				worker.publish(Result{Sample: darwinSample(darwinPrevious, reading, at.Sub(darwinAt))})
+			}
+			darwinPrevious, darwinAt, darwinHave = reading, at, true
+			return true
+		}
+		if worker.kind == kindWindows && !strings.HasPrefix(string(line), "gop-stats-unsupported") {
+			// Some Windows SSH shells print a bounded login banner even for
+			// command sessions. Never let it reset the first-reading timeout.
+			if !windowsRead && startupLines < 8 && len(line) < 1024 {
+				startupLines++
+				return true
+			}
+			fault = ErrMalformed
+			return false
+		}
+		if strings.HasPrefix(string(line), "gop-core ") {
+			core, err := parseCore(line)
+			if err != nil || len(cores) >= 256 {
+				fault = ErrMalformed
+				return false
+			}
+			cores = append(cores, core)
+			return true
+		}
+		if strings.HasPrefix(string(line), "gop-net-primary ") {
+			primary = strings.TrimSpace(strings.TrimPrefix(string(line), "gop-net-primary "))
+			if primary == "-" {
+				primary = ""
+			}
+			if len(primary) > 64 || strings.ContainsAny(primary, "\r\n\t") {
+				fault = ErrMalformed
+				return false
+			}
+			return true
+		}
 		if isGPULine(line) {
-			pending = parseGPULine(pending, line)
+			text := strings.TrimSpace(string(line))
+			if strings.HasPrefix(text, gpuNvidiaProcessPrefix) {
+				if process, ok := parseNvidiaProcess(text[len(gpuNvidiaProcessPrefix):]); ok && len(pendingGPUProcesses) < MaxGPUs*MaxGPUProcesses {
+					pendingGPUProcesses = append(pendingGPUProcesses, process)
+				}
+			} else {
+				pending = parseGPULine(pending, line)
+			}
 			return true
 		}
 		current, err := parse(line)
@@ -89,12 +204,23 @@ func (worker *Worker) run(first, next time.Duration) {
 		watchdog.Reset(next)
 		if have {
 			if reading, ok := sample(previous, current); ok {
-				reading.GPUs = pending
+				reading.GPUs = attachNvidiaProcesses(pending, pendingGPUProcesses)
+				reading.Cores = coreUsage(previousCores, cores)
+				reading.NetworkInterface = primary
+				if primary != previousPrimary {
+					reading.ReceiveBytesPerSecond = 0
+					reading.SendBytesPerSecond = 0
+				}
 				worker.publish(Result{Sample: reading})
 			}
 		}
 		previous, have = current, true
+		previousPrimary = primary
+		previousCores = cores
+		cores = nil
 		pending = nil
+		pendingGPUProcesses = nil
+		primary = ""
 		return true
 	})
 	if worker.ctx.Err() != nil {

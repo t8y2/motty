@@ -2,7 +2,8 @@
 // Clipboard Virtual Channel Extension) for bidirectional clipboard
 // support over the "cliprdr" static virtual channel.
 //
-// Supports CF_UNICODETEXT (format ID 13) and CF_DIB (format ID 8).
+// Supports CF_UNICODETEXT (format ID 13), CF_DIB (format ID 8) and files in
+// both directions (FileGroupDescriptorW and FileContents).
 package cliprdr
 
 import (
@@ -10,6 +11,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log/slog"
+	"sync"
+	"time"
 
 	"motty/internal/rdpcore/util"
 )
@@ -213,27 +216,167 @@ func encodeFormatDataResponse(ok bool, data []byte) []byte {
 }
 
 // Handler manages the cliprdr protocol over the "cliprdr" static virtual channel.
+//
+// PDUs arrive on the connection's read goroutine, while the Set and Request
+// methods are called from the application's; mu guards the state they share.
+// It is never held while a PDU is sent.
 type Handler struct {
-	sendFn             func([]byte) error
-	log                *slog.Logger
-	serverCaps         uint32            // generalFlags from server
-	useLongFormatNames bool              // both sides negotiated CB_USE_LONG_FORMAT_NAMES
-	ready              bool              // true after monitor-ready handshake
-	enabled            bool              // runtime toggle; when false, suppress callbacks and outbound data
-	localText          string            // current local clipboard content (UTF-8)
-	localImage         []byte            // current local clipboard image (PNG-encoded)
-	remoteFormats      []FormatListEntry // last format list from server
-	pendingReq         bool              // waiting for FORMAT_DATA_RESPONSE
-	pendingFormat      uint32            // which format was requested (CFUnicodeText or CFDIB)
-	onRemoteCopy       func(hasText, hasImage bool)
+	sendFn func([]byte) error
+	log    *slog.Logger
+
+	mu                 sync.Mutex
+	serverCaps         uint32                   // generalFlags from server
+	useLongFormatNames bool                     // both sides negotiated CB_USE_LONG_FORMAT_NAMES
+	ready              bool                     // true after monitor-ready handshake
+	enabled            bool                     // runtime toggle; when false, suppress callbacks and outbound data
+	localText          string                   // current local clipboard content (UTF-8)
+	localImage         []byte                   // current local clipboard image (PNG-encoded)
+	files              *fileSnapshot            // the files copied on this computer, when the clipboard holds them
+	locked             map[uint32]*fileSnapshot // lists the server holds locked, by clipDataId
+	remoteFormats      []FormatListEntry        // last format list from server
+	remoteFileListID   uint32                   // the server's FileGroupDescriptorW format, 0 when it offered none
+	remoteContentsID   uint32                   // the server's FileContents format
+	remoteHasFiles     bool
+	// The server's clipboard data may be locked while its files are read, so a
+	// copy made meanwhile cannot change the list under a paste. remoteLockID is
+	// the id sent in CB_LOCK_CLIPDATA, 0 when nothing is locked.
+	remoteLockID   uint32
+	remoteLockNext uint32
+	// Format data requests have no id in the protocol, and a response carries
+	// none. The server answers in order, so the oldest outstanding request is
+	// the one a response belongs to. pendingData holds them in that order; the
+	// four pending* fields mirror its head for the rest of this file.
+	pendingData        []formatDataRequest
+	pendingNextID      uint64
+	pendingReq         bool
+	pendingFormat      uint32
+	pendingFiles       bool
+	pendingGeneration  uint64
+	onRemoteCopy       func(hasText, hasImage, hasFiles bool)
 	onTextData         func(text string)
 	onImageData        func(pngData []byte)
+	onFilesData        func(RemoteFiles, error)
+	fileResponses      chan fileContentsResponse
+	fileStream         uint32 // last streamId used for a file contents request; guarded by downloadMu
+	downloadSerial     uint64 // identifies the newest download; guarded by mu
+	downloadClipID     uint32 // the lock the newest download reads; guarded by mu
+	downloadMu         sync.Mutex
+	downloadCancel     context.CancelFunc
+	downloadGeneration uint64
 }
+
+// formatDataRequest is one CB_FORMAT_DATA_REQUEST whose response has not
+// arrived yet. files marks a request for the server's file list; generation is
+// the remote clipboard it belongs to, so a response to a list that has since
+// changed is dropped instead of being applied to the newer clipboard.
+type formatDataRequest struct {
+	id         uint64
+	format     uint32
+	files      bool
+	clipID     uint32 // the locked clipboard data the file list belongs to, 0 when unlocked
+	generation uint64
+	sent       time.Time
+}
+
+// encodeLockClipData builds a CB_LOCK_CLIPDATA or CB_UNLOCK_CLIPDATA PDU. The
+// payload is the clipboard data's id.
+func encodeLockClipData(kind uint16, id uint32) []byte {
+	var payload [4]byte
+	binary.LittleEndian.PutUint32(payload[:], id)
+	return encodePDU(kind, 0, payload[:])
+}
+
+// Limits of the outstanding-request queue. The queue exists to match responses
+// that arrive after the clipboard changed under them; a normal clipboard update
+// has one request in flight, not dozens.
+const (
+	maxPendingDataRequests = 16
+	// formatDataTimeout discards a request a server never answered, so one lost
+	// response cannot shift every later one onto the wrong data type.
+	formatDataTimeout = 60 * time.Second
+)
 
 // NewHandler creates a cliprdr handler.
 // sendFn writes data to the "cliprdr" static virtual channel.
 func NewHandler(sendFn func([]byte) error, log *slog.Logger) *Handler {
-	return &Handler{sendFn: sendFn, log: log, enabled: true}
+	return &Handler{
+		sendFn: sendFn, log: log, enabled: true,
+		fileResponses: make(chan fileContentsResponse, 8),
+	}
+}
+
+// syncPendingLocked mirrors the oldest outstanding request into the pending*
+// fields. It must be called whenever pendingData changes.
+func (h *Handler) syncPendingLocked() {
+	h.pendingReq = len(h.pendingData) > 0
+	if !h.pendingReq {
+		h.pendingFormat, h.pendingFiles, h.pendingGeneration = 0, false, 0
+		return
+	}
+	head := h.pendingData[0]
+	h.pendingFormat, h.pendingFiles, h.pendingGeneration = head.format, head.files, head.generation
+}
+
+// dropExpiredDataRequestsLocked forgets requests the server did not answer in
+// time, so a later response is not taken for one of them.
+func (h *Handler) dropExpiredDataRequestsLocked(now time.Time) {
+	drop := 0
+	for drop < len(h.pendingData) && now.Sub(h.pendingData[drop].sent) > formatDataTimeout {
+		drop++
+	}
+	if drop == 0 {
+		return
+	}
+	h.pendingData = append(h.pendingData[:0], h.pendingData[drop:]...)
+	h.syncPendingLocked()
+}
+
+// enqueueDataRequestLocked records a request before it is sent. It reports
+// false when too many requests are already outstanding; the caller then does
+// not send it rather than let a response land on the wrong request.
+func (h *Handler) enqueueDataRequestLocked(format uint32, files bool, clipID uint32) (formatDataRequest, bool) {
+	now := time.Now()
+	h.dropExpiredDataRequestsLocked(now)
+	if len(h.pendingData) >= maxPendingDataRequests {
+		return formatDataRequest{}, false
+	}
+	h.pendingNextID++
+	request := formatDataRequest{
+		id: h.pendingNextID, format: format, files: files,
+		clipID: clipID, generation: h.downloadGeneration, sent: now,
+	}
+	h.pendingData = append(h.pendingData, request)
+	h.syncPendingLocked()
+	return request, true
+}
+
+// removeDataRequestLocked forgets a request that could not be sent.
+func (h *Handler) removeDataRequestLocked(id uint64) {
+	for index, request := range h.pendingData {
+		if request.id == id {
+			h.pendingData = append(h.pendingData[:index], h.pendingData[index+1:]...)
+			break
+		}
+	}
+	h.syncPendingLocked()
+}
+
+// popDataRequestLocked takes the request the next response belongs to. The
+// fallback keeps the direct internal state tests set working.
+func (h *Handler) popDataRequestLocked() (formatDataRequest, bool) {
+	if len(h.pendingData) > 0 {
+		request := h.pendingData[0]
+		h.pendingData = h.pendingData[1:]
+		h.syncPendingLocked()
+		return request, true
+	}
+	if !h.pendingReq {
+		return formatDataRequest{}, false
+	}
+	request := formatDataRequest{format: h.pendingFormat, files: h.pendingFiles, generation: h.pendingGeneration}
+	h.pendingReq = false
+	h.pendingFormat, h.pendingFiles, h.pendingGeneration = 0, false, 0
+	return request, true
 }
 
 // SetEnabled toggles clipboard forwarding at runtime. When disabled the
@@ -242,34 +385,101 @@ func NewHandler(sendFn func([]byte) error, log *slog.Logger) *Handler {
 // When re-enabled after being disabled, a fresh CB_FORMAT_LIST is sent to
 // re-announce available formats.
 func (h *Handler) SetEnabled(enabled bool) {
+	h.mu.Lock()
 	was := h.enabled
 	h.enabled = enabled
-	if enabled && !was && h.ready {
+	var cancel context.CancelFunc
+	var unlock uint32
+	if !enabled {
+		h.dropFilesLocked()
+		h.downloadGeneration++
+		cancel = h.downloadCancel
+		h.downloadCancel = nil
+		unlock = h.takeRemoteLockLocked()
+		// Responses to requests sent while sharing was on are not this side's
+		// clipboard any more; re-enabling starts with a fresh format list.
+		h.pendingData = h.pendingData[:0]
+		h.syncPendingLocked()
+	}
+	ready := h.ready
+	h.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if unlock != 0 {
+		h.sendResponse(encodeLockClipData(CBUnlockClipData, unlock))
+	}
+	if enabled && !was && ready {
 		h.sendFormatList()
 	}
 }
 
 // Enabled returns the current enabled state.
 func (h *Handler) Enabled() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	return h.enabled
 }
 
 // OnRemoteCopy sets the callback invoked when the server's clipboard changes.
 // hasText is true if CF_UNICODETEXT is among the advertised formats.
 // hasImage is true if CF_DIB is among the advertised formats.
-func (h *Handler) OnRemoteCopy(fn func(hasText, hasImage bool)) {
+func (h *Handler) OnRemoteCopy(fn func(hasText, hasImage, hasFiles bool)) {
+	h.mu.Lock()
 	h.onRemoteCopy = fn
+	h.mu.Unlock()
+}
+
+// OnRemoteFiles sets the callback invoked when the files the server put on its
+// clipboard have arrived on this computer. It runs on a goroutine of its own;
+// an error says why they could not all be read.
+func (h *Handler) OnRemoteFiles(fn func(RemoteFiles, error)) {
+	h.mu.Lock()
+	h.onFilesData = fn
+	h.mu.Unlock()
 }
 
 // OnTextData sets the callback invoked when the server responds with clipboard text data.
 func (h *Handler) OnTextData(fn func(text string)) {
+	h.mu.Lock()
 	h.onTextData = fn
+	h.mu.Unlock()
 }
 
 // OnImageData sets the callback invoked when the server responds with
 // clipboard image data. The pngData is PNG-encoded.
 func (h *Handler) OnImageData(fn func(pngData []byte)) {
+	h.mu.Lock()
 	h.onImageData = fn
+	h.mu.Unlock()
+}
+
+// Close forgets the copied files and the lists the server held. The handler is
+// not used afterwards.
+func (h *Handler) Close() {
+	h.mu.Lock()
+	h.dropFilesLocked()
+	clear(h.locked)
+	h.downloadGeneration++
+	cancel := h.downloadCancel
+	h.downloadCancel = nil
+	unlock := h.takeRemoteLockLocked()
+	h.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if unlock != 0 {
+		// Best effort: the connection may already be closing.
+		h.sendFn(encodeLockClipData(CBUnlockClipData, unlock))
+	}
+}
+
+// takeRemoteLockLocked forgets the remote clipboard data this side locked and
+// returns its id, 0 when nothing was locked. The caller sends the unlock.
+func (h *Handler) takeRemoteLockLocked() uint32 {
+	id := h.remoteLockID
+	h.remoteLockID = 0
+	return id
 }
 
 // ProcessPDU dispatches an incoming cliprdr PDU.
@@ -292,18 +502,18 @@ func (h *Handler) ProcessPDU(data []byte) {
 		h.handleFormatDataRequest(payload)
 	case CBFormatDataResponse:
 		h.handleFormatDataResponse(msgFlags, payload)
+	case CBFileContentsRequest:
+		h.handleFileContentsRequest(payload)
+	case CBFileContentsResponse:
+		h.handleFileContentsResponse(msgFlags, payload)
 	case CBLockClipData:
-		var clipDataId uint32
 		if len(payload) >= 4 {
-			clipDataId = binary.LittleEndian.Uint32(payload)
+			h.lock(binary.LittleEndian.Uint32(payload))
 		}
-		h.log.LogAttrs(context.Background(), slog.LevelDebug, "lock clipboard data", slog.Int("clipDataId", int(clipDataId)))
 	case CBUnlockClipData:
-		var clipDataId uint32
 		if len(payload) >= 4 {
-			clipDataId = binary.LittleEndian.Uint32(payload)
+			h.unlock(binary.LittleEndian.Uint32(payload))
 		}
-		h.log.LogAttrs(context.Background(), slog.LevelDebug, "unlock clipboard data", slog.Int("clipDataId", int(clipDataId)))
 	default:
 		h.log.LogAttrs(context.Background(), slog.LevelWarn, "unknown PDU type", util.Hex4("type", msgType))
 	}
@@ -315,11 +525,18 @@ func (h *Handler) handleCaps(payload []byte) {
 		h.log.LogAttrs(context.Background(), slog.LevelError, "failed to decode caps", slog.Any("error", err))
 		return
 	}
+	h.mu.Lock()
 	h.serverCaps = flags
+	h.mu.Unlock()
 	h.log.LogAttrs(context.Background(), slog.LevelDebug, "server caps", slog.Int("version", int(version)), util.Hex8("flags", flags))
 }
 
+// clientCaps are the capabilities this side offers: long format names, and the
+// file transfer ones. A capability is in force when the server offers it too.
+const clientCaps = CBUseLongFormatNames | CBStreamFileclipEnabled | CBFileclipNoFilePaths | CBCanLockClipData | CBHugeFileSupportEnabled
+
 func (h *Handler) handleMonitorReady() {
+	h.mu.Lock()
 	h.log.LogAttrs(context.Background(), slog.LevelInfo, "monitor ready", util.Hex8("serverCaps", h.serverCaps))
 	h.ready = true
 
@@ -329,48 +546,61 @@ func (h *Handler) handleMonitorReady() {
 	if h.serverCaps&CBUseLongFormatNames != 0 {
 		h.useLongFormatNames = true
 	}
+	h.mu.Unlock()
 
 	// Send CB_CLIP_CAPS with our supported flags.
-	clientFlags := CBUseLongFormatNames
-	capsPDU := encodeCapsPDU(CBCapsVersion2, clientFlags)
-	h.log.LogAttrs(context.Background(), slog.LevelDebug, "sending client caps", slog.Int("version", 2), util.Hex8("flags", clientFlags))
+	capsPDU := encodeCapsPDU(CBCapsVersion2, clientCaps)
+	h.log.LogAttrs(context.Background(), slog.LevelDebug, "sending client caps", slog.Int("version", 2), util.Hex8("flags", clientCaps))
 	if err := h.sendFn(capsPDU); err != nil {
 		h.log.LogAttrs(context.Background(), slog.LevelError, "failed to send caps", slog.Any("error", err))
 	}
 
-	// Send initial format list advertising both CF_UNICODETEXT and CF_DIB.
+	// Send the initial format list.
 	h.sendFormatList()
 }
 
-// advertisedFormats returns the format list entries to advertise.
-// Always advertise both text and image regardless of current local content.
-func (h *Handler) advertisedFormats() []FormatListEntry {
+// advertisedFormatsLocked returns the format list entries to advertise: the
+// file formats while the clipboard holds copied files, otherwise text and image
+// regardless of the current local content.
+func (h *Handler) advertisedFormatsLocked() []FormatListEntry {
+	if h.files != nil {
+		return []FormatListEntry{
+			{FormatID: formatIDFileGroupDescriptorW, FormatName: FormatFileGroupDescriptorW},
+			{FormatID: formatIDFileContents, FormatName: FormatFileContents},
+		}
+	}
 	return []FormatListEntry{
 		{FormatID: CFUnicodeText},
 		{FormatID: CFDIB},
 	}
 }
 
+// formatListPDU is the CB_FORMAT_LIST for what the clipboard holds now.
+func (h *Handler) formatListPDU() []byte {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.encodeFormatListLocked(h.advertisedFormatsLocked())
+}
+
 // sendFormatList sends a CB_FORMAT_LIST PDU with our advertised formats.
 func (h *Handler) sendFormatList() {
-	fmtList := h.encodeFormatList(h.advertisedFormats())
-	h.log.LogAttrs(context.Background(), slog.LevelDebug, "sending format list",
-		slog.Int("bytes", len(fmtList)), slog.Bool("useLongFormatNames", h.useLongFormatNames))
+	fmtList := h.formatListPDU()
+	h.log.LogAttrs(context.Background(), slog.LevelDebug, "sending format list", slog.Int("bytes", len(fmtList)))
 	if err := h.sendFn(fmtList); err != nil {
 		h.log.LogAttrs(context.Background(), slog.LevelError, "failed to send format list", slog.Any("error", err))
 	}
 }
 
-// encodeFormatList encodes using long or short format names based on negotiation.
-func (h *Handler) encodeFormatList(formats []FormatListEntry) []byte {
+// encodeFormatListLocked encodes using long or short format names based on negotiation.
+func (h *Handler) encodeFormatListLocked(formats []FormatListEntry) []byte {
 	if h.useLongFormatNames {
 		return encodeFormatListLong(formats)
 	}
 	return encodeFormatListShort(formats)
 }
 
-// decodeFormatList decodes using long or short format names based on negotiation.
-func (h *Handler) decodeFormatList(payload []byte) []FormatListEntry {
+// decodeFormatListLocked decodes using long or short format names based on negotiation.
+func (h *Handler) decodeFormatListLocked(payload []byte) []FormatListEntry {
 	if h.useLongFormatNames {
 		return decodeFormatListLong(payload)
 	}
@@ -378,8 +608,25 @@ func (h *Handler) decodeFormatList(payload []byte) []FormatListEntry {
 }
 
 func (h *Handler) handleFormatList(payload []byte) {
-	h.remoteFormats = h.decodeFormatList(payload)
-	h.log.LogAttrs(context.Background(), slog.LevelDebug, "server format list", slog.Int("formats", len(h.remoteFormats)))
+	h.mu.Lock()
+	h.remoteFormats = h.decodeFormatListLocked(payload)
+	formats := h.remoteFormats
+	enabled := h.enabled
+	callback := h.onRemoteCopy
+	// The server's clipboard changed: a file list being read is now stale.
+	cancel := h.downloadCancel
+	h.downloadGeneration++
+	unlock := h.takeRemoteLockLocked()
+	h.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if unlock != 0 {
+		// The list this side locked may still be read from, but the remote
+		// clipboard is now something else; release it.
+		h.sendResponse(encodeLockClipData(CBUnlockClipData, unlock))
+	}
+	h.log.LogAttrs(context.Background(), slog.LevelDebug, "server format list", slog.Int("formats", len(formats)))
 
 	// Always ACK the format list to keep the protocol valid.
 	if err := h.sendFn(encodePDU(CBFormatListResponse, CBResponseOK, nil)); err != nil {
@@ -388,22 +635,32 @@ func (h *Handler) handleFormatList(payload []byte) {
 	}
 
 	// Suppress callback when disabled.
-	if !h.enabled {
+	if !enabled {
 		return
 	}
 
 	hasText := false
 	hasImage := false
-	for _, f := range h.remoteFormats {
-		switch f.FormatID {
-		case CFUnicodeText:
+	hasFiles := false
+	fileListID, contentsID := uint32(0), uint32(0)
+	for _, f := range formats {
+		switch {
+		case f.FormatID == CFUnicodeText:
 			hasText = true
-		case CFDIB:
+		case f.FormatID == CFDIB:
 			hasImage = true
+		case f.FormatName == FormatFileGroupDescriptorW:
+			fileListID = f.FormatID
+		case f.FormatName == FormatFileContents:
+			contentsID = f.FormatID
 		}
 	}
-	if h.onRemoteCopy != nil {
-		h.onRemoteCopy(hasText, hasImage)
+	hasFiles = fileListID != 0 && contentsID != 0
+	h.mu.Lock()
+	h.remoteFileListID, h.remoteContentsID, h.remoteHasFiles = fileListID, contentsID, hasFiles
+	h.mu.Unlock()
+	if callback != nil {
+		callback(hasText, hasImage, hasFiles)
 	}
 }
 
@@ -421,55 +678,89 @@ func (h *Handler) handleFormatDataRequest(payload []byte) {
 	formatID := binary.LittleEndian.Uint32(payload[0:4])
 	h.log.LogAttrs(context.Background(), slog.LevelDebug, "server requests format", slog.Int("formatID", int(formatID)))
 
+	h.mu.Lock()
+	enabled, text, image, files := h.enabled, h.localText, h.localImage, h.files
+	h.mu.Unlock()
+	// The entries of a list never change, so the list is built outside the lock.
+	var fileList []byte
+	if enabled && formatID == formatIDFileGroupDescriptorW && files != nil {
+		fileList = encodeFileList(files.entries)
+	}
+
 	// When disabled, reject all data requests.
-	if !h.enabled {
-		if err := h.sendFn(encodeFormatDataResponse(false, nil)); err != nil {
-			h.log.LogAttrs(context.Background(), slog.LevelError, "failed to send fail response", slog.Any("error", err))
-		}
+	if !enabled {
+		h.sendResponse(encodeFormatDataResponse(false, nil))
 		return
 	}
 
 	switch {
-	case formatID == CFUnicodeText && h.localText != "":
-		wireData := textToWire(h.localText)
-		if err := h.sendFn(encodeFormatDataResponse(true, wireData)); err != nil {
-			h.log.LogAttrs(context.Background(), slog.LevelError, "failed to send data response", slog.Any("error", err))
-		}
-	case formatID == CFDIB && len(h.localImage) > 0:
-		dib, err := pngToDIB(h.localImage)
+	case formatID == CFUnicodeText && text != "":
+		h.sendResponse(encodeFormatDataResponse(true, textToWire(text)))
+	case formatID == CFDIB && len(image) > 0:
+		dib, err := pngToDIB(image)
 		if err != nil {
 			h.log.LogAttrs(context.Background(), slog.LevelError, "pngToDIB failed", slog.Any("error", err))
-			if err2 := h.sendFn(encodeFormatDataResponse(false, nil)); err2 != nil {
-				h.log.LogAttrs(context.Background(), slog.LevelError, "failed to send fail response", slog.Any("error", err2))
-			}
+			h.sendResponse(encodeFormatDataResponse(false, nil))
 			return
 		}
-		if err := h.sendFn(encodeFormatDataResponse(true, dib)); err != nil {
-			h.log.LogAttrs(context.Background(), slog.LevelError, "failed to send data response", slog.Any("error", err))
-		}
+		h.sendResponse(encodeFormatDataResponse(true, dib))
+	case fileList != nil:
+		h.sendResponse(encodeFormatDataResponse(true, fileList))
 	default:
-		if err := h.sendFn(encodeFormatDataResponse(false, nil)); err != nil {
-			h.log.LogAttrs(context.Background(), slog.LevelError, "failed to send fail response", slog.Any("error", err))
-		}
+		h.sendResponse(encodeFormatDataResponse(false, nil))
+	}
+}
+
+// sendResponse sends a PDU that answers the server, logging a failure.
+func (h *Handler) sendResponse(pdu []byte) {
+	if err := h.sendFn(pdu); err != nil {
+		h.log.LogAttrs(context.Background(), slog.LevelError, "failed to send response", slog.Any("error", err))
 	}
 }
 
 func (h *Handler) handleFormatDataResponse(flags uint16, payload []byte) {
-	pendingFmt := h.pendingFormat
-	h.pendingReq = false
-	h.pendingFormat = 0
+	h.mu.Lock()
+	h.dropExpiredDataRequestsLocked(time.Now())
+	request, pending := h.popDataRequestLocked()
+	enabled, onImage, onText := h.enabled, h.onImageData, h.onTextData
+	stale := request.files && request.generation != h.downloadGeneration
+	h.mu.Unlock()
 
+	if !pending {
+		h.log.LogAttrs(context.Background(), slog.LevelDebug, "format data response without a request")
+		return
+	}
+	if stale {
+		h.log.LogAttrs(context.Background(), slog.LevelDebug, "stale file list response dropped")
+		return
+	}
 	if flags&CBResponseOK == 0 {
 		h.log.LogAttrs(context.Background(), slog.LevelWarn, "server returned format data error")
+		if request.files {
+			h.releaseRemoteLockIfIdle(request.clipID)
+			h.finishRemoteFiles(request.generation, RemoteFiles{}, errFileListRefused)
+		}
 		return
 	}
 
 	// Suppress callback when disabled.
-	if !h.enabled {
+	if !enabled {
 		return
 	}
 
-	switch pendingFmt {
+	if request.files {
+		files, err := decodeRemoteFileList(payload)
+		if err != nil {
+			h.log.LogAttrs(context.Background(), slog.LevelWarn, "server file list refused", slog.Any("error", err))
+			h.releaseRemoteLockIfIdle(request.clipID)
+			h.finishRemoteFiles(request.generation, RemoteFiles{}, err)
+			return
+		}
+		h.startRemoteFiles(files, request.generation, request.clipID)
+		return
+	}
+
+	switch request.format {
 	case CFDIB:
 		pngData, err := dibToPNG(payload)
 		if err != nil {
@@ -477,56 +768,88 @@ func (h *Handler) handleFormatDataResponse(flags uint16, payload []byte) {
 			return
 		}
 		h.log.LogAttrs(context.Background(), slog.LevelDebug, "received image", slog.Int("pngBytes", len(pngData)))
-		if h.onImageData != nil {
-			h.onImageData(pngData)
+		if onImage != nil {
+			onImage(pngData)
 		}
 	default:
 		text := textFromWire(payload)
 		h.log.LogAttrs(context.Background(), slog.LevelDebug, "received text", slog.Int("chars", len(text)))
-		if h.onTextData != nil {
-			h.onTextData(text)
+		if onText != nil {
+			onText(text)
 		}
 	}
 }
 
 // SetLocalClipboard updates the local clipboard text and notifies the server.
 func (h *Handler) SetLocalClipboard(text string) error {
+	h.mu.Lock()
 	if !h.enabled {
+		h.mu.Unlock()
 		return nil
 	}
 	h.localText = text
-	return h.sendFn(h.encodeFormatList(h.advertisedFormats()))
+	h.dropFilesLocked()
+	pdu := h.encodeFormatListLocked(h.advertisedFormatsLocked())
+	h.mu.Unlock()
+	return h.sendFn(pdu)
 }
 
 // SetLocalImage updates the local clipboard image (PNG-encoded) and
 // notifies the server that CF_DIB is available.
 func (h *Handler) SetLocalImage(pngData []byte) error {
+	h.mu.Lock()
 	if !h.enabled {
+		h.mu.Unlock()
 		return nil
 	}
 	h.localImage = pngData
-	return h.sendFn(h.encodeFormatList(h.advertisedFormats()))
+	h.dropFilesLocked()
+	pdu := h.encodeFormatListLocked(h.advertisedFormatsLocked())
+	h.mu.Unlock()
+	return h.sendFn(pdu)
 }
 
 // RequestRemoteText sends a CB_FORMAT_DATA_REQUEST for CF_UNICODETEXT.
 // The result is delivered asynchronously via the OnTextData callback.
 func (h *Handler) RequestRemoteText() error {
+	h.mu.Lock()
 	if !h.enabled {
+		h.mu.Unlock()
 		return nil
 	}
-	h.pendingReq = true
-	h.pendingFormat = CFUnicodeText
-	return h.sendFn(encodeFormatDataRequest(CFUnicodeText))
+	request, queued := h.enqueueDataRequestLocked(CFUnicodeText, false, 0)
+	h.mu.Unlock()
+	if !queued {
+		return nil
+	}
+	if err := h.sendFn(encodeFormatDataRequest(CFUnicodeText)); err != nil {
+		h.mu.Lock()
+		h.removeDataRequestLocked(request.id)
+		h.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // RequestRemoteImage sends a CB_FORMAT_DATA_REQUEST for CF_DIB.
 // The result is delivered asynchronously via the OnImageData callback
 // after DIB→PNG conversion.
 func (h *Handler) RequestRemoteImage() error {
+	h.mu.Lock()
 	if !h.enabled {
+		h.mu.Unlock()
 		return nil
 	}
-	h.pendingReq = true
-	h.pendingFormat = CFDIB
-	return h.sendFn(encodeFormatDataRequest(CFDIB))
+	request, queued := h.enqueueDataRequestLocked(CFDIB, false, 0)
+	h.mu.Unlock()
+	if !queued {
+		return nil
+	}
+	if err := h.sendFn(encodeFormatDataRequest(CFDIB)); err != nil {
+		h.mu.Lock()
+		h.removeDataRequestLocked(request.id)
+		h.mu.Unlock()
+		return err
+	}
+	return nil
 }

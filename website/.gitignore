@@ -5,3 +5,4 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 website/AGENTS.md
+.wrangler/

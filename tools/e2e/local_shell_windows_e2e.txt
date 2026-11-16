@@ -1,0 +1,21 @@
+# Windows: detect shells -> select PowerShell -> real ConPTY command -> CMD.
+# Build with -tags vivahead. Use an isolated MOTTY_DATA_DIR and MOTTY_LANG=en.
+# The runner's PSModulePath should name Windows PowerShell's own Modules folder.
+# Set PYTHONUTF8=1 if Python's default encoding is not UTF-8.
+
+click "Settings"
+click "Terminal"
+scroll 1100 650 0 500
+waitfor "Local shell"
+click "Local shell"
+click "Windows PowerShell"
+click "Local Terminal"
+settle 1200
+type Write-Output ('configured-powershell-' + (6*7))
+key enter
+waitfor "configured-powershell-42" 15000
+click "Settings"
+click "Terminal"
+scroll 1100 650 0 500
+click "Local shell"
+click "CMD"

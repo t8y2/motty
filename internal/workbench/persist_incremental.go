@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
+	"motty/internal/buildinfo"
 	"motty/internal/configstore"
 )
 
@@ -36,6 +38,31 @@ func changedSavedFields(previous, current savedState) []savedFieldChange {
 	return changes
 }
 
+// windowOwnFields are the saved fields a window writes about its own work and
+// place rather than about configuration: where it sits on screen, and when it
+// last dialed a host. The store merges the dials of every window rather than
+// replacing them, so another window has nothing to read back from one.
+var windowOwnFields = map[string]bool{
+	"window_x": true, "window_y": true, "window_width": true, "window_height": true,
+	"recent_connections": true,
+}
+
+// changesConfiguration reports whether a save changed configuration that every
+// window of the process shows, rather than only this window's own work: the tabs
+// it has open, the deck they fill, and the records of its own place and dials.
+// The other windows read the first kind back from the store, so only it is worth
+// telling them about; opening, closing or moving a tab happens too often to wake
+// them.
+func changesConfiguration(changes []savedFieldChange) bool {
+	for _, change := range changes {
+		if isWorkspaceField(change.name) || windowOwnFields[change.name] {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // writeChangedFields stores several changed top-level fields in one commit.
 // Every record and device value that did not change is reused from base; only
 // the changed lists, settings and device keys are encoded. The host group list
@@ -47,13 +74,25 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 	for key, payload := range base.payloads {
 		entries = append(entries, configstore.Entry{Kind: key.Kind, ID: key.ID, Payload: payload})
 	}
-	local := map[string]json.RawMessage{}
+	releaseLocal := map[string]json.RawMessage{}
 	if len(base.local) > 0 {
-		if err := json.Unmarshal(base.local, &local); err != nil {
+		if err := json.Unmarshal(base.local, &releaseLocal); err != nil {
 			return false, true, err
 		}
 	}
-	localChanged := false
+	developmentLocal := map[string]json.RawMessage{}
+	if buildinfo.Development && len(base.development) > 0 {
+		if err := json.Unmarshal(base.development, &developmentLocal); err != nil {
+			return false, true, err
+		}
+	}
+	windowLocal := map[string]json.RawMessage{}
+	if base.windowName != "" && len(base.window) > 0 {
+		if err := json.Unmarshal(base.window, &windowLocal); err != nil {
+			return false, true, err
+		}
+	}
+	releaseChanged, developmentChanged, windowChanged := false, false, false
 	nextOrd := base.maxOrd
 	for _, change := range changes {
 		if change.name == "host_groups" {
@@ -73,11 +112,11 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			if err != nil {
 				return false, true, err
 			}
-			changed, err := setLocalField(local, collapsedGroupsKey, collapsed)
+			changed, err := setLocalField(releaseLocal, collapsedGroupsKey, collapsed)
 			if err != nil {
 				return false, true, err
 			}
-			localChanged = localChanged || changed
+			releaseChanged = releaseChanged || changed
 			continue
 		}
 		if change.name == "ai_providers" {
@@ -96,6 +135,22 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			if err != nil {
 				return false, true, err
 			}
+			// Notes and folders linked to files are this device's own, not shared
+			// records.
+			var linked any
+			switch items := change.value.(type) {
+			case []savedNote:
+				linked = linkedSavedNotes(items)
+			case []savedNoteFolder:
+				linked = linkedSavedFolders(items)
+			}
+			if linked != nil {
+				changed, err := setLocalField(releaseLocal, linkedLocalKey(entity.kind), linked)
+				if err != nil {
+					return false, true, err
+				}
+				releaseChanged = releaseChanged || changed
+			}
 		case syncedSettings[change.name]:
 			entries = withoutSetting(entries, change.name)
 			entries, err = appendSettingEntry(entries, base, defaults, change.name, change.value)
@@ -104,23 +159,54 @@ func writeChangedFields(store *configstore.Store, base *configBase, defaults con
 			}
 		case stateVersionFields[change.name]:
 			return false, false, nil
-		default:
-			changed, err := setLocalField(local, change.name, change.value)
+		case windowStateFields[change.name] && base.windowName != "":
+			changed, err := setLocalField(windowLocal, change.name, change.value)
 			if err != nil {
 				return false, true, err
 			}
-			localChanged = localChanged || changed
+			windowChanged = windowChanged || changed
+		default:
+			target := releaseLocal
+			developmentField := buildinfo.Development && isWorkspaceField(change.name)
+			if developmentField {
+				target = developmentLocal
+			}
+			changed, err := setLocalField(target, change.name, change.value)
+			if err != nil {
+				return false, true, err
+			}
+			if developmentField {
+				developmentChanged = developmentChanged || changed
+			} else {
+				releaseChanged = releaseChanged || changed
+			}
 		}
 	}
-	localBytes := base.local
-	if localChanged {
-		localBytes, err = json.Marshal(local)
+	local := localWrite{state: base.local, windowName: base.windowName, window: base.window}
+	if releaseChanged {
+		local.state, err = json.Marshal(releaseLocal)
 		if err != nil {
 			return false, true, err
 		}
 	}
+	if windowChanged {
+		local.window, err = json.Marshal(windowLocal)
+		if err != nil {
+			return false, true, err
+		}
+	}
+	if buildinfo.Development {
+		local.includeDevelopment = true
+		local.development = base.development
+		if developmentChanged {
+			local.development, err = json.Marshal(developmentLocal)
+			if err != nil {
+				return false, true, err
+			}
+		}
+	}
 	sortEntries(entries)
-	shared, err = writeEntries(store, base, entries, localBytes)
+	shared, err = writeEntries(store, base, entries, local)
 	if err == nil {
 		base.maxOrd = nextOrd
 	}
@@ -140,6 +226,15 @@ func entityByField(name string) (entityField, bool) {
 // entries. It uses the same id, ordering, default and delete rules as
 // splitState.
 func appendEntityEntries(entries []configstore.Entry, base *configBase, defaults configDefaults, entity entityField, value any, nextOrd int64) ([]configstore.Entry, int64, error) {
+	// The host list is saved one record at a time: an edit of one host must not
+	// re-encode the whole catalog. The generic path below is kept for lists
+	// whose keys are derived from their content and for duplicate or anonymous
+	// host ids, whose record keys depend on the order.
+	if entity.kind == kindHost {
+		if hosts, ok := value.([]savedHost); ok && uniqueHostIDs(hosts) {
+			return appendHostEntries(entries, base, defaults, hosts, nextOrd)
+		}
+	}
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return nil, nextOrd, err
@@ -157,6 +252,9 @@ func appendEntityEntries(entries []configstore.Entry, base *configBase, defaults
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(item, &fields); err != nil {
 			return nil, nextOrd, err
+		}
+		if linkedLocalKey(entity.kind) != "" && isLinkedNote(fields) {
+			continue // kept in this device's own state, see linkedNotesKey
 		}
 		id := boundKey(entity.key(fields))
 		if id == "" {
@@ -182,6 +280,140 @@ func appendEntityEntries(entries []configstore.Entry, base *configBase, defaults
 			return nil, nextOrd, err
 		}
 		entries = append(entries, configstore.Entry{Kind: entity.kind, ID: id, Payload: payload})
+	}
+	return entries, nextOrd, nil
+}
+
+const kindHost = "host"
+
+// sameSavedHost reports whether two saved hosts hold the same state. It compares
+// field by field instead of reflect.DeepEqual, which allocates an interface box
+// and a visited map per call, three hundred times per save on a large catalog.
+func sameSavedHost(left, right savedHost) bool {
+	return left.Color == right.Color && left.ID == right.ID && left.Label == right.Label &&
+		left.Group == right.Group && slices.Equal(left.Tags, right.Tags) && left.Icon == right.Icon &&
+		left.Address == right.Address && left.User == right.User && left.Port == right.Port &&
+		left.System == right.System &&
+		left.Protocol == right.Protocol && left.Encoding == right.Encoding &&
+		left.Terminal == right.Terminal &&
+		left.Line == right.Line && left.Flow == right.Flow &&
+		sameSavedProxy(left.Proxy, right.Proxy) &&
+		left.Algorithms == right.Algorithms && left.AlgorithmList == right.AlgorithmList &&
+		left.Authentication == right.Authentication && left.Identity == right.Identity && left.Credential == right.Credential &&
+		left.SSHOptions.Equal(right.SSHOptions) && left.IdentitiesOnly == right.IdentitiesOnly &&
+		left.ForwardX11 == right.ForwardX11 && left.AgentForward == right.AgentForward &&
+		left.InteractiveOnly == right.InteractiveOnly &&
+		left.NoHistory == right.NoHistory && left.LoginCommand == right.LoginCommand && left.Transfer == right.Transfer &&
+		left.IdleKeepAliveSeconds == right.IdleKeepAliveSeconds && left.IdleInput == right.IdleInput &&
+		left.IdleInputCustom == right.IdleInputCustom &&
+		slices.Equal(left.RemoteLogPaths, right.RemoteLogPaths) &&
+		left.ViaSSH == right.ViaSSH && left.Clipboard == right.Clipboard && left.Console == right.Console &&
+		left.StandardSecurity == right.StandardSecurity && left.Chromeless == right.Chromeless
+}
+
+func sameSavedProxy(left, right *savedOutboundProxy) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
+}
+
+// uniqueHostIDs reports whether every host has a non-empty id of its own, which
+// is what lets appendHostEntries key its cache by id.
+func uniqueHostIDs(hosts []savedHost) bool {
+	if len(hosts) < 2 {
+		return len(hosts) == 0 || hosts[0].ID != ""
+	}
+	seen := make(map[string]struct{}, len(hosts))
+	for _, host := range hosts {
+		if host.ID == "" {
+			return false
+		}
+		if _, duplicate := seen[host.ID]; duplicate {
+			return false
+		}
+		seen[host.ID] = struct{}{}
+	}
+	return true
+}
+
+// appendHostEntries appends the host records, reusing the record of every host
+// that did not change since the last save. It applies the same id, ordinal,
+// default and skip rules as the generic appendEntityEntries path.
+//
+// hosts is the catalog order the caller means to keep. A slice whose order does
+// not match the ordinals the base holds is taken as a deliberate move and
+// renumbered; a slice in a different order would otherwise rewrite positions the
+// user never changed.
+func appendHostEntries(entries []configstore.Entry, base *configBase, defaults configDefaults, hosts []savedHost, nextOrd int64) ([]configstore.Entry, int64, error) {
+	if base.hostRecords == nil {
+		base.hostRecords = make(map[string]hostRecord, len(hosts))
+	}
+
+	// Existing host ordinals define the catalog order. When the slice still runs
+	// in that order nothing moved, so every ordinal is left as the base holds it
+	// and the cached records are reused as they are. When it does not, the same
+	// set of ordinals is reassigned to the hosts in slice order so the move
+	// persists without renumbering unrelated records. New hosts still receive
+	// fresh ordinals below.
+	// A tie means two records share a position, which is repaired the same way.
+	held := make([]int64, 0, len(hosts))
+	moved := false
+	for _, host := range hosts {
+		ord, known := base.ords[configstore.Key{Kind: kindHost, ID: host.ID}]
+		if !known {
+			continue
+		}
+		if len(held) > 0 && ord <= held[len(held)-1] {
+			moved = true
+		}
+		held = append(held, ord)
+	}
+	desired := map[string]int64{}
+	if moved && len(held) > 0 {
+		sort.Slice(held, func(left, right int) bool { return held[left] < held[right] })
+		for index := 1; index < len(held); index++ {
+			if held[index] <= held[index-1] {
+				held[index] = held[index-1] + 1
+			}
+		}
+		nextOrd = max(nextOrd, held[len(held)-1])
+		at := 0
+		for _, host := range hosts {
+			if _, known := base.ords[configstore.Key{Kind: kindHost, ID: host.ID}]; known {
+				desired[host.ID] = held[at]
+				at++
+			}
+		}
+	}
+
+	for _, host := range hosts {
+		key := configstore.Key{Kind: kindHost, ID: host.ID}
+		ord, known := base.ords[key]
+		if want, reassigned := desired[host.ID]; reassigned {
+			ord = want
+		}
+		if record, cached := base.hostRecords[host.ID]; cached && known && record.ord == ord && sameSavedHost(record.host, host) {
+			entries = append(entries, configstore.Entry{Kind: kindHost, ID: host.ID, Payload: record.payload})
+			continue
+		}
+		raw, err := json.Marshal(host)
+		if err != nil {
+			return nil, nextOrd, err
+		}
+		if _, held := base.payloads[key]; !held && defaults[key] == string(raw) {
+			continue
+		}
+		if !known {
+			nextOrd++
+			ord = nextOrd
+		}
+		payload, err := json.Marshal(recordPayload{Ord: ord, Data: raw})
+		if err != nil {
+			return nil, nextOrd, err
+		}
+		entries = append(entries, configstore.Entry{Kind: kindHost, ID: host.ID, Payload: payload})
+		base.hostRecords[host.ID] = hostRecord{host: host, ord: ord, payload: payload}
 	}
 	return entries, nextOrd, nil
 }

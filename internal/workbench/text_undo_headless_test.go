@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func TestAssistantMessageUndoRedoRunsThroughTheWindowTextPath(t *testing.T) {
@@ -46,7 +46,7 @@ func TestAssistantMessageUndoRedoRunsThroughTheWindowTextPath(t *testing.T) {
 	if handled, err := driver.Shortcut('z'); err != nil || !handled || state.ai.input.String() != "" {
 		t.Fatalf("undo handled=%v err=%v input=%q", handled, err, state.ai.input.String())
 	}
-	if handled, err := driver.ShortcutChord(ui.ModifierMeta|ui.ModifierShift, 'z'); err != nil || !handled || state.ai.input.String() != "draft question" {
+	if handled, err := driver.ShortcutChord(gfx.ModifierMeta|gfx.ModifierShift, 'z'); err != nil || !handled || state.ai.input.String() != "draft question" {
 		t.Fatalf("redo handled=%v err=%v input=%q", handled, err, state.ai.input.String())
 	}
 }

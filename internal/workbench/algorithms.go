@@ -82,17 +82,3 @@ func (host *Host) applyAlgo(mode, list string) bool {
 	}
 	return true
 }
-
-// algorithmsFor maps each endpoint a connection touches to its host's algorithms.
-func (state *State) algorithmsFor(target Host, jumps []Host) map[string]sshconn.Algorithms {
-	var result map[string]sshconn.Algorithms
-	for _, host := range append([]Host{target}, jumps...) {
-		if algorithms := host.algorithms(); !algorithms.IsZero() && host.isSSH() {
-			if result == nil {
-				result = make(map[string]sshconn.Algorithms)
-			}
-			result[sshconn.EndpointKey(host.Address, host.Port)] = algorithms
-		}
-	}
-	return result
-}

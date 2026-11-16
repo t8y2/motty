@@ -1,0 +1,32 @@
+# End to end: two-way sync with the OpenSSH config. The headless build runs with
+# a temporary HOME, so the config it reads and writes is <home>/.ssh/config:
+#
+#   go build -tags vivahead -o /tmp/motty-head-sshsync ./cmd/motty
+#   home=$(mktemp -d); mkdir $home/.ssh; cp some_config $home/.ssh/config
+#   MOTTY_LANG=en MOTTY_DATA_DIR=$(mktemp -d) MOTTY_HEAD=/tmp/motty-head-sshsync \
+#     python3 tools/headless_drive.py $home tools/e2e/ssh_config_sync_e2e.txt
+#
+# Afterwards <home>/.ssh/config must hold every line it began with, plus a block
+# of "# --- motty: begin synced hosts" with the host made below, and the hosts
+# of the file must be in the list.
+click "Settings"
+click "Connection"
+settle 300
+click "Sync with SSH config"
+settle 500
+texts SSH config
+shot /tmp/sshsync-settings.png
+layout
+click "Hosts"
+settle 300
+texts web
+texts db
+
+click "New Host"
+settle 400
+type alpha
+key tab
+type 10.0.0.1
+click "Add Host"
+settle 400
+texts alpha

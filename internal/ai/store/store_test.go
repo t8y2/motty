@@ -8,10 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func openTemp(t testing.TB) (*Store, string) {
@@ -51,6 +53,7 @@ func TestProvidersModelsSettings(t *testing.T) {
 	}
 	p.Name = "A2"
 	p.Enabled = false
+	p.ModelsURL = "https://models.example.com/v1"
 	if err := s.SaveProvider(p); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +64,7 @@ func TestProvidersModelsSettings(t *testing.T) {
 	if err := s.SaveProvider(Provider{ID: "bad", Kind: "nope"}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("kind: %v", err)
 	}
-	if err := s.SaveModels("p1", []Model{{"p1", "m1", true}, {"p1", "m2", false}}); err != nil {
+	if err := s.SaveModels("p1", []Model{{ProviderID: "p1", Name: "m1", Enabled: true}, {ProviderID: "p1", Name: "m2", Enabled: false}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetModelEnabled("p1", "m2", true); err != nil {
@@ -74,7 +77,7 @@ func TestProvidersModelsSettings(t *testing.T) {
 	if len(ms) != 2 || !ms[1].Enabled {
 		t.Fatalf("%v", ms)
 	}
-	if err := s.SaveModels("p1", []Model{{"p1", "m3", true}}); err != nil {
+	if err := s.SaveModels("p1", []Model{{ProviderID: "p1", Name: "m3", Enabled: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if ms, _ = s.Models(); len(ms) != 1 || ms[0].Name != "m3" {
@@ -106,6 +109,115 @@ func TestProvidersModelsSettings(t *testing.T) {
 	}
 	if ms, _ = s.Models(); len(ms) != 0 {
 		t.Fatalf("models survived provider delete: %v", ms)
+	}
+}
+
+func TestProviderAuthStyleRoundTrip(t *testing.T) {
+	s, _ := openTemp(t)
+	want := Provider{ID: "p1", Name: "Relay", Kind: KindAnthropic, BaseURL: "https://relay.example.com", AuthStyle: AuthStyleBearer, HasKey: true, Enabled: true}
+	if err := s.SaveProvider(want); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveProvider(Provider{ID: "p2", Name: "OpenAI", Kind: KindOpenAI, BaseURL: "https://api.example.com/v1", AuthStyle: AuthStyleBearer, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveProvider(Provider{ID: "bad", Kind: KindAnthropic, AuthStyle: "basic"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("unknown style: %v", err)
+	}
+	got, err := s.Providers()
+	if err != nil || len(got) != 2 {
+		t.Fatalf("%v %v", got, err)
+	}
+	byID := map[string]Provider{}
+	for _, provider := range got {
+		byID[provider.ID] = provider
+	}
+	if byID["p1"].AuthStyle != AuthStyleBearer {
+		t.Fatalf("Anthropic style = %q, want %q", byID["p1"].AuthStyle, AuthStyleBearer)
+	}
+	// An OpenAI-compatible provider has no header choice: bearer is inherent.
+	if byID["p2"].AuthStyle != "" {
+		t.Fatalf("OpenAI style = %q, want empty", byID["p2"].AuthStyle)
+	}
+}
+
+func TestProviderAPIFormatRoundTrip(t *testing.T) {
+	s, _ := openTemp(t)
+	for _, provider := range []Provider{
+		{ID: "responses", Name: "A", Kind: KindOpenAI, BaseURL: "https://gw.example.com/v1", APIFormat: APIFormatResponses, Enabled: true},
+		{ID: "chat", Name: "B", Kind: KindOpenAI, APIFormat: APIFormatChat, Enabled: true},
+		{ID: "claude", Name: "C", Kind: KindAnthropic, APIFormat: APIFormatResponses, Enabled: true},
+	} {
+		if err := s.SaveProvider(provider); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SaveProvider(Provider{ID: "bad", Kind: KindOpenAI, APIFormat: "completions"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("unknown format: %v", err)
+	}
+	if err := s.SaveProvider(Provider{ID: "cli", Kind: KindCodexCLI, APIFormat: APIFormatResponses}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("CLI provider with a format: %v", err)
+	}
+	got, err := s.Providers()
+	if err != nil || len(got) != 3 {
+		t.Fatalf("%v %v", got, err)
+	}
+	formats := map[string]string{}
+	for _, provider := range got {
+		formats[provider.ID] = provider.APIFormat
+	}
+	// Chat Completions is stored as the empty value and Anthropic has no format.
+	if formats["responses"] != APIFormatResponses || formats["chat"] != "" || formats["claude"] != "" {
+		t.Fatalf("formats = %v", formats)
+	}
+	// Switching back to Chat Completions overwrites the stored format.
+	if err := s.SaveProvider(Provider{ID: "responses", Name: "A", Kind: KindOpenAI, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.Providers(); got[0].ID != "responses" || got[0].APIFormat != "" {
+		t.Fatalf("after switching back: %#v", got[0])
+	}
+}
+
+// A database written before bearer authentication existed must migrate without
+// losing providers, and every existing row keeps the historical x-api-key
+// behavior.
+func TestVersion2DatabaseMigratesWithTheDefaultAuthStyle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ai.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 2; index++ {
+		if _, err := raw.Exec(migrations[index]); err != nil {
+			t.Fatalf("create v%d: %v", index+1, err)
+		}
+	}
+	if _, err := raw.Exec(`PRAGMA user_version = 2`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`INSERT INTO providers(id,name,kind,base_url,api_key,enabled,has_key) VALUES('old','Old','anthropic','https://old.example.com','',1,0)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	var version int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != schemaVersion {
+		t.Fatalf("version = %d, err %v, want %d", version, err, schemaVersion)
+	}
+	got, err := s.Providers()
+	if err != nil || len(got) != 1 {
+		t.Fatalf("providers = %v, err %v", got, err)
+	}
+	if got[0].ID != "old" || got[0].AuthStyle != "" || got[0].APIFormat != "" {
+		t.Fatalf("migrated provider = %#v", got[0])
 	}
 }
 
@@ -491,5 +603,147 @@ func TestMigrateV1ProvidersToV2(t *testing.T) {
 	}
 	if got, _ := s.Providers(); !got[0].HasKey {
 		t.Fatal("clearing the legacy key must not clear has_key")
+	}
+}
+
+func TestAuditKeepsASummaryNewestFirstAndPrunesByAge(t *testing.T) {
+	s, _ := openTemp(t)
+	now := time.Now()
+	old := AuditEntry{At: now.Add(-48 * time.Hour), HostID: "h1", HostLabel: "web", Tool: "terminal_exec", Summary: "uptime", Outcome: AuditOK}
+	recent := AuditEntry{At: now, HostID: "h2", HostLabel: "db", Tool: "sftp_read", Summary: "/etc/passwd", Outcome: AuditRefused}
+	for _, entry := range []AuditEntry{old, recent} {
+		if err := s.RecordAudit(entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := s.Audit(10)
+	if err != nil || len(entries) != 2 || entries[0].HostLabel != "db" || entries[1].Summary != "uptime" {
+		t.Fatalf("entries = %+v, err %v", entries, err)
+	}
+	if got, err := s.PruneAudit(now.Add(-24 * time.Hour)); err != nil || got != 1 {
+		t.Fatalf("pruned %d, %v", got, err)
+	}
+	if entries, _ := s.Audit(10); len(entries) != 1 || entries[0].Outcome != AuditRefused {
+		t.Fatalf("after prune: %+v", entries)
+	}
+	if err := s.ClearAudit(); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := s.Audit(10); len(entries) != 0 {
+		t.Fatalf("after clear: %+v", entries)
+	}
+}
+
+func TestAuditCutsALongSummaryOnACharacterBoundaryAndNeedsAToolAndOutcome(t *testing.T) {
+	s, _ := openTemp(t)
+	long := strings.Repeat("命", MaxAuditSummaryBytes) // 3 bytes each
+	if err := s.RecordAudit(AuditEntry{Tool: "terminal_exec", Summary: long, Outcome: AuditOK}); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := s.Audit(1)
+	if len(entries) != 1 || len(entries[0].Summary) > MaxAuditSummaryBytes || !utf8.ValidString(entries[0].Summary) {
+		t.Fatalf("summary length %d valid %v", len(entries[0].Summary), utf8.ValidString(entries[0].Summary))
+	}
+	if err := s.RecordAudit(AuditEntry{Outcome: AuditOK}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("no tool: %v", err)
+	}
+	if err := s.RecordAudit(AuditEntry{Tool: "x"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("no outcome: %v", err)
+	}
+}
+
+func TestModelReasoningPersistenceAndRetention(t *testing.T) {
+	s, _ := openTemp(t)
+	p := Provider{ID: "p1", Name: "Provider", Kind: "openai", BaseURL: "https://api.openai.com", Enabled: true}
+	if err := s.SaveProvider(p); err != nil {
+		t.Fatal(err)
+	}
+
+	modelWithReasoning := Model{
+		ProviderID: "p1",
+		Name:       "o3-mini",
+		Enabled:    true,
+		Reasoning: &ReasoningConfig{
+			Levels:  []string{"low", "medium", "high"},
+			Default: "medium",
+		},
+	}
+	modelPlain := Model{
+		ProviderID: "p1",
+		Name:       "gpt-4o",
+		Enabled:    true,
+	}
+
+	if err := s.SaveModels("p1", []Model{modelWithReasoning, modelPlain}); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := s.Models()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(models))
+	}
+
+	var foundO3, found4o *Model
+	for i := range models {
+		if models[i].Name == "o3-mini" {
+			foundO3 = &models[i]
+		} else if models[i].Name == "gpt-4o" {
+			found4o = &models[i]
+		}
+	}
+
+	if foundO3 == nil || foundO3.Reasoning == nil {
+		t.Fatalf("expected o3-mini to have reasoning config, got %+v", foundO3)
+	}
+	if !slices.Equal(foundO3.Reasoning.Levels, []string{"low", "medium", "high"}) || foundO3.Reasoning.Default != "medium" {
+		t.Fatalf("unexpected o3 reasoning: %+v", foundO3.Reasoning)
+	}
+	if found4o == nil || found4o.Reasoning != nil {
+		t.Fatalf("expected gpt-4o to have nil reasoning, got %+v", found4o)
+	}
+
+	// Test SetModelReasoning
+	updatedCfg := &ReasoningConfig{
+		Levels:  []string{"low", "high"},
+		Default: "high",
+	}
+	if err := s.SetModelReasoning("p1", "o3-mini", updatedCfg, false); err != nil {
+		t.Fatal(err)
+	}
+	models, _ = s.Models()
+	for _, m := range models {
+		if m.Name == "o3-mini" {
+			if !slices.Equal(m.Reasoning.Levels, []string{"low", "high"}) || m.Reasoning.Default != "high" {
+				t.Fatalf("updated reasoning mismatch: %+v", m.Reasoning)
+			}
+		}
+	}
+
+	// Test SetModelReasoning disabled
+	if err := s.SetModelReasoning("p1", "o3-mini", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	models, _ = s.Models()
+	for _, m := range models {
+		if m.Name == "o3-mini" {
+			if !m.ReasoningDisabled || m.Reasoning != nil {
+				t.Fatalf("expected o3-mini to be ReasoningDisabled, got %+v", m)
+			}
+		}
+	}
+
+	// Re-enable with custom config
+	_ = s.SetModelReasoning("p1", "o3-mini", updatedCfg, false)
+
+	// Test retention: SaveModels without reasoning config should keep existing reasoning config
+	if err := s.SaveModels("p1", []Model{{ProviderID: "p1", Name: "o3-mini", Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	models, _ = s.Models()
+	if len(models) != 1 || models[0].Reasoning == nil || models[0].Reasoning.Default != "high" {
+		t.Fatalf("expected retained reasoning after SaveModels, got %+v", models)
 	}
 }

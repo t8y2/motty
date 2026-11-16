@@ -1,28 +1,35 @@
 package term
 
-import (
-	"sort"
-	"unicode"
-)
+import "unicode"
 
 // Width is the number of terminal cells r occupies: 0 for combining marks and
 // other zero-width characters, 2 for East Asian wide characters and emoji, 1
 // otherwise. It follows the usual wcwidth rules from a compact range table; a
 // few rare characters may be off by one cell.
 func Width(r rune) int {
-	switch {
-	case r < 0x300:
+	if r < 0x300 {
 		return 1
-	case r >= 0x1100 && isWide(r):
+	}
+	if isWideCJK(r) {
+		return 2
+	}
+	if r >= 0x1100 && isWide(r) {
 		// The wide blocks hold a few combining marks.
 		if (r >= 0x302A && r <= 0x302D) || (r >= 0x3099 && r <= 0x309A) {
 			return 0
 		}
 		return 2
-	case unicode.Is(unicode.Mn, r), unicode.Is(unicode.Me, r), unicode.Is(unicode.Cf, r):
+	}
+	if unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r) || unicode.Is(unicode.Cf, r) {
 		return 0
 	}
 	return 1
+}
+
+// isWideCJK reports whether r is in the contiguous CJK and Hangul blocks that
+// contain only wide characters and no combining marks.
+func isWideCJK(r rune) bool {
+	return (r >= 0x4E00 && r <= 0x9FFF) || (r >= 0xAC00 && r <= 0xD7A3) || (r >= 0x3400 && r <= 0x4DBF)
 }
 
 // wideRanges lists the East Asian Wide and Fullwidth characters and the emoji
@@ -52,7 +59,33 @@ var wideRanges = [][2]rune{
 	{0x1FA70, 0x1FAFF}, {0x20000, 0x2FFFD}, {0x30000, 0x3FFFD},
 }
 
+// wideRanges covers 0x1100 to 0x3FFFD. A character is printed many times per
+// frame, so the table above is spread over one bit per code point once at
+// startup and the lookup on the printing path is a shift and a mask instead of
+// a binary search.
+const (
+	wideBase  = 0x1100
+	wideLast  = 0x3FFFD
+	wideWords = (wideLast-wideBase)/64 + 1
+)
+
+var wideBits = buildWideBits()
+
+func buildWideBits() []uint64 {
+	bits := make([]uint64, wideWords)
+	for _, r := range wideRanges {
+		for c := r[0]; c <= r[1]; c++ {
+			i := c - wideBase
+			bits[i/64] |= 1 << (i % 64)
+		}
+	}
+	return bits
+}
+
 func isWide(r rune) bool {
-	index := sort.Search(len(wideRanges), func(i int) bool { return wideRanges[i][1] >= r })
-	return index < len(wideRanges) && wideRanges[index][0] <= r
+	if r < wideBase || r > wideLast {
+		return false
+	}
+	i := r - wideBase
+	return wideBits[i/64]&(1<<(i%64)) != 0
 }

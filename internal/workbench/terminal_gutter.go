@@ -4,11 +4,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // terminalGutter is what the strip at the left of the terminal shows for each
-// line: its number, the time it was written, both, or nothing.
+// line: its number, the time its current content was written, both, or nothing.
+// A program that repaints a line in place (top, a progress bar) moves that
+// line's time forward with every write.
 //
 // The gutter takes its width from the terminal's columns. The grid, the pty size
 // the remote is told, selection, links, find and mouse coordinates all start at
@@ -29,7 +31,7 @@ const (
 const (
 	gutterNumberChars = 6 // up to 999999, then the low digits
 	gutterTimeChars   = 8 // HH:MM:SS
-	gutterRuleGap     = float32(10)
+	gutterRuleGap     = float32(16)
 )
 
 func (gutter terminalGutter) String() string {
@@ -105,13 +107,19 @@ func (state *State) setTerminalGutter(gutter terminalGutter) bool {
 		return false
 	}
 	state.terminalGutter = gutter
+	state.applyTerminalGutter()
+	return true
+}
+
+// applyTerminalGutter applies the strip the page's choice already wrote to the
+// terminals that are open and refits them to its width.
+func (state *State) applyTerminalGutter() {
 	for index := range state.sessions {
 		if t := state.sessions[index].term; t != nil {
 			state.stampTerminal(t)
 		}
 	}
 	state.fitTerminals()
-	return true
 }
 
 // gutterEntry caches the text of one row's gutter so a repaint of unchanged
@@ -120,47 +128,63 @@ type gutterEntry struct {
 	number uint64
 	at     int64
 	mode   terminalGutter
-	text   string
+	// line is the number as digits, written is the time of day; either is empty
+	// when the mode leaves it out or the row has not been written.
+	line    string
+	written string
 }
 
-// paintGutter draws the strip for row. entry is the row's cache entry.
-func (state *State) paintGutter(canvas *ui.Canvas, entry *rowEntry, t *terminal, geometry terminalGeometry, row int, y float32, style ui.TextStyle) {
+// gutterStyles are the two tones of the strip. Both take the scheme's bright
+// cyan, so the strip reads as part of the terminal's palette and follows the
+// scheme, with the time a step quieter than the line number. Mono matters: a plain label
+// is set in the proportional face, where digits differ in width and the time
+// column wobbles; MonoFace alone only picks which fixed-pitch font Mono uses.
+func gutterStyles(size float32, face gfx.MonoFace, pal *palette) (number, written gfx.TextStyle) {
+	cyan := gfx.RGB(pal.ansi[14][0], pal.ansi[14][1], pal.ansi[14][2])
+	// Cyan thinned over a light background loses contrast fast, so a scheme with
+	// dark text gets a firmer tone.
+	numberAlpha, writtenAlpha := float32(0.85), float32(0.65)
+	if fg := pal.termFG; fg.Red+fg.Green+fg.Blue < 1.5 {
+		numberAlpha, writtenAlpha = 1, 0.85
+	}
+	number = gfx.TextStyle{Size: size, Color: withAlpha(cyan, numberAlpha), Mono: true, MonoFace: face}
+	written = number
+	written.Color = withAlpha(cyan, writtenAlpha)
+	return number, written
+}
+
+// paintGutter draws the strip for row. entry is the row's cache entry. The
+// number is right-aligned against the rule's side of its block so the digits
+// line up whatever their count; the time starts after it.
+func (state *State) paintGutter(canvas *gfx.Canvas, entry *rowEntry, t *terminal, geometry terminalGeometry, row int, y float32, number, written gfx.TextStyle) {
 	mode := state.terminalGutter
 	line := t.screen.Row(row)
-	number := t.screen.LineNumber(row)
+	lineNumber := t.screen.LineNumber(row)
 	cached := &entry.gutter
-	if cached.text == "" || cached.number != number || cached.at != line.Written || cached.mode != mode {
-		cached.number, cached.at, cached.mode = number, line.Written, mode
-		cached.text = formatGutter(mode, number, line.Written)
+	if cached.mode != mode || cached.number != lineNumber || cached.at != line.Written || (cached.line == "" && cached.written == "") {
+		cached.number, cached.at, cached.mode = lineNumber, line.Written, mode
+		cached.line, cached.written = formatGutter(mode, lineNumber, line.Written)
 	}
-	if cached.text == "" {
-		return
+	left := geometry.left - state.gutterWidth()
+	if cached.line != "" {
+		width := float32(gutterNumberChars) * state.cellWidth
+		canvas.LabelAligned(cached.line, gfx.Rect{X: left, Y: y, Width: width, Height: state.cellHeight}, number, gfx.AlignRight)
+		left += width + state.cellWidth
 	}
-	width := float32(mode.chars()) * state.cellWidth
-	canvas.Label(cached.text, ui.Rect{X: geometry.left - state.gutterWidth(), Y: y, Width: width + 1, Height: state.cellHeight}, style)
+	if cached.written != "" {
+		canvas.Label(cached.written, gfx.Rect{X: left, Y: y, Width: float32(gutterTimeChars)*state.cellWidth + 1, Height: state.cellHeight}, written)
+	}
 }
 
-// formatGutter is the text of a gutter: the number right-aligned, then the time.
-func formatGutter(mode terminalGutter, number uint64, written int64) string {
-	var buffer [gutterNumberChars + 1 + gutterTimeChars]byte
-	text := buffer[:0]
+// formatGutter is the two texts of a gutter: the line number and the time.
+func formatGutter(mode terminalGutter, number uint64, written int64) (line, at string) {
 	if mode.numbers() {
 		var scratch [gutterNumberChars]byte
-		digits := strconv.AppendUint(scratch[:0], number%1000000, 10)
-		for pad := gutterNumberChars - len(digits); pad > 0; pad-- {
-			text = append(text, ' ')
-		}
-		text = append(text, digits...)
+		line = string(strconv.AppendUint(scratch[:0], number%1000000, 10))
 	}
-	if mode.times() {
-		if mode.numbers() {
-			text = append(text, ' ')
-		}
-		if written == 0 {
-			text = append(text, "        "...)
-		} else {
-			text = time.Unix(written, 0).AppendFormat(text, "15:04:05")
-		}
+	if mode.times() && written != 0 {
+		var scratch [gutterTimeChars]byte
+		at = string(time.Unix(written, 0).AppendFormat(scratch[:0], "15:04:05"))
 	}
-	return string(text)
+	return line, at
 }

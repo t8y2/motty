@@ -1,6 +1,10 @@
 package workbench
 
-import layoutcore "motty/internal/workspace"
+import (
+	"slices"
+
+	layoutcore "motty/internal/workspace"
+)
 
 const defaultPaneRatio = float32(0.5)
 
@@ -38,13 +42,25 @@ func (state *State) Panes(dst []Pane) []Pane {
 	if layout == nil || layout.Root() == 0 {
 		return dst
 	}
-	return state.appendWorkspacePanes(dst, workspaceID, layout, layout.Root(), FractionBounds{Width: 1, Height: 1})
+	start := len(dst)
+	dst = state.appendWorkspacePanes(dst, workspaceID, layout, layout.Root(), FractionBounds{Width: 1, Height: 1})
+	if state.workspaceTabbed(workspaceID) {
+		// One pane shows at a time, filling the area; the rest keep their place
+		// in reading order with nothing to draw.
+		for index := start; index < len(dst); index++ {
+			dst[index].Bounds = FractionBounds{}
+			if dst[index].Active {
+				dst[index].Bounds = FractionBounds{Width: 1, Height: 1}
+			}
+		}
+	}
+	return dst
 }
 
 // PaneSplits appends active-workspace divider targets in deterministic order.
 func (state *State) PaneSplits(dst []PaneSplit) []PaneSplit {
-	_, layout := state.activeWorkspaceLayout()
-	if layout == nil || layout.Root() == 0 {
+	workspaceID, layout := state.activeWorkspaceLayout()
+	if layout == nil || layout.Root() == 0 || state.workspaceTabbed(workspaceID) {
 		return dst
 	}
 	return state.appendWorkspaceSplits(dst, layout, layout.Root(), FractionBounds{Width: 1, Height: 1})
@@ -69,6 +85,7 @@ func (state *State) SplitPane(target, session uint32, axis layoutcore.Axis, plac
 	}
 	state.syncActiveSession()
 	state.activeSection = sectionTerminal
+	state.syncMonitorTarget()
 	return nil
 }
 
@@ -90,6 +107,7 @@ func (state *State) MovePane(session, target uint32, axis layoutcore.Axis, ratio
 	}
 	state.syncActiveSession()
 	state.activeSection = sectionTerminal
+	state.syncMonitorTarget()
 	return nil
 }
 
@@ -164,6 +182,43 @@ func (state *State) ActivatePane(session uint32) bool {
 	return true
 }
 
+// restoreEmptyPaneActive finds an empty pane (SessionID==0) in the active
+// workspace and activates it. Called after the host-editor modal closes so
+// the New-Tab-Page paint returns instead of only a small "New tab" label.
+func (state *State) restoreEmptyPaneActive() {
+	workspace := state.deck.ActiveWorkspace()
+	if workspace == 0 {
+		return
+	}
+	var scratch [layoutcore.MaxPanes]layoutcore.Pane
+	for _, p := range state.deck.Panes(workspace, scratch[:0]) {
+		if p.SessionID == 0 {
+			state.deck.ActivatePane(workspace, p.ID)
+			state.syncActiveSession()
+			return
+		}
+	}
+}
+
+// restoreAfterHostDialog closes the host-edit modal and restores whatever was
+// open underneath it: a prompt that waited for the dialog, then the connect
+// picker (command palette in connect mode), or nothing.
+func (state *State) restoreAfterHostDialog() {
+	state.modal = modalNone
+	// A prompt that arrived while the dialog was up could not open; it takes
+	// precedence over the picker, which the answer may well replace.
+	state.showNextPrompt()
+	if state.modal == modalNone && state.commandPalette.connect {
+		// Came from the new-tab connect picker: rebuild it so edited/added
+		// hosts show up (refreshCommandPalette caches on search query). The
+		// empty pane the picker was opened on stays active so the New-Tab page
+		// still paints underneath it.
+		state.modal = modalCommandPalette
+		state.rebuildCommandPalette()
+		state.restoreEmptyPaneActive()
+	}
+}
+
 func (state *State) activatePane(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID) bool {
 	previous := state.deck.ActivePane(workspaceID)
 	if !state.deck.ActivatePane(workspaceID, paneID) {
@@ -171,6 +226,15 @@ func (state *State) activatePane(workspaceID layoutcore.WorkspaceID, paneID layo
 	}
 	state.syncActiveSession()
 	state.activeSection = sectionTerminal
+	state.syncMonitorTarget()
+	if previous != paneID {
+		// The candidate list belongs to the terminal that opened it.
+		state.closeCompletionList()
+		// So does find mode: the bar belongs to one pane, and a search left open
+		// on a pane that lost focus would reappear on a session the user is no
+		// longer searching.
+		state.closePaneFind(workspaceID, previous)
+	}
 	if previous != paneID && state.viewport.Width > 0 && state.viewport.Height > 0 {
 		state.fitWorkspaceTerminals(workspaceID)
 		state.fitSFTP(state.viewport)
@@ -182,14 +246,66 @@ func (state *State) activateWorkspace(id layoutcore.WorkspaceID) bool {
 	if !state.deck.ActivateWorkspace(id) {
 		return false
 	}
+	state.clearBroadcast()
+	state.workspaceHeaderMenu = workspaceHeaderMenuNone
+	state.workspaceCardDrag = workspaceCardDrag{}
 	state.syncActiveSession()
 	state.activeSection = sectionTerminal
+	state.syncMonitorTarget()
+	state.closeCompletionList()
+	if state.viewport.Width > 0 && state.viewport.Height > 0 {
+		state.fitWorkspaceTerminals(id)
+		state.fitSFTP(state.viewport)
+	}
+	return true
+}
+
+// leaveTerminalSection stops broadcasting when the terminal page is left by a
+// path that changes the section directly.
+func (state *State) leaveTerminalSection() {
+	state.clearBroadcast()
+}
+
+// cycleWorkspace moves to the tab delta places along the tab bar, wrapping at
+// either end, and reports whether it moved. With one tab there is nowhere to go.
+func (state *State) cycleWorkspace(delta int) bool {
+	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
+	tabs := state.visualWorkspaceTabs()
+	count := len(tabs)
+	if count < 2 {
+		return false
+	}
+	current := state.deck.ActiveWorkspace()
+	index := slices.IndexFunc(tabs, func(workspace layoutcore.WorkspaceInfo) bool { return workspace.ID == current })
+	if index < 0 {
+		index = 0
+	}
+	return state.activateTab((index + delta%count + count) % count)
+}
+
+// activateTab makes the index-th tab of the tab bar the active one.
+func (state *State) activateTab(index int) bool {
+	state.workspaceTabs = state.deck.Workspaces(state.workspaceTabs[:0])
+	tabs := state.visualWorkspaceTabs()
+	if index < 0 || index >= len(tabs) || !state.activateWorkspace(tabs[index].ID) {
+		return false
+	}
+	state.save()
 	return true
 }
 
 func (state *State) syncActiveSession() {
 	workspaceID := state.deck.ActiveWorkspace()
+	if state.noteSidebarWorkspace != workspaceID {
+		if v := state.noteSidebars[state.noteSidebarWorkspace]; v != nil {
+			v.stopCapture()
+			state.noteSidebarFocusBack = v.open
+			v.content.query.Unmark()
+		}
+		state.noteSidebarWorkspace = workspaceID
+	}
 	paneID := state.deck.ActivePane(workspaceID)
+	state.syncCachedWorkspacePane(workspaceID, paneID)
 	pane, ok := state.deck.Pane(workspaceID, paneID)
 	if !ok {
 		state.activeSessionID = 0
@@ -197,6 +313,19 @@ func (state *State) syncActiveSession() {
 	}
 	state.activeSessionID = uint32(pane.SessionID)
 	state.ensureContextSFTP()
+}
+
+// syncCachedWorkspacePane keeps the tab strip's workspace snapshots aligned
+// with the deck. Pane activation already repaints, but without this update tab
+// labels and system badges keep reading the pane that was active when the tab
+// list was last rebuilt.
+func (state *State) syncCachedWorkspacePane(workspaceID layoutcore.WorkspaceID, paneID layoutcore.PaneID) {
+	for index := range state.workspaceTabs {
+		if state.workspaceTabs[index].ID == workspaceID {
+			state.workspaceTabs[index].ActivePane = paneID
+			return
+		}
+	}
 }
 
 // ensureContextSFTP opens the file list for the session the files panel follows
@@ -236,6 +365,7 @@ func (state *State) ensureWorkspaceDeck() {
 		workspaceID, paneID, err := state.deck.Create(state.sessions[0].Title)
 		if err == nil {
 			_ = state.deck.Bind(workspaceID, paneID, layoutcore.SessionID(state.sessions[0].ID))
+			state.initializeSFTPPanel(workspaceID, false)
 		}
 	}
 	wantedSession := state.activeSessionID
@@ -306,21 +436,55 @@ func splitFractionBounds(bounds FractionBounds, axis layoutcore.Axis, ratio floa
 
 func (state *State) savedWorkspaceDeck() layoutcore.DeckDTO {
 	dto := state.deck.DTO()
+	persistedIDs := make(map[uint32]layoutcore.SessionID, len(state.sessions))
+	for index := range state.sessions {
+		session := &state.sessions[index]
+		if session.containerCommand == "" {
+			persistedIDs[session.ID] = layoutcore.SessionID(len(persistedIDs) + 1)
+		}
+	}
+	retained := dto.Workspaces[:0]
 	for workspaceIndex := range dto.Workspaces {
-		workspace := &dto.Workspaces[workspaceIndex]
+		workspace := dto.Workspaces[workspaceIndex]
+		hadTransient := false
+		var firstPersistent layoutcore.PaneID
 		for paneIndex := range workspace.Panes {
 			pane := &workspace.Panes[paneIndex]
 			if pane.SessionID == 0 {
 				continue
 			}
-			persisted := layoutcore.SessionID(0)
-			for sessionIndex := range state.sessions {
-				if state.sessions[sessionIndex].ID == uint32(pane.SessionID) {
-					persisted = layoutcore.SessionID(sessionIndex + 1)
-					break
-				}
+			persisted := persistedIDs[uint32(pane.SessionID)]
+			if persisted == 0 {
+				hadTransient = true
+			} else if firstPersistent == 0 {
+				firstPersistent = pane.ID
 			}
 			pane.SessionID = persisted
+		}
+		if hadTransient && firstPersistent == 0 {
+			continue
+		}
+		if hadTransient {
+			for _, pane := range workspace.Panes {
+				if pane.ID == workspace.ActivePane && pane.SessionID == 0 {
+					workspace.ActivePane = firstPersistent
+				}
+			}
+		}
+		retained = append(retained, workspace)
+	}
+	dto.Workspaces = retained
+	activePresent := false
+	for _, workspace := range dto.Workspaces {
+		if workspace.ID == dto.ActiveWorkspace {
+			activePresent = true
+			break
+		}
+	}
+	if !activePresent {
+		dto.ActiveWorkspace = 0
+		if len(dto.Workspaces) > 0 {
+			dto.ActiveWorkspace = dto.Workspaces[0].ID
 		}
 	}
 	return dto
@@ -349,6 +513,15 @@ func (state *State) restoreWorkspaceDeck(saved *layoutcore.DeckDTO, sourceSessio
 		}
 		if deck, err := layoutcore.RestoreDeck(dto); err == nil {
 			state.deck = deck
+			for _, workspace := range state.deck.Workspaces(nil) {
+				panes := state.deck.Panes(workspace.ID, nil)
+				if len(panes) == 1 {
+					if session, ok := state.sessionByIDPointer(uint32(panes[0].SessionID)); ok {
+						state.renameSession(session, workspace.Title)
+					}
+				}
+				state.initializeSFTPPanel(workspace.ID, true)
+			}
 			state.syncActiveSession()
 			return
 		}

@@ -35,6 +35,21 @@ export function baseOptions(locale: string): BaseLayoutProps {
         text: lang === 'zh' ? '文档' : 'Documentation',
         url: `/${lang}/docs`,
       },
+      {
+        type: 'main',
+        text: lang === 'zh' ? '下载' : 'Download',
+        url: `/${lang}/download`,
+      },
+      {
+        type: 'main',
+        text: lang === 'zh' ? '更新日志' : 'Changelog',
+        url: `/${lang}/changelog`,
+      },
+      {
+        type: 'main',
+        text: lang === 'zh' ? '对比' : 'Compare',
+        url: `/${lang}/compare`,
+      },
     ],
   };
 }

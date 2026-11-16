@@ -38,6 +38,11 @@ restored without reconnecting. All of these are palette commands.
 Search the retained history with **Command+F** (**Control+F** elsewhere). HTTP,
 HTTPS and OSC 8 links can be opened from the terminal.
 
+Double-click selects a word; dragging after the second click extends the selection
+by whole words. Under **Settings → Terminal → Word separators**, enter the
+characters that should split words (for example, `-/`); leave the field empty
+for the default punctuation rules. Whitespace always splits words.
+
 ## Images
 
 Kitty, iTerm2 and SIXEL images are rendered inline.
@@ -47,15 +52,67 @@ Kitty, iTerm2 and SIXEL images are rendered inline.
 Send saved snippets to a session, or broadcast input across the panes of a split
 tab.
 
+Snippets have their own page in the sidebar (shown as "快捷命令" in Chinese),
+below Known Hosts. Each one has a name, a command, and an option to press Enter
+after sending it. A snippet can also have its own shortcut: choose **Set shortcut** in
+its dialog and press the keys. A shortcut needs Command, or Control together
+with Shift or Alt, so that terminal keys such as Ctrl+R keep working. It sends
+the snippet to the active terminal while the terminal page is showing, and
+shortcuts are kept per device because the free modifier differs by platform.
+The command field accepts multiple lines; Enter inserts a line break and the Save
+button saves it. In the list a command stays on one line: the chevron at the end
+of its row opens the full command below the row, and resting the pointer on a
+multi-line row for about 0.4 s previews it without expanding anything.
+On send, each line break becomes Enter in the remote terminal.
+Terminals with bracketed paste enabled receive the lines as a paste; otherwise
+earlier lines may execute immediately, even when **Press Enter after sending**
+is off (that option only controls the final Enter).
+
+A snippet does not need a shortcut. On the Snippets page, select it and choose
+**Send to terminal**, double-click its row, or right-click the row for a menu with
+Send, Move up/down, Edit and Delete. Deleting a snippet asks first. In the unfiltered manual view, drag the handle beside a row or use the
+menu's Move actions to save a custom order; the handle also supports keyboard
+reordering. Clicking the same table heading cycles through ascending, descending,
+and your saved manual order. With one terminal open it is sent there; with several
+(tabs or split panes) a list of them opens so you choose the target, the active
+one marked "Current", and the chosen terminal is shown after sending. The status
+line names the terminal it went to. A **↵** keycap in the command column marks snippets that press
+Enter after sending.
+
+The terminal toolbar's snippet button opens a picker of the same snippets. Its groups start
+closed: click a group, or press Right/Left on it, to open or close it, and a search looks inside
+every group. Under the list, a command field sends a one-off line without saving it: choose
+**Current**, **All** (every connected terminal) or **Choose** (the list switches to your
+connected terminals so you can tick the ones to send to), and keep **Press Enter** on to run it or
+off to only type it. Clicking a snippet in the picker still sends it to the current terminal.
+
 ## Command history
 
 **Command+Shift+H** (**Control+Shift+H** elsewhere) opens the commands you have
-typed into terminals. Optional inline command suggestions can be turned on.
+typed into terminals.
+
+## Command completion
+
+**Command+Shift+J** (**Control+Shift+J** elsewhere) opens a list of commands,
+subcommands, options and fixed option values that can continue the line you are
+typing, from a catalog built into Motty. Enter inserts only the missing text and
+never runs it. In Settings > Terminal choose **Off**, **List**, or **List +
+inline**, which also shows the suggestion in gray while you type. Completion
+works without remembering commands, and **Check for updates** refreshes the
+catalog on request.
+Updates try GitHub directly first. If the connection fails or GitHub returns
+403, 429, or 5xx, Motty retries the public catalog release and source archive
+through the third-party `gh-proxy.com` mirror. No SSH credentials or terminal
+contents are sent. If you prefer not to use a third-party mirror, leave the
+built-in catalog in place rather than checking for updates.
 
 ## Appearance
 
-Eleven colour schemes, keyword highlighting and configurable fonts. Fonts are
-stored per machine and are not synced.
+More than two hundred colour schemes, keyword highlighting and configurable
+fonts. Settings shows a short set of quick picks and opens the full collection
+in a left-hand drawer; your own X resources schemes join the list from the
+data folder's `schemes` directory. Fonts are stored per machine and are not
+synced.
 
 ## Recording
 

@@ -1,0 +1,70 @@
+# End to end: searching the folders below the one on show (#323) over a real SFTP
+# channel. The search reads the tree once over a second subsystem of its own;
+# Escape and typing again match what was read without opening another; a result
+# opens in its folder; a server that allows one SFTP subsystem says why it
+# cannot search instead of showing an empty list.
+#
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && cd ../..
+#   /tmp/e2esshd 2333 2>/tmp/e2esshd.log &        # prints "sftp root <dir>"
+#   cd <sftp root> && mkdir -p docs/api docs/manual/images .config/cache backups/2026/q1 locked
+#   touch alpha.txt guide.txt docs/guide.md docs/api/Guide-v2.md docs/manual/user-guide.md \
+#     docs/manual/images/guide-cover.png .config/cache/guide.cache backups/2026/q1/report-guide.pdf locked/guide-secret.txt
+#   chmod 000 locked
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py /tmp/sftp-search-home tools/e2e/sftp_search_e2e.txt
+#
+# Afterwards `grep subsystem /tmp/e2esshd.log` shows two opened and two closed:
+# the panel's own and the search's, once, however often the query changed.
+# With E2E_MAX_SFTP=1 the second is refused and the panel says "Cannot search the
+# subfolders" (kill the server, start it again with that variable, and stop the
+# script after the first "waitfor Matches": it then waits for that text instead).
+
+click "Search"
+type tester@127.0.0.1:2333
+click "Connect"
+waitfor "Trust this host" 3000
+click "Connect Once"
+waitfor "Password" 3000
+type secret
+key enter
+settle 2500
+key cmd+shift+s
+waitfor "alpha.txt" 5000
+settle 500
+click "More file actions"
+settle 300
+click "Filter current folder"
+settle 400
+click "Filter current folder"
+type guide
+click "Include subfolders"
+# The matches in the readable folders, and the one folder that could not be read.
+waitfor "Unreadable folders: 1" 8000
+settle 500
+texts Matches
+shot /tmp/sftp-search-results.png
+layout
+# Escape clears the query and brings the folder's rows back; typing again
+# matches what was read, without another subsystem.
+click "Filter current folder"
+key escape
+settle 300
+texts items
+click "Filter current folder"
+type guide
+waitfor "Unreadable folders: 1" 3000
+# Nothing matches.
+click "Filter current folder"
+key cmd+a
+type zzzqq
+waitfor "No matches in this folder or its subfolders" 3000
+click "Filter current folder"
+key cmd+a
+type guide
+settle 400
+# Enter on a selected result opens its folder with the file selected.
+click "guide-cover.png"
+key enter
+waitfor "images" 3000
+settle 500
+shot /tmp/sftp-search-opened.png

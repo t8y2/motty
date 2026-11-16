@@ -1,0 +1,46 @@
+# End to end: a snippet gets a shortcut in its dialog, and pressing it in a
+# terminal sends the command, against the loopback SSH fixture on port 2222.
+#
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/snippet_shortcut_e2e.txt
+
+click "Search"
+type tester@127.0.0.1:2222
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+
+click "Hosts"
+click "Snippets"
+waitfor "No snippets" 3000
+shot /tmp/snippet-page-empty.png
+click "Add snippet"
+waitfor "Add a snippet" 3000
+shot /tmp/snippet-add-dialog.png
+type Say hello
+key tab
+type echo snippet-$((6*7))
+click "Set shortcut"
+waitfor "Press the keys" 2000
+expect layout clean
+shot /tmp/snippet-shortcut-recording.png
+key cmd+f
+waitfor "already assigned" 2000
+key cmd+shift+1
+waitfor "Cmd+Shift+1" 2000
+expect layout clean
+shot /tmp/snippet-shortcut-bound.png
+click "Save"
+waitfor "Cmd+Shift+1" 3000
+expect layout clean
+shot /tmp/snippet-page.png
+
+# Back in the terminal, the chord sends the command and presses Enter.
+click "127.0.0.1:2222"
+settle 300
+key cmd+shift+1
+waitfor "snippet-42" 4000
+texts

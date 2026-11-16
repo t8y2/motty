@@ -43,18 +43,24 @@ func TestOSC8LinksTrackWideCombiningSoftWrapAndHistory(t *testing.T) {
 }
 
 func TestOSC8LinksAreIndependentOfInputSplits(t *testing.T) {
-	data := []byte("a\x1b]8;id=x;mailto:user@example.test\x1b\\你e\u0301mail\x1b]8;;\x07z")
-	want := []Link{{
-		Start: BufferPosition{Line: 0, Column: 1}, End: BufferPosition{Line: 0, Column: 8},
-		Target: "mailto:user@example.test",
-	}}
-	for split := 0; split <= len(data); split++ {
-		terminal := New(40, 2, 0)
-		terminal.Write(data[:split])
-		terminal.Write(data[split:])
-		links, truncated := terminal.Links(nil, 4)
-		if truncated || !reflect.DeepEqual(links, want) {
-			t.Fatalf("split %d: Links() = %+v truncated=%t, want %+v", split, links, truncated, want)
+	for _, target := range []string{"mailto:user@example.test", "https://example.test/✳АМНП😀中文"} {
+		for _, end := range []string{"\x07", "\x1b\\"} {
+			data := []byte("a\x1b]8;id=x;" + target + end + "你e\u0301mail\x1b]8;;" + end + "z")
+			want := []Link{{
+				Start: BufferPosition{Line: 0, Column: 1}, End: BufferPosition{Line: 0, Column: 8},
+				Target: target,
+			}}
+			for split := 0; split <= len(data); split++ {
+				terminal := New(40, 2, 0)
+				terminal.Write(data[:split])
+				terminal.Write(data[split:])
+				links, truncated := terminal.Links(nil, 4)
+				if truncated || !reflect.DeepEqual(links, want) {
+					t.Fatalf("target %q end %x split %d: Links() = %+v truncated=%t, want %+v", target, end, split, links, truncated, want)
+				}
+				expectText(t, terminal, "a你e\u0301mailz")
+				expectCursor(t, terminal, 9, 0)
+			}
 		}
 	}
 }

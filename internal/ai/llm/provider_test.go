@@ -26,6 +26,15 @@ func oaText(parts ...string) string {
 	return sb.String()
 }
 
+func oaReasoning(parts ...string) string {
+	var sb strings.Builder
+	for _, p := range parts {
+		b, _ := json.Marshal(p)
+		sb.WriteString(oaData(`{"choices":[{"delta":{"reasoning_content":` + string(b) + `}}]}`))
+	}
+	return sb.String()
+}
+
 func oaFinish(reason string) string {
 	return oaData(`{"choices":[{"delta":{},"finish_reason":"`+reason+`"}]}`) +
 		oaData(`{"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3}}`) + oaData("[DONE]")
@@ -70,15 +79,58 @@ func oaToolChunks(idx int, id, name, args string, chunk int) string {
 	return s
 }
 
+// ---- Responses API stream body builders ----
+
+func rsEv(typ, rest string) string {
+	if rest != "" {
+		rest = "," + rest
+	}
+	return "event: " + typ + "\ndata: " + `{"type":"` + typ + `"` + rest + "}\n\n"
+}
+
+func rsText(parts ...string) string {
+	s := rsEv("response.created", `"response":{"status":"in_progress"}`)
+	for _, p := range parts {
+		b, _ := json.Marshal(p)
+		s += rsEv("response.output_text.delta", `"item_id":"msg_1","output_index":0,"delta":`+string(b))
+	}
+	return s
+}
+
+func rsCompleted() string {
+	return rsEv("response.completed", `"response":{"status":"completed","usage":{"input_tokens":7,"output_tokens":3}}`)
+}
+
+func rsThink(parts ...string) string {
+	s := rsEv("response.created", `"response":{"status":"in_progress"}`)
+	for _, p := range parts {
+		b, _ := json.Marshal(p)
+		s += rsEv("response.reasoning_text.delta", `"item_id":"rs_1","output_index":0,"delta":`+string(b))
+	}
+	return s
+}
+
+func rsToolItem(idx int, callID, name, args string, chunk int) string {
+	item := fmt.Sprintf(`"output_index":%d,"item":{"type":"function_call","id":"fc_%s","call_id":%q,"name":%q,"arguments":%%q}`, idx, callID, callID, name)
+	s := rsEv("response.output_item.added", fmt.Sprintf(item, ""))
+	for _, p := range splitRunes(args, chunk) {
+		part, _ := json.Marshal(p)
+		s += rsEv("response.function_call_arguments.delta", fmt.Sprintf(`"item_id":"fc_%s","output_index":%d,"delta":%s`, callID, idx, part))
+	}
+	s += rsEv("response.function_call_arguments.done", fmt.Sprintf(`"item_id":"fc_%s","output_index":%d,"arguments":%q`, callID, idx, args))
+	return s + rsEv("response.output_item.done", fmt.Sprintf(item, args))
+}
+
 type proto struct {
 	name string
 	new  func(Config) Provider
+	head string                       // a stream prefix that has already produced the text "a"
 	text func(parts ...string) string // full successful text stream
 	tool func(calls ...[3]string) string
 }
 
 var protos = []proto{
-	{"openai", NewOpenAI,
+	{"openai", NewOpenAI, oaText("a"),
 		func(parts ...string) string { return oaText(parts...) + oaFinish("stop") },
 		func(calls ...[3]string) string {
 			s := ""
@@ -87,7 +139,7 @@ var protos = []proto{
 			}
 			return s + oaFinish("tool_calls")
 		}},
-	{"anthropic", NewAnthropic,
+	{"anthropic", NewAnthropic, anStart() + anTextBlock(0, "a"),
 		func(parts ...string) string { return anStart() + anTextBlock(0, parts...) + anEnd("end_turn") },
 		func(calls ...[3]string) string {
 			s := anStart()
@@ -95,6 +147,15 @@ var protos = []proto{
 				s += anToolBlock(i, c[0], c[1], c[2], 2)
 			}
 			return s + anEnd("tool_use")
+		}},
+	{"openai-responses", NewOpenAIResponses, rsText("a"),
+		func(parts ...string) string { return rsText(parts...) + rsCompleted() },
+		func(calls ...[3]string) string {
+			s := ""
+			for i, c := range calls {
+				s += rsToolItem(i, c[0], c[1], c[2], 2)
+			}
+			return s + rsCompleted()
 		}},
 }
 
@@ -122,10 +183,10 @@ func TestPlainText(t *testing.T) {
 				if done.Kind != EventDone || text(evs, EventText) != "Hello 你好🙂 world" {
 					t.Fatalf("got %+v", evs)
 				}
-				if p.name == "openai" && (done.Usage != Usage{7, 3} || done.StopReason != "stop") {
+				if p.name != "anthropic" && (done.Usage != (Usage{InputTokens: 7, OutputTokens: 3}) || done.StopReason != "stop") {
 					t.Fatalf("done %+v", done)
 				}
-				if p.name == "anthropic" && (done.Usage != Usage{11, 9} || done.StopReason != "end_turn") {
+				if p.name == "anthropic" && (done.Usage != (Usage{InputTokens: 11, OutputTokens: 9}) || done.StopReason != "end_turn") {
 					t.Fatalf("done %+v", done)
 				}
 			})
@@ -205,7 +266,7 @@ func TestOpenAINoDoneAfterFinish(t *testing.T) {
 }
 
 func TestTruncatedStreamIsError(t *testing.T) {
-	bodies := []string{oaText("a"), anStart() + anTextBlock(0, "a")}
+	bodies := []string{oaText("a"), anStart() + anTextBlock(0, "a"), rsText("a")}
 	for i, b := range bodies {
 		srv := sseServer(t, b, false, nil)
 		ch, _ := protos[i].provider(srv).Stream(bg, simpleReq)
@@ -222,10 +283,13 @@ func TestInvalidToolJSON(t *testing.T) {
 		anStart() + anToolBlock(0, "a", "t", `{"x":`, 2) + anEnd("tool_use"),
 		oaToolChunks(0, "a", "t", `[1]`, 2) + oaFinish("tool_calls"),
 		anStart() + anToolBlock(0, "a", "t", `"str"`, 2) + anEnd("tool_use"),
+		rsToolItem(0, "a", "t", `{"x":`, 2) + rsCompleted(),
+		rsToolItem(0, "a", "t", `[1]`, 2) + rsCompleted(),
 	}
+	owner := []int{0, 1, 0, 1, 2, 2}
 	for i, b := range bodies {
 		srv := sseServer(t, b, false, nil)
-		ch, _ := protos[i%2].provider(srv).Stream(bg, simpleReq)
+		ch, _ := protos[owner[i]].provider(srv).Stream(bg, simpleReq)
 		evs := collect(t, ch)
 		if terminal(t, evs).Kind != EventError || len(toolCalls(evs)) != 0 {
 			t.Fatalf("case %d: %+v", i, evs)
@@ -237,6 +301,7 @@ func TestProviderErrorEvents(t *testing.T) {
 	bodies := []string{
 		oaText("a") + oaData(`{"error":{"message":"overloaded `+testKey+`"}}`),
 		anStart() + anEv("error", `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded `+testKey+`"}}`),
+		rsText("a") + rsEv("error", `"code":"server_error","message":"overloaded `+testKey+`"`),
 	}
 	for i, b := range bodies {
 		srv := sseServer(t, b, false, nil)
@@ -329,11 +394,7 @@ func TestContextCancelMidStream(t *testing.T) {
 		t.Run(p.name, func(t *testing.T) {
 			base := runtimeGoroutines()
 			gone := make(chan struct{})
-			head := oaText("a")
-			if p.name == "anthropic" {
-				head = anStart() + anTextBlock(0, "a")
-			}
-			srv := blockingServer(t, head, gone)
+			srv := blockingServer(t, p.head, gone)
 			ctx, cancel := context.WithCancel(bg)
 			ch, err := p.provider(srv).Stream(ctx, simpleReq)
 			if err != nil {
@@ -432,7 +493,7 @@ func TestOversizedLineAndTotal(t *testing.T) {
 }
 
 func TestMalformedChunk(t *testing.T) {
-	for i, b := range []string{oaData("{not json"), anStart() + anEv("content_block_delta", "{oops")} {
+	for i, b := range []string{oaData("{not json"), anStart() + anEv("content_block_delta", "{oops"), oaData("{not json")} {
 		srv := sseServer(t, b, false, nil)
 		ch, _ := protos[i].provider(srv).Stream(bg, simpleReq)
 		if terminal(t, collect(t, ch)).Kind != EventError {
@@ -451,6 +512,9 @@ func TestBaseURLNormalisation(t *testing.T) {
 		{"https://api.deepseek.com/v1/chat/completions", "https://api.deepseek.com/v1"},
 		{"https://open.bigmodel.cn/api/paas/v4/", "https://open.bigmodel.cn/api/paas/v4"},
 		{"https://x.test/openai?key=1#f", "https://x.test/openai"},
+		{"https://api.openai.com/v1/responses", "https://api.openai.com/v1"},
+		{"https://gw.test/api/Responses/", "https://gw.test/api"},
+		{"https://gw.test/responses", "https://gw.test/v1"},
 	}
 	for _, c := range oa {
 		got, err := openAIBase(c.in)
@@ -471,6 +535,19 @@ func TestBaseURLNormalisation(t *testing.T) {
 		got, err := anthropicBase(c.in)
 		if err != nil || got != c.want {
 			t.Errorf("anthropicBase(%q) = %q, %v; want %q", c.in, got, err, c.want)
+		}
+	}
+	oaModels := []struct{ in, want string }{
+		{"", ""},
+		{"https://opencode.ai/inference/go/v1", "https://opencode.ai/inference/go/v1"},
+		{"https://opencode.ai/inference/go/v1/models", "https://opencode.ai/inference/go/v1"},
+		{"https://opencode.ai/inference/go/v1/models/", "https://opencode.ai/inference/go/v1"},
+		{"https://api.openai.com", "https://api.openai.com/v1"},
+	}
+	for _, c := range oaModels {
+		got, err := openAIModelsBase(c.in)
+		if err != nil || got != c.want {
+			t.Errorf("openAIModelsBase(%q) = %q, %v; want %q", c.in, got, err, c.want)
 		}
 	}
 	for _, bad := range []string{"ftp://x", "not a url", "http://", "://x"} {
@@ -498,14 +575,55 @@ func TestEndpointPaths(t *testing.T) {
 			}
 			collect(t, ch)
 			srv.Close()
-			want := "/v1/messages"
-			if p.name == "openai" {
-				want = "/v1/chat/completions"
-			}
+			want := map[string]string{"openai": "/v1/chat/completions", "anthropic": "/v1/messages", "openai-responses": "/v1/responses"}[p.name]
 			if path.Load() != want {
 				t.Errorf("%s base %q: path %v want %s", p.name, suffix, path.Load(), want)
 			}
 		}
+	}
+}
+
+func TestModelsURLSeparateFromBaseURL(t *testing.T) {
+	var chatCalled, modelsCalled bool
+	chatSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chatCalled = true
+		if r.URL.Path != "/inference/go/openai/v1/chat/completions" {
+			t.Errorf("chat path = %q", r.URL.Path)
+		}
+		w.Write([]byte(protos[0].text("hello")))
+	}))
+	defer chatSrv.Close()
+
+	modelsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		modelsCalled = true
+		if r.URL.Path != "/inference/go/v1/models" {
+			t.Errorf("models path = %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"id":"gpt-4o"}]}`))
+	}))
+	defer modelsSrv.Close()
+
+	prov := NewOpenAI(Config{
+		BaseURL:   chatSrv.URL + "/inference/go/openai/v1",
+		ModelsURL: modelsSrv.URL + "/inference/go/v1",
+	})
+
+	list, err := prov.Models(bg)
+	if err != nil || len(list) != 1 || list[0] != "gpt-4o" {
+		t.Fatalf("Models() = %v, %v; want [gpt-4o]", list, err)
+	}
+	if !modelsCalled {
+		t.Fatal("models server was not called")
+	}
+
+	ch, err := prov.Stream(bg, simpleReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collect(t, ch)
+	if !chatCalled {
+		t.Fatal("chat server was not called")
 	}
 }
 
@@ -593,7 +711,7 @@ func TestAnthropicRequestGolden(t *testing.T) {
 		t.Fatalf("headers %v", hdr)
 	}
 	jsonEq(t, got, `{
-	"model":"the-model","stream":true,"max_tokens":256,"temperature":0.25,"system":"be brief",
+	"model":"the-model","stream":true,"max_tokens":256,"temperature":0.25,"system":[{"type":"text","text":"be brief","cache_control":{"type":"ephemeral"}}],
 	"messages":[
 	 {"role":"user","content":[{"type":"text","text":"look at two files"}]},
 	 {"role":"assistant","content":[{"type":"text","text":"ok"},
@@ -605,11 +723,27 @@ func TestAnthropicRequestGolden(t *testing.T) {
 	 {"role":"assistant","content":[{"type":"tool_use","id":"c3","name":"read","input":{"path":"b"}}]},
 	 {"role":"user","content":[
 	   {"type":"tool_result","tool_use_id":"c3","content":"CCC"},
-	   {"type":"text","text":"thanks"}]}],
+	   {"type":"text","text":"thanks","cache_control":{"type":"ephemeral"}}]}],
 	"tools":[
 	 {"name":"read","description":"read a file","input_schema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}},
-	 {"name":"noargs","input_schema":{"type":"object","properties":{}}}]
+	 {"name":"noargs","input_schema":{"type":"object","properties":{}},"cache_control":{"type":"ephemeral"}}]
 	}`)
+}
+
+func TestAnthropicBearerAuthentication(t *testing.T) {
+	var hdr http.Header
+	srv := sseServer(t, anStart()+anEnd("end_turn"), false, func(r *http.Request, _ []byte) { hdr = r.Header.Clone() })
+	ch, err := NewAnthropic(Config{BaseURL: srv.URL, APIKey: testKey, AuthStyle: AuthStyleBearer}).Stream(bg, simpleReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collect(t, ch)
+	if hdr.Get("Authorization") != "Bearer "+testKey || hdr.Get("x-api-key") != "" {
+		t.Fatalf("headers %v", hdr)
+	}
+	if hdr.Get("anthropic-version") != "2023-06-01" {
+		t.Fatalf("version header %v", hdr)
+	}
 }
 
 func TestRequestValidation(t *testing.T) {
@@ -643,7 +777,7 @@ func TestModels(t *testing.T) {
 		if err != nil || !reflect.DeepEqual(ids, []string{"alpha", "mid", "zeta"}) {
 			t.Fatalf("%s: %v %v", p.name, ids, err)
 		}
-		if p.name == "openai" && (gotPath != "/v1/models" || gotHdr.Get("Authorization") != "Bearer "+testKey) {
+		if p.name != "anthropic" && (gotPath != "/v1/models" || gotHdr.Get("Authorization") != "Bearer "+testKey) {
 			t.Fatalf("openai %s %v", gotPath, gotHdr)
 		}
 		if p.name == "anthropic" && (gotPath != "/v1/models" || gotHdr.Get("x-api-key") != testKey || gotHdr.Get("anthropic-version") != "2023-06-01") {
@@ -725,7 +859,208 @@ func TestOpenAIReusedChunkDoesNotLeakFields(t *testing.T) {
 	if calls := toolCalls(evs); len(calls) != 1 || calls[0].ID != "call" {
 		t.Fatalf("tool calls = %+v", calls)
 	}
-	if done.Usage != (Usage{5, 1}) || done.StopReason != "stop" {
+	if done.Usage != (Usage{InputTokens: 5, OutputTokens: 1}) || done.StopReason != "stop" {
 		t.Fatalf("done = %+v", done)
+	}
+}
+
+func TestAnthropicUsageCountsCachedTokens(t *testing.T) {
+	// Anthropic reports cached tokens apart from input_tokens; the request's
+	// prompt is all three.
+	body := anEv("message_start", `{"type":"message_start","message":{"usage":{"input_tokens":4,"cache_creation_input_tokens":100,"cache_read_input_tokens":2000,"output_tokens":1}}}`) +
+		anTextBlock(0, "hi") + anEnd("end_turn")
+	srv := sseServer(t, body, false, nil)
+	ch, err := NewAnthropic(Config{BaseURL: srv.URL, APIKey: testKey}).Stream(bg, simpleReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := terminal(t, collect(t, ch))
+	want := Usage{InputTokens: 2104, OutputTokens: 9, CacheReadTokens: 2000, CacheWriteTokens: 100}
+	if done.Usage != want {
+		t.Fatalf("usage = %+v, want %+v", done.Usage, want)
+	}
+}
+
+func TestOpenAIUsageReportsCachedTokens(t *testing.T) {
+	for name, usage := range map[string]string{
+		"nested":   `{"prompt_tokens":3000,"completion_tokens":3,"prompt_tokens_details":{"cached_tokens":2816}}`,
+		"deepseek": `{"prompt_tokens":3000,"completion_tokens":3,"prompt_cache_hit_tokens":2816,"prompt_cache_miss_tokens":184}`,
+		"flat":     `{"prompt_tokens":3000,"completion_tokens":3,"cached_tokens":2816}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := oaText("hi") + oaData(`{"choices":[{"delta":{},"finish_reason":"stop"}]}`) +
+				oaData(`{"choices":[],"usage":`+usage+`}`) + oaData("[DONE]")
+			srv := sseServer(t, body, false, nil)
+			ch, err := NewOpenAI(Config{BaseURL: srv.URL, APIKey: testKey}).Stream(bg, simpleReq)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := Usage{InputTokens: 3000, OutputTokens: 3, CacheReadTokens: 2816}
+			if done := terminal(t, collect(t, ch)); done.Usage != want {
+				t.Fatalf("usage = %+v, want %+v", done.Usage, want)
+			}
+		})
+	}
+}
+
+func TestOpenAIResponsesRequestGolden(t *testing.T) {
+	var got []byte
+	var hdr http.Header
+	var path string
+	srv := sseServer(t, rsCompleted(), false, func(r *http.Request, b []byte) { got, hdr, path = b, r.Header.Clone(), r.URL.Path })
+	ch, err := NewOpenAIResponses(Config{BaseURL: srv.URL, APIKey: testKey}).Stream(bg, goldenReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collect(t, ch)
+	if path != "/v1/responses" || hdr.Get("Authorization") != "Bearer "+testKey || hdr.Get("Content-Type") != "application/json" {
+		t.Fatalf("%s %v", path, hdr)
+	}
+	jsonEq(t, got, `{
+	"model":"the-model","stream":true,"store":false,"max_output_tokens":256,"temperature":0.25,
+	"instructions":"be brief",
+	"input":[
+	 {"role":"user","content":"look at two files"},
+	 {"role":"assistant","content":"ok"},
+	 {"type":"function_call","call_id":"c1","name":"read","arguments":"{\"path\":\"a\"}"},
+	 {"type":"function_call","call_id":"c2","name":"noargs","arguments":"{}"},
+	 {"type":"function_call_output","call_id":"c1","output":"AAA"},
+	 {"type":"function_call_output","call_id":"c2","output":"BBB"},
+	 {"type":"function_call","call_id":"c3","name":"read","arguments":"{\"path\":\"b\"}"},
+	 {"type":"function_call_output","call_id":"c3","output":"CCC"},
+	 {"role":"user","content":"thanks"}],
+	"tools":[
+	 {"type":"function","name":"read","description":"read a file","strict":false,"parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}},
+	 {"type":"function","name":"noargs","strict":false,"parameters":{"type":"object","properties":{}}}]
+	}`)
+}
+
+func TestOpenAIResponsesStreams(t *testing.T) {
+	item := func(typ string, idx int, fields string) string {
+		return rsEv(typ, fmt.Sprintf(`"output_index":%d,"item":{"type":"function_call",%s}`, idx, fields))
+	}
+	cases := []struct {
+		name   string
+		body   string
+		text   string
+		reason string
+		usage  Usage
+		calls  []ToolCall
+		errMsg string
+	}{
+		{name: "reasoning and answer",
+			body: rsEv("response.reasoning_summary_text.delta", `"delta":"think "`) +
+				rsEv("response.reasoning_text.delta", `"delta":"hard"`) + rsText("answer") + rsCompleted(),
+			text: "answer", reason: "stop", usage: Usage{InputTokens: 7, OutputTokens: 3}},
+		{name: "cached input tokens",
+			body: rsText("x") + rsEv("response.completed", `"response":{"usage":{"input_tokens":100,"output_tokens":5,"input_tokens_details":{"cached_tokens":64}}}`),
+			text: "x", reason: "stop", usage: Usage{InputTokens: 100, OutputTokens: 5, CacheReadTokens: 64}},
+		{name: "cache count never exceeds input",
+			body:   rsEv("response.completed", `"response":{"usage":{"input_tokens":10,"output_tokens":1,"input_tokens_details":{"cached_tokens":99}}}`),
+			reason: "stop", usage: Usage{InputTokens: 10, OutputTokens: 1, CacheReadTokens: 10}},
+		{name: "cut off by the output limit",
+			body: rsText("par") + rsEv("response.incomplete", `"response":{"incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":4,"output_tokens":2}}`),
+			text: "par", reason: "length", usage: Usage{InputTokens: 4, OutputTokens: 2}},
+		{name: "other incomplete reason is kept",
+			body:   rsEv("response.incomplete", `"response":{"incomplete_details":{"reason":"content_filter"}}`),
+			reason: "content_filter"},
+		{name: "refusal is shown as text",
+			body: rsEv("response.refusal.delta", `"delta":"no"`) + rsCompleted(), text: "no", reason: "stop", usage: Usage{InputTokens: 7, OutputTokens: 3}},
+		{name: "arguments only on the done item",
+			body: item("response.output_item.added", 0, `"id":"fc_1","call_id":"c1","name":"run"`) +
+				item("response.output_item.done", 0, `"id":"fc_1","call_id":"c1","name":"run","arguments":"{\"a\":1}"`) + rsCompleted(),
+			reason: "tool_calls", usage: Usage{InputTokens: 7, OutputTokens: 3}, calls: []ToolCall{{"c1", "run", `{"a":1}`}}},
+		{name: "arguments only as deltas, flushed at completion",
+			body: item("response.output_item.added", 0, `"id":"fc_1","call_id":"c1","name":"run"`) +
+				rsEv("response.function_call_arguments.delta", `"item_id":"fc_1","delta":"{\"a\""`) +
+				rsEv("response.function_call_arguments.delta", `"item_id":"fc_1","delta":":2}"`) + rsCompleted(),
+			reason: "tool_calls", usage: Usage{InputTokens: 7, OutputTokens: 3}, calls: []ToolCall{{"c1", "run", `{"a":2}`}}},
+		{name: "items named by position only",
+			body: item("response.output_item.added", 1, `"call_id":"c2","name":"two"`) +
+				item("response.output_item.added", 0, `"call_id":"c1","name":"one"`) +
+				rsEv("response.function_call_arguments.delta", `"output_index":1,"delta":"{\"k\":1}"`) +
+				item("response.output_item.done", 0, `"call_id":"c1","name":"one","arguments":""`) +
+				item("response.output_item.done", 1, `"call_id":"c2","name":"two","arguments":""`) + rsCompleted(),
+			reason: "tool_calls", usage: Usage{InputTokens: 7, OutputTokens: 3},
+			calls: []ToolCall{{"c1", "one", "{}"}, {"c2", "two", `{"k":1}`}}},
+		{name: "failed response",
+			body: rsText("a") + rsEv("response.failed", `"response":{"error":{"code":"x","message":"model overloaded"}}`), text: "a", errMsg: "model overloaded"},
+		{name: "error without a message",
+			body: rsEv("error", `"code":"boom"`), errMsg: "provider error: unspecified error"},
+		{name: "untyped error object",
+			body: oaData(`{"error":{"message":"quota exceeded"}}`), errMsg: "quota exceeded"},
+	}
+	for _, c := range cases {
+		for _, bytewise := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/bytewise=%v", c.name, bytewise), func(t *testing.T) {
+				srv := sseServer(t, c.body, bytewise, nil)
+				ch, err := NewOpenAIResponses(Config{BaseURL: srv.URL}).Stream(bg, simpleReq)
+				if err != nil {
+					t.Fatal(err)
+				}
+				evs := collect(t, ch)
+				last := terminal(t, evs)
+				if c.errMsg != "" {
+					if last.Kind != EventError || !strings.Contains(last.Err.Error(), c.errMsg) {
+						t.Fatalf("want error %q, got %+v", c.errMsg, evs)
+					}
+					return
+				}
+				if last.Kind != EventDone || last.StopReason != c.reason || last.Usage != c.usage {
+					t.Fatalf("done %+v", last)
+				}
+				if text(evs, EventText) != c.text {
+					t.Fatalf("text %q", text(evs, EventText))
+				}
+				if got := toolCalls(evs); !reflect.DeepEqual(got, c.calls) {
+					t.Fatalf("calls %+v", got)
+				}
+				if c.name == "reasoning and answer" && text(evs, EventReasoning) != "think hard" {
+					t.Fatalf("reasoning %q", text(evs, EventReasoning))
+				}
+			})
+		}
+	}
+}
+
+func TestOpenAIResponsesIgnoresChatCompletionsStream(t *testing.T) {
+	// A server that answers the Responses route in Chat Completions framing
+	// produces no completion event, so it must surface as an error rather
+	// than as an empty answer.
+	srv := sseServer(t, oaText("hi")+oaFinish("stop"), false, nil)
+	ch, _ := NewOpenAIResponses(Config{BaseURL: srv.URL}).Stream(bg, simpleReq)
+	if terminal(t, collect(t, ch)).Kind != EventError {
+		t.Fatal("want error")
+	}
+}
+
+func TestAnthropicStreamKeepsThinkingBlocks(t *testing.T) {
+	h := &anHandler{}
+	var got []Event
+	events := make(chan Event, 16)
+	em := &emitter{ctx: context.Background(), ch: events}
+	send := func(name, data string) {
+		if _, err := h.event(sseEvent{Name: name, Data: []byte(data)}, em); err != nil {
+			t.Fatal(err)
+		}
+	}
+	send("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`)
+	send("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"a"}}`)
+	send("content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}`)
+	send("content_block_stop", `{"type":"content_block_stop","index":0}`)
+	send("content_block_start", `{"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":"opaque"}}`)
+	send("content_block_stop", `{"type":"content_block_stop","index":1}`)
+	close(events)
+	for ev := range events {
+		got = append(got, ev)
+	}
+	var blocks []ThinkingBlock
+	for _, ev := range got {
+		if ev.Kind == EventThinking {
+			blocks = append(blocks, *ev.Thinking)
+		}
+	}
+	if len(blocks) != 2 || blocks[0] != (ThinkingBlock{Text: "a", Signature: "sig"}) || blocks[1] != (ThinkingBlock{Redacted: true, Data: "opaque"}) {
+		t.Fatalf("thinking blocks = %+v", blocks)
 	}
 }

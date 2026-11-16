@@ -2,7 +2,12 @@
 /CLAUDE.md
 /build/
 /motty
+/motty-dev*
+/.dev-data/
 /.private/
+/.agents/
+/.claude/
+/.atomcode/
 /docs/competitors*.md
 .DS_Store
 /tmp/
@@ -12,3 +17,4 @@ __pycache__/
 
 # website
 /website/node_modules/
+/.wrangler/

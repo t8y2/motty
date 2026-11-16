@@ -17,30 +17,7 @@ import (
 // hub serving it, configured the way the settings page would.
 func hubFixture(t *testing.T, mode string) (*State, *AIHub, string, string) {
 	t.Helper()
-	state, shell := assistantSession(t, &scriptedModel{turn: nil})
-	_ = shell
-	path := state.options.AIStorePath
-	db, err := state.aiStore()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for key, value := range map[string]string{"ai.mcp.enabled": "on", "ai.mcp.mode": mode} {
-		if err := db.SetSetting(key, value); err != nil {
-			t.Fatal(err)
-		}
-	}
-	hub := NewAIHub(path)
-	t.Cleanup(hub.Close)
-	hub.Add(state, nil)
-	if err := hub.Reconfigure(); err != nil {
-		t.Fatal(err)
-	}
-	address := hub.Address()
-	if address == "" {
-		t.Fatal("the hub did not start")
-	}
-	token, _, _ := db.Setting("ai.mcp.token")
-	return state, hub, address, token
+	return hubFixtureWith(t, mode, func(_ *State, shell *fakeShell) { shellThatRuns(shell) })
 }
 
 // rpc posts one JSON-RPC request while the window thread keeps waking, as the
@@ -89,18 +66,6 @@ func rpc(t *testing.T, state *State, address, token, method, params string) map[
 	}
 }
 
-func toolText(t *testing.T, out map[string]any) (string, bool) {
-	t.Helper()
-	result, _ := out["result"].(map[string]any)
-	content, _ := result["content"].([]any)
-	if len(content) == 0 {
-		t.Fatalf("no content in %v", out)
-	}
-	text, _ := content[0].(map[string]any)["text"].(string)
-	isError, _ := result["isError"].(bool)
-	return text, isError
-}
-
 func TestAnExternalAgentSeesTheSessionsAndRunsAReadOnlyCommandWhenAllowedToAsk(t *testing.T) {
 	state, _, address, token := hubFixture(t, "ask")
 	out := rpc(t, state, address, token, "tools/call", `{"name":"list_sessions","arguments":{}}`)
@@ -115,6 +80,36 @@ func TestAnExternalAgentSeesTheSessionsAndRunsAReadOnlyCommandWhenAllowedToAsk(t
 	}
 	if screen := screenText(state, 0); !strings.Contains(screen, "echo from-mcp") {
 		t.Fatalf("the user cannot see what the external agent ran:\n%s", screen)
+	}
+}
+
+func TestHTTPMCPListsOnlyAuthorizedSavedHostsWithoutSessions(t *testing.T) {
+	state, _, address, token := hubFixture(t, "observe")
+	state.closeSession(state.sessions[0].ID)
+	if len(state.sessions) != 0 {
+		t.Fatal("the terminal session was not closed")
+	}
+	state.agentHosts = nil
+	check := func(want string) {
+		t.Helper()
+		out := rpc(t, state, address, token, "tools/call", `{"name":"list_hosts","arguments":{}}`)
+		text, isError := toolText(t, out)
+		if isError || text != want {
+			t.Fatalf("list_hosts = %q (error %t), want %q", text, isError, want)
+		}
+	}
+	check("no hosts are open to agents")
+	state.hosts = []Host{
+		{ID: 1, CatalogID: "allowed", Label: "Allowed", Address: "allowed.invalid", Port: 22, User: "operator", Protocol: protocolSSH},
+		{ID: 2, CatalogID: "private", Label: "Private", Address: "private.invalid", Port: 22, User: "secret", Protocol: protocolSSH},
+	}
+	check("no hosts are open to agents")
+	state.agentHosts = map[string]bool{"allowed": true}
+	check("allowed: Allowed operator@allowed.invalid:22")
+	out := rpc(t, state, address, token, "tools/call", `{"name":"list_sessions","arguments":{}}`)
+	text, isError := toolText(t, out)
+	if isError || text != "no sessions are open" {
+		t.Fatalf("list_sessions with an authorized saved host = %q (error %t)", text, isError)
 	}
 }
 

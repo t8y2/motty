@@ -1,0 +1,77 @@
+# End to end: a host behind a bastion that only offers a shell. The bastion
+# refuses every direct-tcpip channel (E2E_NO_DIRECT=1), so a plain jump route
+# cannot reach the inner host. A route with "Relay through the jump host's shell"
+# types the bastion's "Command after login" (export SWITCHED=1) into a shell on
+# it, then runs the relay command there, and the inner host's SSH runs on that
+# shell's input and output. The relay command insists on SWITCHED=1, so it only
+# works when the command after login was typed first.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && cd ../..
+#   E2E_NO_DIRECT=1 E2E_ALLOW_EXEC=1 /tmp/e2esshd 2291 &
+#   E2E_ALLOW_EXEC=1 /tmp/e2esshd 2292 &
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/shell_relay_e2e.txt
+#
+# What to look for: the route reads "gate · shell relay"; both hosts' keys are
+# asked in turn; VIA_RELAY_3 is on screen in the inner host's shell.
+
+click "New Host"
+click "Advanced"
+click 539 165
+type gate
+click 647 234
+type 127.0.0.1
+click 958 234
+select 0 2
+type 2291
+click 486 305
+type tester
+click 889 305
+type secret
+click 693 703
+type export SWITCHED=1
+click "Add Host"
+settle 400
+click "New Host"
+click "Advanced"
+click 539 165
+type inner
+click 647 234
+type 127.0.0.1
+click 958 234
+select 0 2
+type 2292
+click 486 305
+type tester
+click 889 305
+type secret
+click "Add Host"
+settle 400
+click "Jump Routes"
+settle 300
+click "Add Route"
+settle 400
+click 490 506
+settle 300
+click 600 506
+select 0 40
+type sh -c 'test "$SWITCHED" = 1 && exec nc %h %p'
+settle 200
+click "Add Route"
+settle 400
+click "Hosts"
+settle 300
+dblclick 500 224
+waitfor "127.0.0.1:2291 is new" 5000
+click "Trust and Save"
+waitfor "127.0.0.1:2292 is new" 20000
+click "Trust and Save"
+waitfor "e2e" 20000
+type echo VIA_RELAY_$((1+2))
+key enter
+waitfor "VIA_RELAY_3" 5000
+type echo CONN=$SSH_CONNECTION
+key enter
+settle 500
+shot /tmp/shell-relay.png
+layout

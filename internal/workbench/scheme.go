@@ -1,12 +1,21 @@
 package workbench
 
-import "github.com/vivaui/viva/ui"
+import (
+	"fmt"
+	"math"
+	"strings"
+
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
+)
 
 // A terminal color scheme is the terminal's own look: its background and text,
 // the cursor and the sixteen named colors. It does not touch the window around
-// the terminal, so a light scheme can sit in a dark window and the other way
-// round. The first scheme, Default, is whatever the application palette already
-// uses.
+// the terminal. The dark and the light look of the window each keep a scheme of
+// their own, so the terminal changes with the window; a light scheme can still
+// be chosen for the dark look and the other way round. The first scheme,
+// Default, is whatever the application palette already uses.
 
 type colorScheme struct {
 	id         string
@@ -21,6 +30,17 @@ const defaultSchemeID = "default"
 
 // colorSchemes are the choices after Default, in the order Settings shows them.
 var colorSchemes = [...]colorScheme{
+	{
+		// Windows Terminal's default colors, which it ships as "Campbell".
+		id: "windows-terminal", name: "Windows Terminal",
+		background: [3]uint8{0x0c, 0x0c, 0x0c}, foreground: [3]uint8{0xcc, 0xcc, 0xcc}, cursor: [3]uint8{0xff, 0xff, 0xff},
+		ansi: [16][3]uint8{
+			{0x0c, 0x0c, 0x0c}, {0xc5, 0x0f, 0x1f}, {0x13, 0xa1, 0x0e}, {0xc1, 0x9c, 0x00},
+			{0x00, 0x37, 0xda}, {0x88, 0x17, 0x98}, {0x3a, 0x96, 0xdd}, {0xcc, 0xcc, 0xcc},
+			{0x76, 0x76, 0x76}, {0xe7, 0x48, 0x56}, {0x16, 0xc6, 0x0c}, {0xf9, 0xf1, 0xa5},
+			{0x3b, 0x78, 0xff}, {0xb4, 0x00, 0x9e}, {0x61, 0xd6, 0xd6}, {0xf2, 0xf2, 0xf2},
+		},
+	},
 	{
 		id: "dracula", name: "Dracula",
 		background: [3]uint8{0x28, 0x2a, 0x36}, foreground: [3]uint8{0xf8, 0xf8, 0xf2}, cursor: [3]uint8{0xf8, 0xf8, 0xf2},
@@ -123,25 +143,57 @@ var colorSchemes = [...]colorScheme{
 	},
 }
 
-// schemeCount is how many choices Settings offers, Default included.
+// schemeCount is how many hand-written built-in choices Settings offers,
+// Default included. The embedded community collection and the user's directory
+// follow these in the card list.
 const schemeCount = len(colorSchemes) + 1
 
-func schemeByID(id string) (*colorScheme, bool) {
+// schemeByID finds a scheme among the built-ins, the embedded collection and
+// the user's directory.
+func (state *State) schemeByID(id string) (*colorScheme, bool) {
 	for index := range colorSchemes {
 		if colorSchemes[index].id == id {
 			return &colorSchemes[index], true
 		}
+	}
+	if index, ok := communitySchemeIndex[id]; ok {
+		return &communitySchemes[index], true
+	}
+	if index, ok := state.dirSchemeIndex[id]; ok {
+		return &state.dirSchemes[index], true
 	}
 	return nil, false
 }
 
 // normalizeSchemeID keeps a saved choice that still exists and falls back to
 // Default for one a later or earlier release does not know.
-func normalizeSchemeID(id string) string {
-	if _, ok := schemeByID(id); ok {
+func (state *State) normalizeSchemeID(id string) string {
+	if _, ok := state.schemeByID(id); ok {
 		return id
 	}
 	return defaultSchemeID
+}
+
+// activeScheme is the scheme the terminal wears in the look that is showing.
+func (state *State) activeScheme() string {
+	return state.terminalSchemes[state.appearance]
+}
+
+// migrateTerminalScheme places the single scheme an earlier release saved. It
+// sat in the terminal whatever the window looked like, so it goes to the look
+// its own background suits and the other look keeps Default: nothing changes
+// on screen until the user switches.
+func (state *State) migrateTerminalScheme(id string) (dark, light string) {
+	dark, light = defaultSchemeID, defaultSchemeID
+	scheme, ok := state.schemeByID(id)
+	switch {
+	case !ok:
+	case luminance(scheme.background) < 0.5:
+		dark = id
+	default:
+		light = id
+	}
+	return dark, light
 }
 
 // rebuildTerminalLook derives the terminal's palette from the window palette,
@@ -150,38 +202,86 @@ func normalizeSchemeID(id string) string {
 func (state *State) rebuildTerminalLook() {
 	look := *state.pal
 	look.termFG = look.text
-	if scheme, ok := schemeByID(state.terminalScheme); ok {
+	if scheme, ok := state.schemeByID(state.activeScheme()); ok {
 		look.dark = luminance(scheme.background) < 0.5
-		look.terminal = ui.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
-		look.termFG = ui.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
-		look.cursor = ui.RGB(scheme.cursor[0], scheme.cursor[1], scheme.cursor[2])
+		look.terminal = gfx.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
+		look.termFG = gfx.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
+		look.cursor = gfx.RGB(scheme.cursor[0], scheme.cursor[1], scheme.cursor[2])
 		look.ansi = scheme.ansi
 	}
 	look.highlight = state.highlights
+	look.intense = state.terminalIntense
 	state.termEpoch++
 	look.epoch = state.termEpoch
 	state.termPal = look
+	for index := range state.sessions {
+		state.reportTerminalColors(state.sessions[index].term)
+	}
+	if login := state.ai.login; login != nil {
+		state.reportTerminalColors(login.term)
+	}
+}
+
+// reportTerminalColors tells a terminal the colors it is drawn with, which is
+// what it answers a program that asks for them (OSC 10 and 11). Programs such as
+// Codex or Helix pick a light or a dark theme from that answer.
+func (state *State) reportTerminalColors(t *terminal) {
+	if t == nil {
+		return
+	}
+	t.screen.SetDefaultColors(rgb8(state.termPal.termFG), rgb8(state.termPal.terminal))
+}
+
+// rgb8 is the 8-bit channels of an opaque color, the inverse of gfx.RGB.
+func rgb8(c gfx.Color) [3]uint8 {
+	channel := func(v float32) uint8 { return uint8(min(max(v, 0), 1)*255 + 0.5) }
+	return [3]uint8{channel(c.Red), channel(c.Green), channel(c.Blue)}
 }
 
 func luminance(c [3]uint8) float32 {
 	return (0.2126*float32(c[0]) + 0.7152*float32(c[1]) + 0.0722*float32(c[2])) / 255
 }
 
+// contrastRatio is the WCAG contrast of two opaque colours: how far apart they are
+// on the scale a readability threshold is written on.
+func contrastRatio(a, b [3]uint8) float32 {
+	relative := func(c [3]uint8) float32 {
+		channel := func(v uint8) float32 {
+			f := float32(v) / 255
+			if f <= 0.03928 {
+				return f / 12.92
+			}
+			return float32(math.Pow(float64((f+0.055)/1.055), 2.4))
+		}
+		return 0.2126*channel(c[0]) + 0.7152*channel(c[1]) + 0.0722*channel(c[2])
+	}
+	high, low := relative(a), relative(b)
+	if high < low {
+		high, low = low, high
+	}
+	return (high + 0.05) / (low + 0.05)
+}
+
 func (state *State) setTerminalScheme(id string) bool {
-	id = normalizeSchemeID(id)
-	if state.terminalScheme == id {
+	id = state.normalizeSchemeID(id)
+	if state.activeScheme() == id {
 		return false
 	}
-	state.terminalScheme = id
+	state.terminalSchemes[state.appearance] = id
 	state.rebuildTerminalLook()
 	return true
 }
 
 // Scheme cards in Settings.
 const (
-	schemeCardHeight = float32(54)
-	schemeCardGap    = float32(10)
-	schemeColumns    = 4
+	schemeCardHeight   = float32(54)
+	schemeCardGap      = float32(10)
+	schemeColumns      = 4
+	schemeSearchHeight = float32(38)
+
+	// schemeDrawerNarrow is the body width under which the drawer drops from
+	// three cards a row to two.
+	schemeDrawerNarrow = float32(470)
 
 	// swatchSize and swatchPitch are the dots that show a scheme's four colors, and
 	// the distance from one to the next.
@@ -192,56 +292,333 @@ const (
 // schemeHits is the place of the controls this file paints.
 var schemeHits = tree.Feature("scheme")
 
-// hitSettingsSchemeList starts the ids of the scheme cards: Default is the base
-// itself, the others follow in colorSchemes order.
-var hitSettingsSchemeList = tree.Sub(schemeHits, tree.Name("settings-scheme"))
+var (
+	// hitSettingsSchemeList starts the ids of the scheme cards: Default is the
+	// base itself, the hand-written built-ins follow, then the embedded
+	// community collection, then the user's directory.
+	hitSettingsSchemeList = tree.Sub(schemeHits, tree.Name("settings-scheme"))
+	// hitSchemeDrawerList starts the ids of the drawer's cards. They are their own
+	// identities so a page that declares the quick picks and the drawer together
+	// never names two controls with one id.
+	hitSchemeDrawerList = tree.Sub(schemeHits, tree.Name("scheme-drawer"))
+	hitSchemeSearch     = tree.ID(schemeHits, "scheme-search")
+	hitSchemeBrowseAll  = tree.ID(schemeHits, "scheme-browse-all")
+)
 
-func schemeHit(index int) ui.ID { return hitSettingsSchemeList.At(index) }
+func schemeHit(index int) gfx.ID { return hitSettingsSchemeList.At(index) }
 
-// schemeAt is the id and name of the card at index, Default first.
-func (state *State) schemeAt(index int) (id, name string, scheme *colorScheme) {
-	if index == 0 {
-		return defaultSchemeID, state.messages.Tools.SchemeDefault, nil
-	}
-	scheme = &colorSchemes[index-1]
-	return scheme.id, scheme.name, scheme
+func schemeDrawerHit(index int) gfx.ID { return hitSchemeDrawerList.At(index) }
+
+// schemeTotal is how many cards the browser has: the hand-written built-ins,
+// the embedded community collection and the user's directory.
+func (state *State) schemeTotal() int {
+	return schemeCount + len(communitySchemes) + len(state.dirSchemes)
 }
 
-// paintSchemeSettings is the card grid that picks the terminal's colors.
+// schemeAt is the id and name of the card at index, Default first, then the
+// hand-written built-ins, the embedded collection and the user's directory.
+func (state *State) schemeAt(index int) (id, name string, scheme *colorScheme) {
+	if index < schemeCount {
+		if index == 0 {
+			return defaultSchemeID, state.messages.Tools.SchemeDefault, nil
+		}
+		scheme = &colorSchemes[index-1]
+		return scheme.id, scheme.name, scheme
+	}
+	index -= schemeCount
+	if index < len(communitySchemes) {
+		scheme = &communitySchemes[index]
+		return scheme.id, scheme.name, scheme
+	}
+	index -= len(communitySchemes)
+	if index < len(state.dirSchemes) {
+		scheme = &state.dirSchemes[index]
+		return scheme.id, scheme.name, scheme
+	}
+	return "", "", nil
+}
+
+// paintSchemeSettings is the folded section: quick picks stay on the page and
+// the complete collection opens in a drawer.
 func (state *State) paintSchemeSettings(page *settingsPage) {
-	m, f, pal := state.messages.Tools, page.f, state.pal
-	rows := (schemeCount + schemeColumns - 1) / schemeColumns
+	state.paintSchemePicks(page)
+}
+
+// paintSchemePicks is two rows: seven well-known built-ins, Rose Pine Moon from
+// the bundled collection and the active scheme when it is not one of those.
+func (state *State) paintSchemePicks(page *settingsPage) {
+	m, c, pal := state.messages.Tools, page.c, state.pal
 	page.group(m.SchemeGroup, func() {
 		page.rows++
-		f.Column().PadSides(14, 18, 22, 18).Children(func() {
-			f.Text(m.SchemeDescription).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(0, 0, 14, 0)
-			for row := 0; row < rows; row++ {
-				f.Row().Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
-					for column := 0; column < schemeColumns; column++ {
-						if index := row*schemeColumns + column; index < schemeCount {
-							state.declareScheme(page, index)
-						} else {
-							f.Spacer().Basis(0) // an incomplete last row keeps its cards the width of the others
-						}
-					}
-				})
+		ui.Column(c).PadSides(14, 18, 22, 18).Children(func() {
+			ui.Paragraph(c, m.SchemeDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(0, 0, 6, 0)
+			look := m.SchemeLookDark
+			if state.appearance == appearanceLight {
+				look = m.SchemeLookLight
 			}
+			ui.Text(c, look).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 14, 0)
+			ui.Row(c).Items(ui.Center).MarginSides(0, 0, 10, 0).Children(func() {
+				ui.Text(c, m.SchemeQuickPicks).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
+				page.button(hitSchemeBrowseAll, fmt.Sprintf(m.SchemeMoreFmt, state.schemeTotal()), aiButtonOutline, false)
+			})
+			state.paintSchemeCards(page, state.schemeQuickPicks())
 		})
 	})
 }
 
-// declareScheme declares one color scheme's card: its name and the four colors
-// it gives the terminal, on its own background.
-func (state *State) declareScheme(page *settingsPage, index int) {
-	f, pal := page.f, state.pal
+// openSchemeBrowser resets the search and opens the complete collection.
+func (state *State) openSchemeBrowser() {
+	state.schemeBrowserOpen = true
+	state.schemeFilter = *text.NewEditor("")
+	state.scheme.filter = ""
+	state.scheme.reset = true
+}
+
+// schemeIndexByID finds a card's index by scheme id.
+func (state *State) schemeIndexByID(id string) (int, bool) {
+	for index := 0; index < state.schemeTotal(); index++ {
+		if got, _, _ := state.schemeAt(index); got == id {
+			return index, true
+		}
+	}
+	return 0, false
+}
+
+// communitySchemeIndexByName finds a card in the embedded collection by name.
+func (state *State) communitySchemeIndexByName(name string) (int, bool) {
+	for index := range communitySchemes {
+		if communitySchemes[index].name == name {
+			return schemeCount + index, true
+		}
+	}
+	return 0, false
+}
+
+// schemeQuickPicks is seven hand-written built-ins, one community pick and the
+// active scheme when it would otherwise be off the list.
+func (state *State) schemeQuickPicks() []int {
+	preferred := []string{defaultSchemeID, "windows-terminal", "dracula", "nord", "one-dark", "tokyo-night", "gruvbox-dark"}
+	picks := make([]int, 0, schemeColumns*2)
+	seen := map[int]bool{}
+	add := func(index int, ok bool) {
+		if ok && !seen[index] {
+			seen[index] = true
+			picks = append(picks, index)
+		}
+	}
+	for _, id := range preferred {
+		index, ok := state.schemeIndexByID(id)
+		add(index, ok)
+	}
+	if index, ok := state.communitySchemeIndexByName("Rose Pine Moon"); ok {
+		add(index, ok)
+	}
+	if index, ok := state.schemeIndexByID(state.activeScheme()); ok && !seen[index] {
+		if len(picks) >= schemeColumns*2 {
+			picks[len(picks)-2] = index
+		} else {
+			picks = append(picks, index)
+		}
+		seen[index] = true
+	}
+	for index := 0; index < schemeCount && len(picks) < schemeColumns*2; index++ {
+		add(index, true)
+	}
+	return picks
+}
+
+// paintSchemeCards lays cards out four to a row; an incomplete last row keeps
+// its cards the width of the others.
+func (state *State) paintSchemeCards(page *settingsPage, indices []int) {
+	c := page.c
+	for start := 0; start < len(indices); start += schemeColumns {
+		end := min(start+schemeColumns, len(indices))
+		ui.Row(c).Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
+			for _, index := range indices[start:end] {
+				state.declareScheme(c, page, index)
+			}
+			for pad := end - start; pad < schemeColumns; pad++ {
+				ui.Spacer(c).Basis(0)
+			}
+		})
+	}
+}
+
+// communitySchemeIndices splits the embedded collection into dark and light
+// cards by the depth of their background.
+func (state *State) communitySchemeIndices() (dark, light []int) {
+	for index := range communitySchemes {
+		card := schemeCount + index
+		if luminance(communitySchemes[index].background) < 0.5 {
+			dark = append(dark, card)
+		} else {
+			light = append(light, card)
+		}
+	}
+	return dark, light
+}
+
+// userSchemeIndices lists the cards from the data folder's schemes directory.
+func (state *State) userSchemeIndices() []int {
+	indices := make([]int, len(state.dirSchemes))
+	base := schemeCount + len(communitySchemes)
+	for index := range indices {
+		indices[index] = base + index
+	}
+	return indices
+}
+
+// schemesMatching lists the cards whose name holds every word of the filter.
+func (state *State) schemesMatching(filter string) []int {
+	var matches []int
+	for index := 0; index < state.schemeTotal(); index++ {
+		if _, name, _ := state.schemeAt(index); schemeMatches(name, filter) {
+			matches = append(matches, index)
+		}
+	}
+	return matches
+}
+
+func schemeMatches(name, filter string) bool {
+	name = strings.ToLower(name)
+	for _, word := range strings.Fields(filter) {
+		if !strings.Contains(name, word) {
+			return false
+		}
+	}
+	return true
+}
+
+// schemeUI is the complete-collection drawer's state. The drawer and its
+// controls are declared in the workbench page; what it keeps here is the search
+// field, the scroll area, and the filter its last declaration ranked.
+type schemeUI struct {
+	field  ui.Field
+	bound  bool
+	body   gfx.Rect
+	scroll ui.Box
+	filter string
+	reset  bool
+}
+
+// declareSchemeDrawer declares the complete collection as a Drawer of the
+// settings page: a left-hand panel whose search, hint and cards are page
+// elements. The settings page behind it keeps the height of the quick picks.
+func (state *State) declareSchemeDrawer(c ui.C) {
+	if !state.schemeBrowserOpen {
+		return
+	}
+	m, scheme := state.messages.Tools, &state.scheme
+	if !scheme.bound {
+		// The drawer's search is a page field now; bind it to the editor the
+		// application already reads, as the quick picks' page does for its own.
+		scheme.field.Bind(&state.schemeFilter)
+		scheme.bound = true
+	}
+	bounds := c.Bounds()
+	extent := min(max(bounds.Width*0.40, 420), 560)
+	// The body is the panel's inner width, the extent less its padding: the same
+	// room the drawer's own layout gives it.
+	bodyWidth := extent - 2*state.Theme().Metrics.PadSurface
+	columns := 3
+	if bodyWidth < schemeDrawerNarrow {
+		columns = 2
+	}
+	ui.Drawer(c, &state.schemeBrowserOpen, m.SchemeAll, ui.DrawerSpec{
+		Side: ui.DrawerLeft, Size: extent,
+		Description:  fmt.Sprintf(m.SchemeCountFmt, state.schemeTotal()),
+		InitialFocus: hitSchemeSearch,
+	}, func() {
+		state.declareSchemeDrawerBody(c, columns)
+	}, nil)
+}
+
+// declareSchemeDrawerBody declares the drawer's page: the search field, the data
+// folder's hint and the complete collection in a scroll area.
+func (state *State) declareSchemeDrawerBody(c ui.C, columns int) {
+	m, pal := state.messages.Tools, state.pal
+	scheme := &state.scheme
+	body := ui.Column(c).Fill().DrawOver(func(d *ui.DrawContext) { scheme.body = d.Rect })
+	body.Children(func() {
+		ui.TextFieldID(c, hitSchemeSearch, &scheme.field, m.SchemeSearchPlaceholder, m.SchemeSearchPlaceholder).
+			Icon(lucideIcons[iconSearch]).Height(schemeSearchHeight).FillWidth().MarginSides(0, 0, 10, 0).Shrink(0)
+		ui.Paragraph(c, fmt.Sprintf(m.SchemeDirHintFmt, state.schemesDir()), 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 8, 0)
+		scroll := ui.Scroll(c).Grow(1).Basis(0)
+		scheme.scroll = scroll
+		scroll.Children(func() {
+			filter := strings.ToLower(strings.TrimSpace(scheme.field.Text()))
+			if filter != "" {
+				matches := state.schemesMatching(filter)
+				ui.Text(c, fmt.Sprintf(m.SchemeResultsFmt, len(matches))).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 8, 0)
+				if len(matches) == 0 {
+					ui.Text(c, m.SchemeNoMatches).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20)
+					return
+				}
+				state.paintSchemeDrawerCards(c, matches, columns)
+				ui.Spacer(c).Height(10)
+				return
+			}
+			builtins := make([]int, 0, schemeCount)
+			for index := 0; index < schemeCount; index++ {
+				builtins = append(builtins, index)
+			}
+			state.paintSchemeDrawerGroup(c, fmt.Sprintf("%s (%d)", m.SchemeBuiltin, len(builtins)), builtins, columns)
+			dark, light := state.communitySchemeIndices()
+			state.paintSchemeDrawerGroup(c, fmt.Sprintf("%s · %s (%d)", m.SchemeCommunity, m.SchemeDark, len(dark)), dark, columns)
+			state.paintSchemeDrawerGroup(c, fmt.Sprintf("%s · %s (%d)", m.SchemeCommunity, m.SchemeLight, len(light)), light, columns)
+			state.paintSchemeDrawerGroup(c, fmt.Sprintf("%s (%d)", m.SchemeMine, len(state.dirSchemes)), state.userSchemeIndices(), columns)
+			ui.Spacer(c).Height(10)
+		})
+	})
+	filter := strings.ToLower(strings.TrimSpace(scheme.field.Text()))
+	if scheme.reset || filter != scheme.filter {
+		scheme.reset = false
+		scheme.filter = filter
+		scheme.scroll.ScrollState().ScrollTo(0)
+		if canvas := c.Canvas(); canvas != nil {
+			canvas.RequestFrame()
+		}
+	}
+}
+
+// paintSchemeDrawerGroup titles one group of drawer cards and lays it out.
+func (state *State) paintSchemeDrawerGroup(c ui.C, title string, indices []int, columns int) {
+	if len(indices) == 0 {
+		return
+	}
+	ui.Text(c, title).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(state.pal.text).LineHeight(20).MarginSides(0, 0, 8, 0)
+	state.paintSchemeDrawerCards(c, indices, columns)
+}
+
+// paintSchemeDrawerCards lays the drawer's cards out in the given number of
+// columns; a partial last row keeps the cards as wide as the others.
+func (state *State) paintSchemeDrawerCards(c ui.C, indices []int, columns int) {
+	for start := 0; start < len(indices); start += columns {
+		end := min(start+columns, len(indices))
+		ui.Row(c).Height(schemeCardHeight).Gap(schemeCardGap).MarginSides(0, 0, schemeCardGap, 0).Children(func() {
+			for _, index := range indices[start:end] {
+				state.declareSchemeDrawerCard(c, index)
+			}
+			for pad := end - start; pad < columns; pad++ {
+				ui.Spacer(c).Basis(0)
+			}
+		})
+	}
+}
+
+// declareSchemeDrawerCard declares one card in the drawer: its name, the four colors
+// it gives the terminal, on its own background, and its pointer target. The
+// swatches are painted by the card's own slot, so they scroll with it.
+func (state *State) declareSchemeDrawerCard(c ui.C, index int) {
+	pal := state.pal
 	id, name, scheme := state.schemeAt(index)
-	selected := state.terminalScheme == id
-	background, foreground, swatches := pal.terminal, pal.text, [4]ui.Color{pal.danger, pal.success, pal.warning, pal.accent}
+	selected := state.activeScheme() == id
+	background, foreground, swatches := pal.terminal, pal.text, [4]gfx.Color{pal.danger, pal.success, pal.warning, pal.accent}
 	if scheme != nil {
-		background = ui.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
-		foreground = ui.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
+		background = gfx.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
+		foreground = gfx.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
 		for slot, ansi := range [4]int{9, 10, 11, 12} {
-			swatches[slot] = ui.RGB(scheme.ansi[ansi][0], scheme.ansi[ansi][1], scheme.ansi[ansi][2])
+			swatches[slot] = gfx.RGB(scheme.ansi[ansi][0], scheme.ansi[ansi][1], scheme.ansi[ansi][2])
 		}
 	}
 	border := withAlpha(pal.line, 0.9)
@@ -249,12 +626,56 @@ func (state *State) declareScheme(page *settingsPage, index int) {
 	if selected {
 		border, width = pal.accent, 2
 	}
-	card := f.Column().Grow(1).Basis(0).PadSides(7-width, 10-width, 0, 10-width).Background(background).Radius(radius.popup).Border(width, border)
+	card := ui.Column(c).Grow(1).Basis(0).PadSides(7-width, 10-width, 0, 10-width).Background(background).Radius(radius.popup).Border(width, border)
 	card.Children(func() {
-		f.Text(name).FontSize(metrics.FontSizeS).Weight(ui.WeightSemibold).Color(foreground).LineHeight(18).MarginSides(0, 0, 6, 0)
+		ui.Row(c).Items(ui.Center).MarginSides(0, 0, 6, 0).Children(func() {
+			ui.Paragraph(c, name, 1).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(foreground).LineHeight(18).Grow(1)
+			if selected {
+				ui.Icon(c, lucideIcons[iconCheck]).Size(14, 14).Color(foreground).Shrink(0)
+			}
+		})
+		ui.Slot(c).Size(swatchPitch*3+swatchSize, swatchSize).Shrink(0).Draw(func(d *ui.DrawContext) {
+			for slot, color := range swatches {
+				d.Canvas.Rounded(gfx.Rect{X: d.Rect.X + float32(slot)*swatchPitch, Y: d.Rect.Y, Width: swatchSize, Height: swatchSize}, swatchSize/2, color)
+			}
+		})
+	})
+	card.HitWith(schemeDrawerHit(index), name, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
+}
+
+// declareScheme declares one color scheme's card: its name and the four colors
+// it gives the terminal, on its own background.
+func (state *State) declareScheme(c ui.C, page *settingsPage, index int) {
+	pal := state.pal
+	id, name, scheme := state.schemeAt(index)
+	selected := state.activeScheme() == id
+	background, foreground, swatches := pal.terminal, pal.text, [4]gfx.Color{pal.danger, pal.success, pal.warning, pal.accent}
+	if scheme != nil {
+		background = gfx.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
+		foreground = gfx.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
+		for slot, ansi := range [4]int{9, 10, 11, 12} {
+			swatches[slot] = gfx.RGB(scheme.ansi[ansi][0], scheme.ansi[ansi][1], scheme.ansi[ansi][2])
+		}
+	}
+	border := withAlpha(pal.line, 0.9)
+	width := float32(1)
+	if selected {
+		border, width = pal.accent, 2
+	}
+	card := ui.Column(c).Grow(1).Basis(0).PadSides(7-width, 10-width, 0, 10-width).Background(background).Radius(radius.popup).Border(width, border)
+	card.Children(func() {
+		// The border is the window's accent, which can be the card's own color, so
+		// the choice is also marked with a check in the card's text color: that one
+		// always reads on the card.
+		ui.Row(c).Items(ui.Center).MarginSides(0, 0, 6, 0).Children(func() {
+			ui.Text(c, name).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(foreground).LineHeight(18).Grow(1)
+			if selected {
+				ui.Icon(c, lucideIcons[iconCheck]).Size(14, 14).Color(foreground).Shrink(0)
+			}
+		})
 		view := &state.settings
 		view.colors = append(view.colors, swatches[:]...)
-		page.add(settingsControl{kind: controlSwatches, slot: f.Slot().Size(swatchPitch*3+swatchSize, swatchSize).Shrink(0), first: len(view.colors) - len(swatches), count: len(swatches)})
+		page.add(settingsControl{kind: controlSwatches, slot: ui.Slot(c).Size(swatchPitch*3+swatchSize, swatchSize).Shrink(0), first: len(view.colors) - len(swatches), count: len(swatches)})
 	})
-	page.hitOn(card, schemeHit(index), name, ui.HitOptions{Role: ui.RoleButton, Selected: selected})
+	page.hitOn(card, schemeHit(index), name, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
 }

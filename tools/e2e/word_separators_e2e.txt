@@ -1,0 +1,10 @@
+# lang: zh-CN
+click "设置"
+click "终端"
+scroll 950 520 0 700
+settle 300
+expect text "单词分隔符"
+click "单词分隔符"
+type -/
+layout
+shot /tmp/issue585-word-separators-compact.png

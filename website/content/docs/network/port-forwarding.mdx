@@ -21,10 +21,55 @@ own host key and credentials.
 
 ## Outbound proxy
 
-An outbound SOCKS5 or HTTP proxy carries the initial connection.
+A global outbound SOCKS5 or HTTP CONNECT proxy can carry the initial connection.
+In **New Host** or **Edit Host**, a network host can inherit that setting, force a
+direct connection, or define its own proxy address, optional login and bypass
+list. A host-specific password stays in the encrypted password vault and is not
+included in host catalog exports.
+
+A host can also connect through a **proxy command**, as OpenSSH's `ProxyCommand`
+does: Motty starts the program when the host connects and carries the connection
+over its standard input and output. This is how hosts behind
+`cloudflared access ssh`, or `nc` through a gateway, are reached. `%h`, `%p`, `%r`
+and `%%` are filled in, and the host key is still checked for the host itself. A
+proxy command is a host's own setting, never the global proxy.
+
+- A `ProxyCommand` imported from an SSH config is kept with the host but does not
+  run until you open the host's proxy settings and save it.
+- Agents connecting through `motty mcp-serve` do not start proxy commands.
+- A command started from the Dock or Finder sees the short `PATH` of a graphical
+  app, not your shell's. Write the program's full path, such as
+  `/opt/homebrew/bin/cloudflared`.
+- A host or user name that starts with `-` is refused, so it cannot be read as an
+  option of the program.
 
 ## X11 forwarding
 
-X11 forwarding validates a per-session fake cookie from the remote client before
-replacing it with the local Xauthority cookie, so the real cookie never reaches the
-server.
+X11 forwarding shows a remote graphical program in a window on your computer.
+Motty forwards the connection; the window itself is drawn by an **X server that
+runs on your computer**, and Motty does not include one. Install it once:
+
+| System | X server | Setup |
+| --- | --- | --- |
+| macOS | [XQuartz](https://www.xquartz.org) | Install and start it. Motty finds it by itself, even if it was started after Motty. |
+| Windows | [VcXsrv](https://sourceforge.net/projects/vcxsrv/) or X410 | Install and start it. Motty uses display `:0` on `127.0.0.1` when `DISPLAY` is not set. |
+| Linux | Xorg or Xwayland | Already part of a graphical session. |
+
+Then turn on **Forward X11** under *Advanced* in the host's settings and open a
+new tab. Servers need `X11Forwarding yes` in `sshd_config` and `xauth` installed.
+Run a program such as `xclock` to check.
+
+If forwarding cannot start, the terminal opens anyway and prints why, for
+example that no X server was found or that the server refused the request. Fix
+that and open a new tab; the setting is read when a tab connects.
+
+To use another X server, such as one on a different machine, start Motty with
+`DISPLAY` set to it (`host:0`). `DISPLAY` always wins over the automatic
+choice above.
+
+The remote program never sees your real X authorization. Motty gives each
+session a random cookie and checks it on every connection before replacing it
+with the cookie from your local Xauthority file.
+
+If you only need a desktop and not single windows, [VNC](/en/docs/remote-desktop/vnc)
+needs nothing installed on your computer.

@@ -1,14 +1,16 @@
-// Package vault keeps the secrets a user chose to save (SSH passwords and key
-// passphrases) in one encrypted file.
+// Package vault keeps the secrets a user chose to save (SSH passwords, key
+// passphrases, API keys and the like) in one encrypted file.
 //
-// The records are sealed with AES-256-GCM under a random 32-byte data key. Where
-// that key lives is the user's choice. By default it is in the system's own
-// secret store (Keychain, Credential Manager, Secret Service), which opens it for
-// this application without a prompt. With a master password the file instead
-// holds the key wrapped by a key derived from the password with Argon2id, the
-// system store holds nothing, and the vault stays locked until the password is
-// typed. Record names are hidden too: a record's id is a keyed hash of its name
-// and the name is inside the sealed part.
+// The records are sealed with AES-256-GCM under a random 32-byte data key. The
+// key lives in the system's own secret store (Keychain, Credential Manager,
+// Secret Service), which opens it for this application without a prompt, and in
+// a key file beside the vault where the system has no such store or the data is
+// meant to travel (see FileKeystore). Record names are hidden too: a record's id
+// is a keyed hash of its name and the name is inside the sealed part.
+//
+// Versions before the one that removed it could protect the data key with a
+// master password. Such a file is opened once with ConvertLegacy and is an
+// ordinary vault from then on.
 package vault
 
 import (
@@ -35,17 +37,13 @@ const (
 	KeyAccount = "data key"
 )
 
-// MinMasterPasswordLength is the shortest master password the vault accepts.
-const MinMasterPasswordLength = 8
-
 // Errors callers act on; test with errors.Is.
 var (
-	// ErrLocked means a master password protects the vault and has not been typed.
-	ErrLocked = errors.New("vault: locked")
+	// ErrNeedsConversion means the file is still kept by a master password, which
+	// this version no longer has: ConvertLegacy opens it once with that password.
+	ErrNeedsConversion = errors.New("vault: protected by a master password from an earlier version")
 	// ErrWrongPassword means the master password did not open the vault.
 	ErrWrongPassword = errors.New("vault: wrong master password")
-	// ErrWeakPassword means the new master password is too short.
-	ErrWeakPassword = errors.New("vault: the master password is too short")
 	// ErrKeyLost means the file holds records but the system store has lost the
 	// key that opens them. Clear the vault to start again.
 	ErrKeyLost = errors.New("vault: the key for the saved secrets is gone")
@@ -54,24 +52,27 @@ var (
 	ErrUnavailable = errors.New("vault: no secret store to keep the key in; set a master password")
 	// ErrCorrupt means the file is not a vault, or a record was changed.
 	ErrCorrupt = errors.New("vault: the file is damaged")
+	// ErrTooLarge means the change would grow the file past maxFileSize, which a
+	// later Open would refuse to read. Nothing was written.
+	ErrTooLarge = errors.New("vault: the file would exceed its size limit")
 
 	// ErrKeystoreNotFound, ErrKeystoreUnavailable and ErrKeystoreDenied are what a
 	// Keystore reports for a missing key, a system without a store, and a refusal.
 	ErrKeystoreNotFound    = errors.New("vault: the key is not in the secret store")
 	ErrKeystoreUnavailable = errors.New("vault: the system has no secret store")
 	ErrKeystoreDenied      = errors.New("vault: the secret store refused access")
+	ErrRollbackFailed      = errors.New("vault: could not restore the previous records")
 )
 
-// Keystore is the system's store for a small secret: what the data key lives in
-// when there is no master password.
+// Keystore is a store for a small secret: what the data key lives in.
 type Keystore interface {
 	Store(service, account string, secret []byte) error
 	Load(service, account string) ([]byte, error)
 	Delete(service, account string) error
 }
 
-// kdfParams are the Argon2id costs the wrapped key was made with. They are in the
-// file, so a later release can raise the defaults and still open old vaults.
+// kdfParams are the Argon2id costs the wrapped key of a legacy vault was made
+// with. They are in the file.
 type kdfParams struct {
 	Name      string `json:"name"`
 	Time      uint32 `json:"time"`
@@ -94,27 +95,17 @@ type fileData struct {
 
 const fileVersion = 1
 
-// UseCheapKDFForTests makes every new master password cost a few milliseconds
-// to derive instead of the production tens of them, for the test binaries of
-// packages that create vaults. It has no effect on files that already exist,
-// whose cost is stored in them, and nothing in the program calls it.
-func UseCheapKDFForTests() {
-	defaultKDF = kdfParams{Name: "argon2id", Time: 1, MemoryKiB: 64, Threads: 1}
-}
-
-// defaultKDF is the cost of a new master password. A variable so tests can use a
-// cheap one; it is never read when an existing file is opened.
-var defaultKDF = kdfParams{Name: "argon2id", Time: 3, MemoryKiB: 64 * 1024, Threads: 4}
-
 const (
 	keySize        = 32
 	wrapAssociated = "motty vault data key"
 	idContext      = "motty vault record id\x00"
-	maxFileSize    = 8 << 20
-	maxRecords     = 4096
-	// maxFileRecords bounds the file itself: live secrets are limited to
-	// maxRecords, and tombstones may bring the total up to this.
-	maxFileRecords = 2 * maxRecords
+	// maxFileSize is the one bound on the vault: what it takes to read the whole
+	// file into memory, now and at every later Open. Record counts are not bounded
+	// separately, because a record costs what its name and value cost and a count
+	// would refuse a third of the bytes the file can hold for short passwords. A
+	// write that would pass it fails whole (ErrTooLarge) rather than leaving a file
+	// this same code would refuse to open.
+	maxFileSize = 8 << 20
 )
 
 // Vault is the file and what is known about opening it.
@@ -136,6 +127,14 @@ type Secret struct {
 	Value   string `json:"value,omitempty"`
 	Stamp   string `json:"stamp"`
 	Deleted bool   `json:"deleted,omitempty"`
+}
+
+// Change is one local mutation in an atomic Apply call. Delete ignores Value;
+// otherwise Value replaces the secret under Name.
+type Change struct {
+	Name   string
+	Value  string
+	Delete bool
 }
 
 // SetStamper sets the source of version stamps. Stamps are opaque strings that
@@ -195,7 +194,7 @@ func Open(path string, keys Keystore) (*Vault, error) {
 	if file.Version != fileVersion {
 		return nil, fmt.Errorf("%w: version %d", ErrCorrupt, file.Version)
 	}
-	if len(file.Records) > maxFileRecords || (file.KDF == nil) != (len(file.WrappedKey) == 0) {
+	if (file.KDF == nil) != (len(file.WrappedKey) == 0) {
 		return nil, fmt.Errorf("%w: inconsistent contents", ErrCorrupt)
 	}
 	if file.KDF != nil && (file.KDF.Name != "argon2id" || file.KDF.Time == 0 || file.KDF.Time > 64 || file.KDF.MemoryKiB < 8 ||
@@ -206,15 +205,17 @@ func Open(path string, keys Keystore) (*Vault, error) {
 	return vault, nil
 }
 
-// HasMasterPassword reports whether a master password protects the vault.
-func (vault *Vault) HasMasterPassword() bool {
+// NeedsConversion reports whether the file is still kept by a master password
+// from an earlier version. Nothing can be read or saved until ConvertLegacy.
+func (vault *Vault) NeedsConversion() bool {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
 	return vault.file.KDF != nil
 }
 
-// Len is how many secrets are saved; tombstones are not secrets. While the vault
-// is locked the records cannot be told apart, so Len then counts them all.
+// Len is how many secrets are saved; tombstones are not secrets. Until the data
+// key has been read the records cannot be told apart, so Len then counts them
+// all, which is enough to tell an empty vault from one that holds something.
 func (vault *Vault) Len() int {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
@@ -230,18 +231,11 @@ func (vault *Vault) Len() int {
 	return count
 }
 
-// Unlocked reports whether the vault can be read and written right now.
-func (vault *Vault) Unlocked() bool {
-	vault.mu.Lock()
-	defer vault.mu.Unlock()
-	return vault.key != nil
-}
-
-// Prepare makes the vault usable if that needs nobody: with no master password it
-// takes the data key from the system's store. It returns ErrLocked when a master
-// password is needed, ErrKeyLost when records exist but their key is gone, and
-// ErrUnavailable when there is no store. An empty vault with a store is ready:
-// the key is made when the first secret is saved.
+// Prepare makes the vault usable: it takes the data key from the key store. It
+// returns ErrNeedsConversion for a file still kept by a master password,
+// ErrKeyLost when records exist but their key is gone, and ErrUnavailable when
+// there is no store. An empty vault with a store is ready: the key is made when
+// the first secret is saved.
 func (vault *Vault) Prepare() error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
@@ -253,7 +247,7 @@ func (vault *Vault) prepare(create bool) error {
 		return nil
 	}
 	if vault.file.KDF != nil {
-		return ErrLocked
+		return ErrNeedsConversion
 	}
 	if vault.keys == nil {
 		return ErrUnavailable
@@ -292,32 +286,41 @@ func (vault *Vault) prepare(create bool) error {
 	return nil
 }
 
-// Unlock opens a vault protected by a master password.
-func (vault *Vault) Unlock(password string) error {
+// ConvertLegacy opens a vault kept by a master password, the way earlier versions
+// did, and keeps it by the key store from now on: the data key is stored first,
+// and only then is the file rewritten without the password, so a failure leaves
+// the vault as it was. A vault that is not kept by a password is left alone.
+func (vault *Vault) ConvertLegacy(password string) error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
 	if vault.file.KDF == nil {
 		return nil
 	}
+	if vault.keys == nil {
+		return ErrUnavailable
+	}
 	key, err := unwrapKey(vault.file, password)
 	if err != nil {
+		return err
+	}
+	if err := vault.keys.Store(KeyService, KeyAccount, key); err != nil {
+		clear(key)
+		if errors.Is(err, ErrKeystoreUnavailable) {
+			return ErrUnavailable
+		}
+		return err
+	}
+	if err := vault.write(vault.file.Records); err != nil {
+		_ = vault.keys.Delete(KeyService, KeyAccount)
+		clear(key)
 		return err
 	}
 	vault.key = key
 	return nil
 }
 
-// Lock forgets the data key: a vault with a master password needs it again, and
-// one without reads the system's store on next use.
-func (vault *Vault) Lock() {
-	vault.mu.Lock()
-	defer vault.mu.Unlock()
-	clear(vault.key)
-	vault.key = nil
-}
-
-// Get returns the secret saved under name, and whether there is one. It needs the
-// vault to be unlocked (ErrLocked) and a record that has not been changed.
+// Get returns the secret saved under name, and whether there is one. It fails on
+// a record that has been changed.
 func (vault *Vault) Get(name string) (string, bool, error) {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
@@ -347,110 +350,167 @@ func (vault *Vault) Get(name string) (string, bool, error) {
 // file. A secret that already holds exactly value is left alone, stamp included.
 // A deleted name comes back to life with a new stamp.
 func (vault *Vault) Set(name, value string) error {
+	return vault.Apply([]Change{{Name: name, Value: value}})
+}
+
+// Apply validates and seals every local change before writing the vault once.
+// If any change fails, none of them become visible.
+func (vault *Vault) Apply(changes []Change) error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
-	if name == "" {
-		return errors.New("vault: a secret needs a name")
+	return vault.apply(changes)
+}
+
+// ApplyWithCommit retains the previous encrypted records until commit succeeds.
+// A failed commit restores those records without creating a synced tombstone.
+func (vault *Vault) ApplyWithCommit(changes []Change, commit func() error) error {
+	vault.mu.Lock()
+	defer vault.mu.Unlock()
+	return vault.applyWithCommit(changes, commit)
+}
+
+// ApplyMissingWithCommit checks absence under the same lock that writes the
+// vault. A concurrent writer's existing value always wins over the import.
+func (vault *Vault) ApplyMissingWithCommit(changes []Change, commit func(int) error) (int, error) {
+	vault.mu.Lock()
+	defer vault.mu.Unlock()
+	if err := vault.prepare(false); err != nil {
+		return 0, err
 	}
-	if err := vault.prepare(true); err != nil {
-		return err
+	plains, err := vault.openAll()
+	if err != nil {
+		return 0, err
 	}
-	id := recordID(vault.key, name)
-	position := -1
-	revived := false
-	for index, entry := range vault.file.Records {
-		if !hmac.Equal(entry.ID, id) {
+	existing := make(map[string]bool, len(plains))
+	for _, plain := range plains {
+		if !plain.Deleted {
+			existing[plain.Name] = true
+		}
+	}
+	missing := make([]Change, 0, len(changes))
+	for _, change := range changes {
+		if change.Delete || existing[change.Name] {
 			continue
 		}
-		plain, err := open(vault.key, entry)
-		if err != nil {
-			return err
-		}
-		if !plain.Deleted && plain.Value == value {
-			return nil
-		}
-		position, revived = index, plain.Deleted
+		missing = append(missing, change)
+		existing[change.Name] = true
 	}
-	if position < 0 || revived {
-		plains, err := vault.openAll()
-		if err != nil {
-			return err
-		}
-		live := 0
-		for _, plain := range plains {
-			if !plain.Deleted {
-				live++
-			}
-		}
-		if live >= maxRecords || (position < 0 && len(plains) >= maxFileRecords) {
-			return errors.New("vault: too many saved secrets")
-		}
+	if err := vault.applyWithCommit(missing, func() error { return commit(len(missing)) }); err != nil {
+		return 0, err
 	}
-	stamp, err := vault.stamp()
-	if err != nil {
+	return len(missing), nil
+}
+
+func (vault *Vault) applyWithCommit(changes []Change, commit func() error) error {
+	previous := append([]record(nil), vault.file.Records...)
+	if err := vault.apply(changes); err != nil {
 		return err
 	}
-	sealed, err := seal(vault.key, plainRecord{Name: name, Value: value, Stamp: stamp})
+	if err := commit(); err != nil {
+		if len(changes) > 0 {
+			if restoreErr := vault.write(previous); restoreErr != nil {
+				return errors.Join(err, fmt.Errorf("%w: %v", ErrRollbackFailed, restoreErr))
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func (vault *Vault) apply(changes []Change) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	create := false
+	for _, change := range changes {
+		if change.Name == "" {
+			return errors.New("vault: a secret needs a name")
+		}
+		create = create || !change.Delete
+	}
+	if err := vault.prepare(create); err != nil {
+		return err
+	}
+	if vault.key == nil {
+		return nil // deleting from an empty vault
+	}
+	plains, err := vault.openAll()
 	if err != nil {
 		return err
 	}
 	records := append([]record(nil), vault.file.Records...)
-	if position >= 0 {
-		records[position] = sealed
-	} else {
-		records = append(records, sealed)
+	positions := make(map[string]int, len(plains))
+	for index, plain := range plains {
+		positions[plain.Name] = index
 	}
-	return vault.write(vault.file.KDF, vault.file.WrappedKey, records)
+	changed := false
+	for _, change := range changes {
+		position, known := positions[change.Name]
+		if change.Delete {
+			if !known || plains[position].Deleted {
+				continue
+			}
+			if vault.stamper == nil {
+				records = slices.Delete(records, position, position+1)
+				plains = slices.Delete(plains, position, position+1)
+				delete(positions, change.Name)
+				for name, at := range positions {
+					if at > position {
+						positions[name] = at - 1
+					}
+				}
+			} else {
+				stamp, err := vault.stamp()
+				if err != nil {
+					return err
+				}
+				plain := plainRecord{Name: change.Name, Deleted: true, Stamp: stamp}
+				sealed, err := seal(vault.key, plain)
+				if err != nil {
+					return err
+				}
+				records[position], plains[position] = sealed, plain
+			}
+			changed = true
+			continue
+		}
+
+		if known && !plains[position].Deleted && plains[position].Value == change.Value {
+			continue
+		}
+		stamp, err := vault.stamp()
+		if err != nil {
+			return err
+		}
+		plain := plainRecord{Name: change.Name, Value: change.Value, Stamp: stamp}
+		sealed, err := seal(vault.key, plain)
+		if err != nil {
+			return err
+		}
+		if known {
+			records[position], plains[position] = sealed, plain
+		} else {
+			positions[change.Name] = len(records)
+			records, plains = append(records, sealed), append(plains, plain)
+		}
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return vault.write(records)
 }
 
 // Delete forgets the secret saved under name; there being none is not an error.
 // With a stamper the record becomes a tombstone, so that the deletion can be
 // merged into other devices; deleting a tombstone does nothing.
 func (vault *Vault) Delete(name string) error {
-	vault.mu.Lock()
-	defer vault.mu.Unlock()
-	if err := vault.prepare(false); err != nil {
-		return err
-	}
-	if vault.key == nil {
-		return nil
-	}
-	id := recordID(vault.key, name)
-	position := -1
-	for index, entry := range vault.file.Records {
-		if hmac.Equal(entry.ID, id) {
-			position = index
-		}
-	}
-	if position < 0 {
-		return nil
-	}
-	plain, err := open(vault.key, vault.file.Records[position])
-	if err != nil {
-		return err
-	}
-	if plain.Deleted {
-		return nil
-	}
-	records := append([]record(nil), vault.file.Records...)
-	if vault.stamper == nil {
-		records = slices.Delete(records, position, position+1)
-	} else {
-		stamp, err := vault.stamper()
-		if err != nil {
-			return err
-		}
-		if records[position], err = seal(vault.key, plainRecord{Name: plain.Name, Deleted: true, Stamp: stamp}); err != nil {
-			return err
-		}
-	}
-	return vault.write(vault.file.KDF, vault.file.WrappedKey, records)
+	return vault.Apply([]Change{{Name: name, Delete: true}})
 }
 
 // Export returns every record, tombstones included, sorted by name. With a
 // stamper, secrets that have no stamp yet (saved before stamps existed) are
-// stamped first, so what is exported always carries one. It needs the vault
-// unlocked.
+// stamped first, so what is exported always carries one.
 func (vault *Vault) Export() ([]Secret, error) {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
@@ -487,7 +547,7 @@ func (vault *Vault) Export() ([]Secret, error) {
 			changed = true
 		}
 		if changed {
-			if err := vault.write(vault.file.KDF, vault.file.WrappedKey, records); err != nil {
+			if err := vault.write(records); err != nil {
 				return nil, err
 			}
 		}
@@ -502,9 +562,10 @@ func (vault *Vault) Export() ([]Secret, error) {
 
 // Merge takes in secrets received from another device. A received entry wins when
 // the name is unknown here or its stamp is greater than the local one; equal or
-// older entries, and entries without a name or a stamp, are ignored, as are
-// entries that would exceed the vault's limits. Everything accepted is written at
-// once, and returned. Merge never makes a stamp.
+// older entries, and entries without a name or a stamp, are ignored. Everything
+// accepted is written at once, and returned; a merge whose result would pass
+// maxFileSize fails whole (ErrTooLarge) instead of dropping what does not fit.
+// Merge never makes a stamp.
 func (vault *Vault) Merge(received []Secret) ([]Secret, error) {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
@@ -517,12 +578,8 @@ func (vault *Vault) Merge(received []Secret) ([]Secret, error) {
 	}
 	records := append([]record(nil), vault.file.Records...)
 	positions := make(map[string]int, len(records))
-	live := 0
 	for index, entry := range records {
 		positions[string(entry.ID)] = index
-		if !plains[index].Deleted {
-			live++
-		}
 	}
 	var applied []Secret
 	for _, secret := range received {
@@ -535,14 +592,7 @@ func (vault *Vault) Merge(received []Secret) ([]Secret, error) {
 		}
 		id := recordID(vault.key, secret.Name)
 		position, known := positions[string(id)]
-		if known {
-			if plains[position].Stamp >= secret.Stamp {
-				continue
-			}
-			if plains[position].Deleted && !plain.Deleted && live >= maxRecords {
-				continue
-			}
-		} else if len(records) >= maxFileRecords || (!plain.Deleted && live >= maxRecords) {
+		if known && plains[position].Stamp >= secret.Stamp {
 			continue
 		}
 		sealed, err := seal(vault.key, plain)
@@ -550,23 +600,17 @@ func (vault *Vault) Merge(received []Secret) ([]Secret, error) {
 			return nil, err
 		}
 		if known {
-			if !plains[position].Deleted {
-				live--
-			}
 			records[position], plains[position] = sealed, plain
 		} else {
 			positions[string(id)] = len(records)
 			records, plains = append(records, sealed), append(plains, plain)
-		}
-		if !plain.Deleted {
-			live++
 		}
 		applied = append(applied, Secret{Name: plain.Name, Value: plain.Value, Stamp: plain.Stamp, Deleted: plain.Deleted})
 	}
 	if len(applied) == 0 {
 		return nil, nil
 	}
-	if err := vault.write(vault.file.KDF, vault.file.WrappedKey, records); err != nil {
+	if err := vault.write(records); err != nil {
 		return nil, err
 	}
 	return applied, nil
@@ -597,13 +641,13 @@ func (vault *Vault) Prune(before string) (int, error) {
 	if pruned == 0 {
 		return 0, nil
 	}
-	if err := vault.write(vault.file.KDF, vault.file.WrappedKey, records); err != nil {
+	if err := vault.write(records); err != nil {
 		return 0, err
 	}
 	return pruned, nil
 }
 
-// Names lists what is saved, sorted. It needs the vault unlocked.
+// Names lists what is saved, sorted.
 func (vault *Vault) Names() ([]string, error) {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
@@ -626,106 +670,46 @@ func (vault *Vault) Names() ([]string, error) {
 	return names, nil
 }
 
-// Clear forgets every saved secret and, with it, the master password and the
-// data key: the next secret saved starts a vault of its own. It is the way out of
-// ErrKeyLost, and of a forgotten master password.
+// Clear forgets every saved secret and the data key: the next secret saved starts
+// a vault of its own. It is the way out of ErrKeyLost, and of a master password
+// from an earlier version that was forgotten.
 func (vault *Vault) Clear() error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
-	hadPassword := vault.file.KDF != nil
-	if err := vault.write(nil, nil, nil); err != nil {
+	if err := vault.write(nil); err != nil {
 		return err
 	}
 	clear(vault.key)
 	vault.key = nil
-	if !hadPassword && vault.keys != nil {
+	if vault.keys != nil {
 		_ = vault.keys.Delete(KeyService, KeyAccount)
-	}
-	return nil
-}
-
-// SetMasterPassword protects the vault with a password, or changes it. The vault
-// must be unlocked, except while it holds nothing. The data key leaves the
-// system's store: opening the vault takes the password from then on.
-func (vault *Vault) SetMasterPassword(password string) error {
-	vault.mu.Lock()
-	defer vault.mu.Unlock()
-	if len(password) < MinMasterPasswordLength {
-		return ErrWeakPassword
-	}
-	// An empty vault needs no store: its key is made here, and kept by the password.
-	if err := vault.prepare(false); err != nil && !(errors.Is(err, ErrUnavailable) && len(vault.file.Records) == 0) {
-		return err
-	}
-	if vault.key == nil { // empty, and no key yet
-		vault.key = make([]byte, keySize)
-		if _, err := rand.Read(vault.key); err != nil {
-			vault.key = nil
-			return err
-		}
-	}
-	params := defaultKDF
-	params.Salt = make([]byte, 16)
-	if _, err := rand.Read(params.Salt); err != nil {
-		return err
-	}
-	wrapped, err := wrapKey(vault.key, password, &params)
-	if err != nil {
-		return err
-	}
-	hadPassword := vault.file.KDF != nil
-	if err := vault.write(&params, wrapped, vault.file.Records); err != nil {
-		return err
-	}
-	if !hadPassword && vault.keys != nil {
-		_ = vault.keys.Delete(KeyService, KeyAccount)
-	}
-	return nil
-}
-
-// RemoveMasterPassword puts the data key back in the system's store and drops the
-// password. The vault must be unlocked. Without a store it refuses and keeps the
-// password: nothing is ever left unprotected.
-func (vault *Vault) RemoveMasterPassword() error {
-	vault.mu.Lock()
-	defer vault.mu.Unlock()
-	if vault.file.KDF == nil {
-		return nil
-	}
-	if vault.key == nil {
-		return ErrLocked
-	}
-	if vault.keys == nil {
-		return ErrUnavailable
-	}
-	if err := vault.keys.Store(KeyService, KeyAccount, vault.key); err != nil {
-		if errors.Is(err, ErrKeystoreUnavailable) {
-			return ErrUnavailable
-		}
-		return err
-	}
-	if err := vault.write(nil, nil, vault.file.Records); err != nil {
-		_ = vault.keys.Delete(KeyService, KeyAccount)
-		return err
 	}
 	return nil
 }
 
 // write saves a new state of the file, atomically, and adopts it on success.
-func (vault *Vault) write(params *kdfParams, wrapped []byte, records []record) error {
-	file := fileData{Version: fileVersion, KDF: params, WrappedKey: wrapped, Records: records}
+func (vault *Vault) write(records []record) error {
+	file := fileData{Version: fileVersion, Records: records}
 	if file.Records == nil {
 		file.Records = []record{}
 	}
-	data, err := json.MarshalIndent(file, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := writeFileAtomic(vault.path, append(data, '\n')); err != nil {
+	if err := writeFile(vault.path, file); err != nil {
 		return err
 	}
 	vault.file = file
 	return nil
+}
+
+func writeFile(path string, file fileData) error {
+	data, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	if len(data) > maxFileSize {
+		return fmt.Errorf("%w: %d bytes", ErrTooLarge, len(data))
+	}
+	return writeFileAtomic(path, data)
 }
 
 func writeFileAtomic(path string, data []byte) error {
@@ -816,20 +800,6 @@ func open(key []byte, entry record) (plainRecord, error) {
 
 func deriveKey(password string, params *kdfParams) []byte {
 	return argon2.IDKey([]byte(password), params.Salt, params.Time, params.MemoryKiB, params.Threads, keySize)
-}
-
-func wrapKey(key []byte, password string, params *kdfParams) ([]byte, error) {
-	kek := deriveKey(password, params)
-	defer clear(kek)
-	gcm, err := newGCM(kek)
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, err
-	}
-	return gcm.Seal(nonce, nonce, key, []byte(wrapAssociated)), nil
 }
 
 func unwrapKey(file fileData, password string) ([]byte, error) {

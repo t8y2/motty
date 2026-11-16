@@ -1,0 +1,45 @@
+# Re-mirrors a release to Cloudflare R2, served from https://dl.motty.page.
+# The release workflow copies, publishes and announces every release itself, so
+# this is the repair path: run it with the tag when the copy or the feed has to
+# be redone (it does both). The GitHub release stays the source of record; this
+# workflow only copies its assets. Layout and rerun notes: docs/release.md.
+#
+# It no longer subscribes to `release: published`: a release made with the
+# workflow token does not trigger workflows, and a second mirror racing the
+# release workflow's own announce would only make that ordering ambiguous.
+name: Mirror release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to mirror, e.g. v0.1.0
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Upload the packages to R2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Mirror
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MOTTY_VIVA_UPDATE_KEY: ${{ secrets.MOTTY_VIVA_UPDATE_KEY }}
+          TAG: ${{ inputs.tag }}
+        run: tools/mirror-release.sh "$TAG"

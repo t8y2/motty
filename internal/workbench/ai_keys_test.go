@@ -18,10 +18,11 @@ func lockedVaultWorld(t *testing.T, fake *lister) (*settingsWorld, store.Provide
 	t.Helper()
 	world := newSettingsWorld(t, fake)
 	provider := world.addOpenAI(t, "Work", "", testSecretKey)
-	if err := world.state.secrets.vault.SetMasterPassword("master password"); err != nil {
+	if err := world.state.secrets.vault.LegacyForTests("master password"); err != nil {
 		t.Fatal(err)
 	}
-	world.state.secrets.vault.Lock()
+	world.state.secrets.declined = true
+	world.state.secrets.vault.DropKeyForTests()
 	world.state.reloadAI()
 	if got := world.state.ai.providers[0]; got.APIKey != "" || !got.HasKey {
 		t.Fatalf("a locked vault should leave the key out of memory: %#v", got)
@@ -75,10 +76,11 @@ func TestAILegacyKeysMoveIntoTheVaultOnLoad(t *testing.T) {
 	options.Invalidate = func() {}
 	options.Keystore = &memKeys{}
 	state := newTestState(t, options)
-	if err := state.secrets.vault.SetMasterPassword("master password"); err != nil {
+	if err := state.secrets.vault.LegacyForTests("master password"); err != nil {
 		t.Fatal(err)
 	}
-	state.secrets.vault.Lock()
+	state.secrets.declined = true
+	state.secrets.vault.DropKeyForTests()
 
 	// Locked: the key cannot be moved, but it keeps working and stays for later.
 	db, err = state.aiStore()
@@ -92,7 +94,7 @@ func TestAILegacyKeysMoveIntoTheVaultOnLoad(t *testing.T) {
 		t.Fatalf("the legacy key was dropped without being saved: %v", legacy)
 	}
 
-	if err := state.secrets.vault.Unlock("master password"); err != nil {
+	if err := state.secrets.vault.ConvertLegacy("master password"); err != nil {
 		t.Fatal(err)
 	}
 	state.reloadAI()

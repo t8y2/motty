@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
@@ -96,6 +97,15 @@ func (b *fakeBackend) Exec(ctx context.Context, a tools.TerminalExecArgs) (gate.
 	}
 	return gate.ExecResult{Output: out}, nil
 }
+func (b *fakeBackend) JobStart(context.Context, tools.TerminalStartArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
+func (b *fakeBackend) JobPoll(context.Context, tools.TerminalPollArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
+func (b *fakeBackend) JobStop(context.Context, tools.TerminalStopArgs) (gate.JobStatus, error) {
+	return gate.JobStatus{}, errors.New("not used")
+}
 func (b *fakeBackend) ListDir(context.Context, tools.SFTPListArgs) ([]gate.FileEntry, error) {
 	return nil, nil
 }
@@ -152,6 +162,31 @@ func TestPlainAnswer(t *testing.T) {
 	}
 	if len(p.reqs[0].Messages) != 3 || len(p.reqs[0].Tools) == 0 {
 		t.Fatalf("req %+v", p.reqs[0])
+	}
+}
+
+func TestToolEventsCarryReportedUsageBeforeTheNextModelTurn(t *testing.T) {
+	provider := &fakeProvider{turns: []turn{
+		{events: []llm.Event{call("tool", tools.NameTerminalExec, lsArgs), done(40, 6)}},
+		{events: []llm.Event{text("finished"), done(20, 4)}},
+	}}
+	events, emit := collect()
+	_, err := Run(context.Background(), newCfg(provider, &fakeBackend{}, true), nil, "inspect", emit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, event := range *events {
+		if event.Kind != EventToolStart && event.Kind != EventToolDone {
+			continue
+		}
+		count++
+		if event.Usage != (llm.Usage{InputTokens: 40, OutputTokens: 6}) {
+			t.Fatalf("tool event %v lost reported usage: %+v", event.Kind, event.Usage)
+		}
+	}
+	if count != 2 {
+		t.Fatalf("tool events = %d, want 2", count)
 	}
 }
 
@@ -590,5 +625,134 @@ func TestAskModeAfterADeclineAnswersWithNoTools(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Role != llm.RoleAssistant || got[0].Text != "The screen does not show an answer." {
 		t.Fatalf("messages = %+v", got)
+	}
+}
+
+func TestRunSumsCacheUsageAcrossTurns(t *testing.T) {
+	lsArgs := `{"command":"ls"}`
+	cached := func(in, read, write int) llm.Event {
+		return llm.Event{Kind: llm.EventDone, Usage: llm.Usage{InputTokens: in, OutputTokens: 1, CacheReadTokens: read, CacheWriteTokens: write}}
+	}
+	p := &fakeProvider{turns: []turn{
+		{events: []llm.Event{call("c1", tools.NameTerminalExec, lsArgs), cached(3000, 0, 2900)}},
+		{events: []llm.Event{text("done"), cached(3100, 2900, 100)}},
+	}}
+	evs, emit := collect()
+	if _, err := Run(context.Background(), newCfg(p, &fakeBackend{}, true), nil, "go", emit); err != nil {
+		t.Fatal(err)
+	}
+	want := llm.Usage{InputTokens: 6100, OutputTokens: 2, CacheReadTokens: 2900, CacheWriteTokens: 3000}
+	if u := (*evs)[len(*evs)-1].Usage; u != want {
+		t.Fatalf("usage = %+v, want %+v", u, want)
+	}
+}
+
+// A turn with no prose and no tool calls used to end as if the model had
+// answered; the panel showed an empty bubble and nothing else.
+func TestEmptyAnswerIsAnError(t *testing.T) {
+	p := &fakeProvider{turns: []turn{{events: []llm.Event{done(3, 0)}}}}
+	var last Event
+	_, err := Run(context.Background(), Config{Provider: p, Model: "m", Mode: ModeAgent,
+		Gate: gate.Gate{Policy: risk.Policy{Enabled: false}}}, nil, "hi", func(ev Event) { last = ev })
+	if err == nil {
+		t.Fatal("an empty answer passed as a finished turn")
+	}
+	if last.Kind != EventError {
+		t.Fatalf("the caller was not told: %+v", last)
+	}
+}
+
+// An answer the provider cut off at its output limit before any prose arrived
+// is a truncation, not the model answering nothing: the panel turns the stop
+// reason into its notice, and the returned history is the unanswered round.
+func TestEmptyTruncatedAnswerFinishesWithoutError(t *testing.T) {
+	for _, reason := range []string{"length", "max_tokens", "max_output_tokens"} {
+		t.Run(reason, func(t *testing.T) {
+			p := &fakeProvider{turns: []turn{{events: []llm.Event{{Kind: llm.EventDone, StopReason: reason}}}}}
+			var last Event
+			got, err := Run(context.Background(), Config{Provider: p, Model: "m", Mode: ModeAgent,
+				Gate: gate.Gate{Policy: risk.Policy{Enabled: false}}}, nil, "hi", func(ev Event) { last = ev })
+			if err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if last.Kind != EventDone || last.StopReason != reason {
+				t.Fatalf("last event = %+v", last)
+			}
+			if len(got) != 1 || got[0].Role != llm.RoleUser || got[0].Text != "hi" {
+				t.Fatalf("new messages = %+v, want the unanswered user message", got)
+			}
+		})
+	}
+}
+
+// Ask mode offers only the escalation tool; a call to anything else cannot run,
+// and with no prose beside it the turn has nothing to show.
+func TestAskModeDroppedCallIsAnError(t *testing.T) {
+	p := &fakeProvider{turns: []turn{{events: []llm.Event{call("c1", "terminal_exec", `{"command":"uptime"}`), done(3, 0)}}}}
+	_, err := Run(context.Background(), Config{Provider: p, Model: "m", Mode: ModeAsk,
+		Gate: gate.Gate{Policy: risk.Policy{Enabled: false}}}, nil, "run uptime", nil)
+	if err == nil || !strings.Contains(err.Error(), "terminal_exec") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// The panel tells a cut-off answer apart from a finished one by this reason.
+func TestDoneCarriesTheStopReason(t *testing.T) {
+	p := &fakeProvider{turns: []turn{{events: []llm.Event{text("half an answer"), {Kind: llm.EventDone, StopReason: "length"}}}}}
+	var done Event
+	_, err := Run(context.Background(), Config{Provider: p, Model: "m", Mode: ModeAgent,
+		Gate: gate.Gate{Policy: risk.Policy{Enabled: false}}}, nil, "hi", func(ev Event) {
+		if ev.Kind == EventDone {
+			done = ev
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.StopReason != "length" {
+		t.Fatalf("stop reason = %q", done.StopReason)
+	}
+}
+
+func TestAskNoteQueryExecutesAndCannotEdit(t *testing.T) {
+	for _, editing := range []bool{false, true} {
+		t.Run(fmt.Sprint("editing=", editing), func(t *testing.T) {
+			name := tools.NameNoteQuery
+			args := `{"action":"search","references":[{"kind":"tag","title":"Docker","token":"note:tag:Docker"}]}`
+			if editing {
+				name = tools.NameNoteEdit
+				args = `{"action":"create","title":"n","body":"b"}`
+			}
+			p := &fakeProvider{turns: []turn{{events: []llm.Event{call("q", name, args), done(1, 1)}}, {events: []llm.Event{text("answer"), done(1, 1)}}}}
+			b := &nativeNoteBackend{}
+			cfg := newCfg(p, &b.fakeBackend, true)
+			cfg.Mode = ModeAsk
+			cfg.Tools = tools.InApp()
+			cfg.Gate.Backend = b
+			cfg.Gate.NotesEnabled = true
+			escalated := false
+			messages, err := Run(context.Background(), cfg, nil, "read notes", func(e Event) {
+				if e.Kind == EventAgentModeRequest {
+					escalated = true
+				}
+			})
+			for _, s := range p.reqs[0].Tools {
+				if s.Name != tools.NameNoteQuery && s.Name != tools.NameRequestAgentMode {
+					t.Fatalf("unexpected Ask tool: %s", s.Name)
+				}
+			}
+			if b.edits != 0 || escalated {
+				t.Fatal("Ask edited or escalated")
+			}
+			if editing {
+				if err == nil {
+					t.Fatal("unoffered edit accepted")
+				}
+				return
+			}
+			if err != nil || len(b.query.References) != 1 || len(messages) != 4 || messages[2].Role != llm.RoleTool {
+				t.Fatalf("Ask query failed: %+v %v", messages, err)
+			}
+		})
 	}
 }

@@ -1,0 +1,70 @@
+# End to end: a tab follows the title the terminal reports (OSC 2, which tmux
+# sets with `set-titles on`) once Settings > Terminal > Tab name is set
+# to Terminal title. Needs a headless Viva build and e2esshd on port 2249:
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head-title ./cmd/motty
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd-title .) && /tmp/e2esshd-title 2249 &
+#   MOTTY_LANG=en MOTTY_HEAD=/tmp/motty-head-title \
+#     python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/tab_title_e2e.txt
+#
+# What to look for:
+# - The first `texts` (setting off) lists the host name on the tab and not
+#   "gallery-web:1:bash".
+# - After switching the setting on, the second `texts` lists "gallery-web:1:bash"
+#   on the tab. Clearing the title with an empty OSC 2 brings the host name back.
+# - This fixture does not advertise OpenSSH, so it cannot enable shell path
+#   reports; Current path falls back to the connection name.
+
+click "Search"
+type tester@127.0.0.1:2249
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+
+type printf '\033]2;gallery-web:1:bash\007'; echo title-sent
+key enter
+waitfor "title-sent" 5000
+settle 800
+texts
+
+click "Settings"
+settle 600
+click "Terminal"
+settle 700
+scroll 780 500 0 1400
+settle 500
+click "Terminal title"
+settle 600
+click "gallery-web:1:bash"
+settle 800
+expect text "gallery-web:1:"
+texts
+shot /tmp/tab-title-on.png
+
+type printf '\033]2;\007'; echo title-cleared
+key enter
+waitfor "title-cleared" 5000
+settle 800
+expect text "127.0.0.1:2249"
+texts
+
+click "Settings"
+settle 600
+click "Terminal"
+settle 700
+scroll 780 500 0 1400
+settle 500
+click "Current path"
+settle 600
+click "127.0.0.1:2249"
+type cd /tmp; echo path-changed
+key enter
+waitfor "path-changed" 5000
+settle 800
+expect text "127.0.0.1:2249"
+texts

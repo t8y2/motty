@@ -6,6 +6,19 @@ Over an authenticated SSH connection Motty can list and act on a server's proces
 and Docker containers, and show its resource usage. Resource monitoring is opt-in:
 you start it from the terminal.
 
+Open **Remote tools** from the terminal context menu to get a separate, movable,
+resizable window. The main window remains available for commands, other connections
+and files. Opening tools again for the same session focuses its existing window;
+different sessions can each have their own.
+
+The window title identifies its connection by name and address. Actions stay bound
+to that session, including when another terminal is selected. Confirmations for
+process termination and resource removal appear inside the tool window. Logs and
+image pulls use the original terminal; container shells open a new tab in the
+workbench containing the source session. Closing tools cancels pending requests
+without disconnecting SSH. Closing or disconnecting the source session closes its
+tool window too. Lists still refresh manually.
+
 Every command Motty runs for this is fixed text. What varies is a number or a
 validated container name, never free text, so nothing the server prints or you type
 can become shell syntax.

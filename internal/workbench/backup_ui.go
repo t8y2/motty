@@ -4,26 +4,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/vivaui/viva/gfx"
 	"io/fs"
 	"motty/internal/configstore"
 	"os"
 	"strings"
 	"time"
-	"github.com/vivaui/viva/ui"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/backup"
 	"motty/internal/cloudsync"
+	"motty/internal/gist"
 	"motty/internal/i18n"
 	"motty/internal/vault"
 	"motty/internal/webdav"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 )
 
-// Backup and sync. A backup is the hosts, settings, trusted host keys and saved
-// passwords sealed in one file under a password the user chooses (package
+// Backup and sync. A backup is the shared configuration, trusted host keys and
+// saved passwords sealed in one file under a password the user chooses (package
 // backup). It can be written to a file, or kept in the cloud (a WebDAV server,
-// S3-compatible storage or a GitHub Gist, all behind cloudsync.Store) and
+// S3-compatible storage, a GitHub Gist or a Gitee snippet, all behind
+// cloudsync.Store) and
 // fetched from another computer. Sessions, the open layout and the cloud login
 // itself stay on the computer they belong to.
 
@@ -31,13 +34,18 @@ import (
 var backupUiHits = tree.Feature("backup-ui")
 
 var (
-	hitBackupExport      = tree.ID(backupUiHits, "backup-export")
-	hitBackupRestore     = tree.ID(backupUiHits, "backup-restore")
-	hitSyncConfigure     = tree.ID(backupUiHits, "sync-configure")
-	hitSyncConfigureS3   = tree.ID(backupUiHits, "sync-configure-s3")
-	hitSyncConfigureGist = tree.ID(backupUiHits, "sync-configure-gist")
-	hitSyncNow           = tree.ID(backupUiHits, "sync-now")
-	hitSyncAuto          = tree.ID(backupUiHits, "sync-auto")
+	hitBackupExport       = tree.ID(backupUiHits, "backup-export")
+	hitBackupRestore      = tree.ID(backupUiHits, "backup-restore")
+	hitSyncConfigure      = tree.ID(backupUiHits, "sync-configure")
+	hitSyncConfigureS3    = tree.ID(backupUiHits, "sync-configure-s3")
+	hitSyncConfigureGist  = tree.ID(backupUiHits, "sync-configure-gist")
+	hitSyncConfigureGitee = tree.ID(backupUiHits, "sync-configure-gitee")
+	hitSyncNow            = tree.ID(backupUiHits, "sync-now")
+	hitSyncRestore        = tree.ID(backupUiHits, "sync-restore")
+	hitSyncAuto           = tree.ID(backupUiHits, "sync-auto")
+	// hitSyncCategories is the list of content switches; an item is its index in
+	// syncCategories.
+	hitSyncCategories = tree.Sub(backupUiHits, tree.Name("sync-category"))
 )
 
 const (
@@ -60,16 +68,18 @@ type savedSync struct {
 	ETag     string     `json:"etag,omitempty"`
 	LastSync string     `json:"last_sync,omitempty"`
 	// Manual is set when the user turned automatic syncing off.
-	Manual bool `json:"manual,omitempty"`
+	Manual            bool `json:"manual,omitempty"`
+	AllowInsecureHTTP bool `json:"allow_insecure_http,omitempty"`
 }
 
 // syncState is the cloud service and what is known of the file on it.
 type syncState struct {
 	kind syncKind
 	// url, user and path are the WebDAV server.
-	url, user, path string
-	s3              s3Settings
-	gist            gistSettings
+	url, user, path   string
+	allowInsecureHTTP bool
+	s3                s3Settings
+	gist              gistSettings
 	// etag identifies the version of the file this computer last uploaded or
 	// downloaded, so an upload never replaces one it has not seen.
 	etag string
@@ -90,18 +100,34 @@ type syncState struct {
 	waitingForVault bool
 	// timer is the one pending start of a sync, after a change or a failure.
 	timer *time.Timer
+	// holdBack is set while a restore from the server settles: the changes it
+	// made are not a reason to sync.
+	holdBack bool
 
 	rowText, runText string
 	runFor           time.Time
 	textLanguage     i18n.Language
 }
 
+// restoreSync replaces the account this window syncs with. What the engine has
+// in hand belongs to the window running it rather than to the account: a start
+// waiting on its timer, a request on its way, the retries and what the progress
+// row says carry on, which is what lets the settings be loaded again when
+// another window changes the account.
 func (state *State) restoreSync(saved *savedSync) {
+	work := state.sync
+	defer func() {
+		state.sync.working, state.sync.again, state.sync.err = work.working, work.again, work.err
+		state.sync.retries, state.sync.waitingForVault, state.sync.holdBack = work.retries, work.waitingForVault, work.holdBack
+		state.sync.timer = work.timer
+		state.sync.rowText, state.sync.runText, state.sync.runFor = work.rowText, work.runText, work.runFor
+		state.sync.textLanguage = work.textLanguage
+	}()
 	state.sync = syncState{}
 	if saved == nil {
 		return
 	}
-	next := syncState{etag: saved.ETag, manual: saved.Manual}
+	next := syncState{etag: saved.ETag, manual: saved.Manual, allowInsecureHTTP: saved.AllowInsecureHTTP}
 	switch saved.Kind {
 	case savedKindS3:
 		if saved.S3 == nil {
@@ -130,7 +156,7 @@ func (state *State) savedSyncValue() *savedSync {
 	if !view.configured() {
 		return nil
 	}
-	saved := &savedSync{ETag: view.etag, Manual: view.manual}
+	saved := &savedSync{ETag: view.etag, Manual: view.manual, AllowInsecureHTTP: view.allowInsecureHTTP}
 	switch view.kind {
 	case syncS3:
 		saved.Kind, saved.S3 = savedKindS3, view.s3.saved()
@@ -149,16 +175,23 @@ func (state *State) savedSyncValue() *savedSync {
 // logins that reach the backup itself.
 func excludedFromBackup(name string) bool {
 	switch name {
-	case webdavPasswordSecret, s3SecretName, gistTokenSecret, backupPasswordSecret:
+	case webdavPasswordSecret, s3SecretName, gistTokenSecret, giteeTokenSecret, backupPasswordSecret:
 		return true
 	}
 	return false
 }
 
-// backupDocument gathers what a backup holds: every shared record, deleted ones
-// as tombstones, the trusted keys and the saved passwords. A locked vault is
-// reported as vault.ErrLocked, since the passwords cannot be read.
+// backupDocument gathers what a file backup holds: shared records, device-local
+// shortcuts, trusted keys and saved passwords. A locked vault is
+// reported as vault.ErrNeedsConversion, since the passwords cannot be read.
 func (state *State) backupDocument() (backup.Document, error) {
+	if !state.flushNoteDraft() {
+		return backup.Document{}, errors.New(state.noteText("Finish composing or resolve the note save error before backing up.", "请完成输入法输入或处理笔记保存错误后再备份。"))
+	}
+	state.save()
+	if state.hasUnsavedNotes() {
+		return backup.Document{}, errors.New(state.notes.error)
+	}
 	if state.config == nil {
 		return backup.Document{}, errors.New(state.messages.Tools.SyncErrNoStore)
 	}
@@ -166,7 +199,12 @@ func (state *State) backupDocument() (backup.Document, error) {
 	if err != nil {
 		return backup.Document{}, err
 	}
-	document := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Records: records}
+	document := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
+	snapshot := state.snapshot()
+	document.ShortcutPreferences = &backup.ShortcutPreferences{DefaultsGeneration: snapshot.ShortcutDefaultsGeneration, Shortcuts: make([]backup.Shortcut, 0, len(snapshot.Shortcuts))}
+	for _, entry := range snapshot.Shortcuts {
+		document.ShortcutPreferences.Shortcuts = append(document.ShortcutPreferences.Shortcuts, backup.Shortcut{Action: entry.Action, Key: entry.Key, Modifiers: entry.Modifiers})
+	}
 	if data, err := os.ReadFile(state.options.KnownHostsPath); err == nil {
 		document.KnownHosts = string(data)
 	}
@@ -196,8 +234,10 @@ func (state *State) backupErrorText(err error) string {
 		return m.BackupErrNotBackup
 	case errors.Is(err, backup.ErrTooNew):
 		return m.BackupErrTooNew
-	case errors.Is(err, vault.ErrLocked):
+	case errors.Is(err, vault.ErrNeedsConversion):
 		return m.BackupErrVault
+	case errors.Is(err, vault.ErrTooLarge):
+		return state.messages.VaultTooLarge
 	case errors.Is(err, cloudsync.ErrUnauthorized):
 		// The service's own words (an S3 error code, GitHub's message) follow.
 		if _, detail, found := strings.Cut(err.Error(), " ("); found {
@@ -206,10 +246,15 @@ func (state *State) backupErrorText(err error) string {
 		return m.SyncErrUnauthorized
 	case errors.Is(err, cloudsync.ErrNotFound):
 		return m.SyncErrNotFound
+	case errors.Is(err, cloudsync.ErrChanged):
+		return m.SyncErrChanged
 	case errors.Is(err, cloudsync.ErrInsecure):
 		return m.SyncErrInsecure
 	case errors.Is(err, cloudsync.ErrTooLarge):
 		if state.sync.kind == syncGist {
+			if state.sync.gist.provider == gist.Gitee {
+				return m.GiteeErrTooLarge
+			}
 			return m.GistErrTooLarge
 		}
 		return m.SyncErrTooLarge
@@ -217,10 +262,25 @@ func (state *State) backupErrorText(err error) string {
 	return err.Error()
 }
 
-// applyBackup replaces the hosts, settings, host keys and saved passwords with a
-// backup's, keeping what was there in a safety copy. It returns an error before
-// changing anything when the restore cannot go through.
+// partialRestoreError says a restore replaced the hosts and settings but not
+// everything: a trusted key or a saved password could not be written. Message is
+// what to show; the restore is not to be reported as a success.
+type partialRestoreError struct{ message string }
+
+func (err *partialRestoreError) Error() string { return err.message }
+
+// applyBackup replaces the shared configuration, host keys and saved passwords
+// with a backup's, keeping what was there in a safety copy. It returns an error
+// before changing anything when the restore cannot go through, and a
+// *partialRestoreError, with the hosts restored, when part of it could not.
 func (state *State) applyBackup(document backup.Document) (hosts int, err error) {
+	return state.applyBackupScope(document, syncScope{})
+}
+
+// applyBackupScope is applyBackup for a selection of what to restore: the
+// records, passwords and host keys of a closed category are left as they are.
+// A zero scope restores everything, which is what a backup file does.
+func (state *State) applyBackupScope(document backup.Document, scope syncScope) (hosts int, err error) {
 	m := state.messages.Tools
 	if len(state.sessions) > 0 {
 		return 0, errors.New(m.BackupErrSessions)
@@ -232,48 +292,124 @@ func (state *State) applyBackup(document backup.Document) (hosts int, err error)
 		return 0, backup.ErrTooNew
 	}
 	opened := state.secrets.vault
-	if len(document.Secrets) > 0 && opened != nil && opened.HasMasterPassword() && !opened.Unlocked() {
-		return 0, vault.ErrLocked
+	if len(document.Secrets) > 0 && opened != nil && opened.NeedsConversion() {
+		return 0, vault.ErrNeedsConversion
 	}
 
-	if data, readErr := os.ReadFile(state.options.StatePath); readErr == nil {
-		if err := writeFileAtomic(state.options.StatePath+beforeRestoreSuffix, data); err != nil {
-			return 0, err
-		}
+	if _, refused := holdableRecords(document.Records); refused > 0 {
+		return 0, backup.ErrNotBackup
 	}
-	var entries []configstore.Entry
+	var entries, applied []configstore.Entry
+	seen := map[configstore.Key]bool{}
+	hasCLICollection := false
 	for _, record := range document.Records {
+		hasCLICollection = hasCLICollection || record.Kind == kindAICLIProvider
+		key := configstore.Key{Kind: record.Kind, ID: record.ID}
+		if seen[key] {
+			return 0, backup.ErrNotBackup
+		}
+		seen[key] = true
 		if !record.Deleted {
-			entries = append(entries, configstore.Entry{Kind: record.Kind, ID: record.ID, Payload: record.Payload})
+			entry := configstore.Entry{Kind: record.Kind, ID: record.ID, Payload: record.Payload}
+			entries = append(entries, entry)
+			if scope.allowsRecord(record.Kind) {
+				applied = append(applied, entry)
+			}
 		}
 	}
-	incoming, _, err := joinState(entries, state.configBase.local)
+	_, _, err = joinState(entries, state.configBase.local)
 	if err != nil {
 		return 0, backup.ErrNotBackup
 	}
-	if incoming.AIProviders == nil && state.recordedProviders() > 0 {
-		incoming.AIProviders = &[]savedAIProvider{} // a restore replaces what was recorded
+	data, err := state.config.Snapshot()
+	if err != nil {
+		return 0, err
 	}
-	state.restoreShared(incoming)
-	state.hostDataChanged()
-	state.rebuildTabOptions()
-	state.save()
+	if err := keepBeforeRestore(state.options.StatePath, data); err != nil {
+		return 0, err
+	}
+	current, _, err := state.config.Load()
+	if err != nil {
+		return 0, err
+	}
+	live := map[configstore.Key]bool{}
+	for _, entry := range applied {
+		live[configstore.Key{Kind: entry.Kind, ID: entry.ID}] = true
+	}
+	change := configstore.Change{Writer: configWriter(), Put: applied}
+	for _, entry := range current {
+		key := configstore.Key{Kind: entry.Kind, ID: entry.ID}
+		if !scope.allowsRecord(key.Kind) {
+			continue // a closed category is not this restore's to replace
+		}
+		if key.Kind == kindAICLIProvider && !hasCLICollection {
+			continue // legacy backups predate the independent CLI collection
+		}
+		if !live[key] {
+			change.Delete = append(change.Delete, key)
+		}
+	}
+	if _, err := state.config.Commit(change); err != nil {
+		return 0, err
+	}
+	if err := state.reloadShared(); err != nil {
+		return 0, &partialRestoreError{fmt.Sprintf(m.BackupFailedFmt, err)}
+	}
+	if preferences := document.ShortcutPreferences; preferences != nil {
+		saved := make([]savedShortcut, 0, len(preferences.Shortcuts))
+		for _, entry := range preferences.Shortcuts {
+			saved = append(saved, savedShortcut{Action: entry.Action, Key: entry.Key, Modifiers: entry.Modifiers})
+		}
+		state.shortcuts = restoreShortcuts(saved)
+		if preferences.DefaultsGeneration < shortcutDefaultsGeneration && len(saved) > 0 {
+			state.shortcuts.migrateChangedDefaults(func(chord keymap.Chord) bool { return state.snippetNamed(chord) != "" })
+		}
+		if err := state.saveWithResultMode(false); err != nil {
+			return len(state.hosts), &partialRestoreError{fmt.Sprintf(m.BackupFailedFmt, err)}
+		}
+	}
+	state.reloadOtherWindows()
 
-	if err := state.mergeKnownHosts(document.KnownHosts); err != nil {
-		state.status = fmt.Sprintf(state.messages.Tools.BackupFailedFmt, err)
+	var incomplete error
+	if scope.allowsKnownHosts() {
+		if err := state.mergeKnownHosts(document.KnownHosts); err != nil {
+			incomplete = &partialRestoreError{fmt.Sprintf(state.messages.Tools.BackupFailedFmt, err)}
+		}
 	}
 	if opened != nil {
+		secretsSet := false
 		for _, secret := range document.Secrets {
-			if secret.Deleted || excludedFromBackup(secret.Name) {
+			if secret.Deleted || excludedFromBackup(secret.Name) || !scope.allowsSecret(secret.Name) {
 				continue
 			}
 			if err := opened.Set(secret.Name, secret.Value); err != nil {
-				state.status = fmt.Sprintf(state.messages.Tools.BackupSecretsFailedFmt, state.vaultErrorText(err))
-				return len(state.hosts), nil
+				return len(state.hosts), &partialRestoreError{fmt.Sprintf(state.messages.Tools.BackupSecretsFailedFmt, state.vaultErrorText(err))}
 			}
+			secretsSet = true
+		}
+		if secretsSet || len(scope.excluded) == 0 {
+			// A backup made before secrets were kept under hosts has them under logins.
+			// A restore of everything keeps doing this even when the backup carries no
+			// password; a partial restore only when it actually wrote one.
+			state.migrateSecretsToHosts(true)
 		}
 	}
-	return len(state.hosts), nil
+	return len(state.hosts), incomplete
+}
+
+// keepBeforeRestore writes the state file as it was to <state>.before-restore.
+// A copy already there is the state before an earlier restore, which a second
+// restore must not destroy (the second copy is the first restore's result), so
+// it is moved aside under the time it was written.
+func keepBeforeRestore(statePath string, data []byte) error {
+	target := statePath + beforeRestoreSuffix
+	if info, err := os.Stat(target); err == nil {
+		aside := target + "." + info.ModTime().UTC().Format("20060102T150405.000000")
+		if err := os.Rename(target, aside); err != nil {
+			return err
+		}
+	}
+	return writeFileAtomic(target, data)
 }
 
 // mergeKnownHosts adds the backup's trusted keys that this computer lacks;
@@ -361,7 +497,7 @@ func (state *State) runExportBackup(form *formDialog) string {
 func (state *State) openRestoreBackup() {
 	m := state.messages.Tools
 	if len(state.sessions) > 0 {
-		state.status = m.BackupErrSessions
+		state.showActionWarning(m.BackupRestoreTitle, m.BackupErrSessions)
 		return
 	}
 	paths, err := state.options.OpenFiles(app.OpenFileOptions{
@@ -372,7 +508,7 @@ func (state *State) openRestoreBackup() {
 		return
 	}
 	if err != nil {
-		state.status = fmt.Sprintf(m.BackupFailedFmt, err)
+		state.showActionFailure(m.BackupRestoreTitle, err, state.messages.ActionFeedback.FilePickerFailed)
 		return
 	}
 	info, err := os.Stat(paths[0])
@@ -384,7 +520,11 @@ func (state *State) openRestoreBackup() {
 		data, err = os.ReadFile(paths[0])
 	}
 	if err != nil {
-		state.status = fmt.Sprintf(m.BackupFailedFmt, err)
+		detail := state.messages.ActionFeedback.ReadFailed
+		if errors.Is(err, backup.ErrTooLarge) {
+			detail = state.messages.ActionFeedback.BackupTooLarge
+		}
+		state.showFileReadFailure(m.BackupRestoreTitle, err, detail)
 		return
 	}
 	state.openForm(formDialog{
@@ -395,10 +535,15 @@ func (state *State) openRestoreBackup() {
 				return state.backupErrorText(err)
 			}
 			hosts, err := state.applyBackup(document)
-			if err != nil {
+			var partial *partialRestoreError
+			switch {
+			case errors.As(err, &partial):
+				state.status = partial.message
+			case err != nil:
 				return state.backupErrorText(err)
+			default:
+				state.status = fmt.Sprintf(state.messages.Tools.BackupRestoredFmt, hosts)
 			}
-			state.status = fmt.Sprintf(state.messages.Tools.BackupRestoredFmt, hosts)
 			return ""
 		},
 	}, formField{label: m.BackupPassword, secure: true})
@@ -410,7 +555,10 @@ func (state *State) openSyncConfigure() {
 	m := state.messages.Tools
 	form := state.openForm(formDialog{
 		title: m.SyncDialogTitle, description: m.SyncDialogDescription, submit: m.SyncSave,
-		run: (*State).runSyncConfigure,
+		run:        (*State).runSyncConfigure,
+		test:       (*State).runWebdavFormTest,
+		checkLabel: m.SyncAllowInsecureHTTP, checkDescription: m.SyncInsecureHTTPDescription,
+		checked: state.sync.kind == syncWebDAV && state.sync.allowInsecureHTTP,
 	},
 		formField{label: m.SyncURL, placeholder: "https://dav.example.com/dav"},
 		formField{label: m.SyncUser},
@@ -442,11 +590,8 @@ func (state *State) runSyncConfigure(form *formDialog) string {
 	if backupPassword != "" && len(backupPassword) < backup.MinPasswordLength {
 		return m.BackupErrPasswordShort
 	}
-	if _, err := webdav.New(webdav.Config{URL: address, User: user, Password: "x", Path: path}, nil); err != nil {
-		if errors.Is(err, cloudsync.ErrInsecure) {
-			return m.SyncErrInsecure
-		}
-		return m.SyncErrAddress
+	if _, err := webdav.New(webdav.Config{URL: address, User: user, Password: "x", Path: path, AllowInsecureHTTP: form.checked}, nil); err != nil {
+		return webdavAddressError(m, err)
 	}
 	if message := state.keepSyncSecrets(webdavPasswordSecret, webdavPassword, backupPassword); message != "" {
 		return message
@@ -456,13 +601,25 @@ func (state *State) runSyncConfigure(form *formDialog) string {
 	} else {
 		state.sync.user = user
 	}
+	state.sync.allowInsecureHTTP = form.checked
 	state.sync.rowText = ""
 	state.save()
 	state.testSync()
 	return ""
 }
 
+// webdavAddressError says what is wrong with a server address. The error from
+// webdav.New quotes the address, which may carry a password the user typed into
+// it (https://user:secret@host), so it is never shown.
+func webdavAddressError(m i18n.ToolsMessages, err error) string {
+	if errors.Is(err, cloudsync.ErrInsecure) {
+		return m.SyncErrInsecure
+	}
+	return m.SyncErrAddress
+}
+
 func (state *State) clearSync() {
+	state.syncEpoch++
 	state.sync = syncState{}
 	if opened := state.secrets.vault; opened != nil {
 		for _, name := range [...]string{webdavPasswordSecret, s3SecretName, gistTokenSecret, backupPasswordSecret} {
@@ -491,7 +648,7 @@ func (state *State) syncLogin(retry func(), quiet bool) (store cloudsync.Store, 
 	if !state.sync.configured() || opened == nil {
 		return fail(m.SyncErrNeedsVault)
 	}
-	if opened.HasMasterPassword() && !opened.Unlocked() {
+	if opened.NeedsConversion() {
 		if quiet {
 			state.sync.waitingForVault = true
 			return fail(m.BackupErrVault)
@@ -556,9 +713,171 @@ func (state *State) testSync() {
 	}()
 }
 
+// runWebdavFormTest tests the WebDAV login exactly as typed, without saving
+// it. A blank password falls back to the saved one, as saving would. The
+// result returns to this open form; stale results after Cancel are dropped.
+func (state *State) runWebdavFormTest(form *formDialog) string {
+	m := state.messages.Tools
+	address := strings.TrimSpace(form.value(0))
+	user, path := strings.TrimSpace(form.value(1)), strings.TrimSpace(form.value(3))
+	if path == "" {
+		path = defaultSyncPath
+	}
+	if user == "" {
+		return m.SyncErrFields
+	}
+	password := form.value(2)
+	if password == "" {
+		if state.sync.kind != syncWebDAV || !state.hasSyncSecret(webdavPasswordSecret) {
+			return m.SyncErrFields
+		}
+		secret, found, err := state.secrets.vault.Get(webdavPasswordSecret)
+		if err != nil {
+			return state.backupErrorText(err)
+		}
+		if !found {
+			return m.SyncErrFields
+		}
+		password = secret
+	}
+	client, err := webdav.New(webdav.Config{URL: address, User: user, Password: password, Path: path, AllowInsecureHTTP: form.checked}, nil)
+	if err != nil {
+		return webdavAddressError(m, err)
+	}
+	serial := state.formSerial
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
+		defer cancel()
+		err := client.Prepare(ctx)
+		state.aiPost(func(state *State) { state.finishFormTest(serial, err) })
+	}()
+	return ""
+}
+
+// openSyncRestore asks before replacing this computer's shared state with the
+// server's. Whatever was changed here and never synced is lost, except for the
+// safety copy in .before-restore; the cloud login and this window's layout stay
+// as they are.
+func (state *State) openSyncRestore() {
+	m := state.messages.Tools
+	if !state.sync.configured() || state.sync.working {
+		return
+	}
+	if len(state.sessions) > 0 {
+		state.showActionWarning(m.SyncRestoreTitle, m.BackupErrSessions)
+		return
+	}
+	if state.syncScope.empty() {
+		state.status = m.SyncErrNothingSelected
+		return
+	}
+	store, password, ok := state.syncLogin(func() { state.openSyncRestore() }, false)
+	if !ok {
+		return
+	}
+	epoch := state.syncEpoch
+	state.openForm(formDialog{
+		title: m.SyncRestoreTitle, description: m.SyncRestoreWarning, submit: m.SyncRestoreConfirm, danger: true,
+		run: func(state *State, _ *formDialog) string {
+			return state.runSyncRestore(store, password, epoch)
+		},
+	})
+}
+
+// runSyncRestore reads the remote backup and applies it on the window thread.
+// The dialog may have been open while a sync started or the service was changed;
+// store and epoch are the service the user confirmed.
+func (state *State) runSyncRestore(store cloudsync.Store, password string, epoch uint32) string {
+	m := state.messages.Tools
+	switch {
+	case state.syncEpoch != epoch:
+		return m.SyncRestoreChanged
+	case state.sync.working:
+		return m.SyncWorking
+	case state.syncScope.empty():
+		return m.SyncErrNothingSelected
+	case len(state.sessions) > 0:
+		return m.BackupErrSessions
+	}
+	state.sync.working, state.sync.runText = true, ""
+	state.status = m.SyncWorking
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
+		defer cancel()
+		data, tag, err := store.Get(ctx)
+		var remote backup.Document
+		if err == nil {
+			remote, err = backup.Open(data, password)
+		}
+		state.aiPost(func(state *State) { state.finishSyncRestore(epoch, remote, tag, err) })
+	}()
+	return ""
+}
+
+// finishSyncRestore replaces the shared state only after the whole backup has
+// arrived and opened, and only if the service is still the one it came from.
+//
+// A restore is one direction, so it does not start a sync of its own. It cannot
+// promise that nothing is uploaded afterwards: the records it wrote carry new
+// stamps, and the next sync, after any later change or at the next start, sends
+// the ones that differ from the server's. That is the same data; what it can do
+// is not surprise the user with an upload a few seconds after asking to restore.
+func (state *State) finishSyncRestore(epoch uint32, remote backup.Document, tag string, err error) {
+	if state.syncEpoch != epoch {
+		// The service was changed or cleared while the download ran; the new one
+		// owns the working flag and nothing of this belongs to it.
+		state.status = state.messages.Tools.SyncRestoreChanged
+		return
+	}
+	state.sync.working, state.sync.runText = false, ""
+	again := state.sync.again
+	state.sync.again = false
+	fail := func(message string) {
+		state.sync.err = message
+		state.status = fmt.Sprintf(state.messages.Tools.SyncFailedFmt, message)
+		if again {
+			state.scheduleSync() // something changed here while the restore ran
+		}
+	}
+	if err != nil {
+		fail(state.backupErrorText(err))
+		return
+	}
+	if len(state.sessions) > 0 {
+		fail(state.messages.Tools.BackupErrSessions)
+		return
+	}
+	if state.syncScope.empty() {
+		fail(state.messages.Tools.SyncErrNothingSelected)
+		return
+	}
+
+	state.stopSyncTimer()
+	state.sync.holdBack = true
+	_, err = state.applyBackupScope(remote, state.syncScope)
+	// What the restore itself asks of the sync engine (a saved password changed
+	// by the vault is posted from the vault) is queued ahead of this.
+	if !state.aiPost(func(state *State) { state.sync.holdBack = false }) {
+		state.sync.holdBack = false
+	}
+	var partial *partialRestoreError
+	switch {
+	case errors.As(err, &partial):
+		state.status = partial.message
+		return
+	case err != nil:
+		state.status = state.backupErrorText(err)
+		return
+	}
+	state.sync.etag, state.sync.last = tag, state.options.WallNow()
+	state.sync.err, state.sync.retries = "", 0
+	state.save()
+	state.status = fmt.Sprintf(state.messages.Tools.BackupRestoredFmt, len(state.hosts))
+}
+
 // --- settings page -------------------------------------------------------
 
-func (state *State) clickBackupSettings(id ui.ID) bool {
+func (state *State) clickBackupSettings(id gfx.ID) bool {
 	switch id {
 	case hitBackupExport:
 		state.openExportBackup()
@@ -570,10 +889,14 @@ func (state *State) clickBackupSettings(id ui.ID) bool {
 		state.openS3Configure()
 	case hitSyncConfigureGist:
 		state.openGistConfigure()
+	case hitSyncConfigureGitee:
+		state.openGiteeConfigure()
 	case hitSyncNow:
 		if state.sync.configured() {
 			state.syncNow()
 		}
+	case hitSyncRestore:
+		state.openSyncRestore()
 	case hitSyncAuto:
 		if state.sync.configured() {
 			state.sync.manual = !state.sync.manual
@@ -587,9 +910,27 @@ func (state *State) clickBackupSettings(id ui.ID) bool {
 			}
 		}
 	default:
+		if index, ok := id.In(hitSyncCategories); ok && index >= 0 && index < len(syncCategories) {
+			state.toggleSyncCategory(syncCategories[index])
+			return true
+		}
 		return false
 	}
 	return true
+}
+
+// toggleSyncCategory opens or closes one kind of content for this computer. The
+// choice is local: closing never deletes anything here or on the server, and
+// opening asks for a sync so that what was held back is exchanged soon.
+func (state *State) toggleSyncCategory(category syncCategory) {
+	state.syncScope = state.syncScope.toggled(category)
+	if state.syncScope.allows(category) {
+		state.sync.err, state.sync.retries, state.sync.runText = "", 0, ""
+	}
+	state.save()
+	if state.syncScope.allows(category) {
+		state.scheduleSync()
+	}
 }
 
 // syncTexts keeps the two descriptions of the cloud rows up to date; they are
@@ -632,11 +973,52 @@ func (state *State) paintBackupSettings(page *settingsPage) {
 			page.actionRow(m.SyncRow, row, false,
 				components.ButtonAction{ID: hitSyncConfigure, Label: m.SyncConfigure, Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitSyncConfigureS3, Label: m.SyncConfigureS3, Variant: components.ButtonOutline},
-				components.ButtonAction{ID: hitSyncConfigureGist, Label: m.SyncConfigureGist, Variant: components.ButtonOutline})
+				components.ButtonAction{ID: hitSyncConfigureGist, Label: m.SyncConfigureGist, Variant: components.ButtonOutline},
+				components.ButtonAction{ID: hitSyncConfigureGitee, Label: m.SyncConfigureGitee, Variant: components.ButtonOutline})
 			page.toggleRow(m.SyncAuto, m.SyncAutoDescription, !state.sync.manual, hitSyncAuto)
-			page.actionRow(m.SyncRunRow, run, !state.sync.configured() || state.sync.working,
+			page.actionRowWrap(m.SyncRunRow, run, !state.sync.configured() || state.sync.working,
 				components.ButtonAction{ID: hitSyncNow, Label: m.SyncNow, Variant: components.ButtonOutline},
+				components.ButtonAction{ID: hitSyncRestore, Label: m.SyncRestore, Variant: components.ButtonOutline},
 			)
 		})
+		page.group(m.SyncScopeGroup, func() {
+			page.hintRow(m.SyncScopeDescription)
+			for index, category := range syncCategories {
+				label, description := state.syncCategoryText(category)
+				page.toggleRow(label, description, state.syncScope.allows(category), hitSyncCategories.At(index))
+			}
+		})
 	})
+}
+
+// syncCategoryText is the settings page's words for one kind of content.
+func (state *State) syncCategoryText(category syncCategory) (label, description string) {
+	m := state.messages.Tools
+	switch category {
+	case syncCategoryHosts:
+		return m.SyncScopeHosts, m.SyncScopeHostsDescription
+	case syncCategorySettings:
+		return m.SyncScopeSettings, m.SyncScopeSettingsDescription
+	case syncCategoryNotes:
+		return m.SyncScopeNotes, m.SyncScopeNotesDescription
+	case syncCategorySnippets:
+		return m.SyncScopeSnippets, m.SyncScopeSnippetsDescription
+	case syncCategoryRoutes:
+		return m.SyncScopeRoutes, m.SyncScopeRoutesDescription
+	case syncCategoryForwards:
+		return m.SyncScopeForwards, m.SyncScopeForwardsDescription
+	case syncCategoryWorkspaces:
+		return m.SyncScopeWorkspaces, m.SyncScopeWorkspacesDescription
+	case syncCategoryCredentials:
+		return m.SyncScopeCredentials, m.SyncScopeCredentialsDescription
+	case syncCategoryKeys:
+		return m.SyncScopeKeys, m.SyncScopeKeysDescription
+	case syncCategoryAI:
+		return m.SyncScopeAI, m.SyncScopeAIDescription
+	case syncCategoryRules:
+		return m.SyncScopeRules, m.SyncScopeRulesDescription
+	case syncCategoryKnownHosts:
+		return m.SyncScopeKnownHosts, m.SyncScopeKnownHostsDescription
+	}
+	return "", ""
 }

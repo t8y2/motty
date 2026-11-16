@@ -3,8 +3,6 @@ package sshconn
 import (
 	"errors"
 	"fmt"
-	"net"
-	"os"
 
 	"golang.org/x/crypto/ssh/agent"
 )
@@ -24,13 +22,13 @@ func (conn *Conn) agentLink() (agent.ExtendedAgent, error) {
 	if owner.agentClient != nil {
 		return owner.agentClient, nil
 	}
-	socket := os.Getenv("SSH_AUTH_SOCK")
-	if socket == "" {
-		return nil, errors.New("no ssh-agent is running (SSH_AUTH_SOCK is not set)")
+	address := agentAddress(owner.config.AgentAddress)
+	if address == "" {
+		return nil, errNoAgent
 	}
-	link, err := net.Dial("unix", socket)
+	link, err := dialAgent(address)
 	if err != nil {
-		return nil, fmt.Errorf("connect to the ssh-agent: %w", err)
+		return nil, agentUnreachable(address, err)
 	}
 	client := agent.NewClient(link)
 	owner.agentClient = client

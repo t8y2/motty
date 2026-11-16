@@ -3,12 +3,13 @@ package workbench
 import (
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 // The window as the desktop sees it: where it is and whether the window manager
-// minimized it. Only the first window of a process remembers its frame, so
-// tearing a tab off does not overwrite where the main window was.
+// minimized it. Each window keeps its own place in its own record, so two
+// windows of one process remember two places and a torn-off tab does not
+// overwrite the window it came from.
 
 const (
 	// windowFrameSaveDelay is how long a window drag waits for more movement
@@ -17,45 +18,42 @@ const (
 )
 
 type windowChrome struct {
-	remember  bool
-	frame     ui.Rect
-	hasFrame  bool
-	minimized bool
-	saveTimer *time.Timer
+	remember          bool
+	frame             gfx.Rect
+	hasFrame          bool
+	minimized         bool
+	saveTimer         *time.Timer
+	fullscreen        bool
+	fullscreenSession uint32
+	setFullscreen     func(bool) error
 }
 
 // RestoredWindowFrame is where the last first window was, if a previous run
 // saved it. The window opens there and at that size.
-func (state *State) RestoredWindowFrame() (ui.Rect, bool) {
+func (state *State) RestoredWindowFrame() (gfx.Rect, bool) {
 	return state.winChrome.frame, state.winChrome.hasFrame
 }
 
-// restoreWindowFrame takes the frame a saved state carries and shares it, so
-// another window's later save writes the same place instead of erasing it.
-func (state *State) restoreWindowFrame(frame ui.Rect) {
+// restoreWindowFrame takes the frame a saved state carries. It is this window's
+// own, read from the record it saved, so it is kept here and not shared.
+func (state *State) restoreWindowFrame(frame gfx.Rect) {
 	if frame.Width < 1 || frame.Height < 1 {
 		return
 	}
 	state.winChrome.frame, state.winChrome.hasFrame = frame, true
-	if group := state.options.Group; group != nil {
-		group.setWindowFrame(frame)
-	}
 }
 
 // NoteWindowFrame records where the window is, as Viva reports every move and
 // size change, and saves it once the drag settles. Windows that do not remember
 // their frame ignore it.
-func (state *State) NoteWindowFrame(frame ui.Rect) {
-	if !state.winChrome.remember || state.closed {
+func (state *State) NoteWindowFrame(frame gfx.Rect) {
+	if !state.winChrome.remember || state.closed || state.winChrome.fullscreen || state.winChrome.fullscreenSession != 0 {
 		return
 	}
 	if state.winChrome.hasFrame && state.winChrome.frame == frame {
 		return
 	}
 	state.winChrome.frame, state.winChrome.hasFrame = frame, true
-	if group := state.options.Group; group != nil {
-		group.setWindowFrame(frame)
-	}
 	state.scheduleWindowFrameSave()
 }
 
@@ -86,14 +84,9 @@ func (state *State) closeWindowChrome() {
 	state.save()
 }
 
-// savedWindowFrame is the frame to write: the newest one any window of the
-// process reported, so a secondary window's save does not roll it back.
-func (state *State) savedWindowFrame() (ui.Rect, bool) {
-	if group := state.options.Group; group != nil {
-		if frame, ok := group.windowFrame(); ok {
-			return frame, true
-		}
-	}
+// savedWindowFrame is the frame to write: this window's own, which is what its
+// record holds. Two windows of one process save two places.
+func (state *State) savedWindowFrame() (gfx.Rect, bool) {
 	return state.winChrome.frame, state.winChrome.hasFrame
 }
 

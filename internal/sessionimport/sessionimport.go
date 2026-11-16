@@ -1,27 +1,35 @@
-// Package sessionimport reads the saved sessions of other SSH clients, PuTTY,
-// Xshell and MobaXterm, into the host fields Motty keeps. It reads files the
-// user chose and never executes, resolves or contacts anything in them.
+// Package sessionimport reads the saved sessions of other clients, PuTTY,
+// Xshell, MobaXterm, WindTerm, Electerm, Netcatty and SecureCRT, into the host
+// fields Motty keeps. It reads files or folders the user chose and never
+// executes, resolves or contacts anything in them.
 //
-// Only what a connection needs is taken: a name, a folder, an address, a port
-// and a user. Passwords are never imported: every one of these clients stores
-// them encrypted with a scheme of its own, and a key file path in a session is
-// reported rather than followed, since each client has its own key format.
+// Only connection fields and readable SSH login password candidates from
+// Electerm and Netcatty are taken. The caller decides whether to save those
+// candidates in a vault. Other clients' encrypted credentials and key files
+// are not imported; SecureCRT in particular stores every saved password
+// encrypted, so a SecureCRT import never carries one.
 package sessionimport
 
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 // Limits keep a damaged or hostile file from using the machine: a session file
@@ -31,7 +39,14 @@ const (
 	MaxEntries     = 5000
 	maxArchiveSize = 64 << 20
 	maxNameLength  = 200
+	maxGroupLength = 512
+	// maxGroupDepth is how many folders of a nested group tree are followed; real
+	// bookmark trees are a few levels deep, so only a damaged or hostile file
+	// reaches it.
+	maxGroupDepth = 32
 )
+
+var ErrAmbiguousMobaEncoding = errors.New("MobaXterm text is valid as both UTF-8 and GB18030; choose an encoding")
 
 // Protocol is how a session is reached.
 type Protocol uint8
@@ -49,11 +64,12 @@ type Entry struct {
 	Line     string
 	Flow     string
 
-	Name  string
-	Group string // folders joined with "/", empty at the top
-	Host  string
-	Port  int // zero when the file named none
-	User  string
+	Name     string
+	Group    string // folders joined with "/", empty at the top
+	Host     string
+	Port     int // zero when the file named none
+	User     string
+	Password string // ephemeral candidate; never serialized with a host
 	// Source names where the entry came from, for warnings.
 	Source string
 }
@@ -65,8 +81,12 @@ type Result struct {
 	// and the serial ports of clients whose serial settings are not read).
 	Skipped int
 	// Keys counts sessions that name a private key file, which was not imported.
-	Keys     int
-	Warnings []string
+	Keys int
+	// PlainSecrets counts imported sessions whose file carried a password, key
+	// passphrase or private key in readable text, so the user can be told to
+	// protect the export even if password saving was declined.
+	PlainSecrets int
+	Warnings     []string
 }
 
 func (result *Result) warn(format string, args ...any) {
@@ -81,6 +101,7 @@ func (result *Result) add(entry Entry) {
 		return
 	}
 	entry.Name = clean(entry.Name, maxNameLength)
+	entry.Group = clean(entry.Group, maxGroupLength)
 	entry.Host = clean(entry.Host, 255)
 	entry.User = clean(entry.User, 128)
 	if entry.Name == "" {
@@ -111,6 +132,7 @@ func (result *Result) merge(other Result) {
 	}
 	result.Skipped += other.Skipped
 	result.Keys += other.Keys
+	result.PlainSecrets += other.PlainSecrets
 	for _, warning := range other.Warnings {
 		result.warn("%s", warning)
 	}
@@ -134,24 +156,107 @@ func clean(value string, limit int) string {
 
 // readFile reads at most MaxFileSize bytes and decodes them to UTF-8.
 func readFile(path string) (string, error) {
-	file, err := os.Open(path)
+	data, err := readFileBytes(path)
 	if err != nil {
 		return "", err
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, MaxFileSize+1))
-	if err != nil {
-		return "", err
-	}
-	if len(data) > MaxFileSize {
-		return "", fmt.Errorf("%s is too large to be a session file", filepath.Base(path))
 	}
 	return decode(data), nil
 }
 
+func readFileBytes(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, MaxFileSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > MaxFileSize {
+		return nil, fmt.Errorf("%s is too large to be a session file", filepath.Base(path))
+	}
+	return data, nil
+}
+
+func readMobaFile(path string, encoding MobaEncoding) (string, error) {
+	data, err := readFileBytes(path)
+	if err != nil {
+		return "", err
+	}
+	problem := fmt.Errorf("%s has an unsupported or damaged text encoding", filepath.Base(path))
+	if bytes.HasPrefix(data, []byte{0xff, 0xfe}) || bytes.HasPrefix(data, []byte{0xfe, 0xff}) {
+		bigEndian := data[0] == 0xfe
+		if len(data[2:])%2 != 0 {
+			return "", problem
+		}
+		units := make([]uint16, 0, len(data[2:])/2)
+		for index := 2; index < len(data); index += 2 {
+			unit := uint16(data[index+1])<<8 | uint16(data[index])
+			if bigEndian {
+				unit = uint16(data[index])<<8 | uint16(data[index+1])
+			}
+			if unit >= 0xd800 && unit <= 0xdbff {
+				if index+3 >= len(data) {
+					return "", problem
+				}
+				next := uint16(data[index+3])<<8 | uint16(data[index+2])
+				if bigEndian {
+					next = uint16(data[index+2])<<8 | uint16(data[index+3])
+				}
+				if next < 0xdc00 || next > 0xdfff {
+					return "", problem
+				}
+			} else if unit >= 0xdc00 && unit <= 0xdfff {
+				if len(units) == 0 || units[len(units)-1] < 0xd800 || units[len(units)-1] > 0xdbff {
+					return "", problem
+				}
+			}
+			units = append(units, unit)
+		}
+		return string(utf16.Decode(units)), nil
+	}
+	if bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) {
+		if !utf8.Valid(data[3:]) {
+			return "", problem
+		}
+		return string(data[3:]), nil
+	}
+	if encoding == MobaUTF8 || encoding == MobaAuto && utf8.Valid(data) {
+		if !utf8.Valid(data) {
+			return "", problem
+		}
+		if encoding == MobaAuto {
+			if other, ok := decodeGB18030Verified(data); ok && other != string(data) {
+				return "", ErrAmbiguousMobaEncoding
+			}
+		}
+		return string(data), nil
+	}
+	if decoded, ok := decodeGB18030Verified(data); ok {
+		return decoded, nil
+	}
+	return "", problem
+}
+
+func decodeGB18030Verified(data []byte) (string, bool) {
+	decoded, err := simplifiedchinese.GB18030.NewDecoder().Bytes(data)
+	if err == nil {
+		var encoded []byte
+		encoded, err = simplifiedchinese.GB18030.NewEncoder().Bytes(decoded)
+		if err == nil && bytes.Equal(data, encoded) {
+			return string(decoded), true
+		}
+	}
+	return "", false
+}
+
 // decode turns a file's bytes into text: UTF-16 with a byte-order mark (what
-// Windows tools write), or UTF-8 with or without one. Anything that is neither
-// is read as UTF-8 with its bad bytes dropped.
+// Windows tools write), or UTF-8 with or without one. Bytes that are neither
+// get one more chance — the round-trip-verified GB18030 the MobaXterm reader
+// uses, since ANSI exports from a Chinese Windows (Xshell's among them) keep
+// their text in that encoding — and only what survives none of those is read
+// as UTF-8 with its bad bytes dropped (issue #332).
 func decode(data []byte) string {
 	switch {
 	case bytes.HasPrefix(data, []byte{0xff, 0xfe}):
@@ -163,6 +268,9 @@ func decode(data []byte) string {
 	}
 	if utf8.Valid(data) {
 		return string(data)
+	}
+	if decoded, ok := decodeGB18030Verified(data); ok {
+		return decoded
 	}
 	return strings.ToValidUTF8(string(data), "")
 }
@@ -240,6 +348,24 @@ func (file ini) section(name string) (iniSection, bool) {
 
 // Parse reads each path with the reader for client, and joins the results.
 func Parse(client Client, paths []string) (Result, error) {
+	return ParseWithOptions(client, paths, ParseOptions{})
+}
+
+type MobaEncoding uint8
+
+const (
+	MobaAuto MobaEncoding = iota
+	MobaUTF8
+	MobaGB18030
+)
+
+type ParseOptions struct {
+	MobaEncoding MobaEncoding
+}
+
+// ParseWithOptions resolves BOM-less MobaXterm files whose bytes are valid in
+// both UTF-8 and GB18030. The default keeps valid UTF-8 files as UTF-8.
+func ParseWithOptions(client Client, paths []string, options ParseOptions) (Result, error) {
 	var result Result
 	if len(paths) == 0 {
 		return result, errors.New("no file was chosen")
@@ -256,13 +382,22 @@ func Parse(client Client, paths []string) (Result, error) {
 		case Xshell:
 			part, err = ParseXshell(path)
 		case MobaXterm:
-			part, err = ParseMobaXterm(path)
+			part, err = ParseMobaXtermWithEncoding(path, options.MobaEncoding)
 		case WindTerm:
 			part, err = ParseWindTerm(path)
+		case Electerm:
+			part, err = ParseElecterm(path)
+		case Netcatty:
+			part, err = ParseNetcatty(path)
+		case SecureCRT:
+			part, err = ParseSecureCRT(path)
 		default:
 			err = fmt.Errorf("unknown client %d", client)
 		}
 		if err != nil {
+			if errors.Is(err, ErrAmbiguousMobaEncoding) {
+				return Result{}, fmt.Errorf("%s: %w", filepath.Base(path), err)
+			}
 			failed = append(failed, fmt.Sprintf("%s: %v", filepath.Base(path), err))
 			continue
 		}
@@ -285,6 +420,9 @@ const (
 	Xshell
 	MobaXterm
 	WindTerm
+	Electerm
+	Netcatty
+	SecureCRT
 )
 
 // ---- PuTTY ----
@@ -478,7 +616,8 @@ func parseXshellSession(result *Result, text, name, group, source string) error 
 	}
 	telnet := false
 	switch protocol := strings.ToUpper(connection.values["protocol"]); protocol {
-	case "", "SSH":
+	case "", "SSH", "SSH2":
+		// SSH2 is the name some clients write for the same protocol.
 	case "TELNET":
 		telnet = true
 	default:
@@ -493,12 +632,35 @@ func parseXshellSession(result *Result, text, name, group, source string) error 
 	user := ""
 	if auth, ok := file.section("CONNECTION:AUTHENTICATION"); ok {
 		user = auth.values["username"]
-		if auth.values["userkey"] != "" {
+		// Bastion clients often put a placeholder such as fake_rsa in UserKey;
+		// that is not a private key file to import or to fail a login for.
+		if key := auth.values["userkey"]; key != "" && !IsPlaceholderKey(key) {
 			result.Keys++
 		}
 	}
 	result.add(Entry{Name: name, Group: group, Host: connection.values["host"], Port: port, User: user, Source: source})
 	return nil
+}
+
+// IsLoopbackHost reports whether host is this computer: 127.0.0.1, ::1 or
+// localhost. Bastion clients write those into one-shot tunnel session files.
+func IsLoopbackHost(host string) bool {
+	if strings.EqualFold(strings.TrimSpace(host), "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.TrimSpace(host))
+	return ip != nil && ip.IsLoopback()
+}
+
+// IsPlaceholderKey reports a UserKey name that is not a real private key file.
+// Bastion-generated .xsh files often use fake_rsa (and similar) as a stand-in.
+func IsPlaceholderKey(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return true
+	}
+	lower := strings.ToLower(name)
+	return lower == "fake_rsa" || strings.HasPrefix(lower, "fake_")
 }
 
 func parseXshellArchive(path string) (Result, error) {
@@ -512,6 +674,15 @@ func parseXshellArchive(path string) (Result, error) {
 	for _, member := range archive.File {
 		if member.FileInfo().IsDir() || !strings.EqualFold(filepath.Ext(member.Name), ".xsh") {
 			continue
+		}
+		name := member.Name
+		if !utf8.ValidString(name) {
+			decoded, ok := decodeGB18030Verified([]byte(name))
+			if !ok {
+				result.warn("%s: unsupported member name encoding", filepath.Base(path))
+				continue
+			}
+			name = decoded
 		}
 		total += member.UncompressedSize64
 		if member.UncompressedSize64 > MaxFileSize || total > maxArchiveSize {
@@ -529,13 +700,13 @@ func parseXshellArchive(path string) (Result, error) {
 			result.warn("%s: unreadable", member.Name)
 			continue
 		}
-		slashed := strings.ReplaceAll(member.Name, `\`, "/")
+		slashed := strings.ReplaceAll(name, `\`, "/")
 		group, base := "", slashed
 		if at := strings.LastIndexByte(slashed, '/'); at >= 0 {
 			group, base = strings.Trim(slashed[:at], "/"), slashed[at+1:]
 		}
-		if err := parseXshellSession(&result, decode(data), strings.TrimSuffix(base, filepath.Ext(base)), group, member.Name); err != nil {
-			result.warn("%s: %v", member.Name, err)
+		if err := parseXshellSession(&result, decode(data), strings.TrimSuffix(base, filepath.Ext(base)), group, name); err != nil {
+			result.warn("%s: %v", name, err)
 		}
 	}
 	return result, nil
@@ -548,7 +719,11 @@ func parseXshellArchive(path string) (Result, error) {
 // Name=#icon#type%host%port%user%...; type 0 is SSH. Folders are the SubRep of
 // each [Bookmarks] section.
 func ParseMobaXterm(path string) (Result, error) {
-	text, err := readFile(path)
+	return ParseMobaXtermWithEncoding(path, MobaAuto)
+}
+
+func ParseMobaXtermWithEncoding(path string, encoding MobaEncoding) (Result, error) {
+	text, err := readMobaFile(path, encoding)
 	if err != nil {
 		return Result{}, err
 	}
@@ -654,4 +829,567 @@ func ParseWindTerm(path string) (Result, error) {
 		})
 	}
 	return result, nil
+}
+
+// ---- Electerm ----
+
+// electermExport is what Electerm writes when its bookmarks are exported: a flat
+// list of bookmarks and a flat list of groups, each naming the other by id. A
+// group names the groups inside it (BookmarkGroupIDs) and the bookmarks inside it
+// (BookmarkIDs), so the tree is rebuilt from those ids; Level only says how deep
+// a group is and is not trusted.
+type electermExport struct {
+	Bookmarks      []electermBookmark `json:"bookmarks"`
+	BookmarkGroups []electermGroup    `json:"bookmarkGroups"`
+}
+
+type electermBookmark struct {
+	ID       string       `json:"id"`
+	Title    string       `json:"title"`
+	Host     string       `json:"host"`
+	Port     electermPort `json:"port"`
+	User     string       `json:"username"`
+	Type     string       `json:"type"`
+	AuthType string       `json:"authType"`
+	// Key material is counted but not imported. A password is offered only for
+	// SSH sessions whose authentication does not select a private key.
+	Password   string `json:"password"`
+	Passphrase string `json:"passphrase"`
+	PrivateKey string `json:"privateKey"`
+}
+
+// electermPort is a port that Electerm writes as a number but that an edited or
+// older export may hold as text. Anything that is not a port reads as 0, "the
+// default", rather than failing the whole file.
+type electermPort int
+
+func (port *electermPort) UnmarshalJSON(data []byte) error {
+	text := strings.Trim(strings.TrimSpace(string(data)), `"`)
+	if value, err := strconv.Atoi(text); err == nil {
+		*port = electermPort(value)
+	} else {
+		*port = 0
+	}
+	return nil
+}
+
+type electermGroup struct {
+	ID               string   `json:"id"`
+	Title            string   `json:"title"`
+	BookmarkIDs      []string `json:"bookmarkIds"`
+	BookmarkGroupIDs []string `json:"bookmarkGroupIds"`
+}
+
+// electermDefaultGroup is the id of the group Electerm creates for itself and
+// puts every bookmark in that was never filed anywhere. Its title is the word
+// "default" in the interface language, so it is told apart by id, and it is not a
+// folder the user made.
+const electermDefaultGroup = "default"
+
+// ParseElecterm reads an Electerm bookmarks export (a .json file). Its groups
+// nest, and a session is SSH unless Type says otherwise.
+func ParseElecterm(path string) (Result, error) {
+	text, err := readFile(path)
+	if err != nil {
+		return Result{}, err
+	}
+	var export electermExport
+	if err := json.Unmarshal([]byte(text), &export); err != nil {
+		return Result{}, fmt.Errorf("not an Electerm bookmarks export: %s", electermJSONProblem(err))
+	}
+	if export.Bookmarks == nil && export.BookmarkGroups == nil {
+		return Result{}, errors.New("not an Electerm bookmarks export: it has neither bookmarks nor groups")
+	}
+	var result Result
+	tree := newElectermTree(export)
+	source := filepath.Base(path)
+	shortened := false
+	for _, bookmark := range export.Bookmarks {
+		kind := SSH
+		switch strings.ToLower(bookmark.Type) {
+		case "", "ssh":
+		case "telnet":
+			kind = Telnet
+		default:
+			result.Skipped++
+			continue
+		}
+		if len(result.Entries) >= MaxEntries {
+			result.warn("%s: more than %d sessions; the rest were not read", source, MaxEntries)
+			break
+		}
+		if strings.EqualFold(bookmark.AuthType, "privateKey") {
+			result.Keys++
+		}
+		user := bookmark.User
+		if kind == Telnet {
+			user = ""
+		}
+		group := ""
+		if owner, ok := tree.owner[bookmark.ID]; ok {
+			var cut bool
+			group, cut = tree.groupPath(owner)
+			shortened = shortened || cut
+		}
+		before := len(result.Entries)
+		password := ""
+		if kind == SSH && bookmark.PrivateKey == "" && (bookmark.AuthType == "" || strings.EqualFold(bookmark.AuthType, "password")) {
+			password = bookmark.Password
+		}
+		result.add(Entry{
+			Name: bookmark.Title, Group: group, Protocol: kind,
+			Host: bookmark.Host, Port: int(bookmark.Port), User: user, Password: password, Source: source,
+		})
+		if len(result.Entries) > before && (bookmark.Password != "" || bookmark.Passphrase != "" || bookmark.PrivateKey != "") {
+			result.PlainSecrets++
+		}
+	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", source, maxGroupDepth)
+	}
+	return result, nil
+}
+
+// electermJSONProblem says what is wrong with a file that is not an Electerm
+// export, in words that name the JSON rather than a Go type.
+func electermJSONProblem(err error) string {
+	var wrong *json.UnmarshalTypeError
+	if errors.As(err, &wrong) {
+		if wrong.Field == "" {
+			return "it is a JSON " + wrong.Value + ", not an object of bookmarks"
+		}
+		return fmt.Sprintf("%q holds a JSON %s where a %s was expected", wrong.Field, wrong.Value, wrong.Type.Kind())
+	}
+	return err.Error()
+}
+
+// electermTree answers the two questions the flat export cannot: which group a
+// bookmark is in, and where that group sits.
+type electermTree struct {
+	groups map[string]electermGroup
+	parent map[string]string // group id -> the id of the group it sits in
+	owner  map[string]string // bookmark id -> the id of the group holding it
+}
+
+func newElectermTree(export electermExport) *electermTree {
+	tree := &electermTree{
+		groups: make(map[string]electermGroup, len(export.BookmarkGroups)),
+		parent: map[string]string{},
+		owner:  map[string]string{},
+	}
+	for _, group := range export.BookmarkGroups {
+		if _, seen := tree.groups[group.ID]; !seen && group.ID != "" {
+			tree.groups[group.ID] = group
+		}
+	}
+	// The first group that names something owns it, so a bookmark or group listed
+	// twice still lands in one folder.
+	for _, group := range export.BookmarkGroups {
+		for _, id := range group.BookmarkGroupIDs {
+			if _, seen := tree.parent[id]; !seen && id != "" && id != group.ID {
+				tree.parent[id] = group.ID
+			}
+		}
+		for _, id := range group.BookmarkIDs {
+			if _, seen := tree.owner[id]; !seen && id != "" {
+				tree.owner[id] = group.ID
+			}
+		}
+	}
+	return tree
+}
+
+// groupPath is the folder a group sits in followed by its own title, joined with
+// "/" the way the other imports join nested folders, and whether the path had to
+// be cut at maxGroupDepth levels (the innermost ones are kept). A group that is
+// its own ancestor, as a damaged file can make it, stops the climb where it
+// would come round to itself. Electerm's own default group is not a folder.
+func (tree *electermTree) groupPath(id string) (string, bool) {
+	var ids []string
+	cut := false
+	for current := id; ; {
+		if _, known := tree.groups[current]; !known || slices.Contains(ids, current) {
+			break
+		}
+		if len(ids) == maxGroupDepth {
+			cut = true
+			break
+		}
+		ids = append(ids, current)
+		above, nested := tree.parent[current]
+		if !nested {
+			break
+		}
+		current = above
+	}
+	titles := make([]string, 0, len(ids))
+	for _, groupID := range slices.Backward(ids) {
+		if groupID == electermDefaultGroup {
+			continue
+		}
+		if title := clean(tree.groups[groupID].Title, maxNameLength); title != "" {
+			titles = append(titles, title)
+		}
+	}
+	return strings.Join(titles, "/"), cut
+}
+
+// ---- Netcatty ----
+
+// ParseNetcatty reads the hosts file Netcatty exports from its vault: a CSV whose
+// first row names the columns (Groups, Label, Hostname/IP, Protocol, Port,
+// Username, ...). Netcatty keeps its vault encrypted with the system secret
+// store, so this export is the only form another program can read. A group is
+// already a "/" path. Password and Passphrase are written into the file in the
+// clear; SSH login passwords without a key are offered to the caller, while
+// passphrases and key material are not. ProxyJump, Proxy, tags and notes are
+// not read.
+func ParseNetcatty(path string) (Result, error) {
+	text, err := readFile(path)
+	if err != nil {
+		return Result{}, err
+	}
+	reader := csv.NewReader(strings.NewReader(text))
+	reader.FieldsPerRecord = -1
+	reader.LazyQuotes = true
+	header, err := reader.Read()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return Result{}, errors.New("not a Netcatty hosts export: the file is empty")
+		}
+		return Result{}, fmt.Errorf("not a Netcatty hosts export: %v", err)
+	}
+	column := func(names ...string) int {
+		for index, cell := range header {
+			cell = strings.ToLower(strings.TrimSpace(cell))
+			if slices.Contains(names, cell) {
+				return index
+			}
+		}
+		return -1
+	}
+	columns := struct{ group, label, host, protocol, port, user, password, key, passphrase int }{
+		group: column("groups", "group"), label: column("label", "name"),
+		host: column("hostname/ip", "hostname", "host"), protocol: column("protocol"),
+		port: column("port"), user: column("username", "user"), password: column("password"),
+		key: column("keypath"), passphrase: column("passphrase"),
+	}
+	if columns.host < 0 {
+		return Result{}, errors.New("not a Netcatty hosts export: it has no Hostname/IP column")
+	}
+	cell := func(row []string, index int) string {
+		if index < 0 || index >= len(row) {
+			return ""
+		}
+		return row[index]
+	}
+
+	var result Result
+	source := filepath.Base(path)
+	shortened := false
+	for line := 2; ; line++ {
+		row, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			result.warn("%s: line %d: %v", source, line, err)
+			continue
+		}
+		host := strings.TrimSpace(cell(row, columns.host))
+		if host == "" {
+			continue
+		}
+		kind := SSH
+		switch strings.ToLower(strings.TrimSpace(cell(row, columns.protocol))) {
+		case "", "ssh", "ssh2", "ssh-2":
+		case "telnet":
+			kind = Telnet
+		default:
+			result.Skipped++
+			continue
+		}
+		if len(result.Entries) >= MaxEntries {
+			result.warn("%s: more than %d sessions; the rest were not read", source, MaxEntries)
+			break
+		}
+		port, _ := strconv.Atoi(strings.TrimSpace(cell(row, columns.port)))
+		user := netcattyText(cell(row, columns.user))
+		if kind == Telnet {
+			user = ""
+		}
+		group, cut := netcattyGroup(netcattyText(cell(row, columns.group)))
+		shortened = shortened || cut
+		before := len(result.Entries)
+		password := ""
+		if kind == SSH && strings.TrimSpace(cell(row, columns.key)) == "" {
+			password = netcattyText(cell(row, columns.password))
+		}
+		result.add(Entry{
+			Name: netcattyText(cell(row, columns.label)), Group: group, Protocol: kind,
+			Host: strings.TrimSuffix(strings.TrimPrefix(host, "["), "]"), Port: port, User: user, Password: password,
+			Source: fmt.Sprintf("%s: line %d", source, line),
+		})
+		if len(result.Entries) == before {
+			continue
+		}
+		if kind == SSH && strings.TrimSpace(cell(row, columns.key)) != "" {
+			result.Keys++
+		}
+		if cell(row, columns.password) != "" || cell(row, columns.passphrase) != "" {
+			result.PlainSecrets++
+		}
+	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", source, maxGroupDepth)
+	}
+	return result, nil
+}
+
+// netcattyText undoes the guard Netcatty puts before a text cell that a
+// spreadsheet would read as a formula: a leading "'" before =, +, -, @, tab or
+// carriage return.
+func netcattyText(value string) string {
+	if len(value) > 1 && value[0] == '\'' && strings.ContainsRune("=+-@\t\r", rune(value[1])) {
+		return value[1:]
+	}
+	return value
+}
+
+// netcattyGroup tidies a group path: empty folders go, and a path deeper than
+// maxGroupDepth keeps its innermost folders. It reports whether it cut.
+func netcattyGroup(path string) (string, bool) {
+	var folders []string
+	for _, folder := range strings.Split(path, "/") {
+		if folder = clean(folder, maxNameLength); folder != "" {
+			folders = append(folders, folder)
+		}
+	}
+	cut := len(folders) > maxGroupDepth
+	if cut {
+		folders = folders[len(folders)-maxGroupDepth:]
+	}
+	return strings.Join(folders, "/"), cut
+}
+
+// ---- SecureCRT ----
+
+// ParseSecureCRT reads a SecureCRT Sessions folder — the tree of .ini files
+// under Config/Sessions — or one session file from it. The folders inside
+// become groups. SecureCRT stores every saved password encrypted, so a session
+// brings its address, login name and port but never a password; the caller
+// warns about that the way it does for any other client whose credentials
+// cannot be read.
+func ParseSecureCRT(path string) (Result, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Result{}, err
+	}
+	if info.IsDir() {
+		return parseSecureCRTFolder(path)
+	}
+	text, err := readFile(path)
+	if err != nil {
+		return Result{}, err
+	}
+	var result Result
+	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if !parseSecureCRTSession(&result, text, name, "", filepath.Base(path)) {
+		return result, errors.New("not a SecureCRT session: it has no Hostname or Protocol Name")
+	}
+	return result, nil
+}
+
+func parseSecureCRTFolder(root string) (Result, error) {
+	var (
+		result    Result
+		sessions  int
+		totalSize uint64
+		shortened bool
+	)
+	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			if path == root {
+				return err
+			}
+			result.warn("%s: %v", filepath.Base(path), err)
+			return nil
+		}
+		if entry.IsDir() || entry.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		base := entry.Name()
+		lower := strings.ToLower(base)
+		// A folder's own marker and the inherited defaults are not sessions.
+		if !strings.HasSuffix(lower, ".ini") || lower == "__folderdata__.ini" || lower == "default.ini" {
+			return nil
+		}
+		if len(result.Entries) >= MaxEntries {
+			result.warn("%s: more than %d sessions; the rest were not read", filepath.Base(root), MaxEntries)
+			return filepath.SkipAll
+		}
+		if info, infoErr := entry.Info(); infoErr == nil {
+			totalSize += uint64(info.Size())
+			if totalSize > maxArchiveSize {
+				result.warn("%s: too large; the rest of the folder was not read", filepath.Base(root))
+				return filepath.SkipAll
+			}
+		}
+		relative, relativeErr := filepath.Rel(root, path)
+		if relativeErr != nil {
+			relative = base
+		}
+		relative = filepath.ToSlash(relative)
+		text, readErr := readFile(path)
+		if readErr != nil {
+			result.warn("%s: %v", relative, readErr)
+			return nil
+		}
+		group, cut := secureCRTGroup(filepath.ToSlash(filepath.Dir(relative)), root)
+		shortened = shortened || cut
+		name := strings.TrimSuffix(base, filepath.Ext(base))
+		if parseSecureCRTSession(&result, text, name, group, relative) {
+			sessions++
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return result, walkErr
+	}
+	if sessions == 0 {
+		return result, errors.New("not a SecureCRT Sessions folder: it holds no session files")
+	}
+	if shortened {
+		result.warn("%s: folders nested more than %d levels deep were shortened", filepath.Base(root), maxGroupDepth)
+	}
+	return result, nil
+}
+
+// secureCRTGroup turns the folders between the chosen root and a session's file
+// into the "/" path the other imports use. The root may be Config, so the
+// Sessions folder at its top is not a group of the user's.
+func secureCRTGroup(relativeDir, root string) (string, bool) {
+	if relativeDir == "" || relativeDir == "." {
+		return "", false
+	}
+	folders := strings.Split(relativeDir, "/")
+	if !strings.EqualFold(filepath.Base(root), "Sessions") && strings.EqualFold(folders[0], "Sessions") {
+		folders = folders[1:]
+	}
+	titles := make([]string, 0, len(folders))
+	for _, folder := range folders {
+		if folder = clean(folder, maxNameLength); folder != "" {
+			titles = append(titles, folder)
+		}
+	}
+	cut := len(titles) > maxGroupDepth
+	if cut {
+		titles = titles[len(titles)-maxGroupDepth:]
+	}
+	return strings.Join(titles, "/"), cut
+}
+
+// parseSecureCRTSession reads one session file. It reports whether the file
+// described a session at all, so an unrelated .ini in the folder, or a session
+// of a kind that is skipped, is not mistaken for an unreadable folder.
+func parseSecureCRTSession(result *Result, text, name, group, source string) bool {
+	values := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		if key, value, ok := secureCRTLine(line); ok {
+			values[key] = value
+		}
+	}
+	protocol := strings.ToUpper(strings.TrimSpace(values["protocol name"]))
+	host := strings.TrimSpace(values["hostname"])
+	if protocol == "" && host == "" {
+		return false
+	}
+	kind := SSH
+	switch protocol {
+	case "", "SSH", "SSH1", "SSH2", "SSH-1", "SSH-2":
+	case "TELNET":
+		kind = Telnet
+	default:
+		result.Skipped++
+		return true
+	}
+	port := 0
+	for _, key := range secureCRTPortKeys(protocol) {
+		if port = secureCRTPort(values[key]); port > 0 {
+			break
+		}
+	}
+	user := strings.TrimSpace(values["username"])
+	if kind == Telnet {
+		user = ""
+	}
+	identity := strings.TrimSpace(values["identity filename v2"])
+	if identity == "" {
+		identity = strings.TrimSpace(values["identity filename"])
+	}
+	if identity != "" && !strings.EqualFold(identity, "none") && !IsPlaceholderKey(identity) {
+		result.Keys++
+	}
+	if sessionName := strings.TrimSpace(values["session name"]); sessionName != "" {
+		name = sessionName
+	}
+	result.add(Entry{
+		Name: name, Group: group, Protocol: kind, Host: host, Port: port, User: user, Source: source,
+	})
+	return true
+}
+
+// secureCRTPortKeys is the port field a protocol writes, most specific first.
+func secureCRTPortKeys(protocol string) []string {
+	switch protocol {
+	case "SSH1":
+		return []string{"[ssh1] port", "[ssh2] port", "port"}
+	case "TELNET":
+		return []string{"[telnet] port", "port", "[ssh2] port", "[ssh1] port"}
+	default:
+		return []string{"[ssh2] port", "[ssh1] port", "[telnet] port", "port"}
+	}
+}
+
+// secureCRTLine reads one S:"Key"=value, D:"Key"=value or B:"Key"=value line.
+// B values continue on indented lines of hex, which this does not match.
+func secureCRTLine(line string) (key, value string, ok bool) {
+	line = strings.TrimSpace(strings.TrimRight(line, "\r"))
+	if len(line) < 5 || (line[0] != 'S' && line[0] != 'D' && line[0] != 'B') || line[1] != ':' || line[2] != '"' {
+		return "", "", false
+	}
+	end := strings.IndexByte(line[3:], '"')
+	if end < 0 {
+		return "", "", false
+	}
+	key = strings.ToLower(line[3 : 3+end])
+	rest := line[4+end:]
+	if !strings.HasPrefix(rest, "=") {
+		return "", "", false
+	}
+	value = strings.TrimSpace(rest[1:])
+	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+		value = strings.ReplaceAll(value[1:len(value)-1], `\"`, `"`)
+		value = strings.ReplaceAll(value, `\\`, `\`)
+	}
+	return key, value, true
+}
+
+// secureCRTPort reads a port stored either as SecureCRT's eight hex digits or,
+// as some edited files hold it, as decimal text.
+func secureCRTPort(value string) int {
+	value = strings.TrimSpace(value)
+	if len(value) == 8 {
+		if number, err := strconv.ParseUint(value, 16, 32); err == nil {
+			if number > 0 && number <= 65535 {
+				return int(number)
+			}
+			return 0
+		}
+	}
+	number, err := strconv.Atoi(value)
+	if err != nil || number < 0 || number > 65535 {
+		return 0
+	}
+	return number
 }

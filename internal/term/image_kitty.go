@@ -77,27 +77,47 @@ func (t *Terminal) kittyGraphics(payload []byte) {
 			return
 		}
 	} else {
+		// A delete or a placement of an earlier image is applied in turn with
+		// the decodes before it: the image it names may still be decoding.
+		lineID, column, placed := t.imageAnchor()
 		if params.action == 'd' {
-			t.deleteKitty(params)
-			t.replyKitty(params, "OK")
+			t.queueImageJob(&imageJob{wake: t.imageWake, apply: func(t *Terminal, _ imageResult) {
+				t.deleteKitty(params)
+				t.replyKitty(params, "OK")
+			}})
 			return
 		}
 		if params.action == 'p' {
-			image := t.findKittyImage(params.imageID)
-			if image == nil {
-				t.replyKitty(params, "ENOENT:image not found")
-				return
+			var placement uint64
+			if placed {
+				placement, placed = t.reserveKittyPlacement(params, lineID, column)
 			}
-			t.placeKitty(image, params)
-			t.replyKitty(params, "OK")
+			t.queueImageJob(&imageJob{wake: t.imageWake, apply: func(t *Terminal, _ imageResult) {
+				image := t.findKittyImage(params.imageID)
+				if image == nil {
+					if placed {
+						t.dropImagePlacement(placement)
+					}
+					t.replyKitty(params, "ENOENT:image not found")
+					return
+				}
+				if placed {
+					t.attachImagePlacement(placement, image, nil)
+				}
+				t.replyKitty(params, "OK")
+			}})
 			return
 		}
 		if params.action == 'q' {
+			// The reply goes out with the earlier images so the answers stay in
+			// the order the commands arrived.
+			status := "EINVAL:unsupported format"
 			if params.format == 0 || params.format == 24 || params.format == 32 || params.format == 100 {
-				t.replyKitty(params, "OK")
-			} else {
-				t.replyKitty(params, "EINVAL:unsupported format")
+				status = "OK"
 			}
+			t.queueImageJob(&imageJob{wake: t.imageWake, apply: func(t *Terminal, _ imageResult) {
+				t.replyKitty(params, status)
+			}})
 			return
 		}
 	}
@@ -129,31 +149,53 @@ func (t *Terminal) kittyGraphics(payload []byte) {
 		t.kitty = &kittyTransfer{params: params, data: append([]byte(nil), chunk...)}
 		return
 	}
-	if params.compression == 'z' {
-		chunk, err = inflateImage(chunk)
+	lineID, column, anchored := t.imageAnchor()
+	var placement uint64
+	placed := false
+	if anchored && params.action == 'T' {
+		placement, placed = t.reserveKittyPlacement(params, lineID, column)
+	}
+	transfer := params
+	job := &imageJob{wake: t.imageWake, size: len(chunk), decode: func() imageResult {
+		data := chunk
+		if transfer.compression == 'z' {
+			inflated, err := inflateImage(data)
+			if err != nil {
+				return imageResult{err: err, status: "EINVAL:invalid compressed payload"}
+			}
+			data = inflated
+		} else if transfer.compression != 0 {
+			return imageResult{err: errKittyCompression, status: "EINVAL:unsupported compression"}
+		}
+		pixels, width, height, err := decodeKittyPayload(data, transfer)
 		if err != nil {
-			t.replyKitty(params, "EINVAL:invalid compressed payload")
+			return imageResult{err: err, status: "EINVAL:" + err.Error()}
+		}
+		return imageResult{pixels: pixels, width: width, height: height}
+	}}
+	job.apply = func(t *Terminal, result imageResult) {
+		if result.err != nil {
+			if placed {
+				t.dropImagePlacement(placement)
+			}
+			t.replyKitty(transfer, result.status)
 			return
 		}
-	} else if params.compression != 0 {
-		t.replyKitty(params, "EINVAL:unsupported compression")
-		return
+		image := t.acceptImage(result.pixels, result.width, result.height, transfer.imageID)
+		if image == nil {
+			if placed {
+				t.dropImagePlacement(placement)
+			}
+			t.replyKitty(transfer, "ENOMEM:image limits exceeded")
+			return
+		}
+		image.kitty = true
+		if placed {
+			t.attachImagePlacement(placement, image, nil)
+		}
+		t.replyKitty(transfer, "OK")
 	}
-	pixels, width, height, err := decodeKittyPayload(chunk, params)
-	if err != nil {
-		t.replyKitty(params, "EINVAL:"+err.Error())
-		return
-	}
-	image := t.acceptImage(pixels, width, height, params.imageID)
-	if image == nil {
-		t.replyKitty(params, "ENOMEM:image limits exceeded")
-		return
-	}
-	image.kitty = true
-	if params.action == 'T' {
-		t.placeKitty(image, params)
-	}
-	t.replyKitty(params, "OK")
+	t.queueImageJob(job)
 }
 
 func parseKittyParams(control []byte) (kittyParams, bool) {
@@ -317,15 +359,11 @@ func decodeKittyPayload(data []byte, params kittyParams) ([]byte, int, int, erro
 	}
 }
 
-func (t *Terminal) placeKitty(image *storedImage, params kittyParams) {
-	width, height := params.sourceWidth, params.sourceHeight
-	if width <= 0 {
-		width = image.image.Width - params.sourceX
-	}
-	if height <= 0 {
-		height = image.image.Height - params.sourceY
-	}
-	t.placeImageRegion(image, params.sourceX, params.sourceY, width, height, params.columns, params.rows, 0, 0, params.placementID, params.z)
+// reserveKittyPlacement records where a kitty image will go before its pixels
+// are ready; the source rectangle is clamped when the pixels arrive.
+func (t *Terminal) reserveKittyPlacement(params kittyParams, lineID uint64, column int) (uint64, bool) {
+	return t.reserveImagePlacement(lineID, column, params.sourceX, params.sourceY, params.sourceWidth, params.sourceHeight,
+		params.columns, params.rows, 0, 0, params.placementID, params.z)
 }
 
 func (t *Terminal) deleteKitty(params kittyParams) {

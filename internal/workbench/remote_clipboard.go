@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"unicode/utf8"
 
-	"motty/internal/term"
 	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/term"
 )
 
 type terminalClipboardPolicy uint8
@@ -18,6 +18,14 @@ const (
 	terminalClipboardAsk
 	terminalClipboardAllow
 )
+
+// defaultTerminalClipboard lets a program replace the clipboard without asking.
+// Writing cannot read anything back, readers are denied unconditionally (see
+// term's osc52), and programs that copy on selection (Claude Code, tmux with
+// set-clipboard) send a write per selection: asking each time would turn every
+// drag into a modal. Terminals that support OSC 52, such as kitty, allow writes
+// by default for the same reason.
+const defaultTerminalClipboard = terminalClipboardAllow
 
 func (policy terminalClipboardPolicy) String() string {
 	switch policy {
@@ -34,10 +42,14 @@ func terminalClipboardPolicyFromString(value string) terminalClipboardPolicy {
 	switch value {
 	case terminalClipboardBlock.String():
 		return terminalClipboardBlock
+	case terminalClipboardAsk.String():
+		return terminalClipboardAsk
 	case terminalClipboardAllow.String():
 		return terminalClipboardAllow
 	default:
-		return terminalClipboardAsk
+		// An unset or unknown value means the state predates the choice: follow
+		// the default rather than freezing an older, stricter one.
+		return defaultTerminalClipboard
 	}
 }
 
@@ -82,10 +94,16 @@ func (state *State) setRemoteClipboard(text string) {
 	state.status = state.messages.StatusClipboardCopied
 }
 
-func (state *State) clickRemoteClipboard(id ui.ID) {
+func (state *State) clickRemoteClipboard(id gfx.ID) {
 	request := state.clipboardRequest
 	switch id {
 	case hitClipboardAllow:
+		state.setRemoteClipboard(request.text)
+	case hitClipboardAlways:
+		// The same choice the setting offers, made from the dialog that asked:
+		// saved so the next program that copies stops asking too.
+		state.terminalClipboard = terminalClipboardAllow
+		state.save()
 		state.setRemoteClipboard(request.text)
 	case hitClipboardDismiss, hitClipboardClose, hitClipboardCancel:
 		state.status = state.messages.StatusClipboardBlocked
@@ -105,26 +123,29 @@ func clipboardPreview(text string) string {
 	return strconv.QuoteToGraphic(text)
 }
 
-func (state *State) paintRemoteClipboardDialog(canvas *ui.Canvas, viewport ui.Rect) {
+func (state *State) declareRemoteClipboardDialog(c ui.C) {
 	messages, palette := state.messages, state.pal
-	dialog := components.BeginDialog(canvas, state.Theme(), viewport, components.DialogOptions{
-		Layer: dialogLayer, Scope: dialogScope,
-		DismissID: hitClipboardDismiss, CloseID: hitClipboardClose, InitialFocusID: hitClipboardCancel,
-		ContentSize: ui.Size{Width: 560}, FitBody: true, BodyHeight: 66, // the preview box
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, state.clipboardRequest.description, 66) // the preview box
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: messages.ClipboardRequestTitle, Description: state.clipboardRequest.description,
+		Width: 560, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitClipboardDismiss, CloseID: hitClipboardClose, InitialFocusID: hitClipboardCancel,
 	})
-	layout := dialog.Begin(messages.ClipboardRequestTitle, state.clipboardRequest.description)
-	// The text the program wants to copy, in a box of its own.
-	f := state.partLayout.Begin(canvas, state.Theme(), layout.Body)
-	f.Column().Fill().Children(func() {
-		f.Row().Height(58).Shrink(0).Items(flex.Center).PadX(11).MarginSides(8, 0, 0, 0).
-			Border(1, palette.line).Background(palette.surface).Radius(radius.control).Children(func() {
-			f.Text(state.clipboardRequest.preview).FontSize(metrics.FontSizeS).Color(palette.text)
+	dialog.Body(func() {
+		// The text the program wants to copy, in a box of its own.
+		ui.Column(c).Fill().Children(func() {
+			ui.Row(c).Height(58).Shrink(0).Items(ui.Center).PadX(11).MarginSides(8, 0, 0, 0).
+				Border(1, palette.line).Background(palette.surface).Radius(radius.control).Children(func() {
+				ui.Text(c, state.clipboardRequest.preview).FontSize(metrics.FontSizeS).Color(palette.text)
+			})
 		})
 	})
-	f.End()
-	dialog.Actions(layout,
-		components.ButtonAction{ID: hitClipboardCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
-		components.ButtonAction{ID: hitClipboardAllow, Label: messages.ClipboardAllowOnce},
-	)
-	dialog.End()
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitClipboardCancel, Label: messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitClipboardAlways, Label: messages.ClipboardAlwaysAllow, Variant: components.ButtonOutline},
+			components.ButtonAction{ID: hitClipboardAllow, Label: messages.ClipboardAllowOnce},
+		)
+	})
 }

@@ -9,6 +9,10 @@ import (
 	"motty/internal/x11fwd"
 )
 
+// ErrX11Refused means the server declined the x11-req: X11Forwarding is off in
+// its sshd_config, or it has no xauth.
+var ErrX11Refused = errors.New("the server refused X11 forwarding")
+
 // x11Request is the payload of an "x11-req" session request (RFC 4254 6.3.1).
 type x11Request struct {
 	SingleConnection bool
@@ -37,7 +41,7 @@ func (conn *Conn) requestX11(session *ssh.Session, env x11fwd.Environ) (*x11fwd.
 	if err != nil || !ok {
 		grant.Release()
 		if err == nil {
-			err = errors.New("the server refused X11 forwarding")
+			err = ErrX11Refused
 		}
 		return nil, err
 	}
@@ -70,14 +74,9 @@ func (conn *Conn) x11Hub() (*x11fwd.Hub, error) {
 	return hub, nil
 }
 
-// X11Note is why X11 forwarding is not active although it was asked for, or
-// empty when it is active or was not asked for.
-func (shell *Shell) X11Note() string {
-	if shell.x11Err == nil {
-		return ""
-	}
-	return shell.x11Err.Error()
-}
+// X11Err is why X11 forwarding is not active although it was asked for, or nil
+// when it is active or was not asked for.
+func (shell *Shell) X11Err() error { return shell.x11Err }
 
 func (shell *Shell) releaseX11() {
 	if shell.x11 != nil {

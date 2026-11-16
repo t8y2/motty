@@ -143,8 +143,7 @@ func negotiatedFrom(metadata ssh.ConnMetadata) (Negotiated, bool) {
 // signature algorithms of keys already on file for the host (nil for a new one),
 // wanted the caller's list (nil for the defaults). A known key narrows the offer
 // to it, so a server with several key types is checked against the one the user
-// trusted, as before; an old server that can only sign RSA keys with SHA-1 is
-// still reachable when the caller allows ssh-rsa.
+// trusted, as before.
 func hostKeyAlgorithms(known, wanted []string) []string {
 	if len(wanted) == 0 {
 		return known
@@ -157,10 +156,6 @@ func hostKeyAlgorithms(known, wanted []string) []string {
 		if slices.Contains(known, name) {
 			offer = append(offer, name)
 		}
-	}
-	if slices.Contains(wanted, ssh.KeyAlgoRSA) && !slices.Contains(offer, ssh.KeyAlgoRSA) &&
-		(slices.Contains(known, ssh.KeyAlgoRSASHA256) || slices.Contains(known, ssh.KeyAlgoRSASHA512)) {
-		offer = append(offer, ssh.KeyAlgoRSA)
 	}
 	if len(offer) == 0 {
 		return known

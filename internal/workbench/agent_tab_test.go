@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 )
 
@@ -69,20 +69,31 @@ func TestAgentNamesMatchTheTerminalCommand(t *testing.T) {
 	}
 }
 
-func TestLocalTabUsesTheAgentMarkInsteadOfTheSystemBadge(t *testing.T) {
+// tabBadgeBackground is the color of the rounded square a tab's badge sits on,
+// or false when the tab bar paints none.
+func tabBadgeBackground(canvas *gfx.Canvas) (gfx.Color, bool) {
+	for _, rectangle := range canvas.Rectangles() {
+		if rectangle.Bounds.Y < windowBarHeight && rectangle.Bounds.Width >= 16 && rectangle.Bounds.Width <= 24 && rectangle.Radius > 0 {
+			return rectangle.Color, true
+		}
+	}
+	return gfx.Color{}, false
+}
+
+func TestLocalTabUsesTheAgentMarkInsteadOfTheShellBadge(t *testing.T) {
 	state, session := openLocal(t)
 	canvas, _ := paintedTexts(state)
-	badge, ok := systemBadgeArt(session.host.System, state.pal.dark)
+	background, ok := tabBadgeBackground(canvas)
 	if !ok {
-		t.Fatal("this computer has no system badge to replace")
+		t.Fatal("a local tab with no agent paints no badge to replace")
 	}
-	if !tabBadgeColor(canvas, badge.background) {
-		t.Fatal("local tab did not paint the system badge")
+	if !tabBadgeColor(canvas, background) {
+		t.Fatal("the badge color was not found again")
 	}
 	session.agent = agentClaude
 	canvas, _ = paintedTexts(state)
-	if tabBadgeColor(canvas, badge.background) {
-		t.Fatal("a tab running an agent still paints the system badge")
+	if tabBadgeColor(canvas, background) {
+		t.Fatal("a tab running an agent still paints the shell badge")
 	}
 }
 
@@ -108,7 +119,7 @@ func TestLocalTabFollowsTheForegroundAgent(t *testing.T) {
 	t.Fatalf("tab agent = %d, want claude", session.agent)
 }
 
-func tabBadgeColor(canvas *ui.Canvas, color ui.Color) bool {
+func tabBadgeColor(canvas *gfx.Canvas, color gfx.Color) bool {
 	for _, rectangle := range canvas.Rectangles() {
 		if rectangle.Bounds.Y >= windowBarHeight || rectangle.Bounds.Width < 16 || rectangle.Bounds.Width > 24 {
 			continue

@@ -5,15 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestSessionsRestoreWithoutDialingAndReconnectOnEnter(t *testing.T) {
 	world, options := newWorld(t)
 	first := newTestState(t, options)
-	// This test is about restoring without dialing; what restore connects has its own tests.
-	first.restoreConnect = restoreConnectOff
 	openHost(first)
 	first.Click(hitHosts)
 	first.Click(hitHostList.At(2))
@@ -53,7 +51,7 @@ func TestSessionsRestoreWithoutDialingAndReconnectOnEnter(t *testing.T) {
 	}
 	// The explanation may wrap onto several lines; it reads as the title,
 	// then the body, all above the buttons and in order.
-	var title ui.Text
+	var title gfx.Text
 	var body strings.Builder
 	var bodyBottom float32
 	for _, text := range canvas.Texts() {
@@ -120,8 +118,6 @@ func TestWorkspaceAndClosedTabsPersist(t *testing.T) {
 func TestTypedSessionRestoresAsAnEphemeralTarget(t *testing.T) {
 	world, options := newWorld(t)
 	first := newTestState(t, options)
-	// This test is about restoring without dialing; what restore connects has its own tests.
-	first.restoreConnect = restoreConnectOff
 	first.search.Insert("guest@typed.example.com:2222")
 	first.Click(hitConnect)
 	if len(world.conns) != 1 || len(first.sessions) != 1 || first.sessions[0].HostID != 0 {
@@ -177,8 +173,8 @@ func TestRestoredSessionIdlePathsDoNotAllocate(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := newTestState(t, options)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testing.AllocsPerRun(100, state.Wake); allocations != 0 {
 		t.Fatalf("restored Wake allocations = %v", allocations)

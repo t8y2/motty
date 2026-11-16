@@ -1,9 +1,25 @@
-# Builds the release packages when a version tag is pushed and uploads them to a
-# DRAFT release, which you review and publish. The macOS packages are built on a
-# Mac and signed, notarized and stapled when the secrets below are set; the Linux
-# and Windows ones are cross-built on Ubuntu, with the Windows programs and
-# installer signed when a certificate is set. Without a secret the matching step
-# simply does not sign. Setup and secrets: docs/release.md.
+# Builds the release packages when a version tag is pushed, verifies the whole
+# matrix, and publishes it. The notes come from docs/releases/<version>.md, which
+# is written and reviewed in the commit the tag points at; the tag body carries
+# those same notes, and the draft release is created from them by whoever pushes
+# the tag — this workflow waits for that draft before it builds anything. The
+# macOS packages are built on a Mac and signed, notarized and stapled when the
+# secrets below are set;
+# the Linux and Windows ones are cross-built on Ubuntu, with the Windows programs
+# and installer signed when a certificate is set. Without a secret the matching
+# step simply does not sign.
+#
+# The tag is the approval: *Checksums* refuses the release unless it is exactly
+# the eighteen assets, its SHA256SUMS matches the files, every signature verifies
+# against the key compiled into the app, and the notes name the Viva frame that
+# was built. *Publish* then copies the packages to the mirror, publishes that
+# verified draft, and flips the update feed last, so nothing public ever points
+# at bytes the mirror does not hold; it refuses to run without the mirror's
+# secrets, because a release nobody can download is not a release.
+#
+# The framework is vivaui/viva main as it stands when the release starts: one job
+# resolves the commit, every build job checks out that same commit, and the commit
+# is written into the release notes. Setup and secrets: docs/release.md.
 name: Release
 
 on:
@@ -18,22 +34,107 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  draft:
-    name: Draft release
+  viva:
+    name: Pin viva
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+    steps:
+      # Resolved once, before either build starts, so a push to viva main while
+      # the release runs cannot give the Mac and the Linux jobs different frames.
+      - name: Resolve vivaui/viva main
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.REED_REPO_TOKEN || github.token }}
+        run: |
+          commit=$(gh api repos/vivaui/viva/commits/main --jq .sha)
+          echo "vivaui/viva main is $commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  release-ready:
+    name: Release draft ready
     runs-on: ubuntu-latest
     steps:
-      - name: Create the draft release
+      - uses: actions/checkout@v7
+
+      # The version and the notes live in the release commit; the tag body must
+      # carry those same notes. A tag whose commit or body disagrees stops here,
+      # before any package is built.
+      - name: Check the tag and its notes
+        run: |
+          version=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' viva.toml | head -1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::the tag is $GITHUB_REF_NAME but viva.toml says version $version"
+            exit 1
+          fi
+          notes="docs/releases/$version.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::$notes is missing: the release notes belong in the release commit"
+            exit 1
+          fi
+          git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$RUNNER_TEMP/tag-body.md"
+          python3 - "$notes" "$RUNNER_TEMP/tag-body.md" <<'EOF'
+          import sys
+
+          def normalized(path):
+              lines = open(path, encoding="utf-8").read().splitlines()
+              while lines and not lines[-1].strip():
+                  lines.pop()
+              return "\n".join(lines) + "\n"
+
+          if normalized(sys.argv[1]) != normalized(sys.argv[2]):
+              raise SystemExit("the tag body is not the committed release notes")
+          print("tag body carries the committed notes")
+          EOF
+
+      # The draft is created from those notes when the tag is pushed, before the
+      # packages exist. This job waits for it and holds its body to the notes;
+      # the checksums job later appends the Viva line, which is ignored here.
+      - name: Wait for the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-              --draft --verify-tag --title "Motty ${GITHUB_REF_NAME#v}" --generate-notes
+          for attempt in $(seq 1 90); do
+            state=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft 2>/dev/null || true)
+            case "$state" in
+            true) echo "draft $GITHUB_REF_NAME is ready"; exit 0 ;;
+            false) echo "::error::$GITHUB_REF_NAME is already published; a published release is never rewritten"; exit 1 ;;
+            esac
+            [ "$attempt" != 1 ] || echo "waiting for the draft release..."
+            sleep 10
+          done
+          echo "::error::no draft release for $GITHUB_REF_NAME after 15 minutes; create it from docs/releases/<version>.md with gh release create --draft --verify-tag, then rerun this workflow"
+          exit 1
+
+      - name: Check the draft matches the committed notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' viva.toml | head -1)
+          title=$(gh release view "$GITHUB_REF_NAME" --json name --jq .name)
+          if [ "$title" != "Motty $GITHUB_REF_NAME" ]; then
+            echo "::error::the draft title is not \"Motty $GITHUB_REF_NAME\""
+            exit 1
           fi
+          gh release view "$GITHUB_REF_NAME" --json body --jq .body > "$RUNNER_TEMP/body.md"
+          python3 - "docs/releases/$version.md" "$RUNNER_TEMP/body.md" <<'EOF'
+          import sys
+
+          def normalized(path):
+              lines = [line for line in open(path, encoding="utf-8").read().splitlines()
+                       if not line.startswith("Built against vivaui/viva ")]
+              while lines and not lines[-1].strip():
+                  lines.pop()
+              return "\n".join(lines) + "\n"
+
+          if normalized(sys.argv[1]) != normalized(sys.argv[2]):
+              raise SystemExit("the draft body is not the committed release notes")
+          print("draft body matches the committed notes")
+          EOF
 
   build:
     name: ${{ matrix.name }}
-    needs: draft
+    needs: [release-ready, viva]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -43,24 +144,45 @@ jobs:
           - { name: Linux and Windows, os: ubuntu-24.04, platforms: "linux,windows" }
     steps:
       # Motty builds against the Viva checkout beside it (replace viva => ../viva).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: motty
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: vivaui/viva
-          ref: main
+          ref: ${{ needs.viva.outputs.commit }}
           path: viva
           # A private Viva needs a token that can read it; a public one does not.
           token: ${{ secrets.REED_REPO_TOKEN || github.token }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: motty/go.mod
           cache-dependency-path: motty/go.sum
 
       - name: Install NSIS and osslsigncode, for the Windows installer and its signature
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y nsis osslsigncode
+        run: |
+          set -euo pipefail
+          # The hosted runner's default mirror (azure.archive.ubuntu.com) sometimes
+          # fails to resolve for a while. Retry the install with short network
+          # timeouts, and from the fourth attempt use the main Ubuntu archive
+          # instead of that mirror, so a DNS outage on one host does not block a
+          # release whose macOS assets are already built.
+          options=(-o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=0)
+          for attempt in $(seq 1 10); do
+            if [ "$attempt" -eq 4 ] && [ -f /etc/apt/apt-mirrors.txt ]; then
+              echo "::warning::the azure apt mirror is unreachable; falling back to archive.ubuntu.com"
+              sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt
+            fi
+            if sudo apt-get "${options[@]}" update &&
+              sudo apt-get "${options[@]}" install -y nsis osslsigncode; then
+              exit 0
+            fi
+            echo "::warning::NSIS/osslsigncode install failed (attempt $attempt); retrying in 30s"
+            sleep 30
+          done
+          echo "::error::could not install NSIS/osslsigncode after 10 attempts"
+          exit 1
 
       # A signed but un-notarized image would be blocked by Gatekeeper all the same,
       # so a certificate without notary credentials stops the build here.
@@ -123,16 +245,120 @@ jobs:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           WINDOWS_SIGN_COMMAND: ${{ secrets.WINDOWS_SIGN_COMMAND }}
+          # The minisign key the updater checks; the packages are signed with it
+          # before they are uploaded.
+          MOTTY_UPDATE_SIGNING_KEY: ${{ secrets.MOTTY_UPDATE_SIGNING_KEY }}
         working-directory: motty
-        run: tools/release.sh --platforms "${{ matrix.platforms }}" --viva-ref HEAD --ref "$GITHUB_SHA" --upload "$GITHUB_REF_NAME"
+        run: tools/release.sh --platforms "${{ matrix.platforms }}" --viva-ref "${{ needs.viva.outputs.commit }}" --ref "$GITHUB_SHA" --upload "$GITHUB_REF_NAME"
 
   checksums:
     name: Checksums
-    needs: build
+    needs: [build, viva]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Checksum what the release holds
+      - uses: actions/checkout@v7
+
+      # A release names the framework commit it was built against, so a package
+      # can be traced back to the frame that produced it. Re-running replaces the
+      # line instead of adding another one; a published release is left alone.
+      - name: Note the framework commit
         env:
           GH_TOKEN: ${{ github.token }}
-        run: tools/release.sh --sums "$GITHUB_REF_NAME"
+          VIVA: ${{ needs.viva.outputs.commit }}
+        run: |
+          state=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          if [ "$state" != true ]; then
+            echo "::error::$GITHUB_REF_NAME is already published; a published release is never rewritten"
+            exit 1
+          fi
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body \
+            | sed '/^Built against vivaui\/viva /d' > "$RUNNER_TEMP/notes.md"
+          printf '\nBuilt against vivaui/viva `%s`.\n' "$VIVA" >> "$RUNNER_TEMP/notes.md"
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
+
+      - name: Sign, checksum and verify what the release holds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Signing happens here rather than in the build jobs: this is the only
+          # step that has every platform's packages at once, so the manifest
+          # cannot be left partial by whichever build job uploaded last. It is
+          # also the gate in front of publishing: the run stops unless the
+          # release is the whole matrix, signed with the release key.
+          MOTTY_UPDATE_SIGNING_KEY: ${{ secrets.MOTTY_UPDATE_SIGNING_KEY }}
+        run: tools/release.sh --sums "$GITHUB_REF_NAME" --expect-viva "${{ needs.viva.outputs.commit }}"
+
+  publish:
+    name: Publish
+    needs: [checksums, viva]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # The package managers are updated by their own workflow so it can be run
+      # again for a tag without rebuilding anything; dispatching it needs this.
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+
+      - name: Fetch the verified packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir="$RUNNER_TEMP/release"
+          mkdir -p "$dir"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir "$dir"
+
+      # The bytes reach the mirror before anything is public, so the release
+      # page, the website's download links and the update feed never point at
+      # files that are not there yet. Still a draft: only --copy runs here.
+      # Without the mirror's secrets the release stops here, because the mirror
+      # is what an installed copy updates from.
+      - name: Copy the packages to the mirror
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::publishing needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID: the mirror is the update feed"
+            exit 1
+          fi
+          tools/mirror-release.sh "$GITHUB_REF_NAME" --copy --dir "$RUNNER_TEMP/release"
+
+      - name: Publish the verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+
+      # The update feed flips last, and only after the copy above confirmed the
+      # packages are on the mirror: this is the moment installed copies start
+      # updating. A failure here leaves the release public but the feed on the
+      # previous version; run Mirror release with the tag to finish it.
+      - name: Announce the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # The Viva feed is published beside the existing one; without the key
+          # only the existing feed is written, which is what old versions read.
+          MOTTY_VIVA_UPDATE_KEY: ${{ secrets.MOTTY_VIVA_UPDATE_KEY }}
+          VIVA_REF: ${{ needs.viva.outputs.commit }}
+        run: tools/mirror-release.sh "$GITHUB_REF_NAME" --announce --dir "$RUNNER_TEMP/release"
+
+      # The tap and the Scoop bucket are what `brew` and `scoop` hand out, so
+      # they follow the packages and the mirror rather than leading them. The
+      # run is separate so a broken manifest can be fixed by running Packages
+      # for the tag; nothing here depends on it having finished.
+      - name: Update the package managers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run packages.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF_NAME" \
+            -f tag="$GITHUB_REF_NAME"

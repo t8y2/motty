@@ -20,22 +20,87 @@ files.
 
 Changed:
 
+* Network characteristics auto-detection (MS-RDPBCGR 2.2.14): negotiate and join
+  the MCS message channel, answer server RTT/bandwidth requests during licensing
+  and the connected session, and expose the server's average RTT with its sample
+  timestamp. No synthetic input, graphics probes or client polling are added.
+  Continuous bandwidth measurements count normal slow-path, fast-path and
+  virtual-channel PDU data after the security header and before decompression;
+  connect-time measurements count only their explicit payloads.
 * `Options.Dial`, `Options.VerifyCertificate`: the connection comes from the
   caller (SSH tunnel, proxy) and the server's certificate is passed to the caller
   before any credential is sent, instead of `net.DialTimeout` and a blanket
   `InsecureSkipVerify`. A refused certificate ends the attempt (`ErrCertificateRejected`)
   and does not fall back to other TLS versions.
-* Standard RDP Security (RC4 without TLS) is off unless `Options.AllowLegacySecurity`.
+* Standard RDP Security (RC4 without TLS) is used only when
+  `Options.Security` is `SecurityStandard`; the default refuses a server that
+  offers nothing else.
 * A wrong password stops after one attempt (`%w` instead of `%v` kept
-  `nla.ErrCredentialsFatal` visible; a server that drops the connection after the
-  credentials were sent counts as a refusal). Upstream made 14 logon attempts for
-  one wrong password, which locks an account out.
+  `nla.ErrCredentialsFatal` visible). A server that drops the connection after the
+  credentials were sent is still not retried, but it is reported as an unproven
+  outcome (`nla.ErrClosedAfterCredentials`) instead of a refusal, and the saved
+  password is kept: Windows Server 2012 and other old CredSSP peers close on
+  handshake mismatches as well. Upstream made 14 logon attempts for one wrong
+  password, which locks an account out.
+* CredSSP can reconnect once with raw NTLM tokens when SPNEGO negotiation fails
+  before credentials are sent, for older WinPR servers. Raw NTLM keeps TLS,
+  NTLMv2 MIC/channel binding and public-key verification, but does not consume
+  SPNEGO mechanism-list MIC sequence numbers. Failures after an Authenticate
+  write stop probing and TLS-only fallback; protocol errors remain distinct
+  from credential refusals so the UI does not discard a saved password for them.
+* CredSSP runs the SPNEGO token exchange to its end before sending the
+  public-key binding. When the acceptor requests a mechListMIC (WinPR never
+  treats NTLM as its preferred mechanism, so GNOME Remote Desktop does), the
+  client signs the mechanism list it offered and verifies the acceptor's MIC
+  with sequence zero; the binding then travels in a separate TSRequest. The MIC
+  exchange counts as a signed message on both peers — WinPR's Negotiate layer
+  adds one to every later EncryptMessage/DecryptMessage sequence and Windows
+  advances its own counters — so the CredSSP sealing sequences start at one,
+  while the RC4 handles stay at their start (MS-SPNG 3.2.5.1). Sending the
+  Authenticate token and the binding in one TSRequest made libfreerdp 3.x
+  answer with its own token in a message that still carried the client's
+  pubKeyAuth bytes; the client unsealed them as the server's binding and failed
+  the MAC check (issue #661). Windows accepts both forms.
+* CredSSP keeps the client's own supported version in every TSRequest and uses
+  the server's lower version only to pick the public-key binding. Echoing the
+  server's version back made every target older than Windows 10 abort the TLS
+  session (internal_error) right after the Authenticate message; patched
+  Windows 7 and Server 2008 R2 report version 5 and expect the client's own.
 * Extended scancodes (`0xE0xx`) set the extended flag. `ReadRectBGRA` and
   `SetOutputSuppressed` were added. The receive loop recovers from a panic in a
   decoder and ends the connection.
+* A key's auto-repeat is sent instead of left to the server, which does not
+  repeat a held key: `SendKeyboard` and `SendUnicode` take a `repeat` argument
+  and a repeat press carries `KBD_FLAGS_DOWN` (`0x4000`), the flag FreeRDP and
+  mstsc set on a key the server already has down.
+* The heartbeat pauses while output is suppressed and starts a fresh window on
+  resume. A hidden tab tells the server to stop sending picture updates, so the
+  expected silence was being read as a dead link and ended the connection about
+  ten seconds after switching away; the keepalive is skipped meanwhile because
+  a suppressed server must not answer it.
+* A 32bpp pointer's alpha channel decides transparency, with the AND mask able
+  only to hide a pixel; 32bpp data with no alpha at all still falls back to the
+  masks. xrdp sends X cursors at 32bpp with per-pixel alpha and a zero AND
+  mask, which upstream's rule rendered as an opaque black square around the
+  pointer.
+* The EGFX `ResetGraphics` PDU clears surfaces, output maps and frame state but
+  keeps the progressive-codec decoder. Its tile context (SYNC, CONTEXT and
+  simple tiles) is not part of the graphics output; Windows sends only UPGRADE
+  tiles for a surface it recreates after resizing and does not repeat the first
+  pass. Rebuilding the decoder dropped those base tiles and left the resized
+  desktop black or fragmented.
 * The Bitmap Codecs capability advertises NSCodec only (RemoteFX was advertised
   without being usable by the session's pixel path and made xrdp send surface
   commands that were not drawn).
 * Fixes found by fuzzing (`fuzz_test.go`, corpus in `testdata/fuzz`): zero-length
   runs in the Planar codec, ZGFX history distance, padding and expansion limits,
   an MPPC history bound.
+* The progressive decoder keeps a coefficient's sign in one byte instead of two.
+  The value is +1, -1 or 0, so the byte is exact; every tile the decoder keeps
+  for a later UPGRADE is 12 KiB smaller. Coefficients stay for the surface's
+  whole lifetime because a later tile may be differential to them.
+* The EGFX pixel budget is split in two: surfaces keep the 512 MiB bound, and the
+  bitmap cache is held to the 100 MiB ceiling MS-RDPEGFX 3.3.1.4 gives a client
+  that does not ask for the small cache (the cache is evicted instead of dropping
+  the connection). One shared budget had let a session hold 512 MiB of cache
+  alone, five times what the protocol allows.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -11,6 +12,31 @@ import (
 	"sync"
 	"testing"
 )
+
+func TestApprovedRemoteHTTPTransfersTheEncryptedFile(t *testing.T) {
+	server, _ := newFakeServer(t)
+	config := Config{URL: "http://backup.lan/dav", User: "alice", Password: "s3cret", Path: "motty/backup.mottybak"}
+	if _, err := New(config, nil); !errors.Is(err, ErrInsecure) {
+		t.Fatalf("unapproved remote HTTP: %v", err)
+	}
+	// Keep real HTTP/authentication on the wire, routed only to our local fixture.
+	transport := &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+	}}
+	t.Cleanup(transport.CloseIdleConnections)
+	config.AllowInsecureHTTP = true
+	client, err := New(config, &http.Client{Transport: transport})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Put(context.Background(), []byte("encrypted backup"), ""); err != nil {
+		t.Fatal(err)
+	}
+	data, _, err := client.Get(context.Background())
+	if err != nil || string(data) != "encrypted backup" {
+		t.Fatalf("download: %q, %v", data, err)
+	}
+}
 
 // fakeServer is a WebDAV folder in memory: collections, one file store and
 // basic auth, with an ETag that changes on every write.
@@ -151,6 +177,80 @@ func TestTestAcceptsAMissingFolderAndRefusesBadCredentials(t *testing.T) {
 	}
 	if _, err := wrong.Put(context.Background(), []byte("x"), ""); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("bad password on upload: %v", err)
+	}
+}
+
+// A server like Jianguoyun only has the top-level folders its owner made in its
+// own app; MKCOL below /dav/ answers 409 and so does a PUT into the missing one.
+func TestAnUploadIntoATopLevelFolderTheServerWillNotMakeNamesIt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/dav/existing/") && r.Method == http.MethodPut {
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		w.WriteHeader(http.StatusConflict)
+	}))
+	t.Cleanup(server.Close)
+	_, err := client(t, server, nil).Put(context.Background(), []byte("x"), "")
+	if err == nil || !strings.Contains(err.Error(), `"motty"`) || !strings.Contains(err.Error(), "409") {
+		t.Fatalf("the error does not name the missing folder: %v", err)
+	}
+	existing := client(t, server, func(c *Config) { c.Path = "existing/backup.mottybak" })
+	if _, err := existing.Put(context.Background(), []byte("x"), ""); err != nil {
+		t.Fatalf("a folder that is there: %v", err)
+	}
+}
+
+// Test connection makes the folders but never uploads, and says which folder a
+// server would not make when the folder is really not there.
+func TestPrepareMakesTheFoldersWithoutUploading(t *testing.T) {
+	server, state := newFakeServer(t)
+	c := client(t, server, nil)
+	if err := c.Prepare(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !state.collections["/dav/motty"] {
+		t.Fatal("Prepare did not make the folder")
+	}
+	if _, _, err := c.Get(context.Background()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Prepare uploaded: %v", err)
+	}
+}
+
+// refusingMKCOL builds a server whose MKCOL always says 409 and whose PROPFIND answers
+// by folder, as Jianguoyun's top level does; propfind is the status for /dav/motty.
+func refusingMKCOL(t *testing.T, propfind int) *Client {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "MKCOL":
+			w.WriteHeader(http.StatusConflict)
+		case r.Method == "PROPFIND" && r.URL.Path == "/dav/motty":
+			w.WriteHeader(propfind)
+		case r.Method == "PROPFIND":
+			w.WriteHeader(http.StatusMultiStatus)
+		default:
+			w.WriteHeader(http.StatusCreated)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return client(t, server, nil)
+}
+
+func TestPrepareNamesAFolderTheServerWillNotMakeAndDoesNotHave(t *testing.T) {
+	err := refusingMKCOL(t, http.StatusNotFound).Prepare(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `"motty"`) || !strings.Contains(err.Error(), "409") {
+		t.Fatalf("the error does not name the missing folder: %v", err)
+	}
+}
+
+// Prepare must not fail a setup that uploading would accept: a server that
+// answers MKCOL with an error for a folder that is there, or that cannot be asked.
+func TestPrepareDoesNotFailWhereAnUploadWouldGoThrough(t *testing.T) {
+	for name, status := range map[string]int{"folder is there": http.StatusMultiStatus, "cannot be asked": http.StatusNotImplemented, "forbidden": http.StatusForbidden} {
+		if err := refusingMKCOL(t, status).Prepare(context.Background()); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 }
 

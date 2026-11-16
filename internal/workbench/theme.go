@@ -1,8 +1,8 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/highlight"
-	"github.com/vivaui/viva/ui"
 )
 
 // appearance selects one of the two palettes.
@@ -68,7 +68,7 @@ func appearanceModeFromString(value string) appearanceMode {
 // success green rather than the accent the primary buttons use, so an enabled
 // setting reads at a glance; the thumb keeps the contrast it has on a primary
 // background.
-func (state *State) switchTheme() ui.Theme {
+func (state *State) switchTheme() gfx.Theme {
 	theme := state.Theme()
 	theme.Primary = state.pal.success
 	// The thumb keeps the colour it has when the switch is off. Without this the
@@ -82,48 +82,49 @@ func (state *State) switchTheme() ui.Theme {
 type palette struct {
 	dark bool
 
-	shell        ui.Color // window bar, sidebar and the frame around the workspace
-	workspace    ui.Color // main content, dialogs
-	surface      ui.Color // inputs, buttons, cards
-	surfaceSoft  ui.Color // selected or hovered rows
-	surfaceHot   ui.Color // pressed and active controls
-	line         ui.Color
-	windowStroke ui.Color
-	terminal     ui.Color
+	shell        gfx.Color // window bar, sidebar and the frame around the workspace
+	workspace    gfx.Color // main content, dialogs
+	surface      gfx.Color // inputs, buttons, cards
+	surfaceSoft  gfx.Color // selected or hovered rows
+	surfaceHot   gfx.Color // pressed and active controls
+	line         gfx.Color
+	windowStroke gfx.Color
+	terminal     gfx.Color
 
 	// Window-bar tabs and buttons sit on shell, so their fills are chosen
 	// against it: a resting tab is a quiet pill, hover lifts it, the active
 	// tab is the brightest.
-	tab       ui.Color
-	tabHover  ui.Color
-	tabActive ui.Color
+	tab       gfx.Color
+	tabHover  gfx.Color
+	tabActive gfx.Color
 	// tabCloseHot fills the close button under the pointer on the active tab,
 	// whose own fill is too close to line for that button to show a change.
-	tabCloseHot ui.Color
+	tabCloseHot gfx.Color
 
-	text  ui.Color
-	muted ui.Color
-	faint ui.Color
+	text  gfx.Color
+	muted gfx.Color
+	faint gfx.Color
 
-	accent     ui.Color
-	accentHot  ui.Color
-	accentSoft ui.Color // tinted backgrounds for accent icons
-	onAccent   ui.Color
+	accent     gfx.Color
+	accentHot  gfx.Color
+	accentSoft gfx.Color // tinted backgrounds for accent icons
+	onAccent   gfx.Color
 
-	success ui.Color
-	warning ui.Color
-	danger  ui.Color
+	success gfx.Color
+	warning gfx.Color
+	danger  gfx.Color
 
 	// cursor is the terminal's cursor block; ansi are its sixteen named
 	// colors, chosen to stay legible on the terminal background.
-	cursor ui.Color
+	cursor gfx.Color
 	ansi   [16][3]uint8
 
 	// The rest is the terminal's own look, filled in by rebuildTerminalLook: the
 	// color of its text, the words it colors, and a number that changes with the
 	// look so a prepared line knows it is stale.
-	termFG    ui.Color
+	termFG    gfx.Color
 	highlight *highlight.Set
+	intense   terminalIntense
 	epoch     uint16
 }
 
@@ -134,34 +135,34 @@ type palette struct {
 var darkPalette = palette{
 	dark: true,
 
-	shell:        ui.RGB(24, 28, 35),
-	workspace:    ui.RGB(17, 21, 27),
-	surface:      ui.RGB(31, 36, 45),
-	surfaceSoft:  ui.RGB(37, 43, 53),
-	surfaceHot:   ui.RGB(60, 70, 87),
-	line:         ui.RGB(51, 60, 74),
-	windowStroke: ui.RGB(67, 78, 95),
-	terminal:     ui.RGB(11, 14, 19),
-	tab:          ui.RGB(31, 36, 44),
-	tabHover:     ui.RGB(40, 47, 58),
-	tabActive:    ui.RGB(51, 60, 73),
-	tabCloseHot:  ui.RGB(71, 83, 101),
+	shell:        gfx.RGB(24, 28, 35),
+	workspace:    gfx.RGB(17, 21, 27),
+	surface:      gfx.RGB(31, 36, 45),
+	surfaceSoft:  gfx.RGB(37, 43, 53),
+	surfaceHot:   gfx.RGB(60, 70, 87),
+	line:         gfx.RGB(51, 60, 74),
+	windowStroke: gfx.RGB(67, 78, 95),
+	terminal:     gfx.RGB(11, 14, 19),
+	tab:          gfx.RGB(31, 36, 44),
+	tabHover:     gfx.RGB(40, 47, 58),
+	tabActive:    gfx.RGB(51, 60, 73),
+	tabCloseHot:  gfx.RGB(71, 83, 101),
 
-	text:  ui.RGB(226, 231, 238),
-	muted: ui.RGB(158, 168, 182),
-	faint: ui.RGB(113, 124, 140),
+	text:  gfx.RGB(226, 231, 238),
+	muted: gfx.RGB(158, 168, 182),
+	faint: gfx.RGB(113, 124, 140),
 
-	accent:     ui.RGB(226, 231, 238),
-	accentHot:  ui.RGB(255, 255, 255),
-	accentSoft: ui.RGB(44, 50, 60),
-	onAccent:   ui.RGB(17, 21, 27),
+	accent:     gfx.RGB(226, 231, 238),
+	accentHot:  gfx.RGB(255, 255, 255),
+	accentSoft: gfx.RGB(44, 50, 60),
+	onAccent:   gfx.RGB(17, 21, 27),
 
-	success: ui.RGB(98, 206, 136),
-	warning: ui.RGB(232, 192, 72),
-	danger:  ui.RGB(240, 120, 120),
+	success: gfx.RGB(98, 206, 136),
+	warning: gfx.RGB(232, 192, 72),
+	danger:  gfx.RGB(240, 120, 120),
 
-	cursor: ui.RGB(226, 231, 238),
-	termFG: ui.RGB(226, 231, 238),
+	cursor: gfx.RGB(226, 231, 238),
+	termFG: gfx.RGB(226, 231, 238),
 	ansi: [16][3]uint8{
 		{84, 82, 78}, {240, 120, 120}, {98, 206, 136}, {232, 192, 72},
 		{110, 160, 240}, {198, 140, 230}, {88, 200, 210}, {218, 215, 209},
@@ -170,42 +171,44 @@ var darkPalette = palette{
 	},
 }
 
-// lightPalette is daylight: a cool gray chrome around white content, with the
-// same near-black accent the dark palette inverts. It is meant to sit quietly
-// beside other light windows rather than to carry a tint of its own.
+// lightPalette is daylight, kept off pure white: every ground sits a few steps
+// below 255 so a large light window does not glare, and the content stays one
+// step lighter than the chrome around it. The ink is the same near-black accent
+// the dark palette inverts, a little softened. It is meant to sit quietly beside
+// other light windows rather than to carry a tint of its own.
 var lightPalette = palette{
 	dark: false,
 
-	shell:        ui.RGB(239, 239, 242),
-	workspace:    ui.RGB(246, 246, 248),
-	surface:      ui.RGB(255, 255, 255),
-	surfaceSoft:  ui.RGB(241, 241, 244),
-	surfaceHot:   ui.RGB(227, 227, 231),
-	line:         ui.RGB(232, 232, 236),
-	windowStroke: ui.RGB(214, 214, 219),
-	terminal:     ui.RGB(250, 250, 252),
-	tab:          ui.RGB(245, 245, 247),
-	tabHover:     ui.RGB(249, 249, 251),
-	tabActive:    ui.RGB(255, 255, 255),
-	tabCloseHot:  ui.RGB(236, 236, 240),
+	shell:        gfx.RGB(231, 231, 235),
+	workspace:    gfx.RGB(240, 240, 243),
+	surface:      gfx.RGB(248, 248, 250),
+	surfaceSoft:  gfx.RGB(235, 235, 239),
+	surfaceHot:   gfx.RGB(221, 221, 226),
+	line:         gfx.RGB(220, 220, 225),
+	windowStroke: gfx.RGB(204, 204, 210),
+	terminal:     gfx.RGB(244, 244, 247),
+	tab:          gfx.RGB(238, 238, 241),
+	tabHover:     gfx.RGB(243, 243, 246),
+	tabActive:    gfx.RGB(248, 248, 250),
+	tabCloseHot:  gfx.RGB(228, 228, 233),
 
-	text:  ui.RGB(29, 29, 31),
-	muted: ui.RGB(107, 107, 112),
-	faint: ui.RGB(141, 141, 146),
+	text:  gfx.RGB(38, 38, 42),
+	muted: gfx.RGB(94, 94, 100),
+	faint: gfx.RGB(134, 134, 140),
 
-	accent:     ui.RGB(29, 29, 31),
-	accentHot:  ui.RGB(0, 0, 0),
-	accentSoft: ui.RGB(233, 233, 237),
-	onAccent:   ui.RGB(255, 255, 255),
+	accent:     gfx.RGB(38, 38, 42),
+	accentHot:  gfx.RGB(0, 0, 0),
+	accentSoft: gfx.RGB(226, 226, 231),
+	onAccent:   gfx.RGB(248, 248, 250),
 
-	success: ui.RGB(21, 145, 71),
-	warning: ui.RGB(161, 98, 7),
-	danger:  ui.RGB(214, 40, 40),
+	success: gfx.RGB(21, 145, 71),
+	warning: gfx.RGB(150, 90, 4),
+	danger:  gfx.RGB(214, 40, 40),
 
-	cursor: ui.RGB(29, 29, 31),
-	termFG: ui.RGB(29, 29, 31),
+	cursor: gfx.RGB(38, 38, 42),
+	termFG: gfx.RGB(38, 38, 42),
 	ansi: [16][3]uint8{
-		{30, 30, 32}, {205, 49, 49}, {22, 130, 70}, {152, 104, 0},
+		{38, 38, 42}, {205, 49, 49}, {22, 130, 70}, {152, 104, 0},
 		{36, 98, 198}, {160, 60, 170}, {0, 128, 140}, {110, 110, 112},
 		{130, 130, 133}, {230, 70, 70}, {20, 160, 80}, {190, 130, 0},
 		{66, 128, 232}, {188, 90, 200}, {20, 150, 164}, {90, 90, 92},
@@ -223,8 +226,10 @@ func (a appearance) palette() *palette {
 // radius is every corner the workbench draws itself, derived from them, so one
 // change to the corners reaches the framework's controls and the workbench's own
 // tabs, rows and cards alike.
-var metrics, radius = workbenchMetrics()
-
+//
+// The scale they are built at is the interface body size over the framework's
+// own: the whole window's text is drawn at the size the user chose, its layout
+// intact. The terminal has a font size of its own and does not follow.
 type radii struct {
 	item    float32 // a small row, chip or close button
 	control float32 // a button, tab, field or list row
@@ -232,17 +237,35 @@ type radii struct {
 	surface float32 // a dialog or a large panel
 }
 
-func workbenchMetrics() (ui.Metrics, radii) {
-	m := ui.DefaultMetrics()
+var metrics, radius = workbenchMetrics(1)
+
+// barTitleSize is the size of the name in a pane's bar. It follows the interface
+// text size, as every text the window paints does.
+var barTitleSize = float32(13)
+
+func workbenchMetrics(scale float32) (gfx.Metrics, radii) {
+	m := gfx.DefaultMetrics()
+	m.FontSizeS *= scale
+	m.FontSizeM *= scale
+	m.FontSizeL *= scale
 	return m, radii{item: m.RadiusItem(), control: m.RadiusControl, popup: m.RadiusPopup(), surface: m.RadiusSurface}
+}
+
+// applyTextMetrics rebuilds the size tokens every component paints with, for a
+// scale the user has just chosen. Everything that follows the metrics or the
+// tokens derived from them changes in the next paint; nothing cached survives.
+func applyTextMetrics(scale float32) {
+	metrics, radius = workbenchMetrics(scale)
+	barTitleSize = 13 * scale
+	aiSizes = aiTextMetricsAt(metrics)
 }
 
 // theme maps the palette onto the component theme tokens so framework
 // components follow the same colors without a runtime style parser.
-func (pal *palette) theme() ui.Theme {
-	theme := ui.DarkTheme()
+func (pal *palette) theme() gfx.Theme {
+	theme := gfx.DarkTheme()
 	if !pal.dark {
-		theme = ui.LightTheme()
+		theme = gfx.LightTheme()
 	}
 	theme.Metrics = metrics
 	theme.Background = pal.workspace
@@ -258,6 +281,12 @@ func (pal *palette) theme() ui.Theme {
 	theme.Hover = pal.surfaceSoft
 	theme.Primary = pal.accent
 	theme.PrimaryForeground = pal.onAccent
+	theme.Selection = gfx.RGB(pal.ansi[4][0], pal.ansi[4][1], pal.ansi[4][2])
+	theme.Selection.Alpha = 0.30
+	if !pal.dark {
+		theme.Selection.Alpha = 0.22
+	}
+	theme.SelectionForeground = pal.text
 	theme.Secondary = pal.surfaceHot
 	theme.SecondaryForeground = pal.text
 	theme.Accent = pal.surfaceHot
@@ -266,7 +295,7 @@ func (pal *palette) theme() ui.Theme {
 	theme.Success = pal.success
 	theme.Danger = pal.danger
 	if pal.dark {
-		theme.Input = ui.Color{Red: 1, Green: 1, Blue: 1, Alpha: 0.16}
+		theme.Input = gfx.Color{Red: 1, Green: 1, Blue: 1, Alpha: 0.16}
 	} else {
 		theme.Input = pal.line
 	}

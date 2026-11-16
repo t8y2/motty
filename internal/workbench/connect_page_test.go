@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/ui"
 )
 
 // clockedWorld is a world whose clock the test moves.
@@ -171,8 +171,8 @@ func TestTheTerminalTakesOverWhenTheShellFirstSpeaks(t *testing.T) {
 	if _, ok := hitByID(canvas, hitConnLog); ok {
 		t.Fatal("the connection page stayed up after the shell spoke")
 	}
-	if hit, ok := hitByID(canvas, terminalHit(state, 0)); !ok || !hit.Autofocus {
-		t.Fatalf("terminal hit = %+v, %v; want it painted and taking the keyboard", hit, ok)
+	if hit, ok := hitByID(canvas, terminalHit(state, 0)); !ok || canvas.FocusRequest() != terminalHit(state, 0) {
+		t.Fatalf("terminal hit = %+v, %v; focus request = %v; want it painted and taking the keyboard", hit, ok, canvas.FocusRequest())
 	}
 	if session.finished == 0 {
 		t.Fatal("the elapsed time kept running")
@@ -220,7 +220,7 @@ func TestAFailedConnectionOffersAnotherTryAndTheLog(t *testing.T) {
 	state.Wake()
 
 	canvas, texts := paintedTexts(state)
-	for _, id := range []ui.ID{hitConnLog, hitConnClose, hitConnRetry} {
+	for _, id := range []gfx.ID{hitConnLog, hitConnClose, hitConnRetry} {
 		if _, ok := hitByID(canvas, id); !ok {
 			t.Fatalf("button %d is missing from the failed page", id)
 		}
@@ -313,19 +313,19 @@ func TestTheConnectionPageStaysInsideItsCard(t *testing.T) {
 		{Phase: sshconn.PhaseFailed, Err: sshconn.ErrHostKeyChanged},
 	}
 	for _, status := range statuses {
-		for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 640, Height: 480}, {Width: 360, Height: 420}} {
+		for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 640, Height: 480}, {Width: 360, Height: 420}} {
 			for _, dark := range []bool{true, false} {
 				world, options := newWorld(t)
 				state := newTestState(t, options)
 				if !dark {
 					state.Click(hitTheme)
 				}
-				state.Click(hitLanguage)
+				useChinese(t, state)
 				fake := connect(t, state, world)
 				state.sessions[0].Title = "Production database primary replica in the Frankfurt datacenter"
 				fake.set(func(s *sshconn.Status) { *s = status })
 				state.Wake()
-				var canvas ui.Canvas
+				var canvas gfx.Canvas
 				state.Paint(&canvas, size)
 
 				buttons, ok := hitByID(&canvas, hitConnClose)
@@ -360,8 +360,8 @@ func TestPaintingTheConnectionPageAllocatesNothingOnceWarm(t *testing.T) {
 	fake := connect(t, state, world)
 	fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhasePasswordPrompt; s.Attempt = 1 })
 	state.Wake()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	paint := func() {
 		canvas.Reset()
 		state.Paint(&canvas, size)
@@ -382,13 +382,13 @@ func TestTheConnectionBallWaitsAtTheStartUntilConnected(t *testing.T) {
 	fake := connect(t, state, world)
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	canvas.SetClock(func() time.Duration { return now })
 	paint := func(frames int) {
 		for range frames {
 			now += 16 * time.Millisecond
 			canvas.Reset()
-			state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 		}
 	}
 	paint(300)
@@ -403,20 +403,18 @@ func TestTheConnectionBallWaitsAtTheStartUntilConnected(t *testing.T) {
 	}
 }
 
-// The info bar's right edge holds, from the right, the files button, the state
-// in words, its light and, while the log stands in for the connection page, the
-// way back. None of them may sit on another.
-func TestTheInfoBarsRightEdgeHasRoomForEverything(t *testing.T) {
+// The shared rail gives the log's way back and the files action separate slots,
+// including in a narrow window.
+func TestTheSharedToolbarLogButtonsDoNotOverlap(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	fake := connect(t, state, world)
 	fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseFailed; s.Err = sshconn.ErrAuthFailed })
 	state.Wake()
 	state.Click(hitConnLog)
-	for _, size := range []ui.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 500}} {
-		var canvas ui.Canvas
+	for _, size := range []gfx.Size{{Width: 1400, Height: 900}, {Width: 760, Height: 500}} {
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
-		var spans []ui.Rect
 		files, ok := hitByID(&canvas, hitSFTPOpen)
 		if !ok {
 			t.Fatal("no files button")
@@ -425,22 +423,8 @@ func TestTheInfoBarsRightEdgeHasRoomForEverything(t *testing.T) {
 		if !ok {
 			t.Fatal("no way back to the connection page")
 		}
-		spans = append(spans, files.Bounds, back.Bounds)
-		for _, text := range canvas.Texts() {
-			if text.Value == state.messages.HostStateFailed {
-				spans = append(spans, text.Bounds)
-			}
-		}
-		if len(spans) != 3 {
-			t.Fatalf("found %d of the info bar's right-edge items", len(spans))
-		}
-		for first := range spans {
-			for second := first + 1; second < len(spans); second++ {
-				a, b := spans[first], spans[second]
-				if a.X < b.X+b.Width && b.X < a.X+a.Width {
-					t.Errorf("at %v: %+v overlaps %+v", size, a, b)
-				}
-			}
+		if overlap := intersectRect(files.Bounds, back.Bounds); overlap.Width > 0 && overlap.Height > 0 {
+			t.Errorf("at %v files %+v overlaps back %+v", size, files.Bounds, back.Bounds)
 		}
 	}
 }
@@ -481,14 +465,14 @@ func TestAFailedRowStopsSayingItIsConnecting(t *testing.T) {
 }
 
 func TestTheRailFlowsWhileConnectingAndStillsWhenMotionIsReduced(t *testing.T) {
-	track := ui.Rect{X: 0, Y: 0, Width: 400, Height: 3}
-	frame := func(at time.Duration, reduced bool) []ui.Rectangle {
-		var canvas ui.Canvas
+	track := gfx.Rect{X: 0, Y: 0, Width: 400, Height: 3}
+	frame := func(at time.Duration, reduced bool) []gfx.Rectangle {
+		var canvas gfx.Canvas
 		canvas.SetReduceMotion(reduced)
 		canvas.SetClock(func() time.Duration { return at })
 		canvas.BeginFrame()
-		paintConnectionFlow(&canvas, track, ui.Color{Alpha: 1})
-		return append([]ui.Rectangle(nil), canvas.Rectangles()...)
+		paintConnectionFlow(&canvas, track, gfx.Color{Alpha: 1})
+		return append([]gfx.Rectangle(nil), canvas.Rectangles()...)
 	}
 	early, later := frame(100*time.Millisecond, false), frame(500*time.Millisecond, false)
 	if len(early) == 0 || reflect.DeepEqual(early, later) {

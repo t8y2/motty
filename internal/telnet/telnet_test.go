@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"motty/internal/shellkind"
 )
 
 // pair connects a Session to a raw peer the test plays the server on.
@@ -18,6 +20,13 @@ func pair(t *testing.T, config Config) (*Session, net.Conn) {
 	session := Start(client, config)
 	t.Cleanup(func() { session.Close(); server.Close() })
 	return session, server
+}
+
+func TestATelnetSessionIsADeviceConsole(t *testing.T) {
+	session, _ := pair(t, Config{})
+	if got := session.Kind(); got != shellkind.Console {
+		t.Fatalf("Kind() = %v; want a device console", got)
+	}
 }
 
 // readN reads exactly n bytes from the server side within a second.

@@ -6,9 +6,14 @@ import (
 	"unicode/utf8"
 )
 
-// maxClipboardText is the decoded OSC 52 text accepted from one sequence.
-// The enclosing maxOSC bound limits encoded input first.
-const maxClipboardText = 3072
+// maxClipboardText is the decoded OSC 52 text accepted from one sequence: room
+// for a selection many screens long. maxClipboardSequence, the OSC string that
+// carries it ("52;", a selection list of at most 16 bytes, ';', then base64),
+// limits the encoded input first.
+const (
+	maxClipboardText     = 1 << 20
+	maxClipboardSequence = len("52;") + 16 + len(";") + (maxClipboardText+2)/3*4
+)
 
 // ClipboardWrite is one validated OSC 52 request to replace the system
 // clipboard. Selection is the requested xterm selection list; it always

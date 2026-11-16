@@ -96,3 +96,23 @@ func TestDownloadCopyRetriesSequentiallyWhenWriteToFailsBeforeWriting(t *testing
 		t.Fatalf("writer-to=%v sequential=%v, want both", source.used, source.read)
 	}
 }
+
+type failedDownloadWriter struct{ err error }
+
+func (writer failedDownloadWriter) Write([]byte) (int, error) { return 0, writer.err }
+
+func TestDownloadCopyDoesNotHideDestinationFailureWithFallback(t *testing.T) {
+	for _, writeErr := range []error{errors.New("disk full"), nil} {
+		worker := NewWorker(func() (Remote, error) { return nil, nil }, nil)
+		defer worker.Close()
+		source := &writerToSource{data: []byte("must not be discarded")}
+		written, err := worker.downloadCopy(failedDownloadWriter{writeErr}, source, 0, 0, 0, 0, 0)
+		want := writeErr
+		if want == nil {
+			want = io.ErrShortWrite
+		}
+		if written != 0 || !errors.Is(err, want) {
+			t.Fatalf("written=%d err=%v, want %v", written, err, want)
+		}
+	}
+}

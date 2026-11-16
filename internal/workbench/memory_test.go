@@ -4,6 +4,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 	"weak"
 
 	"motty/internal/sftpclient"
@@ -104,4 +105,49 @@ func TestAnEvictedListingIsReleased(t *testing.T) {
 		t.Fatal("an evicted listing is still reachable through the cache")
 	}
 	runtime.KeepAlive(view)
+}
+
+// Closing several tabs in a row hands memory back once, after the last of them,
+// and nothing is scheduled while no tab is closing.
+func TestReleasedMemoryIsTrimmedOncePerBurst(t *testing.T) {
+	trimmed := make(chan struct{}, 8)
+	trimmer := &memoryTrimmer{delay: 20 * time.Millisecond, trim: func() { trimmed <- struct{}{} }}
+	for range 5 {
+		trimmer.request()
+	}
+	select {
+	case <-trimmed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("released memory was never trimmed")
+	}
+	time.Sleep(100 * time.Millisecond)
+	if len(trimmed) != 0 {
+		t.Fatal("one burst of releases trimmed more than once")
+	}
+	trimmer.request()
+	select {
+	case <-trimmed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a later release was not trimmed")
+	}
+}
+
+// Closing a tab asks for the trim: without it the closed tab's memory waits for
+// the next collection and then stays in the process.
+func TestClosingATabTrimsMemory(t *testing.T) {
+	trimmed := make(chan struct{}, 8)
+	previous := memoryTrim
+	memoryTrim = &memoryTrimmer{delay: 10 * time.Millisecond, trim: func() { trimmed <- struct{}{} }}
+	t.Cleanup(func() { memoryTrim = previous })
+
+	state := newTestState(t, testOptions(t))
+	state.sessions = append(state.sessions, Session{ID: 99, Title: "closed", term: newTerminalWithScrollback(80, 24, 100)})
+	state.activeSessionID = 99
+	state.nextSessionID = 100
+	state.closeSession(99)
+	select {
+	case <-trimmed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("closing a tab did not trim memory")
+	}
 }

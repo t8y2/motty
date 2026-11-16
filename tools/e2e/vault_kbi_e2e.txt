@@ -1,0 +1,26 @@
+# End to end: a password saved for a server that takes it through
+# keyboard-interactive (PAM's "Password: ") answers the next connection with no
+# dialog. Against the loopback SSH fixture started with E2ESSHD_KBI=password:
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && E2ESSHD_KBI=password /tmp/e2esshd 2255 &
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/vault_kbi_e2e.txt
+
+click "Search"
+type tester@127.0.0.1:2255
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+click "Save password"
+click "Connect"
+waitfor "tester@e2e" 8000
+
+key cmd+w
+click "Search"
+key cmd+a
+type tester@127.0.0.1:2255
+click "Connect"
+waitfor "tester@e2e" 8000
+texts

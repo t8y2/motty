@@ -206,12 +206,22 @@ func readLimited(path string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(file, maxXauthoritySize))
 }
 
-// CurrentEnviron reads this process's environment.
+// CurrentEnviron reads this process's environment. Without DISPLAY it looks
+// for the X server the platform usually runs; see DefaultDisplay.
 func CurrentEnviron() Environ {
 	home, _ := os.UserHomeDir()
 	hostname, _ := os.Hostname()
+	display := os.Getenv("DISPLAY")
+	if display == "" {
+		display = DefaultDisplay(goos, filepath.Glob, fileExists)
+	}
 	return Environ{
-		Display: os.Getenv("DISPLAY"), Xauthority: os.Getenv("XAUTHORITY"),
+		Display: display, Xauthority: os.Getenv("XAUTHORITY"),
 		Home: home, Hostname: hostname, GOOS: goos,
 	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

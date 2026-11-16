@@ -3,8 +3,8 @@
 package sshconfig
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -55,7 +55,11 @@ type Host struct {
 	User         string
 	Port         uint16
 	IdentityFile string
+	Options      *ConnectionOptions
 	ProxyJump    []JumpHost
+	// ProxyCommand is the command line as written, its %-tokens left for the
+	// connection to fill in. Empty when none applies, or when it is "none".
+	ProxyCommand string
 }
 
 // Result contains imported concrete aliases in source order and non-fatal
@@ -70,10 +74,16 @@ type directive struct {
 	line int
 	name string
 	args []string
+	// raw is the unsplit value of a ProxyCommand.
+	raw string
 }
 
 type parser struct {
-	home        string
+	home string
+	// docs holds every file read, by canonical path, in the order they were met.
+	// A caller that edits them re-evaluates over the same documents.
+	docs        map[string]*doc
+	order       *[]string
 	directives  []directive
 	warnings    []Warning
 	warningSeen map[warningKey]struct{}
@@ -98,27 +108,65 @@ func ParseFile(path string) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("resolve SSH config: %w", err)
 	}
+	p := newParser(make(map[string]*doc), new([]string))
+	return p.run(absolute)
+}
+
+func newParser(docs map[string]*doc, order *[]string) *parser {
 	home := os.Getenv("HOME")
 	if home == "" {
 		home, _ = os.UserHomeDir()
 	}
-	p := parser{
+	return &parser{
 		home:        home,
+		docs:        docs,
+		order:       order,
 		warningSeen: make(map[warningKey]struct{}),
 		aliasSeen:   make(map[string]struct{}),
 		stack:       make(map[string]struct{}),
 	}
+}
+
+// run reads the configuration graph from path and evaluates every alias in it.
+func (p *parser) run(path string) (Result, error) {
 	inMatch := false
-	if err := p.readFile(absolute, 0, &inMatch); err != nil {
+	if err := p.readFile(path, 0, &inMatch); err != nil {
 		return Result{}, fmt.Errorf("read SSH config: %w", err)
 	}
-	result := Result{Warnings: p.warnings}
-	result.Hosts = make([]Host, 0, len(p.aliases))
+	result := Result{Hosts: make([]Host, 0, len(p.aliases))}
 	for _, alias := range p.aliases {
 		result.Hosts = append(result.Hosts, p.evaluate(alias))
 	}
 	result.Warnings = p.warnings
 	return result, nil
+}
+
+// document is the file at a canonical path: the one already held (which may
+// carry edits), or the one on disk.
+func (p *parser) document(canonical string) (*doc, error) {
+	if held, ok := p.docs[canonical]; ok {
+		return held, nil
+	}
+	file, err := os.Open(canonical)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", canonical)
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+	loaded := newDoc(canonical, data, true, info.Mode().Perm())
+	p.docs[canonical] = loaded
+	*p.order = append(*p.order, canonical)
+	return loaded, nil
 }
 
 func (p *parser) readFile(path string, depth int, inMatch *bool) error {
@@ -129,25 +177,16 @@ func (p *parser) readFile(path string, depth int, inMatch *bool) error {
 	if _, exists := p.stack[canonical]; exists {
 		return fmt.Errorf("include cycle through %s", canonical)
 	}
-	file, err := os.Open(canonical)
+	held, err := p.document(canonical)
 	if err != nil {
 		return err
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a regular file", canonical)
 	}
 	p.stack[canonical] = struct{}{}
 	defer delete(p.stack, canonical)
 
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 4096), 1<<20)
-	for lineNumber := 1; scanner.Scan(); lineNumber++ {
-		name, args, err := parseLine(scanner.Text())
+	for index, line := range held.lines {
+		lineNumber := index + 1
+		name, args, err := parseLine(line.text)
 		if err != nil {
 			p.warn(WarningInvalidSyntax, canonical, lineNumber, "", err.Error())
 			continue
@@ -175,7 +214,11 @@ func (p *parser) readFile(path string, depth int, inMatch *bool) error {
 			continue
 		}
 		if isSupportedDirective(name) {
-			p.directives = append(p.directives, directive{path: canonical, line: lineNumber, name: name, args: args})
+			d := directive{path: canonical, line: lineNumber, name: name, args: args}
+			if name == "proxycommand" {
+				d.raw = rawValue(line.text)
+			}
+			p.directives = append(p.directives, d)
 			continue
 		}
 		code := WarningUnsupportedDirective
@@ -183,9 +226,6 @@ func (p *parser) readFile(path string, depth int, inMatch *bool) error {
 			code = WarningDynamicValue
 		}
 		p.warn(code, canonical, lineNumber, name, "directive is not safe or supported by offline import")
-	}
-	if err := scanner.Err(); err != nil {
-		return err
 	}
 	return nil
 }
@@ -257,7 +297,10 @@ func (p *parser) collectAliases(d directive) {
 func (p *parser) evaluate(alias string) Host {
 	host := Host{Alias: alias}
 	active := true
-	var hostNameSet, userSet, portSet, identitySet, proxyJumpSet bool
+	// ProxyJump and ProxyCommand compete: whichever comes first decides, as in
+	// OpenSSH.
+	var hostNameSet, userSet, portSet, identitySet, proxySet bool
+	var intervalSet, countSet, identitiesOnlySet bool
 	for _, d := range p.directives {
 		if d.name == "host" {
 			active = matchPatternList(d.args, alias)
@@ -301,9 +344,7 @@ func (p *parser) evaluate(alias string) Host {
 			}
 			host.Port = port
 		case "identityfile":
-			if identitySet {
-				continue
-			}
+			first := !identitySet
 			identitySet = true
 			value, ok := p.singleValue(d)
 			if !ok || p.rejectDynamic(d, value) {
@@ -314,12 +355,71 @@ func (p *parser) evaluate(alias string) Host {
 				p.warn(WarningDynamicValue, d.path, d.line, d.name, "IdentityFile uses an unsupported home expansion")
 				continue
 			}
-			host.IdentityFile = expanded
-		case "proxyjump":
-			if proxyJumpSet {
+			if first {
+				host.IdentityFile = expanded
+			}
+			if host.Options == nil {
+				host.Options = &ConnectionOptions{}
+			}
+			host.Options.IdentityFiles = append(host.Options.IdentityFiles, expanded)
+		case "serveraliveinterval", "serveralivecountmax", "identitiesonly":
+			seen := &intervalSet
+			if d.name == "serveralivecountmax" {
+				seen = &countSet
+			} else if d.name == "identitiesonly" {
+				seen = &identitiesOnlySet
+			}
+			if *seen {
 				continue
 			}
-			proxyJumpSet = true
+			*seen = true
+			value, ok := p.singleValue(d)
+			if !ok {
+				continue
+			}
+			if d.name == "identitiesonly" {
+				value = strings.ToLower(value)
+				if value != "yes" && value != "no" {
+					p.warn(WarningInvalidSyntax, d.path, d.line, d.name, "expected yes or no")
+					continue
+				}
+				if host.Options == nil {
+					host.Options = &ConnectionOptions{}
+				}
+				enabled := value == "yes"
+				host.Options.IdentitiesOnly = &enabled
+				continue
+			}
+			number, err := parseNonnegativeOption(value, d.name == "serveraliveinterval")
+			if err != nil {
+				p.warn(WarningInvalidSyntax, d.path, d.line, d.name, err.Error())
+				continue
+			}
+			if host.Options == nil {
+				host.Options = &ConnectionOptions{}
+			}
+			if d.name == "serveraliveinterval" {
+				host.Options.ServerAliveInterval = &number
+			} else {
+				host.Options.ServerAliveCountMax = &number
+			}
+		case "proxycommand":
+			if proxySet {
+				continue
+			}
+			proxySet = true
+			if d.raw == "" {
+				p.warn(WarningInvalidSyntax, d.path, d.line, d.name, "directive requires a command")
+				continue
+			}
+			if !strings.EqualFold(d.raw, "none") {
+				host.ProxyCommand = d.raw
+			}
+		case "proxyjump":
+			if proxySet {
+				continue
+			}
+			proxySet = true
 			value, ok := p.singleValue(d)
 			if !ok || p.rejectDynamic(d, value) || strings.EqualFold(value, "none") {
 				continue
@@ -473,16 +573,28 @@ func hasDynamicValue(value string) bool {
 
 func isSupportedDirective(name string) bool {
 	switch name {
-	case "hostname", "user", "port", "identityfile", "proxyjump":
+	case "hostname", "user", "port", "identityfile", "proxyjump", "proxycommand", "serveraliveinterval", "serveralivecountmax", "identitiesonly":
 		return true
 	default:
 		return false
 	}
 }
 
+// rawValue is everything after a directive's name and its separator, unsplit,
+// which is how OpenSSH reads a ProxyCommand: its quotes and backslashes belong
+// to the command.
+func rawValue(line string) string {
+	line = strings.TrimLeft(line, " \t")
+	end := strings.IndexAny(line, " \t=")
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimLeft(line[end:], " \t="))
+}
+
 func isDynamicCommand(name string) bool {
 	switch name {
-	case "knownhostscommand", "localcommand", "proxycommand", "remotecommand":
+	case "knownhostscommand", "localcommand", "remotecommand":
 		return true
 	default:
 		return false

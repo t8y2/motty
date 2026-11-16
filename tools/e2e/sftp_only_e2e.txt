@@ -1,0 +1,23 @@
+# End to end: an account that only allows SFTP. The fixture accepts the shell
+# request, prints a refusal and ends it with exit status 1; the file panel must
+# keep working over the same connection instead of showing "SFTP worker is
+# unavailable".
+#
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && cd ../..
+#   E2E_SFTP_ONLY=1 /tmp/e2esshd 2236 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py /tmp/sftp-only-home tools/e2e/sftp_only_e2e.txt
+
+click "Search"
+type tester@127.0.0.1:2236
+click "Connect"
+waitfor "Trust this host" 3000
+click "Connect Once"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "sftp connections only" 5000
+key cmd+shift+s
+waitfor "alpha.txt" 5000
+texts
+shot /tmp/sftp-only.png

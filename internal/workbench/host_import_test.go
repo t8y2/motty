@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
+	"motty/internal/sshconn"
 )
 
 func TestSSHConfigImportHitChoosesOneFileAndShowsResult(t *testing.T) {
@@ -90,8 +90,12 @@ Host warning
 	if got := state.hostImportResult.summary; got != "Imported 4 hosts, 1 keys and 2 jump routes; skipped 1 duplicate hosts." {
 		t.Fatalf("summary = %q", got)
 	}
-	if state.hostImportResult.visible == 0 || !strings.Contains(state.hostImportResult.warnings[0], "proxycommand") {
+	if state.hostImportResult.visible == 0 || !strings.Contains(state.hostImportResult.warnings[0], "ProxyCommand") {
 		t.Fatalf("warnings = %+v", state.hostImportResult)
+	}
+	if warning := mustHostLabel(t, state, "warning"); warning.Proxy == nil || warning.Proxy.kind != sshconn.ProxyCommand ||
+		warning.Proxy.address != "nc gateway %h" || !warning.Proxy.unconfirmed {
+		t.Fatalf("the ProxyCommand was imported as %+v", warning.Proxy)
 	}
 	target := mustHostLabel(t, state, "target")
 	inner := mustHostLabel(t, state, "inner")
@@ -125,6 +129,10 @@ Host warning
 	}
 	if !slices.Equal(world.configs[0].ProxyJumps, wantJumps) || !slices.Equal(world.configs[0].AdditionalIdentityFiles, []string{identity}) {
 		t.Fatalf("dial config = %+v", world.configs[0])
+	}
+	if proxy := restarted.proxyForHost(mustHostLabel(t, restarted, "warning")); proxy == nil || proxy.Kind != sshconn.ProxyCommand ||
+		proxy.Command != "nc gateway %h" || proxy.Err == nil {
+		t.Fatalf("the restored ProxyCommand, not yet confirmed, dials with %+v", proxy)
 	}
 }
 
@@ -195,8 +203,8 @@ Host imported
 	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{config}, nil }
 	state := newTestState(t, options)
 	state.Click(hitImportSSHConfig)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(50, func() {
 		canvas.Reset()
@@ -232,7 +240,7 @@ func mustHostLabel(t testing.TB, state *State, label string) Host {
 func TestImportMenuOpensListsEverySourceAndCloses(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	canvas, _ := paintedTexts(state)
-	for _, id := range []ui.ID{hitImportSSHConfig, hitImportHostCatalog, hitImportSessions} {
+	for _, id := range []gfx.ID{hitImportSSHConfig, hitImportHostCatalog, hitImportSessions} {
 		if _, ok := hitByID(canvas, id); ok {
 			t.Fatalf("source %d is painted while the menu is closed", id)
 		}
@@ -242,13 +250,13 @@ func TestImportMenuOpensListsEverySourceAndCloses(t *testing.T) {
 		t.Fatal("the Import button did not open its menu")
 	}
 	canvas, _ = paintedTexts(state)
-	for _, id := range []ui.ID{hitImportSSHConfig, hitImportHostCatalog, hitImportSessions} {
+	for _, id := range []gfx.ID{hitImportSSHConfig, hitImportHostCatalog, hitImportSessions} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled {
 			t.Fatalf("menu source %d = %+v, %v", id, hit, ok)
 		}
 	}
 
-	state.Key(ui.KeyEvent{Key: ui.KeyEscape})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
 	if state.importMenu {
 		t.Fatal("Escape left the menu open")
 	}

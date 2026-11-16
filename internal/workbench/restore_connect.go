@@ -1,8 +1,9 @@
 package workbench
 
 import (
+	"github.com/vivaui/viva/gfx"
+	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/ui"
 )
 
 // restoreConnectPolicy is what reopening the app does with the tabs of the
@@ -13,10 +14,13 @@ import (
 type restoreConnectPolicy uint8
 
 const (
-	// restoreConnectActive is the zero value and the default: the tab in front
-	// is the one the user returns to.
-	restoreConnectActive restoreConnectPolicy = iota
-	restoreConnectOff
+	// restoreConnectOff is the zero value and the default: a restored tab is
+	// metadata until the user connects it, so reopening the app never dials.
+	restoreConnectOff restoreConnectPolicy = iota
+	// restoreConnectActive is the tab in front, all its panes, when the user
+	// chose to connect on restore.
+	restoreConnectActive
+	// restoreConnectAll is every restored tab, when the user chose it.
 	restoreConnectAll
 )
 
@@ -26,25 +30,29 @@ const maxAutoRestoreConnections = 8
 
 func (policy restoreConnectPolicy) String() string {
 	switch policy {
-	case restoreConnectOff:
-		return "off"
+	case restoreConnectActive:
+		return "current"
 	case restoreConnectAll:
-		return "all"
+		return "all-tabs"
 	default:
-		return "active"
+		return "off"
 	}
 }
 
-// restoreConnectPolicyFromString reads a saved policy; a state saved before the
-// setting existed has none and gets the default.
+// restoreConnectPolicyFromString reads a saved policy. Files written before the
+// default changed carry "active" or "all": "active" was the old default and
+// cannot be told apart from a choice, so both read as off and the user chooses
+// again. Choices written since then use tokens of their own ("current",
+// "all-tabs"), which is what keeps them from being taken for a legacy value. A
+// state saved before the setting existed has none at all, which is off too.
 func restoreConnectPolicyFromString(value string) restoreConnectPolicy {
 	switch value {
-	case restoreConnectOff.String():
-		return restoreConnectOff
+	case restoreConnectActive.String():
+		return restoreConnectActive
 	case restoreConnectAll.String():
 		return restoreConnectAll
 	default:
-		return restoreConnectActive
+		return restoreConnectOff
 	}
 }
 
@@ -79,6 +87,8 @@ func (state *State) connectRestoredSessions() {
 		if dialed == maxAutoRestoreConnections {
 			break
 		}
+		// Mark the origin before dialing: a local shell can succeed synchronously.
+		session.autoRestore = true
 		state.reconnect(session)
 		session.autoRestore = true
 		dialed++
@@ -98,10 +108,14 @@ func (state *State) abandonRestoredConnect(session *Session) {
 	if session.conn != nil {
 		session.conn.Cancel()
 	}
+	// No PhaseClosed is applied after this: the tab goes back to its page with
+	// the connection dropped, so its row is closed here as a canceled attempt.
+	state.finishSessionLog(session, sessionlog.StatusEnded, sessionlog.ReasonCanceled)
 	if state.modalSession == session.ID && (state.modal == modalHostKey || state.modal == modalKeyPassphrase || state.modal == modalPassword) {
 		state.closeModal()
 	}
 	session.conn = nil
+	session.sudoCommands, session.sudoPassword = false, ""
 	session.term = nil
 	session.restored = true
 	session.autoRestore = false
@@ -125,22 +139,22 @@ func (state *State) setRestoreConnectPolicy(policy restoreConnectPolicy) bool {
 
 // restoredPageKey lets Enter bring a restored tab back from its page. Nothing on
 // that page has the keyboard (it has no terminal yet), so the key is the page's.
-func (state *State) restoredPageKey(event ui.KeyEvent) (ui.EventResult, bool) {
-	if event.Key != ui.KeyEnter || event.Repeat || state.modal != modalNone || state.activeSection != sectionTerminal {
-		return ui.EventResult{}, false
+func (state *State) restoredPageKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if event.Key != gfx.KeyEnter || event.Repeat || state.modal != modalNone || state.activeSection != sectionTerminal {
+		return gfx.EventResult{}, false
 	}
 	// Choosing a tab leaves the keyboard on that tab, and a live terminal takes it
 	// from there by itself. This page has nothing to take it with, so Enter on the
 	// tab that is already showing it means the page's one action.
 	if !event.Target.IsZero() && event.Target != hitTabList.At(int(state.deck.ActiveWorkspace())) {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	session, ok := state.sessionByIDPointer(state.activeSessionID)
 	if !ok || !session.restored || session.term != nil {
-		return ui.EventResult{}, false
+		return gfx.EventResult{}, false
 	}
 	state.reconnect(session)
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 // shareConnectionsPolicy is whether a new tab on a host that another tab of the

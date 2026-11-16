@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/text"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
-	"github.com/vivaui/viva/text"
 )
 
 // TestUsageAccumulatesAcrossRuns proves the token accounting of the finished
@@ -39,6 +39,20 @@ func TestUsageAccumulatesAcrossRuns(t *testing.T) {
 	}
 	if text := state.aiUsageText(); !strings.Contains(text, "30") || !strings.Contains(text, "5") {
 		t.Fatalf("usage line %q misses the run's numbers", text)
+	}
+}
+
+// TestUsageTextShowsCachedTokens proves a reader can see how much of the prompt
+// the provider served from its cache, and sees nothing when it served none.
+func TestUsageTextShowsCachedTokens(t *testing.T) {
+	state, _ := assistantSession(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("x") }})
+	state.ai.lastUsage = llm.Usage{InputTokens: 12000, OutputTokens: 90}
+	if text := state.aiUsageText(); strings.Contains(text, "9,800") || strings.Contains(text, "缓存") || strings.Contains(text, "cached") {
+		t.Fatalf("usage line %q mentions a cache that was not hit", text)
+	}
+	state.ai.lastUsage.CacheReadTokens = 9800
+	if text := state.aiUsageText(); !strings.Contains(text, "9,800") {
+		t.Fatalf("usage line %q misses the cached tokens", text)
 	}
 }
 

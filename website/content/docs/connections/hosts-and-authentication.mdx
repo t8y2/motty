@@ -21,6 +21,16 @@ Motty supports:
 A round that asks several questions, for example a password and a one-time code
 from the same PAM stack, is shown as one dialog with one field per question.
 
+### Private keys
+
+**Keychain > Add Key** offers three ways to bring a key in: **Import from File**
+(the file stays where it is), **Paste Private Key** (no file needed) and
+**Generate New Key** (an Ed25519 pair; the public key is copied so you can add it
+to the server's `~/.ssh/authorized_keys`). Pasted and generated keys are kept
+encrypted in the vault, so they follow the vault to your other computers.
+**Copy Public Key** copies the selected key's public half at any time. Deleting a
+pasted or generated key is final: there is no file to fall back on.
+
 ### Certificates and the agent
 
 Hosts that present a certificate connect without a prompt once their
@@ -35,18 +45,90 @@ machine.
 TOTP and HOTP seeds can be stored in the vault and filled automatically when a
 server asks for a code.
 
+### Testing a connection
+
+The host form has a **Test Connection** button. It dials the host as typed
+without saving it. An unknown host key is never trusted by a test, and nothing
+is sent to such a server; a login that needs more than the form holds, such as a
+one-time code, ends as "not verified" instead of failing.
+
+## After login
+
+A host's **Command after login** (under Advanced) is typed into each new shell
+once it is ready for input, as if you had typed it, for example `cd /srv/app`
+or `sudo -i`. It is one line, and it stays out of the command history.
+
+To switch to root, use `sudo -i` as that command and add an autofill rule for
+the password prompt: **Settings > Terminal > Autofill rules** has a **sudo
+preset** (answers with the host's saved password) and a **su preset** (answers
+with a fixed text kept in the vault, such as root's password). A rule starts
+off, and asks once per session before it first sends anything.
+
 ## Organising hosts
 
 Hosts can be grouped, tagged and searched.
 
 ### Import
 
-Motty reads the saved sessions of other clients:
+Open **Import > Import from** and choose the client, then the file it saved.
+Motty takes each session's name, folder, address, port and user; protocols it
+cannot open are counted as skipped. Electerm and Netcatty exports may also
+contain readable SSH login passwords. When they do, Motty asks whether to save
+them in its vault or import connections only. Key passphrases, private keys and
+encrypted passwords from other clients are not imported. A host whose address,
+user and port are already saved is not duplicated; importing a password may
+fill an empty saved password, but never replace one already saved.
 
-- OpenSSH config
-- PuTTY
-- Xshell
-- MobaXterm
+| Client | File to choose |
+| --- | --- |
+| OpenSSH config | `~/.ssh/config` (**Import > Import SSH Config**) |
+| PuTTY | On Windows, a registry export: `reg export HKCU\Software\SimonTatham\PuTTY\Sessions putty.reg`. On Linux and macOS, the files in `~/.putty/sessions`. |
+| Xshell | The `.xsh` session files, or the `.xts` archive Xshell exports. |
+| MobaXterm | The `.mxtsessions` file exported from the sessions panel, or `MobaXterm.ini`. |
+| WindTerm | `user.sessions` in the `terminal` folder of WindTerm's profile. |
+| Electerm | The bookmarks JSON exported from Electerm's bookmark manager. |
+| Netcatty | The CSV from the **Export** button on Netcatty's hosts page. Netcatty keeps its own vault encrypted, so only this export can be read. |
+
+Electerm and Netcatty write saved passwords into the export in clear text.
+Choosing to save passwords encrypts eligible SSH passwords in Motty's vault,
+but does not erase the export. Protect or delete the file when you are done.
+MobaXterm imports support UTF-8, UTF-16 with a byte-order mark, and
+GB18030 text; unsupported or damaged encodings are rejected rather than
+silently dropping characters. If a BOM-less file can be read as both UTF-8 and
+GB18030, Motty shows the differing names and asks you to choose before saving
+any hosts. If several selected files have an encoding ambiguity, import them
+one at a time so each can be decoded correctly.
+
+## Syncing with your SSH config
+
+Importing reads a file once. To keep `~/.ssh/config` and Motty in step both ways,
+turn on **Settings > Connection > Sync with SSH config**.
+
+- A `Host` you add or change in the file shows up in Motty, and a host you add or
+  change in Motty is written to the file. A block that serves Git rather than a
+  shell (a `git` user, or a public forge such as `github.com`) is not a host to
+  open, so it is left alone and listed in the sync report. The host, user, port and `ProxyJump`
+  travel both ways; `IdentityFile` is added to the Keychain once. A `ProxyCommand`
+  comes along once, with a host new to Motty, and waits for you to confirm it
+  (see [Outbound proxy](/en/docs/network/port-forwarding#outbound-proxy)).
+  Stopping a jump route in Motty only affects Motty's own connections; the file
+  keeps the `ProxyJump`, so `ssh` in a terminal still goes through the jump host.
+- Hosts made in Motty go in a block fenced by `# --- motty: begin synced hosts`
+  and `# --- motty: end synced hosts`, placed before your general `Host *` blocks.
+  Everything else in the file, comments and settings Motty does not know included,
+  is left as it is. A host you wrote is edited in place, and only if its block
+  names that host alone.
+- When one field was changed on both sides since the last sync, the file's value
+  is kept. Taking a host out of the file stops syncing it and keeps it in Motty;
+  deleting a host in Motty removes the block Motty wrote, and leaves one you wrote.
+- The first time Motty rewrites a file it keeps a copy beside it, named with
+  `.motty-backup`. A file that changed while Motty was writing is never overwritten.
+- It syncs at start, when hosts change, and when you click in the window after the
+  file changed. Nothing polls the file. **Sync now** runs it on request and lists
+  what could not be mapped.
+
+The links between hosts and aliases are kept on this computer only, so they do not
+travel with [cloud sync](/en/docs/data/backup-and-sync).
 
 ## The vault
 

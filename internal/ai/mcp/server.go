@@ -41,6 +41,10 @@ const (
 	DefaultMaxBody     int64 = 1 << 20
 	DefaultCallTimeout       = 5 * time.Minute
 	maxBatch                 = 16
+	// maxSessions bounds the session table. A session is an id and its last
+	// use; retained output expires on its own, so an unused session holds
+	// nothing worth an idle timeout.
+	maxSessions = 128
 )
 
 // Protocol versions this server speaks, newest first.
@@ -55,8 +59,11 @@ const (
 )
 
 const instructions = "Tools to inspect and operate the terminal sessions the user has open in Motty. " +
-	"Call list_sessions first to get a session id. Commands and file changes may need the user's approval " +
-	"in the Motty window; such a call waits for the answer and is refused if the user declines."
+	"Call list_sessions first to get a session id. list_hosts lists saved SSH hosts explicitly opened to agents, " +
+	"including hosts without a session; its host ids are not terminal session ids. Commands and file changes may need the user's approval " +
+	"in the Motty window; such a call waits for the answer and is refused if the user declines. " +
+	"When this shell was reached by ssh from a jump host, SFTP is not that shell: use rzsz_upload and rzsz_download. The remote needs rz and sz. " +
+	"Those calls report how many bytes have moved. The remote screen stays at rz waiting to receive until the end, which is also what it shows when the sender has not connected; call rzsz_status to tell those apart. A client timeout does not mean the transfer failed."
 
 // Config configures a Server.
 type Config struct {
@@ -64,8 +71,15 @@ type Config struct {
 	Token string
 	// Gate supplies the gate for each tool call.
 	Gate func() gate.Gate
+	// Tools nil preserves the public server's default catalog. An explicit
+	// empty slice exposes no tools. Dispatch is used by request-scoped agents.
+	Tools    []tools.Spec
+	Dispatch func(context.Context, string, []byte) gate.Result
 	// ServerName and Version appear in the initialize reply.
 	ServerName, Version string
+	// Instructions is the usage note in the initialize reply; empty keeps the
+	// one for the sessions of open windows.
+	Instructions string
 	// MaxBody limits a request body; default 1 MiB.
 	MaxBody int64
 	// CallTimeout limits one tools/call; default 5 minutes.
@@ -77,16 +91,21 @@ type Server struct {
 	tokenHash [sha256.Size]byte
 	gate      func() gate.Gate
 	name, ver string
+	guidance  string
 	maxBody   int64
 	timeout   time.Duration
 	toolsList json.RawMessage
+	allowed   map[string]bool
+	dispatch  func(context.Context, string, []byte) gate.Result
 
 	base   context.Context
 	cancel context.CancelFunc
 
-	mu     sync.Mutex // guards http and closed: Serve and Shutdown may race
-	http   *http.Server
-	closed bool
+	mu       sync.Mutex // guards http, closed, sessions and seq: Serve and Shutdown may race
+	http     *http.Server
+	closed   bool
+	sessions map[string]uint64 // session id -> last use, in seq order
+	seq      uint64
 }
 
 // New validates cfg and builds a Server.
@@ -99,7 +118,7 @@ func New(cfg Config) (*Server, error) {
 			return nil, errors.New("mcp: token must be printable ASCII without spaces")
 		}
 	}
-	if cfg.Gate == nil {
+	if cfg.Gate == nil && cfg.Dispatch == nil {
 		return nil, errors.New("mcp: Gate provider is required")
 	}
 	s := &Server{
@@ -109,6 +128,13 @@ func New(cfg Config) (*Server, error) {
 		ver:       cfg.Version,
 		maxBody:   cfg.MaxBody,
 		timeout:   cfg.CallTimeout,
+		dispatch:  cfg.Dispatch,
+		allowed:   make(map[string]bool),
+		sessions:  make(map[string]uint64),
+	}
+	s.guidance = cfg.Instructions
+	if s.guidance == "" {
+		s.guidance = instructions
 	}
 	if s.name == "" {
 		s.name = "motty"
@@ -122,7 +148,17 @@ func New(cfg Config) (*Server, error) {
 	if s.timeout <= 0 {
 		s.timeout = DefaultCallTimeout
 	}
-	list, err := buildToolsList()
+	specs := cfg.Tools
+	if specs == nil {
+		specs = tools.All()
+	}
+	for _, spec := range specs {
+		if spec.Name == "" || s.allowed[spec.Name] {
+			return nil, errors.New("mcp: invalid scoped tool catalog")
+		}
+		s.allowed[spec.Name] = true
+	}
+	list, err := buildToolsListFor(specs)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +281,50 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	out := s.handleBody(r.Context(), body)
+	ctx := r.Context()
+	if id := r.Header.Get("Mcp-Session-Id"); id != "" {
+		// A session has no idle timeout while the server runs. The id is not a
+		// credential (every request carries the bearer token); it only scopes
+		// retained output, whose own lifetime is ten minutes. Expiring an idle
+		// session made clients that treat 404 as fatal, instead of starting a
+		// new session, fail every call after thirty quiet minutes.
+		s.mu.Lock()
+		_, ok := s.sessions[id]
+		if ok {
+			s.seq++
+			s.sessions[id] = s.seq
+		}
+		s.mu.Unlock()
+		if !ok {
+			// The MCP spec requires 404 for a session the server does not know,
+			// so the client starts a new one; the stdio bridge does that itself.
+			http.Error(w, "MCP session not found", http.StatusNotFound)
+			return
+		}
+		ctx = gate.WithOutputOwner(ctx, id)
+	} else {
+		var request rpcRequest
+		if json.Unmarshal(body, &request) == nil && request.JSONRPC == "2.0" && request.Method == "initialize" && len(request.ID) > 0 && validID(request.ID) {
+			var random [24]byte
+			if _, err := rand.Read(random[:]); err != nil {
+				http.Error(w, "cannot create MCP session", http.StatusInternalServerError)
+				return
+			}
+			id := base64.RawURLEncoding.EncodeToString(random[:])
+			s.mu.Lock()
+			s.addSession(id)
+			s.mu.Unlock()
+			w.Header().Set("Mcp-Session-Id", id)
+			ctx = gate.WithOutputOwner(ctx, id)
+		}
+	}
+	if token, ok := rzszProgressCall(r.Header.Get("Accept"), body); ok {
+		if flusher, can := w.(http.Flusher); can {
+			s.serveRZSZProgress(w, flusher, ctx, body, token)
+			return
+		}
+	}
+	out := s.handleBody(ctx, body)
 	if r.Context().Err() != nil {
 		return // the client left; nobody to answer
 	}
@@ -256,6 +335,23 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Write(out)
+}
+
+// addSession records a new session, forgetting the one that has gone longest
+// without a request when the table is full. The caller holds s.mu.
+func (s *Server) addSession(id string) {
+	if len(s.sessions) >= maxSessions {
+		var oldestID string
+		var oldest uint64
+		for key, used := range s.sessions {
+			if oldestID == "" || used < oldest {
+				oldestID, oldest = key, used
+			}
+		}
+		delete(s.sessions, oldestID)
+	}
+	s.seq++
+	s.sessions[id] = s.seq
 }
 
 // authorized compares the presented bearer token with the configured one in
@@ -442,12 +538,16 @@ func (s *Server) initialize(params json.RawMessage) json.RawMessage {
 		ProtocolVersion: version,
 		Capabilities:    map[string]any{"tools": map[string]any{"listChanged": false}},
 		ServerInfo:      map[string]any{"name": s.name, "version": s.ver},
-		Instructions:    instructions,
+		Instructions:    s.guidance,
 	})
 	return b
 }
 
 func buildToolsList() (json.RawMessage, error) {
+	return buildToolsListFor(tools.All())
+}
+
+func buildToolsListFor(specs []tools.Spec) (json.RawMessage, error) {
 	type annotations struct {
 		ReadOnlyHint    bool  `json:"readOnlyHint"`
 		DestructiveHint *bool `json:"destructiveHint,omitempty"`
@@ -459,13 +559,19 @@ func buildToolsList() (json.RawMessage, error) {
 		Annotations annotations     `json:"annotations"`
 	}
 	yes, no := true, false
-	var list []entry
-	for _, sp := range tools.All() {
+	list := make([]entry, 0, len(specs))
+	for _, sp := range specs {
 		a := annotations{ReadOnlyHint: sp.Kind == tools.Read, DestructiveHint: &yes}
 		if sp.Kind == tools.Read {
 			a.DestructiveHint = &no
 		}
-		list = append(list, entry{sp.Name, sp.Description, sp.Schema, a})
+		// inputSchema is required to be a JSON Schema object. A missing schema
+		// serialized as null, which strict clients reject for the whole list.
+		schema := sp.Schema
+		if len(schema) == 0 || string(schema) == "null" {
+			schema = json.RawMessage(`{"type":"object"}`)
+		}
+		list = append(list, entry{sp.Name, sp.Description, schema, a})
 	}
 	return json.Marshal(struct {
 		Tools []entry `json:"tools"`
@@ -478,8 +584,9 @@ type textContent struct {
 }
 
 type callResult struct {
-	Content []textContent `json:"content"`
-	IsError bool          `json:"isError"`
+	Content           []textContent   `json:"content"`
+	IsError           bool            `json:"isError"`
+	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
 }
 
 func toolResult(text string, isErr bool) json.RawMessage {
@@ -500,7 +607,7 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (json.Raw
 	if p.Name == "" {
 		return nil, &rpcError{codeInvalidParams, "name is required"}
 	}
-	if _, ok := tools.Lookup(p.Name); !ok {
+	if !s.allowed[p.Name] {
 		return nil, &rpcError{codeInvalidParams, "unknown tool: " + p.Name}
 	}
 	args := strings.TrimSpace(string(p.Arguments))
@@ -520,6 +627,10 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (json.Raw
 				done <- gate.Result{Text: "internal error while running the tool", IsError: true}
 			}
 		}()
+		if s.dispatch != nil {
+			done <- s.dispatch(ctx, p.Name, []byte(args))
+			return
+		}
 		g := s.gate()
 		if g.Backend == nil {
 			done <- gate.Result{Text: "the assistant backend is not available", IsError: true}
@@ -529,7 +640,11 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (json.Raw
 	}()
 	select {
 	case res := <-done:
-		return toolResult(res.Text, res.IsError), nil
+		encoded, err := json.Marshal(callResult{Content: []textContent{{"text", res.Text}}, IsError: res.IsError, StructuredContent: res.Structured})
+		if err != nil {
+			return toolResult("cannot encode tool result: "+err.Error(), true), nil
+		}
+		return encoded, nil
 	case <-ctx.Done():
 		// The goroutine ends when the backend honours ctx; it never blocks on done.
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {

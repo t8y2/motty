@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -19,6 +20,30 @@ import (
 
 	"motty/internal/cloudsync"
 )
+
+func TestApprovedRemoteHTTPUsesSignedRequests(t *testing.T) {
+	server, _ := newFakeS3(t)
+	config := Config{Endpoint: "http://backup.lan", Bucket: testBucket, Key: "backup.mottybak", AccessKey: testAccess, Secret: testSecret, PathStyle: true}
+	if _, err := New(config, nil); !errors.Is(err, cloudsync.ErrInsecure) {
+		t.Fatalf("unapproved remote HTTP: %v", err)
+	}
+	transport := &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+	}}
+	t.Cleanup(transport.CloseIdleConnections)
+	config.AllowInsecureHTTP = true
+	client, err := New(config, &http.Client{Transport: transport})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Put(context.Background(), []byte("encrypted backup"), ""); err != nil {
+		t.Fatal(err)
+	}
+	data, _, err := client.Get(context.Background())
+	if err != nil || string(data) != "encrypted backup" {
+		t.Fatalf("download: %q, %v", data, err)
+	}
+}
 
 const (
 	testAccess = "AKIAMOTTYTEST"
@@ -32,11 +57,12 @@ const (
 // (it rebuilds the canonical request from what arrived on the wire), so the two
 // agreeing is a check and not an echo.
 type fakeS3 struct {
-	mu          sync.Mutex
-	objects     map[string][]byte
-	conditional bool // supports If-Match; otherwise answers 501 NotImplemented
-	methods     []string
-	badSigs     int
+	mu                   sync.Mutex
+	objects              map[string][]byte
+	conditional          bool // supports If-Match; otherwise answers NotImplemented
+	notImplementedStatus int  // 501 when zero; Aliyun OSS answers 400
+	methods              []string
+	badSigs              int
 }
 
 func (s *fakeS3) etag(key string) string {
@@ -104,6 +130,13 @@ func verify(r *http.Request, body []byte) bool {
 	return hmac.Equal([]byte(hex.EncodeToString(mac.Sum(nil))), []byte(fields["Signature"]))
 }
 
+func (fake *fakeS3) unsupportedStatus() int {
+	if fake.notImplementedStatus != 0 {
+		return fake.notImplementedStatus
+	}
+	return 501
+}
+
 func newFakeS3(t *testing.T) (*httptest.Server, *fakeS3) {
 	t.Helper()
 	fake := &fakeS3{objects: map[string][]byte{}, conditional: true}
@@ -131,7 +164,7 @@ func newFakeS3(t *testing.T) (*httptest.Server, *fakeS3) {
 		case http.MethodPut:
 			if r.Header.Get("If-None-Match") == "*" {
 				if !fake.conditional {
-					xmlError(w, 501, "NotImplemented", "A header you provided implies functionality that is not implemented")
+					xmlError(w, fake.unsupportedStatus(), "NotImplemented", "A header you provided implies functionality that is not implemented")
 					return
 				}
 				if exists {
@@ -141,7 +174,7 @@ func newFakeS3(t *testing.T) (*httptest.Server, *fakeS3) {
 			}
 			if match := r.Header.Get("If-Match"); match != "" {
 				if !fake.conditional {
-					xmlError(w, 501, "NotImplemented", "A header you provided implies functionality that is not implemented")
+					xmlError(w, fake.unsupportedStatus(), "NotImplemented", "A header you provided implies functionality that is not implemented")
 					return
 				}
 				if !exists {
@@ -232,8 +265,17 @@ func TestAConditionalUploadNeverReplacesAVersionItHasNotSeen(t *testing.T) {
 }
 
 func TestAServiceWithoutConditionalWritesIsCheckedWithAHeadFirst(t *testing.T) {
+	for _, status := range []int{501, 400} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			checkHeadFallback(t, status)
+		})
+	}
+}
+
+func checkHeadFallback(t *testing.T, status int) {
 	server, fake := newFakeS3(t)
 	fake.conditional = false
+	fake.notImplementedStatus = status
 	client := testClient(t, server, DefaultKey)
 	ctx := context.Background()
 	first, _ := client.Put(ctx, []byte("one"), "")
@@ -343,5 +385,12 @@ func TestAFirstUploadDoesNotOverwriteAnObjectAnotherComputerCreatedFirst(t *test
 		if string(fake.objects[DefaultKey]) != "mine" {
 			t.Fatalf("conditional=%v: the object holds %q", conditional, fake.objects[DefaultKey])
 		}
+	}
+}
+
+func TestARedirectIsNotASuccess(t *testing.T) {
+	response := &http.Response{StatusCode: http.StatusFound, Status: "302 Found", Body: io.NopCloser(strings.NewReader(""))}
+	if _, err := check(response); err == nil {
+		t.Fatal("a redirect the client did not follow was reported as a working bucket")
 	}
 }

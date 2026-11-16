@@ -10,51 +10,162 @@ type Position struct {
 	Row, Column int
 }
 
+// Point is one cell of the retained buffer. Line counts as LineNumber does, so
+// a Point keeps naming the same text while the view scrolls and while the
+// history drops its oldest lines. Selections use it to stay put under scrolling.
+type Point struct {
+	Line   uint64
+	Column int
+}
+
+// SetWordSeparators overrides the punctuation that separates words in selections.
+// An empty value keeps the Unicode-based default classification.
+func (t *Terminal) SetWordSeparators(separators string) {
+	t.wordSeparators = separators
+}
+
+// PointAt is the buffer point under a view position.
+func (t *Terminal) PointAt(position Position) Point {
+	return Point{Line: t.LineNumber(position.Row), Column: position.Column}
+}
+
 // SelectedText returns the cells between two inclusive visible positions.
 // Soft-wrapped rows are joined; hard line endings remain newlines.
 func (t *Terminal) SelectedText(anchor, focus Position) string {
-	anchor = t.clampPosition(anchor)
-	focus = t.clampPosition(focus)
-	if positionLess(focus, anchor) {
+	return t.SelectedRange(t.PointAt(t.clampPosition(anchor)), t.PointAt(t.clampPosition(focus)))
+}
+
+// SelectedRange returns the cells between two inclusive buffer points, which
+// may lie outside the view. Points beyond the retained lines clamp to them.
+// Soft-wrapped rows are joined; hard line endings remain newlines.
+func (t *Terminal) SelectedRange(anchor, focus Point) string {
+	base, count := t.lineBase(), uint64(t.bufferLineCount())
+	if count == 0 {
+		return ""
+	}
+	anchor, focus = t.clampPoint(anchor, base, count), t.clampPoint(focus, base, count)
+	if pointLess(focus, anchor) {
 		anchor, focus = focus, anchor
 	}
 
 	var result strings.Builder
-	result.Grow((focus.Row - anchor.Row + 1) * (t.cols + 1))
-	for rowIndex := anchor.Row; rowIndex <= focus.Row; rowIndex++ {
+	result.Grow(int(min(focus.Line-anchor.Line+1, 1<<16)) * (t.cols + 1))
+	for line := anchor.Line; line <= focus.Line; line++ {
 		from, to := 0, t.cols-1
-		if rowIndex == anchor.Row {
+		if line == anchor.Line {
 			from = anchor.Column
 		}
-		if rowIndex == focus.Row {
+		if line == focus.Line {
 			to = focus.Column
 		}
-		row := t.Row(rowIndex)
+		row := t.rowOf(t.bufferLine(int(line - base)))
 		writeSelectedCells(&result, row, from, to)
-		if rowIndex < focus.Row && !row.Wrapped {
+		if line < focus.Line && !row.Wrapped {
 			result.WriteByte('\n')
 		}
 	}
 	return result.String()
 }
 
+// BlockRange returns the cells of the rectangle between two buffer points: the
+// columns they span, on every line they span. Unlike SelectedRange, a
+// soft-wrapped row is a line of its own here, the way the rectangle shows it on
+// screen. Points beyond the retained lines clamp to them; a wide character is
+// kept whole when the rectangle starts on its second cell. Blank cells at the
+// right edge are dropped from each line, so a column copied out of a table keeps
+// its alignment without trailing spaces.
+func (t *Terminal) BlockRange(anchor, focus Point) string {
+	base, count := t.lineBase(), uint64(t.bufferLineCount())
+	if count == 0 {
+		return ""
+	}
+	anchor, focus = t.clampPoint(anchor, base, count), t.clampPoint(focus, base, count)
+	if focus.Line < anchor.Line {
+		anchor.Line, focus.Line = focus.Line, anchor.Line
+	}
+	from, to := min(anchor.Column, focus.Column), max(anchor.Column, focus.Column)
+
+	var result strings.Builder
+	result.Grow(int(min(focus.Line-anchor.Line+1, 1<<16)) * (to - from + 1))
+	for line := anchor.Line; line <= focus.Line; line++ {
+		if line > anchor.Line {
+			result.WriteByte('\n')
+		}
+		row := t.rowOf(t.bufferLine(int(line - base)))
+		start := from
+		if start > 0 && start < len(row.Cells) && row.Cells[start].Attr&WideTail != 0 {
+			start--
+		}
+		writeSelectedCells(&result, row, start, to)
+	}
+	return result.String()
+}
+
+// lineBase is the line number of retained-buffer index 0.
+func (t *Terminal) lineBase() uint64 {
+	if t.onAlt {
+		return t.scrolled + 1
+	}
+	return t.scrolled - uint64(t.histCount) + 1
+}
+
+func (t *Terminal) clampPoint(point Point, base, count uint64) Point {
+	point.Line = min(max(point.Line, base), base+count-1)
+	point.Column = clampInt(point.Column, 0, t.cols-1)
+	return point
+}
+
+func pointLess(left, right Point) bool {
+	return left.Line < right.Line || left.Line == right.Line && left.Column < right.Column
+}
+
 // WordBounds returns the inclusive run of like cells around position. Letters,
 // numbers, and underscores form words; spaces and punctuation form their own runs.
 func (t *Terminal) WordBounds(position Position) (Position, Position) {
 	position = t.clampPosition(position)
-	row := t.Row(position.Row)
-	column := position.Column
+	start, end := t.wordColumns(t.Row(position.Row), position.Column)
+	return Position{Row: position.Row, Column: start}, Position{Row: position.Row, Column: end}
+}
+
+// WordRange is WordBounds for a point of the retained buffer, which may lie
+// outside the view. Points beyond the retained lines clamp to them.
+func (t *Terminal) WordRange(point Point) (Point, Point) {
+	base, count := t.lineBase(), uint64(t.bufferLineCount())
+	if count == 0 {
+		return point, point
+	}
+	point = t.clampPoint(point, base, count)
+	start, end := t.wordColumns(t.rowOf(t.bufferLine(int(point.Line-base))), point.Column)
+	return Point{Line: point.Line, Column: start}, Point{Line: point.Line, Column: end}
+}
+
+// LineRange is the whole logical line holding point: every row the terminal
+// soft-wrapped it into, from the first cell of the first to the last cell of the
+// last. Points beyond the retained lines clamp to them.
+func (t *Terminal) LineRange(point Point) (Point, Point) {
+	base, count := t.lineBase(), uint64(t.bufferLineCount())
+	if count == 0 {
+		return point, point
+	}
+	point = t.clampPoint(point, base, count)
+	index := int(point.Line - base)
+	first, last := t.linkGroupStart(index), t.linkGroupEnd(index)-1
+	return Point{Line: base + uint64(first)}, Point{Line: base + uint64(last), Column: t.cols - 1}
+}
+
+// wordColumns is the inclusive column range of the run of like cells around column.
+func (t *Terminal) wordColumns(row Row, column int) (int, int) {
 	if column < len(row.Cells) && row.Cells[column].Attr&WideTail != 0 && column > 0 {
 		column--
 	}
-	kind := selectedCellKind(row.Cells, column)
+	kind := t.selectedCellKind(row.Cells, column)
 	start := column
 	for start > 0 {
 		previous := start - 1
 		if previous < len(row.Cells) && row.Cells[previous].Attr&WideTail != 0 && previous > 0 {
 			previous--
 		}
-		if selectedCellKind(row.Cells, previous) != kind {
+		if t.selectedCellKind(row.Cells, previous) != kind {
 			break
 		}
 		start = previous
@@ -62,13 +173,13 @@ func (t *Terminal) WordBounds(position Position) (Position, Position) {
 	end := column
 	for {
 		next := end + selectedCellWidth(row.Cells, end)
-		if next >= t.cols || selectedCellKind(row.Cells, next) != kind {
+		if next >= t.cols || t.selectedCellKind(row.Cells, next) != kind {
 			break
 		}
 		end = next
 	}
 	end += selectedCellWidth(row.Cells, end) - 1
-	return Position{Row: position.Row, Column: start}, Position{Row: position.Row, Column: min(end, t.cols-1)}
+	return start, min(end, t.cols-1)
 }
 
 func (t *Terminal) clampPosition(position Position) Position {
@@ -156,9 +267,15 @@ const (
 	cellPunctuation
 )
 
-func selectedCellKind(cells []Cell, column int) cellKind {
+func (t *Terminal) selectedCellKind(cells []Cell, column int) cellKind {
 	if column < 0 || column >= len(cells) || cells[column].R == 0 || unicode.IsSpace(cells[column].R) {
 		return cellBlank
+	}
+	if t.wordSeparators != "" {
+		if strings.ContainsRune(t.wordSeparators, cells[column].R) {
+			return cellPunctuation
+		}
+		return cellWord
 	}
 	if cells[column].R == '_' || unicode.IsLetter(cells[column].R) || unicode.IsNumber(cells[column].R) {
 		return cellWord

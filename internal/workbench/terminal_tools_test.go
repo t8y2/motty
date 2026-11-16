@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/highlight"
 	"motty/internal/sshconn"
 	"motty/internal/term"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
 )
 
 // buildWith prepares row 0 of a screen holding input under a palette with rules.
@@ -20,7 +20,7 @@ func buildWith(t testing.TB, input string, rules []highlight.Rule) *rowEntry {
 	look.highlight = highlight.Compile(rules)
 	var cache rowCache
 	cache.begin()
-	return cache.row(screen.Row(0), 40, -1, &look, false)
+	return cache.row(screen.Row(0), 40, -1, cellSpan{}, &look, false)
 }
 
 func TestHighlightColorsTheMatchedWordsAndKeepsEveryOtherCell(t *testing.T) {
@@ -28,7 +28,7 @@ func TestHighlightColorsTheMatchedWordsAndKeepsEveryOtherCell(t *testing.T) {
 	if entry.text != "ok: Permission denied now" {
 		t.Fatalf("text = %q", entry.text)
 	}
-	green, red := ui.RGB(140, 230, 168), ui.RGB(255, 150, 150)
+	green, red := gfx.RGB(140, 230, 168), gfx.RGB(255, 150, 150)
 	colorAt := func(column int32) any {
 		for _, run := range entry.runs {
 			if column >= run.Column && column < run.Column+run.Cells {
@@ -53,7 +53,7 @@ func TestHighlightColorsTheMatchedWordsAndKeepsEveryOtherCell(t *testing.T) {
 
 func TestHighlightLeavesTextAProgramAlreadyColoredAlone(t *testing.T) {
 	entry := buildWith(t, "\x1b[34merror\x1b[0m error", highlight.Builtin())
-	red := ui.RGB(255, 150, 150)
+	red := gfx.RGB(255, 150, 150)
 	first, last := entry.runs[0], entry.runs[len(entry.runs)-1]
 	if first.Color == red {
 		t.Errorf("a word the program colored blue was recolored: %+v", first)
@@ -65,7 +65,7 @@ func TestHighlightLeavesTextAProgramAlreadyColoredAlone(t *testing.T) {
 
 func TestHighlightFollowsWideCharactersToTheirCells(t *testing.T) {
 	entry := buildWith(t, "你好 error", highlight.Builtin())
-	red := ui.RGB(255, 150, 150)
+	red := gfx.RGB(255, 150, 150)
 	for _, run := range entry.runs {
 		if run.Column >= 5 && run.Color != red {
 			t.Errorf("run at cell %d is %+v, want red: the word starts at cell 5 after two wide characters", run.Column, run)
@@ -83,10 +83,22 @@ func TestHighlightingNothingCostsNoExtraWork(t *testing.T) {
 	look := darkPalette
 	look.highlight = highlight.Compile(highlight.Builtin())
 	cache.begin()
-	cache.row(screen.Row(0), 40, -1, &look, false)
+	cache.row(screen.Row(0), 40, -1, cellSpan{}, &look, false)
 	if cells := cache.markCells(screen.Row(0), 40, look.highlight); cells != nil {
 		t.Fatalf("a line with no match returned marks: %v", cells)
 	}
+}
+
+// schemeCard is the Settings card showing the color scheme with this id.
+func schemeCard(t *testing.T, id string) gfx.ID {
+	t.Helper()
+	for index := range colorSchemes {
+		if colorSchemes[index].id == id {
+			return hitSettingsSchemeList.At(index + 1)
+		}
+	}
+	t.Fatalf("no color scheme %q", id)
+	return gfx.ID{}
 }
 
 func TestSchemeChangesTheTerminalNotTheWindow(t *testing.T) {
@@ -96,14 +108,14 @@ func TestSchemeChangesTheTerminalNotTheWindow(t *testing.T) {
 	epoch := state.termPal.epoch
 
 	state.Click(hitSettings)
-	state.Click(hitSettingsSchemeList.At(1)) // Dracula, the first after Default
-	if state.terminalScheme != "dracula" {
-		t.Fatalf("scheme = %q", state.terminalScheme)
+	state.Click(schemeCard(t, "dracula"))
+	if state.activeScheme() != "dracula" {
+		t.Fatalf("scheme = %q", state.activeScheme())
 	}
-	if state.termPal.terminal == dark || state.termPal.terminal != ui.RGB(0x28, 0x2a, 0x36) {
+	if state.termPal.terminal == dark || state.termPal.terminal != gfx.RGB(0x28, 0x2a, 0x36) {
 		t.Errorf("terminal background = %v", state.termPal.terminal)
 	}
-	if state.termPal.termFG != ui.RGB(0xf8, 0xf8, 0xf2) || state.termPal.ansi[1] != [3]uint8{0xff, 0x55, 0x55} {
+	if state.termPal.termFG != gfx.RGB(0xf8, 0xf8, 0xf2) || state.termPal.ansi[1] != [3]uint8{0xff, 0x55, 0x55} {
 		t.Errorf("text %v, red %v", state.termPal.termFG, state.termPal.ansi[1])
 	}
 	if state.pal.workspace != window {
@@ -118,22 +130,74 @@ func TestSchemeChangesTheTerminalNotTheWindow(t *testing.T) {
 	screen.Write([]byte("\x1b[31mred\x1b[0m"))
 	var cache rowCache
 	cache.begin()
-	before := cache.row(screen.Row(0), 40, -1, &darkPalette, false).runs[0].Color
+	before := cache.row(screen.Row(0), 40, -1, cellSpan{}, &darkPalette, false).runs[0].Color
 	look := state.termPal
 	cache.begin()
-	after := cache.row(screen.Row(0), 40, -1, &look, false).runs[0].Color
-	if before == after || after != ui.RGB(0xff, 0x55, 0x55) {
+	after := cache.row(screen.Row(0), 40, -1, cellSpan{}, &look, false).runs[0].Color
+	if before == after || after != gfx.RGB(0xff, 0x55, 0x55) {
 		t.Errorf("red before %v, after %v", before, after)
 	}
 
 	// It is kept, and Default comes back with the first card.
 	restarted := newTestState(t, options)
-	if restarted.terminalScheme != "dracula" {
-		t.Fatalf("restored scheme = %q", restarted.terminalScheme)
+	if restarted.activeScheme() != "dracula" {
+		t.Fatalf("restored scheme = %q", restarted.activeScheme())
 	}
 	state.Click(hitSettingsSchemeList.At(0))
-	if state.terminalScheme != defaultSchemeID || state.termPal.terminal != state.pal.terminal {
-		t.Errorf("default scheme: %q, %v", state.terminalScheme, state.termPal.terminal)
+	if state.activeScheme() != defaultSchemeID || state.termPal.terminal != state.pal.terminal {
+		t.Errorf("default scheme: %q, %v", state.activeScheme(), state.termPal.terminal)
+	}
+}
+
+func TestEachLookKeepsItsOwnTerminalScheme(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	if state.appearance != appearanceDark {
+		t.Fatal("the window opens dark")
+	}
+
+	state.Click(hitSettings)
+	state.Click(schemeCard(t, "dracula"))
+	darkTerminal := state.termPal.terminal
+
+	state.Click(hitTheme) // the window turns light and so does the terminal
+	if state.appearance != appearanceLight || state.activeScheme() != defaultSchemeID {
+		t.Fatalf("light look: %v scheme %q", state.appearance, state.activeScheme())
+	}
+	if state.termPal.terminal == darkTerminal || state.termPal.terminal != state.pal.terminal {
+		t.Errorf("the terminal stayed %v in a light window", state.termPal.terminal)
+	}
+	state.Click(hitSettingsSchemeList.At(schemeCount - 1)) // One Light
+
+	state.Click(hitTheme)
+	if state.activeScheme() != "dracula" || state.termPal.terminal != darkTerminal {
+		t.Errorf("dark look came back as %q %v", state.activeScheme(), state.termPal.terminal)
+	}
+
+	restarted := newTestState(t, options)
+	if restarted.terminalSchemes != [2]string{"dracula", "one-light"} {
+		t.Errorf("restored schemes = %q", restarted.terminalSchemes)
+	}
+}
+
+func TestASchemeSavedBeforeLooksHadOneGoesToTheLookItSuits(t *testing.T) {
+	for _, test := range []struct {
+		saved       string
+		dark, light string
+	}{
+		{"dracula", "dracula", defaultSchemeID},
+		{"github-light", defaultSchemeID, "github-light"},
+		{"default", defaultSchemeID, defaultSchemeID},
+		{"no-such-scheme", defaultSchemeID, defaultSchemeID},
+	} {
+		_, options := newWorld(t)
+		if err := saveState(options.StatePath, savedState{Hosts: sampleHosts, TerminalScheme: test.saved}); err != nil {
+			t.Fatal(err)
+		}
+		state := newTestState(t, options)
+		if got := state.terminalSchemes; got != [2]string{test.dark, test.light} {
+			t.Errorf("%q restored as %q", test.saved, got)
+		}
 	}
 }
 
@@ -190,7 +254,27 @@ func TestAddingAHighlightRuleThroughTheDialogCompilesKeepsAndRestoresIt(t *testi
 	}
 	typeInto(state, hitHighlightPattern, "5\\d\\d")
 	state.Click(hitHighlightRegex)
-	state.Click(hitHighlightColorList.At(2)) // Green in the dialog's order: Red, Yellow, Green
+	// The color chips are controls of the dialog's page: press one through an
+	// event pass, as the window does, rather than through the stable-hit
+	// dispatcher.
+	driver := modalEventDriver(t, state)
+	green := hitHighlightColorList.At(2) // Green in the dialog's order: Red, Yellow, Green
+	var chip gfx.Hit
+	for _, hit := range driver.Snapshot().Hits {
+		if hit.ID == green && !hit.IsLabel {
+			chip = hit
+			break
+		}
+	}
+	if chip.Bounds.Width == 0 {
+		t.Fatal("the dialog painted no green color chip")
+	}
+	if err := driver.Click(chip.Bounds.X+chip.Bounds.Width/2, chip.Bounds.Y+chip.Bounds.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if state.highlighting.slot != highlight.Green {
+		t.Fatalf("the green chip did not choose its color: slot %v", state.highlighting.slot)
+	}
 	state.Click(hitHighlightSubmit)
 	if state.modal != modalNone || len(state.highlighting.rules) != 1 {
 		t.Fatalf("modal %d, rules %v", state.modal, state.highlighting.rules)
@@ -209,6 +293,7 @@ func TestAddingAHighlightRuleThroughTheDialogCompilesKeepsAndRestoresIt(t *testi
 	}
 
 	state.Click(hitHighlightDeleteList.At(0))
+	state.Click(hitRuleDeleteConfirm)
 	if len(state.highlighting.rules) != 0 {
 		t.Fatalf("rules after delete = %v", state.highlighting.rules)
 	}
@@ -276,11 +361,11 @@ func TestADamagedStateFileCannotInstallAnUnusableRuleOrSnippet(t *testing.T) {
 	if len(state.highlighting.rules) != 1 || state.highlighting.rules[0].Pattern != "ok" {
 		t.Errorf("rules = %+v", state.highlighting.rules)
 	}
-	if len(state.snippets.list) != 1 || state.snippets.list[0].Command != "[2Jls" {
-		t.Errorf("snippets = %+v: control characters must not survive into keystrokes", state.snippets.list)
+	if len(state.snippets.list) != 1 || state.snippets.list[0].Command != "[2Jls\n" {
+		t.Errorf("snippets = %+v: unsafe control characters must not survive into keystrokes", state.snippets.list)
 	}
-	if state.terminalScheme != defaultSchemeID {
-		t.Errorf("scheme = %q", state.terminalScheme)
+	if state.activeScheme() != defaultSchemeID {
+		t.Errorf("scheme = %q", state.activeScheme())
 	}
 }
 
@@ -290,8 +375,8 @@ func TestSnippetsAreAddedEditedSentAndKept(t *testing.T) {
 	world.connectFirst(t, state)
 	shell := world.conns[0].shell(t)
 
-	state.Click(hitSettings)
-	state.Click(hitSettingsSnippetAdd)
+	state.Click(hitSnippets)
+	state.Click(hitSnippetAdd)
 	state.Click(hitSnippetSubmit)
 	if state.modal != modalSnippet || state.snippets.dialogError != state.messages.Tools.SnippetErrorName {
 		t.Fatalf("modal %d, error %q", state.modal, state.snippets.dialogError)
@@ -313,7 +398,7 @@ func TestSnippetsAreAddedEditedSentAndKept(t *testing.T) {
 	// It is on the command palette, and choosing it types into the active shell.
 	state.openCommandPalette()
 	found := false
-	for index := 0; index < int(state.commandPalette.entryCount); index++ {
+	for index := 0; index < len(state.commandPalette.entries); index++ {
 		if strings.Contains(state.commandPalette.entries[index].label, "Restart nginx") {
 			found = true
 		}
@@ -331,7 +416,7 @@ func TestSnippetsAreAddedEditedSentAndKept(t *testing.T) {
 	}
 
 	// Edited without Enter, it only types.
-	state.Click(hitSnippetEditList.At(0))
+	state.Click(hitSnippetEdit)
 	if state.modal != modalSnippet || state.snippets.name.String() != "Restart nginx" {
 		t.Fatalf("editing opened modal %d with name %q", state.modal, state.snippets.name.String())
 	}
@@ -345,7 +430,11 @@ func TestSnippetsAreAddedEditedSentAndKept(t *testing.T) {
 	if restarted := newTestState(t, options); len(restarted.snippets.list) != 1 || restarted.snippets.list[0].Run {
 		t.Fatalf("restored snippets = %+v", restarted.snippets.list)
 	}
-	state.Click(hitSnippetDeleteList.At(0))
+	state.Click(hitSnippetRemove)
+	if state.modal != modalSnippetDelete {
+		t.Fatalf("deleting a snippet opened modal %d, want a confirmation", state.modal)
+	}
+	state.Click(hitSnippetDeleteConfirm)
 	if len(state.snippets.list) != 0 {
 		t.Fatalf("snippets after delete = %+v", state.snippets.list)
 	}
@@ -371,6 +460,10 @@ func twoPanes(t *testing.T) (state *State, first, second *fakeShell, firstID, se
 	firstID = firstSession.ID
 	state.Click(hitPaneSplitHorizontal)
 	secondID = state.activeSessionID
+	firstSession.term.live = true
+	secondSession, _ := state.sessionByIDPointer(secondID)
+	secondSession.term.live = true
+	state.Wake()
 	if secondID == firstID || len(world.shared) != 1 {
 		t.Fatalf("split did not make a second pane: %d %d", firstID, secondID)
 	}
@@ -407,7 +500,7 @@ func TestBroadcastTypesIntoEveryPaneOfTheTabUntilItIsTurnedOff(t *testing.T) {
 	if !strings.HasSuffix(second.typed(), "echo hi") {
 		t.Fatalf("paste did not reach the other pane: %q", second.typed())
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitTerminalList.At(int(firstID))})
+	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: terminalTestHitByID(state, firstID)})
 	if !strings.HasSuffix(second.typed(), "\r") {
 		t.Fatalf("Enter did not reach the other pane: %q", second.typed())
 	}
@@ -493,7 +586,7 @@ func BenchmarkPrepareALogLine(b *testing.B) {
 			for b.Loop() {
 				cache.begin()
 				row.Version++ // as if the line had changed
-				cache.row(row, 120, -1, &look, false)
+				cache.row(row, 120, -1, cellSpan{}, &look, false)
 			}
 		})
 	}

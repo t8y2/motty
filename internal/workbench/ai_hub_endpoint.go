@@ -12,5 +12,15 @@ import (
 // here. It is safe from any goroutine.
 func (state *State) setMCPEndpoint(url, token string) {
 	addr := strings.TrimSuffix(strings.TrimPrefix(url, "http://"), mcp.Path)
-	state.aiPost(func(s *State) { s.ai.mcpAddr, s.ai.mcpToken = addr, token })
+	state.aiPost(func(s *State) {
+		if s.ai.mcpAddr != addr || s.ai.mcpToken != token {
+			s.ai.cfg.copied = aiCopyIdle
+		}
+		s.ai.mcpAddr, s.ai.mcpToken = addr, token
+		// Every assistant setting publishes through the hub, including changes
+		// made while HTTP is disabled or the endpoint stays the same. Refresh
+		// the shared choices without reopening an unused assistant or saving
+		// another window's conversation state back into the store.
+		s.reloadAISettings()
+	})
 }

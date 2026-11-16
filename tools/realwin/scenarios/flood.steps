@@ -1,0 +1,18 @@
+# Output of three kinds, with a marker between them.
+# slow: one line every ~30 ms; flood: 30000 lines at once; mixed: slow output after the flood.
+focus
+sleep 500
+keys clear{ENTER}
+sleep 800
+mark slow-begin
+typefast for i in $(seq 1 100); do echo slow line $i; sleep 0.03; done{ENTER}
+sleep 5000
+mark slow-end
+keys clear{ENTER}
+sleep 800
+mark flood-begin
+typefast seq 1 30000{ENTER}
+sleep 6000
+mark flood-end
+keys clear{ENTER}
+sleep 500

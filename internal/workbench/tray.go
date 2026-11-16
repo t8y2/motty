@@ -3,8 +3,11 @@ package workbench
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/vivaui/viva/app"
+	"motty/internal/buildinfo"
+	"motty/internal/update"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -72,23 +75,69 @@ func (tray *Tray) Tooltip() (text string, changed bool) {
 	}
 	tray.count = count
 	messages := tray.members[0].state.messages
+	version := update.Current
 	if count == 0 {
-		tray.tooltip = messages.TrayTooltipEmpty
+		tray.tooltip = fmt.Sprintf(productText(messages.TrayTooltipEmpty), version)
 	} else {
-		tray.tooltip = fmt.Sprintf(messages.TrayTooltipFmt, count)
+		tray.tooltip = fmt.Sprintf(productText(messages.TrayTooltipFmt), version, count)
 	}
 	return tray.tooltip, true
 }
 
+// productText puts this build's product name into an existing localized string.
+// The catalogs stay unchanged, so switching builds never changes global i18n.
+func productText(text string) string {
+	if buildinfo.ProductName == "Motty" {
+		return text
+	}
+	return strings.ReplaceAll(text, "Motty", buildinfo.ProductName)
+}
+
+// closeActionVisible reports whether closing a window can leave the application
+// in the status area, so the choice of what it does is worth showing.
+func (state *State) closeActionVisible() bool {
+	return state.options.StatusArea != nil && state.options.StatusArea()
+}
+
+// StaysInTray reports whether closing the last window, or a window that has
+// sessions, hides it into the status area instead of closing it.
+func (state *State) StaysInTray() bool { return state.closeAction == closeToTray }
+
 // WantsToStay reports whether a window with sessions should hide rather than
 // close: closing it would end connections the user may still be using.
 func (state *State) WantsToStay() bool { return len(state.sessions) > 0 }
+
+// NoteHiddenToTray tells the user, once per device, that closing the window did
+// not quit: the sessions stay connected and the status icon brings the window
+// back. A window that vanishes into the status area looks the same as one that
+// ended the program, so the first time it happens is explained rather than
+// assumed. Later hides stay silent.
+func (state *State) NoteHiddenToTray() {
+	if state.trayHintShown {
+		return
+	}
+	state.trayHintShown = true
+	state.save()
+	messages := state.messages
+	if err := state.options.Notify(app.Notification{Title: productText(messages.TrayHintTitle), Body: productText(messages.TrayHintBody)}); err != nil {
+		// The platform may have no notification service; the tray icon and the
+		// setting are still there, so this is not reported over the window.
+		return
+	}
+}
 
 // ConfirmClose asks before a window that is about to quit takes its sessions
 // with it, and runs allow only when the user agrees. It reports whether it took
 // over; false means nothing is open and the caller may close at once. Asking a
 // second time while the question is up closes, since the user insists.
 func (state *State) ConfirmClose(allow func()) bool {
+	if state.ConfirmDocumentClose(func() {
+		if !state.ConfirmClose(allow) {
+			allow()
+		}
+	}) {
+		return true
+	}
 	if len(state.sessions) == 0 || state.closeAsked && state.modal == modalForm {
 		return false
 	}
@@ -135,9 +184,10 @@ func (tray *Tray) Menu() []app.MenuItem {
 	return append(items,
 		app.MenuItem{Separator: true},
 		app.MenuItem{Title: messages.TrayLocalTerminal, OnSelect: tray.openLocalTerminal},
-		app.MenuItem{Title: messages.TrayShowWindow, OnSelect: tray.ShowWindow},
+		app.MenuItem{Title: productText(messages.TrayShowWindow), OnSelect: tray.ShowWindow},
+		app.MenuItem{Title: messages.TrayCheckUpdates, OnSelect: tray.checkForUpdates, Disabled: tray.checkingForUpdates()},
 		app.MenuItem{Separator: true},
-		app.MenuItem{Title: messages.TrayQuit, OnSelect: tray.quit},
+		app.MenuItem{Title: productText(messages.TrayQuit), OnSelect: tray.quit},
 	)
 }
 
@@ -225,4 +275,26 @@ func (tray *Tray) ShowWindow() {
 	if member, ok := tray.visibleMember(); ok {
 		member.window.Show()
 	}
+}
+
+// checkingForUpdates reports whether any window is already asking the feed, so
+// the menu can disable the entry instead of queueing a second request.
+func (tray *Tray) checkingForUpdates() bool {
+	for _, member := range tray.members {
+		if member.state.update.checking {
+			return true
+		}
+	}
+	return false
+}
+
+// checkForUpdates asks the feed from the window the user can see, bringing it
+// forward first: a release is offered in that window's update dialog.
+func (tray *Tray) checkForUpdates() {
+	member, ok := tray.visibleMember()
+	if !ok {
+		return
+	}
+	member.window.Show()
+	member.state.checkForUpdates(true)
 }

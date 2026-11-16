@@ -7,6 +7,7 @@ package llm
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,13 +39,60 @@ type ToolCall struct {
 	Arguments string
 }
 
+// Image is a picture sent with a user message. MediaType is one of the four
+// formats every vision endpoint accepts; DetectImage finds it from the bytes.
+type Image struct {
+	MediaType string
+	Data      []byte
+}
+
+// Media types an Image can carry.
+const (
+	ImagePNG  = "image/png"
+	ImageJPEG = "image/jpeg"
+	ImageGIF  = "image/gif"
+	ImageWebP = "image/webp"
+)
+
+// DetectImage names the format of data from its signature, never from a file
+// name, or returns "" when it is none of the supported ones.
+func DetectImage(data []byte) string {
+	switch {
+	case bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")):
+		return ImagePNG
+	case bytes.HasPrefix(data, []byte("\xff\xd8\xff")):
+		return ImageJPEG
+	case bytes.HasPrefix(data, []byte("GIF87a")), bytes.HasPrefix(data, []byte("GIF89a")):
+		return ImageGIF
+	case len(data) >= 12 && bytes.Equal(data[:4], []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP")):
+		return ImageWebP
+	}
+	return ""
+}
+
 // Message is one conversation turn. RoleTool messages carry the result text
-// of the call named by ToolCallID.
+// of the call named by ToolCallID. Images belong to user messages only; they
+// stay out of the JSON form, which the CLI backends embed in their prompt.
 type Message struct {
 	Role       Role
 	Text       string
+	Images     []Image `json:"-"`
 	ToolCalls  []ToolCall
 	ToolCallID string
+	// Thinking is the reasoning blocks of an assistant turn that Anthropic
+	// requires back, unchanged, while the turn continues through tool calls.
+	// It is kept for the run in progress only, so it stays out of the JSON form.
+	Thinking []ThinkingBlock `json:"-"`
+}
+
+// ThinkingBlock is one thinking or redacted_thinking block of a Messages API
+// response, with the signature that proves it came from the model.
+type ThinkingBlock struct {
+	Text      string
+	Signature string
+	// Redacted marks a redacted_thinking block, whose opaque payload is in Data.
+	Redacted bool
+	Data     string
 }
 
 // ToolSpec declares a tool the model may call.
@@ -57,12 +105,13 @@ type ToolSpec struct {
 
 // Request is one model invocation.
 type Request struct {
-	Model       string
-	System      string
-	Messages    []Message
-	Tools       []ToolSpec
-	MaxTokens   int
-	Temperature *float64
+	Model           string
+	System          string
+	Messages        []Message
+	Tools           []ToolSpec
+	MaxTokens       int
+	Temperature     *float64
+	ReasoningEffort string
 }
 
 // EventKind classifies a streamed Event.
@@ -74,12 +123,32 @@ const (
 	EventToolCall
 	EventDone
 	EventError
+	// EventThinking carries one finished ThinkingBlock to keep for replay; the
+	// readable text already went out as EventReasoning deltas.
+	EventThinking
 )
 
 // Usage is the token accounting reported by the provider, when it reports any.
 type Usage struct {
+	// InputTokens counts every prompt token of the request, cached or not.
 	InputTokens  int
 	OutputTokens int
+	// CacheReadTokens is the part of InputTokens the provider served from its
+	// prompt cache, CacheWriteTokens the part it stored there (Anthropic
+	// reports it, OpenAI-compatible providers do not). Zero means none or
+	// not reported.
+	CacheReadTokens  int
+	CacheWriteTokens int
+}
+
+// Add returns the sum of u and o.
+func (u Usage) Add(o Usage) Usage {
+	return Usage{
+		InputTokens:      u.InputTokens + o.InputTokens,
+		OutputTokens:     u.OutputTokens + o.OutputTokens,
+		CacheReadTokens:  u.CacheReadTokens + o.CacheReadTokens,
+		CacheWriteTokens: u.CacheWriteTokens + o.CacheWriteTokens,
+	}
 }
 
 // Event is one streamed item. Exactly one EventDone or EventError terminates
@@ -88,20 +157,38 @@ type Event struct {
 	Kind       EventKind
 	Text       string
 	ToolCall   *ToolCall
+	Thinking   *ThinkingBlock
 	Usage      Usage
 	StopReason string
 	Err        error
 }
 
+// Authentication styles. An empty style keeps the protocol's historical
+// behavior: x-api-key for Anthropic and Authorization: Bearer for
+// OpenAI-compatible endpoints.
+const (
+	AuthStyleAPIKey = "api_key"
+	AuthStyleBearer = "bearer"
+)
+
 // Config selects the endpoint and credentials of a Provider.
 type Config struct {
-	BaseURL string
-	APIKey  string
+	BaseURL   string
+	ModelsURL string
+	APIKey    string
+	// AuthStyle applies to Anthropic only. AuthStyleBearer sends the key as
+	// Authorization: Bearer instead of x-api-key. OpenAI-compatible requests
+	// always use bearer authentication.
+	AuthStyle string
 	// Client is used for all requests. Nil selects a client with no overall
 	// timeout but with dial, TLS and response-header timeouts.
 	Client *http.Client
 	// MaxResponseBytes bounds the total bytes of one SSE stream (default 16 MiB).
 	MaxResponseBytes int64
+	// IdleTimeout fails a stream that delivers no data for this long (default
+	// 2m). A provider can hold a connection open without producing anything,
+	// and no other timeout covers that.
+	IdleTimeout time.Duration
 }
 
 // Provider streams model output and lists models.
@@ -127,16 +214,19 @@ func (e *HTTPError) Error() string {
 
 const (
 	defaultMaxResponse = 16 << 20
+	defaultIdle        = 2 * time.Minute
 	maxLineBytes       = 1 << 20
 	maxErrBody         = 512
 	maxModelsBody      = 4 << 20
 )
 
 type base struct {
-	endpoint string // normalized base, no trailing slash
-	key      string
-	client   *http.Client
-	max      int64
+	endpoint  string // normalized base, no trailing slash
+	key       string
+	authStyle string
+	client    *http.Client
+	max       int64
+	idle      time.Duration
 }
 
 func newBase(cfg Config, endpoint string) base {
@@ -148,7 +238,11 @@ func newBase(cfg Config, endpoint string) base {
 	if m <= 0 {
 		m = defaultMaxResponse
 	}
-	return base{endpoint: endpoint, key: cfg.APIKey, client: c, max: m}
+	idle := cfg.IdleTimeout
+	if idle <= 0 {
+		idle = defaultIdle
+	}
+	return base{endpoint: endpoint, key: cfg.APIKey, authStyle: cfg.AuthStyle, client: c, max: m, idle: idle}
 }
 
 func defaultClient() *http.Client {
@@ -289,7 +383,22 @@ func validateRequest(req Request) error {
 			return errors.New("llm: tool without a name")
 		}
 	}
+	for _, m := range req.Messages {
+		if len(m.Images) > 0 && m.Role != RoleUser {
+			return errors.New("llm: only user messages carry images")
+		}
+		for _, image := range m.Images {
+			if len(image.Data) == 0 || image.MediaType == "" || DetectImage(image.Data) != image.MediaType {
+				return errors.New("llm: image is empty or not in its declared format")
+			}
+		}
+	}
 	return nil
+}
+
+// dataURL is an image as the data: URL the OpenAI APIs take.
+func (i Image) dataURL() string {
+	return "data:" + i.MediaType + ";base64," + base64.StdEncoding.EncodeToString(i.Data)
 }
 
 func sortedUnique(ids []string) []string {
@@ -338,4 +447,15 @@ func decodeBounded(r io.Reader, v any) error {
 		return fmt.Errorf("llm: malformed response: %w", err)
 	}
 	return nil
+}
+
+// StopsAtLimit reports whether a provider's stop reason means it cut the answer
+// off because the output budget ran out, so the caller can say so instead of
+// presenting half an answer as the whole of it.
+func StopsAtLimit(reason string) bool {
+	switch reason {
+	case "length", "max_tokens", "max_output_tokens":
+		return true
+	}
+	return false
 }

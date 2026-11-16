@@ -1,0 +1,118 @@
+package workbench
+
+import (
+	"testing"
+
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
+)
+
+// Exercise the real composer/provider/placement path. Windows' preservation
+// of the native IME session across these caret updates is covered in Viva.
+func TestAIComposerPreeditCommitAndSend(t *testing.T) {
+	state, _ := panelState(t, quietModel{answer: "收到"})
+	withModel(t, state)
+	state.Click(hitAIToggle)
+	paintAt(state, panelWide)
+	apply := func(event app.TextEvent) app.TextState {
+		t.Helper()
+		input := state.AIPanelInput(app.TextInputContext{ID: hitAIInput})
+		if input == nil || input.OnEvent == nil {
+			t.Fatal("AI composer has no native text handler")
+		}
+		next, err := input.OnEvent(event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		canvas, _ := paintAt(state, panelWide)
+		hit := panelHit(t, canvas, hitAIInput)
+		text := hitText(canvas, &hit)
+		if !hit.Multiline || text.Placement == nil {
+			t.Fatal("AI composer lost its multiline caret placement")
+		}
+		if _, ok := text.Placement.CaretBounds(); !ok {
+			t.Fatal("AI composer has no candidate-window anchor")
+		}
+		if got := state.AIPanelInput(app.TextInputContext{ID: hitAIInput}).State; got != app.TextStateOf(&state.ai.input) {
+			t.Fatalf("provider mirrors stale state: %+v", got)
+		}
+		return next
+	}
+	for _, prefix := range []string{"", "你好\n"} {
+		for _, preedit := range []string{"n", "ni", "nih", "nihao"} {
+			next := apply(app.TextEvent{Kind: app.TextSetMarked, Text: preedit, MarkedSelection: app.TextRange{Start: len(preedit), End: len(preedit)}})
+			start := len([]rune(prefix))
+			if next.Value != prefix+preedit || !next.Composing || next.Composition != (app.TextRange{Start: start, End: start + len(preedit)}) {
+				t.Fatalf("preedit %q = %+v", preedit, next)
+			}
+			if state.ai.run != nil || len(state.ai.items) != 0 || state.ai.input.String() != prefix+preedit {
+				t.Fatal("preedit changed or sent the message")
+			}
+		}
+		next := apply(app.TextEvent{Kind: app.TextInsert, Text: "你好"})
+		if next.Value != prefix+"你好" || next.Composing {
+			t.Fatalf("commit = %+v", next)
+		}
+		if prefix == "" {
+			apply(app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextInsertLineBreak})
+		}
+	}
+	apply(app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextInsertNewline})
+	if state.ai.input.String() != "" || state.ai.run == nil && len(state.ai.items) == 0 {
+		t.Fatal("Enter did not send the committed message")
+	}
+	pumpWindow(t, state, func() bool { return state.ai.run == nil })
+}
+
+// Option moves and deletes by word and Command goes to the ends of the line in the
+// composer, as in any macOS text field: Viva turns them into text commands before
+// the application sees a key, so the composer needs no key handling of its own.
+func TestAIComposerOptionAndCommandKeysEditByWordAndLine(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.Click(hitAIToggle)
+	canvas, _ := paintAt(state, panelWide)
+	box := panelHit(t, canvas, hitAIInput).Bounds
+	driver, err := app.NewDriver(app.Config{
+		Title: "assistant word editing", Width: int(panelWide.Width), Height: int(panelWide.Height), Tree: Tree(),
+		Paint:     state.Paint,
+		TextInput: func(context app.TextInputContext) *app.TextInput { return state.AIPanelInput(context) },
+		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer driver.Close()
+	if err := driver.Click(box.X+box.Width/2, box.Y+box.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Type("alpha beta/gamma"); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Key(gfx.KeyLeft, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	if caret := state.ai.input.Caret(); caret != 11 {
+		t.Fatalf("Option+Left moved the caret to %d, want 11", caret)
+	}
+	if err := driver.Key(gfx.KeyRight, gfx.ModifierAlt|gfx.ModifierShift); err != nil {
+		t.Fatal(err)
+	}
+	if selection := state.ai.input.Selection(); selection.Start != 11 || selection.End != 16 {
+		t.Fatalf("Option+Shift+Right selected %+v, want 11:16", selection)
+	}
+	if err := driver.Key(gfx.KeyBackspace, gfx.ModifierAlt); err != nil {
+		t.Fatal(err)
+	}
+	if got := state.ai.input.String(); got != "alpha beta/" {
+		t.Fatalf("Option+Backspace left %q", got)
+	}
+	if err := driver.Type("\n第二行"); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Key(gfx.KeyBackspace, gfx.ModifierMeta); err != nil {
+		t.Fatal(err)
+	}
+	if got := state.ai.input.String(); got != "alpha beta/\n" {
+		t.Fatalf("Command+Backspace left %q, want the second line removed", got)
+	}
+}

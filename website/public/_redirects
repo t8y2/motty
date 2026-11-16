@@ -1,0 +1,10 @@
+# The root is a shortcut to the Chinese site, as a real HTTP redirect. The
+# exported index.html can only do a meta refresh, which still loads the page and
+# its scripts before navigating again, and browsers never cache it — every visit
+# paid two round trips. A 301 is served before any asset and is cached by the
+# browser, so repeat visits go straight to /zh.
+#
+# Keep the meta refresh in app/(root)/page.tsx: this file only exists on
+# Cloudflare Pages, and `next dev` or another static host still needs a way out
+# of /.
+/ /zh 301

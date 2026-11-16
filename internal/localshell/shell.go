@@ -8,10 +8,12 @@ package localshell
 import (
 	"errors"
 	"fmt"
+	"github.com/vivaui/viva/leaks"
 	"io"
+	"motty/internal/shellkind"
+	"strings"
 	"sync"
 	"time"
-	"github.com/vivaui/viva/leaks"
 )
 
 const (
@@ -20,7 +22,24 @@ const (
 	maxPendingOutput = 1 << 20
 	// maxPendingInput is how much typed or pasted input may wait to be written.
 	maxPendingInput = 4 << 20
+	// resizeInterval bounds PTY redraws during a window drag while keeping the
+	// program up to date even when the window never pauses at one size.
+	resizeInterval = time.Second / 60
 )
+
+// ArgsFor is how an interactive session starts the chosen program: Git Bash
+// needs its login startup files, or /etc/profile and the bundled tools that
+// live beside the binary are missing from the session.
+func ArgsFor(program string) []string {
+	name := program
+	if cut := strings.LastIndexAny(name, `\/`); cut >= 0 {
+		name = name[cut+1:]
+	}
+	if strings.EqualFold(name, "bash.exe") {
+		return []string{"--login", "-i"}
+	}
+	return nil
+}
 
 // Config describes the shell to start.
 type Config struct {
@@ -28,8 +47,18 @@ type Config struct {
 	Cols, Rows int
 	// Shell is the program to run. Empty means the platform's default shell.
 	Shell string
+	// Args starts a specific local executable without interpreting a shell
+	// command. Nil preserves the platform's normal interactive shell behavior.
+	Args []string
 	// Dir is the working directory. Empty means the user's home directory.
 	Dir string
+	// DirectoryToken enables prompt directory reports for supported local shells.
+	// Empty leaves the shell's startup and prompt untouched.
+	DirectoryToken string
+	// WSLScript is the sh program a WSL distribution runs to start its user's
+	// login shell with directory reports (Shell "wsl:<distribution>"). Empty
+	// starts the distribution's own login shell untouched.
+	WSLScript string
 	// Env is added to the environment the shell inherits.
 	Env []string
 	// Notify is called after output arrives and when the shell ends, from any
@@ -77,10 +106,21 @@ type Shell struct {
 	input   chan []byte
 	pending int
 	closed  bool
+
+	resizeWake         chan struct{}
+	resizeMu           sync.Mutex
+	wantCols, wantRows int
+	curCols, curRows   int
+
+	kind shellkind.Kind
 }
 
+// Kind is the family of the shell this session runs, Unknown when the program is
+// not a shell Start recognizes.
+func (shell *Shell) Kind() shellkind.Kind { return shell.kind }
+
 // liveShells counts shells that were started and not yet closed: each holds a
-// pty and three goroutines until Close.
+// pty and four goroutines until Close.
 var liveShells = leaks.New("local shells")
 
 // Start launches the shell. It returns once the process is running.
@@ -90,10 +130,17 @@ func Start(config Config) (*Shell, error) {
 		return nil, err
 	}
 	liveShells.Acquire()
-	shell := &Shell{b: b, notify: config.Notify, done: make(chan struct{}), readDone: make(chan struct{}), input: make(chan []byte, 256)}
+	cols, rows := max(config.Cols, 1), max(config.Rows, 1)
+	shell := &Shell{
+		b: b, notify: config.Notify, done: make(chan struct{}), readDone: make(chan struct{}),
+		input: make(chan []byte, 256), kind: kindOf(config),
+		resizeWake: make(chan struct{}, 1),
+		wantCols:   cols, wantRows: rows, curCols: cols, curRows: rows,
+	}
 	shell.space = sync.NewCond(&shell.mu)
 	go shell.readLoop()
 	go shell.writeLoop()
+	go shell.resizeLoop()
 	go shell.wait()
 	return shell, nil
 }
@@ -102,6 +149,17 @@ func (shell *Shell) wake() {
 	if shell.notify != nil {
 		shell.notify()
 	}
+}
+
+// kindOf names the shell Start runs, from the program alone: the arguments only
+// shape how it starts, and the integration shim on Unix starts Bash or Zsh
+// through sh.
+func kindOf(config Config) shellkind.Kind {
+	program := config.Shell
+	if program == "" {
+		program = defaultShell()
+	}
+	return shellkind.FromProgram(program)
 }
 
 // readLoop moves the program's output into the buffer. It blocks while the
@@ -133,8 +191,48 @@ func (shell *Shell) writeLoop() {
 	for data := range shell.input {
 		shell.mu.Lock()
 		shell.pending -= len(data)
+		ended := shell.closed || shell.finished
 		shell.mu.Unlock()
+		if ended {
+			return
+		}
+		// Input starts at the latest size. The actual write holds no resize
+		// lock: a program that stops reading input can still be resized.
+		shell.flushResize()
 		if _, err := shell.b.io.Write(data); err != nil {
+			return
+		}
+	}
+}
+
+func (shell *Shell) resizeLoop() {
+	var timer *time.Timer
+	var resizeReady <-chan time.Time
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
+	for {
+		select {
+		case _, ok := <-shell.resizeWake:
+			if !ok {
+				return
+			}
+			// Keep the first deadline. Resetting it for every motion would
+			// leave full-screen programs frozen until the drag ends.
+			if resizeReady == nil {
+				if timer == nil {
+					timer = time.NewTimer(resizeInterval)
+				} else {
+					timer.Reset(resizeInterval)
+				}
+				resizeReady = timer.C
+			}
+		case <-resizeReady:
+			resizeReady = nil
+			shell.flushResize()
+		case <-shell.done:
 			return
 		}
 	}
@@ -211,12 +309,43 @@ func (shell *Shell) ForegroundArgs() ([]string, bool) {
 	return shell.b.foreground()
 }
 
-// Resize tells the program the terminal size in cells.
+// Resize queues the terminal size in cells without blocking the caller.
+// Updates within one frame interval collapse into the latest size.
 func (shell *Shell) Resize(cols, rows int) {
 	if cols < 1 || rows < 1 {
 		return
 	}
-	shell.b.resize(cols, rows)
+	shell.mu.Lock()
+	defer shell.mu.Unlock()
+	if shell.closed || shell.finished {
+		return
+	}
+	if cols == shell.wantCols && rows == shell.wantRows {
+		return
+	}
+	shell.wantCols, shell.wantRows = cols, rows
+	select {
+	case shell.resizeWake <- struct{}{}:
+	default:
+	}
+}
+
+// flushResize serializes the timer and input writer's size updates. Backend
+// calls hold no shell-state lock, so a slow resize never blocks the window.
+func (shell *Shell) flushResize() {
+	shell.resizeMu.Lock()
+	defer shell.resizeMu.Unlock()
+	shell.mu.Lock()
+	if shell.closed || shell.finished || (shell.wantCols == shell.curCols && shell.wantRows == shell.curRows) {
+		shell.mu.Unlock()
+		return
+	}
+	cols, rows := shell.wantCols, shell.wantRows
+	shell.curCols, shell.curRows = cols, rows
+	shell.mu.Unlock()
+	if shell.b.resize != nil {
+		shell.b.resize(cols, rows)
+	}
 }
 
 // Done is closed once the shell has ended and its output is complete.
@@ -249,6 +378,9 @@ func (shell *Shell) Close() {
 	shell.closed = true
 	liveShells.Release()
 	close(shell.input)
+	if shell.resizeWake != nil {
+		close(shell.resizeWake)
+	}
 	shell.mu.Unlock()
 	shell.b.hangup()
 	timer := time.AfterFunc(killGrace, shell.b.kill)

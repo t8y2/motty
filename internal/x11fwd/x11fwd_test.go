@@ -436,3 +436,34 @@ func TestMoreThanMaxChannelsAreRefused(t *testing.T) {
 		t.Fatalf("open=%d refused=%d", len(open), refused)
 	}
 }
+
+func TestDefaultDisplayFindsTheServerThePlatformRuns(t *testing.T) {
+	none := func(string) ([]string, error) { return nil, nil }
+	absent := func(string) bool { return false }
+	xquartz := func(string) ([]string, error) {
+		return []string{"/private/tmp/com.apple.launchd.b/org.xquartz:1", "/private/tmp/com.apple.launchd.a/org.xquartz:0"}, nil
+	}
+	if got := DefaultDisplay("windows", none, absent); got != ":0" {
+		t.Errorf("windows = %q", got)
+	}
+	if got := DefaultDisplay("darwin", xquartz, absent); got != "/private/tmp/com.apple.launchd.a/org.xquartz:0" {
+		t.Errorf("darwin with XQuartz = %q", got)
+	}
+	if got := DefaultDisplay("darwin", none, absent); got != "" {
+		t.Errorf("darwin without XQuartz = %q", got)
+	}
+	if got := DefaultDisplay("linux", none, func(path string) bool { return path == "/tmp/.X11-unix/X0" }); got != ":0" {
+		t.Errorf("linux with display 0 = %q", got)
+	}
+	if got := DefaultDisplay("linux", none, absent); got != "" {
+		t.Errorf("linux without X = %q", got)
+	}
+}
+
+func TestRegisterFailsWhenNothingListensOnTheDisplay(t *testing.T) {
+	_, err := NewHub().Register(Environ{Display: "/nonexistent/org.xquartz:0", GOOS: "darwin"})
+	var unreachable *UnreachableError
+	if !errors.As(err, &unreachable) || unreachable.Address != "/nonexistent/org.xquartz:0" {
+		t.Fatalf("err = %v", err)
+	}
+}

@@ -3,25 +3,27 @@ package workbench
 import (
 	"context"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
+	"github.com/vivaui/viva/text"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/gate"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
 	"motty/internal/ai/store"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 var (
-	panelWide   = ui.Size{Width: 1400, Height: 900}
-	panelNarrow = ui.Size{Width: 800, Height: 600}
+	panelWide   = gfx.Size{Width: 1400, Height: 900}
+	panelNarrow = gfx.Size{Width: 800, Height: 600}
 )
 
 // quietModel answers every request with one line of text.
@@ -55,7 +57,7 @@ func panelState(t testing.TB, model llm.Provider) (*State, *fakeShell) {
 	shell := fake.shell(t)
 	shell.say("\x1b[0m")
 	state.Wake()
-	state.Paint(&ui.Canvas{}, panelWide)
+	state.Paint(&gfx.Canvas{}, panelWide)
 	return state, shell
 }
 
@@ -75,8 +77,8 @@ func withModel(t testing.TB, state *State) {
 	state.reloadAI()
 }
 
-func paintAt(state *State, size ui.Size) (*ui.Canvas, []string) {
-	var canvas ui.Canvas
+func paintAt(state *State, size gfx.Size) (*gfx.Canvas, []string) {
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	var texts []string
 	for _, text := range canvas.Texts() {
@@ -85,13 +87,97 @@ func paintAt(state *State, size ui.Size) (*ui.Canvas, []string) {
 	return &canvas, texts
 }
 
-func panelHit(t testing.TB, canvas *ui.Canvas, id ui.ID) ui.Hit {
+// clickAIPanelPage delivers a click on one of the panel's page-declared title
+// controls in the event pass of a paint, where the page reads it, and runs the
+// actions the page deferred, as the runtime does after an event pass.
+func clickAIPanelPage(t testing.TB, state *State, id gfx.ID) {
+	t.Helper()
+	clickAIPanelPageAt(t, state, panelWide, id)
+}
+
+func clickAIPanelPageAt(t testing.TB, state *State, size gfx.Size, id gfx.ID) {
+	t.Helper()
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(id, gfx.ClickInfo{})
+	state.Paint(&canvas, size)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+}
+
+// aiDrawerDismiss is the hit that dismisses the open assistant drawer: the
+// page's Drawer paints its backdrop over the window.
+func aiDrawerDismiss(canvas *gfx.Canvas) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Backdrop {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+func panelHit(t testing.TB, canvas *gfx.Canvas, id gfx.ID) gfx.Hit {
 	t.Helper()
 	hit, ok := hitByID(canvas, id)
 	if !ok {
 		t.Fatalf("hit %d is not painted", id)
 	}
 	return hit
+}
+
+// aiMenuRowNamed finds a row of an open assistant menu by its label: the menu
+// rows are the painted hits with the menu item role.
+func aiMenuRowNamed(canvas *gfx.Canvas, label string) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleMenuItem && hit.Label == label {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+func aiMenuRow(t testing.TB, canvas *gfx.Canvas, label string) gfx.Hit {
+	t.Helper()
+	hit, ok := aiMenuRowNamed(canvas, label)
+	if !ok {
+		t.Fatalf("no assistant menu row %q is painted", label)
+	}
+	return hit
+}
+
+// aiMenuBackdrop is the hit that dismisses the open menu: the whole window.
+func aiMenuBackdrop(canvas *gfx.Canvas) (gfx.Hit, bool) {
+	for _, hit := range canvas.Hits() {
+		if hit.Backdrop {
+			return hit, true
+		}
+	}
+	return gfx.Hit{}, false
+}
+
+// clickMenuItem delivers a click on an open menu's row in an event pass, where
+// the menu's declaration reads it, and runs the actions deferred after it.
+func clickMenuItem(t testing.TB, state *State, hit gfx.Hit) {
+	t.Helper()
+	clickMenuItemByID(t, state, hit.ID)
+}
+
+func clickMenuItemByID(t testing.TB, state *State, id gfx.ID) {
+	t.Helper()
+	if id.IsZero() {
+		t.Fatal("a menu row or escape target is not painted")
+	}
+	var canvas gfx.Canvas
+	canvas.BeginEventPass(id, gfx.ClickInfo{})
+	state.Paint(&canvas, panelWide)
+	canvas.EndEventPass()
+	canvas.RunAfterPaint()
+}
+
+// clickAIMenuRow opens the painted row named label in an event pass.
+func clickAIMenuRow(t testing.TB, state *State, label string) {
+	t.Helper()
+	canvas, _ := paintAt(state, panelWide)
+	clickMenuItem(t, state, aiMenuRow(t, canvas, label))
 }
 
 func terminalColumns(state *State) int {
@@ -116,12 +202,12 @@ func TestPanelOpensWithTheBarButtonAndTheTerminalsFollowItsWidth(t *testing.T) {
 		t.Fatal("the panel is up before it was asked for")
 	}
 	button := panelHit(t, canvas, hitAIToggle)
-	if button.Label != state.messages.AIPanel.ToggleTip || button.Role != ui.RoleButton {
+	if button.Label != state.messages.AIPanel.ToggleTip || button.Role != gfx.RoleButton {
 		t.Fatalf("bar button = %+v", button)
 	}
 	state.Click(hitAIToggle)
 	canvas, texts := paintAt(state, panelWide)
-	for _, id := range []ui.ID{hitAIInput, hitAIClose, hitAINew, hitAIHistory, hitAIMode, hitAISend} {
+	for _, id := range []gfx.ID{hitAIInput, hitAIClose, hitAINew, hitAIHistory, hitAIMode, hitAISend} {
 		panelHit(t, canvas, id)
 	}
 	if !hasText(texts, state.messages.AIPanel.Title) {
@@ -135,7 +221,7 @@ func TestPanelOpensWithTheBarButtonAndTheTerminalsFollowItsWidth(t *testing.T) {
 	if terminal.Bounds.X+terminal.Bounds.Width > panelHit(t, canvas, hitAIInput).Bounds.X {
 		t.Fatalf("the terminal %+v runs under the panel", terminal.Bounds)
 	}
-	state.Click(hitAIClose)
+	clickAIPanelPage(t, state, hitAIClose)
 	canvas, _ = paintAt(state, panelWide)
 	if _, ok := hitByID(canvas, hitAIInput); ok {
 		t.Fatal("the panel stayed after Close")
@@ -147,11 +233,11 @@ func TestPanelOpensWithTheBarButtonAndTheTerminalsFollowItsWidth(t *testing.T) {
 
 func TestShortcutAndPaletteToggleThePanel(t *testing.T) {
 	state, _ := panelState(t, nil)
-	chord := state.shortcuts.chords[shortcutAssistant]
-	if !chord.valid() || state.shortcuts.actionFor(chord) != shortcutAssistant {
+	chord := state.shortcuts.chords.Chord(shortcutAssistant)
+	if !chord.Valid() || state.shortcuts.actionFor(chord) != shortcutAssistant {
 		t.Fatalf("assistant chord %+v", chord)
 	}
-	event := ui.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Key))}
+	event := gfx.KeyEvent{Modifiers: chord.Modifiers, Text: string(rune(chord.Char))}
 	result := state.Shortcut(event)
 	if !result.Handled || !state.ai.open || result.Focus != hitAIInput {
 		t.Fatalf("shortcut opened = %+v, open=%v", result, state.ai.open)
@@ -165,15 +251,15 @@ func TestShortcutAndPaletteToggleThePanel(t *testing.T) {
 	state.openCommandPalette()
 	found := -1
 	palette := &state.commandPalette
-	for index := uint8(0); index < palette.entryCount; index++ {
+	for index := 0; index < len(palette.entries); index++ {
 		if palette.entries[index].label == state.messages.AIPanel.Toggle {
-			found = int(index)
+			found = index
 		}
 	}
 	if found < 0 {
 		t.Fatal("the command palette has no assistant entry")
 	}
-	state.executeCommandPalette(uint8(found))
+	state.executeCommandPalette(found)
 	if !state.ai.open || state.modal != modalNone {
 		t.Fatalf("palette entry: open=%v modal=%v", state.ai.open, state.modal)
 	}
@@ -183,7 +269,7 @@ func TestShortcutSettingsPageListsTheAssistantAction(t *testing.T) {
 	state, _ := panelState(t, nil)
 	showShortcutSettings(state)
 	paintAt(state, panelWide)
-	state.scrollSettings(ui.ScrollEvent{DeltaY: 4000, Precise: true}) // the last rows sit below the fold
+	state.scrollSettings(gfx.ScrollEvent{DeltaY: 4000, Precise: true}) // the last rows sit below the fold
 	canvas, texts := paintAt(state, panelWide)
 	if !hasText(texts, state.messages.AIPanel.Toggle) {
 		t.Fatalf("the shortcut page lacks %q: %q", state.messages.AIPanel.Toggle, texts)
@@ -208,7 +294,7 @@ func TestEmptyPanelOffersExamplesThatFillTheInput(t *testing.T) {
 	if _, ok := hitByID(canvas, hitAISetup); ok {
 		t.Error("the setup button is shown although a model is chosen")
 	}
-	release := state.Pointer(ui.PointerEvent{Kind: ui.PointerUp, Button: ui.PointerButtonPrimary, Target: hitAIExamples.At(1)})
+	release := state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitAIExamples.At(1)})
 	if release.Focus != hitAIInput || release.Handled {
 		t.Fatalf("releasing an example = %+v, want focus on the box and the click still delivered", release)
 	}
@@ -269,8 +355,8 @@ func TestWithoutAModelThePanelOffersSetupAndSettingsOpens(t *testing.T) {
 		t.Fatal("Send is enabled without a model")
 	}
 	state.Click(hitAISetup)
-	if state.activeSection != sectionSettings {
-		t.Fatalf("section = %d, want settings", state.activeSection)
+	if state.activeSection != sectionSettings || state.settingsCategory != settingsAssistant {
+		t.Fatalf("section = %d, category = %d; want settings and settingsAssistant", state.activeSection, state.settingsCategory)
 	}
 	// The panel waits where it was.
 	if !state.ai.open {
@@ -297,9 +383,8 @@ func TestConversationShowsEveryKindOfRowAndToolStatus(t *testing.T) {
 	withModel(t, state)
 	conversationFixture(state)
 	state.ai.open = true
-	state.ai.scroll.ScrollToStart()
 	// A tall window so that everything is on screen.
-	size := ui.Size{Width: 1400, Height: 2600}
+	size := gfx.Size{Width: 1400, Height: 2600}
 	state.Resize(size)
 	_, texts := paintAt(state, size)
 	m := state.messages.AIPanel
@@ -363,7 +448,7 @@ func TestLinksInAnswersOpenTheirOwnDestination(t *testing.T) {
 	if !hasText(texts, "the second") || hasText(texts, "**") || hasText(texts, "](") {
 		t.Fatalf("answers are not rendered as Markdown: %q", texts)
 	}
-	var ids []ui.ID
+	var ids []gfx.ID
 	for _, hit := range canvas.Hits() {
 		if _, ok := hit.ID.In(hitAILinks); ok {
 			ids = append(ids, hit.ID)
@@ -387,13 +472,13 @@ func TestMessageBoxWrapsLongMessagesAndMovesTheCaretByRow(t *testing.T) {
 	state.ai.open = true
 	value := "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau\n\n中文也要换行,这一行也很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长很长\n"
 	state.ai.input.Insert(value)
-	canvas, texts := paintAt(state, ui.Size{Width: 900, Height: 700})
+	canvas, texts := paintAt(state, gfx.Size{Width: 900, Height: 700})
 	rows := 0
 	box := panelHit(t, canvas, hitAIInput)
 	for _, text := range canvas.Texts() {
 		if text.Bounds.Y >= box.Bounds.Y && text.Bounds.Y < box.Bounds.Y+box.Bounds.Height && text.Bounds.X < box.Bounds.X+box.Bounds.Width {
 			rows++
-			if got := canvas.TextWidthWeight(text.Value, 13, ui.WeightRegular); got > box.Bounds.Width {
+			if got := canvas.TextWidthWeight(text.Value, 13, gfx.WeightRegular); got > box.Bounds.Width {
 				t.Errorf("row %q is %v wide in a box %v wide", text.Value, got, box.Bounds.Width)
 			}
 		}
@@ -404,11 +489,11 @@ func TestMessageBoxWrapsLongMessagesAndMovesTheCaretByRow(t *testing.T) {
 
 	// Up from the end goes to the row above, not to the start of the message.
 	end := state.ai.input.Caret()
-	state.Key(ui.KeyEvent{Key: ui.KeyUp, Target: hitAIInput})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyUp, Target: hitAIInput})
 	if up := state.ai.input.Caret(); up >= end || up == 0 {
 		t.Fatalf("Up moved the caret from %d to %d", end, up)
 	}
-	state.Key(ui.KeyEvent{Key: ui.KeyEnd, Modifiers: ui.ModifierShift, Target: hitAIInput})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnd, Modifiers: gfx.ModifierShift, Target: hitAIInput})
 	if selection := state.ai.input.Selection(); selection.Start >= selection.End {
 		t.Errorf("Shift+End selected nothing: %+v", selection)
 	}
@@ -433,22 +518,36 @@ func TestModelChipSwitchesTheModelThatAnswers(t *testing.T) {
 	}
 	state.Click(hitAIModelChip)
 	canvas, texts := paintAt(state, panelWide)
-	if !hasText(texts, "gpt-y") || !hasText(texts, "gpt-off") {
-		t.Fatalf("the menu should list every model that was fetched, switched on or not: %q", texts)
+	if !hasText(texts, "Work") {
+		t.Fatalf("the menu should list the provider: %q", texts)
 	}
-	// A fetched model that is still off is switched on by choosing it.
-	state.Click(hitAIModels.At(0)) // gpt-off, the first by name
-	if _, model, err := state.aiModel(); err != nil || model != "gpt-off" {
+	// The provider's models open beside its row: only the ones the settings
+	// switched on, not every model that was fetched.
+	clickAIMenuRow(t, state, "Work")
+	_, texts = paintAt(state, panelWide)
+	if !hasText(texts, "gpt-y") || hasText(texts, "gpt-off") {
+		t.Fatalf("the menu should list only the models switched on in the settings: %q", texts)
+	}
+	clickAIMenuRow(t, state, "gpt-y")
+	if _, model, err := state.aiModel(); err != nil || model != "gpt-y" {
 		t.Fatalf("model after choosing = %q %v", model, err)
 	}
+	// The pick belongs to the workspace: the settings keep their default and
+	// the model they left off stays off.
+	if providerID, name, ok, err := db.DefaultModel(); err != nil || !ok || providerID != "p" || name != "gpt-x" {
+		t.Fatalf("workspace choice changed the settings' default: %q/%q ok=%v err=%v", providerID, name, ok, err)
+	}
 	for _, model := range state.aiModelList("p") {
-		if model.Name == "gpt-off" && !model.Enabled {
-			t.Error("the chosen model was not switched on")
+		if model.Name == "gpt-off" && model.Enabled {
+			t.Error("choosing in the workspace switched on a disabled setting")
 		}
 	}
 	canvas, _ = paintAt(state, panelWide)
-	if _, ok := hitByID(canvas, hitAIModels.At(0)); ok {
+	if _, ok := aiMenuRowNamed(canvas, "gpt-y"); ok {
 		t.Error("the menu stayed open after a choice")
+	}
+	if chip = panelHit(t, canvas, hitAIModelChip); !strings.Contains(chip.Label, "gpt-y") {
+		t.Fatalf("chip after choosing = %+v", chip)
 	}
 }
 
@@ -461,7 +560,7 @@ func TestModelMenuScrollsAProviderWithManyModels(t *testing.T) {
 	}
 	var models []store.Model
 	for index := 0; index < 40; index++ {
-		models = append(models, store.Model{ProviderID: "p", Name: fmt.Sprintf("model-%02d", index)})
+		models = append(models, store.Model{ProviderID: "p", Name: fmt.Sprintf("model-%02d", index), Enabled: true})
 	}
 	models = append(models, store.Model{ProviderID: "p", Name: "gpt-x", Enabled: true})
 	if err := db.SaveModels("p", models); err != nil {
@@ -471,31 +570,34 @@ func TestModelMenuScrollsAProviderWithManyModels(t *testing.T) {
 	state.ai.open = true
 	paintAt(state, panelWide)
 	state.Click(hitAIModelChip)
-	canvas, texts := paintAt(state, panelWide)
-	shown := 0
-	for _, text := range texts {
-		if strings.HasPrefix(text, "model-") || text == "gpt-x" {
-			shown++
-		}
-	}
-	if shown == 0 || shown > aiMenuRows+1 { // +1: the chip names the model that answers
-		t.Fatalf("%d models shown at once, want a window of at most %d: %q", shown, aiMenuRows, texts)
-	}
-	rect := state.ai.panel.modelsRect
-	list := &state.ai.panel.modelList
-	before := list.Offset
-	state.Scroll(ui.ScrollEvent{X: rect.X + 10, Y: rect.Y + 10, DeltaY: 96, Precise: true})
-	if list.Offset != before+96 {
-		t.Fatalf("scrolled from %v to %v, want 96 pixels further", before, list.Offset)
-	}
-	// The keyboard reaches the last model of a long list, and it is clickable there.
-	state.Key(ui.KeyEvent{Key: ui.KeyEnd, Target: hitAIModels.At(0)})
+	canvas, _ := paintAt(state, panelWide)
+	clickAIMenuRow(t, state, "Work")
 	canvas, _ = paintAt(state, panelWide)
-	last := hitAIModels.At(40)
-	if hit, ok := hitByID(canvas, last); !ok || hit.Bounds.Y+hit.Bounds.Height > rect.Y+rect.Height {
-		t.Fatalf("after End the last model is %+v (painted %v) outside the menu %+v", hit, ok, rect)
+	first, ok := aiMenuRowNamed(canvas, "model-00")
+	if !ok {
+		t.Fatal("the first model is not painted")
 	}
-	_ = canvas
+	// The wheel over the long list scrolls the menu, not the conversation.
+	before := aiListOffset(state)
+	windowScrollRoutes(state, gfx.ScrollEvent{X: first.Bounds.X + 10, Y: first.Bounds.Y + 10, DeltaY: 96, Precise: true, Viewport: panelWide, Target: first.ID})
+	if aiListOffset(state) != before {
+		t.Error("wheel over the model menu scrolled the conversation")
+	}
+	canvas, _ = paintAt(state, panelWide)
+	if moved, ok := aiMenuRowNamed(canvas, "model-00"); ok && moved.Bounds.Y >= first.Bounds.Y {
+		t.Errorf("the list did not scroll: model-00 stayed at %v", moved.Bounds.Y)
+	}
+	// The keyboard reaches the last model of a long list.
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnd, Target: first.ID})
+	canvas, _ = paintAt(state, panelWide)
+	listed := state.aiModelList("p")
+	last, ok := hitByID(canvas, result.Focus)
+	if !ok || last.Label != listed[len(listed)-1].Name {
+		t.Fatalf("End focused %+v, want the last model %q", last.Label, listed[len(listed)-1].Name)
+	}
+	if last.Bounds.Y+last.Bounds.Height > panelWide.Height {
+		t.Fatalf("the last model is painted outside the window: %+v", last.Bounds)
+	}
 }
 
 func TestModelChipListsProvidersFirstWhenThereAreSeveral(t *testing.T) {
@@ -520,17 +622,17 @@ func TestModelChipListsProvidersFirstWhenThereAreSeveral(t *testing.T) {
 	state.Click(hitAIModelChip)
 	canvas, texts := paintAt(state, panelWide)
 	if !hasText(texts, "Work") || !hasText(texts, "Home") || hasText(texts, "llama-a") {
-		t.Fatalf("the menu should list both providers and the models of the current one: %q", texts)
+		t.Fatalf("the menu should list the providers before a provider is opened: %q", texts)
 	}
-	if _, ok := hitByID(canvas, hitAIModelProviders.At(1)); !ok {
+	if _, ok := aiMenuRowNamed(canvas, "Home"); !ok {
 		t.Fatal("the second provider is not offered")
 	}
-	state.Click(hitAIModelProviders.At(0)) // Home, which sorts before Work
+	clickAIMenuRow(t, state, "Home") // Home sorts before Work
 	_, texts = paintAt(state, panelWide)
 	if !hasText(texts, "llama-b") {
 		t.Fatalf("opening a provider should show its models: %q", texts)
 	}
-	state.Click(hitAIModels.At(1))
+	clickAIMenuRow(t, state, "llama-b")
 	if provider, model, err := state.aiModel(); err != nil || model != "llama-b" || provider.ID != "q" {
 		t.Fatalf("model after choosing = %v %q %v", provider, model, err)
 	}
@@ -576,7 +678,7 @@ func TestApprovalCardShowsRiskReasonsAndGatesTheCriticalWord(t *testing.T) {
 	if panelHit(t, canvas, hitAIApprove).Disabled {
 		t.Fatal("Approve is still locked after the word")
 	}
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitAIConfirm})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitAIConfirm})
 	if !result.Handled || len(state.ai.approvals) != 0 {
 		t.Fatalf("Enter did not approve: %+v", result)
 	}
@@ -604,7 +706,7 @@ func TestApprovalButtonsAndEscapeAnswer(t *testing.T) {
 		t.Fatalf("first answer = %+v", answer)
 	}
 	paintAt(state, panelWide)
-	result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: hitAIInput})
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: hitAIInput})
 	if !result.Handled {
 		t.Fatal("Escape was not taken")
 	}
@@ -612,7 +714,7 @@ func TestApprovalButtonsAndEscapeAnswer(t *testing.T) {
 		t.Fatalf("Escape approved: %+v", answer)
 	}
 	// Escape from the terminal is not the panel's.
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEscape, Target: terminalHit(state, 0)}); result.Handled && len(state.ai.approvals) != 0 {
+	if result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: terminalHit(state, 0)}); result.Handled && len(state.ai.approvals) != 0 {
 		t.Fatal("unexpected")
 	}
 }
@@ -657,7 +759,10 @@ func TestNarrowWindowsGetADrawerAndTerminalsKeepTheirWidth(t *testing.T) {
 	state.Click(hitAIToggle)
 	canvas, _ := paintAt(state, panelNarrow)
 	panelHit(t, canvas, hitAIInput)
-	dismiss := panelHit(t, canvas, hitAIDrawerDismiss)
+	dismiss, ok := aiDrawerDismiss(canvas)
+	if !ok {
+		t.Fatal("the drawer painted no dismiss backdrop")
+	}
 	if terminalColumns(state) != before {
 		t.Fatalf("a drawer took terminal width: %d -> %d", before, terminalColumns(state))
 	}
@@ -665,10 +770,24 @@ func TestNarrowWindowsGetADrawerAndTerminalsKeepTheirWidth(t *testing.T) {
 	if input.Bounds.X+input.Bounds.Width > panelNarrow.Width || input.Bounds.X < panelNarrow.Width*0.4 {
 		t.Fatalf("drawer input at %+v", input.Bounds)
 	}
-	state.Click(dismiss.ID)
+	clickAIPanelPageAt(t, state, panelNarrow, dismiss.ID)
 	canvas, _ = paintAt(state, panelNarrow)
 	if _, ok := hitByID(canvas, hitAIInput); ok || state.ai.open {
 		t.Fatal("the drawer did not close")
+	}
+}
+
+func TestSectionAIDrawerUsesTheWidthWithoutTheBackgroundTerminalRail(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.terminalToolbarPosition = terminalToolbarRight
+	state.activeSection = sectionSettings
+	state.ai.open = true
+
+	canvas, _ := paintAt(state, panelNarrow)
+	input := panelHit(t, canvas, hitAIInput)
+	if input.Bounds.X+input.Bounds.Width <= panelNarrow.Width-terminalToolRailExtent {
+		t.Fatalf("drawer input ends at %v, leaving the hidden %vpx terminal rail instead of using the section width",
+			input.Bounds.X+input.Bounds.Width, terminalToolRailExtent)
 	}
 }
 
@@ -680,47 +799,47 @@ func TestWheelScrollsTheConversationAndFollowingTracksTheEnd(t *testing.T) {
 		state.ai.items = append(state.ai.items, aiItem{kind: aiAssistant, text: "line of an answer that is long enough to be a message number " + string(rune('A'+index%26))})
 	}
 	canvas, _ := paintAt(state, panelWide)
-	if !state.ai.scroll.Following() || state.ai.panel.maxScroll <= 0 || state.ai.scroll.Offset() != state.ai.panel.maxScroll {
-		t.Fatalf("not at the end: following=%v scroll=%v max=%v", state.ai.scroll.Following(), state.ai.scroll.Offset(), state.ai.panel.maxScroll)
+	if !aiListFollows(state) || state.ai.panel.maxScroll <= 0 || aiListOffset(state) != state.ai.panel.maxScroll {
+		t.Fatalf("not at the end: following=%v scroll=%v max=%v", aiListFollows(state), aiListOffset(state), state.ai.panel.maxScroll)
 	}
 	if _, ok := hitByID(canvas, hitAIToEnd); ok {
 		t.Fatal("the jump-to-end button shows at the end")
 	}
-	at := ui.Point{X: state.ai.panel.list.X + 100, Y: state.ai.panel.list.Y + 100}
-	wheel := func(dy float32) ui.EventResult {
-		return state.Scroll(ui.ScrollEvent{X: at.X, Y: at.Y, DeltaY: dy, Viewport: panelWide, Precise: true})
+	at := gfx.Point{X: state.ai.panel.list.X + 100, Y: state.ai.panel.list.Y + 100}
+	wheel := func(dy float32) gfx.EventResult {
+		return state.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: dy, Viewport: panelWide, Precise: true})
 	}
-	end := state.ai.scroll.Offset()
-	if result := wheel(-120); !result.Handled || state.ai.scroll.Offset() != end-120 || state.ai.scroll.Following() {
-		t.Fatalf("wheel up: %+v scroll=%v following=%v", result, state.ai.scroll.Offset(), state.ai.scroll.Following())
+	end := aiListOffset(state)
+	if result := wheel(-120); !result.Handled || aiListOffset(state) != end-120 || aiListFollows(state) {
+		t.Fatalf("wheel up: %+v scroll=%v following=%v", result, aiListOffset(state), aiListFollows(state))
 	}
 	canvas, _ = paintAt(state, panelWide)
-	if state.ai.scroll.Offset() != end-120 {
-		t.Fatalf("a paint moved the reader: %v", state.ai.scroll.Offset())
+	if aiListOffset(state) != end-120 {
+		t.Fatalf("a paint moved the reader: %v", aiListOffset(state))
 	}
 	panelHit(t, canvas, hitAIToEnd)
 	// New messages do not drag a reader who scrolled up.
 	state.ai.items = append(state.ai.items, aiItem{kind: aiAssistant, text: "new"})
 	paintAt(state, panelWide)
-	if state.ai.scroll.Offset() != end-120 || state.ai.scroll.Following() {
+	if aiListOffset(state) != end-120 || aiListFollows(state) {
 		t.Fatal("new text moved a reader who scrolled up")
 	}
 	// Wheeling to the end follows again.
 	wheel(10000)
-	if !state.ai.scroll.Following() {
+	if !aiListFollows(state) {
 		t.Fatal("not following at the end")
 	}
 	wheel(-50)
-	if state.ai.scroll.Following() {
+	if aiListFollows(state) {
 		t.Fatal("still following after scrolling up")
 	}
 	state.Click(hitAIToEnd)
 	paintAt(state, panelWide)
-	if !state.ai.scroll.Following() || state.ai.scroll.Offset() != state.ai.panel.maxScroll {
+	if !aiListFollows(state) || aiListOffset(state) != state.ai.panel.maxScroll {
 		t.Fatal("jump to end did not follow")
 	}
 	// A wheel outside the panel is the terminal's, one over its header is swallowed.
-	if result := state.Scroll(ui.ScrollEvent{X: state.ai.panel.rect.X + 20, Y: state.ai.panel.rect.Y + 10, DeltaY: 50, Viewport: panelWide}); !result.Handled {
+	if result := state.Scroll(gfx.ScrollEvent{X: state.ai.panel.rect.X + 20, Y: state.ai.panel.rect.Y + 10, DeltaY: 50, Viewport: panelWide}); !result.Handled {
 		t.Fatal("the wheel over the panel header leaked to the terminal")
 	}
 }
@@ -734,7 +853,7 @@ func TestHistoryListsOpensAndDeletes(t *testing.T) {
 	_, _ = db.AppendMessage(one.ID, store.StoredMessage{Role: "assistant", Text: "hi, how can I help"})
 	_, _ = db.CreateConversation("Second chat", "x")
 	state.ai.open = true
-	state.Click(hitAIHistory)
+	clickAIPanelPage(t, state, hitAIHistory)
 	canvas, texts := paintAt(state, panelWide)
 	if !hasText(texts, "First chat") || !hasText(texts, "Second chat") || !hasText(texts, state.messages.AIPanel.HistoryTitle) {
 		t.Fatalf("history not listed: %q", texts)
@@ -746,7 +865,7 @@ func TestHistoryListsOpensAndDeletes(t *testing.T) {
 	if !hasText(texts, "hello there") || !hasText(texts, "hi, how can I help") || state.ai.panel.history {
 		t.Fatalf("conversation not opened: %q", texts)
 	}
-	state.Click(hitAIHistory)
+	clickAIPanelPage(t, state, hitAIHistory)
 	paintAt(state, panelWide)
 	state.Click(hitAIHistoryDelete.At(1))
 	_, texts = paintAt(state, panelWide)
@@ -788,8 +907,8 @@ func TestMessageBoxTakesEnterAndNewLines(t *testing.T) {
 	}
 	apply(app.TextEvent{Kind: app.TextInsert, Text: "first"})
 	// Shift+Enter, Ctrl+J and Cmd+J make a line break; plain Enter is not one.
-	state.Key(ui.KeyEvent{Key: ui.KeyEnter, Modifiers: ui.ModifierShift, Target: hitAIInput})
-	state.Shortcut(ui.KeyEvent{Modifiers: ui.ModifierControl, Text: "j", Target: hitAIInput})
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEnter, Modifiers: gfx.ModifierShift, Target: hitAIInput})
+	state.Shortcut(gfx.KeyEvent{Modifiers: gfx.ModifierControl, Text: "j", Target: hitAIInput})
 	apply(app.TextEvent{Kind: app.TextInsert, Text: "second"})
 	if got := state.ai.input.String(); got != "first\n\nsecond" {
 		t.Fatalf("input = %q", got)
@@ -876,17 +995,17 @@ func TestAnApprovalOpensTheClosedPanelAndTheTerminalsFollow(t *testing.T) {
 	}
 }
 
-func TestOtherSectionsShowADotWhileAQuestionWaits(t *testing.T) {
+func TestOtherSectionsKeepAssistantVisibleWhileAQuestionWaits(t *testing.T) {
 	state, _ := panelState(t, nil)
 	approvalFixture(state, risk.Medium, false)
 	state.activeSection = sectionHosts
 	canvas, _ := paintAt(state, panelWide)
-	if _, ok := hitByID(canvas, hitAIInput); ok {
-		t.Fatal("the panel is shown over the host list")
+	if _, ok := hitByID(canvas, hitAIInput); !ok {
+		t.Fatal("the panel disappeared on the host list")
 	}
 	state.Click(hitAIToggle)
-	if state.activeSection != sectionTerminal || !state.ai.open {
-		t.Fatalf("the button did not bring the panel up: section=%d", state.activeSection)
+	if state.activeSection != sectionHosts || state.ai.open {
+		t.Fatalf("the button did not close the panel in place: section=%d", state.activeSection)
 	}
 }
 
@@ -904,7 +1023,7 @@ func TestPaintingTheOpenPanelAllocatesLittle(t *testing.T) {
 			state.ai.items = append(state.ai.items, aiItem{kind: aiTool, call: llm.ToolCall{ID: "x", Name: "terminal_exec", Arguments: `{"command":"ls -la"}`}, status: aiToolDone, result: "out\nput"})
 		}
 	}
-	var canvas ui.Canvas
+	var canvas gfx.Canvas
 	paint := func() {
 		canvas.Reset()
 		state.Paint(&canvas, panelWide)
@@ -946,19 +1065,19 @@ func TestDraggingTheEdgesResizesThePanelAndTheMessageBox(t *testing.T) {
 	divider := panelHit(t, canvas, hitAIDivider)
 	before := state.aiPanelExtent(panelWide)
 	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
-	pointer := func(kind ui.PointerEventKind, at float32) {
-		state.Pointer(ui.PointerEvent{Kind: kind, Target: hitAIDivider, X: at, Y: y, Viewport: panelWide, Captured: true, Button: ui.PointerButtonPrimary})
+	pointer := func(kind gfx.PointerEventKind, at float32) {
+		state.Pointer(gfx.PointerEvent{Kind: kind, Target: hitAIDivider, X: at, Y: y, Viewport: panelWide, Captured: true, Button: gfx.PointerButtonPrimary})
 	}
-	pointer(ui.PointerDown, x)
-	pointer(ui.PointerMove, x-120)
-	pointer(ui.PointerUp, x-120)
+	pointer(gfx.PointerDown, x)
+	pointer(gfx.PointerMove, x-120)
+	pointer(gfx.PointerUp, x-120)
 	if got := state.aiPanelExtent(panelWide); got < before+110 || got > before+130 {
 		t.Fatalf("panel is %v wide after dragging its edge 120 left, was %v", got, before)
 	}
 	// It cannot be dragged past what leaves the panes their room.
-	pointer(ui.PointerDown, x)
-	pointer(ui.PointerMove, -500)
-	pointer(ui.PointerUp, -500)
+	pointer(gfx.PointerDown, x)
+	pointer(gfx.PointerMove, -500)
+	pointer(gfx.PointerUp, -500)
 	if reserve := state.aiReserve(state.deck.ActiveWorkspace(), panelWide); reserve == 0 {
 		t.Fatal("dragging the panel wide turned it into a drawer")
 	}
@@ -967,15 +1086,204 @@ func TestDraggingTheEdgesResizesThePanelAndTheMessageBox(t *testing.T) {
 	grip := panelHit(t, canvas, hitAIComposerGrip)
 	tall := state.ai.panel.boxHeight
 	gx, gy := grip.Bounds.X+50, grip.Bounds.Y+grip.Bounds.Height/2
-	event := func(kind ui.PointerEventKind, at float32) {
-		state.Pointer(ui.PointerEvent{Kind: kind, Target: hitAIComposerGrip, X: gx, Y: at, Viewport: panelWide, Captured: true, Button: ui.PointerButtonPrimary})
+	event := func(kind gfx.PointerEventKind, at float32) {
+		state.Pointer(gfx.PointerEvent{Kind: kind, Target: hitAIComposerGrip, X: gx, Y: at, Viewport: panelWide, Captured: true, Button: gfx.PointerButtonPrimary})
 	}
-	event(ui.PointerDown, gy)
-	event(ui.PointerMove, gy-90)
-	event(ui.PointerUp, gy-90)
+	event(gfx.PointerDown, gy)
+	event(gfx.PointerMove, gy-90)
+	event(gfx.PointerUp, gy-90)
 	paintAt(state, panelWide)
 	if got := state.ai.panel.boxHeight; got < tall+80 {
 		t.Fatalf("message box is %v tall after dragging its edge 90 up, was %v", got, tall)
+	}
+}
+
+// TestThePanelWidensToWhatThePanesDoNotNeed guards the promised range: the panel
+// is not held to a narrow constant, only to the room the panes keep.
+func TestThePanelWidensToWhatThePanesDoNotNeed(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	wide := gfx.Size{Width: 1920, Height: 1080}
+	canvas, _ := paintAt(state, wide)
+	divider := panelHit(t, canvas, hitAIDivider)
+	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
+	pointer := func(kind gfx.PointerEventKind, at float32) {
+		state.Pointer(gfx.PointerEvent{Kind: kind, Target: hitAIDivider, X: at, Y: y, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	}
+	pointer(gfx.PointerDown, x)
+	pointer(gfx.PointerMove, x-2000)
+	pointer(gfx.PointerUp, x-2000)
+	want := state.baseWorkspacePixelBounds(wide).Width - aiMinTerminal - 1
+	if got := state.aiPanelExtent(wide); got != want {
+		t.Fatalf("panel is %v wide in a %v window, want %v", got, wide.Width, want)
+	}
+	canvas, _ = paintAt(state, wide)
+	terminal := panelHit(t, canvas, terminalHit(state, 0))
+	if terminal.Bounds.Width < aiMinTerminal-1 {
+		t.Fatalf("the terminal keeps only %v beside the panel", terminal.Bounds.Width)
+	}
+	if columns := terminalColumns(state); float32(columns) < aiMinTerminal/state.cellWidth/2 {
+		t.Fatalf("the terminal is down to %d columns", columns)
+	}
+	// A narrow window still docks the panel, and the drag stops at the same room.
+	narrow := gfx.Size{Width: 1000, Height: 700}
+	paintAt(state, narrow)
+	if state.aiReserve(state.deck.ActiveWorkspace(), narrow) == 0 {
+		t.Fatal("the panel became a drawer in a window that has room for it")
+	}
+	if got, most := state.aiPanelExtent(narrow), state.baseWorkspacePixelBounds(narrow).Width-aiMinTerminal-1; got != most {
+		t.Fatalf("panel is %v wide in a %v window, want %v", got, narrow.Width, most)
+	}
+}
+
+// TestAWidePanelLeavesTheSectionItsRoom guards the other side of the same
+// share: the panel stands beside a section card there, so the fixed navigation
+// rail is not room it may take, and the card keeps its own width.
+func TestAWidePanelLeavesTheSectionItsRoom(t *testing.T) {
+	_, options := newWorld(t)
+	options.AIStorePath = filepath.Join(t.TempDir(), "ai.db")
+	state := newTestState(t, options)
+	t.Cleanup(state.Close)
+	withModel(t, state)
+	state.ai.open = true
+	wide := gfx.Size{Width: 1920, Height: 1080}
+	canvas, _ := paintAt(state, wide)
+	divider := panelHit(t, canvas, hitAIDivider)
+	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
+	pointer := func(kind gfx.PointerEventKind, at float32) {
+		state.Pointer(gfx.PointerEvent{Kind: kind, Target: hitAIDivider, X: at, Y: y, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	}
+	pointer(gfx.PointerDown, x)
+	pointer(gfx.PointerMove, 0)
+	pointer(gfx.PointerUp, 0)
+	if got, want := state.aiPanelExtent(wide), wide.Width-navigationWidth-aiMinTerminal-1; got != want {
+		t.Fatalf("panel is %v wide beside a section in a %v window, want %v", got, wide.Width, want)
+	}
+	canvas, _ = paintAt(state, wide)
+	panel := state.ai.panel.rect
+	// The card keeps the share less its own margins and border, and never runs
+	// under the panel.
+	room := aiMinTerminal - 2*(sectionCardMargin+workspaceBorder)
+	if section := state.hostsBounds; section.Width < room || section.X+section.Width > panel.X {
+		t.Fatalf("the section is %+v beside a panel at %+v", section, panel)
+	}
+}
+
+func TestAIPanelRemembersWidthAcrossRestarts(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	wide := gfx.Size{Width: 1920, Height: 1080}
+	canvas, _ := paintAt(state, wide)
+	divider := panelHit(t, canvas, hitAIDivider)
+	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Target: hitAIDivider, X: x - 150, Y: y, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+
+	if state.ai.panelWidth != 530 {
+		t.Fatalf("state.ai.panelWidth after drag = %v, want 530", state.ai.panelWidth)
+	}
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || saved.AIPanelWidth != 530 {
+		t.Fatalf("saved.AIPanelWidth = %v, err = %v", saved.AIPanelWidth, err)
+	}
+	restored := newTestState(t, state.options)
+	if restored.ai.panelWidth != 530 {
+		t.Fatalf("restored.ai.panelWidth = %v, want 530", restored.ai.panelWidth)
+	}
+	restored.ai.open = true
+	paintAt(restored, wide)
+	if restored.ai.panel.rect.Width != 530 {
+		t.Fatalf("restored.ai.panel.rect.Width = %v, want 530", restored.ai.panel.rect.Width)
+	}
+
+	// Test dragging on section page (e.g. hosts page)
+	sectionState := newTestState(t, state.options)
+	sectionState.activeSection = sectionHosts
+	sectionState.ai.open = true
+	canvasSection, _ := paintAt(sectionState, wide)
+	dividerSection := panelHit(t, canvasSection, hitAIDivider)
+	sx, sy := dividerSection.Bounds.X+dividerSection.Bounds.Width/2, dividerSection.Bounds.Y+100
+	sectionState.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitAIDivider, X: sx, Y: sy, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	sectionState.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	sectionState.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Target: hitAIDivider, X: sx - 80, Y: sy, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	if sectionState.ai.panelWidth != 610 {
+		t.Fatalf("sectionState.ai.panelWidth after drag = %v, want 610", sectionState.ai.panelWidth)
+	}
+	restoredSection := newTestState(t, sectionState.options)
+	if restoredSection.ai.panelWidth != 610 {
+		t.Fatalf("restoredSection.ai.panelWidth = %v, want 610", restoredSection.ai.panelWidth)
+	}
+}
+
+func TestAIPanelDrawerModeRemembersResizedWidth(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	// Narrow window triggers drawer mode (< aiDockAt = 900)
+	narrow := gfx.Size{Width: 800, Height: 600}
+	canvas, _ := paintAt(state, narrow)
+	// In drawer mode, divider is placed at the left edge of the drawer
+	initialWidth := state.ai.panel.rect.Width
+	divider := panelHit(t, canvas, hitAIDivider)
+	x, y := divider.Bounds.X+divider.Bounds.Width/2, divider.Bounds.Y+100
+	// Drag divider to resize drawer by 70px wider
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitAIDivider, X: x, Y: y, Viewport: narrow, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Target: hitAIDivider, X: x - 70, Y: y, Viewport: narrow, Captured: true, Button: gfx.PointerButtonPrimary})
+
+	wantWidth := initialWidth + 70
+	if math.Abs(float64(state.ai.panelWidth-wantWidth)) > 0.01 {
+		t.Fatalf("state.ai.panelWidth after drawer drag = %v, want %v", state.ai.panelWidth, wantWidth)
+	}
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || math.Abs(float64(saved.AIPanelWidth-wantWidth)) > 0.01 {
+		t.Fatalf("saved.AIPanelWidth = %v, want %v, err = %v", saved.AIPanelWidth, wantWidth, err)
+	}
+
+	// Restored state in narrow window opens drawer with remembered width
+	restored := newTestState(t, state.options)
+	restored.ai.open = true
+	paintAt(restored, narrow)
+	if math.Abs(float64(restored.ai.panel.rect.Width-wantWidth)) > 0.01 {
+		t.Fatalf("restored drawer width = %v, want %v", restored.ai.panel.rect.Width, wantWidth)
+	}
+}
+
+func TestAIComposerHeightRemembersAcrossRestarts(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.open = true
+	wide := gfx.Size{Width: 1920, Height: 1080}
+	canvas, _ := paintAt(state, wide)
+
+	grip := panelHit(t, canvas, hitAIComposerGrip)
+	gx, gy := grip.Bounds.X+grip.Bounds.Width/2, grip.Bounds.Y+grip.Bounds.Height/2
+	initialHeight := state.ai.panel.boxHeight
+	// Drag grip upward to increase composer height
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Target: hitAIComposerGrip, X: gx, Y: gy, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Target: hitAIComposerGrip, X: gx, Y: gy - 60, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Target: hitAIComposerGrip, X: gx, Y: gy - 60, Viewport: wide, Captured: true, Button: gfx.PointerButtonPrimary})
+
+	wantHeight := initialHeight + 60
+	if state.ai.composerHeight != wantHeight {
+		t.Fatalf("state.ai.composerHeight = %v, want %v", state.ai.composerHeight, wantHeight)
+	}
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || saved.AIComposerHeight != wantHeight {
+		t.Fatalf("saved.AIComposerHeight = %v, want %v, err = %v", saved.AIComposerHeight, wantHeight, err)
+	}
+
+	restored := newTestState(t, state.options)
+	if restored.ai.composerHeight != wantHeight {
+		t.Fatalf("restored.ai.composerHeight = %v, want %v", restored.ai.composerHeight, wantHeight)
+	}
+	restored.ai.open = true
+	paintAt(restored, wide)
+	if restored.ai.panel.boxHeight != wantHeight {
+		t.Fatalf("restored.ai.panel.boxHeight = %v, want %v", restored.ai.panel.boxHeight, wantHeight)
 	}
 }
 
@@ -1037,9 +1345,9 @@ func nextFrameAfterPaint(state *State) (time.Duration, bool) {
 	return canvas.NextFrame()
 }
 
-// The model list is a submenu level: Escape and Left close it and leave the
-// provider menu open, and Right opens it again.
-func TestModelSubmenuOwnsEscapeAndTheLeftRightKeys(t *testing.T) {
+// The model list is a submenu level: Right opens it, Left closes it and leaves
+// the provider menu open, and Escape closes both.
+func TestModelSubmenuWithTheKeyboard(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
 	db, err := state.aiStore()
@@ -1054,40 +1362,121 @@ func TestModelSubmenuOwnsEscapeAndTheLeftRightKeys(t *testing.T) {
 	paintAt(state, panelWide)
 	state.Click(hitAIModelChip)
 	canvas, _ := paintAt(state, panelWide)
-	if canvas.EscapeTarget() != hitAIModelSubDismiss {
-		t.Fatalf("Escape target = %v, want the model submenu", canvas.EscapeTarget())
+	if canvas.EscapeTarget().IsZero() {
+		t.Fatal("the open menu names no escape target")
 	}
-	if _, ok := hitByID(canvas, hitAIModels.At(0)); !ok {
-		t.Fatal("the model list is not open")
-	}
-
-	state.Click(hitAIModelSubDismiss)
-	canvas, _ = paintAt(state, panelWide)
-	if !state.ai.panel.modelMenu || state.ai.panel.modelSubmenu.IsAnyOpen() {
-		t.Fatalf("closing the submenu: menu=%v submenu=%v", state.ai.panel.modelMenu, state.ai.panel.modelSubmenu)
-	}
-	if _, ok := hitByID(canvas, hitAIModels.At(0)); ok {
-		t.Fatal("the model list stayed open")
-	}
-	if canvas.EscapeTarget() != hitAIModelDismiss {
-		t.Fatalf("after closing the submenu Escape = %v, want the provider menu", canvas.EscapeTarget())
+	if _, ok := aiMenuRowNamed(canvas, "gpt-x"); ok {
+		t.Fatal("the provider menu opened with its submenu already showing")
 	}
 
-	provider := hitAIModelProviders.At(0)
-	result := state.Key(ui.KeyEvent{Key: ui.KeyRight, Target: provider})
-	if !result.Handled || result.Focus != hitAIModels.At(0) {
-		t.Fatalf("Right = %+v, want the first model focused", result)
-	}
 	canvas, _ = paintAt(state, panelWide)
-	if _, ok := hitByID(canvas, hitAIModels.At(0)); !ok {
+	result := windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyDown, Target: hitAIModelChip})
+	provider, ok := hitByID(canvas, result.Focus)
+	if !ok || provider.Role != gfx.RoleMenuItem {
+		t.Fatalf("Down from the chip focused %v, not the provider row", result.Focus)
+	}
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyRight, Target: provider.ID})
+	canvas, _ = paintAt(state, panelWide)
+	model, ok := aiMenuRowNamed(canvas, "gpt-x")
+	if !ok {
 		t.Fatal("Right did not open the model list")
 	}
-	result = state.Key(ui.KeyEvent{Key: ui.KeyLeft, Target: hitAIModels.At(0)})
-	if !result.Handled || result.Focus != provider {
-		t.Fatalf("Left = %+v, want the provider row focused", result)
+	result = windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyLeft, Target: model.ID})
+	if result.Focus != provider.ID {
+		t.Fatalf("Left focused %v, want the provider row", result.Focus)
 	}
 	canvas, _ = paintAt(state, panelWide)
-	if _, ok := hitByID(canvas, hitAIModels.At(0)); ok {
+	if _, ok := aiMenuRowNamed(canvas, "gpt-x"); ok {
 		t.Fatal("Left left the model list open")
+	}
+
+	// Escape reaches the menu as the runtime's click on its escape target.
+	target := canvas.EscapeTarget()
+	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyEscape, Target: provider.ID})
+	clickMenuItemByID(t, state, target)
+	if state.ai.panel.modelMenu {
+		t.Fatal("Escape left the menu open")
+	}
+}
+
+func TestNarrowAIDrawerDoesNotTrapFocusOrBlockSidebar(t *testing.T) {
+	state, _ := panelState(t, nil)
+	narrow := gfx.Size{Width: 720, Height: 600}
+	state.Resize(narrow)
+	state.setAIPanelOpen(true)
+	canvas, _ := paintAt(state, narrow)
+	if !canvas.TrappedFocusScope().IsZero() {
+		t.Fatalf("AI drawer should not trap focus scope: got %v", canvas.TrappedFocusScope())
+	}
+	foundSidebar := false
+	for _, hit := range canvas.Hits() {
+		if hit.ID == hitAIToggle || hit.ID == hitVerticalTabsNew {
+			foundSidebar = true
+			break
+		}
+	}
+	if !foundSidebar {
+		t.Fatal("sidebar/toolbar controls should be present and interactive")
+	}
+}
+
+func TestNarrowAIDrawerTakesTheComposerAndHandsFocusBack(t *testing.T) {
+	state, _ := panelState(t, nil)
+	size := gfx.Size{Width: 720, Height: 600}
+	view, err := headless.Open(app.Config{
+		Width: 1000, Height: 700, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
+		OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	state.Resize(gfx.Size{Width: 1000, Height: 700})
+	state.setAIPanelOpen(true)
+	// The drawer appears once the window is too narrow to dock the panel, which
+	// is also the frame that shows where opening it put the keyboard.
+	if err := view.Resize(int(size.Width), int(size.Height)); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if focused := view.Snapshot().Focused; focused != hitAIInput {
+		t.Fatalf("narrow assistant focused %v, want the composer %v", focused, hitAIInput)
+	}
+
+	// Leaving the composer is the user's choice; repainting the drawer must not
+	// drag focus back into it.
+	if err := view.Keys("tab"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	afterTab := view.Snapshot().Focused
+	if afterTab == hitAIInput || afterTab.IsZero() {
+		t.Fatalf("focus after Tab = %v, want a control beside the composer", afterTab)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if got := view.Snapshot().Focused; got != afterTab {
+		t.Fatalf("focus moved from %v to %v: the drawer must ask for focus once", afterTab, got)
+	}
+
+	// A press on the terminal is the drawer's dismiss target; closing from inside
+	// the panel gives the keyboard back to the terminal instead of nowhere.
+	if err := view.Click(200, 300); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.aiPanelVisible() {
+		t.Fatal("a press on the terminal should dismiss the assistant drawer")
+	}
+	if focused := view.Snapshot().Focused; focused.IsZero() || focused == hitAIInput {
+		t.Fatalf("focus after dismissing = %v, want the terminal", focused)
 	}
 }

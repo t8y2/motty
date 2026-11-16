@@ -494,3 +494,29 @@ func TestEncodeUTF16LEFixedLenTruncation(t *testing.T) {
 		t.Errorf("second char wrong")
 	}
 }
+
+func TestClientClusterDataCarriesTheConsoleSessionRequest(t *testing.T) {
+	// mstsc /admin, and FreeRDP's /admin, ask for the console session by setting
+	// REDIRECTED_SESSIONID_FIELD_VALID with session id 0 (MS-RDPBCGR 2.2.1.3.5).
+	cluster := &ClientClusterData{
+		Flags: RedirectionSupported | (RedirectionVersion5 << 2) | RedirectedSessionIDFieldValid,
+	}
+	data := cluster.Encode()
+	if len(data) != 8 {
+		t.Fatalf("expected 8 bytes, got %d", len(data))
+	}
+	if flags := binary.LittleEndian.Uint32(data[0:4]); flags != 0x00000013 {
+		t.Errorf("flags = 0x%08X, want 0x00000013", flags)
+	}
+	if session := binary.LittleEndian.Uint32(data[4:8]); session != 0 {
+		t.Errorf("redirected session id = %d, want 0 (the console)", session)
+	}
+
+	block := cluster.EncodeBlock()
+	if blockType := binary.LittleEndian.Uint16(block[0:2]); blockType != ClientClusterDataType {
+		t.Errorf("block type = 0x%04X, want 0x%04X", blockType, ClientClusterDataType)
+	}
+	if blockLen := binary.LittleEndian.Uint16(block[2:4]); blockLen != 12 {
+		t.Errorf("block length = %d, want 12", blockLen)
+	}
+}

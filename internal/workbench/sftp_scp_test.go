@@ -12,9 +12,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"motty/internal/scpclient"
 	"motty/internal/sftpclient"
-	"github.com/vivaui/viva/app"
 )
 
 // scpServer is a server that has no SFTP and answers the few commands the SCP
@@ -138,6 +138,7 @@ func TestFilePanelFallsBackToSCPWhenSFTPIsRefused(t *testing.T) {
 	state, session, fake, server := openScpFallback(t, transferAuto, errors.New("sftp: start subsystem: ssh: subsystem request failed"))
 	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && len(view.rows) == 1 })
 	view := session.files
+	state.sftpDownloadDirectory = "" // exercise the ask-each-time picker path
 	if view.path != "/home/test" || view.rows[0].entry.Name != "notes.txt" || view.status != fmt.Sprintf(state.messages.SCPItemsFmt, 1) {
 		t.Fatalf("listing = %q %+v status %q error %q", view.path, view.rows, view.status, view.errorText)
 	}

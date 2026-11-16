@@ -3,6 +3,8 @@
 package localshell
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +68,23 @@ func TestShellStartsInTheRequestedDirectoryWithTheTerminalType(t *testing.T) {
 	}
 }
 
+// An application opened from Finder inherits no locale, and the C locale it
+// would otherwise see makes macOS ls print "?" for every character of a
+// non-ASCII file name.
+func TestShellSeesChineseFileNamesWhenNoLocaleIsInherited(t *testing.T) {
+	for _, name := range []string{"LANG", "LC_ALL", "LC_CTYPE"} {
+		t.Setenv(name, "")
+	}
+	dir := t.TempDir()
+	const name = "产品分类映射.xlsx"
+	if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shell, wakes := start(t, Config{Dir: dir})
+	shell.Write([]byte("ls\n"))
+	until(t, shell, wakes, name)
+}
+
 func TestResizeReachesTheProgram(t *testing.T) {
 	shell, wakes := start(t, Config{Cols: 80, Rows: 24})
 	shell.Resize(132, 43)
@@ -90,6 +109,28 @@ func TestForegroundArgsNamesTheRunningCommand(t *testing.T) {
 	}
 	args, _ := shell.ForegroundArgs()
 	t.Fatalf("foreground = %q, want sleep", args)
+}
+
+func TestAnInFlightResizeCanOverlapClosingThePTY(t *testing.T) {
+	shell, _ := start(t, Config{})
+	started, resized := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(resized)
+		close(started)
+		// Call the backend directly to exercise a resize that has already
+		// passed Shell's closed check when Close destroys the descriptor.
+		for i := range 1000 {
+			shell.b.resize(80+i%2, 24)
+		}
+	}()
+	<-started
+	shell.Close()
+	<-resized
+	select {
+	case <-shell.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent resize kept the closed shell alive")
+	}
 }
 
 func TestExitEndsTheShellCleanlyAndRefusesFurtherInput(t *testing.T) {

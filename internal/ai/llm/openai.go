@@ -14,18 +14,45 @@ import (
 
 type openAI struct {
 	base
-	baseErr error
+	baseErr        error
+	modelsEndpoint string
+	modelsErr      error
 }
 
 // NewOpenAI returns a Provider speaking OpenAI-compatible Chat Completions.
 // An empty BaseURL selects https://api.openai.com/v1.
 func NewOpenAI(cfg Config) Provider {
 	u, err := openAIBase(cfg.BaseURL)
-	return &openAI{base: newBase(cfg, u), baseErr: err}
+	p := &openAI{base: newBase(cfg, u), baseErr: err}
+	if strings.TrimSpace(cfg.ModelsURL) != "" {
+		p.modelsEndpoint, p.modelsErr = openAIModelsBase(cfg.ModelsURL)
+	}
+	return p
+}
+
+// openAIModelsBase normalizes a models URL: trailing slashes and a pasted
+// /models suffix are dropped, and a bare host gets /v1.
+func openAIModelsBase(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	u, err := normalizeBase(raw)
+	if err != nil {
+		return "", err
+	}
+	if path, ok := cutSuffixFold(u.Path, "/models"); ok {
+		u.Path = path
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	if u.Path == "" {
+		u.Path = "/v1"
+	}
+	return u.String(), nil
 }
 
 // openAIBase normalizes a base URL: trailing slashes and a pasted
-// /chat/completions suffix are dropped, and a bare host gets /v1.
+// /chat/completions or /responses suffix are dropped, and a bare host gets /v1.
+// Which of the two routes is used follows the provider, not the pasted address.
 func openAIBase(raw string) (string, error) {
 	if strings.TrimSpace(raw) == "" {
 		return "https://api.openai.com/v1", nil
@@ -34,7 +61,11 @@ func openAIBase(raw string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	u.Path, _ = cutSuffixFold(u.Path, "/chat/completions")
+	if path, ok := cutSuffixFold(u.Path, "/chat/completions"); ok {
+		u.Path = path
+	} else {
+		u.Path, _ = cutSuffixFold(u.Path, "/responses")
+	}
 	u.Path = strings.TrimRight(u.Path, "/")
 	if u.Path == "" {
 		u.Path = "/v1"
@@ -62,9 +93,38 @@ type oaToolCall struct {
 	Function oaToolFunc `json:"function"`
 }
 
+// oaPart is one piece of a user message that carries pictures.
+type oaPart struct {
+	Type     string      `json:"type"`
+	Text     string      `json:"text,omitempty"`
+	ImageURL *oaImageURL `json:"image_url,omitempty"`
+}
+
+type oaImageURL struct {
+	URL string `json:"url"`
+}
+
+// oaContent is a message's content: null, a string, or, when the message has
+// pictures, a list of parts. Plain text stays a string because not every
+// OpenAI-compatible server reads the list form.
+type oaContent struct {
+	text  *string
+	parts []oaPart
+}
+
+func (c oaContent) MarshalJSON() ([]byte, error) {
+	switch {
+	case c.parts != nil:
+		return json.Marshal(c.parts)
+	case c.text != nil:
+		return json.Marshal(*c.text)
+	}
+	return []byte("null"), nil
+}
+
 type oaMessage struct {
 	Role       string       `json:"role"`
-	Content    *string      `json:"content"`
+	Content    oaContent    `json:"content"`
 	ToolCalls  []oaToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string       `json:"tool_call_id,omitempty"`
 }
@@ -81,31 +141,47 @@ type oaRequest struct {
 	StreamOptions *struct {
 		IncludeUsage bool `json:"include_usage"`
 	} `json:"stream_options,omitempty"`
-	Tools       []oaTool `json:"tools,omitempty"`
-	MaxTokens   int      `json:"max_tokens,omitempty"`
-	Temperature *float64 `json:"temperature,omitempty"`
+	Tools           []oaTool `json:"tools,omitempty"`
+	MaxTokens       int      `json:"max_tokens,omitempty"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+	ReasoningEffort string   `json:"reasoning_effort,omitempty"`
 }
 
 func (p *openAI) buildBody(req Request) ([]byte, error) {
 	if err := validateRequest(req); err != nil {
 		return nil, err
 	}
-	out := oaRequest{Model: req.Model, Stream: true, MaxTokens: req.MaxTokens, Temperature: req.Temperature}
+	out := oaRequest{
+		Model:           req.Model,
+		Stream:          true,
+		MaxTokens:       req.MaxTokens,
+		Temperature:     req.Temperature,
+		ReasoningEffort: req.ReasoningEffort,
+	}
+	if out.ReasoningEffort == "default" {
+		out.ReasoningEffort = ""
+	}
 	out.StreamOptions = &struct {
 		IncludeUsage bool `json:"include_usage"`
 	}{true}
 	str := func(s string) *string { return &s }
 	if req.System != "" {
-		out.Messages = append(out.Messages, oaMessage{Role: "system", Content: str(req.System)})
+		out.Messages = append(out.Messages, oaMessage{Role: "system", Content: oaContent{text: str(req.System)}})
 	}
 	for _, m := range req.Messages {
 		om := oaMessage{Role: string(m.Role)}
 		switch m.Role {
 		case RoleSystem, RoleUser:
-			om.Content = str(m.Text)
+			om.Content = oaContent{text: str(m.Text)}
+			if len(m.Images) > 0 {
+				om.Content = oaContent{parts: []oaPart{{Type: "text", Text: m.Text}}}
+				for _, image := range m.Images {
+					om.Content.parts = append(om.Content.parts, oaPart{Type: "image_url", ImageURL: &oaImageURL{URL: image.dataURL()}})
+				}
+			}
 		case RoleAssistant:
 			if m.Text != "" || len(m.ToolCalls) == 0 {
-				om.Content = str(m.Text)
+				om.Content = oaContent{text: str(m.Text)}
 			}
 			for _, tc := range m.ToolCalls {
 				args, err := validateArgs(tc.Arguments)
@@ -119,7 +195,7 @@ func (p *openAI) buildBody(req Request) ([]byte, error) {
 			if m.ToolCallID == "" {
 				return nil, errors.New("llm: tool message without ToolCallID")
 			}
-			om.Content, om.ToolCallID = str(m.Text), m.ToolCallID
+			om.Content, om.ToolCallID = oaContent{text: str(m.Text)}, m.ToolCallID
 		default:
 			return nil, fmt.Errorf("llm: unknown role %q", m.Role)
 		}
@@ -151,14 +227,23 @@ func (p *openAI) Stream(ctx context.Context, req Request) (<-chan Event, error) 
 	if err != nil {
 		return nil, err
 	}
-	return p.pump(ctx, resp.Body, &oaHandler{}), nil
+	return p.pump(ctx, resp.Body, &oaHandler{
+		dsml:      newDSMLFilter(true, len(req.Tools) > 0),
+		reasoning: newDSMLFilter(true, len(req.Tools) > 0),
+	}), nil
 }
 
 func (p *openAI) Models(ctx context.Context) ([]string, error) {
-	if p.baseErr != nil {
+	if p.modelsErr != nil {
+		return nil, p.modelsErr
+	}
+	endpoint := p.endpoint
+	if p.modelsEndpoint != "" {
+		endpoint = p.modelsEndpoint
+	} else if p.baseErr != nil {
 		return nil, p.baseErr
 	}
-	resp, err := p.do(ctx, http.MethodGet, p.endpoint+"/models", nil, func(r *http.Request) {
+	resp, err := p.do(ctx, http.MethodGet, endpoint+"/models", nil, func(r *http.Request) {
 		r.Header.Set("Accept", "application/json")
 		if p.key != "" {
 			r.Header.Set("Authorization", "Bearer "+p.key)
@@ -207,6 +292,23 @@ type oaChoice struct {
 type oaUsage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
+	// The cached share of PromptTokens is reported under different names:
+	// OpenAI and most compatible providers nest it, DeepSeek and Moonshot do not.
+	PromptTokensDetails struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
+	PromptCacheHitTokens int `json:"prompt_cache_hit_tokens"`
+	CachedTokens         int `json:"cached_tokens"`
+}
+
+// cacheRead is the number of prompt tokens served from the provider's cache.
+func (u *oaUsage) cacheRead() int {
+	for _, n := range [...]int{u.PromptTokensDetails.CachedTokens, u.PromptCacheHitTokens, u.CachedTokens} {
+		if n > 0 {
+			return min(n, u.PromptTokens)
+		}
+	}
+	return 0
 }
 
 type oaChunk struct {
@@ -226,6 +328,20 @@ type oaHandler struct {
 	finished bool
 	stop     string
 	usage    Usage
+	// dsml recovers tool calls a provider wrote as text, and recovered says
+	// one was, so the stop reason can name the turn a tool turn.
+	dsml      dsmlFilter
+	recovered bool
+	// reasoning keeps tool-call markup out of the thinking channel. Its calls
+	// are held until the turn ends: only a turn that would otherwise be empty
+	// acts on them, so a call the model merely planned while it also answered
+	// (or called natively) never runs twice.
+	reasoning      dsmlFilter
+	reasoningCalls []ToolCall
+	// toolSent says a tool call already left this turn, and texted says the
+	// content channel published prose.
+	toolSent bool
+	texted   bool
 	// chunk is reused between events. Strings and tool calls still allocate
 	// inside it; this only saves rebuilding the outer struct and the choices
 	// slice for every token.
@@ -279,6 +395,7 @@ func (h *oaHandler) flushTools(em *emitter) error {
 			id = "call_" + strconv.Itoa(i)
 		}
 		tc := &ToolCall{ID: id, Name: c.name, Arguments: args}
+		h.toolSent = true
 		if err := em.send(Event{Kind: EventToolCall, ToolCall: tc}); err != nil {
 			return err
 		}
@@ -288,10 +405,117 @@ func (h *oaHandler) flushTools(em *emitter) error {
 }
 
 func (h *oaHandler) finish(em *emitter) error {
+	if err := h.flushReasoning(em); err != nil {
+		return err
+	}
 	if err := h.flushTools(em); err != nil {
 		return err
 	}
+	if err := h.flushText(em); err != nil {
+		return err
+	}
+	if err := h.emitReasoningCalls(em); err != nil {
+		return err
+	}
+	if h.recovered && (h.stop == "" || h.stop == "stop") {
+		h.stop = "tool_calls"
+	}
 	return em.send(Event{Kind: EventDone, Usage: h.usage, StopReason: h.stop})
+}
+
+// text publishes one content delta after the DSML filter has taken the
+// markup out of it.
+func (h *oaHandler) text(delta string, em *emitter) error {
+	text, calls, err := h.dsml.push(delta)
+	if err != nil {
+		return err
+	}
+	return h.emitText(text, calls, em)
+}
+
+// reasoningText publishes one thinking delta after the DSML filter has taken
+// the markup out of it. A thinking block that breaks the parser is dropped
+// rather than ending a turn that can still answer: the model may quote the
+// markup while reasoning about it.
+func (h *oaHandler) reasoningText(delta string, em *emitter) error {
+	text, calls, err := h.reasoning.push(delta)
+	if err != nil {
+		h.reasoning.reset()
+		return nil
+	}
+	h.reasoningCalls = append(h.reasoningCalls, calls...)
+	if text != "" {
+		return em.send(Event{Kind: EventReasoning, Text: text})
+	}
+	return nil
+}
+
+// flushText publishes what the content filter still holds when the model has
+// finished. Leftover markup does not fail a turn that already answered: the
+// markup is protocol noise, and the error would hide the answer and keep it out
+// of the history. A turn the provider cut off at its output limit is a
+// truncation, which StopReason reports; the filter's error would hide that too.
+func (h *oaHandler) flushText(em *emitter) error {
+	text, calls, err := h.dsml.flush()
+	if err != nil && (h.texted || StopsAtLimit(h.stop)) {
+		err = nil
+	}
+	if err != nil {
+		return err
+	}
+	return h.emitText(text, calls, em)
+}
+
+// flushReasoning publishes the tail of the thinking channel and holds any call
+// it recovered until the turn ends.
+func (h *oaHandler) flushReasoning(em *emitter) error {
+	text, calls, err := h.reasoning.flush()
+	if err != nil {
+		// Thinking that yields no call is not a broken answer.
+		h.reasoning.reset()
+		text, calls = "", nil
+	}
+	h.reasoningCalls = append(h.reasoningCalls, calls...)
+	if text != "" {
+		return em.send(Event{Kind: EventReasoning, Text: text})
+	}
+	return nil
+}
+
+// emitReasoningCalls acts on a call the provider wrote into the thinking
+// channel. It runs only when nothing else answered the turn: a call the model
+// also made natively would otherwise run twice, and markup the model merely
+// quoted would run a command it never asked for.
+func (h *oaHandler) emitReasoningCalls(em *emitter) error {
+	defer func() { h.reasoningCalls = nil }()
+	if h.toolSent || h.texted {
+		return nil
+	}
+	for i := range h.reasoningCalls {
+		h.toolSent, h.recovered = true, true
+		if err := em.send(Event{Kind: EventToolCall, ToolCall: &h.reasoningCalls[i]}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h *oaHandler) emitText(text string, calls []ToolCall, em *emitter) error {
+	if text != "" {
+		if strings.TrimSpace(text) != "" {
+			h.texted = true
+		}
+		if err := em.send(Event{Kind: EventText, Text: text}); err != nil {
+			return err
+		}
+	}
+	for i := range calls {
+		h.recovered, h.toolSent = true, true
+		if err := em.send(Event{Kind: EventToolCall, ToolCall: &calls[i]}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (h *oaHandler) event(ev sseEvent, em *emitter) (bool, error) {
@@ -319,7 +543,7 @@ func (h *oaHandler) event(ev sseEvent, em *emitter) (bool, error) {
 		return false, errors.New("llm: provider error: " + errorMessage(c.Error))
 	}
 	if c.Usage != nil {
-		h.usage = Usage{InputTokens: c.Usage.PromptTokens, OutputTokens: c.Usage.CompletionTokens}
+		h.usage = Usage{InputTokens: c.Usage.PromptTokens, OutputTokens: c.Usage.CompletionTokens, CacheReadTokens: c.Usage.cacheRead()}
 	}
 	if len(c.Choices) == 0 {
 		return false, nil
@@ -330,12 +554,12 @@ func (h *oaHandler) event(ev sseEvent, em *emitter) (bool, error) {
 		r = ch.Delta.Reasoning
 	}
 	if r != "" {
-		if err := em.send(Event{Kind: EventReasoning, Text: r}); err != nil {
+		if err := h.reasoningText(r, em); err != nil {
 			return false, err
 		}
 	}
 	if ch.Delta.Content != "" {
-		if err := em.send(Event{Kind: EventText, Text: ch.Delta.Content}); err != nil {
+		if err := h.text(ch.Delta.Content, em); err != nil {
 			return false, err
 		}
 	}

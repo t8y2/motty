@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 // Store is one remote file.
@@ -45,13 +44,16 @@ var (
 	ErrTooLarge = errors.New("the file is too large")
 )
 
-// CheckAddress accepts https addresses, and http ones only for this computer,
-// since a login travels with every request.
-func CheckAddress(address *url.URL) error {
+// CheckAddress requires HTTPS away from loopback unless the user explicitly
+// allowed unencrypted HTTP for this server.
+func CheckAddress(address *url.URL, allowInsecureHTTP bool) error {
 	switch address.Scheme {
 	case "https":
 		return nil
 	case "http":
+		if allowInsecureHTTP {
+			return nil
+		}
 		host := address.Hostname()
 		if ip := net.ParseIP(host); host == "localhost" || ip != nil && ip.IsLoopback() {
 			return nil
@@ -61,17 +63,21 @@ func CheckAddress(address *url.URL) error {
 	return errors.New("not an http or https address")
 }
 
-// HTTPClient returns a copy of client (nil: one with a 60 second timeout) that
-// does not follow a redirect to another host, so a login is not handed to a
-// server the user did not name.
-func HTTPClient(client *http.Client) *http.Client {
+// HTTPClient returns a copy of client (nil: a default client) that does not
+// follow a redirect to another host, so a login is not handed to a server the
+// user did not name. The caller's context bounds the whole operation, including
+// reading the response body; an HTTP client timeout must not cut it short.
+func HTTPClient(client *http.Client, allowInsecureHTTP bool) *http.Client {
 	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
+		client = &http.Client{}
 	}
 	copied := *client
 	copied.CheckRedirect = func(request *http.Request, via []*http.Request) error {
 		if request.URL.Host != via[0].URL.Host || len(via) > 5 {
 			return http.ErrUseLastResponse
+		}
+		if err := CheckAddress(request.URL, allowInsecureHTTP); err != nil {
+			return err
 		}
 		return nil
 	}

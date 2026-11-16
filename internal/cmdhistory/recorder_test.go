@@ -97,7 +97,7 @@ func TestAPasswordTypedWithoutEchoIsNeverRecorded(t *testing.T) {
 }
 
 func TestAPromptThatAsksForASecretIsNeverRecordedEvenIfEchoed(t *testing.T) {
-	for _, prompt := range []string{"[sudo] password for user: ", "Enter passphrase for key '/home/u/.ssh/id': ", "Verification code: ", "请输入密码: ", "OTP> "} {
+	for _, prompt := range []string{"[sudo] password for user: ", "Enter passphrase for key '/home/u/.ssh/id': ", "Verification code: ", "请输入密码: ", "請輸入密碼: ", "驗證碼: ", "OTP> "} {
 		s := newShell(t, 80)
 		s.prompt(prompt)
 		s.typeEchoed("123456")
@@ -109,6 +109,30 @@ func TestAPromptThatAsksForASecretIsNeverRecordedEvenIfEchoed(t *testing.T) {
 	s.prompt("> ")
 	s.typeEchoed("abc123")
 	s.wantNothing()
+}
+
+// The first command after a password prompt is a command, not an answer: su,
+// sudo -i and ssh leave their question on the row above the child shell's own
+// prompt, and that prompt is no continuation of it (#799).
+func TestACommandBelowAPasswordPromptRowIsRecordedAndSuggestable(t *testing.T) {
+	s := newShell(t, 80)
+	s.prompt("[user@host ~]$ ")
+	s.typeEchoed("su - root")
+	s.wantRecorded("su - root")
+	s.out("密码： ")
+	s.now += 300 * time.Millisecond
+	s.typeHidden("hunter2")
+	if command, ok := s.send("\r"); ok {
+		t.Fatalf("the password was recorded as %q", command)
+	}
+	s.out("\r\n")
+	s.out("[root@host ~]# ")
+	s.now += 300 * time.Millisecond
+	s.typeEchoed("doc")
+	if line, ok := s.line(); !ok || line != "doc" {
+		t.Fatalf("line = %q, %v", line, ok)
+	}
+	s.wantRecorded("doc")
 }
 
 func TestALineStartingWithASpaceIsNotRecorded(t *testing.T) {
@@ -302,6 +326,32 @@ func TestAnOverlongCommandIsNotRecorded(t *testing.T) {
 
 func (s *shell) line() (string, bool) { return s.rec.Line(TermScreen{s.screen}) }
 
+func (s *shell) linePrompt() (string, string, bool) {
+	return s.rec.LinePrompt(TermScreen{s.screen})
+}
+
+func TestTheLineComesWithThePromptItWasTypedAfter(t *testing.T) {
+	s := newShell(t, 80)
+	s.prompt("user@host:~$ ")
+	if _, prompt, ok := s.linePrompt(); ok || prompt != "" {
+		t.Fatalf("a line nobody has typed in yet is %q (%v)", prompt, ok)
+	}
+	s.typeEchoed("git s")
+	line, prompt, ok := s.linePrompt()
+	if !ok || line != "git s" || prompt != "user@host:~$" {
+		t.Fatalf("line=%q prompt=%q ok=%v", line, prompt, ok)
+	}
+
+	// A prompt that wraps is one prompt: the continuation rows count too.
+	s = newShell(t, 20)
+	s.prompt("user@a-long-host:~/projects/x$ ")
+	s.typeEchoed("ls")
+	line, prompt, ok = s.linePrompt()
+	if !ok || line != "ls" || prompt != "user@a-long-host:~/projects/x$" {
+		t.Fatalf("wrapped prompt line=%q prompt=%q ok=%v", line, prompt, ok)
+	}
+}
+
 func TestTheLineBeingTypedIsAvailableToSuggestFor(t *testing.T) {
 	s := newShell(t, 80)
 	s.prompt("user@host:~$ ")
@@ -380,5 +430,28 @@ func TestSuggestContinuesWithTheMostRecentCommandThatStartsTheSame(t *testing.T)
 	}
 	if _, ok := Suggest([]Entry{{Command: "mysql --password hunter2"}}, "mysql --password"); ok {
 		t.Fatal("a line that reads like a secret was suggested for")
+	}
+}
+
+func TestSuggestAllReturnsUpToMaxMatchesNewestFirst(t *testing.T) {
+	entries := []Entry{{Command: "git status"}, {Command: "git checkout main"}, {Command: "git checkout dev"}, {Command: "git config"}}
+	matches := SuggestAll(entries, "git c", 2)
+	if len(matches) != 2 || matches[0] != "heckout main" || matches[1] != "heckout dev" {
+		t.Fatalf("matches = %q", matches)
+	}
+	if got := SuggestAll(entries, "git c", 10); len(got) != 3 {
+		t.Fatalf("without the cap every match returns, got %q", got)
+	}
+	if got := SuggestAll(entries, "git c", 0); got != nil {
+		t.Fatalf("a zero cap returns nothing, got %q", got)
+	}
+	if got := SuggestAll(entries, "", 5); got != nil {
+		t.Fatalf("an empty line returns nothing, got %q", got)
+	}
+	if got := SuggestAll([]Entry{{Command: "mysql --password hunter2"}}, "mysql --password", 5); got != nil {
+		t.Fatal("a line that reads like a secret was suggested for")
+	}
+	if got := SuggestAll(entries, "git status", 5); got != nil {
+		t.Fatal("a command that is already complete has nothing to add")
 	}
 }

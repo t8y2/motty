@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
+	"motty/internal/linkwatch"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
 )
 
 // fakeConn stands in for a network connection: tests set its status the way
@@ -22,6 +23,7 @@ import (
 type fakeConn struct {
 	mu                sync.Mutex
 	status            sshconn.Status
+	statusReads       int
 	trusted           []bool
 	rejected          int
 	passwords         []string
@@ -39,15 +41,27 @@ type fakeConn struct {
 	scpOpens          int
 	dial              func(context.Context, string, string) (net.Conn, error)
 	dialCalls         []fakeDialCall
+	shellDial         func(context.Context, string, string) (net.Conn, error)
+	shellDialCalls    []fakeShellDialCall
 	listen            func(string, string) (net.Listener, error)
 	listenCalls       []fakeListenCall
 	runCommand        func(context.Context, string, int) ([]byte, error)
+	exec              func(context.Context, string, int) (sshconn.ExecResult, error)
 	streamCommand     func(context.Context, string, int, func([]byte) bool) error
 	commandCalls      []string
+	// verifies counts link checks, and verifyErr is what they answer. A link
+	// change asks every established connection; the fake lets a test see that.
+	verifies  int
+	verifyErr error
 }
 
 type fakeDialCall struct {
 	network string
+	address string
+}
+
+type fakeShellDialCall struct {
+	command string
 	address string
 }
 
@@ -57,6 +71,21 @@ type fakeListenCall struct {
 }
 
 // OpenShell hands out a scripted shell, as a connected server would.
+// Verify answers a link check without touching a network, as a connection that
+// survived the change would.
+func (fake *fakeConn) Verify(context.Context) error {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	fake.verifies++
+	return fake.verifyErr
+}
+
+func (fake *fakeConn) verifyCount() int {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	return fake.verifies
+}
+
 func (fake *fakeConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
@@ -103,6 +132,17 @@ func (fake *fakeConn) DialContext(ctx context.Context, network, address string) 
 	return dial(ctx, network, address)
 }
 
+func (fake *fakeConn) DialShellContext(ctx context.Context, command, address string) (net.Conn, error) {
+	fake.mu.Lock()
+	fake.shellDialCalls = append(fake.shellDialCalls, fakeShellDialCall{command: command, address: address})
+	dial := fake.shellDial
+	fake.mu.Unlock()
+	if dial == nil {
+		return nil, errors.New("test shell relay is not configured")
+	}
+	return dial(ctx, command, address)
+}
+
 func (fake *fakeConn) Listen(network, address string) (net.Listener, error) {
 	fake.mu.Lock()
 	fake.listenCalls = append(fake.listenCalls, fakeListenCall{network: network, address: address})
@@ -114,6 +154,20 @@ func (fake *fakeConn) Listen(network, address string) (net.Listener, error) {
 	return listen(network, address)
 }
 
+func (fake *fakeConn) ListenContext(ctx context.Context, network, address string, check func(net.Listener) error) (net.Listener, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	listener, err := fake.Listen(network, address)
+	if err == nil && check != nil {
+		if err = check(listener); err != nil {
+			_ = listener.Close()
+			return nil, err
+		}
+	}
+	return listener, err
+}
+
 func (fake *fakeConn) RunCommand(ctx context.Context, command string, limit int) ([]byte, error) {
 	fake.mu.Lock()
 	fake.commandCalls = append(fake.commandCalls, command)
@@ -123,6 +177,17 @@ func (fake *fakeConn) RunCommand(ctx context.Context, command string, limit int)
 		return nil, errors.New("test command runner is not configured")
 	}
 	return run(ctx, command, limit)
+}
+
+func (fake *fakeConn) Exec(ctx context.Context, command string, limit int) (sshconn.ExecResult, error) {
+	fake.mu.Lock()
+	fake.commandCalls = append(fake.commandCalls, command)
+	exec := fake.exec
+	fake.mu.Unlock()
+	if exec == nil {
+		return sshconn.ExecResult{}, errors.New("test command executor is not configured")
+	}
+	return exec(ctx, command, limit)
 }
 
 func (fake *fakeConn) StreamCommand(ctx context.Context, command string, limit int, line func([]byte) bool) error {
@@ -199,6 +264,21 @@ func (shell *fakeShell) Resize(cols, rows int) {
 	shell.mu.Unlock()
 }
 
+func (shell *fakeShell) resizeCount() int {
+	shell.mu.Lock()
+	defer shell.mu.Unlock()
+	return len(shell.resizes)
+}
+
+func (shell *fakeShell) lastResize() [2]int {
+	shell.mu.Lock()
+	defer shell.mu.Unlock()
+	if len(shell.resizes) == 0 {
+		return [2]int{}
+	}
+	return shell.resizes[len(shell.resizes)-1]
+}
+
 func (shell *fakeShell) Done() <-chan struct{} { return shell.done }
 func (shell *fakeShell) Err() error {
 	shell.mu.Lock()
@@ -229,6 +309,7 @@ func (shell *fakeShell) typed() string {
 func (fake *fakeConn) Status() sshconn.Status {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
+	fake.statusReads++
 	return fake.status
 }
 
@@ -287,6 +368,7 @@ func (fake *fakeConn) set(change func(*sshconn.Status)) {
 type world struct {
 	configs []sshconn.Config
 	conns   []*fakeConn
+	onDial  func(call int)
 }
 
 // sampleHosts are the hosts most tests act on. The application starts empty,
@@ -309,9 +391,13 @@ func newWorld(t testing.TB) (*world, Options) {
 		PreferredLanguages:    func() []string { return nil },
 		SystemAppearance:      func() app.Appearance { return app.AppearanceUnknown },
 		WatchSystemAppearance: func(func()) func() { return func() {} },
+		WatchNetworkChanges:   func(func(linkwatch.Change)) func() { return func() {} },
 		SetNativeAppearance:   func(app.Appearance) {},
 		Dial: func(config sshconn.Config) Connection {
 			fake := &fakeConn{}
+			if known.onDial != nil {
+				known.onDial(len(known.configs) + 1)
+			}
 			known.configs = append(known.configs, config)
 			known.conns = append(known.conns, fake)
 			return fake
@@ -342,7 +428,7 @@ func openHost(state *State) {
 	if id == 0 {
 		id = state.hosts[0].ID
 	}
-	pointer(state, ui.PointerEvent{Kind: ui.PointerDown, Button: ui.PointerButtonPrimary, ClickCount: 2, Target: hitHostList.At(int(id))})
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, Target: hitHostList.At(int(id))})
 }
 
 func connect(t testing.TB, state *State, world *world) *fakeConn {
@@ -355,9 +441,9 @@ func connect(t testing.TB, state *State, world *world) *fakeConn {
 	return world.conns[len(world.conns)-1]
 }
 
-func paintedTexts(state *State) (*ui.Canvas, []string) {
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
+func paintedTexts(state *State) (*gfx.Canvas, []string) {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	var texts []string
 	for _, text := range canvas.Texts() {
 		texts = append(texts, text.Value)
@@ -396,10 +482,80 @@ func TestConnectDialsTheSelectedHostAndShowsProgress(t *testing.T) {
 	}
 }
 
+// A derivative reports its parent in the SSH banner: fnOS serves Debian's
+// OpenSSH, so Debian arrives a moment before the host says what it really is.
+// The rail reads the host's system, so that guess must not badge it as Debian.
+func TestABannerGuessNeverReplacesTheSystemTheHostNamed(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	report := func(system sshconn.RemoteSystem, provisional bool) {
+		fake.set(func(status *sshconn.Status) {
+			status.Phase = sshconn.PhaseConnected
+			status.System = system
+			status.SystemProvisional = provisional
+		})
+		state.Wake()
+	}
+
+	report(sshconn.SystemFnOS, false)
+	if got := state.hosts[0].System; got != sshconn.SystemFnOS {
+		t.Fatalf("host system = %v, want the answer the host gave", got)
+	}
+	report(sshconn.SystemDebian, true)
+	if got := state.hosts[0].System; got != sshconn.SystemFnOS {
+		t.Fatalf("a banner guess replaced the known system: %v", got)
+	}
+	// The host's own answer still wins when it disagrees with what was known.
+	report(sshconn.SystemDebian, false)
+	if got := state.hosts[0].System; got != sshconn.SystemDebian {
+		t.Fatalf("host system = %v, want the answer the host gave", got)
+	}
+}
+
+// A server that ends the connection on the client's own probes is remembered as
+// an interactive-only host, so the retry it promises can connect.
+func TestAProbeRefusalKeepsTheHostToItsInteractiveSession(t *testing.T) {
+	world, options := newWorld(t)
+	now := 10 * time.Second
+	options.Now = func() time.Duration { return now }
+	state := newTestState(t, options)
+	state.connectionReconnect = reconnectThree
+	connection := connect(t, state, world)
+	connection.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	if world.configs[0].InteractiveOnly {
+		t.Fatal("a host was confined to its interactive session before a server refused a probe")
+	}
+	connection.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseClosed
+		status.Err = fmt.Errorf("%w: ssh: disconnect, reason 11", sshconn.ErrDisconnected)
+		status.ProbeRefused = true
+	})
+	state.Wake()
+	if !state.hosts[0].InteractiveOnly {
+		t.Fatal("the saved host was not confined to its interactive session")
+	}
+	if !state.sessions[0].host.InteractiveOnly {
+		t.Fatal("the retry would still send probes: the session's host was not updated")
+	}
+	if screen := state.sessions[0].term.screen.Text(); !strings.Contains(screen, state.messages.ConnProbeRefused) {
+		t.Fatalf("the user was not told why the host was confined: %q", screen)
+	}
+	now += time.Second
+	state.Wake()
+	if len(world.conns) != 2 {
+		t.Fatalf("the retry dialed %d connections, want 2", len(world.conns))
+	}
+	if !world.configs[1].InteractiveOnly {
+		t.Fatal("the retry was not dialed as an interactive session")
+	}
+}
+
 func TestHostKeyDialogAnswersTrustOnceRejectAndDismiss(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		hit     ui.ID
+		hit     gfx.ID
 		trusted []bool
 		reject  int
 	}{
@@ -474,20 +630,20 @@ func TestPasswordDialogMasksSubmitsOnEnterAndAsksAgainAfterARefusal(t *testing.T
 	if contains(texts, "hunter2") {
 		t.Fatalf("the password was painted: %v", texts)
 	}
-	var field ui.Hit
+	var field gfx.Hit
 	for _, hit := range canvas.Hits() {
 		if hit.ID == hitPasswordField {
 			field = hit
 		}
 	}
-	if !field.Secure || field.Value != "" || field.Role != ui.RoleTextField {
+	if !field.Secure || field.Value != "" || field.Role != gfx.RoleTextField {
 		t.Fatalf("password hit = %+v, want a secure field carrying no value", field)
 	}
 	if canvas.InitialFocus() != hitPasswordField {
 		t.Fatal("the password field does not take focus when the dialog opens")
 	}
 
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitPasswordField}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitPasswordField}); !result.Handled {
 		t.Fatal("Enter in the password field was not handled")
 	}
 	if len(fake.passwords) != 1 || fake.passwords[0] != "hunter2" {
@@ -508,16 +664,49 @@ func TestPasswordDialogMasksSubmitsOnEnterAndAsksAgainAfterARefusal(t *testing.T
 	}
 }
 
+func TestThePasswordDialogHintAndErrorLinesDoNotOverlap(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	askForPassword(state, fake, 2) // a refused password, with no vault to save into
+	state.secrets.canSave = false
+	if state.modal != modalPassword || state.passwordError == "" {
+		t.Fatalf("modal %d, error %q", state.modal, state.passwordError)
+	}
+
+	canvas, texts := paintedTexts(state)
+	if !contains(texts, state.messages.PasswordRetry) || !contains(texts, state.messages.PasswordHintUnsaved) {
+		t.Fatalf("the dialog does not show both lines: %v", texts)
+	}
+	var hint, problem gfx.Rect
+	for _, text := range canvas.Texts() {
+		switch text.Value {
+		case state.messages.PasswordHintUnsaved:
+			hint = text.Bounds
+		case state.messages.PasswordRetry:
+			problem = text.Bounds
+		}
+	}
+	overlap := hint.Y < problem.Bottom() && problem.Y < hint.Bottom() &&
+		hint.X < problem.Right() && problem.X < hint.Right()
+	if overlap {
+		t.Fatalf("the hint line %v overlaps the error line %v", hint, problem)
+	}
+	if height := state.passwordBodyHeight(); height < 66+18+18 {
+		t.Fatalf("body height %v does not reserve the hint and error lines", height)
+	}
+}
+
 func TestEnterOutsideThePasswordFieldDoesNotSubmit(t *testing.T) {
 	world, options := newWorld(t)
 	state := newTestState(t, options)
 	fake := connect(t, state, world)
 	fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhasePasswordPrompt; s.Attempt = 1 })
 	state.Wake()
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitPasswordCancel}); result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitPasswordCancel}); result.Handled {
 		t.Fatal("Enter on a button was taken as a password submit")
 	}
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitPasswordField, Repeat: true}); result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitPasswordField, Repeat: true}); result.Handled {
 		t.Fatal("a held Enter submitted the password")
 	}
 	if len(fake.passwords) != 0 {
@@ -526,7 +715,7 @@ func TestEnterOutsideThePasswordFieldDoesNotSubmit(t *testing.T) {
 }
 
 func TestDismissingThePasswordDialogCancelsTheConnection(t *testing.T) {
-	for _, hit := range []ui.ID{hitPasswordCancel, hitPasswordClose, hitPasswordDismiss} {
+	for _, hit := range []gfx.ID{hitPasswordCancel, hitPasswordClose, hitPasswordDismiss} {
 		world, options := newWorld(t)
 		state := newTestState(t, options)
 		fake := connect(t, state, world)
@@ -537,6 +726,37 @@ func TestDismissingThePasswordDialogCancelsTheConnection(t *testing.T) {
 		if fake.canceled != 1 || len(fake.passwords) != 0 || state.modal != modalNone || len(state.passwordFields) != 0 {
 			t.Fatalf("hit %d: canceled=%d passwords=%v modal=%d kept=%d", hit, fake.canceled, fake.passwords, state.modal, len(state.passwordFields))
 		}
+	}
+}
+
+// A changed key is a warning with the old and the presented fingerprint, and
+// its primary action replaces the saved record rather than treating the key as
+// a first connection.
+func TestChangedHostKeyDialogShowsBothFingerprintsAndUpdates(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	changed := sshconn.HostKeyInfo{
+		Address: "prod.example.com:22", Type: "ssh-ed25519", Fingerprint: "SHA256:NEW",
+		Changed: true, Known: []string{"SHA256:OLD"}, File: "/tmp/known_hosts",
+	}
+	fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseHostKeyPrompt; s.HostKey = changed })
+	state.Wake()
+	if state.modal != modalHostKey {
+		t.Fatal("a changed host key did not open the dialog")
+	}
+	_, texts := paintedTexts(state)
+	for _, want := range []string{
+		state.messages.HostKeyChangedTitle, state.messages.HostKeySavedFingerprint,
+		state.messages.HostKeyUpdateAndContinue, "SHA256:OLD", "SHA256:NEW", "prod.example.com:22",
+	} {
+		if !contains(texts, want) {
+			t.Fatalf("the changed-key dialog does not show %q: %q", want, texts)
+		}
+	}
+	state.Click(hitHostKeyTrust)
+	if len(fake.trusted) != 1 || !fake.trusted[0] {
+		t.Fatalf("update and continue sent trusted=%v, want one save", fake.trusted)
 	}
 }
 
@@ -618,6 +838,26 @@ func TestEncryptedIdentitiesWithTheSameAttemptEachPrompt(t *testing.T) {
 	state.Wake()
 	if state.modal != modalKeyPassphrase || !strings.Contains(state.keyPassphraseDescription, "second") {
 		t.Fatalf("second identity prompt = modal %d description %q", state.modal, state.keyPassphraseDescription)
+	}
+}
+
+func TestStrayDismissDoesNotSkipTheKeyPrompt(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhaseKeyPassphrasePrompt
+		status.Attempt = 1
+		status.IdentityPath = "/keys/work"
+	})
+	state.Wake()
+	state.Click(hitKeyPassphraseDismiss)
+	if state.modal != modalKeyPassphrase || fake.skippedIdentities != 0 {
+		t.Fatalf("a click beside the dialog dropped the key: modal %d, skipped %d", state.modal, fake.skippedIdentities)
+	}
+	state.Click(hitKeyPassphraseSkip)
+	if fake.skippedIdentities != 1 {
+		t.Fatalf("Skip did not skip the key: skipped %d", fake.skippedIdentities)
 	}
 }
 
@@ -715,8 +955,8 @@ func TestWakeAndConnectingPaintDoNotAllocateWhenNothingChanged(t *testing.T) {
 	state := newTestState(t, options)
 	connect(t, state, world)
 	state.Wake()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 
 	if allocations := testing.AllocsPerRun(100, state.Wake); allocations != 0 {
@@ -796,9 +1036,9 @@ func TestOneKeyboardInteractiveRoundShowsAFieldPerQuestion(t *testing.T) {
 			t.Fatalf("the dialog does not ask %q: %v", want, texts)
 		}
 	}
-	var canvas ui.Canvas
-	state.Paint(&canvas, ui.Size{Width: 1400, Height: 900})
-	secure := map[ui.ID]bool{}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	secure := map[gfx.ID]bool{}
 	for _, hit := range canvas.Hits() {
 		if index, ok := hit.ID.In(hitPasswordFields); ok {
 			secure[hit.ID] = hit.Secure
@@ -813,7 +1053,7 @@ func TestOneKeyboardInteractiveRoundShowsAFieldPerQuestion(t *testing.T) {
 
 	// The password is the only answer the save box may keep.
 	state.secrets.save = true
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitPasswordFields.At(3)}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitPasswordFields.At(3)}); !result.Handled {
 		t.Fatal("Enter in a question field was not handled")
 	}
 	if len(fake.answers) != 1 || len(fake.answers[0]) != 3 ||
@@ -834,11 +1074,11 @@ func TestMultiQuestionDialogFillsThePasswordAndTheCurrentCode(t *testing.T) {
 	if state.secrets.vault == nil {
 		t.Fatal("the test vault did not open")
 	}
-	if err := state.secrets.vault.Set(passwordSecretName(endpoint), "hunter2"); err != nil {
+	if err := state.secrets.vault.Set(prodPasswordName, "hunter2"); err != nil {
 		t.Fatal(err)
 	}
 	seed := "otpauth://totp/Prod:deploy?secret=" + testOTPSeed + "&issuer=Prod"
-	if err := state.secrets.vault.Set(otpSecretName(endpoint), seed); err != nil {
+	if err := state.secrets.vault.Set(prodOTPName, seed); err != nil {
 		t.Fatal(err)
 	}
 	fake.set(func(s *sshconn.Status) {
@@ -857,5 +1097,28 @@ func TestMultiQuestionDialogFillsThePasswordAndTheCurrentCode(t *testing.T) {
 	}
 	if code := state.passwordFields[1].String(); len(code) != 6 {
 		t.Fatalf("code field = %q, want a six-digit code", code)
+	}
+}
+
+// A round that still asks for a one-time code must not claim the password was
+// refused: the server may have rejected either factor, and the saved password
+// has to survive.
+func TestARepeatedSecondFactorRoundDoesNotBlameThePassword(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	session := &state.sessions[0]
+	session.filledSecret = state.passwordName(session)
+	fake.set(func(status *sshconn.Status) {
+		status.Phase, status.Attempt = sshconn.PhasePasswordPrompt, 2
+		status.Questions = []sshconn.Question{{Secret: true, Text: "Password: "}, {Secret: true, Text: "Verification code: "}}
+		status.Endpoint = sshconn.Endpoint{Host: "prod.example.com", Port: 22, User: "deploy"}
+	})
+	state.Wake()
+	if state.modal != modalPassword || state.passwordError != state.messages.PasswordRetryFactor {
+		t.Fatalf("modal %d error %q", state.modal, state.passwordError)
+	}
+	if session.filledSecret == "" {
+		t.Fatal("a second-factor round forgot the saved password")
 	}
 }

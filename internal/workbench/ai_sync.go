@@ -15,13 +15,20 @@ import (
 
 // savedAIProvider is a provider as a record.
 type savedAIProvider struct {
-	ID      string         `json:"id"`
-	Name    string         `json:"name"`
-	Kind    string         `json:"kind"`
-	BaseURL string         `json:"base_url,omitempty"`
-	Enabled bool           `json:"enabled,omitempty"`
-	HasKey  bool           `json:"has_key,omitempty"`
-	Models  []savedAIModel `json:"models,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	BaseURL   string `json:"base_url,omitempty"`
+	ModelsURL string `json:"models_url,omitempty"`
+	// AuthStyle is empty for the kind's default. It stays out of the payload
+	// when it is empty so records written before bearer authentication read
+	// back unchanged.
+	AuthStyle string `json:"auth_style,omitempty"`
+	// APIFormat is empty for Chat Completions, on the same terms.
+	APIFormat string         `json:"api_format,omitempty"`
+	Enabled   bool           `json:"enabled,omitempty"`
+	HasKey    bool           `json:"has_key,omitempty"`
+	Models    []savedAIModel `json:"models,omitempty"`
 }
 
 type savedAIModel struct {
@@ -29,19 +36,31 @@ type savedAIModel struct {
 	Enabled bool   `json:"enabled,omitempty"`
 }
 
-// savedAIProviders is the providers for the state, or nil while the assistant's
+// savedAIProviders is the HTTP providers for the state, or nil while the assistant's
 // database has not been read: a window that has not looked must not be taken to
 // say there are none.
 func (state *State) savedAIProviders() *[]savedAIProvider {
+	return state.savedAIProviderCollection(false)
+}
+
+func (state *State) savedAICLIProviders() *[]savedAIProvider {
+	return state.savedAIProviderCollection(true)
+}
+
+func (state *State) savedAIProviderCollection(cli bool) *[]savedAIProvider {
 	ai := &state.ai
 	if ai.store == nil || ai.storeErr != nil {
 		return nil
 	}
 	list := make([]savedAIProvider, 0, len(ai.providers))
 	for _, provider := range ai.providers {
+		if store.IsCLIKind(provider.Kind) != cli {
+			continue
+		}
 		entry := savedAIProvider{
 			ID: provider.ID, Name: provider.Name, Kind: provider.Kind, BaseURL: provider.BaseURL,
-			Enabled: provider.Enabled, HasKey: provider.HasKey,
+			ModelsURL: provider.ModelsURL,
+			AuthStyle: provider.AuthStyle, APIFormat: provider.APIFormat, Enabled: provider.Enabled, HasKey: provider.HasKey,
 		}
 		for _, model := range ai.models {
 			if model.ProviderID == provider.ID {
@@ -53,12 +72,14 @@ func (state *State) savedAIProviders() *[]savedAIProvider {
 	return &list
 }
 
-// importAIProviders makes the assistant's database hold these providers: it adds
-// and updates them, and drops the ones that are not in the list.
-func (state *State) importAIProviders(list []savedAIProvider) {
+// importAIProviderCollections adds, updates and removes recorded providers.
+// Collections are independently authoritative. In particular an old backup or
+// HTTP-only update cannot imply that CLI providers were deleted.
+func (state *State) importAIProviderCollections(http, cli *[]savedAIProvider) {
 	// Opening the database reads it, and a read saves; the records this window is
 	// bringing in are not in its base yet, so that save would stamp them anew.
-	known := state.recordedProviderIDs()
+	knownHTTP := state.recordedProviderIDs(kindAIProvider)
+	knownCLI := state.recordedProviderIDs(kindAICLIProvider)
 	state.pauseSave++
 	db, err := state.aiStore()
 	state.pauseSave--
@@ -69,13 +90,32 @@ func (state *State) importAIProviders(list []savedAIProvider) {
 	if err != nil {
 		return
 	}
+	var list []savedAIProvider
+	for _, collection := range []struct {
+		entries *[]savedAIProvider
+		cli     bool
+	}{{http, false}, {cli, true}} {
+		if collection.entries == nil {
+			continue
+		}
+		for _, entry := range *collection.entries {
+			if store.IsCLIKind(entry.Kind) == collection.cli {
+				list = append(list, entry)
+			}
+		}
+	}
 	wanted := make(map[string]bool, len(list))
 	for _, entry := range list {
-		if entry.ID == "" || (entry.Kind != store.KindOpenAI && entry.Kind != store.KindAnthropic) {
+		if entry.ID == "" || !store.ValidProviderKind(entry.Kind) {
 			continue
 		}
 		wanted[entry.ID] = true
-		provider := store.Provider{ID: entry.ID, Name: entry.Name, Kind: entry.Kind, BaseURL: entry.BaseURL, HasKey: entry.HasKey, Enabled: entry.Enabled}
+		provider := store.Provider{ID: entry.ID, Name: entry.Name, Kind: entry.Kind, BaseURL: entry.BaseURL, ModelsURL: entry.ModelsURL, AuthStyle: entry.AuthStyle, APIFormat: entry.APIFormat, HasKey: entry.HasKey, Enabled: entry.Enabled}
+		for _, local := range current {
+			if local.ID == entry.ID && local.Kind == entry.Kind {
+				provider.CLIPath = local.CLIPath
+			}
+		}
 		if db.SaveProvider(provider) != nil {
 			continue
 		}
@@ -88,7 +128,11 @@ func (state *State) importAIProviders(list []savedAIProvider) {
 	for _, provider := range current {
 		// Only what the records once held can have been deleted elsewhere; a provider
 		// here that was never recorded is new, not deleted.
-		if known[provider.ID] && !wanted[provider.ID] {
+		known, imported := knownHTTP, http != nil
+		if store.IsCLIKind(provider.Kind) {
+			known, imported = knownCLI, cli != nil
+		}
+		if imported && known[provider.ID] && !wanted[provider.ID] {
 			_ = db.DeleteProvider(provider.ID)
 		}
 	}
@@ -97,19 +141,25 @@ func (state *State) importAIProviders(list []savedAIProvider) {
 	state.pauseSave--
 }
 
-// adoptRecordedProviders restores providers from the records when the
-// assistant's database has none: a database that was lost or set aside must not
-// make the providers look deleted to every other computer.
+// adoptRecordedProviders restores recorded providers the assistant's database
+// is missing. A database that was lost or set aside must not make the providers
+// look deleted to every other computer, and a database that still holds another
+// provider (for example HTTP) must not hide a recorded CLI provider.
 func (state *State) adoptRecordedProviders(db *store.Store) {
 	if state.configBase == nil {
 		return
 	}
-	if current, err := db.Providers(); err != nil || len(current) > 0 {
+	current, err := db.Providers()
+	if err != nil {
 		return
+	}
+	present := make(map[string]bool, len(current))
+	for _, provider := range current {
+		present[provider.ID] = true
 	}
 	var recorded []savedAIProvider
 	for key, payload := range state.configBase.payloads {
-		if key.Kind != kindAIProvider {
+		if key.Kind != kindAIProvider && key.Kind != kindAICLIProvider {
 			continue
 		}
 		var wrapper recordPayload
@@ -118,14 +168,12 @@ func (state *State) adoptRecordedProviders(db *store.Store) {
 			recorded = append(recorded, entry)
 		}
 	}
-	if len(recorded) == 0 {
-		return
-	}
 	for _, entry := range recorded {
-		if entry.Kind != store.KindOpenAI && entry.Kind != store.KindAnthropic {
+		if entry.ID == "" || present[entry.ID] || !store.ValidProviderKind(entry.Kind) {
 			continue
 		}
-		_ = db.SaveProvider(store.Provider{ID: entry.ID, Name: entry.Name, Kind: entry.Kind, BaseURL: entry.BaseURL, HasKey: entry.HasKey, Enabled: entry.Enabled})
+		present[entry.ID] = true
+		_ = db.SaveProvider(store.Provider{ID: entry.ID, Name: entry.Name, Kind: entry.Kind, BaseURL: entry.BaseURL, AuthStyle: entry.AuthStyle, APIFormat: entry.APIFormat, HasKey: entry.HasKey, Enabled: entry.Enabled})
 		models := make([]store.Model, 0, len(entry.Models))
 		for _, model := range entry.Models {
 			models = append(models, store.Model{ProviderID: entry.ID, Name: model.Name, Enabled: model.Enabled})
@@ -134,14 +182,17 @@ func (state *State) adoptRecordedProviders(db *store.Store) {
 	}
 }
 
-const kindAIProvider = "ai-provider"
+const (
+	kindAIProvider    = "ai-provider"
+	kindAICLIProvider = "ai-cli-provider"
+)
 
 // recordedProviderIDs are the providers the records of this window's base hold.
-func (state *State) recordedProviderIDs() map[string]bool {
+func (state *State) recordedProviderIDs(kind string) map[string]bool {
 	ids := map[string]bool{}
 	if state.configBase != nil {
 		for key := range state.configBase.payloads {
-			if key.Kind == kindAIProvider {
+			if key.Kind == kind {
 				ids[key.ID] = true
 			}
 		}
@@ -149,4 +200,4 @@ func (state *State) recordedProviderIDs() map[string]bool {
 	return ids
 }
 
-func (state *State) recordedProviders() int { return len(state.recordedProviderIDs()) }
+func (state *State) recordedProviders(kind string) int { return len(state.recordedProviderIDs(kind)) }

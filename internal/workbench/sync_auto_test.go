@@ -4,8 +4,6 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"motty/internal/vault"
 )
 
 func fastSync(state *State) {
@@ -143,15 +141,15 @@ func TestAFailedSyncIsRetriedLaterAndASettledOneStops(t *testing.T) {
 }
 
 func TestALockedVaultMakesAQuietSyncWaitInsteadOfAskingForThePassword(t *testing.T) {
-	vault.UseCheapKDFForTests()
 	server, dav := newFakeDAV(t)
 	first, _, _ := backupTestState(t)
 	setUpAutoSync(t, first, server, dav)
 	base := dav.putCount()
-	if err := first.secrets.vault.SetMasterPassword("a long master password"); err != nil {
+	if err := first.secrets.vault.LegacyForTests("a long master password"); err != nil {
 		t.Fatal(err)
 	}
-	first.secrets.vault.Lock()
+	first.secrets.declined = true
+	first.secrets.vault.DropKeyForTests()
 
 	first.terminalScrollback = 10000
 	first.save()
@@ -159,7 +157,7 @@ func TestALockedVaultMakesAQuietSyncWaitInsteadOfAskingForThePassword(t *testing
 	if first.modal != modalNone || dav.putCount() != base || first.sync.err == "" {
 		t.Fatalf("modal %d, %d uploads, err %q", first.modal, dav.putCount()-base, first.sync.err)
 	}
-	if err := first.secrets.vault.Unlock("a long master password"); err != nil {
+	if err := first.secrets.vault.ConvertLegacy("a long master password"); err != nil {
 		t.Fatal(err)
 	}
 	first.scheduleSync() // what unlocking does

@@ -26,7 +26,7 @@ import (
 type Config struct {
 	// Endpoint is the service's address, such as https://s3.eu-west-1.amazonaws.com
 	// or https://<account>.r2.cloudflarestorage.com. https:// only, except for a
-	// loopback address.
+	// loopback address or an explicit AllowInsecureHTTP opt-in.
 	Endpoint string
 	// Region the requests are signed for; empty means us-east-1. R2 uses "auto".
 	Region string
@@ -38,6 +38,8 @@ type Config struct {
 	// PathStyle puts the bucket in the path (endpoint/bucket/key), as MinIO and
 	// most self-hosted services want; otherwise it is the host (bucket.endpoint).
 	PathStyle bool
+	// AllowInsecureHTTP is the user's consent to HTTP outside loopback.
+	AllowInsecureHTTP bool
 }
 
 // DefaultKey is the object name used when the user gives none.
@@ -58,14 +60,14 @@ var _ cloudsync.Store = (*Client)(nil)
 
 const defaultMaxBytes = 64 << 20
 
-// New checks the configuration. A nil http client uses one with a 60 second
-// timeout that does not follow redirects to another host.
+// New checks the configuration. A nil http client does not follow redirects to
+// another host. The caller controls the request deadline through its context.
 func New(config Config, client *http.Client) (*Client, error) {
 	base, err := url.Parse(strings.TrimSpace(config.Endpoint))
 	if err != nil || base.Host == "" || base.User != nil {
 		return nil, fmt.Errorf("s3: %q is not a server address", config.Endpoint)
 	}
-	if err := cloudsync.CheckAddress(base); err != nil {
+	if err := cloudsync.CheckAddress(base, config.AllowInsecureHTTP); err != nil {
 		if errors.Is(err, cloudsync.ErrInsecure) {
 			return nil, err
 		}
@@ -87,7 +89,7 @@ func New(config Config, client *http.Client) (*Client, error) {
 	if config.AccessKey == "" || config.Secret == "" {
 		return nil, errors.New("s3: an access key and its secret are required")
 	}
-	return &Client{config: config, base: base, http: cloudsync.HTTPClient(client), MaxBytes: defaultMaxBytes}, nil
+	return &Client{config: config, base: base, http: cloudsync.HTTPClient(client, config.AllowInsecureHTTP), MaxBytes: defaultMaxBytes}, nil
 }
 
 // address is the object's URL. The path is encoded the way it is signed, so the
@@ -167,6 +169,10 @@ func check(response *http.Response) (code string, err error) {
 	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
 		code, detail := failure(response)
 		return code, fmt.Errorf("%w (%s)", cloudsync.ErrUnauthorized, strings.TrimPrefix(detail.Error(), "s3: the server answered "))
+	case response.StatusCode >= 300 && response.StatusCode < 400:
+		// A redirect the client did not follow (another host, or too many hops)
+		// is not a success: nothing was verified.
+		return "", fmt.Errorf("s3: the server answered %s", response.Status)
 	case response.StatusCode >= 400:
 		return failure(response)
 	}
@@ -226,7 +232,7 @@ func (client *Client) Get(ctx context.Context) (data []byte, tag string, err err
 // The condition is If-Match (or If-None-Match: * to create) on the PUT, which S3
 // has supported since late 2024 and MinIO and R2 support too. A service that does
 // not know the header answers
-// 501 NotImplemented (or ignores it); then the version is read with a HEAD and
+// NotImplemented (501, or 400 from Aliyun OSS) or ignores it; then the version is read with a HEAD and
 // compared before an unconditional PUT. That fallback leaves a window of a
 // round trip in which another computer can slip in; it is the best an old
 // service allows.
@@ -245,6 +251,9 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 		return "", err
 	}
 	defer response.Body.Close()
+	if unsupported(response) {
+		return client.putAfterHead(ctx, data, previous)
+	}
 	switch {
 	case response.StatusCode == http.StatusPreconditionFailed:
 		return "", cloudsync.ErrChanged
@@ -253,13 +262,31 @@ func (client *Client) Put(ctx context.Context, data []byte, previous string) (ta
 			return "", cloudsync.ErrChanged // deleted since it was last read
 		}
 		return "", errors.New("s3: the bucket was not found")
-	case response.StatusCode == http.StatusNotImplemented:
-		return client.putAfterHead(ctx, data, previous)
 	}
 	if _, err := check(response); err != nil {
 		return "", err
 	}
 	return response.Header.Get("ETag"), nil
+}
+
+// unsupported reports whether the service refused the conditional header itself.
+// S3-compatible services say so differently: 501 NotImplemented from MinIO-era
+// and older gateways, 400 NotImplemented from Aliyun OSS (error 0017-00000245),
+// so the error code decides, not the status. The body is left readable.
+func unsupported(response *http.Response) bool {
+	if response.StatusCode == http.StatusNotImplemented {
+		return true
+	}
+	if response.StatusCode != http.StatusBadRequest {
+		return false
+	}
+	data, _ := io.ReadAll(io.LimitReader(response.Body, 8<<10))
+	response.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(data), response.Body), response.Body}
+	var parsed serviceError
+	return xml.Unmarshal(data, &parsed) == nil && parsed.Code == "NotImplemented"
 }
 
 // putAfterHead is the fallback for a service without conditional writes.

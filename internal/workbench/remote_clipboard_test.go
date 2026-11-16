@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -18,7 +19,7 @@ func newClipboardState(t testing.TB, options Options) (*State, *Session) {
 	return state, session
 }
 
-func TestOSC52DefaultAsksThenUsesVifPublicClipboard(t *testing.T) {
+func TestOSC52DefaultWritesWithoutAsking(t *testing.T) {
 	driver, err := app.NewDriver(app.Config{}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -27,16 +28,40 @@ func TestOSC52DefaultAsksThenUsesVifPublicClipboard(t *testing.T) {
 
 	state, session := newClipboardState(t, testOptions(t))
 	session.term.screen.Write([]byte("\x1b]52;c;cmVtb3RlIHRleHQ=\x07"))
-	if state.modal != modalRemoteClipboard || !state.clipboardRequest.pending || driver.Clipboard() != "" {
-		t.Fatalf("modal=%v request=%+v clipboard=%q", state.modal, state.clipboardRequest, driver.Clipboard())
+	if state.modal != modalNone || state.clipboardRequest.pending || driver.Clipboard() != "remote text" || state.status != state.messages.StatusClipboardCopied {
+		t.Fatalf("modal=%v request=%+v clipboard=%q status=%q", state.modal, state.clipboardRequest, driver.Clipboard(), state.status)
+	}
+}
+
+func TestOSC52AskDescribesTheRequestAndAlwaysAllowStopsIt(t *testing.T) {
+	writes := []string{}
+	options := testOptions(t)
+	options.SetClipboardText = func(value string) error {
+		writes = append(writes, value)
+		return nil
+	}
+	state, session := newClipboardState(t, options)
+	state.terminalClipboard = terminalClipboardAsk
+
+	session.term.screen.Write([]byte("\x1b]52;c;cmVtb3RlIHRleHQ=\x07"))
+	if state.modal != modalRemoteClipboard || !state.clipboardRequest.pending || len(writes) != 0 {
+		t.Fatalf("modal=%v request=%+v writes=%q", state.modal, state.clipboardRequest, writes)
 	}
 	if !strings.Contains(state.clipboardRequest.description, session.Address) || state.clipboardRequest.preview != `"remote text"` {
 		t.Fatalf("request=%+v", state.clipboardRequest)
 	}
 
-	state.Click(hitClipboardAllow)
-	if state.modal != modalNone || state.clipboardRequest.pending || driver.Clipboard() != "remote text" || state.status != state.messages.StatusClipboardCopied {
-		t.Fatalf("modal=%v request=%+v clipboard=%q status=%q", state.modal, state.clipboardRequest, driver.Clipboard(), state.status)
+	state.Click(hitClipboardAlways)
+	if state.modal != modalNone || state.clipboardRequest.pending || len(writes) != 1 || writes[0] != "remote text" {
+		t.Fatalf("writes=%q modal=%v request=%+v", writes, state.modal, state.clipboardRequest)
+	}
+	if state.terminalClipboard != terminalClipboardAllow {
+		t.Fatalf("policy = %v after Always allow", state.terminalClipboard)
+	}
+	// The choice is saved, so the next launch does not ask again.
+	reopened := newTestState(t, options)
+	if reopened.terminalClipboard != terminalClipboardAllow {
+		t.Fatalf("reloaded policy = %v after Always allow", reopened.terminalClipboard)
 	}
 }
 
@@ -72,6 +97,7 @@ func TestOSC52AskKeepsFirstBoundedRequestAndCancelDoesNotWrite(t *testing.T) {
 	options := testOptions(t)
 	options.SetClipboardText = func(string) error { writes++; return nil }
 	state, session := newClipboardState(t, options)
+	state.terminalClipboard = terminalClipboardAsk
 	session.term.screen.Write([]byte("\x1b]52;c;Zmlyc3Q=\x07\x1b]52;c;c2Vjb25k\x07"))
 	if state.clipboardRequest.text != "first" {
 		t.Fatalf("pending text = %q", state.clipboardRequest.text)
@@ -95,11 +121,16 @@ func TestOSC52ClipboardFailureIsVisible(t *testing.T) {
 
 func TestOSC52ConfirmationDialogPaintsWithoutSchedulingWork(t *testing.T) {
 	state, session := newClipboardState(t, testOptions(t))
+	state.terminalClipboard = terminalClipboardAsk
 	session.term.screen.Write([]byte("\x1b]52;c;cHJldmlldw==\x07"))
-	var canvas ui.Canvas
-	state.paintRemoteClipboardDialog(&canvas, ui.Rect{Width: 900, Height: 600})
-	if _, ok := hitByID(&canvas, hitClipboardAllow); !ok {
-		t.Fatal("confirmation dialog did not paint Allow once")
+	var canvas gfx.Canvas
+	canvas.SetTree(&tree)
+	page := ui.NewPage(ui.PageConfig{Tree: &tree, Root: "clipboard-test", Theme: &state.theme})
+	page.Draw(&canvas, gfx.Rect{Width: 900, Height: 600}, state.declareRemoteClipboardDialog)
+	for _, id := range []gfx.ID{hitClipboardAllow, hitClipboardAlways} {
+		if _, ok := hitByID(&canvas, id); !ok {
+			t.Fatalf("confirmation dialog did not paint %v", id)
+		}
 	}
 	if _, scheduled := canvas.NextFrame(); scheduled {
 		t.Fatal("clipboard confirmation scheduled background work")

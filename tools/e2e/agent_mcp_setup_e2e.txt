@@ -1,0 +1,56 @@
+# End to end for the MCP server that works without the window (motty mcp-serve):
+# the window side. It adds a host and opens it to agents, adds another that stays
+# closed, connects to the first once so that the fixture's host key is trusted
+# (mcp-serve never trusts a key by itself), and lets agents run commands.
+# tools/e2e/run_agent_mcp_e2e.sh runs it, then drives the real `motty mcp-serve`
+# with tools/e2e/agent_mcp_e2e.py. The fields are clicked by id: a second dialog
+# does not focus its first one.
+click "New Host"
+settle 500
+click id:shell/dialog-label
+type agent-host
+click id:shell/dialog-address
+type 127.0.0.1
+click id:shell/dialog-user
+type tester
+click id:shell/dialog-port
+key backspace
+key backspace
+type 2248
+click "Advanced"
+settle 400
+scroll 700 600 0 400
+settle 200
+click "Allow MCP agents to use this host"
+click "Add Host"
+settle 400
+click "New Host"
+settle 500
+click id:shell/dialog-label
+type closed-host
+click id:shell/dialog-address
+type 127.0.0.1
+click id:shell/dialog-user
+type spare
+click id:shell/dialog-port
+key backspace
+key backspace
+type 2248
+click "Add Host"
+settle 400
+# Connect to the open one to trust its key; the host signs in with the default key.
+dblclick 400 150
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "tester@e2e" 8000
+# Let agents run commands: Settings > MCP > Commands.
+click "Settings"
+settle 400
+click "MCP"
+settle 400
+scroll 700 600 0 300
+settle 300
+click "Commands"
+settle 300
+shot /tmp/agent-mcp-settings.png
+texts

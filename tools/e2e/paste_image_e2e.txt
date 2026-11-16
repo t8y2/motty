@@ -1,0 +1,45 @@
+# End to end: pasting a clipboard image into an SSH terminal uploads it to the
+# server and types its path. Needs a headless Viva with the `clipimage` command
+# and the e2esshd fixture. Run once against SFTP and once against a server that
+# has only SCP (E2E_NO_SFTP=1), changing the port to match:
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head-paste ./cmd/motty
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd-paste .)
+#   python3 -I -c 'import zlib,struct,sys;c=lambda t,d:struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d));sys.stdout.buffer.write(b"\x89PNG\r\n\x1a\n"+c(b"IHDR",struct.pack(">IIBBBBB",1,1,8,2,0,0,0))+c(b"IDAT",zlib.compress(b"\x00\xff\x00\x00"))+c(b"IEND",b""))' > /tmp/paste-image.png
+#   /tmp/e2esshd-paste 2252 &                    # SFTP
+#   E2E_NO_SFTP=1 /tmp/e2esshd-paste 2253 &      # SCP only; use :2253 below
+#   MOTTY_LANG=en MOTTY_HEAD=/tmp/motty-head-paste \
+#     python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/paste_image_e2e.txt
+#
+# What to look for: the `ls -l` line shows one paste-*.png of 69 bytes with mode
+# -rw------- under .cache/motty/paste, and the status line names the same path.
+# A second paste with the clipboard holding text types that text instead.
+
+click "Search"
+type tester@127.0.0.1:2252
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+
+clipimage /tmp/paste-image.png
+type ls -l
+key space
+key cmd+v
+waitfor ".cache/motty/paste/paste-" 8000
+key enter
+waitfor "-rw-------" 5000
+settle 500
+texts
+shot /tmp/paste-image.png.shot.png
+
+clip typed-text
+type echo
+key space
+key cmd+v
+key enter
+waitfor "typed-text" 5000

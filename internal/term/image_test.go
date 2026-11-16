@@ -33,6 +33,7 @@ func TestKittyGraphicsChunksDecodePlaceAndDeleteRealPixels(t *testing.T) {
 		t.Fatal("an incomplete transmission became visible")
 	}
 	feed(terminal, "\x1b_Gm=0;"+encoded[cut:]+"\x1b\\")
+	terminal.WaitImages()
 	placements := terminal.Images()
 	if len(placements) != 1 || placements[0].Image.Width != 2 || placements[0].WidthCells != 4 || placements[0].HeightCells != 2 || placements[0].ProtocolID != 3 {
 		t.Fatalf("placements = %+v", placements)
@@ -42,6 +43,7 @@ func TestKittyGraphicsChunksDecodePlaceAndDeleteRealPixels(t *testing.T) {
 		t.Fatalf("BGRA pixels = %v, want %v", placements[0].Image.Pix, want)
 	}
 	feed(terminal, "\x1b_Ga=d,d=I,i=7;\x1b\\")
+	terminal.WaitImages()
 	if len(terminal.Images()) != 0 || len(terminal.images.images) != 0 {
 		t.Fatal("Kitty image deletion retained storage or placement")
 	}
@@ -51,19 +53,24 @@ func TestKittyLowercaseDeleteRetainsDataAndContinuationRejectsConflicts(t *testi
 	terminal := New(10, 4, 10)
 	raw := base64.StdEncoding.EncodeToString([]byte{255, 0, 0})
 	feed(terminal, "\x1b_Ga=T,f=24,s=1,v=1,i=11,p=7;"+raw+"\x1b\\")
+	terminal.WaitImages()
 	feed(terminal, "\x1b_Ga=d,d=i,i=11;\x1b\\")
+	terminal.WaitImages()
 	if len(terminal.Images()) != 0 || len(terminal.images.images) != 1 {
 		t.Fatalf("lowercase image delete removed data: %d placements, %d images", len(terminal.Images()), len(terminal.images.images))
 	}
 	feed(terminal, "\x1b_Ga=p,i=11,p=8;\x1b\\")
+	terminal.WaitImages()
 	if len(terminal.Images()) != 1 || terminal.Images()[0].ProtocolID != 8 {
 		t.Fatalf("retained image could not be placed again: %+v", terminal.Images())
 	}
 	feed(terminal, "\x1b_Ga=d,d=p,p=8;\x1b\\")
+	terminal.WaitImages()
 	if len(terminal.Images()) != 0 || len(terminal.images.images) != 1 {
 		t.Fatal("lowercase placement delete removed image data")
 	}
 	feed(terminal, "\x1b_Ga=p,i=11,p=9;\x1b\\\x1b_Ga=d,d=P,p=9;\x1b\\")
+	terminal.WaitImages()
 	if len(terminal.Images()) != 0 || terminal.findKittyImage(11) != nil {
 		t.Fatal("uppercase placement delete retained image data")
 	}
@@ -71,6 +78,7 @@ func TestKittyLowercaseDeleteRetainsDataAndContinuationRejectsConflicts(t *testi
 	cut := len(raw) / 2
 	feed(terminal, "\x1b_Ga=T,f=24,s=1,v=1,i=12,m=1;"+raw[:cut]+"\x1b\\")
 	feed(terminal, "\x1b_Gs=2,m=0;"+raw[cut:]+"\x1b\\")
+	terminal.WaitImages()
 	if terminal.kitty != nil || terminal.findKittyImage(12) != nil {
 		t.Fatal("conflicting continuation was retained or decoded")
 	}
@@ -91,6 +99,7 @@ func TestKittyCompressedTransmissionAndQuietReplyPolicy(t *testing.T) {
 	var replies bytes.Buffer
 	terminal.SetReply(func(value []byte) { replies.Write(value) })
 	feed(terminal, "\x1b_Ga=T,f=24,o=z,s=1,v=1,i=9;"+encoded+"\x1b\\")
+	terminal.WaitImages()
 	if len(terminal.Images()) != 1 || !bytes.Equal(terminal.Images()[0].Image.Pix, []byte{30, 20, 10, 255}) {
 		t.Fatalf("compressed image = %+v", terminal.Images())
 	}
@@ -99,6 +108,7 @@ func TestKittyCompressedTransmissionAndQuietReplyPolicy(t *testing.T) {
 	}
 	replies.Reset()
 	feed(terminal, "\x1b_Ga=d,d=i,i=9,q=2;\x1b\\")
+	terminal.WaitImages()
 	if replies.Len() != 0 {
 		t.Fatalf("quiet delete replied %q", replies.Bytes())
 	}
@@ -112,6 +122,7 @@ func TestItermInlineImageDecodesPNGAndHonorsDimensions(t *testing.T) {
 	for index := range sequence {
 		terminal.Write([]byte(sequence[index : index+1]))
 	}
+	terminal.WaitImages()
 	placements := terminal.Images()
 	if len(placements) != 1 || placements[0].WidthPixels != 8 || placements[0].HeightPixels != 4 {
 		t.Fatalf("placements = %+v", placements)
@@ -124,6 +135,7 @@ func TestItermInlineImageDecodesPNGAndHonorsDimensions(t *testing.T) {
 func TestSixelRasterizesPaletteRepeatAndRows(t *testing.T) {
 	terminal := New(10, 4, 10)
 	feed(terminal, "\x1bPq\"1;1;2;6#1;2;100;0;0!2~\x1b\\")
+	terminal.WaitImages()
 	placements := terminal.Images()
 	if len(placements) != 1 || placements[0].Image.Width != 2 || placements[0].Image.Height != 6 {
 		t.Fatalf("placements = %+v", placements)
@@ -138,6 +150,7 @@ func TestSixelRasterizesPaletteRepeatAndRows(t *testing.T) {
 func TestImagesFollowScrollbackResizeAlternateScreenAndErase(t *testing.T) {
 	terminal := New(8, 3, 10)
 	feed(terminal, "\x1bPq#1;2;100;0;0~\x1b\\")
+	terminal.WaitImages()
 	line := terminal.Images()[0].LineID
 	feed(terminal, "\r\na\r\nb\r\nc\r\nd")
 	if row, ok := terminal.ImageRow(line); !ok || row >= 0 {
@@ -153,6 +166,7 @@ func TestImagesFollowScrollbackResizeAlternateScreenAndErase(t *testing.T) {
 	}
 	terminal.ScrollToBottom()
 	feed(terminal, "\x1b[?1049h\x1bPq#2;2;0;100;0~\x1b\\")
+	terminal.WaitImages()
 	alt := terminal.Images()[len(terminal.Images())-1].LineID
 	feed(terminal, "\x1b[?1049l")
 	if _, ok := terminal.ImageRow(alt); ok {
@@ -163,6 +177,7 @@ func TestImagesFollowScrollbackResizeAlternateScreenAndErase(t *testing.T) {
 		t.Fatal("clearing alternate screen retained its placement")
 	}
 	feed(terminal, "\x1b[?1049l\x1bPq#1~\x1b\\\x1b[2K")
+	terminal.WaitImages()
 	for _, placement := range terminal.Images() {
 		if _, ok := terminal.ImageRow(placement.LineID); ok && placement.LineID == terminal.scr.lines[terminal.cy].id {
 			t.Fatal("line erase retained an overlapping image")
@@ -173,6 +188,7 @@ func TestImagesFollowScrollbackResizeAlternateScreenAndErase(t *testing.T) {
 func TestResizeDropsPlacementsForDiscardedRows(t *testing.T) {
 	terminal := New(8, 4, 10)
 	feed(terminal, "\x1b[4;1H\x1bPq#1~\x1b\\\x1b[1;1H")
+	terminal.WaitImages()
 	bottomLine := terminal.Images()[0].LineID
 	terminal.Resize(8, 2)
 	if len(terminal.Images()) != 0 {
@@ -183,6 +199,7 @@ func TestResizeDropsPlacementsForDiscardedRows(t *testing.T) {
 	}
 
 	feed(terminal, "\x1b[?1049h\x1b[1;1H\x1bPq#2~\x1b\\\x1b[2;1H")
+	terminal.WaitImages()
 	altLine := terminal.Images()[0].LineID
 	terminal.Resize(8, 1)
 	if len(terminal.Images()) != 0 {
@@ -198,6 +215,7 @@ func TestMalformedImagesAndDecompressionBombsAreRejected(t *testing.T) {
 	feed(terminal, "\x1b_Ga=T,f=100,i=1;%%%\x1b\\")
 	feed(terminal, "\x1b]1337;File=inline=1:not-base64\x07")
 	feed(terminal, "\x1bPq!999999999~\x1b\\")
+	terminal.WaitImages()
 	if terminal.images != nil {
 		t.Fatal("malformed image input allocated retained storage")
 	}
@@ -275,6 +293,7 @@ func FuzzTerminalImages(f *testing.F) {
 			terminal.Write(data[:count])
 			data = data[count:]
 		}
+		terminal.WaitImages()
 		checkInvariants(t, terminal)
 		if terminal.images != nil && (len(terminal.images.images) > maxImages || len(terminal.images.placements) > maxImagePlacements || terminal.images.bytes > maxImageMemory) {
 			t.Fatal("image store exceeded limits")

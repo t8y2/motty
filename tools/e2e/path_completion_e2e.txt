@@ -1,0 +1,47 @@
+# End to end: path completion in the terminal against the loopback SSH fixture.
+# The fixture must report a real server implementation, because the client only
+# starts its shell integration (whose OSC 7 report gives the completion the
+# shell's own directory) for one:
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .)
+#   E2E_ALLOW_EXEC=1 E2ESSHD_BANNER=SSH-2.0-OpenSSH_9.0 /tmp/e2esshd 2222 &
+#   make head
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/path_completion_e2e.txt
+#
+# The fixture serves the real filesystem over SFTP, so the folder made in the
+# shell is the folder the completion reads. Typing `cd` alone must open the menu
+# with the folder and the file; Home then Enter supplies the space and takes
+# `docs-e2e/`, and the next Enter runs `cd docs-e2e/` instead of being swallowed
+# by a reopened menu.
+click "主机"
+click 462 68
+type tester@127.0.0.1:2222
+click "连接"
+waitfor "信任" 5000
+click "信任并保存"
+waitfor "密码" 5000
+type secret
+key enter
+settle 2500
+type rm -rf /tmp/motty-path-e2e && mkdir -p /tmp/motty-path-e2e && cd /tmp/motty-path-e2e && printf 'alpha\n' > alpha-e2e.txt && mkdir -p docs-e2e
+key enter
+waitfor "motty-path-e2e" 4000
+settle 600
+type clear
+key enter
+settle 500
+type cd
+settle 900
+shot /tmp/path-popup.png
+texts "alpha-e2e.txt"
+texts "docs-e2e/"
+layout clean
+key home
+key enter
+settle 400
+shot /tmp/path-accepted.png
+key enter
+settle 700
+type pwd
+key enter
+waitfor "/tmp/motty-path-e2e/docs-e2e" 4000

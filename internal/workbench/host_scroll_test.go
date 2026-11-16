@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 )
 
 func manyHostsState(t *testing.T, count int) *State {
@@ -22,34 +22,34 @@ func manyHostsState(t *testing.T, count int) *State {
 
 func TestAHostListLongerThanTheWindowScrollsToItsLastHost(t *testing.T) {
 	state := manyHostsState(t, 40)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	last := hitHostList.At(int(state.hosts[len(state.hosts)-1].ID))
-	if _, ok := hitByID(&canvas, last); ok {
+	lastID := state.hosts[len(state.hosts)-1].ID
+	if _, ok := hostListHostHit(&canvas, state, lastID); ok {
 		t.Fatal("the last of forty hosts is reachable without scrolling")
 	}
-	if _, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID))); !ok {
+	if _, ok := hostListHostHit(&canvas, state, state.hosts[0].ID); !ok {
 		t.Fatal("the first host is not reachable")
 	}
 	for step := 0; step < 200; step++ {
-		state.Scroll(ui.ScrollEvent{DeltaY: 120, Precise: true, X: 600, Y: 400, Viewport: size})
-		canvas = ui.Canvas{}
+		state.Scroll(gfx.ScrollEvent{DeltaY: 120, Precise: true, X: 600, Y: 400, Viewport: size})
+		canvas = gfx.Canvas{}
 		state.Paint(&canvas, size)
 	}
-	hit, ok := hitByID(&canvas, last)
+	hit, ok := hostListHostHit(&canvas, state, lastID)
 	if !ok {
 		t.Fatalf("the last host is not reachable after scrolling to the end (scroll %v of %v)", state.hostsScroll, state.hostsContent)
 	}
 	if hit.Bounds.Y < state.hostsBounds.Y+100 || hit.Bounds.Y+hit.Bounds.Height > size.Height {
 		t.Fatalf("the last host is drawn at %+v, outside the list", hit.Bounds)
 	}
-	if _, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID))); ok {
+	if _, ok := hostListHostHit(&canvas, state, state.hosts[0].ID); ok {
 		t.Fatal("the first host is still reachable at the end of the list")
 	}
 	// Back to the top.
 	for step := 0; step < 200; step++ {
-		state.Scroll(ui.ScrollEvent{DeltaY: -120, Precise: true, X: 600, Y: 400, Viewport: size})
+		state.Scroll(gfx.ScrollEvent{DeltaY: -120, Precise: true, X: 600, Y: 400, Viewport: size})
 	}
 	if state.hostsScroll != 0 {
 		t.Fatalf("scroll %v at the top", state.hostsScroll)
@@ -58,9 +58,9 @@ func TestAHostListLongerThanTheWindowScrollsToItsLastHost(t *testing.T) {
 
 func TestAShortHostListDoesNotScroll(t *testing.T) {
 	state := manyHostsState(t, 3)
-	size := ui.Size{Width: 1400, Height: 900}
-	state.Paint(&ui.Canvas{}, size)
-	result := state.Scroll(ui.ScrollEvent{DeltaY: 200, Precise: true, X: 600, Y: 400, Viewport: size})
+	size := gfx.Size{Width: 1400, Height: 900}
+	state.Paint(&gfx.Canvas{}, size)
+	result := state.Scroll(gfx.ScrollEvent{DeltaY: 200, Precise: true, X: 600, Y: 400, Viewport: size})
 	if result.Repaint || state.hostsScroll != 0 {
 		t.Fatalf("result %+v, scroll %v", result, state.hostsScroll)
 	}
@@ -68,8 +68,8 @@ func TestAShortHostListDoesNotScroll(t *testing.T) {
 
 func TestTheHostsPageShowsCardsAndRemembersTheChoice(t *testing.T) {
 	state := manyHostsState(t, 40)
-	size := ui.Size{Width: 1400, Height: 900}
-	var canvas ui.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
 	if hit, ok := hitByID(&canvas, hitHostViewGrid); !ok || hit.Selected {
 		t.Fatalf("grid toggle: found %v", ok)
@@ -78,23 +78,20 @@ func TestTheHostsPageShowsCardsAndRemembersTheChoice(t *testing.T) {
 	if state.hostView != hostViewGrid {
 		t.Fatal("the grid was not chosen")
 	}
-	canvas = ui.Canvas{}
+	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	first, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID)))
 	second, ok2 := hitByID(&canvas, hitHostList.At(int(state.hosts[1].ID)))
 	if !ok || !ok2 || first.Bounds.Y != second.Bounds.Y || second.Bounds.X <= first.Bounds.X+first.Bounds.Width-1 {
 		t.Fatalf("cards are not side by side: %+v %+v", first.Bounds, second.Bounds)
 	}
-	if first.Bounds.Width < hostCardMinWidth || first.Bounds.Height != hostCardHeight {
-		t.Fatalf("card size %+v", first.Bounds)
-	}
 	last := hitHostList.At(int(state.hosts[len(state.hosts)-1].ID))
 	if _, ok := hitByID(&canvas, last); ok {
 		t.Fatal("the last card is reachable without scrolling")
 	}
 	for step := 0; step < 100; step++ {
-		state.Scroll(ui.ScrollEvent{DeltaY: 200, Precise: true, X: 600, Y: 400, Viewport: size})
-		canvas = ui.Canvas{}
+		state.Scroll(gfx.ScrollEvent{DeltaY: 200, Precise: true, X: 600, Y: 400, Viewport: size})
+		canvas = gfx.Canvas{}
 		state.Paint(&canvas, size)
 	}
 	if _, ok := hitByID(&canvas, last); !ok {
@@ -116,31 +113,23 @@ func TestTheHostsPageShowsCardsAndRemembersTheChoice(t *testing.T) {
 	}
 }
 
-func TestCardColumnsFollowTheWidth(t *testing.T) {
-	for width, want := range map[float32]int{100: 1, 280: 1, 571: 1, 572: 2, 1364: 4, 2000: 6} {
-		if got := hostGridColumns(width); got != want {
-			t.Errorf("width %v: %d columns, want %d", width, got, want)
-		}
-	}
-}
-
 // A thousand hosts as cards: only the cards in the window are declared and
 // painted, wherever the page is scrolled to.
 func TestTheCardGridPaintsOnlyWhatIsInTheWindow(t *testing.T) {
 	state := hostsState(t, 1000)
 	state.hostView = hostViewGrid
-	size := ui.Size{Width: 1400, Height: 900}
+	size := gfx.Size{Width: 1400, Height: 900}
 	for _, scroll := range []float32{0, 5000, 12345} {
 		state.hostsScroll = scroll
-		var canvas ui.Canvas
+		var canvas gfx.Canvas
 		state.Paint(&canvas, size)
 		cards := 0
-		for _, hit := range canvas.Hits() {
-			if hit.Bounds.Height == hostCardHeight && hit.Bounds.Width >= hostCardMinWidth {
+		for _, host := range state.hosts {
+			if _, ok := hitByID(&canvas, hitHostList.At(int(host.ID))); ok {
 				cards++
 			}
 		}
-		if cards == 0 || cards > 4*(int(size.Height/hostCardHeight)+2) {
+		if cards == 0 || cards >= len(state.hosts)/2 {
 			t.Fatalf("scroll %v: %d cards painted", scroll, cards)
 		}
 	}

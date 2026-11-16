@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
 )
 
 // The whole path through the window's entry points: type, Enter, a tool card,
@@ -22,7 +22,7 @@ func TestTypingAQuestionRunsAToolAfterApprovalAndTheAnswerAppears(t *testing.T) 
 		return textTurn("The file is made.")
 	}}
 	state, shell := assistantSession(t, model)
-	state.Paint(&ui.Canvas{}, panelWide)
+	state.Paint(&gfx.Canvas{}, panelWide)
 	state.Click(hitAIToggle)
 	state.Click(hitAIMode)
 	if state.ai.mode != agent.ModeAgent {

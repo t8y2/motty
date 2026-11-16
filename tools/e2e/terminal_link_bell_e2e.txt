@@ -1,0 +1,85 @@
+# End to end: opening a terminal link needs the shortcut modifier, and the
+# Settings > Terminal toggle brings plain clicks back; a remote BEL is accepted
+# without an error. Needs a headless Viva build and the e2esshd fixture on
+# port 2261:
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head-link ./cmd/motty
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd-link .) && /tmp/e2esshd-link 2261 &
+#   MOTTY_LANG=en MOTTY_HEAD=/tmp/motty-head-link \
+#     python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/terminal_link_bell_e2e.txt
+#
+# What to look for (cmd is the macOS modifier; use ctrl elsewhere):
+# - `openedurl` is "none" after a plain click and after shift+cmd+click, and
+#   the URL after cmd+click.
+# - With "Open links with a plain click" on, a plain click opens it.
+# - The BEL line leaves no error in the status bar (the sound itself is
+#   system output and cannot be observed here).
+#
+# The link sits on the second output row; its coordinates come from `texts`.
+
+click "Search"
+type tester@127.0.0.1:2261
+click "Connect"
+waitfor "Trust" 5000
+click "Trust and Save"
+waitfor "Password" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+
+type echo https://example.test/linkcheck
+key enter
+settle 500
+texts
+
+# A plain click only selects.
+move 60 166
+down 60 166
+up 60 166
+openedurl
+
+# Shift keeps selecting even with the modifier held.
+keydown shift
+keydown cmd
+down 60 166
+up 60 166
+keyup cmd
+keyup shift
+openedurl
+
+# The modifier opens it.
+keydown cmd
+move 61 166
+down 61 166
+up 61 166
+keyup cmd
+openedurl
+
+# The setting brings plain clicks back. The second link is told apart from the
+# first, which `openedurl` still remembers.
+click "Settings"
+settle 600
+click "Terminal"
+settle 700
+layout
+shot /tmp/terminal-link-setting.png
+click "Open links with a plain click"
+settle 400
+click "127.0.0.1:2261"
+settle 600
+type echo https://example.test/second
+key enter
+settle 500
+texts
+move 60 190
+down 60 190
+up 60 190
+openedurl
+
+# A remote BEL.
+type printf 'ring\a\n'
+key enter
+settle 500
+texts
+shot /tmp/terminal-bell.png

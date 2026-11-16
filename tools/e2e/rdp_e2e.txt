@@ -9,11 +9,11 @@
 
 click "新建主机"
 click "RDP"
-click 700 302
+click 654 241
 type xrdp-test
-click 700 360
+click 654 311
 type 127.0.0.1
-click 620 418
+click 542 381
 type motty
 click "添加主机"
 texts "xrdp-test"

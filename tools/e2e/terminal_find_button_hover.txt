@@ -1,0 +1,21 @@
+# End to end: the find bar's icon buttons follow their own hover.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/terminal_find_button_hover.txt
+#
+# The close button's glyph brightens and its square fills while the pointer is on
+# it (flex Hover looks, with the glyph following the button through StateFrom).
+# Compare the two screenshots: only the 24 pixel square around the pointer differs.
+
+# lang: en
+resize 1200 800
+click "Local Terminal"
+settle 1200
+key cmd+f
+settle 600
+expect exists id:terminal-find/terminal-find-close
+shot /tmp/motty-find-button-rest.png
+move 1134 53
+settle 500
+shot /tmp/motty-find-button-hover.png
+expect layout clean

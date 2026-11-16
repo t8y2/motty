@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vivaui/viva/app"
 	"motty/internal/diag"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/app"
 )
 
 func TestTheDiagnosticsReportNamesNoHostAccountOrAddress(t *testing.T) {
@@ -18,16 +18,17 @@ func TestTheDiagnosticsReportNamesNoHostAccountOrAddress(t *testing.T) {
 	fmt.Fprintln(log, "motty: dial prod.example.com: connection refused (deploy@192.168.1.1)")
 	options.Log = log
 	state := newTestState(t, options)
+	state.hosts[0].Proxy = &outboundProxy{kind: sshconn.ProxySOCKS5, address: "private.proxy.internal:1080", user: "proxy-account"}
 	connection := connect(t, state, world)
 	connection.set(func(status *sshconn.Status) {
 		status.Phase = sshconn.PhaseFailed
-		status.Err = fmt.Errorf("dial tcp 203.0.113.9:22 for deploy on prod.example.com: %w", sshconn.ErrDisconnected)
+		status.Err = fmt.Errorf("proxy private.proxy.internal:1080: lookup private.proxy.internal: no such host: dial tcp 203.0.113.9:22 for deploy on prod.example.com: %w", sshconn.ErrDisconnected)
 		status.ServerVersion = "SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13"
 	})
 	state.Wake()
 
 	report := state.diagnosticReport()
-	for _, private := range []string{"prod.example.com", "staging.example.com", "192.168.1.1", "203.0.113.9", "deploy", "admin", "Production", "Router"} {
+	for _, private := range []string{"prod.example.com", "staging.example.com", "192.168.1.1", "203.0.113.9", "private.proxy.internal", "proxy-account", "deploy", "admin", "Production", "Router"} {
 		if strings.Contains(report, private) {
 			t.Errorf("the report names %q:\n%s", private, report)
 		}

@@ -14,13 +14,43 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// setConsoleCtrlHandler is kernel32!SetConsoleCtrlHandler. x/sys does not wrap
+// it, and only the HandlerRoutine == NULL form is needed here.
+var setConsoleCtrlHandler = windows.NewLazySystemDLL("kernel32.dll").NewProc("SetConsoleCtrlHandler")
+
+// restoreCtrlC clears a Ctrl+C-ignored state inherited from whatever started the
+// program. A process created with CREATE_NEW_PROCESS_GROUP, or by one that
+// ignores Ctrl+C, carries that state into every child, and a console program
+// hosted by a pseudo console then never receives the user's interrupt. This
+// program has no console of its own where the state could mean anything, so
+// clearing it before the console host starts keeps local shells behaving as
+// they do in a terminal started from the desktop. A later auto-update
+// restart is one way to inherit the state (issue 804).
+func restoreCtrlC() error {
+	if r, _, err := setConsoleCtrlHandler.Call(0, 0); r == 0 { // NULL, FALSE
+		return fmt.Errorf("localshell: restoring Ctrl+C: %w", err)
+	}
+	return nil
+}
+
 // startBackend runs the shell on a ConPTY: Windows' pseudo-console, which turns
 // a console program's screen into the same escape-sequence stream a Unix pty
 // carries, so the terminal view needs no Windows special case.
 func startBackend(config Config) (backend, error) {
+	if err := restoreCtrlC(); err != nil {
+		return backend{}, err
+	}
 	program := config.Shell
 	if program == "" {
 		program = defaultShell()
+	}
+	if distro, ok := WSLDistro(program); ok {
+		var err error
+		if program, config, err = prepareWSL(config, distro); err != nil {
+			return backend{}, err
+		}
+	} else {
+		config = integrateWindowsShell(config, program)
 	}
 
 	var inRead, inWrite, outRead, outWrite windows.Handle
@@ -33,8 +63,8 @@ func startBackend(config Config) (backend, error) {
 		return backend{}, fmt.Errorf("localshell: output pipe: %w", err)
 	}
 	size := windows.Coord{X: int16(max(config.Cols, 1)), Y: int16(max(config.Rows, 1))}
-	var console windows.Handle
-	if err := windows.CreatePseudoConsole(size, inRead, outWrite, 0, &console); err != nil {
+	console, consoleBackend, err := createPseudoConsole(size, inRead, outWrite)
+	if err != nil {
 		for _, handle := range []windows.Handle{inRead, inWrite, outRead, outWrite} {
 			windows.CloseHandle(handle)
 		}
@@ -46,14 +76,14 @@ func startBackend(config Config) (backend, error) {
 
 	attributes, err := windows.NewProcThreadAttributeList(1)
 	if err != nil {
-		windows.ClosePseudoConsole(console)
+		consoleBackend.close(console)
 		windows.CloseHandle(inWrite)
 		windows.CloseHandle(outRead)
 		return backend{}, err
 	}
 	fail := func(err error) (backend, error) {
 		attributes.Delete()
-		windows.ClosePseudoConsole(console)
+		consoleBackend.close(console)
 		windows.CloseHandle(inWrite)
 		windows.CloseHandle(outRead)
 		return backend{}, err
@@ -69,7 +99,7 @@ func startBackend(config Config) (backend, error) {
 	// the pseudo console, which then shows nothing.
 	startup.StartupInfo.Flags |= windows.STARTF_USESTDHANDLES
 
-	commandLine, err := windows.UTF16PtrFromString(windows.ComposeCommandLine([]string{program}))
+	commandLine, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(append([]string{program}, config.Args...)))
 	if err != nil {
 		return fail(err)
 	}
@@ -84,7 +114,19 @@ func startBackend(config Config) (backend, error) {
 		}
 	}
 	environment := append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
-	environment = append(environment, config.Env...)
+	for _, entry := range config.Env {
+		key, _, _ := strings.Cut(entry, "=")
+		// Windows environment names are case-insensitive. An overridden PROMPT
+		// must replace the inherited entry, rather than create ambiguous twins.
+		filtered := environment[:0]
+		for _, inherited := range environment {
+			name, _, _ := strings.Cut(inherited, "=")
+			if !strings.EqualFold(name, key) {
+				filtered = append(filtered, inherited)
+			}
+		}
+		environment = append(filtered, entry)
+	}
 	block, err := environmentBlock(environment)
 	if err != nil {
 		return fail(err)
@@ -103,13 +145,29 @@ func startBackend(config Config) (backend, error) {
 
 	output := os.NewFile(uintptr(outRead), "conpty-out")
 	input := os.NewFile(uintptr(inWrite), "conpty-in")
-	var closeOnce sync.Once
-	closeConsole := func() { closeOnce.Do(func() { windows.ClosePseudoConsole(console) }) }
+	var consoleMu sync.Mutex
+	consoleClosed := false
+	closeConsole := func() {
+		consoleMu.Lock()
+		if consoleClosed {
+			consoleMu.Unlock()
+			return
+		}
+		// Wait for any in-flight resize before releasing the console, then
+		// prevent queued resizes from using its handle while it closes.
+		consoleClosed = true
+		consoleMu.Unlock()
+		consoleBackend.close(console)
+	}
 	return backend{
 		io:         &consoleIO{output: output, input: input, closeConsole: closeConsole},
 		foreground: func() ([]string, bool) { return windowsForeground(shellPID, shellCreated) },
 		resize: func(cols, rows int) {
-			_ = windows.ResizePseudoConsole(console, windows.Coord{X: int16(cols), Y: int16(rows)})
+			consoleMu.Lock()
+			defer consoleMu.Unlock()
+			if !consoleClosed {
+				_ = consoleBackend.resize(console, windows.Coord{X: int16(cols), Y: int16(rows)})
+			}
 		},
 		wait: func() (int, error) {
 			defer windows.CloseHandle(process.Process)
@@ -152,11 +210,18 @@ func (stream *consoleIO) Close() error {
 }
 
 // defaultShell is PowerShell when it is installed, else the command interpreter.
+// A Store package is not on PATH for a process that did not receive its alias
+// directory, so it is checked by its own location before Windows PowerShell
+// (issue #750).
 func defaultShell() string {
-	for _, name := range []string{"pwsh.exe", "powershell.exe"} {
-		if path, err := exec.LookPath(name); err == nil {
-			return path
-		}
+	if path, err := exec.LookPath("pwsh.exe"); err == nil {
+		return path
+	}
+	if store := storePowerShell(); store != "" {
+		return store
+	}
+	if path, err := exec.LookPath("powershell.exe"); err == nil {
+		return path
 	}
 	if comspec := os.Getenv("COMSPEC"); comspec != "" {
 		return comspec

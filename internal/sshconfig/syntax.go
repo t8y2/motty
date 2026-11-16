@@ -35,7 +35,6 @@ func splitFields(line string) ([]string, error) {
 	var current strings.Builder
 	var quote byte
 	started := false
-	escaped := false
 	flush := func() {
 		if !started {
 			return
@@ -46,14 +45,14 @@ func splitFields(line string) ([]string, error) {
 	}
 	for index := 0; index < len(line); index++ {
 		character := line[index]
-		if escaped {
-			current.WriteByte(character)
-			started = true
-			escaped = false
-			continue
-		}
 		if character == '\\' && quote != '\'' {
-			escaped = true
+			// Any other backslash is kept, so a Windows path such as
+			// C:\Users\me\.ssh\id_ed25519 reads back as written.
+			if index+1 < len(line) && escapes(line[index+1], quote) {
+				index++
+				character = line[index]
+			}
+			current.WriteByte(character)
 			started = true
 			continue
 		}
@@ -81,14 +80,24 @@ func splitFields(line string) ([]string, error) {
 			started = true
 		}
 	}
-	if escaped {
-		return nil, fmt.Errorf("trailing escape")
-	}
 	if quote != 0 {
 		return nil, fmt.Errorf("unterminated quote")
 	}
 	flush()
 	return fields, nil
+}
+
+// escapes reports whether a backslash before next stands for next itself. It
+// is the set OpenSSH reads (argv_split): the backslash, both quotes and, outside
+// quotes, a space; before anything else the backslash is an ordinary character.
+func escapes(next, quote byte) bool {
+	switch next {
+	case '\\', '\'', '"':
+		return true
+	case ' ':
+		return quote == 0
+	}
+	return false
 }
 
 func matchPatternList(arguments []string, alias string) bool {

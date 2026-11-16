@@ -3,10 +3,67 @@
 package localshell
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+
+	"github.com/vivaui/viva/gfx"
+	"golang.org/x/sys/windows"
+	"motty/internal/term"
 )
+
+// Run the test binary inside ConPTY as a raw VT reader, like a Node TTY.
+func TestConPTYRawReader(t *testing.T) {
+	if os.Getenv("MOTTY_TEST_RAW_READER") != "1" {
+		t.Skip("ConPTY child only")
+	}
+	input := windows.Handle(os.Stdin.Fd())
+	var mode uint32
+	if err := windows.GetConsoleMode(input, &mode); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetConsoleMode(input, windows.ENABLE_VIRTUAL_TERMINAL_INPUT|windows.ENABLE_EXTENDED_FLAGS); err != nil {
+		t.Fatal(err)
+	}
+	defer windows.SetConsoleMode(input, mode)
+	fmt.Println("RAW-READER-READY")
+	var received []byte
+	for len(received) < 2 {
+		var buffer [32]byte
+		n, err := os.Stdin.Read(buffer[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		received = append(received, buffer[:n]...)
+	}
+	fmt.Printf("RAW-READER-BYTES:%x\n", received)
+}
+
+func TestConPTYWin32ControlCharactersReachRawReader(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	shell, wakes := startWindows(t, Config{Env: []string{"MOTTY_TEST_RAW_READER=1"}})
+	command := windows.ComposeCommandLine([]string{executable, "-test.run=^TestConPTYRawReader$"})
+	shell.Write([]byte(command + "\r"))
+	untilWindows(t, shell, wakes, "RAW-READER-READY")
+	for _, record := range []gfx.Win32Key{
+		{VirtualKey: 13, ScanCode: 28, Unicode: 13},
+		{VirtualKey: 'D', ScanCode: 32, Unicode: 4, ControlState: 8},
+	} {
+		for _, release := range []bool{false, true} {
+			if !shell.Write(term.EncodeWin32Key(gfx.KeyEvent{Win32: record, Release: release})) {
+				t.Fatal("Write refused")
+			}
+		}
+	}
+	untilWindows(t, shell, wakes, "RAW-READER-BYTES:0d04")
+}
 
 func startWindows(t *testing.T, config Config) (*Shell, chan struct{}) {
 	t.Helper()
@@ -82,6 +139,42 @@ func TestConPTYCloseEndsARunningProgram(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("closing did not end the shell")
 	}
+}
+
+// A process created with CREATE_NEW_PROCESS_GROUP, or by one that ignores
+// Ctrl+C, passes that state on to its children. A terminal started that way
+// must still let Ctrl+C reach the program on the pseudo console: the update
+// helper used to restart the application like that (issue 804).
+func TestConPTYCtrlCInterruptsAProgramInAnInheritedCtrlCDisabledGroup(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(executable, "-test.run=^TestConPTYCtrlCChild$")
+	command.Env = append(os.Environ(), "MOTTY_TEST_CTRL_C_CHILD=1")
+	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP}
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the child failed: %v\n%s", err, output)
+	}
+	if !strings.Contains(string(output), "CTRL-C-CHILD-OK") {
+		t.Fatalf("the child did not finish its check:\n%s", output)
+	}
+}
+
+func TestConPTYCtrlCChild(t *testing.T) {
+	if os.Getenv("MOTTY_TEST_CTRL_C_CHILD") != "1" {
+		t.Skip("ConPTY child only")
+	}
+	shell, wakes := startWindows(t, Config{})
+	shell.Write([]byte("ping -n 60 127.0.0.1\r\n"))
+	untilWindows(t, shell, wakes, "TTL=")
+	// The child test only proves the point if the program keeps running until
+	// the interrupt arrives; 60 pings outlast the waits below.
+	shell.Write([]byte{3})
+	shell.Write([]byte("echo ctrlc-%OS%\r\n"))
+	untilWindows(t, shell, wakes, "ctrlc-Windows_NT")
+	fmt.Println("CTRL-C-CHILD-OK")
 }
 
 func TestConPTYStartsInTheRequestedDirectory(t *testing.T) {

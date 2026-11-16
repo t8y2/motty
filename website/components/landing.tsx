@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Bot, FolderTree, KeyRound, MonitorPlay, Terminal, Waypoints, type LucideIcon } from 'lucide-react';
 import { landing } from '@/lib/landing-content';
 import { resolveLang } from '@/lib/i18n';
+import { LandingShowcase } from '@/components/landing-showcase';
 
 const icons: Record<(typeof landing.en.features)[number]['icon'], LucideIcon> = {
   terminal: Terminal,
@@ -18,7 +19,7 @@ export function Landing({ lang }: { lang: string }) {
 
   return (
     <main className="flex-1">
-      <section className="relative isolate overflow-hidden px-4 pt-16 pb-12 text-center">
+      <section className="relative isolate overflow-hidden px-4 pt-16 pb-4 text-center">
         <span className="mb-6 inline-block rounded-full border bg-fd-secondary px-3.5 py-1.5 text-sm font-medium text-fd-secondary-foreground">
           {c.badge}
         </span>
@@ -34,24 +35,15 @@ export function Landing({ lang }: { lang: string }) {
             {c.start}
           </Link>
           <Link
-            href={`/${l}/docs/guides/install`}
+            href={`/${l}/download`}
             className="rounded-lg bg-fd-primary px-6 py-2.5 font-medium text-fd-primary-foreground transition-opacity hover:opacity-90"
           >
             {c.install}
           </Link>
         </div>
-        <div className="mx-auto mt-12 max-w-7xl rounded-xl border bg-fd-card p-1.5 shadow-xl">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/hero-dark.webp"
-            width={2800}
-            height={1750}
-            alt={c.heroAlt}
-            className="w-full rounded-lg"
-            fetchPriority="high"
-          />
-        </div>
       </section>
+
+      <LandingShowcase content={c.showcase} />
 
       <section className="relative isolate mx-auto max-w-5xl px-4 py-16">
         <div
@@ -122,6 +114,23 @@ export function Landing({ lang }: { lang: string }) {
               </span>
               <h3 className="mb-1.5 font-medium">{p.title}</h3>
               <p className="text-sm leading-relaxed text-fd-muted-foreground">{p.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-3xl px-4 py-16">
+        <h2 className="mb-6 text-2xl font-semibold tracking-tight">{c.aboutTitle}</h2>
+        <p className="text-lg leading-relaxed text-fd-muted-foreground">{c.about}</p>
+      </section>
+
+      <section className="mx-auto max-w-5xl px-4 py-16">
+        <h2 className="mb-10 text-center text-2xl font-semibold tracking-tight">{c.faqTitle}</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {c.faq.map((item) => (
+            <div key={item.q} className="rounded-2xl border bg-fd-card p-5">
+              <h3 className="mb-1.5 font-medium">{item.q}</h3>
+              <p className="text-sm leading-relaxed text-fd-muted-foreground">{item.a}</p>
             </div>
           ))}
         </div>

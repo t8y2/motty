@@ -12,25 +12,55 @@ type sixelDecoder struct {
 	palette       [256][4]byte
 }
 
-func (t *Terminal) sixel(payload []byte) {
+// sixel handles one DCS sixel sequence. It reports whether it took ownership of
+// payload's bytes, which the parser detaches for the decoder.
+func (t *Terminal) sixel(payload []byte) bool {
 	q := bytes.IndexByte(payload, 'q')
 	if q < 0 || q+1 >= len(payload) {
-		return
+		return false
 	}
-	decoder := sixelDecoder{}
-	decoder.initPalette()
-	if !decoder.decode(payload[q+1:]) || decoder.usedWidth == 0 || decoder.usedHeight == 0 {
-		return
+	lineID, column, placed := t.imageAnchor()
+	var placement uint64
+	if placed {
+		placement, placed = t.reserveImagePlacement(lineID, column, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 	}
-	width, height := decoder.usedWidth, decoder.usedHeight
-	pixels := make([]byte, width*height*4)
-	for row := 0; row < height; row++ {
-		copy(pixels[row*width*4:(row+1)*width*4], decoder.pixels[row*decoder.width*4:row*decoder.width*4+width*4])
+	job := &imageJob{wake: t.imageWake, size: len(payload) - q - 1, decode: func() imageResult {
+		decoder := sixelDecoder{}
+		decoder.initPalette()
+		data := payload[q+1:]
+		if !decoder.decode(data) || decoder.usedWidth == 0 || decoder.usedHeight == 0 {
+			return imageResult{err: errSixelImage}
+		}
+		width, height := decoder.usedWidth, decoder.usedHeight
+		pixels := make([]byte, width*height*4)
+		for row := 0; row < height; row++ {
+			copy(pixels[row*width*4:(row+1)*width*4], decoder.pixels[row*decoder.width*4:row*decoder.width*4+width*4])
+		}
+		return imageResult{pixels: pixels, width: width, height: height}
+	}}
+	job.apply = func(t *Terminal, result imageResult) {
+		if result.err != nil || result.pixels == nil {
+			if placed {
+				t.dropImagePlacement(placement)
+			}
+			return
+		}
+		image := t.acceptImage(result.pixels, result.width, result.height, 0)
+		if image == nil {
+			if placed {
+				t.dropImagePlacement(placement)
+			}
+			return
+		}
+		if !placed {
+			return
+		}
+		t.attachImagePlacement(placement, image, func(p *ImagePlacement) {
+			p.WidthPixels, p.HeightPixels = result.width, result.height
+		})
 	}
-	image := t.acceptImage(pixels, width, height, 0)
-	if image != nil {
-		t.placeImage(image, 0, 0, width, height, 0)
-	}
+	t.queueImageJob(job)
+	return true
 }
 
 func (decoder *sixelDecoder) initPalette() {

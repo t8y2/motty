@@ -1103,4 +1103,99 @@ R1 的 4K/60 fps、启动期 netdb/图标按需化仍可继续。每项落地时
   heap **0.38 MB**；GPU profile 关闭，运行在 WARP。
 - RDP 4K 只有解码 benchmark，没有真实 4K RDP 会话/60 fps 端到端数据。
 
+## 13. 复查落地（2026-10-27）
+
+第二轮复查（HEAD `791f4b0`，0.1.3）确认基线没有回退：热启动 66–75 ms、常驻 50.7 MB、
+空闲 CPU 0%、`PaintTerminalFlood` 309–325 µs、`SaveNothingShared` 106–112 µs。
+本轮落地四项；测量都是 Apple M2 Pro、Go 1.26.5、`-tags vivahead` 或纯 `term` 包。
+
+### 13.1 内联图片像素转换：去掉每像素一次分配
+
+[`decodeImage`](../internal/term/image.go) 原来逐像素走 `image.Image.At(...).RGBA()`，
+每个像素把一个 `color.Color` 装箱进接口，**1 alloc/像素**。现在按解码器实际返回的类型
+直接按行拷贝（`*image.RGBA` 换 R/B、`*image.NRGBA` 用与 `color.NRGBA.RGBA` 相同的
+整数公式、`*image.YCbCr` 用 `YCbCrToRGB`、`*image.Gray` 展开，其余回退到原循环）。
+
+| 指标 | 落地前 | 落地后 |
+|---|---|---|
+| 1 MP PNG (`BenchmarkDecodeImage/png/1024`) | 23.7–25.2 ms / 12.6 MB / **1.05 M allocs** | **12.2 ms / 8.45 MB / 29 allocs** |
+| 4 MP PNG (`png/2048`) | 94–100 ms / 50 MB / **4.19 M allocs** | **49.5 ms / 33.6 MB / 37 allocs** |
+| 1 MP JPEG (`jpeg/1024`) | 未单独测；旧转换口径约 **1.05 M allocs** | **17.6 ms / 5.8 MB / 12 allocs** |
+| 4 MP JPEG (`jpeg/2048`) | 未单独测 | **69.5 ms / 23.1 MB / 13 allocs** |
+
+等价性：`TestImagePixelsMatchesTheGenericConversion` 对 RGBA/NRGBA/Gray/Gray16/Paletted/
+YCbCr 四种采样比、奇数尺寸、非零原点和子图逐字节比较旧循环；`TestImagePixelsDoesNotAllocatePerPixel`
+守住“每次调用最多一次分配”。
+
+### 13.2 图片解码离开窗口线程
+
+`Terminal.Write` 不再解码图片。解析阶段只做 base64/分块组装并登记一个 `imageJob`：
+
+- 每帧 `Wake` 在 `pump` 开头调用 `Terminal.ApplyImages()`，按**解析顺序**应用已完成的
+  任务；队首未完成时后面的任务不会越过它（`TestEarlierImageDecodeBlocksLaterApplication`）。
+- 解析时先**预留** placement（像素为 nil），解码完成后再挂上像素。因此图片字节之后的
+  擦除、resize、回滚区淘汰、kitty delete 仍然作用在这张图上（`TestImagePlacementReservedBeforeDecode`、
+  `TestResizeDropsAPendingPlacement`、`TestDeletingAPendingImageAppliesAfterTheDecode`）。
+- kitty 的 `a=p`/`a=d`/`a=q` 也进入同一队列，回复顺序与命令顺序一致；解码完成或就绪
+  操作都会通过 `SetImageWake` 请求下一帧（`TestAReadyKittyOperationAsksForAFrame`）。
+- 解析器把 OSC/DCS 缓冲区**移交**给解码器（`osc`/`dcs` 置 nil），不再复制大图；第二批
+  控制字符串按可打印 run 一次追加，而不是逐字节 append（`TestControlStringsLoadInRuns`、
+  `TestOverlongOSCIsIgnoredWhole`）。
+- 队列有上限（8 个任务 / 96 MB 负载、2 路并行解码）：超出的图片按失败处理并给出 kitty
+  错误回复，内存不随程序写图速度增长（`TestImageQueueDropsPastItsBudget`）。
+- `Reset` 丢弃待应用任务与像素（`TestResetDiscardsPendingImageWork`）；锚定行已淘汰的
+  图片不再留下 placement（`TestImageAnchoredToAnEvictedLineIsDropped`）。
+- 4 MP PNG 序列（62 KB 文本）的 `Terminal.Write`：**约 0.28 ms**（解析 + 移交缓冲，
+  不计后台解码）；此前同一路径还要在窗口线程上做 base64 + 解码，约 **95–100 ms**。
+
+### 13.3 终端链接悬停只扫指针所在的软换行组
+
+[`LinksAt`](../internal/term/links.go) 只扫描指针所在的软换行行组，并在找到覆盖指针的链接
+时立刻停止；[`terminalLinks`](../internal/workbench/terminal_link.go) 不再保留整段回滚区的
+链接列表，也不再因终端版本变化而整段重扫。指针停在一行里移动时：落在同一个链接内直接
+命中；同一版本内已确认没有链接的行也记住（按行负缓存），不重复扫描。
+
+| 指标 | 落地前 | 落地后 |
+|---|---|---|
+| 5000 行回滚区上的悬停（`BenchmarkLinksScrollback` → `BenchmarkLinksAtScrollback`） | **1.26 ms** / 0 allocs | **97.9 ns** / 0 allocs |
+| OSC 8 链接悬停（`BenchmarkLinksOSC8Scrollback` 全扫 ≈1.0 ms） | ≈1.0 ms | 约 0.1 µs（单行组） |
+
+等价性：`TestLinksAtMatchesLinksForEveryPosition` 在纯文本、软换行、OSC 8、宽字符+组合
+标记、标点、回滚区六类终端上，对**每个缓冲区位置**比较 `LinksAt` 与完整 `Links` 的结果
+（目标一致、有无一致）；`TestTerminalLinkHoverChecksTheNextLineAfterALinklessOne`
+守住负缓存不会跨行误命中。
+
+### 13.4 单主机保存只重编码变化的那台
+
+[`appendHostEntries`](../internal/workbench/persist_incremental.go) 按键缓存每台主机上次
+写入的记录（主机值 + ord），未变化的主机直接复用 `base.payloads` 里的字节；只有变化或新
+加入的主机重新 `Marshal`。重复/匿名 ID 回退到原来的通用路径，保证记录键语义不变。
+`sameSavedHost` 用逐字段比较替代 `reflect.DeepEqual`（后者每次调用都会装箱并建 visited
+map）。`configBase.accept` 对已知 ord 不再逐条 `json.Unmarshal`。
+
+| 场景 | 落地前 | 落地后 |
+|---|---|---|
+| 300 台，改一台（`BenchmarkSaveOneHostChanged`） | 2.4–3.0 ms / 814 KB / 11.3 k allocs | **0.75 ms / 217 KB / 147 allocs** |
+| 1 000 台，改一台 | 7.5 ms / 2.8 MB | **1.0 ms / 770 KB** |
+| 5 000 台，改一台 | **31.7 ms / 14.9 MB** | **3.45 ms / 3.4 MB** |
+| 300 台，改一个设置 | 1.0–1.6 ms / 319 KB | **0.77 ms / 202 KB** |
+| 无变化保存 | 106 µs / 101 KB / 4 allocs | 不变 |
+
+剩下的时间（本机 0.75–0.93 ms，随提交耗时波动）里约 0.6 ms 是 SQLite 提交
+（`syscall`），不是编码。缓存里保存的是编码后的 payload，所以一次提交失败后重试仍会写
+新值，而不是 base 里留下的旧记录（`TestAFailedHostSaveIsWrittenByTheRetry`）。等价性：
+`TestSavingOneHostKeepsEveryOtherEncodedRecord` 比较未变化主机 payload 的底层指针；
+`TestSavingHostsMatchesAReopenedStore` 在增删改/代理/标签/多字段同时变化后重开 store，
+逐台比较 `savedHost`；`TestSameSavedHostNoticesEveryField` 用反射遍历 `savedHost` 的每个
+字段，防止以后新增字段漏出比较；`TestDuplicateHostIDsStillUseTheGenericEncoder` 守住回退
+路径。
+
+### 13.5 验证与未验证
+
+- `gofmt -l .` 无输出；`go vet ./...` 通过；`go test ./... -count=1` 全仓通过；
+  `go test -race -tags vivahead ./internal/term ./internal/workbench` 通过。
+- 一次性探针已删除，未进仓库；改动未提交。
+- **未验证**：真实窗口下的图片显示与悬停手感、4 MP 图片在真实 GPU 上的上屏时间、Windows/
+  Linux 文本引擎；`stringRun` 的吞吐是解析器口径，未在真实窗口的输入法/拖动路径复测。
+
 （完）

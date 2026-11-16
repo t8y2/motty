@@ -10,113 +10,39 @@ import (
 	"github.com/vivaui/viva/text"
 
 	"motty/internal/otp"
-	"motty/internal/sshconn"
-	"motty/internal/vault"
 )
 
 // One-time code secrets are kept in the saved-passwords vault, one per account,
 // as an otpauth:// address. The host dialog is where they are given and taken
 // away; the connection (vault_ui.go) answers the server's question with them.
 
-func (state *State) otpName(host Host) string {
-	return otpSecretName(sshconn.Endpoint{Host: host.Address, Port: host.Port, User: state.login(host)})
-}
+// otpName is where the one-time code secret of a host is kept: under the host,
+// so that it follows the host wherever its address or login is edited.
+func otpName(host Host) string { return hostSecretName(host.CatalogID, hostOTPPart) }
 
-// otpMayExist says whether checking this host could find a saved secret without
-// opening the vault. A locked vault cannot distinguish live records from
-// tombstones, so this deliberately permits a harmless false positive.
-func (state *State) otpMayExist(host Host) bool {
-	vaultFile := state.secrets.vault
-	return vaultFile != nil && vaultFile.Len() > 0 && host.isSSH()
-}
-
-// prepareOTPState fills the editor from an already-open vault only. Opening an
-// ordinary host editor must not make the system secret store display a prompt.
+// prepareOTPState tells the host dialog whether the host being edited has a
+// secret saved. The secret itself is never read into the form.
 func (state *State) prepareOTPState(host Host) {
 	editor, vaultFile := &state.editor, state.secrets.vault
-	editor.otpChecked, editor.otpSaved, editor.otpRemove = true, false, false
-	if !state.otpMayExist(host) {
+	editor.otpSaved, editor.otpRemove = false, false
+	if vaultFile == nil || vaultFile.Len() == 0 || vaultFile.NeedsConversion() || !host.isSSH() {
 		return
 	}
-	if !vaultFile.Unlocked() {
-		editor.otpChecked = false
-		return
-	}
-	_, editor.otpSaved, _ = vaultFile.Get(state.otpName(host))
-}
-
-// checkEditedHostOTP is the explicit action that may ask the system secret
-// store for the vault key. It checks the original account, whose secret will be
-// moved if the edited endpoint changes when the host is saved.
-func (state *State) checkEditedHostOTP() bool {
-	if state.hostDialogMode != hostDialogEdit {
-		state.editor.otpChecked = true
-		return true
-	}
-	host, ok := state.hostByID(state.hostDialogID)
-	if !ok {
-		return false
-	}
-	return state.checkOTP(host)
-}
-
-func (state *State) checkOTP(host Host) bool {
-	editor, vaultFile := &state.editor, state.secrets.vault
-	if !state.otpMayExist(host) {
-		editor.otpChecked, editor.otpSaved, editor.otpRemove = true, false, false
-		return true
-	}
-	_, found, err := vaultFile.Get(state.otpName(host))
-	switch {
-	case errors.Is(err, vault.ErrLocked):
-		state.dialogError = state.messages.Tools.ErrOTPLocked
-		return false
-	case err != nil:
-		state.dialogError = fmt.Sprintf(state.messages.Tools.ErrOTPCheckFmt, state.vaultErrorText(err))
-		return false
-	}
-	editor.otpChecked, editor.otpSaved, editor.otpRemove = true, found, false
-	state.dialogError = ""
-	return true
-}
-
-// otpNeedsVault reports whether saving the form touches the vault.
-func (state *State) otpNeedsVault(previous *Host) bool {
-	editor := &state.editor
-	if editor.protocol != protocolSSH {
-		return false
-	}
-	if editor.value(fieldOTP) != "" || editor.otpRemove {
-		return true
-	}
-	if previous != nil && editor.otpSaved {
-		updated := editor.host(previous.ID)
-		return state.otpName(updated) != state.otpName(*previous)
-	}
-	if previous != nil && !editor.otpChecked && state.otpMayExist(*previous) {
-		updated := editor.host(previous.ID)
-		return state.otpName(updated) != state.otpName(*previous)
-	}
-	return false
+	_, editor.otpSaved, _ = vaultFile.Get(otpName(host))
 }
 
 // otpPrecheck says why the secret cannot be kept, before anything is saved, so a
 // host is not stored with its secret silently dropped.
-func (state *State) otpPrecheck(previous *Host) string {
-	if !state.otpNeedsVault(previous) {
+func (state *State) otpPrecheck() string {
+	editor := &state.editor
+	if editor.protocol != protocolSSH || (editor.value(fieldOTP) == "" && !editor.otpRemove) {
 		return ""
-	}
-	if previous != nil && state.editor.value(fieldOTP) == "" && !state.editor.otpRemove &&
-		!state.editor.otpChecked && !state.checkOTP(*previous) {
-		return state.dialogError
 	}
 	vaultFile := state.secrets.vault
 	switch {
 	case vaultFile == nil:
 		return state.messages.Tools.ErrOTPNoVault
-	case vaultFile.Unlocked():
-		return ""
-	case vaultFile.HasMasterPassword():
+	case vaultFile.NeedsConversion():
 		return state.messages.Tools.ErrOTPLocked
 	case vaultFile.Prepare() != nil:
 		return state.messages.Tools.ErrOTPNoVault
@@ -125,17 +51,14 @@ func (state *State) otpPrecheck(previous *Host) string {
 }
 
 // commitOTP applies the form's secret to the vault once the host is saved:
-// store a new one, remove the old one, or move it when the account changed.
-func (state *State) commitOTP(host Host, previous *Host) {
+// store a new one, or remove the old one.
+func (state *State) commitOTP(host Host) {
 	editor := &state.editor
 	vaultFile := state.secrets.vault
 	if vaultFile == nil || host.Protocol != protocolSSH {
 		return
 	}
-	name, oldName := state.otpName(host), ""
-	if previous != nil {
-		oldName = state.otpName(*previous)
-	}
+	name := otpName(host)
 	label := state.login(host) + "@" + host.Address
 	switch typed := editor.value(fieldOTP); {
 	case typed != "":
@@ -147,24 +70,10 @@ func (state *State) commitOTP(host Host, previous *Host) {
 			state.status = fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))
 			return
 		}
-		if oldName != "" && oldName != name {
-			_ = vaultFile.Delete(oldName)
-		}
 		state.status = fmt.Sprintf(state.messages.Tools.OTPSavedFmt, label)
 	case editor.otpRemove:
-		for _, candidate := range []string{name, oldName} {
-			if candidate != "" {
-				_ = vaultFile.Delete(candidate)
-			}
-		}
+		_ = vaultFile.Delete(name)
 		state.status = fmt.Sprintf(state.messages.Tools.OTPRemovedFmt, label)
-	case oldName != "" && oldName != name && editor.otpSaved:
-		value, found, err := vaultFile.Get(oldName)
-		if err == nil && found && vaultFile.Set(name, value) == nil {
-			_ = vaultFile.Delete(oldName)
-		} else if err != nil && !errors.Is(err, vault.ErrLocked) {
-			state.status = fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))
-		}
 	}
 }
 

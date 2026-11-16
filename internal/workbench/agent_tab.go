@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vivaui/viva/ui"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/workbench/icons"
 )
 
@@ -66,7 +66,7 @@ var agentCommands = map[string]codingAgent{
 	"grok-build":  agentGrok,
 }
 
-func agentIcon(agent codingAgent) (ui.Icon, bool) {
+func agentIcon(agent codingAgent) (gfx.Icon, bool) {
 	switch agent {
 	case agentClaude:
 		return icons.AiClaude, true
@@ -91,7 +91,7 @@ func agentIcon(agent codingAgent) (ui.Icon, bool) {
 	case agentGrok:
 		return icons.AiGrok, true
 	default:
-		return ui.Icon{}, false
+		return gfx.Icon{}, false
 	}
 }
 
@@ -242,7 +242,7 @@ func (state *State) syncAgentIcon(session *Session, output, finished bool) {
 	}
 }
 
-func (state *State) paintTabBadge(canvas *ui.Canvas, session *Session, bounds ui.Rect, fill ui.Color) {
+func (state *State) paintTabBadge(canvas *gfx.Canvas, session *Session, bounds gfx.Rect, fill gfx.Color) {
 	if session.isLocal() {
 		if icon, ok := agentIcon(session.agent); ok {
 			canvas.DrawIcon(icon, insetRect(bounds, 0.08), state.pal.text)

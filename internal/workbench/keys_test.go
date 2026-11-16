@@ -11,10 +11,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"golang.org/x/crypto/ssh"
 	"motty/internal/sshconn"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/ui"
 )
 
 // lockedIdentities holds one passphrase-protected key per passphrase: protecting
@@ -176,7 +176,7 @@ func TestLanguageSwitchRefreshesIdentityCells(t *testing.T) {
 	if got := state.identities[0].cells[2]; got != state.messages.KeyPassphraseProtected {
 		t.Fatalf("English protection = %q", got)
 	}
-	state.Click(hitLanguage)
+	useChinese(t, state)
 	if got := state.identities[0].cells[2]; got != state.messages.KeyPassphraseProtected {
 		t.Fatalf("Chinese protection = %q", got)
 	}
@@ -197,7 +197,7 @@ func TestKeyPassphraseDialogSubmitsRetriesAndSkips(t *testing.T) {
 		t.Fatalf("passphrase prompt = modal %d description %q", state.modal, state.keyPassphraseDescription)
 	}
 	typeInto(state, hitKeyPassphraseField, "once-only")
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyEnter, Target: hitKeyPassphraseField}); !result.Handled {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitKeyPassphraseField}); !result.Handled {
 		t.Fatal("Enter did not submit key passphrase")
 	}
 	if !slices.Equal(fake.keyPassphrases, []string{"once-only"}) || state.keyPassphrase.String() != "" || state.modal != modalNone {
@@ -226,8 +226,8 @@ func TestKeysSteadyStatePaintDoesNotAllocate(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitKeychain)
 	state.Click(hitKeysImport)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -245,13 +245,79 @@ func BenchmarkPaintKeysPage(b *testing.B) {
 	state := newTestState(b, options)
 	state.Click(hitKeychain)
 	state.Click(hitKeysImport)
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
 		canvas.Reset()
 		state.Paint(&canvas, size)
+	}
+}
+
+func TestKeychainSavesAndForgetsAKeyPassphrase(t *testing.T) {
+	plain := writeWorkbenchIdentity(t, "id_plain", "")
+	locked := writeWorkbenchIdentity(t, "id_locked", "secret")
+	options := freshOptions(t)
+	options.Keystore = &memKeys{}
+	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{plain, locked}, nil }
+	state := newTestState(t, options)
+	state.Click(hitKeychain)
+	state.Click(hitKeysImport)
+
+	state.selectedIdentityID = state.identities[0].ID
+	state.Click(hitKeysPassphrase)
+	if state.modal != modalNone {
+		t.Fatal("a key without a passphrase offered to save one")
+	}
+
+	state.selectedIdentityID = state.identities[1].ID
+	state.Click(hitKeysPassphrase)
+	if state.modal != modalForm {
+		t.Fatal("the encrypted key did not open the passphrase form")
+	}
+	state.form.set(0, "not it")
+	state.Click(hitFormSubmit)
+	if state.modal != modalForm || state.form.dialogError != state.messages.KeyPassphraseWrong {
+		t.Fatalf("a wrong passphrase was accepted: modal %d, error %q", state.modal, state.form.dialogError)
+	}
+	if _, found, _ := state.secrets.vault.Get(passphraseSecretName(locked)); found {
+		t.Fatal("a wrong passphrase reached the vault")
+	}
+
+	state.form.set(0, "secret")
+	state.Click(hitFormSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("the form stayed open: %q", state.form.dialogError)
+	}
+	if value, found, err := state.secrets.vault.Get(passphraseSecretName(locked)); err != nil || !found || value != "secret" {
+		t.Fatalf("saved passphrase = %q, %v, %v", value, found, err)
+	}
+
+	state.Click(hitKeysPassphrase)
+	state.form.set(0, "")
+	state.Click(hitFormSubmit)
+	if _, found, _ := state.secrets.vault.Get(passphraseSecretName(locked)); found {
+		t.Fatal("an empty save did not forget the passphrase")
+	}
+}
+
+func TestEncryptedKeyWithoutAFingerprintCannotBePinnedToAHost(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.identities = []identityRecord{
+		{ID: 1, Name: "id_pkcs8", Path: "/keys/id_pkcs8", Encrypted: true},
+		{ID: 2, Name: "id_ed25519", Path: "/keys/id_ed25519", Fingerprint: "SHA256:known", Encrypted: true},
+	}
+	state.nextIdentityID = 3
+	state.hosts = append(state.hosts, Host{ID: 99, Label: "box", Auth: authPrivateKey})
+	state.Click(hitKeychain)
+	state.selectedIdentityID = 1
+	state.Click(hitKeysRemove)
+	if len(state.identities) != 1 {
+		t.Fatalf("a host using any key blocked removing a key that cannot be pinned: %+v", state.identities)
+	}
+	if !state.hostKeyNeedsPassphrase("") || !state.hostKeyNeedsPassphrase("SHA256:known") || state.hostKeyNeedsPassphrase("SHA256:other") {
+		t.Fatal("the host form's passphrase hint does not follow the chosen key")
 	}
 }

@@ -1,0 +1,57 @@
+# End to end: the file panel hands its folder to an editor through the editor's own
+# URL scheme, against the loopback SSH fixture on port 2246
+# (cd tools/e2esshd && go build -o /tmp/e2esshd . && /tmp/e2esshd 2246).
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/editor_open_e2e.txt
+#
+# The headless run has no installed editors, so schemehandlers declares both. The
+# setting lists them, Zed carries the fixture's non-default port in its link, and
+# VS Code refuses a port its link cannot carry rather than open another host.
+
+schemehandlers zed vscode
+click "Search"
+type tester@127.0.0.1:2246
+click "Connect"
+waitfor "Trust this host" 3000
+click "Connect Once"
+waitfor "Password" 3000
+type secret
+key enter
+settle 2500
+key cmd+shift+s
+settle 1500
+
+click "Settings"
+settle 500
+click "Files"
+settle 500
+click 1113 541
+settle 300
+texts "Zed"
+click "Zed"
+settle 300
+click "127.0.0.1:2246"
+settle 800
+
+click 316 53
+settle 300
+shot /tmp/editor-menu.png
+click "Open in Zed"
+settle 800
+openedurl
+
+click "Settings"
+settle 500
+click 1113 541
+settle 300
+click "VS Code"
+settle 300
+click "127.0.0.1:2246"
+settle 800
+click 316 53
+settle 300
+click "Open in VS Code"
+settle 800
+texts "port 2246"
+shot /tmp/editor-vscode-port.png

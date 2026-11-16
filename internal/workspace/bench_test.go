@@ -2,6 +2,19 @@ package workspace
 
 import "testing"
 
+func BenchmarkNewGridTwelve(b *testing.B) {
+	sessions := make([]SessionID, MaxPanes)
+	for index := range sessions {
+		sessions[index] = SessionID(index + 1)
+	}
+	b.ReportAllocs()
+	for range b.N {
+		if _, err := NewGrid(sessions, MaxGridColumns); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkSetRatio(b *testing.B) {
 	layout := benchmarkLayout(b, 64)
 	split := layout.Root()

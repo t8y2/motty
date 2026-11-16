@@ -2,7 +2,9 @@
 // forwarding, and jump-host paths. Password "secret" works for any user, the
 // server listens on loopback only, and shells run on a real pty. The first
 // argument is the port (default 2222); further arguments are exact loopback
-// endpoints that direct-tcpip may reach for jump-host tests.
+// endpoints that direct-tcpip may reach for jump-host tests. With
+// E2E_NO_DIRECT=1 every direct-tcpip request is refused, which makes the server a
+// bastion that only offers a shell.
 package main
 
 import (
@@ -69,8 +71,16 @@ func main() {
 		}
 		allowedTargets = append(allowedTargets, directTarget{requested: target, dial: target})
 	}
+	// The banner says which server the client thinks it talks to. The default
+	// names no real implementation, so the client keeps its shell-integration
+	// probes to itself; a test that needs them (path completion reads the
+	// shell's own directory) can claim an OpenSSH banner for one run.
+	banner := os.Getenv("E2ESSHD_BANNER")
+	if banner == "" {
+		banner = "SSH-2.0-GopE2E"
+	}
 	config := &ssh.ServerConfig{
-		ServerVersion: "SSH-2.0-GopE2E",
+		ServerVersion: banner,
 		PublicKeyCallback: func(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 			if bytes.Equal(key.Marshal(), fixture.publicKey.Marshal()) || certs.acceptKey(key) {
 				return nil, nil
@@ -82,6 +92,20 @@ func main() {
 	if keyOnly {
 		// The certificate and extra-key fixtures must be proven by the key
 		// alone, so the password method is refused.
+	} else if os.Getenv("E2ESSHD_KBI") == "password" {
+		// A PAM-style password login: the account password is the only question
+		// of a keyboard-interactive request, as on a default OpenSSH with PAM.
+		// Password authentication stays refused.
+		config.KeyboardInteractiveCallback = func(meta ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+			answers, err := challenge("", "", []string{"Password: "}, []bool{false})
+			if err != nil {
+				return nil, err
+			}
+			if len(answers) == 1 && answers[0] == "secret" {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("denied")
+		}
 	} else if os.Getenv("E2ESSHD_KBI") == "1" {
 		// A PAM-style round: the account password and a one-time code are two
 		// questions of one keyboard-interactive request. Password authentication
@@ -147,7 +171,14 @@ func main() {
 						go serve(conn, fixture.sftpRoot, channel, reqs)
 					}
 				case "direct-tcpip":
-					target, err := allowedDirectTarget(newChannel.ExtraData(), allowedTargets...)
+					if os.Getenv("E2E_NO_DIRECT") == "1" {
+						// A bastion that gives a shell and nothing else: forwarding is
+						// refused whatever the target, as with AllowTcpForwarding no.
+						newChannel.Reject(ssh.Prohibited, "administratively prohibited")
+						continue
+					}
+					targets := append(remoteForwards.directTargets(), allowedTargets...)
+					target, err := allowedDirectTarget(newChannel.ExtraData(), targets...)
 					if err != nil {
 						newChannel.Reject(ssh.Prohibited, err.Error())
 						continue
@@ -276,6 +307,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 		env        []string
 		ptmx       *os.File
 		once       sync.Once
+		ptyAsked   bool
 	)
 	for request := range requests {
 		switch request.Type {
@@ -293,6 +325,7 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 			}
 			ssh.Unmarshal(request.Payload, &payload)
 			term, cols, rows = payload.Term, int(payload.Columns), int(payload.Rows)
+			ptyAsked = true
 			request.Reply(true, nil)
 		case "x11-req":
 			request.Reply(x11.Request(request.Payload), nil)
@@ -308,11 +341,26 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 			}
 		case "shell":
 			request.Reply(true, nil)
+			if os.Getenv("E2E_SFTP_ONLY") == "1" {
+				// An account restricted to SFTP: the shell request is accepted, the
+				// session says so and ends with a failure status.
+				fmt.Fprint(channel, "This service allows sftp connections only.\r\n")
+				channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
+				channel.Close()
+				return
+			}
 			once.Do(func() {
 				command := exec.Command("/bin/bash", "--noprofile", "--norc", "-i")
 				command.Env = append([]string{"TERM=" + term, "HOME=" + os.Getenv("HOME"), "PATH=" + os.Getenv("PATH"),
 					"PS1=\\[\\e[01;32m\\]" + user + "@e2e\\[\\e[00m\\]:\\[\\e[01;34m\\]\\w\\[\\e[00m\\]\\$ ", "LANG=en_US.UTF-8", "CLICOLOR=1"}, append(x11.Env(), env...)...)
 				command.Dir = os.TempDir()
+				if login := os.Getenv("E2E_LOGIN_SHELL"); login != "" {
+					// A server whose users have this login shell, which the client
+					// learns from $SHELL and starts through its own startup shim.
+					command = exec.Command(login, "-l")
+					command.Env = append([]string{"TERM=" + term, "HOME=" + os.Getenv("HOME"), "PATH=" + os.Getenv("PATH"), "SHELL=" + login, "LANG=en_US.UTF-8"}, append(x11.Env(), env...)...)
+					command.Dir = os.TempDir()
+				}
 				var err error
 				ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 				if err != nil {
@@ -353,12 +401,57 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 				return
 			}
 			ok := isStatsCommand(payload.Command)
+			if !ok && os.Getenv("E2E_HANG_EXEC") == "1" {
+				// A server whose commands are accepted and never answered, for
+				// watching a client give up on a probe of its own: the session
+				// must be left open rather than closed while the command runs.
+				request.Reply(true, nil)
+				log.Printf("hang-exec %q", payload.Command)
+				select {}
+			}
 			if !ok && os.Getenv("E2E_ALLOW_EXEC") == "1" {
 				// Opt-in, for checks of features that run a command on the server (such as
 				// extracting an archive). The fixture already hands out a full shell on
 				// loopback, so this adds no reach.
 				request.Reply(true, nil)
 				command := exec.Command("/bin/sh", "-c", payload.Command)
+				if login := os.Getenv("E2E_LOGIN_SHELL"); login != "" {
+					command.Env = append(os.Environ(), "SHELL="+login)
+				}
+				if ptyAsked {
+					// Like sshd, a command asked for with a terminal runs on one: the
+					// client's shell startup shim is such a command.
+					command.Env = append(append(command.Env, "TERM="+term), env...)
+					command.Env = append(command.Env, x11.Env()...)
+					command.Dir = os.TempDir()
+					var err error
+					ptmx, err = pty.StartWithSize(command, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+					if err != nil {
+						fmt.Fprintf(channel, "cannot start command: %v\r\n", err)
+						channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
+						channel.Close()
+						return
+					}
+					go func() { io.Copy(ptmx, channel) }()
+					// The output copy runs beside the request loop, as it does for
+					// a plain shell: an sshd keeps answering window-change while
+					// the command owns the pty, and the client's startup shim is
+					// the shell it resizes.
+					go func() {
+						io.Copy(channel, ptmx)
+						status := uint32(0)
+						if err := command.Wait(); err != nil {
+							status = 1
+							var exit *exec.ExitError
+							if errors.As(err, &exit) {
+								status = uint32(exit.ExitCode())
+							}
+						}
+						channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{status}))
+						channel.Close()
+					}()
+					continue
+				}
 				command.Stdout, command.Stderr = channel, channel
 				status := uint32(0)
 				if err := command.Run(); err != nil {
@@ -400,13 +493,24 @@ func serve(sshConn ssh.Conn, sftpRoot string, channel ssh.Channel, requests <-ch
 				request.Reply(false, nil)
 				continue
 			}
+			// E2E_MAX_SFTP=n refuses an SFTP subsystem while n are open, as a server
+			// whose MaxSessions is that small does.
+			if !sftpSessionAllowed() {
+				log.Printf("sftp subsystem refused")
+				request.Reply(false, nil)
+				continue
+			}
 			request.Reply(true, nil)
+			log.Printf("sftp subsystem opened")
 			server, err := sftp.NewServer(channel, sftp.WithServerWorkingDirectory(sftpRoot))
 			if err != nil {
+				sftpSessionDone()
 				return
 			}
 			_ = server.Serve()
 			_ = server.Close()
+			sftpSessionDone()
+			log.Printf("sftp subsystem closed")
 			return
 		default:
 			request.Reply(strings.HasPrefix(request.Type, "x-"), nil)

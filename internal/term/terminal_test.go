@@ -2,6 +2,7 @@ package term
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -167,6 +168,59 @@ func TestScrollbackCollectsLinesThatLeaveTheTop(t *testing.T) {
 	expectText(t, term, "line4\nline5")
 	if !term.Cursor().Visible {
 		t.Error("the cursor disappeared after returning to the bottom")
+	}
+}
+
+func TestClearScreenKeepsThePromptLineAndDropsEverythingAboveIt(t *testing.T) {
+	terminal := New(16, 4, 20)
+	for i := 0; i < 8; i++ {
+		feed(terminal, fmt.Sprintf("old%d\r\n", i))
+	}
+	feed(terminal, "prompt$ ls -l")
+	if terminal.Scrollback() == 0 {
+		t.Fatal("the test needs history to clear")
+	}
+	terminal.Scroll(2)
+	if !terminal.ClearScreen() {
+		t.Fatal("ClearScreen refused the main screen")
+	}
+	if terminal.Scrollback() != 0 || terminal.ViewOffset() != 0 {
+		t.Fatalf("history = %d, view = %d after a clear", terminal.Scrollback(), terminal.ViewOffset())
+	}
+	if got, want := terminal.RowText(0), "prompt$ ls -l"; got != want {
+		t.Fatalf("first row = %q, want the cursor's line %q", got, want)
+	}
+	for row := 1; row < 4; row++ {
+		if got := terminal.RowText(row); got != "" {
+			t.Fatalf("row %d = %q, want it cleared", row, got)
+		}
+	}
+	cursor := terminal.Cursor()
+	if cursor.X != len("prompt$ ls -l") || cursor.Y != 0 || !cursor.Visible {
+		t.Fatalf("cursor = %+v, want column %d of the first row", cursor, len("prompt$ ls -l"))
+	}
+	// The shell keeps writing where it was: its next prompt lands under the one
+	// it left, on the row after it rather than on a cleared screen's top.
+	feed(terminal, "\r\nnext")
+	if got, want := terminal.RowText(1), "next"; got != want {
+		t.Fatalf("row after the prompt = %q, want %q", got, want)
+	}
+}
+
+func TestClearScreenLeavesTheAlternateScreenToItsProgram(t *testing.T) {
+	terminal := New(30, 3, 20)
+	feed(terminal, "kept on the main screen\r\n")
+	feed(terminal, "\x1b[?1049h\x1b[Hfull screen")
+	before := terminal.Text()
+	if terminal.ClearScreen() {
+		t.Fatal("ClearScreen cleared the screen of a full-screen program")
+	}
+	if got := terminal.Text(); got != before {
+		t.Fatalf("alternate screen = %q, want it untouched: %q", got, before)
+	}
+	feed(terminal, "\x1b[?1049l")
+	if got := terminal.RowText(0); !strings.Contains(got, "kept on the main screen") {
+		t.Fatalf("main screen = %q after leaving the alternate one", got)
 	}
 }
 
@@ -552,10 +606,138 @@ func TestTitleFromOSC(t *testing.T) {
 	}
 }
 
+func TestUTF8TitlePreservesTerminalContentAcrossWrites(t *testing.T) {
+	for _, title := range []string{"✳ Issue 和 PR 的相关反馈", "А", "М", "Н", "П", "😀 中文"} {
+		for _, command := range []string{"0", "2"} {
+			for _, end := range []string{"\x07", "\x1b\\"} {
+				data := []byte("\x1b]" + command + ";" + title + end)
+				for split := -1; split <= len(data); split++ {
+					t.Run(fmt.Sprintf("%s/OSC%s/%x/split%d", title, command, end, split), func(t *testing.T) {
+						screen := newTerm(60, 3)
+						feed(screen, "history\r\nfirst\r\nsecond\r\n❯ ")
+						for _, offset := range []int{0, 1} {
+							screen.Scroll(offset)
+							before := screen.AppendRetainedText(nil)
+							cursor, history, view := screen.Cursor(), screen.Scrollback(), screen.ViewOffset()
+							rows := make([]Row, 3)
+							for i := range rows {
+								rows[i] = screen.Row(i)
+								rows[i].Cells = append([]Cell(nil), rows[i].Cells...)
+							}
+							if split == -1 {
+								for _, b := range data {
+									screen.Write([]byte{b})
+								}
+							} else {
+								screen.Write(data[:split])
+								screen.Write(data[split:])
+							}
+							if got := screen.Title(); got != title {
+								t.Fatalf("title = %q, want %q; screen = %q", got, title, screen.Text())
+							}
+							if got := string(screen.AppendRetainedText(nil)); got != string(before) || screen.Cursor() != cursor || screen.Scrollback() != history || screen.ViewOffset() != view {
+								t.Fatalf("title changed terminal content: retained=%q cursor=%+v history=%d view=%d", got, screen.Cursor(), screen.Scrollback(), screen.ViewOffset())
+							}
+							for i, row := range rows {
+								if !reflect.DeepEqual(screen.Row(i), row) {
+									t.Fatalf("title changed visible row %d", i)
+								}
+							}
+							checkInvariants(t, screen)
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
 func TestUnsupportedStringsAreSkipped(t *testing.T) {
 	term := newTerm(20, 2)
 	feed(term, "a\x1bPsome;dcs\x1b\\b\x1b_apc\x1b\\c\x1b^pm\x1b\\d\x1bXsos\x1b\\e")
 	expectText(t, term, "abcde")
+}
+
+func TestC1BytesAreNotStringControls(t *testing.T) {
+	for _, b := range []byte{0x90, 0x9C, 0x9D, 0x9F} {
+		screen := newTerm(40, 3)
+		feed(screen, string([]byte{b})+"plain\x07")
+		expectText(t, screen, "�plain")
+		if screen.Title() != "" || screen.state != stGround {
+			t.Fatalf("bare %x opened a control string", b)
+		}
+
+		for _, payload := range []string{string([]byte{b}), string(rune(b))} {
+			screen := newTerm(40, 3)
+			feed(screen, "\x1b]0;previous\x07\x1b]0;left"+payload+"right")
+			if screen.Title() != "previous" || screen.Text() != "" || screen.state != stOSC {
+				t.Fatalf("payload %x changed string state: title=%q screen=%q state=%v", payload, screen.Title(), screen.Text(), screen.state)
+			}
+			feed(screen, "\x1b\\")
+			if want := "left" + strings.ToValidUTF8(payload, "�") + "right"; screen.Title() != want {
+				t.Fatalf("payload %x: title=%q, want %q", payload, screen.Title(), want)
+			}
+			feed(screen, "\x1b]2;next\x07ok")
+			if screen.Title() != "next" {
+				t.Fatalf("payload %x poisoned the next title", payload)
+			}
+			expectText(t, screen, "ok")
+		}
+	}
+}
+
+func TestUTF8ControlStringsRecoverWithoutLeaking(t *testing.T) {
+	const payload = "✳ АМНП 😀 中文"
+	for _, start := range []string{"\x1b]0;", "\x1bP", "\x1b_", "\x1b^", "\x1bX"} {
+		for _, end := range []string{"\x1b\\", "\x18", "\x1a", "\x1b[0m", "reset"} {
+			t.Run(fmt.Sprintf("%x/%x", start, end), func(t *testing.T) {
+				screen := newTerm(40, 3)
+				feed(screen, "before"+start)
+				for _, b := range []byte(payload) {
+					screen.Write([]byte{b})
+				}
+				if end == "reset" {
+					screen.Reset()
+				} else {
+					feed(screen, end)
+				}
+				feed(screen, "\x1b]2;next\x07after")
+				want := "beforeafter"
+				if end == "reset" {
+					want = "after"
+				}
+				expectText(t, screen, want)
+				if screen.Title() != "next" {
+					t.Fatalf("recovery title = %q", screen.Title())
+				}
+				checkInvariants(t, screen)
+			})
+		}
+	}
+}
+
+func TestOversizedUTF8TitleIsDiscardedUntilTerminator(t *testing.T) {
+	for _, end := range []string{"\x07", "\x1b\\"} {
+		screen := newTerm(40, 3)
+		feed(screen, "prompt\x1b]0;previous\x07\x1b]0;")
+		for range maxOSC {
+			feed(screen, "✳АМНП😀")
+		}
+		if len(screen.osc) > maxOSC || !screen.oscOverflow {
+			t.Fatalf("oversized payload: buffered=%d overflow=%v", len(screen.osc), screen.oscOverflow)
+		}
+		feed(screen, end)
+		if screen.Title() != "previous" {
+			t.Fatalf("overflow replaced title with %q", screen.Title())
+		}
+		expectText(t, screen, "prompt")
+		feed(screen, "\x1b]2;next"+end+"after")
+		if screen.Title() != "next" {
+			t.Fatalf("overflow poisoned next title: %q", screen.Title())
+		}
+		expectText(t, screen, "promptafter")
+		checkInvariants(t, screen)
+	}
 }
 
 func TestControlCharactersInsideSequencesStillRun(t *testing.T) {
@@ -692,8 +874,9 @@ func TestResizeShrinkingKeepsTheCursorLineAndPushesHistory(t *testing.T) {
 	}
 }
 
-func TestResizeColumnsTruncateAndPad(t *testing.T) {
+func TestResizeAlternateColumnsTruncateAndPad(t *testing.T) {
 	term := newTerm(10, 3)
+	feed(term, "\x1b[?1049h\x1b[H")
 	feed(term, "abcdefghij\x1b[1;10H")
 	term.Resize(4, 3)
 	expectText(t, term, "abcd")

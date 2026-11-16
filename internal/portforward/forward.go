@@ -34,6 +34,7 @@ type Config struct {
 	ListenAddress string
 	Destination   string
 	Mode          Mode
+	MaxStreams    int
 	Listen        ListenFunc
 	Dial          DialFunc
 	Notify        func()
@@ -63,6 +64,7 @@ type Forward struct {
 	done        chan struct{}
 	closeOnce   sync.Once
 	wait        sync.WaitGroup
+	streams     chan struct{}
 
 	mu     sync.Mutex
 	status Status
@@ -117,10 +119,14 @@ func Start(config Config) (*Forward, error) {
 	if err != nil {
 		return nil, fmt.Errorf("portforward: listen on %s: %w", config.ListenAddress, err)
 	}
+	var streams chan struct{}
+	if config.MaxStreams > 0 {
+		streams = make(chan struct{}, config.MaxStreams)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	forward := &Forward{
 		listener: listener, destination: config.Destination, mode: config.Mode, dial: config.Dial, notify: config.Notify,
-		ctx: ctx, cancel: cancel, done: make(chan struct{}), peers: make(map[*peer]struct{}),
+		ctx: ctx, cancel: cancel, done: make(chan struct{}), peers: make(map[*peer]struct{}), streams: streams,
 	}
 	forward.status = Status{Version: 1, ListenAddress: listener.Addr().String()}
 	forward.wait.Add(1)
@@ -143,7 +149,6 @@ func (forward *Forward) Done() <-chan struct{} { return forward.done }
 func (forward *Forward) Close() {
 	forward.closeOnce.Do(func() {
 		forward.cancel()
-		_ = forward.listener.Close()
 		forward.mu.Lock()
 		forward.status.Closed = true
 		forward.status.Version++
@@ -152,24 +157,44 @@ func (forward *Forward) Close() {
 			peers = append(peers, *connection)
 		}
 		forward.mu.Unlock()
+		listenerClosed := make(chan struct{})
+		go func() {
+			_ = forward.listener.Close()
+			close(listenerClosed)
+		}()
+		// Close every local socket before waiting for any SSH close reply.
 		for _, connection := range peers {
-			_ = connection.local.Close()
-			if connection.remote != nil {
-				_ = connection.remote.Close()
+			local := connection.local
+			if forward.mode == ModeRemote {
+				local = connection.remote
+			}
+			if local != nil {
+				_ = local.Close()
 			}
 		}
+		for _, connection := range peers {
+			remote := connection.remote
+			if forward.mode == ModeRemote {
+				remote = connection.local
+			}
+			if remote != nil {
+				_ = remote.Close()
+			}
+		}
+		<-listenerClosed
 		forward.wait.Wait()
 		close(forward.done)
 		forward.wake()
 	})
 }
 
-// CloseAsync stops accepting at once, so the listen address is free when it
-// returns, and leaves closing the streams and waiting for them to a goroutine:
-// a stream over a dead connection can take a long while to let go.
+// CloseAsync frees local listeners immediately. Remote listener cancellation
+// also runs in the background because SSH may wait for the server's reply.
 func (forward *Forward) CloseAsync() {
 	forward.cancel()
-	_ = forward.listener.Close()
+	if forward.mode != ModeRemote {
+		_ = forward.listener.Close()
+	}
 	go forward.Close()
 }
 
@@ -188,6 +213,15 @@ func (forward *Forward) accept() {
 			_ = local.Close()
 			return
 		}
+		if forward.streams != nil {
+			select {
+			case forward.streams <- struct{}{}:
+			default:
+				forward.mu.Unlock()
+				_ = local.Close()
+				continue
+			}
+		}
 		forward.peers[connection] = struct{}{}
 		forward.status.Active++
 		forward.status.Accepted++
@@ -201,6 +235,9 @@ func (forward *Forward) accept() {
 
 func (forward *Forward) serve(connection *peer) {
 	defer forward.wait.Done()
+	if forward.streams != nil {
+		defer func() { <-forward.streams }()
+	}
 	destination := forward.destination
 	localReader := io.Reader(connection.local)
 	switch forward.mode {

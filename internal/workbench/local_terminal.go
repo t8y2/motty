@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
 	"motty/internal/localshell"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
+	"motty/internal/systemproxy"
 )
 
 // errLocalOnly is what the remote-only capabilities say to a local terminal.
@@ -25,13 +28,19 @@ const localHostID = ^uint32(0)
 // credentials to ask for, and a shell on this machine instead of a remote one.
 // Everything that needs a server (files, forwarding, commands) refuses.
 type localConn struct {
-	mu     sync.Mutex
-	status sshconn.Status
-	dir    string
+	mu                sync.Mutex
+	status            sshconn.Status
+	dir               string
+	shell             string
+	networkProxy      networkProxyMode
+	lookupSystemProxy func() systemproxy.Settings
 }
 
-func newLocalConn() *localConn {
-	return &localConn{status: sshconn.Status{Version: 1, Phase: sshconn.PhaseConnected, Method: "local"}}
+func newLocalConn(shell string, networkProxy networkProxyMode) *localConn {
+	return &localConn{
+		status: sshconn.Status{Version: 1, Phase: sshconn.PhaseConnected, Method: "local"}, shell: shell,
+		networkProxy: networkProxy, lookupSystemProxy: systemproxy.Lookup,
+	}
 }
 
 func (conn *localConn) Status() sshconn.Status {
@@ -49,7 +58,125 @@ func (conn *localConn) SkipIdentity()              {}
 func (conn *localConn) Cancel()                    {}
 
 func (conn *localConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
-	return localshell.Start(localshell.Config{Cols: config.Cols, Rows: config.Rows, Dir: conn.dir, Notify: config.Notify})
+	shell, err := localshell.Start(conn.shellConfig(config, runtime.GOOS))
+	if err != nil {
+		// A nil *localshell.Shell inside the interface would not be nil to the
+		// caller that closes whatever a failed open handed back.
+		return nil, err
+	}
+	return shell, nil
+}
+
+// opensShellSlowly: following the system proxy runs the platform's settings
+// tool, which can take a while when a desktop service is stuck, so such a shell
+// opens off the window's thread. Otherwise starting a process is quick.
+func (conn *localConn) opensShellSlowly() bool { return conn.networkProxy == networkProxySystem }
+
+// proxyEnvironment is the proxy variables the shell is started with on top of
+// the ones it inherits: none unless the terminal follows the system. A WSL
+// distribution gets none either: its own network may not reach a proxy on this
+// computer's loopback, and WSL has its own proxy setting.
+func (conn *localConn) proxyEnvironment() []string {
+	if _, wsl := localshell.WSLDistro(conn.shell); wsl {
+		return nil
+	}
+	if conn.networkProxy != networkProxySystem || conn.lookupSystemProxy == nil {
+		return nil
+	}
+	if proxy := conn.lookupSystemProxy(); proxy.Enabled() {
+		return systemproxy.Environment(proxy)
+	}
+	return nil
+}
+
+// shellConfig is how the shell starts on goos, with the folder and prompt
+// reporting the shell supports there.
+func (conn *localConn) shellConfig(config sshconn.ShellConfig, goos string) localshell.Config {
+	shell := localshell.Config{Shell: conn.shell, Args: localshell.ArgsFor(conn.shell), Cols: config.Cols, Rows: config.Rows, Dir: conn.dir, Notify: config.Notify}
+	shell.Env = conn.proxyEnvironment()
+	if config.IntegrateShell && goos == "windows" {
+		shell.DirectoryToken = config.IntegrationToken
+		if _, wsl := localshell.WSLDistro(conn.shell); wsl {
+			// A distribution's shell reports through a script it runs itself.
+			shell.WSLScript = sshconn.WSLIntegrationScript(config.IntegrationToken, localshell.WSLDirectoryVariable)
+		}
+	}
+	if config.IntegrateShell && goos != "windows" {
+		program := conn.shell
+		if program == "" {
+			program = os.Getenv("SHELL")
+		}
+		// Bash and Zsh report their folder when started through this shim, so
+		// the files panel can open and follow where the terminal is.
+		if args := sshconn.IntegrationArgs(program, config.IntegrationToken); args != nil {
+			shell.Shell, shell.Args = "/bin/sh", args
+		}
+	}
+	return shell
+}
+
+// A remembered path is process startup data, never text sent to the shell.
+// Deleted/unmounted folders fall back to the normal home-directory startup.
+func localStartupDirectory(directory, shell string) string {
+	if !validLocalDirectory(directory) {
+		return ""
+	}
+	if _, wsl := localshell.WSLDistro(shell); wsl {
+		// Looking at a distribution's files from Windows starts the distribution
+		// if it is stopped, which can take seconds; its own start script already
+		// stays where it is when the folder is gone.
+		return filepath.Clean(directory)
+	}
+	if localshell.IsWSLUNC(directory) {
+		return "" // a distribution's folder is no place for a Windows shell to start
+	}
+	if info, err := os.Stat(directory); err == nil && info.IsDir() {
+		return filepath.Clean(directory)
+	}
+	return ""
+}
+
+// validLocalShell reports whether a saved shell names something Start can run:
+// a WSL distribution, or an absolute program path. What it names may be gone by
+// now; that is reported when the tab starts, not here.
+func validLocalShell(shell string) bool {
+	if _, wsl := localshell.WSLDistro(shell); wsl {
+		return true
+	}
+	return filepath.IsAbs(shell) && len(shell) <= 2048 && strings.IndexFunc(shell, func(r rune) bool { return r < 0x20 || r == 0x7f }) < 0
+}
+
+func validLocalDirectory(directory string) bool {
+	return filepath.IsAbs(directory) && len(directory) <= 2048 && strings.IndexFunc(directory, func(r rune) bool { return r < 0x20 || r == 0x7f }) < 0
+}
+
+func localDirectoryHost(host string) bool {
+	if host == "" || strings.EqualFold(host, "localhost") {
+		return true
+	}
+	name, err := os.Hostname()
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(host, name) || strings.EqualFold(shortHostName(host), shortHostName(name))
+}
+
+// shortHostName drops a domain suffix, so a shell that reports its FQDN still
+// names the same machine as a short hostname.
+func shortHostName(name string) string {
+	if index := strings.IndexByte(name, '.'); index > 0 {
+		return name[:index]
+	}
+	return name
+}
+
+// Coalesce reports from one output drain. Terminal callbacks themselves only
+// update memory, without reentering persistence while the parser is running.
+func (state *State) flushTerminalDirectories() {
+	if state.terminalDirectoryDirty {
+		state.terminalDirectoryDirty = false
+		state.save()
+	}
 }
 
 func (conn *localConn) OpenSFTP() (sftpclient.Remote, error) { return nil, errLocalOnly }
@@ -58,10 +185,22 @@ func (conn *localConn) DialContext(context.Context, string, string) (net.Conn, e
 	return nil, errLocalOnly
 }
 
+func (conn *localConn) DialShellContext(context.Context, string, string) (net.Conn, error) {
+	return nil, errLocalOnly
+}
+
 func (conn *localConn) Listen(string, string) (net.Listener, error) { return nil, errLocalOnly }
+
+func (conn *localConn) ListenContext(context.Context, string, string, func(net.Listener) error) (net.Listener, error) {
+	return nil, errLocalOnly
+}
 
 func (conn *localConn) RunCommand(context.Context, string, int) ([]byte, error) {
 	return nil, errLocalOnly
+}
+
+func (conn *localConn) Exec(context.Context, string, int) (sshconn.ExecResult, error) {
+	return sshconn.ExecResult{}, errLocalOnly
 }
 
 func (conn *localConn) StreamCommand(context.Context, string, int, func([]byte) bool) error {
@@ -71,7 +210,24 @@ func (conn *localConn) StreamCommand(context.Context, string, int, func([]byte) 
 // openLocalTerminal opens a shell on this computer, in the empty pane the user
 // is looking at or else in a new tab, like any other host.
 func (state *State) openLocalTerminal() *Session {
-	host := localHost(state.messages.LocalTerminalTitle)
+	return state.openLocalTerminalWith(localshell.Choice{})
+}
+
+// openLocalTerminalWith opens a local terminal that runs shell, whatever the
+// default shell is. A zero Choice starts the default one, which stays the
+// default for this tab on a reconnect, so changing the setting later moves it.
+// It starts in the folder the setting picks (newLocalTerminalDirectory) unless
+// the caller already chose one.
+func (state *State) openLocalTerminalWith(shell localshell.Choice) *Session {
+	label := state.messages.LocalTerminalTitle
+	if shell.Path != "" {
+		label = shell.Name
+	}
+	host := localHost(label)
+	host.localShell = shell.Path
+	if state.pendingDirectory == "" {
+		state.pendingDirectory = state.newLocalTerminalDirectory()
+	}
 	return state.createHostSession(host, host.Address)
 }
 

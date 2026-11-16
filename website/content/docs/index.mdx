@@ -7,6 +7,8 @@ Motty is a native desktop SSH workspace. It is written in Go on
 [Viva](https://github.com/vivaui/viva), so there is no Electron runtime, no embedded
 browser and no JavaScript layer in the application.
 
+## Guides
+
 <Cards>
   <Card title="Getting started" href="/en/docs/guides/getting-started">
     Add a host, verify its key and open your first session.
@@ -14,10 +16,72 @@ browser and no JavaScript layer in the application.
   <Card title="Install" href="/en/docs/guides/install">
     Packages for macOS, Windows and Linux.
   </Card>
+</Cards>
+
+## Connections and files
+
+<Cards>
   <Card title="Hosts and authentication" href="/en/docs/connections/hosts-and-authentication">
     Host keys, agent, keys, passwords, one-time codes and the vault.
   </Card>
-  <Card title="Assistant" href="/en/docs/assistant/ask-and-agent">
-    Ask and Agent modes, the approval gate and the MCP server.
+  <Card title="Serial, Telnet and local shell" href="/en/docs/connections/other-protocols">
+    The other transports Motty speaks, and when each one is the right choice.
+  </Card>
+  <Card title="The terminal" href="/en/docs/terminal/terminal">
+    PTY sessions, true colour, scrollback, splits, search and recording.
+  </Card>
+  <Card title="SFTP and SCP" href="/en/docs/files/sftp-and-scp">
+    The file panel, the resumable queue and atomic replacement.
+  </Card>
+  <Card title="ZMODEM, XMODEM and YMODEM" href="/en/docs/files/zmodem-xmodem">
+    Transferring files over an existing terminal session.
+  </Card>
+</Cards>
+
+## Networking and remote desktops
+
+<Cards>
+  <Card title="Port forwarding" href="/en/docs/network/port-forwarding">
+    Local, remote, SOCKS5 and HTTP CONNECT rules, X11 and jump chains.
+  </Card>
+  <Card title="VNC" href="/en/docs/remote-desktop/vnc">
+    Certificate pinning, and reaching a loopback-only server through SSH.
+  </Card>
+  <Card title="RDP" href="/en/docs/remote-desktop/rdp">
+    Remote desktops in a tab, with the same host verification as SSH.
+  </Card>
+</Cards>
+
+## Assistant
+
+<Cards>
+  <Card title="Ask and Agent" href="/en/docs/assistant/ask-and-agent">
+    The two modes, and the approval gate in front of a command.
+  </Card>
+  <Card title="MCP server" href="/en/docs/assistant/mcp">
+    Let an external agent drive a session: loopback, token, audit log.
+  </Card>
+</Cards>
+
+## Data, reference and development
+
+<Cards>
+  <Card title="Backup and sync" href="/en/docs/data/backup-and-sync">
+    Encrypted local and remote backups of hosts, keys and settings.
+  </Card>
+  <Card title="Keyboard shortcuts" href="/en/docs/reference/shortcuts">
+    Tabs, splits, the file panel and the assistant from the keyboard.
+  </Card>
+  <Card title="Security" href="/en/docs/reference/security">
+    What is verified, what is encrypted and what is not protected.
+  </Card>
+  <Card title="Server tools" href="/en/docs/reference/server-tools">
+    The helpers Motty can run on the far side of a session.
+  </Card>
+  <Card title="Architecture" href="/en/docs/development/architecture">
+    How the Go application and the Viva framework divide the work.
+  </Card>
+  <Card title="Build from source" href="/en/docs/development/build-from-source">
+    Toolchains, tags and the commands that produce a local build.
   </Card>
 </Cards>

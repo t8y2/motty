@@ -18,12 +18,57 @@ type Link struct {
 // retained text, reusing dst. At most limit links are retained; truncated
 // reports that more existed. Detection is performed only when Links is called.
 func (t *Terminal) Links(dst []Link, limit int) ([]Link, bool) {
-	dst = dst[:0]
 	if limit <= 0 {
-		return dst, false
+		return dst[:0], false
 	}
+	scanner := linkScanner{dst: dst[:0], limit: limit}
+	stopped := t.scanLinks(&scanner, 0, t.bufferLineCount())
+	return scanner.dst, stopped
+}
 
-	scanner := linkScanner{dst: dst, limit: limit}
+// linkGroupStart is the first line of the soft-wrapped group that holds line.
+func (t *Terminal) linkGroupStart(line int) int {
+	for line > 0 && t.bufferLine(line-1).wrapped {
+		line--
+	}
+	return line
+}
+
+// linkGroupEnd is one past the last line of the group that holds line.
+func (t *Terminal) linkGroupEnd(line int) int {
+	total := t.bufferLineCount()
+	for line < total && t.bufferLine(line).wrapped {
+		line++
+	}
+	return min(line+1, total)
+}
+
+// LinksAt returns the link covering position, if one exists. It scans only the
+// soft-wrapped line group that holds the position, so moving the pointer over a
+// terminal with thousands of lines of history does not rescan them.
+func (t *Terminal) LinksAt(position BufferPosition) (Link, bool) {
+	if position.Line < 0 || position.Line >= t.bufferLineCount() {
+		return Link{}, false
+	}
+	scanner := linkScanner{want: position, hasWant: true, limit: linksAtLimit}
+	t.scanLinks(&scanner, t.linkGroupStart(position.Line), t.linkGroupEnd(position.Line))
+	if scanner.found {
+		return scanner.target, true
+	}
+	return Link{}, false
+}
+
+// linksAtLimit bounds what one wrapped group may collect before the pointer's
+// link when LinksAt scans it. A group of ordinary width holds far fewer.
+const linksAtLimit = 16 << 10
+
+// scanLinks runs the scanner over buffer lines [first, last). It reports
+// whether the scan stopped early: the limit was reached, or a link covered the
+// position the scanner wants.
+func (t *Terminal) scanLinks(scanner *linkScanner, first, last int) bool {
+	if scanner == nil || last <= first || scanner.limit <= 0 && !scanner.hasWant {
+		return false
+	}
 	var explicitID uint32
 	var explicitStart, explicitEnd BufferPosition
 	finishExplicit := func() bool {
@@ -35,13 +80,13 @@ func (t *Terminal) Links(dst []Link, limit int) ([]Link, bool) {
 		if target == "" {
 			return false
 		}
-		if len(scanner.dst) >= scanner.limit {
+		link := Link{Start: explicitStart, End: explicitEnd, Target: target}
+		if scanner.accept(link) {
 			return true
 		}
-		scanner.dst = append(scanner.dst, Link{Start: explicitStart, End: explicitEnd, Target: target})
-		return false
+		return len(scanner.dst) >= scanner.limit
 	}
-	for lineIndex := 0; lineIndex < t.bufferLineCount(); lineIndex++ {
+	for lineIndex := first; lineIndex < last; lineIndex++ {
 		line := t.bufferLine(lineIndex)
 		used := retainedLineUsedCells(line)
 		mark := 0
@@ -63,11 +108,11 @@ func (t *Terminal) Links(dst []Link, limit int) ([]Link, bool) {
 			hyperlink := line.hyperlinkAt(column)
 			if hyperlink != explicitID {
 				if finishExplicit() {
-					return scanner.dst, true
+					return true
 				}
 				if hyperlink != 0 {
 					if scanner.breakLine() {
-						return scanner.dst, true
+						return true
 					}
 					explicitID = hyperlink
 					explicitStart = start
@@ -78,36 +123,39 @@ func (t *Terminal) Links(dst []Link, limit int) ([]Link, bool) {
 				continue
 			}
 			if scanner.write(value, start, end) {
-				return scanner.dst, true
+				return true
 			}
 			for mark < len(line.marks) && int(line.marks[mark].Col) < column {
 				mark++
 			}
 			for mark < len(line.marks) && int(line.marks[mark].Col) == column {
 				if scanner.write(line.marks[mark].R, start, end) {
-					return scanner.dst, true
+					return true
 				}
 				mark++
 			}
 		}
 		if !line.wrapped {
 			if finishExplicit() || scanner.breakLine() {
-				return scanner.dst, true
+				return true
 			}
 		}
 	}
 	if finishExplicit() {
-		return scanner.dst, true
+		return true
 	}
-	if scanner.finish() {
-		return scanner.dst, true
-	}
-	return scanner.dst, false
+	return scanner.finish()
 }
 
 type linkScanner struct {
 	dst   []Link
 	limit int
+	// want, when set, is the position LinksAt is looking for: the scan stops
+	// as soon as a link covers it.
+	want    BufferPosition
+	hasWant bool
+	found   bool
+	target  Link
 
 	previous rune
 	start    BufferPosition
@@ -260,13 +308,33 @@ func (s *linkScanner) finish() bool {
 		return false
 	}
 	text := s.text.String()[:s.safeBytes]
+	stopped := false
 	if validLinkTarget(text, s.schemeLength()) {
-		if len(s.dst) >= s.limit {
-			return true
+		link := Link{Start: s.start, End: s.safeEnd, Target: text}
+		if s.accept(link) {
+			stopped = true
+		} else if len(s.dst) >= s.limit {
+			stopped = true
 		}
-		s.dst = append(s.dst, Link{Start: s.start, End: s.safeEnd, Target: text})
 	}
 	s.resetCandidate()
+	return stopped
+}
+
+// linkPositionLess orders two positions in the retained buffer.
+func linkPositionLess(left, right BufferPosition) bool {
+	return left.Line < right.Line || left.Line == right.Line && left.Column < right.Column
+}
+
+// accept records a link, or stops the scan when it covers the wanted position.
+func (s *linkScanner) accept(link Link) bool {
+	if s.hasWant && !linkPositionLess(s.want, link.Start) && linkPositionLess(s.want, link.End) {
+		s.found, s.target = true, link
+		return true
+	}
+	if len(s.dst) < s.limit {
+		s.dst = append(s.dst, link)
+	}
 	return false
 }
 

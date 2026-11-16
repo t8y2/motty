@@ -1,0 +1,36 @@
+# End to end: dragging a terminal selection past the top or bottom of the grid
+# scrolls the view and extends the selection through the scrollback. Needs a
+# headless build and a local shell only.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=en MOTTY_DATA_DIR=$(mktemp -d) python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/terminal_drag_scroll_e2e.txt
+#
+# What to look for: the first copy runs up into the scrollback, while the second
+# runs down through the scrollback without jumping above the pressed row.
+
+click "Local Terminal"
+settle 800
+type seq 1 400
+key enter
+settle 800
+size
+
+# Press on the last visible rows, then hold the pointer above the grid.
+down 200 780
+move 200 60
+move 200 40
+wait 1500
+up 200 40
+key cmd+c
+settle 300
+clip
+scroll 200 400 0 -3600
+settle 300
+down 200 160
+move 200 840
+move 200 1100
+wait 1500
+up 200 1100
+key cmd+c
+settle 300
+clip

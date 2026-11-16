@@ -19,6 +19,23 @@ import (
 // ErrNoDisplay means there is no local X display to forward to.
 var ErrNoDisplay = errors.New("no local X display (DISPLAY is not set)")
 
+// UnreachableError means a display was named but nothing accepts connections
+// there: the X server is not running, or DISPLAY is stale.
+type UnreachableError struct {
+	// Address is where the connection was tried.
+	Address string
+	Err     error
+}
+
+func (err *UnreachableError) Error() string {
+	return "cannot reach the X server at " + err.Address + ": " + err.Err.Error()
+}
+
+func (err *UnreachableError) Unwrap() error { return err.Err }
+
+// probeTimeout bounds Probe; a local X server answers at once.
+const probeTimeout = 2 * time.Second
+
 // Display is a parsed X display name.
 type Display struct {
 	// Network and Address say how to reach the server: ("unix", path) or
@@ -112,4 +129,15 @@ func parseSmall(text string, limit int) (int, error) {
 // Dial connects to the X server.
 func (display Display) Dial() (net.Conn, error) {
 	return net.DialTimeout(display.Network, display.Address, 5*time.Second)
+}
+
+// Probe checks that something accepts connections on the display, so a session
+// can say so up front instead of every X client failing later with a bare
+// "can't open display".
+func (display Display) Probe() error {
+	conn, err := net.DialTimeout(display.Network, display.Address, probeTimeout)
+	if err != nil {
+		return &UnreachableError{Address: display.Address, Err: err}
+	}
+	return conn.Close()
 }

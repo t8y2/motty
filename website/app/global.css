@@ -31,3 +31,301 @@ html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
 }
+
+/* The changelog page: every release on the left, the release body in the
+   middle, the contents of the release in view on the right. The layout follows
+   dbxio.com's changelog, drawn with fumadocs tokens so both themes work. */
+
+.changelog-shell {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr) 224px;
+  gap: 44px;
+  align-items: start;
+}
+
+.changelog-sidebar {
+  position: sticky;
+  top: 88px;
+}
+
+.changelog-sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  color: var(--color-fd-foreground);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.changelog-version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 6px;
+}
+
+.changelog-version-link {
+  display: block;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--color-fd-muted-foreground);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.changelog-version-link:hover {
+  color: var(--color-fd-foreground);
+  background: var(--color-fd-muted);
+}
+
+.changelog-version-link.is-active {
+  color: var(--color-fd-foreground);
+  background: var(--color-fd-card);
+  border-color: var(--color-fd-border);
+  font-weight: 600;
+}
+
+.changelog-content {
+  min-width: 0;
+}
+
+.changelog-release {
+  scroll-margin-top: 96px;
+}
+
+.changelog-release + .changelog-release {
+  margin-top: 64px;
+  padding-top: 56px;
+  border-top: 1px solid var(--color-fd-border);
+}
+
+.changelog-release-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.changelog-release-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.changelog-version-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--color-fd-border);
+  border-radius: 999px;
+  color: var(--color-fd-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.changelog-version-pill svg {
+  color: var(--color-fd-primary);
+}
+
+.changelog-release-date {
+  color: var(--color-fd-muted-foreground);
+  font-size: 14px;
+}
+
+.changelog-download {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--color-fd-border);
+  border-radius: 999px;
+  color: var(--color-fd-foreground);
+  font-size: 14px;
+  white-space: nowrap;
+  transition: border-color 0.15s ease;
+}
+
+.changelog-download:hover {
+  border-color: var(--color-fd-muted-foreground);
+}
+
+.changelog-toc-title {
+  margin: 0;
+  color: var(--color-fd-foreground);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.changelog-toc-subtitle {
+  margin: 3px 0 14px;
+  color: var(--color-fd-muted-foreground);
+  font-size: 12px;
+}
+
+.changelog-toc-list {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--color-fd-border);
+}
+
+.changelog-toc-list a {
+  display: block;
+  padding: 5px 0 5px 14px;
+  color: var(--color-fd-muted-foreground);
+  font-size: 13px;
+  transition: color 0.15s ease;
+}
+
+.changelog-toc-list a:hover {
+  color: var(--color-fd-foreground);
+}
+
+.changelog-markdown {
+  color: var(--color-fd-muted-foreground);
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+.changelog-markdown h3 {
+  margin: 44px 0 16px;
+  color: var(--color-fd-foreground);
+  font-size: 20px;
+  font-weight: 600;
+  scroll-margin-top: 112px;
+}
+
+/* Every group of notes is wrapped in its own <section>, so each heading is the
+   first child of a section; only the heading that opens the release body sits
+   right under the release head and gives up the space above it. */
+.changelog-markdown > section:first-child > h3 {
+  margin-top: 0;
+}
+
+.changelog-markdown ul {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.changelog-markdown li {
+  position: relative;
+  padding-left: 19px;
+}
+
+.changelog-markdown li::before {
+  content: '';
+  position: absolute;
+  top: 0.66em;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-fd-muted-foreground);
+  opacity: 0.55;
+}
+
+.changelog-markdown code {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--color-fd-muted);
+  color: var(--color-fd-foreground);
+  font-size: 0.88em;
+}
+
+.changelog-markdown a {
+  color: var(--color-fd-primary);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in oklab, var(--color-fd-primary) 35%, transparent);
+}
+
+.changelog-markdown a:hover {
+  border-bottom-color: var(--color-fd-primary);
+}
+
+@media (max-width: 1040px) {
+  .changelog-shell {
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 32px;
+  }
+
+  .changelog-sidebar-right {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .changelog-shell {
+    display: block;
+  }
+
+  .changelog-sidebar,
+  .changelog-sidebar-left {
+    position: static;
+  }
+
+  .changelog-sidebar-title {
+    display: none;
+  }
+
+  .changelog-version-list {
+    flex-direction: row;
+    gap: 8px;
+    max-height: none;
+    margin: 0 -18px 6px;
+    padding: 0 18px 10px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .changelog-version-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .changelog-version-link {
+    flex: 0 0 auto;
+    padding: 7px 14px;
+    border-color: var(--color-fd-border);
+    border-radius: 999px;
+    font-size: 13px;
+  }
+
+  .changelog-release-head {
+    flex-wrap: wrap;
+    margin-bottom: 22px;
+  }
+
+  .changelog-markdown {
+    font-size: 14px;
+    line-height: 1.66;
+  }
+
+  .changelog-markdown h3 {
+    margin: 30px 0 13px;
+    font-size: 17px;
+  }
+
+  .changelog-markdown ul {
+    gap: 10px;
+  }
+}
+

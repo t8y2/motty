@@ -65,6 +65,19 @@ func checkLine(t testing.TB, l *line, cols int) {
 	if l.hyperlinks != nil && len(*l.hyperlinks) != len(l.cells) {
 		t.Fatalf("%d hyperlink cells for %d text cells", len(*l.hyperlinks), len(l.cells))
 	}
+	if l.used < 0 || l.used > len(l.cells) {
+		t.Fatalf("used %d outside %d cells", l.used, len(l.cells))
+	}
+	for x := l.used; x < len(l.cells); x++ {
+		if l.cells[x] != (Cell{}) {
+			t.Fatalf("cell %d past used %d is not blank: %+v", x, l.used, l.cells[x])
+		}
+		// pushHistory trims on a blank cell and an empty link slot, so a link
+		// left past used would be trimmed away without this check.
+		if l.hyperlinkAt(x) != 0 {
+			t.Fatalf("hyperlink %d past used %d is set", x, l.used)
+		}
+	}
 	for x, c := range l.cells {
 		if c.Attr&WideHead != 0 {
 			if x+1 >= len(l.cells) || l.cells[x+1].Attr&WideTail == 0 {
@@ -122,6 +135,10 @@ var corpus = []string{
 	"\x1b[?1049h\x1b[H\x1b[2J\x1b[1;1Hfull screen\x1b[24;1H~\x1b[1;3r\x1b[3;1H\n\n\x1b[r\x1b[?1049l",
 	"progress [=====>    ] 50%\r\x1b[Kdone\r\n",
 	"\x1b]0;user@host: ~/project\x07\x1b[6n\x1b[c",
+	"\x1b]0;✳ Issue 和 PR 的相关反馈\x07\x1b]2;АМНП😀\x1b\\",
+	"\x1b]8;;https://example.test/✳АМНП😀\x1b\\link\x1b]8;;\x07",
+	"\x1b]0;✳АМНП😀\x18\x1bP✳АМНП😀\x1a\x1b]2;recovered\x07",
+	"\x1b]0;" + strings.Repeat("✳АМНП😀", maxOSC) + "\x07\x1b]2;recovered\x07",
 	"\x1b]8;id=docs;https://example.test/文档\x1b\\linked text\x1b]8;;\x07",
 	"\x1b]52;c;SGVsbG8sIOS4lueVjA==\x07",
 	"tab\tseparated\tvalues\r\n\x1b[2Kcleared\r\n",

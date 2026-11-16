@@ -10,11 +10,11 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestHostCatalogTreeFilterSelectionAndBatchMoveCompose(t *testing.T) {
@@ -23,18 +23,18 @@ func TestHostCatalogTreeFilterSelectionAndBatchMoveCompose(t *testing.T) {
 	if servers < 0 {
 		t.Fatalf("groups = %+v", state.hostGroups)
 	}
-	state.Click(hitHostGroupOpenList.At(servers))
+	state.toggleHostGroup(servers)
 	canvas, _ := paintedTexts(state)
-	if _, ok := hitByID(canvas, hitHostList.At(int(state.hosts[0].ID))); ok {
+	if _, ok := hostListHostHit(canvas, state, state.hosts[0].ID); ok {
 		t.Fatal("collapsed group still exposes a host row")
 	}
-	if _, ok := hitByID(canvas, hitHostList.At(int(state.hosts[2].ID))); !ok {
+	if _, ok := hostListHostHit(canvas, state, state.hosts[2].ID); !ok {
 		t.Fatal("collapsing Servers hid Network")
 	}
 
 	typeSearch(state, "Production")
 	canvas, _ = paintedTexts(state)
-	if _, ok := hitByID(canvas, hitHostList.At(int(state.hosts[0].ID))); !ok {
+	if _, ok := hostListHostHit(canvas, state, state.hosts[0].ID); !ok {
 		t.Fatal("filter did not reveal a match inside a collapsed group")
 	}
 	state.Click(hitHostCheckList.At(int(state.hosts[0].ID)))
@@ -45,13 +45,12 @@ func TestHostCatalogTreeFilterSelectionAndBatchMoveCompose(t *testing.T) {
 	}
 
 	clickHostAction(state, hitMoveHostGroup)
-	network := state.hostGroupIndex("Network")
-	state.Click(hitHostGroupItemList.At(network))
+	state.Click(hostMoveGroupChoice(t, state, "Network"))
 	if state.hosts[0].Group != "Network" || !state.hostSelected(state.hosts[0].ID) {
 		t.Fatalf("batch move result host=%+v selection=%v", state.hosts[0], state.hostSelections)
 	}
 	canvas, _ = paintedTexts(state)
-	if _, ok := hitByID(canvas, hitHostList.At(int(state.hosts[0].ID))); !ok {
+	if _, ok := hostListHostHit(canvas, state, state.hosts[0].ID); !ok {
 		t.Fatal("moved selected host was not placed in the expanded target branch")
 	}
 }
@@ -62,9 +61,12 @@ func TestHostTagsAndCompactIconEditPersistAndFilter(t *testing.T) {
 	state.Click(hitHostList.At(int(state.hosts[0].ID)))
 	clickHostAction(state, hitEditHost)
 	state.editor.tags = text.Editor{}
-	typeInto(state, hitDialogTags, "prod, critical, PROD")
-	state.Click(hitDialogIcon)
-	state.Click(hitDialogIconItemList.At(int(hostIconTerminal)))
+	for _, tag := range []string{"prod", "critical", "PROD"} {
+		typeInto(state, hitDialogTags, tag)
+		state.Key(gfx.KeyEvent{Target: hitDialogTags, Key: gfx.KeyEnter})
+	}
+	state.Click(hitHostTagsDismiss)
+	chooseHostIcon(t, state, "Terminal")
 	state.Click(hitDialogSubmit)
 	host := state.hosts[0]
 	if host.Tags != "prod, critical" || host.Icon != hostIconTerminal {
@@ -144,6 +146,18 @@ func TestHostCatalogExportImportRoundTripContainsNoSecrets(t *testing.T) {
 	}
 }
 
+func TestHostCatalogStillImportsVersionOneDocuments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "motty-hosts-v1.json")
+	document := `{"format":"motty-host-catalog","version":1,"hosts":[{"id":"host_old","label":"Old","address":"old.example.com","port":22}]}`
+	if err := os.WriteFile(path, []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	read, err := readHostCatalog(path)
+	if err != nil || len(read.Hosts) != 1 || read.Hosts[0].Label != "Old" {
+		t.Fatalf("version-one catalog = %+v, %v", read, err)
+	}
+}
+
 func TestHostCatalogExportsCheckedSubsetAndHandlesPickerErrors(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "selected.json")
 	options := testOptions(t)
@@ -163,7 +177,7 @@ func TestHostCatalogExportsCheckedSubsetAndHandlesPickerErrors(t *testing.T) {
 	options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return nil, errors.New("picker failed") }
 	state = newTestState(t, options)
 	state.Click(hitImportHostCatalog)
-	if len(state.hosts) != 0 || !strings.Contains(state.status, "picker failed") {
+	if len(state.hosts) != 0 || state.status != state.messages.ActionFeedback.FilePickerFailed {
 		t.Fatalf("failed import hosts=%d status=%q", len(state.hosts), state.status)
 	}
 }
@@ -173,8 +187,8 @@ func TestHostCatalogTreeSteadyPaintIsAllocationFree(t *testing.T) {
 	setHostTags(&state.hosts[0], []string{"prod", "critical"})
 	state.hosts[0].Icon = hostIconTerminal
 	state.hostDataChanged()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	if allocations := testing.AllocsPerRun(100, func() {
 		canvas.Reset()
@@ -189,8 +203,8 @@ func BenchmarkPaintHostCatalogTree(b *testing.B) {
 	setHostTags(&state.hosts[0], []string{"prod", "critical"})
 	state.hosts[0].Icon = hostIconTerminal
 	state.hostDataChanged()
-	var canvas ui.Canvas
-	size := ui.Size{Width: 1400, Height: 900}
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
 	b.ResetTimer()
 	b.ReportMetric(float64(unsafe.Sizeof(Host{})), "bytes/host")
@@ -207,8 +221,7 @@ func TestHostIconCanBeASystemBadgeAndSurvivesEditingAndRestart(t *testing.T) {
 	state := newTestState(t, options)
 	state.Click(hitHostList.At(int(state.hosts[0].ID)))
 	clickHostAction(state, hitEditHost)
-	state.Click(hitDialogIcon)
-	state.Click(hitDialogIconItemList.At(int(hostIconOf(sshconn.SystemUbuntu))))
+	chooseHostIcon(t, state, "Ubuntu")
 	state.Click(hitDialogSubmit)
 	if got := state.hosts[0].Icon; got != hostIconOf(sshconn.SystemUbuntu) {
 		t.Fatalf("icon after choosing Ubuntu = %v", got)
@@ -223,62 +236,101 @@ func TestHostIconCanBeASystemBadgeAndSurvivesEditingAndRestart(t *testing.T) {
 	}
 }
 
-// The list of icons has more entries than fit, so it scrolls, and an entry far
-// down it can still be reached and chosen.
-func TestHostIconListScrollsToTheEntriesBelow(t *testing.T) {
+// chooseHostIcon opens the icon field, narrows it to the named icon and clicks
+// the row it reaches, the way typing in the field does.
+func chooseHostIcon(t *testing.T, state *State, name string) {
+	t.Helper()
+	state.Click(hitDialogIcon)
+	p := state.hostIconPicker()
+	p.control.Query = text.Editor{}
+	p.control.Query.Insert(name)
+	canvas, _ := paintedTexts(state)
+	for _, hit := range canvas.Hits() {
+		if hit.ID.Scope() == hitHostIconChoices && hit.Role == gfx.RoleOption && hit.Label == name {
+			state.Click(hit.ID)
+			return
+		}
+	}
+	t.Fatalf("no icon row named %q after typing it", name)
+}
+
+// The icon field is a searchable list of fixed choices: a query filters it, and
+// a query that names no icon neither chooses nor creates one.
+func TestHostIconPickerFiltersAndNeverCreates(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	clickHostAction(state, hitAddHost)
 	state.Click(hitDialogIcon)
+	p := state.hostIconPicker()
+	p.control.Query.Insert("mint")
 	canvas, _ := paintedTexts(state)
-	last := hitDialogIconItemList.At(int(hostIconDesktop))
-	if _, ok := hitByID(canvas, last); ok {
-		t.Fatal("the last entry of the icon list is reachable before scrolling")
+	var mint gfx.ID
+	for _, hit := range canvas.Hits() {
+		if hit.ID.Scope() == hitHostIconChoices && hit.Role == gfx.RoleOption && hit.Label == "Linux Mint" {
+			mint = hit.ID
+		}
 	}
-	state.Scroll(ui.ScrollEvent{X: state.popups.surface.X + 20, Y: state.popups.surface.Y + 20, DeltaY: 100000})
-	canvas, _ = paintedTexts(state)
-	if _, ok := hitByID(canvas, last); !ok {
-		t.Fatal("the last entry of the icon list is out of reach after scrolling to the end")
+	if mint.IsZero() {
+		t.Fatal("typing mint did not offer Linux Mint")
 	}
-	state.Click(last)
-	if state.editor.icon != hostIconDesktop || state.editor.iconOpen {
-		t.Fatalf("after choosing the last entry: icon %v, open %v", state.editor.icon, state.editor.iconOpen)
+	state.Click(mint)
+	if state.editor.icon != hostIconOf(sshconn.SystemMint) || !state.editor.iconChosen || p.control.Open {
+		t.Fatalf("after choosing Linux Mint: icon %v chosen %v open %v", state.editor.icon, state.editor.iconChosen, p.control.Open)
+	}
+
+	state.Click(hitDialogIcon)
+	p.control.Query.Insert("not an icon")
+	paintedTexts(state)
+	for _, choice := range p.control.Choices() {
+		if choice.Create {
+			t.Fatal("an unmatched query offered to create an icon")
+		}
+	}
+	state.Key(gfx.KeyEvent{Target: hitDialogIcon, Key: gfx.KeyEnter})
+	if state.editor.icon != hostIconOf(sshconn.SystemMint) {
+		t.Fatalf("an unmatched query changed the icon to %v", state.editor.icon)
 	}
 }
 
-// With a secret that can be checked or removed the row has three buttons; the
+// With a secret that can be removed the row has three buttons; the
 // code field must keep room to show what it says, so the scan and paste buttons
 // go on a row of their own under it.
 func TestOTPFieldKeepsItsWidthWhateverButtonsItHas(t *testing.T) {
-	for _, checked := range []bool{false, true} {
+	for _, saved := range []bool{false, true} {
 		state := newTestState(t, testOptions(t))
 		clickHostAction(state, hitAddHost)
 		state.Click(hitDialogAdvanced)
-		state.editor.otpChecked = checked
+		state.editor.otpSaved = saved
 		canvas, _ := paintedTexts(state)
+		state.editor.form.offset = state.editor.form.geometry.MaxOffsetY
+		canvas, _ = paintedTexts(state)
 		// The field's label shares its identity, so take the input: the taller one.
-		var field ui.Hit
+		var field gfx.Hit
 		for _, hit := range canvas.Hits() {
 			if hit.ID == hitDialogOTP && hit.Bounds.Height > field.Bounds.Height {
 				field = hit
 			}
 		}
 		if field.Bounds.Width < 250 {
-			t.Fatalf("checked=%v: the code field is %v wide, too narrow for its placeholder", checked, field.Bounds.Width)
+			t.Fatalf("saved=%v: the code field is %v wide, too narrow for its placeholder", saved, field.Bounds.Width)
 		}
 		scan, _ := hitByID(canvas, hitDialogOTPScan)
 		if scan.Bounds.Y <= field.Bounds.Y+field.Bounds.Height-1 {
-			t.Fatalf("checked=%v: scan %+v should sit under the field %+v", checked, scan.Bounds, field.Bounds)
+			t.Fatalf("saved=%v: scan %+v should sit under the field %+v", saved, scan.Bounds, field.Bounds)
 		}
-		for _, id := range []ui.ID{hitDialogOTPScan, hitDialogOTPPaste, hitDialogForwardX11, hitDialogNoHistory} {
+		for _, id := range []gfx.ID{hitDialogOTPScan, hitDialogOTPPaste, hitDialogForwardX11, hitDialogNoHistory, hitDialogAgentAccess} {
 			hit, found := hitByID(canvas, id)
 			if !found || hit.Bounds.Y+hit.Bounds.Height > float32(state.windowRect().Height) {
-				t.Fatalf("checked=%v: control %v is missing or off screen: %+v", checked, id, hit)
+				t.Fatalf("saved=%v: control %v is missing or off screen: %+v", saved, id, hit)
 			}
 		}
 		x11, _ := hitByID(canvas, hitDialogForwardX11)
 		history, _ := hitByID(canvas, hitDialogNoHistory)
 		if x11.Bounds.Y+x11.Bounds.Height > history.Bounds.Y {
-			t.Fatalf("checked=%v: the two switches overlap: %+v and %+v", checked, x11.Bounds, history.Bounds)
+			t.Fatalf("saved=%v: the two switches overlap: %+v and %+v", saved, x11.Bounds, history.Bounds)
+		}
+		access, _ := hitByID(canvas, hitDialogAgentAccess)
+		if history.Bounds.Y+history.Bounds.Height > access.Bounds.Y {
+			t.Fatalf("saved=%v: the agent switch overlaps the one above it: %+v and %+v", saved, history.Bounds, access.Bounds)
 		}
 	}
 }
@@ -313,9 +365,47 @@ func TestDesktopHostsGetAMonitorIconByDefault(t *testing.T) {
 	if art := state.hostIconArt(hostIconDesktop, sshconn.SystemUnknown, false); !reflect.DeepEqual(art, icons.Monitor) {
 		t.Fatal("the explicit desktop icon is not the monitor")
 	}
+	if art := state.hostIconArt(hostIconSerial, sshconn.SystemUnknown, false); !reflect.DeepEqual(art, icons.Serial) {
+		t.Fatal("the explicit serial icon is not the serial glyph")
+	}
 	icon, ok := parseHostIcon("desktop")
 	if !ok || icon != hostIconDesktop || icon.String() != "desktop" {
 		t.Fatalf("desktop icon = %v, %v", icon, ok)
+	}
+	serial, ok := parseHostIcon("serial")
+	if !ok || serial != hostIconSerial || serial.String() != "serial" {
+		t.Fatalf("serial icon = %v, %v", serial, ok)
+	}
+	offered := false
+	for _, choice := range hostIconChoices() {
+		if choice == hostIconSerial {
+			offered = true
+		}
+	}
+	if !offered {
+		t.Fatal("the icon list does not offer serial")
+	}
+}
+
+// Switching the form to a serial connection selects the serial icon, until the
+// user picks one of their own.
+func TestSerialProtocolDefaultsTheHostIcon(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	editor := &state.editor
+	editor.reset()
+	editor.setProtocol(protocolSerial)
+	if editor.icon != hostIconSerial {
+		t.Fatalf("serial form icon = %v, want serial", editor.icon)
+	}
+	editor.setProtocol(protocolSSH)
+	if editor.icon != hostIconAuto {
+		t.Fatalf("SSH form kept the serial icon: %v", editor.icon)
+	}
+	editor.setProtocol(protocolSerial)
+	editor.icon, editor.iconChosen = hostIconGlobe, true
+	editor.setProtocol(protocolSSH)
+	if editor.icon != hostIconGlobe {
+		t.Fatalf("an explicit icon changed with the protocol: %v", editor.icon)
 	}
 }
 

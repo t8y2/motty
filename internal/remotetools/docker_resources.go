@@ -37,6 +37,34 @@ func (kind Kind) listing() (command string, fields int) {
 	return "docker images --format '{{.ID}}|{{.Repository}}:{{.Tag}}|{{.Size}}|{{.CreatedSince}}' 2>&1", 4
 }
 
+func (kind Kind) legacyListing() (command, unsupportedField string) {
+	switch kind {
+	case Volumes:
+		return "docker volume ls --format '{{.Name}}|{{.Driver}}' 2>&1", "Scope"
+	case Networks:
+		return "docker network ls --format '{{.ID}}|{{.Name}}|{{.Driver}}' 2>&1", "Scope"
+	default:
+		return "docker images --format '{{.ID}}|{{.Repository}}:{{.Tag}}|{{.Size}}' 2>&1", "CreatedSince"
+	}
+}
+
+func missingTemplateField(output []byte, field string) bool {
+	text := string(output)
+	return strings.Contains(text, "<."+field+">") && strings.Contains(text, "can't evaluate field "+field)
+}
+
+func appendMissingResourceField(output []byte) []byte {
+	var rows strings.Builder
+	for _, row := range strings.Split(string(output), "\n") {
+		row = strings.TrimSuffix(row, "\r")
+		if row != "" {
+			rows.WriteString(row)
+			rows.WriteString("|\n")
+		}
+	}
+	return []byte(rows.String())
+}
+
 // Docker object names are a restricted alphabet; an image reference may also
 // carry a registry path, a tag and a digest.
 var referencePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]{0,255}$`)
@@ -45,9 +73,14 @@ var referencePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]{0,255}$
 func Resources(ctx context.Context, runner Runner, kind Kind) ([]Resource, error) {
 	command, fields := kind.listing()
 	output, err := runner.RunCommand(ctx, command, maxOutput)
+	legacyCommand, optionalField := kind.legacyListing()
+	legacy := err != nil && missingTemplateField(output, optionalField)
+	if legacy {
+		output, err = runner.RunCommand(ctx, legacyCommand, maxOutput)
+	}
 	if err != nil {
 		text := strings.TrimSpace(string(output))
-		if strings.Contains(text, "not found") || strings.Contains(text, "No such file") {
+		if missingDockerCLI(output) {
 			return nil, ErrNoDocker
 		}
 		if text == "" {
@@ -55,6 +88,9 @@ func Resources(ctx context.Context, runner Runner, kind Kind) ([]Resource, error
 		}
 		line, _, _ := strings.Cut(text, "\n")
 		return nil, &Failure{Message: line, Err: err}
+	}
+	if legacy {
+		output = appendMissingResourceField(output)
 	}
 	return ParseResources(kind, output, fields)
 }

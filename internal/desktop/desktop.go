@@ -7,7 +7,9 @@ package desktop
 
 import (
 	"context"
+	"errors"
 	"net"
+	"time"
 )
 
 // Rect is a region of the remote picture in pixels.
@@ -106,11 +108,17 @@ const (
 // system cannot say. A backend that names characters (VNC) sends it instead of
 // the Rune; a backend that names keys (RDP) ignores it, the remote applies the
 // modifiers itself.
+//
+// Repeat marks a press that repeats a key the remote already has down: the
+// local system's auto-repeat. A backend whose server repeats a held key by
+// itself ignores it; one whose server waits for the client (RDP) sends the key
+// down again and says that it was already down.
 type KeyEvent struct {
-	Key   Key
-	Rune  rune
-	Typed rune
-	Down  bool
+	Key    Key
+	Rune   rune
+	Typed  rune
+	Down   bool
+	Repeat bool
 }
 
 // Info describes a connection for display.
@@ -180,6 +188,131 @@ type Session interface {
 	Close() error
 }
 
+// FileClipboard is a Session that can give files from this computer to the
+// remote system's clipboard, so that the remote user pastes them: RDP does, as
+// a clipboard file transfer; VNC has no such transfer and does not implement it.
+type FileClipboard interface {
+	Session
+	// SetClipboardFiles makes the files and folders at paths what the remote
+	// clipboard holds. The list is made before it returns, which walks folders, so
+	// a caller does not call it from a goroutine that paints. What the remote then
+	// pastes is read from this computer when it does. The error is one of the
+	// Err values below or a failure of the connection; the FileOffer comes back
+	// with it so the path that caused it can be named.
+	SetClipboardFiles(paths []string) (FileOffer, error)
+}
+
+// FileReceiver is a Session that can take files the remote system put on its
+// clipboard. The files are saved beside this computer's own clipboard, so the
+// user can paste them where they are working.
+type FileReceiver interface {
+	Session
+	// RemoteFiles returns the files the remote clipboard delivered since the
+	// previous call, if any. Paths names the top-level entries to put on the
+	// local clipboard; Err says why none or only some arrived.
+	RemoteFiles() (ReceivedFiles, bool)
+}
+
+// ReceivedFiles is a remote file list saved on this computer.
+type ReceivedFiles struct {
+	// Paths are the top-level files and folders, absolute and local.
+	Paths []string
+	// Files and Folders count what arrived; Bytes is their total size.
+	Files, Folders int
+	Bytes          uint64
+	// Skipped counts entries that could not be saved.
+	Skipped int
+	// Err reports a failure, including one that left only some entries saved.
+	Err error
+}
+
+// FileOffer says what SetClipboardFiles put on the remote clipboard.
+type FileOffer struct {
+	// Files and Folders count what is offered; Bytes is the total size of the files.
+	Files, Folders int
+	Bytes          uint64
+	// Skipped counts what could not be offered (links, devices, files the server
+	// cannot take, unreadable entries) and FirstSkipped names the first. With an
+	// error, FirstSkipped names the path that caused it.
+	Skipped      int
+	FirstSkipped string
+}
+
+// Why SetClipboardFiles refuses.
+var (
+	// ErrFilesUnsupported: the server does not take files through the clipboard.
+	ErrFilesUnsupported = errors.New("the remote system does not take files through the clipboard")
+	// ErrClipboardOff: the host shares no clipboard.
+	ErrClipboardOff = errors.New("clipboard sharing is off for this host")
+	// ErrClipboardNotReady: the clipboard channel is still starting.
+	ErrClipboardNotReady = errors.New("the clipboard channel is not ready")
+	// ErrNothingToOffer: none of the paths can be offered.
+	ErrNothingToOffer = errors.New("there is nothing to offer")
+	// ErrTooManyFiles: the selection is larger than one offer holds (MaxOfferFiles).
+	ErrTooManyFiles = errors.New("the selection holds too many files")
+	// ErrPathTooLong: a path inside the selection does not fit what the remote can name.
+	ErrPathTooLong = errors.New("a path in the selection is too long")
+)
+
+// MaxOfferFiles is the most files and folders one offer holds, as RDP counts them.
+const MaxOfferFiles = 20000
+
+// Resizer is a Session whose server changes the desktop's size while the
+// session runs, so that the picture can be kept the size of the pane and shown
+// pixel for pixel, as a window of the remote machine would be.
+type Resizer interface {
+	Session
+	// CanResize reports whether the server accepts Resize now. A server that
+	// does not (or not yet) leaves the picture the size it was opened at.
+	CanResize() bool
+	// Resize asks for a width x height desktop, in device pixels, whose
+	// interface is drawn at scale (see Options.Scale). The new size arrives
+	// through Present, when the server has made it.
+	Resize(width, height int, scale float32) error
+}
+
+// LatencySource reports the remote server's last network RTT measurement.
+// A zero timestamp means the server has not supplied a measurement.
+type LatencySource interface {
+	NetworkRTT() (time.Duration, time.Time)
+}
+
+// PointerKind is what a session's remote system last said about its pointer.
+type PointerKind uint8
+
+const (
+	// PointerNone: the session has not named a pointer shape at all.
+	PointerNone PointerKind = iota
+	// PointerHidden: the remote system hides its pointer (full-screen video
+	// and the like); the viewer hides its own and paints nothing.
+	PointerHidden
+	// PointerSystem: the remote asks for the local system's ordinary pointer.
+	PointerSystem
+	// PointerBitmap: the remote paints its pointer with PointerShape's bitmap.
+	PointerBitmap
+)
+
+// PointerShape is a pointer as the remote system paints it: BGRA rows, top
+// down, the color not multiplied by alpha, with the hotspot that names which
+// pixel of it is the pointer's point.
+type PointerShape struct {
+	Width, Height int
+	HotX, HotY    int
+	BGRA          []byte
+}
+
+// PointerSource is a Session whose remote system names its pointer's shape.
+// The workbench has the system draw the bitmap as the local pointer over the
+// picture, the way a native client of that system would.
+type PointerSource interface {
+	Session
+	// PointerShape returns what the remote last said about its pointer, the
+	// shape itself when the kind is PointerBitmap, and a version that changes
+	// whenever the answer does. The BGRA bytes belong to the caller: a session
+	// makes new ones for every shape and never writes to them again.
+	PointerShape() (PointerKind, PointerShape, int)
+}
+
 // Options are what a backend needs to connect that is not in its own address.
 type Options struct {
 	// Password is the secret the server asks for, empty if none was saved.
@@ -188,6 +321,9 @@ type Options struct {
 	// Password is empty. It may block until the user has answered; the same
 	// connection then goes on. An error ends the attempt.
 	AskPassword func() (string, error)
+	// AskCredentials obtains a VNC RSA-AES account and its password, separately
+	// from a legacy VNC password.
+	AskCredentials func() (username, password string, err error)
 	// Notify is called, from any goroutine, when the session has something new:
 	// a changed picture, a clipboard, the end of the connection. It must not
 	// block.
@@ -198,19 +334,38 @@ type Options struct {
 	// Clipboard allows the clipboard to cross in both directions. Off, the
 	// backend neither sends the local clipboard nor keeps the remote's.
 	Clipboard bool
-	// Username and Domain are the account a protocol with accounts (RDP) signs
-	// in as; VNC has none.
+	// Console asks an RDP server for its console (administrative) session
+	// instead of a new one, as mstsc /admin does. Windows decides whether the
+	// request is granted: the account still needs the right to log on, and what
+	// happens when someone is already at the console is its decision, not the
+	// client's. VNC has no such session.
+	Console bool
+	// StandardSecurity makes an RDP connection use Standard RDP Security only,
+	// with no TLS and no NLA, for a server that offers nothing else or whose
+	// administrator chose that layer. Its traffic is encrypted from a server key
+	// that is never authenticated, so anyone on the path can read and alter the
+	// session; the backend reports the connection as not encrypted. VNC chooses
+	// its security types with the server and ignores this.
+	StandardSecurity bool
+	// Username and Domain are the account a protocol with accounts signs in as.
+	// VNC account authentication uses Username; Domain belongs to RDP.
 	Username, Domain string
-	// Width and Height are the size of the desktop to ask for when the protocol
-	// lets the client choose it (RDP); zero lets the backend choose.
+	// Width and Height are the size, in device pixels, of the desktop to ask for
+	// when the protocol lets the client choose it (RDP); zero lets the backend
+	// choose.
 	Width, Height int
-	// VerifyCertificate is called with the DER certificate a server presents over
-	// TLS (RDP), after the handshake and before any secret is sent. A server's
-	// self-signed certificate cannot be checked against an authority, so the
-	// caller decides, typically by pinning: an error ends the attempt. address is
-	// what the user typed (the name the pin is kept under), not necessarily where
-	// the bytes went. Nil accepts any certificate, which only tests do.
+	// Scale is the device pixels the client shows per logical pixel (1 for a
+	// 100% display, 1.25 for 125%). A backend that can tell the server draws
+	// its interface at that scale (RDP), so that text and controls come out the
+	// size the user's own display makes them; zero is 1.
+	Scale float32
+	// VerifyCertificate checks an RDP server's DER certificate before any
+	// secret is sent. address is the user-entered name used for pinning.
+	// A callback error ends the connection. Nil is only used by tests.
 	VerifyCertificate func(address string, der []byte) error
+	// VerifyServerKey checks a RealVNC server's canonical PKIX RSA public key
+	// before the client sends credentials. Nil does not trust an RSA-AES server.
+	VerifyServerKey func(address string, publicKeyDER []byte) error
 }
 
 // Dialer opens the byte stream to the server: a direct TCP connection, or a

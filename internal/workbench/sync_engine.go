@@ -11,6 +11,7 @@ import (
 	"motty/internal/backup"
 	"motty/internal/cloudsync"
 	"motty/internal/configstore"
+	"motty/internal/sshconn"
 	"motty/internal/vault"
 )
 
@@ -38,6 +39,12 @@ func (state *State) syncNow() { state.runSync(false) }
 // or at start, never opens a dialog and keeps the status line as it is.
 func (state *State) runSync(quiet bool) {
 	if state.sync.working {
+		return
+	}
+	if state.syncScope.empty() {
+		if !quiet {
+			state.status = state.messages.Tools.SyncErrNothingSelected
+		}
 		return
 	}
 	store, password, ok := state.syncLogin(func() { state.runSync(false) }, quiet)
@@ -141,6 +148,10 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 		return nil, backup.ErrTooNew
 	}
 	opened := state.secrets.vault
+	// The selection is a snapshot of this round: changing it on the settings page
+	// while the file is on its way must not make half of a round follow one rule
+	// and half the other.
+	scope := state.syncScope
 
 	// Passwords saved before they were versioned get a stamp now, so that they are
 	// compared with the server's by when they were last changed here and not
@@ -153,13 +164,25 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 	var received []vault.Secret
 	var stamps []configstore.Stamp
 	for _, secret := range remote.Secrets {
-		if excludedFromBackup(secret.Name) || !state.config.Acceptable(configstore.Stamp(secret.Stamp)) {
+		if excludedFromBackup(secret.Name) {
+			continue
+		}
+		// The clock must outrank every version seen, including one this computer
+		// chooses not to take: an edit made here later must still be the later one.
+		stamps = append(stamps, configstore.Stamp(secret.Stamp))
+		if !scope.allowsSecret(secret.Name) || !state.config.Acceptable(configstore.Stamp(secret.Stamp)) {
 			continue
 		}
 		received = append(received, secret)
-		stamps = append(stamps, configstore.Stamp(secret.Stamp))
 	}
-	keysChanged := false
+	// The same for the records of a closed category: they are not merged, but
+	// their versions are seen and the next edit here must outrank them.
+	for _, record := range remote.Records {
+		if !scope.allowsRecord(record.Kind) {
+			stamps = append(stamps, record.Stamp)
+		}
+	}
+	keysChanged, storedKeysChanged := false, false
 	if opened != nil && len(received) > 0 {
 		applied, err := opened.Merge(received)
 		if err != nil {
@@ -167,6 +190,7 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 		}
 		for _, secret := range applied {
 			keysChanged = keysChanged || strings.HasPrefix(secret.Name, aiKeySecretName(""))
+			storedKeysChanged = storedKeysChanged || sshconn.IsStoredKey(secret.Name)
 		}
 	}
 	if err := state.config.Observe(stamps...); err != nil {
@@ -174,15 +198,32 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 	}
 
 	holdable, _ := holdableRecords(remote.Records)
+	holdable = scope.filterRecords(holdable)
+	if err := state.flushNotesForSync(); err != nil {
+		return nil, err
+	}
+	notesChanged := false
+	if scope.allows(syncCategoryNotes) {
+		// A conflict copy is a write on this computer; a closed notes category must
+		// not take the server's bodies in through the back door.
+		var err error
+		notesChanged, err = state.preserveNoteConflicts(holdable)
+		if err != nil {
+			return nil, err
+		}
+	}
 	result, err := state.config.Merge(holdable)
 	if err != nil {
 		return nil, err
 	}
-	if len(result.Applied) > 0 {
+	if len(result.Applied) > 0 || notesChanged {
 		if err := state.reloadShared(); err != nil {
 			return nil, err
 		}
 		state.reloadOtherWindows()
+	}
+	if storedKeysChanged {
+		state.reloadStoredIdentities()
 	}
 	if keysChanged && state.ai.store != nil {
 		// A key was changed on another computer: the providers keep it in memory.
@@ -190,52 +231,84 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 		state.reloadAI()
 		state.pauseSave--
 	}
-	if err := state.mergeKnownHosts(remote.KnownHosts); err != nil {
-		return nil, err
-	}
-	if _, err := state.config.Prune(tombstoneKeep); err != nil {
-		return nil, err
-	}
-	if opened != nil {
-		if _, err := opened.Prune(string(configstore.CutoffStamp(state.options.WallNow().Add(-tombstoneKeep)))); err != nil {
+	if scope.allowsKnownHosts() {
+		if err := state.mergeKnownHosts(remote.KnownHosts); err != nil {
 			return nil, err
 		}
 	}
+	if err := state.pruneTombstones(); err != nil {
+		return nil, err
+	}
 
 	// What goes back is the union of the two, so nothing the server holds is lost
-	// to a computer that could not read it (a locked vault, a newer build).
+	// to a computer that could not read it (a locked vault, a newer build). The
+	// server's records of a closed category are part of that: this computer does
+	// not send its own, but it must not delete the other computers' copies either.
 	records, err := state.config.Records()
 	if err != nil {
 		return nil, err
 	}
+	records = scope.filterRecords(records)
 	records = append(records, passedOn(records, remote.Records, holdable)...)
-	local := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Records: records}
-	localHosts := ""
-	if data, err := os.ReadFile(state.options.KnownHostsPath); err == nil {
-		localHosts = string(data)
+	local := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
+	if scope.allowsKnownHosts() {
+		localHosts := ""
+		if data, err := os.ReadFile(state.options.KnownHostsPath); err == nil {
+			localHosts = string(data)
+		}
+		local.KnownHosts = unionLines(remote.KnownHosts, localHosts)
+	} else {
+		// Not ours to change: what the server holds goes back exactly as it came.
+		local.KnownHosts = remote.KnownHosts
 	}
-	local.KnownHosts = unionLines(remote.KnownHosts, localHosts)
 	if opened != nil {
 		exported, err := opened.Export()
 		if err != nil {
 			return nil, err
 		}
 		for _, secret := range exported {
-			if !excludedFromBackup(secret.Name) {
+			if !excludedFromBackup(secret.Name) && scope.allowsSecret(secret.Name) {
 				local.Secrets = append(local.Secrets, secret)
 			}
 		}
 	}
 	local.Secrets = unionSecrets(local.Secrets, received)
+	for _, secret := range remote.Secrets {
+		if excludedFromBackup(secret.Name) || scope.allowsSecret(secret.Name) {
+			continue
+		}
+		local.Secrets = append(local.Secrets, secret)
+	}
+	sortSecrets(local.Secrets)
 
 	newer, err := state.config.Newer(remote.Records)
 	if err != nil {
 		return nil, err
 	}
-	if !missing && len(newer) == 0 && !secretsNewer(local.Secrets, remote.Secrets) && !hasNewLines(local.KnownHosts, remote.KnownHosts) {
+	newer = scope.filterRecords(newer)
+	secretsChanged := secretsNewer(scope.filterSecrets(local.Secrets), scope.filterSecrets(remote.Secrets))
+	hostsChanged := scope.allowsKnownHosts() && hasNewLines(local.KnownHosts, remote.KnownHosts)
+	if !missing && len(newer) == 0 && !secretsChanged && !hostsChanged {
 		return nil, nil
 	}
 	return &local, nil
+}
+
+// pruneTombstones drops the deletions older than tombstoneKeep from the saved
+// passwords and from the shared records. A device away for less than that still
+// hears of them; one away for longer was going to resurrect them anyway. Sync
+// prunes on every merge, and starting prunes too, so a computer that never syncs
+// does not carry deletions forever: in the vault they would fill the file.
+func (state *State) pruneTombstones() error {
+	if _, err := state.config.Prune(tombstoneKeep); err != nil {
+		return err
+	}
+	if state.secrets.vault == nil {
+		return nil
+	}
+	cutoff := string(configstore.CutoffStamp(state.options.WallNow().Add(-tombstoneKeep)))
+	_, err := state.secrets.vault.Prune(cutoff)
+	return err
 }
 
 // passedOn are the server's records that this computer would not hold because it
@@ -281,22 +354,38 @@ func unionLines(remote, local string) string {
 // reloadShared brings the window's shared data up to date with the store, after
 // records came in from another computer. What is open keeps running.
 func (state *State) reloadShared() error {
+	if err := state.refreshShared(); err != nil {
+		return err
+	}
+	state.save() // what was here and never recorded (a provider of the assistant, say)
+	return nil
+}
+
+// refreshShared replaces the shared data with the store's without writing back.
+func (state *State) refreshShared() error {
 	entries, _, err := state.config.Load()
 	if err != nil {
 		return err
 	}
+	development := append([]byte(nil), state.configBase.development...)
 	saved, base, err := joinState(entries, state.configBase.local)
 	if err != nil {
 		return err
 	}
-	if saved.AIProviders == nil && state.recordedProviders() > 0 {
+	base.development = development
+	// This window's own value is nobody else's to rewrite: it is carried over so
+	// the next save patches its own record rather than emptying it.
+	base.windowName, base.window = state.configBase.windowName, state.configBase.window
+	if saved.AIProviders == nil && state.recordedProviders(kindAIProvider) > 0 {
 		saved.AIProviders = &[]savedAIProvider{} // all it had recorded are gone
+	}
+	if saved.AICLIProviders == nil && state.recordedProviders(kindAICLIProvider) > 0 {
+		saved.AICLIProviders = &[]savedAIProvider{}
 	}
 	state.restoreShared(saved)
 	state.configBase = base
 	state.hostDataChanged()
 	state.rebuildTabOptions()
-	state.save() // what was here and never recorded (a provider of the assistant, say)
 	return nil
 }
 
@@ -314,8 +403,14 @@ func unionSecrets(local, other []vault.Secret) []vault.Secret {
 	for _, secret := range byName {
 		union = append(union, secret)
 	}
-	slices.SortFunc(union, func(left, right vault.Secret) int { return strings.Compare(left.Name, right.Name) })
+	sortSecrets(union)
 	return union
+}
+
+// sortSecrets puts saved passwords in the name order the backup file uses, so
+// that merging lists with different origins still writes the same file.
+func sortSecrets(secrets []vault.Secret) {
+	slices.SortFunc(secrets, func(left, right vault.Secret) int { return strings.Compare(left.Name, right.Name) })
 }
 
 // secretsNewer says whether local holds a secret that remote lacks or has an

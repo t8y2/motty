@@ -3,16 +3,18 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 	"runtime/debug"
 	"strings"
 	"time"
 
+	"github.com/vivaui/viva/app"
+	"motty/internal/crashlog"
 	"motty/internal/diag"
 	"motty/internal/sshconn"
 	"motty/internal/update"
-	"github.com/vivaui/viva/app"
 )
 
 // The diagnostics report is what a user attaches to a bug report: the build, the
@@ -67,21 +69,34 @@ func (state *State) diagnosticsRedactor() (*diag.Redactor, map[uint32]string) {
 			redactor.Hide(user, users[user])
 		}
 	}
+	hideProxy := func(proxy *outboundProxy) {
+		if proxy == nil || proxy.address == "" {
+			return
+		}
+		redactor.Hide(proxy.address, "outbound-proxy")
+		// A failed lookup can leave the bare host in the wrapped error after the
+		// host:port form is replaced, so hide the host on its own as well.
+		if host, _, err := net.SplitHostPort(proxy.address); err == nil && host != "" {
+			redactor.Hide(host, "outbound-proxy")
+		}
+		hide("", "", proxy.user)
+	}
 	for index, host := range state.hosts {
 		alias := fmt.Sprintf("host-%d", index+1)
 		aliases[host.ID] = alias
 		redactor.Hide(host.Address, alias)
 		redactor.Hide(host.Label, alias)
 		hide("", "", host.User)
+		hideProxy(host.Proxy)
 	}
 	for index := range state.sessions {
 		host := state.sessions[index].host
 		hide(host.Label, host.Address, host.User)
+		hideProxy(host.Proxy)
 		redactor.Hide(state.sessions[index].Title, "tab")
 	}
 	if state.proxy.address != "" {
-		redactor.Hide(state.proxy.address, "outbound-proxy")
-		hide("", "", state.proxy.user)
+		hideProxy(&state.proxy)
 	}
 	if name, err := os.Hostname(); err == nil {
 		redactor.Hide(name, "this-computer")
@@ -120,13 +135,13 @@ func (state *State) diagnosticReport() string {
 	report.Section("Settings")
 	report.Fact("language", orDefault(saved.Language, "automatic"))
 	report.Fact("theme", orDefault(saved.Theme, "system"))
-	report.Fact("terminal", fmt.Sprintf("%s %s %dpx %q scheme=%s padding=%s scrollback=%d",
-		saved.TerminalOption, saved.TerminalFontFace, saved.TerminalFontSize, saved.TerminalFontFamily, saved.TerminalScheme, saved.TerminalPadding, saved.TerminalScrollback))
+	report.Fact("terminal", fmt.Sprintf("%s %s %dpx %q scheme=%s/%s padding=%s scrollback=%d",
+		saved.TerminalOption, saved.TerminalFontFace, saved.TerminalFontSize, saved.TerminalFontFamily, saved.TerminalSchemeDark, saved.TerminalSchemeLight, saved.TerminalPadding, saved.TerminalScrollback))
 	report.Fact("clipboard", saved.TerminalClipboard)
 	report.Fact("connection", fmt.Sprintf("timeout=%ds keepalive=%ds reconnect=%s restore=%s share=%s",
 		saved.ConnectionTimeoutSeconds, saved.ConnectionKeepAliveSeconds, saved.ConnectionReconnect, saved.RestoreConnect, saved.ShareConnections))
 	report.Fact("files", fmt.Sprintf("parallel=%d keep-times=%q follow=%q", saved.SFTPParallel, saved.SFTPKeepTimes, saved.SFTPFollow))
-	report.Fact("update check at start", saved.UpdateCheck != "")
+	report.Fact("automatic update check", saved.UpdateCheck != "off")
 	if saved.OutboundProxy != nil {
 		report.Fact("outbound proxy", saved.OutboundProxy.Kind)
 	}
@@ -138,6 +153,9 @@ func (state *State) diagnosticReport() string {
 	report.Section("Hosts")
 	for _, host := range state.hosts {
 		line := fmt.Sprintf("%s protocol=%s port=%d system=%s", aliases[host.ID], protocolOf(host), host.Port, host.System)
+		if host.mosh() {
+			line += " terminal=mosh"
+		}
 		if host.Algo != nil {
 			line += " custom-algorithms"
 		}
@@ -182,6 +200,21 @@ func (state *State) diagnosticReport() string {
 		}
 	}
 
+	if state.options.LogDir != "" {
+		report.Section("Log files")
+		report.Field("directory", state.options.LogDir)
+	}
+	if state.options.PreviousCrash != "" {
+		report.Section("Previous crash")
+		if text, err := crashlog.ReadReport(state.options.PreviousCrash); err != nil {
+			report.Fact("unreadable", err)
+		} else {
+			for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+				report.Line(line)
+			}
+		}
+	}
+
 	report.Section("Recent log")
 	lines := state.options.Log.Lines()
 	if len(lines) == 0 {
@@ -223,11 +256,12 @@ func (state *State) openExportDiagnostics() {
 	if errors.Is(err, app.ErrCanceled) || err == nil && path == "" {
 		return
 	}
-	if err == nil {
-		err = writePrivateAtomic(path, []byte(state.diagnosticReport()))
-	}
 	if err != nil {
-		state.status = fmt.Sprintf(m.DiagnosticsFailedFmt, err)
+		state.showActionFailure(m.DiagnosticsSaveTitle, err, state.messages.ActionFeedback.FilePickerFailed)
+		return
+	}
+	if err = writePrivateAtomic(path, []byte(state.diagnosticReport())); err != nil {
+		state.showFileSaveFailure(m.DiagnosticsSaveTitle, err)
 		return
 	}
 	state.status = fmt.Sprintf(m.DiagnosticsSavedFmt, path)

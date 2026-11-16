@@ -1,0 +1,787 @@
+package workbench
+
+import (
+	"errors"
+	"fmt"
+	"path/filepath"
+	"slices"
+	"strings"
+	"time"
+
+	"motty/internal/sshconn"
+	"motty/internal/vault"
+)
+
+type agentHostMode uint8
+
+const (
+	agentHostModeFollow agentHostMode = iota
+	agentHostModeNone
+	agentHostModeAll
+)
+
+func (mode agentHostMode) saved() string {
+	switch mode {
+	case agentHostModeNone:
+		return "none"
+	case agentHostModeAll:
+		return "all"
+	}
+	return ""
+}
+
+func agentHostModeFromSaved(value string) agentHostMode {
+	switch value {
+	case "none":
+		return agentHostModeNone
+	case "all":
+		return agentHostModeAll
+	}
+	return agentHostModeFollow
+}
+
+// hostCatalog is what it takes to turn a saved host into a connection: the
+// hosts and the jump routes between them, the private keys the user imported,
+// the outbound proxy, and the timeouts. It draws nothing and owns no window, so
+// the workbench and the headless MCP server resolve a host the same way. State
+// embeds one; its methods are the State's own.
+type hostCatalog struct {
+	hosts      []Host
+	templates  []WorkspaceTemplate
+	proxies    []proxyRecord
+	identities []identityRecord
+	// credentials are the saved passwords hosts can share; the secrets are in the vault.
+	credentials []credential
+	// proxy is the outbound proxy every host inherits unless it names its own.
+	proxy             outboundProxy
+	connectionTimeout time.Duration
+	// sshAgent is the ssh-agent connections offer their keys to.
+	sshAgent            agentChoice
+	connectionKeepAlive time.Duration
+	// systemUser is the login used for a host that names none.
+	systemUser string
+	// agentHosts holds the catalog ids of the hosts an agent may use without a
+	// window (see savedState.AgentHosts). agentHostMode is the bulk choice and
+	// the default for a host created through the dialog.
+	agentHosts    map[string]bool
+	agentHostMode agentHostMode
+	// merged maps the catalog ID of each host that was folded into another when
+	// the hosts were last read (see mergeSameHosts) to the ID that stayed, for
+	// what still refers to the old one. mergedHosts says the read changed the
+	// catalog, so the store still holds what was folded away.
+	merged      map[string]string
+	mergedHosts bool
+}
+
+// connectEnv is what resolving a connection needs beyond the catalog.
+type connectEnv struct {
+	// KnownHostsPath is the file of trusted host keys.
+	KnownHostsPath string
+	// Notify is called after every change of the connection's status.
+	Notify func()
+	// Passwords answers the saved password of an outbound proxy; nil means none
+	// is saved.
+	Passwords passwordReader
+	// ProxyLocked is what a proxy reports when its password is in a locked vault.
+	ProxyLocked error
+	// ProxyCommandUnconfirmed is what a proxy command imported from an SSH
+	// config reports, instead of running, until the user confirms it.
+	ProxyCommandUnconfirmed error
+	// ProxyCommandRefused, when set, is what every proxy command reports
+	// instead of running: an agent's connections start none.
+	ProxyCommandRefused error
+}
+
+// passwordReader looks up a saved secret by name. *vault.Vault is one.
+type passwordReader interface {
+	Get(name string) (value string, found bool, err error)
+}
+
+// connectionRoute is what resolving a host also learns about how it is reached.
+type connectionRoute struct {
+	// proxyKey identifies the non-secret outbound route, so a live connection
+	// through another route is not shared.
+	proxyKey string
+	// jumpPath is the chain of jump hosts, "a → b", or empty for a direct host.
+	jumpPath string
+}
+
+// login is the account a connection to host signs in as.
+func (catalog *hostCatalog) login(host Host) string {
+	if host.User != "" {
+		return host.User
+	}
+	return catalog.systemUser
+}
+
+func (catalog *hostCatalog) hostByID(id uint32) (Host, bool) {
+	for _, host := range catalog.hosts {
+		if host.ID == id {
+			return host, true
+		}
+	}
+	return Host{}, false
+}
+
+func (catalog *hostCatalog) hostByConnection(address, user string, port uint16) (Host, bool) {
+	if port == 0 {
+		port = defaultPort
+	}
+	for _, host := range catalog.hosts {
+		if host.isSSH() && host.Address == address && host.User == user && host.Port == port {
+			return host, true
+		}
+	}
+	return Host{}, false
+}
+
+// hostByRouteEnd is the host one end of a saved route names: the host with that
+// catalog ID, or, for a route saved without one, the host at that destination.
+// An ID that no host holds names nothing: another host at the same destination
+// is not the one the route was made for.
+func (catalog *hostCatalog) hostByRouteEnd(id, address, user string, port uint16) (Host, bool) {
+	if id == "" {
+		return catalog.hostByConnection(address, user, port)
+	}
+	for _, host := range catalog.hosts {
+		if host.CatalogID == id && host.isSSH() {
+			return host, true
+		}
+	}
+	return Host{}, false
+}
+
+// secretOwner is the catalog ID of the host that the secrets of a connection
+// prompt belong to: the host that was opened, or, for a prompt of a jump host
+// along the way, the saved host that is that jump host. A jump host nobody saved
+// gets the ID a host with its address, login and port would have been given.
+func (catalog *hostCatalog) secretOwner(target Host, endpoint sshconn.Endpoint, role sshconn.EndpointRole) string {
+	if role == sshconn.EndpointTarget {
+		if target.CatalogID == "" {
+			return catalogIDFor(target)
+		}
+		return target.CatalogID
+	}
+	if jump, ok := catalog.hostByConnection(endpoint.Host, endpoint.User, endpoint.Port); ok {
+		return jump.CatalogID
+	}
+	return catalogIDFor(Host{Protocol: protocolSSH, Address: endpoint.Host, User: endpoint.User, Port: endpoint.Port})
+}
+
+func (catalog *hostCatalog) identityPaths() []string {
+	paths := make([]string, 0, len(catalog.identities))
+	for _, identity := range catalog.identities {
+		if identity.Error == "" {
+			paths = append(paths, identity.Path)
+		}
+	}
+	return paths
+}
+
+func (catalog *hostCatalog) identityForFingerprint(fingerprint string) (identityRecord, bool) {
+	for _, identity := range catalog.identities {
+		if identity.Error == "" && identity.Fingerprint == fingerprint {
+			return identity, true
+		}
+	}
+	return identityRecord{}, false
+}
+
+func (catalog *hostCatalog) authenticationFor(host Host) sshconn.Authentication {
+	if host.Auth == authAutomatic {
+		authentication := sshconn.Authentication{Methods: sshconn.AuthAll, Agent: true}
+		options := host.SSHOptions
+		if options != nil && len(options.IdentityFiles) > 0 {
+			authentication.IdentityFiles = options.IdentityFiles
+		}
+		importedOnly := options != nil && options.IdentitiesOnly != nil && *options.IdentitiesOnly
+		switch {
+		case host.IdentitiesOnly:
+			// The app's own switch. Every identity configured here stays
+			// eligible — the host's files, the key library and the defaults —
+			// while the agent may only supply the keys matching one of them.
+			authentication.IdentitiesOnly = true
+			authentication.AdditionalIdentityFiles = catalog.identityPaths()
+		case importedOnly:
+			// An imported ssh_config said so: follow it exactly, without
+			// adding keys the file does not name.
+			authentication.IdentitiesOnly = true
+		default:
+			authentication.AdditionalIdentityFiles = catalog.identityPaths()
+		}
+		return authentication
+	}
+	switch host.Auth {
+	case authPassword:
+		return sshconn.Authentication{
+			Methods:       sshconn.AuthKeyboardInteractive | sshconn.AuthPassword,
+			IdentityFiles: []string{},
+		}
+	case authPrivateKey:
+		if fingerprint := strings.TrimSpace(host.Identity); fingerprint != "" {
+			if identity, ok := catalog.identityForFingerprint(fingerprint); ok {
+				return sshconn.Authentication{Methods: sshconn.AuthPublicKey, IdentityFiles: []string{identity.Path}}
+			}
+			return sshconn.Authentication{Methods: sshconn.AuthPublicKey, IdentityFiles: []string{}}
+		}
+		return sshconn.Authentication{
+			Methods:                 sshconn.AuthPublicKey,
+			AdditionalIdentityFiles: catalog.identityPaths(),
+		}
+	case authAgent:
+		return sshconn.Authentication{
+			Methods:       sshconn.AuthPublicKey,
+			IdentityFiles: []string{},
+			Agent:         true,
+		}
+	default:
+		return sshconn.Authentication{
+			Methods:                 sshconn.AuthAll,
+			AdditionalIdentityFiles: catalog.identityPaths(),
+			Agent:                   true,
+		}
+	}
+}
+
+// algorithmsFor maps each endpoint a connection touches to its host's algorithms.
+func (catalog *hostCatalog) algorithmsFor(target Host, jumps []Host) map[string]sshconn.Algorithms {
+	var result map[string]sshconn.Algorithms
+	for _, host := range append([]Host{target}, jumps...) {
+		if algorithms := host.algorithms(); !algorithms.IsZero() && host.isSSH() {
+			if result == nil {
+				result = make(map[string]sshconn.Algorithms)
+			}
+			result[sshconn.EndpointKey(host.Address, host.Port)] = algorithms
+		}
+	}
+	return result
+}
+
+func (catalog *hostCatalog) proxyTargetConfigured(hostID uint32) bool {
+	return catalog.proxyTargetConfiguredExcluding(hostID, 0)
+}
+
+func (catalog *hostCatalog) proxyTargetConfiguredExcluding(hostID, excludeRouteID uint32) bool {
+	for _, route := range catalog.proxies {
+		if (excludeRouteID != 0 && route.ID == excludeRouteID) || route.TargetID != hostID {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// proxyChainFor follows target's running jump routes from the immediate jump
+// outward. The boolean is false when the in-memory graph is damaged or cyclic.
+func (catalog *hostCatalog) proxyChainFor(target Host) ([]Host, bool) {
+	return catalog.proxyChain(target, true)
+}
+
+func (catalog *hostCatalog) proxyChain(target Host, runningOnly bool) ([]Host, bool) {
+	var chain []Host
+	current := target
+	for range len(catalog.proxies) + 1 {
+		jump, routed, valid := catalog.proxyJump(current.ID, runningOnly)
+		if !routed {
+			return chain, true
+		}
+		if !valid {
+			return nil, false
+		}
+		for _, seen := range chain {
+			if seen.ID == jump.ID {
+				return nil, false
+			}
+		}
+		if jump.ID == target.ID {
+			return nil, false
+		}
+		if chain == nil {
+			chain = make([]Host, 0, min(len(catalog.proxies), 4))
+		}
+		chain = append(chain, jump)
+		current = jump
+	}
+	return nil, false
+}
+
+func (catalog *hostCatalog) proxyJump(targetID uint32, runningOnly bool) (Host, bool, bool) {
+	return catalog.proxyJumpExcluding(targetID, runningOnly, 0)
+}
+
+func (catalog *hostCatalog) proxyJumpExcluding(targetID uint32, runningOnly bool, excludeRouteID uint32) (Host, bool, bool) {
+	for _, route := range catalog.proxies {
+		if (excludeRouteID != 0 && route.ID == excludeRouteID) || route.TargetID != targetID {
+			continue
+		}
+		if runningOnly && route.Stopped {
+			return Host{}, false, true
+		}
+		jump, ok := catalog.hostByID(route.JumpID)
+		return jump, true, ok
+	}
+	return Host{}, false, true
+}
+
+func (catalog *hostCatalog) proxyWouldCycle(targetID, jumpID uint32) bool {
+	return catalog.proxyWouldCycleExcluding(targetID, jumpID, 0)
+}
+
+func (catalog *hostCatalog) proxyWouldCycleExcluding(targetID, jumpID, excludeRouteID uint32) bool {
+	current := jumpID
+	for range len(catalog.proxies) + 1 {
+		if current == targetID {
+			return true
+		}
+		jump, routed, valid := catalog.proxyJumpExcluding(current, false, excludeRouteID)
+		if !routed {
+			return false
+		}
+		if !valid {
+			return true
+		}
+		current = jump.ID
+	}
+	return true
+}
+
+// proxyWithPassword is the saved proxy with its password, as a connection is
+// given it, or nil for none.
+func (catalog *hostCatalog) proxyWithPassword(saved outboundProxy, passwordSecret string, env connectEnv) *sshconn.Proxy {
+	if saved.kind == sshconn.ProxyNone || saved.address == "" {
+		return nil
+	}
+	if saved.kind == sshconn.ProxyCommand {
+		proxy := &sshconn.Proxy{Kind: saved.kind, Command: saved.address, Bypass: splitBypass(saved.bypass)}
+		switch {
+		case env.ProxyCommandRefused != nil:
+			proxy.Err = env.ProxyCommandRefused
+		case saved.unconfirmed:
+			proxy.Err = env.ProxyCommandUnconfirmed
+			if proxy.Err == nil {
+				proxy.Err = errProxyCommandUnconfirmed
+			}
+		}
+		return proxy
+	}
+	proxy := &sshconn.Proxy{Kind: saved.kind, Address: saved.address, Username: saved.user, Bypass: splitBypass(saved.bypass)}
+	if saved.user != "" && env.Passwords != nil {
+		password, found, err := env.Passwords.Get(passwordSecret)
+		switch {
+		case errors.Is(err, vault.ErrNeedsConversion):
+			proxy.Err = env.ProxyLocked
+		case err == nil && found:
+			proxy.Password = password
+		}
+	}
+	return proxy
+}
+
+// errProxyCommandUnconfirmed stands in for connectEnv.ProxyCommandUnconfirmed
+// when a caller gives none, so an unconfirmed command never runs for want of a
+// message.
+var errProxyCommandUnconfirmed = errors.New("the proxy command imported from an SSH config is not confirmed yet")
+
+// proxyForHost resolves a host's policy at connection time so inherited hosts
+// observe later changes to the global proxy.
+func (catalog *hostCatalog) proxyForHost(host Host, env connectEnv) *sshconn.Proxy {
+	if host.Protocol == protocolSerial {
+		return nil
+	}
+	if host.Proxy == nil {
+		return catalog.proxyWithPassword(catalog.proxy, proxyPasswordSecret, env)
+	}
+	return catalog.proxyWithPassword(*host.Proxy, hostProxyPasswordSecret(host.CatalogID, host.Proxy), env)
+}
+
+// sshConfigFor is how to connect to an SSH host: its endpoint, identities and
+// keep-alive, and the jump chain its route names, which it also reports as the
+// route. valid is false when the route is broken, and the config then has no
+// host to dial. The outbound proxy is the policy of proxyHost, which is host
+// itself except for the gateway of a tunneled desktop host: that connection
+// leaves by the desktop host's proxy.
+func (catalog *hostCatalog) sshConfigFor(host, proxyHost Host, env connectEnv) (config sshconn.Config, route connectionRoute, valid bool) {
+	proxy := catalog.proxyForHost(proxyHost, env)
+	route.proxyKey = proxyRouteKey(proxy)
+	config = sshconn.Config{
+		Host: host.Address, Port: host.Port, User: catalog.login(host),
+		KnownHostsPath:          env.KnownHostsPath,
+		Agent:                   true,
+		AgentAddress:            catalog.sshAgent.resolved(),
+		DialTimeout:             catalog.connectionTimeout,
+		AdditionalIdentityFiles: catalog.identityPaths(),
+		Authentication:          make(map[sshconn.Endpoint]sshconn.Authentication, 1),
+		InteractiveOnly:         host.InteractiveOnly,
+		Notify:                  env.Notify,
+		Proxy:                   proxy,
+	}
+	if env.Passwords != nil {
+		config.StoredKey = storedKeyReader(env.Passwords)
+	}
+	targetEndpoint := sshconn.Endpoint{Host: host.Address, Port: host.Port, User: catalog.login(host)}
+	config.Authentication[targetEndpoint] = catalog.authenticationFor(host)
+	config.KeepAlive = catalog.keepAliveFor(host)
+	chain, valid := catalog.proxyChainFor(host)
+	config.Algorithms = catalog.algorithmsFor(host, chain)
+	disableKeepAliveForTunnel(host, &config)
+	if !valid {
+		config.Host = ""
+	} else if len(chain) > 0 {
+		config.ProxyJumps = make([]sshconn.Endpoint, len(chain))
+		config.Authentication = make(map[sshconn.Endpoint]sshconn.Authentication, len(chain)+1)
+		config.EndpointKeepAlive = make(map[sshconn.Endpoint]sshconn.KeepAliveConfig, len(chain))
+		config.Authentication[targetEndpoint] = catalog.authenticationFor(host)
+		var path strings.Builder
+		for source := len(chain) - 1; source >= 0; source-- {
+			jump := chain[source]
+			endpoint := sshconn.Endpoint{Host: jump.Address, Port: jump.Port, User: catalog.login(jump)}
+			config.ProxyJumps[len(chain)-1-source] = endpoint
+			config.Authentication[endpoint] = catalog.authenticationFor(jump)
+			config.EndpointKeepAlive[endpoint] = catalog.keepAliveFor(jump)
+			if path.Len() > 0 {
+				path.WriteString(" → ")
+			}
+			path.WriteString(formatEndpoint(endpoint))
+		}
+		route.jumpPath = path.String()
+		catalog.addRelays(&config, &route, host, chain)
+	}
+	return config, route, valid
+}
+
+func (catalog *hostCatalog) keepAliveFor(host Host) sshconn.KeepAliveConfig {
+	options := host.SSHOptions
+	if options != nil && (options.ServerAliveInterval != nil || options.ServerAliveCountMax != nil) {
+		config := sshconn.KeepAliveConfig{UseTCP: host.InteractiveOnly}
+		if options.ServerAliveInterval != nil {
+			config.Interval = time.Duration(*options.ServerAliveInterval) * time.Second
+		} else {
+			config.Interval = catalog.connectionKeepAlive
+		}
+		if config.Interval > 0 {
+			count := 3
+			if options.ServerAliveCountMax != nil {
+				count = *options.ServerAliveCountMax
+			}
+			config.CountMax = &count
+		}
+		return config
+	}
+	if catalog.connectionKeepAlive > 0 {
+		return sshconn.KeepAliveConfig{Interval: catalog.connectionKeepAlive, Timeout: 10 * time.Second, UseTCP: host.InteractiveOnly}
+	}
+	return sshconn.KeepAliveConfig{}
+}
+
+// addRelays sets how the hops that are reached through a jump host's shell leave
+// it. chain is target's jump hosts, the nearest first: each host is reached by its
+// own route, and a ViaShell one runs after the command that route's jump host has
+// after login.
+func (catalog *hostCatalog) addRelays(config *sshconn.Config, route *connectionRoute, target Host, chain []Host) {
+	var key strings.Builder
+	for index := -1; index < len(chain); index++ {
+		reached := target
+		if index >= 0 {
+			reached = chain[index]
+		}
+		record, ok := catalog.proxyRoute(reached.ID)
+		if !ok || !record.ViaShell || index+1 >= len(chain) {
+			continue
+		}
+		jump := chain[index+1]
+		relay := sshconn.Relay{Prelude: jump.LoginCommand, Command: record.relayCommand()}
+		if config.Relays == nil {
+			config.Relays = make(map[sshconn.Endpoint]sshconn.Relay, 1)
+		}
+		config.Relays[sshconn.Endpoint{Host: reached.Address, Port: reached.Port, User: catalog.login(reached)}] = relay
+		// A connection that left by a relay is not one that left by a channel, nor by
+		// another program, and is not shared with it.
+		fmt.Fprintf(&key, "|relay:%d:%s:%d:%s", len(relay.Prelude), relay.Prelude, len(relay.Command), relay.Command)
+	}
+	route.proxyKey += key.String()
+}
+
+// proxyRoute is the running route that reaches the host, if it has one.
+func (catalog *hostCatalog) proxyRoute(targetID uint32) (proxyRecord, bool) {
+	for _, route := range catalog.proxies {
+		if route.TargetID == targetID && !route.Stopped {
+			return route, true
+		}
+	}
+	return proxyRecord{}, false
+}
+
+// decodeHosts turns saved host records into hosts. A host whose catalog id is in
+// known keeps that run-local number; the others are numbered from next on. It
+// returns the hosts and the first number still unused. A record without a label
+// or an address, or whose transport does not parse, is dropped.
+func decodeHosts(saved []savedHost, known map[string]uint32, next uint32) (hosts []Host, unused uint32) {
+	next = max(next, 1)
+	hosts = make([]Host, 0, len(saved))
+	usedIDs := make(map[string]struct{}, len(saved))
+	for _, entry := range saved {
+		if entry.Label == "" || entry.Address == "" {
+			continue
+		}
+		id, kept := known[entry.ID]
+		if !kept {
+			id = next
+			next++
+		}
+		host := Host{
+			ID: id, CatalogID: entry.ID, Label: entry.Label, Group: strings.TrimSpace(entry.Group),
+			Address: entry.Address, User: entry.User, Port: entry.Port, System: sshconn.ParseRemoteSystem(entry.System),
+		}
+		if !host.applyTransport(entry.savedTransport) {
+			if !kept {
+				next--
+			}
+			continue
+		}
+		host.Icon, _ = parseHostIcon(entry.Icon)
+		host.Color, _ = normalizeHostColor(entry.Color)
+		if tags, ok := normalizeHostTags(entry.Tags); ok {
+			setHostTags(&host, tags)
+		}
+		host.normalizeEndpoint()
+		host.finish()
+		host.CatalogID = uniqueCatalogID(host.CatalogID, host, usedIDs)
+		hosts = append(hosts, host)
+	}
+	return hosts, next
+}
+
+// decodeProxies turns saved jump routes into routes between hosts. A route keeps
+// the number it was saved with, so a window that reloads the catalog does not
+// re-point an open dialog at another route. A record saved before the number was
+// written, and a second record claiming a number already taken, are given the
+// lowest free one. A route whose ends are unknown, that jumps a host through
+// itself, that gives a target a second route, or that would close a loop, is
+// dropped.
+func decodeProxies(saved []savedProxy, hosts []Host) []proxyRecord {
+	catalog := hostCatalog{hosts: hosts}
+	ids := proxyNumbersBySavedID(saved)
+	next := uint32(1)
+	for index, entry := range saved {
+		target, targetOK := catalog.hostByRouteEnd(entry.TargetID, entry.TargetAddress, entry.TargetUser, entry.TargetPort)
+		jump, jumpOK := catalog.hostByRouteEnd(entry.JumpID, entry.JumpAddress, entry.JumpUser, entry.JumpPort)
+		if !targetOK || !jumpOK || target.ID == jump.ID || catalog.proxyTargetConfigured(target.ID) || catalog.proxyWouldCycle(target.ID, jump.ID) {
+			continue
+		}
+		if ids[index] == 0 {
+			ids[index] = freeRecordNumber(ids, &next)
+		}
+		route := proxyRecord{ID: ids[index], TargetID: target.ID, JumpID: jump.ID, Stopped: entry.Stopped}
+		if entry.ViaShell {
+			route.ViaShell = true
+			// A saved command that could not have come from the form is no command:
+			// the route then runs the default one.
+			if command := strings.TrimSpace(entry.RelayCommand); sshconn.CheckRelay(sshconn.Relay{Command: command}) == nil {
+				route.Relay = command
+			}
+		}
+		catalog.proxies = append(catalog.proxies, route)
+	}
+	return catalog.proxies
+}
+
+// proxyNumbersBySavedID is the number each saved route keeps, by its index.
+func proxyNumbersBySavedID(saved []savedProxy) []uint32 {
+	wanted := make([]uint32, len(saved))
+	for index, entry := range saved {
+		wanted[index] = entry.ID
+	}
+	return recordNumbers(wanted)
+}
+
+// recordNumbers is the number each record keeps, by its index, with zero where
+// the record has none. A number counts as kept only where exactly one record
+// asks for it: two records cannot answer to the same one.
+func recordNumbers(wanted []uint32) []uint32 {
+	numbers := make([]uint32, len(wanted))
+	count := make(map[uint32]int, len(wanted))
+	for _, number := range wanted {
+		if number != 0 {
+			count[number]++
+		}
+	}
+	for index, number := range wanted {
+		if number != 0 && count[number] == 1 {
+			numbers[index] = number
+		}
+	}
+	return numbers
+}
+
+// freeRecordNumber is the lowest number no record keeps or has been given yet.
+func freeRecordNumber(numbers []uint32, next *uint32) uint32 {
+	for {
+		number := *next
+		*next++
+		if !slices.Contains(numbers, number) {
+			return number
+		}
+	}
+}
+
+// decodeOutboundProxy reads the saved outbound proxy. A damaged address means
+// none, since it would only fail every connection.
+func decodeOutboundProxy(entry *savedOutboundProxy) outboundProxy {
+	if entry == nil {
+		return outboundProxy{}
+	}
+	kind := proxyKindFromString(entry.Kind)
+	// A proxy command is a host's own setting, never the global proxy.
+	if kind == sshconn.ProxyCommand || kind != sshconn.ProxyNone && !validProxyAddress(entry.Address) {
+		kind = sshconn.ProxyNone
+	}
+	proxy := outboundProxy{kind: kind, bypass: strings.TrimSpace(entry.Bypass)}
+	if kind != sshconn.ProxyNone {
+		proxy.address, proxy.user = entry.Address, entry.User
+	}
+	return proxy
+}
+
+// agentHostSet is the set of catalog ids a saved list names.
+func agentHostSet(ids []string) map[string]bool {
+	if len(ids) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
+}
+
+// agentHostList is the hosts an agent may use, in catalog order: the SSH hosts
+// whose catalog id is in agentHosts.
+func (catalog *hostCatalog) agentHostList() []Host {
+	var allowed []Host
+	for _, host := range catalog.hosts {
+		if host.isSSH() && catalog.agentHosts[host.CatalogID] {
+			allowed = append(allowed, host)
+		}
+	}
+	return allowed
+}
+
+// decodeIdentities inspects the private-key files a saved list names, numbering
+// them from 1 and skipping blanks and repeats.
+func decodeIdentities(paths []string, messages keyMessages) []identityRecord {
+	var identities []identityRecord
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		absolute, err := filepath.Abs(filepath.Clean(path))
+		if err != nil {
+			absolute = filepath.Clean(path)
+		}
+		if slices.ContainsFunc(identities, func(identity identityRecord) bool { return identity.Path == absolute }) {
+			continue
+		}
+		identities = append(identities, inspectIdentity(uint32(len(identities))+1, path, messages))
+	}
+	return identities
+}
+
+// connectionTimes are the dial timeout and keep-alive a saved state asks for.
+func connectionTimes(saved savedState) (timeout, keepAlive time.Duration) {
+	return time.Duration(normalizeConnectionTimeoutSeconds(saved.ConnectionTimeoutSeconds)) * time.Second,
+		connectionKeepAlive(saved)
+}
+
+// connectionKeepAlive is how often an established connection is probed.
+//
+// A state file that says nothing gets the default interval, not "off": without
+// a probe a half-open connection looks connected until the user types, which is
+// the longest wait there is. "Off" is a separate key because a duration of zero
+// is dropped from the file, and then it could not be told apart from never
+// having chosen.
+func connectionKeepAlive(saved savedState) time.Duration {
+	if saved.ConnectionKeepAliveOff {
+		return 0
+	}
+	if seconds := normalizeConnectionKeepAliveSeconds(saved.ConnectionKeepAliveSeconds); seconds > 0 {
+		return time.Duration(seconds) * time.Second
+	}
+	return defaultConnectionKeepAlive
+}
+
+// catalogFromSaved is the catalog a saved state describes, built the way the
+// window builds it when it starts, but with nothing to draw and no sessions.
+func catalogFromSaved(saved savedState, systemUser string, messages keyMessages) hostCatalog {
+	hosts, _ := decodeHosts(saved.Hosts, nil, 1)
+	catalog := hostCatalog{
+		hosts:         hosts,
+		proxies:       decodeProxies(saved.Proxies, hosts),
+		identities:    decodeIdentities(saved.IdentityFiles, messages),
+		credentials:   decodeCredentials(saved.Credentials),
+		proxy:         decodeOutboundProxy(saved.OutboundProxy),
+		systemUser:    systemUser,
+		agentHosts:    agentHostSet(saved.AgentHosts),
+		agentHostMode: agentHostModeFromSaved(saved.AgentHostMode),
+	}
+	catalog.connectionTimeout, catalog.connectionKeepAlive = connectionTimes(saved)
+	catalog.sshAgent = agentChoiceFromSaved(saved.SSHAgent, saved.SSHAgentPath)
+	return catalog
+}
+
+// effectiveAgentHostMode is the bulk mode the saved permissions actually
+// describe. A stored bulk choice only holds while every SSH host still matches
+// it; a host created, copied or imported outside the mode's own path never went
+// through it, so the page and the dialog default read the permissions rather
+// than a stored label that no longer matches them.
+func (catalog *hostCatalog) effectiveAgentHostMode() agentHostMode {
+	switch catalog.agentHostMode {
+	case agentHostModeAll:
+		for _, host := range catalog.hosts {
+			if host.isSSH() && !catalog.agentHosts[host.CatalogID] {
+				return agentHostModeFollow
+			}
+		}
+		return agentHostModeAll
+	case agentHostModeNone:
+		for _, host := range catalog.hosts {
+			if host.isSSH() && catalog.agentHosts[host.CatalogID] {
+				return agentHostModeFollow
+			}
+		}
+		return agentHostModeNone
+	}
+	return agentHostModeFollow
+}
+
+func (catalog *hostCatalog) setAgentHostMode(mode agentHostMode) {
+	switch mode {
+	case agentHostModeNone:
+		catalog.agentHosts = nil
+	case agentHostModeAll:
+		if catalog.agentHosts == nil {
+			catalog.agentHosts = make(map[string]bool)
+		}
+		for _, host := range catalog.hosts {
+			if host.isSSH() {
+				catalog.agentHosts[host.CatalogID] = true
+			}
+		}
+	case agentHostModeFollow:
+	default:
+		return
+	}
+	catalog.agentHostMode = mode
+}
+
+// setAgentAccess opens a host to agents or closes it. Only an SSH host can be
+// opened.
+func (catalog *hostCatalog) setAgentAccess(host Host, open bool) {
+	if !host.isSSH() || !open {
+		delete(catalog.agentHosts, host.CatalogID)
+		return
+	}
+	if catalog.agentHosts == nil {
+		catalog.agentHosts = make(map[string]bool)
+	}
+	catalog.agentHosts[host.CatalogID] = true
+}

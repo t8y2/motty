@@ -3,8 +3,10 @@ package sshconn
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -28,12 +30,20 @@ func xauthFile(hostname, number string, cookie []byte) []byte {
 // environment that finds it, plus the cookie it will be sent.
 func localX(t *testing.T) (env x11fwd.Environ, setups <-chan x11fwd.Setup) {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "X9")
+	dir, err := os.MkdirTemp("", "motty-x11-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	socket := filepath.Join(dir, "X9:9")
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
+		os.RemoveAll(dir)
 		t.Skipf("no unix sockets: %v", err)
 	}
-	t.Cleanup(func() { listener.Close() })
+	t.Cleanup(func() {
+		listener.Close()
+		os.RemoveAll(dir)
+	})
 	received := make(chan x11fwd.Setup, 4)
 	go func() {
 		for {
@@ -55,7 +65,7 @@ func localX(t *testing.T) (env x11fwd.Environ, setups <-chan x11fwd.Setup) {
 	file := xauthFile("testhost", "9", []byte("the-real-cookie!"))
 	env = x11fwd.Environ{
 		// The absolute form names the socket itself, as XQuartz's launchd path does.
-		Display: socket + ":9", Hostname: "testhost", GOOS: "linux", Xauthority: "/test/xauthority",
+		Display: socket, Hostname: "testhost", GOOS: "linux", Xauthority: "/test/xauthority",
 		ReadFile: func(string) ([]byte, error) { return file, nil },
 	}
 	return env, received
@@ -70,8 +80,8 @@ func TestX11ChannelOfTheShellReachesTheLocalDisplayWithItsRealCookie(t *testing.
 	})
 	h := connect(t, server)
 	w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, X11: &env})
-	if note := w.shell.X11Note(); note != "" {
-		t.Fatalf("X11 not active: %s", note)
+	if err := w.shell.X11Err(); err != nil {
+		t.Fatalf("X11 not active: %v", err)
 	}
 	w.until("welcome", func(output string) bool { return len(output) > 0 })
 	server.mu.Lock()
@@ -108,12 +118,19 @@ func TestX11ChannelOfTheShellReachesTheLocalDisplayWithItsRealCookie(t *testing.
 }
 
 func TestShellOpensWithAReasonWhenX11CannotBeForwarded(t *testing.T) {
+	var unreachable *x11fwd.UnreachableError
+	liveX, _ := localX(t)
 	cases := map[string]struct {
 		env    x11fwd.Environ
 		refuse bool
+		is     func(error) bool
 	}{
-		"no display": {env: x11fwd.Environ{GOOS: "linux"}},
-		"refused":    {env: x11fwd.Environ{Display: ":0", GOOS: "linux"}, refuse: true},
+		"no display": {env: x11fwd.Environ{GOOS: "linux"},
+			is: func(err error) bool { return errors.Is(err, x11fwd.ErrNoDisplay) }},
+		"no server": {env: x11fwd.Environ{Display: "/nonexistent/org.xquartz:0", GOOS: "darwin"},
+			is: func(err error) bool { return errors.As(err, &unreachable) }},
+		"refused": {env: liveX, refuse: true,
+			is: func(err error) bool { return errors.Is(err, ErrX11Refused) }},
 	}
 	for name, c := range cases {
 		server := startServer(t, func(server *testServer) {
@@ -124,8 +141,8 @@ func TestShellOpensWithAReasonWhenX11CannotBeForwarded(t *testing.T) {
 		h := connect(t, server)
 		env := c.env
 		w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24, X11: &env})
-		if w.shell.X11Note() == "" {
-			t.Errorf("%s: no reason given", name)
+		if err := w.shell.X11Err(); !c.is(err) {
+			t.Errorf("%s: reason = %v", name, err)
 		}
 		w.until("the shell greets", func(output string) bool { return len(output) > 0 })
 	}

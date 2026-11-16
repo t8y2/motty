@@ -8,6 +8,88 @@ Add a provider in **Settings > AI assistant**. OpenAI-compatible endpoints and
 Anthropic are supported. Provider keys are stored in the vault, never in the
 settings file.
 
+### Local CLI providers
+
+Choose **Claude Code CLI**, **Codex CLI**, **OpenCode CLI**, or **Pi CLI** to use
+an already installed local agent. Leave the executable path empty to discover its command,
+or enter the path to the executable (spaces are supported; shell commands and
+extra arguments are not). Executable paths are local to each computer and are
+not copied by configuration sync. Other provider settings and models still sync.
+
+Opening the form or changing the CLI type fills the path field with the discovered
+executable, or shows a not-found hint. Saving that value unchanged preserves
+automatic lookup; editing it saves an explicit path. Discovery does not run the
+CLI or start a login flow.
+
+No Endpoint or API Key is required in Motty. The CLI keeps its own credentials
+and provider configuration. Select **CLI default model** to use its configured
+default, or manually add a model ID. The default entry and a successful version
+probe do not establish that authentication or model access works.
+
+Official-account sign-in is optional when the CLI already has a working
+third-party provider, API key, or gateway configuration. Authentication status
+is advisory: even a signed-out status does not block sending. Motty preserves
+the CLI's user-level routing and inherited environment; it does not replace
+them with official endpoints or move those credentials into Motty's vault.
+
+### Sign in from Motty
+
+The selected local provider has **Check status** and **Sign in** actions. A
+definite login-required assistant error also offers **Sign in** for that provider.
+Only your click starts authentication; opening settings or refreshing models
+never starts a browser or signs you in.
+
+Sign in opens a dedicated **sensitive local terminal**, not an SSH session:
+
+| Provider | Official command | Flow |
+| --- | --- | --- |
+| Claude Code | `claude auth login` | Official browser authorization and CLI code fallback. |
+| Codex | `codex login` | Official browser authorization; **Device code** is an explicit alternative. |
+| OpenCode | `opencode auth login` | Choose the provider, then its supported browser/key/other method. |
+| Pi | `pi` | Opens Pi's own interface; run `/login` to choose a provider and its browser/key flow. |
+
+Complete the CLI prompts, close the login terminal, and manually retry your
+question. Authentication is rechecked where the CLI supplies reliable status;
+OpenCode, Pi and custom/environment-key configurations may remain **unknown**.
+Unknown does not block sending a request. A provider/model permission or network
+error is not automatically treated as a signed-out account.
+
+The terminal's output and input never enter AI context, conversation history,
+recordings, or sync. Motty does not import CLI credentials into its vault or
+change the CLI's own configuration; the official CLI may save credentials during
+your login. Pi has no switch for a separate MCP file, so a request runs from a
+private agent directory that links the existing login and provider definitions
+for its duration and is removed afterwards. Cancel/Escape,
+a 15-minute timeout, provider removal, or window close stops the owned login
+process without logging you out or closing your browser. Original AI requests
+and terminal actions are never automatically resumed after login.
+
+### CLI safety and compatibility
+
+Each AI send uses a private working directory and a short-lived, authenticated
+MCP endpoint scoped to its window and mode. It does not enable external MCP.
+CLI shell/file/browser/subagent execution channels are disabled: terminal and
+SFTP operations still go through Motty's normal approval gate. Pi runs with its
+built-in tools, third-party extensions, skills, context files and user-level MCP servers
+disabled, and its private agent directory lists Motty's endpoint as the only
+server. Unsupported
+isolation controls cause a clear failure rather than a weaker fallback. Installed
+CLI executables remain trusted software, not hostile programs sandboxed by Motty.
+
+For native CLI sessions, each accepted Motty tool call consumes one configured
+step. HTTP providers retain their existing tool-requesting-model-turn counting.
+Sends have a 30-minute total timeout; individual tool approval limits still apply.
+Motty does not automatically install, upgrade, or log in to a CLI.
+
+The shared CLI runtime reads the installed version and checks the capabilities
+declared by its adapter; it does not use a version-number allowlist. Missing
+parameters, ineffective isolation settings, failed checks and invalid check
+output are reported with the CLI name, detected version and failing check.
+Native tool isolation remains required regardless of the version. Codex retains
+protocol-only MCP resource helpers, but the private Motty endpoint publishes no
+resources and rejects resource list/read requests. These helpers cannot read
+local files or reach another MCP server.
+
 ## Modes
 
 **Ask** answers questions with the visible terminal as context.
@@ -18,6 +100,12 @@ SFTP.
 In Ask mode the assistant can request a switch to Agent when a request needs a
 tool. If you approve, the request is retried in Agent mode and the choice is
 remembered. If you decline, the assistant answers without the tool.
+
+### Attachments and SSH uploads
+
+The paperclip sends text, extracted Office text or images to the model for reading; it is not a binary transfer. Assistant settings offer 1, 4 (default), or 8 MiB per text file. Conversation history and provider context limits still apply.
+
+To upload a local build artifact, switch to Agent mode, use the upload button beside the paperclip, select a regular file and specify its full remote destination. The model sees only its name, size and request-scoped ID, never its bytes or absolute local path. The file streams over SFTP/SCP without an attachment-size limit. Every upload asks for approval naming the file, SSH host and destination; existing files are not overwritten by default. Stopping the request cancels the transfer. Success is reported only after completion.
 
 ## Risk and approval
 

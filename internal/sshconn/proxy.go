@@ -18,7 +18,8 @@ import (
 // target, or to the first jump host. Everything after that already travels inside
 // SSH. SOCKS5 (RFC 1928, with the user/password method of RFC 1929) and HTTP
 // CONNECT are supported; the proxy resolves the destination's name, so a host
-// that is only known inside the proxy's network works.
+// that is only known inside the proxy's network works. A proxy command (see
+// proxycommand.go) is a local program in the place of the proxy.
 
 // ProxyKind says how a proxy is spoken to.
 type ProxyKind uint8
@@ -27,13 +28,17 @@ const (
 	ProxyNone ProxyKind = iota
 	ProxySOCKS5
 	ProxyHTTPConnect
+	ProxyCommand
 )
 
 // Proxy is an outbound proxy.
 type Proxy struct {
 	Kind ProxyKind
-	// Address is the proxy's host:port.
+	// Address is the proxy's host:port; a ProxyCommand has none.
 	Address string
+	// Command is a ProxyCommand's program line, with the tokens of
+	// ExpandProxyCommand.
+	Command string
 	// Username and Password sign in to the proxy; both empty means no login.
 	Username, Password string
 	// Bypass lists destinations reached directly: a host name, a ".suffix" or
@@ -53,7 +58,7 @@ const maxProxyHeader = 8 << 10
 // Uses reports whether a connection to address (host:port) goes through the
 // proxy.
 func (proxy *Proxy) Uses(address string) bool {
-	if proxy == nil || proxy.Kind == ProxyNone || proxy.Address == "" {
+	if proxy == nil || !proxy.Configured() {
 		return false
 	}
 	host, _, err := net.SplitHostPort(address)
@@ -90,8 +95,26 @@ func (proxy *Proxy) bypassed(host string) bool {
 	return false
 }
 
+// Configured reports whether the proxy names somewhere to go: an address, or a
+// command for a ProxyCommand.
+func (proxy *Proxy) Configured() bool {
+	switch proxy.Kind {
+	case ProxySOCKS5, ProxyHTTPConnect:
+		return proxy.Address != ""
+	case ProxyCommand:
+		return proxy.Command != ""
+	}
+	return false
+}
+
 // Dial opens a TCP connection to address through the proxy.
 func (proxy *Proxy) Dial(ctx context.Context, timeout time.Duration, address string) (net.Conn, error) {
+	return proxy.DialAs(ctx, timeout, address, "")
+}
+
+// DialAs is Dial for a connection that will sign in as user, whom a proxy
+// command can name (%r).
+func (proxy *Proxy) DialAs(ctx context.Context, timeout time.Duration, address, user string) (net.Conn, error) {
 	if proxy.Err != nil {
 		return nil, proxy.Err
 	}
@@ -102,6 +125,9 @@ func (proxy *Proxy) Dial(ctx context.Context, timeout time.Duration, address str
 	port, err := strconv.Atoi(portText)
 	if err != nil || port < 1 || port > 65535 {
 		return nil, fmt.Errorf("invalid port in %q", address)
+	}
+	if proxy.Kind == ProxyCommand {
+		return proxy.dialCommand(ctx, host, port, user)
 	}
 	dialer := net.Dialer{Timeout: timeout}
 	socket, err := dialer.DialContext(ctx, "tcp", proxy.Address)

@@ -7,11 +7,11 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sshconn"
 	"motty/internal/term"
-	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/flex"
-	"github.com/vivaui/viva/ui"
+	layoutcore "motty/internal/workspace"
 )
 
 // terminalMenuHits is the place of the controls this file paints.
@@ -22,13 +22,14 @@ var (
 	hitTerminalMenuSave    = tree.ID(terminalMenuHits, "terminal-menu-save")
 	hitTerminalMenuSearch  = tree.ID(terminalMenuHits, "terminal-menu-search")
 	hitTerminalMenuHistory = tree.ID(terminalMenuHits, "terminal-menu-history")
+	hitTerminalMenuRename  = tree.ID(terminalMenuHits, "terminal-menu-rename")
 )
 
 // maxMenuActions bounds what the menu offers for the text under the pointer.
 const maxMenuActions = 4
 
 // hitTerminalMenuAction is the row of one detected action.
-var hitTerminalMenuAction = [maxMenuActions]ui.ID{
+var hitTerminalMenuAction = [maxMenuActions]gfx.ID{
 	tree.ID(terminalMenuHits, "terminal-menu-action-0"), tree.ID(terminalMenuHits, "terminal-menu-action-1"),
 	tree.ID(terminalMenuHits, "terminal-menu-action-2"), tree.ID(terminalMenuHits, "terminal-menu-action-3"),
 }
@@ -41,8 +42,8 @@ const maxSearchQuery = 300
 type terminalMenu struct {
 	open    bool
 	session uint32
-	at      ui.Point // window coordinates of the press that opened it
-	pointer ui.Point // window coordinates of the latest pointer event
+	at      gfx.Point // window coordinates of the press that opened it
+	pointer gfx.Point // window coordinates of the latest pointer event
 	// found is what can be done with the text the menu was opened on.
 	found [maxMenuActions]detected
 	count int
@@ -50,15 +51,16 @@ type terminalMenu struct {
 
 // terminalMenuPointer closes an open menu on a press of any button outside it:
 // the backdrop swallows the press, and only a primary one is also a click.
-func (state *State) terminalMenuPointer(event ui.PointerEvent) (ui.EventResult, bool) {
-	if !state.terminalMenu.open || event.Target != hitTerminalMenuDismiss || event.Kind != ui.PointerDown || event.Button == ui.PointerButtonPrimary {
-		return ui.EventResult{}, false
+func (state *State) terminalMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if !state.terminalMenu.open || event.Target != hitTerminalMenuDismiss || event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonPrimary {
+		return gfx.EventResult{}, false
 	}
 	state.terminalMenu.open = false
-	return ui.EventResult{Handled: true, Repaint: true}, true
+	return gfx.EventResult{Handled: true, Repaint: true}, true
 }
 
 func (state *State) openTerminalMenu(session *Session) {
+	state.ghostMenu.open = false
 	state.terminalMenu = terminalMenu{open: true, session: session.ID, at: state.terminalMenu.pointer, pointer: state.terminalMenu.pointer}
 }
 
@@ -150,14 +152,16 @@ func (state *State) showInFiles(session *Session, target string) {
 	if strings.HasSuffix(target, "/") {
 		dir = path.Clean(target)
 	}
-	state.Click(hitSFTPOpen)
+	// Showing a folder only ever opens the panel: a panel that is already up
+	// keeps the view it has, and the navigation below runs on it.
+	state.showFilesPanel(session)
 	view := session.files
 	switch {
 	case view == nil:
 	case view.local:
-		state.listLocal(view, filepath.FromSlash(dir))
+		state.navigateLocalDirectory(view, filepath.FromSlash(dir))
 	default:
-		state.openSFTPDirectory(view, dir)
+		state.navigateSFTPDirectory(view, dir)
 	}
 }
 
@@ -170,7 +174,14 @@ func (state *State) terminalMenuSession() (*Session, bool) {
 	return session, ok && session.term != nil
 }
 
-func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
+// terminalMenuSplits reports whether the session is one pane of a split tab, so
+// closing it takes away a pane rather than the whole tab.
+func (state *State) terminalMenuSplits(session *Session) bool {
+	workspaceID, _, ok := state.deck.PaneForSession(layoutcore.SessionID(session.ID))
+	return ok && len(state.deck.Panes(workspaceID, nil)) > 1
+}
+
+func (state *State) paintTerminalMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	session, ok := state.terminalMenuSession()
 	if !ok {
 		state.terminalMenu.open = false
@@ -183,9 +194,9 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	// so painting the menu allocates nothing.
 	var keys [shortcutActionCount][5]string
 	caps := func(action shortcutAction) []string {
-		return state.shortcuts.chords[action].keys(keys[action][:0])
+		return state.shortcuts.chords.Chord(action).Keycaps(keys[action][:0])
 	}
-	icon := func(kind uint8) ui.Icon { return lucideIcons[kind] }
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	for index := 0; index < state.terminalMenu.count; index++ {
 		found := state.terminalMenu.found[index]
@@ -195,32 +206,51 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuCopy, Label: messages.MenuCopy, Icon: icon(iconCopy), Keys: caps(shortcutCopy), Disabled: !hasSelection})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuPaste, Label: messages.MenuPaste, Icon: icon(iconPaste), Keys: caps(shortcutPaste), Disabled: !live})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSelectAll, Label: messages.MenuSelectAll, Icon: icon(iconSelectAll)})
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuClearScreen, Label: messages.MenuClearScreen, Icon: icon(iconEraser), Keys: caps(shortcutClearScreen), Disabled: session.term.screen.Modes().AltScreen})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuClear, Label: messages.MenuClearScrollback, Icon: icon(iconEraser), Disabled: session.term.screen.Scrollback() == 0})
-	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSave, Label: messages.Tools.MenuSaveOutput, Icon: icon(iconFileDown)})
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSave, Label: messages.Tools.MenuSaveOutput, Icon: icon(iconSave)})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSplitRight, Label: messages.PaneSplitHorizontal, Icon: icon(iconColumns2), Keys: caps(shortcutPaneSplitHorizontal)})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSplitDown, Label: messages.PaneSplitVertical, Icon: icon(iconRows2), Keys: caps(shortcutPaneSplitVertical)})
+	// A tab of one pane closes as a tab, which this menu does not offer: closing
+	// its only pane would look like the same thing under a narrower name.
+	if state.terminalMenuSplits(session) {
+		// The tab's own Rename names a one-terminal tab; in a split tab each
+		// terminal needs a name of its own for the assistant to be told apart.
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuRename, Label: messages.MenuRenameTerminal, Icon: icon(iconPencil)})
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuClosePane, Label: messages.PaneClose, Icon: icon(iconClose), Keys: caps(shortcutPaneClose)})
+	}
 	rows.separate()
-	rows.add(components.ContextMenuItem{ID: hitTerminalMenuFiles, Label: messages.SFTPFiles, Icon: icon(iconFolderOpen), Keys: caps(shortcutSFTP), Disabled: !session.isLocal() && (session.conn == nil || !session.hasServer())})
-	rows.add(components.ContextMenuItem{ID: hitTerminalMenuTransfer, Label: messages.Tools.XYMenu, Icon: icon(iconTransfer), Disabled: !live || state.transfer.phase != transferNone})
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuFiles, Label: messages.SFTPFiles, Icon: icon(iconFolderOpen), Kind: components.ContextMenuCheckbox, Checked: state.filesPanelShown(), Disabled: !session.isLocal() && (session.conn == nil || !session.hasServer())})
+	rows.add(components.ContextMenuItem{ID: hitTerminalMenuTransfer, Label: messages.Tools.XYMenu, Icon: icon(iconTransfer), Disabled: !live || session.transferBusy()})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuAsk, Label: messages.AIPanel.MenuAskSelection, Icon: icon(iconBot), Disabled: !hasSelection})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuExplain, Label: messages.AIPanel.MenuExplainOutput, Icon: icon(iconSparkles)})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuHistory, Label: messages.History.Title, Icon: icon(iconHistory), Keys: caps(shortcutHistory), Disabled: !state.historyAvailable(session)})
 	rows.add(components.ContextMenuItem{ID: hitTerminalMenuSearch, Label: messages.Tools.MenuSearchSelection, Icon: icon(iconSearch), Disabled: !hasSelection})
-	const switchWidth = float32(32)
 	if _, _, monitor := state.remoteStatsToggle(session); monitor {
-		rows.add(components.ContextMenuItem{ID: hitTerminalMenuStats, Label: messages.MenuResourceMonitor, Icon: icon(iconActivity), TrailingWidth: switchWidth})
-		rows.add(components.ContextMenuItem{ID: hitTerminalMenuTools, Label: messages.Tools.RemoteMenu, Icon: icon(iconWrench)})
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuStats, Label: messages.MenuResourceMonitor, Icon: icon(iconActivity), Kind: components.ContextMenuCheckbox, Checked: session.stats != nil})
 	}
-	if state.canReconnect(session) {
+	if state.remoteToolsOffered(session) {
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuTools, Label: messages.Tools.RemoteMenu, Icon: icon(iconProcess)})
+	}
+	reconnect, restart, disconnect := state.canReconnect(session), state.canReconnectLive(session), state.canDisconnect(session)
+	if reconnect || restart || disconnect {
 		rows.separate()
+	}
+	if reconnect {
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuReconnect, Label: messages.SessionReconnect, Icon: icon(iconRefresh)})
+	}
+	if restart {
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuRestart, Label: messages.MenuReconnect, Icon: icon(iconRefresh)})
+	}
+	if disconnect {
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuDisconnect, Label: messages.MenuDisconnect, Icon: icon(iconPlug)})
 	}
 
 	width, height := rows.size(canvas, state.contextMenuTheme())
 	at := state.terminalMenu.at
-	bounds := ui.Rect{
+	bounds := gfx.Rect{
 		X:     min(at.X, max(viewport.Width-width-6, 0)),
 		Y:     min(at.Y, max(viewport.Height-height-6, 0)),
 		Width: width, Height: height,
@@ -232,17 +262,7 @@ func (state *State) paintTerminalMenu(canvas *ui.Canvas, viewport ui.Rect) {
 		RowHeight: contextMenuRow,
 	})
 	state.menuPlaced(menu.Bounds())
-	// The row is the click target; the switch in its slot only shows the state,
-	// so it is painted without a hit of its own.
-	rows.paint(&menu, func(_ components.ContextMenuItem, slot ui.Rect) {
-		var track flex.Box
-		f := state.paneChrome.Begin(canvas, state.Theme(), slot)
-		f.Row().Fill().Items(flex.Center).Children(func() {
-			track = f.Slot().Size(switchWidth, 18)
-		})
-		f.End()
-		components.BeginSwitch(canvas, state.switchTheme(), ui.ID{}, track.Rect(), session.stats != nil).Small().Paint()
-	})
+	rows.paint(&menu, nil)
 	menu.End()
 }
 
@@ -262,7 +282,7 @@ func actionIcon(kind actionKind) uint8 {
 }
 
 // clickTerminalMenu runs a menu choice. A press anywhere else only closes the menu.
-func (state *State) clickTerminalMenu(id ui.ID) bool {
+func (state *State) clickTerminalMenu(id gfx.ID) bool {
 	if !state.terminalMenu.open {
 		return false
 	}
@@ -280,7 +300,7 @@ func (state *State) clickTerminalMenu(id ui.ID) bool {
 	switch id {
 	case hitTerminalMenuCopy:
 		if selection := session.term.selection; selection.selected {
-			if err := state.options.SetClipboardText(session.term.screen.SelectedText(selection.anchor, selection.focus)); err != nil {
+			if err := state.options.SetClipboardText(selection.text(session.term.screen)); err != nil {
 				state.status = err.Error()
 			}
 		}
@@ -288,9 +308,14 @@ func (state *State) clickTerminalMenu(id ui.ID) bool {
 		state.pasteIntoTerminal(session)
 	case hitTerminalMenuSelectAll:
 		cols, rows := session.term.screen.Size()
-		session.term.selection.selectRange(term.Position{}, term.Position{Row: rows - 1, Column: cols - 1})
+		session.term.selection.selectRange(
+			session.term.screen.PointAt(term.Position{}),
+			session.term.screen.PointAt(term.Position{Row: rows - 1, Column: cols - 1}))
+	case hitTerminalMenuClearScreen:
+		session.term.clearScreen(state.messages)
 	case hitTerminalMenuClear:
 		session.term.screen.ClearScrollback()
+		session.term.selection.trim(session.term.screen)
 	case hitTerminalMenuSave:
 		state.saveTerminalOutput(session)
 	case hitTerminalMenuSearch:
@@ -301,20 +326,30 @@ func (state *State) clickTerminalMenu(id ui.ID) bool {
 		state.Click(hitPaneSplitHorizontal)
 	case hitTerminalMenuSplitDown:
 		state.Click(hitPaneSplitVertical)
+	case hitTerminalMenuRename:
+		state.openTerminalRename(session)
+	case hitTerminalMenuClosePane:
+		// The session the menu was opened on, not whichever pane has the
+		// keyboard: a right click does not move focus.
+		state.requestCloseSession(session.ID)
 	case hitTerminalMenuFiles:
 		state.Click(hitSFTPOpen)
 	case hitTerminalMenuAsk:
 		state.aiAskAboutSelection(session)
 	case hitTerminalMenuExplain:
-		state.aiExplainOutput()
+		state.aiExplainOutput(session)
 	case hitTerminalMenuTransfer:
 		state.openXYSetup(session)
 	case hitTerminalMenuTools:
-		state.openRemoteTools(session)
+		state.openProcessTools(session)
 	case hitTerminalMenuStats:
 		state.Click(hitRemoteStats)
 	case hitTerminalMenuReconnect:
 		state.reconnect(session)
+	case hitTerminalMenuRestart:
+		state.askSessionLink(session, false)
+	case hitTerminalMenuDisconnect:
+		state.askSessionLink(session, true)
 	}
 	return true
 }

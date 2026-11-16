@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/components"
 )
 
 type openedPaths struct {
@@ -77,6 +78,13 @@ func TestEditingInTheSystemEditorSendsEverySaveBack(t *testing.T) {
 	})
 	if session.files.status != fmt.Sprintf(state.messages.Tools.ExtEditSentFmt, "notes.txt") {
 		t.Fatalf("status %q", session.files.status)
+	}
+	if len(state.fileNotices.items) == 0 {
+		t.Fatal("sending an edit back did not report success")
+	}
+	notice := state.fileNotices.items[len(state.fileNotices.items)-1]
+	if notice.title != "notes.txt" || notice.detail != fmt.Sprintf(state.messages.Tools.ExtEditSentFmt, "notes.txt") || notice.kind != components.ToastSuccess {
+		t.Fatalf("send notice = %+v", notice)
 	}
 
 	// A second save goes on the identity the first one left, with no conflict.
@@ -177,12 +185,22 @@ func TestAnEditOfTheSameFileIsNotOpenedTwice(t *testing.T) {
 func TestLocalNamesKeepTheExtensionAndDropTheDangerousCharacters(t *testing.T) {
 	for remote, want := range map[string]string{
 		"/etc/nginx/nginx.conf": "nginx.conf",
-		"/tmp/a:b*c?.txt":       "a_b_c_.txt",
-		"/tmp/..":               "file",
 		"/tmp/ok name.sh":       "ok name.sh",
 	} {
 		if got := safeLocalName(remote); got != want {
 			t.Errorf("%q -> %q, want %q", remote, got, want)
 		}
+	}
+	// A name that had to change keeps its extension last and a digest of the
+	// original, so a:b and a*b cannot land on one local name.
+	dangerous := safeLocalName("/tmp/a:b*c?.txt")
+	if strings.ContainsAny(dangerous, `<>:"/\|?*`) || !strings.HasSuffix(dangerous, ".txt") || !strings.Contains(dangerous, "~") {
+		t.Errorf("dangerous name = %q", dangerous)
+	}
+	if safeLocalName("/tmp/a:b.txt") == safeLocalName("/tmp/a*b.txt") {
+		t.Error("distinct remote names share one local name")
+	}
+	if got := safeLocalName("/tmp/.."); !strings.HasPrefix(got, "file") {
+		t.Errorf("parent name -> %q", got)
 	}
 }

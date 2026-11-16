@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -27,30 +28,75 @@ type Info struct {
 	Name        string
 	Algorithm   string
 	Fingerprint string
-	Encrypted   bool
-	Size        int64
-	Modified    time.Time
+	// PublicKey is the key in authorized_keys form ("ssh-ed25519 AAAA…"), ready
+	// to paste on a server. Empty while the key is locked and its public half is
+	// not readable without the passphrase.
+	PublicKey string
+	Encrypted bool
+	Size      int64
+	Modified  time.Time
 }
 
 // Inspect validates path as a supported private key and returns its public
 // metadata. Encrypted OpenSSH keys and PPK files expose their public key
-// without a passphrase; older encrypted PEM forms may leave Algorithm and
-// Fingerprint empty until authentication.
+// without a passphrase; older encrypted PEM forms and encrypted PKCS#8 files
+// may leave Algorithm and Fingerprint empty until authentication.
 func Inspect(path string) (Info, error) {
 	absolute, data, file, err := read(path)
 	if err != nil {
 		return Info{}, err
 	}
-	info := Info{
-		Path: absolute, Name: filepath.Base(absolute),
-		Size: file.Size(), Modified: file.ModTime(),
+	info, err := InspectData(absolute, data)
+	if err != nil {
+		return Info{}, err
 	}
+	info.Size, info.Modified = file.Size(), file.ModTime()
+	return info, nil
+}
+
+func PublicKey(path string) (ssh.PublicKey, error) {
+	for _, candidate := range []string{path + ".pub", path} {
+		absolute, data, _, err := read(candidate)
+		if err != nil {
+			continue
+		}
+		public, _, _, _, err := ssh.ParseAuthorizedKey(data)
+		if err == nil {
+			return public, nil
+		}
+		if candidate == path {
+			info, err := InspectData(absolute, data)
+			if err == nil && info.PublicKey != "" {
+				public, _, _, _, err := ssh.ParseAuthorizedKey([]byte(info.PublicKey))
+				return public, err
+			}
+		}
+	}
+	return nil, fmt.Errorf("no readable public identity for %s", path)
+}
+
+// InspectData is Inspect for a key whose bytes are already in hand, such as one
+// kept in the vault. name stands where the path would: it becomes Path and,
+// as its last element, Name.
+func InspectData(name string, data []byte) (Info, error) {
+	if len(data) > maxPrivateKeySize {
+		return Info{}, ErrTooLarge
+	}
+	info := Info{Path: name, Name: filepath.Base(name), Size: int64(len(data))}
 	if ppk.LooksLikePPK(data) {
 		public, _, encrypted, err := ppk.ParsePublic(data)
 		if err != nil {
 			return Info{}, fmt.Errorf("inspect SSH private key: %w", err)
 		}
-		info.Algorithm, info.Fingerprint, info.Encrypted = public.Type(), ssh.FingerprintSHA256(public), encrypted
+		info.describe(public)
+		info.Encrypted = encrypted
+		return info, nil
+	}
+	if block := encryptedPKCS8(data); block != nil {
+		if _, err := parsePKCS8Scheme(block.Bytes); err != nil {
+			return Info{}, fmt.Errorf("inspect SSH private key: %w", err)
+		}
+		info.Encrypted = true
 		return info, nil
 	}
 	if err := securityKeyCheck(data); err != nil {
@@ -58,8 +104,7 @@ func Inspect(path string) (Info, error) {
 	}
 	signer, err := ssh.ParsePrivateKey(data)
 	if err == nil {
-		info.Algorithm = signer.PublicKey().Type()
-		info.Fingerprint = ssh.FingerprintSHA256(signer.PublicKey())
+		info.describe(signer.PublicKey())
 		return info, nil
 	}
 	var missing *ssh.PassphraseMissingError
@@ -68,10 +113,15 @@ func Inspect(path string) (Info, error) {
 	}
 	info.Encrypted = true
 	if missing.PublicKey != nil {
-		info.Algorithm = missing.PublicKey.Type()
-		info.Fingerprint = ssh.FingerprintSHA256(missing.PublicKey)
+		info.describe(missing.PublicKey)
 	}
 	return info, nil
+}
+
+func (info *Info) describe(public ssh.PublicKey) {
+	info.Algorithm = public.Type()
+	info.Fingerprint = ssh.FingerprintSHA256(public)
+	info.PublicKey = strings.TrimSpace(string(ssh.MarshalAuthorizedKey(public)))
 }
 
 // securityKeyCheck refuses FIDO2 hardware-key identities with a message that
@@ -87,16 +137,24 @@ func securityKeyCheck(data []byte) error {
 	return nil
 }
 
-// Load parses one private key, OpenSSH/PEM or PuTTY PPK format. passphrase
-// may be nil for an unencrypted key. Callers own the passphrase bytes and can
-// clear them immediately after return.
+// Load parses one private key file, OpenSSH/PEM or PuTTY PPK format.
+// passphrase may be nil for an unencrypted key. Callers own the passphrase
+// bytes and can clear them immediately after return.
 func Load(path string, passphrase []byte) (ssh.Signer, error) {
 	_, data, _, err := read(path)
 	if err != nil {
 		return nil, err
 	}
+	return Parse(data, passphrase)
+}
+
+// Parse is Load for a key whose bytes are already in hand.
+func Parse(data, passphrase []byte) (ssh.Signer, error) {
 	if ppk.LooksLikePPK(data) {
 		return ppk.Parse(data, passphrase)
+	}
+	if block := encryptedPKCS8(data); block != nil {
+		return loadEncryptedPKCS8(block, passphrase)
 	}
 	if err := securityKeyCheck(data); err != nil {
 		return nil, err

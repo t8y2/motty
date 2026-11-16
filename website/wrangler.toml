@@ -1,0 +1,10 @@
+# Cloudflare Pages project that serves https://motty.page.
+#
+# `pnpm build` writes the static export to out/, and `wrangler pages deploy`
+# uploads that directory. The project name and the output directory live here so
+# that the workflow and a manual deploy from this directory agree.
+#
+# One-time project and custom-domain setup: docs/website.md.
+name = "motty-page"
+compatibility_date = "2026-10-26"
+pages_build_output_dir = "out"

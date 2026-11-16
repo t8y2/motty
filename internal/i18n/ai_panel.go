@@ -2,20 +2,34 @@ package i18n
 
 // AIPanelMessages are the texts of the assistant panel.
 type AIPanelMessages struct {
-	Title string
+	Target             string
+	TargetChoose       string
+	TargetSwitchedFmt  string
+	TargetNone         string
+	TargetConnected    string
+	TargetDisconnected string
+	TargetUnavailable  string
+	TargetLocked       string
+	TargetHint         string
+	// TargetGroupFmt labels the row that ticks every terminal of a split tab;
+	// tab; TargetLimitFmt says why one more connection was not added.
+	TargetGroupFmt string
+	TargetLimitFmt string
+	Title          string
 	// ToggleTip names the window-bar button; Toggle is the shortcut and command
 	// palette entry.
 	ToggleTip string
 	Toggle    string
 	Close     string
 
-	NewConversation string
-	History         string
-	HistoryTitle    string
-	HistoryEmpty    string
-	HistoryOpen     string
-	HistoryDelete   string
-	HistoryRename   string
+	NewConversation       string
+	History               string
+	HistoryTitle          string
+	HistoryEmpty          string
+	HistoryOpen           string
+	HistoryDelete         string
+	HistoryRename         string
+	HistoryScrollbarLabel string
 
 	// The rename dialog of a saved conversation.
 	RenameTitle       string
@@ -24,8 +38,23 @@ type AIPanelMessages struct {
 	RenameSubmit      string
 	RenameRequired    string
 
-	UsageFmt      string
-	UsageTotalFmt string
+	UsageFmt                string
+	UsageTotalFmt           string
+	UsageCachedFmt          string
+	RunWaiting              string
+	RunWaitingLong          string
+	RunAnswering            string
+	RunToolFmt              string
+	RunApproval             string
+	RunStopping             string
+	RunCompleted            string
+	RunStopped              string
+	RunElapsedFmt           string
+	RunTotalTimeFmt         string
+	RunUsageFmt             string
+	RunUsageUnknown         string
+	RunUsageIncomplete      string
+	RunUsageConversationFmt string
 
 	ModeAsk   string
 	ModeAgent string
@@ -37,6 +66,7 @@ type AIPanelMessages struct {
 	SetupSummary string
 
 	ModelChooseFmt string // the model chip: the model and what pressing it does
+	ModelSettings  string // the chip menu's shortcut to the settings' model page
 	ResizePanel    string // the name of the edge that changes the panel's width
 	ResizeComposer string // and of the one that changes the message box's height
 
@@ -46,12 +76,41 @@ type AIPanelMessages struct {
 	Send                string
 	Stop                string
 
-	EmptyTitle  string
-	EmptyHint   string
-	Example1    string
-	Example2    string
-	Example3    string
-	ScrollToEnd string
+	// Files and pictures attached to a message. The Fmt strings take the file's
+	// name first.
+	Attach                   string // the paperclip: its name and tooltip
+	Upload                   string
+	UploadPickerTitle        string
+	UploadNeedsAgent         string
+	AttachPickerTitle        string
+	AttachDropHint           string // over the panel while files are dragged in
+	AttachRemoveFmt          string
+	AttachedLabel            string // the name of the row of attachments under a sent message
+	AttachTooManyFmt         string // takes the most that can be attached
+	AttachFolderFmt          string
+	AttachEmptyFmt           string
+	AttachTextTooBigFmt      string // takes the name and the size limit
+	AttachReadTooLargeFmt    string // takes the name and the maximum file read size
+	AttachTooLargeFmt        string
+	AttachUnsupportedFmt     string
+	AttachTotalTextFmt       string // takes the name and the size limit of all text
+	AttachFailedFmt          string // takes the name and the system's reason
+	PastedImageName          string // the name a picture pasted from the clipboard goes by
+	PastedTextName           string // the name a long text pasted from the clipboard goes by
+	AttachPastedTruncatedFmt string // takes the name, limit and truncated size when huge pasted text is capped
+	MessageTooLargeFmt       string // takes the saved-message size limit
+	HistorySaveFailedFmt     string // takes the system's reason
+
+	EmptyTitle     string
+	EmptyHint      string
+	Example1       string
+	Example2       string
+	Example3       string
+	ScrollToEnd    string
+	ScrollbarLabel string
+	// ListLabel names the scrolling conversation or history list, the control the
+	// messages are painted in.
+	ListLabel string
 
 	// The empty panel while no terminal is open: what to do to give the assistant
 	// something to look at, and questions that need no terminal.
@@ -67,6 +126,7 @@ type AIPanelMessages struct {
 	HideOutput  string
 	CopyCode    string
 	CopyAnswer  string
+	AnswerText  string // the selectable body of an assistant answer
 
 	ToolListSessions     string
 	ToolTerminalRead     string
@@ -76,6 +136,8 @@ type AIPanelMessages struct {
 	ToolSFTPRead         string
 	ToolSFTPWrite        string
 	ToolSFTPRemove       string
+	ToolNotesQuery       string
+	ToolNotesEdit        string
 
 	StatusRunning string
 	StatusWaiting string
@@ -87,6 +149,27 @@ type AIPanelMessages struct {
 	RiskMedium   string
 	RiskHigh     string
 	RiskCritical string
+
+	// The approval scope chip in the message box and the menu behind it: what
+	// each scope lets run without asking, in this conversation only. The chip
+	// carries its scope's name alone; the hint says what the name controls.
+	AutoScopeHint       string
+	AutoScopeBusy       string // why the chip waits while work is running
+	AutoScopeLowDesc    string
+	AutoScopeMediumDesc string
+	AutoScopeHighDesc   string
+
+	ReasoningEffort     string
+	ReasoningEffortHint string
+	ReasoningNone       string
+	ReasoningMinimal    string
+	ReasoningLow        string
+	ReasoningMedium     string
+	ReasoningHigh       string
+	ReasoningXHigh      string
+	ReasoningMax        string
+	ReasoningDefault    string
+	ReasoningAuto       string
 
 	ApprovalTitle       string
 	ApprovalMoreFmt     string // takes how many more are waiting
@@ -102,213 +185,12 @@ type AIPanelMessages struct {
 	EscalationCancelled string
 	EscalationMissing   string
 	NoticeStoreError    string
+	// AnswerTruncated explains a reply the provider cut off at its output
+	// limit, so a half answer is not read as a finished one.
+	AnswerTruncated string
 
 	MenuAskSelection  string
 	MenuExplainOutput string
 	PromptSelectionFn string // introduces a quoted selection
 	PromptExplain     string
-}
-
-var englishAIPanel = AIPanelMessages{
-	Title:     "AI assistant",
-	ToggleTip: "AI assistant",
-	Toggle:    "Toggle AI assistant",
-	Close:     "Close assistant",
-
-	NewConversation: "New conversation",
-	History:         "Conversation history",
-	HistoryTitle:    "History",
-	HistoryEmpty:    "No saved conversations yet.",
-	HistoryOpen:     "Open conversation",
-	HistoryDelete:   "Delete conversation",
-	HistoryRename:   "Rename conversation",
-
-	RenameTitle:       "Rename conversation",
-	RenameField:       "Title",
-	RenamePlaceholder: "Conversation title",
-	RenameSubmit:      "Rename",
-	RenameRequired:    "A title is required.",
-
-	UsageFmt:      "Tokens: %s in, %s out",
-	UsageTotalFmt: " · total %s in, %s out",
-
-	ModeAsk:       "Ask",
-	ModeAgent:     "Agent",
-	ModeHintAsk:   "Ask: answers only. Click for Agent mode, which can run commands with your approval",
-	ModeHintAgent: "Agent: can run commands with your approval. Click to go back to Ask",
-
-	SetupModel:   "Set up a model",
-	SetupSummary: "Add a provider and choose a model to start.",
-
-	ModelChooseFmt: "Model: %s. Choose another",
-	ResizePanel:    "Resize the assistant panel",
-	ResizeComposer: "Resize the message box",
-
-	InputLabel:          "Message to the assistant",
-	InputPlaceholder:    "Ask anything (Enter to send)",
-	InputPlaceholderAsk: "Ask mode answers only; switch to Agent to run commands.",
-	Send:                "Send",
-	Stop:                "Stop",
-
-	EmptyTitle:  "Ask about this terminal",
-	EmptyHint:   "The assistant sees what is on your screen. In Agent mode it can also run commands for you.",
-	Example1:    "Explain the last error and how to fix it",
-	Example2:    "What is using the most disk space here?",
-	Example3:    "Show me what is listening on which port",
-	ScrollToEnd: "Scroll to the latest message",
-
-	IdleTitle:    "Ask anything about SSH and the shell",
-	IdleHint:     "Open a host and the assistant can see its terminal; in Agent mode it can also run commands there. Until then it answers from what you ask.",
-	IdleExample1: "How do I set up key-based login for a server?",
-	IdleExample2: "How do I forward a port to a remote database?",
-	IdleExample3: "What is the difference between SFTP and scp?",
-
-	Thinking:    "Thinking",
-	ThinkingNow: "Thinking…",
-	ShowOutput:  "Show output",
-	HideOutput:  "Hide output",
-	CopyCode:    "Copy code",
-	CopyAnswer:  "Copy answer",
-
-	ToolListSessions:     "List sessions",
-	ToolTerminalRead:     "Read terminal",
-	ToolTerminalExec:     "Run command",
-	ToolTerminalExecMany: "Run command on several hosts",
-	ToolSFTPList:         "List directory",
-	ToolSFTPRead:         "Read file",
-	ToolSFTPWrite:        "Write file",
-	ToolSFTPRemove:       "Delete path",
-
-	StatusRunning: "Running",
-	StatusWaiting: "Waiting for approval",
-	StatusDone:    "Done",
-	StatusFailed:  "Failed",
-	StatusDenied:  "Declined",
-
-	RiskLow:      "Low risk",
-	RiskMedium:   "Medium risk",
-	RiskHigh:     "High risk",
-	RiskCritical: "Critical risk",
-
-	ApprovalTitle:       "Approval needed",
-	ApprovalMoreFmt:     "%d more waiting",
-	ConfirmFmt:          "Type %s to confirm",
-	ConfirmField:        "Confirmation word",
-	Approve:             "Approve",
-	Decline:             "Decline",
-	ApprovalSafer:       "Safer alternative",
-	EscalationTitle:     "Switch to Agent mode and run this?",
-	EscalationSummary:   "Switch to Agent mode, then retry the request.",
-	EscalationApprove:   "Switch",
-	EscalationDecline:   "Stay in Ask",
-	EscalationCancelled: "Stayed in Ask mode.",
-	EscalationMissing:   "Could not retry: the request was not found.",
-	NoticeStoreError:    "The assistant's database could not be opened: %s",
-
-	MenuAskSelection:  "Ask the assistant about the selection",
-	MenuExplainOutput: "Explain recent output",
-	PromptSelectionFn: "About this part of the terminal:",
-	PromptExplain:     "Explain the recent output of this terminal and point out anything wrong.",
-}
-
-var chineseAIPanel = AIPanelMessages{
-	Title:     "AI 助手",
-	ToggleTip: "AI 助手",
-	Toggle:    "切换 AI 助手",
-	Close:     "关闭助手",
-
-	NewConversation: "新对话",
-	History:         "对话历史",
-	HistoryTitle:    "历史对话",
-	HistoryEmpty:    "还没有保存的对话。",
-	HistoryOpen:     "打开对话",
-	HistoryDelete:   "删除对话",
-	HistoryRename:   "重命名对话",
-
-	RenameTitle:       "重命名对话",
-	RenameField:       "标题",
-	RenamePlaceholder: "对话标题",
-	RenameSubmit:      "重命名",
-	RenameRequired:    "标题不能为空。",
-
-	UsageFmt:      "Token:%s 入,%s 出",
-	UsageTotalFmt: " · 累计 %s 入,%s 出",
-
-	ModeAsk:       "问答",
-	ModeAgent:     "代理",
-	ModeHintAsk:   "问答:只回答问题。点击切换到代理模式,经你批准后可以执行命令",
-	ModeHintAgent: "代理:经你批准后可以执行命令。点击切回问答",
-
-	SetupModel:   "设置模型",
-	SetupSummary: "先添加服务商并选择一个模型。",
-
-	ModelChooseFmt: "模型:%s,点击切换",
-	ResizePanel:    "调整助手面板宽度",
-	ResizeComposer: "调整输入框高度",
-
-	InputLabel:          "发给助手的消息",
-	InputPlaceholder:    "随便问点什么(回车发送)",
-	InputPlaceholderAsk: "问答模式只回答问题；要执行命令请切换到代理模式。",
-	Send:                "发送",
-	Stop:                "停止",
-
-	EmptyTitle:  "就这个终端提问",
-	EmptyHint:   "助手能看到屏幕上的内容;在代理模式下,它还可以替你执行命令。",
-	Example1:    "解释最近的报错并告诉我怎么修复",
-	Example2:    "这里什么占用了最多磁盘空间?",
-	Example3:    "看看哪些进程在监听哪些端口",
-	ScrollToEnd: "滚动到最新消息",
-
-	IdleTitle:    "问问 SSH 和命令行的事",
-	IdleHint:     "先连接一台主机,助手就能看到它的终端;在代理模式下还能替你在上面执行命令。在那之前,它只根据你的提问来回答。",
-	IdleExample1: "怎么给服务器配置密钥登录?",
-	IdleExample2: "怎么通过端口转发访问远程数据库?",
-	IdleExample3: "SFTP 和 scp 有什么区别?",
-
-	Thinking:    "思考",
-	ThinkingNow: "思考中…",
-	ShowOutput:  "显示输出",
-	HideOutput:  "隐藏输出",
-	CopyCode:    "复制代码",
-	CopyAnswer:  "复制回答",
-
-	ToolListSessions:     "列出会话",
-	ToolTerminalRead:     "读取终端",
-	ToolTerminalExec:     "执行命令",
-	ToolTerminalExecMany: "在多台主机上执行命令",
-	ToolSFTPList:         "列出目录",
-	ToolSFTPRead:         "读取文件",
-	ToolSFTPWrite:        "写入文件",
-	ToolSFTPRemove:       "删除路径",
-
-	StatusRunning: "运行中",
-	StatusWaiting: "等待批准",
-	StatusDone:    "已完成",
-	StatusFailed:  "失败",
-	StatusDenied:  "已拒绝",
-
-	RiskLow:      "低风险",
-	RiskMedium:   "中风险",
-	RiskHigh:     "高风险",
-	RiskCritical: "极高风险",
-
-	ApprovalTitle:       "需要你的批准",
-	ApprovalMoreFmt:     "还有 %d 项在等待",
-	ConfirmFmt:          "输入 %s 以确认",
-	ConfirmField:        "确认词",
-	Approve:             "批准",
-	Decline:             "拒绝",
-	ApprovalSafer:       "更安全的做法",
-	EscalationTitle:     "切换到代理模式并执行？",
-	EscalationSummary:   "切换到代理模式后，重新执行这次请求。",
-	EscalationApprove:   "切换并执行",
-	EscalationDecline:   "继续问答",
-	EscalationCancelled: "已保持问答模式。",
-	EscalationMissing:   "无法重试：没有找到这条请求。",
-	NoticeStoreError:    "无法打开助手的数据库:%s",
-
-	MenuAskSelection:  "就所选内容询问助手",
-	MenuExplainOutput: "解释最近的输出",
-	PromptSelectionFn: "关于终端中的这一段:",
-	PromptExplain:     "请解释这个终端最近的输出,并指出其中的问题。",
 }

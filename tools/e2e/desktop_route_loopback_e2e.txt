@@ -1,0 +1,63 @@
+# End to end: a VNC host reached through a jump route, with real SSH and a real
+# desktop. The route signs in to the loopback SSH fixture and dials the VNC
+# fixture's port from there; the VNC host is given no ViaSSH every-machine
+# tunnel, so a picture can only appear if the route carried the connection.
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   go build -o /tmp/vncfixture ./tools/e2e/vncfixture && /tmp/vncfixture 5901 &
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .) && /tmp/e2esshd 2222 127.0.0.1:5901 &
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/desktop_route_loopback_e2e.txt
+#
+# The SSH fixture's password is "secret"; the VNC fixture asks for none.
+
+click "新建主机"
+settle 400
+click 500 230
+type jump
+click 500 300
+type 127.0.0.1
+click 960 300
+key cmd+a
+type 2222
+click 500 370
+type tester
+click 900 370
+type secret
+click "添加主机"
+settle 400
+
+click "新建主机"
+settle 300
+click "VNC"
+settle 300
+click 500 200
+type desk
+click 500 270
+type 127.0.0.1
+click 960 270
+key cmd+a
+type 5901
+click "添加主机"
+settle 400
+
+click "跳板路由"
+settle 400
+click id:proxies/proxy-add
+settle 400
+click "添加路由"
+settle 400
+waitfor "127.0.0.1:2222 → vnc://127.0.0.1:5901" 2000
+expect layout clean
+
+click "主机"
+settle 400
+click 400 60
+type desk
+settle 300
+dblclick 500 160
+waitfor "信任" 8000
+click "信任并保存"
+waitfor "经 SSH" 10000
+settle 1000
+expect layout clean
+shot /tmp/desktop-route-loopback.png

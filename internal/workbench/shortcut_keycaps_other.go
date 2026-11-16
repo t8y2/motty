@@ -2,16 +2,16 @@
 
 package workbench
 
-import "github.com/vivaui/viva/ui"
+import "github.com/vivaui/viva/gfx"
 
 // modifierKeycap is the name printed on a modifier key.
-func modifierKeycap(modifier ui.Modifiers) string {
+func modifierKeycap(modifier gfx.Modifiers) string {
 	switch modifier {
-	case ui.ModifierControl:
+	case gfx.ModifierControl:
 		return "Ctrl"
-	case ui.ModifierAlt:
+	case gfx.ModifierAlt:
 		return "Alt"
-	case ui.ModifierShift:
+	case gfx.ModifierShift:
 		return "Shift"
 	default:
 		return "Win"

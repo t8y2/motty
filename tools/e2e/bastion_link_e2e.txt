@@ -1,0 +1,20 @@
+# End to end: a bastion's xshell:// link opens Motty after asking, and the
+# password embedded in the link answers the first password question itself.
+# Against the loopback SSH fixture:
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   go build -o /tmp/motty-e2esshd ./tools/e2esshd
+#   MOTTY_LANG=en /tmp/motty-e2esshd 2248 &
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/bastion_link_e2e.txt
+#
+# The password dialog must not appear: the run only reaches the shell if the
+# link's password was submitted for it.
+
+openurl xshell://ssh://tester:secret@127.0.0.1:2248
+waitfor "Open connection" 3000
+texts
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "tester@e2e" 8000
+texts

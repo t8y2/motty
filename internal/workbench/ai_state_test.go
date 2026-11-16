@@ -3,51 +3,16 @@
 package workbench
 
 import (
-	"context"
 	"encoding/json"
 	"os/exec"
-	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"motty/internal/ai/agent"
 	"motty/internal/ai/llm"
-	"motty/internal/ai/store"
 	"motty/internal/ai/tools"
-	"motty/internal/sshconn"
+	"motty/internal/i18n"
 )
-
-// scriptedModel answers each request from a script: a function of the request.
-type scriptedModel struct {
-	mu       sync.Mutex
-	requests []llm.Request
-	turn     func(index int, request llm.Request) []llm.Event
-}
-
-func (model *scriptedModel) Stream(ctx context.Context, request llm.Request) (<-chan llm.Event, error) {
-	model.mu.Lock()
-	index := len(model.requests)
-	model.requests = append(model.requests, request)
-	model.mu.Unlock()
-	events := model.turn(index, request)
-	out := make(chan llm.Event, len(events)+1)
-	for _, event := range events {
-		out <- event
-	}
-	out <- llm.Event{Kind: llm.EventDone}
-	close(out)
-	return out, nil
-}
-
-func (model *scriptedModel) Models(context.Context) ([]string, error) { return nil, nil }
-
-func toolTurn(name, arguments string) []llm.Event {
-	return []llm.Event{{Kind: llm.EventToolCall, ToolCall: &llm.ToolCall{ID: "c1", Name: name, Arguments: arguments}}}
-}
-
-func textTurn(text string) []llm.Event { return []llm.Event{{Kind: llm.EventText, Text: text}} }
 
 // shellThatRuns makes a fake shell that runs what it is typed with /bin/sh and
 // echoes the input like a terminal does, as a real remote shell would.
@@ -58,55 +23,12 @@ func shellThatRuns(shell *fakeShell) {
 	}
 }
 
-// assistantSession is a live session with the assistant pointed at a scripted
-// model and a temporary database.
-func assistantSession(t *testing.T, model *scriptedModel) (*State, *fakeShell) {
+// The command-execution tests keep their real POSIX shell dependency here.
+func assistantSession(t *testing.T, model llm.Provider) (*State, *fakeShell) {
 	t.Helper()
-	world, options := newWorld(t)
-	options.Invalidate = func() {}
-	options.AIStorePath = filepath.Join(t.TempDir(), "ai.db")
-	options.AIProvider = func(store.Provider) llm.Provider { return model }
-	state := newTestState(t, options)
-	t.Cleanup(state.Close)
-	fake := connect(t, state, world)
-	fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseConnected })
-	state.Wake()
-	shell := fake.shell(t)
-	shell.say("\x1b[0m")
-	state.Wake()
+	state, shell := assistantTestSession(t, model)
 	shellThatRuns(shell)
-
-	db, err := state.aiStore()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.SaveProvider(store.Provider{ID: "p", Name: "test", Kind: store.KindOpenAI, Enabled: true}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.SetDefaultModel("p", "m"); err != nil {
-		t.Fatal(err)
-	}
-	state.reloadAI()
 	return state, shell
-}
-
-// pumpUntil runs the window thread's wake-ups until the condition holds.
-func pumpUntil(t *testing.T, state *State, what string, done func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for !done() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s; items: %+v", what, state.ai.items)
-		}
-		state.Wake()
-		time.Sleep(2 * time.Millisecond)
-	}
-}
-
-func ask(state *State, question string, mode agent.Mode) {
-	state.ai.mode = mode
-	state.ai.input.Insert(question)
-	state.aiSend()
 }
 
 func TestAssistantRunsALowRiskCommandInTheVisibleTerminalAndAnswers(t *testing.T) {
@@ -162,10 +84,13 @@ func TestAssistantRunsALowRiskCommandInTheVisibleTerminalAndAnswers(t *testing.T
 	if !painted {
 		t.Fatal("the AI gutter mark was not painted")
 	}
-	// The conversation is shown and saved.
+	// The conversation is shown and saved. The target separator is a
+	// presentation row, not part of the conversation.
 	var kinds []aiItemKind
 	for _, item := range state.ai.items {
-		kinds = append(kinds, item.kind)
+		if item.kind != aiTargetChange {
+			kinds = append(kinds, item.kind)
+		}
 	}
 	if len(kinds) < 3 || kinds[0] != aiUser || kinds[len(kinds)-1] != aiAssistant {
 		t.Fatalf("items = %+v", state.ai.items)
@@ -249,7 +174,7 @@ func TestACriticalCommandNeedsTheConfirmationWordTyped(t *testing.T) {
 	}
 }
 
-func TestAskModeOffersOnlyEscalationAndSendsTheTerminalAsContext(t *testing.T) {
+func TestAskModeOffersNotesAndEscalationAndSendsTheTerminalAsContext(t *testing.T) {
 	model := &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("it failed because of X") }}
 	state, shell := assistantSession(t, model)
 	shell.say("connection refused on port 5432\r\n")
@@ -257,7 +182,7 @@ func TestAskModeOffersOnlyEscalationAndSendsTheTerminalAsContext(t *testing.T) {
 	ask(state, "why did it fail?", agent.ModeAsk)
 	pumpUntil(t, state, "the run to end", func() bool { return state.ai.run == nil })
 	request := model.requests[0]
-	if len(request.Tools) != 1 || request.Tools[0].Name != tools.NameRequestAgentMode {
+	if len(request.Tools) != 2 || request.Tools[0].Name != tools.NameRequestAgentMode || request.Tools[1].Name != tools.NameNoteQuery {
 		t.Fatalf("Ask mode tools = %+v", request.Tools)
 	}
 	user := request.Messages[len(request.Messages)-1].Text
@@ -325,6 +250,24 @@ func TestThePromptAfterAnAICommandIsNotMarkedAsAI(t *testing.T) {
 	}
 	if _, ok := term.aiRows[start]; !ok {
 		t.Fatal("the AI command row lost its mark")
+	}
+}
+
+func TestClearingTheScreenDropsTheAssistantMarksOfTheRowsItErased(t *testing.T) {
+	term := newTerminal(80, 24)
+	term.screen.Write([]byte("$ ai-command\r\nresult\r\nPROMPT $ "))
+	prompt := term.screen.Row(term.screen.Cursor().Y).ID
+	term.aiRows = make(map[uint64]struct{}, 3)
+	for row := 0; row < 3; row++ {
+		term.aiRows[term.screen.Row(row).ID] = struct{}{}
+	}
+	term.aiStartID = term.screen.Row(0).ID
+	term.clearScreen(i18n.EnglishMessages)
+	if _, ok := term.aiRows[prompt]; !ok {
+		t.Fatal("the prompt line lost its mark")
+	}
+	if len(term.aiRows) != 1 || term.aiStartID != 0 {
+		t.Fatalf("marks = %d, start = %d; want only the prompt line, with no start row", len(term.aiRows), term.aiStartID)
 	}
 }
 

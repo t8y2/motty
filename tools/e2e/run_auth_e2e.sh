@@ -45,7 +45,7 @@ wait_listening() { # port
 }
 
 run_script() { # script file
-	MOTTY_LANG=en MOTTY_DATA_DIR="$(mktemp -d)" python3 tools/headless_drive.py "$(mktemp -d)" "$1"
+MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" "$1"
 }
 
 echo "== agent forwarding =="
@@ -70,10 +70,11 @@ kill "$fixture_pid" 2>/dev/null || true
 echo "== host certificate =="
 start_fixture 2246 E2E_HOST_CERT=1
 wait_listening 2246
-data=$(mktemp -d)
-echo "@cert-authority [127.0.0.1]:2246 $(fixture_line 2246 host-ca)" >"$data/known_hosts"
-MOTTY_LANG=en MOTTY_DATA_DIR="$data" python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/host_cert_e2e.txt
-rm -rf "$data"
+home=$(mktemp -d)
+mkdir -p "$home/motty-data"
+echo "@cert-authority [127.0.0.1]:2246 $(fixture_line 2246 host-ca)" >"$home/motty-data/known_hosts"
+MOTTY_LANG=en python3 tools/headless_drive.py "$home" tools/e2e/host_cert_e2e.txt
+rm -rf "$home"
 kill "$fixture_pid" 2>/dev/null || true
 
 echo "== ppk identity =="

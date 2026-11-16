@@ -9,8 +9,8 @@ import (
 	"time"
 	"unicode"
 
-	"motty/internal/sshconn"
 	"github.com/vivaui/viva/app"
+	"motty/internal/sshconn"
 )
 
 type connectionEventKind uint8
@@ -39,6 +39,9 @@ func (state *State) recordConnectionEvent(session *Session, kind connectionEvent
 	session.connectionStory = append(session.connectionStory, connectionEvent{
 		at: state.now(), kind: kind, attempt: session.reconnectAttempt, detail: cleanConnectionLogDetail(detail),
 	})
+	// The exported log keeps its free-text detail; the journal stores only the
+	// typed step, so a server error string can never reach the database.
+	state.journalConnectionEvent(session, kind)
 }
 
 func (state *State) recordConnectionStatus(session *Session, previous sshconn.Phase, status sshconn.Status) {
@@ -154,7 +157,7 @@ func connectionEventText(event connectionEvent) string {
 func (state *State) exportConnectionLog(session *Session) {
 	path, err := state.options.SaveFile(app.SaveFileOptions{
 		Title:            state.messages.ConnExportLog,
-		SuggestedName:    connectionLogName(session.Title),
+		SuggestedName:    connectionLogName(session.Title, time.Now()),
 		DefaultExtension: "txt",
 		Filters:          []app.FileFilter{{Name: "Text", Pattern: "*.txt"}},
 	})
@@ -173,9 +176,21 @@ func (state *State) exportConnectionLog(session *Session) {
 	state.reportConnectionExport(session, fmt.Sprintf(state.messages.ConnExportedFmt, path), false)
 }
 
+// reportConnectionExport tells the user how an export ended. A live terminal is
+// the remote shell's screen: a line written into it moves the cursor under the
+// prompt without the shell knowing, so typing lands in the wrong place. Only
+// the status line and a notice are used there. Before the shell exists, or
+// after it is gone, the terminal is the connection's own log page and the line
+// belongs in it.
 func (state *State) reportConnectionExport(session *Session, message string, failed bool) {
 	state.status = message
 	if session.term == nil {
+		return
+	}
+	if session.term.live {
+		if failed {
+			state.showActionError(state.messages.ConnExportLog, message)
+		}
 		return
 	}
 	style := sgrMuted
@@ -186,7 +201,10 @@ func (state *State) reportConnectionExport(session *Session, message string, fai
 	session.showLog = true
 }
 
-func connectionLogName(title string) string {
+// exportFileName suggests a name for a file saved from a session: the session's
+// title, what the file holds, and the moment it was saved, so a second export
+// of the same session does not offer to overwrite the first.
+func exportFileName(title, kind, extension string, at time.Time) string {
 	var name strings.Builder
 	separator := false
 	for _, value := range title {
@@ -203,7 +221,11 @@ func connectionLogName(title string) string {
 	if value == "" {
 		value = "session"
 	}
-	return value + "-connection-log.txt"
+	return value + "-" + kind + "-" + at.Format("20060102-150405") + "." + extension
+}
+
+func connectionLogName(title string, at time.Time) string {
+	return exportFileName(title, "connection-log", "txt", at)
 }
 
 func writePrivateAtomic(path string, data []byte) (err error) {

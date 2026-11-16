@@ -2,15 +2,49 @@
 title: 安装
 description: macOS、Windows 和 Linux 的安装包。
 ---
-从[发布页](https://github.com/t8y2/motty/releases)下载对应平台的安装包。
+从[发布页](https://github.com/t8y2/motty/releases)下载对应平台的安装包；
+motty.page 上的[下载页](/zh/download)通过 Cloudflare R2 提供同样的文件，部分网络下更快。
 
 | 平台 | 安装包 |
 | --- | --- |
-| macOS（arm64、amd64） | `.dmg`、`.zip` |
-| Windows（amd64、arm64） | 安装程序、`.zip` |
+| macOS（arm64、amd64） | `.dmg` |
+| Windows（amd64、arm64） | `.exe` 安装程序、便携版 `.zip` |
 | Linux（amd64、arm64） | `.deb`、`.tar.gz` |
 
+Windows 安装包需要 Windows 10 或 Windows Server 2016 及更高版本。
+
 每个发布版本还附带 `SHA256SUMS` 文件。
+
+## 包管理器
+
+```sh
+brew install --cask t8y2/tap/motty
+```
+
+如果 Homebrew 提示要先信任这个 tap，执行一次 `brew trust t8y2/tap`。
+
+```powershell
+scoop bucket add t8y2 https://github.com/t8y2/scoop-bucket
+scoop install t8y2/motty
+```
+
+cask 安装的是已公证的磁盘映像，并标记为自行更新，安装后的副本会原地升级。Scoop 安装
+的是便携版：`motty-data` 会在版本间保留，升级走 `scoop update motty`。
+
+## Windows 便携版
+
+便携版 `.zip` 里有 `motty.exe` 和 `motty-data` 文件夹。可以解压到任意位置，包括 U 盘。
+只要 `motty-data` 放在 `motty.exe` 旁边，Motty 就把主机、设置、已知主机和已保存的密码
+都存在这个文件夹里，不会在这台电脑上留下别的东西。把两者一起复制或移动，就能带走全部
+配置。
+
+- 已保存的密码只由主密码保护，不使用 Windows 凭据管理器，所以换一台电脑也能读取。
+  保存密码前请先在设置的安全页设置主密码。
+- 想把已安装版的数据带进来，请先在那台电脑上设好主密码，再把数据文件夹复制到
+  `motty-data`。否则密钥仍留在原电脑的凭据管理器里，已保存的密码在这里打不开。
+- 便携版不会自我更新。更新时用新 zip 里的 `motty.exe` 替换旧的，保留 `motty-data`。
+- 没有 `motty-data` 文件夹，或该文件夹只读时，Motty 按普通副本运行，使用默认位置。
+- 若开启登录时启动，Windows 会记录程序所在路径。
 
 ## 签名
 
@@ -18,11 +52,15 @@ description: macOS、Windows 和 Linux 的安装包。
 - 配置了证书时，Windows 构建会签名。
 - Linux 安装包未签名。
 
-Homebrew、AUR 和 `.AppImage` 暂不提供。
+AUR 和 `.AppImage` 暂不提供。
 
 ## 更新
 
 Motty 没有任何统计分析。可选的更新检查会访问 GitHub Releases，默认关闭。
+
+Windows 按当前账户安装时，默认目录与自定义目录都支持原地更新；安装记录、卸载程序和
+目录写入权限需有效。升级会继续使用原安装目录。较早版本若因自定义目录只提供浏览器
+下载，需要先手动安装一次包含修复的版本。
 
 ## 从源码构建
 

@@ -1,0 +1,110 @@
+# The three session captures behind the landing page's scroll-pinned showcase
+# (website/public/showcase-base-dark.webp, showcase-light.webp and
+# showcase-files.webp): the same session dark, light, and with the assistant
+# closed. The light shot is the theme step; the closed shot is the files step.
+# The module captures (hosts, forwards, colours) are in showcase_modules.txt.
+# The first reveal only masks one capture over another, so the dark and light
+# shots must be the same size with the same session and panel geometry.
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .) && /tmp/e2esshd 2222 &
+#   export SFTP_ROOT=<the "sftp root" path e2esshd prints>
+#   python3 tools/e2e/hero_fixture.py "$SFTP_ROOT"    # the deploy tree, pinned dates
+#   home=$(mktemp -d)
+#   mkdir -p "$home/motty-data"
+#   go run ./tools/e2e/heroseed "$home/motty-data/ai.db" "$SFTP_ROOT/logs/app.log"
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   # substitute $SFTP_ROOT below, then run:
+#   python3 tools/headless_drive.py "$home" /tmp/showcase.txt
+#
+# The driver owns MOTTY_DATA_DIR: it points it at <home>/motty-data, so the
+# seeded database belongs there; an environment variable is overridden.
+#
+# The shot is 1560x975 points (2x = 3120x1950). The width is not decoration: the
+# fixture's log lines run to 80 characters, and the assistant panel narrows the
+# terminal enough that a 1400-point window wraps them, which reads as a broken
+# log. 1560 keeps every line on one row.
+#
+# The terminal is clicked before each shot so the block caret is in the same
+# blink phase; without it the caret shows up in the diff between the light and
+# closed captures and flickers during the panel reveal. The click does not move
+# the shell cursor.
+#
+# The host is saved as staging-web instead of connected ad hoc, because the tab
+# title is the host's label. The files panel is opened with its toolbar button
+# and the assistant with its window-bar button; the saved conversation is picked
+# from 对话历史 by geometry. The assistant's target picker is driven by its IDs.
+# `layout` reports the terminal/assistant divider as a crossing: it is the hit
+# area that resizes the panels, not text over text.
+#
+# Convert with cwebp -q 88 -m 6, then copy the three files to
+# website/public/showcase-base-dark.webp, showcase-light.webp and
+# showcase-files.webp.
+resize 1560 975
+appearance dark
+settle 600
+click "新建主机"
+settle 800
+click id:shell/dialog-label
+type staging-web
+click id:shell/dialog-address
+type 127.0.0.1
+click id:shell/dialog-user
+type tester
+click id:shell/dialog-port
+key cmd+a
+type 2222
+click id:shell/dialog-icon
+settle 400
+click id:host-protocol-ui/dialog-icon-item/#9
+settle 300
+click id:shell/dialog-submit
+settle 900
+click id:shell/search
+type staging-web
+settle 600
+click id:shell/connect
+waitfor "仅本次连接" 5000
+click "仅本次连接"
+waitfor "需要密码" 5000
+type secret
+key enter
+settle 2500
+click id:sftp/sftp-open
+settle 2000
+click id:ai-panel/ai-toggle
+settle 1000
+click id:ai-panel/ai-history
+settle 700
+click 1300 118
+settle 1200
+click id:ai-panel/ai-target
+settle 600
+click id:ai-panel/ai-targets/#1
+settle 500
+click id:ai-panel/ai-target-dismiss
+settle 500
+click 700 400
+settle 400
+type cd "$SFTP_ROOT" && export PS1='\[\e[1;32m\]deploy@staging-web\[\e[0m\]:\[\e[1;34m\]~/app\[\e[0m\]$ ' && clear
+key enter
+settle 700
+type ls --color=always
+key enter
+settle 500
+type ./scripts/logs.sh 38
+key enter
+settle 900
+click 700 400
+settle 100
+shot /tmp/showcase-base-dark.png
+click id:shell/theme
+settle 1000
+click 700 400
+settle 100
+shot /tmp/showcase-light.png
+click id:ai-panel/ai-toggle
+settle 1200
+click 700 400
+settle 100
+shot /tmp/showcase-files.png
+layout

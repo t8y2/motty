@@ -1,0 +1,33 @@
+# End to end: an input method's composition over text the program already drew
+# at the cursor, which is how Codex shows its empty prompt (placeholder text, the
+# real cursor hidden). Against the loopback SSH fixture on port 2222
+# (cd tools/e2esshd && go build -o /tmp/e2esshd . && /tmp/e2esshd 2222).
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/preedit_e2e.txt
+#
+# preedit-before.png must show "Ask Codex" whole, preedit-during.png "wo" over
+# its first two cells with "k Codex" after them and none of "As" showing through.
+
+click "主机"
+click 462 68
+type tester@127.0.0.1:2222
+click "连接"
+waitfor "信任" 5000
+click "信任并保存"
+waitfor "密码" 5000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+settle 800
+type clear; printf '\n\n  \033[?25l\033[48;5;238m  > \033[38;5;250mAsk Codex to do anything\033[0m\033[3;7H'; read -n1
+key enter
+settle 600
+shot /tmp/preedit-before.png
+compose wo
+settle 400
+shot /tmp/preedit-during.png
+texts "Codex"
+compose
+settle 300
+key enter

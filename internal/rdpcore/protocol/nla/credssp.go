@@ -1,6 +1,7 @@
 package nla
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"crypto/rand"
@@ -21,6 +22,23 @@ import (
 // Callers should stop probing and report the error immediately.
 var ErrCredentialsFatal = errors.New("credentials rejected")
 
+// ErrNegotiateToken marks a failure before an NTLM Authenticate message was
+// sent. A caller may reconnect and try another token encoding without retrying
+// credentials. Explicit credential refusals are never marked with this error.
+var ErrNegotiateToken = errors.New("token negotiation failed")
+
+// ErrCredentialsSent marks failures after sending an NTLM Authenticate message
+// was attempted. Callers must not retry credentials or fall back to TLS-only.
+var ErrCredentialsSent = errors.New("failed after credentials were sent")
+
+// ErrClosedAfterCredentials marks a server that dropped the connection right
+// after the NTLM Authenticate message, without an error code. A server that
+// refuses the password and one that cannot handle this client's handshake
+// (older CredSSP versions in particular) look the same here, so it is not a
+// credential refusal: the saved password must not be discarded on its account.
+// It is still a failed logon attempt, so callers must not retry.
+var ErrClosedAfterCredentials = errors.New("the server closed the connection after the credentials were sent; the password may be wrong, or the server may not accept this client's NLA handshake")
+
 // isFatalNTSTATUS returns true for error codes where retrying is pointless.
 func isFatalNTSTATUS(code int) bool {
 	switch uint32(code) {
@@ -35,10 +53,21 @@ func isFatalNTSTATUS(code int) bool {
 		0xC000015B, // STATUS_LOGON_TYPE_NOT_GRANTED
 		0xC0000193, // STATUS_ACCOUNT_EXPIRED
 		0xC0000224, // STATUS_PASSWORD_MUST_CHANGE
-		0xC0000234: // STATUS_ACCOUNT_LOCKED_OUT
+		0xC0000234, // STATUS_ACCOUNT_LOCKED_OUT
+		0x8009030C: // SEC_E_LOGON_DENIED (some servers return SSPI status directly)
 		return true
 	}
 	return false
+}
+
+// serverError turns an NTSTATUS from a CredSSP ErrorCode field into an error,
+// marking the codes that make a retry pointless.
+func serverError(code int) error {
+	err := fmt.Errorf("credssp: server error 0x%08X %s", uint32(code), ntstatusName(code))
+	if isFatalNTSTATUS(code) {
+		return fmt.Errorf("%w: %w", ErrCredentialsFatal, err)
+	}
+	return err
 }
 
 // MaxCredSSPVersion is the highest CredSSP version we support.
@@ -78,6 +107,29 @@ type tsPasswordCreds struct {
 // the actual version used is the minimum of this and the server's response.
 // The hostname is used to construct the SPN for MsvAvTargetName in the NTLM TargetInfo.
 func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int) error {
+	return authenticate(tlsConn, log, hostname, domain, username, password, advertiseVersion, false)
+}
+
+// AuthenticateRawNTLM is Motty's compatibility path for unwrapped NTLM tokens
+// inside CredSSP, for servers such as WinPR 2.x whose Negotiate package passes
+// input directly to NTLM. It retains TLS, NTLMv2 MIC/channel binding and
+// CredSSP public-key verification.
+func AuthenticateRawNTLM(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int) error {
+	return authenticate(tlsConn, log, hostname, domain, username, password, advertiseVersion, true)
+}
+
+func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int, rawNTLM bool) (err error) {
+	credentialsSent := false
+	defer func() {
+		if err == nil {
+			return
+		}
+		if credentialsSent {
+			err = fmt.Errorf("%w: %w", ErrCredentialsSent, err)
+		} else if !errors.Is(err, ErrCredentialsFatal) {
+			err = fmt.Errorf("%w: %w", ErrNegotiateToken, err)
+		}
+	}()
 	ctx := context.Background()
 
 	// Compute TLS channel bindings hash (RFC 5929 tls-server-end-point)
@@ -99,19 +151,24 @@ func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 		targetSPN:           "TERMSRV/" + hostname,
 	}
 
-	// Step 1: Send NTLM Negotiate in SPNEGO in TSRequest
+	// Step 1: Send an NTLM Negotiate token, optionally wrapped in SPNEGO.
 	negotiateMsg := ntlm.negotiate()
-	spnegoInit, mechTypeList := encodeNegTokenInit(negotiateMsg)
+	negotiateToken := negotiateMsg
+	var mechTypeList []byte
+	if !rawNTLM {
+		negotiateToken, mechTypeList = encodeNegTokenInit(negotiateMsg)
+	}
 
 	req1 := &tsRequest{
 		Version:    advertiseVersion,
-		NegoTokens: []negoToken{{Data: spnegoInit}},
+		NegoTokens: []negoToken{{Data: negotiateToken}},
 	}
 	req1Bytes, _ := asn1.Marshal(*req1)
 	log.LogAttrs(ctx, slog.LevelDebug, "sending NTLM Negotiate",
 		slog.Int("advertiseVersion", advertiseVersion), slog.Int("negoBytes", len(negotiateMsg)),
 		slog.Int("tsRequestBytes", len(req1Bytes)),
-		util.Bytes("spnegoInit", spnegoInit),
+		slog.Bool("rawNTLM", rawNTLM),
+		util.Bytes("negotiateToken", negotiateToken),
 		util.Bytes("tsRequest", req1Bytes))
 	if err := sendTSRequest(tlsConn, req1); err != nil {
 		return fmt.Errorf("credssp: sending negotiate: %w", err)
@@ -124,34 +181,48 @@ func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 	}
 	log.LogAttrs(ctx, slog.LevelDebug, "received server challenge", slog.Int("serverVersion", resp1.Version), slog.Int("negoTokens", len(resp1.NegoTokens)), slog.Int("pubKeyAuthLen", len(resp1.PubKeyAuth)), util.Hex8("errorCode", uint32(resp1.ErrorCode)))
 	if resp1.ErrorCode != 0 {
-		err := fmt.Errorf("credssp: server error 0x%08X %s", uint32(resp1.ErrorCode), ntstatusName(resp1.ErrorCode))
-		if isFatalNTSTATUS(resp1.ErrorCode) {
-			return fmt.Errorf("%w: %w", ErrCredentialsFatal, err)
-		}
-		return err
+		return serverError(resp1.ErrorCode)
 	}
 	if len(resp1.NegoTokens) == 0 {
 		return errors.New("credssp: no nego tokens in server response")
 	}
 
-	// Extract NTLM challenge from SPNEGO NegTokenResp
-	negState, ntlmChallenge, err := decodeNegTokenResp(resp1.NegoTokens[0].Data)
-	if err != nil {
-		return fmt.Errorf("credssp: decoding SPNEGO response: %w", err)
-	}
-	log.LogAttrs(ctx, slog.LevelDebug, "SPNEGO challenge decoded", slog.Int("negState", negState), slog.Int("challengeBytes", len(ntlmChallenge)))
-	if negState == spnegoReject {
-		return errors.New("credssp: SPNEGO negotiation rejected by server")
+	ntlmChallenge := resp1.NegoTokens[0].Data
+	requestMIC := false
+	if rawNTLM {
+		if !bytes.HasPrefix(ntlmChallenge, ntlmSignature[:]) {
+			return errors.New("credssp: expected a raw NTLM challenge")
+		}
+	} else {
+		negResp, err := decodeNegTokenResp(ntlmChallenge)
+		if err != nil {
+			return fmt.Errorf("credssp: decoding SPNEGO response: %w", err)
+		}
+		log.LogAttrs(ctx, slog.LevelDebug, "SPNEGO challenge decoded", slog.Int("negState", negResp.negState), slog.Int("challengeBytes", len(negResp.responseToken)))
+		if negResp.negState == spnegoReject {
+			return errors.New("credssp: SPNEGO negotiation rejected by server")
+		}
+		// RFC 4178 §5: when the acceptor asks for a mechListMIC, the initiator
+		// must sign the mechanism list it offered; otherwise the Authenticate
+		// token closes the exchange.
+		requestMIC = negResp.negState == spnegoRequestMIC
+		ntlmChallenge = negResp.responseToken
 	}
 
-	// Negotiate CredSSP version: use minimum of client and server versions (MS-CSSP 3.1.5)
+	// The version field of a TSRequest states the version its sender supports
+	// (MS-CSSP 2.2.1), so every message keeps advertiseVersion. The server's
+	// version only selects the public-key binding below: Windows peers reject a
+	// client that lowers the version it advertised in the first TSRequest, and
+	// answer with a bare TLS internal_error after the Authenticate message.
+	// Patched Windows 7/Server 2008 R2 report 5 and unpatched ones 2, so echoing
+	// the server's version here broke every pre-Windows 10 target.
 	negotiatedVersion := advertiseVersion
 	if resp1.Version > 0 && resp1.Version < negotiatedVersion {
 		negotiatedVersion = resp1.Version
 	}
 	log.LogAttrs(ctx, slog.LevelDebug, "CredSSP version negotiated", slog.Int("negotiated", negotiatedVersion), slog.Int("client", advertiseVersion), slog.Int("server", resp1.Version))
 
-	// Step 3: Send NTLM Authenticate + pubKeyAuth + clientNonce
+	// Step 3: NTLM Authenticate, then the public-key binding.
 	authMsg, err := ntlm.authenticate(ntlmChallenge)
 	if err != nil {
 		return fmt.Errorf("credssp: building authenticate: %w", err)
@@ -159,22 +230,6 @@ func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 
 	// Initialize NTLM SEAL for mechListMIC, pubKeyAuth, and authInfo.
 	seal := newNTLMSeal(ntlm.exportedSessionKey, log)
-
-	// Compute mechListMIC = MAC(ExportedSessionKey, MechTypeList) with seqNum=0.
-	// Per RFC 4178 §5, this MUST be included when the NTLM Authenticate contains a MIC
-	// (indicated by MsvAvFlags=0x02 in the TargetInfo).
-	mechListMICSig := seal.makeSignature(mechTypeList)
-	log.LogAttrs(ctx, slog.LevelDebug, "mechListMIC computed", util.Bytes("mic", mechListMICSig[:]), slog.Int("mechTypeListLen", len(mechTypeList)))
-
-	// Reset RC4 cipher state after mechListMIC, per MS-NLMP.
-	// Sequence numbers are NOT reset — pubKeyAuth will use seqNum=1.
-	// The server also increments its server-to-client seqNum symmetrically,
-	// so both directions advance to 1 after mechListMIC.
-	seal.seqNumServer++
-	seal.resetCipherState(ntlm.exportedSessionKey)
-
-	spnegoResp := encodeNegTokenResp(authMsg, mechListMICSig[:])
-	log.LogAttrs(ctx, slog.LevelDebug, "NTLM Authenticate built", slog.Int("authBytes", len(authMsg)), slog.Int("spnegoRespBytes", len(spnegoResp)))
 
 	// Extract SubjectPublicKey (raw key DER) from SubjectPublicKeyInfo.
 	// MS-CSSP 3.1.5 specifies "SubjectPublicKey" — the BIT STRING content
@@ -186,9 +241,8 @@ func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 	}
 	log.LogAttrs(ctx, slog.LevelDebug, "TLS public key extracted", slog.Int("spkiBytes", len(spkiBytes)), slog.Int("pubKeyBytes", len(subjectPubKey)))
 
-	var pubKeyAuth []byte
+	var binding []byte
 	var clientNonce []byte
-
 	if negotiatedVersion >= 5 {
 		// CredSSP v5+: nonce-based SHA-256 pubKeyAuth binding
 		clientNonce = make([]byte, 32)
@@ -200,46 +254,125 @@ func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 		hashInput = append(hashInput, subjectPubKey...)
 		hashValue := sha256.Sum256(hashInput)
 		log.LogAttrs(ctx, slog.LevelDebug, "pubKeyAuth hash input", slog.Int("hashInputLen", len(hashInput)), util.Bytes("hashValue", hashValue[:]), util.Bytes("pubKey", subjectPubKey))
-		pubKeyAuth = seal.seal(hashValue[:])
-		log.LogAttrs(ctx, slog.LevelDebug, "pubKeyAuth computed (v5+ SHA-256 binding)", slog.Int("sealedBytes", len(pubKeyAuth)))
+		binding = hashValue[:]
 	} else {
 		// CredSSP v2-v4: legacy pubKeyAuth — encrypt raw public key
-		pkCopy := make([]byte, len(subjectPubKey))
-		copy(pkCopy, subjectPubKey)
-		pubKeyAuth = seal.seal(pkCopy)
-		log.LogAttrs(ctx, slog.LevelDebug, "pubKeyAuth computed (v2-v4 legacy)", slog.Int("sealedBytes", len(pubKeyAuth)))
+		binding = make([]byte, len(subjectPubKey))
+		copy(binding, subjectPubKey)
 	}
 
+	// A MIC exchange adds a round trip before the binding may be sent: the
+	// acceptor answers the Authenticate token with its own NegTokenResp first
+	// (WinPR, and therefore GNOME Remote Desktop on Ubuntu 24.04 and later,
+	// always asks for the MIC because NTLM is never its preferred mechanism).
+	spnegoRound := !rawNTLM && requestMIC
+
+	authToken := authMsg
+	if !rawNTLM {
+		// The client signs the mechanism list it offered on every SPNEGO path,
+		// even when the acceptor did not ask for it. Windows 11 24H2 and Server
+		// 2025 verify the list against this MIC before they accept the
+		// public-key binding and tear the TLS session down with internal_error
+		// when it is missing; older servers accept it unrequested.
+		sig := seal.mechListMIC(mechTypeList)
+		log.LogAttrs(ctx, slog.LevelDebug, "mechListMIC computed", util.Bytes("mic", sig[:]), slog.Int("mechTypeListLen", len(mechTypeList)))
+		// A mechListMIC exchange counts as a signed message on both peers:
+		// WinPR's Negotiate layer adds one to every later
+		// EncryptMessage/DecryptMessage sequence (negotiate.c, "if
+		// (context->mic) MessageSeqNo++"), and Windows' SSPI advances its
+		// own counters. The RC4 handles stay at their start (MS-SPNG
+		// 3.2.5.1), which mechListMIC leaves untouched.
+		seal.seqNumClient = 1
+		seal.seqNumServer = 1
+		authToken = encodeNegTokenResp(authMsg, sig[:])
+	}
+	log.LogAttrs(ctx, slog.LevelDebug, "NTLM Authenticate built", slog.Int("authBytes", len(authMsg)), slog.Int("tokenBytes", len(authToken)))
+
 	req2 := &tsRequest{
-		Version:    negotiatedVersion,
-		NegoTokens: []negoToken{{Data: spnegoResp}},
-		PubKeyAuth: pubKeyAuth,
+		Version:    advertiseVersion,
+		NegoTokens: []negoToken{{Data: authToken}},
 	}
 	if clientNonce != nil {
+		// MS-CSSP 2.2.1.1.1: a version 5+ client includes its nonce in the
+		// second and every later TSRequest, which now includes the Authenticate
+		// message on the SPNEGO path.
 		req2.ClientNonce = clientNonce
 	}
-	log.LogAttrs(ctx, slog.LevelDebug, "sending NTLM Authenticate + pubKeyAuth")
+	if !spnegoRound {
+		// MS-CSSP 3.2.5: the TSRequest that carries the client's last SPNEGO
+		// token or NTLM message MUST carry pubKeyAuth as well. A peer that
+		// expects it there — Windows, raw NTLM servers — answers a bare
+		// Authenticate by tearing down TLS with an internal_error, which is
+		// reported to the user as a possibly wrong password.
+		req2.PubKeyAuth = seal.seal(binding)
+	}
+	log.LogAttrs(ctx, slog.LevelDebug, "sending NTLM Authenticate",
+		slog.Bool("withPubKeyAuth", !spnegoRound), slog.Bool("spnegoRound", spnegoRound))
+	// A partial write can already count as a logon attempt at the server.
+	credentialsSent = true
 	if err := sendTSRequest(tlsConn, req2); err != nil {
 		return fmt.Errorf("credssp: sending authenticate: %w", err)
+	}
+
+	if spnegoRound {
+		// Step 3b: accept the acceptor's final SPNEGO token. The TSRequest
+		// carrying it can repeat fields of the message it answers — FreeRDP 3.x
+		// returns the client's own pubKeyAuth bytes in this reply — so only the
+		// negoToken field is meaningful here.
+		final, err := readTSRequest(tlsConn)
+		if err != nil {
+			log.LogAttrs(ctx, slog.LevelError, "failed reading final SPNEGO token", slog.String("error", err.Error()))
+			// Same reasoning as below: the credentials have been sent, and a
+			// close is not proof of a refusal.
+			return fmt.Errorf("%w: credssp: %w", ErrClosedAfterCredentials, err)
+		}
+		log.LogAttrs(ctx, slog.LevelDebug, "received final SPNEGO token response", slog.Int("negoTokens", len(final.NegoTokens)), util.Hex8("errorCode", uint32(final.ErrorCode)))
+		if final.ErrorCode != 0 {
+			return serverError(final.ErrorCode)
+		}
+		if len(final.NegoTokens) > 0 {
+			finalToken, err := decodeNegTokenResp(final.NegoTokens[0].Data)
+			if err != nil {
+				return fmt.Errorf("credssp: decoding final SPNEGO token: %w", err)
+			}
+			if finalToken.negState == spnegoReject {
+				return errors.New("credssp: SPNEGO negotiation rejected by server")
+			}
+			if len(finalToken.mechListMIC) > 0 {
+				// RFC 4178 §5: the acceptor's MIC covers the same mechanism
+				// list; without it a peer could rewrite the list to force a
+				// different mechanism.
+				if !seal.verifyMechListMIC(mechTypeList, finalToken.mechListMIC) {
+					return errors.New("credssp: server mechListMIC verification failed")
+				}
+			}
+		}
+
+		pubKeyAuth := seal.seal(binding)
+		log.LogAttrs(ctx, slog.LevelDebug, "pubKeyAuth computed", slog.Int("sealedBytes", len(pubKeyAuth)))
+		req3 := &tsRequest{Version: advertiseVersion, PubKeyAuth: pubKeyAuth}
+		if clientNonce != nil {
+			req3.ClientNonce = clientNonce
+		}
+		if err := sendTSRequest(tlsConn, req3); err != nil {
+			return fmt.Errorf("credssp: sending pubKeyAuth: %w", err)
+		}
 	}
 
 	// Step 4: Read + verify server pubKeyAuth
 	resp2, err := readTSRequest(tlsConn)
 	if err != nil {
 		log.LogAttrs(ctx, slog.LevelError, "failed reading server pubKeyAuth", slog.String("error", err.Error()))
-		// Motty divergence: the password has been sent. A server that drops the
-		// connection now has refused it (Windows does not say so), and trying again
-		// under another TLS or CredSSP version would be another failed logon for the
-		// account, enough to lock it out after a single mistyped password.
-		return fmt.Errorf("%w: credssp: the server closed the connection after the credentials were sent: %w", ErrCredentialsFatal, err)
+		// Motty divergence: the password has been sent, and trying again under
+		// another TLS or CredSSP version would be another failed logon for the
+		// account, enough to lock it out after a single mistyped password. The
+		// close is not proof of a refusal, though (Windows Server 2012 closes on
+		// handshake mismatches too), so it is not reported as one.
+		return fmt.Errorf("%w: credssp: %w", ErrClosedAfterCredentials, err)
 	}
 	log.LogAttrs(ctx, slog.LevelDebug, "received server pubKeyAuth response", slog.Int("pubKeyAuthBytes", len(resp2.PubKeyAuth)), util.Hex8("errorCode", uint32(resp2.ErrorCode)))
 	if resp2.ErrorCode != 0 {
-		err := fmt.Errorf("credssp: server error 0x%08X %s", uint32(resp2.ErrorCode), ntstatusName(resp2.ErrorCode))
-		if isFatalNTSTATUS(resp2.ErrorCode) {
-			return fmt.Errorf("%w: %w", ErrCredentialsFatal, err)
-		}
-		return err
+		return serverError(resp2.ErrorCode)
 	}
 	if len(resp2.PubKeyAuth) == 0 {
 		return errors.New("credssp: server did not send pubKeyAuth — authentication may have failed")
@@ -293,7 +426,7 @@ func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 	authInfo := seal.seal(credsBytes)
 
 	req3 := &tsRequest{
-		Version:  negotiatedVersion,
+		Version:  advertiseVersion,
 		AuthInfo: authInfo,
 	}
 	log.LogAttrs(ctx, slog.LevelDebug, "sending sealed credentials", slog.Int("authInfoBytes", len(authInfo)))
@@ -482,6 +615,8 @@ func ntstatusName(code int) string {
 		return "STATUS_ACCOUNT_LOCKED_OUT"
 	case 0x80090308:
 		return "SEC_E_INVALID_TOKEN"
+	case 0x8009030C:
+		return "SEC_E_LOGON_DENIED"
 	case 0x80090311:
 		return "SEC_E_NO_AUTHENTICATING_AUTHORITY"
 	case 0x80090331:

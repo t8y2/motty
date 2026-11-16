@@ -14,7 +14,7 @@ import (
 	"motty/internal/webdav"
 )
 
-// The three places the encrypted backup can be kept. Each is a
+// The places the encrypted backup can be kept. Each is a
 // cloudsync.Store; this file holds what is particular to the settings of S3 and
 // Gist and the forms that ask for them. WebDAV, the first one, is in
 // backup_ui.go.
@@ -34,9 +34,14 @@ const (
 )
 
 const (
-	s3SecretName    = "s3:secret"
-	gistTokenSecret = "gist:token"
+	s3SecretName     = "s3:secret"
+	gistTokenSecret  = "gist:token"
+	giteeTokenSecret = "gitee:token"
 )
+
+// savedProviderGitee is how the state file names the Gitee snippet service;
+// an empty provider is GitHub, which came first.
+const savedProviderGitee = "gitee"
 
 // s3Settings is the bucket and the key's public half. The secret half is in the
 // vault.
@@ -55,16 +60,19 @@ type savedS3 struct {
 	PathStyle bool   `json:"path_style,omitempty"`
 }
 
-// gistSettings is where the backup is on GitHub. The token is in the vault.
+// gistSettings is where the backup is on a snippet service. The token is in the
+// vault.
 type gistSettings struct {
+	provider      gist.Provider
 	id, file, api string
 }
 
 // savedGist is gistSettings in the state file.
 type savedGist struct {
-	ID   string `json:"id,omitempty"`
-	File string `json:"file,omitempty"`
-	API  string `json:"api,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	ID       string `json:"id,omitempty"`
+	File     string `json:"file,omitempty"`
+	API      string `json:"api,omitempty"`
 }
 
 func (saved *savedS3) settings() s3Settings {
@@ -78,11 +86,26 @@ func (settings s3Settings) saved() *savedS3 {
 }
 
 func (saved *savedGist) settings() gistSettings {
-	return gistSettings{id: saved.ID, file: saved.File, api: saved.API}
+	provider := gist.GitHub
+	if saved.Provider == savedProviderGitee {
+		provider = gist.Gitee
+	}
+	return gistSettings{provider: provider, id: saved.ID, file: saved.File, api: saved.API}
 }
 
 func (settings gistSettings) saved() *savedGist {
-	return &savedGist{ID: settings.id, File: settings.file, API: settings.api}
+	saved := &savedGist{ID: settings.id, File: settings.file, API: settings.api}
+	if settings.provider == gist.Gitee {
+		saved.Provider = savedProviderGitee
+	}
+	return saved
+}
+
+func (settings gistSettings) tokenSecretName() string {
+	if settings.provider == gist.Gitee {
+		return giteeTokenSecret
+	}
+	return gistTokenSecret
 }
 
 // gistHolder is a store that may have made a gist during an upload.
@@ -105,7 +128,7 @@ func (view *syncState) secretName() string {
 	case syncS3:
 		return s3SecretName
 	case syncGist:
-		return gistTokenSecret
+		return view.gist.tokenSecretName()
 	}
 	return webdavPasswordSecret
 }
@@ -120,10 +143,14 @@ func (view *syncState) location() string {
 		if file == "" {
 			file = gist.DefaultFile
 		}
-		if view.gist.id == "" {
-			return "GitHub Gist (" + file + ")"
+		name := "GitHub Gist"
+		if view.gist.provider == gist.Gitee {
+			name = "Gitee"
 		}
-		return "GitHub Gist " + view.gist.id + " (" + file + ")"
+		if view.gist.id == "" {
+			return name + " (" + file + ")"
+		}
+		return name + " " + view.gist.id + " (" + file + ")"
 	}
 	return strings.TrimSuffix(view.url, "/") + "/" + strings.TrimPrefix(view.path, "/")
 }
@@ -144,11 +171,13 @@ func (view *syncState) fieldsError(m i18n.ToolsMessages) string {
 func (view *syncState) newStore(secret string) (cloudsync.Store, error) {
 	switch view.kind {
 	case syncS3:
-		return s3.New(view.s3.config(secret), nil)
+		config := view.s3.config(secret)
+		config.AllowInsecureHTTP = view.allowInsecureHTTP
+		return s3.New(config, nil)
 	case syncGist:
-		return gist.New(gist.Config{Token: secret, ID: view.gist.id, File: view.gist.file, APIBase: view.gist.api}, nil)
+		return gist.New(gist.Config{Provider: view.gist.provider, Token: secret, ID: view.gist.id, File: view.gist.file, APIBase: view.gist.api}, nil)
 	}
-	return webdav.New(webdav.Config{URL: view.url, User: view.user, Password: secret, Path: view.path}, nil)
+	return webdav.New(webdav.Config{URL: view.url, User: view.user, Password: secret, Path: view.path, AllowInsecureHTTP: view.allowInsecureHTTP}, nil)
 }
 
 func (settings s3Settings) config(secret string) s3.Config {
@@ -159,10 +188,11 @@ func (settings s3Settings) config(secret string) s3.Config {
 // switchSync makes next the service, forgetting what was known of the file on
 // the previous one, and drops the secrets of the services no longer used.
 func (state *State) switchSync(next syncState) {
-	if opened := state.secrets.vault; opened != nil && next.kind != state.sync.kind {
+	if opened := state.secrets.vault; opened != nil && (next.kind != state.sync.kind || next.secretName() != state.sync.secretName()) {
 		_ = opened.Delete(state.sync.secretName())
 	}
 	state.stopSyncTimer()
+	state.syncEpoch++
 	next.working = false
 	state.sync = next
 }
@@ -181,7 +211,7 @@ func (state *State) keepSyncSecrets(secretName, secret, backupPassword string) s
 			continue
 		}
 		if err := opened.Set(entry.name, entry.value); err != nil {
-			if errors.Is(err, vault.ErrLocked) {
+			if errors.Is(err, vault.ErrNeedsConversion) {
 				return m.BackupErrVault
 			}
 			return fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))
@@ -201,16 +231,37 @@ func (state *State) hasSyncSecret(name string) bool {
 
 // --- S3 ------------------------------------------------------------------
 
-// openS3Configure asks for the bucket, then (a second form) for the access key.
+type s3Setup struct {
+	settings                          s3Settings
+	allowInsecureHTTP                 bool
+	accessKey, secret, backupPassword string
+}
+
 func (state *State) openS3Configure() {
-	m := state.messages.Tools
 	current := state.sync.s3
 	if state.sync.kind != syncS3 {
 		current = s3Settings{pathStyle: true}
 	}
+	state.openS3Bucket(&s3Setup{
+		settings: current, accessKey: current.accessKey,
+		allowInsecureHTTP: state.sync.kind == syncS3 && state.sync.allowInsecureHTTP,
+	})
+}
+
+func (state *State) openS3Bucket(draft *s3Setup) {
+	m := state.messages.Tools
+	current := draft.settings
 	form := state.openForm(formDialog{
-		title: m.S3DialogTitle, description: m.S3DialogDescription, submit: m.SyncSave,
-		run: (*State).runS3Bucket,
+		title: m.S3DialogTitle, description: m.S3DialogDescription, submit: m.S3Next,
+		submitLabel: func(form *formDialog) string {
+			if strings.TrimSpace(form.value(0)) == "" {
+				return m.S3Stop
+			}
+			return m.S3Next
+		},
+		run:        func(state *State, form *formDialog) string { return state.runS3Bucket(form, draft) },
+		checkLabel: m.SyncAllowInsecureHTTP, checkDescription: m.SyncInsecureHTTPDescription,
+		checked: draft.allowInsecureHTTP,
 	},
 		formField{label: m.S3Endpoint, placeholder: "https://s3.eu-west-1.amazonaws.com"},
 		formField{label: m.S3Region, placeholder: "us-east-1"},
@@ -227,7 +278,7 @@ func (state *State) openS3Configure() {
 	}
 }
 
-func (state *State) runS3Bucket(form *formDialog) string {
+func (state *State) runS3Bucket(form *formDialog, draft *s3Setup) string {
 	m := state.messages.Tools
 	endpoint := strings.TrimSpace(form.value(0))
 	if endpoint == "" {
@@ -236,7 +287,7 @@ func (state *State) runS3Bucket(form *formDialog) string {
 	}
 	settings := s3Settings{
 		endpoint: endpoint, region: strings.TrimSpace(form.value(1)), bucket: strings.TrimSpace(form.value(2)),
-		key: strings.TrimSpace(form.value(3)), accessKey: state.sync.s3.accessKey,
+		key: strings.TrimSpace(form.value(3)), accessKey: draft.accessKey,
 	}
 	if settings.key == "" {
 		settings.key = s3.DefaultKey
@@ -253,6 +304,7 @@ func (state *State) runS3Bucket(form *formDialog) string {
 	}
 	check := settings.config("x")
 	check.AccessKey = "x"
+	check.AllowInsecureHTTP = form.checked
 	if _, err := s3.New(check, nil); err != nil {
 		if errors.Is(err, cloudsync.ErrInsecure) {
 			return m.SyncErrInsecure
@@ -261,24 +313,34 @@ func (state *State) runS3Bucket(form *formDialog) string {
 	}
 	// The second form opens once this one has closed, in a frame of its own, so
 	// that its first field takes the focus like any newly opened dialog.
-	state.aiPost(func(state *State) { state.openS3Login(settings) })
+	draft.settings, draft.allowInsecureHTTP = settings, form.checked
+	state.aiPost(func(state *State) { state.openS3Login(draft) })
 	return ""
 }
 
-func (state *State) openS3Login(settings s3Settings) {
+func (state *State) openS3Login(draft *s3Setup) {
 	m := state.messages.Tools
 	form := state.openForm(formDialog{
 		title: m.S3LoginTitle, description: m.S3LoginDescription, submit: m.SyncSave,
-		run: func(state *State, form *formDialog) string { return state.runS3Login(form, settings) },
+		run: func(state *State, form *formDialog) string {
+			return state.runS3Login(form, draft.settings, draft.allowInsecureHTTP)
+		},
+		backLabel: m.S3Back,
+		back: func(state *State, form *formDialog) {
+			draft.accessKey, draft.secret, draft.backupPassword = form.value(0), form.value(1), form.value(2)
+			state.aiPost(func(state *State) { state.openS3Bucket(draft) })
+		},
 	},
 		formField{label: m.S3AccessKey},
 		formField{label: m.S3Secret, secure: true},
 		formField{label: m.BackupPassword, placeholder: m.BackupPasswordPlaceholder, secure: true},
 	)
-	form.set(0, settings.accessKey)
+	form.set(0, draft.accessKey)
+	form.set(1, draft.secret)
+	form.set(2, draft.backupPassword)
 }
 
-func (state *State) runS3Login(form *formDialog, settings s3Settings) string {
+func (state *State) runS3Login(form *formDialog, settings s3Settings, allowInsecureHTTP bool) string {
 	m := state.messages.Tools
 	settings.accessKey = strings.TrimSpace(form.value(0))
 	secret, backupPassword := form.value(1), form.value(2)
@@ -298,44 +360,60 @@ func (state *State) runS3Login(form *formDialog, settings s3Settings) string {
 	if state.sync.kind != syncS3 || state.sync.s3 != settings {
 		state.switchSync(syncState{kind: syncS3, s3: settings})
 	}
+	state.sync.allowInsecureHTTP = allowInsecureHTTP
 	state.sync.rowText = ""
 	state.save()
 	state.testSync()
 	return ""
 }
 
-// --- Gist ----------------------------------------------------------------
+// --- Gist and Gitee ------------------------------------------------------
 
 func (state *State) openGistConfigure() {
+	state.openSnippetConfigure(gist.GitHub)
+}
+
+func (state *State) openGiteeConfigure() {
+	state.openSnippetConfigure(gist.Gitee)
+}
+
+func (state *State) openSnippetConfigure(provider gist.Provider) {
 	m := state.messages.Tools
+	title, description := m.GistDialogTitle, m.GistDialogDescription
+	idLabel := m.GistID
+	if provider == gist.Gitee {
+		title, description, idLabel = m.GiteeDialogTitle, m.GiteeDialogDescription, m.GiteeID
+	}
+	fields := []formField{
+		{label: m.GistToken, secure: true},
+		{label: idLabel},
+		{label: m.GistFile, placeholder: gist.DefaultFile},
+		{label: m.GistAPI, placeholder: gist.DefaultAPIBaseFor(provider)},
+	}
+	fields = append(fields, formField{label: m.BackupPassword, placeholder: m.BackupPasswordPlaceholder, secure: true})
 	form := state.openForm(formDialog{
-		title: m.GistDialogTitle, description: m.GistDialogDescription, submit: m.SyncSave,
-		run: (*State).runGistConfigure,
-	},
-		formField{label: m.GistToken, secure: true},
-		formField{label: m.GistID},
-		formField{label: m.GistFile, placeholder: gist.DefaultFile},
-		formField{label: m.GistAPI, placeholder: gist.DefaultAPIBase},
-		formField{label: m.BackupPassword, placeholder: m.BackupPasswordPlaceholder, secure: true},
-	)
-	if state.sync.kind == syncGist {
+		title: title, description: description, submit: m.SyncSave,
+		run: func(state *State, form *formDialog) string { return state.runSnippetConfigure(provider, form) },
+	}, fields...)
+	if state.sync.kind == syncGist && state.sync.gist.provider == provider {
 		form.set(1, state.sync.gist.id)
 		form.set(2, state.sync.gist.file)
 		form.set(3, state.sync.gist.api)
 	}
 }
 
-func (state *State) runGistConfigure(form *formDialog) string {
+func (state *State) runSnippetConfigure(provider gist.Provider, form *formDialog) string {
 	m := state.messages.Tools
+	settings := gistSettings{provider: provider, id: strings.TrimSpace(form.value(1)), file: strings.TrimSpace(form.value(2)), api: strings.TrimSpace(form.value(3))}
 	token, backupPassword := strings.TrimSpace(form.value(0)), form.value(4)
-	settings := gistSettings{id: strings.TrimSpace(form.value(1)), file: strings.TrimSpace(form.value(2)), api: strings.TrimSpace(form.value(3))}
 	if settings.file == gist.DefaultFile {
 		settings.file = ""
 	}
-	if settings.api == gist.DefaultAPIBase {
+	if settings.api == gist.DefaultAPIBaseFor(provider) {
 		settings.api = ""
 	}
-	haveToken := state.sync.kind == syncGist && state.hasSyncSecret(gistTokenSecret)
+	secretName := settings.tokenSecretName()
+	haveToken := state.sync.kind == syncGist && state.sync.gist.provider == provider && state.hasSyncSecret(secretName)
 	haveBackup := state.hasSyncSecret(backupPasswordSecret)
 	if token == "" && !haveToken || backupPassword == "" && !haveBackup {
 		return m.GistErrFields
@@ -343,13 +421,13 @@ func (state *State) runGistConfigure(form *formDialog) string {
 	if backupPassword != "" && len(backupPassword) < backup.MinPasswordLength {
 		return m.BackupErrPasswordShort
 	}
-	if _, err := gist.New(gist.Config{Token: "x", ID: settings.id, File: settings.file, APIBase: settings.api}, nil); err != nil {
+	if _, err := gist.New(gist.Config{Provider: provider, Token: "x", ID: settings.id, File: settings.file, APIBase: settings.api}, nil); err != nil {
 		if errors.Is(err, cloudsync.ErrInsecure) {
 			return m.SyncErrInsecure
 		}
 		return m.SyncErrAddress
 	}
-	if message := state.keepSyncSecrets(gistTokenSecret, token, backupPassword); message != "" {
+	if message := state.keepSyncSecrets(secretName, token, backupPassword); message != "" {
 		return message
 	}
 	if state.sync.kind != syncGist || state.sync.gist != settings {

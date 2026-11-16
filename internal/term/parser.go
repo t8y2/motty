@@ -1,8 +1,9 @@
 package term
 
 import (
-	"bytes"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 )
 
 type parseState uint8
@@ -60,8 +61,19 @@ func (t *Terminal) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	// Everything written from this buffer arrived together, so it shares one
+	// stamped time; see clockNow.
+	t.clockValid = false
 	for i := 0; i < len(p); {
 		if t.state == stGround && t.utf8n == 0 && t.charsets[t.gl] == charsetASCII {
+			// The run check stays ahead of the scan: behind it, the scan's
+			// hot path cost 7% more on a redraw of short runs.
+			if p[i] >= 0x80 {
+				if n := t.textRun(p[i:]); n > 0 {
+					i += n
+					continue
+				}
+			}
 			j := i
 			for j < len(p) && p[j] >= 0x20 && p[j] < 0x7F {
 				j++
@@ -72,6 +84,12 @@ func (t *Terminal) Write(p []byte) (int, error) {
 				continue
 			}
 		}
+		if t.inString() {
+			if run := t.stringRun(p[i:]); run > 0 {
+				i += run
+				continue
+			}
+		}
 		t.feed(p[i])
 		i++
 	}
@@ -79,23 +97,100 @@ func (t *Terminal) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (t *Terminal) feed(b byte) {
-	if t.utf8n == 0 {
-		switch b {
-		case 0x90: // C1 DCS
-			t.state, t.dcs, t.dcsOverflow = stDCS, t.dcs[:0], false
-			return
-		case 0x9D: // C1 OSC
-			t.state, t.osc, t.oscOverflow = stOSC, t.osc[:0], false
-			return
-		case 0x9F: // C1 APC
-			t.state, t.apc, t.apcOverflow = stAPC, t.apc[:0], false
-			return
-		case 0x9C: // C1 ST
-			t.endString()
-			return
+// textRun writes the non-ASCII text at the start of p and returns how many
+// bytes it took, or zero when the sequence cannot be completed from p. A run
+// ends at a control character and at the end of p; the rest is the state
+// machine's, so a character split across writes still carries over.
+func (t *Terminal) textRun(p []byte) int {
+	t.runBuf = t.runBuf[:0]
+	n := 0
+	for n < len(p) && len(t.runBuf) < maxTextRun {
+		b := p[n]
+		if b >= 0x20 && b < 0x7F {
+			t.runBuf = append(t.runBuf, rune(b))
+			n++
+			continue
+		}
+		if b < 0x20 || b == 0x7F {
+			break
+		}
+		r, size := utf8.DecodeRune(p[n:])
+		if r == utf8.RuneError && size <= 1 {
+			break
+		}
+		t.runBuf = append(t.runBuf, r)
+		n += size
+	}
+	if n == 0 {
+		return 0
+	}
+	t.printRunes(t.runBuf)
+	return n
+}
+
+// inString reports whether the parser is inside a control string, whose payload
+// is copied in runs rather than fed a byte at a time.
+func (t *Terminal) inString() bool {
+	switch t.state {
+	case stOSC, stDCS, stAPC:
+		return true
+	}
+	return false
+}
+
+// stringRun appends a printable run of a control string in one copy and
+// returns how many bytes it took, or zero when the byte needs the per-byte
+// state machine (a terminator, a C0 control, or an OSC whose limit still
+// depends on its first bytes). An inline picture's payload is megabytes, and
+// copying it one byte at a time cost more than decoding it.
+func (t *Terminal) stringRun(p []byte) int {
+	if len(p) == 0 || p[0] < 0x20 {
+		return 0
+	}
+	var dst *[]byte
+	limit, overflow := maxOSC, false
+	switch t.state {
+	case stOSC:
+		// A longer limit applies only when the string starts with its prefix,
+		// so the first bytes still go through the per-byte path.
+		var decided bool
+		if limit, decided = oscLimit(t.osc); !decided {
+			return 0
+		}
+		dst, overflow = &t.osc, t.oscOverflow
+	case stDCS:
+		dst, overflow, limit = &t.dcs, t.dcsOverflow, maxSixelSequence
+	case stAPC:
+		dst, overflow, limit = &t.apc, t.apcOverflow, maxImageSequence
+	default:
+		return 0
+	}
+	run := 0
+	for run < len(p) && p[run] >= 0x20 {
+		run++
+	}
+	if overflow {
+		return run
+	}
+	take := min(run, max(limit-len(*dst), 0))
+	*dst = append(*dst, p[:take]...)
+	if take < run {
+		switch t.state {
+		case stOSC:
+			t.oscOverflow = true
+		case stDCS:
+			t.dcsOverflow = true
+		case stAPC:
+			t.apcOverflow = true
 		}
 	}
+	return run
+}
+
+func (t *Terminal) feed(b byte) {
+	// Input is UTF-8: C1 byte values can be continuation bytes inside a
+	// control-string payload, where ground's UTF-8 decoder is not running.
+	// Recognize string controls through their seven-bit ESC forms instead.
 	switch b {
 	case 0x18, 0x1A: // CAN, SUB cancel any sequence
 		if t.utf8n > 0 {
@@ -172,6 +267,10 @@ func (t *Terminal) ground(b byte) {
 // control executes a C0 control character.
 func (t *Terminal) control(b byte) {
 	switch b {
+	case 0x07: // BEL
+		if t.bellFn != nil {
+			t.bellFn()
+		}
 	case 0x08: // BS
 		t.pend = false
 		if t.cx > 0 {
@@ -337,16 +436,42 @@ func (t *Terminal) oscByte(b byte) {
 		t.state = stGround
 	case b < 0x20:
 	default:
-		limit := maxOSC
-		if bytes.HasPrefix(t.osc, []byte("1337;File=")) || len(t.osc) < len("1337;File=") && bytes.HasPrefix([]byte("1337;File="), t.osc) {
-			limit = maxImageSequence
-		}
+		limit, _ := oscLimit(t.osc)
 		if len(t.osc) < limit {
 			t.osc = append(t.osc, b)
 		} else {
 			t.oscOverflow = true
 		}
 	}
+}
+
+// oscPrefixLimits are the OSC strings that may run past maxOSC, by their first
+// bytes: an inline picture, and a clipboard write, which carries a whole
+// selection (a page of output, or a table whose box drawing is three bytes a
+// character).
+var oscPrefixLimits = [...]struct {
+	prefix string
+	limit  int
+}{
+	{"1337;File=", maxImageSequence},
+	{"52;", maxClipboardSequence},
+}
+
+// oscLimit is the byte limit of an OSC string that begins with osc, and
+// whether those bytes decide it: false while osc could still grow into one of
+// the oscPrefixLimits prefixes.
+func oscLimit(osc []byte) (limit int, decided bool) {
+	decided = true
+	for _, rule := range oscPrefixLimits {
+		if len(osc) >= len(rule.prefix) {
+			if string(osc[:len(rule.prefix)]) == rule.prefix {
+				return rule.limit, true
+			}
+		} else if string(osc) == rule.prefix[:len(osc)] {
+			decided = false
+		}
+	}
+	return maxOSC, decided
 }
 
 // endOSC runs a completed operating-system command.
@@ -377,7 +502,58 @@ func (t *Terminal) endOSC() {
 		t.osc9(text)
 	case 99:
 		t.osc99(text)
+	case 133:
+		suffix := ""
+		if t.promptToken != "" {
+			suffix = ";motty=" + t.promptToken
+		}
+		// The owning shell's prompt is drawn after the command it just finished,
+		// so this is where a program that never restored its modes loses them.
+		// A token is required: without one, markers a program echoes are
+		// indistinguishable from the shell's own.
+		own := t.promptToken != ""
+		value := string(text)
+		if value == "A"+suffix {
+			t.inputStartSet = false
+			t.markPromptStart(own)
+			if own {
+				t.ReclaimApplicationModes()
+			}
+			if t.promptStartFn != nil {
+				t.promptStartFn()
+			}
+		}
+		if value == "B"+suffix {
+			t.markInputStart(own)
+			if t.promptReadyFn != nil {
+				t.promptReadyFn()
+			}
+		}
+		if value == "C"+suffix {
+			t.inputStartSet = false
+			t.promptActive, t.promptStale = false, false
+			t.dropPromptRows()
+			if t.commandStartFn != nil {
+				t.commandStartFn()
+			}
+		}
+		if strings.HasPrefix(value, "D;") && strings.HasSuffix(value, suffix) {
+			t.inputStartSet = false
+			t.promptActive, t.promptStale = false, false
+			t.dropPromptRows()
+			status := strings.TrimSuffix(value[2:], suffix)
+			if code, err := strconv.Atoi(status); err == nil && code >= 0 && code <= 255 && strconv.Itoa(code) == status {
+				if own {
+					t.ReclaimApplicationModes()
+				}
+				if t.commandFinishedFn != nil {
+					t.commandFinishedFn(code)
+				}
+			}
+		}
 	case 777:
+		t.inputEnvironmentReport(text)
+		t.homeDirectoryReport(text)
 		t.osc777(text)
 	case 10, 11:
 		if len(text) == 1 && text[0] == '?' && t.haveDefaults {
@@ -390,7 +566,11 @@ func (t *Terminal) endOSC() {
 	case 52:
 		t.osc52(text)
 	case 1337:
-		t.itermImage(text)
+		if t.itermImage(text) {
+			// The decoder reads the payload in place; the next escape sequence
+			// must not overwrite the buffer under it.
+			t.osc = nil
+		}
 	}
 }
 
@@ -424,7 +604,10 @@ func (t *Terminal) endString() {
 		data, overflow := t.dcs, t.dcsOverflow
 		t.dcs, t.dcsOverflow, t.state = t.dcs[:0], false, stGround
 		if !overflow {
-			t.sixel(data)
+			if t.sixel(data) {
+				// Decoding reads the sequence in place; detach it.
+				t.dcs = nil
+			}
 		}
 	case stAPC:
 		data, overflow := t.apc, t.apcOverflow

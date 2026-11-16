@@ -3,18 +3,23 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"github.com/vivaui/viva/gfx"
 	"path/filepath"
 	"strings"
-	"github.com/vivaui/viva/ui"
 
-	"motty/internal/i18n"
-	"motty/internal/sshconfig"
 	"github.com/vivaui/viva/app"
+	"motty/internal/i18n"
+	"motty/internal/keyidentity"
+	"motty/internal/sshconfig"
+	"motty/internal/sshconn"
 )
 
 const maxVisibleHostImportWarnings = 7
 
 type hostImportResult struct {
+	// title replaces the dialog's own when set: the sync with the SSH config
+	// reports in the same dialog.
+	title         string
 	summary       string
 	warningsTitle string
 	warnings      [maxVisibleHostImportWarnings]string
@@ -45,6 +50,7 @@ type hostImportBuilder struct {
 	sources     map[string]sshconfig.Host
 	aliasIDs    map[string]uint32
 	connections map[hostConnection]Host
+	usedIDs     map[string]struct{}
 	identitySet map[string]struct{}
 	routes      map[uint32]uint32
 }
@@ -56,12 +62,12 @@ func (state *State) importSSHConfig() {
 		return
 	}
 	if err != nil {
-		state.status = fmt.Sprintf(state.messages.SSHConfigImportFailedFmt, err)
+		state.showActionFailure(state.messages.SSHConfigPickerTitle, err, state.messages.ActionFeedback.FilePickerFailed)
 		return
 	}
 	parsed, err := sshconfig.ParseFile(paths[0])
 	if err != nil {
-		state.status = fmt.Sprintf(state.messages.SSHConfigImportFailedFmt, err)
+		state.showFileReadFailure(state.messages.SSHConfigPickerTitle, err, state.messages.ActionFeedback.ImportSSHConfigFailed)
 		return
 	}
 	plan := newHostImportBuilder(state, parsed).build(parsed.Hosts)
@@ -74,6 +80,7 @@ func newHostImportBuilder(state *State, parsed sshconfig.Result) *hostImportBuil
 		sources:     make(map[string]sshconfig.Host, len(parsed.Hosts)),
 		aliasIDs:    make(map[string]uint32, len(parsed.Hosts)),
 		connections: make(map[hostConnection]Host, len(state.hosts)+len(parsed.Hosts)),
+		usedIDs:     make(map[string]struct{}, len(state.hosts)+len(parsed.Hosts)),
 		identitySet: make(map[string]struct{}, len(state.identities)+len(parsed.Hosts)),
 		routes:      make(map[uint32]uint32, len(state.proxies)+len(parsed.Hosts)),
 	}
@@ -81,6 +88,7 @@ func newHostImportBuilder(state *State, parsed sshconfig.Result) *hostImportBuil
 	builder.plan.nextIdentityID = state.nextIdentityID
 	builder.plan.nextProxyID = state.nextProxyID
 	for _, host := range state.hosts {
+		builder.usedIDs[host.CatalogID] = struct{}{}
 		if host.isSSH() {
 			builder.connections[connectionKey(host.Address, host.User, host.Port)] = host
 		}
@@ -109,7 +117,15 @@ func (builder *hostImportBuilder) build(sources []sshconfig.Host) hostImportPlan
 		builder.addSourceHost(source)
 	}
 	for _, source := range sources {
-		builder.addIdentity(source.IdentityFile)
+		if source.Options != nil {
+			for _, path := range source.Options.IdentityFiles {
+				if path != "none" {
+					builder.addIdentity(path)
+				}
+			}
+		} else {
+			builder.addIdentity(source.IdentityFile)
+		}
 	}
 	for _, source := range sources {
 		if len(source.ProxyJump) != 0 {
@@ -132,7 +148,46 @@ func (builder *hostImportBuilder) addSourceHost(source sshconfig.Host) {
 	builder.aliasIDs[strings.ToLower(source.Alias)] = host.ID
 	if !added {
 		builder.plan.duplicateHosts++
+		return
 	}
+	builder.plan.hosts[len(builder.plan.hosts)-1].SSHOptions = importedSSHOptions(source.Options)
+	if source.ProxyCommand != "" {
+		builder.addProxyCommand(source)
+	}
+}
+
+func importedSSHOptions(source *sshconfig.ConnectionOptions) *sshconfig.ConnectionOptions {
+	options := source.Clone()
+	if options != nil {
+		for index, path := range options.IdentityFiles {
+			if path != "none" {
+				if absolute, err := filepath.Abs(path); err == nil {
+					options.IdentityFiles[index] = absolute
+				}
+			}
+		}
+	}
+	return options
+}
+
+// addProxyCommand gives the host just added the source's ProxyCommand as its
+// own proxy, and says so.
+func (builder *hostImportBuilder) addProxyCommand(source sshconfig.Host) {
+	proxy, note := importedProxyCommand(&builder.state.messages, source)
+	builder.plan.hosts[len(builder.plan.hosts)-1].Proxy = proxy
+	builder.warn(note)
+}
+
+// importedProxyCommand is the proxy a host read from an SSH config gets for its
+// ProxyCommand, and the line that tells the user. The command would run here,
+// so it stays unconfirmed until the user saves it in the host's proxy dialog. A
+// command Motty cannot run is left out (nil) and the line says so.
+func importedProxyCommand(m *i18n.Messages, source sshconfig.Host) (*outboundProxy, string) {
+	if sshconn.CheckProxyCommand(source.ProxyCommand) != nil {
+		return nil, fmt.Sprintf(m.SSHConfigWarningProxyCommandFmt, source.Alias)
+	}
+	proxy := &outboundProxy{kind: sshconn.ProxyCommand, address: source.ProxyCommand, unconfirmed: true}
+	return proxy, fmt.Sprintf(m.SSHConfigProxyCommandFmt, source.Alias)
 }
 
 func (builder *hostImportBuilder) addIdentity(path string) {
@@ -148,6 +203,9 @@ func (builder *hostImportBuilder) addIdentity(path string) {
 	}
 	record := inspectIdentity(builder.plan.nextIdentityID, absolute, builder.state.keyMessages())
 	if record.Error != "" {
+		if _, err := keyidentity.PublicKey(absolute); err == nil {
+			return
+		}
 		builder.warn(fmt.Sprintf(builder.state.messages.SSHConfigWarningIdentityFmt, filepath.Base(path), record.Error))
 		return
 	}
@@ -237,7 +295,7 @@ func (builder *hostImportBuilder) ensureHost(label, address, user string, port u
 	if host, exists := builder.connections[key]; exists {
 		return host, false
 	}
-	host := Host{ID: builder.plan.nextHostID, Label: label, Address: address, User: user, Port: port}
+	host := Host{ID: builder.plan.nextHostID, Label: label, Address: address, User: user, Port: port, CatalogID: freshCatalogID(builder.usedIDs)}
 	host.finish()
 	builder.plan.nextHostID++
 	builder.plan.hosts = append(builder.plan.hosts, host)
@@ -260,7 +318,7 @@ func (state *State) applyHostImport(plan hostImportPlan) {
 }
 
 // applyHostImportSummary adds what a plan found and tells the user in summary.
-func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) {
+func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) error {
 	state.hosts = append(state.hosts, plan.hosts...)
 	state.identities = append(state.identities, plan.identities...)
 	state.proxies = append(state.proxies, plan.proxies...)
@@ -284,11 +342,13 @@ func (state *State) applyHostImportSummary(plan hostImportPlan, summary string) 
 	state.status = summary
 	state.modal = modalHostImportResult
 	if len(plan.hosts)+len(plan.identities)+len(plan.proxies) > 0 {
-		state.save()
+		return state.saveWithResult()
 	}
+	return nil
 }
 
 func (result *hostImportResult) set(messages i18n.Messages, summary string, warnings []string) {
+	result.title = ""
 	result.summary = summary
 	result.warningsTitle = ""
 	result.more = ""
@@ -305,7 +365,7 @@ func (result *hostImportResult) set(messages i18n.Messages, summary string, warn
 	}
 }
 
-func (state *State) clickHostImportResult(id ui.ID) {
+func (state *State) clickHostImportResult(id gfx.ID) {
 	switch id {
 	case hitHostImportDismiss, hitHostImportClose, hitHostImportDone:
 		state.modal = modalNone
@@ -322,6 +382,32 @@ func connectionKey(address, user string, port uint16) hostConnection {
 
 func validImportedAddress(address string) bool {
 	return address != "" && !strings.ContainsAny(address, " \t\r\n\x00")
+}
+
+// gitHostingHosts are the public forges a Git remote reaches over SSH. They
+// offer no shell, so a block that points at one is a Git alias even when the
+// remote URL, not the block, names the "git" user.
+var gitHostingHosts = map[string]bool{
+	"github.com":              true,
+	"ssh.github.com":          true,
+	"gitlab.com":              true,
+	"altssh.gitlab.com":       true,
+	"gitee.com":               true,
+	"bitbucket.org":           true,
+	"codeberg.org":            true,
+	"git.sr.ht":               true,
+	"ssh.dev.azure.com":       true,
+	"vs-ssh.visualstudio.com": true,
+}
+
+// gitRemoteAlias reports whether a config block is an alias for a Git remote
+// rather than a host to open: a Git server is asked to run Git as the user
+// "git", and the public forges have no shell to offer either way.
+func gitRemoteAlias(host sshconfig.Host) bool {
+	if strings.EqualFold(strings.TrimSpace(host.User), "git") {
+		return true
+	}
+	return gitHostingHosts[strings.ToLower(strings.TrimSpace(host.HostName))]
 }
 
 func proxyRouteWouldCycle(routes map[uint32]uint32, target, jump uint32) bool {

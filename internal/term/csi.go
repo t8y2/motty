@@ -50,8 +50,9 @@ func (t *Terminal) escDispatchInter(inter, b byte) {
 			t.top, t.bot = 0, t.rows-1
 			t.cx, t.cy, t.pend = 0, 0, false
 			for _, l := range t.scr.lines {
-				for i := range l.cells {
-					l.cells[i] = Cell{R: 'E'}
+				cells := l.span(0, len(l.cells))
+				for i := range cells {
+					cells[i] = Cell{R: 'E'}
 				}
 				l.marks = l.marks[:0]
 				l.hyperlinks = nil
@@ -328,16 +329,16 @@ func (t *Terminal) insertCells(l *line, x, n int) {
 	if t.images != nil {
 		t.images.insert(l.id, x, n, t.cols)
 	}
+	// The shift carries the row's text to the right, so it can now reach the
+	// last column.
+	l.touch(t.cols)
 	copy(l.cells[x+n:], l.cells[x:t.cols-n])
 	if l.hyperlinks != nil {
 		links := *l.hyperlinks
 		copy(links[x+n:], links[x:t.cols-n])
 		clear(links[x : x+n])
 	}
-	blank := t.blankCell()
-	for i := x; i < x+n; i++ {
-		l.cells[i] = blank
-	}
+	l.fill(x, x+n, t.blankCell())
 	if len(l.marks) > 0 {
 		kept := l.marks[:0]
 		for _, m := range l.marks {
@@ -372,10 +373,7 @@ func (t *Terminal) deleteCells(l *line, x, n int) {
 		copy(links[x:], links[x+n:])
 		clear(links[t.cols-n:])
 	}
-	blank := t.blankCell()
-	for i := t.cols - n; i < t.cols; i++ {
-		l.cells[i] = blank
-	}
+	l.fill(t.cols-n, t.cols, t.blankCell())
 	if len(l.marks) > 0 {
 		kept := l.marks[:0]
 		for _, m := range l.marks {
@@ -419,6 +417,7 @@ func (t *Terminal) enterAlt(clearScreen bool) {
 		return
 	}
 	t.onAlt, t.scr, t.modes.AltScreen = true, &t.alt, true
+	t.inputStartSet = false
 	t.view = 0
 	if clearScreen {
 		if t.images != nil {
@@ -432,6 +431,7 @@ func (t *Terminal) enterAlt(clearScreen bool) {
 	}
 	t.top, t.bot = 0, t.rows-1
 	t.pend = false
+	t.generation++
 	t.version++
 }
 
@@ -452,6 +452,7 @@ func (t *Terminal) leaveAlt(clearScreen bool) {
 	t.onAlt, t.scr, t.modes.AltScreen = false, &t.main, false
 	t.top, t.bot = 0, t.rows-1
 	t.pend = false
+	t.generation++
 	t.version++
 }
 
@@ -461,12 +462,14 @@ func (t *Terminal) softReset() {
 	t.top, t.bot = 0, t.rows-1
 	t.pen = pen{}
 	t.charsets, t.gl = [4]charset{}, 0
-	t.cursor, t.cursorSteady = CursorBlock, false
+	t.cursor, t.cursorSteady = t.defaultCursor, false
+	t.cursorStyled = false
 	t.scr.saved = savedCursor{}
 }
 
 func (t *Terminal) setCursorStyle(n int) {
 	t.cursorSteady = n == 2 || n == 4 || n == 6
+	t.cursorStyled = true
 	switch n {
 	case 3, 4:
 		t.cursor = CursorUnderline

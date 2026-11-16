@@ -5,8 +5,8 @@ import (
 	"image/png"
 	"sync"
 
+	"github.com/vivaui/viva/gfx"
 	"motty/assets"
-	"github.com/vivaui/viva/ui"
 )
 
 const (
@@ -14,10 +14,11 @@ const (
 	lockupHeight = 36
 )
 
-// lockupBitmap decodes one embedded lockup picture to the premultiplied BGRA the
-// canvas draws. The pictures are fixed and embedded, so a bad one is a build error.
-func lockupBitmap(data []byte, id uint64) func() ui.Bitmap {
-	return sync.OnceValue(func() ui.Bitmap {
+// embeddedBitmap decodes one embedded picture to the premultiplied BGRA the
+// canvas draws. The pictures are fixed and embedded, so a bad one is a build
+// error.
+func embeddedBitmap(data []byte, id uint64) func() gfx.Bitmap {
+	return sync.OnceValue(func() gfx.Bitmap {
 		picture, err := png.Decode(bytes.NewReader(data))
 		if err != nil {
 			panic("workbench: the embedded logo is not a PNG: " + err.Error())
@@ -26,18 +27,20 @@ func lockupBitmap(data []byte, id uint64) func() ui.Bitmap {
 		if err != nil {
 			panic("workbench: the embedded logo is unusable: " + err.Error())
 		}
-		return ui.Bitmap{Pix: pix, Width: width, Height: height, Stride: width * 4, ID: id}
+		return gfx.Bitmap{Pix: pix, Width: width, Height: height, Stride: width * 4, ID: id}
 	})
 }
 
 var (
-	lockupDark  = lockupBitmap(assets.LockupDark, 1<<61|1)
-	lockupLight = lockupBitmap(assets.LockupLight, 1<<61|2)
+	lockupDark  = embeddedBitmap(assets.LockupDark, 1<<60|1)
+	lockupLight = embeddedBitmap(assets.LockupLight, 1<<60|2)
 )
 
 // paintLockup draws the logo with the name beside it into the slot the sidebar
-// header kept for it.
-func (state *State) paintLockup(canvas *ui.Canvas, bounds ui.Rect) {
+// header kept for it. Every build paints the same picture: a development build
+// says which copy it is on the Dock icon (see buildinfo.DockBadge), not by
+// renaming the product inside its own interface.
+func (state *State) paintLockup(canvas *gfx.Canvas, bounds gfx.Rect) {
 	bitmap := lockupLight()
 	if state.pal.dark {
 		bitmap = lockupDark()

@@ -12,6 +12,7 @@ import (
 
 // ErrNoCompose means Docker is there but has no compose plugin.
 var ErrNoCompose = fmt.Errorf("remotetools: docker compose is not installed")
+var ErrComposeListUnsupported = fmt.Errorf("remotetools: this docker compose cannot list projects as JSON")
 
 // ComposeProject is one project `docker compose ls` reports.
 type ComposeProject struct {
@@ -27,11 +28,14 @@ func Compose(ctx context.Context, runner Runner) ([]ComposeProject, error) {
 	output, err := runner.RunCommand(ctx, composeListCommand, maxOutput)
 	if err != nil {
 		text := strings.TrimSpace(string(output))
-		if strings.Contains(text, "'compose' is not a docker command") || strings.Contains(text, "unknown shorthand flag") ||
-			strings.Contains(text, "unknown command") {
+		if strings.Contains(text, "'compose' is not a docker command") || strings.Contains(text, "unknown command \"compose\"") {
 			return nil, ErrNoCompose
 		}
-		if strings.Contains(text, "not found") || strings.Contains(text, "No such file") {
+		if strings.Contains(text, "unknown shorthand flag") || strings.Contains(text, "unknown flag: --format") ||
+			strings.Contains(text, "unknown command \"ls\"") {
+			return nil, ErrComposeListUnsupported
+		}
+		if missingDockerCLI(output) {
 			return nil, ErrNoDocker
 		}
 		if text == "" {
@@ -48,6 +52,9 @@ func ParseCompose(output []byte) ([]ComposeProject, error) {
 	text := strings.TrimSpace(string(output))
 	if text == "" {
 		return nil, nil
+	}
+	if text == "null" {
+		return nil, &Failure{Message: text, Err: ErrMalformed}
 	}
 	var raw []struct {
 		Name        string `json:"Name"`

@@ -5,6 +5,7 @@ package workbench
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/headless"
@@ -12,6 +13,7 @@ import (
 
 func TestHeadlessTerminalPredictionAppearsAfterVerifiedRemoteEcho(t *testing.T) {
 	state, _, _, shell := liveSession(t)
+	advance := slowLink(state)
 	var input app.TextInput
 	resolveInput := func(context app.TextInputContext) *app.TextInput {
 		if context.Terminal {
@@ -47,6 +49,7 @@ func TestHeadlessTerminalPredictionAppearsAfterVerifiedRemoteEcho(t *testing.T) 
 		t.Fatal("headless surface displayed input before the remote verified echo")
 	}
 
+	advance(80 * time.Millisecond)
 	shell.say("abc")
 	invalidator.Invalidate()
 	if err := session.Driver().Pump(); err != nil {
@@ -59,6 +62,7 @@ func TestHeadlessTerminalPredictionAppearsAfterVerifiedRemoteEcho(t *testing.T) 
 		t.Fatalf("headless texts do not contain the prediction: %q", session.Texts())
 	}
 
+	advance(80 * time.Millisecond)
 	shell.say("de")
 	invalidator.Invalidate()
 	if err := session.Driver().Pump(); err != nil {

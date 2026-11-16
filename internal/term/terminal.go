@@ -8,9 +8,10 @@ const (
 	maxRows            = 500
 	maxMarks           = 32   // combining marks kept per line
 	maxTitle           = 1024 // bytes of window title
-	maxOSC             = 4096 // bytes of one OSC string; longer ones are ignored whole
+	maxOSC             = 4096 // bytes of one OSC string; longer ones are ignored whole (but see oscPrefixLimits)
 	maxHyperlinkTarget = 2048 // bytes retained for one OSC 8 target
 	maxHyperlinks      = 8192 // live target slots per terminal; oldest tokens expire after this
+	maxTextRun         = 4096 // runes decoded for one text run, which bounds its buffer
 )
 
 // DefaultScrollback is the number of lines kept above the screen.
@@ -22,11 +23,11 @@ const DefaultScrollback = 5000
 // full line count.
 const (
 	defaultHistoryBytes = 16 << 20
-	historyLineOverhead = 96 // the line struct, its slice headers and allocator slack
-	historyCellBytes    = 16 // Cell
-	historyMarkBytes    = 8  // Mark
-	historyLinkBytes    = 4  // one uint32 element of a line's hyperlink slice
-	historyLinkOverhead = 24 // that slice's header and allocation
+	historyLineOverhead = 112 // the line struct, its slice headers and allocator slack
+	historyCellBytes    = 16  // Cell
+	historyMarkBytes    = 8   // Mark
+	historyLinkBytes    = 4   // one uint32 element of a line's hyperlink slice
+	historyLinkOverhead = 24  // that slice's header and allocation
 )
 
 // CursorStyle is the cursor shape an application asked for with DECSCUSR.
@@ -101,6 +102,11 @@ type pen struct {
 	hyperlink uint32
 }
 
+// cell returns a cell painted with the pen's colors and attributes.
+func (p pen) cell() Cell {
+	return Cell{FG: p.fg, BG: p.bg, Attr: p.attr}
+}
+
 // charset is a G0-G3 designation.
 type charset uint8
 
@@ -133,7 +139,8 @@ type screen struct {
 
 // Terminal is the emulator. Create it with New.
 type Terminal struct {
-	cols, rows int
+	cols, rows     int
+	wordSeparators string
 
 	main, alt screen
 	scr       *screen // the active one
@@ -153,17 +160,25 @@ type Terminal struct {
 	histSpare  *line        // an evicted line to reuse, so a budget-bound history does not allocate per line
 	view       int          // how many lines the view is scrolled back
 	scrolled   uint64       // lines ever pushed into history, kept or dropped
-	clock      func() int64 // stamps lines on first write; nil records nothing
+	clock      func() int64 // stamps lines when they are written; nil records nothing
+	clockAt    int64        // clock() for the current Write, see clockNow
+	clockValid bool
 
-	cx, cy            int
-	pend              bool // a character was written in the last column; wrap on the next
-	pen               pen
-	top, bot          int // scroll region, inclusive
-	tabs              []bool
-	charsets          [4]charset
-	gl                uint8
-	modes             Modes
-	cursor            CursorStyle
+	cx, cy   int
+	pend     bool // a character was written in the last column; wrap on the next
+	pen      pen
+	top, bot int // scroll region, inclusive
+	tabs     []bool
+	charsets [4]charset
+	gl       uint8
+	modes    Modes
+	cursor   CursorStyle
+	// defaultCursor is the shape the cursor takes until a program asks for its
+	// own with DECSCUSR; SetDefaultCursor sets it from the user's settings.
+	defaultCursor CursorStyle
+	// cursorStyled says a program has styled the cursor, so the default no
+	// longer applies to it.
+	cursorStyled      bool
 	cursorSteady      bool
 	title             string
 	hyperlinks        []hyperlinkRecord // allocated only after the first accepted OSC 8 target
@@ -171,20 +186,53 @@ type Terminal struct {
 	nextHyperlink     uint32
 	images            *imageStore
 	kitty             *kittyTransfer
+	// imageOps are the inline images whose decode or placement has not been
+	// applied yet, in parse order; see image_decode.go.
+	imageOps   []*imageJob
+	imageBytes int
+	imageWake  func()
 
-	replyFn      func([]byte)
-	clipboardFn  func(ClipboardWrite)
-	notifyFn     func(Notification)
-	cwdFn        func(Cwd)
-	syncFn       func(bool)
-	cwd          Cwd
-	kittyNotes   []kittyPending // OSC 99 notifications still waiting for chunks
-	defFG, defBG [3]uint8
-	haveDefaults bool
+	replyFn       func([]byte)
+	clipboardFn   func(ClipboardWrite)
+	notifyFn      func(Notification)
+	bellFn        func()
+	cwdFn         func(Cwd)
+	cwdReportFn   func(Cwd)
+	promptReadyFn func()
+	promptStartFn func()
+	promptToken   string
+	inputStart    Point // where the shell's editable line begins; see InputMove
+	inputStartSet bool
 
-	lastRune rune // for REP
+	// promptLine is the buffer line the shell's prompt began on (OSC 133 A), and
+	// promptActive whether the cursor is still on that prompt; see
+	// markPromptStart. promptStale is whether a resize left the rows it drew on
+	// waiting for the shell's own redraw; promptSaved holds those rows and the
+	// cursor column as the shell drew them until it does.
+	promptLine   uint64
+	promptActive bool
+	promptStale  bool
+	promptSaved  []*line
+	promptCol    int
+
+	inputEnvironmentFn func(InputEnvironment)
+	homeDirectoryFn    func(string)
+	commandStartFn     func()
+	commandFinishedFn  func(int)
+	syncFn             func(bool)
+	cwd                Cwd
+	kittyNotes         []kittyPending // OSC 99 notifications still waiting for chunks
+	defFG, defBG       [3]uint8
+	haveDefaults       bool
+
+	lastRune rune   // for REP
+	runBuf   []rune // text decoded for the run path, reused across writes
 	nextID   uint64
 	version  uint64
+	// generation counts the structural changes that make line numbers name
+	// other text; see BufferGeneration.
+	generation uint64
+	reflow     reflow
 
 	parser
 }
@@ -207,9 +255,30 @@ func clampInt(value, low, high int) int { return min(max(value, low), high) }
 // Size is the grid size in cells.
 func (t *Terminal) Size() (cols, rows int) { return t.cols, t.rows }
 
+// AtPrompt reports whether the cursor is on a shell prompt the owning shell
+// reported with OSC 133 A and has not left, which is the state in which the
+// shell redraws the prompt itself after a resize.
+func (t *Terminal) AtPrompt() bool { return t.promptActive && !t.onAlt }
+
 // Version changes whenever anything visible may have changed: written bytes,
 // resizes and scrolling the view. The owner can skip repainting while it holds.
 func (t *Terminal) Version() uint64 { return t.version }
+
+// BufferGeneration changes when the retained line numbers stop naming the text
+// they named before: a reset, and entering or leaving the alternate screen.
+// Ordinary output, which appends and scrolls, leaves it alone. An owner's
+// selection watches it to know when its points have become meaningless.
+func (t *Terminal) BufferGeneration() uint64 { return t.generation }
+
+// RetainedFrom is the oldest line the retained buffer still holds, for owners
+// that anchor to line numbers: it is where a point at or before it has to
+// start. ok is false when the buffer holds no lines at all.
+func (t *Terminal) RetainedFrom() (line uint64, ok bool) {
+	if t.bufferLineCount() == 0 {
+		return 0, false
+	}
+	return t.lineBase(), true
+}
 
 // Title is the window title the application set with OSC 0 or 2.
 func (t *Terminal) Title() string { return t.title }
@@ -261,6 +330,31 @@ func (t *Terminal) ClearScrollback() {
 	}
 	t.clearHistory()
 	t.version++
+}
+
+// ClearScreen drops the history and erases every row except the one the cursor
+// is on, which becomes the first row with the cursor in its column. A shell's
+// prompt and the command typed on it therefore survive the clear, and the line
+// editor's idea of where it is writing stays true: nothing has been sent to the
+// shell. It reports false, and leaves the screen alone, on the alternate screen,
+// which a full-screen program owns and would paint over the blank rows without
+// knowing to redraw them.
+func (t *Terminal) ClearScreen() bool {
+	if t.onAlt {
+		return false
+	}
+	lines := t.main.lines
+	lines[t.cy], lines[0] = lines[0], lines[t.cy]
+	for i := 1; i < len(lines); i++ {
+		t.eraseLine2(lines[i])
+	}
+	// What stays on the line above is gone, so it no longer continues it.
+	lines[0].wrapped = false
+	t.clearHistory()
+	t.cy = 0
+	t.generation++
+	t.version++
+	return true
 }
 
 // ScrollbackLimit is the configured maximum retained history length.
@@ -334,16 +428,28 @@ func (t *Terminal) Cursor() Cursor {
 }
 
 // Row returns view row i (0 is the top).
-func (t *Terminal) Row(i int) Row {
-	l := t.lineAt(i)
+func (t *Terminal) Row(i int) Row { return t.rowOf(t.lineAt(i)) }
+
+func (t *Terminal) rowOf(l *line) Row {
 	cells := l.cells
 	if len(cells) > t.cols {
 		cells = cells[:t.cols]
 	}
+	markColumns := len(cells)
+	if markColumns > 0 && cells[markColumns-1].Attr&WideHead != 0 {
+		markColumns--
+		if background := cells[markColumns].BG; background != 0 {
+			// Keep the boundary's background without changing retained history.
+			cells = append([]Cell(nil), cells...)
+			cells[markColumns] = Cell{BG: background}
+		} else {
+			cells = cells[:markColumns]
+		}
+	}
 	marks := l.marks
 	// Marks are sorted by column; those past a cut belong to cells that are
 	// no longer shown.
-	for len(marks) > 0 && int(marks[len(marks)-1].Col) >= len(cells) {
+	for len(marks) > 0 && int(marks[len(marks)-1].Col) >= markColumns {
 		marks = marks[:len(marks)-1]
 	}
 	return Row{Cells: cells, Marks: marks, ID: l.id, Version: l.version, Wrapped: l.wrapped, Written: l.at}
@@ -411,10 +517,25 @@ func (t *Terminal) trimHistory() {
 	t.view = min(t.view, t.histCount)
 }
 
+// SetDefaultCursor sets the shape the cursor takes until a program asks for
+// its own with DECSCUSR: at construction, and after a reset. A cursor a program
+// has styled keeps its shape. The change reaches the screen when it repaints.
+func (t *Terminal) SetDefaultCursor(style CursorStyle) {
+	if t.defaultCursor == style {
+		return
+	}
+	t.defaultCursor = style
+	if !t.cursorStyled {
+		t.cursor = style
+	}
+	t.version++
+}
+
 // Reset restores the power-on state and clears the screen. History stays.
 func (t *Terminal) Reset() {
 	t.parser = parser{}
 	t.kitty = nil
+	t.discardImageJobs()
 	if t.images != nil {
 		t.images.deleteAll()
 	}
@@ -428,18 +549,26 @@ func (t *Terminal) Reset() {
 	}
 	t.view = 0
 	t.title = ""
+	t.generation++
 	t.resetState()
 }
 
 // resetState sets modes, cursor, margins and tabs to their defaults.
 func (t *Terminal) resetState() {
+	t.inputStartSet = false
+	t.promptActive, t.promptStale = false, false
+	t.dropPromptRows()
 	t.setSync(false)
 	t.cx, t.cy, t.pend = 0, 0, false
 	t.top, t.bot = 0, t.rows-1
 	t.charsets, t.gl = [4]charset{}, 0
-	t.cursor, t.cursorSteady = CursorBlock, false
-	t.modes = Modes{CursorVisible: true, Autowrap: true}
-	t.resetKeyboard()
+	t.cursor, t.cursorSteady = t.defaultCursor, false
+	t.cursorStyled = false
+	// Alternate scroll starts on, as in VTE, kitty and Windows Terminal: a pager
+	// or editor that did not ask for the mouse still scrolls with the wheel. A
+	// program turns it off with 1007 reset.
+	t.modes = Modes{CursorVisible: true, Autowrap: true, AlternateScroll: true}
+	t.ResetKeyboard()
 	t.tabs = defaultTabs(t.cols, nil)
 	t.version++
 }
@@ -464,6 +593,35 @@ func defaultTabs(cols int, old []bool) []bool {
 
 func (t *Terminal) blankCell() Cell { return Cell{BG: t.pen.bg} }
 
+// touch records that columns up to end have been written. Columns past it still
+// hold the blank the line was recycled with, so pushHistory starts trimming
+// there instead of at the row's width.
+func (l *line) touch(end int) {
+	if end > l.used {
+		l.used = min(end, len(l.cells))
+	}
+}
+
+// span hands out cells x..x+n to be written and records the row as written up
+// to there. Cells past used are blank, so anything but a blank goes through
+// here; a write that skips it leaves text the scrollback then trims away.
+func (l *line) span(x, n int) []Cell {
+	l.touch(x + n)
+	return l.cells[x : x+n]
+}
+
+// fill writes cell over cells a..b-1. A blank that carries a background is
+// content of its own, so the row counts as written up to b.
+func (l *line) fill(a, b int, cell Cell) {
+	if cell != (Cell{}) {
+		l.touch(b)
+	}
+	cells := l.cells[a:b]
+	for i := range cells {
+		cells[i] = cell
+	}
+}
+
 func (t *Terminal) blankLines(n int) []*line {
 	lines := make([]*line, n)
 	for i := range lines {
@@ -477,14 +635,28 @@ func (t *Terminal) allocLine() *line { return t.recycle(&line{}) }
 // recycle turns l into a fresh blank line of the current width, reusing its
 // storage. Giving it a new ID keeps caches built from the old content honest.
 func (t *Terminal) recycle(l *line) *line {
+	// A recycled row is written from column zero again, so it only has to lose
+	// what it wrote: the cells past used are blank already. They can hold stale
+	// cells when the row grows back over a width it had before, so the cells a
+	// shorter slice never covered are cleared too.
+	to := l.used
 	if cap(l.cells) < t.cols {
 		l.cells = make([]Cell, t.cols)
+		to = 0
 	} else {
+		if t.cols > len(l.cells) {
+			// The row grew back over a width it had before: the cells the
+			// shorter slice never covered can still hold its old content.
+			to = t.cols
+		}
 		l.cells = l.cells[:t.cols]
 	}
-	blank := t.blankCell()
-	for i := range l.cells {
-		l.cells[i] = blank
+	// The runtime zeroes cells faster than the blank-cell loop can store them.
+	if blank := t.blankCell(); blank == (Cell{}) {
+		clear(l.cells[:to])
+		l.used = 0
+	} else {
+		l.fill(0, len(l.cells), blank)
 	}
 	l.marks = l.marks[:0]
 	l.hyperlinks = nil
@@ -504,7 +676,7 @@ func (t *Terminal) pushHistory(l *line) {
 	if t.histMax == 0 {
 		return
 	}
-	used := len(l.cells)
+	used := l.used
 	for used > 0 && l.cells[used-1] == (Cell{}) && l.hyperlinkAt(used-1) == 0 {
 		used--
 	}
@@ -524,6 +696,7 @@ func (t *Terminal) pushHistory(l *line) {
 		dst.cells = make([]Cell, used)
 	}
 	dst.cells = dst.cells[:used]
+	dst.used = used
 	copy(dst.cells, l.cells[:used])
 	dst.marks = append(dst.marks[:0], l.marks...)
 	if used > 0 && l.hyperlinks != nil {
@@ -556,21 +729,14 @@ func (t *Terminal) popHistory() *line {
 	if t.histCount == 0 {
 		t.histHead = 0
 	}
-	l := &line{cells: make([]Cell, t.cols), wrapped: h.wrapped, id: h.id, version: h.version, at: h.at}
-	copy(l.cells, h.cells)
+	l := &line{cells: append([]Cell(nil), h.cells...), marks: append([]Mark(nil), h.marks...),
+		wrapped: h.wrapped, id: h.id, version: h.version, at: h.at}
 	if h.hyperlinks != nil {
-		links := make([]uint32, t.cols)
-		copy(links, *h.hyperlinks)
+		links := append([]uint32(nil), (*h.hyperlinks)...)
 		l.hyperlinks = &links
 	}
-	for _, m := range h.marks {
-		if int(m.Col) < t.cols {
-			l.marks = append(l.marks, m)
-		}
-	}
-	if l.cells[t.cols-1].Attr&WideHead != 0 { // the tail was cut off by a narrower terminal
-		l.orphan(t.cols - 1)
-	}
+	t.fitCols(l)
+	l.used = len(l.cells)
 	t.view = min(t.view, t.histCount)
 	return l
 }
@@ -634,9 +800,11 @@ func (t *Terminal) rotate(top, bottom, n int, up, toHistory bool) {
 	t.version++
 }
 
-// Resize changes the grid size. It truncates or pads; it does not reflow.
-// Shrinking pushes the lines above the cursor into the history, growing pulls
-// them back, so a shell that redraws its prompt keeps its place.
+// Resize changes the grid size. A new width reflows the main screen and its
+// history (see reflowMain); the alternate screen, which its program redraws,
+// truncates or pads. Shrinking pushes the lines above the cursor into the
+// history, growing pulls them back, so a shell that redraws its prompt keeps
+// its place.
 func (t *Terminal) Resize(cols, rows int) {
 	cols = clampInt(cols, 1, maxCols)
 	rows = clampInt(rows, 1, maxRows)
@@ -645,7 +813,13 @@ func (t *Terminal) Resize(cols, rows int) {
 	}
 	oldCols := t.cols
 	t.cols = cols
+	if cols != oldCols {
+		t.inputStartSet = false // reflow moves the line the shell is editing
+	}
 	t.tabs = defaultTabs(cols, t.tabs[:min(oldCols, cols)])
+	if cols != oldCols {
+		t.reflowMain()
+	}
 
 	cursor := &t.cy
 	if t.onAlt {
@@ -721,14 +895,20 @@ func (t *Terminal) resizeLines(s *screen, rows int, cursorY *int, useHistory boo
 
 // fitCols makes l exactly as wide as the terminal.
 func (t *Terminal) fitCols(l *line) {
+	changed := false
 	switch {
 	case len(l.cells) > t.cols:
+		if l.used > t.cols {
+			changed = true
+		}
 		l.cells = l.cells[:t.cols]
 		for len(l.marks) > 0 && int(l.marks[len(l.marks)-1].Col) >= t.cols {
 			l.marks = l.marks[:len(l.marks)-1]
+			changed = true
 		}
 		if l.cells[t.cols-1].Attr&WideHead != 0 { // its tail was cut off
 			l.orphan(t.cols - 1)
+			changed = true
 		}
 	case len(l.cells) < t.cols:
 		if cap(l.cells) >= t.cols {
@@ -744,8 +924,11 @@ func (t *Terminal) fitCols(l *line) {
 		l.fitHyperlinks(t.cols)
 		return
 	}
+	l.used = min(l.used, len(l.cells))
 	l.fitHyperlinks(t.cols)
-	l.version++
+	if changed {
+		l.version++
+	}
 }
 
 // eraseRange blanks cells a..b-1 of l with the current background, repairing
@@ -758,11 +941,8 @@ func (t *Terminal) eraseRange(l *line, a, b int) {
 	if t.images != nil {
 		t.images.erase(l.id, a, b)
 	}
-	blank := t.blankCell()
 	l.dropMarks(a, b)
-	for i := a; i < b; i++ {
-		l.cells[i] = blank
-	}
+	l.fill(a, b, t.blankCell())
 	if l.hyperlinks != nil {
 		clear((*l.hyperlinks)[a:b])
 		if a == 0 && b == t.cols {
@@ -772,6 +952,12 @@ func (t *Terminal) eraseRange(l *line, a, b int) {
 	t.repairWide(l, a-1)
 	t.repairWide(l, b)
 	l.version++
+	// Erasing is a write too: the line's current (blank) content was produced
+	// now, so it must not keep the time of what it used to hold. A line nothing
+	// has ever been written to stays unstamped.
+	if t.clock != nil && (l.at != 0 || l.used != 0) {
+		l.at = t.clockNow()
+	}
 }
 
 // repairWide blanks the orphan half of a double-width character at x.
@@ -843,6 +1029,44 @@ func (l *line) text(cols int) string {
 // RowText is the text of view row i with trailing spaces removed.
 func (t *Terminal) RowText(i int) string { return t.lineAt(i).text(t.cols) }
 
+// AppendCellText appends the text of cells [from, to) of view row y to dst, the
+// way RowText writes a row but over an exact range and without trimming: an
+// empty cell reads as a space, the tail of a wide character adds nothing and
+// combining marks follow the cell they belong to. ok is false when the range
+// lies outside the row or starts or ends inside a wide character.
+func (t *Terminal) AppendCellText(dst []byte, y, from, to int) ([]byte, bool) {
+	if y < 0 || y >= t.rows || from < 0 || from > to || to > t.cols {
+		return dst, false
+	}
+	l := t.lineAt(y)
+	cell := func(x int) Cell {
+		if x < len(l.cells) {
+			return l.cells[x]
+		}
+		return Cell{}
+	}
+	if from < to && cell(from).Attr&WideTail != 0 || to < t.cols && from < to && cell(to).Attr&WideTail != 0 {
+		return dst, false
+	}
+	for x := from; x < to; x++ {
+		c := cell(x)
+		if c.Attr&WideTail != 0 {
+			continue
+		}
+		r := c.R
+		if r == 0 {
+			r = ' '
+		}
+		dst = utf8.AppendRune(dst, r)
+		for _, mark := range l.marks {
+			if int(mark.Col) == x {
+				dst = utf8.AppendRune(dst, mark.R)
+			}
+		}
+	}
+	return dst, true
+}
+
 // Text is the whole view as lines of text, trailing empty lines removed.
 func (t *Terminal) Text() string {
 	rows := make([]string, t.rows)
@@ -909,11 +1133,17 @@ func (t *Terminal) AppendRetainedText(dst []byte) []byte {
 	return dst
 }
 
-// SetClock makes the terminal remember when each line is first written: now
-// returns unix seconds and is called once per line, not per character. A nil
-// clock stops recording and costs one nil check per printed run. Lines keep
-// their time when they scroll into the history.
-func (t *Terminal) SetClock(now func() int64) { t.clock = now }
+// SetClock makes the terminal remember when each line is written: now returns
+// unix seconds and is called at most once per Write, not per line or character.
+// A line that is written over takes the time of that write, so a program that
+// repaints the screen in place moves its rows' times forward instead of leaving
+// them at the time each row first appeared. A nil clock stops recording and
+// costs one nil check per printed run. Lines keep their time when they scroll
+// into the history.
+func (t *Terminal) SetClock(now func() int64) {
+	t.clock = now
+	t.clockValid = false
+}
 
 // LineNumber is the 1-based number of view row i among every line the main
 // screen has produced since the terminal started. It keeps counting as the
@@ -921,9 +1151,22 @@ func (t *Terminal) SetClock(now func() int64) { t.clock = now }
 // screen.
 func (t *Terminal) LineNumber(i int) uint64 { return t.scrolled - uint64(t.view) + uint64(i) + 1 }
 
-// stamp records the first write to l.
+// clockNow is the time stamped on lines written by the current Write. Asking
+// the clock once keeps a burst of lines on the same second and keeps the clock
+// out of the per-character paths, which call stamp for every rune they print.
+func (t *Terminal) clockNow() int64 {
+	if !t.clockValid {
+		t.clockAt, t.clockValid = t.clock(), true
+	}
+	return t.clockAt
+}
+
+// stamp records when the content of l was written. Overwriting a line moves its
+// time forward: a full-screen program on the main screen writes its rows again
+// every refresh, and the gutter must not report the time a row first appeared
+// for content that has since been replaced.
 func (t *Terminal) stamp(l *line) {
-	if t.clock != nil && l.at == 0 {
-		l.at = t.clock()
+	if t.clock != nil {
+		l.at = t.clockNow()
 	}
 }

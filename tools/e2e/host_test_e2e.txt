@@ -1,0 +1,57 @@
+# End to end: Test Connection in the host form dials the host as typed, saves
+# nothing, and says how far it got. Against the loopback SSH fixture:
+#
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   cd tools/e2esshd && go build -o /tmp/e2esshd . && /tmp/e2esshd 2291 &
+#   MOTTY_LANG=en python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/host_test_e2e.txt
+
+# A server whose key is not trusted yet: reachable, nothing sent to it.
+click "New Host"
+click 500 340
+type 127.0.0.1
+click 970 340
+select 0 2
+type 2291
+click 480 410
+type tester
+click 900 410
+type secret
+click "Test Connection"
+waitfor "The server answered" 5000
+shot /tmp/host-test-untrusted.png
+click "Cancel"
+
+# Trust the key once through an ordinary connection.
+click "Search"
+type tester@127.0.0.1:2291
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+key cmd+w
+
+# Now the same form logs in.
+click "New Host"
+click 500 340
+type 127.0.0.1
+click 970 340
+select 0 2
+type 2291
+click 480 410
+type tester
+click 900 410
+type secret
+click "Test Connection"
+waitfor "Connected" 5000
+shot /tmp/host-test-ok.png
+layout
+
+# A wrong password is reported, not retried.
+click 900 410
+select 0 6
+type wrong
+click "Test Connection"
+waitfor "Authentication failed" 8000
+shot /tmp/host-test-refused.png
+layout
+click "Cancel"

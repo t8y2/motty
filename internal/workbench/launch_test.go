@@ -4,11 +4,13 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/gfx"
+	"motty/internal/sshconn"
 	"motty/internal/update"
-	"github.com/vivaui/viva/ui"
 )
 
 func TestLaunchTextReadsWhatPeopleTypeAtACommandLine(t *testing.T) {
@@ -20,8 +22,16 @@ func TestLaunchTextReadsWhatPeopleTypeAtACommandLine(t *testing.T) {
 		{[]string{"alice@host"}, "alice@host", false},
 		{[]string{"-ssh", "-P", "2222", "-l", "bob", "host"}, "-p 2222 -l bob host", false},
 		{[]string{"-ssh", "-P2200", "host"}, "-p2200 host", false},
+		{[]string{"-p", "2222", "-l", "bob", "-pw", "secret", "host"}, "-p 2222 -l bob -pw secret host", false},
 		{[]string{"ssh://bob@host:2222/"}, "ssh://bob@host:2222/", true},
+		{[]string{"-url", "ssh://bob:pw@host:2222"}, "ssh://bob:pw@host:2222", true},
+		{[]string{"xshell://ssh://bob@host:2222"}, "xshell://ssh://bob@host:2222", true},
+		{[]string{"sftp://bob@host:2222"}, "sftp://bob@host:2222", true},
 		{[]string{"TELNET://switch"}, "TELNET://switch", true},
+		{[]string{"rdp://alice@win.example"}, "rdp://alice@win.example", true},
+		{[]string{"rdp+ssh://alice@win.example"}, "rdp+ssh://alice@win.example", true},
+		{[]string{"vnc://desk.example"}, "vnc://desk.example", true},
+		{[]string{"vnc+ssh://desk.example"}, "vnc+ssh://desk.example", true},
 		{[]string{"--background"}, "", false},
 		{nil, "", false},
 	} {
@@ -142,6 +152,11 @@ func openGeneralSettings(state *State) {
 	state.settingsCategory = settingsGeneral
 }
 
+func openAboutSettings(state *State) {
+	state.activeSection = sectionSettings
+	state.settingsCategory = settingsAbout
+}
+
 func waitUpdate(t *testing.T, state *State, done func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -165,13 +180,17 @@ func TestCheckingForUpdatesOffersTheDownloadOfANewerVersion(t *testing.T) {
 	var opened []string
 	options.OpenURL = func(url string) error { opened = append(opened, url); return nil }
 	state := newTestState(t, options)
-	openGeneralSettings(state)
+	openAboutSettings(state)
 	_, texts := paintedTexts(state)
 	if contains(texts, state.messages.Tools.GeneralUpdateDownload) {
 		t.Fatal("a download button before any check")
 	}
 	state.Click(hitSettingsUpdateCheck)
-	waitUpdate(t, state, func() bool { return state.update.available })
+	waitUpdate(t, state, func() bool { return state.modal == modalUpdate })
+	state.Click(hitUpdateLater)
+	if state.modal != modalNone {
+		t.Fatal("Later left the dialog open")
+	}
 	_, texts = paintedTexts(state)
 	if !contains(texts, "99.0.0") || !contains(texts, state.messages.Tools.GeneralUpdateDownload) {
 		t.Fatalf("the result is not shown: %q", texts)
@@ -179,6 +198,142 @@ func TestCheckingForUpdatesOffersTheDownloadOfANewerVersion(t *testing.T) {
 	state.Click(hitSettingsUpdateDownload)
 	if !reflect.DeepEqual(opened, []string{"https://example.com/release"}) {
 		t.Fatalf("opened %q", opened)
+	}
+}
+
+func TestANewVersionIsOfferedInADialogWithItsNotesAsMarkdown(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	options.CheckUpdate = func() (update.Release, error) {
+		return update.Release{Version: "99.0.0", URL: "https://example.com/release", Notes: "## Fixed\n- the thing"}, nil
+	}
+	var opened []string
+	options.OpenURL = func(url string) error { opened = append(opened, url); return nil }
+	state := newTestState(t, options)
+	state.Click(hitSettingsUpdateCheck)
+	waitUpdate(t, state, func() bool { return state.modal == modalUpdate })
+	canvas, texts := paintedTexts(state)
+	if !contains(texts, "99.0.0") || !contains(texts, "Fixed") || !contains(texts, "the thing") {
+		t.Fatalf("the dialog does not show the version and its notes: %q", texts)
+	}
+	// The notes are Markdown: a level-two heading is set larger than the body,
+	// where plain lines would have painted both at the same size.
+	heading, body := float32(0), float32(0)
+	for _, text := range canvas.Texts() {
+		switch text.Value {
+		case "Fixed":
+			heading = text.Style.Size
+		case "the thing":
+			body = text.Style.Size
+		}
+	}
+	if heading <= body {
+		t.Fatalf("the notes' heading (%.1f) is not larger than their body (%.1f): they are not Markdown", heading, body)
+	}
+	state.Click(hitUpdateDownload)
+	if state.modal != modalNone || !reflect.DeepEqual(opened, []string{"https://example.com/release"}) {
+		t.Fatalf("modal %d, opened %q", state.modal, opened)
+	}
+}
+
+func TestALinkInTheReleaseNotesOpensInTheBrowser(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	options.CheckUpdate = func() (update.Release, error) {
+		return update.Release{
+			Version: "99.0.0", URL: "https://example.com/release",
+			Notes: "See [#12](https://example.com/12) for the details.",
+		}, nil
+	}
+	var opened []string
+	options.OpenURL = func(url string) error { opened = append(opened, url); return nil }
+	state := newTestState(t, options)
+	state.Click(hitSettingsUpdateCheck)
+	waitUpdate(t, state, func() bool { return state.modal == modalUpdate })
+	paintedTexts(state)
+	state.Click(hitUpdateNotesLinks.At(0))
+	if !reflect.DeepEqual(opened, []string{"https://example.com/12"}) {
+		t.Fatalf("opened %q", opened)
+	}
+	if state.modal != modalUpdate {
+		t.Fatalf("a link in the notes closed the dialog: modal %d", state.modal)
+	}
+}
+
+func TestASkippedVersionStaysQuietAtStartupButNotWhenAsked(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	version := "99.0.0"
+	options.CheckUpdate = func() (update.Release, error) {
+		return update.Release{Version: version, URL: "https://example.com/r"}, nil
+	}
+	state := New(options)
+	state.Click(hitSettingsUpdateCheck)
+	waitUpdate(t, state, func() bool { return state.modal == modalUpdate })
+	state.Click(hitUpdateSkip)
+	state.Close()
+
+	again := New(options)
+	again.update.firstDelay = time.Millisecond
+	waitUpdate(t, again, func() bool { return again.update.available })
+	if again.modal == modalUpdate || again.update.offer {
+		t.Fatal("a skipped version was offered again at startup")
+	}
+	again.Click(hitSettingsUpdateCheck)
+	waitUpdate(t, again, func() bool { return again.modal == modalUpdate })
+	again.Close()
+
+	version = "99.1.0"
+	newer := New(options)
+	newer.update.firstDelay = time.Millisecond
+	defer newer.Close()
+	waitUpdate(t, newer, func() bool { return newer.update.available })
+	// A check nobody asked for announces the version without a dialog, which
+	// would land on whatever the user is typing; the notice's button opens it.
+	if newer.modal != modalNone || newer.update.offer {
+		t.Fatal("a background check opened a dialog")
+	}
+	if len(newer.fileNotices.items) != 1 || newer.fileNotices.items[0].action != hitUpdateNoticeAction {
+		t.Fatalf("the new version was not announced: %+v", newer.fileNotices.items)
+	}
+	newer.Click(hitUpdateNoticeAction)
+	if newer.modal != modalUpdate || len(newer.fileNotices.items) != 0 {
+		t.Fatalf("the notice's button did not open the offer and clear the notice: modal %d, notices %d", newer.modal, len(newer.fileNotices.items))
+	}
+}
+
+func TestAnAvailableUpdateStaysInTheBarUntilThereIsNone(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	options.CheckUpdate = func() (update.Release, error) {
+		return update.Release{Version: "99.0.0", URL: "https://example.com/r"}, nil
+	}
+	state := newTestState(t, options)
+	inBar := func() bool {
+		var tools [maxBarTools]barTool
+		for _, tool := range state.toolbarDockTools(state.defaultToolbarDockZone(toolbarWindow), &tools) {
+			if tool.id == hitUpdateToolbar {
+				return true
+			}
+		}
+		return false
+	}
+	if inBar() {
+		t.Fatal("an update button before any update is known")
+	}
+	state.Click(hitSettingsUpdateCheck)
+	waitUpdate(t, state, func() bool { return state.modal == modalUpdate })
+	state.Click(hitUpdateLater)
+	if !inBar() {
+		t.Fatal("the bar lost the update button after Later")
+	}
+	state.Click(hitUpdateToolbar)
+	if state.modal != modalUpdate {
+		t.Fatalf("the bar button did not reopen the offer: modal %d", state.modal)
+	}
+	state.Click(hitUpdateSkip)
+	if inBar() {
+		t.Fatal("a skipped version still has a button in the bar")
 	}
 }
 
@@ -202,34 +357,48 @@ func TestCheckingForUpdatesSaysSoWhenCurrentOrFailed(t *testing.T) {
 	}
 }
 
-func TestTheStartupCheckIsOptInAndRemembered(t *testing.T) {
+func TestTheAutoCheckIsOnByDefaultRunsAndCanBeTurnedOff(t *testing.T) {
 	_, options := newWorld(t)
 	options.Invalidate = func() {}
-	calls := make(chan struct{}, 4)
 	options.CheckUpdate = func() (update.Release, error) {
-		calls <- struct{}{}
 		return update.Release{Version: "99.0.0", URL: "https://example.com/r"}, nil
 	}
 	state := New(options)
 	t.Cleanup(state.Close)
-	state.Wake()
-	select {
-	case <-calls:
-		t.Fatal("a check ran without being asked for")
-	case <-time.After(50 * time.Millisecond):
+	if !state.updateAtStart {
+		t.Fatal("the automatic check is not on by default")
 	}
+	state.update.firstDelay, state.update.every = time.Millisecond, time.Hour
+	waitUpdate(t, state, func() bool { return state.update.available })
+	if !strings.Contains(state.status, "99.0.0") {
+		t.Fatalf("status %q does not announce the version", state.status)
+	}
+	state.Click(hitUpdateLater)
 	state.Click(hitSettingsUpdateStartToggle)
+	if state.update.timer != nil {
+		t.Fatal("turning the check off left a timer armed")
+	}
 	state.Close()
 
 	again := New(options)
 	defer again.Close()
-	if !again.updateAtStart {
-		t.Fatal("the choice was not saved")
+	if again.updateAtStart {
+		t.Fatal("turning the check off was not saved")
 	}
-	waitUpdate(t, again, func() bool { return again.update.available })
-	if !strings.Contains(again.status, "99.0.0") {
-		t.Fatalf("status %q does not announce the version", again.status)
+}
+
+func TestTheAutoCheckAsksAgainAfterItsInterval(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	var calls atomic.Int32
+	options.CheckUpdate = func() (update.Release, error) {
+		calls.Add(1)
+		return update.Release{Version: update.Current, URL: "https://example.com/r"}, nil
 	}
+	state := New(options)
+	t.Cleanup(state.Close)
+	state.update.firstDelay, state.update.every = time.Millisecond, 5*time.Millisecond
+	waitUpdate(t, state, func() bool { return calls.Load() >= 2 })
 }
 
 func TestStartAtLoginFollowsTheSystemAndReportsFailure(t *testing.T) {
@@ -292,7 +461,7 @@ func TestAWaitingRequestStartsWhenTheDialogIsClosedByAKey(t *testing.T) {
 	state.Launch([]string{"four@four.example.com"})
 	state.Wake()
 	state.modal = modalNone // as an escape or a click elsewhere would
-	if result := state.Key(ui.KeyEvent{Key: ui.KeyTab}); !result.Repaint || len(world.configs) != 2 {
+	if result := state.Key(gfx.KeyEvent{Key: gfx.KeyTab}); !result.Repaint || len(world.configs) != 2 {
 		t.Fatalf("repaint %v, dials %d", result.Repaint, len(world.configs))
 	}
 }
@@ -306,5 +475,247 @@ func TestAMissingReleaseIsSaidPlainlyNotAsAFailure(t *testing.T) {
 	waitUpdate(t, state, func() bool { return !state.update.checking })
 	if state.update.text != state.messages.Tools.UpdateNoReleaseText || state.update.available {
 		t.Fatalf("text %q, available %v", state.update.text, state.update.available)
+	}
+}
+
+func TestASecondStartWithNothingToOpenBringsTheWindowForward(t *testing.T) {
+	state, world, raised := launchState(t)
+	state.Launch(nil)
+	state.Wake()
+	if *raised != 1 || len(world.configs) != 0 {
+		t.Fatalf("raised %d times, dialed %d", *raised, len(world.configs))
+	}
+}
+
+func TestAStartAtLoginDoesNotBringTheWindowForward(t *testing.T) {
+	state, _, raised := launchState(t)
+	state.Launch([]string{"--background"})
+	state.Wake()
+	if *raised != 0 {
+		t.Fatalf("the window was raised %d times", *raised)
+	}
+}
+
+func TestRelaunchChoiceOpensAWindowWithoutChangingOtherLaunches(t *testing.T) {
+	options := freshOptions(t)
+	options.Invalidate = func() {}
+	opened, raised := 0, 0
+	options.NewWindow = func() error { opened++; return nil }
+	options.Raise = func() { raised++ }
+	first := newTestState(t, options)
+	openGeneralSettings(first)
+	_, texts := paintedTexts(first)
+	if !contains(texts, first.messages.Tools.GeneralRelaunch) {
+		t.Fatal("the relaunch choice is missing from General settings")
+	}
+	first.Launch(nil)
+	first.Wake()
+	if raised != 1 || opened != 0 {
+		t.Fatalf("default relaunch: raised %d, opened %d", raised, opened)
+	}
+	clickSettingsChoice(t, first, first.messages.Tools.GeneralRelaunchNewWindow)
+	first.Launch(nil)
+	first.Wake()
+	if raised != 1 || opened != 1 {
+		t.Fatalf("configured relaunch: raised %d, opened %d", raised, opened)
+	}
+	first.Launch([]string{"--background"})
+	first.Wake()
+	if raised != 1 || opened != 1 {
+		t.Fatalf("background launch: raised %d, opened %d", raised, opened)
+	}
+	first.Launch([]string{"-unknown"})
+	first.Wake()
+	if opened != 1 {
+		t.Fatal("a launch with arguments opened a new window")
+	}
+	first.Launch([]string{"ssh://bob@link.example.com/"})
+	first.Wake()
+	if first.modal != modalOpenLink || raised != 3 || opened != 1 {
+		t.Fatalf("link launch: modal %v, raised %d, opened %d", first.modal, raised, opened)
+	}
+	first.Close()
+
+	second := newTestState(t, options)
+	second.Launch(nil)
+	second.Wake()
+	if opened != 2 {
+		t.Fatal("the new-window choice did not survive a restart")
+	}
+	openGeneralSettings(second)
+	clickSettingsChoice(t, second, second.messages.Tools.GeneralRelaunchRaise)
+	second.Launch(nil)
+	second.Wake()
+	if opened != 2 || raised != 4 {
+		t.Fatalf("restored default: raised %d, opened %d", raised, opened)
+	}
+}
+
+func TestRelaunchUsesChoiceChangedInAnotherWindow(t *testing.T) {
+	pair := newTwoWindows(t)
+	opened := 0
+	pair.second.options.NewWindow = func() error { opened++; return nil }
+	// The first window only shows the row; the launch happens in the second.
+	pair.first.options.NewWindow = func() error { return nil }
+	openGeneralSettings(pair.first)
+	clickSettingsChoice(t, pair.first, pair.first.messages.Tools.GeneralRelaunchNewWindow)
+	pair.second.Launch(nil)
+	pair.second.Wake()
+	if opened != 1 {
+		t.Fatal("the last window did not pick up the relaunch choice from the other window")
+	}
+}
+
+func TestThePreviousRunsCrashIsToldOnceAtStart(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	options.PreviousCrash = "/data/logs/crash-20261029-061442.log"
+	state := newTestState(t, options)
+	if state.modal != modalStateNotice {
+		t.Fatalf("modal = %d, want the notice", state.modal)
+	}
+	state.buildStateNotice()
+	if !strings.Contains(state.stateNotice.body, "crash-20261029-061442.log") {
+		t.Fatalf("the notice does not name the report: %q", state.stateNotice.body)
+	}
+	if report := state.diagnosticReport(); !strings.Contains(report, "== Previous crash ==") {
+		t.Fatalf("the diagnostics report leaves the crash out:\n%s", report)
+	}
+}
+
+func TestWhatClosingDoesIsChosenInSettingsAndSurvivesARestart(t *testing.T) {
+	options := freshOptions(t)
+	options.StatusArea = func() bool { return true }
+	first := newTestState(t, options)
+	if !first.StaysInTray() {
+		t.Fatal("closing quits by default; it has always stayed in the tray")
+	}
+	openGeneralSettings(first)
+	_, texts := paintedTexts(first)
+	if !contains(texts, first.messages.Tools.GeneralClose) {
+		t.Fatalf("no close row: %q", texts)
+	}
+	clickSettingsChoice(t, first, first.messages.Tools.GeneralCloseQuit)
+	if first.StaysInTray() {
+		t.Fatal("choosing Quit still stays in the tray")
+	}
+	second := newTestState(t, options)
+	if second.StaysInTray() {
+		t.Fatal("the choice was forgotten by a restart")
+	}
+	clickSettingsChoice(t, second, second.messages.Tools.GeneralCloseTray)
+	if !second.StaysInTray() {
+		t.Fatal("choosing the tray again did not stick")
+	}
+}
+
+func TestWithoutAStatusAreaThereIsNothingToChooseAboutClosing(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openGeneralSettings(state)
+	_, texts := paintedTexts(state)
+	if contains(texts, state.messages.Tools.GeneralClose) {
+		t.Fatal("a close row on a desktop with no status area")
+	}
+}
+
+func TestAnXshellLinkAsksAndUsesItsPasswordOnce(t *testing.T) {
+	state, world, _ := launchState(t)
+	before := len(state.hosts)
+	state.Launch([]string{"xshell://ssh://bob:secret@bastion.example.com:2222"})
+	state.Wake()
+	if state.modal != modalOpenLink || len(world.configs) != 0 {
+		t.Fatalf("modal %d, dials %d", state.modal, len(world.configs))
+	}
+	if description := state.launchDescription(); strings.Contains(description, "secret") || !strings.Contains(description, "bob@bastion.example.com:2222") {
+		t.Fatalf("description %q", description)
+	}
+	_, texts := paintedTexts(state)
+	if !contains(texts, state.messages.Tools.LaunchPasswordWarning) {
+		t.Fatal("the dialog did not say the link carries a password")
+	}
+	state.Click(hitLaunchConnect)
+	state.Wake()
+	if len(world.configs) != 1 {
+		t.Fatalf("dialed %d connections", len(world.configs))
+	}
+	config := world.configs[0]
+	if config.Host != "bastion.example.com" || config.Port != 2222 || config.User != "bob" {
+		t.Fatalf("dialed %+v", config)
+	}
+	if len(state.hosts) != before {
+		t.Fatal("the link wrote a host into the library")
+	}
+	conn := world.conns[0]
+	conn.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhasePasswordPrompt
+		status.Attempt = 1
+		status.Questions = []sshconn.Question{{Secret: true}}
+	})
+	state.Wake()
+	conn.mu.Lock()
+	passwords := append([]string(nil), conn.passwords...)
+	conn.mu.Unlock()
+	if state.modal != modalNone || len(passwords) != 1 || passwords[0] != "secret" {
+		t.Fatalf("modal %d, passwords %q", state.modal, passwords)
+	}
+	// The one-shot password is spent: a refused round is the user's to answer.
+	conn.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhasePasswordPrompt
+		status.Attempt = 2
+		status.Questions = []sshconn.Question{{Secret: true}}
+	})
+	state.Wake()
+	conn.mu.Lock()
+	again := len(conn.passwords)
+	conn.mu.Unlock()
+	if state.modal != modalPassword || again != 1 {
+		t.Fatalf("modal %d, passwords %d", state.modal, again)
+	}
+}
+
+func TestAnXftpLinkOpensTheFileWindow(t *testing.T) {
+	state, world, _ := launchState(t)
+	state.sftpOpenMode = sftpOpenTab
+	state.Launch([]string{"xftp://sftp://bob:secret@files.example.com:2222"})
+	state.Wake()
+	if state.modal != modalOpenLink || !strings.Contains(state.launchDescription(), "files.example.com") {
+		t.Fatalf("modal %d, description %q", state.modal, state.launchDescription())
+	}
+	state.Click(hitLaunchConnect)
+	state.Wake()
+	open := 0
+	for _, w := range state.sftpWindows {
+		if !w.closed {
+			open++
+		}
+	}
+	if len(state.sessions) != 0 || open != 1 || len(world.configs) != 1 {
+		t.Fatalf("sessions %d, file windows %d, dials %d", len(state.sessions), open, len(world.configs))
+	}
+	config := world.configs[0]
+	if config.Host != "files.example.com" || config.Port != 2222 || config.User != "bob" {
+		t.Fatalf("dialed %+v", config)
+	}
+	conn := world.conns[0]
+	conn.set(func(status *sshconn.Status) {
+		status.Phase = sshconn.PhasePasswordPrompt
+		status.Attempt = 1
+		status.Questions = []sshconn.Question{{Secret: true}}
+	})
+	state.Wake()
+	conn.mu.Lock()
+	passwords := append([]string(nil), conn.passwords...)
+	conn.mu.Unlock()
+	if len(passwords) != 1 || passwords[0] != "secret" {
+		t.Fatalf("the file window got passwords %q", passwords)
+	}
+}
+
+func TestAFailedLinkDoesNotShowItsPassword(t *testing.T) {
+	state, _, _ := launchState(t)
+	state.Launch([]string{"ssh://bob:secret@bad host"})
+	state.Wake()
+	if strings.Contains(state.status, "secret") || !strings.Contains(state.status, "***") {
+		t.Fatalf("status %q", state.status)
 	}
 }

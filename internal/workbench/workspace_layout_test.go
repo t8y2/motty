@@ -2,8 +2,10 @@ package workbench
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
+	"motty/internal/buildinfo"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
@@ -125,8 +127,6 @@ func TestWorkspaceLayoutRoundTrip(t *testing.T) {
 func TestMultipleWorkspacesRestoreIndependentTreesContextAndDoNotDial(t *testing.T) {
 	world, options := newWorld(t)
 	first := newTestState(t, options)
-	// This test is about restoring without dialing; what restore connects has its own tests.
-	first.restoreConnect = restoreConnectOff
 	openHost(first)
 	production := first.deck.ActiveWorkspace()
 	first.Click(hitPaneSplitHorizontal) // opens a second shell on the same host
@@ -136,7 +136,7 @@ func TestMultipleWorkspacesRestoreIndependentTreesContextAndDoNotDial(t *testing
 
 	openEmptyTab(first)
 	database := first.deck.ActiveWorkspace()
-	first.Click(hitPaneChooseHost)
+	first.chooseHostSection()
 	first.Click(hitHostList.At(2))
 	openHost(first)
 	if database == production || len(world.conns) != 3 { // two production shells, one database
@@ -156,7 +156,8 @@ func TestMultipleWorkspacesRestoreIndependentTreesContextAndDoNotDial(t *testing
 		t.Fatalf("restored workspaces=%+v production=%+v database=%+v", workspaces, restored.deck.Panes(production, nil), restored.deck.Panes(database, nil))
 	}
 	context, ok := restored.deck.Context(database)
-	if !ok || context != (layoutcore.ContextState{Kind: layoutcore.ContextSFTP, Open: true, Width: 404}) {
+	// Width remains workspace-owned; startup visibility follows the preference.
+	if !ok || context != (layoutcore.ContextState{Kind: layoutcore.ContextSFTP, Open: false, Width: 404}) {
 		t.Fatalf("restored context = %+v, %v", context, ok)
 	}
 	for index := range restored.sessions {
@@ -179,11 +180,19 @@ func TestCorruptDeckDegradesToSafeDisconnectedPanes(t *testing.T) {
 	}
 	if err := saveState(options.StatePath, savedState{
 		Workspace: "terminal", Sessions: []savedSession{{Label: "Safe", Address: "safe.example.com", Port: 22}}, Deck: &invalid,
-		RestoreConnect: restoreConnectOff.String(), // a corrupt deck must degrade safely without dialing
 	}); err != nil {
 		t.Fatal(err)
 	}
 	state := newTestState(t, options)
+	if buildinfo.Development {
+		if len(world.conns) != 0 || len(state.sessions) != 0 || state.deck.ActiveWorkspace() != 0 {
+			t.Fatalf("corrupt development deck restored sessions=%+v dials=%d", state.sessions, len(world.conns))
+		}
+		if !strings.Contains(state.status, "Could not restore the development workspace") {
+			t.Fatalf("corrupt development deck was not reported: %q", state.status)
+		}
+		return
+	}
 	if len(world.conns) != 0 || len(state.sessions) != 1 || state.sessions[0].conn != nil {
 		t.Fatalf("corrupt restore sessions=%+v dials=%d", state.sessions, len(world.conns))
 	}

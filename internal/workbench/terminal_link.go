@@ -3,12 +3,10 @@ package workbench
 import (
 	"fmt"
 
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"motty/internal/term"
 )
-
-// terminalLinkLimit bounds the target strings retained after a pointer enters
-// a terminal. Detection stays dormant until pointer interaction asks for it.
-const terminalLinkLimit = 8192
 
 func (state *State) openTerminalLink(target string) {
 	if err := state.options.OpenURL(target); err != nil {
@@ -16,36 +14,59 @@ func (state *State) openTerminalLink(target string) {
 	}
 }
 
+// terminalLinkOpens reports whether a pointer with these modifiers works on
+// links: a click opens one only with the platform's shortcut modifier held
+// (Command on macOS, Control elsewhere), unless the user chose plain clicks.
+// Shift is the terminal's own selection and never works on links. Other
+// modifiers stay free for what they may mean to a pointer later.
+func (state *State) terminalLinkOpens(modifiers gfx.Modifiers) bool {
+	if modifiers&gfx.ModifierShift != 0 {
+		return false
+	}
+	return state.terminalLinkPlainClick || modifiers == keymap.Primary
+}
+
+// terminalLinks tracks the link under the pointer. Detection stays dormant
+// until pointer interaction asks for it, and then looks at the soft-wrapped
+// group under the pointer, not the whole scrollback: a hover over a busy
+// terminal must not rescan thousands of lines per pointer event.
 type terminalLinks struct {
-	items    []term.Link
-	version  uint64
-	valid    bool
-	hovered  int // index in items plus one; zero means none
-	pressed  term.Link
-	pressing bool
+	hovered  term.Link
+	hasHover bool
+	version  uint64 // the screen version the hover was found at
+	// emptyLine remembers the line whose group had no link at version, so
+	// moving the pointer along a linkless line does not scan it again.
+	emptyLine int
+	empty     bool
+	pressed   term.Link
+	pressing  bool
 }
 
 func (links *terminalLinks) hover(screen *term.Terminal, position term.BufferPosition) bool {
-	changed := links.refresh(screen)
-	hovered := 0
-	for index := range links.items {
-		if terminalLinkContains(links.items[index], position) {
-			hovered = index + 1
-			break
+	version := screen.Version()
+	if links.version == version {
+		if links.hasHover && terminalLinkContains(links.hovered, position) {
+			return false
+		}
+		if links.empty && links.emptyLine == position.Line {
+			return false
 		}
 	}
-	if hovered != links.hovered {
-		links.hovered = hovered
-		changed = true
+	link, ok := screen.LinksAt(position)
+	changed := ok != links.hasHover || link != links.hovered
+	links.hovered, links.hasHover, links.version = link, ok, version
+	links.empty, links.emptyLine = !ok, position.Line
+	if changed {
+		links.pressing = false
 	}
 	return changed
 }
 
 func (links *terminalLinks) press(screen *term.Terminal, position term.BufferPosition) bool {
 	changed := links.hover(screen, position)
-	links.pressing = links.hovered > 0
+	links.pressing = links.hasHover
 	if links.pressing {
-		links.pressed = links.items[links.hovered-1]
+		links.pressed = links.hovered
 	} else {
 		links.pressed = term.Link{}
 	}
@@ -57,41 +78,26 @@ func (links *terminalLinks) release(screen *term.Terminal, position term.BufferP
 	pressed, pressing := links.pressed, links.pressing
 	links.pressed = term.Link{}
 	links.pressing = false
-	if !pressing || links.hovered == 0 || links.items[links.hovered-1] != pressed {
+	if !pressing || !links.hasHover || links.hovered != pressed {
 		return "", false, changed
 	}
 	return pressed.Target, true, changed
 }
 
 func (links *terminalLinks) clear() bool {
-	changed := links.hovered != 0
-	links.hovered = 0
+	changed := links.hasHover
+	links.hovered, links.hasHover = term.Link{}, false
+	links.empty, links.emptyLine = false, 0
 	links.pressed = term.Link{}
 	links.pressing = false
 	return changed
 }
 
 func (links *terminalLinks) hoveredLink(screen *term.Terminal) (term.Link, bool) {
-	if !links.valid || links.version != screen.Version() || links.hovered <= 0 || links.hovered > len(links.items) {
+	if !links.hasHover || links.version != screen.Version() {
 		return term.Link{}, false
 	}
-	return links.items[links.hovered-1], true
-}
-
-func (links *terminalLinks) refresh(screen *term.Terminal) bool {
-	version := screen.Version()
-	if links.valid && links.version == version {
-		return false
-	}
-	changed := links.hovered != 0
-	clear(links.items)
-	links.items, _ = screen.Links(links.items[:0], terminalLinkLimit)
-	links.version = version
-	links.valid = true
-	links.hovered = 0
-	links.pressed = term.Link{}
-	links.pressing = false
-	return changed
+	return links.hovered, true
 }
 
 func terminalLinkContains(link term.Link, position term.BufferPosition) bool {

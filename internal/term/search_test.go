@@ -2,6 +2,7 @@ package term
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -122,5 +123,31 @@ func BenchmarkSearchScrollback(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		matches, _ = terminal.Search(matches[:0], "not present", 16)
+	}
+}
+
+func TestSearchFromKeepsMatchesNearTheStartWhenTruncated(t *testing.T) {
+	terminal := New(8, 3, 2000)
+	terminal.Write([]byte(strings.Repeat("x\r\n", 1200)))
+	for _, test := range []struct {
+		line     int
+		backward bool
+		lines    [3]int
+		first    int
+	}{
+		{1100, false, [3]int{1100, 1101, 1102}, 0},
+		{1100, true, [3]int{1098, 1099, 1100}, 2},
+		{1199, false, [3]int{0, 1, 1199}, 2},
+		{0, true, [3]int{0, 1198, 1199}, 0},
+	} {
+		matches, first, truncated := terminal.SearchFrom(nil, "x", 3, test.line, test.backward)
+		if len(matches) != len(test.lines) || first != test.first || !truncated {
+			t.Fatalf("start=%d backward=%t: got %v, first=%d, truncated=%t", test.line, test.backward, matches, first, truncated)
+		}
+		for index, match := range matches {
+			if match.Start.Line != test.lines[index] {
+				t.Fatalf("start=%d backward=%t: got %v, want lines %v", test.line, test.backward, matches, test.lines)
+			}
+		}
 	}
 }
