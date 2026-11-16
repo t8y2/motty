@@ -15,5 +15,5 @@ func waitBudget() time.Duration {
 	if runtime.GOOS == "windows" {
 		return 30 * time.Second
 	}
-	return 5 * time.Second
+	return 10 * time.Second
 }

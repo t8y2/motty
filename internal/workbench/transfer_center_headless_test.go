@@ -488,6 +488,24 @@ func TestTransferCenterPreviewAndFilters(t *testing.T) {
 	}
 	writeTransferPreview(t, view, state.transfers.surface, "transfer-center.png")
 
+	for _, preview := range []struct {
+		filter, count int
+		name          string
+	}{
+		{transferFilterRunning, 3, "transfer-center-running.png"},
+		{transferFilterEnded, 3, "transfer-center-ended.png"},
+		{transferFilterFailed, 1, "transfer-center-failed.png"},
+	} {
+		click(hitTransfersFilter.At(preview.filter))
+		wait(16 * time.Millisecond)
+		if state.transfers.filter != preview.filter || state.transfers.count != preview.count {
+			t.Fatalf("preview filter %d: got filter=%d count=%d", preview.filter, state.transfers.filter, state.transfers.count)
+		}
+		writeTransferPreview(t, view, state.transfers.surface, preview.name)
+	}
+	click(hitTransfersFilter.At(transferFilterAll))
+	wait(16 * time.Millisecond)
+
 	const redis = 9
 	anchor := hit(hitTransfersDetails.At(redis)).Bounds
 	if err := view.Move(anchor.X+min(154, anchor.Width/2), anchor.Y+anchor.Height/2); err != nil {
