@@ -1854,6 +1854,9 @@ var chineseTools = ToolsMessages{
 	FontPickerSample:        "The quick brown fox 敏捷的棕色狐狸 0123",
 	FontPickerSampleSymbols: "0123456789 {}[]() <> -> == != ~ $ # | iIl1 oO0",
 	FontPickerConfirm:       "确定",
+	FontWeightMain:          "主字重",
+	FontWeightBold:          "粗体字重",
+	FontWeightDefault:       "默认",
 
 	FontFallbackRow:         "备用字体",
 	FontFallbackEmpty:       "终端字体缺少的字符（如中文）由系统选择字体绘制。添加备用字体后，按顺序依次尝试。",

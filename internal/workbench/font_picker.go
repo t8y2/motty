@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/vivaui/viva/components"
@@ -114,6 +115,11 @@ type fontsUI struct {
 	// says which one.
 	family  string
 	classic bool
+	// main and bold are the weights the terminal's text is drawn at, as the
+	// platform's font weights, or 0 for the face's own.
+	main, bold int
+	// appliedMain and appliedBold are the weights the engine was last told.
+	appliedMain, appliedBold int
 	// fallbacks are the families that draw what the font lacks, in the order the user
 	// added them. It is what the user chose, kept as it is whatever this computer has
 	// installed, so that data carried to another computer (a portable copy) keeps the
@@ -138,6 +144,20 @@ type fontsUI struct {
 	// kept once so a warm repaint makes no new method value.
 	searchSlot ui.Box
 	searchDraw func(*ui.DrawContext)
+	// weightMain and weightBold are the picker's pending weights: what Confirm
+	// applies, once the sample's family is taken.
+	weightMain, weightBold int
+	// weightChoices and weightName feed the weight drop-downs. They are kept
+	// across paints, so a repaint of the open picker makes no new slice or
+	// method value.
+	weightChoices []int
+	weightName    func(int) string
+	// weights is what each family is installed with, read off the window thread
+	// the first time a picker shows the family; weightsReading marks a read that
+	// has not come back yet. Both pickers share them: a family's weights are the
+	// family's.
+	weights        map[string][]int
+	weightsReading map[string]bool
 	// pickerLoad reads the installed families the open picker offers. The picker
 	// makes it when it opens and drops it on close, so closing the picker cancels
 	// the read and the next opening starts clean.
@@ -225,10 +245,19 @@ func (state *State) terminalFace() gfx.MonoFace {
 	return gfx.MonoStack(base, fonts.usable...)
 }
 
-// applyTerminalFace makes the terminal draw in the font and fallbacks as they stand.
-// It reports whether the face changed.
+// applyTerminalFace makes the terminal draw in the font, fallbacks and weights as
+// they stand. It reports whether anything changed.
 func (state *State) applyTerminalFace() bool {
-	return state.setTerminalFontFace(state.terminalFace())
+	fonts := &state.fonts
+	changed := state.setTerminalFontFace(state.terminalFace())
+	if fonts.main != fonts.appliedMain || fonts.bold != fonts.appliedBold {
+		if state.options.SetTerminalFontWeights != nil {
+			state.options.SetTerminalFontWeights(fonts.main, fonts.bold)
+		}
+		fonts.appliedMain, fonts.appliedBold = fonts.main, fonts.bold
+		changed = true
+	}
+	return changed
 }
 
 // cleanFallbackFonts is the fallback list a saved file or the picker may hold: names a
@@ -304,6 +333,13 @@ func (state *State) openPicker(kind fontPickerKind) {
 	state.fonts.kind = kind
 	state.fonts.search = text.Editor{}
 	state.fonts.built = false
+	if kind == pickInterfaceFont {
+		// The weights the picker starts from: what is in effect, clamped to the
+		// highlighted family once its weights are read.
+		state.fonts.weightMain, state.fonts.weightBold = state.uiFont.main, state.uiFont.bold
+	} else if kind == pickTerminalFont {
+		state.fonts.weightMain, state.fonts.weightBold = state.fonts.main, state.fonts.bold
+	}
 	list := state.pickerList()
 	if list.installed != nil || list.loading {
 		// The list is known, or another opening is already reading it.
@@ -412,6 +448,14 @@ func (state *State) moveFontSelection(delta int) {
 const fontPickerRowStep float32 = 32
 const fontPickerListHeight float32 = fontPickerVisibleRows * fontPickerRowStep
 
+// The body's room: the search field, the list and the sample. The interface picker
+// adds one row for each of the family's two weights.
+const (
+	fontPickerBodyHeight        float32 = 366
+	fontPickerWeightRowHeight   float32 = 36
+	fontPickerWeightChoiceWidth float32 = 300
+)
+
 func (fonts *fontsUI) contentHeight() float32 {
 	return max(0, float32(len(fonts.filtered))*fontPickerRowStep-2)
 }
@@ -448,6 +492,17 @@ func (state *State) canConfirmFont() bool {
 	return !state.pickerList().loading && fonts.selected >= 0 && fonts.selected < len(fonts.filtered)
 }
 
+// pendingWeights is the weight pair Confirm applies to family. The pair is only
+// the user's while the drop-downs that show it are there: a family whose weights
+// are not known, or that the platform cannot report, gets the platform's own, so a
+// pair chosen for another family is never applied unseen.
+func (state *State) pendingWeights(family string) (main, bold int) {
+	if len(state.familyWeights(family)) == 0 {
+		return 0, 0
+	}
+	return state.fonts.weightMain, state.fonts.weightBold
+}
+
 // confirmFont applies the highlighted row and closes the picker.
 func (state *State) confirmFont() {
 	if !state.canConfirmFont() {
@@ -462,9 +517,11 @@ func (state *State) confirmFont() {
 	case pickFallbackFont:
 		changed = state.addFallbackFont(entry.family)
 	case pickInterfaceFont:
-		changed = state.setInterfaceFont(entry.family)
+		main, bold := state.pendingWeights(entry.family)
+		changed = state.setInterfaceFont(entry.family, main, bold)
 	default:
-		changed = state.useTerminalFont(entry)
+		main, bold := state.pendingWeights(entry.family)
+		changed = state.useTerminalFontWeights(entry, main, bold)
 	}
 	if changed {
 		state.save()
@@ -510,17 +567,27 @@ func (state *State) fontInUse(entry fontEntry) bool {
 	return state.fonts.family == "" && (entry.face == gfx.MonoClassic) == state.fonts.classic
 }
 
-// useTerminalFont switches the terminal to a font. It reports whether anything changed.
+// useTerminalFont switches the terminal to a font, keeping the weights it draws at.
+// It reports whether anything changed.
 func (state *State) useTerminalFont(entry fontEntry) bool {
+	return state.useTerminalFontWeights(entry, state.fonts.main, state.fonts.bold)
+}
+
+// useTerminalFontWeights switches the terminal to a font and the two weights its
+// text is drawn at. It reports whether anything changed.
+func (state *State) useTerminalFontWeights(entry fontEntry, main, bold int) bool {
 	fonts := &state.fonts
 	family, classic := entry.family, false
 	if family == "" {
+		// A built-in face has no weights of its own to choose.
 		classic = entry.face == gfx.MonoClassic
+		main, bold = 0, 0
 	} else if gfx.MonoFamily(family) == gfx.MonoSystem {
 		return false
 	}
-	changed := fonts.family != family || fonts.classic != classic
+	changed := fonts.family != family || fonts.classic != classic || fonts.main != main || fonts.bold != bold
 	fonts.family, fonts.classic = family, classic
+	fonts.main, fonts.bold = main, bold
 	// A family cannot stand behind itself.
 	if before := len(fonts.fallbacks); family != "" {
 		fonts.fallbacks = slices.DeleteFunc(fonts.fallbacks, func(name string) bool { return name == family })
@@ -574,6 +641,15 @@ func (state *State) fontPickerKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			handled.FocusVisible = true
 		}
 		return handled, true
+	}
+	if event.Key == gfx.KeyUp || event.Key == gfx.KeyDown || event.Key == gfx.KeyPageUp || event.Key == gfx.KeyPageDown {
+		// The list navigates with the arrows only from its own rows or the search
+		// field: a weight drop-down the dialog opened keeps the keys while it has
+		// them, or the highlight would move behind the open list.
+		_, onRow := event.Target.In(hitFontPickerItemList)
+		if !event.Target.IsZero() && event.Target != hitFontPickerSearch && !onRow {
+			return gfx.EventResult{}, false
+		}
 	}
 	switch event.Key {
 	case gfx.KeyEscape:
@@ -644,7 +720,14 @@ func (state *State) declareFontPicker(c ui.C) {
 		title = state.messages.SettingsInterfaceFont
 	}
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, "", 366)
+	bodyHeight := fontPickerBodyHeight
+	if fonts.kind != pickFallbackFont {
+		// The picker chooses the family's two weights as well. Their room is kept
+		// whether or not the family's weights are known yet, so the dialog does not
+		// grow when the read lands.
+		bodyHeight += 2 * fontPickerWeightRowHeight
+	}
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 560, "", bodyHeight)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Width: 560, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitFontPickerDismiss, CloseID: hitFontPickerClose,
@@ -715,7 +798,11 @@ func (state *State) declareFontPickerBody(c ui.C) {
 		})
 		if rows > 0 {
 			// The highlighted font, set in itself.
-			state.declareFontPickerSample(c, fonts.entries[fonts.filtered[fonts.selected]])
+			entry := fonts.entries[fonts.filtered[fonts.selected]]
+			state.declareFontPickerSample(c, entry)
+			if fonts.kind != pickFallbackFont {
+				state.declareFontPickerWeightRows(c, entry)
+			}
 		}
 	})
 	column.DrawOver(fonts.searchDraw)
@@ -777,4 +864,144 @@ func (state *State) declareFontPickerSample(c ui.C, entry fontEntry) {
 		ui.Text(c, m.FontPickerSample).FontSize(metrics.FontSizeM).Color(pal.text).MonoFace(face).LineHeight(20).Height(20)
 		ui.Text(c, m.FontPickerSampleSymbols).FontSize(metrics.FontSizeM).Color(pal.muted).MonoFace(face).LineHeight(20).Height(20)
 	})
+}
+
+// declareFontPickerWeightRows declares the picker's two weight rows: the weight the
+// family's main text is drawn at and the weight its bold text is, each a drop-down
+// over the family's own weights and the platform's own (Default). The rows appear
+// once the platform has listed the family's weights; until then the choice keeps
+// what is in effect, and a family the platform cannot report weights for — a
+// built-in face, the platform's own interface font — keeps them too.
+func (state *State) declareFontPickerWeightRows(c ui.C, entry fontEntry) {
+	weights := state.familyWeights(entry.family)
+	if len(weights) == 0 {
+		return
+	}
+	fonts := &state.fonts
+	fonts.weightMain = nearestWeight(fonts.weightMain, weights)
+	fonts.weightBold = nearestWeight(fonts.weightBold, weights)
+	// The platform's own weight is a choice as well, so a family's weight can be
+	// chosen explicitly and taken away again.
+	fonts.weightChoices = append(append(fonts.weightChoices[:0], 0), weights...)
+	if fonts.weightName == nil {
+		fonts.weightName = state.fontWeightChoiceName
+	}
+	m := state.messages.Tools
+	state.declareFontWeightRow(c, m.FontWeightMain, &fonts.weightMain)
+	state.declareFontWeightRow(c, m.FontWeightBold, &fonts.weightBold)
+}
+
+// declareFontWeightRow declares one weight drop-down row of the picker, over the
+// choices declareFontPickerWeightRows has kept.
+func (state *State) declareFontWeightRow(c ui.C, label string, value *int) {
+	fonts, pal := &state.fonts, state.pal
+	ui.Row(c).Height(fontPickerWeightRowHeight).Shrink(0).MarginSides(8, 0, 0, 10).Items(ui.Center).Children(func() {
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Color(pal.muted).Grow(1)
+		ui.Select(c, value, fonts.weightChoices, fonts.weightName).Width(fontPickerWeightChoiceWidth)
+	})
+}
+
+// familyWeights is the weights family is installed with, or nil while the read is
+// still in flight: reading them is the platform's and takes a moment, so it happens
+// off the paint and the next paint shows them. A family with no weights listed is
+// one the platform cannot report weights for, or the platform's own.
+func (state *State) familyWeights(family string) []int {
+	fonts, read := &state.fonts, state.options.FontWeights
+	if family == "" || read == nil {
+		return nil
+	}
+	if weights, ok := fonts.weights[family]; ok {
+		return weights
+	}
+	if fonts.weightsReading == nil {
+		fonts.weightsReading = make(map[string]bool)
+	}
+	if !fonts.weightsReading[family] {
+		fonts.weightsReading[family] = true
+		state.listWeights(family, func(s *State, family string, weights []int) {
+			if s.fonts.weights == nil {
+				s.fonts.weights = make(map[string][]int)
+			}
+			s.fonts.weights[family] = weights
+			delete(s.fonts.weightsReading, family)
+		})
+	}
+	return nil
+}
+
+// listWeights reads family's installed weights off the window thread and delivers
+// them to fn on it.
+func (state *State) listWeights(family string, fn func(*State, string, []int)) {
+	read := state.options.FontWeights
+	if read == nil || state.callbacksClosed.Load() { // none, or the window is closing
+		return
+	}
+	go func() {
+		weights := read(family)
+		state.aiPost(func(s *State) { fn(s, family, weights) })
+	}()
+}
+
+// fontWeightName is what the picker calls a weight: the style names fonts are
+// installed under, which are not translated. "" is the platform's own weight.
+func fontWeightName(weight int) string {
+	switch weight {
+	case 0:
+		return ""
+	case 100:
+		return "Thin"
+	case 200:
+		return "ExtraLight"
+	case 300:
+		return "Light"
+	case 350:
+		return "SemiLight"
+	case 400:
+		return "Regular"
+	case 500:
+		return "Medium"
+	case 600:
+		return "SemiBold"
+	case 700:
+		return "Bold"
+	case 800:
+		return "ExtraBold"
+	case 900:
+		return "Black"
+	}
+	return strconv.Itoa(weight)
+}
+
+// fontWeightChoiceName is what the weight drop-downs call a weight: the style name
+// fonts are installed under, and a message for the platform's own.
+func (state *State) fontWeightChoiceName(weight int) string {
+	if weight == 0 {
+		return state.messages.Tools.FontWeightDefault
+	}
+	return fontWeightName(weight)
+}
+
+// nearestWeight is weight as one of the family's weights: itself when the family
+// has it, 0 for the platform's own, the nearest one otherwise, and unchanged where
+// the family's weights are not known.
+func nearestWeight(weight int, weights []int) int {
+	if weight == 0 || len(weights) == 0 {
+		return weight
+	}
+	nearest := weights[0]
+	for _, candidate := range weights {
+		if weightGap(candidate, weight) < weightGap(nearest, weight) {
+			nearest = candidate
+		}
+	}
+	return nearest
+}
+
+// weightGap is how far apart two weights are: their numbers run low to high, 100
+// to 900.
+func weightGap(a, b int) int {
+	if a > b {
+		return a - b
+	}
+	return b - a
 }

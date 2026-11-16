@@ -351,13 +351,23 @@ type Options struct {
 	// FontFamilies lists every installed font family, for the choice of the
 	// interface's own. Nil uses the platform's list.
 	FontFamilies func() []string
+	// FontWeights lists the weights a family is installed with, ascending, for
+	// the main and the bold text of the interface. Nil uses the platform's list,
+	// and an empty list where the platform cannot report a family's weights.
+	FontWeights func(family string) []int
 	// SetInterfaceFont names the family the window's text is drawn in, or ""
-	// for the platform's own interface font; it reports whether the platform
-	// can follow a family at all. Nil uses the platform's own.
-	SetInterfaceFont func(family string) bool
+	// for the platform's own interface font, and the weights its main and bold
+	// text are drawn at (0 for the platform's own); it reports whether the
+	// platform can follow a family at all. Nil uses the platform's own.
+	SetInterfaceFont func(family string, main, bold int) bool
 	// MonoFamilies lists the installed fixed-pitch font families. Nil uses
 	// app.MonospaceFamilies.
 	MonoFamilies func() []string
+	// SetTerminalFontWeights names the weights the terminal's text is drawn at,
+	// main for its regular text and bold for its bold runs (0 for the platform's
+	// own), and reports whether the platform has the choice. Nil uses the
+	// platform's own.
+	SetTerminalFontWeights func(main, bold int) bool
 	// WallNow is the time of day, for one-time codes. Nil uses time.Now.
 	WallNow func() time.Time
 	// Now is a monotonic clock, for how long a connection has taken and how long
@@ -460,11 +470,17 @@ func (options Options) withDefaults() Options {
 	if options.MonoFamilies == nil {
 		options.MonoFamilies = app.MonospaceFamilies
 	}
+	if options.SetTerminalFontWeights == nil {
+		options.SetTerminalFontWeights = app.SetMonospaceFontWeights
+	}
 	if options.FontFamilies == nil {
 		options.FontFamilies = app.FontFamilies
 	}
+	if options.FontWeights == nil {
+		options.FontWeights = app.FontWeights
+	}
 	if options.SetInterfaceFont == nil {
-		options.SetInterfaceFont = app.SetInterfaceFontFamily
+		options.SetInterfaceFont = app.SetInterfaceFont
 	}
 	if options.WallNow == nil {
 		options.WallNow = time.Now

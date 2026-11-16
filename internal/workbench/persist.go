@@ -61,8 +61,12 @@ type savedState struct {
 	TextScale                  string                  `json:"text_scale,omitempty"` // read only: before the size was kept in pixels
 	InterfaceTextSize          int                     `json:"interface_text_size,omitempty"`
 	InterfaceFont              string                  `json:"interface_font,omitempty"`
+	InterfaceFontMain          int                     `json:"interface_font_main_weight,omitempty"`
+	InterfaceFontBold          int                     `json:"interface_font_bold_weight,omitempty"`
 	TerminalFontFace           string                  `json:"terminal_font_face,omitempty"`
 	TerminalFontFamily         string                  `json:"terminal_font_family,omitempty"`
+	TerminalFontMain           int                     `json:"terminal_font_main_weight,omitempty"`
+	TerminalFontBold           int                     `json:"terminal_font_bold_weight,omitempty"`
 	TerminalFontFallbacks      []string                `json:"terminal_font_fallbacks,omitempty"`
 	TerminalFind               terminalFindPreferences `json:"terminal_find,omitzero"`
 	TerminalScrollback         int                     `json:"terminal_scrollback,omitempty"`
@@ -530,8 +534,12 @@ func (state *State) snapshot() savedState {
 		TerminalFontSize:           int(state.terminalFontSize),
 		InterfaceTextSize:          int(state.interfaceTextSize),
 		InterfaceFont:              state.uiFont.family,
+		InterfaceFontMain:          state.uiFont.main,
+		InterfaceFontBold:          state.uiFont.bold,
 		TerminalFontFace:           terminalFontFaceString(state.fonts.classic),
 		TerminalFontFamily:         state.fonts.family,
+		TerminalFontMain:           state.fonts.main,
+		TerminalFontBold:           state.fonts.bold,
 		TerminalFontFallbacks:      slices.Clone(state.fonts.fallbacks),
 		TerminalFind:               state.terminalFindPrefs,
 		TerminalScrollback:         state.terminalScrollback,
@@ -1074,10 +1082,12 @@ func (state *State) restoreLocal(saved savedState) {
 	// Only the choice: what is in effect is decided once the window starts, when
 	// the platform has been asked what it can follow (validateInterfaceFont).
 	state.uiFont.family = strings.TrimSpace(saved.InterfaceFont)
+	state.uiFont.main, state.uiFont.bold = saved.InterfaceFontMain, saved.InterfaceFontBold
 	state.fonts.family, state.fonts.classic = "", terminalFontFaceFromString(saved.TerminalFontFace) == gfx.MonoClassic
 	if family := strings.TrimSpace(saved.TerminalFontFamily); family != "" && gfx.MonoFamily(family) != gfx.MonoSystem {
 		state.fonts.family, state.fonts.classic = family, false
 	}
+	state.fonts.main, state.fonts.bold = saved.TerminalFontMain, saved.TerminalFontBold
 	// Kept as saved, whatever this computer has installed: a copy carried to another
 	// computer comes back with the choice it was given.
 	state.fonts.fallbacks = cleanFallbackFonts(saved.TerminalFontFallbacks, state.fonts.family)

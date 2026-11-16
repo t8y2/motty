@@ -30,6 +30,10 @@ type notePreviewLayout struct {
 	source        string
 	width, height float32
 	face          gfx.MonoFace
+	// main and bold are the weights the face is drawn at: the same source wraps
+	// differently under another weight, so a layout made at one is not kept for
+	// the other.
+	main, bold int
 }
 
 func (s *State) configureNoteEditor(e *text.Editor) {

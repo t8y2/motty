@@ -46,10 +46,17 @@ func newTestState(t testing.TB, options Options) *State {
 	if options.SetInterfaceFont == nil {
 		// Nor may a test change the process's interface font, or read the fonts of
 		// the machine it runs on.
-		options.SetInterfaceFont = func(string) bool { return true }
+		options.SetInterfaceFont = func(string, int, int) bool { return true }
 	}
 	if options.FontFamilies == nil {
 		options.FontFamilies = func() []string { return nil }
+	}
+	if options.FontWeights == nil {
+		options.FontWeights = func(string) []int { return nil }
+	}
+	if options.SetTerminalFontWeights == nil {
+		// The terminal's weights reach the same process-wide engine.
+		options.SetTerminalFontWeights = func(int, int) bool { return true }
 	}
 	if options.ClipboardText == nil {
 		// The clipboard a test reads is its own: the real one is asked on the

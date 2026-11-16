@@ -369,10 +369,10 @@ func (s *State) paintNotePreviewContent(c *gfx.Canvas, b gfx.Rect, n *notesUI) {
 	}
 	source, width := n.body.String(), max(1, b.Width-12)
 	cache := &n.previewLayout
-	if !cache.ready || cache.source != source || cache.width != width || cache.face != s.terminalFontFace {
+	if !cache.ready || cache.source != source || cache.width != width || cache.face != s.terminalFontFace || cache.main != s.fonts.main || cache.bold != s.fonts.bold {
 		n.doc.Parse(source)
 		height := n.rendered.Layout(c, components.MarkdownStyle{Size: noteFontSize, MonoFace: s.terminalFontFace, CodeInset: 28, Highlight: highlightCode}, &n.doc, width)
-		*cache = notePreviewLayout{ready: true, source: source, width: width, face: s.terminalFontFace, height: height}
+		*cache = notePreviewLayout{ready: true, source: source, width: width, face: s.terminalFontFace, main: s.fonts.main, bold: s.fonts.bold, height: height}
 	}
 	height := cache.height
 	images := float32(0)
