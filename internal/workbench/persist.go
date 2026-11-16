@@ -205,6 +205,8 @@ type savedState struct {
 	SyncExcluded           []syncCategory   `json:"sync_excluded,omitempty"`
 	HostView               string           `json:"host_view,omitempty"`
 	HostOrder              string           `json:"host_order,omitempty"`
+	HostSideWidth          float32          `json:"host_side_width,omitempty"`
+	HostTreeOpen           bool             `json:"host_tree_open,omitempty"`
 	HiddenHostTags         []string         `json:"hidden_host_tags,omitempty"`
 	HostPrivacy            bool             `json:"host_privacy,omitempty"`
 	HostPrivacyShowName    bool             `json:"host_privacy_show_name,omitempty"`
@@ -751,6 +753,8 @@ func (state *State) snapshot() savedState {
 	saved.SyncExcluded = state.syncScope.excludedCopy()
 	saved.HostView = state.hostView.saved()
 	saved.HostOrder = state.hostOrder.saved()
+	saved.HostSideWidth = state.hostSide.width
+	saved.HostTreeOpen = state.hostSide.open
 	saved.HiddenHostTags = state.hiddenHostTags
 	saved.HostPrivacy = state.hostPrivacy.enabled
 	saved.HostPrivacyShowName = !state.hostPrivacy.maskName
@@ -1120,6 +1124,10 @@ func (state *State) restoreLocal(saved savedState) {
 	state.restoreSync(saved.Sync)
 	state.syncScope = newSyncScope(saved.SyncExcluded)
 	state.hostView = hostViewFromString(saved.HostView)
+	if saved.HostSideWidth >= hostSideMinWidth && saved.HostSideWidth <= hostSideMaxWidth {
+		state.hostSide.width = saved.HostSideWidth
+	}
+	state.hostSide.open = saved.HostTreeOpen
 	state.hostPrivacy.enabled = saved.HostPrivacy
 	state.hostPrivacy.maskName = !saved.HostPrivacyShowName
 	state.hostPrivacy.maskAddress = !saved.HostPrivacyShowAddress

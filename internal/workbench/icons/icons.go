@@ -2345,6 +2345,38 @@ var ChevronRight = gfx.Icon{
 	},
 }
 
+// chevrons-down-up is a compiled vector icon.
+var ChevronsDownUp = gfx.Icon{
+	ViewBox: 24.0,
+	Stroke:  2.0,
+	Cap:     gfx.CapRound,
+	Join:    gfx.JoinRound,
+	Commands: []gfx.PathCommand{
+		gfx.MoveTo(7.0, 20.0),
+		gfx.LineTo(12.0, 15.0),
+		gfx.LineTo(17.0, 20.0),
+		gfx.MoveTo(7.0, 4.0),
+		gfx.LineTo(12.0, 9.0),
+		gfx.LineTo(17.0, 4.0),
+	},
+}
+
+// chevrons-up-down is a compiled vector icon.
+var ChevronsUpDown = gfx.Icon{
+	ViewBox: 24.0,
+	Stroke:  2.0,
+	Cap:     gfx.CapRound,
+	Join:    gfx.JoinRound,
+	Commands: []gfx.PathCommand{
+		gfx.MoveTo(7.0, 15.0),
+		gfx.LineTo(12.0, 20.0),
+		gfx.LineTo(17.0, 15.0),
+		gfx.MoveTo(7.0, 9.0),
+		gfx.LineTo(12.0, 4.0),
+		gfx.LineTo(17.0, 9.0),
+	},
+}
+
 // circle-alert is a compiled vector icon.
 var CircleAlert = gfx.Icon{
 	ViewBox: 24.0,

@@ -7,6 +7,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 func TestHostGroupMoveSubtreeAndRejectCyclesOrCollisions(t *testing.T) {
@@ -181,21 +182,25 @@ func TestHostGroupDragRejectsSelfDescendantAndNameCollision(t *testing.T) {
 	state := nestedHostGroupState(t)
 	state.hostGroups = append(state.hostGroups, hostGroup{Name: "Team2/Prod", Expanded: true, Explicit: true})
 	state.refreshHostGroups()
-	size := gfx.Size{Width: 1400, Height: 900}
-	canvas, _ := paintAt(state, size)
-	source, ok := hostListGroupHit(canvas, state, state.hostGroupIndex("Team/Prod"))
-	if !ok {
-		t.Fatal("the source group row is not painted")
+	groupRow := func(index int) int {
+		for row, entry := range state.hostTreeRows {
+			if entry.Kind == hostTreeGroup && entry.GroupIndex == index {
+				return row
+			}
+		}
+		return -1
+	}
+	source := groupRow(state.hostGroupIndex("Team/Prod"))
+	if source < 0 {
+		t.Fatal("the source group row is not visible")
 	}
 	for _, targetPath := range []string{"Team/Prod", "Team/Prod/EU", "Team2"} {
-		target, ok := hostListGroupHit(canvas, state, state.hostGroupIndex(targetPath))
-		if !ok {
-			t.Fatalf("target group %q is not painted", targetPath)
+		target := groupRow(state.hostGroupIndex(targetPath))
+		if target < 0 {
+			t.Fatalf("target group %q is not visible", targetPath)
 		}
-		dragged := dragHostGroup(state, size, source, target)
-		releaseHostGroup(state, size, dragged, source, target)
-		if state.hosts[0].Group != "Team/Prod/EU" || state.hostGroupIndex("Team2/Prod") < 0 {
-			t.Fatalf("drop on %q was accepted: hosts=%+v groups=%+v", targetPath, state.hosts, state.hostGroups)
+		if state.hostListCanDrop(source, target, ui.TreeDropInside) {
+			t.Fatalf("inside drop on %q was accepted", targetPath)
 		}
 	}
 }
@@ -214,9 +219,21 @@ func TestHostGroupDragPaintsTheDropIndicator(t *testing.T) {
 	}
 	dragged := dragHostGroup(state, size, source, target)
 	primary := state.Theme().Primary
+	wash, edge := primary, primary
+	wash.Alpha *= 0.05
+	edge.Alpha *= 0.5
+	within := func(bounds gfx.Rect) bool {
+		return bounds.X >= target.Bounds.X-2 && bounds.X+bounds.Width <= target.Bounds.X+target.Bounds.Width+2 &&
+			bounds.Y >= target.Bounds.Y-2 && bounds.Y+bounds.Height <= target.Bounds.Y+target.Bounds.Height+2
+	}
 	found := false
+	for _, rectangle := range dragged.Rectangles() {
+		if rectangle.Color == wash && within(rectangle.Bounds) {
+			found = true
+		}
+	}
 	for _, triangle := range dragged.Triangles() {
-		if triangle.Color != primary {
+		if triangle.Color != edge {
 			continue
 		}
 		inside := true

@@ -589,6 +589,8 @@ type State struct {
 	hostSelections     []uint32
 	hostActionIDs      []uint32
 	hostGroups         []hostGroup
+	hostSide           hostCatalogSide
+	hostSideRows       []int
 	hostTreeRows       []hostTreeRow
 	hostList           hostCatalogList
 	hostGridDrag       hostGridDrag
@@ -2642,6 +2644,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if result, handled := state.hostListBarPointer(event); handled {
+		return result
+	}
+	if result, handled := state.hostSidePointer(event); handled {
 		return result
 	}
 	if result, handled := state.hostListPointer(event); handled {

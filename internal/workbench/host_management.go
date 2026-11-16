@@ -107,9 +107,13 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 	case hitHostFilterMore:
 		state.hostFilterMenu = true
 	case hitHostGroupsExpandAll:
-		state.setHostGroupsExpanded(true)
+		if state.hostGroupControlsOffered() {
+			state.setHostGroupsExpanded(true)
+		}
 	case hitHostGroupsCollapseAll:
-		state.setHostGroupsExpanded(false)
+		if state.hostGroupControlsOffered() {
+			state.setHostGroupsExpanded(false)
+		}
 	case hitEditHost:
 		state.openEditHost()
 	case hitConnectSelectedHosts:
@@ -1072,6 +1076,15 @@ func (state *State) hostManagementKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	}
 	if state.activeSection != sectionHosts || state.modal != modalNone || event.Repeat {
 		return gfx.EventResult{}, false
+	}
+	if event.Target == hitHostSideWidth {
+		if bounds := state.hostSide.splitBounds; bounds.Width > 1 {
+			if fraction, ok := state.hostSideResizable(nil).FractionForKey(event.Key); ok {
+				state.hostSide.width = fraction * (bounds.Width - 1)
+				state.save()
+				return handled, true
+			}
+		}
 	}
 	if event.Key == gfx.KeySpace && !event.Release && state.clickHostScopeSelection(event.Target) {
 		return handled, true

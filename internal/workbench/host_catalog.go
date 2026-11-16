@@ -457,7 +457,29 @@ func (state *State) setHostFilter(on bool, group string) {
 	state.hostSelections = state.hostSelections[:0]
 	state.refreshHostSelection()
 	state.hostsScroll = 0
+	if state.hostSide.open {
+		state.revealHostFilterGroup()
+	}
 	state.rebuildHostTreeRows()
+}
+
+// revealHostFilterGroup opens the groups above the chosen one, so the tree
+// shows the row that is selected after a filter was set from the chips or from
+// another view.
+func (state *State) revealHostFilterGroup() {
+	if !state.hostFilterOn || state.hostFilter == "" {
+		return
+	}
+	changed := false
+	for path := hostGroupParent(state.hostFilter); path != ""; path = hostGroupParent(path) {
+		if index := state.hostGroupIndex(path); index >= 0 && !state.hostGroups[index].Expanded {
+			state.hostGroups[index].Expanded = true
+			changed = true
+		}
+	}
+	if changed {
+		state.rebuildHostSideRows()
+	}
 }
 
 // inHostFilter is whether a host belongs to what the chips currently show.
@@ -522,6 +544,7 @@ func (state *State) rebuildHostTreeRows() {
 			state.hostTreeRows = append(state.hostTreeRows, hostTreeRow{Kind: hostTreeHost, GroupIndex: groupIndex, HostIndex: hostIndex, Depth: depth})
 		}
 	}
+	state.rebuildHostSideRows()
 }
 
 func (state *State) toggleHostGroup(index int) {

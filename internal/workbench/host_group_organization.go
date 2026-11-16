@@ -47,6 +47,108 @@ func (state *State) moveHostGroup(path, parent string) bool {
 	return true
 }
 
+// hostGroupMoveBesideAllowed says whether group source may be placed as the
+// sibling before or after group target: the target's parent must not be the
+// source or inside it, the two must share the pin state the order groups by,
+// and the new name must not meet another group. Reordering is only defined for
+// the manual order.
+func (state *State) hostGroupMoveBesideAllowed(source, target int) bool {
+	if state.hostOrder != hostOrderManual {
+		return false
+	}
+	if source < 0 || target < 0 || source >= len(state.hostGroups) || target >= len(state.hostGroups) || source == target {
+		return false
+	}
+	src, tgt := state.hostGroups[source], state.hostGroups[target]
+	if src.Name == "" || tgt.Name == "" || src.Pinned != tgt.Pinned {
+		return false
+	}
+	parent := hostGroupParent(tgt.Name)
+	if hostGroupWithin(parent, src.Name) {
+		return false
+	}
+	moved := joinHostGroup(parent, hostGroupLeaf(src.Name))
+	for index, group := range state.hostGroups {
+		if index != source && strings.EqualFold(group.Name, moved) {
+			return false
+		}
+	}
+	return true
+}
+
+// moveHostGroupBeside puts group source next to group target: under the target's
+// parent when the two are in different folders, then before or after the target
+// in the manual order.
+func (state *State) moveHostGroupBeside(source, target int, after bool) bool {
+	if !state.hostGroupMoveBesideAllowed(source, target) {
+		return false
+	}
+	sourceName, targetName := state.hostGroups[source].Name, state.hostGroups[target].Name
+	parent := hostGroupParent(targetName)
+	moved := joinHostGroup(parent, hostGroupLeaf(sourceName))
+	if moved != sourceName && !state.moveHostGroup(sourceName, parent) {
+		return false
+	}
+	state.orderHostGroupBeside(moved, targetName, after)
+	return true
+}
+
+// orderHostGroupBeside assigns the sibling order with path immediately before or
+// after target. The current visible order is the base, so a group dragged from
+// elsewhere lands where the line showed it.
+func (state *State) orderHostGroupBeside(path, target string, after bool) {
+	if state.hostOrder != hostOrderManual {
+		return
+	}
+	targetIndex := state.hostGroupIndex(target)
+	if targetIndex < 0 || state.hostGroupIndex(path) < 0 {
+		return
+	}
+	parent, pinned := hostGroupParent(target), state.hostGroups[targetIndex].Pinned
+	siblings := make([]int, 0, len(state.hostGroups))
+	for index, group := range state.hostGroups {
+		if group.Name != "" && hostGroupParent(group.Name) == parent && group.Pinned == pinned {
+			siblings = append(siblings, index)
+		}
+	}
+	sourceAt, targetAt := -1, -1
+	for position, index := range siblings {
+		switch state.hostGroups[index].Name {
+		case path:
+			sourceAt = position
+		case target:
+			targetAt = position
+		}
+	}
+	if sourceAt < 0 || targetAt < 0 || sourceAt == targetAt {
+		return
+	}
+	moved := siblings[sourceAt]
+	siblings = append(siblings[:sourceAt], siblings[sourceAt+1:]...)
+	targetAt = -1
+	for position, index := range siblings {
+		if state.hostGroups[index].Name == target {
+			targetAt = position
+			break
+		}
+	}
+	if targetAt < 0 {
+		return
+	}
+	insert := targetAt
+	if after {
+		insert++
+	}
+	siblings = append(siblings, 0)
+	copy(siblings[insert+1:], siblings[insert:])
+	siblings[insert] = moved
+	for position, index := range siblings {
+		state.hostGroups[index].Order = position + 1
+	}
+	state.refreshHostGroups()
+	state.save()
+}
+
 func (state *State) deleteHostGroup(path string, ungroup bool) bool {
 	if path == "" || state.hostGroupIndex(path) < 0 {
 		state.dialogError = state.messages.HostGroupActions.Missing

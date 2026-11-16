@@ -80,12 +80,9 @@ func TestTheHostListRoomIsTheWorkspaceSlot(t *testing.T) {
 		state := nestedHostGroupState(t)
 		state.Paint(&gfx.Canvas{}, size)
 		workspace := state.chrome.workspaceSlot.Rect().Inset(gfx.All(workspaceBorder))
-		headerHeight := state.hostHeaderHeight(workspace.Width, len(state.hostSelections) > 0)
-		if got, want := state.hostList.header.Rect().Height, headerHeight; got != want {
-			t.Fatalf("%v: header height %v, want %v", size, got, want)
-		}
-		wantList := gfx.Rect{X: workspace.X + 18, Y: workspace.Y + headerHeight,
-			Width: max(workspace.Width-36, 0), Height: max(workspace.Height-headerHeight-18, 0)}
+		layout := state.hostsLayout(workspace.Width, workspace.Height)
+		wantList := gfx.Rect{X: workspace.X + layout.list.X, Y: workspace.Y + layout.list.Y,
+			Width: layout.list.Width, Height: layout.list.Height}
 		if got := state.hostList.bounds; got != wantList {
 			t.Fatalf("%v: list room %v, want %v", size, got, wantList)
 		}

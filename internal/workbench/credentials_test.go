@@ -449,3 +449,47 @@ func TestAHostWithNoIdentityKeepsTheSystemLoginName(t *testing.T) {
 		t.Fatalf("login = %q, want the system user %q", got, state.hostCatalog.systemUser)
 	}
 }
+
+// The host form's password field types this host's own password; only its
+// arrow opens the list of identities.
+func TestTheHostPasswordFieldTypesAndItsArrowOpensTheList(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	addIdentity(t, state, "Deploy", "ops", "pw")
+	state.activeSection = sectionHosts
+	clickHostAction(state, hitEditHost)
+
+	state.Click(hitDialogPassword)
+	if state.editor.credentialOpen {
+		t.Fatal("clicking the password field opened the identity list")
+	}
+	typeInto(state, hitDialogPassword, "own")
+	if got := state.editor.password.String(); got != "own" {
+		t.Fatalf("the field holds %q, want what was typed", got)
+	}
+	state.Click(hitDialogCredential)
+	if !state.editor.credentialOpen {
+		t.Fatal("the arrow did not open the identity list")
+	}
+}
+
+// With an identity chosen, the field names it, and both the field and the arrow
+// open the list; the clear button at its start goes back to the host's own password.
+func TestAChosenIdentityOpensFromTheFieldAndClearsBack(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	entry := addIdentity(t, state, "Deploy", "ops", "pw")
+	state.activeSection = sectionHosts
+	clickHostAction(state, hitEditHost)
+	state.editor.credential = entry.ID
+
+	state.Click(hitDialogCredentialValue)
+	if !state.editor.credentialOpen {
+		t.Fatal("the chosen identity's field did not open the list")
+	}
+	state.editor.credentialOpen = false
+	state.Click(hitDialogCredentialOwn)
+	if state.editor.credential != "" {
+		t.Fatalf("clear left the identity %q chosen", state.editor.credential)
+	}
+}

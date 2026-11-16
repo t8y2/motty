@@ -97,7 +97,7 @@ func (state *State) reserveEmptyPageWithColor(c ui.C, bounds gfx.Rect, title, su
 func (state *State) declareEmptyPageRegion(c ui.C, bounds gfx.Rect, title, sub, add string, descriptionColor gfx.Color, action gfx.ID, icon uint8, enabled bool) {
 	state.prepareEmptyPage(bounds, title, sub, add, descriptionColor, action, icon, enabled)
 	body := max(0, bounds.Height-142)
-	column := ui.Column(c).Absolute().Left(0).Top(0).Width(bounds.Width).Height(bounds.Height).
+	column := ui.Column(c).Absolute().Left(bounds.X).Top(bounds.Y).Width(bounds.Width).Height(bounds.Height).
 		MarginSides(0, 0, 9, 0).PadSides(max(20, body*0.40-48), 0, 0, 0).Items(ui.Center)
 	column.Children(func() { state.declareEmptyPageContent(c) })
 }

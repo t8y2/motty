@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -17,6 +19,124 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 )
+
+func TestRemoteLogsWithCommandsBar(t *testing.T) {
+	for _, width := range []int{800, 1444} {
+		for _, logsFirst := range []bool{false, true} {
+			t.Run(fmt.Sprintf("width=%d/logsFirst=%v", width, logsFirst), func(t *testing.T) {
+				state, _, _, _ := liveSession(t)
+				state.snippets.list = []snippet{{Name: "pwd", Command: "pwd"}, {Name: "ls", Command: "ls"}}
+				view, err := headless.Open(state.WindowConfig(app.Config{
+					Width: width, Height: 808, Tree: Tree(),
+					Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
+					OnScroll: state.Scroll, OnResize: state.Resize, OnWake: state.Wake,
+				}), nil, headless.Options{Scale: 1})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer view.Close()
+				click := func(id gfx.ID) {
+					t.Helper()
+					for _, hit := range view.Snapshot().Hits {
+						if hit.ID == id {
+							x, y := hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2
+							if err := view.Click(x, y); err != nil {
+								t.Fatal(err)
+							}
+							if err := view.Rest(); err != nil {
+								t.Fatal(err)
+							}
+							return
+						}
+					}
+					t.Fatalf("missing control %v", id)
+				}
+				if logsFirst {
+					click(hitServerLogs)
+				}
+				click(hitTerminalSnippets)
+				click(hitCommandsBarToggle)
+				if err := view.Keys("Escape"); err != nil {
+					t.Fatal(err)
+				}
+				if err := view.Rest(); err != nil {
+					t.Fatal(err)
+				}
+				if !logsFirst {
+					click(hitServerLogs)
+				}
+				assertSeparate := func() {
+					t.Helper()
+					session, _ := state.sessionByIDPointer(state.activeSessionID)
+					if session.remoteLogs == nil || !state.commands.shown {
+						t.Fatal("both panels must be open")
+					}
+					bar := state.commands.bar
+					paths, err := view.Locate(state.messages.RemoteLogs.ResizePaths)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if bar.Height <= 0 || paths.Bounds.Y+paths.Bounds.Height > bar.Y {
+						t.Fatalf("server logs overlap commands bar: logs splitter=%+v bar=%+v", paths.Bounds, bar)
+					}
+				}
+				if dir := os.Getenv("MOTTY_REMOTE_LOG_SCREENSHOTS"); dir != "" {
+					if err := view.Screenshot(filepath.Join(dir, fmt.Sprintf("logs-commands-%d-%v.png", width, logsFirst))); err != nil {
+						t.Fatal(err)
+					}
+				}
+				assertSeparate()
+				for _, label := range []string{state.messages.RemoteLogs.Expand, state.messages.RemoteLogs.Restore} {
+					if err := view.ClickLabel(label); err != nil {
+						t.Fatal(err)
+					}
+					if err := view.Rest(); err != nil {
+						t.Fatal(err)
+					}
+					assertSeparate()
+				}
+				dividerFound := false
+				for _, hit := range view.Snapshot().Hits {
+					if hit.ID != hitRemoteLogDivider {
+						continue
+					}
+					dividerFound = true
+					x, y := hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2
+					if err := view.Press(x, y); err != nil {
+						t.Fatal(err)
+					}
+					if err := view.Move(x, y-60); err != nil {
+						t.Fatal(err)
+					}
+					if err := view.Release(x, y-60); err != nil {
+						t.Fatal(err)
+					}
+					session, _ := state.sessionByIDPointer(state.activeSessionID)
+					if session.remoteLogs.height <= 360 {
+						t.Fatal("dragging the log divider did not resize the panel")
+					}
+				}
+				if !dividerFound {
+					t.Fatal("missing log panel divider")
+				}
+				assertSeparate()
+				if err := view.Resize(width, 600); err != nil {
+					t.Fatal(err)
+				}
+				assertSeparate()
+				click(hitCommandsClose)
+				if state.commands.shown {
+					t.Fatal("commands close control did not hide the bar")
+				}
+				click(hitServerLogs)
+				session, _ := state.sessionByIDPointer(state.activeSessionID)
+				if session.remoteLogs != nil {
+					t.Fatal("server logs toggle did not close the panel")
+				}
+			})
+		}
+	}
+}
 
 func TestRemoteLogsDockDragReorderAndPersist(t *testing.T) {
 	state, _, _, _ := liveSession(t)

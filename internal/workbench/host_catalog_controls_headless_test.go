@@ -151,7 +151,13 @@ func TestHostCatalogControlsNativeCompactPanel(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-	ids := []gfx.ID{hitHostSelectAll, hitHostFilterAll, hitHostFilterMore, hitHostOrder, hitHostViewList, hitHostViewGrid, hitHostGroupsExpandAll, hitHostGroupsCollapseAll}
+	ids := []gfx.ID{hitHostSelectAll, hitHostFilterAll, hitHostOrder, hitHostViewList, hitHostViewGrid, hitHostGroupsExpandAll, hitHostGroupsCollapseAll}
+	// The compact panel puts the chips on a row of their own, so they can all
+	// fit even when the panel is very narrow; check the More button only when
+	// one is needed.
+	if _, ok := hitByIDSnapshot(view.Snapshot().Hits, hitHostFilterMore); ok {
+		ids = append(ids, hitHostFilterMore)
+	}
 	for index, id := range ids {
 		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
 		if !ok {

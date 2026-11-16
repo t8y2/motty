@@ -33,11 +33,9 @@ type hostCatalogList struct {
 	// c is the declaration being used while the Tree asks content for its rows:
 	// ui.Tree calls content during the declaration it is part of.
 	c ui.C
-	// header and area are the rooms the page declared: the header painted by
-	// hand, and the Tree that paints the rows. Their rectangles are read after
-	// the page is laid out.
-	header ui.Box
-	area   ui.Box
+	// area is the Tree that paints the rows. Its rectangle is read after the
+	// page is laid out.
+	area ui.Box
 	// scroll is the Tree's scroll area as of the last list paint; scrollLive says
 	// that paint declared it, and pendingLive is that answer for the paint being
 	// made, which clears it. They apply an offset another part of the page asked
@@ -151,8 +149,7 @@ func (state *State) hostListLabel(i int) string {
 // own name. A row can only be dropped onto a group, so before and after fall
 // back to inside and any point of a group row takes the same move it always did.
 func (state *State) hostListCanDrop(from, to int, where ui.TreeDrop) bool {
-	if where != ui.TreeDropInside || state.hostSort.enabled ||
-		state.activeSection != sectionHosts || state.modal != modalNone {
+	if state.hostSort.enabled || state.activeSection != sectionHosts || state.modal != modalNone {
 		return false
 	}
 	rows := state.hostTreeRows
@@ -163,7 +160,13 @@ func (state *State) hostListCanDrop(from, to int, where ui.TreeDrop) bool {
 	if source.Kind != hostTreeGroup || target.Kind != hostTreeGroup {
 		return false
 	}
-	return state.hostGroupMoveAllowed(source.GroupIndex, target.GroupIndex)
+	switch where {
+	case ui.TreeDropInside:
+		return state.hostGroupMoveAllowed(source.GroupIndex, target.GroupIndex)
+	case ui.TreeDropBefore, ui.TreeDropAfter:
+		return state.hostGroupMoveBesideAllowed(source.GroupIndex, target.GroupIndex)
+	}
+	return false
 }
 
 // hostGroupMoveAllowed says whether group source may move under group parent:
@@ -223,7 +226,7 @@ func (list *hostCatalogList) drawer(state *State, index int) *hostRowDrawer {
 // own identity or its disclosure's: the controls painted inside a row (a
 // checkbox, a button) are named in the workbench's tree instead.
 func (state *State) hostListHitKey(id gfx.ID) (int, bool) {
-	if state.hostView != hostViewList || id.IsZero() {
+	if state.hostView == hostViewGrid || id.IsZero() {
 		return 0, false
 	}
 	key, ok := id.Name().Index()
@@ -377,6 +380,7 @@ func (state *State) hostListPointer(event gfx.PointerEvent) (gfx.EventResult, bo
 // the slot's and not a copy of it.
 func (state *State) declareHostsWorkspace(c ui.C) {
 	list := state.hostListFns()
+	state.hostSideFns()
 	if cap(state.groupActions.rows) < len(state.hostGroups) {
 		state.groupActions.rows = make([]gfx.Rect, len(state.hostGroups))
 	} else {
@@ -384,24 +388,29 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 		clear(state.groupActions.rows)
 	}
 	width, height := state.hostsWorkspaceSize()
-	headerHeight := state.hostHeaderHeight(width, len(state.hostSelections) > 0)
-	list.header = ui.Slot(c).Absolute().Left(0).Right(0).Top(0).Height(headerHeight)
-	list.header.Children(func() {
-		state.declareHostsHeader(c, gfx.Rect{Width: width, Height: headerHeight})
-	})
+	layout := state.hostsLayout(width, height)
+	state.hostSide.visible = layout.sideVisible
+	state.hostSide.visibleWidth = layout.side.Width
+	state.chrome.headerPlan = state.hostsHeaderPlan(c.Canvas(), layout)
+	state.chrome.headerBoxes = hostsHeaderBoxes{}
+	state.declareHostsToolbar(c, width, state.chrome.headerPlan)
+	if layout.sideVisible {
+		state.declareHostsSide(c, layout)
+	}
+	state.declareHostsRightHeader(c, layout, state.chrome.headerPlan)
 	if len(state.hostTreeRows) == 0 {
 		// The page owns the empty state too: the window paints only its icon and
 		// action after the page has laid them out.
-		m, bounds := state.messages, gfx.Rect{Width: width, Height: height}
+		m := state.messages
 		switch {
 		case len(state.hosts) == 0:
-			state.declareEmptyPageRegion(c, bounds, m.HostsEmpty, m.HostsEmptySub, m.NewHost, state.pal.muted, hitAddHostEmpty, iconHosts, true)
+			state.declareEmptyPageRegion(c, layout.list, m.HostsEmpty, m.HostsEmptySub, m.NewHost, state.pal.muted, hitAddHostEmpty, iconHosts, true)
 		case len(state.visible) == 0:
-			state.declareEmptyPageRegion(c, bounds, m.NoMatches, m.NoMatchesSub, "", state.pal.muted, gfx.ID{}, 0, false)
+			state.declareEmptyPageRegion(c, layout.list, m.NoMatches, m.NoMatchesSub, "", state.pal.muted, gfx.ID{}, 0, false)
 		}
 	}
 	if state.hostView == hostViewGrid && len(state.hostTreeRows) > 0 {
-		state.declareHostGrid(c, width, height, headerHeight)
+		state.declareHostGrid(c, layout.list)
 		list.scrollLive = false
 		return
 	}
@@ -411,10 +420,10 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 	}
 	// The bar keeps its strip out of the rows when the content overflows; the
 	// viewport is the rest of the list's room.
-	room := gfx.Rect{Y: headerHeight, Width: max(width-36, 0), Height: max(height-headerHeight-18, 0)}
+	room := layout.list
 	content := state.hostListHeight(room.Width)
 	_, geometry := hostListScrollArea(nil, state.Theme(), room, content, state.hostsScroll, state.hostListBarRevealed())
-	right := float32(18) + room.Width - geometry.Viewport.Width
+	right := width - room.X - geometry.Viewport.Width
 	list.rowWidth = geometry.Viewport.Width
 	state.applyHostListScroll(c.Canvas(), content)
 	list.tree.RowHeight = hostRowHeight
@@ -428,7 +437,7 @@ func (state *State) declareHostsWorkspace(c ui.C) {
 	list.next = 0
 	list.c = c
 	area := ui.Tree(c, &list.tree, len(state.hostTreeRows), list.label, list.content).
-		Absolute().Left(18).Right(right).Top(headerHeight).Bottom(18)
+		Absolute().Left(room.X).Right(right).Top(room.Y).Bottom(hostsBodyBottom)
 	list.c = nil
 	// The sort overlay is not a page element: it starts before the rows paint
 	// their handles and ends after them, as the list has always painted it.
@@ -466,19 +475,6 @@ func (state *State) hostsWorkspaceSize() (width, height float32) {
 	width = state.viewport.Width - state.toolbarDockSideReserveFor(true, false) - navigationWidth - state.chrome.shellCardRight - 2*workspaceBorder
 	height = state.viewport.Height - windowBarHeight - state.toolbarDockBottomReserve(false) - sectionCardMargin - 2*workspaceBorder
 	return max(width, 0), max(height, 0)
-}
-
-// hostHeaderHeight is the height of the toolbar, the filters and, while hosts are
-// checked, the batch actions: the rows the header lays out below its top.
-func (state *State) hostHeaderHeight(width float32, anySelected bool) float32 {
-	height := float32(hostListTop)
-	if width < 450 {
-		height += hostHeaderRowHeight + hostHeaderRowGap
-	}
-	if anySelected {
-		height += hostHeaderRowHeight + hostHeaderRowGap
-	}
-	return height
 }
 
 // applyHostListScroll applies an offset another part of the page asked for, and
@@ -526,14 +522,28 @@ func (state *State) hostListChanges(c ui.C, list *hostCatalogList) {
 			path := state.hostGroups[source.GroupIndex].Name
 			parent := state.hostGroups[target.GroupIndex].Name
 			if path != "" {
-				c.After(func() {
-					if state.activeSection != sectionHosts || state.modal != modalNone {
-						return
-					}
-					if !state.moveHostGroup(path, parent) {
-						state.status, state.dialogError = state.dialogError, ""
-					}
-				})
+				switch move.Where {
+				case ui.TreeDropInside:
+					c.After(func() {
+						if state.activeSection != sectionHosts || state.modal != modalNone {
+							return
+						}
+						if !state.moveHostGroup(path, parent) {
+							state.status, state.dialogError = state.dialogError, ""
+						}
+					})
+				case ui.TreeDropBefore, ui.TreeDropAfter:
+					after := move.Where == ui.TreeDropAfter
+					c.After(func() {
+						if state.activeSection != sectionHosts || state.modal != modalNone {
+							return
+						}
+						sourceAt, targetAt := state.hostGroupIndex(path), state.hostGroupIndex(parent)
+						if sourceAt < 0 || targetAt < 0 || !state.moveHostGroupBeside(sourceAt, targetAt, after) {
+							state.status, state.dialogError = state.dialogError, ""
+						}
+					})
+				}
 			}
 		}
 	}
