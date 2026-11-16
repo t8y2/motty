@@ -18,6 +18,7 @@ type ActionFeedbackMessages struct {
 	ImportPrivateKeyFailedFmt string
 	BackupTooLarge            string
 	NewWindowFailed           string
+	ClipboardFailed           string
 	InvalidConnection         string
 }
 
@@ -37,6 +38,7 @@ var chineseActionFeedback = ActionFeedbackMessages{
 	ImportPrivateKeyFailedFmt: "无法导入“%s”，请重新选择可读取的 SSH 私钥文件。",
 	BackupTooLarge:            "备份文件过大，请选择其他备份。",
 	NewWindowFailed:           "暂时无法打开新窗口，请稍后重试。",
+	ClipboardFailed:           "无法写入剪贴板，请稍后重试。",
 	InvalidConnection:         "连接地址有误，请按 用户名@主机地址:端口 填写，例如 admin@192.168.1.10:22。",
 }
 
@@ -56,5 +58,6 @@ var englishActionFeedback = ActionFeedbackMessages{
 	ImportPrivateKeyFailedFmt: "Could not import “%s”. Select a readable SSH private key file.",
 	BackupTooLarge:            "This backup file is too large. Choose another backup.",
 	NewWindowFailed:           "Could not open a new window. Please try again shortly.",
+	ClipboardFailed:           "Could not write to the clipboard. Please try again.",
 	InvalidConnection:         "Check the connection address. Use user@host:port, for example admin@192.168.1.10:22.",
 }

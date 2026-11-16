@@ -2965,6 +2965,7 @@ var traditionalActionFeedback = ActionFeedbackMessages{
 	ImportPrivateKeyFailedFmt: "無法匯入「%s」，請重新選擇可讀取的 SSH 私密金鑰檔案。",
 	BackupTooLarge:            "備份檔案過大，請選擇其他備份。",
 	NewWindowFailed:           "暫時無法開啟新視窗，請稍後重試。",
+	ClipboardFailed:           "無法寫入剪貼簿，請稍後重試。",
 	InvalidConnection:         "連線位址有誤，請按 使用者名稱@主機位址：連接埠 填寫，例如 admin@192.168.1.10:22。",
 }
 

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/vivaui/viva/components"
+	"motty/internal/i18n"
 	"motty/internal/term"
 )
 
@@ -42,6 +44,7 @@ func TestMenuBarCopyWithoutSelectionPreservesClipboard(t *testing.T) {
 
 func TestMenuBarCopyReportsClipboardFailure(t *testing.T) {
 	state, session, _ := selectionState()
+	state.messages = i18n.For(i18n.English)
 	session.term.write([]byte("alpha beta"))
 	session.term.selection.selectRange(
 		session.term.screen.PointAt(term.Position{}),
@@ -52,7 +55,16 @@ func TestMenuBarCopyReportsClipboardFailure(t *testing.T) {
 	invalidations := 0
 	state.options.Invalidate = func() { invalidations++ }
 	state.MenuBar()[1].Items[0].OnSelect()
-	if state.status != want.Error() || invalidations != 1 {
-		t.Fatalf("clipboard failure: status=%q, invalidations=%d", state.status, invalidations)
+	// The main window paints none of state.status: the failure is only visible
+	// if it reaches the shared notice queue.
+	if len(state.fileNotices.items) != 1 {
+		t.Fatalf("clipboard failure queued %v, want one visible notice", state.fileNotices.items)
+	}
+	notice, messages := state.fileNotices.items[0], state.messages
+	if notice.title != messages.MenuCopy || notice.detail != messages.ActionFeedback.ClipboardFailed || notice.kind != components.ToastError {
+		t.Fatalf("notice = %+v, want %q / %q", notice, messages.MenuCopy, messages.ActionFeedback.ClipboardFailed)
+	}
+	if invalidations != 1 {
+		t.Fatalf("clipboard failure requested %d repaints, want 1", invalidations)
 	}
 }
