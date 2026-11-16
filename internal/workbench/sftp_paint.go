@@ -45,7 +45,12 @@ type sftpPanelScratch struct {
 	bounds gfx.Rect
 
 	// headerTools is where orderToolbarTools builds the header's actions.
-	headerTools [12]barTool
+	headerTools   [12]barTool
+	overflowTools []barTool
+	// overflow is the storage overflowTools reads. It is a copy because the eye
+	// appended to the visible roster would otherwise overwrite the first action
+	// that the same backing array made overflow.
+	overflow [maxBarTools]barTool
 	// buttons are the icon buttons, in the order they were declared.
 	buttons           [32]sftpIconButton
 	buttonCount       int
@@ -206,6 +211,26 @@ func (state *State) declareSFTPPanel(c ui.C) {
 	}
 	moveIcon, moveHint := state.sftpPanelMoveAction()
 	headerTools = state.orderToolbarTools(toolbarSFTP, headerTools, false)
+	// Reserve More and the gaps on either side of the flexible spacer before
+	// fitting actions. The eye that reports hidden entries on screen keeps its
+	// slot too: it is their status affordance, not just another action.
+	const gap = float32(4)
+	hidden := folder.showHidden
+	width := max(s.bounds.Width-2*sftpPad, 0)
+	capacity := max(int((width-sftpHeaderButton-gap)/(sftpHeaderButton+gap)), 0)
+	if hidden {
+		capacity = max(capacity-1, 0)
+	}
+	visible := min(len(headerTools), capacity)
+	count := len(headerTools) - visible
+	for i := 0; i < count; i++ {
+		s.overflow[i] = headerTools[visible+i]
+	}
+	s.overflowTools = s.overflow[:count]
+	headerTools = headerTools[:visible]
+	if hidden {
+		headerTools = append(headerTools, barTool{id: hitSFTPHiddenToggle, icon: iconEye, hint: messages.Tools.FilesHideHidden, style: iconButtonActive})
+	}
 
 	// icon declares an icon button where it goes; it is painted after Draw.
 	icon := func(side float32, id gfx.ID, glyph uint8, hint string, disabled bool, style iconButtonStyle) {
@@ -227,14 +252,9 @@ func (state *State) declareSFTPPanel(c ui.C) {
 				}
 			})
 		})
-		ui.Row(c).FillWidth().Height(sftpButton).Shrink(0).Gap(4).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
+		ui.Row(c).FillWidth().Height(sftpButton).Shrink(0).Gap(gap).Items(ui.Center).MarginSides(6, 0, 0, 0).Children(func() {
 			for _, tool := range headerTools {
 				icon(sftpHeaderButton, tool.id, tool.icon, tool.hint, tool.disabled, tool.style)
-			}
-			// Once hidden entries are enabled, the Eye control remains visible
-			// as their status affordance beside the secondary actions menu.
-			if folder.showHidden {
-				icon(sftpHeaderButton, hitSFTPHiddenToggle, iconEye, messages.Tools.FilesHideHidden, false, iconButtonActive)
 			}
 			ui.Spacer(c)
 			icon(sftpHeaderButton, hitSFTPHeaderMore, iconEllipsis, messages.Tools.FilesMore, false, iconButtonQuiet)

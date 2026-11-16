@@ -515,6 +515,12 @@ func (state *State) clickSFTP(id gfx.ID) {
 			state.toggleSFTPFollow(session)
 		default:
 			folder.headerMenuOpen = false
+			for _, tool := range state.chrome.sftpPanel.overflowTools {
+				if tool.id == id && !tool.disabled {
+					state.clickSFTP(id)
+					break
+				}
+			}
 		}
 		return
 	}
