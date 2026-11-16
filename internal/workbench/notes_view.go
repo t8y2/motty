@@ -51,6 +51,7 @@ type noteViewState struct {
 	overlayFrom              gfx.ID
 	listArea                 components.ScrollArea
 	treeScroll               float32
+	treeScratch              noteTreeScratch
 	noteTokens, folderTokens map[string]int
 	tokenNotes, tokenFolders map[int]string
 	inlineID, inlineParent   string

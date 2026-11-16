@@ -237,25 +237,22 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 	components.PaintSeparator(c, theme, gfx.Rect{X: top.X, Y: top.Y + headerExtra + 36, Width: top.Width, Height: 1}, components.SeparatorHorizontal)
 	body := gfx.Rect{X: b.X + 6, Y: top.Y + headerExtra + 43, Width: max(0, b.Width-12), Height: max(0, b.Y+b.Height-top.Y-headerExtra-49)}
 	n.listBounds = body
-	type entry struct {
-		note     savedNote
-		folder   savedNoteFolder
-		isFolder bool
-		depth    int
-	}
-	var rows []entry
-	matches, parents := map[string]bool{}, map[string]bool{}
 	query := strings.ToLower(n.query.String())
 	if query != v.lastQuery {
 		n.view.treeScroll = 0
 		v.lastQuery = query
 	}
+	sc := &n.view.treeScratch
+	sc.reset()
+	matches, parents := sc.matches, sc.parents
 	host := ""
 	if session, ok := s.sessionByIDPointer(s.activeSessionID); ok {
 		host = session.host.CatalogID
 	}
+	notes := sc.notes
 	for _, stored := range s.notes.list {
 		note := s.noteBrowserNote(stored)
+		notes = append(notes, note)
 		if !n.sideAll && !note.Pinned && (host == "" || !s.noteMatchesHost(note.Tags, host)) {
 			continue
 		}
@@ -263,7 +260,7 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 			continue
 		}
 		matches[note.ID] = true
-		seen := map[string]bool{}
+		seen := sc.seen
 		for parent := note.Folder; parent != "" && !seen[parent]; {
 			seen[parent] = true
 			parents[parent] = true
@@ -273,10 +270,11 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 			}
 			parent = f.Parent
 		}
+		clear(seen)
 	}
-	folders := slices.Clone(s.notes.folders)
+	folders := append(sc.folders, s.notes.folders...)
 	slices.SortStableFunc(folders, func(a, b savedNoteFolder) int { return a.Order - b.Order })
-	notes := slices.Clone(s.notes.list)
+	sc.folders = folders
 	slices.SortStableFunc(notes, func(a, b savedNote) int {
 		if a.Pinned != b.Pinned {
 			if a.Pinned {
@@ -286,7 +284,9 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 		}
 		return a.Order - b.Order
 	})
-	seen := map[string]bool{}
+	sc.notes = notes
+	seen := sc.walked
+	rows := sc.rows
 	var walk func(string, int)
 	walk = func(parent string, depth int) {
 		for _, f := range folders {
@@ -294,7 +294,7 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 				continue
 			}
 			seen[f.ID] = true
-			rows = append(rows, entry{folder: f, isFolder: true, depth: depth})
+			rows = append(rows, noteTreeEntry{id: f.ID, label: f.Name, folder: true, depth: depth})
 			if n.view.expanded[f.ID] || query != "" {
 				walk(f.ID, depth+1)
 			}
@@ -305,27 +305,33 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 				p = ""
 			}
 			if matches[note.ID] && p == parent {
-				rows = append(rows, entry{note: s.noteBrowserNote(note), depth: depth})
+				label := note.Title
+				if strings.TrimSpace(label) == "" {
+					label = s.noteText("Untitled", "无标题")
+				}
+				rows = append(rows, noteTreeEntry{id: note.ID, label: label, pinned: note.Pinned, depth: depth})
 			}
 		}
 	}
 	walk("", 0)
-	n.view.listArea = s.noteHoverScrollArea(c, body, gfx.Size{Width: body.Width, Height: float32(len(rows)) * 30}, n.view.treeScroll, hitNoteListScroll, hitNoteListThumb, s.noteText("Scroll notes", "滚动笔记"), &n.view.treeBar, n.view.scrollDrag, n.view.pointerValid && pointInRect(n.view.pointer.X, n.view.pointer.Y, body))
+	sc.rows = rows
+	n.view.listArea = s.noteHoverScrollArea(c, body, gfx.Size{Width: body.Width, Height: float32(len(rows)) * noteTreeRowHeight}, n.view.treeScroll, hitNoteListScroll, hitNoteListThumb, s.noteText("Scroll notes", "滚动笔记"), &n.view.treeBar, n.view.scrollDrag, n.view.pointerValid && pointInRect(n.view.pointer.X, n.view.pointer.Y, body))
 	geo := n.view.listArea.BeginContent()
 	n.view.treeScroll = geo.OffsetY
-	tv := components.BeginTree(c, theme, geo.Content).RowHeight(30)
-	for _, e := range rows {
-		id := e.note.ID
-		label := e.note.Title
+	first, last := noteTreeVisibleRange(geo.OffsetY, geo.Viewport.Height, len(rows))
+	treeBounds := geo.Content
+	treeBounds.Y += float32(first) * noteTreeRowHeight
+	tv := components.BeginTree(c, theme, treeBounds).RowHeight(noteTreeRowHeight)
+	for _, e := range rows[first:last] {
+		id := e.id
+		label := e.label
 		icon := icons.MitMarkdown
 		rowID := hitNoteRows.At(s.notes.view.noteTokens[id])
 		disclosure := gfx.ID{}
-		if e.note.Pinned {
+		if e.pinned {
 			icon = icons.StarSolid
 		}
-		if e.isFolder {
-			id = e.folder.ID
-			label = e.folder.Name
+		if e.folder {
 			rowID = hitNoteFolderRows.At(s.notes.view.folderTokens[id])
 			disclosure = hitNoteDisclosures.At(s.notes.view.folderTokens[id])
 			icon = icons.FolderSolid
@@ -333,10 +339,7 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 				icon = icons.FolderSolidOpen
 			}
 		}
-		if strings.TrimSpace(label) == "" {
-			label = s.noteText("Untitled", "无标题")
-		}
-		row := tv.Item(components.TreeItem{ID: rowID, DisclosureID: disclosure, Label: label, Depth: uint8(min(e.depth, 31)), Branch: e.isFolder, Expanded: n.view.expanded[id] || query != "", Selected: !e.isFolder && id == n.selected})
+		row := tv.Item(components.TreeItem{ID: rowID, DisclosureID: disclosure, Label: label, Depth: uint8(min(e.depth, 31)), Branch: e.folder, Expanded: n.view.expanded[id] || query != "", Selected: !e.folder && id == n.selected})
 		content := row.Content
 		content.X += 4
 		content.Width = max(0, content.Width-4)
@@ -344,7 +347,7 @@ func (s *State) paintNoteSidebarTree(c *gfx.Canvas, b gfx.Rect) {
 		content.X += 22
 		content.Width = max(0, content.Width-22)
 		openID := hitNoteSideRowOpen.At(s.notes.view.noteTokens[id])
-		showOpen := !e.isFolder && (c.Hovered() == rowID || c.Hovered() == openID || c.FocusVisible() == rowID || c.FocusVisible() == openID)
+		showOpen := !e.folder && (c.Hovered() == rowID || c.Hovered() == openID || c.FocusVisible() == rowID || c.FocusVisible() == openID)
 		if showOpen {
 			content.Width = max(0, content.Width-32)
 		}
