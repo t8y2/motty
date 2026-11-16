@@ -138,33 +138,42 @@ func (state *State) declareTransferPopoverBody(c ui.C, width, height float32) {
 	body.DrawOver(center.bodyDraw)
 }
 
-// transferSection is the group a transfer card sits in: the transfers moving
-// bytes come first, then the ones waiting or paused, then the finished ones.
+// transferSection is the group a transfer card sits in, top to bottom: the
+// failures that need a decision, the transfers moving bytes, the ones waiting
+// or paused, and the finished ones.
 func transferSection(snapshot sftpclient.TransferSnapshot) int {
 	switch {
-	case snapshot.State == sftpclient.TransferRunning:
+	case snapshot.State == sftpclient.TransferFailed:
 		return 0
-	case transferActive(snapshot):
+	case snapshot.State == sftpclient.TransferRunning:
 		return 1
-	default:
+	case transferActive(snapshot):
 		return 2
+	default:
+		return 3
 	}
+}
+
+// appendTransferOrder appends the entries keep accepts in the order every
+// transfer list shows them: by transferSection, and the newest first within a
+// section. The transfer center and a window's queue both use it, so they agree.
+func appendTransferOrder(dst []*transferEntry, entries []transferEntry, keep func(*transferEntry) bool) []*transferEntry {
+	for section := range 4 {
+		for index := len(entries) - 1; index >= 0; index-- {
+			entry := &entries[index]
+			if keep(entry) && transferSection(entry.snapshot) == section {
+				dst = append(dst, entry)
+			}
+		}
+	}
+	return dst
 }
 
 // prepareTransferCards fills the visible entries in the order the popover shows
 // them and the scratch each card's row uses.
 func (state *State) prepareTransferCards() {
 	center := &state.transfers
-	center.visible = center.visible[:0]
-	for section := range 3 {
-		for index := len(center.entries) - 1; index >= 0; index-- {
-			entry := &center.entries[index]
-			if !center.shows(entry) || transferSection(entry.snapshot) != section {
-				continue
-			}
-			center.visible = append(center.visible, entry)
-		}
-	}
+	center.visible = appendTransferOrder(center.visible[:0], center.entries, center.shows)
 	center.count = len(center.visible)
 	if cap(center.cards) < len(center.visible) {
 		center.cards = make([]transferCard, len(center.visible))

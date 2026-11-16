@@ -820,16 +820,9 @@ func (w *sftpWindow) queueCount() int {
 func (w *sftpWindow) declareQueue(c ui.C, bounds, origin gfx.Rect) {
 	state := w.owner
 	w.ui.queueBounds = gfx.Rect{X: bounds.X, Y: bounds.Y + 24, Width: bounds.Width, Height: max(bounds.Height-24, 0)}
-	w.ui.queueVisible = w.ui.queueVisible[:0]
-	for pass := 0; pass < 2; pass++ {
-		for i := len(state.transfers.entries) - 1; i >= 0; i-- {
-			e := &state.transfers.entries[i]
-			if e.owner != w.view || e.removed || (pass == 0) != transferActive(e.snapshot) {
-				continue
-			}
-			w.ui.queueVisible = append(w.ui.queueVisible, e)
-		}
-	}
+	w.ui.queueVisible = appendTransferOrder(w.ui.queueVisible[:0], state.transfers.entries, func(e *transferEntry) bool {
+		return e.owner == w.view && !e.removed
+	})
 	w.ui.queueItems = len(w.ui.queueVisible)
 	if cap(w.ui.queueCards) < w.ui.queueItems {
 		w.ui.queueCards = make([]transferCard, w.ui.queueItems)
