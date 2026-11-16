@@ -16,5 +16,5 @@ func installerCommandLine(cmd *exec.Cmd, dir string) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-	cmd.SysProcAttr.CmdLine = syscall.EscapeArg(cmd.Path) + " /S /D=" + dir
+	cmd.SysProcAttr.CmdLine = syscall.EscapeArg(cmd.Path) + " /D=" + dir
 }
