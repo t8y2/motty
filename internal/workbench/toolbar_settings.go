@@ -54,7 +54,6 @@ var toolbarCatalog = [3][]toolbarSpec{
 		{"local-remote", hitSFTPPaneToggle, iconHosts}, {"refresh", hitSFTPRefresh, iconRefresh},
 		{"follow-folder", hitSFTPFollowToggle, iconFollowFolder},
 		{"locate-terminal", hitSFTPLocateTerminal, iconTerminal},
-		{"panel-side", hitSFTPPanelSide, iconColumns2}, {"close", hitSFTPClose, iconClose},
 	},
 }
 
@@ -260,10 +259,6 @@ func (state *State) toolbarLabel(id gfx.ID) string {
 		return m.Tools.FilesFollow
 	case hitSFTPLocateTerminal:
 		return m.Tools.FilesLocateTerminal
-	case hitSFTPPanelSide:
-		return m.Toolbars.PanelSide
-	case hitSFTPClose:
-		return m.TipSFTPClose
 	}
 	return ""
 }

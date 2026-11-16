@@ -123,6 +123,15 @@ func TestToolbarOrderAndResetAreRestoredByANewState(t *testing.T) {
 
 func TestToolbarAllOffHidesOnlyEntriesAndResetRestoresThem(t *testing.T) {
 	state, _, _, _ := openTestSFTP(t)
+	// Older versions allowed hiding the title controls through toolbar settings.
+	state.toolbars.restore(&savedToolbars{SFTP: []toolbarEntry{
+		{Key: "panel-side", Enabled: false}, {Key: "close", Enabled: false},
+	}})
+	for _, entry := range state.toolbars.entries(toolbarSFTP) {
+		if entry.Key == "panel-side" || entry.Key == "close" {
+			t.Fatal("panel title controls remain in toolbar customization")
+		}
+	}
 	var canvas gfx.Canvas
 	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
@@ -152,6 +161,14 @@ func TestToolbarAllOffHidesOnlyEntriesAndResetRestoresThem(t *testing.T) {
 	}
 	if _, ok := hitByID(&canvas, contextID(hitSFTPUp)); !ok {
 		t.Fatal("configuring the header removed path navigation")
+	}
+	for _, id := range []gfx.ID{hitSFTPPanelSide, hitSFTPClose} {
+		if _, ok := hitByID(&canvas, contextID(id)); !ok {
+			t.Fatal("toolbar visibility hid a panel title control")
+		}
+		if sftpToolbarMenuSource(id) {
+			t.Fatal("a panel title control still offers toolbar customization")
+		}
 	}
 	for group := toolbarWindow; group <= toolbarSFTP; group++ {
 		state.openToolbarSettings(group)
