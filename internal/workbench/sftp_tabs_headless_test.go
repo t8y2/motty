@@ -141,14 +141,7 @@ func TestSFTPFileTabHeadlessCompactThemesAndNativeInput(t *testing.T) {
 				if !ok || modeHit.Width <= 0 || modeHit.Y+modeHit.Height > w.ui.list[1].Y || modeHit.X < 0 || modeHit.X+modeHit.Width > float32(snapshot.Width) {
 					t.Fatalf("remote mode control escaped compact header: %+v, hit=%t", modeHit, ok)
 				}
-				pathID := sftpWindowPath[0]
-				pathHit, ok := hitByIDFromSnapshot(snapshot, pathID)
-				if !ok {
-					t.Fatal("the local path field has no window hit identity")
-				}
-				if err := preview.Click(pathHit.X+pathHit.Width/2, pathHit.Y+pathHit.Height/2); err != nil {
-					t.Fatal(err)
-				}
+				dualClickID(t, preview, sftpWindowPath[0])
 				if err := preview.Driver().Pump(); err != nil {
 					t.Fatal(err)
 				}
@@ -318,14 +311,7 @@ func TestSFTPFileTabEventsRouteThroughTheWorkbenchPage(t *testing.T) {
 		t.Fatalf("the page's List did not move the row on Down: selected=%d", w.view.sftpFolder.selected)
 	}
 
-	snapshot = preview.Snapshot()
-	pathHit, ok := hitByIDFromSnapshot(snapshot, sftpWindowPath[0])
-	if !ok {
-		t.Fatal("the local path field has no window hit identity")
-	}
-	if err := preview.Click(pathHit.X+pathHit.Width/2, pathHit.Y+pathHit.Height/2); err != nil {
-		t.Fatal(err)
-	}
+	dualClickID(t, preview, sftpWindowPath[0])
 	if err := preview.Driver().Pump(); err != nil {
 		t.Fatal(err)
 	}

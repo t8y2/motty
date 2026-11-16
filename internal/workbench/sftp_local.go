@@ -331,6 +331,9 @@ func (state *State) applyLocalListing(view *sftpView, listing localListing, seq 
 	folder := &view.lfolder
 	place, restore := folder.acceptNavigation(listing.dir, listing.navigation)
 	folder.path = listing.dir
+	if view.detached != nil && listing.navigation.kind == sftpNavigationManual && !state.sftpPathInput {
+		folder.pathEditing = false
+	}
 	previousRows := folder.allRows
 	folder.allRows = listing.rows
 	state.loadAppIcons(view, previousRows, listing.rows)

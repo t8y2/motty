@@ -23,6 +23,12 @@ func (w *sftpWindow) targetSide(id gfx.ID) (bool, bool) {
 		return true, true
 	}
 	for side := range 2 {
+		if _, ok := id.In(sftpWindowBreadcrumbs[side]); ok {
+			return side == 0, true
+		}
+		if id == sftpWindowPathEdit[side] {
+			return side == 0, true
+		}
 		if _, ok := id.In(sftpWindowRecentHits[side]); ok {
 			return side == 0, true
 		}

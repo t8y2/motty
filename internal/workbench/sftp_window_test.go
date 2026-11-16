@@ -524,8 +524,7 @@ func TestSFTPWindowPreviewAndAsyncLocalPathUseWindowContext(t *testing.T) {
 	for index := range 513 {
 		os.WriteFile(filepath.Join(large, fmt.Sprintf("file-%03d.conf", index)), nil, 0600)
 	}
-	pathField := dualHit(t, view, sftpWindowPath[0])
-	view.Click(pathField.X+30, pathField.Y+12)
+	dualClickID(t, view, sftpWindowPath[0])
 	modifier := gfx.ModifierControl
 	if runtime.GOOS == "darwin" {
 		modifier = gfx.ModifierMeta

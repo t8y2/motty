@@ -35,6 +35,8 @@ var (
 	hitSFTPWindowSudoMode        = tree.ID(sftpWindowRemote, "sudo-mode")
 	hitSFTPWindowHeaderDismiss   = tree.ID(sftpWindowHits, "header-dismiss")
 	sftpWindowPath               = [2]gfx.ID{tree.ID(sftpWindowLocal, "path"), tree.ID(sftpWindowRemote, "path")}
+	sftpWindowPathEdit           = [2]gfx.ID{tree.ID(sftpWindowLocal, "path-edit"), tree.ID(sftpWindowRemote, "path-edit")}
+	sftpWindowBreadcrumbs        = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("breadcrumbs")), tree.Sub(sftpWindowRemote, tree.Name("breadcrumbs"))}
 	sftpWindowList               = [2]gfx.ID{tree.ID(sftpWindowLocal, "list"), tree.ID(sftpWindowRemote, "list")}
 	sftpWindowSortHits           = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("sort")), tree.Sub(sftpWindowRemote, tree.Name("sort"))}
 	sftpWindowActions            = [2]gfx.Scope{tree.Sub(sftpWindowLocal, tree.Name("actions")), tree.Sub(sftpWindowRemote, tree.Name("actions"))}
@@ -434,8 +436,17 @@ func (w *sftpWindow) paintPaneDetails(canvas *gfx.Canvas, s *sftpWindowScratch, 
 	} else {
 		w.view.places.anchors[0] = s.address.Rect()
 	}
-	value := folder.pathInput().String()
-	components.PaintInput(canvas, theme, s.address.Rect(), components.InputSnapshot{ID: sftpWindowPath[side], Label: m.SFTPWindow.Path, Value: value, Hint: folder.path, Focused: canvas.Focused() == sftpWindowPath[side], PlatformEditing: canvas.Focused() == sftpWindowPath[side]})
+	focused := canvas.Focused() == sftpWindowPath[side]
+	if folder.pathEditing && !w.owner.sftpPathInput && !focused {
+		folder.pathEditing = false
+		folder.resetPathInput()
+	}
+	if w.owner.sftpPathVisible(folder) {
+		value := folder.pathInput().String()
+		components.PaintInput(canvas, theme, s.address.Rect(), components.InputSnapshot{ID: sftpWindowPath[side], Label: m.SFTPWindow.Path, Value: value, Hint: folder.path, Focused: focused, PlatformEditing: focused, ReadOnly: w.navigationBusy()})
+	} else {
+		w.owner.paintSFTPFolderBreadcrumbs(canvas, s.address.Rect(), folder.crumbs, sftpWindowPathEdit[side], sftpWindowBreadcrumbs[side])
+	}
 	listBounds := s.list.Rect()
 	if s.treeSet {
 		treeBounds := s.tree.Rect()
