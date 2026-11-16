@@ -129,7 +129,14 @@ func (state *State) prepareTerminalDirectory(view *sftpView, directory string, l
 // confined to its interactive session. Unlike automatic sync this is the
 // user's explicit command. Accept only a familiar empty shell prompt; never
 // use this fallback after this session's integration has taken ownership.
-var locateShellPrompt = regexp.MustCompile(`^(?:[^\s@]+@[^\s:]+:[^\r\n#$]*|\[[^\r\n]*@[^\r\n]*\]|(?:ba|z|da|k)?sh(?:-[0-9.]+)?)?[#$] ?$`)
+//
+// Bash-family prompts end in `$` or `#`, optionally behind a known user/host
+// shape. zsh's default prompt ends in `%` after the host name (`#` for root),
+// so those bare-word forms accept only `%` or `#`; a word followed by `$` is
+// still not a prompt. The terminator is required and trailing spaces are
+// anchored, so an echoed command line cannot match.
+var locateShellPrompt = regexp.MustCompile(
+	`^(?:(?:[^\s@]+@[^\s:]+:[^\r\n#$]*|\[[^\r\n]*@[^\r\n]*\]|(?:ba|z|da|k)?sh(?:-[0-9.]+)?)?[#$]|[A-Za-z][A-Za-z0-9._-]*[%#])[ \t]*$`)
 
 func (state *State) terminalLocateReady(session *Session) bool {
 	if state.terminalDirectoryReady(session) {
@@ -163,7 +170,8 @@ func (state *State) canLocateSFTPTerminal(view *sftpView) bool {
 		return false
 	}
 	session, ok := state.sftpSession(view)
-	return ok && session.hasServer() && session.containerCommand == "" && session.phase == sshconn.PhaseConnected &&
+	return ok && session.hasServer() && session.host.System != sshconn.SystemWindows &&
+		session.containerCommand == "" && session.phase == sshconn.PhaseConnected &&
 		session.term != nil && session.term.shell != nil && !session.term.ended
 }
 

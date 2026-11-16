@@ -51,12 +51,15 @@ func TestLocateTerminalToolbarUsesDisplayedDirectoryOnce(t *testing.T) {
 }
 
 func TestLocateTerminalRejectsUnsafeOrUnrelatedContexts(t *testing.T) {
-	for _, mode := range []string{"unknown", "dirty", "running", "alt-screen", "ai-exec", "local", "detached", "container", "disconnected", "busy", "invalid-path"} {
+	for _, mode := range []string{"unknown", "dirty", "running", "alt-screen", "ai-exec", "local", "detached", "container", "disconnected", "busy", "invalid-path", "windows-host"} {
 		t.Run(mode, func(t *testing.T) {
 			state, session, fake, _ := openTestSFTP(t)
 			shell := fake.shell(t)
 			view := session.files
-			if mode != "unknown" {
+			// A Windows remote host cannot run the POSIX prompt fallback, so it
+			// must not even see the shell-integration markers that would make
+			// the trusted directory path look available.
+			if mode != "unknown" && mode != "windows-host" {
 				shell.say(folderSyncMarker(session, "C") + folderSyncMarker(session, "A") + folderSyncMarker(session, "B"))
 				state.Wake()
 			}
@@ -82,6 +85,8 @@ func TestLocateTerminalRejectsUnsafeOrUnrelatedContexts(t *testing.T) {
 				view.busy = true
 			case "invalid-path":
 				view.path = "/tmp/invalid\npath"
+			case "windows-host":
+				session.host.System = sshconn.SystemWindows
 			}
 			before := folderSyncInput(shell)
 			state.locateSFTPTerminal(view)
@@ -93,6 +98,14 @@ func TestLocateTerminalRejectsUnsafeOrUnrelatedContexts(t *testing.T) {
 			}
 			if mode == "unknown" && view.status != state.messages.Tools.FilesLocateTerminalSkipped {
 				t.Fatal("an unrecognized prompt was skipped without explanation")
+			}
+			if mode == "windows-host" {
+				if state.canLocateSFTPTerminal(view) {
+					t.Fatal("a Windows remote host was offered a locate action it can never satisfy")
+				}
+				if view.status == state.messages.Tools.FilesLocateTerminalSkipped {
+					t.Fatal("the unavailable locate action asked for a shell prompt instead of being disabled")
+				}
 			}
 		})
 	}
@@ -271,14 +284,56 @@ func TestLocateTerminalPlainShellRequiresAnEmptyUnchangedPrompt(t *testing.T) {
 }
 
 func TestLocateTerminalPlainPromptRecognition(t *testing.T) {
-	for _, prompt := range []string{"root@box:/etc# ", "user@box:~/中文 dir$ ", "[root@box etc]# ", "bash-5.2$ ", "sh$ ", "# ", "$ "} {
-		if !locateShellPrompt.MatchString(prompt) {
-			t.Errorf("ordinary POSIX prompt was not recognized: %q", prompt)
-		}
+	tests := []struct {
+		name   string
+		prompt string
+		want   bool
+	}{
+		// Bash-family prompts stay accepted, including their bracketed and
+		// versioned forms.
+		{"bash-user-host-path", "root@box:/etc# ", true},
+		{"bash-user-host-path-spaces", "user@box:~/中文 dir$ ", true},
+		{"bash-bracketed", "[root@box etc]# ", true},
+		{"bash-versioned", "bash-5.2$ ", true},
+		{"zsh-versioned", "zsh-5.9$ ", true},
+		{"posix-sh", "sh$ ", true},
+		{"bare-root", "# ", true},
+		{"bare-user", "$ ", true},
+		{"bare-user-no-space", "$", true},
+		// zsh's default prompt is hostname followed by `%`, or `#` for root.
+		{"zsh-hostname", "box% ", true},
+		{"zsh-hostname-root", "box# ", true},
+		{"zsh-hostname-fqdn", "box.local%", true},
+		{"zsh-hostname-no-space", "box%", true},
+		// A prompt may pad its terminator with more than one space.
+		{"bash-multiple-trailing-spaces", "root@box:/etc$    ", true},
+		{"zsh-multiple-trailing-spaces", "box%    ", true},
+		// Text after the terminator is a command line, not a prompt.
+		{"text-after-bash-prompt", "root@box:/etc# ls", false},
+		{"text-after-zsh-prompt", "box% ls", false},
+		{"text-after-root-zsh-prompt", "box# make", false},
+		// `$` inside a command line must not look like a prompt.
+		{"command-with-dollar", "echo $HOME", false},
+		{"word-ending-in-dollar", "echo$", false},
+		{"bare-word-dollar", "box$", false},
+		{"variable-assignment", "answer=$", false},
+		// Other prompts and incomplete rows are not shells we can drive.
+		{"database", "postgres=# ", false},
+		{"mysql", "mysql> ", false},
+		{"continuation", "> ", false},
+		{"password", "Password: ", false},
+		{"powershell", `PS C:\> `, false},
+		{"trailing-comment", "root@box:/etc# echo # ", false},
+		{"percent-without-host", "% ", false},
+		{"many-percent", "50% ", false},
+		{"hostname-without-terminator", "box", false},
+		{"empty", "", false},
 	}
-	for _, prompt := range []string{"root@box:/etc# ls", "postgres=# ", "mysql> ", "> ", "Password: ", "PS C:\\> ", "root@box:/etc# echo # "} {
-		if locateShellPrompt.MatchString(prompt) {
-			t.Errorf("nonempty or foreign prompt was recognized: %q", prompt)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := locateShellPrompt.MatchString(tt.prompt); got != tt.want {
+				t.Fatalf("locateShellPrompt(%q) = %v, want %v", tt.prompt, got, tt.want)
+			}
+		})
 	}
 }
