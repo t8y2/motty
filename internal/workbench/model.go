@@ -223,6 +223,10 @@ type Session struct {
 	fileHistory [2]sftpSavedHistory
 	// pastingImage is set while a pasted image is on its way to the server.
 	pastingImage bool
+	// agent is the coding agent in this local terminal's foreground, and
+	// agentWatch is when that was last read; both are cleared when the shell ends.
+	agent      codingAgent
+	agentWatch agentWatch
 	// relay is where this session's background goroutines report progress. It
 	// points at the window the session is in, and moves with the session.
 	relay *notifyRelay

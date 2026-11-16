@@ -71,6 +71,9 @@ type backend struct {
 	// io is the terminal's master side: read what the program prints, write what
 	// the user types.
 	io io.ReadWriteCloser
+	// foreground reads the argv of the program the user is looking at. Nil
+	// where the platform cannot tell.
+	foreground func() ([]string, bool)
 	// resize tells the program the terminal size in cells.
 	resize func(cols, rows int)
 	// wait blocks until the program has ended and returns its exit status.
@@ -288,6 +291,22 @@ func (shell *Shell) Write(p []byte) bool {
 	default:
 		return false
 	}
+}
+
+// ForegroundArgs is the argv of the program in front in this terminal: the
+// foreground process group on Unix, the newest program the shell started on
+// Windows. The shell itself is what it reports while a prompt is waiting. ok is
+// false when the platform or the moment gives no answer.
+func (shell *Shell) ForegroundArgs() ([]string, bool) {
+	if shell.b.foreground == nil {
+		return nil, false
+	}
+	select {
+	case <-shell.done:
+		return nil, false // the shell's pid may already belong to someone else
+	default:
+	}
+	return shell.b.foreground()
 }
 
 // Resize queues the terminal size in cells without blocking the caller.

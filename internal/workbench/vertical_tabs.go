@@ -450,7 +450,7 @@ func (state *State) paintWorkspaceTabParts(canvas *gfx.Canvas, strip gfx.Rect, t
 		}
 		badge := tab.badge.Rect()
 		if session != nil {
-			state.paintHostCatalogIcon(canvas, session.host, badge, tab.background)
+			state.paintTabBadge(canvas, session, badge, tab.background)
 		} else if state.tabOrientation == tabsVertical {
 			canvas.DrawIcon(lucideIcons[iconTerminal], badge, state.pal.muted)
 		}

@@ -380,6 +380,14 @@ func (state *State) declarePaneBar(c ui.C, width float32, title, status string, 
 	if session.busy {
 		gap = 6
 	}
+	// A local pane running a coding agent shows its mark in place of the
+	// terminal icon.
+	mark, tint := lucideIcons[iconTerminal], pal.faint
+	if session.isLocal() {
+		if icon, ok := agentIcon(session.agent); ok {
+			mark, tint = icon, pal.text
+		}
+	}
 	ui.Row(c).Fill().PadX(termPadX).Items(ui.Center).Children(func() {
 		if active {
 			light = ui.Slot(c).Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0)
@@ -388,7 +396,7 @@ func (state *State) declarePaneBar(c ui.C, width float32, title, status string, 
 			// reading beside it do not move when the pane gains or loses the
 			// keyboard.
 			ui.Row(c).Size(16, 16).Shrink(0).MarginSides(0, 7, 0, 0).Center().Children(func() {
-				ui.Icon(c, lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint)
+				ui.Icon(c, mark).Size(14, 14).Color(tint)
 			})
 		}
 		titleColor := pal.muted

@@ -183,3 +183,32 @@ func TestConPTYStartsInTheRequestedDirectory(t *testing.T) {
 	shell.Write([]byte("cd\r\n"))
 	untilWindows(t, shell, wakes, dir)
 }
+
+func TestForegroundArgsNamesTheRunningCommand(t *testing.T) {
+	shell, _ := startWindows(t, Config{})
+	if !shell.Write([]byte("ping -n 30 127.0.0.1\r\n")) {
+		t.Fatal("Write refused")
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		args, ok := shell.ForegroundArgs()
+		for _, arg := range args {
+			if ok && strings.Contains(strings.ToLower(arg), "ping") {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	args, ok := shell.ForegroundArgs()
+	t.Fatalf("foreground = %q (ok %v), want ping", args, ok)
+}
+
+func TestForegroundArgsIsTheShellAtItsPrompt(t *testing.T) {
+	shell, wakes := startWindows(t, Config{})
+	shell.Write([]byte("echo ready\r\n"))
+	untilWindows(t, shell, wakes, "ready")
+	args, ok := shell.ForegroundArgs()
+	if !ok || len(args) == 0 || !strings.Contains(strings.ToLower(args[0]), "cmd") {
+		t.Fatalf("foreground = %q (ok %v), want cmd", args, ok)
+	}
+}

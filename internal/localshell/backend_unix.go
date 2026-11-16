@@ -45,7 +45,8 @@ func startBackend(config Config) (backend, error) {
 		return backend{}, err
 	}
 	return backend{
-		io: master,
+		io:         master,
+		foreground: func() ([]string, bool) { return foregroundArgs(master) },
 		resize: func(cols, rows int) {
 			control, err := master.SyscallConn()
 			if err != nil {
