@@ -182,6 +182,78 @@ func TestInteractiveOnlyJumpKeepAliveDoesNotProbeGateway(t *testing.T) {
 	}
 }
 
+func TestInteractiveOnlyTCPKeepAliveRejectsSSHProbes(t *testing.T) {
+	requests := make(chan string, 1)
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.request = func(connection *ssh.ServerConn, request *ssh.Request) {
+			requests <- request.Type
+			_ = connection.Close()
+		}
+	})
+	harness := dial(t, server, func(config *Config) {
+		config.InteractiveOnly = true
+		config.KeepAlive = KeepAliveConfig{Interval: 20 * time.Millisecond, Timeout: 20 * time.Millisecond, UseTCP: true}
+	})
+	harness.phase(PhaseHostKeyPrompt)
+	harness.conn.TrustHostKey(false)
+	harness.phase(PhasePasswordPrompt)
+	harness.conn.SubmitPassword("secret")
+	harness.phase(PhaseConnected)
+	if _, err := harness.conn.Ping(context.Background()); !errors.Is(err, ErrKeepAliveUnsupported) {
+		t.Fatalf("Ping error = %v, want ErrKeepAliveUnsupported", err)
+	}
+	if err := harness.conn.Verify(context.Background()); err != nil {
+		t.Fatalf("Verify error = %v, want nil", err)
+	}
+	// A tab sharing the transport borrows the same operating-system keepalive
+	// and must not fall back to the gateway's refused request either.
+	shared, err := harness.conn.Share(nil)
+	if err != nil {
+		t.Fatalf("Share: %v", err)
+	}
+	t.Cleanup(shared.Close)
+	if _, err := shared.Ping(context.Background()); !errors.Is(err, ErrKeepAliveUnsupported) {
+		t.Fatalf("shared Ping error = %v, want ErrKeepAliveUnsupported", err)
+	}
+	if err := shared.Verify(context.Background()); err != nil {
+		t.Fatalf("shared Verify error = %v, want nil", err)
+	}
+	select {
+	case request := <-requests:
+		t.Fatalf("interactive-only gateway received %q and disconnected", request)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if status := harness.conn.Status(); status.Phase != PhaseConnected || status.Err != nil {
+		t.Fatalf("interactive-only gateway did not stay connected: %+v", status)
+	}
+}
+
+// A transport with no operating-system keepalive still answers both probes with
+// the keepalive@openssh.com request.
+func TestNormalTransportStillSendsSSHProbes(t *testing.T) {
+	var requests atomic.Int32
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.request = func(_ *ssh.ServerConn, request *ssh.Request) {
+			if request.Type == keepAliveRequest {
+				requests.Add(1)
+			}
+			_ = request.Reply(true, nil)
+		}
+	})
+	harness := connect(t, server)
+	if rtt, err := harness.conn.Ping(context.Background()); err != nil || rtt <= 0 {
+		t.Fatalf("Ping = %v, %v", rtt, err)
+	}
+	if err := harness.conn.Verify(context.Background()); err != nil {
+		t.Fatalf("Verify = %v", err)
+	}
+	if got := requests.Load(); got != 2 {
+		t.Fatalf("keepalive requests = %d, want 2", got)
+	}
+}
+
 type recordingTCPKeepAliveConn struct {
 	net.Conn
 	settings net.KeepAliveConfig

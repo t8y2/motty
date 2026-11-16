@@ -85,8 +85,23 @@ func (conn *Conn) dialThrough(client *ssh.Client, address string) (net.Conn, err
 	return client.DialContext(ctx, "tcp", address)
 }
 
+// usesTCPKeepAlive reports whether the target transport is probed by the
+// operating system's TCP keepalive. No keepalive@openssh.com request may be
+// sent on such a transport: a restricted gateway can end the connection when it
+// receives one. A shared tab borrows its owner's transport, so it asks the
+// owner, and every read takes the same lock as the handshake's write.
+func (conn *Conn) usesTCPKeepAlive() bool {
+	owner := conn
+	if conn.owner != nil {
+		owner = conn.owner
+	}
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
+	return owner.tcpKeepAlive
+}
+
 func (conn *Conn) startKeepAlive(client *ssh.Client) *keepAliveWorker {
-	if conn.config.KeepAlive.Interval == 0 || conn.config.KeepAlive.CountMax != nil || conn.tcpKeepAlive {
+	if conn.config.KeepAlive.Interval == 0 || conn.config.KeepAlive.CountMax != nil || conn.usesTCPKeepAlive() {
 		return nil
 	}
 	worker := &keepAliveWorker{stop: make(chan struct{}), done: make(chan struct{})}
@@ -262,6 +277,13 @@ func (conn *Conn) closedError(waitErr error) error {
 	return fmt.Errorf("%w: %w", ErrDisconnected, waitErr)
 }
 
+// ErrKeepAliveUnsupported reports that this transport is kept alive by the
+// operating system's TCP keepalive instead of keepalive@openssh.com requests.
+// A restricted gateway can end the connection on such a request, so Ping
+// cannot measure its round trip and Verify has nothing to ask; both treat the
+// operating-system probes as the liveness check instead.
+var ErrKeepAliveUnsupported = errors.New("sshconn: transport uses TCP keepalive")
+
 // verifyTimeout bounds how long Verify waits for the server's answer when the
 // caller set no deadline of its own. It is shorter than a keepalive interval,
 // because the caller is asking after a known event rather than on a schedule.
@@ -275,7 +297,9 @@ const verifyTimeout = 3 * time.Second
 // sends, so it waits behind a probe already in flight (ErrPingPending) instead
 // of queueing a second one. A failure ends the connection the way a keepalive
 // timeout does — ErrDisconnected wrapping the cause — which is what starts a
-// reconnect; a success changes nothing.
+// reconnect; a success changes nothing. A transport kept alive by the operating
+// system is never asked: there is no SSH request to send, and its liveness is
+// already watched, so Verify reports that nothing changed.
 func (conn *Conn) Verify(ctx context.Context) error {
 	owner := conn
 	if conn.owner != nil {
@@ -287,6 +311,9 @@ func (conn *Conn) Verify(ctx context.Context) error {
 	owner.mu.Unlock()
 	if client == nil || phase != PhaseConnected {
 		return errors.New("sshconn: not connected")
+	}
+	if owner.usesTCPKeepAlive() {
+		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -336,7 +363,9 @@ var ErrPingPending = errors.New("sshconn: previous keepalive request is still un
 // reply before it can send another global request. Ping therefore sends no new
 // request until the previous one has been answered or the connection has ended,
 // and returns ErrPingPending meanwhile. Tabs that share a client share this
-// state.
+// state. A transport kept alive by the operating system's TCP keepalive sends
+// no request at all and returns ErrKeepAliveUnsupported, because a restricted
+// gateway can end the connection on one.
 func (conn *Conn) Ping(ctx context.Context) (time.Duration, error) {
 	conn.mu.Lock()
 	client := conn.client
@@ -344,6 +373,9 @@ func (conn *Conn) Ping(ctx context.Context) (time.Duration, error) {
 	conn.mu.Unlock()
 	if client == nil || phase != PhaseConnected {
 		return 0, errors.New("sshconn: not connected")
+	}
+	if conn.usesTCPKeepAlive() {
+		return 0, ErrKeepAliveUnsupported
 	}
 	if ctx == nil {
 		ctx = context.Background()

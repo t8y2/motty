@@ -304,7 +304,11 @@ type Conn struct {
 	closersClosed bool
 	// disconnectErr records why an established connection was force-closed.
 	disconnectErr error
-	tcpKeepAlive  bool
+	// tcpKeepAlive reports that the target transport is probed by the operating
+	// system's TCP keepalive instead of keepalive@openssh.com requests. It is
+	// written by the target handshake and read by the keepalive worker and the
+	// probe methods, always under mu.
+	tcpKeepAlive bool
 
 	// x11 serves the X11 channels of the current client for every tab on it.
 	x11mu     sync.Mutex
@@ -775,7 +779,9 @@ func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys)
 	useTCP := keepAlive.UseTCP || conn.config.InteractiveOnly && endpoint.normalized() == target
 	tcpKeepAlive := useTCP && configureTCPKeepAlive(socket, keepAlive)
 	if endpoint.normalized() == target {
+		conn.mu.Lock()
 		conn.tcpKeepAlive = tcpKeepAlive
+		conn.mu.Unlock()
 	}
 	var monitored *aliveSocket
 	if !tcpKeepAlive && keepAlive.Interval > 0 && keepAlive.CountMax != nil {
