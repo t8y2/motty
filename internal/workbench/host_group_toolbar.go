@@ -7,7 +7,10 @@ var (
 )
 
 func (state *State) hostGroupsExpansionActions() (expand, collapse bool) {
-	if state.hostFilterOn || state.hostsFlat() {
+	// The group headers of the list and grid are the only place the controls
+	// act in those views, so a flat list or a leaf filter offers nothing. The
+	// tree view always has its groups to open and close.
+	if !state.hostSide.visible && (state.hostFilterOn || state.hostsFlat()) {
 		return false, false
 	}
 	for _, group := range state.hostGroups {
@@ -17,10 +20,16 @@ func (state *State) hostGroupsExpansionActions() (expand, collapse bool) {
 	return expand, collapse
 }
 
-func (state *State) setHostGroupsExpanded(expanded bool) {
-	if state.hostFilterOn || state.hostsFlat() {
-		return
+// hostGroupControlsOffered says whether expand-all and collapse-all are on the
+// page: beside the tree always, and over the list only while group headers show.
+func (state *State) hostGroupControlsOffered() bool {
+	if state.hostSide.visible {
+		return true
 	}
+	return state.hasHostFilter() && !state.hostFilterOn
+}
+
+func (state *State) setHostGroupsExpanded(expanded bool) {
 	changed := false
 	for index := range state.hostGroups {
 		if state.hostGroups[index].Expanded != expanded {

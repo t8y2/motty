@@ -64,6 +64,8 @@ const (
 	iconCopy
 	iconChevronRight
 	iconChevronDown
+	iconChevronsExpand
+	iconChevronsCollapse
 	iconSliders
 	iconAlert
 	iconCircleCheck
@@ -108,6 +110,7 @@ const (
 	iconSave
 	iconProcess
 	iconDirectoryTree
+	iconListTree
 	iconFollowFolder
 	// iconArrowUpDown is the command bar's order button.
 	iconArrowUpDown
@@ -1312,7 +1315,7 @@ type hostsHeaderPlan struct {
 	actionsCondensed             bool
 	showChips, showGroupControls bool
 	compactHostControls          bool
-	headerHeight                 float32
+	sideVisible                  bool
 }
 
 // hostsHeaderBoxes are the slots the hosts header's declaration leaves for the
@@ -1327,7 +1330,7 @@ type hostsHeaderBoxes struct {
 
 // hostToggleBoxes are the slots of the hosts header's view and sort controls.
 type hostToggleBoxes struct {
-	list, grid, sort, privacy, order ui.Box
+	tree, list, grid, sort, privacy, order ui.Box
 }
 
 // declareNavigation declares the sidebar: the name of the application over the
@@ -1377,14 +1380,31 @@ func (state *State) navigationItem(c ui.C, id gfx.ID, icon uint8, label string, 
 }
 
 func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
-	headerHeight := state.hostHeaderHeight(bounds.Width, len(state.hostSelections) > 0)
+	layout := state.hostsLayout(bounds.Width, bounds.Height)
+	state.hostSide.visible = layout.sideVisible
+	state.hostSide.visibleWidth = layout.side.Width
 	state.paintHostsHeader(canvas)
-	list := gfx.Rect{X: bounds.X + 18, Y: bounds.Y + headerHeight, Width: max(bounds.Width-36, 0), Height: max(bounds.Height-headerHeight-18, 0)}
+	state.paintHostsRightHeader(canvas, layout)
+	state.hostSide.bounds = gfx.Rect{
+		X: bounds.X + layout.sideTree.X, Y: bounds.Y + layout.sideTree.Y,
+		Width: layout.sideTree.Width, Height: layout.sideTree.Height,
+	}
+	state.hostSide.splitBounds = gfx.Rect{
+		X: bounds.X + layout.side.X, Y: bounds.Y + layout.split.Y,
+		Width: layout.side.Width + 1 + hostSidePaneGap + layout.main.Width, Height: layout.split.Height,
+	}
+	if layout.sideVisible {
+		state.paintHostsSideSplit(canvas)
+	}
+	list := gfx.Rect{
+		X: bounds.X + layout.list.X, Y: bounds.Y + layout.list.Y,
+		Width: layout.list.Width, Height: layout.list.Height,
+	}
 	state.hostList.bounds = list
 	state.chrome.hostList = list
 
 	switch {
-	case len(state.hostTreeRows) > 0 && state.hostView == hostViewList:
+	case len(state.hostTreeRows) > 0 && state.hostView != hostViewGrid:
 		// The page has already painted and declared the Tree; what is left is
 		// the bar beside the rows and the focus a reveal asked for.
 		state.paintHostListTable(canvas, list)
@@ -1401,6 +1421,7 @@ func (state *State) paintHostsWorkspace(canvas *gfx.Canvas, bounds gfx.Rect) {
 		}
 	}
 	state.paintHostSortDrag(canvas, list)
+	state.paintHostDragGhost(canvas, bounds)
 	state.hostsBounds = bounds
 }
 
@@ -1433,7 +1454,7 @@ func (state *State) paintHostMenus(canvas *gfx.Canvas, viewport gfx.Rect) {
 // widths its controls need, which of them are condensed, and the actions shown
 // while hosts are checked. The declaration and the painter share it, so the
 // controls painted into the slots are the ones the page laid out.
-func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, bounds gfx.Rect) hostsHeaderPlan {
+func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, layout hostsLayout) hostsHeaderPlan {
 	m := state.messages
 	// The buttons keep their natural width, so the search box gives way to them
 	// rather than the other way round: a label that is wider than expected (a
@@ -1442,7 +1463,7 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, bounds gfx.Rect) hostsHe
 		toolbarMargin      = float32(18)  // the toolbar row's own margin inside the section card
 		buttonGap          = float32(10)  // the air between the search box and the buttons
 		searchLeast        = float32(140) // the narrowest the search box stays a search box at
-		toggleWidth        = float32(56)
+		toggleWidth        = float32(82)
 		rowPad             = float32(18)
 		actionGap          = float32(4)
 		groupControlsWidth = float32(56)
@@ -1454,11 +1475,11 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, bounds gfx.Rect) hostsHe
 	labeled := searchLeast + buttonGap + toolbarButtonWidth(canvas, m.Connect, false) +
 		buttonGap + toolbarButtonWidth(canvas, m.ImportMenu, true) +
 		buttonGap + toolbarButtonWidth(canvas, m.NewHost, true)
-	plan.condensed = labeled > bounds.Width-2*toolbarMargin
+	plan.condensed = labeled > layout.pageWidth-2*toolbarMargin
 	plan.connectWidth, plan.connectIcon = toolbarButtonLayout(canvas, m.Connect, 0, iconPlug, plan.condensed)
 	plan.importWidth, plan.importIcon = toolbarButtonLayout(canvas, m.ImportMenu, iconDownload, iconDownload, plan.condensed)
 	plan.newHostWidth, plan.newHostIcon = toolbarButtonLayout(canvas, m.NewHost, iconPlus, iconPlus, plan.condensed)
-	plan.anySelected = len(state.hostSelections) > 0
+	plan.anySelected = layout.anySelected
 	// While something is checked the first label lines up with the list's left
 	// edge, so the button's padding hangs outside it (a negative margin).
 	const quietPadding = float32(12)
@@ -1492,7 +1513,7 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, bounds gfx.Rect) hostsHe
 		for _, action := range plan.actions {
 			used += canvas.TextWidthWeight(action.label, metrics.FontSizeS, gfx.WeightSemibold) + 4 + 2*quietPadding + actionGap
 		}
-		plan.actionsCondensed = used > bounds.Width-2*rowPad
+		plan.actionsCondensed = used > layout.main.Width-2*rowPad
 		for index, action := range plan.actions {
 			plan.actionWidths[index] = canvas.TextWidthWeight(action.label, metrics.FontSizeS, gfx.WeightSemibold) + 4 + 2*quietPadding
 		}
@@ -1502,165 +1523,208 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, bounds gfx.Rect) hostsHe
 			}
 		}
 	}
-	// Which chips fit decides what is declared; where they sit is the row's.
-	plan.showChips = state.hasHostFilter()
+	// The tree takes the group filter's place while it is shown; in a window
+	// too narrow for both panes the chips come back over the list.
+	plan.sideVisible = layout.sideVisible
+	plan.showChips = state.hasHostFilter() && !layout.sideVisible
 	plan.showGroupControls = plan.showChips && !state.hostFilterOn
-	plan.compactHostControls = bounds.Width < 450
+	plan.compactHostControls = layout.compact
 	viewControlsWidth := toggleWidth + 6 + 26 + 6 + 26
-	selectionControlsWidth := float32(0)
-	if !plan.compactHostControls {
-		viewControlsWidth += 32
-		selectionControlsWidth = 52
-	}
-	plan.headerHeight = state.hostHeaderHeight(bounds.Width, plan.anySelected)
 	if plan.showChips {
-		room := bounds.Width - 2*rowPad - viewControlsWidth - hostHeaderRowGap - selectionControlsWidth
-		if plan.showGroupControls {
-			room -= groupControlsWidth + hostHeaderRowGap
+		// A short window keeps the chips on a row of their own, above the
+		// select-all box and the controls.
+		const chipRowPad = float32(30) // the row's left and right padding
+		room := layout.main.Width - chipRowPad - hostHeaderRowGap
+		if !plan.compactHostControls {
+			room -= viewControlsWidth + 40 + 3*hostHeaderRowGap
+			if plan.showGroupControls {
+				room -= groupControlsWidth + hostHeaderRowGap
+			}
 		}
 		state.fitHostChips(canvas, room)
 	}
 	return plan
 }
 
-// declareHostsHeader declares the toolbar, persistent group filters and, while
-// hosts are checked, the separate row of batch actions. The controls themselves
-// are painted into the slots it leaves.
-func (state *State) declareHostsHeader(c ui.C, bounds gfx.Rect) {
-	m, pal := state.messages, state.pal
+// declareHostsToolbar declares the hosts page's toolbar across the top of the
+// page. The search field is painted into the slot it leaves; the buttons paint
+// themselves.
+func (state *State) declareHostsToolbar(c ui.C, width float32, plan hostsHeaderPlan) {
+	m := state.messages
+	b := &state.chrome.headerBoxes
+	const (
+		buttonGap   = float32(10)
+		searchLeast = float32(140)
+	)
+	searchWidth := min(max(width*0.41, 330), 485)
+	ui.Row(c).Absolute().Left(hostsBodyMargin).Right(hostsBodyMargin).Top(hostsToolbarTop).Height(toolbarHeight).Items(ui.Center).Children(func() {
+		b.search = ui.Slot(c).Basis(searchWidth).Shrink(1).MinWidth(searchLeast).Height(toolbarHeight).MarginSides(0, buttonGap, 0, 0)
+		b.connect = state.declareButtonSized(c, hitConnect, m.Connect, plan.connectIcon, false, false, state.typedQuery() != "", toolbarFont, plan.condensed).Size(plan.connectWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
+		ui.Spacer(c)
+		b.importButton = state.declareButtonSized(c, hitImportMenu, m.ImportMenu, plan.importIcon, false, false, true, toolbarFont, plan.condensed).Size(plan.importWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
+		b.newHost = state.declareButtonSized(c, hitAddHost, m.NewHost, plan.newHostIcon, true, false, true, toolbarFont, plan.condensed).Size(plan.newHostWidth, toolbarHeight)
+	})
+}
+
+// declareHostsRightHeader declares the controls over the host list or grid:
+// checking every host, the group chips shown while the tree is closed, the view
+// and order controls, and, while hosts are checked, the row of batch actions. A
+// window too narrow for one row puts the chips above them, so neither has to
+// give way.
+func (state *State) declareHostsRightHeader(c ui.C, layout hostsLayout, plan hostsHeaderPlan) {
+	pal := state.pal
 	chrome := &state.chrome
-	plan := state.hostsHeaderPlan(c.Canvas(), bounds)
-	chrome.headerPlan = plan
-	chrome.headerBoxes = hostsHeaderBoxes{}
 	b := &chrome.headerBoxes
 	const (
-		toolbarMargin = float32(18)
-		buttonGap     = float32(10)
-		searchLeast   = float32(140)
-		rowPad        = float32(18)
-		actionGap     = float32(4)
+		rowPad    = float32(18)
+		actionGap = float32(4)
+		leftPad   = float32(12)
 	)
 	quietPadding := float32(12)
-	searchWidth := min(max(bounds.Width*0.41, 330), 485)
-	ui.Column(c).Fill().Children(func() {
-		ui.Column(c).Height(plan.headerHeight).Shrink(0).PadSides(14, 0, 0, 0).Children(func() {
-			ui.Row(c).Height(toolbarHeight).MarginX(toolbarMargin).Items(ui.Center).Children(func() {
-				b.search = ui.Slot(c).Basis(searchWidth).Shrink(1).MinWidth(searchLeast).Height(toolbarHeight).MarginSides(0, buttonGap, 0, 0)
-				b.connect = state.declareButtonSized(c, hitConnect, m.Connect, plan.connectIcon, false, false, state.typedQuery() != "", toolbarFont, plan.condensed).Size(plan.connectWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
-				ui.Spacer(c)
-				b.importButton = state.declareButtonSized(c, hitImportMenu, m.ImportMenu, plan.importIcon, false, false, true, toolbarFont, plan.condensed).Size(plan.importWidth, toolbarHeight).MarginSides(0, buttonGap, 0, 0)
-				b.newHost = state.declareButtonSized(c, hitAddHost, m.NewHost, plan.newHostIcon, true, false, true, toolbarFont, plan.condensed).Size(plan.newHostWidth, toolbarHeight)
-			})
-			// Filters and view controls stay in place when the selection changes.
-			ui.Row(c).Height(hostHeaderRowHeight).MarginSides(12, 0, 0, 0).PadSides(0, 18, 0, 18).Gap(12).Items(ui.Center).Children(func() {
-				if !plan.compactHostControls {
-					b.selectAll = ui.Slot(c).Size(40, hostHeaderRowHeight).Shrink(0)
-				}
+	ui.Column(c).Absolute().Left(layout.rightHeader.X).Top(layout.rightHeader.Y).
+		Width(layout.rightHeader.Width).Height(layout.rightHeader.Height).Children(func() {
+		if plan.compactHostControls {
+			ui.Row(c).Height(hostHeaderRowHeight).PadSides(0, rowPad, 0, leftPad).Gap(12).Items(ui.Center).Children(func() {
 				if plan.showChips {
-					ui.Row(c).Gap(6).Children(func() {
-						chrome.chips = chrome.chips[:0]
-						chrome.chips = append(chrome.chips, state.declareFilterChip(c, filterChip{
-							id: hitHostFilterAll, label: m.HostFilterAll, digits: state.hostTotalDigits, chosen: !state.hostFilterOn,
-						}).Size(state.filterChipWidth(c.Canvas(), m.HostFilterAll, state.hostTotalDigits), hostHeaderRowHeight))
-						for _, index := range state.hostChips[:state.hostFilterHidden] {
-							label, digits, chosen := state.hostChipView(index)
-							var chevron gfx.ID
-							if state.hostChipHasMenu(index) {
-								chevron = hitHostFilterChevronList.At(index)
-							}
-							chrome.chips = append(chrome.chips, state.declareFilterChip(c, filterChip{
-								id: hitHostFilterList.At(index), chevron: chevron, label: label, digits: digits,
-								pinned: state.hostGroups[index].Pinned, chosen: chosen,
-							}).Size(state.hostChipWidth(c.Canvas(), index), hostHeaderRowHeight))
-						}
-						if state.hostFilterHidden < len(state.hostChips) {
-							hiddenChosen := false
-							if state.hostFilterOn {
-								for _, index := range state.hostChips[state.hostFilterHidden:] {
-									if _, _, chosen := state.hostChipView(index); chosen {
-										hiddenChosen = true
-									}
-								}
-							}
-							chrome.chips = append(chrome.chips, state.declareFilterChip(c, filterChip{
-								id: hitHostFilterMore, label: m.HostFilterMore, chosen: hiddenChosen,
-							}).Size(state.filterChipWidth(c.Canvas(), m.HostFilterMore, ""), hostHeaderRowHeight))
-						}
-					})
+					state.declareHostChips(c)
 				}
 				ui.Spacer(c)
-				if plan.showGroupControls {
-					ui.Row(c).Gap(2).Children(func() {
-						expand, collapse := state.hostGroupsExpansionActions()
-						b.groupControls[0] = state.declareIconButton(c, hitHostGroupsExpandAll, iconChevronDown, m.HostGroupActions.ExpandAll, !expand, iconButtonQuiet).Size(26, 26)
-						b.groupControls[1] = state.declareIconButton(c, hitHostGroupsCollapseAll, iconChevronRight, m.HostGroupActions.CollapseAll, !collapse, iconButtonQuiet).Size(26, 26)
-					})
-				}
-				viewControlsWidth := float32(56 + 6 + 26 + 6 + 26)
-				b.toggle = ui.Slot(c).Size(viewControlsWidth, hostHeaderRowHeight).MarginSides(0, 0, 0, 2)
-				chrome.hostToggle = hostToggleBoxes{}
-				b.toggle.Children(func() {
-					ui.Row(c).Fill().Items(ui.Center).Children(func() {
-						ui.Row(c).Width(54).Gap(2).Children(func() {
-							listStyle, gridStyle := iconButtonQuiet, iconButtonQuiet
-							if state.hostView == hostViewList {
-								listStyle = iconButtonActive
-							} else {
-								gridStyle = iconButtonActive
-							}
-							chrome.hostToggle.list = state.declareIconButton(c, hitHostViewList, iconRows2, state.messages.Tools.HostViewList, false, listStyle).Size(26, 26)
-							chrome.hostToggle.grid = state.declareIconButton(c, hitHostViewGrid, iconHome, state.messages.Tools.HostViewGrid, false, gridStyle).Size(26, 26)
-						})
-						privacyIcon, privacyStyle := uint8(iconEye), iconButtonQuiet
-						if state.hostPrivacy.enabled {
-							privacyIcon, privacyStyle = iconEyeOff, iconButtonActive
-						}
-						chrome.hostToggle.privacy = state.declareIconButton(c, hitHostPrivacy, privacyIcon, state.messages.Tools.HostPrivacy, false, privacyStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
-						orderStyle := iconButtonQuiet
-						if state.hostOrder != hostOrderManual {
-							orderStyle = iconButtonActive
-						}
-						// The far-right control is the display-order menu, wearing the
-						// manual-sort mark; manual moves are made by dragging a host.
-						chrome.hostToggle.order = state.declareIconButton(c, hitHostOrder, iconTransfer, state.messages.HostCatalog.Order, false, orderStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
-					})
-				})
 			})
-			if plan.compactHostControls {
-				ui.Row(c).Height(hostHeaderRowHeight).MarginSides(hostHeaderRowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(8).Items(ui.Center).Children(func() {
-					b.selectAll = ui.Slot(c).Size(40, hostHeaderRowHeight).Shrink(0)
-					ui.Spacer(c)
-				})
-			}
-			if plan.anySelected {
-				ui.Row(c).Height(hostHeaderRowHeight).MarginSides(hostHeaderRowGap, 0, 0, 0).PadSides(0, rowPad, 0, rowPad).Gap(hostHeaderRowGap).Items(ui.Center).Children(func() {
-					actionsLeft := -quietPadding
-					if plan.actionsCondensed {
-						actionsLeft = 0
+			ui.Row(c).Height(hostHeaderRowHeight).MarginSides(hostHeaderRowGap, 0, 0, 0).PadSides(0, rowPad, 0, leftPad).Gap(12).Items(ui.Center).Children(func() {
+				b.selectAll = ui.Slot(c).Size(40, hostHeaderRowHeight).Shrink(0)
+				state.declareHostGroupControls(c, plan)
+				ui.Spacer(c)
+				state.declareHostViewControls(c)
+			})
+		} else {
+			ui.Row(c).Height(hostHeaderRowHeight).PadSides(0, rowPad, 0, leftPad).Gap(12).Items(ui.Center).Children(func() {
+				b.selectAll = ui.Slot(c).Size(40, hostHeaderRowHeight).Shrink(0)
+				if plan.showChips {
+					state.declareHostChips(c)
+				}
+				ui.Spacer(c)
+				state.declareHostGroupControls(c, plan)
+				state.declareHostViewControls(c)
+			})
+		}
+		if plan.anySelected {
+			ui.Row(c).Height(hostHeaderRowHeight).MarginSides(hostHeaderRowGap, 0, 0, 0).PadSides(0, rowPad, 0, leftPad).Gap(hostHeaderRowGap).Items(ui.Center).Children(func() {
+				actionsLeft := -quietPadding
+				if plan.actionsCondensed {
+					actionsLeft = 0
+				}
+				ui.Row(c).Gap(actionGap).MarginSides(0, 0, 0, actionsLeft).Children(func() {
+					for index := range b.buttons {
+						b.buttons[index] = ui.Slot(c).Size(plan.actionWidths[index], hostHeaderRowHeight)
 					}
-					ui.Row(c).Gap(actionGap).MarginSides(0, 0, 0, actionsLeft).Children(func() {
-						for index := range b.buttons {
-							b.buttons[index] = ui.Slot(c).Size(plan.actionWidths[index], hostHeaderRowHeight)
-						}
-					})
-					ui.Spacer(c)
-					ui.Text(c, state.hostSelectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Ellipsis().Shrink(1)
 				})
+				ui.Spacer(c)
+				ui.Text(c, state.hostSelectionText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Ellipsis().Shrink(1)
+			})
+		}
+	})
+}
+
+// declareHostChips declares the group chips that stand in for the tree in the
+// list and grid views.
+func (state *State) declareHostChips(c ui.C) {
+	m := state.messages
+	chrome := &state.chrome
+	ui.Row(c).Gap(6).Children(func() {
+		chrome.chips = chrome.chips[:0]
+		chrome.chips = append(chrome.chips, state.declareFilterChip(c, filterChip{
+			id: hitHostFilterAll, label: m.HostFilterAll, digits: state.hostTotalDigits, chosen: !state.hostFilterOn,
+		}).Size(state.filterChipWidth(c.Canvas(), m.HostFilterAll, state.hostTotalDigits), hostHeaderRowHeight))
+		for _, index := range state.hostChips[:state.hostFilterHidden] {
+			label, digits, chosen := state.hostChipView(index)
+			var chevron gfx.ID
+			if state.hostChipHasMenu(index) {
+				chevron = hitHostFilterChevronList.At(index)
 			}
+			chrome.chips = append(chrome.chips, state.declareFilterChip(c, filterChip{
+				id: hitHostFilterList.At(index), chevron: chevron, label: label, digits: digits,
+				pinned: state.hostGroups[index].Pinned, chosen: chosen,
+			}).Size(state.hostChipWidth(c.Canvas(), index), hostHeaderRowHeight))
+		}
+		if state.hostFilterHidden < len(state.hostChips) {
+			hiddenChosen := false
+			if state.hostFilterOn {
+				for _, index := range state.hostChips[state.hostFilterHidden:] {
+					if _, _, chosen := state.hostChipView(index); chosen {
+						hiddenChosen = true
+					}
+				}
+			}
+			chrome.chips = append(chrome.chips, state.declareFilterChip(c, filterChip{
+				id: hitHostFilterMore, label: m.HostFilterMore, chosen: hiddenChosen,
+			}).Size(state.filterChipWidth(c.Canvas(), m.HostFilterMore, ""), hostHeaderRowHeight))
+		}
+	})
+}
+
+// declareHostGroupControls declares the one-click expand and collapse buttons
+// where the page offers them.
+func (state *State) declareHostGroupControls(c ui.C, plan hostsHeaderPlan) {
+	if !plan.showGroupControls {
+		return
+	}
+	m := state.messages
+	ui.Row(c).Gap(2).Children(func() {
+		expand, collapse := state.hostGroupsExpansionActions()
+		state.chrome.headerBoxes.groupControls[0] = state.declareIconButton(c, hitHostGroupsExpandAll, iconChevronsExpand, m.HostGroupActions.ExpandAll, !expand, iconButtonQuiet).Size(26, 26)
+		state.chrome.headerBoxes.groupControls[1] = state.declareIconButton(c, hitHostGroupsCollapseAll, iconChevronsCollapse, m.HostGroupActions.CollapseAll, !collapse, iconButtonQuiet).Size(26, 26)
+	})
+}
+
+// declareHostViewControls declares the tree pane's toggle, the list and grid
+// choices, and the privacy and order controls beside them.
+func (state *State) declareHostViewControls(c ui.C) {
+	m := state.messages
+	chrome := &state.chrome
+	viewControlsWidth := float32(82 + 6 + 26 + 6 + 26)
+	chrome.headerBoxes.toggle = ui.Slot(c).Size(viewControlsWidth, hostHeaderRowHeight).MarginSides(0, 0, 0, 2)
+	chrome.hostToggle = hostToggleBoxes{}
+	chrome.headerBoxes.toggle.Children(func() {
+		ui.Row(c).Fill().Items(ui.Center).Children(func() {
+			ui.Row(c).Width(82).Gap(2).Children(func() {
+				listStyle, gridStyle, treeStyle := iconButtonQuiet, iconButtonQuiet, iconButtonQuiet
+				switch state.hostView {
+				case hostViewList:
+					listStyle = iconButtonActive
+				case hostViewGrid:
+					gridStyle = iconButtonActive
+				}
+				treeOpen := state.hostSide.open && state.hasHostFilter()
+				if treeOpen {
+					treeStyle = iconButtonActive
+				}
+				chrome.hostToggle.tree = state.declareIconButton(c, hitHostViewTree, iconListTree, m.Tools.HostViewTree, !state.hasHostFilter(), treeStyle).Size(26, 26)
+				chrome.hostToggle.list = state.declareIconButton(c, hitHostViewList, iconRows2, m.Tools.HostViewList, false, listStyle).Size(26, 26)
+				chrome.hostToggle.grid = state.declareIconButton(c, hitHostViewGrid, iconHome, m.Tools.HostViewGrid, false, gridStyle).Size(26, 26)
+			})
+			privacyIcon, privacyStyle := uint8(iconEye), iconButtonQuiet
+			if state.hostPrivacy.enabled {
+				privacyIcon, privacyStyle = iconEyeOff, iconButtonActive
+			}
+			chrome.hostToggle.privacy = state.declareIconButton(c, hitHostPrivacy, privacyIcon, m.Tools.HostPrivacy, false, privacyStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
+			orderStyle := iconButtonQuiet
+			if state.hostOrder != hostOrderManual {
+				orderStyle = iconButtonActive
+			}
+			// The far-right control is the display-order menu, wearing the
+			// manual-sort mark; manual moves are made by dragging a host.
+			chrome.hostToggle.order = state.declareIconButton(c, hitHostOrder, iconTransfer, m.HostCatalog.Order, false, orderStyle).Size(26, 26).MarginSides(0, 0, 0, 6)
 		})
 	})
 }
 
-// paintHostsHeader paints the toolbar, persistent group filters and, while hosts
-// are checked, a separate row of batch actions into the slots the header's
-// declaration left. Hits are added in the order the controls were painted: Tab
-// follows it.
+// paintHostsHeader paints the search field into the slot the toolbar's
+// declaration left. The buttons are the page's own.
 func (state *State) paintHostsHeader(canvas *gfx.Canvas) {
 	m := state.messages
 	chrome := &state.chrome
-	plan := chrome.headerPlan
 	b := &chrome.headerBoxes
-	if plan.headerHeight <= 0 {
+	if b.search.Rect().Width <= 0 {
 		return
 	}
 	// The box filters the list as you type and is what Connect opens, so it is
@@ -1675,7 +1739,18 @@ func (state *State) paintHostsHeader(canvas *gfx.Canvas) {
 	})
 	// Connect needs something to connect to.
 	chrome.importButton = b.importButton.Rect()
+}
 
+// paintHostsRightHeader paints the list's header controls over the slots the
+// page left: the select-all checkbox, the fallback chips, and the batch
+// actions.
+func (state *State) paintHostsRightHeader(canvas *gfx.Canvas, layout hostsLayout) {
+	chrome := &state.chrome
+	plan := chrome.headerPlan
+	b := &chrome.headerBoxes
+	if !layout.sideVisible && layout.main.Width <= 0 {
+		return
+	}
 	state.hostOrderButton = chrome.hostToggle.order.Rect()
 	state.hostPrivacy.button = chrome.hostToggle.privacy.Rect()
 	state.paintHostScopeCheckbox(canvas, hitHostSelectAll, b.selectAll.Rect(), state.hostScopeSelection.all)
@@ -2195,17 +2270,24 @@ func (state *State) declareHostListRowContent(c ui.C, d *hostRowDrawer) {
 func (state *State) declareHostGroupTreeRow(c ui.C, d *hostRowDrawer, width float32) {
 	pal := state.pal
 	group := state.hostGroups[state.hostTreeRows[d.index].GroupIndex]
+	textColor, countColor, pinColor := pal.text, pal.faint, pal.accent
+	if from, _, ok := state.hostList.tree.DragSource(); ok && from == d.index {
+		// The row stays where it is while the ghost carries its name.
+		textColor.Alpha *= 0.5
+		countColor.Alpha *= 0.5
+		pinColor.Alpha *= 0.5
+	}
 	ui.Row(c).Width(width).Height(hostGroupRowHeight).PadSides(0, 0, 0, 2).Gap(6).Items(ui.Center).Children(func() {
 		d.groupCheck = ui.Slot(c).Size(40, 28).Shrink(0)
 		if group.Pinned {
-			ui.Icon(c, lucideIcons[iconStar]).Size(14, 14).Color(pal.accent)
+			ui.Icon(c, lucideIcons[iconStar]).Size(14, 14).Color(pinColor)
 		}
 		label := group.Label
 		if group.Name == "" {
 			label = state.messages.HostGroupDefault
 		}
-		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(23).Ellipsis().Shrink(1)
-		ui.Text(c, group.Count).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).LineHeight(21)
+		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(textColor).LineHeight(23).Ellipsis().Shrink(1)
+		ui.Text(c, group.Count).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(countColor).LineHeight(21)
 	})
 }
 
@@ -2349,10 +2431,6 @@ func (state *State) paintHostGroupTreeRow(canvas *gfx.Canvas, row, content gfx.R
 	state.paintHostScopeCheckbox(canvas, hitHostGroupCheck.At(groupIndex), d.groupCheck.Rect(), state.hostScopeSelection.groups[groupIndex])
 }
 
-// hostListTop is the base list offset below the toolbar and group filters;
-// checked hosts reserve an additional batch-action row.
-const hostListTop = 102
-
 const (
 	hostGroupRowHeight = 42
 	hostRowHeight      = 64
@@ -2404,7 +2482,10 @@ const hostListBarWidth = float32(10)
 // moves the same scroll state. The grid keeps the offset the cards are painted
 // at.
 func (state *State) scrollHosts(event gfx.ScrollEvent) gfx.EventResult {
-	if state.hostView == hostViewList {
+	if result, handled := state.scrollHostSideTree(event); handled {
+		return result
+	}
+	if state.hostView != hostViewGrid {
 		list := &state.hostList
 		if list.scroll == nil || !pointInRect(event.X, event.Y, list.bounds) {
 			return gfx.EventResult{}
@@ -2617,54 +2698,57 @@ var lucideIcons = [...]gfx.Icon{
 	iconRows2:      icons.Rows2,
 	iconGrid2x2:    icons.Grid2x2,
 
-	iconBot:            icons.Bot,
-	iconHistory:        icons.History,
-	iconCopy:           icons.Copy,
-	iconChevronRight:   icons.ChevronRight,
-	iconChevronLeft:    icons.ChevronLeft,
-	iconChevronDown:    icons.ChevronDown,
-	iconSliders:        icons.SlidersHorizontal,
-	iconAlert:          icons.CircleAlert,
-	iconCircleCheck:    icons.CircleCheck,
-	iconRadio:          icons.RadioTower,
-	iconKeyboard:       icons.Keyboard,
-	iconStar:           icons.Star,
-	iconStarSolid:      icons.StarSolid,
-	iconArchive:        icons.Archive,
-	iconHardDrive:      icons.HardDrive,
-	iconExternal:       icons.SquarePen,
-	iconPlug:           icons.Plug,
-	iconPaperclip:      icons.Paperclip,
-	iconImage:          icons.Image,
-	iconSave:           icons.Download,
-	iconPaste:          icons.ClipboardPaste,
-	iconSelectAll:      icons.SquareDashed,
-	iconEraser:         icons.Eraser,
-	iconEye:            icons.Eye,
-	iconEyeOff:         icons.EyeOff,
-	iconEllipsis:       icons.Ellipsis,
-	iconWrench:         icons.Wrench,
-	iconProcess:        icons.Process,
-	iconDirectoryTree:  icons.PanelLeft,
-	iconArrowUpDown:    icons.ArrowUpDown,
-	iconCloseOthers:    icons.ListX,
-	iconCloseRight:     icons.ArrowRightToLine,
-	iconSparkles:       icons.Sparkles,
-	iconTransfer:       icons.ArrowUpDown,
-	iconBug:            icons.Bug,
-	iconInfo:           icons.Info,
-	iconQQ:             icons.Qq,
-	iconWeChat:         icons.Wechat,
-	iconDiscord:        icons.Discord,
-	iconGitHub:         icons.Github,
-	iconNote:           icons.StickyNote,
-	iconNotebook:       icons.Notebook,
-	iconSFTPTransfer:   icons.SftpTransfer,
-	iconSFTPBrowseSync: icons.SftpSync,
-	iconSFTPProfiles:   icons.SftpProfiles,
-	iconFileClock:      icons.FileClock,
-	iconClock:          icons.Clock3,
-	iconFollowFolder:   icons.LocateFixed,
+	iconBot:              icons.Bot,
+	iconHistory:          icons.History,
+	iconCopy:             icons.Copy,
+	iconChevronRight:     icons.ChevronRight,
+	iconChevronLeft:      icons.ChevronLeft,
+	iconChevronDown:      icons.ChevronDown,
+	iconChevronsExpand:   icons.ChevronsUpDown,
+	iconChevronsCollapse: icons.ChevronsDownUp,
+	iconSliders:          icons.SlidersHorizontal,
+	iconAlert:            icons.CircleAlert,
+	iconCircleCheck:      icons.CircleCheck,
+	iconRadio:            icons.RadioTower,
+	iconKeyboard:         icons.Keyboard,
+	iconStar:             icons.Star,
+	iconStarSolid:        icons.StarSolid,
+	iconArchive:          icons.Archive,
+	iconHardDrive:        icons.HardDrive,
+	iconExternal:         icons.SquarePen,
+	iconPlug:             icons.Plug,
+	iconPaperclip:        icons.Paperclip,
+	iconImage:            icons.Image,
+	iconSave:             icons.Download,
+	iconPaste:            icons.ClipboardPaste,
+	iconSelectAll:        icons.SquareDashed,
+	iconEraser:           icons.Eraser,
+	iconEye:              icons.Eye,
+	iconEyeOff:           icons.EyeOff,
+	iconEllipsis:         icons.Ellipsis,
+	iconWrench:           icons.Wrench,
+	iconProcess:          icons.Process,
+	iconDirectoryTree:    icons.PanelLeft,
+	iconListTree:         icons.ListTree,
+	iconArrowUpDown:      icons.ArrowUpDown,
+	iconCloseOthers:      icons.ListX,
+	iconCloseRight:       icons.ArrowRightToLine,
+	iconSparkles:         icons.Sparkles,
+	iconTransfer:         icons.ArrowUpDown,
+	iconBug:              icons.Bug,
+	iconInfo:             icons.Info,
+	iconQQ:               icons.Qq,
+	iconWeChat:           icons.Wechat,
+	iconDiscord:          icons.Discord,
+	iconGitHub:           icons.Github,
+	iconNote:             icons.StickyNote,
+	iconNotebook:         icons.Notebook,
+	iconSFTPTransfer:     icons.SftpTransfer,
+	iconSFTPBrowseSync:   icons.SftpSync,
+	iconSFTPProfiles:     icons.SftpProfiles,
+	iconFileClock:        icons.FileClock,
+	iconClock:            icons.Clock3,
+	iconFollowFolder:     icons.LocateFixed,
 }
 
 func paintIcon(canvas *gfx.Canvas, kind uint8, bounds gfx.Rect, foreground gfx.Color) {

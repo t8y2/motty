@@ -433,6 +433,7 @@ var EnglishMessages = Messages{
 	HostCatalog: HostCatalogMessages{
 		SelectAll: "Select all matching hosts", SelectGroupFmt: "Select hosts in %s",
 		Order: "Host display order", Manual: "Manual order", Name: "By name", IP: "By IP address",
+		Groups: "Groups", ResizeGroups: "Resize host groups",
 	},
 	ExportHosts:                 "Export",
 	ImportCatalog:               "Import Catalog",
@@ -2590,6 +2591,7 @@ var englishTools = ToolsMessages{
 	ExtEditReplace:                  "Replace",
 	HostViewList:                    "List view",
 	HostViewGrid:                    "Card view",
+	HostViewTree:                    "Group tree",
 	HostSort:                        "Sort",
 	HostSortDone:                    "Done",
 	HostPrivacy:                     "Privacy mode",

@@ -23,6 +23,7 @@ var hostGridHits = tree.Feature("host-grid")
 var (
 	hitHostViewList = tree.ID(hostGridHits, "host-view-list")
 	hitHostViewGrid = tree.ID(hostGridHits, "host-view-grid")
+	hitHostViewTree = tree.ID(hostGridHits, "host-view-tree")
 )
 
 const (
@@ -130,6 +131,19 @@ func (mode hostViewMode) saved() string {
 }
 
 func (state *State) clickHostView(id gfx.ID) bool {
+	if id == hitHostViewTree {
+		// The group tree stands beside either layout: it is a pane, not a third
+		// view, so the list and grid choices keep working with it open.
+		if state.activeSection == sectionHosts && state.modal == modalNone && state.hasHostFilter() {
+			state.hostSide.open = !state.hostSide.open
+			if state.hostSide.open {
+				state.revealHostFilterGroup()
+				state.rebuildHostTreeRows()
+			}
+			state.save()
+		}
+		return true
+	}
 	var mode hostViewMode
 	switch id {
 	case hitHostViewList:
@@ -201,8 +215,7 @@ func (state *State) hostGridHeight(width float32) float32 {
 // Tree declares only its visible rows. The cards and group headers keep their
 // application identities, so the central click dispatch still owns them, while
 // the control places their parts in the page and routes their drag.
-func (state *State) declareHostGrid(c ui.C, width, height, headerHeight float32) {
-	bounds := gfx.Rect{X: 18, Y: headerHeight, Width: max(width-36, 0), Height: max(height-headerHeight-18, 0)}
+func (state *State) declareHostGrid(c ui.C, bounds gfx.Rect) {
 	content := state.hostListHeight(bounds.Width)
 	_, geometry := hostListScrollArea(nil, state.Theme(), bounds, content, state.hostsScroll, state.hostListBarRevealed())
 	if geometry.MaxOffsetY > 0 {

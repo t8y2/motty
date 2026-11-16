@@ -433,6 +433,7 @@ var ChineseMessages = Messages{
 	HostCatalog: HostCatalogMessages{
 		SelectAll: "全选当前范围内的主机", SelectGroupFmt: "选择 %s 内的主机",
 		Order: "主机显示排序", Manual: "手动排序", Name: "按名称排序", IP: "按 IP 地址排序",
+		Groups: "分组", ResizeGroups: "调整主机分组栏宽度",
 	},
 	ExportHosts:                 "导出",
 	ImportCatalog:               "导入目录",
@@ -2590,6 +2591,7 @@ var chineseTools = ToolsMessages{
 	ExtEditReplace:                  "替换",
 	HostViewList:                    "列表视图",
 	HostViewGrid:                    "卡片视图",
+	HostViewTree:                    "分组树",
 	HostSort:                        "排序",
 	HostSortDone:                    "完成",
 	HostPrivacy:                     "隐私模式",

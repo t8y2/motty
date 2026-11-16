@@ -81,16 +81,27 @@ func (state *State) openHostGroupActions(path string, at gfx.Point) {
 func (state *State) clickHostGroupActions(id gfx.ID) bool {
 	a := &state.groupActions
 	if !a.open {
-		if id.Scope() != hitHostGroupMore || state.activeSection != sectionHosts || state.modal != modalNone {
+		side := id.Scope() == hitHostSideGroupMore
+		if id.Scope() != hitHostGroupMore && !side {
+			return false
+		}
+		if state.activeSection != sectionHosts || state.modal != modalNone {
 			return false
 		}
 		index := item(id)
 		if index < 0 || index >= len(state.hostGroups) {
 			return true
 		}
-		at := gfx.Point{X: state.hostsBounds.X + 30, Y: state.hostsBounds.Y + hostListTop}
-		if index < len(a.rows) {
-			row := a.rows[index]
+		row := gfx.Rect{}
+		if side {
+			if index < len(state.hostSide.rowRects) {
+				row = state.hostSide.rowRects[index]
+			}
+		} else if index < len(a.rows) {
+			row = a.rows[index]
+		}
+		at := gfx.Point{X: state.hostsBounds.X + 30, Y: state.hostsBounds.Y + hostsToolbarHeight()}
+		if row.Width > 0 {
 			at = gfx.Point{X: row.X + row.Width - 32, Y: row.Y + row.Height}
 		}
 		state.openHostGroupActions(state.hostGroups[index].Name, at)

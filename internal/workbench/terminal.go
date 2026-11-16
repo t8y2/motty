@@ -2111,7 +2111,7 @@ func (state *State) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.activeSection == sectionSettings && state.modal == modalNone {
 		return state.scrollSettings(event)
 	}
-	if state.activeSection == sectionHosts && state.modal == modalNone && state.hostsContent > 0 {
+	if state.activeSection == sectionHosts && state.modal == modalNone && (state.hostsContent > 0 || state.hostSide.visible) {
 		return state.scrollHosts(event)
 	}
 	if state.activeSection == sectionSessionLogs && state.modal == modalNone {

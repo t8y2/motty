@@ -967,6 +967,7 @@ type ToolsMessages struct {
 	ExtEditReplace                  string
 	HostViewList                    string
 	HostViewGrid                    string
+	HostViewTree                    string
 	HostSort                        string
 	HostSortDone                    string
 	HostPrivacy                     string

@@ -433,6 +433,7 @@ var TraditionalMessages = Messages{
 	HostCatalog: HostCatalogMessages{
 		SelectAll: "全選目前範圍內的主機", SelectGroupFmt: "選取 %s 內的主機",
 		Order: "主機顯示排序", Manual: "手動排序", Name: "依名稱排序", IP: "依 IP 位址排序",
+		Groups: "群組", ResizeGroups: "調整主機群組欄寬度",
 	},
 	ExportHosts:                 "匯出",
 	ImportCatalog:               "匯入目錄",
@@ -2590,6 +2591,7 @@ var traditionalTools = ToolsMessages{
 	ExtEditReplace:                  "取代",
 	HostViewList:                    "清單檢視",
 	HostViewGrid:                    "卡片檢視",
+	HostViewTree:                    "群組樹",
 	HostSort:                        "排序",
 	HostSortDone:                    "完成",
 	HostPrivacy:                     "隱私模式",
