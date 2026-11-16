@@ -3,6 +3,7 @@ package workbench
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,9 +45,16 @@ func (state *State) agentHostModeLabel(mode agentHostMode) string {
 	return state.messages.AISettings.AgentHostsFollow
 }
 
+// applyAgentHostMode stores a bulk choice and persists it. A refused save puts
+// the mode and the per-host permissions back, so the page, the running server
+// and the file keep describing the same access.
 func (state *State) applyAgentHostMode(mode agentHostMode) {
+	previousMode, previousHosts := state.agentHostMode, maps.Clone(state.agentHosts)
 	state.setAgentHostMode(mode)
-	state.save()
+	if err := state.saveWithResult(); err != nil {
+		state.agentHostMode, state.agentHosts = previousMode, previousHosts
+		state.showActionFailure(state.messages.AISettings.AgentsTitle, err, state.messages.ActionFeedback.SaveFailed)
+	}
 }
 
 // aiAgentClick handles the controls of the group that are not its mode choice.
@@ -185,7 +193,7 @@ func (state *State) paintAIAgents(page *settingsPage) {
 		if state.ai.settings.agentMode == gate.ModeAllowAll {
 			page.mcpAccessWarning(m.AgentAllowAllWarning)
 		}
-		hostMode := state.agentHostMode
+		hostMode := state.effectiveAgentHostMode()
 		choices := agentHostModeChoices[:]
 		controlWidth := max(min(float32(300), max(float32(190), page.width*0.40)), settingsChoiceWidth(page, choices, state.agentHostModeLabel))
 		controlWidth = min(controlWidth, max(page.width-60, 0))
@@ -193,6 +201,14 @@ func (state *State) paintAIAgents(page *settingsPage) {
 			choice := ui.Choice(c, &hostMode, choices, state.agentHostModeLabel).Width(controlWidth)
 			if choice.Changed() {
 				state.applyAgentHostMode(hostMode)
+				return
+			}
+			// Clicking the option already shown changes nothing in the value, but
+			// is still a choice: re-apply the effective mode, so a stored label
+			// that drifted from the permissions is written back as what the page
+			// shows.
+			if _, clicked := choice.ChosenIndex(); clicked {
+				state.applyAgentHostMode(state.effectiveAgentHostMode())
 			}
 		})
 		page.separator()

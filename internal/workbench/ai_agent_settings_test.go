@@ -229,6 +229,13 @@ func TestAgentHostModeChoicesBulkUpdateHostsAndPersist(t *testing.T) {
 	if got := catalog.agentHostList(); len(got) != 2 || got[0].CatalogID != "web" || got[1].CatalogID != "db" {
 		t.Fatalf("the independent service read %+v after allow all", got)
 	}
+	all := New(state.options)
+	if all.agentHostMode != agentHostModeAll || !all.agentHosts["web"] || !all.agentHosts["db"] || all.agentHosts["desk"] {
+		t.Fatalf("the allow-all choice did not survive a restart: mode %v, hosts %v", all.agentHostMode, all.agentHosts)
+	}
+	// Close before the test changes the store again: a state writes its own
+	// snapshot back on the way out.
+	all.Close()
 
 	clickSettingsChoiceInRow(t, state, m.AgentHosts, m.AgentHostsNone)
 	if state.agentHostMode != agentHostModeNone || len(state.agentHosts) != 0 {
@@ -297,6 +304,31 @@ func TestAgentHostModeControlsNewHostDefaultsAndIndividualOverrides(t *testing.T
 	state.Click(hitDialogSubmit)
 	if state.agentHostMode != agentHostModeFollow || state.agentHosts[created.CatalogID] || !state.agentHosts[host.CatalogID] {
 		t.Fatalf("an individual exception did not switch to per-host settings: mode %v, hosts %v", state.agentHostMode, state.agentHosts)
+	}
+}
+
+func TestEffectiveAgentHostModeDescribesTheSavedPermissions(t *testing.T) {
+	ssh1 := Host{ID: 1, CatalogID: "web", Address: "web.example.com", Port: 22}
+	ssh2 := Host{ID: 2, CatalogID: "db", Address: "db.example.com", Port: 22}
+	desktop := Host{ID: 3, CatalogID: "desk", Address: "desk.example.com", Port: 5900, Protocol: protocolVNC}
+	for _, test := range []struct {
+		name string
+		mode agentHostMode
+		open []string
+		want agentHostMode
+	}{
+		{name: "all matches every SSH host", mode: agentHostModeAll, open: []string{"web", "db"}, want: agentHostModeAll},
+		{name: "a desktop host is not part of the bulk choice", mode: agentHostModeAll, open: []string{"web", "db", "desk"}, want: agentHostModeAll},
+		{name: "an SSH host closed while stored as all is drift", mode: agentHostModeAll, open: []string{"web"}, want: agentHostModeFollow},
+		{name: "none matches closed hosts", mode: agentHostModeNone, want: agentHostModeNone},
+		{name: "a desktop host in the list is not drift from none", mode: agentHostModeNone, open: []string{"desk"}, want: agentHostModeNone},
+		{name: "an SSH host opened while stored as none is drift", mode: agentHostModeNone, open: []string{"db"}, want: agentHostModeFollow},
+		{name: "follow is always itself", mode: agentHostModeFollow, open: []string{"web"}, want: agentHostModeFollow},
+	} {
+		catalog := hostCatalog{hosts: []Host{ssh1, ssh2, desktop}, agentHostMode: test.mode, agentHosts: agentHostSet(test.open)}
+		if got := catalog.effectiveAgentHostMode(); got != test.want {
+			t.Errorf("%s: effective mode %v, want %v", test.name, got, test.want)
+		}
 	}
 }
 

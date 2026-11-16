@@ -728,6 +728,31 @@ func catalogFromSaved(saved savedState, systemUser string, messages keyMessages)
 	return catalog
 }
 
+// effectiveAgentHostMode is the bulk mode the saved permissions actually
+// describe. A stored bulk choice only holds while every SSH host still matches
+// it; a host created, copied or imported outside the mode's own path never went
+// through it, so the page and the dialog default read the permissions rather
+// than a stored label that no longer matches them.
+func (catalog *hostCatalog) effectiveAgentHostMode() agentHostMode {
+	switch catalog.agentHostMode {
+	case agentHostModeAll:
+		for _, host := range catalog.hosts {
+			if host.isSSH() && !catalog.agentHosts[host.CatalogID] {
+				return agentHostModeFollow
+			}
+		}
+		return agentHostModeAll
+	case agentHostModeNone:
+		for _, host := range catalog.hosts {
+			if host.isSSH() && catalog.agentHosts[host.CatalogID] {
+				return agentHostModeFollow
+			}
+		}
+		return agentHostModeNone
+	}
+	return agentHostModeFollow
+}
+
 func (catalog *hostCatalog) setAgentHostMode(mode agentHostMode) {
 	switch mode {
 	case agentHostModeNone:

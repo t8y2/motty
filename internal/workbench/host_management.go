@@ -254,7 +254,7 @@ func (state *State) openCopyHostID(id uint32) {
 	state.selectedHostID = host.ID
 	state.cancelHostTest()
 	state.editor.load(host)
-	state.editor.agentAccess = state.agentHostMode == agentHostModeAll
+	state.editor.agentAccess = state.effectiveAgentHostMode() == agentHostModeAll
 	state.editor.label = text.Editor{}
 	state.editor.label.Insert(fmt.Sprintf(state.messages.HostCopyLabelFmt, host.Label))
 	state.hostDialogMode = hostDialogCopy
