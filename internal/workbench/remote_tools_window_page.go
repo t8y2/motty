@@ -368,6 +368,7 @@ func (w *remoteToolsWindow) paintRows(canvas *gfx.Canvas, bounds gfx.Rect) {
 	view.processTableBounds = gfx.Rect{X: bounds.X, Y: bounds.Y - headerHeight, Width: bounds.Width, Height: bounds.Height + headerHeight}
 	view.tableBodyBounds = bounds
 	view.tableRowHeight = rowHeight
+	view.tableBodyRemainder = 0
 	if bounds.Width <= 0 || bounds.Height <= 0 {
 		return
 	}
@@ -423,6 +424,7 @@ func (w *remoteToolsWindow) paintRows(canvas *gfx.Canvas, bounds gfx.Rect) {
 		Width: geometry.Viewport.Width, Height: min(geometry.Viewport.Height+rowHeight, float32(last-first)*rowHeight),
 	}
 	view.tableBodyFirst = first
+	view.tableBodyRemainder = rowRemainder
 	table := components.BeginTable(canvas, theme, tableBounds, columns).RowHeight(rowHeight)
 	for index := first; index < last; index++ {
 		row := &view.rows[index]
@@ -668,7 +670,11 @@ func (w *remoteToolsWindow) tableRowAt(x, y float32) int {
 	if view.tableRowHeight <= 0 || !pointInRect(x, y, view.tableBodyBounds) {
 		return -1
 	}
-	index := view.tableBodyFirst + int((y-view.tableBodyBounds.Y)/view.tableRowHeight)
+	// Rows are painted from the content origin, which sits a partial row above
+	// the body viewport after a precise scroll. Measure from there, not from the
+	// viewport, or a click lands on the row above the one under the pointer.
+	top := view.tableBodyBounds.Y - view.tableBodyRemainder
+	index := view.tableBodyFirst + int((y-top)/view.tableRowHeight)
 	if index < 0 || index >= len(view.rows) {
 		return -1
 	}

@@ -542,6 +542,74 @@ func TestRemoteNativeWindowScrollsThroughAllDockerObjects(t *testing.T) {
 	})
 }
 
+// A click in the native window's table must select the row painted under the
+// pointer even when a precise scroll stopped between two rows.
+func TestRemoteNativeWindowRowHitTestFollowsPaintedRows(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+
+		size := gfx.Size{Width: 1100, Height: 780}
+		clickRemoteTabChoice(t, w, w.ui.remoteTabLabel(remoteContainers))
+		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteContainers })
+		w.ui.remote.rows = make([]remoteRow, 40)
+		for index := range w.ui.remote.rows {
+			w.ui.remote.rows[index] = remoteRow{
+				key:   fmt.Sprintf("resource-%02d", index),
+				cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+			}
+		}
+		var canvas gfx.Canvas
+		w.paint(&canvas, size)
+		rowHeight := w.ui.remote.tableRowHeight
+		if rowHeight <= 0 {
+			t.Fatal("the table has no row height")
+		}
+		// Stop more than half a row into the list: an offset that is not a
+		// multiple of the row height, as a precise wheel or dragged scrollbar gives.
+		w.ui.remote.processScroll = 8*rowHeight + 2*rowHeight/3
+		canvas.Reset()
+		w.paint(&canvas, size)
+		if w.ui.remote.tableBodyRemainder == 0 {
+			t.Fatalf("scroll offset %.1f landed on a row boundary", w.ui.remote.processScroll)
+		}
+		viewport := w.ui.remote.processScrollBar.Viewport
+		label := "resource-09"
+		var bounds gfx.Rect
+		for _, painted := range canvas.Texts() {
+			if painted.Value == label && pointInRect(painted.Bounds.X, painted.Bounds.Y, viewport) {
+				bounds = painted.Bounds
+				break
+			}
+		}
+		if bounds.Width == 0 {
+			t.Fatalf("%q is not painted after scrolling to %.1f", label, w.ui.remote.processScroll)
+		}
+		table, ok := hitByLabelRole(&canvas, w.ui.remoteTabLabel(remoteContainers), gfx.RoleGroup)
+		if !ok {
+			t.Fatal("the container table is not a page control")
+		}
+		down := gfx.PointerEvent{
+			Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1,
+			X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
+			Target: table.ID, Viewport: size,
+		}
+		pointerPageControl(w, down)
+		up := down
+		up.Kind = gfx.PointerUp
+		pointerPageControl(w, up)
+		if w.ui.remote.selected != label {
+			t.Fatalf("clicking the painted %q selected %q", label, w.ui.remote.selected)
+		}
+	})
+}
+
 func TestRemoteNativeWindowContainerRowDoubleClickOpensDetails(t *testing.T) {
 	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
 		state, _, fake, _ := liveSession(t)

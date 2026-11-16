@@ -228,6 +228,58 @@ func TestRemoteToolsModalEscapeDismisses(t *testing.T) {
 	}
 }
 
+// A precise wheel or a dragged scrollbar stops between two rows. A click must
+// select the row painted under the pointer, not the row that would be there if
+// the list were aligned to the top of its viewport.
+func TestRemoteToolsModalRowHitTestFollowsPaintedRows(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	state.remote.tab = remoteContainers
+	state.remote.rows = make([]remoteRow, 40)
+	for index := range state.remote.rows {
+		state.remote.rows[index] = remoteRow{
+			key:   fmt.Sprintf("resource-%02d", index),
+			cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+		}
+	}
+	remoteToolsPaint(t, state)
+	rowHeight := state.remote.tableRowHeight
+	if rowHeight <= 0 {
+		t.Fatal("the table has no row height")
+	}
+	// Stop more than half a row into the list: an offset that is not a
+	// multiple of the row height, as a precise wheel or dragged scrollbar gives.
+	state.remote.processScroll = 8*rowHeight + 2*rowHeight/3
+	canvas := remoteToolsPaint(t, state)
+	if state.remote.tableBodyRemainder == 0 {
+		t.Fatalf("scroll offset %.1f landed on a row boundary", state.remote.processScroll)
+	}
+	viewport := state.remote.processScrollBar.Viewport
+	label := "resource-09"
+	var bounds gfx.Rect
+	for _, painted := range canvas.Texts() {
+		if painted.Value == label && pointInRect(painted.Bounds.X, painted.Bounds.Y, viewport) {
+			bounds = painted.Bounds
+			break
+		}
+	}
+	if bounds.Width == 0 {
+		t.Fatalf("%q is not painted after scrolling to %.1f", label, state.remote.processScroll)
+	}
+	control := remoteToolsTableControl(t, canvas, state)
+	down := gfx.PointerEvent{
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 1,
+		X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
+		Target: control.ID, Viewport: remoteToolsPageSize,
+	}
+	windowPointerRoutes(state, down)
+	up := down
+	up.Kind = gfx.PointerUp
+	windowPointerRoutes(state, up)
+	if state.remote.selected != label {
+		t.Fatalf("clicking the painted %q selected %q", label, state.remote.selected)
+	}
+}
+
 func TestRemoteToolsModalScrollsThroughAllDockerObjects(t *testing.T) {
 	for _, tab := range []remoteTab{remoteContainers, remoteImages, remoteVolumes, remoteNetworks, remoteCompose} {
 		t.Run(fmt.Sprint(tab), func(t *testing.T) {

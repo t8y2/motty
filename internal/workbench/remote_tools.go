@@ -183,6 +183,7 @@ type remoteToolsView struct {
 	processTableBounds     gfx.Rect
 	tableBodyBounds        gfx.Rect
 	tableBodyFirst         int
+	tableBodyRemainder     float32
 	tableRowHeight         float32
 	processColumns         [6]components.TableColumn
 	searches               [6]remoteSearch
