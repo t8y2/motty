@@ -95,7 +95,9 @@ const (
 	iconDiscord
 	iconGitHub
 	iconChevronLeft
-	iconNote
+	// iconSnippets is the quick-command bolt: a stored command the terminal sends
+	// the moment it is picked. A sticky note said "reminder"; the bolt says "run".
+	iconSnippets
 	iconNotebook
 	iconSFTPTransfer
 	iconSFTPBrowseSync
@@ -114,6 +116,11 @@ const (
 	iconFollowFolder
 	// iconArrowUpDown is the command bar's order button.
 	iconArrowUpDown
+	// iconLocalProxy is the rail row that hands a session's downloads to the
+	// machine's own HTTP proxy through the SSH connection. Waypoints: traffic
+	// leaves through a point that is not the destination. The globe it replaced
+	// is the SSH browser's glyph.
+	iconLocalProxy
 )
 
 // terminalPage reports whether the window shows the panes of a workspace rather
@@ -2741,8 +2748,9 @@ var lucideIcons = [...]gfx.Icon{
 	iconWeChat:           icons.Wechat,
 	iconDiscord:          icons.Discord,
 	iconGitHub:           icons.Github,
-	iconNote:             icons.StickyNote,
 	iconNotebook:         icons.Notebook,
+	iconSnippets:         icons.Zap,
+	iconLocalProxy:       icons.Waypoints,
 	iconSFTPTransfer:     icons.SftpTransfer,
 	iconSFTPBrowseSync:   icons.SftpSync,
 	iconSFTPProfiles:     icons.SftpProfiles,
