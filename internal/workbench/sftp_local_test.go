@@ -220,6 +220,10 @@ func TestLocalNewFolderIsMadeOnThisComputer(t *testing.T) {
 
 func TestLocalPaneSteadyPaintDoesNotAllocate(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
+	// This test measures painting, not the platform icon service. A failed
+	// shared slot gives every .txt row the built-in fallback without a
+	// background request that could land during the allocation check.
+	state.sftpTypeIcons = map[string]*fileIconSlot{".txt": {failed: true}}
 	view := openLocalPane(t, state, session, localFixture(t))
 	clickSFTPLocalRow(t, state, view, "report.txt")
 	// The completion catalog loads on a background wake. Settle it before
@@ -229,12 +233,10 @@ func TestLocalPaneSteadyPaintDoesNotAllocate(t *testing.T) {
 	canvas.SetClock(func() time.Duration { return time.Second })
 	size := gfx.Size{Width: 1400, Height: 900}
 	state.Paint(&canvas, size)
-	if allocations := testingAllocs(func() { canvas.Reset(); state.Paint(&canvas, size) }); allocations != 0 {
+	if allocations := steadyAllocs(func() { canvas.Reset(); state.Paint(&canvas, size) }); allocations != 0 {
 		t.Fatalf("local pane paint allocations = %v", allocations)
 	}
 }
-
-func testingAllocs(fn func()) float64 { return testing.AllocsPerRun(100, fn) }
 
 func TestLocalPaneSortsNamesWithoutRegardToCase(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)

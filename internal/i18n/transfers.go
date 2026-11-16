@@ -4,7 +4,8 @@ package i18n
 type TransferCenterMessages struct {
 	Close                                                                                                                 string
 	Title, Description, Empty, EmptyFiltered                                                                              string
-	All, Active, Ended, Clear, Remove, CancelAll                                                                          string
+	EmptyHint, EmptyFilteredHint                                                                                          string
+	All, Active, Waiting, Ended, Clear, Remove, CancelAll                                                                 string
 	Upload, Download, RemoteCopy, To, From, Queued, Running, Finalizing, Paused, Completed, Failed, Canceled, Interrupted string
 	InterruptedHint                                                                                                       string
 	SummaryFmt, Idle, ProgressFmt, FilesFmt, TimeFmt                                                                      string
@@ -12,4 +13,8 @@ type TransferCenterMessages struct {
 	ShowInFolder, ShowInFolderFailed, ShowInFolderMissing                                                                 string
 	Hosts, AllHosts, ScopeFmt, CancelVisible, ClearVisible, RetryFailedFmt, ConflictCountFmt                              string
 	ConfirmBatchFmt, BatchScopeFmt                                                                                        string
+	RunningCountFmt, WaitingCountFmt, RemainingFmt, DurationFmt                                                           string
+	PauseAll, ResumeAll, PauseVisible, ResumeVisible                                                                      string
+	Direction, AllDirections, Search, Details, FileName, Size, Speed, Elapsed                                             string
+	LocalPath, RemotePath, SourcePath, TargetPath, QueuedAt, StartedAt, FinishedAt, Error                                 string
 }

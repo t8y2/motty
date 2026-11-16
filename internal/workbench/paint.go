@@ -374,6 +374,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintHostMenus(canvas, viewport)
 	state.endMenus()
 	state.paintSnippetHoverCard(canvas, viewport)
+	state.paintTransferDetails(canvas, viewport)
 	state.requestReconnectFrames(canvas)
 	state.requestAutofillFrames(canvas)
 	state.requestLoginCommandFrames(canvas)
@@ -529,6 +530,16 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 // the wheel over its backdrop: the panel keeps still behind it, as it did when
 // its list was painted by hand and the window's own handler saw the event first.
 func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
+	if state.transfers.open && state.transferCenterAvailable() {
+		if !state.transfers.selectOpen.IsZero() {
+			if result, handled := state.menuWheel(event); handled {
+				return result
+			}
+		}
+		if result, handled := state.transferCenterScroll(event); handled {
+			return result
+		}
+	}
 	if state.hostGroupMenu {
 		// The move picker and its backdrop own the wheel over the host list.
 		return state.Scroll(event)
