@@ -25,7 +25,6 @@ type remoteToolsWindow struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	closed     bool
-	pageSize   int
 
 	// The window's page and the stable callbacks it declares. The callbacks are
 	// made once, not in each paint.
@@ -61,9 +60,8 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 					window.ui.remote.tab = tab
 				}
 				window.ui.remote.selected = ""
-				window.ui.remote.page = 0
 				window.ui.remote.rows = nil
-				window.ui.remote.pageText = ""
+				window.ui.remote.processScroll = 0
 				window.ui.remote.collectedAt = time.Time{}
 				window.ui.remote.stale = false
 				window.window.Show()
@@ -77,7 +75,7 @@ func (state *State) openRemoteToolsWindowTab(session *Session, tab remoteTab, sw
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &remoteToolsWindow{owner: state, group: state.options.Group, connection: session.conn, ctx: ctx, cancel: cancel, pageSize: remoteRowsPerPage, tablePressRow: -1, tableHoverRow: -1}
+	w := &remoteToolsWindow{owner: state, group: state.options.Group, connection: session.conn, ctx: ctx, cancel: cancel, tablePressRow: -1, tableHoverRow: -1}
 	w.session.ID = session.ID
 	w.bind(state, session)
 	w.ui.language, w.ui.messages = state.language, state.messages
@@ -245,13 +243,6 @@ func (state *State) postRemoteToolsUpdate(update func(*State)) {
 		return
 	}
 	state.aiPost(update)
-}
-
-func (state *State) remotePageSize() int {
-	if state.remoteWindow != nil {
-		return max(state.remoteWindow.pageSize, 1)
-	}
-	return remoteRowsPerPage
 }
 
 func (state *State) typeRemoteCommand(session *Session, command string) bool {
@@ -434,7 +425,7 @@ func (w *remoteToolsWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 	return gfx.EventResult{}
 }
 
-// scroll sends the wheel to the open dialog, else to the process snapshot.
+// scroll sends the wheel to the open dialog, else to the selected snapshot.
 func (w *remoteToolsWindow) scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if w.closed {
 		return gfx.EventResult{Handled: true}
