@@ -668,6 +668,45 @@ func (t *Terminal) recycle(l *line) *line {
 	return l
 }
 
+// pushScreenToHistory moves the content a main-screen erase would wipe into the
+// history, up to the last row that holds any. The blank rows below it would only
+// add empty lines to the scrollback for every clear. Each screen row takes a
+// fresh identity afterwards, so the history keeps its images and the caches
+// built from the old rows cannot paint over the new blank ones.
+func (t *Terminal) pushScreenToHistory() {
+	lines := t.scr.lines
+	last := -1
+	for y, l := range lines {
+		if t.lineHasContent(l) {
+			last = y
+		}
+	}
+	for y := 0; y <= last; y++ {
+		l := lines[y]
+		t.pushHistory(l)
+		lines[y] = t.recycle(l)
+	}
+}
+
+// lineHasContent reports whether a row holds something a clear would destroy: a
+// character other than a space, a combining mark, or an image anchored to it.
+// A background color alone is not content, as in Windows Terminal.
+func (t *Terminal) lineHasContent(l *line) bool {
+	cells := l.cells
+	if len(cells) > t.cols {
+		cells = cells[:t.cols]
+	}
+	for _, c := range cells {
+		if c.R != 0 && c.R != ' ' {
+			return true
+		}
+	}
+	if len(l.marks) != 0 {
+		return true
+	}
+	return t.images != nil && t.images.hasLine(l.id)
+}
+
 // pushHistory appends a copy of l, without its trailing blanks, to the
 // history. When the ring is full the oldest line's storage is reused; when the
 // byte budget is reached the oldest lines are dropped.
