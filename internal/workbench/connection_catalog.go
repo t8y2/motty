@@ -12,6 +12,34 @@ import (
 	"motty/internal/vault"
 )
 
+type agentHostMode uint8
+
+const (
+	agentHostModeFollow agentHostMode = iota
+	agentHostModeNone
+	agentHostModeAll
+)
+
+func (mode agentHostMode) saved() string {
+	switch mode {
+	case agentHostModeNone:
+		return "none"
+	case agentHostModeAll:
+		return "all"
+	}
+	return ""
+}
+
+func agentHostModeFromSaved(value string) agentHostMode {
+	switch value {
+	case "none":
+		return agentHostModeNone
+	case "all":
+		return agentHostModeAll
+	}
+	return agentHostModeFollow
+}
+
 // hostCatalog is what it takes to turn a saved host into a connection: the
 // hosts and the jump routes between them, the private keys the user imported,
 // the outbound proxy, and the timeouts. It draws nothing and owns no window, so
@@ -33,8 +61,10 @@ type hostCatalog struct {
 	// systemUser is the login used for a host that names none.
 	systemUser string
 	// agentHosts holds the catalog ids of the hosts an agent may use without a
-	// window (see savedState.AgentHosts).
-	agentHosts map[string]bool
+	// window (see savedState.AgentHosts). agentHostMode is the bulk choice and
+	// the default for a host created through the dialog.
+	agentHosts    map[string]bool
+	agentHostMode agentHostMode
 	// merged maps the catalog ID of each host that was folded into another when
 	// the hosts were last read (see mergeSameHosts) to the ID that stayed, for
 	// what still refers to the old one. mergedHosts says the read changed the
@@ -684,17 +714,63 @@ func connectionKeepAlive(saved savedState) time.Duration {
 func catalogFromSaved(saved savedState, systemUser string, messages keyMessages) hostCatalog {
 	hosts, _ := decodeHosts(saved.Hosts, nil, 1)
 	catalog := hostCatalog{
-		hosts:       hosts,
-		proxies:     decodeProxies(saved.Proxies, hosts),
-		identities:  decodeIdentities(saved.IdentityFiles, messages),
-		credentials: decodeCredentials(saved.Credentials),
-		proxy:       decodeOutboundProxy(saved.OutboundProxy),
-		systemUser:  systemUser,
-		agentHosts:  agentHostSet(saved.AgentHosts),
+		hosts:         hosts,
+		proxies:       decodeProxies(saved.Proxies, hosts),
+		identities:    decodeIdentities(saved.IdentityFiles, messages),
+		credentials:   decodeCredentials(saved.Credentials),
+		proxy:         decodeOutboundProxy(saved.OutboundProxy),
+		systemUser:    systemUser,
+		agentHosts:    agentHostSet(saved.AgentHosts),
+		agentHostMode: agentHostModeFromSaved(saved.AgentHostMode),
 	}
 	catalog.connectionTimeout, catalog.connectionKeepAlive = connectionTimes(saved)
 	catalog.sshAgent = agentChoiceFromSaved(saved.SSHAgent, saved.SSHAgentPath)
 	return catalog
+}
+
+// effectiveAgentHostMode is the bulk mode the saved permissions actually
+// describe. A stored bulk choice only holds while every SSH host still matches
+// it; a host created, copied or imported outside the mode's own path never went
+// through it, so the page and the dialog default read the permissions rather
+// than a stored label that no longer matches them.
+func (catalog *hostCatalog) effectiveAgentHostMode() agentHostMode {
+	switch catalog.agentHostMode {
+	case agentHostModeAll:
+		for _, host := range catalog.hosts {
+			if host.isSSH() && !catalog.agentHosts[host.CatalogID] {
+				return agentHostModeFollow
+			}
+		}
+		return agentHostModeAll
+	case agentHostModeNone:
+		for _, host := range catalog.hosts {
+			if host.isSSH() && catalog.agentHosts[host.CatalogID] {
+				return agentHostModeFollow
+			}
+		}
+		return agentHostModeNone
+	}
+	return agentHostModeFollow
+}
+
+func (catalog *hostCatalog) setAgentHostMode(mode agentHostMode) {
+	switch mode {
+	case agentHostModeNone:
+		catalog.agentHosts = nil
+	case agentHostModeAll:
+		if catalog.agentHosts == nil {
+			catalog.agentHosts = make(map[string]bool)
+		}
+		for _, host := range catalog.hosts {
+			if host.isSSH() {
+				catalog.agentHosts[host.CatalogID] = true
+			}
+		}
+	case agentHostModeFollow:
+	default:
+		return
+	}
+	catalog.agentHostMode = mode
 }
 
 // setAgentAccess opens a host to agents or closes it. Only an SSH host can be

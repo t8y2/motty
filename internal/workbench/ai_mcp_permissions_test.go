@@ -114,7 +114,9 @@ func TestMCPConsentForgetsSaveErrorsWhenCanceled(t *testing.T) {
 		world := newSettingsWorld(t, newLister())
 		state := world.state
 		state.selectSettingsCategory(settingsMCP)
-		allow := func() { clickSettingsChoice(t, state, state.messages.AISettings.MCPModeAllowAll) }
+		allow := func() {
+			clickSettingsChoiceInRow(t, state, state.messages.AISettings.AgentMode, state.messages.AISettings.MCPModeAllowAll)
+		}
 		if !agent {
 			allow = func() { clickSettingsChoiceFirst(t, state, state.messages.AISettings.MCPModeAllowAll) }
 		}
@@ -174,7 +176,7 @@ func TestMCPPermissionsFollowTheSharedHubAcrossOpenWindows(t *testing.T) {
 	// settings changes must not write an earlier access level back.
 	clickSettingsChoice(t, b, b.messages.AISettings.MCPModeObserve)
 	check(true, gate.ModeObserve, gate.ModeObserve)
-	clickSettingsChoice(t, a, a.messages.AISettings.MCPModeAllowAll)
+	clickSettingsChoiceInRow(t, a, a.messages.AISettings.AgentMode, a.messages.AISettings.MCPModeAllowAll)
 	a.Click(hitAISetConfirmAction)
 	check(true, gate.ModeObserve, gate.ModeAllowAll)
 	b.Click(hitAISetMCPEnabled)
@@ -200,7 +202,7 @@ func TestMCPFullAccessWarningsStayVisibleWhileHTTPIsOffAndAfterRestart(t *testin
 	state.selectSettingsCategory(settingsMCP)
 	clickSettingsChoiceFirst(t, state, state.messages.AISettings.MCPModeAllowAll)
 	state.Click(hitAISetConfirmAction)
-	clickSettingsChoice(t, state, state.messages.AISettings.MCPModeAllowAll)
+	clickSettingsChoiceInRow(t, state, state.messages.AISettings.AgentMode, state.messages.AISettings.MCPModeAllowAll)
 	state.Click(hitAISetConfirmAction)
 	state = world.open(t)
 	state.selectSettingsCategory(settingsMCP)

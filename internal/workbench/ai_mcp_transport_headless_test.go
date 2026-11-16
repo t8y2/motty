@@ -46,8 +46,9 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 					}
 					t.Fatal("missing MCP control", tree.Text(id))
 				}
-				// The access levels are page Choices: click the segment by its
-				// words, the last "Allow all" being the stdio one.
+				// The access levels are page Choices. The unique Commands segment
+				// reaches stdio's Allow all with Right without confusing it with
+				// the HTTP or host-access choice of the same name.
 				clickLabel := func(label string, last bool) {
 					t.Helper()
 					view.Rest()
@@ -78,7 +79,6 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 				}
 				shot("stdio")
 				agentRun := state.messages.AISettings.AgentModeRun
-				allowAll := state.messages.AISettings.MCPModeAllowAll
 				clickButton := func(label string) {
 					t.Helper()
 					view.Rest()
@@ -90,10 +90,14 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				clickLabel(agentRun, false)
-				if err := view.Keys("right"); err != nil {
-					t.Fatal(err)
+				allowAgentAll := func() {
+					t.Helper()
+					clickLabel(agentRun, false)
+					if err := view.Keys("right"); err != nil {
+						t.Fatal(err)
+					}
 				}
+				allowAgentAll()
 				cancel, ok := snapshotButton(view.Snapshot(), state.messages.Cancel)
 				if state.ai.cfg.dialog != aiDialogAgentAllowAll || state.ai.settings.agentMode != gate.ModeAsk || !ok || view.Snapshot().Focused != cancel.ID {
 					t.Fatal("stdio full access did not wait on the safe confirmation action")
@@ -105,14 +109,14 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 				if state.ai.settings.agentMode != gate.ModeAsk || state.ai.cfg.dialog != aiDialogNone {
 					t.Fatal("Enter on the default action did not cancel")
 				}
-				clickLabel(allowAll, true)
+				allowAgentAll()
 				if err := view.Keys("esc"); err != nil {
 					t.Fatal(err)
 				}
 				if state.ai.settings.agentMode != gate.ModeAsk || state.ai.cfg.dialog != aiDialogNone {
 					t.Fatal("Escape did not cancel")
 				}
-				clickLabel(allowAll, true)
+				allowAgentAll()
 				clickButton(state.messages.AISettings.MCPAllowAllConfirm)
 				if state.ai.settings.agentMode != gate.ModeAllowAll || state.ai.settings.mcpMode != gate.ModeObserve {
 					t.Fatal("confirmation changed the wrong MCP service")
@@ -150,7 +154,7 @@ func TestMCPConsentSaveErrorsAreForgottenAfterNativeEscape(t *testing.T) {
 					clickSettingsChoiceFirst(t, state, allowAll)
 					return
 				}
-				clickSettingsChoice(t, state, allowAll)
+				clickSettingsChoiceInRow(t, state, state.messages.AISettings.AgentMode, allowAll)
 			}
 			allow()
 			view, err := headless.Open(state.WindowConfig(app.Config{Title: "MCP save failure", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnResize: state.Resize}), nil, headless.Options{})

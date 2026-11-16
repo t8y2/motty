@@ -294,6 +294,9 @@ type AISettingsMessages struct {
 	AgentModeObserve     string
 	AgentModeRun         string
 	AgentHosts           string
+	AgentHostsNone       string
+	AgentHostsFollow     string
+	AgentHostsAll        string
 	AgentHostsNoneDesc   string
 	AgentConfig          string
 	AgentConfigDesc      string

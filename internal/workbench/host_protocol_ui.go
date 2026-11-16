@@ -416,6 +416,7 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.noHistory = !editor.noHistory
 	case id == hitDialogAgentAccess:
 		editor.agentAccess = !editor.agentAccess
+		editor.agentAccessChanged = true
 	case state.clickHostAuthentication(id):
 	case state.clickHostCredential(id):
 	case state.clickHostColor(id):

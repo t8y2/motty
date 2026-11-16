@@ -254,7 +254,7 @@ func (state *State) openCopyHostID(id uint32) {
 	state.selectedHostID = host.ID
 	state.cancelHostTest()
 	state.editor.load(host)
-	state.editor.agentAccess = false // a copy is a new host, closed to agents until asked
+	state.editor.agentAccess = state.effectiveAgentHostMode() == agentHostModeAll
 	state.editor.label = text.Editor{}
 	state.editor.label.Insert(fmt.Sprintf(state.messages.HostCopyLabelFmt, host.Label))
 	state.hostDialogMode = hostDialogCopy
@@ -371,12 +371,13 @@ func (state *State) submitHostDialog() {
 		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
 		state.editor.proxyPassword = ""
 		// Editing may open or close the host's existing entry to agents.
+		if state.editor.agentAccessChanged {
+			state.agentHostMode = agentHostModeFollow
+		}
 		state.setAgentAccess(candidate, state.editor.agentAccess)
 		state.updateHostFromEditor(candidate, *previous, proxyNote)
 		return
 	}
-	// A copy or a new host is closed to agents unless the switch was turned on in
-	// this very dialog.
 	commit := func() error {
 		return state.saveNewHostFromDialog(candidate, true)
 	}
@@ -444,13 +445,18 @@ func (err *hostConfigCommitError) Unwrap() error { return err.err }
 // at restart.
 func (state *State) saveNewHostFromDialog(candidate Host, refreshConflict bool) error {
 	previousNextHostID, previousSelection := state.nextHostID, state.selectedHostID
+	previousAgentMode := state.agentHostMode
 	previousAgentAccess, hadAgentAccess := state.agentHosts[candidate.CatalogID]
 	agentAccess := state.editor.agentAccess
+	if state.editor.agentAccessChanged {
+		state.agentHostMode = agentHostModeFollow
+	}
 	state.setAgentAccess(candidate, agentAccess)
 	state.nextHostID++
 	state.hosts = append(state.hosts, candidate)
 	state.selectedHostID = candidate.ID
 	rollback := func() {
+		state.agentHostMode = previousAgentMode
 		index := state.hostDialogCandidateIndex(candidate)
 		if index >= 0 {
 			state.hosts = append(state.hosts[:index], state.hosts[index+1:]...)
