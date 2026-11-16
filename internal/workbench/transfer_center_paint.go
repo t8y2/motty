@@ -138,15 +138,28 @@ func (state *State) declareTransferPopoverBody(c ui.C, width, height float32) {
 	body.DrawOver(center.bodyDraw)
 }
 
+// transferSection is the group a transfer card sits in: the transfers moving
+// bytes come first, then the ones waiting or paused, then the finished ones.
+func transferSection(snapshot sftpclient.TransferSnapshot) int {
+	switch {
+	case snapshot.State == sftpclient.TransferRunning:
+		return 0
+	case transferActive(snapshot):
+		return 1
+	default:
+		return 2
+	}
+}
+
 // prepareTransferCards fills the visible entries in the order the popover shows
 // them and the scratch each card's row uses.
 func (state *State) prepareTransferCards() {
 	center := &state.transfers
 	center.visible = center.visible[:0]
-	for pass := 0; pass < 2; pass++ {
+	for section := range 3 {
 		for index := len(center.entries) - 1; index >= 0; index-- {
 			entry := &center.entries[index]
-			if !center.shows(entry) || (pass == 0) != transferActive(entry.snapshot) {
+			if !center.shows(entry) || transferSection(entry.snapshot) != section {
 				continue
 			}
 			center.visible = append(center.visible, entry)
