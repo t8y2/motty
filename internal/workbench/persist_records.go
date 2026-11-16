@@ -258,6 +258,7 @@ var syncedSettings = map[string]bool{
 	"sftp_follow":                  true,
 	"sftp_terminal_follow":         true,
 	"sftp_path_input":              true,
+	"terminal_sidebars":            true,
 	"sftp_panel_auto_open":         true,
 	"sftp_panel_side":              true,
 	"command_history":              true,

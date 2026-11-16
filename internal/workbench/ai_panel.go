@@ -454,6 +454,19 @@ type aiPanel struct {
 
 // The panel stays available on every page, independently of terminal tabs.
 func (state *State) aiPanelVisible() bool {
+	if state.terminalPage() {
+		return state.aiPanelVisibleFor(state.deck.ActiveWorkspace())
+	}
+	return state.aiPanelVisibleFor(0)
+}
+
+// A zero workspace names a section page, which retains window-wide visibility.
+func (state *State) aiPanelVisibleFor(workspaceID layoutcore.WorkspaceID) bool {
+	if workspaceID != 0 {
+		if open, ok := state.startupAIVisibility[workspaceID]; ok {
+			return open
+		}
+	}
 	return state.ai.open
 }
 
@@ -475,7 +488,7 @@ func (state *State) aiSectionReserve(size gfx.Size) float32 {
 // divider included, or zero when the panel is closed or the window is too narrow
 // to share (it is then a drawer over the panes).
 func (state *State) aiReserve(workspaceID layoutcore.WorkspaceID, size gfx.Size) float32 {
-	if !state.ai.open || size.Width < aiDockAt {
+	if !state.aiPanelVisibleFor(workspaceID) || size.Width < aiDockAt {
 		return 0
 	}
 	panel := state.aiPanelExtent(size) + 1
@@ -543,7 +556,7 @@ func (state *State) aiPanelSync() {
 // setAIPanelOpen shows or hides the panel.
 func (state *State) setAIPanelOpen(open bool) {
 	ai := &state.ai
-	if ai.open == open {
+	if state.aiPanelVisible() == open {
 		return
 	}
 	if open {
@@ -557,7 +570,11 @@ func (state *State) setAIPanelOpen(open bool) {
 		// than during a paint.
 		_, _ = state.aiStore()
 	}
-	ai.open = open
+	if _, scoped := state.startupAIVisibility[state.deck.ActiveWorkspace()]; scoped && state.terminalPage() {
+		state.startupAIVisibility[state.deck.ActiveWorkspace()] = open
+	} else {
+		ai.open = open
+	}
 	if !open {
 		if ai.panel.messageScroll != nil {
 			// The panel's List stops being declared, so the page drops its offset;
@@ -583,7 +600,7 @@ func (state *State) setAIPanelOpen(open bool) {
 // drawer under the monitor's trapped one. Resize and a question the assistant
 // raises on its own call this.
 func (state *State) reconcileAIPanelWithMonitor(size gfx.Size) {
-	if !state.ai.open {
+	if !state.aiPanelVisible() {
 		return
 	}
 	workspace := state.deck.ActiveWorkspace()

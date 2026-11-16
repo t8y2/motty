@@ -38,7 +38,7 @@ func TestAITargetChangeSeparatorsAndHistory(t *testing.T) {
 	}
 	send(second)
 	send(second)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	_, texts := paintAt(state, panelWide)
 	changes := targetChanges(state)
 	if len(changes) != 2 || changes[1] != state.sessions[1].Title {
@@ -82,7 +82,7 @@ func TestAITargetFollowsRenamedTabWithoutChangingIdentity(t *testing.T) {
 	if state.aiTarget().ID != "" {
 		t.Fatal("explicit no-target choice followed the active tab")
 	}
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	_, texts := paintAt(state, gfx.Size{Width: 1400, Height: 900})
 	if !hasText(texts, state.messages.AIPanel.TargetChoose) {
 		t.Fatal("missing compact no-target label")

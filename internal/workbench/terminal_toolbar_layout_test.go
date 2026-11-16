@@ -547,7 +547,7 @@ func TestSharedToolbarAndPanelsStayInTheirOuterBands(t *testing.T) {
 		t.Run(position.String(), func(t *testing.T) {
 			state, session, _, _ := openTestSFTP(t)
 			state.terminalToolbarPosition = position
-			state.ai.open = true
+			state.setAIPanelOpen(true)
 			state.ai.panelWidth = 280
 			workspace := state.deck.ActiveWorkspace()
 			context, _ := state.deck.Context(workspace)

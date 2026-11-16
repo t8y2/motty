@@ -197,7 +197,7 @@ func (state *State) independentMonitorReserve(workspace layoutcore.WorkspaceID, 
 	}
 	width := state.monitorPanelWidth(workspace, size)
 	aiWidth := float32(0)
-	if state.aiPanelVisible() {
+	if state.aiPanelVisibleFor(workspace) {
 		if !state.monitorAndAICanCoexist(workspace, size) {
 			return 0
 		}

@@ -38,7 +38,7 @@ func BenchmarkAIPanelLongConversation(b *testing.B) {
 func benchAIConversation(b *testing.B, count int) {
 	state, _ := panelState(b, nil)
 	withModel(b, state)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	longConversation(state, count)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, panelWide)

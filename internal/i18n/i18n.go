@@ -367,6 +367,9 @@ type Messages struct {
 	VaultCorruptFmt                        string
 	VaultCleared                           string
 	SettingsRestore                        string
+	SettingsTerminalSidebars               string
+	SettingsTerminalSidebarsDescription    string
+	SettingsTerminalSidebarChoices         [5]string
 	SettingsStartupRow                     string
 	SettingsStartupEnable                  string
 	SettingsStartupEnableDescription       string

@@ -286,7 +286,7 @@ func TestVerticalTabsLeaveRoomForFilesAndAssistant(t *testing.T) {
 	state.setTabOrientation(tabsVertical)
 	workspace := state.deck.ActiveWorkspace()
 	size := gfx.Size{Width: 1600, Height: 900}
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	for _, side := range []layoutcore.ContextSide{layoutcore.ContextLeft, layoutcore.ContextRight} {
 		if err := state.deck.SetContext(workspace, layoutcore.ContextState{Kind: layoutcore.ContextSFTP, Open: true, Side: side, Width: layoutcore.DefaultContextWidth}); err != nil {
 			t.Fatal(err)

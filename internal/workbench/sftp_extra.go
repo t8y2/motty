@@ -46,7 +46,6 @@ var (
 	hitSettingsPathBreadcrumbs      = tree.ID(sftpHits, "settings-path-breadcrumbs")
 	hitSettingsPathInput            = tree.ID(sftpHits, "settings-path-input")
 	hitSettingsFollowSetup          = tree.ID(sftpHits, "settings-follow-setup")
-	hitSettingsPanelAutoOpen        = tree.ID(sftpHits, "settings-panel-auto-open")
 	hitSettingsDirectoryTree        = tree.ID(sftpHits, "settings-directory-tree")
 	hitSettingsPanelLeft            = tree.ID(sftpHits, "settings-panel-left")
 	hitSettingsPanelRight           = tree.ID(sftpHits, "settings-panel-right")
@@ -356,7 +355,6 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 	downloadDescription, downloadActions := state.sftpFilesDownloadSetting()
 	page.groups(func() {
 		page.group("", func() {
-			page.toggleRow(m.FilesPanelAutoOpen, m.FilesPanelAutoOpenDescription, state.sftpPanelAutoOpen, hitSettingsPanelAutoOpen)
 			settingsChoiceRow(page, m.FilesPanelPosition, m.FilesPanelPositionDescription, &state.sftpPanelSide, settingsSFTPPanelPositionChoices[:], state.settingsSFTPPanelPositionLabel,
 				func() { state.save() }, nil)
 			settingsChoiceRow(page, m.FilesPathStyle, m.FilesPathDescription, &state.sftpPathInput, settingsPathChoices[:], state.settingsPathLabel,
@@ -410,9 +408,6 @@ func (state *State) customEditorSettingVisible() bool {
 // clickFilesSettings handles the presses of the Files settings.
 func (state *State) clickFilesSettings(id gfx.ID) bool {
 	switch id {
-	case hitSettingsPanelAutoOpen:
-		state.sftpPanelAutoOpen = !state.sftpPanelAutoOpen
-		state.save()
 	case hitSettingsDirectoryTree:
 		state.sftpDirectoryTree = !state.sftpDirectoryTree
 		state.save()
@@ -565,7 +560,7 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.sftpFollowOff = saved.SFTPFollow == "off"
 	state.sftpTerminalFollow = saved.SFTPTerminalFollow
 	state.sftpPathInput = saved.SFTPPathInput
-	state.sftpPanelAutoOpen = saved.SFTPPanelAutoOpen
+	state.restoreTerminalSidebars(saved.TerminalSidebars, saved.SFTPPanelAutoOpen)
 	state.sftpDirectoryTree = saved.SFTPDirectoryTree
 	if saved.SFTPPanelWidth >= layoutcore.MinContextWidth && saved.SFTPPanelWidth <= layoutcore.MaxContextWidth {
 		state.sftpPanelWidth = saved.SFTPPanelWidth

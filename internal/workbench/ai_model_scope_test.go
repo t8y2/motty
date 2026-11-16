@@ -158,7 +158,7 @@ func TestAIModelSelectionFollowsSettingsUntilPinned(t *testing.T) {
 // The model chip's menu carries a settings shortcut at the providers' level.
 func TestAIModelMenuOffersAShortcutToSettings(t *testing.T) {
 	state, _ := aiModelScopeState(t)
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.panel.modelMenu = true
 	canvas, _ := paintAt(state, panelWide)
 	row := aiMenuRow(t, canvas, "Manage models…")

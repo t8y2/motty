@@ -31,7 +31,7 @@ func TestTheAssistantDrawerKeepsItsOwnLayerUnderADialog(t *testing.T) {
 	shell.say("\x1b[0m")
 	state.Wake()
 
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	state.ai.items = []aiItem{{kind: aiAssistant, text: "## SOCKS\n\n- 在 ~/.ssh/config 里加 ServerAliveInterval 60"}}
 	openGeneralSettings(state)
 	state.Click(hitSettingsUpdateCheck)

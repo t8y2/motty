@@ -40,7 +40,7 @@ func TestAIExplicitReferenceExecutesOnBWhileDefaultStaysA(t *testing.T) {
 	if strings.Contains(shellB.typed(), "hostname") {
 		t.Fatal("cross-session command executed before approval")
 	}
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	_, texts := paintAt(state, panelWide)
 	if !hasText(texts, second.Address) {
 		t.Fatal("approval card did not paint actual target address")
@@ -124,7 +124,7 @@ func TestAIReferenceBindingsWithoutADefaultDoNotFollowTheActiveTab(t *testing.T)
 
 func TestAIAtPickerAfterProseAndAcceptedReferencesAgree(t *testing.T) {
 	state := targetTestWorld(t, quietModel{"ok"})
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	for _, prefix := range []string{"请检查这台服务器", "check-this-host", "对比：", "第一行\n然后查看"} {
 		state.ai.input = *text.NewEditor(prefix + "@")
 		canvas, _ := paintAt(state, panelWide)

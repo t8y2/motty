@@ -29,7 +29,8 @@ func TestAITargetComposerNativeLayoutAtDisplayScales(t *testing.T) {
 				state.sessions[1].host.System = sshconn.SystemLinux
 				state.rebuildTabOptions()
 				state.aiChooseOnlyTarget(hitAITargets.At(int(state.sessions[1].ID)))
-				state.ai.mode, state.ai.open = agent.ModeAgent, true
+				state.ai.mode = agent.ModeAgent
+				state.setAIPanelOpen(true)
 				state.aiAppendQuestion("看看服务器磁盘占用", "first", state.sessions[0].Title)
 				state.ai.items = append(state.ai.items, aiItem{kind: aiAssistant, text: "可以从磁盘使用情况开始分析。"})
 				state.aiAppendQuestion("再看看这台服务器", "second", state.sessions[1].Title)

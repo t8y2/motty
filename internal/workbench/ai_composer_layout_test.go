@@ -32,7 +32,7 @@ func TestAIComposerControlsStayInsideTheMessageBox(t *testing.T) {
 				}
 				state.reloadAI()
 				state.messages = i18n.For(language)
-				state.ai.open = true
+				state.setAIPanelOpen(true)
 				state.ai.mode = agent.ModeAgent
 				state.ai.panelWidth = width
 				canvas, _ := paintAt(state, panelWide)
@@ -72,7 +72,7 @@ func TestAIComposerNarrowPanelTakesPointerClicks(t *testing.T) {
 			}
 			state.reloadAI()
 			state.messages = i18n.For(i18n.Chinese)
-			state.ai.open = true
+			state.setAIPanelOpen(true)
 			state.ai.mode = agent.ModeAgent
 			state.ai.panelWidth = 300
 			view, err := headless.Open(app.Config{

@@ -71,7 +71,7 @@ func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {
 		t.Run(fmt.Sprint(scale), func(t *testing.T) {
 			state, session, remote, oldPanel, paths := dropFixture(t)
 			files, worker := session.files, session.files.worker
-			state.ai.open = true
+			state.setAIPanelOpen(true)
 			preview, err := headless.Open(app.Config{
 				Title: "File panel", Width: 1600, Height: 900, Tree: Tree(), Paint: state.Paint,
 				OnPointer: state.Pointer, OnKey: state.Key, OnResize: state.Resize, OnFileDrop: state.FileDrop,
@@ -152,7 +152,7 @@ func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {
 				t.Fatal("moving changed the drop target")
 			}
 			state.Click(hitTransfersClose)
-			state.ai.open = false
+			state.setAIPanelOpen(false)
 			if err := preview.Resize(800, 640); err != nil {
 				t.Fatal(err)
 			}

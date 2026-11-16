@@ -32,8 +32,9 @@ func TestMultiTargetScreenshots(t *testing.T) {
 	state.renameSession(&state.sessions[1], "db-primary")
 	state.renameSession(&state.sessions[2], "db-replica")
 	state.rebuildTabOptions()
-	state.ai.mode, state.ai.open = agent.ModeAsk, true
+	state.ai.mode = agent.ModeAsk
 	state.activeSection = sectionTerminal
+	state.setAIPanelOpen(true)
 	size := gfx.Size{Width: 1400, Height: 820}
 	view, err := headless.Open(app.Config{Width: int(size.Width), Height: int(size.Height), Tree: Tree(), Paint: state.Paint, OnResize: state.Resize,
 		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll,

@@ -1007,7 +1007,7 @@ func TestToolbarDockVerticalTabsSideAndBottom(t *testing.T) {
 		t.Fatal("bottom layout did not survive restart")
 	}
 	state.setTabOrientation(tabsVertical)
-	state.ai.open = false
+	state.setAIPanelOpen(false)
 	// Scroll a bottom strip that is deliberately narrower than its real actions.
 	for _, spec := range toolbarCatalog[toolbarTerminal] {
 		state.moveToolbarDockTool(spec.id, toolbarDockBottom, gfx.ID{})

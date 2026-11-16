@@ -125,7 +125,7 @@ func TestAIReasoningMenuInteractionAndRequestTransmission(t *testing.T) {
 	})
 	_ = db.SetDefaultModel("p1", "o3-mini")
 	state.reloadAI()
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	paintAt(state, panelWide)
 
 	// 点击 reasoning chip，开启菜单

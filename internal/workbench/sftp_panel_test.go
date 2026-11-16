@@ -25,15 +25,17 @@ func TestSFTPPanelSettingsPersistAndDoNotMoveExistingWorkspace(t *testing.T) {
 	state.selectSettingsCategory(settingsFiles)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1100})
-	if _, ok := hitByID(&canvas, hitSettingsPanelAutoOpen); !ok {
-		t.Fatal("missing file panel setting", hitSettingsPanelAutoOpen)
+	if _, ok := hitByID(&canvas, tree.ID(sftpHits, "settings-panel-auto-open")); ok {
+		t.Fatal("legacy file panel setting is still visible")
 	}
 	for _, side := range []layoutcore.ContextSide{layoutcore.ContextLeft, layoutcore.ContextRight} {
 		if _, ok := settingsChoiceIn(&canvas, state.settingsSFTPPanelPositionLabel(side)); !ok {
 			t.Fatalf("missing file panel position %q", state.settingsSFTPPanelPositionLabel(side))
 		}
 	}
-	state.Click(hitSettingsPanelAutoOpen)
+	state.selectSettingsCategory(settingsTerminal)
+	state.Click(hitTerminalSidebarItems.At(4))
+	state.selectSettingsCategory(settingsFiles)
 	left := settingsChoiceHitInRow(t, state, state.messages.Tools.FilesPanelPosition, state.settingsSFTPPanelPositionLabel(layoutcore.ContextLeft))
 	right := settingsChoiceHitInRow(t, state, state.messages.Tools.FilesPanelPosition, state.settingsSFTPPanelPositionLabel(layoutcore.ContextRight))
 	result := windowKeyRoutes(state, gfx.KeyEvent{Target: left.ID, Key: gfx.KeyRight})
@@ -62,7 +64,7 @@ func TestSFTPPanelSettingsPersistAndDoNotMoveExistingWorkspace(t *testing.T) {
 	}
 	for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
 		state.setLanguage(language)
-		for _, label := range []string{state.messages.Tools.FilesPanelAutoOpen, state.messages.Tools.FilesPanelPosition} {
+		for _, label := range []string{state.messages.Tools.FilesPanelPosition} {
 			app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(&state.settings.search)
 			searchSettings(t, state, label)
 			if state.settings.count == 0 || state.settings.results[0].category != settingsFiles {
@@ -83,7 +85,9 @@ func TestSFTPPanelSettingsPersistAndDoNotMoveExistingWorkspace(t *testing.T) {
 	state.Click(hitSettings)
 	windowKeyRoutes(state, gfx.KeyEvent{Target: hitSettingsSearch, Key: gfx.KeyEscape})
 	state.selectSettingsCategory(settingsFiles)
-	state.Click(hitSettingsPanelAutoOpen)
+	state.selectSettingsCategory(settingsTerminal)
+	state.Click(hitTerminalSidebarItems.At(4))
+	state.selectSettingsCategory(settingsFiles)
 	clickSettingsChoice(t, state, state.settingsSFTPPanelPositionLabel(layoutcore.ContextLeft))
 	restored = newTestState(t, state.options)
 	context, _ = restored.deck.Context(restored.deck.ActiveWorkspace())

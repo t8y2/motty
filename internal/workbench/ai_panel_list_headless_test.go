@@ -344,10 +344,10 @@ func testHeadlessApprovalActions(t *testing.T, history bool, width int, extras, 
 		if err := view.Rest(); err != nil {
 			t.Fatal(err)
 		}
-		if state.ai.open {
+		if state.aiPanelVisible() {
 			t.Fatal("Escape did not dismiss the drawer")
 		}
-		state.ai.open = true
+		state.setAIPanelOpen(true)
 		if err := view.Resize(width, MinimumWindowHeight); err != nil {
 			t.Fatal(err)
 		}
@@ -368,7 +368,7 @@ func testHeadlessApprovalActions(t *testing.T, history bool, width int, extras, 
 		if err := view.Rest(); err != nil {
 			t.Fatal(err)
 		}
-		if state.ai.open {
+		if state.aiPanelVisible() {
 			t.Fatal("backdrop click did not dismiss the drawer")
 		}
 	}
@@ -384,7 +384,7 @@ func TestHeadlessConversationFollowsNewRowsAndLeavesAScrolledReaderAlone(t *test
 	for index := 0; index < 30; index++ {
 		state.ai.items = append(state.ai.items, aiItem{kind: aiAssistant, text: "answer number " + strings.Repeat("word ", 6)})
 	}
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	view := openAIPanelView(t, state)
 	defer view.Close()
 	if err := view.Rest(); err != nil {
@@ -468,7 +468,7 @@ func TestHeadlessHistoryRowsOpenRenameAndDelete(t *testing.T) {
 	_, _ = db.AppendMessage(first.ID, store.StoredMessage{Role: "user", Text: "hello there"})
 	_, _ = db.AppendMessage(first.ID, store.StoredMessage{Role: "assistant", Text: "hi, how can I help"})
 	_, _ = db.CreateConversation("Second chat", "x")
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	view := openAIPanelView(t, state)
 	defer view.Close()
 	if err := view.Rest(); err != nil {
@@ -529,7 +529,7 @@ func TestHeadlessWrappedRowHeightFollowsTheWidth(t *testing.T) {
 	state, _ := panelState(t, nil)
 	withModel(t, state)
 	state.ai.items = []aiItem{{kind: aiUser, text: strings.Repeat("a long sentence that wraps in the assistant panel ", 6)}}
-	state.ai.open = true
+	state.setAIPanelOpen(true)
 	view := openAIPanelView(t, state)
 	defer view.Close()
 	if err := view.Rest(); err != nil {
