@@ -207,6 +207,9 @@ type KeepAliveConfig struct {
 	// Timeout bounds each probe response. It must be positive when Interval is.
 	Timeout  time.Duration
 	CountMax *int
+	// UseTCP avoids SSH global requests on gateways that accept interactive
+	// traffic only. Non-TCP streams retain the request-based probe as a fallback.
+	UseTCP bool
 }
 
 // Config describes one connection attempt.
@@ -272,6 +275,11 @@ type Config struct {
 	// consumes the user's login banner. With PrimaryShell the probes wait for
 	// OpenShell to accept its shell request (see ADR 0025).
 	PrimaryShell bool
+	// NoProbes keeps optional command sessions off this connection entirely.
+	// It is for a connection that carries one service of its own — a file
+	// transport, say — where a server may allow only that channel and where a
+	// probe could take its place.
+	NoProbes bool
 	// Algorithms sets what each endpoint negotiates, keyed by "host:port" as
 	// Endpoint formats it. An endpoint without an entry keeps the defaults.
 	Algorithms map[string]Algorithms
@@ -301,6 +309,11 @@ type Conn struct {
 	closersClosed bool
 	// disconnectErr records why an established connection was force-closed.
 	disconnectErr error
+	// tcpKeepAlive reports that the target transport is probed by the operating
+	// system's TCP keepalive instead of keepalive@openssh.com requests. It is
+	// written by the target handshake and read by the keepalive worker and the
+	// probe methods, always under mu.
+	tcpKeepAlive bool
 
 	// x11 serves the X11 channels of the current client for every tab on it.
 	x11mu     sync.Mutex
@@ -666,7 +679,7 @@ func (conn *Conn) connect() error {
 	// until the answer arrives, so a guess that is about to be checked is not
 	// published at all.
 	guess := classifyBanner(serverVersion)
-	ask := !conn.config.InteractiveOnly && standardImplementation(serverVersion) &&
+	ask := !conn.config.InteractiveOnly && !conn.config.NoProbes && standardImplementation(serverVersion) &&
 		(guess == SystemUnknown || guess == SystemUbuntu || guess == SystemDebian)
 	conn.update(func(status *Status) {
 		status.Phase = PhaseConnected
@@ -765,8 +778,18 @@ func (conn *Conn) beginEndpoint(endpoint Endpoint, role EndpointRole) {
 
 func (conn *Conn) handshake(endpoint Endpoint, socket net.Conn, known *hostKeys) (*ssh.Client, string, error) {
 	keepAlive := conn.keepAliveFor(endpoint)
+	target := (Endpoint{Host: conn.config.Host, Port: conn.config.Port, User: conn.config.User}).normalized()
+	// Restricted gateways can end the transport on a global keepalive request;
+	// TCP probes detect a lost network path without sending SSH protocol traffic.
+	useTCP := keepAlive.UseTCP || conn.config.InteractiveOnly && endpoint.normalized() == target
+	tcpKeepAlive := useTCP && configureTCPKeepAlive(socket, keepAlive)
+	if endpoint.normalized() == target {
+		conn.mu.Lock()
+		conn.tcpKeepAlive = tcpKeepAlive
+		conn.mu.Unlock()
+	}
 	var monitored *aliveSocket
-	if keepAlive.Interval > 0 && keepAlive.CountMax != nil {
+	if !tcpKeepAlive && keepAlive.Interval > 0 && keepAlive.CountMax != nil {
 		monitored = &aliveSocket{Conn: socket, received: make(chan struct{}, 1)}
 		socket = monitored
 	}

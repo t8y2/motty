@@ -70,7 +70,14 @@ func (w *sftpWindow) connect() {
 }
 
 func (state *State) raiseSFTPAuthentication(session *Session) {
-	if w := state.sftpWindows[session.ID]; w != nil && w.ownsConnection && !w.closed && state.options.Raise != nil {
+	if state.options.Raise == nil {
+		return
+	}
+	if w := state.sftpWindows[session.ID]; w != nil && w.ownsConnection && !w.closed {
+		state.options.Raise()
+		return
+	}
+	if state.dedicatedFileSession(session.ID) != nil {
 		state.options.Raise()
 	}
 }
@@ -154,6 +161,13 @@ func (state *State) connectionSessions() func(func(*Session) bool) {
 		for i := range state.sessions {
 			if !yield(&state.sessions[i]) {
 				return
+			}
+			// A file panel's own connection asks through the same prompts as
+			// every other connection.
+			if files := state.sessions[i].files; files != nil && files.dedicated != nil && !files.dedicated.ready {
+				if !yield(&files.dedicated.session) {
+					return
+				}
 			}
 		}
 		for _, tunnel := range state.forwardTunnels {

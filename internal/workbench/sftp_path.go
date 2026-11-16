@@ -3,14 +3,13 @@ package workbench
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 
-	"github.com/pkg/sftp"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"motty/internal/sftpclient"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -219,8 +218,7 @@ func (state *State) showSFTPPathError(destination string, err error) {
 func (state *State) showSFTPPathErrorAt(view *sftpView, destination string, err error) {
 	m := state.messages.Tools
 	detail := fmt.Sprintf(m.FilesPathFailedFmt, destination, err)
-	var status *sftp.StatusError
-	if errors.Is(err, os.ErrNotExist) || errors.As(err, &status) && status.FxCode() == sftp.ErrSSHFxNoSuchFile {
+	if sftpclient.IsPathNotFound(err) {
 		detail = fmt.Sprintf(m.FilesPathNotFoundFmt, destination)
 	}
 	var origin *sftpWindow

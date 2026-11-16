@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,10 +34,15 @@ type fakeGist struct {
 	commits []string
 }
 
-func (g *fakeGist) json(id string) map[string]any {
+func (g *fakeGist) json(id, base string) map[string]any {
 	files := map[string]any{}
 	for name, content := range g.files {
-		files[name] = map[string]any{"filename": name, "content": content, "size": len(content), "truncated": false}
+		file := map[string]any{"filename": name, "content": content, "size": len(content), "truncated": false, "raw_url": base + "/raw/" + id + "/" + name}
+		if len(content) > 1_000_000 {
+			// The API answers at most 1 MB of a file and says so.
+			file["content"], file["truncated"] = content[:1_000_000], true
+		}
+		files[name] = file
 	}
 	history := []map[string]string{}
 	for i := len(g.commits) - 1; i >= 0; i-- {
@@ -57,6 +63,22 @@ func newFakeGitHub(t *testing.T) (*httptest.Server, *fakeGitHub) {
 		fake.mu.Lock()
 		defer fake.mu.Unlock()
 		fake.requests = append(fake.requests, r.Method+" "+r.URL.RequestURI())
+		if strings.HasPrefix(r.URL.Path, "/raw/") {
+			// A raw URL is a secret address that needs no login; sending the token
+			// to it would leak the token to the file host.
+			if r.Header.Get("Authorization") != "" {
+				http.Error(w, "token sent to a raw URL", http.StatusBadRequest)
+				return
+			}
+			parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/raw/"), "/", 2)
+			g, ok := fake.gists[parts[0]]
+			if len(parts) != 2 || !ok || g.files[parts[1]] == "" {
+				http.NotFound(w, r)
+				return
+			}
+			io.WriteString(w, g.files[parts[1]])
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		reply := func(status int, v any) {
 			w.WriteHeader(status)
@@ -98,7 +120,7 @@ func newFakeGitHub(t *testing.T) (*httptest.Server, *fakeGitHub) {
 			}
 			g.commit()
 			fake.gists["abc123"] = g
-			reply(201, g.json("abc123"))
+			reply(201, g.json("abc123", "http://"+r.Host))
 		case strings.HasPrefix(r.URL.Path, "/gists/"):
 			g, ok := fake.gists[id]
 			if !ok {
@@ -107,13 +129,13 @@ func newFakeGitHub(t *testing.T) (*httptest.Server, *fakeGitHub) {
 			}
 			switch r.Method {
 			case http.MethodGet:
-				reply(200, g.json(id))
+				reply(200, g.json(id, "http://"+r.Host))
 			case http.MethodPatch:
 				for name, file := range body.Files {
 					g.files[name] = file.Content
 				}
 				g.commit()
-				reply(200, g.json(id))
+				reply(200, g.json(id, "http://"+r.Host))
 			}
 		default:
 			reply(404, map[string]string{"message": "Not Found"})
@@ -238,15 +260,34 @@ func TestMissingGistAndBadTokenSayWhatIsWrong(t *testing.T) {
 	}
 }
 
-func TestABackupTooBigForAGistFileIsRefusedBeforeItIsSent(t *testing.T) {
-	server, fake := newFakeGitHub(t)
+func TestAGitHubBackupLargerThanOneMegabyteIsReadBackWhole(t *testing.T) {
+	server, _ := newFakeGitHub(t)
 	client := newTestClient(t, server, "")
-	_, err := client.Put(context.Background(), make([]byte, 800_000), "") // 1.07 MB as base64
+	backup := make([]byte, 900_000) // 1.2 MB as base64, past the API's 1 MB answer
+	for i := range backup {
+		backup[i] = byte(i * 7)
+	}
+	if _, err := client.Put(context.Background(), backup, ""); err != nil {
+		t.Fatalf("a GitHub gist takes a backup over 1 MB: %v", err)
+	}
+	got, _, err := client.Get(context.Background())
+	if err != nil {
+		t.Fatalf("reading back a truncated file: %v", err)
+	}
+	if string(got) != string(backup) {
+		t.Fatalf("read back %d bytes, want the %d uploaded", len(got), len(backup))
+	}
+}
+
+func TestAGiteeBackupTooBigForASnippetFileIsRefusedBeforeItIsSent(t *testing.T) {
+	server, fake := newFakeGitHub(t)
+	client, err := New(Config{Provider: Gitee, Token: testToken, APIBase: server.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Put(context.Background(), make([]byte, 800_000), "") // 1.07 MB as base64
 	if !errors.Is(err, cloudsync.ErrTooLarge) || len(fake.requests) != 0 {
 		t.Fatalf("%v, %d requests", err, len(fake.requests))
-	}
-	if _, err := client.Put(context.Background(), make([]byte, 700_000), ""); err != nil { // 933 KB
-		t.Fatal(err)
 	}
 }
 

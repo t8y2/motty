@@ -360,5 +360,8 @@ func TestReverseFolderSyncNeverWritesToUnsafePrompts(t *testing.T) {
 }
 
 func folderSyncMarker(session *Session, kind string) string {
+	if kind == "C" {
+		return string(sshconn.IntegrationCommandStartMarker(session.term.folderToken))
+	}
 	return "\x1b]133;" + kind + ";motty=" + session.term.folderToken + "\x07"
 }

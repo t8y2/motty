@@ -10,6 +10,7 @@ type ActionFeedbackMessages struct {
 	SaveFolderMissing         string
 	SaveDenied                string
 	SaveFailed                string
+	ChangeSaveFailed          string
 	ImportSSHConfigFailed     string
 	ImportHostCatalogFailed   string
 	ImportUpdateRequired      string
@@ -18,6 +19,7 @@ type ActionFeedbackMessages struct {
 	ImportPrivateKeyFailedFmt string
 	BackupTooLarge            string
 	NewWindowFailed           string
+	ClipboardFailed           string
 	InvalidConnection         string
 }
 
@@ -29,6 +31,7 @@ var chineseActionFeedback = ActionFeedbackMessages{
 	SaveFolderMissing:         "保存位置不存在，请重新选择文件夹。",
 	SaveDenied:                "没有权限保存到这里，请选择其他位置。",
 	SaveFailed:                "保存失败，请换个保存位置，或检查磁盘空间后重试。",
+	ChangeSaveFailed:          "修改未能写入设置，请检查磁盘空间或文件权限后重试。",
 	ImportSSHConfigFailed:     "无法导入此 SSH 配置，请检查文件内容是否完整。",
 	ImportHostCatalogFailed:   "无法导入此文件，请选择 Motty 导出的主机文件。",
 	ImportUpdateRequired:      "此文件由更新版本的 Motty 导出，请更新 Motty 后再试。",
@@ -37,6 +40,7 @@ var chineseActionFeedback = ActionFeedbackMessages{
 	ImportPrivateKeyFailedFmt: "无法导入“%s”，请重新选择可读取的 SSH 私钥文件。",
 	BackupTooLarge:            "备份文件过大，请选择其他备份。",
 	NewWindowFailed:           "暂时无法打开新窗口，请稍后重试。",
+	ClipboardFailed:           "无法写入剪贴板，请稍后重试。",
 	InvalidConnection:         "连接地址有误，请按 用户名@主机地址:端口 填写，例如 admin@192.168.1.10:22。",
 }
 
@@ -48,6 +52,7 @@ var englishActionFeedback = ActionFeedbackMessages{
 	SaveFolderMissing:         "The save location no longer exists. Choose another folder.",
 	SaveDenied:                "You do not have permission to save here. Choose another location.",
 	SaveFailed:                "Could not save the file. Choose another location or check the available disk space.",
+	ChangeSaveFailed:          "The change could not be written to the settings. Check the disk space and file permissions, then try again.",
 	ImportSSHConfigFailed:     "Could not import this SSH config. Check that the file is complete.",
 	ImportHostCatalogFailed:   "Could not import this file. Choose a host file exported by Motty.",
 	ImportUpdateRequired:      "This file was exported by a newer Motty version. Update Motty and try again.",
@@ -56,5 +61,6 @@ var englishActionFeedback = ActionFeedbackMessages{
 	ImportPrivateKeyFailedFmt: "Could not import “%s”. Select a readable SSH private key file.",
 	BackupTooLarge:            "This backup file is too large. Choose another backup.",
 	NewWindowFailed:           "Could not open a new window. Please try again shortly.",
+	ClipboardFailed:           "Could not write to the clipboard. Please try again.",
 	InvalidConnection:         "Check the connection address. Use user@host:port, for example admin@192.168.1.10:22.",
 }

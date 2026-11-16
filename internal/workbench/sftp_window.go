@@ -18,14 +18,17 @@ import (
 // The terminal entry borrows that connection; the host-menu entry owns its
 // connection or authenticated share. Both own their browser and SFTP worker.
 type sftpWindow struct {
-	owner                       *State
-	session                     Session
-	window                      *app.ContentWindow
-	view                        *sftpView
-	closed, closeConfirm        bool
-	closedSignal                atomic.Bool
-	allowClose, afterClosed     func()
-	activeLocal                 bool
+	owner                   *State
+	session                 Session
+	window                  *app.ContentWindow
+	view                    *sftpView
+	closed, closeConfirm    bool
+	closedSignal            atomic.Bool
+	allowClose, afterClosed func()
+	activeLocal             bool
+	// pendingFocus is the control the next paint hands the keyboard to, for a
+	// focus change the model makes outside an input event.
+	pendingFocus                gfx.ID
 	localRefresh                bool
 	pendingLocal                string
 	phase                       sshconn.Phase

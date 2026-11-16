@@ -337,6 +337,11 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 		if state.modalSession == session.ID {
 			state.closeModal()
 		}
+		// A file panel's own connection is not a tab, but its prompt is just as
+		// much this window's while the tab is here.
+		if files := session.files; files != nil && files.dedicated != nil && state.modalSession == files.dedicated.session.ID {
+			state.closeModal()
+		}
 		if state.broadcast == id {
 			state.broadcast = 0
 		}
@@ -422,6 +427,12 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 		state.sessions = append(state.sessions, session)
 		moved := &state.sessions[len(state.sessions)-1]
 		moved.paneSlot = state.claimPaneSlot()
+		if files := moved.files; files != nil && files.dedicated != nil {
+			// The hidden prompt session takes this window's numbering, so its
+			// number cannot collide with a tab that arrives later.
+			files.dedicated.session.ID = state.nextSessionID
+			state.nextSessionID++
+		}
 		if moved.term != nil {
 			// What the terminal kept of the window it left: its row cache is made
 			// for that window's look, and its callbacks and text handlers name

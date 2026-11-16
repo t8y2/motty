@@ -100,22 +100,17 @@ func (s *State) paintNoteTree(c *gfx.Canvas, b gfx.Rect) {
 	components.PaintSeparator(c, theme, gfx.Rect{X: b.X + 8, Y: y - 1, Width: max(0, b.Width-16), Height: 1}, components.SeparatorHorizontal)
 	y += 6
 	body := gfx.Rect{X: b.X + 6, Y: y, Width: b.Width - 12, Height: max(0, b.Y+b.Height-y-6)}
-	type entry struct {
-		id, label      string
-		folder, pinned bool
-		depth          int
-	}
-	var rows []entry
 	query := strings.ToLower(n.query.String())
-	matches := map[string]bool{}
-	parents := map[string]bool{}
+	sc := &v.treeScratch
+	sc.reset()
+	matches, parents := sc.matches, sc.parents
 	for _, note := range n.list {
 		if !s.noteMatchesSearch(note, query) {
 			continue
 		}
 		matches[note.ID] = true
 		id := note.Folder
-		seen := map[string]bool{}
+		seen := sc.seen
 		for id != "" && !seen[id] {
 			seen[id] = true
 			parents[id] = true
@@ -125,10 +120,12 @@ func (s *State) paintNoteTree(c *gfx.Canvas, b gfx.Rect) {
 			}
 			id = f.Parent
 		}
+		clear(seen)
 	}
-	folders := slices.Clone(n.folders)
+	folders := append(sc.folders, n.folders...)
 	slices.SortStableFunc(folders, func(a, b savedNoteFolder) int { return a.Order - b.Order })
-	notes := slices.Clone(n.list)
+	sc.folders = folders
+	notes := append(sc.notes, n.list...)
 	slices.SortStableFunc(notes, func(a, b savedNote) int {
 		if a.Pinned != b.Pinned {
 			if a.Pinned {
@@ -138,7 +135,9 @@ func (s *State) paintNoteTree(c *gfx.Canvas, b gfx.Rect) {
 		}
 		return a.Order - b.Order
 	})
-	seen := map[string]bool{}
+	sc.notes = notes
+	seen := sc.walked
+	rows := sc.rows
 	var walk func(string, int)
 	walk = func(parent string, depth int) {
 		for _, f := range folders {
@@ -149,13 +148,13 @@ func (s *State) paintNoteTree(c *gfx.Canvas, b gfx.Rect) {
 				continue
 			}
 			seen[f.ID] = true
-			rows = append(rows, entry{id: f.ID, label: f.Name, folder: true, depth: depth})
+			rows = append(rows, noteTreeEntry{id: f.ID, label: f.Name, folder: true, depth: depth})
 			if v.expanded[f.ID] || query != "" {
 				walk(f.ID, depth+1)
 			}
 		}
 		if v.inlineNew && v.inlineParent == parent {
-			rows = append(rows, entry{folder: true, depth: depth})
+			rows = append(rows, noteTreeEntry{folder: true, depth: depth})
 		}
 		for _, note := range notes {
 			if !matches[note.ID] {
@@ -172,15 +171,19 @@ func (s *State) paintNoteTree(c *gfx.Canvas, b gfx.Rect) {
 			if strings.TrimSpace(label) == "" {
 				label = s.noteText("Untitled", "无标题")
 			}
-			rows = append(rows, entry{id: note.ID, label: label, pinned: note.Pinned, depth: depth})
+			rows = append(rows, noteTreeEntry{id: note.ID, label: label, pinned: note.Pinned, depth: depth})
 		}
 	}
 	walk("", 0)
-	v.listArea = s.noteHoverScrollArea(c, body, gfx.Size{Width: body.Width, Height: float32(len(rows)) * 30}, v.treeScroll, hitNoteListScroll, hitNoteListThumb, s.noteText("Scroll notes", "滚动笔记"), &v.treeBar, v.scrollDrag, s.noteScrollRegions()&1 != 0)
+	sc.rows = rows
+	v.listArea = s.noteHoverScrollArea(c, body, gfx.Size{Width: body.Width, Height: float32(len(rows)) * noteTreeRowHeight}, v.treeScroll, hitNoteListScroll, hitNoteListThumb, s.noteText("Scroll notes", "滚动笔记"), &v.treeBar, v.scrollDrag, s.noteScrollRegions()&1 != 0)
 	geo := v.listArea.BeginContent()
 	v.treeScroll = geo.OffsetY
-	treeView := components.BeginTree(c, theme, geo.Content).RowHeight(30)
-	for _, e := range rows {
+	first, last := noteTreeVisibleRange(geo.OffsetY, geo.Viewport.Height, len(rows))
+	treeBounds := geo.Content
+	treeBounds.Y += float32(first) * noteTreeRowHeight
+	treeView := components.BeginTree(c, theme, treeBounds).RowHeight(noteTreeRowHeight)
+	for _, e := range rows[first:last] {
 		token := v.noteTokens[e.id]
 		id, more := hitNoteRows.At(token), hitNoteRowMore.At(token)
 		disclosure := gfx.ID{}

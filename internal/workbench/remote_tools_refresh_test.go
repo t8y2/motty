@@ -219,7 +219,7 @@ func TestRemoteDockerPlaceholderRecoversAndDoesNotHideOtherErrors(t *testing.T) 
 	if !state.remote.noDocker || remoteCanvasHasText(&canvas, state.messages.Tools.RemoteDockerMissing) {
 		t.Fatal("processes lost the Docker availability cache or displayed the wrong empty state")
 	}
-	clickRemoteToolsRow(t, state, 0)
+	doubleClickRemoteToolsRow(t, state, 0)
 	canvas.Reset()
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	if hit, ok := hitByLabelRoleLast(&canvas, state.messages.Tools.RemoteForceKill, gfx.RoleButton); !ok || hit.Disabled {

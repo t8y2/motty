@@ -131,7 +131,7 @@ func (state *State) startSFTPArchive(session *Session, view *sftpView, directory
 		view.status = fmt.Sprintf(state.messages.Tools.CompressRunningFmt, source)
 	}
 	view.archiveSequence++
-	sequence, connection := view.archiveSequence, session.conn
+	sequence, connection := view.archiveSequence, view.fileConnection(session)
 	results, notify := make(chan archiveResult, 1), state.notifyForView(session, view)
 	view.archiveResults = results
 	ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)

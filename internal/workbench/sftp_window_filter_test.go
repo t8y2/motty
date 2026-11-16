@@ -20,6 +20,16 @@ import (
 
 func dualClickID(t *testing.T, view *headless.Session, id gfx.ID) {
 	t.Helper()
+	for side, pathID := range sftpWindowPath {
+		if id == pathID {
+			if edit, ok := hitByIDSnapshot(view.Snapshot().Hits, sftpWindowPathEdit[side]); ok {
+				if err := view.Click(edit.Bounds.X+edit.Bounds.Width-3, edit.Bounds.Y+edit.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+	}
 	hit := dualHit(t, view, id)
 	if err := view.Click(hit.X+hit.Width/2, hit.Y+hit.Height/2); err != nil {
 		t.Fatal(err)

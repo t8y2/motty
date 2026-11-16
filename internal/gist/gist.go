@@ -74,9 +74,13 @@ func DefaultAPIBaseFor(provider Provider) string {
 	return DefaultAPIBase
 }
 
-// MaxFileBytes is what the API takes per file in one request (1 MB of text); a
-// bigger file is truncated when read back, so it is refused before it is sent.
+// MaxFileBytes is the most text a Gitee snippet file is allowed here. GitHub
+// takes bigger gist files; the API cuts a file bigger than 1 MB in its answer,
+// so Get reads such a file back from its raw URL instead.
 const MaxFileBytes = 1_000_000
+
+// maxRawBytes bounds what one raw download may hold in memory.
+const maxRawBytes = 100 << 20
 
 // Client talks to one snippet.
 type Client struct {
@@ -190,6 +194,7 @@ func (client *Client) do(ctx context.Context, method, route string, body any) (*
 type gistFile struct {
 	Content   string `json:"content"`
 	Truncated bool   `json:"truncated"`
+	Size      int64  `json:"size"`
 	RawURL    string `json:"raw_url"`
 }
 
@@ -382,14 +387,57 @@ func (client *Client) Get(ctx context.Context) (data []byte, tag string, err err
 	if !found || !has {
 		return nil, "", cloudsync.ErrNotFound
 	}
-	if file.Truncated || g.Truncated && file.Content == "" {
-		return nil, "", cloudsync.ErrTooLarge
+	content := file.Content
+	if file.Truncated || g.Truncated && content == "" {
+		if content, err = client.raw(ctx, file); err != nil {
+			return nil, "", err
+		}
 	}
-	data, err = base64.StdEncoding.DecodeString(strings.TrimSpace(file.Content))
+	data, err = base64.StdEncoding.DecodeString(strings.TrimSpace(content))
 	if err != nil {
 		return nil, "", errors.New("gist: the file is not a Motty backup")
 	}
 	return data, client.tag(g), nil
+}
+
+// raw downloads a file the API truncated, from the raw URL it names, which holds
+// the whole file. The URL is a secret address on the file host, so the token is
+// not sent with it.
+func (client *Client) raw(ctx context.Context, file gistFile) (string, error) {
+	if file.RawURL == "" {
+		return "", cloudsync.ErrTooLarge
+	}
+	target, err := url.Parse(file.RawURL)
+	if err != nil || target.Host == "" || target.User != nil {
+		return "", errors.New("gist: the file's raw address is not valid")
+	}
+	if err := cloudsync.CheckAddress(target, false); err != nil {
+		return "", err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("User-Agent", "motty")
+	response, err := client.http.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "", failure(client.config.Provider, response)
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, maxRawBytes+1))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > maxRawBytes {
+		return "", cloudsync.ErrTooLarge
+	}
+	if file.Size > 0 && int64(len(data)) != file.Size {
+		return "", fmt.Errorf("gist: the file came back %d bytes, the snippet says %d", len(data), file.Size)
+	}
+	return string(data), nil
 }
 
 // Put uploads the backup, creating a secret snippet when there is none. It is
@@ -399,7 +447,7 @@ func (client *Client) Get(ctx context.Context) (data []byte, tag string, err err
 // noticed; the window is one round trip.
 func (client *Client) Put(ctx context.Context, data []byte, previous string) (tag string, err error) {
 	content := base64.StdEncoding.EncodeToString(data)
-	if len(content) > MaxFileBytes {
+	if client.config.Provider == Gitee && len(content) > MaxFileBytes {
 		return "", fmt.Errorf("%w: a snippet file holds at most 1 MB, and this backup is %d KB as text", cloudsync.ErrTooLarge, len(content)/1000+1)
 	}
 	files := map[string]map[string]string{client.config.File: {"content": content}}

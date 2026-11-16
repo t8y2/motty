@@ -44,7 +44,6 @@ var (
 	hitRemoteAutoToggle    = tree.ID(remoteToolsHits, "remote-auto-toggle")
 	hitRemoteClose         = tree.ID(remoteToolsHits, "remote-close")
 	hitRemoteDismiss       = tree.ID(remoteToolsHits, "remote-dismiss")
-	hitRemoteNext          = tree.ID(remoteToolsHits, "remote-next")
 	hitRemoteProcessTable  = tree.ID(remoteToolsHits, "remote-process-table")
 	hitRemoteProcessScroll = tree.ID(remoteToolsHits, "remote-process-scroll")
 )
@@ -61,10 +60,10 @@ var (
 )
 
 const (
-	remoteRowsPerPage   = 12
-	remoteMaxRows       = 200
-	remoteTimeout       = 20 * time.Second
-	remoteToolbarHeight = float32(34)
+	remoteDefaultVisibleRows = 12
+	remoteMaxRows            = 200
+	remoteTimeout            = 20 * time.Second
+	remoteToolbarHeight      = float32(34)
 )
 
 // clickRemoteToolsOpen opens the dialog for the active session.
@@ -118,8 +117,11 @@ func (state *State) remoteTabLabel(tab remoteTab) string {
 func (state *State) applyRemoteTab() {
 	view := &state.remote
 	m := state.messages.Tools
-	view.selected, view.page = "", 0
-	view.rows, view.pageText = nil, ""
+	view.selected = ""
+	view.rows = nil
+	view.processScroll = 0
+	view.processScrollBar = components.ScrollAreaGeometry{}
+	view.processTableBounds = gfx.Rect{}
 	view.procs, view.containers, view.compose, view.resources = nil, nil, nil, nil
 	view.collectedAt, view.stale, view.snapshotStatus = time.Time{}, false, ""
 	view.processesTruncated, view.commandsTruncated = false, false
@@ -171,8 +173,6 @@ type remoteToolsView struct {
 	resources              []remotetools.Resource
 	rows                   []remoteRow
 	selected               string
-	page                   int
-	pageText               string
 	processScroll          float32
 	processScrollBar       components.ScrollAreaGeometry
 	processScrollDragging  bool
@@ -183,6 +183,7 @@ type remoteToolsView struct {
 	processTableBounds     gfx.Rect
 	tableBodyBounds        gfx.Rect
 	tableBodyFirst         int
+	tableBodyRemainder     float32
 	tableRowHeight         float32
 	processColumns         [6]components.TableColumn
 	searches               [6]remoteSearch
@@ -197,14 +198,14 @@ type remoteToolsView struct {
 	autoHandlers    ui.Handlers
 	// The page's declaration functions are made once too: method values and
 	// closures made in each paint allocate.
-	tabLabel     func(remoteTab) string
-	autoMenu     func(*ui.MenuItems)
-	processMenu  func(*ui.MenuItems)
-	autoDraw     func(*ui.DrawContext)
-	processDraw  func(*ui.DrawContext)
-	objectDraw   func(*ui.DrawContext)
-	body, footer func()
-	detailsAct   func(gfx.ID)
+	tabLabel      func(remoteTab) string
+	autoMenu      func(*ui.MenuItems)
+	processMenu   func(*ui.MenuItems)
+	containerMenu func(*ui.MenuItems)
+	autoDraw      func(*ui.DrawContext)
+	tableDraw     func(*ui.DrawContext)
+	body, footer  func()
+	detailsAct    func(gfx.ID)
 	// ctx is the page declaration being used while the tools dialog declares
 	// itself. The stored body, footer and menu functions read it, because a
 	// closure cannot capture a paint's C beyond that paint.
@@ -824,10 +825,6 @@ func (state *State) rebuildRemoteRows() {
 	}
 	state.filterRemoteRows()
 	state.sortRemoteRows()
-	if view.page*state.remotePageSize() >= len(view.rows) {
-		view.page = 0
-	}
-	view.pageText = ""
 }
 
 func (state *State) remoteToolActions() (actions [8]components.ButtonAction, count int) {

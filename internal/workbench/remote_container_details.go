@@ -59,6 +59,31 @@ func (state *State) closeRemoteContainerDetails() {
 	state.remote.containerDetails = remoteContainerDetails{}
 }
 
+func (state *State) declareRemoteContainerMenuItems(menu *ui.MenuItems, after func(func()), act func(gfx.ID)) {
+	actions, count := state.remoteToolActions()
+	run := func(fn func()) {
+		if after != nil {
+			after(fn)
+			return
+		}
+		fn()
+	}
+	for index := 0; index < count; index++ {
+		action := actions[index]
+		if action.ID == hitRemoteClose {
+			continue
+		}
+		item := menu.Item(action.Label).Disabled(action.Disabled)
+		if action.Variant == components.ButtonDestructive {
+			item = item.Destructive()
+		}
+		if item.Clicked() {
+			id := action.ID
+			run(func() { act(id) })
+		}
+	}
+}
+
 func (state *State) selectRemoteContainerDetailTab(tab gfx.ID) {
 	details := &state.remote.containerDetails
 	if !details.open || tab != hitRemoteContainerDetailsOverview && tab != hitRemoteContainerDetailsEnvironment {

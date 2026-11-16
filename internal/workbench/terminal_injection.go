@@ -193,6 +193,12 @@ func (state *State) applyInjection(session *Session, data []byte) (rest []byte, 
 	injection := &t.injection
 	injection.buf = append(injection.buf, data...)
 	if index := bytes.Index(injection.buf, injection.marker); index >= 0 {
+		// Bash reports command-start support while the activation output is
+		// still hidden. Retain that capability so the first prompt can own input.
+		commandStart := sshconn.IntegrationCommandStartMarker(t.folderToken)
+		if bytes.Contains(injection.buf[:index], commandStart) {
+			t.commandReporting = true
+		}
 		rest = append([]byte(nil), injection.buf[index+len(injection.marker):]...)
 		injection.buf = injection.buf[:0]
 		injection.phase = injectionDone

@@ -28,3 +28,20 @@ To tell the usual suspects apart, start Motty with one of these set:
 - `VIVA_ACCESSIBILITY=0` — no UI Automation tree.
 
 A dump is a copy of the program's memory: look before you share it.
+
+## If Windows Smart App Control blocks Motty
+
+Windows 11 with Smart App Control turned on blocks programs it cannot verify,
+including any whose signature is missing. The Windows packages are not
+Authenticode-signed yet, so a copy that Windows does not already trust is
+stopped with a *Smart App Control has blocked a potentially unsafe app* dialog
+(智能应用控制已阻止可能不安全的应用) naming `motty.exe`, whether it came from
+the installer or from the portable ZIP.
+
+Clearing the mark of the web (`Unblock-File`) does not lift the block: the check
+applies to the executable itself, not to the download, and Windows offers no way
+to allow a single app. On such a system Motty runs only after Smart App Control
+is turned off under Windows Security → App & browser control → Smart App
+Control. Depending on the Windows build, turning it back on later may require
+resetting or reinstalling Windows. The release notes will say when a
+code-signed build is available.

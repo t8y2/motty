@@ -443,6 +443,13 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 		}
 		return gfx.EventResult{}
 	}
+	if event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonPrimary {
+		for side, id := range sftpWindowPathEdit {
+			if event.Target == id {
+				return w.startPathEditing(side)
+			}
+		}
+	}
 	if w.ui.splitting {
 		if event.Kind == gfx.PointerMove {
 			w.ui.fraction = w.ui.split.FractionAt(event.X)
@@ -742,6 +749,12 @@ func (w *sftpWindow) click(id gfx.ID) {
 	}
 	for side := range sftpWindowPath {
 		local := side == 0
+		if index, ok := id.In(sftpWindowBreadcrumbs[side]); ok {
+			if folder := w.folder(local); index >= 0 && index < len(folder.crumbs) {
+				w.navigate(local, folder.crumbs[index].path)
+			}
+			return
+		}
 		switch id {
 		case sftpWindowRefresh[side]:
 			w.refresh(local)
@@ -832,6 +845,17 @@ func (w *sftpWindow) textInput(context app.TextInputContext) *app.TextInput {
 		}
 	}
 	return nil
+}
+
+func (w *sftpWindow) startPathEditing(side int) gfx.EventResult {
+	folder := w.folder(side == 0)
+	if !w.owner.sftpPathVisible(folder) {
+		folder.resetPathInput()
+	}
+	folder.pathEditing = true
+	w.activeLocal, w.view.local = side == 0, side == 0
+	w.cancelDrag()
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: sftpWindowPath[side], FocusVisible: true}
 }
 
 func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
@@ -953,6 +977,10 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 							w.owner.cancelSFTPNavigation(w.view)
 						}
 						folder.resetPathInput()
+						if !w.owner.sftpPathInput {
+							folder.pathEditing = false
+							handled.Focus, handled.FocusVisible = sftpWindowPathEdit[side], true
+						}
 					}
 				}
 			}
@@ -983,6 +1011,13 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if w.fileProperties.open || w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
 		return gfx.EventResult{}
+	}
+	if !event.Repeat && event.Modifiers == 0 && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
+		for side, id := range sftpWindowPathEdit {
+			if event.Target == id {
+				return w.startPathEditing(side)
+			}
+		}
 	}
 	if result, handled := w.directoryTreeKey(event); handled {
 		return result
@@ -1183,8 +1218,9 @@ func (w *sftpWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 		return handled
 	case "l":
 		side := sideIndex(w.activeLocal)
-		app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(w.folder(w.activeLocal).pathInput())
-		handled.Focus = sftpWindowPath[side]
+		handled = w.startPathEditing(side)
+		folder := w.folder(w.activeLocal)
+		app.TextEvent{Kind: app.TextCommandEvent, Command: app.TextSelectAll}.Apply(folder.pathInput())
 		return handled
 	case "r":
 		w.refresh(w.activeLocal)

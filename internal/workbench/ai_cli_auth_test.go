@@ -316,3 +316,31 @@ func TestResetCLIAuthClearsACheckingState(t *testing.T) {
 		t.Fatalf("reset auth canceled=%t state=%q checks=%v", canceled, s.ai.auth["auth"], s.ai.authChecks)
 	}
 }
+
+// Closing the sign-in dialog through its real pointer path stops the login in
+// the middle of a paint pass. The dialog's terminal is painted after that
+// decision in the same pass, so it must not reach a terminal already released.
+func TestClosingCLILoginDialogDoesNotPaintReleasedTerminal(t *testing.T) {
+	w := newSettingsWorld(t, newLister("default"))
+	s := w.state
+	path, _ := os.Executable()
+	db, _ := s.aiStore()
+	if err := db.SaveProvider(store.Provider{ID: "auth", Name: "Auth", Kind: "codex-cli", CLIPath: path, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	s.reloadAI()
+	s.options.CLIAuthStart = func(localshell.Config) (Shell, error) { return &fakeShell{done: make(chan struct{})}, nil }
+	s.Click(hitSettings)
+	s.selectSettingsCategory(settingsAssistant)
+	s.aiStartCLILogin("auth", false)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && (s.ai.login == nil || s.ai.login.term.shell == nil) {
+		s.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	driver := modalEventDriver(t, s)
+	clickPaintedHit(t, driver, hitAISetFormClose)
+	if s.ai.login != nil {
+		t.Fatal("closing the dialog did not stop the login")
+	}
+}

@@ -26,7 +26,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"terminal_toolbar_position": true,
 		"terminal_find":             true,
 		"terminal_toolbar_size":     true,
-		"workspace":                 true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "sessions": true, "deck": true, "sync": true,
+		"workspace":                 true, "active_session": true, "shortcuts": true, "identity_files": true, "agent_hosts": true, "agent_host_mode": true, "sessions": true, "deck": true, "sync": true,
 		// The generation of default chords this computer's table was reconciled
 		// against: which defaults a build ships is not another device's business.
 		"shortcut_defaults_generation": true,
@@ -43,7 +43,10 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"sftp_window_order": true, "sftp_open_mode": true, "sftp_directory_tree": true, "custom_editor_path": true,
 		"sftp_transfer_filter": true,
 		"toolbars":             true,
-		"local_shell":          true, "local_start": true, "last_local_directory": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
+		// Whether the new-tab picker lists its shells expanded is this
+		// computer's own picker layout, like the hidden shells below.
+		"local_shells_expanded": true,
+		"local_shell":           true, "local_start": true, "last_local_directory": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
 		// Whether the command bar shows, which groups it filters and how it
 		// orders them are this computer's own layout, not a preference to sync.
 		"commands_shown": true, "commands_sort": true, "commands_hidden_groups": true,
