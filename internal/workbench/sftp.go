@@ -2263,6 +2263,11 @@ func (state *State) pumpSFTP(session *Session) {
 					continue
 				}
 				if result.Err == nil && !state.sftpPathInput {
+					// The accepted path replaces the editor with breadcrumbs; hand
+					// the keyboard to the control that takes its place.
+					if view.sftpFolder.pathEditing && view.detached != nil {
+						view.detached.pendingFocus = sftpWindowPathEdit[1]
+					}
 					view.sftpFolder.pathEditing = false
 				}
 			}

@@ -37,6 +37,25 @@ func openSFTPTabFixture(t *testing.T) (*State, *Session, *sftpWindow, *workbench
 	return state, source, w, remote, localDir
 }
 
+// Switching to a file tab hands the keyboard to the path control that is
+// actually painted: the field in permanent-input mode, the edit button in
+// breadcrumbs mode.
+func TestSFTPTabFocusTargetFollowsThePathMode(t *testing.T) {
+	state, _, window, _, _ := openSFTPTabFixture(t)
+	if state.activeSection != sectionSFTP || state.activeSFTPWindow() != window {
+		t.Fatal("the file tab is not the active section")
+	}
+	state.sftpPathInput = false
+	window.view.lfolder.pathEditing = false
+	if got := state.activeTopTabFocusHit(); got != sftpWindowPathEdit[0] {
+		t.Fatalf("breadcrumbs focus target = %v, want %v", got, sftpWindowPathEdit[0])
+	}
+	state.sftpPathInput = true
+	if got := state.activeTopTabFocusHit(); got != sftpWindowPath[0] {
+		t.Fatalf("permanent path input focus target = %v, want %v", got, sftpWindowPath[0])
+	}
+}
+
 func waitSFTPTab(t *testing.T, state *State, w *sftpWindow, ready func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(4 * time.Second)

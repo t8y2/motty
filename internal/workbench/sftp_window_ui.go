@@ -270,6 +270,10 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	if !w.ui.profileHoverOpen {
 		w.ui.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	}
+	if !w.pendingFocus.IsZero() {
+		canvas.RequestFocus(w.pendingFocus)
+		w.pendingFocus = gfx.ID{}
+	}
 }
 
 // The window's body is a padded column: the panes take what is left, the transfer
@@ -443,7 +447,11 @@ func (w *sftpWindow) paintPaneDetails(canvas *gfx.Canvas, s *sftpWindowScratch, 
 	}
 	if w.owner.sftpPathVisible(folder) {
 		value := folder.pathInput().String()
-		components.PaintInput(canvas, theme, s.address.Rect(), components.InputSnapshot{ID: sftpWindowPath[side], Label: m.SFTPWindow.Path, Value: value, Hint: folder.path, Focused: focused, PlatformEditing: focused, ReadOnly: w.navigationBusy()})
+		// Only the server pane waits for the server. The local pane is not
+		// listing while a remote navigation is pending, and a window-wide flag
+		// would blank a focused local field and stop it accepting input.
+		readOnly := !local && w.view.busy
+		components.PaintInput(canvas, theme, s.address.Rect(), components.InputSnapshot{ID: sftpWindowPath[side], Label: m.SFTPWindow.Path, Value: value, Hint: folder.path, Focused: focused, PlatformEditing: focused && !readOnly && value != "", ReadOnly: readOnly})
 	} else {
 		w.owner.paintSFTPFolderBreadcrumbs(canvas, s.address.Rect(), folder.crumbs, sftpWindowPathEdit[side], sftpWindowBreadcrumbs[side])
 	}

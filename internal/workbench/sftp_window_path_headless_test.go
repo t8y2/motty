@@ -66,11 +66,37 @@ func TestSFTPWindowBreadcrumbsNavigateAndEditBothPanes(t *testing.T) {
 		if folder.pathEditing {
 			t.Fatal("accepted navigation did not return to breadcrumbs")
 		}
+		if preview.Snapshot().Focused != edit {
+			t.Fatalf("accepted navigation left focus at %v, want the breadcrumb edit button %v", preview.Snapshot().Focused, edit)
+		}
 	}
 	if output := os.Getenv("MOTTY_SFTP_WINDOW_PATH_EVIDENCE"); output != "" {
 		if err := preview.Screenshot(filepath.Join(output, "881-both-breadcrumbs.png")); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// A pending server listing must not take the local path field's editor away:
+// the panes are independent, and the local side is not waiting for the server.
+func TestSFTPWindowLocalPathStaysEditableWhileRemoteNavigates(t *testing.T) {
+	_, window, _, host, _ := dualSFTPFixture(t, 1.25)
+	preview := host.windows[0].view
+	dualClickID(t, preview, sftpWindowPath[0])
+	if got := preview.Snapshot().Focused; got != sftpWindowPath[0] {
+		t.Fatalf("the local edit button focused %v", got)
+	}
+	// The server pane is listing; the local pane is not.
+	window.view.busy = true
+	config := host.windows[0].config
+	if err := preview.Resize(config.Width+1, config.Height); err != nil {
+		t.Fatal(err)
+	}
+	if err := preview.Type("x"); err != nil {
+		t.Fatalf("the local path field stopped accepting typing while the server listed: %v", err)
+	}
+	if draft := window.view.lfolder.pathInput().String(); !strings.Contains(draft, "x") {
+		t.Fatalf("local path draft = %q, want the typed x", draft)
 	}
 }
 
