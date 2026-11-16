@@ -271,12 +271,13 @@ const (
 )
 
 func (state *State) openSFTP(session *Session) {
+	saved := savedHistoryFor(session)
 	if session != nil && session.isLocal() && session.files == nil {
 		view := &sftpView{local: true, localOnly: true}
-		view.adoptHistory(session.fileHistory)
+		view.adoptHistory(saved)
 		view.selected, view.lfolder.selected = -1, -1
 		session.files = view
-		start := session.fileHistory[0].path
+		start := saved[0].path
 		if start == "" || session.term != nil && session.term.followPath != "" {
 			start = state.localPanelStart(session)
 		}
@@ -291,7 +292,7 @@ func (state *State) openSFTP(session *Session) {
 	}
 	connection, transfer := session.conn, session.host.Transfer
 	view := &sftpView{busy: true, operation: sftpclient.OperationList}
-	view.adoptHistory(session.fileHistory)
+	view.adoptHistory(saved)
 	view.startListingStatus(state.messages.SFTPLoading)
 	view.sftpFolder.showHidden = true
 	view.transferServer, view.transferAddress = session.Title, session.Address
@@ -306,7 +307,7 @@ func (state *State) openSFTP(session *Session) {
 			state.terminalDirectory(session.ID, cwd)
 		}
 	}
-	view.restorePath = session.fileHistory[1].path
+	view.restorePath = saved[1].path
 	state.listSFTP(view, view.restorePath)
 	if !view.busy {
 		view.busy = false
@@ -323,6 +324,7 @@ func (state *State) closeSFTP(session *Session) {
 	}
 	for side, saved := range session.files.saveHistory() {
 		if saved.path != "" {
+			saved.endpoint = session.Address
 			session.fileHistory[side] = saved
 		}
 	}

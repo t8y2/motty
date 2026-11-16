@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -53,6 +54,51 @@ func TestSFTPReconnectRestoresLastAcceptedDirectory(t *testing.T) {
 				t.Fatal("reconnect did not fetch the restored directory with a fresh worker")
 			}
 		})
+	}
+}
+
+// Editing a host's address while its tab is open makes the tab connect to a
+// different server. Folders browsed on the old one are not the new one's to
+// restore.
+func TestSFTPReconnectDropsHistoryFromAnotherEndpoint(t *testing.T) {
+	state, session, _, remote := openTestSFTP(t)
+	state.navigateSFTPDirectory(session.files, "/home/test/docs")
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" })
+
+	previous := session.host
+	updated := previous
+	updated.Address = "other.example"
+	index := -1
+	for candidate := range state.hosts {
+		if state.hosts[candidate].ID == updated.ID {
+			index = candidate
+			break
+		}
+	}
+	if index < 0 {
+		t.Fatal("the session's host is not in the host list")
+	}
+	state.replaceHost(index, previous, updated)
+
+	next := &fakeConn{sftp: remote}
+	state.options.Dial = func(sshconn.Config) Connection { return next }
+	state.reconnect(session)
+	next.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy })
+	if session.files.path != "/home/test" {
+		t.Fatalf("a changed endpoint restored %q from the previous server", session.files.path)
+	}
+}
+
+// A server that reports a missing folder with the SFTP v4-v6 status code gets
+// the same notice as one that reports it with FX_NO_SUCH_FILE.
+func TestSFTPPathNotFoundNoticeCoversCodeTen(t *testing.T) {
+	state, _, _, _ := openTestSFTP(t)
+	state.showSFTPPathErrorAt(nil, "/gone", &sftp.StatusError{Code: 10})
+	detail := fmt.Sprintf(state.messages.Tools.FilesPathNotFoundFmt, "/gone")
+	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].detail != detail {
+		t.Fatalf("notice=%v want detail %q", state.fileNotices.items, detail)
 	}
 }
 
