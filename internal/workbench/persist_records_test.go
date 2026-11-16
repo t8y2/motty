@@ -31,6 +31,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// against: which defaults a build ships is not another device's business.
 		"shortcut_defaults_generation": true,
 		"host_view":                    true, "host_privacy": true, "host_privacy_show_name": true,
+		"host_side_width": true, "host_tree_open": true,
 		"host_privacy_show_address": true, "host_privacy_show_user": true,
 		"background": true, "snippet_shortcuts": true,
 		"background_output_alerts": true,
@@ -88,6 +89,7 @@ func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
 		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/", HiddenHostTags: []string{"dev", "prod"},
+		HostSideWidth: 240, HostTreeOpen: true,
 		RecentConnectSort: true, RecentConnections: map[string]time.Time{"host_b": time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
 		SFTPParallel: 2, SFTPTerminalFollow: true, SFTPTransferFilter: 1, CommandHistory: true,
 		Hosts: []savedHost{
