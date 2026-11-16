@@ -131,6 +131,9 @@ func (state *State) activeTerminalTools(session *Session, toolList *[maxBarTools
 		tools = append(tools, barTool{id: hitRemoteStats, icon: iconActivity, hint: hint, style: style})
 	}
 	tools = append(tools, barTool{id: hitProcessToolsOpen, icon: iconProcess, hint: state.messages.Tools.RemoteMenu, disabled: !state.remoteToolsOffered(session), style: iconButtonQuiet})
+	if tool, ok := state.serverLogsRailTool(session, true); ok {
+		tools = append(tools, tool)
+	}
 	inSplit := state.paneInSplit(session.ID)
 	if inSplit {
 		tools = append(tools, barTool{id: hitPaneClose, icon: iconClose, hint: state.messages.PaneClose, style: iconButtonQuiet, groupEnd: true})

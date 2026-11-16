@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -137,6 +138,57 @@ func TestRemoteLogsWithCommandsBar(t *testing.T) {
 	}
 }
 
+func TestRemoteLogsDockDragReorderAndPersist(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Title: "Server logs", Width: 1200, Height: 800, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+		OnResize: state.Resize, OnWake: state.Wake,
+	}), nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	toolbarDockShot(t, view, "server-logs-default")
+
+	logs := dualHit(t, view, hitServerLogs)
+	notes := dualHit(t, view, hitNotesPanel)
+	if err := view.Press(logs.X+logs.Width/2, logs.Y+logs.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Move(notes.X+notes.Width/2, notes.Y+2); err != nil {
+		t.Fatal(err)
+	}
+	if !state.toolbarDock.drag.active {
+		t.Fatal("server logs did not start a toolbar drag")
+	}
+	if err := view.Release(notes.X+notes.Width/2, notes.Y+2); err != nil {
+		t.Fatal(err)
+	}
+	if zone := state.toolbarDockZoneFor(toolbarTerminal, "remote-logs"); zone != toolbarDockSideTop {
+		t.Fatalf("server logs zone = %q, want %q", zone, toolbarDockSideTop)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if logs, notes = dualHit(t, view, hitServerLogs), dualHit(t, view, hitNotesPanel); logs.Y >= notes.Y {
+		t.Fatalf("server logs were not reordered before notes: logs=%v notes=%v", logs, notes)
+	}
+	toolbarDockShot(t, view, "server-logs-reordered")
+	want := state.toolbars.snapshot()
+	reopened := newTestState(t, state.options)
+	if !reflect.DeepEqual(reopened.toolbars.snapshot(), want) {
+		t.Fatal("server logs placement did not survive restart")
+	}
+	if err := view.ClickLabel(state.messages.RemoteLogs.Title); err != nil {
+		t.Fatal(err)
+	}
+	if session.remoteLogs == nil {
+		t.Fatal("reordered server logs button did not open the panel")
+	}
+}
+
 func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	state, _, fake, _ := liveSession(t)
 	state.setAppearance(appearanceLight)
@@ -193,8 +245,8 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	}
 	if rail := state.toolbarDockSideBoundsFor(state.viewport, false); entry.Width == 0 ||
 		entry.X < rail.X || entry.X+entry.Width > rail.X+rail.Width ||
-		entry.Y < rail.Y+rail.Height/2 || entry.Y+entry.Height > rail.Y+rail.Height {
-		t.Fatalf("log entry %v is not anchored to the bottom of the right rail %v", entry, rail)
+		entry.Y < rail.Y || entry.Y+entry.Height > rail.Y+rail.Height {
+		t.Fatalf("log entry %v is not on the right rail %v", entry, rail)
 	}
 	click(state.messages.RemoteLogs.Title)
 	if session.remoteLogs == nil {

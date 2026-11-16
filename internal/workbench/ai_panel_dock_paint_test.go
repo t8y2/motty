@@ -30,7 +30,7 @@ func TestTheDockedAssistantIsBoundedFromTheSideRail(t *testing.T) {
 		t.Fatalf("the panel's edge beside the side rail is %+v, want the line at %v", got, want)
 	}
 
-	// Move the configurable tools left and hide the fixed server-log entry
+	// Move the configurable tools left and hide the server-log entry
 	// to exercise the layout with no rail beside the assistant.
 	state.terminalToolbarPosition = terminalToolbarLeft
 	for i, entry := range state.toolbars.customize(toolbarTerminal) {
