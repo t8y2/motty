@@ -8,6 +8,7 @@ import (
 	"motty/internal/ai/llm"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 )
@@ -25,9 +26,28 @@ type command struct {
 	input     string
 }
 
+// PathEnv carries the user's login PATH into a process Motty starts on its own
+// terminal, such as a CLI login. It is empty where the inherited PATH is already
+// the user's.
+func PathEnv() []string {
+	if path := loginPath(); path != "" {
+		return []string{"PATH=" + path}
+	}
+	return nil
+}
+
 func processEnv(overrides []string) []string {
+	return childEnv(os.Environ(), overrides, loginPath())
+}
+
+// childEnv applies the login PATH under the explicit overrides, so a provider
+// that names its own PATH entry still wins.
+func childEnv(base, overrides []string, path string) []string {
+	env := slices.Clone(base)
+	if path != "" {
+		overrides = append([]string{"PATH=" + path}, overrides...)
+	}
 	// Replace rather than append duplicate names (Windows comparisons ignore case).
-	env := os.Environ()
 	for _, pair := range overrides {
 		name, _, ok := strings.Cut(pair, "=")
 		if !ok {

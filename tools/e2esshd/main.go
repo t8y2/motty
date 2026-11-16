@@ -163,11 +163,24 @@ func main() {
 			remoteForwards := newRemoteForwardSet(conn)
 			defer remoteForwards.Close()
 			go remoteForwards.Serve(requests)
+			// E2E_ONE_SESSION=1 serves one session channel per connection: the
+			// first channel claims the transport, and a later one is refused as
+			// an embedded SSH server that binds a connection to its first
+			// service does. Motty must then carry the files on a connection of
+			// their own.
+			oneSession := os.Getenv("E2E_ONE_SESSION") == "1"
+			usedSession := false
 			for newChannel := range channels {
 				switch newChannel.ChannelType() {
 				case "session":
+					if oneSession && usedSession {
+						log.Printf("session-refused %s", newChannel.ChannelType())
+						newChannel.Reject(ssh.Prohibited, "open failed")
+						continue
+					}
 					channel, reqs, err := newChannel.Accept()
 					if err == nil {
+						usedSession = oneSession
 						go serve(conn, fixture.sftpRoot, channel, reqs)
 					}
 				case "direct-tcpip":

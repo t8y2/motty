@@ -10,7 +10,7 @@ func (state *State) remoteProcessTableMetrics() (headerHeight, rowHeight float32
 	return components.TableHeaderHeight(theme), components.TableRowHeight(theme)
 }
 
-// remoteProcessScrollPointer drags the shared virtual process table's
+// remoteProcessScrollPointer drags the shared virtual table's
 // scrollbar with stable pointer capture and thumb geometry.
 func (state *State) remoteProcessScrollPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
 	if result, handled := state.remoteProcessEnvironmentScrollPointer(event); handled {

@@ -239,7 +239,7 @@ func sftpSizeExecutor(state *State, view *sftpView, local bool) Connection {
 	if !ok || session.host.System == sshconn.SystemUnknown || session.host.System == sshconn.SystemWindows || session.host.InteractiveOnly {
 		return nil
 	}
-	return session.conn
+	return view.fileConnection(session)
 }
 
 type sftpSizeChannel struct {

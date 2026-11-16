@@ -772,14 +772,15 @@ type Messages struct {
 	ClipboardAlwaysAllow           string
 
 	// Status bar.
-	StatusReadyIdle    string
-	StatusSelected     string // prefix: host name follows
-	StatusOpened       string // prefix: session title follows
-	StatusReused       string // prefix: session title follows
-	StatusHostAdded    string
-	HostSaveFailedFmt  string
-	HostSaveMissing    string
-	StatusEditCanceled string
+	StatusReadyIdle       string
+	StatusSelected        string // prefix: host name follows
+	StatusOpened          string // prefix: session title follows
+	StatusReused          string // prefix: session title follows
+	StatusHostAdded       string
+	HostSaveFailedFmt     string
+	HostSaveMissing       string
+	HostEditSaveFailedFmt string
+	StatusEditCanceled    string
 
 	// OpenSSH known_hosts management.
 	KnownHostsTitle                 string
@@ -1043,39 +1044,46 @@ type Messages struct {
 	HostPickerNoMatches string
 
 	// SFTP remote-file page.
-	SFTPFiles                   string
-	SFTPUp                      string
-	SFTPRefresh                 string
-	SFTPDownload                string
-	SFTPUpload                  string
-	SFTPUploadDirectory         string
-	SFTPNewDirectory            string
-	SFTPSudoEnable              string
-	SFTPSudoDisable             string
-	SFTPModeToggle              string
-	SFTPSudoHint                string
-	SFTPSudoPassword            string
-	SFTPSudoBusy                string
-	SudoCommandsEnable          string
-	SudoCommandsDisable         string
-	SudoCommandsHint            string
-	DashboardSudoEnable         string
-	DashboardSudoDisable        string
-	DashboardSudoHint           string
-	SFTPOpen                    string
-	SFTPRename                  string
-	SFTPMove                    string
-	SFTPDelete                  string
-	SFTPPermissions             string
-	SFTPCancelTransfer          string
-	SFTPLoading                 string
-	SFTPUnavailable             string
-	SFTPCanceling               string
-	SFTPCanceled                string
-	SFTPSaveTitle               string
-	SFTPSaveCanceled            string
-	SFTPEmpty                   string
-	SFTPErrorFmt                string
+	SFTPFiles            string
+	SFTPUp               string
+	SFTPRefresh          string
+	SFTPDownload         string
+	SFTPUpload           string
+	SFTPUploadDirectory  string
+	SFTPNewDirectory     string
+	SFTPSudoEnable       string
+	SFTPSudoDisable      string
+	SFTPModeToggle       string
+	SFTPSudoHint         string
+	SFTPSudoPassword     string
+	SFTPSudoBusy         string
+	SudoCommandsEnable   string
+	SudoCommandsDisable  string
+	SudoCommandsHint     string
+	DashboardSudoEnable  string
+	DashboardSudoDisable string
+	DashboardSudoHint    string
+	SFTPOpen             string
+	SFTPRename           string
+	SFTPMove             string
+	SFTPDelete           string
+	SFTPPermissions      string
+	SFTPCancelTransfer   string
+	SFTPLoading          string
+	SFTPUnavailable      string
+	SFTPCanceling        string
+	SFTPCanceled         string
+	SFTPSaveTitle        string
+	SFTPSaveCanceled     string
+	SFTPEmpty            string
+	SFTPErrorFmt         string
+	// SFTPDedicatedConnecting is the panel's status while the connection it
+	// opens for itself because the session's transport refused another channel
+	// is being made. SFTPDedicatedFailedFmt is why that connection did not come
+	// up, and SFTPDedicatedCanceled says the user stopped it.
+	SFTPDedicatedConnecting     string
+	SFTPDedicatedFailedFmt      string
+	SFTPDedicatedCanceled       string
 	SFTPItemsFmt                string
 	SCPItemsFmt                 string
 	SFTPDownloadedFmt           string

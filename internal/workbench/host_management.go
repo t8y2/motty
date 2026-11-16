@@ -353,29 +353,61 @@ func (state *State) submitHostDialog() {
 	changes := append(passwordChanges, proxyChanges...)
 	changes = append(changes, passphraseChanges...)
 	if state.hostDialogMode == hostDialogEdit {
-		if len(changes) > 0 {
-			vaultFile := state.secrets.vault
-			if vaultFile == nil {
-				state.dialogError = state.messages.Tools.ProxyErrorNoVault
-				return
-			}
-			if err := vaultFile.Apply(changes); err != nil {
-				if errors.Is(err, vault.ErrNeedsConversion) && len(proxyChanges) > 0 {
-					state.dialogError = state.messages.Tools.ProxyPasswordLocked
-				} else {
-					state.dialogError = state.hostPasswordSaveError(err)
-				}
-				return
-			}
-		}
-		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
-		state.editor.proxyPassword = ""
-		// Editing may open or close the host's existing entry to agents.
+		previousAgentMode := state.agentHostMode
+		previousAgentAccess, hadAgentAccess := state.agentHosts[candidate.CatalogID]
 		if state.editor.agentAccessChanged {
 			state.agentHostMode = agentHostModeFollow
 		}
+		// Editing may open or close the host's existing entry to agents.
 		state.setAgentAccess(candidate, state.editor.agentAccess)
-		state.updateHostFromEditor(candidate, *previous, proxyNote)
+		rollbackAgentAccess := func() {
+			state.agentHostMode = previousAgentMode
+			if hadAgentAccess {
+				state.agentHosts[candidate.CatalogID] = previousAgentAccess
+				return
+			}
+			delete(state.agentHosts, candidate.CatalogID)
+		}
+		var commitErr error
+		if len(changes) == 0 {
+			commitErr = state.saveEditedHost(candidate, *previous, true, proxyNote)
+		} else {
+			vaultFile := state.secrets.vault
+			if vaultFile == nil {
+				rollbackAgentAccess()
+				state.dialogError = state.messages.Tools.ProxyErrorNoVault
+				return
+			}
+			// The secrets and the host are written under one lock: a host the
+			// store refuses must not leave the new password behind.
+			commitErr = vaultFile.ApplyWithCommit(changes, func() error {
+				return state.saveEditedHost(candidate, *previous, false, proxyNote)
+			})
+			if commitErr != nil && errors.Is(commitErr, configstore.ErrConflict) {
+				if refreshErr := state.refreshShared(); refreshErr != nil {
+					commitErr = errors.Join(commitErr, fmt.Errorf("reload configuration after conflict: %w", refreshErr))
+				}
+			}
+		}
+		if commitErr != nil {
+			rollbackAgentAccess()
+			var saveErr *hostConfigCommitError
+			switch {
+			case errors.As(commitErr, &saveErr):
+				state.dialogError = fmt.Sprintf(state.messages.HostEditSaveFailedFmt, commitErr)
+				state.showActionFailure(state.messages.EditHostTitle, commitErr, state.messages.ActionFeedback.ChangeSaveFailed)
+			case errors.Is(commitErr, vault.ErrNeedsConversion) && len(proxyChanges) > 0:
+				state.dialogError = state.messages.Tools.ProxyPasswordLocked
+			default:
+				state.dialogError = state.hostPasswordSaveError(commitErr)
+			}
+			return
+		}
+		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
+		state.editor.proxyPassword = ""
+		state.cancelHostTest()
+		state.dialogError = ""
+		state.restoreAfterHostDialog()
 		return
 	}
 	commit := func() error {
@@ -503,23 +535,35 @@ func (state *State) hostDialogCandidateIndex(candidate Host) int {
 	return -1
 }
 
-func (state *State) updateHostFromEditor(updated Host, previous Host, notes ...string) {
+// saveEditedHost puts updated in the place of previous and writes it. A store
+// that refuses the write puts the host and everything that followed it back, so
+// that the dialog can stay open rather than claim an edit the next start would
+// not have.
+func (state *State) saveEditedHost(updated, previous Host, refreshConflict bool, notes ...string) error {
 	index := state.hostIndex(state.hostDialogID)
-	if index < 0 {
-		state.restoreAfterHostDialog()
-		return
+	if index < 0 || state.hosts[index].CatalogID != previous.CatalogID {
+		return &hostConfigCommitError{err: errors.New(state.messages.HostSaveMissing)}
 	}
 	state.replaceHost(index, previous, updated)
-	state.cancelHostTest()
-	state.dialogError = ""
+	save := state.saveWithResult
+	if !refreshConflict {
+		save = state.saveWithResultWithoutRefresh
+	}
+	if err := save(); err != nil {
+		// A conflict recovery may already have replaced this window with what
+		// reached the store first; only the staged host is put back.
+		if at := state.hostIndex(state.hostDialogID); at >= 0 && state.hosts[at].CatalogID == updated.CatalogID && sameHost(state.hosts[at], updated) {
+			state.replaceHost(at, updated, previous)
+		}
+		return &hostConfigCommitError{err: err}
+	}
 	state.status = state.messages.HostUpdated + updated.Label
 	state.commitOTP(updated)
 	for _, note := range notes {
 		state.appendStatusNote(note)
 	}
 	state.hostDataChanged()
-	state.save()
-	state.restoreAfterHostDialog()
+	return nil
 }
 
 // replaceHost puts updated in the place of previous, the host at index, and

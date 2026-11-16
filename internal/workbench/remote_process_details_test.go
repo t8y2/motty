@@ -27,10 +27,17 @@ func selectRemoteToolsWindowRow(w *remoteToolsWindow, index int) {
 	}
 }
 
-func TestProcessRowClickOpensDetailsAndEscapeReturnsToTheList(t *testing.T) {
+func TestProcessRowDoubleClickOpensDetailsAndEscapeReturnsToTheList(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	process := state.remote.procs[0]
 	clickRemoteToolsRow(t, state, 0)
+	if state.remote.processDetails.open {
+		t.Fatal("a single click opened process details")
+	}
+	if state.remote.selected != remotetools.ProcessKey(process) {
+		t.Fatal("a single click did not select the process")
+	}
+	doubleClickRemoteToolsRow(t, state, 0)
 	if !state.remote.processDetails.open || state.remote.processDetails.process.PID != process.PID ||
 		state.modal != modalRemoteTools {
 		t.Fatalf("details=%+v modal=%d", state.remote.processDetails, state.modal)
@@ -69,7 +76,7 @@ func TestProcessRowClickOpensDetailsAndEscapeReturnsToTheList(t *testing.T) {
 
 func TestProcessDetailsKeyboardSupportsTraversalAndActions(t *testing.T) {
 	state, server, _ := openRemoteToolsDialog(t)
-	clickRemoteToolsRow(t, state, 0)
+	doubleClickRemoteToolsRow(t, state, 0)
 	canvas := remoteToolsPaint(t, state)
 	closeHit, ok := hitByLabelRoleLast(canvas, state.messages.Tools.RemoteClose, gfx.RoleButton)
 	if !ok {
@@ -87,7 +94,7 @@ func TestProcessDetailsKeyboardSupportsTraversalAndActions(t *testing.T) {
 		t.Fatal("keyboard action did not return to the process list")
 	}
 
-	clickRemoteToolsRow(t, state, 0)
+	doubleClickRemoteToolsRow(t, state, 0)
 	canvas = remoteToolsPaint(t, state)
 	closeHit, ok = hitByLabelRoleLast(canvas, state.messages.Tools.RemoteClose, gfx.RoleButton)
 	if !ok {
@@ -102,7 +109,7 @@ func TestProcessDetailsKeyboardSupportsTraversalAndActions(t *testing.T) {
 func TestProcessDetailsOwnsClicksAimedAtTheObscuredToolsPage(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	opened := state.remote.procs[0]
-	clickRemoteToolsRow(t, state, 0)
+	doubleClickRemoteToolsRow(t, state, 0)
 	if !state.remote.processDetails.open {
 		t.Fatal("process details did not open")
 	}

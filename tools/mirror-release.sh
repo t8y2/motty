@@ -34,6 +34,26 @@ tag=${1:-}
 case $tag in v*) ;; *) echo "tag must look like v0.1.2, not $tag" >&2; exit 2 ;; esac
 version=${tag#v}
 version_re=$(printf '%s' "$version" | sed 's/\./\\./g')
+
+# The first Windows updater that can install a delta. Earlier releases start
+# the helper with DETACHED_PROCESS, which makes Windows PowerShell exit before
+# it runs; a delta from one of them quits the application without installing
+# anything. Those versions take the full package instead, and Windows patches
+# resume as soon as the previous release is this one or newer.
+first_windows_delta_version=0.4.13
+
+# version_lt reports whether dotted version a is older than b.
+version_lt() {
+	awk -v a="$1" -v b="$2" 'BEGIN {
+		na = split(a, x, "."); nb = split(b, y, ".")
+		n = na > nb ? na : nb
+		for (i = 1; i <= n; i++) {
+			if (x[i] + 0 < y[i] + 0) exit 0
+			if (x[i] + 0 > y[i] + 0) exit 1
+		}
+		exit 1
+	}'
+}
 shift
 
 dir=
@@ -319,6 +339,9 @@ publish_viva_feed() {
 				*-windows-*) os=windows ;;
 				*) continue ;;
 				esac
+				if [ "$os" = windows ] && version_lt "$prev_version" "$first_windows_delta_version"; then
+					continue
+				fi
 				arch=$(printf '%s' "$name" | sed -E "s/^motty-${version_re}-(darwin|linux|windows)-//; s/\.(zip|tar\.gz)$//")
 				patch_args+=(--patch-from "$os/$arch=$prev_version=$old")
 			done

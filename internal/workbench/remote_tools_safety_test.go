@@ -37,7 +37,7 @@ func TestRemoteProcessRefreshFailurePreservesStaleRowsAndRecovers(t *testing.T) 
 			t.Fatal("direct dispatch bypassed stale-state guard")
 		}
 	}
-	clickRemoteToolsRow(t, state, 0)
+	doubleClickRemoteToolsRow(t, state, 0)
 	canvas := &gfx.Canvas{}
 	driver, err := app.NewDriver(state.WindowConfig(app.Config{
 		Title: "stale processes", Width: 1400, Height: 900, Tree: Tree(),

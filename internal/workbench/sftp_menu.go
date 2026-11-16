@@ -102,8 +102,10 @@ func (state *State) sftpMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bo
 	}
 	background := event.Target == hitSFTPListBackground
 	if background && event.Button == gfx.PointerButtonPrimary {
-		// A press on the list background still takes focus out of the path field.
-		return gfx.EventResult{Handled: true, Repaint: true, Blur: true}, true
+		// The list's background is a focus target: the press itself moves the
+		// keyboard there, out of the path field or the terminal, and Ctrl+V then
+		// pastes into the folder the list shows.
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if event.Button != gfx.PointerButtonSecondary {
 		return gfx.EventResult{}, false
