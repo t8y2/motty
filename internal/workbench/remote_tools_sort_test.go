@@ -57,7 +57,7 @@ func TestRemoteImageSizeAndCreationSortNumericallyWithMissingValuesLast(t *testi
 	}
 }
 
-func TestRemoteSortPrecedesPaginationAndKeepsConfirmationTarget(t *testing.T) {
+func TestRemoteSortCoversWholeSnapshotAndKeepsConfirmationTarget(t *testing.T) {
 	state, _, _ := openRemoteToolsDialog(t)
 	state.remote.procs = nil
 	for i := 0; i < 30; i++ {
@@ -66,10 +66,11 @@ func TestRemoteSortPrecedesPaginationAndKeepsConfirmationTarget(t *testing.T) {
 	state.rebuildRemoteRows()
 	state.remote.procs[0].StartIdentity = "linux:12345678-1234-1234-1234-123456789abc:100001"
 	state.rebuildRemoteRows()
-	state.remote.selected, state.remote.page = remotetools.ProcessKey(state.remote.procs[0]), 2
+	state.remote.selected = remotetools.ProcessKey(state.remote.procs[0])
+	state.remote.processScroll = 100
 	clickRemoteToolsHeader(t, state, remoteTableHeaderID(remoteProcesses, 0))
-	if state.remote.rows[0].key != "971" || state.remote.page != 0 {
-		t.Fatal("PID sorted lexically, sorted only a page, or did not return to the first page")
+	if state.remote.rows[0].key != "971" || state.remote.processScroll != 0 {
+		t.Fatal("PID sorted lexically, sorted only visible rows, or did not return to the top")
 	}
 	clickRemoteToolsAction(t, state, hitRemoteKill)
 	if state.modal != modalForm || !strings.Contains(state.form.description, "1000") {

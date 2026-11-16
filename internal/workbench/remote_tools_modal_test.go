@@ -7,7 +7,6 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
-	"motty/internal/remotetools"
 )
 
 var remoteToolsPageSize = gfx.Size{Width: 1400, Height: 900}
@@ -75,16 +74,25 @@ func remoteToolsTableControl(t testing.TB, canvas *gfx.Canvas, state *State) gfx
 	return hit
 }
 
-// clickRemoteToolsRow presses and releases the primary button on a row. For the
-// process tab that selects the row and opens its details.
+// clickRemoteToolsRow selects a row without opening its details.
 func clickRemoteToolsRow(t testing.TB, state *State, index int) {
+	t.Helper()
+	clickRemoteToolsRowCount(t, state, index, 1)
+}
+
+func doubleClickRemoteToolsRow(t testing.TB, state *State, index int) {
+	t.Helper()
+	clickRemoteToolsRowCount(t, state, index, 2)
+}
+
+func clickRemoteToolsRowCount(t testing.TB, state *State, index, clickCount int) {
 	t.Helper()
 	canvas := remoteToolsPaint(t, state)
 	control := remoteToolsTableControl(t, canvas, state)
 	x := control.Bounds.X + control.Bounds.Width/2
 	y := state.remote.tableBodyBounds.Y + (float32(index-state.remote.tableBodyFirst)+0.5)*state.remote.tableRowHeight
 	down := gfx.PointerEvent{
-		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary,
+		Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: clickCount,
 		X: x, Y: y, Target: control.ID, Viewport: remoteToolsPageSize,
 	}
 	windowPointerRoutes(state, down)
@@ -220,49 +228,40 @@ func TestRemoteToolsModalEscapeDismisses(t *testing.T) {
 	}
 }
 
-// controls of the object tabs: the first page offers only Next, and the second
-// page is reachable and returns to the first.
-func TestRemoteToolsModalPagesThroughDockerObjects(t *testing.T) {
-	state, _, _ := openRemoteToolsDialog(t)
-	state.remote.tab = remoteVolumes
-	state.remote.resources = nil
-	for index := 0; index < 20; index++ {
-		state.remote.resources = append(state.remote.resources, remotetools.Resource{
-			Key: fmt.Sprintf("volume-%02d", index), Cells: []string{fmt.Sprintf("volume-%02d", index), "local", "local"},
+func TestRemoteToolsModalScrollsThroughAllDockerObjects(t *testing.T) {
+	for _, tab := range []remoteTab{remoteContainers, remoteImages, remoteVolumes, remoteNetworks, remoteCompose} {
+		t.Run(fmt.Sprint(tab), func(t *testing.T) {
+			state, _, _ := openRemoteToolsDialog(t)
+			state.remote.tab = tab
+			state.remote.rows = make([]remoteRow, 40)
+			for index := range state.remote.rows {
+				state.remote.rows[index] = remoteRow{
+					key:   fmt.Sprintf("resource-%02d", index),
+					cells: [6]string{fmt.Sprintf("resource-%02d", index)},
+				}
+			}
+			canvas := remoteToolsPaint(t, state)
+			for _, label := range []string{state.messages.KnownHostsPrevious, state.messages.KnownHostsNext} {
+				if _, ok := hitByLabelRoleLast(canvas, label, gfx.RoleButton); ok {
+					t.Fatalf("resource list still paints %q", label)
+				}
+			}
+			if state.remote.processScrollBar.MaxOffsetY <= 0 {
+				t.Fatal("resource list has no virtual scroll range")
+			}
+			bounds := state.remote.processTableBounds
+			result, handled := state.remoteProcessWheel(gfx.ScrollEvent{
+				X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2,
+				DeltaY: 100, Precise: true, Viewport: remoteToolsPageSize,
+			})
+			if !handled || !result.Handled || state.remote.processScroll <= 0 {
+				t.Fatalf("resource wheel did not scroll: handled=%v result=%+v", handled, result)
+			}
+			state.remote.processScroll = state.remote.processScrollBar.MaxOffsetY
+			canvas = remoteToolsPaint(t, state)
+			if !remoteCanvasHasText(canvas, "resource-39") {
+				t.Fatal("the last resource is not reachable by scrolling")
+			}
 		})
-	}
-	state.rebuildRemoteRows()
-	canvas := remoteToolsPaint(t, state)
-	previous, ok := hitByLabelRoleLast(canvas, state.messages.KnownHostsPrevious, gfx.RoleButton)
-	if !ok || !previous.Disabled {
-		t.Fatalf("the first page offers Previous: %+v found=%v", previous, ok)
-	}
-	next, ok := hitByLabelRoleLast(canvas, state.messages.KnownHostsNext, gfx.RoleButton)
-	if !ok || next.Disabled {
-		t.Fatalf("the first page offers no Next: %+v found=%v", next, ok)
-	}
-	clickRemoteToolsButton(t, state, state.messages.KnownHostsNext)
-	if state.remote.page != 1 {
-		t.Fatalf("next page: page=%d", state.remote.page)
-	}
-	canvas = remoteToolsPaint(t, state)
-	if state.remote.pageText != "2/2" {
-		t.Fatalf("next page text=%q", state.remote.pageText)
-	}
-	previous, ok = hitByLabelRoleLast(canvas, state.messages.KnownHostsPrevious, gfx.RoleButton)
-	if !ok || previous.Disabled {
-		t.Fatalf("the second page offers no Previous: %+v found=%v", previous, ok)
-	}
-	next, ok = hitByLabelRoleLast(canvas, state.messages.KnownHostsNext, gfx.RoleButton)
-	if !ok || !next.Disabled {
-		t.Fatalf("the last page offers Next: %+v found=%v", next, ok)
-	}
-	clickRemoteToolsButton(t, state, state.messages.KnownHostsPrevious)
-	if state.remote.page != 0 {
-		t.Fatalf("previous page: page=%d", state.remote.page)
-	}
-	remoteToolsPaint(t, state)
-	if state.remote.pageText != "1/2" {
-		t.Fatalf("previous page text=%q", state.remote.pageText)
 	}
 }

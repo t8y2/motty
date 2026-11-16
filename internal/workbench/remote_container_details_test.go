@@ -22,6 +22,57 @@ func openContainerDetailsForTest(t *testing.T) (*State, *remoteServer) {
 	return state, server
 }
 
+func TestContainerRowDoubleClickOpensDetails(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
+
+	clickRemoteToolsRow(t, state, 0)
+	if state.remote.containerDetails.open {
+		t.Fatal("a single click opened container details")
+	}
+	if state.remote.selected != state.remote.rows[0].key {
+		t.Fatal("a single click did not select the container")
+	}
+	doubleClickRemoteToolsRow(t, state, 0)
+	if !state.remote.containerDetails.open || state.remote.containerDetails.container.Name != "web" {
+		t.Fatalf("double-clicking a container did not open its details: %+v", state.remote.containerDetails)
+	}
+}
+
+func TestContainerContextMenuIncludesFooterActions(t *testing.T) {
+	state, _, _ := openRemoteToolsDialog(t)
+	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
+	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
+	actions, count := state.remoteToolActions()
+
+	rightClickRemoteToolsRow(t, state, 0)
+	if state.remote.selected != state.remote.rows[0].key {
+		t.Fatal("right-click did not select the container")
+	}
+	canvas := remoteToolsPaint(t, state)
+	for _, action := range actions[:count] {
+		_, found := hitByLabelRoleLast(canvas, action.Label, gfx.RoleMenuItem)
+		if action.ID == hitRemoteClose {
+			if found {
+				t.Error("container context menu includes Close")
+			}
+			continue
+		}
+		if !found {
+			t.Errorf("container context menu lacks %q", action.Label)
+		}
+	}
+	details, ok := hitByLabelRoleLast(canvas, state.messages.Tools.RemoteContainerDetails, gfx.RoleMenuItem)
+	if !ok {
+		t.Fatal("container context menu has no details action")
+	}
+	clickRemoteToolsPageHit(t, state, details)
+	if !state.remote.containerDetails.open || state.remote.containerDetails.container.Name != "web" {
+		t.Fatal("container context menu did not open details")
+	}
+}
+
 func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 	state, server := openContainerDetailsForTest(t)
 	var canvas gfx.Canvas
