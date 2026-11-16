@@ -1056,7 +1056,10 @@ type State struct {
 	clipboardRequest   remoteClipboardRequest
 	autofillRules      autofillUI
 	credentialForm     credentialUI
-	commandPalette     commandPalette
+	// credentialReturn is the modal the identity dialog returns to when the host
+	// form opened it to make an identity for itself; modalNone otherwise.
+	credentialReturn modalKind
+	commandPalette   commandPalette
 	// sessionLogs is this window's local connection journal; it is off only
 	// when the user disabled metadata capture in the settings.
 	sessionLogs    sessionLogs
@@ -1541,6 +1544,8 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		switch hit {
 		case hitCredentialName:
 			return &state.credentialForm.name
+		case hitCredentialUser:
+			return &state.credentialForm.user
 		case hitCredentialPassword:
 			return &state.credentialForm.password
 		}
@@ -3290,7 +3295,7 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalCredential && event.Key == gfx.KeyEnter && !event.Repeat &&
-		(event.Target == hitCredentialName || event.Target == hitCredentialPassword) {
+		(event.Target == hitCredentialName || event.Target == hitCredentialUser || event.Target == hitCredentialPassword) {
 		state.submitCredential()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}

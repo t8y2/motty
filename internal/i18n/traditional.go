@@ -1873,7 +1873,7 @@ var traditionalTools = ToolsMessages{
 	PasteImageTooLarge:    "剪貼簿裡的圖片太大，無法貼上。",
 
 	PasswordHintRow:         "密碼提示輔助",
-	PasswordHintDescription: "sudo 要求密碼時提供該主機的已儲存密碼；su 要求密碼時列出該主機和共用密碼供選擇。按下 Enter 或點選之前不會傳送任何內容。共用密碼在「設定 > 安全 > 共用密碼」中儲存。",
+	PasswordHintDescription: "sudo 要求密碼時提供該主機的已儲存密碼；su 要求密碼時列出該主機和身份的密碼供選擇。按下 Enter 或點選之前不會傳送任何內容。身份在「設定 > 安全 > 身份」中儲存。",
 	CloseConfirmRow:         "關閉執行中的工作階段前確認",
 	CloseConfirmDescription: "關閉仍處於連線狀態的分頁或分割窗格時先詢問。已結束的工作階段直接關閉。",
 	PasswordHintGhost:       "按 Enter 貼上已儲存的密碼",
@@ -2766,7 +2766,7 @@ var traditionalAutofill = AutofillMessages{
 	PickSend:         "傳送",
 	PickDismiss:      "關閉",
 	PickHostDetail:   "此主機",
-	PickSharedDetail: "共用密碼",
+	PickSharedDetail: "身份",
 	PickSentFmt:      "已傳送「%s」。",
 	PickMissingFmt:   "「%s」已不在保險庫中。",
 	PickLockedFmt:    "保險庫已鎖定，無法傳送「%s」。",

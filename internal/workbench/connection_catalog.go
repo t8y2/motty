@@ -108,10 +108,22 @@ type connectionRoute struct {
 
 // login is the account a connection to host signs in as.
 func (catalog *hostCatalog) login(host Host) string {
+	if name := catalog.storedLogin(host); name != "" {
+		return name
+	}
+	return catalog.systemUser
+}
+
+// storedLogin is the login name the host itself names: its own, else the one of
+// the identity it uses. Empty when neither has one, and the system user applies.
+func (catalog *hostCatalog) storedLogin(host Host) string {
 	if host.User != "" {
 		return host.User
 	}
-	return catalog.systemUser
+	if entry, ok := catalog.credentialByID(host.Credential); ok {
+		return entry.User
+	}
+	return ""
 }
 
 func (catalog *hostCatalog) hostByID(id uint32) (Host, bool) {
@@ -128,7 +140,7 @@ func (catalog *hostCatalog) hostByConnection(address, user string, port uint16) 
 		port = defaultPort
 	}
 	for _, host := range catalog.hosts {
-		if host.isSSH() && host.Address == address && host.User == user && host.Port == port {
+		if host.isSSH() && host.Address == address && catalog.storedLogin(host) == user && host.Port == port {
 			return host, true
 		}
 	}

@@ -1876,7 +1876,7 @@ var englishTools = ToolsMessages{
 	PasteImageTooLarge:    "The clipboard image is too large to paste.",
 
 	PasswordHintRow:         "Password prompt assist",
-	PasswordHintDescription: "When sudo asks for a password, offers the host's saved password; when su asks, lists the host's and shared passwords to choose from. Nothing is sent until you press Enter or pick one. Save shared passwords in Settings > Security > Shared passwords.",
+	PasswordHintDescription: "When sudo asks for a password, offers the host's saved password; when su asks, lists the host's and identities' passwords to choose from. Nothing is sent until you press Enter or pick one. Save identities in Settings > Security > Identities.",
 	CloseConfirmRow:         "Confirm before closing running sessions",
 	CloseConfirmDescription: "Asks first when a tab or pane that is still connected is closed. Sessions that have ended close without asking.",
 	PasswordHintGhost:       "Press Enter to paste the saved password",
@@ -2766,7 +2766,7 @@ var englishAutofill = AutofillMessages{
 	PickSend:         "send",
 	PickDismiss:      "close",
 	PickHostDetail:   "This host",
-	PickSharedDetail: "Shared password",
+	PickSharedDetail: "Identity",
 	PickSentFmt:      "Sent %q.",
 	PickMissingFmt:   "%q is no longer in the vault.",
 	PickLockedFmt:    "The vault is locked, so %q cannot be sent.",

@@ -1327,6 +1327,7 @@ func (state *State) showNextPrompt() {
 
 func (state *State) closeModal() {
 	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
+	returnToHost := state.modal == modalCredential && state.credentialReturn != modalNone
 	if state.modal == modalRuleManager {
 		state.ruleManager = ruleManagerUI{}
 	}
@@ -1386,6 +1387,10 @@ func (state *State) closeModal() {
 		state.modal = modalRuleManager
 		state.ruleManager.returning = false
 		state.ruleManager.list = nil
+	}
+	if returnToHost {
+		state.modal = state.credentialReturn
+		state.credentialReturn = modalNone
 	}
 	state.modalSession = 0
 	state.reveal.reset()

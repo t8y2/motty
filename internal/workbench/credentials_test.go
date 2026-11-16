@@ -232,12 +232,12 @@ func TestASavedPasswordNeedsANameAndAPassword(t *testing.T) {
 	}
 }
 
-func TestTheHostFormOffersNoChoiceWhileNothingIsSaved(t *testing.T) {
+func TestTheHostFormOffersTheChoiceEvenWhenNothingIsSaved(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)
 	clickHostAction(state, hitEditHost)
-	if state.hostOffersCredential() {
-		t.Fatal("the form offers a shared password that does not exist")
+	if !state.hostOffersCredential() {
+		t.Fatal("the form offers no way to make the first identity")
 	}
 	state.modal = modalNone
 	addCredential(t, state, "Internal", "pw")
@@ -249,6 +249,45 @@ func TestTheHostFormOffersNoChoiceWhileNothingIsSaved(t *testing.T) {
 	state.editor.auth = authPrivateKey
 	if state.hostOffersCredential() {
 		t.Fatal("a host that signs in with a key was offered a password")
+	}
+}
+
+func TestAnIdentityMadeFromTheHostFormIsChosenWhenItSaves(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	clickHostAction(state, hitEditHost)
+	state.Click(hitDialogCredential)
+	state.Click(hitDialogCredentialNew)
+	if state.modal != modalCredential {
+		t.Fatalf("modal %d, want the identity dialog over the host form", state.modal)
+	}
+	typeInto(state, hitCredentialName, "Made here")
+	typeInto(state, hitCredentialUser, "ops")
+	typeInto(state, hitCredentialPassword, "pw")
+	state.Click(hitCredentialSubmit)
+	if state.modal != modalNewHost {
+		t.Fatalf("modal %d after saving, want the host form back", state.modal)
+	}
+	if len(state.credentials) != 1 || state.editor.credential != state.credentials[0].ID {
+		t.Fatalf("the form chose %q, identities %+v", state.editor.credential, state.credentials)
+	}
+	if !state.hostTakesCredential() {
+		t.Fatal("the host form does not take the identity it made")
+	}
+}
+
+func TestCancellingAnIdentityMadeFromTheHostFormReturnsWithoutOne(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	clickHostAction(state, hitEditHost)
+	state.Click(hitDialogCredential)
+	state.Click(hitDialogCredentialNew)
+	state.Click(hitCredentialCancel)
+	if state.modal != modalNewHost {
+		t.Fatalf("modal %d after cancelling, want the host form back", state.modal)
+	}
+	if len(state.credentials) != 0 || state.editor.credential != "" {
+		t.Fatalf("identities %+v, the form chose %q", state.credentials, state.editor.credential)
 	}
 }
 
@@ -333,5 +372,80 @@ func TestCredentialDialogPageServesItsFieldsAndSaves(t *testing.T) {
 	}
 	if len(state.credentials) != 1 || state.credentials[0].Name != "Page password" {
 		t.Fatalf("credentials after the page save = %+v", state.credentials)
+	}
+}
+
+// addIdentity makes an identity with a login name through Settings.
+func addIdentity(t *testing.T, state *State, name, user, password string) credential {
+	t.Helper()
+	state.activeSection = sectionSettings
+	state.settingsCategory = settingsSecurity
+	state.modal = modalNone
+	state.Click(hitSettingsCredentialAdd)
+	typeInto(state, hitCredentialName, name)
+	typeInto(state, hitCredentialUser, user)
+	typeInto(state, hitCredentialPassword, password)
+	state.Click(hitCredentialSubmit)
+	if state.modal != modalNone {
+		t.Fatalf("the dialog stayed open: %q", state.credentialForm.dialogError)
+	}
+	return state.credentials[len(state.credentials)-1]
+}
+
+// clearHostUser empties a sample host's own login name, so the identity's name
+// is the one a connection signs in with.
+func clearHostUser(t *testing.T, state *State, label string) {
+	t.Helper()
+	index := state.hostIndex(hostLabeled(t, state, label).ID)
+	state.hosts[index].User = ""
+}
+
+func TestAHostSignsInWithTheLoginNameOfItsIdentity(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	entry := addIdentity(t, state, "Deploy", "ops", "pw")
+	clearHostUser(t, state, "Production")
+	useCredential(t, state, hostLabeled(t, state, "Production"), entry)
+
+	prod := connectHost(t, state, world, "Production")
+	askForPassword(state, prod, 1)
+	if got := world.configs[len(world.configs)-1].User; got != "ops" {
+		t.Fatalf("signed in as %q, want the identity's login name", got)
+	}
+}
+
+func TestAHostsOwnLoginNameWinsOverItsIdentity(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	entry := addIdentity(t, state, "Deploy", "ops", "pw")
+	useCredential(t, state, hostLabeled(t, state, "Production"), entry)
+
+	prod := connectHost(t, state, world, "Production")
+	askForPassword(state, prod, 1)
+	if got := world.configs[len(world.configs)-1].User; got != "deploy" {
+		t.Fatalf("signed in as %q, want the host's own login name", got)
+	}
+}
+
+func TestDeletingAnIdentityKeepsItsLoginNameOnItsHosts(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	entry := addIdentity(t, state, "Deploy", "ops", "pw")
+	clearHostUser(t, state, "Production")
+	useCredential(t, state, hostLabeled(t, state, "Production"), entry)
+
+	state.deleteCredential(entry.ID)
+	if got := hostLabeled(t, state, "Production").User; got != "ops" {
+		t.Fatalf("Production signs in as %q after its identity was deleted, want ops", got)
+	}
+}
+
+func TestAHostWithNoIdentityKeepsTheSystemLoginName(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	clearHostUser(t, state, "Production")
+	host := hostLabeled(t, state, "Production")
+	if got := state.login(host); got != state.hostCatalog.systemUser {
+		t.Fatalf("login = %q, want the system user %q", got, state.hostCatalog.systemUser)
 	}
 }

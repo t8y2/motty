@@ -14,24 +14,28 @@ import (
 	"motty/internal/sshconn"
 )
 
-// Shared passwords. One password kept once and used by several hosts: a host
-// names it (Host.Credential) instead of keeping a password of its own, so
+// Identities. One login name and password kept once and used by several hosts: a
+// host names one (Host.Credential) instead of keeping a password of its own, so
 // changing it changes every host that uses it. The password lives in the vault
 // under the credential's id, never in the settings file or a record that syncs
-// in the clear; the record holds the id and the name the user gave it.
-//
-// A shared password is the password alone. The login stays on the host, because
-// the host's login also names its forwards, jump routes and SSH-config entries.
+// in the clear; the record holds the id, the name the user gave it and the login
+// name. A host's own login name wins over the identity's; a host with neither
+// signs in as the system user. The login name is resolved in one place
+// (hostCatalog.login), so forwards, jump routes and SSH-config entries follow it.
 
 const (
 	maxCredentialName = 80
+	maxCredentialUser = 128
 	maxCredentials    = 256
 )
 
-// credential is one shared password. Its secret is in the vault.
+// credential is one identity: a shared password and, optionally, the login name
+// that goes with it. Its secret is in the vault. User is empty when the identity
+// only carries the password; a host then keeps its own login name.
 type credential struct {
 	ID   string
 	Name string
+	User string
 }
 
 // credentialSecretName is where a shared password is kept in the vault. The id is
@@ -105,18 +109,22 @@ func (state *State) passwordShared(session *Session) bool {
 type savedCredential struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// User is optional: records saved before identities carried a login name
+	// have none.
+	User string `json:"user,omitempty"`
 }
 
 func (state *State) savedCredentials() []savedCredential {
 	var saved []savedCredential
 	for _, entry := range state.credentials {
-		saved = append(saved, savedCredential{ID: entry.ID, Name: entry.Name})
+		saved = append(saved, savedCredential{ID: entry.ID, Name: entry.Name, User: entry.User})
 	}
 	return saved
 }
 
-// decodeCredentials turns saved records into shared passwords. A record without
-// an id or a name, or whose id repeats, is dropped.
+// decodeCredentials turns saved records into identities. A record without an id
+// or a name, or whose id repeats, is dropped; an unusable login name is dropped
+// alone, which leaves the identity a password-only one.
 func decodeCredentials(saved []savedCredential) []credential {
 	var credentials []credential
 	for _, entry := range saved {
@@ -125,7 +133,7 @@ func decodeCredentials(saved []savedCredential) []credential {
 			slices.ContainsFunc(credentials, func(have credential) bool { return have.ID == entry.ID }) {
 			continue
 		}
-		credentials = append(credentials, credential{ID: entry.ID, Name: name})
+		credentials = append(credentials, credential{ID: entry.ID, Name: name, User: cleanSnippetText(entry.User, maxCredentialUser)})
 	}
 	return credentials
 }
@@ -142,6 +150,7 @@ var credentialHits = tree.Feature("credentials")
 var (
 	hitSettingsCredentialAdd = tree.ID(credentialHits, "settings-credential-add")
 	hitCredentialName        = tree.ID(credentialHits, "credential-name")
+	hitCredentialUser        = tree.ID(credentialHits, "credential-user")
 	hitCredentialPassword    = tree.ID(credentialHits, "credential-password")
 	hitCredentialSubmit      = tree.ID(credentialHits, "credential-submit")
 	hitCredentialCancel      = tree.ID(credentialHits, "credential-cancel")
@@ -156,15 +165,15 @@ var (
 // credentialUI is the dialog that adds or edits a shared password.
 type credentialUI struct {
 	// editing is the id of the password being edited; empty adds a new one.
-	editing        string
-	name, password text.Editor
-	dialogError    string
+	editing              string
+	name, user, password text.Editor
+	dialogError          string
 	// passwordShown swaps the password's bullets for its text, as the field's
 	// eye button does; closing the dialog forgets it.
 	passwordShown bool
 	// nameField and passwordField are the page's handles on the same editors, so
 	// the platform edits and the dialog reads one text.
-	nameField, passwordField ui.Field
+	nameField, userField, passwordField ui.Field
 }
 
 func (state *State) openCredentialDialog(id string) {
@@ -172,9 +181,11 @@ func (state *State) openCredentialDialog(id string) {
 	*form = credentialUI{editing: id}
 	// The handles point at the form's own editors, which live as long as it does.
 	form.nameField.Bind(&form.name)
+	form.userField.Bind(&form.user)
 	form.passwordField.Bind(&form.password)
 	if entry, ok := state.credentialByID(id); ok {
 		form.name.Insert(entry.Name)
+		form.user.Insert(entry.User)
 		// The dialog shows what is saved, as a host's does; a vault that cannot
 		// answer leaves the field empty, which saving reads as "keep".
 		if vaultFile := state.secrets.vault; vaultFile != nil && vaultFile.Len() > 0 {
@@ -199,6 +210,7 @@ func (state *State) submitCredential() {
 	form, m := &state.credentialForm, state.messages.Credentials
 	fail := func(message string) { form.dialogError = message }
 	name := cleanSnippetText(form.name.String(), maxCredentialName)
+	user := cleanSnippetText(form.user.String(), maxCredentialUser)
 	switch {
 	case name == "":
 		fail(m.ErrorName)
@@ -248,21 +260,29 @@ func (state *State) submitCredential() {
 	}
 	if index := slices.IndexFunc(state.credentials, func(entry credential) bool { return entry.ID == id }); index >= 0 {
 		state.credentials[index].Name = name
+		state.credentials[index].User = user
 	} else {
-		state.credentials = append(state.credentials, credential{ID: id, Name: name})
+		state.credentials = append(state.credentials, credential{ID: id, Name: name, User: user})
 	}
 	form.password = text.Editor{}
+	returning := state.credentialReturn
 	state.closeModal()
+	if returning == modalNewHost {
+		state.editor.credential = id
+	}
 	state.save()
 }
 
-// deleteCredential removes a shared password and its secret. The hosts that used
-// it keep no password of their own, so they ask for one at the next connection.
+// deleteCredential removes an identity and its secret. The hosts that used it
+// keep no password of their own, so they ask for one at the next connection. They
+// keep its login name too, as their own, so they do not silently sign in as the
+// system user instead.
 func (state *State) deleteCredential(id string) {
 	index := slices.IndexFunc(state.credentials, func(entry credential) bool { return entry.ID == id })
 	if index < 0 {
 		return
 	}
+	gone := state.credentials[index]
 	if state.secrets.vault != nil {
 		if err := state.secrets.vault.Delete(credentialSecretName(id)); err != nil {
 			state.status = state.hostPasswordSaveError(err)
@@ -274,6 +294,9 @@ func (state *State) deleteCredential(id string) {
 		if previous := state.hosts[hostIndex]; previous.Credential == id {
 			updated := previous
 			updated.Credential = ""
+			if updated.User == "" {
+				updated.User = gone.User
+			}
 			state.replaceHost(hostIndex, previous, updated)
 		}
 	}
@@ -294,7 +317,7 @@ func (state *State) declareCredentialDialog(c ui.C) {
 		title = m.DialogEditTitle
 	}
 	const width float32 = 520
-	bodyHeight := withError(float32(68*2+8), form.dialogError)
+	bodyHeight := withError(float32(68*3+8), form.dialogError)
 	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
 	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
 		ContentSize: gfx.Size{Width: width}, FitBody: true,
@@ -307,6 +330,7 @@ func (state *State) declareCredentialDialog(c ui.C) {
 	dialog.Body(func() {
 		ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
 			state.credentialField(c, hitCredentialName, &form.nameField, m.Name, m.NamePlaceholder, 62, false)
+			state.credentialField(c, hitCredentialUser, &form.userField, m.User, m.UserPlaceholder, 62, false)
 			placeholder := ""
 			if form.editing != "" {
 				placeholder = m.PasswordKeep
@@ -369,6 +393,9 @@ func (state *State) paintCredentialSettings(page *settingsPage) {
 			if count := state.credentialUses(entry.ID); count > 0 {
 				uses = fmt.Sprintf(m.UsedByFmt, count)
 			}
+			if entry.User != "" {
+				uses = entry.User + " · " + uses
+			}
 			page.actionRow(entry.Name, uses, false,
 				components.ButtonAction{ID: hitCredentialEditList.At(index), Label: m.Edit, Variant: components.ButtonOutline},
 				components.ButtonAction{ID: hitCredentialDeleteList.At(index), Label: m.Delete, Variant: components.ButtonOutline})
@@ -404,17 +431,16 @@ var (
 	hitDialogCredential         = tree.ID(credentialChoiceHits, "dialog-credential")
 	hitDialogCredentialDismiss  = tree.ID(credentialChoiceHits, "dialog-credential-dismiss")
 	hitDialogCredentialOwn      = tree.ID(credentialChoiceHits, "dialog-credential-own")
+	hitDialogCredentialNew      = tree.ID(credentialChoiceHits, "dialog-credential-new")
 	hitDialogCredentialValue    = tree.ID(credentialChoiceHits, "dialog-credential-value")
 	hitDialogCredentialItemList = tree.Sub(credentialChoiceHits, tree.Name("dialog-credential-item")) // + credential index
 )
 
 // hostOffersCredential says the form has a choice of password source: the host
-// signs in with a password, and there is a saved one to choose.
+// signs in with a password. The choice is offered even with no identity saved,
+// because it is where the first one is made.
 func (state *State) hostOffersCredential() bool {
 	editor := &state.editor
-	if len(state.credentials) == 0 {
-		return false
-	}
 	switch editor.protocol {
 	case protocolSSH:
 		return editor.auth != authPrivateKey && editor.auth != authAgent
@@ -432,6 +458,20 @@ func (state *State) hostTakesCredential() bool {
 	}
 	_, ok := state.credentialByID(state.editor.credential)
 	return ok
+}
+
+// hostUserHint is the hint of the host form's login field when the form's host
+// takes its login name from an identity: the identity's name, shown where the
+// field is empty, so the user sees the login the host will sign in as. Otherwise
+// it is the hint the field would show anyway.
+func (state *State) hostUserHint(hint string) string {
+	if !state.hostTakesCredential() {
+		return hint
+	}
+	if entry, _ := state.credentialByID(state.editor.credential); entry.User != "" {
+		return entry.User
+	}
+	return hint
 }
 
 // paintHostPasswordWithCredential is the password field of a form that has
@@ -475,7 +515,7 @@ func (state *State) paintHostCredentialMenu(canvas *gfx.Canvas) {
 	}
 	portal := state.beginHostFormPopup(canvas, true)
 	defer state.endHostFormPopup(canvas, portal)
-	list := state.hostAuthListBounds(editor.credentialAnchor, len(state.credentials)+1)
+	list := state.hostAuthListBounds(editor.credentialAnchor, len(state.credentials)+2)
 	state.menuPlaced(list)
 	menu := components.BeginDropdownMenu(canvas, state.Theme(), list, components.DropdownMenuOptions{
 		Layer: dialogLayer + 1, Scope: dialogScope, DismissID: hitDialogCredentialDismiss, Viewport: state.windowRect(),
@@ -490,6 +530,7 @@ func (state *State) paintHostCredentialMenu(canvas *gfx.Canvas) {
 			ID: hitDialogCredentialItemList.At(index), Label: entry.Name, Kind: components.DropdownMenuRadio, Checked: entry.ID == editor.credential, Selected: entry.ID == editor.credential,
 		})
 	}
+	menu.AddItem(components.DropdownMenuItem{ID: hitDialogCredentialNew, Label: m.Add})
 }
 
 func (state *State) clickHostCredential(id gfx.ID) bool {
@@ -502,6 +543,13 @@ func (state *State) clickHostCredential(id gfx.ID) bool {
 		editor.credentialOpen = false
 	case id == hitDialogCredentialOwn:
 		editor.credential, editor.credentialOpen = "", false
+	case id == hitDialogCredentialNew:
+		// The identity dialog goes over the host form; saving or cancelling it
+		// brings the form back, with the new identity chosen.
+		editor.credentialOpen = false
+		state.credentialReturn = modalNewHost
+		state.openCredentialDialog("")
+		return true
 	case id.Scope() == hitDialogCredentialItemList:
 		index := item(id)
 		if index < 0 || index >= len(state.credentials) {

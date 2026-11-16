@@ -1873,7 +1873,7 @@ var chineseTools = ToolsMessages{
 	PasteImageTooLarge:    "剪贴板里的图片太大，无法粘贴。",
 
 	PasswordHintRow:         "密码提示辅助",
-	PasswordHintDescription: "sudo 要求密码时提供该主机的已保存密码；su 要求密码时列出该主机和共用密码供选择。按下 Enter 或点选之前不会发送任何内容。共用密码在「设置 > 安全 > 共用密码」中保存。",
+	PasswordHintDescription: "sudo 要求密码时提供该主机的已保存密码；su 要求密码时列出该主机和身份的密码供选择。按下 Enter 或点选之前不会发送任何内容。身份在「设置 > 安全 > 身份」中保存。",
 	CloseConfirmRow:         "关闭运行中的会话前确认",
 	CloseConfirmDescription: "关闭仍处于连接状态的标签页或分屏时先询问。已结束的会话直接关闭。",
 	PasswordHintGhost:       "按 Enter 粘贴已保存的密码",
@@ -2766,7 +2766,7 @@ var chineseAutofill = AutofillMessages{
 	PickSend:         "发送",
 	PickDismiss:      "关闭",
 	PickHostDetail:   "此主机",
-	PickSharedDetail: "共用密码",
+	PickSharedDetail: "身份",
 	PickSentFmt:      "已发送“%s”。",
 	PickMissingFmt:   "“%s”已不在保险库中。",
 	PickLockedFmt:    "保险库已锁定，无法发送“%s”。",
