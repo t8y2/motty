@@ -275,6 +275,11 @@ type Config struct {
 	// consumes the user's login banner. With PrimaryShell the probes wait for
 	// OpenShell to accept its shell request (see ADR 0025).
 	PrimaryShell bool
+	// NoProbes keeps optional command sessions off this connection entirely.
+	// It is for a connection that carries one service of its own — a file
+	// transport, say — where a server may allow only that channel and where a
+	// probe could take its place.
+	NoProbes bool
 	// Algorithms sets what each endpoint negotiates, keyed by "host:port" as
 	// Endpoint formats it. An endpoint without an entry keeps the defaults.
 	Algorithms map[string]Algorithms
@@ -674,7 +679,7 @@ func (conn *Conn) connect() error {
 	// until the answer arrives, so a guess that is about to be checked is not
 	// published at all.
 	guess := classifyBanner(serverVersion)
-	ask := !conn.config.InteractiveOnly && standardImplementation(serverVersion) &&
+	ask := !conn.config.InteractiveOnly && !conn.config.NoProbes && standardImplementation(serverVersion) &&
 		(guess == SystemUnknown || guess == SystemUbuntu || guess == SystemDebian)
 	conn.update(func(status *Status) {
 		status.Phase = PhaseConnected

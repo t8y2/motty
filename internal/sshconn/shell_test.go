@@ -212,6 +212,32 @@ func TestAnInteractiveOnlyHostGetsOnlyPtyAndShell(t *testing.T) {
 	w.waitDone()
 }
 
+// A connection that carries one service of its own — a file transport, say —
+// sends no system probe beside it: where a server allows only the session the
+// connection is for, a probe could take its place.
+func TestANoProbesConnectionIsNotProbedForItsSystem(t *testing.T) {
+	probed := make(chan struct{}, 1)
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.version = "SSH-2.0-OpenSSH_8.9p1"
+		server.execChannel = func(ssh.Channel) { probed <- struct{}{} }
+	})
+	h := dial(t, server, func(config *Config) { config.NoProbes = true })
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("secret")
+	h.phase(PhaseConnected)
+	select {
+	case <-probed:
+		t.Fatal("a no-probes connection was sent a system probe")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if system := h.conn.Status().System; system != SystemUnknown {
+		t.Fatalf("a no-probes connection was probed for its system: %v", system)
+	}
+}
+
 func TestShellRunsOnAPtyAndCarriesDataBothWays(t *testing.T) {
 	server := startServer(t, func(server *testServer) {
 		server.password = "secret"

@@ -180,6 +180,10 @@ type Session struct {
 	// avoidShare makes the next connection a fresh one: the server refused one
 	// more channel on the shared connection.
 	avoidShare bool
+	// fileConnectionSeparate says the server refused a session channel on this
+	// terminal's transport, so the file panel opens its own connection instead
+	// of asking it again. A new terminal connection forgets it.
+	fileConnectionSeparate bool
 	// notified is when this terminal last had a notification shown.
 	notified  time.Duration
 	didNotify bool

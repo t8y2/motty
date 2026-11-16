@@ -35,6 +35,8 @@ With `E2E_ALLOW_EXEC=1` a command requested together with a terminal runs on a p
 
 `E2E_SFTP_ONLY=1` makes it an account restricted to SFTP: a shell request is accepted, prints `This service allows sftp connections only.` and ends with exit status 1, while the SFTP subsystem keeps working (see `tools/e2e/sftp_only_e2e.txt`).
 
+`E2E_ONE_SESSION=1` allows one session channel per SSH connection: the first one accepted claims the transport and every later session channel is refused with `administratively prohibited ("open failed")`, as an embedded SSH server that binds a connection to its first service does. A file panel on such a server has to open a connection of its own (see `tools/e2e/sftp_separate_connection_e2e.txt`; the log says `session-refused session` when the second channel is turned away).
+
 It is its own module so the pty dependency never reaches the application.
 
 ```sh

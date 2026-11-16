@@ -129,9 +129,16 @@ type sftpFolder struct {
 }
 
 type sftpView struct {
-	detached                        *sftpWindow // optional native dual-pane owner; transport/navigation stay per view
-	worker                          *sftpclient.Worker
-	openFiles                       func() (sftpclient.Remote, error) // the server's files again, outside the worker's queue; nil when unavailable
+	detached  *sftpWindow // optional native dual-pane owner; transport/navigation stay per view
+	worker    *sftpclient.Worker
+	openFiles func() (sftpclient.Remote, error) // the server's files again, outside the worker's queue; nil when unavailable
+	// transport is the SSH connection this panel's worker opens files on: the
+	// session's own or, when the server refused another channel there, the
+	// panel's separate connection (see sftp_connection.go).
+	transport *filesTransport
+	// dedicated is the panel's separate connection while it is being made and
+	// once it carries the files.
+	dedicated                       *sftpDedicated
 	sudo                            bool
 	transferScan                    uint64
 	transferHost                    *transferHost
@@ -296,7 +303,8 @@ func (state *State) openSFTP(session *Session) {
 	view.transferServer, view.transferAddress = session.Title, session.Address
 	view.transferHost = transferHostFor(session)
 	view.selected, view.lfolder.selected = -1, -1
-	view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, transfer) }
+	view.transport = &filesTransport{conn: connection}
+	view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(view.transport.connection(), transfer) }
 	view.worker = sftpclient.NewWorker(view.openFiles, state.notifyFor(session))
 	state.configureSFTPWorker(view)
 	session.files = view
@@ -304,6 +312,13 @@ func (state *State) openSFTP(session *Session) {
 		if cwd, ok := session.term.screen.WorkingDirectory(); ok {
 			state.terminalDirectory(session.ID, cwd)
 		}
+	}
+	if session.fileConnectionSeparate {
+		// This server already refused a channel on the terminal transport:
+		// opening the files the same way would fail the same way, so the panel
+		// connects for itself from the start.
+		state.startFileConnection(session, view, session.fileHistory[1].path)
+		return
 	}
 	state.listSFTP(view, session.fileHistory[1].path)
 	if !view.busy {
@@ -342,6 +357,7 @@ func (state *State) closeSFTP(session *Session) {
 	if session.files.sudo {
 		state.forgetSFTPDocumentAccess(session.files)
 	}
+	state.stopFileConnection(session.files)
 	session.files.openFiles = nil
 	session.files.sudo = false
 	state.forgetTerminalUploads(session.files)
@@ -2125,6 +2141,7 @@ func (state *State) pumpSFTP(session *Session) {
 		return
 	}
 	view := session.files
+	state.pumpFileConnection(session, view)
 	state.pumpSFTPArchive(session, view)
 	state.pumpSFTPEditor(session, view)
 	defer func() {
@@ -2267,6 +2284,9 @@ func (state *State) pumpSFTP(session *Session) {
 				}
 			}
 			if result.Err != nil {
+				if state.separateFileConnection(session, view, result) {
+					continue
+				}
 				if result.Operation == sftpclient.OperationList {
 					view.navigation = sftpNavigation{}
 				}

@@ -574,6 +574,9 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.resetLatency()
 	avoidShare := session.avoidShare || loopbackTunnel(host)
 	session.avoidShare = false
+	// A new transport deserves its own attempt: the server may accept another
+	// channel now, or the host may have changed.
+	session.fileConnectionSeparate = false
 	session.closeSSHBrowser()
 	session.stopRemoteLogs()
 	state.redialSessionForwards(session.ID)
@@ -1399,6 +1402,9 @@ func (state *State) promptSession() *Session {
 	}
 	if w := state.sftpWindows[state.modalSession]; w != nil && w.ownsConnection && !w.closed {
 		return &w.session
+	}
+	if session := state.dedicatedFileSession(state.modalSession); session != nil {
+		return session
 	}
 	return nil
 }

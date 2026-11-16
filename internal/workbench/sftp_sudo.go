@@ -153,6 +153,11 @@ func (state *State) switchSudoSFTP(session *Session, view *sftpView, password st
 	view.remoteCopies = nil
 	view.sudo = elevated
 	connection, mode := session.conn, session.host.Transfer
+	if view.dedicated != nil && view.dedicated.ready {
+		// The panel opened a connection of its own when the server refused
+		// another channel on the session's transport (see sftp_connection.go).
+		connection = view.dedicated.conn
+	}
 	view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }
 	if elevated {
 		opener := connection.(interface {
