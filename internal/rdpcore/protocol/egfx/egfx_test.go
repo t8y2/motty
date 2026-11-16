@@ -883,6 +883,21 @@ func TestProgressiveReplaysTilesUpdatedEarlierInFrame(t *testing.T) {
 	}
 }
 
+func TestProgressiveOutOfFramePDUsDoNotShareTiles(t *testing.T) {
+	h := NewHandler(func([]byte) error { return nil }, slog.New(slog.DiscardHandler))
+	defer h.Close()
+	testCreateSurface(h, 1, 64, 64)
+
+	h.handleWireToSurface2(testWireToSurface2(1, testProgressiveSimpleTilesStreamAt(0, 1, 32)))
+	surface := h.surfaces[1]
+	copy(surface.Data[40*4:40*4+4], []byte{1, 2, 3, 0xFF})
+	h.handleWireToSurface2(testWireToSurface2(1, testProgressiveSimpleTilesStreamAt(0, 0, 64)))
+
+	if got := surface.Data[40*4 : 40*4+4]; !bytes.Equal(got, []byte{1, 2, 3, 0xFF}) {
+		t.Fatalf("a tile from an earlier out-of-frame PDU replaced newer pixels: %v", got)
+	}
+}
+
 func testCreateSurface(h *Handler, id, width, height uint16) {
 	data := make([]byte, 7)
 	binary.LittleEndian.PutUint16(data[0:2], id)

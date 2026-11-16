@@ -778,9 +778,17 @@ func (h *Handler) handleStartFrame(data []byte) {
 	h.frameStartMs = time.Now().UnixMilli()
 	h.inFrame = true
 	h.frameDirtyRects = h.frameDirtyRects[:0]
-	clear(h.frameProgressiveTiles)
+	h.forgetFrameTiles()
 	clear(h.frameH264)
 	h.frameH264 = h.frameH264[:0]
+}
+
+// forgetFrameTiles empties the per-frame tile sets. It keeps their maps so the
+// next frame does not allocate them again.
+func (h *Handler) forgetFrameTiles() {
+	for _, tiles := range h.frameProgressiveTiles {
+		clear(tiles)
+	}
 }
 
 func (h *Handler) handleEndFrame(data []byte) {
@@ -1131,9 +1139,11 @@ func (h *Handler) handleWireToSurface2(data []byte) {
 	//
 	// The server may split a progressive region across WTS2 PDUs in one frame.
 	// Later PDUs re-blit tiles decoded earlier in that frame, but historical
-	// tiles must not overwrite newer drawing commands.
+	// tiles must not overwrite newer drawing commands. A PDU outside
+	// StartFrame/EndFrame has no frame to share, so it reuses only the tiles it
+	// decodes itself.
 	if !h.inFrame {
-		clear(h.frameProgressiveTiles)
+		h.forgetFrameTiles()
 	}
 	frameTiles := h.frameProgressiveTiles[surfId]
 	if frameTiles == nil {
