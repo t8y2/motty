@@ -225,3 +225,27 @@ func TestWindowsInstallerKeepsTheExactCustomDirectory(t *testing.T) {
 		})
 	}
 }
+
+func TestWindowsInstallerDoesNotRunSilently(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	installer := filepath.Join(t.TempDir(), "setup.exe")
+	if err := copyExecutable(exe, installer); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "command-line.txt")
+	t.Setenv("MOTTY_TEST_INSTALLER_COMMAND_LINE", output)
+	root := filepath.Join(t.TempDir(), "Motty")
+	if err := (Job{Staged: installer, Root: root}).runWindowsInstaller(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), " /S ") {
+		t.Fatalf("installer should not run silently with /S flag: %q", string(data))
+	}
+}
