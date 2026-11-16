@@ -1847,6 +1847,9 @@ var englishTools = ToolsMessages{
 	FontPickerSample:        "The quick brown fox jumps over the lazy dog",
 	FontPickerSampleSymbols: "0123456789 {}[]() <> -> == != ~ $ # | iIl1 oO0",
 	FontPickerConfirm:       "Confirm",
+	FontWeightMain:          "Main weight",
+	FontWeightBold:          "Bold weight",
+	FontWeightDefault:       "Default",
 
 	FontFallbackRow:         "Fallback fonts",
 	FontFallbackEmpty:       "Characters the font lacks, such as Chinese, are drawn by the system. Add fonts to choose which, in order.",

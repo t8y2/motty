@@ -240,6 +240,12 @@ type ToolsMessages struct {
 	FontPickerSampleSymbols string
 	FontPickerConfirm       string
 
+	// The two weights an interface font is chosen by: the weight its main text
+	// is drawn at, the weight its bold text is drawn at, and the family's own.
+	FontWeightMain    string
+	FontWeightBold    string
+	FontWeightDefault string
+
 	// The fonts that draw what the terminal's font lacks.
 	FontFallbackRow         string
 	FontFallbackEmpty       string

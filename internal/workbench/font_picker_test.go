@@ -429,3 +429,101 @@ func TestTheTerminalFontRowsDescriptionsFollowTheLanguage(t *testing.T) {
 		t.Fatalf("the descriptions stayed in English: %q, %q", state.fontDescription(), state.fallbackDescription())
 	}
 }
+
+// The terminal's picker chooses its family's two weights as well: the weight its
+// regular text is drawn at and the weight its bold runs are, both applied with the
+// family and kept in the state file.
+func TestTheTerminalFontWeightsAreChosenAppliedAndKept(t *testing.T) {
+	options := fontOptions(t, testFonts)
+	options.FontWeights = func(family string) []int {
+		if family == "Menlo" {
+			return []int{300, 400, 700}
+		}
+		return nil
+	}
+	applied := &[]interfaceFontChoice{}
+	options.SetTerminalFontWeights = func(main, bold int) bool {
+		*applied = append(*applied, interfaceFontChoice{main: main, bold: bold})
+		return true
+	}
+	state := newTestState(t, options)
+	state.openFontPicker(false)
+	waitForPicker(t, state, func() bool { return !state.fonts.loading })
+	typeInto(state, hitFontPickerSearch, "menlo")
+	paintedTexts(state)
+	clickFontPickerRow(t, state, 0)
+	waitForPicker(t, state, func() bool { return len(state.fonts.weights["Menlo"]) > 0 })
+	_, labels := paintedTexts(state)
+	for _, want := range []string{state.messages.Tools.FontWeightMain, state.messages.Tools.FontWeightBold} {
+		if !contains(labels, want) {
+			t.Fatalf("the picker does not offer %q: %v", want, labels)
+		}
+	}
+	if got := state.familyWeights("Menlo"); !slices.Equal(got, []int{300, 400, 700}) {
+		t.Fatalf("Menlo's weights are %v", got)
+	}
+
+	// The drop-downs show the weight chosen from them, and the choice reaches the
+	// engine with the family.
+	state.fonts.weightMain, state.fonts.weightBold = 300, 700
+	if _, texts := paintedTexts(state); !contains(texts, "Light") || !contains(texts, "Bold") {
+		t.Fatalf("the weight drop-downs do not show their choice: %v", texts)
+	}
+	state.Click(hitFontPickerConfirm)
+	last := (*applied)[len(*applied)-1]
+	if state.fonts.family != "Menlo" || state.fonts.main != 300 || state.fonts.bold != 700 {
+		t.Fatalf("the terminal draws in %q %d/%d", state.fonts.family, state.fonts.main, state.fonts.bold)
+	}
+	if last != (interfaceFontChoice{main: 300, bold: 700}) {
+		t.Fatalf("the engine was told %+v", last)
+	}
+
+	state.save()
+	saved, _, err := loadState(state.options.StatePath)
+	if err != nil || saved.TerminalFontMain != 300 || saved.TerminalFontBold != 700 {
+		t.Fatalf("the saved weights are %d/%d, %v", saved.TerminalFontMain, saved.TerminalFontBold, err)
+	}
+	state.Close()
+	second := fontOptions(t, testFonts)
+	second.StatePath = state.options.StatePath
+	reloaded := newTestState(t, second)
+	if reloaded.fonts.main != 300 || reloaded.fonts.bold != 700 {
+		t.Fatalf("the weights came back as %d/%d", reloaded.fonts.main, reloaded.fonts.bold)
+	}
+}
+
+// A built-in terminal face has no weights of its own: choosing it takes the
+// family's weights away with the family.
+func TestThePlatformsOwnTerminalFaceHasNoWeights(t *testing.T) {
+	options := fontOptions(t, testFonts)
+	state := newTestState(t, options)
+	if !state.useTerminalFontWeights(fontEntry{family: "Menlo"}, 300, 700) {
+		t.Fatal("the family was not taken")
+	}
+	if !state.useTerminalFontWeights(fontEntry{face: gfx.MonoClassic}, 300, 700) {
+		t.Fatal("the built-in face was not taken")
+	}
+	if state.fonts.main != 0 || state.fonts.bold != 0 {
+		t.Fatalf("the built-in face kept the weights %d/%d", state.fonts.main, state.fonts.bold)
+	}
+	state.Close()
+}
+
+// The arrows navigate the list from its rows and from the search field only: a
+// weight drop-down the dialog opened keeps the keys it was given, and the
+// highlight stays where it is behind the open list.
+func TestAnOpenWeightListKeepsTheArrowKeys(t *testing.T) {
+	state := newTestState(t, fontOptions(t, testFonts))
+	state.openFontPicker(false)
+	waitForPicker(t, state, func() bool { return !state.fonts.loading })
+	state.selectFont(2)
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitFontPickerConfirm})
+	if result.Handled || state.fonts.selected != 2 {
+		t.Fatalf("a key for the drop-down moved the list: handled %v, selected %d", result.Handled, state.fonts.selected)
+	}
+	state.Key(gfx.KeyEvent{Key: gfx.KeyDown, Target: hitFontPickerSearch})
+	if state.fonts.selected != 3 {
+		t.Fatalf("the search field lost the arrows: selected %d", state.fonts.selected)
+	}
+	state.Close()
+}

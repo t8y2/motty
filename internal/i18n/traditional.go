@@ -1847,6 +1847,9 @@ var traditionalTools = ToolsMessages{
 	FontPickerSample:        "The quick brown fox 敏捷的棕色狐狸 0123",
 	FontPickerSampleSymbols: "0123456789 {}[]() <> -> == != ~ $ # | iIl1 oO0",
 	FontPickerConfirm:       "確定",
+	FontWeightMain:          "主字重",
+	FontWeightBold:          "粗體字重",
+	FontWeightDefault:       "預設",
 
 	FontFallbackRow:         "備用字型",
 	FontFallbackEmpty:       "終端機字型缺少的字元（如中文）由系統選擇字型繪製。新增備用字型後，按順序依次嘗試。",
