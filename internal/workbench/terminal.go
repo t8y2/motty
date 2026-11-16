@@ -505,6 +505,7 @@ func (state *State) pump(session *Session) {
 		return
 	}
 	t.rx = t.shell.Drain(t.rx) // keep what an earlier frame could not parse
+	hadOutput := len(t.rx) > 0
 	finished := false
 	select {
 	case <-t.shell.Done():
@@ -554,6 +555,7 @@ func (state *State) pump(session *Session) {
 	default:
 		t.rx = t.rx[:0]
 	}
+	state.syncAgentIcon(session, hadOutput, finished)
 	if finished {
 		state.shellEnded(session)
 	}

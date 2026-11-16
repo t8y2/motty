@@ -97,13 +97,17 @@ type Session struct {
 	answered uint64
 	// otpSent is set once a one-time code was typed for this connection, so a
 	// refused one is never sent again by itself.
-	otpSent   bool
-	busy      bool
-	tone      tone
-	hostKey   sshconn.HostKeyInfo
-	questions []sshconn.Question
-	identity  string
-	files     *sftpView
+	otpSent bool
+	busy    bool
+	tone    tone
+	// agent is the coding agent in this local terminal's foreground, and
+	// agentWatch is when that was last read; both are cleared when the shell ends.
+	agent      codingAgent
+	agentWatch agentWatch
+	hostKey    sshconn.HostKeyInfo
+	questions  []sshconn.Question
+	identity   string
+	files      *sftpView
 	// relay is where this session's background goroutines report progress. It
 	// points at the window the session is in, and moves with the session.
 	relay *notifyRelay

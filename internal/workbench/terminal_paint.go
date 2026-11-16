@@ -212,8 +212,14 @@ func (state *State) declareInactiveBar(f *flex.Frame, width float32, title, stat
 	if session.busy {
 		gap = 6
 	}
+	mark, tint := lucideIcons[iconTerminal], pal.faint
+	if session.isLocal() {
+		if icon, ok := agentIcon(session.agent); ok {
+			mark, tint = icon, pal.text
+		}
+	}
 	f.Row().Fill().PadX(termPadX).Items(flex.Center).Children(func() {
-		f.Icon(lucideIcons[iconTerminal]).Size(14, 14).Color(pal.faint).MarginSides(0, 7, 0, 0)
+		f.Icon(mark).Size(14, 14).Color(tint).MarginSides(0, 7, 0, 0)
 		f.Text(title).FontSize(barTitleSize).Weight(ui.WeightSemibold).Color(pal.muted).LineHeight(22).Ellipsis().Grow(1).MarginSides(0, gap, 0, 0)
 		if session.busy {
 			spinner = f.Slot().Size(14, 14).MarginSides(0, 9, 0, 0)

@@ -4,7 +4,7 @@
 // comes from Skill Icons (https://github.com/tandpfun/skill-icons), MIT. The Linux
 // glyph comes from selfh.st/icons (https://selfh.st/icons), CC-BY-4.0, and is
 // split into theme-aware color layers. The Apple glyph comes from Devicon
-// (https://devicon.dev), MIT. The Linux distribution and FreeBSD glyphs come from Simple Icons (https://simpleicons.org), CC0-1.0. The mit-* file-type glyphs come from Material Icon Theme (https://github.com/material-extensions/vscode-material-icon-theme), MIT, through Iconify. The ai-* provider marks come from LobeHub Icons (https://github.com/lobehub/lobe-icons), MIT (Claude, Gemini, DeepSeek, Kimi, Qwen, MiniMax, Z.ai), Iconify (OpenAI) and Simple Icons (https://simpleicons.org), CC0-1.0 (Ollama); the plug glyph is Lucide's. Brand names and logos remain subject to their
+// (https://devicon.dev), MIT. The Linux distribution and FreeBSD glyphs come from Simple Icons (https://simpleicons.org), CC0-1.0. The mit-* file-type glyphs come from Material Icon Theme (https://github.com/material-extensions/vscode-material-icon-theme), MIT, through Iconify. The ai-* provider marks come from LobeHub Icons (https://github.com/lobehub/lobe-icons), MIT (Claude, Gemini, DeepSeek, Kimi, Qwen, MiniMax, Z.ai, Pi, OpenCode, Grok), Iconify (OpenAI) and Simple Icons (https://simpleicons.org), CC0-1.0 (Ollama); the plug glyph is Lucide's. Brand names and logos remain subject to their
 // respective trademark policies. SVG sources are compiled at build time with
 // `viva icons`; no SVG parser links into the app.
 
@@ -401,6 +401,40 @@ var AiGemini = ui.Icon{
 			ui.CubicTo(21.9343, 11.3407, 21.2645, 11.114, 20.616, 10.835),
 			ui.ClosePath(),
 		}},
+	},
+}
+
+// ai-grok is a compiled vector icon.
+var AiGrok = ui.Icon{
+	ViewBox: 24.0,
+	Stroke:  0.0,
+	Cap:     ui.CapRound,
+	Join:    ui.JoinRound,
+	Commands: []ui.PathCommand{
+		ui.MoveTo(9.27, 15.29),
+		ui.LineTo(17.248, 9.393),
+		ui.CubicTo(17.639, 9.103, 18.198, 9.216, 18.385, 9.665),
+		ui.CubicTo(19.365, 12.034, 18.927, 14.88, 16.975, 16.834),
+		ui.CubicTo(15.024, 18.788, 12.308, 19.216, 9.826, 18.24),
+		ui.LineTo(7.115, 19.497),
+		ui.CubicTo(11.004, 22.158, 15.726, 21.5, 18.677, 18.544),
+		ui.CubicTo(21.018, 16.2, 21.743, 13.005, 21.065, 10.124),
+		ui.LineTo(21.071, 10.131),
+		ui.CubicTo(20.088, 5.899, 21.313, 4.207, 23.821, 0.748),
+		ui.CubicTo(23.881, 0.666, 23.941, 0.584, 24.0, 0.5),
+		ui.LineTo(20.699, 3.805),
+		ui.LineTo(20.699, 3.795),
+		ui.LineTo(9.267, 15.292),
+		ui.MoveTo(7.623, 16.723),
+		ui.CubicTo(4.831, 14.053, 5.313, 9.922, 7.694, 7.539),
+		ui.CubicTo(9.455, 5.776, 12.341, 5.056, 14.86, 6.114),
+		ui.LineTo(17.565, 4.864),
+		ui.CubicTo(17.0028, 4.45042, 16.3876, 4.11409, 15.736, 3.864),
+		ui.CubicTo(12.3863, 2.493, 8.54087, 3.26823, 5.984, 5.83),
+		ui.CubicTo(3.451, 8.366, 2.654, 12.266, 4.022, 15.594),
+		ui.CubicTo(5.044, 18.081, 3.369, 19.84, 1.682, 21.616),
+		ui.CubicTo(1.083, 22.246, 0.483, 22.875, 4.44089e-16, 23.541),
+		ui.LineTo(7.62, 16.726),
 	},
 }
 
@@ -850,6 +884,60 @@ var AiOpenai = ui.Icon{
 		ui.LineTo(14.613, 13.497),
 		ui.LineTo(12.016, 14.997),
 		ui.LineTo(9.409, 13.497),
+		ui.ClosePath(),
+	},
+}
+
+// ai-opencode is a compiled vector icon.
+var AiOpencode = ui.Icon{
+	ViewBox: 24.0,
+	Stroke:  0.0,
+	Cap:     ui.CapRound,
+	Join:    ui.JoinRound,
+	Commands: []ui.PathCommand{
+		ui.MoveTo(16.0, 6.0),
+		ui.LineTo(8.0, 6.0),
+		ui.LineTo(8.0, 18.0),
+		ui.LineTo(16.0, 18.0),
+		ui.LineTo(16.0, 6.0),
+		ui.ClosePath(),
+		ui.MoveTo(20.0, 22.0),
+		ui.LineTo(4.0, 22.0),
+		ui.LineTo(4.0, 2.0),
+		ui.LineTo(20.0, 2.0),
+		ui.LineTo(20.0, 22.0),
+		ui.ClosePath(),
+	},
+}
+
+// ai-pi is a compiled vector icon.
+var AiPi = ui.Icon{
+	ViewBox: 24.0,
+	Stroke:  0.0,
+	Cap:     ui.CapRound,
+	Join:    ui.JoinRound,
+	Commands: []ui.PathCommand{
+		ui.MoveTo(1.0, 1.0),
+		ui.LineTo(17.5, 1.0),
+		ui.LineTo(17.5, 12.0),
+		ui.LineTo(12.0, 12.0),
+		ui.LineTo(12.0, 17.5),
+		ui.LineTo(6.5, 17.5),
+		ui.LineTo(6.5, 23.0),
+		ui.LineTo(1.0, 23.0),
+		ui.LineTo(1.0, 1.0),
+		ui.ClosePath(),
+		ui.MoveTo(6.5, 6.5),
+		ui.LineTo(6.5, 12.0),
+		ui.LineTo(12.0, 12.0),
+		ui.LineTo(12.0, 6.5),
+		ui.LineTo(6.5, 6.5),
+		ui.ClosePath(),
+		ui.MoveTo(17.5, 12.0),
+		ui.LineTo(23.0, 12.0),
+		ui.LineTo(23.0, 23.0),
+		ui.LineTo(17.5, 23.0),
+		ui.LineTo(17.5, 12.0),
 		ui.ClosePath(),
 	},
 }

@@ -97,13 +97,17 @@ func startBackend(config Config) (backend, error) {
 	}
 	windows.CloseHandle(process.Thread)
 	attributes.Delete()
+	// The shell's pid and start time say which process "the shell" is for as
+	// long as it runs. The handle itself is closed by wait.
+	shellPID, shellCreated := process.ProcessId, processStart(process.Process)
 
 	output := os.NewFile(uintptr(outRead), "conpty-out")
 	input := os.NewFile(uintptr(inWrite), "conpty-in")
 	var closeOnce sync.Once
 	closeConsole := func() { closeOnce.Do(func() { windows.ClosePseudoConsole(console) }) }
 	return backend{
-		io: &consoleIO{output: output, input: input, closeConsole: closeConsole},
+		io:         &consoleIO{output: output, input: input, closeConsole: closeConsole},
+		foreground: func() ([]string, bool) { return windowsForeground(shellPID, shellCreated) },
 		resize: func(cols, rows int) {
 			_ = windows.ResizePseudoConsole(console, windows.Coord{X: int16(cols), Y: int16(rows)})
 		},

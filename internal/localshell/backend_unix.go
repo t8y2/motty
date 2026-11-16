@@ -34,7 +34,8 @@ func startBackend(config Config) (backend, error) {
 		return backend{}, err
 	}
 	return backend{
-		io: master,
+		io:         master,
+		foreground: func() ([]string, bool) { return foregroundArgs(master) },
 		resize: func(cols, rows int) {
 			_ = pty.Setsize(master, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 		},

@@ -482,7 +482,7 @@ func (state *State) paintWindowBarParts(canvas *ui.Canvas, strip ui.Rect) {
 			case canvas.Hovered() == tab.id || canvas.Hovered() == tab.closeID:
 				fill = state.pal.tabHover
 			}
-			state.paintHostCatalogIcon(canvas, session.host, tab.badge.Rect(), fill)
+			state.paintTabBadge(canvas, session, tab.badge.Rect(), fill)
 			kind, dot := state.sessionLight(session)
 			light := tab.light.Rect()
 			paintLight(canvas, light.X+light.Width/2, light.Y+light.Height/2, kind, dot, fill)
