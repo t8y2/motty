@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/backup"
@@ -293,17 +292,13 @@ func (state *State) declareDevelopmentImport(c ui.C) {
 		errorLines = wrappedLines(canvas, errorText, metrics.FontSizeM, bodyWidth)
 	}
 	bodyHeight := float32(lines+errorLines)*stateNoticeLine + 40
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(canvas, *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout("")
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: m.DevelopmentImportTitle, Width: width, Height: layout.Content.Height + bodyHeight,
+		Title: m.DevelopmentImportTitle, Width: width,
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitDevelopmentClose, CloseID: hitDevelopmentClose,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().Children(func() {
+		ui.Column(c).Height(bodyHeight).Children(func() {
 			ui.Paragraph(c, body, lines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
 			ui.Checkbox(c, &view.passwords, m.DevelopmentImportPasswords).Color(state.pal.text)
 			if errorLines != 0 {

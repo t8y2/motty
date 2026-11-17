@@ -370,17 +370,13 @@ func (state *State) declareMobaEncoding(c ui.C) {
 	}
 	m := state.messages.Tools
 	const width float32 = 520
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(m.ImportEncodingBody)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ImportEncodingTitle, Description: m.ImportEncodingBody,
-		Width: width, Height: layout.Content.Height + 52, Layer: dialogLayer,
+		Width: width, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitMobaEncodingCancel, CloseID: hitMobaEncodingClose,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().Gap(6).Children(func() {
+		ui.Column(c).Height(52).Gap(6).Children(func() {
 			ui.Text(c, fmt.Sprintf(m.ImportEncodingSampleUTF8Fmt, state.mobaEncoding.utf8)).
 				FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Ellipsis()
 			ui.Text(c, fmt.Sprintf(m.ImportEncodingSampleGBFmt, state.mobaEncoding.gb)).
@@ -416,17 +412,13 @@ func (state *State) declareSessionImportPreview(c ui.C) {
 	}
 	const width float32 = 550
 	description := fmt.Sprintf(m.ImportPasswordPreviewBodyFmt, len(state.sessionImport.plan.hosts), len(state.sessionImport.passwords), state.sessionImport.eligible)
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(description)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ImportPasswordPreviewTitle, Description: description,
-		Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Width: width, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitImportPreviewCancel, CloseID: hitImportPreviewClose,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().Children(func() {
+		ui.Column(c).Height(bodyHeight).Children(func() {
 			if state.dialogError != "" {
 				ui.Text(c, state.dialogError).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(24)
 			}
