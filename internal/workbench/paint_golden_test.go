@@ -10,6 +10,8 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 
+	"motty/internal/autofill"
+
 	"motty/internal/aiproviderimport"
 )
 
@@ -99,6 +101,12 @@ func paintScenes() []paintScene {
 		plainScene("highlight-rule-error", func(t *testing.T, s *State) {
 			s.openHighlightDialog()
 			s.highlighting.dialogError = "That pattern is not valid."
+		}),
+		plainScene("autofill-rule", func(t *testing.T, s *State) { s.openAutofillDialog(nil) }),
+		plainScene("autofill-rule-text-error", func(t *testing.T, s *State) {
+			s.openAutofillDialog(nil)
+			s.autofillRules.send = autofill.SendText
+			s.autofillRules.dialogError = "Name the rule."
 		}),
 		plainScene("sudo-sftp", func(t *testing.T, s *State) { s.sudoSFTP = sudoSFTPDialog{}; s.modal = modalSudoSFTP }),
 		plainScene("moba-encoding", func(t *testing.T, s *State) {
