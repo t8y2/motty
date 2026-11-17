@@ -58,9 +58,8 @@ type localProxyUI struct {
 	copyError      string
 	retryCopy      gfx.ID
 	// The dialog's body is part of the window page; these are the slots its
-	// declaration leaves for the hand-painted field, phase line and buttons.
-	portField, phaseLine                          ui.Box
-	configButton, docsButton, dockerRestoreButton ui.Box
+	// declaration leaves for the hand-painted field and phase line.
+	portField, phaseLine ui.Box
 	// viewportDraw and controlsDraw are the dialog's kept painters, made once
 	// per open so a repaint declares the body without allocating.
 	viewportDraw, controlsDraw func(*ui.DrawContext)
@@ -514,15 +513,13 @@ func (state *State) drawLocalProxyViewport(d *ui.DrawContext) {
 	d.Canvas.HitWithOptions(hitLocalProxyScroll, geometry.Viewport, state.localProxyUI.viewportTitle, gfx.HitOptions{Role: gfx.RoleGroup})
 }
 
-// drawLocalProxyControls paints the field, phase line and buttons into the slots
-// the body's declaration left.
+// drawLocalProxyControls paints the main view's port field and phase line into the slots the
+// body's declaration left. The Docker view declares everything in the page.
 func (state *State) drawLocalProxyControls(d *ui.DrawContext) {
-	snapshot := state.localProxySnapshot(state.localProxySession())
 	if state.localProxyUI.docker {
-		state.paintLocalProxyDockerControls(d.Canvas, snapshot)
 		return
 	}
-	state.paintLocalProxyMainControls(d.Canvas, snapshot)
+	state.paintLocalProxyMainControls(d.Canvas, state.localProxySnapshot(state.localProxySession()))
 }
 
 // paintLocalProxyScrollbar paints the body's scrollbar over the page: the thumb
@@ -675,11 +672,9 @@ func (state *State) localProxyCopyLabel(id gfx.ID, normal, copied string) string
 }
 
 // declareLocalProxyDockerBody declares the Docker view's rows in the dialog body
-// and keeps the slots its hand-painted buttons go in.
+// with its buttons.
 func (state *State) declareLocalProxyDockerBody(c ui.C, snapshot localProxySnapshot) {
 	m, pal, theme := state.messages.LocalProxy, state.pal, state.Theme()
-	proxy := &state.localProxyUI
-	proxy.configButton, proxy.docsButton, proxy.dockerRestoreButton = ui.Box{}, ui.Box{}, ui.Box{}
 	port := state.localProxyCommandPort()
 	ui.Wrap(c, m.DockerScope).FontSize(theme.Metrics.FontSizeS).Color(pal.warning).LineHeight(18)
 	ui.Wrap(c, m.DockerWarning).FontSize(theme.Metrics.FontSizeS).Color(pal.danger).LineHeight(18)
@@ -690,30 +685,25 @@ func (state *State) declareLocalProxyDockerBody(c ui.C, snapshot localProxySnaps
 		}
 	}
 	ui.Row(c).Height(34).Gap(8).Children(func() {
-		proxy.configButton = ui.Slot(c).Grow(1)
-		proxy.docsButton = ui.Slot(c).Grow(1)
+		if port != 0 {
+			label := state.localProxyCopyLabel(hitLocalProxyDockerConfig, m.DockerCopy, m.DockerCopied)
+			ui.Button(c, label).Outline().Hit(hitLocalProxyDockerConfig, label).Basis(0).Grow(1)
+		} else {
+			ui.Spacer(c).Basis(0).Grow(1)
+		}
+		ui.Button(c, m.OpenDockerDocs).Outline().Hit(hitLocalProxyDockerDocs, m.OpenDockerDocs).Basis(0).Grow(1)
 	})
 	ui.Wrap(c, m.DockerRestoreFmt).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 	for _, line := range strings.Split(localProxyDockerRestoreCommand(), "\n") {
 		ui.Text(c, line).Mono().FontSize(11).Color(pal.text).LineHeight(16)
 	}
-	ui.Row(c).Height(34).Children(func() { proxy.dockerRestoreButton = ui.Slot(c).Grow(1) })
+	ui.Row(c).Height(34).Children(func() {
+		label := state.localProxyCopyLabel(hitLocalProxyDockerRestore, m.DockerCopy, m.DockerCopied)
+		ui.Button(c, label).Outline().Hit(hitLocalProxyDockerRestore, label).Grow(1)
+	})
 	if state.localProxyUI.copyError != "" {
 		ui.Text(c, state.localProxyUI.copyError).FontSize(theme.Metrics.FontSizeS).Color(pal.danger)
 	}
-}
-
-// paintLocalProxyDockerControls paints the Docker view's buttons into the slots
-// its declaration left.
-func (state *State) paintLocalProxyDockerControls(canvas *gfx.Canvas, snapshot localProxySnapshot) {
-	m, theme := state.messages.LocalProxy, state.Theme()
-	proxy := &state.localProxyUI
-	port := state.localProxyCommandPort()
-	if port != 0 {
-		components.BeginButton(canvas, theme, hitLocalProxyDockerConfig, proxy.configButton.Rect()).Outline(state.localProxyCopyLabel(hitLocalProxyDockerConfig, m.DockerCopy, m.DockerCopied))
-	}
-	components.BeginButton(canvas, theme, hitLocalProxyDockerDocs, proxy.docsButton.Rect()).Outline(m.OpenDockerDocs)
-	components.BeginButton(canvas, theme, hitLocalProxyDockerRestore, proxy.dockerRestoreButton.Rect()).Outline(state.localProxyCopyLabel(hitLocalProxyDockerRestore, m.DockerCopy, m.DockerCopied))
 }
 
 func localProxyDockerConfigCommand(port uint16) string {

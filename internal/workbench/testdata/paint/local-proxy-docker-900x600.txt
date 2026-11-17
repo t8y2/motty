@@ -10,8 +10,8 @@ rect {{0 0 900 600} {0 0 0 0.5} 0 600 {0 0 0 0} false 1452}
 rect {{140 16 620 568} {0.2 0.23529412 0.2901961 1} 11 600 {0 0 0 0} false 1453}
 rect {{141 17 618 566} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} false 1454}
 rect {{712 32 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false 1458}
-rect {{450 268 272 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {164 131 572 373} true 1523}
-rect {{451 269 270 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {164 131 572 373} true 1524}
+rect {{450 268 272 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {164 131 572 373} true 1518}
+rect {{451 269 270 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {164 131 572 373} true 1519}
 rect {{170 417 552 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {164 131 572 373} true 1527}
 rect {{171 418 550 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {164 131 572 373} true 1528}
 rect {{481.45898 528 112.052734 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false 1530}
@@ -47,7 +47,7 @@ rect {{283.20898 340.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {
 rect {{290.20898 340.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 860 564} true 2138}
 rect {{860 36 40 564} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false 2139}
 rect {{727 132 8 223.19838} {0.2 0.23529412 0.2901961 1} 4 0 {0 0 0 0} false 3455}
-shadow {{450 268 272 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {164 131 572 373} true 1522}
+shadow {{450 268 272 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {164 131 572 373} true 1517}
 shadow {{170 417 552 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {164 131 572 373} true 1526}
 shadow {{601.5117 528 134.48828 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false 1532}
 shadow {{625.5029 400.62 56.49707 32} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 36 860 564} true 1884}
@@ -66,12 +66,12 @@ text "Docker, Docker Desktop, or a remote Docker context." {170 169 552 18}
 text "The example uses sudo and restarts Docker, which may interrupt containers. Motty never runs these" {170 195 552 18}
 text "commands. Restore this configuration before stopping the tunnel." {170 213 552 18}
 text "Systemd-managed Linux Docker" {170 239 552 21}
+text "Open Docker documentation" {493.75244 268 272 32}
 text "Remove /etc/systemd/system/docker.service.d/motty-proxy.conf only if you created it, then reload" {170 310 552 18}
 text "and restart Docker." {170 328 552 18}
 text "sudo rm -f /etc/systemd/system/docker.service.d/motty-proxy.conf" {170 354 552 13}
 text "sudo systemctl daemon-reload" {170 375 552 13}
 text "sudo systemctl restart docker" {170 396 552 13}
-text "Open Docker documentation" {493.75244 268 272 32}
 text "Copy command" {395.31494 417 552 32}
 text "Proxy settings" {491.45898 528 112.052734 32}
 text "Return to terminal" {611.5117 528 134.48828 32}

@@ -10,8 +10,8 @@ rect {{0 0 1400 900} {0 0 0 0.5} 0 600 {0 0 0 0} false 1452}
 rect {{390 42.5 620 815} {0.2 0.23529412 0.2901961 1} 11 600 {0 0 0 0} false 1453}
 rect {{391 43.5 618 813} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} false 1454}
 rect {{962 58.5 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false 1458}
-rect {{705 294.5 277 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {414 157.5 572 620} true 1523}
-rect {{706 295.5 275 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {414 157.5 572 620} true 1524}
+rect {{705 294.5 277 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {414 157.5 572 620} true 1518}
+rect {{706 295.5 275 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {414 157.5 572 620} true 1519}
 rect {{420 443.5 562 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {414 157.5 572 620} true 1527}
 rect {{421 444.5 560 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {414 157.5 572 620} true 1528}
 rect {{731.459 801.5 112.052734 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false 1530}
@@ -46,7 +46,7 @@ rect {{526.209 466.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 
 rect {{533.209 466.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 1360 864} true 2137}
 rect {{540.209 466.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 1360 864} true 2138}
 rect {{1360 36 40 864} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false 2139}
-shadow {{705 294.5 277 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {414 157.5 572 620} true 1522}
+shadow {{705 294.5 277 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {414 157.5 572 620} true 1517}
 shadow {{420 443.5 562 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {414 157.5 572 620} true 1526}
 shadow {{851.5117 801.5 134.48828 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false 1532}
 shadow {{875.5029 526.62 56.49707 32} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 36 1360 864} true 1884}
@@ -65,12 +65,12 @@ text "Docker, Docker Desktop, or a remote Docker context." {420 195.5 562 18}
 text "The example uses sudo and restarts Docker, which may interrupt containers. Motty never runs these" {420 221.5 562 18}
 text "commands. Restore this configuration before stopping the tunnel." {420 239.5 562 18}
 text "Systemd-managed Linux Docker" {420 265.5 562 21}
+text "Open Docker documentation" {751.25244 294.5 277 32}
 text "Remove /etc/systemd/system/docker.service.d/motty-proxy.conf only if you created it, then reload" {420 336.5 562 18}
 text "and restart Docker." {420 354.5 562 18}
 text "sudo rm -f /etc/systemd/system/docker.service.d/motty-proxy.conf" {420 380.5 562 13}
 text "sudo systemctl daemon-reload" {420 401.5 562 13}
 text "sudo systemctl restart docker" {420 422.5 562 13}
-text "Open Docker documentation" {751.25244 294.5 277 32}
 text "Copy command" {650.31494 443.5 562 32}
 text "Proxy settings" {741.459 801.5 112.052734 32}
 text "Return to terminal" {861.5117 801.5 134.48828 32}
