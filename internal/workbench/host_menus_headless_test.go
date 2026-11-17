@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"motty/internal/sshconn"
 )
@@ -52,6 +53,23 @@ func TestHostsToolbarMenusCloseWithEscape(t *testing.T) {
 		if menu.open() {
 			t.Fatalf("Escape left the %s menu open", menu.trigger)
 		}
+	}
+	// A context menu opened at a point of the window closes the same way.
+	state.openHostBlankMenu(gfx.Point{X: 300, Y: 300})
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if !state.hostBlankMenu.open {
+		t.Fatal("the blank-area menu did not open")
+	}
+	if err := view.Keys("Escape"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.hostBlankMenu.open {
+		t.Fatal("Escape left the blank-area menu open")
 	}
 }
 

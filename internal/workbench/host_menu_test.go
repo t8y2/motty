@@ -221,4 +221,3 @@ func TestMoveGroupFromAHostsMenuOpensThePickerWhereTheMenuWas(t *testing.T) {
 		t.Fatalf("the group picker first row opened at %+v, want where the menu's first row was %+v", first.Bounds, connect.Bounds)
 	}
 }
-

@@ -155,10 +155,10 @@ func TestRenamingOneTerminalOfASplitTabRenamesOnlyThatTerminal(t *testing.T) {
 	state.openTerminalMenu(third)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTerminalMenuRename); !ok {
+	if _, ok := menuHit(&canvas, state, hitTerminalMenuRename); !ok {
 		t.Fatal("the menu of a split tab's terminal has no rename entry")
 	}
-	state.Click(hitTerminalMenuRename)
+	chooseMenu(t, state, hitTerminalMenuRename)
 	if state.modal != modalRenameTab || state.tabRename.editor.String() != third.Title {
 		t.Fatalf("modal %v with %q, want the dialog on the terminal's own name", state.modal, state.tabRename.editor.String())
 	}

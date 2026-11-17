@@ -968,10 +968,10 @@ func TestTerminalMenuAsksTheAssistantWithoutSending(t *testing.T) {
 		t.Fatal("asking about the selection is enabled without one")
 	}
 	panelHit(t, canvas, hitTerminalMenuExplain)
-	state.Click(hitTerminalMenuSelectAll)
+	chooseMenu(t, state, hitTerminalMenuSelectAll)
 	rightClick(state, session, 300, 300)
 	paintAt(state, panelWide)
-	state.Click(hitTerminalMenuAsk)
+	chooseMenu(t, state, hitTerminalMenuAsk)
 	if !state.ai.open || !strings.Contains(state.ai.input.String(), "error: disk full") || !strings.Contains(state.ai.input.String(), "```") {
 		t.Fatalf("open=%v input=%q", state.ai.open, state.ai.input.String())
 	}
@@ -981,7 +981,7 @@ func TestTerminalMenuAsksTheAssistantWithoutSending(t *testing.T) {
 	state.ai.input = text.Editor{}
 	rightClick(state, session, 300, 300)
 	paintAt(state, panelWide)
-	state.Click(hitTerminalMenuExplain)
+	chooseMenu(t, state, hitTerminalMenuExplain)
 	if state.ai.input.String() != state.messages.AIPanel.PromptExplain || state.ai.mode != agent.ModeAsk {
 		t.Fatalf("input = %q mode=%v", state.ai.input.String(), state.ai.mode)
 	}

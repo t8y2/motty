@@ -103,7 +103,7 @@ func TestTerminalMenuOffersDisconnectOnlyWhileItIsConnected(t *testing.T) {
 	if !menuHas(state, hitTerminalMenuDisconnect) || !menuHas(state, hitTerminalMenuRestart) {
 		t.Fatal("the terminal menu lacks Disconnect or Reconnect")
 	}
-	state.Click(hitTerminalMenuDisconnect)
+	chooseMenu(t, state, hitTerminalMenuDisconnect)
 	if state.modal != modalSessionLink || !state.sessionLink.disconnect || state.sessionLink.session != session.ID {
 		t.Fatalf("modal=%v link=%+v", state.modal, state.sessionLink)
 	}

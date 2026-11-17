@@ -242,7 +242,7 @@ func openRemoteToolsDialog(t *testing.T) (*State, *remoteServer, *fakeShell) {
 	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	rightClick(state, session, 400, 300)
 	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
-	state.Click(hitTerminalMenuTools)
+	chooseMenu(t, state, hitTerminalMenuTools)
 	if state.modal != modalRemoteTools {
 		t.Fatalf("the dialog did not open: modal %d", state.modal)
 	}

@@ -67,10 +67,10 @@ func TestYmodemReceiveIntoAFolderFromTheTerminalMenu(t *testing.T) {
 	state.openTerminalMenu(session)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTerminalMenuTransfer); !ok {
+	if _, ok := menuHit(&canvas, state, hitTerminalMenuTransfer); !ok {
 		t.Fatal("the terminal menu has no file transfer entry")
 	}
-	state.Click(hitTerminalMenuTransfer)
+	chooseMenu(t, state, hitTerminalMenuTransfer)
 	if state.modal != modalXYTransfer {
 		t.Fatalf("modal = %d", state.modal)
 	}

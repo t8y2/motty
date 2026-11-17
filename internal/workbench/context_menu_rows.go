@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 )
 
@@ -63,6 +64,8 @@ const (
 type menuEntry struct {
 	item      components.ContextMenuItem
 	separator bool
+	// chord is the shortcut the row shows at its end, when it has one.
+	chord keymap.Chord
 }
 
 // menuRows collects the rows of a context menu before it is painted, so its
@@ -82,6 +85,13 @@ func (rows *menuRows) add(item components.ContextMenuItem) {
 
 // separate puts a separator after the rows so far; one at the top or doubled up
 // is dropped.
+// chord gives the last row added the shortcut it shows at its end.
+func (rows *menuRows) chord(chord keymap.Chord) {
+	if rows.count > 0 {
+		rows.entries[rows.count-1].chord = chord
+	}
+}
+
 func (rows *menuRows) separate() {
 	if rows.count == 0 || rows.entries[rows.count-1].separator || rows.count == len(rows.entries) {
 		return
@@ -139,6 +149,9 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 		}
 		if row.Description != "" {
 			item = item.Description(row.Description)
+		}
+		if entry.chord.Valid() {
+			item = item.Keys(entry.chord.Modifiers, entry.chord.Name())
 		}
 		switch row.Kind {
 		case components.ContextMenuCheckbox:

@@ -347,7 +347,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	case modalSFTPColumns:
 		state.paintSFTPColumnSettings(canvas, viewport)
 	}
-	state.paintTerminalMenu(canvas, viewport)
 	state.paintGhostMenu(canvas, viewport)
 	state.paintToolbarDockMenu(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)

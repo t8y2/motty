@@ -20,7 +20,11 @@ func init() {
 		hitHostMenuEdit, hitHostMenuCopyEdit, hitHostMenuSetJump, hitHostMenuMove, hitHostMenuDelete,
 		hitGroupNewHost, hitGroupNewChild, hitGroupPaste, hitGroupRename, hitGroupMove, hitGroupPin, hitGroupUp, hitGroupDown, hitGroupDelete,
 		hitHostBlankNewHost, hitHostBlankNewGroup, hitHostBlankPaste,
+		hitTerminalMenuCopy, hitTerminalMenuPaste, hitTerminalMenuSelectAll, hitTerminalMenuClearScreen, hitTerminalMenuClear, hitTerminalMenuSave, hitTerminalMenuSplitRight, hitTerminalMenuSplitDown, hitTerminalMenuRename, hitTerminalMenuClosePane, hitTerminalMenuFiles, hitTerminalMenuTransfer, hitTerminalMenuAsk, hitTerminalMenuExplain, hitTerminalMenuHistory, hitTerminalMenuSearch, hitTerminalMenuStats, hitTerminalMenuTools, hitTerminalMenuReconnect, hitTerminalMenuRestart, hitTerminalMenuDisconnect,
 	} {
+		menuRowIDs[id] = true
+	}
+	for _, id := range hitTerminalMenuAction {
 		menuRowIDs[id] = true
 	}
 }
@@ -87,6 +91,51 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.NewGroup
 	case hitHostBlankPaste:
 		return m.PasteHost
+	case hitTerminalMenuCopy:
+		return m.MenuCopy
+	case hitTerminalMenuPaste:
+		return m.MenuPaste
+	case hitTerminalMenuSelectAll:
+		return m.MenuSelectAll
+	case hitTerminalMenuClearScreen:
+		return m.MenuClearScreen
+	case hitTerminalMenuClear:
+		return m.MenuClearScrollback
+	case hitTerminalMenuSave:
+		return m.Tools.MenuSaveOutput
+	case hitTerminalMenuSplitRight:
+		return m.PaneSplitHorizontal
+	case hitTerminalMenuSplitDown:
+		return m.PaneSplitVertical
+	case hitTerminalMenuRename:
+		return m.MenuRenameTerminal
+	case hitTerminalMenuClosePane:
+		return m.PaneClose
+	case hitTerminalMenuFiles:
+		return m.SFTPFiles
+	case hitTerminalMenuTransfer:
+		return m.Tools.XYMenu
+	case hitTerminalMenuAsk:
+		return m.AIPanel.MenuAskSelection
+	case hitTerminalMenuExplain:
+		return m.AIPanel.MenuExplainOutput
+	case hitTerminalMenuHistory:
+		return m.History.Title
+	case hitTerminalMenuSearch:
+		return m.Tools.MenuSearchSelection
+	case hitTerminalMenuStats:
+		return m.MenuResourceMonitor
+	case hitTerminalMenuTools:
+		return m.Tools.RemoteMenu
+	case hitTerminalMenuReconnect:
+		return m.SessionReconnect
+	case hitTerminalMenuRestart:
+		return m.MenuReconnect
+	case hitTerminalMenuDisconnect:
+		return m.MenuDisconnect
+	}
+	if index, ok := terminalMenuActionIndex(id); ok {
+		return state.actionLabel(state.terminalMenu.found[index])
 	}
 	panic("no label is known for the menu row " + tree.Text(id))
 }
@@ -117,4 +166,15 @@ func menuHit(canvas *gfx.Canvas, state *State, id gfx.ID) (gfx.Hit, bool) {
 		}
 	}
 	return gfx.Hit{}, false
+}
+
+// terminalMenuActionIndex is the place of a row the terminal menu offers for the text
+// under the pointer.
+func terminalMenuActionIndex(id gfx.ID) (int, bool) {
+	for index, action := range hitTerminalMenuAction {
+		if action == id {
+			return index, true
+		}
+	}
+	return 0, false
 }
