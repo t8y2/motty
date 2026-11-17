@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"fmt"
+
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
@@ -32,6 +34,32 @@ func (page *settingsPage) mcpFrame(label, description string, color gfx.Color, c
 		})
 		ui.Row(c).Children(control)
 	})
+}
+
+func (page *settingsPage) mcpAgentHostsFrame(controlWidth float32) {
+	state, c, m := page.state, page.c, page.state.messages.AISettings
+	hostMode := state.effectiveAgentHostMode()
+	labels := state.agentHostLabels()
+	description := m.AgentHostsNoneDesc
+	if len(labels) > 0 {
+		description = fmt.Sprintf(m.AgentHostsCountFmt, len(labels))
+	}
+	control := func() {
+		ui.Row(c).Gap(8).Items(ui.Center).Children(func() {
+			page.button(hitAISetAgentHostsView, m.AgentHostsView, aiButtonOutline, len(labels) == 0)
+			choice := ui.Choice(c, &hostMode, agentHostModeChoices[:], state.agentHostModeLabel).Width(controlWidth)
+			if choice.Changed() {
+				state.applyAgentHostMode(hostMode)
+				return
+			}
+			// Re-apply the effective mode when the selected option is clicked again,
+			// so the stored mode and the permissions cannot drift apart.
+			if _, clicked := choice.ChosenIndex(); clicked {
+				state.applyAgentHostMode(state.effectiveAgentHostMode())
+			}
+		})
+	}
+	page.mcpFrame(m.AgentHosts, description, state.pal.muted, control)
 }
 
 func (page *settingsPage) mcpCopyButton(id gfx.ID, label string, disabled bool) {
