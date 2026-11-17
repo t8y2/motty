@@ -828,10 +828,10 @@ func sessionLogFilterFor(id gfx.ID) sessionLogFilterMenu {
 // sessionLogsSectionUI is what the session journal's declaration leaves for its
 // paint.
 type sessionLogsSectionUI struct {
-	search, timeSlot, statusSlot, protocolSlot, outcomeSlot, sortSlot, favoriteFilterBox ui.Box
-	moreButton, content, detailSlot, loadMore, emptySlot                                 ui.Box
-	condensed                                                                            bool
-	empty, sideDetail, detailOnly                                                        bool
+	timeSlot, statusSlot, protocolSlot, outcomeSlot, sortSlot, favoriteFilterBox ui.Box
+	moreButton, content, detailSlot, loadMore, emptySlot                         ui.Box
+	condensed                                                                    bool
+	empty, sideDetail, detailOnly                                                bool
 	// draw is the page hook that paints into these slots. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
@@ -887,7 +887,12 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 			ui.Text(c, m.Description).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).Ellipsis().MarginSides(0, 0, 8, 0)
 		}
 		ui.Row(c).Height(40).Gap(sessionLogToolbarGap).Items(ui.Center).Children(func() {
-			layout.search = ui.Slot(c).Size(searchWidth, toolbarHeight)
+			if !view.searchBound {
+				view.searchField.Bind(&view.search)
+				view.searchBound = true
+			}
+			ui.TextFieldID(c, hitSessionLogsSearch, &view.searchField, m.Search, m.SearchPlaceholder).
+				Icon(lucideIcons[iconSearch]).Size(searchWidth, toolbarHeight)
 			if !separateFilters {
 				ui.Spacer(c)
 				layout.timeSlot = state.declareSessionLogFilterTrigger(c, hitSessionLogsTime, sessionLogFilterTimeMenu, filterWidth).Size(filterWidth, toolbarHeight)
@@ -954,16 +959,9 @@ func (state *State) declareSessionLogsWorkspace(c ui.C) {
 // paintSessionLogsWorkspace paints the session journal's controls, table,
 // details and empty state into the slots its declaration left.
 func (state *State) paintSessionLogsWorkspace(canvas *gfx.Canvas) {
-	view, m := &state.sessionLogs.view, &state.messages.SessionLogs
-	theme := state.Theme()
+	view := &state.sessionLogs.view
 	layout := &state.sectionBodies.sessionLogs
 
-	value := view.search.String()
-	components.PaintInputGroup(canvas, theme, layout.search.Rect(), components.InputGroupSnapshot{
-		ID: hitSessionLogsSearch, Label: m.Search, Value: value, Placeholder: m.SearchPlaceholder,
-		NativeEditing: canvas.Focused() == hitSessionLogsSearch && value != "",
-		InlineStart:   components.InputGroupSlot{Kind: components.InputGroupSlotIcon, Icon: lucideIcons[iconSearch]},
-	})
 	// The triggers' places are kept: the open menu opens under its own trigger
 	// in the frame's menu pass, outside the card's clip.
 	view.filterBounds[0], view.filterBounds[1], view.filterBounds[2] = layout.timeSlot.Rect(), layout.statusSlot.Rect(), layout.protocolSlot.Rect()

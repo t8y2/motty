@@ -11,6 +11,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/i18n"
 	"motty/internal/sessionlog"
 	"motty/internal/sshconn"
@@ -86,7 +87,10 @@ type sessionLogsView struct {
 	selectedLive    bool
 
 	// The page.
-	search         text.Editor
+	search text.Editor
+	// searchField is the page's text field over search, bound when first declared.
+	searchField    ui.Field
+	searchBound    bool
 	appliedSearch  string
 	page           []sessionLogRow
 	loaded         bool
