@@ -71,6 +71,7 @@ func (s *State) clickNoteExit(id gfx.ID) bool {
 		s.notes.drafts = map[string]*noteDraft{}
 		s.notes.noteDraft = &noteDraft{}
 		s.notes.error = ""
+		s.notes.saveDetail = ""
 		s.selectNoteWithoutSave(s.notes.selected)
 		for _, d := range s.fileWindows.documents {
 			if d.note == nil {

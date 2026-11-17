@@ -298,31 +298,39 @@ func TestNotesFailedTitleSaveSurvivesRefresh(t *testing.T) {
 	}
 }
 
-// A save that cannot reach the store reports itself, and the notice goes away
-// as soon as a later save succeeds. The path that reports a refusal and the
-// path that clears it share one wording, so a refusal from any of them can be
-// cleared instead of leaving a stale warning over a note that is now stored.
+// A save the store refuses reports itself with the store's own words and does
+// not lock the library: the draft stays, switching notes still works, and the
+// notice goes away as soon as a later save succeeds. The path that reports a
+// refusal and the path that clears it share one wording, so a refusal from any
+// of them can be cleared instead of leaving a stale warning over a stored note.
 func TestNotesSaveFailureNoticeClearsAfterRetry(t *testing.T) {
 	s := newTestState(t, freshOptions(t))
 	s.Click(hitNotes)
 	s.Click(hitNoteAdd)
+	first := s.notes.selected
 	s.EditorFor(hitNoteBody).Insert("first")
 	s.save()
-	s.pauseSave = 1
+	s.saveBlocked = true
 	s.EditorFor(hitNoteBody).Insert(" second")
-	if s.selectNote("") {
-		t.Fatal("note switch was accepted while the store was unavailable")
+	if !s.selectNote("") {
+		t.Fatal("a refused save blocked switching notes")
 	}
 	if s.notes.error != s.noteSaveFailure() {
 		t.Fatalf("refusal notice: %q", s.notes.error)
 	}
-	s.pauseSave = 0
+	if !strings.Contains(s.notes.saveDetail, "newer build") {
+		t.Fatalf("refusal did not name the store's reason: %q", s.notes.saveDetail)
+	}
+	if !s.selectNote(first) || s.notes.body.String() != "first second" {
+		t.Fatalf("draft lost after a refused save: %q", s.notes.body.String())
+	}
+	s.saveBlocked = false
 	s.save()
 	if s.hasUnsavedNotes() {
 		t.Fatalf("draft was not stored: %+v", s.notes.list)
 	}
-	if s.notes.error != "" {
-		t.Fatalf("stale refusal notice over a stored note: %q", s.notes.error)
+	if s.notes.error != "" || s.notes.saveDetail != "" {
+		t.Fatalf("stale refusal notice over a stored note: %q / %q", s.notes.error, s.notes.saveDetail)
 	}
 }
 

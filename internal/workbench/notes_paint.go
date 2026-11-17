@@ -295,6 +295,12 @@ func (s *State) paintNoteEditor(c *gfx.Canvas, b gfx.Rect) {
 	if message != "" {
 		c.Label(message, gfx.Rect{X: b.X + 20, Y: y, Width: b.Width - 40, Height: 24}, gfx.TextStyle{Size: 12, Color: s.pal.danger})
 		y += 26
+		// The store's refusal has its own line: the generic sentence above is
+		// long enough to push the cause out of a narrow pane if they shared one.
+		if detail := n.saveDetail; detail != "" && message == s.noteSaveFailure() {
+			c.Label(s.noteText("Cause: ", "原因：")+detail, gfx.Rect{X: b.X + 20, Y: y, Width: b.Width - 40, Height: 20}, gfx.TextStyle{Size: 11, Color: s.pal.muted})
+			y += 22
+		}
 	}
 	y += s.paintNoteLinkNotice(c, b.X+20, y, b.Width-40)
 	content := gfx.Rect{X: b.X + 16, Y: y, Width: max(0, b.Width-32), Height: max(0, b.Y+b.Height-y-16)}

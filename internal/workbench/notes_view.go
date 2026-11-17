@@ -217,6 +217,7 @@ func (s *State) commitNoteInline() bool {
 	v.inlineID = ""
 	v.inlineNew = false
 	s.notes.error = ""
+	s.notes.saveDetail = ""
 	s.noteTokens()
 	s.save()
 	return true
