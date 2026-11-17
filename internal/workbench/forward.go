@@ -243,16 +243,19 @@ type forwardEditor struct {
 	forwardID  uint32
 	// dialogBody is where the dialog body laid out the controls painted by hand.
 	dialogBody forwardDialogBody
+	// The dialog's text fields are page fields, indexed by forwardField: a labelled row and a
+	// text bound to the editor above, which the dialog binds when it is first declared.
+	rows  [forwardFieldCount]ui.FormFieldState
+	texts [forwardFieldCount]ui.Field
+	bound bool
 }
 
 // forwardDialogBody is where the forward editor's body put each control it
 // paints by hand.
 type forwardDialogBody struct {
-	name, host, port             ui.Box
-	destination, destinationPort ui.Box
-	viaShell, viaShellHelp       ui.Box
-	relay                        ui.Box
-	resume, resumeHelp           ui.Box
+	host                   ui.Box
+	viaShell, viaShellHelp ui.Box
+	resume, resumeHelp     ui.Box
 }
 
 type forwardField uint8
@@ -263,6 +266,7 @@ const (
 	forwardFieldDestinationHost
 	forwardFieldDestinationPort
 	forwardFieldRelay
+	forwardFieldCount
 )
 
 func (editor *forwardEditor) field(field forwardField) *text.Editor {
