@@ -1251,9 +1251,6 @@ type chromeLayout struct {
 	// passwordSave is the slot the save box of the password dialog was laid out
 	// in.
 	passwordSave ui.Box
-	// passwordFieldsDraw paints the password dialog's fields into the slots its
-	// body declared; it is kept so a warm repaint allocates nothing.
-	passwordFieldsDraw func(*ui.DrawContext)
 	// hostDialogTitle labels the host form's scroll viewport. The handlers below
 	// are the form's Draw and DrawOver declarations kept once, so a warm repaint
 	// of the form allocates nothing.
@@ -3646,17 +3643,24 @@ func (state *State) declarePasswordDialog(c ui.C) {
 // them and, when the vault can keep it, the box that offers to save it. The
 // fields themselves are painted into their slots by the body's DrawOver.
 func (state *State) declarePasswordBody(c ui.C) {
-	boxes := state.passwordBoxes
-	if len(boxes) != len(state.passwordQuestions) {
-		boxes = make([]ui.Box, len(state.passwordQuestions))
-		state.passwordBoxes = boxes
+	multi := len(state.passwordQuestions) > 1
+	if len(state.passwordInputs) != len(state.passwordQuestions) {
+		state.passwordInputs = make([]dialogField, len(state.passwordQuestions))
 	}
-	multi := len(boxes) > 1
 	state.chrome.passwordSave = ui.Box{}
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
-		for index := range boxes {
-			boxes[index] = ui.Slot(c).Height(62).MarginSides(0, 0, 4, 0)
+		for index, question := range state.passwordQuestions {
+			label := strings.TrimSpace(question.Text)
+			if label == "" {
+				label = state.messages.PasswordLabel
+			}
+			ui.Column(c.KeyInt(index)).Height(62).MarginSides(0, 0, 4, 0).Children(func() {
+				state.passwordInputs[index].declare(c, state, &state.passwordFields[index], dialogFieldSpec{
+					ID: hitPasswordFields.At(index + 1), Label: label, Secret: question.Secret,
+					Invalid: state.passwordError != "", Height: 62,
+				})
+			})
 		}
 		state.hintLineC(c)
 		state.problemLineC(c, state.passwordError)
@@ -3671,39 +3675,6 @@ func (state *State) declarePasswordBody(c ui.C) {
 			})
 		}
 	})
-	column.DrawOver(state.passwordFieldsDraw())
-}
-
-// passwordFieldsDraw returns the handler that paints the password dialog's
-// fields, made once so a warm repaint allocates nothing.
-func (state *State) passwordFieldsDraw() func(*ui.DrawContext) {
-	if state.chrome.passwordFieldsDraw == nil {
-		state.chrome.passwordFieldsDraw = state.drawPasswordFields
-	}
-	return state.chrome.passwordFieldsDraw
-}
-
-// drawPasswordFields paints a field per question into the slots the body
-// declared. The box that offers to save the password is a page element, declared
-// by declarePasswordBody.
-func (state *State) drawPasswordFields(d *ui.DrawContext) {
-	canvas, theme := d.Canvas, *d.Theme
-	for index := range state.passwordBoxes {
-		question := state.passwordQuestions[index]
-		label := strings.TrimSpace(question.Text)
-		if label == "" {
-			label = state.messages.PasswordLabel
-		}
-		field := components.BeginField(canvas, theme, state.passwordBoxes[index].Rect())
-		content := field.Paint(label, "", "")
-		value := state.passwordFields[index].String()
-		id := hitPasswordFields.At(index + 1)
-		focused := canvas.Focused() == id
-		state.paintSecretInput(canvas, content, components.InputSnapshot{
-			ID: id, Label: label, Value: value, Secure: question.Secret,
-			Focused: focused, PlatformEditing: focused && (value != "" || !question.Secret), Invalid: state.passwordError != "",
-		})
-	}
 }
 
 // passwordBodyHeight is tall enough for every question's field, the error line
@@ -3779,7 +3750,10 @@ func (state *State) declareKeyPassphraseDialog(c ui.C) {
 	dialog.Body(func() {
 		column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 		column.Children(func() {
-			state.keyPassphraseField = ui.Slot(c).Height(62)
+			state.keyPassphraseInput.declare(c, state, &state.keyPassphrase, dialogFieldSpec{
+				ID: hitKeyPassphraseField, Label: m.KeyPassphraseLabel, Description: m.KeyPassphraseHint,
+				Secret: true, Invalid: state.keyPassphraseError != "", Height: 62,
+			})
 			if state.keyPassphraseError != "" {
 				ui.Text(c, state.keyPassphraseError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
 			}
@@ -3793,29 +3767,11 @@ func (state *State) declareKeyPassphraseDialog(c ui.C) {
 				state.declareSaveBox(c, hitKeyPassphraseSave, m.KeyPassphraseSave, "", gfx.ID{})
 			}
 		})
-		if state.keyPassphraseDraw == nil {
-			state.keyPassphraseDraw = state.drawKeyPassphraseField
-		}
-		column.DrawOver(state.keyPassphraseDraw)
 	})
 	dialog.Footer(func() {
 		state.dialogActionFooter(c,
 			components.ButtonAction{ID: hitKeyPassphraseSkip, Label: m.KeyPassphraseSkip, Variant: components.ButtonSecondary},
 			components.ButtonAction{ID: hitKeyPassphraseSubmit, Label: m.KeyUnlock},
 		)
-	})
-}
-
-// drawKeyPassphraseField paints the passphrase field into the slot the dialog's
-// body laid out.
-func (state *State) drawKeyPassphraseField(d *ui.DrawContext) {
-	m := state.messages
-	field := components.BeginField(d.Canvas, *d.Theme, state.keyPassphraseField.Rect())
-	content := field.Paint(m.KeyPassphraseLabel, m.KeyPassphraseHint, "")
-	value := state.keyPassphrase.String()
-	focused := d.Canvas.Focused() == hitKeyPassphraseField
-	state.paintSecretInput(d.Canvas, content, components.InputSnapshot{
-		ID: hitKeyPassphraseField, Label: m.KeyPassphraseLabel, Value: value, Secure: true,
-		Focused: focused, PlatformEditing: focused && value != "", Invalid: state.keyPassphraseError != "",
 	})
 }

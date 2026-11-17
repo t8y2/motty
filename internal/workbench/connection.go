@@ -1409,8 +1409,7 @@ func (state *State) closeModal() {
 	state.modalSession = 0
 	state.reveal.reset()
 	state.passwordFields = nil
-	state.passwordRects = nil
-	state.passwordBoxes = nil
+	state.passwordInputs = nil
 	state.passwordQuestions = nil
 	state.passwordError = ""
 	state.keyPassphrase = text.Editor{}

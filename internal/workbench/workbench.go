@@ -1050,21 +1050,17 @@ type State struct {
 	hostKeyDescription       string
 	passwordFields           []text.Editor
 	sudoSFTP                 sudoSFTPDialog
-	passwordRects            []gfx.Rect
-	passwordBoxes            []ui.Box
+	passwordInputs           []dialogField
 	passwordQuestions        []sshconn.Question
 	passwordError            string
 	passwordDescription      string
 	keyPassphrase            text.Editor
 	keyPassphraseError       string
 	keyPassphraseDescription string
-	// keyPassphraseField is the slot the passphrase dialog's field is painted
-	// into, and keyPassphraseDraw the painter kept so a repaint allocates none.
-	keyPassphraseField ui.Box
-	keyPassphraseDraw  func(*ui.DrawContext)
-	clipboardRequest   remoteClipboardRequest
-	autofillRules      autofillUI
-	credentialForm     credentialUI
+	keyPassphraseInput       dialogField
+	clipboardRequest         remoteClipboardRequest
+	autofillRules            autofillUI
+	credentialForm           credentialUI
 	// credentialReturn is the modal the identity dialog returns to when the host
 	// form opened it to make an identity for itself; modalNone otherwise.
 	credentialReturn modalKind

@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/otp"
 	"motty/internal/sshconn"
 )
@@ -53,8 +51,7 @@ func (state *State) preparePassword(session *Session) {
 			passwordName = state.passwordSecret(session.host, endpoint, session.role)
 		}
 	}
-	state.passwordRects = make([]gfx.Rect, len(questions))
-	state.passwordBoxes = make([]ui.Box, len(questions))
+	state.passwordInputs = nil
 	state.passwordError = ""
 	state.offerToSave()
 	passwordIndex := passwordQuestionIndex(questions)

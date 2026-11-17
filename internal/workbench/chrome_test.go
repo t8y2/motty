@@ -25,13 +25,23 @@ func windowScrollRoutes(state *State, event gfx.ScrollEvent) gfx.EventResult {
 	return state.WindowConfig(app.Config{OnScroll: state.Scroll}).OnScroll(event)
 }
 
+// hitByID finds the control painted with id. A form field's title is a hit with
+// the control's identity too, so the control comes before its label.
 func hitByID(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
+	var label gfx.Hit
+	var labelled bool
 	for _, hit := range canvas.Hits() {
-		if hit.ID == id {
+		if hit.ID != id {
+			continue
+		}
+		if !hit.IsLabel {
 			return hit, true
 		}
+		if !labelled {
+			label, labelled = hit, true
+		}
 	}
-	return gfx.Hit{}, false
+	return label, labelled
 }
 
 // hitByLabel finds the first painted button with label: a page-owned dialog
