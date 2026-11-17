@@ -315,18 +315,13 @@ func (state *State) declareImportSessions(c ui.C) {
 	rows := (len(choices) + columns - 1) / columns
 	bodyHeight := float32(rows)*rowHeight + float32(rows-1)*gap
 	const width float32 = 480
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), theme, viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(m.ImportChooserBody)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ImportChooserTitle, Description: m.ImportChooserBody,
-		Width: width, Height: layout.Content.Height + bodyHeight, Layer: dialogLayer,
+		Width: width, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitImportSessionsDismiss, CloseID: hitImportSessionsClose,
 	})
 	dialog.Body(func() {
-		cellWidth := (layout.Body.Width - gap*(columns-1)) / columns
-		ui.Column(c).Fill().Gap(gap).Children(func() {
+		ui.Column(c).Height(bodyHeight).Gap(gap).Children(func() {
 			for row := 0; row < rows; row++ {
 				ui.Row(c).Height(rowHeight).Gap(gap).Children(func() {
 					for column := 0; column < columns; column++ {
@@ -336,7 +331,7 @@ func (state *State) declareImportSessions(c ui.C) {
 							continue
 						}
 						choice := choices[index]
-						button := ui.Button(c, choice.label).Large().Outline().Width(cellWidth).Shrink(0)
+						button := ui.Button(c, choice.label).Large().Outline().Basis(0).Grow(1).Shrink(0)
 						if index == 0 {
 							button = button.AutoFocus()
 						}
