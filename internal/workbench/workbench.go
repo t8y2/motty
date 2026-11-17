@@ -1889,7 +1889,7 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	}
 	if state.clickHostOrder(id) || state.clickHostsPanel(id) || state.clickToolbarDockMenu(id) || state.clickWorkspaceTemplateManagement(id) ||
-		state.clickHostGroupActions(id) || state.clickGhostMenu(id) || state.clickTabMenu(id) {
+		state.clickHostGroupActions(id) || state.clickTabMenu(id) {
 		return
 	}
 	if state.clickWorkspaceCommand(id) {
@@ -2631,9 +2631,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.menuPointer(event); handled {
 		return result
 	}
-	if result, handled := state.ghostMenuPointer(event); handled {
-		return result
-	}
 	if result, handled := state.tabMenuPointer(event); handled {
 		return result
 	}
@@ -3143,10 +3140,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	// A tooltip is the topmost transient thing when no popup menu is open:
 	// Escape hides it before it can reach a dialog or the page.
 	if event.Key == gfx.KeyEscape && state.openMenuScroll() == nil && state.tooltip.Dismiss() {
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if state.ghostMenu.open && event.Key == gfx.KeyEscape {
-		state.ghostMenu.open = false
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if result, handled := state.workspaceTemplateDeleteKey(event); handled {

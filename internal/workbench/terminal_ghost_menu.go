@@ -7,6 +7,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/ui"
 )
 
 // The menu of the accept-suggestion badge: the three keys Warp offers and a way
@@ -48,7 +49,16 @@ var ghostMenuPresetHits = [3]gfx.ID{hitGhostMenuRight, hitGhostMenuTab, hitGhost
 // ghostMenuSession is the session the open menu acts on: still there, still the
 // active terminal, with no dialog on top.
 func (state *State) ghostMenuSession() (*Session, bool) {
-	if !state.ghostMenu.open || state.activeSection != sectionTerminal || state.modal != modalNone {
+	if !state.ghostMenu.open {
+		return nil, false
+	}
+	return state.ghostMenuTarget()
+}
+
+// ghostMenuTarget is the session the menu was opened on, while it is still the active
+// terminal: a choice is run once the menu has closed.
+func (state *State) ghostMenuTarget() (*Session, bool) {
+	if state.activeSection != sectionTerminal || state.modal != modalNone {
 		return nil, false
 	}
 	session, ok := state.sessionByIDPointer(state.ghostMenu.session)
@@ -71,36 +81,20 @@ func (state *State) openGhostMenu(session *Session) {
 	state.ghostMenu = ghostMenu{open: true, session: session.ID, anchor: session.term.hintRect}
 }
 
-// ghostMenuPointer closes the open menu on a press of any non-primary button
-// outside it; the backdrop swallows the press, and only a primary one is also a
-// click.
-func (state *State) ghostMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if !state.ghostMenu.open || event.Target != hitGhostMenuDismiss || event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonPrimary {
-		return gfx.EventResult{}, false
-	}
-	state.ghostMenu.open = false
-	return gfx.EventResult{Handled: true, Repaint: true}, true
-}
-
-// clickGhostMenu runs the menu's choice. A press anywhere else only closes it.
-func (state *State) clickGhostMenu(id gfx.ID) bool {
-	if !state.ghostMenu.open {
-		return false
-	}
-	_, live := state.ghostMenuSession()
-	state.ghostMenu.open = false
-	if !live {
-		return true
+// chooseGhostMenu runs a choice of the menu, which closed with it.
+func (state *State) chooseGhostMenu(id gfx.ID) {
+	if _, live := state.ghostMenuTarget(); !live {
+		return
 	}
 	for index, chord := range ghostMenuPresets {
 		if id == ghostMenuPresetHits[index] {
 			state.bindAcceptSuggestion(chord)
-			return true
+			return
 		}
 	}
 	if id == hitGhostMenuCustom {
 		state.openShortcutCapture(shortcutAcceptSuggestion)
-		return true
+		return
 	}
 	if id == hitGhostMenuTurnOff {
 		// Re-enabling is deliberate: it lives in Settings, not in a menu the
@@ -108,7 +102,6 @@ func (state *State) clickGhostMenu(id gfx.ID) bool {
 		state.history.acceptHintOff = true
 		state.save()
 	}
-	return true
 }
 
 // bindAcceptSuggestion gives the accept action a chord and saves it, saying why
@@ -137,11 +130,14 @@ func acceptSuggestionPreset(chord keymap.Chord) bool {
 	return false
 }
 
-// paintGhostMenu paints the menu above the badge, or below it when the row is
+// declareGhostMenu declares the menu above the badge, or below it when the row is
 // too close to the top. The anchor is the badge's rectangle from the frame the
 // menu opened in; the terminal stops painting the suggestion once the menu has
 // the keyboard, so it is not read back from later frames.
-func (state *State) paintGhostMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareGhostMenu(c ui.C) {
+	if !state.ghostMenu.open {
+		return
+	}
 	if _, ok := state.ghostMenuSession(); !ok {
 		state.ghostMenu.open = false
 		return
@@ -153,10 +149,9 @@ func (state *State) paintGhostMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	}
 	m := state.messages.Completion
 	current := state.shortcuts.chords.Chord(shortcutAcceptSuggestion)
-	var presets [3]components.ContextMenuItem
+	var rows menuRows
 	var scratch [5]string
 	for index, preset := range ghostMenuPresets {
-		label := strings.Join(preset.Keycaps(scratch[:0]), "")
 		disabled := false
 		if owner := state.shortcuts.boundAction(preset); owner != shortcutNone && owner != shortcutAcceptSuggestion {
 			disabled = true
@@ -164,65 +159,18 @@ func (state *State) paintGhostMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 		if state.snippetNamed(preset) != "" {
 			disabled = true
 		}
-		presets[index] = components.ContextMenuItem{
-			ID: ghostMenuPresetHits[index], Label: label, Value: preset.Label(), Hint: preset.Label(),
+		rows.add(components.ContextMenuItem{
+			ID: ghostMenuPresetHits[index], Label: strings.Join(preset.Keycaps(scratch[:0]), ""),
 			Kind: components.ContextMenuRadio, Selected: current == preset, Disabled: disabled,
-		}
+		})
 	}
-	custom := components.ContextMenuItem{ID: hitGhostMenuCustom, Label: m.AcceptHintCustom}
+	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitGhostMenuCustom, Label: m.AcceptHintCustom})
 	if current.Valid() && !acceptSuggestionPreset(current) {
 		// A custom key is named on the row that goes and changes it.
-		custom.Keys = current.Keycaps(nil)
-	}
-	turnOff := components.ContextMenuItem{ID: hitGhostMenuTurnOff, Label: m.AcceptHintTurnOff}
-	var rows menuRows
-	for _, item := range presets {
-		rows.add(item)
+		rows.chord(current)
 	}
 	rows.separate()
-	rows.add(custom)
-	rows.separate()
-	rows.add(turnOff)
-
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	// BeginContextMenu never paints narrower than 144; place the menu with the
-	// width it will actually have.
-	width = max(width, 144)
-	gap := float32(4)
-	x := min(max(pill.X, viewport.X+6), max(viewport.X+viewport.Width-width-6, viewport.X+6))
-	y := pill.Y - height - gap
-	if y < viewport.Y+6 {
-		y = pill.Y + pill.Height + gap
-	}
-	y = min(max(y, viewport.Y+6), max(viewport.Y+viewport.Height-height-6, viewport.Y+6))
-	bounds := gfx.Rect{X: x, Y: y, Width: width, Height: height}
-	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitGhostMenuDismiss, Viewport: viewport,
-		Scroll: state.menuScrollFor(hitGhostMenuDismiss), RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(menu.Bounds())
-	selection := state.Theme().Selection
-	selection.Alpha = 0.30
-	if state.pal.dark {
-		selection.Alpha = 1
-	}
-	for index, item := range presets {
-		if current == ghostMenuPresets[index] {
-			// The current key keeps the menu's selected-row fill, as the reference
-			// does; the radio check remains for assistive technology.
-			if row := menu.NextItemBounds(); row.Width > 0 {
-				// The menu's rows are on its dialog layer; the fill has to share
-				// it to sit above the surface and under the row's own content.
-				canvas.PushLayer(dialogLayer)
-				canvas.Rounded(row, min(contextMenuRow/2, float32(5)), selection)
-				canvas.PopLayer()
-			}
-		}
-		menu.AddItem(item)
-	}
-	menu.AddSeparator()
-	menu.AddItem(custom)
-	menu.AddSeparator()
-	menu.AddItem(turnOff)
-	menu.End()
+	rows.add(components.ContextMenuItem{ID: hitGhostMenuTurnOff, Label: m.AcceptHintTurnOff})
+	state.declareAnchoredMenu(c, &state.ghostMenu.open, pill, hitGhostMenuDismiss, &rows, state.chooseGhostMenu)
 }
