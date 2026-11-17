@@ -29,7 +29,6 @@ const (
 	controlButtons                               // buttons against the right edge of the slot
 	controlButton                                // one small button filling the slot
 	controlHit                                   // the slot is a pointer target
-	controlSearch                                // the search box
 	controlModelInput                            // the assistant's model-name field
 	controlStepsValue                            // the assistant's step-count field between its − and + buttons
 	controlFindPreference
@@ -267,8 +266,6 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 			canvas.HitWithOptions(control.id, rect, control.label, control.hit)
 		case controlLabel:
 			canvas.HitLabel(control.id, rect, control.label, control.disabled)
-		case controlSearch:
-			state.paintSettingsSearchBox(canvas, rect)
 		case controlModelInput:
 			state.paintAIModelInput(canvas, rect)
 		case controlStepsValue:

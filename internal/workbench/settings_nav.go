@@ -130,7 +130,12 @@ func (page *settingsPage) nav(width float32, searching bool) {
 	pal, m := state.pal, state.messages
 	ui.Column(c).Width(width).FillHeight().Children(func() {
 		ui.Text(c, m.SettingsTitle).FontSize(19).Bold().Color(pal.text).LineHeight(28).MarginSides(26, 8, 10, 22).Shrink(0)
-		page.add(settingsControl{kind: controlSearch, slot: ui.Slot(c).Height(38).MarginSides(0, 12, 12, 12).Shrink(0)})
+		if !view.searchBound {
+			view.searchField.Bind(&view.search)
+			view.searchBound = true
+		}
+		ui.TextFieldID(c, hitSettingsSearch, &view.searchField, m.Tools.SearchPlaceholder, m.Tools.SearchPlaceholder).
+			Icon(lucideIcons[iconSearch]).Height(38).MarginSides(0, 12, 12, 12).Shrink(0)
 		page.navList = ui.ScrollAt(c, view.navShown).FillWidth().Grow(1).Basis(0)
 		page.navList.Children(func() {
 			ui.Column(c).Gap(settingsNavEntryGap).MarginSides(0, 0, 8, 0).Shrink(0).Children(func() {
