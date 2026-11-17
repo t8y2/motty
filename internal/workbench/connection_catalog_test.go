@@ -148,7 +148,7 @@ func TestWindowAndHeadlessCatalogResolveEveryHostToTheSameConnection(t *testing.
 		t.Fatalf("Deep leaves by %+v with timeout %v and keep-alive %+v", config.Proxy, config.DialTimeout, config.KeepAlive)
 	}
 	inner, _ := catalog.hostByConnection("10.0.0.5", "deploy", 22)
-	if auth := catalog.authenticationFor(inner); auth.Methods != sshconn.AuthPublicKey || len(auth.IdentityFiles) != 1 || auth.IdentityFiles[0] != keyPath {
+	if auth := catalog.authenticationFor(inner); auth.Methods != sshconn.AuthPublicKey|sshconn.AuthKeyboardInteractive || !auth.RequirePublicKey || len(auth.IdentityFiles) != 1 || auth.IdentityFiles[0] != keyPath {
 		t.Fatalf("Inner signs in with %+v, want the key %s", auth, keyPath)
 	}
 }

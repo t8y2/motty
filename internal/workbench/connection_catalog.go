@@ -230,16 +230,19 @@ func (catalog *hostCatalog) authenticationFor(host Host) sshconn.Authentication 
 			IdentityFiles: []string{},
 		}
 	case authPrivateKey:
+		authentication := sshconn.Authentication{
+			Methods:          sshconn.AuthPublicKey | sshconn.AuthKeyboardInteractive,
+			RequirePublicKey: true,
+		}
 		if fingerprint := strings.TrimSpace(host.Identity); fingerprint != "" {
+			authentication.IdentityFiles = []string{}
 			if identity, ok := catalog.identityForFingerprint(fingerprint); ok {
-				return sshconn.Authentication{Methods: sshconn.AuthPublicKey, IdentityFiles: []string{identity.Path}}
+				authentication.IdentityFiles = []string{identity.Path}
 			}
-			return sshconn.Authentication{Methods: sshconn.AuthPublicKey, IdentityFiles: []string{}}
+		} else {
+			authentication.AdditionalIdentityFiles = catalog.identityPaths()
 		}
-		return sshconn.Authentication{
-			Methods:                 sshconn.AuthPublicKey,
-			AdditionalIdentityFiles: catalog.identityPaths(),
-		}
+		return authentication
 	case authAgent:
 		return sshconn.Authentication{
 			Methods:       sshconn.AuthPublicKey,

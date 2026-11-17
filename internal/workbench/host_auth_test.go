@@ -109,7 +109,7 @@ func TestSSHConfigKeepsTargetAndJumpAuthenticationSeparate(t *testing.T) {
 	}
 	targetEndpoint := sshconn.Endpoint{Host: target.Address, Port: target.Port, User: target.User}
 	targetAuth := config.Authentication[targetEndpoint]
-	if targetAuth.Methods != sshconn.AuthPublicKey || !slices.Equal(targetAuth.IdentityFiles, []string{identityPath}) || targetAuth.Agent {
+	if targetAuth.Methods != sshconn.AuthPublicKey|sshconn.AuthKeyboardInteractive || !targetAuth.RequirePublicKey || !slices.Equal(targetAuth.IdentityFiles, []string{identityPath}) || targetAuth.Agent {
 		t.Fatalf("target authentication = %+v", targetAuth)
 	}
 	jumpEndpoint := sshconn.Endpoint{Host: jump.Address, Port: jump.Port, User: jump.User}
@@ -123,7 +123,7 @@ func TestUnavailableSelectedKeyDoesNotFallBackToAnotherKey(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.identities = []identityRecord{{Path: "/keys/other", Fingerprint: "SHA256:other"}}
 	authentication := state.authenticationFor(Host{Auth: authPrivateKey, Identity: "SHA256:missing"})
-	if authentication.Methods != sshconn.AuthPublicKey || authentication.IdentityFiles == nil || len(authentication.IdentityFiles) != 0 || authentication.Agent {
+	if authentication.Methods != sshconn.AuthPublicKey|sshconn.AuthKeyboardInteractive || !authentication.RequirePublicKey || authentication.IdentityFiles == nil || len(authentication.IdentityFiles) != 0 || authentication.Agent {
 		t.Fatalf("authentication = %+v", authentication)
 	}
 }
