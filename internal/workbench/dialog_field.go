@@ -23,7 +23,7 @@ type dialogField struct {
 type dialogFieldSpec struct {
 	ID                                     gfx.ID
 	Label, Description, Placeholder, Error string
-	Secret, Invalid                        bool
+	Secret, Invalid, Disabled              bool
 	Height                                 float32
 }
 
@@ -36,6 +36,7 @@ func (f *dialogField) declare(c ui.C, state *State, editor *text.Editor, spec di
 	}
 	f.input.Secure = spec.Secret && !f.shown
 	f.input.Invalid = spec.Invalid || spec.Error != ""
+	f.input.Disabled = spec.Disabled
 	f.row.For, f.row.Description, f.row.Error = spec.ID, spec.Description, spec.Error
 	f.row.Invalid = spec.Invalid || spec.Error != ""
 	ui.FormField(c, &f.row, spec.Label).FillWidth().Height(spec.Height).Children(func() {

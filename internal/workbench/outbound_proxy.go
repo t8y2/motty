@@ -70,8 +70,8 @@ type outboundProxyForm struct {
 	// choice is the proxy kind the page Choice offers, derived from inherit and
 	// kind before every paint.
 	choice outboundProxyChoice
-	// slots are where the dialog body laid the fields out.
-	slots [4]ui.Box
+	// inputs are the dialog's four fields, over address, user, password and bypass.
+	inputs [4]dialogField
 	// text is the settings row's description, made for textKind, textFor (the
 	// address) and textLanguage.
 	text, textFor string
@@ -512,12 +512,9 @@ func (state *State) declareOutboundProxyBody(c ui.C) {
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
 		ui.Column(c).Height(34).MarginSides(0, 0, 14, 0).Children(func() { state.declareOutboundProxyKind(c) })
-		for index := range form.slots {
-			form.slots[index] = ui.Slot(c).Height(62).MarginSides(0, 0, 4, 0)
-		}
+		state.declareOutboundProxyFields(c)
 		state.problemLineC(c, form.dialogError)
 	})
-	column.DrawOver(func(d *ui.DrawContext) { state.paintOutboundProxyFields(d.Canvas) })
 }
 
 var (
@@ -559,10 +556,9 @@ func (state *State) declareOutboundProxyKind(c ui.C) {
 	}
 }
 
-// paintOutboundProxyFields paints the kind switch and the four fields into the
-// slots the dialog body laid out.
-func (state *State) paintOutboundProxyFields(canvas *gfx.Canvas) {
-	m, theme := state.messages.Tools, state.Theme()
+// declareOutboundProxyFields declares the four fields under the kind switch.
+func (state *State) declareOutboundProxyFields(c ui.C) {
+	m := state.messages.Tools
 	form := &state.proxyForm
 	disabled := form.inherit || form.kind == sshconn.ProxyNone
 	command := form.kind == sshconn.ProxyCommand
@@ -583,14 +579,12 @@ func (state *State) paintOutboundProxyFields(canvas *gfx.Canvas) {
 		{hitOutboundProxyBypass, m.ProxyBypass, defaultProxyBypass, &form.bypass, false},
 	}
 	for index, entry := range entries {
-		content := components.BeginField(canvas, theme, form.slots[index].Rect()).Paint(entry.label, "", "")
-		value := entry.editor.String()
-		focused := canvas.Focused() == entry.id
 		login := entry.id == hitOutboundProxyUser || entry.id == hitOutboundProxyPassword
-		state.paintSecretInput(canvas, content, components.InputSnapshot{
-			ID: entry.id, Label: entry.label, Value: value, Placeholder: entry.placeholder, Secure: entry.secure,
-			Focused: focused, PlatformEditing: focused && value != "",
-			Disabled: disabled && entry.id != hitOutboundProxyBypass || command && login,
+		ui.Column(c.KeyInt(index)).Height(62).MarginSides(0, 0, 4, 0).Children(func() {
+			form.inputs[index].declare(c, state, entry.editor, dialogFieldSpec{
+				ID: entry.id, Label: entry.label, Placeholder: entry.placeholder, Secret: entry.secure, Height: 62,
+				Disabled: disabled && entry.id != hitOutboundProxyBypass || command && login,
+			})
 		})
 	}
 }

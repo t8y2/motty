@@ -47,6 +47,17 @@ func init() {
 			s.secrets.canSave = true
 			s.modal = modalKeyPassphrase
 		}),
+		plainScene("g6-outbound-proxy-none", func(t *testing.T, s *State) { s.openOutboundProxyDialog() }),
+		plainScene("g6-outbound-proxy-socks5", func(t *testing.T, s *State) {
+			s.proxy = outboundProxy{kind: sshconn.ProxySOCKS5, address: "10.0.0.1:1080", user: "me"}
+			s.openOutboundProxyDialog()
+			s.proxyForm.password.Insert("secret")
+		}),
+		plainScene("g6-outbound-proxy-error", func(t *testing.T, s *State) {
+			s.proxy = outboundProxy{kind: sshconn.ProxyHTTPConnect, address: "10.0.0.1:3128"}
+			s.openOutboundProxyDialog()
+			s.proxyForm.dialogError = "The proxy address is not valid."
+		}),
 		sessionLinkScene("g6-session-reconnect", false),
 		sessionLinkScene("g6-session-disconnect", true),
 	)
