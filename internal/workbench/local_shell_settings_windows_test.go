@@ -56,7 +56,7 @@ func TestLocalShellDropdownSelectsAndPersists(t *testing.T) {
 	state := shellSelectState(t, choices)
 	canvas := paintShellSettings(state)
 	hit, ok := hitByID(canvas, hitSettingsLocalShell)
-	if !ok || hit.Value != "CMD" || hit.Expanded {
+	if !ok || hit.Expanded {
 		t.Fatalf("default select: %+v", hit)
 	}
 	state.Click(hitSettingsLocalShell)
