@@ -83,11 +83,17 @@ func TestAgentSettingsStoreTheModeCopyTheConfigurationAndShowAndClearTheActivity
 	m := state.messages.AISettings
 
 	_, texts := world.paint()
-	if got := state.agentHostsText(); got != m.AgentHostsNoneDesc {
-		t.Fatalf("empty hosts description = %q", got)
+	if got := state.agentHostLabels(); len(got) != 0 {
+		t.Fatalf("empty hosts = %v", got)
 	}
-	if !contains(texts, m.AgentsTitle) || !contains(texts, m.AgentActivityNone) {
-		t.Fatalf("the empty group says %v", texts)
+	if !contains(texts, m.AgentsTitle) {
+		t.Fatalf("the empty group has no title: %v", texts)
+	}
+	if !strings.Contains(strings.Join(texts, " "), m.AgentHostsNoneDesc) {
+		t.Fatalf("the empty group has no host description %q: %q", m.AgentHostsNoneDesc, texts)
+	}
+	if !contains(texts, m.AgentActivityNone) {
+		t.Fatalf("the empty group has no activity description: %v", texts)
 	}
 	clickSettingsChoice(t, state, m.AgentModeRun)
 	if settingValue(t, db, agentModeSetting) != AgentModeCommands || state.ai.settings.agentMode != gate.ModeAsk {
