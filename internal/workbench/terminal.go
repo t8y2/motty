@@ -96,6 +96,9 @@ type terminal struct {
 	// user types, and anything else that would write through send, waits until
 	// the transfer ends. The transfer itself writes straight to the shell.
 	transferHoldsInput bool
+	// pasteQueue is the remaining lines of a line-by-line paste; see
+	// paste_queue.go.
+	pasteQueue terminalPasteQueue
 
 	told announcement
 	// noShellTold records that a keystroke into a tab with no shell has already
@@ -475,6 +478,7 @@ func (t *terminal) resetFolderSync() {
 	t.injection = terminalInjection{}
 	t.inputGuard = terminalInputGuard{}
 	t.suggestionPending = nil
+	t.pasteQueue = terminalPasteQueue{}
 	t.folderToken = rand.Text()
 	t.screen.SetPromptToken(t.folderToken)
 	t.promptReady, t.promptStarted, t.promptDirty = false, false, false
@@ -654,6 +658,12 @@ func (t *terminal) send(p []byte) bool {
 // A confirmed input snapshot has already drained and validated its owner.
 // Consuming another transition after that check would invalidate the decision.
 func (t *terminal) sendInput(p []byte, drain bool) bool {
+	// Any other input takes the terminal back from a line-by-line paste: the
+	// remaining lines would otherwise be interleaved with what the user is
+	// typing. The queue's own writes pass through writing.
+	if t.pasteQueue.active && !t.pasteQueue.writing {
+		t.pasteQueue = terminalPasteQueue{}
+	}
 	if t.shell == nil || len(p) == 0 {
 		return false
 	}
@@ -1229,8 +1239,12 @@ func (state *State) shellEnded(session *Session) {
 	t.releasePromptWait()
 	t.recording.stop()
 	t.ended = true
+	t.pasteQueue = terminalPasteQueue{}
 	t.prediction.reset()
 	t.preedit = app.TextState{}
+	if state.modal == modalPasteReview && state.modalSession == session.ID {
+		state.closeModal()
+	}
 	if t.told < toldEnded {
 		t.told = toldEnded
 		m := state.messages
@@ -1730,7 +1744,14 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 			redraw = t.prediction.input(t.screen, input, state.now(), t.inputLine && !session.isLocal(), t.lastInputID)
 		}
 	case app.TextPaste:
-		if state.modal == modalTerminalInput || state.guardTerminalText(session, event) {
+		if state.modal != modalNone {
+			return app.TextState{Redraw: true}
+		}
+		state.cancelPasteQueue(t)
+		if state.reviewTerminalPaste(session, event.Text) {
+			return app.TextState{Redraw: true}
+		}
+		if state.guardTerminalText(session, event) {
 			return app.TextState{Redraw: true}
 		}
 		redraw = t.prediction.reset()
@@ -1974,6 +1995,9 @@ func (state *State) copySelection(session *Session) gfx.EventResult {
 func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.noteExit != nil {
 		return gfx.EventResult{Handled: true}
+	}
+	if state.modal == modalPasteReview {
+		return state.scrollPasteReview(event)
 	}
 	if result := state.notesScroll(event); result.Handled {
 		return result

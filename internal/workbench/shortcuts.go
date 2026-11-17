@@ -777,12 +777,16 @@ func encodeTerminalPaste(value string, terminal *terminal) []byte {
 
 // pasteIntoTerminal sends the system clipboard to a live shell as a paste.
 func (state *State) pasteIntoTerminal(session *Session) {
-	if session.term == nil || session.term.shell == nil {
+	if session.term == nil || session.term.shell == nil || state.modal != modalNone {
 		return
 	}
 	value, err := state.options.ClipboardText()
 	if err == nil && value != "" {
-		if state.modal == modalTerminalInput || state.guardTerminalText(session, app.TextEvent{Kind: app.TextPaste, Text: value}) {
+		state.cancelPasteQueue(session.term)
+		if state.reviewTerminalPaste(session, value) {
+			return
+		}
+		if state.guardTerminalText(session, app.TextEvent{Kind: app.TextPaste, Text: value}) {
 			return
 		}
 		state.typed(session, encodeTerminalPaste(value, session.term))

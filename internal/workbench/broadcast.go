@@ -145,6 +145,12 @@ func (state *State) clickTerminalTools(id gfx.ID) bool {
 		if state.setPasteImage(state.pasteImageOff) {
 			state.save()
 		}
+	case id == hitSettingsPasteConfirmToggle:
+		state.pasteConfirmOff = !state.pasteConfirmOff
+		if state.pasteConfirmOff {
+			state.cancelAllPasteQueues()
+		}
+		state.save()
 	case id == hitSettingsCloseConfirmToggle:
 		state.closeConfirmOff = !state.closeConfirmOff
 		state.save()

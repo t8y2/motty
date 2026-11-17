@@ -554,6 +554,7 @@ const (
 	modalWorkspaceTemplateDelete
 	modalLocalProxy
 	modalCredential
+	modalPasteReview
 )
 
 // tone colors a session's headline.
@@ -839,6 +840,7 @@ func (state *State) Wake() {
 		state.pump(session)
 		state.pumpCompletionPath(session)
 		state.advanceInjection(session, findNow)
+		state.advancePasteQueue(session, findNow)
 		state.runLoginCommand(session)
 		state.runIdleKeepAlive(session, findNow)
 		// A session-local charset notice changes the available character grid.
@@ -1062,7 +1064,11 @@ func (state *State) closeDisconnectedShell(session *Session) {
 	terminal.login = loginCommand{}
 	terminal.recording.stop()
 	terminal.ended = true
+	terminal.pasteQueue = terminalPasteQueue{}
 	terminal.preedit = app.TextState{}
+	if state.modal == modalPasteReview && state.modalSession == session.ID {
+		state.closeModal()
+	}
 }
 
 // adoptSystem records the system a connection reported, for this tab, the saved
@@ -1341,6 +1347,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalTerminalInput {
 		state.inputConfirmation = terminalInputConfirmation{}
+	}
+	if state.modal == modalPasteReview {
+		state.pasteReview = pasteReviewUI{}
 	}
 	if state.modal == modalDashboard {
 		state.dashboard.editor.order.Cancel()

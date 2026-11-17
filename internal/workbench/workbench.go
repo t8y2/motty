@@ -463,6 +463,8 @@ type State struct {
 	revealResults     chan revealResult
 	revealBusy        bool // only the window thread changes it; a worker returns over revealResults
 	inputConfirmation terminalInputConfirmation
+	// pasteReview holds the multi-line paste confirmation; see paste_review.go.
+	pasteReview pasteReviewUI
 	// reveal is which password fields show their text rather than bullets.
 	reveal      secretReveal
 	sftpWindows map[uint32]*sftpWindow
@@ -941,6 +943,9 @@ type State struct {
 	notifyOff      bool
 	// pasteImageOff keeps a pasted clipboard image from being sent to a server.
 	pasteImageOff bool
+	// pasteConfirmOff skips the multi-line paste confirmation; see
+	// paste_review.go.
+	pasteConfirmOff bool
 	// passwordHintOff keeps the saved password from being offered at a sudo prompt.
 	passwordHintOff bool
 	// closeConfirmOff skips the question before closing a session that still runs.
@@ -1541,6 +1546,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		case hitOutboundProxyBypass:
 			return &state.proxyForm.bypass
 		}
+	case modalPasteReview:
+		if hit == hitPasteReviewEditor && !state.pasteReview.readOnly {
+			return &state.pasteReview.editor
+		}
 	case modalForm:
 		return state.formEditor(hit)
 	case modalCredential:
@@ -1722,6 +1731,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	}
 	switch state.modal {
+	case modalPasteReview:
+		state.clickPasteReview(id)
+		return
 	case modalNewHost:
 		state.clickHostDialog(id)
 		return
@@ -2527,6 +2539,9 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return gfx.EventResult{Handled: true}
 	}
 	defer state.afterEvent(&outcome)
+	if state.modal == modalPasteReview {
+		return state.pasteReview.code.Pointer(event)
+	}
 	if state.trackHostListBar(event) {
 		defer func() { outcome.Repaint = true }()
 	}
@@ -3036,6 +3051,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.tabMenuColorKey(event); handled {
+		return result
+	}
+	if result, handled := state.pasteReviewKey(event); handled {
 		return result
 	}
 	if result, handled := state.terminalInputKey(event); handled {

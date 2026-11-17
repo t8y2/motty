@@ -104,6 +104,7 @@ type savedState struct {
 	TerminalToolbarPosition string              `json:"terminal_toolbar_position,omitempty"`
 	TerminalToolbarSize     string              `json:"terminal_toolbar_size,omitempty"`
 	TerminalBellOff         bool                `json:"terminal_bell_off,omitempty"`
+	TerminalPasteConfirmOff bool                `json:"terminal_paste_confirm_off,omitempty"`
 	TerminalInputClickOff   bool                `json:"terminal_input_click_off,omitempty"`
 	TerminalLinkPlainClick  bool                `json:"terminal_link_plain_click,omitempty"`
 	AIPanelWidth            float32             `json:"ai_panel_width,omitempty"`
@@ -570,6 +571,7 @@ func (state *State) snapshot() savedState {
 		TerminalToolbarPosition:    state.terminalToolbarPosition.String(),
 		TerminalToolbarSize:        state.terminalToolbarSize.String(),
 		TerminalBellOff:            state.terminalBellOff,
+		TerminalPasteConfirmOff:    state.pasteConfirmOff,
 		TerminalInputClickOff:      state.terminalInputClickOff,
 		TerminalLinkPlainClick:     state.terminalLinkPlainClick,
 		AIPanelWidth:               state.ai.panelWidth,
@@ -1187,6 +1189,7 @@ func (state *State) restoreShared(saved savedState) {
 	}
 	state.terminalShowLatency = saved.TerminalShowLatency
 	state.terminalBellOff = saved.TerminalBellOff
+	state.pasteConfirmOff = saved.TerminalPasteConfirmOff
 	state.terminalInputClickOff = saved.TerminalInputClickOff
 	state.terminalLinkPlainClick = saved.TerminalLinkPlainClick
 	if saved.TerminalSchemeDark == "" && saved.TerminalSchemeLight == "" && saved.TerminalScheme != "" {

@@ -72,6 +72,15 @@ var TraditionalMessages = Messages{
 		SendFailed: "終端機暫時無法接收本次輸入，內容尚未傳送。可以重試選擇或取消。", LocaleDismiss: "本工作階段不再顯示此提示", LocaleCanceled: "已取消工作階段修復，shell 環境未修改。",
 	},
 
+	PasteReview: PasteReviewMessages{
+		Title: "多行貼上", SummaryFmt: "%d 行 · %d 個字元", EditorLabel: "貼上內容預覽",
+		Hint:        "「貼上」按程式目前的方式整段傳送；「逐行傳送」為每行補一個 Enter，間隔 250 毫秒。",
+		TooLargeFmt: "文字過大，無法在這裡編輯。預覽只顯示開頭部分，傳送的仍是全部 %d 行。",
+		Whole:       "貼上", Lines: "逐行傳送",
+		Stale:   "終端機已變化，未傳送任何內容；請重新貼上。",
+		Stopped: "終端機無法接收本次貼上的剩餘行；已傳送的行不會重發。",
+	},
+
 	Transfers: TransferCenterMessages{
 		Title: "傳輸中心", Description: "所有連線的上傳、下載與傳輸記錄", Close: "關閉傳輸中心",
 		Empty: "還沒有傳輸任務", EmptyFiltered: "暫無此類傳輸任務",
@@ -1883,12 +1892,14 @@ var traditionalTools = ToolsMessages{
 	FontFallbackClear:       "清除",
 	FontFallbackPickerTitle: "備用字型",
 
-	PasteImageRow:         "在終端機貼上圖片",
-	PasteImageDescription: "剪貼簿裡只有圖片時，將圖片儲存在本機快取或上傳到 SSH 伺服器的 ~/.cache/motty/paste，再貼上路徑供 Codex 等程式讀取。檔案保留一週。",
-	PasteImageUploading:   "正在儲存剪貼簿裡的圖片…",
-	PasteImageDoneFmt:     "圖片已上傳到 %s。",
-	PasteImageFailedFmt:   "無法儲存剪貼簿裡的圖片：%v",
-	PasteImageTooLarge:    "剪貼簿裡的圖片太大，無法貼上。",
+	PasteImageRow:           "在終端機貼上圖片",
+	PasteImageDescription:   "剪貼簿裡只有圖片時，將圖片儲存在本機快取或上傳到 SSH 伺服器的 ~/.cache/motty/paste，再貼上路徑供 Codex 等程式讀取。檔案保留一週。",
+	PasteImageUploading:     "正在儲存剪貼簿裡的圖片…",
+	PasteImageDoneFmt:       "圖片已上傳到 %s。",
+	PasteImageFailedFmt:     "無法儲存剪貼簿裡的圖片：%v",
+	PasteImageTooLarge:      "剪貼簿裡的圖片太大，無法貼上。",
+	PasteConfirmRow:         "貼上多行前確認",
+	PasteConfirmDescription: "貼上包含換行的文字時先顯示預覽，可選擇整段或逐行傳送。關閉後按原樣一次貼上。",
 
 	PasswordHintRow:         "密碼提示輔助",
 	PasswordHintDescription: "sudo 要求密碼時提供該主機的已儲存密碼；su 要求密碼時列出該主機和身份的密碼供選擇。按下 Enter 或點選之前不會傳送任何內容。身份在「設定 > 安全 > 身份」中儲存。",

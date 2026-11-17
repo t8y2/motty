@@ -72,6 +72,15 @@ var ChineseMessages = Messages{
 		SendFailed: "终端暂时无法接收本次输入，内容尚未发送。可以重试选择或取消。", LocaleDismiss: "本会话不再显示此提示", LocaleCanceled: "已取消会话修复，shell 环境未修改。",
 	},
 
+	PasteReview: PasteReviewMessages{
+		Title: "多行粘贴", SummaryFmt: "%d 行 · %d 个字符", EditorLabel: "粘贴内容预览",
+		Hint:        "“粘贴”按程序当前的方式整段发送；“逐行发送”为每行补一个回车，间隔 250 毫秒。",
+		TooLargeFmt: "文本过大，无法在这里编辑。预览只显示开头部分，发送的仍是全部 %d 行。",
+		Whole:       "粘贴", Lines: "逐行发送",
+		Stale:   "终端已变化，未发送任何内容；请重新粘贴。",
+		Stopped: "终端无法接收本次粘贴的剩余行；已发送的行不会重发。",
+	},
+
 	Transfers: TransferCenterMessages{
 		Title: "传输中心", Description: "所有连接的上传、下载与传输记录", Close: "关闭传输中心",
 		Empty: "还没有传输任务", EmptyFiltered: "暂无此类传输任务",
@@ -1883,12 +1892,14 @@ var chineseTools = ToolsMessages{
 	FontFallbackClear:       "清除",
 	FontFallbackPickerTitle: "备用字体",
 
-	PasteImageRow:         "在终端粘贴图片",
-	PasteImageDescription: "剪贴板里只有图片时，将图片保存在本机缓存或上传到 SSH 服务器的 ~/.cache/motty/paste，并粘贴路径供 Codex 等程序读取。文件保留一周。",
-	PasteImageUploading:   "正在保存剪贴板里的图片…",
-	PasteImageDoneFmt:     "图片已上传到 %s。",
-	PasteImageFailedFmt:   "无法保存剪贴板里的图片：%v",
-	PasteImageTooLarge:    "剪贴板里的图片太大，无法粘贴。",
+	PasteImageRow:           "在终端粘贴图片",
+	PasteImageDescription:   "剪贴板里只有图片时，将图片保存在本机缓存或上传到 SSH 服务器的 ~/.cache/motty/paste，并粘贴路径供 Codex 等程序读取。文件保留一周。",
+	PasteImageUploading:     "正在保存剪贴板里的图片…",
+	PasteImageDoneFmt:       "图片已上传到 %s。",
+	PasteImageFailedFmt:     "无法保存剪贴板里的图片：%v",
+	PasteImageTooLarge:      "剪贴板里的图片太大，无法粘贴。",
+	PasteConfirmRow:         "粘贴多行前确认",
+	PasteConfirmDescription: "粘贴包含换行的文本时先显示预览，可选择整段或逐行发送。关闭后按原样一次粘贴。",
 
 	PasswordHintRow:         "密码提示辅助",
 	PasswordHintDescription: "sudo 要求密码时提供该主机的已保存密码；su 要求密码时列出该主机和身份的密码供选择。按下 Enter 或点选之前不会发送任何内容。身份在「设置 > 安全 > 身份」中保存。",

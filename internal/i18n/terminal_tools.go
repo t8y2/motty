@@ -265,6 +265,8 @@ type ToolsMessages struct {
 	PasteImageDoneFmt       string // the path on the server
 	PasteImageFailedFmt     string // the reason
 	PasteImageTooLarge      string
+	PasteConfirmRow         string
+	PasteConfirmDescription string
 	PasswordHintRow         string
 	PasswordHintDescription string
 	CloseConfirmRow         string

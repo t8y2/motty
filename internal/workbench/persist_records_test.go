@@ -67,6 +67,10 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// hides or excludes: restoreLocal applies both, and the sync scope test
 		// holds that one computer's selection never reaches another.
 		"hidden_nav": true, "sync_excluded": true,
+		// The multi-line paste confirmation belongs to this computer. Its
+		// absence in a saved state means on, which a shared setting could not
+		// express when another device turns it back on.
+		"terminal_paste_confirm_off": true,
 	}
 	entity := map[string]bool{}
 	for _, field := range entityFields {

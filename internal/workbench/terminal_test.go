@@ -204,6 +204,9 @@ func TestRawKeysBecomeTheBytesAProgramExpects(t *testing.T) {
 
 func TestTextPasteAndInputMethodsReachTheProgram(t *testing.T) {
 	state, _, _, shell := liveSession(t)
+	// This test checks the paste bytes; the multi-line review is tested
+	// separately in paste_review_test.go.
+	state.pasteConfirmOff = true
 	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
 	context := app.TextInputContext{ID: terminalHit(state, 0), Terminal: true}
 	input := state.TerminalInput(context)

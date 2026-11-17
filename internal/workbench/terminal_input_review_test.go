@@ -119,6 +119,9 @@ func TestTerminalInputPublicPastePreservesTransparentCases(t *testing.T) {
 	for _, mode := range []string{"multiline", "control", "alternate", "broadcast", "unknown", "quoted", "substitution", "heredoc"} {
 		t.Run(mode, func(t *testing.T) {
 			state, _, _, shell := liveSession(t)
+			// This test is about the smart-character guard; the multi-line review
+			// has its own tests in paste_review_test.go.
+			state.pasteConfirmOff = true
 			session := &state.sessions[0]
 			inputGuardPrompt(state, session, shell, "utf8", "")
 			value, want := "\u3000", "\u3000"
