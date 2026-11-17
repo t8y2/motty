@@ -179,7 +179,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	// way.
 	state.reconcileDragHosts()
 	state.devBeginPaint()
-	state.localShellMenu.bounds = gfx.Rect{}
 	state.fileManagerRect = gfx.Rect{}
 	if state.activeSection != sectionSettings || state.settingsCategory != settingsTerminal || state.settingsSearching() {
 		state.localShellMenu.open = false
@@ -332,7 +331,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintToolbarDockBottom(canvas, size)
 	viewport := state.windowRect()
 	state.paintAITargetSelect(canvas)
-	state.paintLocalShellSelect(canvas)
 	state.paintFindPreferences(canvas)
 	state.paintStartupHostSelect(canvas)
 	state.paintMonitorIntervalMenu(canvas)

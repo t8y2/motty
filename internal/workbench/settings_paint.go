@@ -29,12 +29,11 @@ const (
 	controlModelInput                            // the assistant's model-name field
 	controlStepsValue                            // the assistant's step-count field between its − and + buttons
 	controlFindPreference
-	controlWordSeparators   // the terminal's word-selection separators
-	controlSwatches         // a strip of round color dots
-	controlLabel            // the words of a row, which label the control beside them
-	controlLogo             // the product wordmark in a slot
-	controlLocalShellSelect // detected Windows shells
-	controlStartupHosts     // the hosts a launch connects
+	controlWordSeparators // the terminal's word-selection separators
+	controlSwatches       // a strip of round color dots
+	controlLabel          // the words of a row, which label the control beside them
+	controlLogo           // the product wordmark in a slot
+	controlStartupHosts   // the hosts a launch connects
 )
 
 // settingsControl is one control of the page, recorded while the page is
@@ -235,8 +234,6 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 		control := &state.settings.controls[index]
 		rect := control.slot.Rect()
 		switch control.kind {
-		case controlLocalShellSelect:
-			state.localShellMenu.bounds = rect
 		case controlStartupHosts:
 			state.startupPicker.bounds = rect
 		case controlHit:

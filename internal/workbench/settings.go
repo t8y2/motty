@@ -734,7 +734,7 @@ func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			return gfx.EventResult{}, false
 		}
 		state.localShellMenu.open = true
-		return gfx.EventResult{Focus: hitSettingsLocalShellItems.At(max(0, state.localShellSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
+		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false
 }

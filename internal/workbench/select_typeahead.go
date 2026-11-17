@@ -48,12 +48,6 @@ func (state *State) selectTypeaheadKey(event gfx.KeyEvent) (gfx.EventResult, boo
 // currently showing its value rather than its list.
 func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuTypeaheadItem, func(gfx.ID) bool, bool) {
 	switch {
-	case localShellSettingVisible() && state.modal == modalNone && state.activeSection == sectionSettings && state.settingsCategory == settingsTerminal && target == hitSettingsLocalShell && !state.localShellMenu.open:
-		items := make([]components.MenuTypeaheadItem, 0, len(state.localShellMenu.choices))
-		for index, choice := range state.localShellMenu.choices {
-			items = append(items, components.MenuTypeaheadItem{ID: hitSettingsLocalShellItems.At(index), Label: choice.Name})
-		}
-		return items, state.clickLocalShell, true
 	case state.aiPanelVisible() && target == hitAITarget && !state.ai.panel.targetOpen && state.ai.run == nil:
 		options := state.aiTargetOptions()
 		items := make([]components.MenuTypeaheadItem, 0, len(options))
