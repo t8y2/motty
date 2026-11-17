@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/remotetools"
 )
 
@@ -95,44 +95,33 @@ func (state *State) applyRemoteProcessEnvironment(
 	details.text.scroll = 0
 }
 
-func (state *State) paintRemoteProcessDetailsBody(canvas *gfx.Canvas, bounds gfx.Rect, process remotetools.Process, collectedAt time.Time) {
+// declareRemoteProcessDetailsBody declares the dialog's body: the facts about the
+// process in two columns of pairs, the tabs under them, and the room the tab's
+// text is painted in.
+func (state *State) declareRemoteProcessDetailsBody(c ui.C, width float32, process remotetools.Process, collectedAt time.Time) {
+	theme, pal := c.Theme(), state.pal
+	labelWidth := min(float32(150), max(width*0.18, 96))
+	ui.Column(c).Fill().Pad(8).Gap(8).Children(func() {
+		for index, pair := range state.remoteProcessDetailPairRows(process, collectedAt) {
+			ui.Row(c.KeyInt(index)).FillWidth().Height(34).Shrink(0).Items(ui.Center).PadSides(0, 8, 0, 8).Children(func() {
+				ui.Text(c, pair[0].label).Width(labelWidth).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(pal.muted).Ellipsis()
+				ui.Text(c, pair[0].value).Grow(1).Basis(0).FontSize(theme.Metrics.FontSizeM).Color(pal.text).Ellipsis()
+				ui.Text(c, pair[1].label).Width(labelWidth).Shrink(0).FontSize(theme.Metrics.FontSizeM).Color(pal.muted).Ellipsis()
+				ui.Text(c, pair[1].value).Grow(1).Basis(0).FontSize(theme.Metrics.FontSizeM).Color(pal.text).Ellipsis()
+			})
+		}
+		tab := state.remoteProcessDetailTab()
+		if ui.Tabs(c, &tab, remoteProcessDetailTabIDs[:], state.remoteProcessDetailTabLabel).Width(min(float32(300), width)).Height(34).Shrink(0).MarginSides(2, 0, 0, 0).Changed() {
+			c.After(func() { state.selectRemoteProcessDetailTab(tab) })
+		}
+		ui.Slot(c).Grow(1).Draw(func(d *ui.DrawContext) {
+			state.paintRemoteProcessDetailsPanel(d.Canvas, d.Rect)
+		})
+	})
+}
+
+func (state *State) paintRemoteProcessDetailsPanel(canvas *gfx.Canvas, panelBounds gfx.Rect) {
 	theme := state.Theme()
-	const (
-		pad       = float32(8)
-		rowHeight = float32(34)
-	)
-	content := gfx.Rect{
-		X: bounds.X + pad, Y: bounds.Y + pad,
-		Width: max(bounds.Width-pad*2, 0), Height: max(bounds.Height-pad*2, 0),
-	}
-	infoHeight := rowHeight * 5
-	infoBounds := gfx.Rect{X: content.X, Y: content.Y, Width: content.Width, Height: min(infoHeight, content.Height)}
-	labelWidth := min(float32(150), max(content.Width*0.18, 96))
-	valueWidth := max((content.Width-labelWidth*2)/2, 0)
-	columns := []components.TableColumn{
-		{Width: labelWidth}, {Width: valueWidth}, {Width: labelWidth}, {Width: 0},
-	}
-	table := components.BeginTable(canvas, theme, infoBounds, columns).RowHeight(rowHeight)
-	for _, pair := range state.remoteProcessDetailPairRows(process, collectedAt) {
-		table.Row(gfx.ID{}, []string{pair[0].label, pair[0].value, pair[1].label, pair[1].value}, false)
-	}
-
-	tabsY := infoBounds.Bottom() + 10
-	tabsBounds := gfx.Rect{
-		X: content.X, Y: tabsY, Width: min(float32(300), content.Width),
-		Height: min(float32(34), max(content.Bottom()-tabsY, 0)),
-	}
-	if tabsBounds.Height <= 0 {
-		return
-	}
-	options := state.remoteProcessDetailTabs()
-	components.BeginTabs(canvas, theme, tabsBounds, options[:], state.remoteProcessDetailTab()).Paint()
-
-	panelY := tabsBounds.Bottom() + 8
-	panelBounds := gfx.Rect{
-		X: content.X, Y: panelY, Width: content.Width,
-		Height: max(content.Bottom()-panelY, 0),
-	}
 	if panelBounds.Height <= 0 {
 		return
 	}

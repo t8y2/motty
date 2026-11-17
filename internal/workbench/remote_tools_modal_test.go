@@ -154,6 +154,10 @@ func clickRemoteToolsDetailTab(t testing.TB, state *State, id gfx.ID) {
 		clickPageLabelIn(t, state, remoteToolsPageSize, gfx.RoleTab, state.remoteContainerDetailTabLabel(id))
 		return
 	}
+	if id == hitRemoteProcessDetailsCommand || id == hitRemoteProcessDetailsEnv {
+		clickPageLabelIn(t, state, remoteToolsPageSize, gfx.RoleTab, state.remoteProcessDetailTabLabel(id))
+		return
+	}
 	clickRemoteToolsHeader(t, state, id)
 }
 
