@@ -19,7 +19,7 @@ func TestTerminalFindSettingsSharedControlsAndPersistence(t *testing.T) {
 	openFindForTest(t, state)
 	typeTerminalFind(t, state, "needle")
 
-	view, err := headless.Open(app.Config{
+	config := app.Config{
 		Width: 1100, Height: 800, Tree: Tree(), Paint: state.Paint,
 		OnResize: state.Resize, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
 		TextInput: func(context app.TextInputContext) *app.TextInput {
@@ -34,7 +34,9 @@ func TestTerminalFindSettingsSharedControlsAndPersistence(t *testing.T) {
 			}
 			return nil
 		},
-	}, nil, headless.Options{Scale: 1.25})
+	}
+	config = state.WindowConfig(config)
+	view, err := headless.Open(config, nil, headless.Options{Scale: 1.25})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,8 +97,7 @@ func TestTerminalFindSettingsSharedControlsAndPersistence(t *testing.T) {
 	if state.terminalFindPrefs.Opacity != 0 {
 		t.Fatalf("slider drag ended at %d", state.terminalFindPrefs.Opacity)
 	}
-	click(hitFindSettingsOrigin)
-	click(hitFindOriginItems.At(1))
+	chooseSelectOption(t, state, state.messages.FindSettings.Origin, state.findOriginLabel(findSessionBottom))
 	if state.terminalFindPrefs.Origin != findSessionBottom {
 		t.Fatalf("origin: %s", state.terminalFindPrefs.Origin)
 	}

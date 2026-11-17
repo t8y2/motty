@@ -7,6 +7,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 type terminalFindOrigin string
@@ -70,8 +71,6 @@ var (
 	hitFindSettingsReset   = tree.ID(findSettingsHits, "reset")
 	hitFindSettingsOpacity = tree.ID(findSettingsHits, "opacity")
 	hitFindSettingsOrigin  = tree.ID(findSettingsHits, "origin")
-	hitFindOriginDismiss   = tree.ID(findSettingsHits, "origin-dismiss")
-	hitFindOriginItems     = tree.Sub(findSettingsHits, tree.Name("origins"))
 	hitFindColorDismiss    = tree.ID(findSettingsHits, "color-dismiss")
 	hitFindColorHex        = tree.ID(findSettingsHits, "hex")
 	hitFindColorSaturation = tree.ID(findSettingsHits, "saturation")
@@ -84,17 +83,22 @@ var (
 )
 
 type terminalFindSettingsUI struct {
-	open, originOpen, opacityDrag          bool
-	session                                uint32
-	anchor, foreground, background, origin gfx.Rect
-	color                                  gfx.ID
-	picker                                 hostColorPicker
-	slider                                 components.Slider
-	focus                                  gfx.ID
+	open    bool
+	session uint32
+	// anchor is where the find bar's settings button was, for the color panel;
+	// foreground and background are where the color triggers were.
+	anchor, foreground, background gfx.Rect
+	color                          gfx.ID
+	picker                         hostColorPicker
+	// opacity and originChoice are the page controls' values, copied from the
+	// preferences as the page declares them and written back when they change.
+	opacity      ui.SliderState
+	originChoice terminalFindOrigin
+	focus        gfx.ID
 }
 
 func (v *terminalFindSettingsUI) close() {
-	v.open, v.originOpen, v.opacityDrag = false, false, false
+	v.open = false
 	v.color = gfx.ID{}
 	v.focus = gfx.ID{}
 }
@@ -189,43 +193,80 @@ func (state *State) findColorOptions(canvas *gfx.Canvas, id gfx.ID, layer uint16
 	return o
 }
 
-func (state *State) paintFindSetting(canvas *gfx.Canvas, id gfx.ID, bounds gfx.Rect) {
+// declareFindPreference declares one of the find preference controls in a row of
+// the page: the two color triggers keep Viva's color picker (the documented
+// canvas-level exception) in a slot, while the opacity and the origin are page
+// controls.
+func (state *State) declareFindPreference(c ui.C, id gfx.ID) ui.Box {
 	v, m := &state.findSettingsUI, state.messages.FindSettings
 	switch id {
 	case hitFindForeground, hitFindBackground:
-		spot := gfx.Rect{X: bounds.X + bounds.Width - bounds.Height, Y: bounds.Y, Width: bounds.Height, Height: bounds.Height}
-		if id == hitFindForeground {
-			v.foreground = spot
-		} else {
-			v.background = spot
-		}
-		options := state.findColorOptions(canvas, id, 0)
-		var hex [9]byte
-		canvas.Label(string(options.Value.AppendHex(hex[:0], false)),
-			gfx.Rect{X: bounds.X, Y: bounds.Y, Width: max(0, spot.X-bounds.X-8), Height: bounds.Height},
-			gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted, Mono: true})
-		components.BeginColorPicker(canvas, state.Theme(), spot, options).PaintTrigger()
+		row := ui.Row(c).Grow(1).Gap(8).Items(ui.Center)
+		row.Children(func() {
+			options := state.findColorOptions(c.Canvas(), id, 0)
+			var hex [9]byte
+			ui.Text(c, string(options.Value.AppendHex(hex[:0], false))).FontSize(metrics.FontSizeS).Mono().
+				Color(state.pal.muted).Grow(1).Ellipsis()
+			slot := ui.Slot(c).Size(34, 34).Shrink(0)
+			slot.Draw(func(d *ui.DrawContext) {
+				if id == hitFindForeground {
+					v.foreground = d.Rect
+				} else {
+					v.background = d.Rect
+				}
+				components.BeginColorPicker(d.Canvas, *d.Theme, d.Rect, state.findColorOptions(d.Canvas, id, 0)).PaintTrigger()
+			})
+		})
+		return row
 	case hitFindSettingsOpacity:
-		value := state.terminalFindPrefs.Opacity
-		percent := strconv.Itoa(value) + "%"
-		slider := bounds
-		slider.Width = max(0, slider.Width-40)
-		v.slider = components.BeginSlider(canvas, state.Theme(), id, slider, float32(value)).Range(0, 100).Step(1).ValueText(percent)
-		v.slider.Paint(m.Opacity)
-		canvas.LabelCenter(percent, gfx.Rect{X: bounds.X + slider.Width + 4, Y: bounds.Y, Width: 36, Height: bounds.Height},
-			gfx.TextStyle{Size: metrics.FontSizeS, Color: state.pal.muted})
+		if value := float32(state.terminalFindPrefs.Opacity); v.opacity.Value != value {
+			v.opacity.Value = value
+		}
+		percent := strconv.Itoa(state.terminalFindPrefs.Opacity) + "%"
+		row := ui.Row(c).Grow(1).Gap(8).Items(ui.Center)
+		row.Children(func() {
+			slider := ui.Slider(c, &v.opacity).Range(0, 100).Step(1).Label(m.Opacity).Hit(hitFindSettingsOpacity, m.Opacity).Grow(1)
+			if slider.Changed() {
+				opacity := int(v.opacity.Value)
+				c.After(func() {
+					p := state.terminalFindPrefs
+					p.Opacity = opacity
+					state.setFindPreferences(p)
+				})
+			}
+			ui.Text(c, percent).FontSize(metrics.FontSizeS).Color(state.pal.muted).Width(36).Shrink(0).TextEnd()
+		})
+		return row
 	case hitFindSettingsOrigin:
-		v.origin = bounds
-		components.BeginSelect(canvas, state.Theme(), bounds, components.SelectOptions{
-			TriggerID: id, Label: m.Origin, Value: state.findOriginLabel(state.terminalFindPrefs.Origin),
-		}).End()
-	default:
-		state.paintFindPreview(canvas, bounds)
+		if v.originChoice != state.terminalFindPrefs.Origin {
+			v.originChoice = state.terminalFindPrefs.Origin
+		}
+		origins := terminalFindOrigins[:]
+		selector := ui.Select(c, &v.originChoice, origins, state.findOriginLabel).Label(m.Origin).Hit(hitFindSettingsOrigin, m.Origin).Grow(1)
+		if selector.Changed() {
+			origin := v.originChoice
+			c.After(func() {
+				p := state.terminalFindPrefs
+				p.Origin = origin
+				state.setFindPreferences(p)
+			})
+		}
+		return selector
 	}
+	preview := state.declareFindPreview(c)
+	return preview
+}
+
+// declareFindPreview declares the strip that shows the highlight colors, the
+// opacity included, as they would read in the terminal.
+func (state *State) declareFindPreview(c ui.C) ui.Box {
+	preview := ui.Slot(c).Grow(1).Height(34)
+	preview.Draw(func(d *ui.DrawContext) { state.paintFindPreview(d.Canvas, d.Rect) })
+	return preview
 }
 
 func (state *State) paintFindPreferences(canvas *gfx.Canvas) {
-	v, m := &state.findSettingsUI, state.messages.FindSettings
+	v := &state.findSettingsUI
 	if !v.focus.IsZero() {
 		canvas.RequestFocus(v.focus)
 		v.focus = gfx.ID{}
@@ -236,63 +277,8 @@ func (state *State) paintFindPreferences(canvas *gfx.Canvas) {
 		return
 	}
 
-	if bar && v.anchor.Width > 0 {
-		theme := state.Theme()
-		height := theme.Metrics.ControlHeight
-		const gap = float32(8)
-		popover := components.BeginPopover(canvas, theme, state.windowRect(), v.anchor, components.PopoverOptions{
-			Layer: popupLayer, Scope: hitFindSettingsDismiss, DismissID: hitFindSettingsDismiss,
-			Align: components.PopoverAlignEnd, AnchorDismiss: true, ConsumeOutsidePress: true, SideOffset: 6,
-			ContentSize: gfx.Size{Width: 370}, BodyHeight: 6*height + 5*gap,
-		})
-		body := popover.Begin(m.Title, "").Body
-		canvas.TrapFocus(hitFindSettingsDismiss)
-		canvas.Clip(body)
-		for index, setting := range [...]struct {
-			id    gfx.ID
-			label string
-		}{
-			{hitFindForeground, m.Foreground}, {hitFindBackground, m.Background},
-			{hitFindSettingsOpacity, m.Opacity}, {hitFindSettingsOrigin, m.Origin},
-		} {
-			y := body.Y + float32(index)*(height+gap)
-			left := min(144, body.Width*0.48)
-			label := gfx.Rect{X: body.X, Y: y, Width: max(0, left-8), Height: height}
-			canvas.Label(elide(canvas, setting.label, metrics.FontSizeS, gfx.WeightMedium, label.Width), label,
-				gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: state.pal.text})
-			state.paintFindSetting(canvas, setting.id, gfx.Rect{X: body.X + left, Y: y, Width: max(0, body.Width-left), Height: height})
-		}
-		preview := gfx.Rect{X: body.X, Y: body.Y + 4*(height+gap), Width: body.Width, Height: height}
-		state.paintFindPreview(canvas, preview)
-		reset := gfx.Rect{X: body.X, Y: preview.Y + height + gap, Width: body.Width, Height: height}
-		components.BeginButton(canvas, theme, hitFindSettingsReset, reset).Outline(m.Reset)
-		canvas.Unclip()
-		popover.End()
-	}
-
-	if v.originOpen {
-		anchor := v.origin
-		if state.findSettingAnchorVisible(anchor) {
-			layer := popupLayer + 1
-			content := state.popupAt(canvas, state.windowRect(), gfx.Point{X: anchor.X, Y: anchor.Y + anchor.Height + 4},
-				max(180, anchor.Width), 152, 4)
-			canvas.PushLayer(layer)
-			control := components.BeginSelect(canvas, state.Theme(), anchor, components.SelectOptions{
-				TriggerID: hitFindSettingsOrigin, Label: m.Origin, Value: state.findOriginLabel(state.terminalFindPrefs.Origin),
-				Open: true, Layer: layer, Scope: hitFindOriginDismiss, DismissID: hitFindOriginDismiss,
-				Content: content, Viewport: state.windowRect(),
-			})
-			for index, origin := range terminalFindOrigins {
-				control.AddItem(components.SelectItem{ID: hitFindOriginItems.At(index), Label: state.findOriginLabel(origin),
-					Selected: state.terminalFindPrefs.Origin == origin})
-			}
-			control.End()
-			canvas.PopLayer()
-		} else {
-			v.originOpen = false
-		}
-	}
-
+	// The color picker is the documented canvas-level exception: its panel is
+	// painted over the page until a page form exists for it.
 	if !v.color.IsZero() {
 		anchor := v.foreground
 		if v.color == hitFindBackground {
@@ -304,6 +290,47 @@ func (state *State) paintFindPreferences(canvas *gfx.Canvas) {
 		} else {
 			v.color = gfx.ID{}
 		}
+	}
+}
+
+// declareFindSettingsPopover declares the preferences popover of the find bar in
+// the page, hanging off the settings button. The settings page's copy of these
+// controls is declared in its own rows.
+func (state *State) declareFindSettingsPopover(c ui.C, anchor ui.Box) {
+	v, m := &state.findSettingsUI, state.messages.FindSettings
+	if !v.open || !state.findSettingsOnBar() {
+		return
+	}
+	dismissed := ui.PopoverWith(c, anchor, ui.PopoverSpec{
+		Scope: hitFindSettingsDismiss, DismissID: hitFindSettingsDismiss,
+		Align: ui.End, Offset: 6, Width: 370, Title: m.Title,
+		ConsumeOutsidePress: true,
+	}, &v.open, func() {
+		for _, setting := range [...]struct {
+			id    gfx.ID
+			label string
+		}{
+			{hitFindForeground, m.Foreground}, {hitFindBackground, m.Background},
+			{hitFindSettingsOpacity, m.Opacity}, {hitFindSettingsOrigin, m.Origin},
+		} {
+			ui.Row(c).Height(32).Gap(8).Items(ui.Center).Shrink(0).Children(func() {
+				ui.Text(c, setting.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.text).Width(144).Shrink(0).Ellipsis()
+				state.declareFindPreference(c, setting.id)
+			})
+		}
+		state.declareFindPreview(c).FillWidth().Height(32)
+		ui.Button(c, m.Reset).Outline().Hit(hitFindSettingsReset, m.Reset).FillWidth().Shrink(0)
+	})
+	if dismissed {
+		// The page closed the panel; the keyboard goes back to the find field,
+		// as it does when the application's own dismiss handler closes it.
+		c.After(func() {
+			v.color = gfx.ID{}
+			v.focus = hitTerminalFindField
+			if session, ok := state.activeTerminalFind(); ok {
+				v.focus = state.paneIdentity(session, hitTerminalFindField)
+			}
+		})
 	}
 }
 
@@ -331,21 +358,8 @@ func (state *State) clickFindPreferences(id gfx.ID) bool {
 		}
 	case hitFindSettingsReset:
 		state.setFindPreferences(defaultTerminalFindPreferences)
-	case hitFindSettingsOrigin:
-		v.originOpen = !v.originOpen
-		v.color = gfx.ID{}
-		if v.originOpen {
-			for index, origin := range terminalFindOrigins {
-				if p.Origin == origin {
-					v.focus = hitFindOriginItems.At(index)
-				}
-			}
-		}
-	case hitFindOriginDismiss:
-		v.originOpen, v.focus = false, hitFindSettingsOrigin
 	case hitFindForeground, hitFindBackground:
 		v.color = id
-		v.originOpen = false
 		value := p.Foreground
 		if id == hitFindBackground {
 			value = p.Background
@@ -373,13 +387,7 @@ func (state *State) clickFindPreferences(id gfx.ID) bool {
 		state.setFindPreferences(p)
 		v.focus, v.color = v.color, gfx.ID{}
 	default:
-		index, ok := id.In(hitFindOriginItems)
-		if !ok || index < 0 || index >= len(terminalFindOrigins) {
-			return false
-		}
-		p.Origin = terminalFindOrigins[index]
-		state.setFindPreferences(p)
-		v.originOpen, v.focus = false, hitFindSettingsOrigin
+		return false
 	}
 	return true
 }
@@ -396,34 +404,6 @@ func (state *State) findPreferencesPointer(event gfx.PointerEvent) gfx.EventResu
 		}
 		return result
 	}
-	if v.opacityDrag {
-		switch event.Kind {
-		case gfx.PointerMove:
-			p := state.terminalFindPrefs
-			p.Opacity = int(v.slider.ValueAt(event.X))
-			state.applyFindPreferences(p)
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitFindSettingsOpacity}
-		case gfx.PointerUp, gfx.PointerExit:
-			v.opacityDrag = false
-			state.save()
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitFindSettingsOpacity}
-		}
-		// A press elsewhere ends a drag whose release was never delivered; that
-		// press still reaches what it names.
-		v.opacityDrag = false
-		state.save()
-	}
-	if event.Target != hitFindSettingsOpacity {
-		return gfx.EventResult{}
-	}
-	switch {
-	case event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone):
-		p := state.terminalFindPrefs
-		p.Opacity = int(v.slider.ValueAt(event.X))
-		state.applyFindPreferences(p)
-		v.opacityDrag = true
-		return gfx.EventResult{Handled: true, Repaint: true, Focus: hitFindSettingsOpacity}
-	}
 	return gfx.EventResult{}
 }
 
@@ -432,45 +412,16 @@ func (state *State) findPreferencesKey(event gfx.KeyEvent) gfx.EventResult {
 	if event.Release || !state.findSettingsOnBar() && !state.findSettingsOnPage() {
 		return gfx.EventResult{}
 	}
-	if event.Key == gfx.KeyEscape && (v.open || v.originOpen || !v.color.IsZero()) {
+	// The popover, its select and its slider are page controls: the page routes
+	// their keys. Only the color picker's panel is still painted by hand.
+	if event.Key == gfx.KeyEscape && !v.color.IsZero() {
 		if event.Target == hitFindColorHex {
 			if _, composing := v.picker.hex.Composition(); composing {
 				return gfx.EventResult{}
 			}
 		}
-		switch {
-		case !v.color.IsZero():
-			state.clickFindPreferences(hitFindColorDismiss)
-		case v.originOpen:
-			state.clickFindPreferences(hitFindOriginDismiss)
-		default:
-			state.clickFindPreferences(hitFindSettingsDismiss)
-		}
+		state.clickFindPreferences(hitFindColorDismiss)
 		return gfx.EventResult{Handled: true, Repaint: true, Focus: v.focus, FocusVisible: true}
-	}
-	if v.originOpen {
-		switch event.Key {
-		case gfx.KeyUp, gfx.KeyDown, gfx.KeyHome, gfx.KeyEnd:
-			index, ok := event.Target.In(hitFindOriginItems)
-			if !ok {
-				index = -1
-			}
-			count := len(terminalFindOrigins)
-			switch event.Key {
-			case gfx.KeyHome:
-				index = 0
-			case gfx.KeyEnd:
-				index = count - 1
-			case gfx.KeyUp:
-				if index < 0 {
-					index = 0
-				}
-				index = (index + count - 1) % count
-			case gfx.KeyDown:
-				index = (index + 1) % count
-			}
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitFindOriginItems.At(index), FocusVisible: true}
-		}
 	}
 	if !v.color.IsZero() {
 		if event.Target == hitFindColorHex && event.Key == gfx.KeyEnter && event.Modifiers == 0 {
@@ -484,15 +435,6 @@ func (state *State) findPreferencesKey(event gfx.KeyEvent) gfx.EventResult {
 			v.picker.setValue(value)
 		}
 		return result
-	}
-	if event.Target == hitFindSettingsOpacity {
-		p := state.terminalFindPrefs
-		value, handled := components.SliderKeyDown(float32(p.Opacity), 0, 100, 1, components.LTR, event.Key, event.Modifiers)
-		if handled {
-			p.Opacity = int(value)
-			state.setFindPreferences(p)
-			return gfx.EventResult{Handled: true, Repaint: true}
-		}
 	}
 	return gfx.EventResult{}
 }
@@ -525,6 +467,7 @@ func (state *State) TerminalFindPreferencesInput(context app.TextInputContext) *
 func (state *State) paintTerminalFindSettingsGroup(page *settingsPage) {
 	m := state.messages.FindSettings
 	page.group(m.Title, func() {
+		c := page.c
 		for _, setting := range [...]struct {
 			id    gfx.ID
 			label string
@@ -535,10 +478,11 @@ func (state *State) paintTerminalFindSettingsGroup(page *settingsPage) {
 			{hitFindSettingsOpacity, m.Opacity, 182},
 			{hitFindSettingsOrigin, m.Origin, 192},
 		} {
-			slot := page.lineFor(setting.id, setting.label, "", setting.width, nil)
-			page.add(settingsControl{kind: controlFindPreference, slot: slot, id: setting.id})
+			page.lineFor(setting.id, setting.label, "", setting.width, func() {
+				state.declareFindPreference(c, setting.id)
+			})
 		}
-		page.add(settingsControl{kind: controlFindPreference, slot: page.line(m.Preview, "", 192)})
+		page.lineWith(m.Preview, "", 192, func() { state.declareFindPreview(c) })
 		page.actionRow(m.Title, "", false, components.ButtonAction{ID: hitFindSettingsReset, Label: m.Reset, Variant: components.ButtonOutline})
 	})
 }
