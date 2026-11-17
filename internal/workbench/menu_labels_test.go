@@ -23,6 +23,7 @@ func init() {
 		hitTerminalMenuCopy, hitTerminalMenuPaste, hitTerminalMenuSelectAll, hitTerminalMenuClearScreen, hitTerminalMenuClear, hitTerminalMenuSave, hitTerminalMenuSplitRight, hitTerminalMenuSplitDown, hitTerminalMenuRename, hitTerminalMenuClosePane, hitTerminalMenuFiles, hitTerminalMenuTransfer, hitTerminalMenuAsk, hitTerminalMenuExplain, hitTerminalMenuHistory, hitTerminalMenuSearch, hitTerminalMenuStats, hitTerminalMenuTools, hitTerminalMenuReconnect, hitTerminalMenuRestart, hitTerminalMenuDisconnect,
 		hitSnippetMenuSend, hitSnippetMenuUp, hitSnippetMenuDown, hitSnippetMenuEdit, hitSnippetMenuDelete, hitWorkspaceTemplateMenuEdit, hitWorkspaceTemplateMenuDelete,
 		hitToolbarDockTop, hitToolbarDockSideTop, hitToolbarDockSideBottom, hitToolbarDockLeftTop, hitToolbarDockLeftBottom, hitToolbarDockBottom, hitToolbarDockBottomRight, hitToolbarDockHide, hitToolbarDockCustomize, hitToolbarDockReset,
+		hitTabMenuRename, hitTabMenuDuplicate, hitTabMenuEditHost, hitTabMenuNewWindow, hitTabMenuCopyHost, hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuBrowserClose, hitTabMenuBrowserOpen, hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency, hitTabMenuClose, hitTabMenuCloseOthers, hitTabMenuReconnect, hitTabMenuRestart, hitTabMenuDisconnect, hitTabMenuSaveWorkspace, hitTabMenuLock, hitTabMenuCloseRight,
 		hitSFTPMenuOpen, hitSFTPMenuDownload, hitSFTPMenuDownloadHere, hitSFTPMenuSend, hitSFTPMenuInsertPath, hitSFTPMenuEdit, hitSFTPMenuRename, hitSFTPMenuMove, hitSFTPMenuChmod, hitSFTPMenuChown, hitSFTPMenuExtract, hitSFTPMenuCompress, hitSFTPMenuDelete, hitSFTPMenuSudo, hitSFTPMenuCopyFiles, hitSFTPMenuPasteFiles,
 	} {
 		menuRowIDs[id] = true
@@ -175,6 +176,58 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.Toolbars.Customize
 	case hitToolbarDockReset:
 		return m.Toolbars.ResetLayout
+	case hitTabMenuRename:
+		return m.MenuRenameTab
+	case hitTabMenuDuplicate:
+		return m.MenuDuplicateTab
+	case hitTabMenuEditHost:
+		return m.EditHostTitle
+	case hitTabMenuNewWindow:
+		return m.MenuMoveTabToNewWindow
+	case hitTabMenuCopyHost:
+		return m.CopyHostAddress
+	case hitTabMenuCopyAddress:
+		return m.CopyAddressAndPort
+	case hitTabMenuCopyName:
+		return m.CopyConnectionName
+	case hitTabMenuBrowserClose:
+		return m.MenuCloseSSHBrowser
+	case hitTabMenuBrowserOpen:
+		return m.MenuOpenSSHBrowser
+	case hitTabMenuFit:
+		return m.Desktop.Fit
+	case hitTabMenuActual:
+		return m.Desktop.Actual
+	case hitTabMenuCtrlAltDel:
+		return m.Desktop.CtrlAltDel
+	case hitTabMenuHideBars:
+		return m.Desktop.HideBars
+	case hitTabMenuFullscreen:
+		return m.Desktop.Fullscreen
+	case hitTabMenuLatency:
+		return m.Desktop.ShowLatency
+	case hitTabMenuClose:
+		return m.LabelCloseTab
+	case hitTabMenuCloseOthers:
+		return m.MenuCloseOtherTabs
+	case hitTabMenuReconnect:
+		return m.SessionReconnect
+	case hitTabMenuRestart:
+		return m.MenuReconnect
+	case hitTabMenuDisconnect:
+		return m.MenuDisconnect
+	case hitTabMenuSaveWorkspace:
+		return m.WorkspaceSaveMenu
+	case hitTabMenuLock:
+		if menuHasRow(state, m.MenuUnlockTab) {
+			return m.MenuUnlockTab
+		}
+		return m.MenuLockTab
+	case hitTabMenuCloseRight:
+		if state.tabOrientation == tabsVertical {
+			return m.MenuCloseTabsBelow
+		}
+		return m.MenuCloseTabsToRight
 	}
 	t := m.Tools
 	w := m.SFTPWindow

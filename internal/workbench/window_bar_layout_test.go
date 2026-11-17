@@ -53,7 +53,7 @@ func TestMenusOpenedAtTheEdgeOfTheWindowStayInsideIt(t *testing.T) {
 	state.tabMenu = tabMenu{open: true, workspace: state.workspaceTabs[0].ID, at: edge}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, size)
-	rename, ok := hitByID(&canvas, hitTabMenuRename)
+	rename, ok := menuHit(&canvas, state, hitTabMenuRename)
 	if !ok {
 		t.Fatal("the tab menu was not painted")
 	}

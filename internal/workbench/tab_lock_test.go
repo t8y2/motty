@@ -10,7 +10,7 @@ import (
 func lockTab(t *testing.T, state *State, id layoutcore.WorkspaceID) {
 	t.Helper()
 	rightClickTab(state, hitTabList.At(int(id)))
-	state.Click(hitTabMenuLock)
+	chooseMenu(t, state, hitTabMenuLock)
 	if !state.deck.Locked(id) {
 		t.Fatal("the menu did not lock the tab")
 	}
@@ -29,7 +29,7 @@ func TestLockedTabCloseRoutesRequireConfirmation(t *testing.T) {
 					state.Click(hitTabCloseList.At(int(id)))
 				case "menu":
 					rightClickTab(state, hitTabList.At(int(id)))
-					state.Click(hitTabMenuClose)
+					chooseMenu(t, state, hitTabMenuClose)
 				case "shortcut":
 					commandW(state)
 				case "pane":
@@ -71,11 +71,11 @@ func TestLockedTabStateRestoresAndUnlockAllowsImmediateClose(t *testing.T) {
 	rightClickTab(state, hitTabList.At(int(id)))
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1100, Height: 700})
-	hit, ok := hitByID(&canvas, hitTabMenuLock)
+	hit, ok := menuHit(&canvas, state, hitTabMenuLock)
 	if !ok || hit.Label != state.messages.MenuUnlockTab {
 		t.Fatalf("unlock menu = %+v", hit)
 	}
-	state.Click(hitTabMenuLock)
+	chooseMenu(t, state, hitTabMenuLock)
 	state.closeWorkspace(id)
 	if state.modal != modalNone || len(tabsOf(state)) != 0 {
 		t.Fatal("an unlocked tab still requires confirmation")
@@ -86,13 +86,13 @@ func TestLockedTabBulkCloseConfirmsOneLockedTabAndKeepsStableTargets(t *testing.
 	state, tabs := fourTabs(t)
 	lockTab(t, state, tabs[3])
 	rightClickTab(state, hitTabList.At(int(tabs[2])))
-	state.Click(hitTabMenuCloseRight)
+	chooseMenu(t, state, hitTabMenuCloseRight)
 	if state.modal != modalCloseTabs || state.tabsClose.locked != 1 || len(tabsOf(state)) != 4 {
 		t.Fatal("closing a single locked neighbour bypassed confirmation")
 	}
 	state.Click(hitTabsCloseCancel)
 	rightClickTab(state, hitTabList.At(int(tabs[1])))
-	state.Click(hitTabMenuCloseRight)
+	chooseMenu(t, state, hitTabMenuCloseRight)
 	// A background/new-window operation may change the deck while the dialog
 	// is open. The confirmation must still apply only to the displayed targets.
 	newID, _, err := state.deck.Create("new tab")

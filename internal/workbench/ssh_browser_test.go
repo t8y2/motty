@@ -18,11 +18,11 @@ func TestTabMenuOffersSSHBrowserOnlyWhileConnected(t *testing.T) {
 		state.Paint(&canvas, state.viewport)
 		rightClickTab(state, hitTabList.At(int(tab)))
 		state.Paint(&canvas, state.viewport)
-		hit, found := hitByID(&canvas, hitTabMenuBrowserOpen)
+		hit, found := menuHit(&canvas, state, hitTabMenuBrowserOpen)
 		if found != want || found && hit.Disabled {
 			t.Fatalf("SSH browser menu item = %+v, found %v, want %v", hit, found, want)
 		}
-		state.Click(hitTabMenuDismiss)
+		state.tabMenu.open = false
 	}
 
 	check(false)

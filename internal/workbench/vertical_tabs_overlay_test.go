@@ -306,9 +306,9 @@ func TestDialogsAndMenusPaintAboveTheVerticalTabsOverlay(t *testing.T) {
 	state.tabMenu = tabMenu{open: true, workspace: ids[0], at: gfx.Point{X: 300, Y: 100}}
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	dismiss, ok := hitByID(&canvas, hitTabMenuDismiss)
+	dismiss, ok := menuHit(&canvas, state, hitTabMenuRename)
 	if !ok || dismiss.Layer <= row.Layer {
-		t.Fatalf("the tab menu's dismiss layer is %d, the sidebar is %d", dismiss.Layer, row.Layer)
+		t.Fatalf("the tab menu's layer is %d, the sidebar is %d", dismiss.Layer, row.Layer)
 	}
 
 	state.tabMenu = tabMenu{}

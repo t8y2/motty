@@ -2630,9 +2630,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.menuPointer(event); handled {
 		return result
 	}
-	if result, handled := state.tabMenuPointer(event); handled {
-		return result
-	}
 	if result, handled := state.tabMiddlePointer(event); handled {
 		return result
 	}

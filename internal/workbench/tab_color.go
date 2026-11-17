@@ -175,13 +175,8 @@ func (state *State) clickTabColor(workspace layoutcore.WorkspaceID, id gfx.ID) b
 	return true
 }
 
-func (state *State) paintTabColorChoices(canvas *gfx.Canvas, menu *components.ContextMenu) {
-	menu.AddSeparator()
-	footer := menu.NextItemBounds()
-	footer.Height = tabColorFooterHeight
-	for range tabColorFooterRows {
-		menu.AddItem(components.ContextMenuItem{})
-	}
+// paintTabColorRow paints the swatches of the tab menu's last row, centred across its width.
+func (state *State) paintTabColorRow(canvas *gfx.Canvas, footer gfx.Rect, _ gfx.Theme) {
 	index, ok := state.workspaceTab(state.tabMenu.workspace)
 	if !ok {
 		return
@@ -189,13 +184,6 @@ func (state *State) paintTabColorChoices(canvas *gfx.Canvas, menu *components.Co
 	m := state.messages
 	labels := [...]string{m.ColorNone, m.ColorRed, m.ColorGreen, m.ColorYellow, m.ColorBlue, m.ColorPink, m.ColorTeal}
 	selected := state.tabColor(state.workspaceTabs[index])
-	bounds := menu.Bounds()
-	menu.BeginContent()
-	defer menu.EndContent()
-	// Hand-drawn content must honour the menu's scroll clip too, so a small window
-	// cannot receive clicks on a swatch outside the menu.
-	canvas.Clip(gfx.Rect{X: bounds.X, Y: bounds.Y + contextMenuPadding/2, Width: bounds.Width, Height: bounds.Height - contextMenuPadding})
-	defer canvas.Unclip()
 	// The swatches lay themselves out across the row's own width and stay centred:
 	// the labels set the menu's width, and the swatch row never widens it.
 	room := footer.Width - 2*tabColorPaletteInset

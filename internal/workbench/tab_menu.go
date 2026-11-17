@@ -3,6 +3,7 @@ package workbench
 import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/desktop"
 	layoutcore "motty/internal/workspace"
 )
@@ -70,31 +71,6 @@ type tabMenu struct {
 	at        gfx.Point
 }
 
-// tabMenuPointer closes an open menu on a secondary press outside it (the
-// backdrop swallows the press; only a primary one is also a click). Opening it is
-// the paint of a tab (openTabMenuOn). A press on the rename row starts the
-// in-place rename here, on the press, so the field is handed the keyboard by the
-// same event that opens it.
-func (state *State) tabMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone {
-		return gfx.EventResult{}, false
-	}
-	if state.tabMenu.open && event.Target == hitTabMenuDismiss && event.Button != gfx.PointerButtonPrimary {
-		state.tabMenu.open = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	if state.tabMenu.open && event.Target == hitTabMenuRename {
-		workspace := state.tabMenu.workspace
-		state.tabMenu.open = false
-		state.beginTabInline(workspace)
-		if state.tabInlineActive() {
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTabInline}, true
-		}
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
-}
-
 // openTabMenuOn is called while painting a tab and its close button: when this
 // paint is the event pass of a secondary press on either, it opens the tab's menu.
 func (state *State) openTabMenuOn(canvas *gfx.Canvas, workspace layoutcore.WorkspaceID, tab, closeButton gfx.ID) {
@@ -144,7 +120,7 @@ func (state *State) tabMenuHost(session *Session) (Host, bool) {
 	return Host{}, false
 }
 
-func (state *State) paintTabMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareTabMenu(c ui.C) {
 	if !state.tabMenu.open {
 		return
 	}
@@ -228,32 +204,30 @@ func (state *State) paintTabMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 		rows.separate()
 		rows.add(components.ContextMenuItem{ID: hitTabMenuSaveWorkspace, Label: messages.WorkspaceSaveMenu, Icon: icon(iconArchive)})
 	}
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	height += contextMenuSeparator + tabColorFooterHeight
-	bounds := state.popupAt(canvas, viewport, state.tabMenu.at, width, height, 6)
-	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitTabMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitTabMenuDismiss),
-		RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(menu.Bounds())
-	rows.paint(&menu, nil)
-	state.paintTabColorChoices(canvas, &menu)
-	menu.End()
+	rows.separate()
+	rows.addContent(tabColorFooterHeight, state.paintTabColorRow)
+	state.declareRowsMenu(c, &state.tabMenu.open, state.tabMenu.at, hitTabMenuDismiss, &rows, state.chooseTabMenu)
 }
 
-// clickTabMenu runs a menu choice. A press anywhere else only closes the menu.
+// clickTabMenu takes a press on one of the color swatches the menu's last row paints, which
+// are hits of the application's own: the choice is made and the menu closes.
 func (state *State) clickTabMenu(id gfx.ID) bool {
 	if !state.tabMenu.open {
 		return false
 	}
-	workspace := state.tabMenu.workspace
-	state.tabMenu.open = false
-	index, ok := state.workspaceTab(workspace)
-	if !ok {
+	if state.clickTabColor(state.tabMenu.workspace, id) {
+		state.tabMenu.open = false
 		return true
 	}
-	if state.clickTabColor(workspace, id) {
-		return true
+	return false
+}
+
+// chooseTabMenu runs a choice of the menu, which closed with it.
+func (state *State) chooseTabMenu(id gfx.ID) {
+	workspace := state.tabMenu.workspace
+	index, ok := state.workspaceTab(workspace)
+	if !ok {
+		return
 	}
 	switch id {
 	case hitTabMenuBrowserOpen:
@@ -305,7 +279,7 @@ func (state *State) clickTabMenu(id gfx.ID) bool {
 	case hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency:
 		session, ok := state.tabMenuSessionFor(workspace)
 		if !ok || session.desk == nil {
-			return true
+			return
 		}
 		state.activateWorkspace(workspace)
 		switch id {
@@ -359,7 +333,6 @@ func (state *State) clickTabMenu(id gfx.ID) bool {
 	case hitTabMenuSaveWorkspace:
 		state.openWorkspaceSave(workspace)
 	}
-	return true
 }
 
 func (state *State) tabMenuSessionFor(workspace layoutcore.WorkspaceID) (*Session, bool) {

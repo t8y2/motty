@@ -36,7 +36,7 @@ func TestRightClickOnATabOpensItsMenu(t *testing.T) {
 	state, tabs := fourTabs(t)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTabMenuClose); ok {
+	if _, ok := menuHit(&canvas, state, hitTabMenuClose); ok {
 		t.Fatal("the menu is up before any click")
 	}
 	if result := rightClickTab(state, hitTabList.At(int(tabs[1]))); !result.Handled || !result.Repaint {
@@ -83,10 +83,10 @@ func TestTabMenuEditsTheSavedHostOfTheClickedTab(t *testing.T) {
 	rightClickTab(state, hitTabList.At(int(workspace)))
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if hit, ok := hitByID(&canvas, hitTabMenuEditHost); !ok || hit.Disabled {
+	if hit, ok := menuHit(&canvas, state, hitTabMenuEditHost); !ok || hit.Disabled {
 		t.Fatalf("edit host: found=%v disabled=%v", ok, hit.Disabled)
 	}
-	state.Click(hitTabMenuEditHost)
+	chooseMenu(t, state, hitTabMenuEditHost)
 	index := state.hostIndex(state.hostDialogID)
 	if index < 0 {
 		t.Fatalf("host dialog refers to missing host %d", state.hostDialogID)
@@ -108,10 +108,10 @@ func TestTabMenuCannotEditAnUncataloguedSession(t *testing.T) {
 	rightClickTab(state, hitTabList.At(int(workspace)))
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if hit, ok := hitByID(&canvas, hitTabMenuEditHost); !ok || !hit.Disabled {
+	if hit, ok := menuHit(&canvas, state, hitTabMenuEditHost); !ok || !hit.Disabled {
 		t.Fatalf("temporary session edit: found=%v disabled=%v", ok, hit.Disabled)
 	}
-	state.Click(hitTabMenuEditHost)
+	chooseMenu(t, state, hitTabMenuEditHost)
 	if state.modal != modalNone {
 		t.Fatal("a temporary session opened the host editor")
 	}
@@ -130,20 +130,20 @@ func TestTabMenuCopiesTheActiveSessionsAddressAndConnectionName(t *testing.T) {
 	workspace := state.deck.ActiveWorkspace()
 
 	rightClickTab(state, hitTabList.At(int(workspace)))
-	state.Click(hitTabMenuCopyHost)
+	chooseMenu(t, state, hitTabMenuCopyHost)
 	if state.tabMenu.open || len(copied) != 1 || copied[0] != session.host.Address {
 		t.Fatalf("Copy Host Address: open=%v copied=%q target=%q", state.tabMenu.open, copied, session.host.Address)
 	}
 
 	rightClickTab(state, hitTabList.At(int(workspace)))
-	state.Click(hitTabMenuCopyAddress)
+	chooseMenu(t, state, hitTabMenuCopyAddress)
 	wantAddress := net.JoinHostPort(session.host.Address, strconv.Itoa(int(session.host.Port)))
 	if state.tabMenu.open || len(copied) != 2 || copied[1] != wantAddress {
 		t.Fatalf("Copy Address and Port: open=%v copied=%q target=%q", state.tabMenu.open, copied, wantAddress)
 	}
 
 	rightClickTab(state, hitTabList.At(int(workspace)))
-	state.Click(hitTabMenuCopyName)
+	chooseMenu(t, state, hitTabMenuCopyName)
 	if state.tabMenu.open || len(copied) != 3 || copied[2] != session.host.Label {
 		t.Fatalf("Copy Connection Name: open=%v copied=%q target=%q", state.tabMenu.open, copied, session.host.Label)
 	}
@@ -157,10 +157,10 @@ func TestTabMenuPlacesConnectionCopiesBelowDuplicate(t *testing.T) {
 
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	duplicate, duplicateOK := hitByID(&canvas, hitTabMenuDuplicate)
-	host, hostOK := hitByID(&canvas, hitTabMenuCopyHost)
-	address, addressOK := hitByID(&canvas, hitTabMenuCopyAddress)
-	name, nameOK := hitByID(&canvas, hitTabMenuCopyName)
+	duplicate, duplicateOK := menuHit(&canvas, state, hitTabMenuDuplicate)
+	host, hostOK := menuHit(&canvas, state, hitTabMenuCopyHost)
+	address, addressOK := menuHit(&canvas, state, hitTabMenuCopyAddress)
+	name, nameOK := menuHit(&canvas, state, hitTabMenuCopyName)
 	if !duplicateOK || !hostOK || !addressOK || !nameOK {
 		t.Fatalf("menu items: duplicate=%v host=%v address=%v name=%v", duplicateOK, hostOK, addressOK, nameOK)
 	}
@@ -213,7 +213,7 @@ func TestTabMenuDuplicateOpensAnIndependentSessionForTheSameHost(t *testing.T) {
 	}
 	rightClickTab(state, hitTabList.At(int(originalWorkspace)))
 
-	state.Click(hitTabMenuDuplicate)
+	chooseMenu(t, state, hitTabMenuDuplicate)
 
 	workspaces := state.deck.Workspaces(nil)
 	if len(workspaces) != 2 || len(state.sessions) != 3 {
@@ -246,7 +246,7 @@ func TestTabMenuDuplicateDoesNotConsumeAPendingEmptyPane(t *testing.T) {
 	state.chooseHostSection()
 	rightClickTab(state, hitTabList.At(int(sourceWorkspace)))
 
-	state.Click(hitTabMenuDuplicate)
+	chooseMenu(t, state, hitTabMenuDuplicate)
 
 	if workspaces := state.deck.Workspaces(nil); len(workspaces) != 3 {
 		t.Fatalf("duplicate created %d workspaces, want a new third tab", len(workspaces))
@@ -273,17 +273,17 @@ func TestTabMenuDisablesWhatCannotApply(t *testing.T) {
 	rightClickTab(state, hitTabList.At(int(tabs[3])))
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if hit, _ := hitByID(&canvas, hitTabMenuCloseRight); !hit.Disabled {
+	if hit, _ := menuHit(&canvas, state, hitTabMenuCloseRight); !hit.Disabled {
 		t.Fatal("the last tab has nothing to its right to close")
 	}
-	state.Click(hitTabMenuDismiss)
+	state.tabMenu.open = false
 	for _, id := range tabs[1:] {
 		state.closeWorkspace(id)
 	}
 	rightClickTab(state, hitTabList.At(int(tabs[0])))
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if hit, _ := hitByID(&canvas, hitTabMenuCloseOthers); !hit.Disabled {
+	if hit, _ := menuHit(&canvas, state, hitTabMenuCloseOthers); !hit.Disabled {
 		t.Fatal("a lone tab has no others to close")
 	}
 }
@@ -291,7 +291,7 @@ func TestTabMenuDisablesWhatCannotApply(t *testing.T) {
 func TestTabMenuCloseAndCloseOthersAndCloseRight(t *testing.T) {
 	state, tabs := fourTabs(t)
 	rightClickTab(state, hitTabList.At(int(tabs[1])))
-	state.Click(hitTabMenuClose)
+	chooseMenu(t, state, hitTabMenuClose)
 	if got := tabsOf(state); len(got) != 3 || got[0] != tabs[0] || got[1] != tabs[2] {
 		t.Fatalf("after Close: %v", got)
 	}
@@ -299,14 +299,14 @@ func TestTabMenuCloseAndCloseOthersAndCloseRight(t *testing.T) {
 	state, tabs = fourTabs(t)
 	// Only one tab to the right of the third: no question for a single tab.
 	rightClickTab(state, hitTabList.At(int(tabs[2])))
-	state.Click(hitTabMenuCloseRight)
+	chooseMenu(t, state, hitTabMenuCloseRight)
 	if state.modal != modalNone || len(tabsOf(state)) != 3 {
 		t.Fatalf("closing one tab asked first or did not close it: modal=%v tabs=%d", state.modal, len(tabsOf(state)))
 	}
 
 	state, tabs = fourTabs(t)
 	rightClickTab(state, hitTabList.At(int(tabs[1])))
-	state.Click(hitTabMenuCloseRight)
+	chooseMenu(t, state, hitTabMenuCloseRight)
 	if state.modal != modalCloseTabs || len(tabsOf(state)) != 4 {
 		t.Fatalf("closing two tabs did not ask first: modal=%v tabs=%d", state.modal, len(tabsOf(state)))
 	}
@@ -320,37 +320,19 @@ func TestTabMenuCloseAndCloseOthersAndCloseRight(t *testing.T) {
 
 	state, tabs = fourTabs(t)
 	rightClickTab(state, hitTabList.At(int(tabs[1])))
-	state.Click(hitTabMenuCloseOthers)
+	chooseMenu(t, state, hitTabMenuCloseOthers)
 	state.Click(hitTabsCloseCancel)
 	if state.modal != modalNone || len(tabsOf(state)) != 4 {
 		t.Fatalf("cancel closed tabs: modal=%v tabs=%d", state.modal, len(tabsOf(state)))
 	}
 	rightClickTab(state, hitTabList.At(int(tabs[1])))
-	state.Click(hitTabMenuCloseOthers)
+	chooseMenu(t, state, hitTabMenuCloseOthers)
 	state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitTabsCloseConfirm})
 	if got := tabsOf(state); len(got) != 1 || got[0] != tabs[1] {
 		t.Fatalf("after Close Others: %v", got)
 	}
 	if state.deck.ActiveWorkspace() != tabs[1] || state.activeSection != sectionTerminal {
 		t.Fatalf("active = %d section %v", state.deck.ActiveWorkspace(), state.activeSection)
-	}
-}
-
-func TestTabMenuClosesWithoutActingOnAnOutsidePressOrEscape(t *testing.T) {
-	state, tabs := fourTabs(t)
-	rightClickTab(state, hitTabList.At(int(tabs[1])))
-	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if hit, ok := hitByID(&canvas, hitTabMenuDismiss); !ok || hit.Bounds.Width != 1400 || hit.Bounds.Height != 900 {
-		t.Fatalf("no window-wide backdrop: %+v, %v", hit, ok)
-	}
-	if result := pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTabMenuDismiss}); !result.Handled || state.tabMenu.open {
-		t.Fatalf("a secondary press outside: %+v open=%v", result, state.tabMenu.open)
-	}
-	rightClickTab(state, hitTabList.At(int(tabs[1])))
-	state.Click(hitTabMenuDismiss) // Escape and a primary press outside both arrive as this
-	if state.tabMenu.open || len(tabsOf(state)) != 4 {
-		t.Fatalf("open=%v tabs=%d", state.tabMenu.open, len(tabsOf(state)))
 	}
 }
 
@@ -370,17 +352,17 @@ func TestTabMenuOffersReconnectOnlyForATabThatNeedsIt(t *testing.T) {
 	rightClickTab(state, hitTabList.At(int(tab)))
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTabMenuReconnect); !ok {
+	if _, ok := menuHit(&canvas, state, hitTabMenuReconnect); !ok {
 		t.Fatal("a restored tab offers no Reconnect")
 	}
-	state.Click(hitTabMenuReconnect)
+	chooseMenu(t, state, hitTabMenuReconnect)
 	if session.conn == nil {
 		t.Fatal("Reconnect did not dial")
 	}
 	rightClickTab(state, hitTabList.At(int(tab)))
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTabMenuReconnect); ok {
+	if _, ok := menuHit(&canvas, state, hitTabMenuReconnect); ok {
 		t.Fatal("a tab that is connecting still offers Reconnect")
 	}
 }
@@ -390,7 +372,7 @@ func TestTabMenuStaysInsideTheWindow(t *testing.T) {
 	pointer(state, gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary, Target: hitTabList.At(int(tabs[0])), X: 1399, Y: 895, Viewport: state.viewport})
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	hit, ok := hitByID(&canvas, hitTabMenuCloseRight)
+	hit, ok := menuHit(&canvas, state, hitTabMenuCloseRight)
 	if !ok || hit.Bounds.X+hit.Bounds.Width > 1400 || hit.Bounds.Y+hit.Bounds.Height > 900 {
 		t.Fatalf("the menu runs off the window: %+v %v", hit.Bounds, ok)
 	}

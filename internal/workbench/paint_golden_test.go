@@ -117,7 +117,7 @@ func basePaintScenes() []paintScene {
 		plainScene("workspace-save", func(t *testing.T, s *State) {
 			id := launchTemporaryWorkspace(t, s, 1, 0)
 			rightClickTab(s, hitTabList.At(int(id)))
-			s.Click(hitTabMenuSaveWorkspace)
+			chooseMenu(t, s, hitTabMenuSaveWorkspace)
 		}),
 		{name: "xy-transfer", sizes: []gfx.Size{paintDesktop}, open: func(t *testing.T) (*State, func(*gfx.Canvas, gfx.Size)) {
 			state, session, _ := transferState(t)
