@@ -11,6 +11,7 @@ func (state *State) declareMenus(c ui.C) {
 	state.declareTerminalMenu(c)
 	state.declareGhostMenu(c)
 	state.declareSFTPMenu(c)
+	state.declareWorkspacePaneTools(c)
 	state.declareToolbarDockMenu(c)
 	state.declareSnippetMenu(c)
 	state.declareLocalShellPicker(c)

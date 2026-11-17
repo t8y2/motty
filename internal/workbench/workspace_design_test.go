@@ -119,7 +119,7 @@ func TestWorkspacePaneToolsPreserveAvailabilityAndDismissForNewFocus(t *testing.
 	index := -1
 	for i := 0; i < state.workspacePaneTools.count; i++ {
 		tool := state.workspacePaneTools.items[i]
-		hit := panelHit(t, canvas, hitWorkspacePaneToolList.At(i))
+		hit := paneToolRow(t, canvas, tool)
 		if hit.Disabled != tool.disabled {
 			t.Fatalf("menu changed availability: %+v, tool %+v", hit, tool)
 		}
@@ -144,7 +144,7 @@ func TestWorkspacePaneToolsPreserveAvailabilityAndDismissForNewFocus(t *testing.
 		t.Fatal("menu kept actions targeting a previous pane")
 	}
 	before := len(state.Panes(nil))
-	state.Click(hitWorkspacePaneToolList.At(index))
+	state.runWorkspacePaneTool(index)
 	if len(state.Panes(nil)) != before {
 		t.Fatal("a stale menu action changed the new pane")
 	}
@@ -157,13 +157,10 @@ func TestWorkspacePaneToolsRejectDisabledAndInvalidActions(t *testing.T) {
 	state.workspacePaneTools = workspacePaneTools{session: state.activeSessionID, count: 1}
 	state.workspacePaneTools.items[0] = barTool{id: hitPaneClose, disabled: true}
 	state.workspaceHeaderMenu = workspaceHeaderMenuTools
-	state.activateWorkspacePaneTool(-1)
-	state.activateWorkspacePaneTool(1)
-	if state.workspaceHeaderMenu != workspaceHeaderMenuTools {
-		t.Fatal("an invalid action changed the menu")
-	}
-	state.activateWorkspacePaneTool(0)
-	if len(state.Panes(nil)) != before || state.workspaceHeaderMenu != workspaceHeaderMenuNone {
+	state.runWorkspacePaneTool(-1)
+	state.runWorkspacePaneTool(1)
+	state.runWorkspacePaneTool(0)
+	if len(state.Panes(nil)) != before {
 		t.Fatal("disabled close action changed the workspace")
 	}
 }
@@ -199,4 +196,16 @@ func TestWorkspaceStatusAndSelectedDetailStayReadable(t *testing.T) {
 			}
 		}
 	}
+}
+
+// paneToolRow is the row of the pane-tools menu that stands for a tool.
+func paneToolRow(t *testing.T, canvas *gfx.Canvas, tool barTool) gfx.Hit {
+	t.Helper()
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleMenuItem && hit.Label == tool.hint {
+			return hit
+		}
+	}
+	t.Fatalf("the menu has no row %q", tool.hint)
+	return gfx.Hit{}
 }

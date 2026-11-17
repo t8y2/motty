@@ -183,10 +183,18 @@ func (state *State) declareRowsMenu(c ui.C, open *bool, at gfx.Point, target gfx
 // such as a badge the terminal painted: the menu opens above it unless there is no
 // room, and is named by target.
 func (state *State) declareAnchoredMenu(c ui.C, open *bool, anchor gfx.Rect, target gfx.ID, rows *menuRows, choose func(gfx.ID)) {
+	state.declareMenuAt(c, open, anchor, true, target, rows, choose)
+}
+
+// declareMenuAt is declareAnchoredMenu with the side chosen: above the rectangle, or
+// below it.
+func (state *State) declareMenuAt(c ui.C, open *bool, anchor gfx.Rect, above bool, target gfx.ID, rows *menuRows, choose func(gfx.ID)) {
 	ui.PopupLayer(c, dialogLayer)
 	box := ui.Slot(c).Absolute().Left(anchor.X).Top(anchor.Y).Size(anchor.Width, anchor.Height).HitWith(target, "", gfx.HitOptions{SkipFocus: true, SkipTab: true})
 	ui.Menu(c, box, open, func(menu *ui.MenuItems) {
-		menu.Above()
+		if above {
+			menu.Above()
+		}
 		rows.declare(c, menu, choose)
 	})
 }
