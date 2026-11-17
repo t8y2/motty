@@ -223,9 +223,10 @@ type savedState struct {
 	// The bottom command bar's own layout: whether it is hidden, the snippet
 	// groups it filters out (keyed by lowercased name; "" means ungrouped), and
 	// the order of its chips. A fresh state shows every group in list order.
-	CommandsShown        bool     `json:"commands_shown,omitempty"`
-	CommandsHiddenGroups []string `json:"commands_hidden_groups,omitempty"`
-	CommandsSort         string   `json:"commands_sort,omitempty"`
+	CommandsShown        bool                `json:"commands_shown,omitempty"`
+	CommandsHiddenGroups []string            `json:"commands_hidden_groups,omitempty"`
+	CommandsSort         string              `json:"commands_sort,omitempty"`
+	CommandSidebar       savedCommandSidebar `json:"command_sidebar,omitzero"`
 }
 
 type savedOutboundProxy struct {
@@ -246,6 +247,7 @@ type savedHighlight struct {
 }
 
 type savedSnippet struct {
+	Pinned  bool   `json:"pinned,omitempty"`
 	Name    string `json:"name"`
 	Command string `json:"command"`
 	Run     bool   `json:"run,omitempty"`
@@ -653,7 +655,7 @@ func (state *State) snapshot() savedState {
 	saved.Notes = append([]savedNote(nil), state.notes.list...)
 	saved.NoteFolders = append([]savedNoteFolder(nil), state.notes.folders...)
 	for index, entry := range state.snippets.list {
-		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group, Order: index})
+		saved.Snippets = append(saved.Snippets, savedSnippet{Name: entry.Name, Command: entry.Command, Run: entry.Run, Group: entry.Group, Order: index, Pinned: entry.Pinned})
 		if entry.Shortcut.Valid() {
 			saved.SnippetShortcuts = append(saved.SnippetShortcuts, savedSnippetKey{
 				Name: entry.Name, Key: string([]byte{entry.Shortcut.Char}), Modifiers: uint8(entry.Shortcut.Modifiers),
@@ -661,6 +663,7 @@ func (state *State) snapshot() savedState {
 		}
 	}
 	saved.CommandsShown = state.commands.shown
+	saved.CommandSidebar = state.savedCommandSidebarState()
 	saved.CommandsSort = state.commands.sort.String()
 	for key := range state.commands.hiddenGroups {
 		saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)

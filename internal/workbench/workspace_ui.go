@@ -77,6 +77,12 @@ func (state *State) workspacePixelBounds(size gfx.Size) gfx.Rect {
 }
 
 func (state *State) workspacePixelBoundsFor(workspaceID layoutcore.WorkspaceID, size gfx.Size) gfx.Rect {
+	bounds := state.workspacePixelBoundsWithoutCommands(workspaceID, size)
+	bounds.Width = max(0, bounds.Width-state.commandSidebarExtent(bounds.Width))
+	return bounds
+}
+
+func (state *State) workspacePixelBoundsWithoutCommands(workspaceID layoutcore.WorkspaceID, size gfx.Size) gfx.Rect {
 	bounds := state.workspaceBoundsAboveLogs(workspaceID, size)
 	if view := state.workspaceRemoteLogs(workspaceID); view != nil {
 		bounds.Height -= view.extent(bounds.Height)

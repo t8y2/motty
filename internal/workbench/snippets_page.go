@@ -17,6 +17,7 @@ func (state *State) refreshSnippets() {
 	form := &state.snippets
 	for index := range form.list {
 		entry := &form.list[index]
+		entry.sortName, entry.sortGroup = strings.ToLower(entry.Name), strings.ToLower(entry.Group)
 		command := entry.Command
 		shortcut := ""
 		if entry.Shortcut.Valid() {

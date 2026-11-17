@@ -158,10 +158,24 @@ type ToolsMessages struct {
 	CommandsNoGroups string
 	// The bar's order: the tooltip of its order button, and the three orders that
 	// button offers.
-	CommandsSortRow     string
-	CommandsSortCreated string
-	CommandsSortName    string
-	CommandsSortGroup   string
+	CommandsSortRow      string
+	CommandsSortCreated  string
+	CommandsSortName     string
+	CommandsSortGroup    string
+	SidebarExpand        string
+	SidebarCollapse      string
+	SidebarManage        string
+	SidebarFromSelection string
+	SidebarSaved         string
+	ComposeTitle         string
+	ComposePlaceholder   string
+	ComposePinned        string
+	ComposePin           string
+	ComposeUnpin         string
+	ComposeClearAfter    string
+	ComposeRisk          string
+	ComposeConfirm       string
+	ComposeTooLong       string
 
 	// The categories of the settings page, and what each holds.
 	CatGeneral    string

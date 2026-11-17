@@ -278,6 +278,13 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.beginMenus()
 	state.beginHostsPaint()
 	state.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, state.declareShell)
+	if state.commandSidebar.focusDraft && state.commandSidebarVisible() && !state.commandSidebar.ComposerCollapsed {
+		if canvas.Focused() == hitCommandComposer {
+			state.commandSidebar.focusDraft = false
+		} else {
+			canvas.RequestFocus(hitCommandComposer)
+		}
+	}
 	if state.verticalTabs.slot != (ui.Box{}) {
 		state.verticalTabs.slotRect = state.verticalTabs.slot.Rect()
 	}
@@ -643,6 +650,7 @@ func (state *State) declareShell(c ui.C) {
 			state.declareRemoteLogs(c)
 			state.declareContextPanel(c)
 			state.declareHostsPanel(c)
+			state.declareCommandSidebar(c)
 		} else {
 			// The file-manager tab is part of the page like the panes.
 			state.declareSFTPTab(c)

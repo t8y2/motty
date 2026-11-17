@@ -15,7 +15,7 @@ func (s *State) paintNotesPanel(c *gfx.Canvas, size gfx.Size) {
 	if !s.notesPanelOpen() {
 		return
 	}
-	frame := s.workspacePixelBounds(size)
+	frame := s.workspacePixelBoundsWithoutCommands(s.deck.ActiveWorkspace(), size)
 	base := s.baseWorkspacePixelBounds(size)
 	b := gfx.Rect{X: frame.X + frame.Width, Y: base.Y, Width: s.notesPanelWidth(size), Height: base.Height}
 	s.paintNoteSidebar(c, b)
