@@ -45,6 +45,9 @@ func TestWebDAVHTTPConsentSurvivesRestartAndCanBeRevoked(t *testing.T) {
 	waitFor(t, state, func() bool { return state.status == state.messages.Tools.SyncTestOK })
 	state.Close()
 	restored := newTestState(t, options)
+	restored.syncPending = false
+	restored.syncDelay, restored.syncRetryBase = state.syncDelay, state.syncRetryBase
+	restored.stopSyncTimer()
 	if !restored.sync.allowInsecureHTTP {
 		t.Fatal("restart lost the saved consent")
 	}
