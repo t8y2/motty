@@ -245,10 +245,9 @@ func (s *State) paintNoteTree(c *gfx.Canvas, b gfx.Rect) {
 		}
 	}
 	if len(rows) == 0 {
-		message := s.noteText("No notes yet. Create one above.", "暂无笔记，可点击上方新建。")
+		message := s.noteText("Your first working note starts here.", "第一条工作记录，从这里开始。")
 		if query != "" {
 			message = s.noteText("No matching notes.", "没有匹配的笔记。")
-
 		}
 		c.Label(message, gfx.Rect{X: geo.Content.X + 6, Y: geo.Content.Y + 12, Width: body.Width - 12, Height: 40}, gfx.TextStyle{Size: 12, Color: s.pal.muted})
 	}

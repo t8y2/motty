@@ -64,17 +64,21 @@ func TestNotesEditorShowsAnInvitingEmptyState(t *testing.T) {
 	var c gfx.Canvas
 	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
 	title := s.noteText("Start with a note", "从一篇笔记开始")
-	foundTitle, foundDescription := false, false
+	foundTitle, foundDescription, foundLibraryPrompt := false, false, false
 	for _, text := range c.Texts() {
 		foundTitle = foundTitle || text.Value == title
 		foundDescription = foundDescription || strings.Contains(text.Value, s.noteText("Select a note", "从左侧选择"))
+		foundLibraryPrompt = foundLibraryPrompt || text.Value == s.noteText("Your first working note starts here.", "第一条工作记录，从这里开始。")
 	}
-	if !foundTitle || !foundDescription {
-		t.Fatalf("empty state is incomplete: title=%v description=%v", foundTitle, foundDescription)
+	if !foundTitle || !foundDescription || !foundLibraryPrompt {
+		t.Fatalf("empty state is incomplete: title=%v description=%v library=%v", foundTitle, foundDescription, foundLibraryPrompt)
 	}
 	for _, text := range c.Texts() {
 		if text.Value == s.noteText("Select a note or create one to begin.", "选择笔记，或新建一篇笔记。") {
 			t.Fatal("legacy one-line empty prompt is still visible")
+		}
+		if text.Value == s.noteText("No notes yet. Create one above.", "暂无笔记，可点击上方新建。") {
+			t.Fatal("legacy library prompt is still visible")
 		}
 	}
 }
