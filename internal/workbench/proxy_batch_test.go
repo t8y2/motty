@@ -186,7 +186,7 @@ func TestHostMenuSetJumpTrigger(t *testing.T) {
 	}
 
 	// 点击“关联跳板机...”
-	state.Click(hitHostMenuSetJump)
+	chooseMenu(t, state, hitHostMenuSetJump)
 	if state.modal != modalProxyBatchAssociate {
 		t.Fatalf("after hitHostMenuSetJump: modal=%v, want modalProxyBatchAssociate", state.modal)
 	}

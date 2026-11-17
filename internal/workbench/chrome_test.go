@@ -28,6 +28,14 @@ func windowScrollRoutes(state *State, event gfx.ScrollEvent) gfx.EventResult {
 // hitByID finds the control painted with id. A form field's title is a hit with
 // the control's identity too, so the control comes before its label.
 func hitByID(canvas *gfx.Canvas, id gfx.ID) (gfx.Hit, bool) {
+	if rowLabel, ok := menuRowLabel(id); ok {
+		for _, hit := range canvas.Hits() {
+			if hit.Role == gfx.RoleMenuItem && hit.Label == rowLabel {
+				return hit, true
+			}
+		}
+		return gfx.Hit{}, false
+	}
 	var label gfx.Hit
 	var labelled bool
 	for _, hit := range canvas.Hits() {

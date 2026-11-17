@@ -45,17 +45,6 @@ type hostGroupActions struct {
 	slot ui.Box
 }
 
-// hostGroupActionsPointer closes the group actions menu on a secondary press
-// outside it. The menu's dismiss target is its backdrop.
-func (state *State) hostGroupActionsPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	a := &state.groupActions
-	if a.open && event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonSecondary && event.Target == hitGroupActionDismiss {
-		a.open = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
-}
-
 func hostGroupParent(path string) string {
 	if at := strings.LastIndex(path, "/"); at >= 0 {
 		return path[:at]
@@ -108,33 +97,36 @@ func (state *State) openHostGroupActions(path string, at gfx.Point) {
 	state.groupActions.open, state.groupActions.path, state.groupActions.at = true, path, at
 }
 
+// clickHostGroupActions opens the actions of a group from the button of its row.
 func (state *State) clickHostGroupActions(id gfx.ID) bool {
 	a := &state.groupActions
-	if !a.open {
-		if id.Scope() != hitHostGroupMore {
-			return false
-		}
-		if state.activeSection != sectionHosts || state.modal != modalNone {
-			return false
-		}
-		index := item(id)
-		if index < 0 || index >= len(state.hostGroups) {
-			return true
-		}
-		row := gfx.Rect{}
-		if index < len(a.rows) {
-			row = a.rows[index]
-		}
-		at := gfx.Point{X: state.hostsBounds.X + 30, Y: state.hostsBounds.Y + hostsToolbarHeight()}
-		if row.Width > 0 {
-			at = gfx.Point{X: row.X + row.Width - 32, Y: row.Y + row.Height}
-		}
-		state.openHostGroupActions(state.hostGroups[index].Name, at)
+	if id.Scope() != hitHostGroupMore {
+		return false
+	}
+	if state.activeSection != sectionHosts || state.modal != modalNone {
+		return false
+	}
+	index := item(id)
+	if index < 0 || index >= len(state.hostGroups) {
 		return true
 	}
-	a.open = false
+	row := gfx.Rect{}
+	if index < len(a.rows) {
+		row = a.rows[index]
+	}
+	at := gfx.Point{X: state.hostsBounds.X + 30, Y: state.hostsBounds.Y + hostsToolbarHeight()}
+	if row.Width > 0 {
+		at = gfx.Point{X: row.X + row.Width - 32, Y: row.Y + row.Height}
+	}
+	state.openHostGroupActions(state.hostGroups[index].Name, at)
+	return true
+}
+
+// chooseHostGroupAction runs a choice of the menu, which closed with it.
+func (state *State) chooseHostGroupAction(id gfx.ID) {
+	a := &state.groupActions
 	if !state.hostGroupsManaged() || state.modal != modalNone || state.hostGroupIndex(a.path) < 0 {
-		return true
+		return
 	}
 	switch id {
 	case hitGroupNewHost:
@@ -144,7 +136,7 @@ func (state *State) clickHostGroupActions(id gfx.ID) bool {
 		state.pasteHostsInto(a.path)
 	case hitGroupRename, hitGroupNewChild:
 		if a.path == "" && id == hitGroupRename {
-			return true
+			return
 		}
 		a.op = hostGroupCreateChild
 		state.hostGroupEditor = text.Editor{}
@@ -156,7 +148,7 @@ func (state *State) clickHostGroupActions(id gfx.ID) bool {
 		state.modal = modalMoveHostGroup
 	case hitGroupMove, hitGroupDelete:
 		if a.path == "" {
-			return true
+			return
 		}
 		a.op, a.ungroup, a.parentOpen = hostGroupRelocate, false, false
 		state.hostGroupEditor = text.Editor{}
@@ -173,10 +165,9 @@ func (state *State) clickHostGroupActions(id gfx.ID) bool {
 	case hitGroupDown:
 		state.reorderHostGroup(a.path, 1)
 	}
-	return true
 }
 
-func (state *State) paintHostGroupActions(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareHostGroupActions(c ui.C) {
 	a := &state.groupActions
 	if !a.open {
 		return
@@ -202,15 +193,7 @@ func (state *State) paintHostGroupActions(canvas *gfx.Canvas, viewport gfx.Rect)
 	rows.add(components.ContextMenuItem{ID: hitGroupDown, Label: m.MoveDown, Icon: lucideIcons[iconChevronDown], Disabled: state.hostGroupOrderNeighbor(a.path, 1) < 0})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitGroupDelete, Label: m.Delete, Icon: lucideIcons[iconTrash], Disabled: a.path == "", Variant: components.ContextMenuItemDestructive})
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	bounds := state.popupAt(canvas, viewport, a.at, width, height, 6)
-	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitGroupActionDismiss, Viewport: viewport,
-		Scroll: state.menuScrollFor(hitGroupActionDismiss), RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(menu.Bounds())
-	rows.paint(&menu, nil)
-	menu.End()
+	state.declareRowsMenu(c, &a.open, a.at, hitGroupActionDismiss, &rows, state.chooseHostGroupAction)
 }
 
 func (state *State) hostGroupRowEvents(canvas *gfx.Canvas, id gfx.ID, index int, bounds gfx.Rect) {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 // hostMenuHits is the place of the controls this file paints.
@@ -46,19 +47,6 @@ type groupMenuAnchor struct {
 	menu   bool      // that menu asked, so the point counts, not the button
 }
 
-// hostMenuPointer closes an open menu on a secondary press outside it. Opening
-// it is the paint of a host row (openHostMenuOn), where the row is declared.
-func (state *State) hostMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if event.Kind != gfx.PointerDown || event.Button == gfx.PointerButtonNone || event.Button == gfx.PointerButtonPrimary {
-		return gfx.EventResult{}, false
-	}
-	if state.hostMenu.open && event.Target == hitHostMenuDismiss {
-		state.hostMenu.open = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
-}
-
 // openHostOn is called while painting a host row: when this paint is the event
 // pass of a double click on it, the host is connected. Consuming the press keeps
 // its release from clicking whatever the new page put under the pointer.
@@ -97,7 +85,8 @@ func (state *State) hostRowEvents(canvas *gfx.Canvas, id gfx.ID, host Host) {
 	state.openHostOn(canvas, id, host)
 }
 
-func (state *State) paintHostMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+// declareHostMenu declares the host's menu while it is open.
+func (state *State) declareHostMenu(c ui.C) {
 	if !state.hostMenu.open {
 		return
 	}
@@ -127,27 +116,14 @@ func (state *State) paintHostMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	rows.add(components.ContextMenuItem{ID: hitHostMenuSetJump, Label: messages.HostMenuSetJump, Icon: icon(iconGlobe)})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuMove, Label: messages.MoveHostGroup, Icon: icon(iconFolderOpen)})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuDelete, Label: messages.DeleteHost, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	bounds := state.popupAt(canvas, viewport, state.hostMenu.at, width, height, 6)
-	menu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitHostMenuDismiss, Viewport: viewport, Scroll: state.menuScrollFor(hitHostMenuDismiss),
-		RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(menu.Bounds())
-	rows.paint(&menu, nil)
-	menu.End()
+	state.declareRowsMenu(c, &state.hostMenu.open, state.hostMenu.at, hitHostMenuDismiss, &rows, state.chooseHostMenu)
 }
 
-// clickHostMenu runs a menu choice. A press anywhere else only closes the menu.
-func (state *State) clickHostMenu(id gfx.ID) bool {
-	if !state.hostMenu.open {
-		return false
-	}
-	hostID := state.hostMenu.host
-	state.hostMenu.open = false
-	host, ok := state.hostByID(hostID)
+// chooseHostMenu runs a choice of the menu, which closed with it.
+func (state *State) chooseHostMenu(id gfx.ID) {
+	host, ok := state.hostByID(state.hostMenu.host)
 	if !ok {
-		return true
+		return
 	}
 	switch id {
 	case hitHostMenuConnect:
@@ -186,7 +162,6 @@ func (state *State) clickHostMenu(id gfx.ID) bool {
 		state.captureHostMenuActionIDs(host.ID)
 		state.openDeleteCapturedHosts()
 	}
-	return true
 }
 
 func (state *State) captureHostMenuActionIDs(hostID uint32) {

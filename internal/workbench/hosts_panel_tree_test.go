@@ -68,7 +68,7 @@ func TestHostsPanelEmptySpaceCreatesATopLevelGroup(t *testing.T) {
 			t.Errorf("blank menu row %s is not painted", tree.Text(id))
 		}
 	}
-	state.Click(hitHostBlankNewGroup)
+	chooseMenu(t, state, hitHostBlankNewGroup)
 	if state.modal != modalMoveHostGroup || state.groupActions.op != hostGroupCreateRoot {
 		t.Fatalf("new root group: modal %v op %v", state.modal, state.groupActions.op)
 	}

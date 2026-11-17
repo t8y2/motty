@@ -1629,6 +1629,10 @@ func freePort(t testing.TB) uint16 {
 }
 
 func hasHit(canvas *gfx.Canvas, id gfx.ID) bool {
+	if _, ok := menuRowLabel(id); ok {
+		_, found := hitByID(canvas, id)
+		return found
+	}
 	for _, hit := range canvas.Hits() {
 		if hit.ID == id {
 			return true

@@ -351,9 +351,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintGhostMenu(canvas, viewport)
 	state.paintToolbarDockMenu(canvas, viewport)
 	state.paintTabMenu(canvas, viewport)
-	state.paintHostMenu(canvas, viewport)
-	state.paintHostGroupActions(canvas, viewport)
-	state.paintHostBlankMenu(canvas, viewport)
 	state.paintWorkspaceTemplateMenu(canvas, viewport)
 	state.paintLocalShellPicker(canvas, viewport)
 	state.paintSnippetMenu(canvas, viewport)
@@ -702,6 +699,7 @@ func (state *State) declareShell(c ui.C) {
 	// them.
 	state.declareDialogs(c)
 	state.declareKnownHostsDialog(c)
+	state.declareMenus(c)
 	// The drag overlay is hitless and paints over the page on the drag layer.
 	state.declareTabDragOverlays(c)
 	state.declareWorkspaceCardDragOverlay(c)

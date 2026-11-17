@@ -66,7 +66,7 @@ func TestMenusOpenedAtTheEdgeOfTheWindowStayInsideIt(t *testing.T) {
 	state.hostMenu = hostMenu{open: true, host: state.hosts[0].ID, at: edge}
 	canvas.Reset()
 	state.Paint(&canvas, size)
-	remove, ok := hitByID(&canvas, hitHostMenuDelete)
+	remove, ok := menuHit(&canvas, state, hitHostMenuDelete)
 	if !ok {
 		t.Fatal("the host menu was not painted")
 	}

@@ -4,6 +4,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 // hostBlankMenuHits is the place of the rows the empty part of the session
@@ -30,7 +31,7 @@ func (state *State) openHostBlankMenu(at gfx.Point) {
 	state.hostBlankMenu = hostBlankMenu{open: true, at: at}
 }
 
-func (state *State) paintHostBlankMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
+func (state *State) declareHostBlankMenu(c ui.C) {
 	menu := &state.hostBlankMenu
 	if !menu.open {
 		return
@@ -45,31 +46,11 @@ func (state *State) paintHostBlankMenu(canvas *gfx.Canvas, viewport gfx.Rect) {
 	rows.add(components.ContextMenuItem{ID: hitHostBlankNewGroup, Label: messages.NewGroup, Icon: lucideIcons[iconFolderOpen]})
 	rows.separate()
 	rows.add(components.ContextMenuItem{ID: hitHostBlankPaste, Label: messages.PasteHost, Icon: lucideIcons[iconCopy], Disabled: len(state.hostClipboard) == 0})
-	width, height := rows.size(canvas, state.contextMenuTheme())
-	bounds := state.popupAt(canvas, viewport, menu.at, width, height, 6)
-	contextMenu := components.BeginContextMenu(canvas, state.contextMenuTheme(), bounds, components.ContextMenuOptions{
-		Layer: dialogLayer, Scope: dialogScope, DismissID: hitHostBlankDismiss, Viewport: viewport,
-		Scroll: state.menuScrollFor(hitHostBlankDismiss), RowHeight: contextMenuRow,
-	})
-	state.menuPlaced(contextMenu.Bounds())
-	rows.paint(&contextMenu, nil)
-	contextMenu.End()
+	state.declareRowsMenu(c, &menu.open, menu.at, hitHostBlankDismiss, &rows, state.chooseHostBlankMenu)
 }
 
-func (state *State) hostBlankMenuPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if state.hostBlankMenu.open && event.Kind == gfx.PointerDown && event.Button == gfx.PointerButtonSecondary && event.Target == hitHostBlankDismiss {
-		state.hostBlankMenu.open = false
-		return gfx.EventResult{Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
-}
-
-func (state *State) clickHostBlankMenu(id gfx.ID) bool {
-	menu := &state.hostBlankMenu
-	if !menu.open {
-		return false
-	}
-	menu.open = false
+// chooseHostBlankMenu runs a choice of the menu, which closed with it.
+func (state *State) chooseHostBlankMenu(id gfx.ID) {
 	switch id {
 	case hitHostBlankNewHost:
 		state.openHostDialog()
@@ -81,5 +62,4 @@ func (state *State) clickHostBlankMenu(id gfx.ID) bool {
 	case hitHostBlankPaste:
 		state.pasteHostsInto("")
 	}
-	return true
 }

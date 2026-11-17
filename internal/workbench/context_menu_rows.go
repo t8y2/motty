@@ -6,6 +6,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 // contextMenuRow is the height of an item row in every right-click menu: a dense
@@ -119,4 +120,44 @@ func (rows *menuRows) paint(menu *components.ContextMenu, slot func(item compone
 			menu.AddItem(entry.item)
 		}
 	}
+}
+
+// declare declares the rows as the items of a page menu. A row that is chosen runs
+// choose with its identity once the paint that delivered the choice is over: the
+// application's handlers are keyed by the identities the rows were given.
+func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
+	menu.RowHeight(contextMenuRow)
+	for _, entry := range rows.entries[:rows.count] {
+		if entry.separator {
+			menu.Separator()
+			continue
+		}
+		row := entry.item
+		item := menu.Item(row.Label).Icon(row.Icon).Disabled(row.Disabled)
+		if row.Variant == components.ContextMenuItemDestructive {
+			item = item.Destructive()
+		}
+		if row.Description != "" {
+			item = item.Description(row.Description)
+		}
+		switch row.Kind {
+		case components.ContextMenuCheckbox:
+			item = item.Checked(row.Checked)
+		case components.ContextMenuRadio:
+			item = item.Chosen(row.Selected)
+		}
+		if item.Clicked() {
+			id := row.ID
+			c.After(func() { choose(id) })
+		}
+	}
+}
+
+// declareRowsMenu declares an open context menu at a point of the window, over the
+// dialogs. The menu is named by dismiss: the identity its press-away used to have,
+// kept as the target of the page's menu.
+func (state *State) declareRowsMenu(c ui.C, open *bool, at gfx.Point, target gfx.ID, rows *menuRows, choose func(gfx.ID)) {
+	ui.PopupLayer(c, dialogLayer)
+	anchor := ui.Slot(c).Absolute().Left(at.X).Top(at.Y).Size(0, 0).HitWith(target, "", gfx.HitOptions{SkipFocus: true, SkipTab: true})
+	ui.ContextMenuAt(c, anchor, open, at, func(menu *ui.MenuItems) { rows.declare(c, menu, choose) })
 }
