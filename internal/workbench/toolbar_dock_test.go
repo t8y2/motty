@@ -1503,20 +1503,16 @@ func TestToolbarDockDisabledToolYieldsToTargetedPresses(t *testing.T) {
 	point := gfx.Point{X: hit.Bounds.X + hit.Bounds.Width/2, Y: hit.Bounds.Y + hit.Bounds.Height/2}
 
 	state.tabMenu.open = true
-	result := state.Pointer(gfx.PointerEvent{
+	// The menu is the page's now and dismisses itself in the paint that reads the
+	// press; the dock must leave a press that names another control alone.
+	state.Pointer(gfx.PointerEvent{
 		Kind: gfx.PointerDown, Button: gfx.PointerButtonSecondary,
 		Target: hitTabMenuDismiss, X: point.X, Y: point.Y, Viewport: size,
 	})
-	if !result.Handled {
-		t.Fatal("the press should be handled by the menu it names")
-	}
 	if state.toolbarDock.menu {
 		t.Fatal("press on an open menu's dismiss layer opened the dock menu")
 	}
 	if state.toolbarDock.drag.pressed {
 		t.Fatal("press on an open menu's dismiss layer armed a dock drag")
-	}
-	if state.tabMenu.open {
-		t.Fatal("the open tab menu was not dismissed")
 	}
 }

@@ -1374,7 +1374,6 @@ func (state *State) closeModal() {
 		state.dashboard.addHosts = nil
 	}
 	if state.modal == modalToolbarSettings {
-		state.toolbarEditor.list.Cancel()
 	}
 	if state.modal == modalSidebarSettings {
 		state.sidebarEditor = sidebarSettingsUI{}

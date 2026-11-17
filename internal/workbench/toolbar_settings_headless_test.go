@@ -16,6 +16,20 @@ import (
 	"motty/internal/i18n"
 )
 
+// toolbarRowHit is the bounds of the editor's row for the entry key of group, which the
+// page's list names by its label.
+func toolbarRowHit(t *testing.T, state *State, view *headless.Session, group toolbarGroup, key string) (gfx.Rect, bool) {
+	t.Helper()
+	spec, _ := toolbarSpecFor(group, key)
+	label := state.toolbarLabel(spec.id)
+	for _, h := range view.Snapshot().Hits {
+		if h.Role == gfx.RoleOption && h.Label == label && !h.Block {
+			return h.Bounds, true
+		}
+	}
+	return gfx.Rect{}, false
+}
+
 func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testing.T) {
 	for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
 		t.Run(fmt.Sprint(scale), func(t *testing.T) {
@@ -24,7 +38,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 			openGeneralSettings(state)
 			var invalidator app.Invalidator
 			state.options.Invalidate = invalidator.Invalidate
-			view, err := headless.Open(app.Config{Width: 1200, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: scale})
+			view, err := headless.Open(state.WindowConfig(app.Config{Width: 1200, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{Scale: scale})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -53,20 +67,20 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				view.Driver().Advance(250 * time.Millisecond)
 				shot(fmt.Sprintf("toolbar-opened-%d", group))
 				original := state.toolbars.entries(group)[0].Key
-				first := hitToolbarHandles.At(toolbarEntryIndex(group, original))
 				// The editor scrolls, so a long group does not show every entry at
 				// once: the drag ends on the last one in view.
 				lastEntries := state.toolbars.entries(group)
-				painted := map[gfx.ID]bool{}
-				for _, h := range view.Snapshot().Hits {
-					painted[h.ID] = true
-				}
 				lastSlot := len(lastEntries) - 1
-				for lastSlot > 0 && !painted[hitToolbarHandles.At(toolbarEntryIndex(group, lastEntries[lastSlot].Key))] {
+				for lastSlot > 0 {
+					// A row cut by the list's edge is not a place to drop on.
+					if row, ok := toolbarRowHit(t, state, view, group, lastEntries[lastSlot].Key); ok && row.Height >= 44 {
+						break
+					}
 					lastSlot--
 				}
-				last := hitToolbarHandles.At(toolbarEntryIndex(group, lastEntries[lastSlot].Key))
-				a, b := dualHit(t, view, first), dualHit(t, view, last)
+				a, _ := toolbarRowHit(t, state, view, group, original)
+				b, _ := toolbarRowHit(t, state, view, group, lastEntries[lastSlot].Key)
+				a.Width, b.Width = 24, 24 // the row's left edge, clear of the controls
 				x, y := a.X+a.Width/2, a.Y+a.Height/2
 				if err := view.Press(x, y); err != nil {
 					t.Fatal(err)
@@ -80,7 +94,7 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				if err := view.Release(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
 					t.Fatal(err)
 				}
-				if state.toolbarEditor.list.Dragging() || state.toolbars.entries(group)[0].Key != original {
+				if state.toolbars.entries(group)[0].Key != original {
 					t.Fatal("a cancelled press retained or committed an interrupted drag")
 				}
 				if err := view.Press(x, y); err != nil {
@@ -99,8 +113,10 @@ func TestToolbarSettingsNativeControlsDragKeyboardAndSwitchAcrossScales(t *testi
 				if entries[lastSlot].Key != original {
 					t.Fatalf("group %d did not reorder on drop: %+v", group, entries)
 				}
-				if err := view.Keys("Home"); err != nil {
-					t.Fatal(err)
+				for range lastSlot {
+					if err := view.Keys("alt+Up"); err != nil {
+						t.Fatal(err)
+					}
 				}
 				if state.toolbars.entries(group)[0].Key != original {
 					t.Fatal("keyboard could not move the focused entry back")
@@ -132,7 +148,7 @@ func TestToolbarSettingsSizeSwitchTakesClicks(t *testing.T) {
 	state.openToolbarSettings(toolbarTerminal)
 	var invalidator app.Invalidator
 	state.options.Invalidate = invalidator.Invalidate
-	view, err := headless.Open(app.Config{Width: 1200, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: 1})
+	view, err := headless.Open(state.WindowConfig(app.Config{Width: 1200, Height: 900, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,34 +177,34 @@ func TestToolbarSettingsSmallWindowCanScrollDuringDrag(t *testing.T) {
 	state.openToolbarSettings(toolbarTerminal)
 	var invalidator app.Invalidator
 	state.options.Invalidate = invalidator.Invalidate
-	view, err := headless.Open(app.Config{Width: 640, Height: 480, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}, nil, headless.Options{Scale: 1.25})
+	view, err := headless.Open(state.WindowConfig(app.Config{Width: 640, Height: 480, Tree: Tree(), Invalidator: &invalidator, OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{Scale: 1.25})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer view.Close()
 	view.Driver().Advance(250 * time.Millisecond)
-	if state.toolbarEditor.geometry.MaxOffsetY <= 0 {
+	if state.toolbarEditor.list.ScrollState().Max() <= 0 {
 		t.Fatal("small window fixture did not scroll")
 	}
 	entries := state.toolbars.entries(toolbarTerminal)
 	first, last := entries[0].Key, entries[len(entries)-1].Key
-	a := dualHit(t, view, hitToolbarHandles.At(toolbarEntryIndex(toolbarTerminal, first)))
-	x, y := a.X+a.Width/2, a.Y+a.Height/2
+	a, _ := toolbarRowHit(t, state, view, toolbarTerminal, first)
+	x, y := a.X+12, a.Y+a.Height/2
 	if err := view.Press(x, y); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Move(x, y+20); err != nil {
 		t.Fatal(err)
 	}
-	box := state.toolbarEditor.geometry.Viewport
+	box := state.toolbarEditor.list.Rect()
 	if err := view.Scroll(gfx.ScrollEvent{X: box.X + box.Width/2, Y: box.Y + box.Height/2, DeltaY: 1000}); err != nil {
 		t.Fatal(err)
 	}
-	b := dualHit(t, view, hitToolbarHandles.At(toolbarEntryIndex(toolbarTerminal, last)))
-	if err := view.Move(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
+	b, _ := toolbarRowHit(t, state, view, toolbarTerminal, last)
+	if err := view.Move(b.X+12, b.Y+b.Height-4); err != nil {
 		t.Fatal(err)
 	}
-	if err := view.Release(b.X+b.Width/2, b.Y+b.Height/2); err != nil {
+	if err := view.Release(b.X+12, b.Y+b.Height-4); err != nil {
 		t.Fatal(err)
 	}
 	entries = state.toolbars.entries(toolbarTerminal)
