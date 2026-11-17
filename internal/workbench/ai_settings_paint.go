@@ -856,18 +856,17 @@ func (state *State) declareAIConfirm(c ui.C, title, body, action string) {
 	}
 }
 
+// aiProbeBodyHeight is the probe dialog's body: its two labelled choices.
+const aiProbeBodyHeight = 140
+
 // declareAIProbe declares the model-probe dialog in the window page; its two
 // choices are page controls.
 func (state *State) declareAIProbe(c ui.C) {
 	m := state.messages.AISettings
 	const width float32 = 460
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(m.ProbeDialogDesc)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ProbeDialogTitle, Description: m.ProbeDialogDesc, Width: width,
-		Height: layout.Content.Height + 140, Layer: dialogLayer, Scope: dialogScope,
+		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAISetFormClose,
 	})
 	dialog.Body(func() { state.declareAIProbeBody(c) })
@@ -899,16 +898,12 @@ func (state *State) declareAIReasoning(c ui.C) {
 	}
 	const width float32 = 520
 	description := fmt.Sprintf("%s (%s)", m.ModelReasoningDesc, cfg.reasoningModelName)
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(description)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ModelReasoningTitle, Description: description, Width: width,
-		Height: layout.Content.Height + bodyHeight, Layer: dialogLayer, Scope: dialogScope,
+		Layer: dialogLayer, Scope: dialogScope,
 		CloseID: hitAISetFormClose,
 	})
-	dialog.Body(func() { state.declareAIReasoningBody(c) })
+	dialog.Body(func() { state.declareAIReasoningBody(c, bodyHeight) })
 	dialog.Footer(func() {
 		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
 			c.After(func() { state.aiDialogClick(hitAISetReasoningCancel) })
@@ -927,7 +922,7 @@ func (state *State) declareAIReasoning(c ui.C) {
 // chosen before anything was stored.
 func (state *State) declareAIProbeBody(c ui.C) {
 	pal, m, cfg := state.pal, state.messages.AISettings, &state.ai.cfg
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
+	ui.Column(c).Height(aiProbeBodyHeight).PadSides(2, 4, 0, 4).Gap(10).Children(func() {
 		ui.Text(c, m.ProbeConcurrency).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
 		concurrency := state.aiProbeConcurrency()
 		ui.Row(c).FillWidth().Children(func() {
@@ -947,9 +942,9 @@ func (state *State) declareAIProbeBody(c ui.C) {
 
 // declareAIReasoningBody declares the reasoning dialog: the mode, and the effort
 // preset only while the mode gives the model a manual choice.
-func (state *State) declareAIReasoningBody(c ui.C) {
+func (state *State) declareAIReasoningBody(c ui.C, height float32) {
 	pal, m, cfg := state.pal, state.messages.AISettings, &state.ai.cfg
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(10).Children(func() {
+	ui.Column(c).Height(height).PadSides(2, 4, 0, 4).Gap(10).Children(func() {
 		ui.Text(c, m.ModelReasoningMode).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
 		mode := cfg.reasoningMode
 		ui.Row(c).FillWidth().Children(func() {
