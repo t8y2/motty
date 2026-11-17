@@ -101,8 +101,12 @@ type snippetsUI struct {
 	capturing     bool // the next chord pressed becomes shortcut
 	dialogError   string
 
-	// The boxes are the slots the dialog body's controls are painted in.
-	dialogFields   [2]ui.Box
+	// nameForm and nameText are the name field's row and text, bound to name. The boxes are
+	// the slots the dialog body paints the other controls in.
+	nameForm       ui.FormFieldState
+	nameText       ui.Field
+	nameBound      bool
+	dialogCommand  ui.Box
 	dialogGroup    ui.Box
 	dialogRun      ui.Box
 	dialogShortcut ui.Box
@@ -645,8 +649,15 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 	form, m := &state.snippets, state.messages.Tools
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
-		form.dialogFields[0] = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
-		form.dialogFields[1] = ui.Slot(c).Height(140).MarginSides(0, 0, 6, 0)
+		if !form.nameBound {
+			form.nameText.Bind(&form.name)
+			form.nameBound = true
+		}
+		form.nameText.Invalid = form.dialogError != ""
+		ui.FormField(c, &form.nameForm, m.SnippetName).FillWidth().Height(62).MarginSides(0, 0, 6, 0).Children(func() {
+			ui.TextFieldID(c, hitSnippetName, &form.nameText, m.SnippetName, m.SnippetNamePlaceholder)
+		})
+		form.dialogCommand = ui.Slot(c).Height(140).MarginSides(0, 0, 6, 0)
 		form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
 		form.dialogRun = state.declareDialogCheckboxC(c, m.SnippetRun, 7, 0)
 		ui.Row(c).Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
@@ -665,38 +676,20 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 func (state *State) paintSnippetDialogFields(canvas *gfx.Canvas) {
 	m, theme := state.messages.Tools, state.Theme()
 	form := &state.snippets
-	entries := [...]struct {
-		id          gfx.ID
-		label       string
-		placeholder string
-		value       string
-	}{
-		{hitSnippetName, m.SnippetName, m.SnippetNamePlaceholder, form.name.String()},
-		{hitSnippetCommand, m.SnippetCommand, m.SnippetCommandPlaceholder, form.command.String()},
+	content := components.BeginField(canvas, theme, form.dialogCommand.Rect()).Paint(m.SnippetCommand, "", "")
+	value := form.command.String()
+	selection := form.command.Selection()
+	snapshot := components.TextareaSnapshot{
+		ID: hitSnippetCommand, Label: m.SnippetCommand, Value: value, Placeholder: m.SnippetCommandPlaceholder,
+		Focused: canvas.Focused() == hitSnippetCommand, HideEditorText: true, ShowCaret: selection.Start == selection.End,
+		Layout: &form.commandLayout, SelectionStart: aiByteOffset(value, selection.Start),
+		SelectionEnd: aiByteOffset(value, selection.End), Caret: aiByteOffset(value, form.command.Caret()),
 	}
-	for index, entry := range entries {
-		content := components.BeginField(canvas, theme, form.dialogFields[index].Rect()).Paint(entry.label, "", "")
-		focused := canvas.Focused() == entry.id
-		if entry.id == hitSnippetCommand {
-			selection := form.command.Selection()
-			snapshot := components.TextareaSnapshot{
-				ID: entry.id, Label: entry.label, Value: entry.value, Placeholder: entry.placeholder,
-				Focused: focused, HideEditorText: true, ShowCaret: selection.Start == selection.End,
-				Layout: &form.commandLayout, SelectionStart: aiByteOffset(entry.value, selection.Start),
-				SelectionEnd: aiByteOffset(entry.value, selection.End), Caret: aiByteOffset(entry.value, form.command.Caret()),
-			}
-			if marked, composing := form.command.Composition(); composing {
-				snapshot.CompositionStart = aiByteOffset(entry.value, marked.Start)
-				snapshot.CompositionEnd = aiByteOffset(entry.value, marked.End)
-			}
-			components.PaintTextarea(canvas, theme, content, snapshot)
-			continue
-		}
-		components.PaintInput(canvas, theme, content, components.InputSnapshot{
-			ID: entry.id, Label: entry.label, Value: entry.value, Placeholder: entry.placeholder,
-			Focused: focused, PlatformEditing: focused && entry.value != "", Invalid: form.dialogError != "",
-		})
+	if marked, composing := form.command.Composition(); composing {
+		snapshot.CompositionStart = aiByteOffset(value, marked.Start)
+		snapshot.CompositionEnd = aiByteOffset(value, marked.End)
 	}
+	components.PaintTextarea(canvas, theme, content, snapshot)
 	state.paintSnippetGroupField(canvas, form.dialogGroup.Rect())
 	state.paintDialogCheckbox(canvas, hitSnippetRun, m.SnippetRun, form.run, form.dialogRun)
 	label := m.SnippetShortcutNone
