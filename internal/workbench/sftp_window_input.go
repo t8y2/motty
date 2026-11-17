@@ -963,7 +963,7 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 			w.owner.closeSFTPDialog(w.view)
 		} else if w.headerMenuOpen() {
 			w.closeHeaderMenu()
-		} else if w.ui.queueDetails.pinned != 0 || w.ui.queueDetails.showing != 0 {
+		} else if w.ui.queueDetails.pinned != 0 {
 			w.ui.queueDetails.dismiss()
 		} else if result, ok := w.filterEscape(event); ok {
 			return result
