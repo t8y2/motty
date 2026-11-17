@@ -91,16 +91,12 @@ func (state *State) declareAIImportSources(c ui.C) {
 		bodyHeight += aiImportErrorHeight
 	}
 	const width float32 = 620
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(m.ImportSourcesDesc)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ImportSourcesTitle, Description: m.ImportSourcesDesc, Width: width,
-		Height: layout.Content.Height + bodyHeight, Layer: dialogLayer, Scope: dialogScope,
+		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose,
 	})
-	dialog.Body(func() { state.declareAIImportSourcesBody(c, initial) })
+	dialog.Body(func() { state.declareAIImportSourcesBody(c, initial, bodyHeight) })
 	dialog.Footer(func() {
 		if ui.Button(c, state.messages.Cancel).Secondary().Shrink(0).Clicked() {
 			c.After(func() { state.aiDialogClick(hitAISetImportClose) })
@@ -143,16 +139,12 @@ func (state *State) declareAIImportPreview(c ui.C) {
 	pages := &state.ai.panel.importPages
 	pages.listHeight = listHeight
 	const width float32 = 760
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout(m.ImportPreviewDesc)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.ImportPreviewTitle, Description: m.ImportPreviewDesc, Width: width,
-		Height: layout.Content.Height + bodyHeight, Layer: dialogLayer, Scope: dialogScope,
+		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose,
 	})
-	dialog.Body(func() { state.declareAIImportPreviewBody(c) })
+	dialog.Body(func() { state.declareAIImportPreviewBody(c, bodyHeight) })
 	dialog.Footer(func() {
 		back := ui.Button(c, m.ImportBack).Secondary().Shrink(0)
 		if initial == hitAISetImportBack {
@@ -195,16 +187,12 @@ func (state *State) declareAIImportResult(c ui.C) {
 		bodyHeight += float32(extra)*aiImportResultLine + float32(extra)*aiImportResultGap
 	}
 	const width float32 = 520
-	viewport := gfx.Rect{Width: c.Bounds().Width, Height: c.Bounds().Height}
-	layout := components.BeginDialog(c.Canvas(), *c.Theme(), viewport, components.DialogOptions{
-		ContentSize: gfx.Size{Width: width}, FitBody: true,
-	}).Layout("")
 	dialog := ui.Dialog(c, ui.DialogSpec{
-		Title: m.ImportDoneTitle, Width: width, Height: layout.Content.Height + bodyHeight,
+		Title: m.ImportDoneTitle, Width: width,
 		Layer: dialogLayer, Scope: dialogScope,
 		DismissID: hitAISetFormDismiss, CloseID: hitAISetFormClose,
 	})
-	dialog.Body(func() { state.declareAIImportResultBody(c) })
+	dialog.Body(func() { state.declareAIImportResultBody(c, bodyHeight) })
 	dialog.Footer(func() {
 		if ui.Button(c, m.ImportClose).Shrink(0).AutoFocus().Clicked() {
 			c.After(func() { state.aiDialogClick(hitAISetImportClose) })
@@ -217,9 +205,9 @@ func (state *State) declareAIImportResult(c ui.C) {
 
 // declareAIImportSourcesBody declares the step that names the sources found on
 // this computer. Its Preview buttons are page controls, so a press reads here.
-func (state *State) declareAIImportSourcesBody(c ui.C, initial gfx.ID) {
+func (state *State) declareAIImportSourcesBody(c ui.C, initial gfx.ID, height float32) {
 	cfg, m, pal := &state.ai.cfg, state.messages.AISettings, state.pal
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+	ui.Column(c).Height(height).PadSides(2, 4, 0, 4).Children(func() {
 		for index, source := range cfg.importSources {
 			ui.Row(c).Height(aiImportSourceRowHeight).Gap(12).Items(ui.Center).Children(func() {
 				ui.Row(c).Size(32, 32).Shrink(0).Background(pal.accentSoft).Radius(radius.control).Center().Children(func() {
@@ -281,14 +269,14 @@ func (state *State) declareAIImportSourcesBody(c ui.C, initial gfx.ID) {
 // declareAIImportPreviewBody declares the count above the candidate list, the
 // list itself, and any read error. The list is a scroll area of this page, so
 // the wheel it takes and the offset it keeps belong to the dialog step.
-func (state *State) declareAIImportPreviewBody(c ui.C) {
+func (state *State) declareAIImportPreviewBody(c ui.C, height float32) {
 	cfg, m, pal := &state.ai.cfg, state.messages.AISettings, state.pal
 	pages := &state.ai.panel.importPages
 	total := len(cfg.importCandidates)
 	importable := aiImportImportableCount(cfg.importCandidates)
 	selected := state.aiImportSelectedCount()
 	pages.list, pages.listSet = ui.Box{}, false
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Children(func() {
+	ui.Column(c).Height(height).PadSides(2, 4, 0, 4).Children(func() {
 		// Only a full selection earns the check. A partial one keeps the dot,
 		// so the icon never claims more than the count says.
 		summaryIcon, summaryColor := icons.CircleDot, pal.muted
@@ -450,7 +438,7 @@ func (state *State) paintAIImportScrollbar(canvas *gfx.Canvas, bounds gfx.Rect) 
 
 // declareAIImportResultBody declares the outcome of the import: what changed,
 // and the notes that need attention under it.
-func (state *State) declareAIImportResultBody(c ui.C) {
+func (state *State) declareAIImportResultBody(c ui.C, height float32) {
 	result, m, pal := state.ai.cfg.importResult, state.messages.AISettings, state.pal
 
 	icon, color := icons.CircleCheck, pal.success
@@ -460,7 +448,7 @@ func (state *State) declareAIImportResultBody(c ui.C) {
 		icon, color = icons.CircleDot, pal.muted
 	}
 
-	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(aiImportResultGap).Children(func() {
+	ui.Column(c).Height(height).PadSides(2, 4, 0, 4).Gap(aiImportResultGap).Children(func() {
 		ui.Row(c).Height(aiImportResultBannerHeight).PadSides(10, 12, 10, 12).
 			Background(pal.surfaceSoft).Radius(radius.control).Gap(10).
 			Items(ui.Center).Children(func() {
