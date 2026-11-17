@@ -37,7 +37,6 @@ const (
 // the changed callback stores it.
 var (
 	aiRiskChoices         = [...]risk.Level{risk.Low, risk.Medium, risk.High}
-	aiStepsChoices        = [...]int{6, 12, 24}
 	aiContextChoices      = [...]int{0, 30, 60, 120}
 	aiTextLimitChoices    = [...]int{1, 4, 8} // MiB, as stored in ai.attachment_text_mib
 	aiMCPModeChoices      = [...]gate.Mode{gate.ModeObserve, gate.ModeAsk, gate.ModeAllowAll}
@@ -267,6 +266,9 @@ func (state *State) aiButton(canvas *gfx.Canvas, id gfx.ID, slot gfx.Rect, label
 const (
 	aiSwitchWidth  = float32(36)
 	aiSwitchHeight = float32(20)
+
+	aiStepsValueWidth   = float32(64)
+	aiStepsControlWidth = float32(160)
 )
 
 // aiSwitch paints a switch in a slot.
@@ -668,6 +670,22 @@ func (state *State) paintAIModelInput(canvas *gfx.Canvas, bounds gfx.Rect) {
 	})
 }
 
+// paintAIStepsValue paints the step count between its − and + buttons. While
+// the field is being typed into it shows the edit, otherwise the stored value.
+func (state *State) paintAIStepsValue(canvas *gfx.Canvas, bounds gfx.Rect) {
+	cfg := &state.ai.cfg
+	value := strconv.Itoa(state.ai.settings.maxSteps)
+	if cfg.stepsEditing {
+		value = cfg.stepsInput.String()
+	}
+	focused := canvas.Focused() == hitAISetStepsValue
+	components.PaintInput(canvas, state.Theme(), bounds, components.InputSnapshot{
+		ID: hitAISetStepsValue, Label: state.messages.AISettings.MaxSteps,
+		Value: value, Alignment: gfx.AlignCenter,
+		Focused: focused, PlatformEditing: focused && cfg.stepsEditing,
+	})
+}
+
 func (state *State) paintAIBehaviour(page *settingsPage) {
 	pal, m := state.pal, state.messages.AISettings
 	settings := &state.ai.settings
@@ -684,8 +702,13 @@ func (state *State) paintAIBehaviour(page *settingsPage) {
 		settingsChoiceRow(page, m.AutoRun, m.AutoRunDesc, &risk, aiRiskChoices[:], state.aiRiskLabel,
 			func() { state.aiPut("ai.auto_up_to", aiRiskSetting(risk)) }, nil)
 		steps := settings.maxSteps
-		settingsChoiceRow(page, m.MaxSteps, m.MaxStepsDesc, &steps, aiStepsChoices[:], strconv.Itoa,
-			func() { state.aiPut("ai.max_steps", strconv.Itoa(steps)) }, nil)
+		page.lineWith(m.MaxSteps, m.MaxStepsDesc, aiStepsControlWidth, func() {
+			ui.Row(page.c).Gap(6).Shrink(0).Items(ui.Center).Children(func() {
+				page.button(hitAISetStepsMinus, "−", aiButtonOutline, steps <= aiStepsMin)
+				page.add(settingsControl{kind: controlStepsValue, slot: ui.Slot(page.c).Size(aiStepsValueWidth, 32)})
+				page.button(hitAISetStepsPlus, "+", aiButtonOutline, steps >= aiStepsMax)
+			})
+		})
 		lines := settings.contextLines
 		settingsChoiceRow(page, m.ContextLines, m.ContextLinesDesc, &lines, aiContextChoices[:], state.aiContextLabel,
 			func() { state.aiPut("ai.context_lines", strconv.Itoa(lines)) }, nil)

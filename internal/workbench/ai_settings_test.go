@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -122,6 +123,19 @@ func (world *settingsWorld) paint() (*gfx.Canvas, []string) {
 		texts = append(texts, text.Value)
 	}
 	return &canvas, texts
+}
+
+// setAISteps types a step count into the field and commits it, as the runtime
+// does when a person edits the number.
+func setAISteps(t *testing.T, state *State, steps int) {
+	t.Helper()
+	state.Click(hitAISetStepsValue)
+	editor := state.EditorFor(hitAISetStepsValue)
+	if editor == nil {
+		t.Fatalf("the step field has no editor")
+	}
+	editor.Insert(strconv.Itoa(steps))
+	state.Key(gfx.KeyEvent{Target: hitAISetStepsValue, Key: gfx.KeyEnter})
 }
 
 // type puts text into the field behind a hit the way the runtime does: the
@@ -811,24 +825,56 @@ func TestAIModelsCanBeAddedByNameAndPaged(t *testing.T) {
 	}
 }
 
+// The step field is a stepper: − and + move the count, the number itself takes
+// a typed value, and both ends stay inside the range the field accepts.
+func TestAIStepsFieldAdjustsAndAcceptsTypedCounts(t *testing.T) {
+	world := newSettingsWorld(t, newLister())
+	state := world.state
+	if got := state.ai.settings.maxSteps; got != 30 {
+		t.Fatalf("default steps = %d, want 30", got)
+	}
+	state.Click(hitAISetStepsPlus)
+	if got := state.ai.settings.maxSteps; got != 31 {
+		t.Fatalf("after + steps = %d, want 31", got)
+	}
+	state.Click(hitAISetStepsMinus)
+	if got := state.ai.settings.maxSteps; got != 30 {
+		t.Fatalf("after − steps = %d, want 30", got)
+	}
+	setAISteps(t, state, 999)
+	if got := state.ai.settings.maxSteps; got != aiStepsMax {
+		t.Fatalf("typed 999 steps = %d, want %d", got, aiStepsMax)
+	}
+	setAISteps(t, state, 0)
+	if got := state.ai.settings.maxSteps; got != aiStepsMin {
+		t.Fatalf("typed 0 steps = %d, want %d", got, aiStepsMin)
+	}
+	// At the lower end, − is a no-op rather than a way below the range.
+	state.Click(hitAISetStepsMinus)
+	if got := state.ai.settings.maxSteps; got != aiStepsMin {
+		t.Fatalf("− at the minimum steps = %d, want %d", got, aiStepsMin)
+	}
+}
+
 func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
 	m := state.messages.AISettings
-	for _, label := range []string{m.RiskHigh, "24", "120", "8 MiB"} {
+	for _, label := range []string{m.RiskHigh, "120", "8 MiB"} {
 		clickSettingsChoice(t, state, label)
 	}
+	setAISteps(t, state, 50)
 	state.Click(hitAISetRedact)
 	state.Click(hitAISetHistory)
 	db := world.db(t)
 	for key, want := range map[string]string{
-		"ai.auto_up_to": "high", "ai.max_steps": "24", "ai.context_lines": "120", "ai.attachment_text_mib": "8", "ai.redact": "off", "ai.history": "off",
+		"ai.auto_up_to": "high", "ai.max_steps": "50", "ai.context_lines": "120", "ai.attachment_text_mib": "8", "ai.redact": "off", "ai.history": "off",
 	} {
 		if got := settingValue(t, db, key); got != want {
 			t.Errorf("%s = %q, want %q", key, got, want)
 		}
 	}
-	want := aiSettings{autoUpTo: risk.High, maxSteps: 24, contextLines: 120, maxTextBytes: 8 << 20, redact: false, keepHistory: false, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
+	want := aiSettings{autoUpTo: risk.High, maxSteps: 50, contextLines: 120, maxTextBytes: 8 << 20, redact: false, keepHistory: false, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
 	if state.ai.settings != want {
 		t.Fatalf("settings = %+v, want %+v", state.ai.settings, want)
 	}
@@ -848,12 +894,12 @@ func TestAIBehaviourChoicesPersistAndSurviveANewWindow(t *testing.T) {
 	}
 	// And back.
 	clickSettingsChoice(t, again, m.RiskLow)
-	clickSettingsChoice(t, again, "6")
+	setAISteps(t, again, 12)
 	clickSettingsChoice(t, again, m.ContextOff)
 	clickSettingsChoice(t, again, "4 MiB")
 	again.Click(hitAISetRedact)
 	again.Click(hitAISetHistory)
-	if got, want := again.ai.settings, (aiSettings{autoUpTo: risk.Low, maxSteps: 6, contextLines: 0, maxTextBytes: attach.MaxTextBytes, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}); got != want {
+	if got, want := again.ai.settings, (aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 0, maxTextBytes: attach.MaxTextBytes, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}); got != want {
 		t.Fatalf("settings = %+v, want %+v", got, want)
 	}
 }
@@ -1078,9 +1124,10 @@ func TestAISettingsFocusOrderFollowsThePage(t *testing.T) {
 	// rest of the category is a page too, the Choices therefore lead the keyboard
 	// order, while their own order is the page's.
 	want := []gfx.ID{
-		choice(state.messages.AISettings.RiskLow), choice("12"), choice("60"), choice("4 MiB"),
+		choice(state.messages.AISettings.RiskLow), choice("60"), choice("4 MiB"),
 		hitAISetProviderRow.At(0), hitAISetProviderSwitch.At(0), hitAISetProviderEdit.At(0), hitAISetProviderDelete.At(0), hitAISetProviderAdd,
 		hitAISetFetchModels, hitAISetModelUse.At(1), hitAISetModelSwitch.At(1), hitAISetModelInput, hitAISetModelAdd,
+		hitAISetStepsMinus, hitAISetStepsValue, hitAISetStepsPlus,
 		hitAISetRedact, hitAISetHistory, hitAISetClearHistory,
 	}
 	position := -1

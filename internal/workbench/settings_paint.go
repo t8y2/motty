@@ -31,6 +31,7 @@ const (
 	controlHit                                   // the slot is a pointer target
 	controlSearch                                // the search box
 	controlModelInput                            // the assistant's model-name field
+	controlStepsValue                            // the assistant's step-count field between its − and + buttons
 	controlFindPreference
 	controlWordSeparators   // the terminal's word-selection separators
 	controlSwatches         // a strip of round color dots
@@ -270,6 +271,8 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 			state.paintSettingsSearchBox(canvas, rect)
 		case controlModelInput:
 			state.paintAIModelInput(canvas, rect)
+		case controlStepsValue:
+			state.paintAIStepsValue(canvas, rect)
 		case controlFindPreference:
 			state.paintFindSetting(canvas, control.id, rect)
 		case controlWordSeparators:

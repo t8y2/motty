@@ -3,6 +3,7 @@ package workbench
 import (
 	"path/filepath"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -152,18 +153,23 @@ func TestAssistantSettingsChangedInOneWindowReachOtherWindows(t *testing.T) {
 		window int
 		hit    gfx.ID // a switch
 		choice string // a page Choice's selected segment
+		steps  int    // a step count typed into the field
 	}{
-		{0, gfx.ID{}, "24"}, {0, gfx.ID{}, m.ContextOff}, {1, gfx.ID{}, m.RiskHigh},
-		{2, hitAISetRedact, ""}, {0, hitAISetHistory, ""}, {1, gfx.ID{}, "6"},
-		{1, hitAISetRedact, ""}, {2, gfx.ID{}, m.RiskLow},
+		{0, gfx.ID{}, "", 50}, {0, gfx.ID{}, m.ContextOff, 0}, {1, gfx.ID{}, m.RiskHigh, 0},
+		{2, hitAISetRedact, "", 0}, {0, hitAISetHistory, "", 0}, {1, gfx.ID{}, "", 100},
+		{1, hitAISetRedact, "", 0}, {2, gfx.ID{}, m.RiskLow, 0},
 	} {
 		origin := windows[change.window]
 		before := origin.ai.settings
 		what := change.choice
-		if !change.hit.IsZero() {
+		switch {
+		case change.steps != 0:
+			setAISteps(t, origin, change.steps)
+			what = strconv.Itoa(change.steps)
+		case !change.hit.IsZero():
 			origin.Click(change.hit)
 			what = tree.Text(change.hit)
-		} else {
+		default:
 			clickSettingsChoice(t, origin, change.choice)
 		}
 		want := origin.ai.settings
@@ -244,9 +250,9 @@ func TestAssistantSettingsRefreshKeepsAnActiveRequestAndDrafts(t *testing.T) {
 	b.ai.input.Insert("next question")
 	b.Click(hitAISetProviderAdd)
 	b.ai.cfg.name.Insert("unsaved provider")
-	clickSettingsChoice(t, a, "24")
+	setAISteps(t, a, 50)
 	b.Wake()
-	if b.ai.settings.maxSteps != 24 {
+	if b.ai.settings.maxSteps != 50 {
 		t.Fatal("the window running a request did not receive the setting")
 	}
 	if b.ai.run != run || b.ai.mode != agent.ModeAgent || b.ai.autoUpTo != &scope {
@@ -268,13 +274,13 @@ func TestAssistantSettingsPublicationLeavesUnusedStoresClosed(t *testing.T) {
 	options.WindowID = 4
 	dormant := newTestState(t, options)
 	hub.Add(dormant, nil)
-	clickSettingsChoice(t, windows[0], "24")
+	setAISteps(t, windows[0], 50)
 	dormant.Wake()
 	if dormant.ai.store != nil || dormant.ai.storeTried {
 		t.Fatal("publishing settings opened an unused assistant database")
 	}
 	dormant.Click(hitSettings)
-	if dormant.ai.settings.maxSteps != 24 {
+	if dormant.ai.settings.maxSteps != 50 {
 		t.Fatal("opening the settings page did not read the latest choice")
 	}
 }

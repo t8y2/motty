@@ -115,7 +115,7 @@ type aiSettings struct {
 }
 
 func defaultAISettings() aiSettings {
-	return aiSettings{autoUpTo: risk.Low, maxSteps: 12, contextLines: 60, maxTextBytes: attach.MaxTextBytes, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
+	return aiSettings{autoUpTo: risk.Low, maxSteps: 30, contextLines: 60, maxTextBytes: attach.MaxTextBytes, redact: true, keepHistory: true, mcpMode: gate.ModeObserve, agentMode: gate.ModeObserve}
 }
 
 // aiState is everything the assistant keeps in a window. It costs nothing until
@@ -331,7 +331,7 @@ func (state *State) reloadAISettings() {
 		}
 	})
 	read("ai.max_steps", func(v string) {
-		if n, err := strconv.Atoi(v); err == nil && n >= 1 && n <= 50 {
+		if n, err := strconv.Atoi(v); err == nil && n >= aiStepsMin && n <= aiStepsMax {
 			settings.maxSteps = n
 		}
 	})

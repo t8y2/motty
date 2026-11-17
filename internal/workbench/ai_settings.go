@@ -65,6 +65,9 @@ var (
 	hitAISetModelAdd          = tree.ID(aiSettingsHits, "ai-set-model-add")
 	hitAISetModelPrev         = tree.ID(aiSettingsHits, "ai-set-model-prev")
 	hitAISetModelNext         = tree.ID(aiSettingsHits, "ai-set-model-next")
+	hitAISetStepsMinus        = tree.ID(aiSettingsHits, "ai-set-steps-minus")
+	hitAISetStepsValue        = tree.ID(aiSettingsHits, "ai-set-steps-value")
+	hitAISetStepsPlus         = tree.ID(aiSettingsHits, "ai-set-steps-plus")
 	hitAISetFilterAll         = tree.ID(aiSettingsHits, "ai-set-filter-all")
 	hitAISetFilterAvailable   = tree.ID(aiSettingsHits, "ai-set-filter-avail")
 	hitAISetFilterFailed      = tree.ID(aiSettingsHits, "ai-set-filter-failed")
@@ -210,6 +213,10 @@ type aiSettingsUI struct {
 	modelFilter aiModelFilter
 	modelSort   aiModelSort
 	modelInput  text.Editor
+	stepsInput  text.Editor
+	// stepsEditing says the step field is being typed into; the stored setting
+	// changes when the edit is committed.
+	stepsEditing bool
 
 	probeResults    map[string]map[string]probe.Result
 	probeCancel     context.CancelFunc
@@ -294,11 +301,72 @@ func (state *State) aiSettingsOpened() {
 	}
 }
 
+// The step-count field accepts this range. The agent treats a zero MaxSteps as
+// unlimited, but the settings page never produces that value.
+const (
+	aiStepsMin = 1
+	aiStepsMax = 500
+)
+
+func aiClampSteps(steps int) int {
+	return min(max(steps, aiStepsMin), aiStepsMax)
+}
+
+// stepDigit accepts the characters a step count may hold.
+func stepDigit(r rune) bool { return r >= '0' && r <= '9' }
+
+// aiSetSteps stores a step count, clamped to the range the field accepts.
+func (state *State) aiSetSteps(steps int) {
+	steps = aiClampSteps(steps)
+	if steps == state.ai.settings.maxSteps {
+		return
+	}
+	state.aiPut("ai.max_steps", strconv.Itoa(steps))
+}
+
+// aiStepBy moves the step count by delta, committing a field edit first.
+func (state *State) aiStepBy(delta int) {
+	state.aiCommitSteps()
+	state.aiSetSteps(state.ai.settings.maxSteps + delta)
+}
+
+// aiBeginStepsEdit opens the field for typing, seeded with the stored value.
+func (state *State) aiBeginStepsEdit() {
+	cfg := &state.ai.cfg
+	if cfg.stepsEditing {
+		return
+	}
+	cfg.stepsInput = text.Editor{}
+	cfg.stepsInput.Insert(strconv.Itoa(state.ai.settings.maxSteps))
+	cfg.stepsInput.SetSelection(text.Range{Start: 0, End: cfg.stepsInput.RuneCount()})
+	cfg.stepsEditing = true
+}
+
+// aiCommitSteps stores what was typed in the field, if it is a number, and
+// closes the edit. An empty or malformed value leaves the setting unchanged.
+func (state *State) aiCommitSteps() {
+	cfg := &state.ai.cfg
+	if !cfg.stepsEditing {
+		return
+	}
+	cfg.stepsEditing = false
+	value := strings.TrimSpace(cfg.stepsInput.String())
+	cfg.stepsInput = text.Editor{}
+	steps, err := strconv.Atoi(value)
+	if err != nil {
+		return
+	}
+	state.aiSetSteps(steps)
+}
+
 func (state *State) aiSettingsClick(id gfx.ID) bool {
 	if !state.aiSettingsVisible() {
 		return false
 	}
 	cfg := &state.ai.cfg
+	if cfg.dialog == aiDialogNone && cfg.stepsEditing && id != hitAISetStepsValue && id != hitAISetStepsMinus && id != hitAISetStepsPlus {
+		state.aiCommitSteps()
+	}
 	if cfg.dialog != aiDialogNone {
 		state.aiDialogClick(id)
 		return true // nothing behind a dialog is reachable
@@ -308,6 +376,12 @@ func (state *State) aiSettingsClick(id gfx.ID) bool {
 	}
 	cfg.clearedDone, cfg.copied, cfg.tokenReset, cfg.notice = false, aiCopyIdle, false, ""
 	switch {
+	case id == hitAISetStepsMinus:
+		state.aiStepBy(-1)
+	case id == hitAISetStepsPlus:
+		state.aiStepBy(1)
+	case id == hitAISetStepsValue:
+		state.aiBeginStepsEdit()
 	case id == hitAICLILogin:
 		if provider, ok := state.aiSelectedProvider(); ok {
 			state.aiStartCLILogin(provider.ID, false)
@@ -579,6 +653,14 @@ func (state *State) aiSettingsPointer(event gfx.PointerEvent) (gfx.EventResult, 
 	if state.ai.login != nil && event.Target == hitAICLILoginTerminal {
 		return gfx.EventResult{Handled: true, Focus: hitAICLILoginTerminal}, true
 	}
+	// Pressing the step field selects the count as a whole and keeps the
+	// runtime from placing a caret inside it: typing replaces the value.
+	if state.aiSettingsVisible() && state.ai.cfg.dialog == aiDialogNone &&
+		event.Kind == gfx.PointerDown && event.Target == hitAISetStepsValue &&
+		(event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) {
+		state.aiBeginStepsEdit()
+		return gfx.EventResult{Focus: hitAISetStepsValue, FocusVisible: true, Handled: true, Repaint: true}, true
+	}
 	return gfx.EventResult{}, false
 }
 
@@ -604,6 +686,25 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	cfg := &state.ai.cfg
 	if cfg.dialog == aiDialogMCPAllowAll || cfg.dialog == aiDialogAgentAllowAll {
 		return gfx.EventResult{}, false // the alert's focus trap owns its keys
+	}
+	if cfg.dialog == aiDialogNone {
+		if cfg.stepsEditing && event.Target != hitAISetStepsValue {
+			state.aiCommitSteps()
+		}
+		if cfg.stepsEditing && event.Target == hitAISetStepsValue {
+			if event.Key == gfx.KeyTab {
+				// Leaving the field keeps what was typed, and Tab still moves on.
+				state.aiCommitSteps()
+			}
+			switch event.Key {
+			case gfx.KeyEnter:
+				state.aiCommitSteps()
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			case gfx.KeyEscape:
+				cfg.stepsEditing, cfg.stepsInput = false, text.Editor{}
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			}
+		}
 	}
 	if event.Key == gfx.KeyEnter && !event.Repeat {
 		switch {
@@ -647,6 +748,12 @@ func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {
 	case cfg.dialog == aiDialogNone && hit == hitAISetModelInput:
 		cfg.modelInput.Restrict(modelNameRune, 200)
 		return &cfg.modelInput
+	case cfg.dialog == aiDialogNone && hit == hitAISetStepsValue:
+		// Focus can reach the field by Tab without a click; open the edit then
+		// too, so typing works however the field was reached.
+		state.aiBeginStepsEdit()
+		cfg.stepsInput.Restrict(stepDigit, 3)
+		return &cfg.stepsInput
 	}
 	return nil
 }
