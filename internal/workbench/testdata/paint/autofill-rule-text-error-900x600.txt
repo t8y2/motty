@@ -117,7 +117,7 @@ text "Fixed text (kept encrypted in the vault)" {178 296.5 248.38379 18}
 text "" {189 324.5 498 20}
 text "Hosts or groups (comma separated; empty for all hosts)" {178 364.5 359.13965 18}
 text "all hosts" {189 392.5 522 20}
-text "Press Enter after" {204 436.5 518 20}
+text "Press Enter after" {204 436 518 21}
 text "Name the rule." {178 471.5 544 18}
 text "Cancel" {583.31445 510.5 64.61133 32}
 text "Save rule" {655.9258 510.5 80.07422 32}
@@ -179,11 +179,11 @@ hit "Prompt pattern (Go regular expression, matched against the last line)" text
 hit "Fixed text (kept encrypted in the vault)" textfield {178 318.5 544 32} disabled=false
 hit "Show password" button {693 322.5 24 24} disabled=false
 hit "Hosts or groups (comma separated; empty for all hosts)" textfield {178 386.5 544 32} disabled=false
+hit "Press Enter after" button {204 436 518 21} disabled=false
+hit "Press Enter after" checkbox {168 430.5 40 32} disabled=false
 hit "saved password" button {178 258.5 194.16406 30} disabled=false
 hit "one-time code" button {380.16406 258.5 182.65918 30} disabled=false
 hit "fixed text" button {570.82324 258.5 151.17676 30} disabled=false
-hit "Press Enter after" checkbox {168 430.5 40 32} disabled=false
-hit "Press Enter after" button {208 436.5 514 20} disabled=false
 hit "Cancel" button {573.31445 510.5 64.61133 32} disabled=false
 hit "Save rule" button {645.9258 510.5 80.07422 32} disabled=false
 hit "Search" textfield {248 51 246.68213 36} disabled=false

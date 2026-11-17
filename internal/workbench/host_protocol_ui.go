@@ -664,15 +664,13 @@ const (
 
 // hostVNCRowsBody is where the desktop switches' body put each checkbox row.
 type hostVNCRowsBody struct {
-	tunnel, clipboard, chromeless, console, remoteAudio, standardSecurity, standardSecurityHelp ui.Box
+	standardSecurityHelp ui.Box
 }
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
 type hostAlgoRowsBody struct {
 	algo, custom, login, otp, scan, paste, remove ui.Box
-	x11, agentFwd, noHistory, interactive         ui.Box
-	identitiesOnly, identitiesOnlyHelp            ui.Box
-	agentAccess, agentHelp                        ui.Box
+	identitiesOnlyHelp, agentHelp                 ui.Box
 }
 
 // paintAlgorithmRows draws the SSH algorithm choice and, for a custom one, the
@@ -695,15 +693,9 @@ func (state *State) paintAlgorithmRows(canvas *gfx.Canvas) {
 		removeRect = b.remove.Rect()
 	}
 	state.paintOTPRow(canvas, b.otp.Rect(), b.scan.Rect(), b.paste.Rect(), removeRect)
-	state.paintDialogCheckbox(canvas, hitDialogForwardX11, m.X11Forward, editor.forwardX11, b.x11)
-	state.paintDialogCheckbox(canvas, hitDialogAgentForward, m.AgentForward, editor.agentForward, b.agentFwd)
-	state.paintDialogCheckbox(canvas, hitDialogNoHistory, state.messages.History.HostNoRecord, editor.noHistory, b.noHistory)
-	state.paintDialogCheckbox(canvas, hitDialogInteractiveOnly, m.InteractiveOnly, editor.interactiveOnly, b.interactive)
 	if editor.auth == authAutomatic {
-		state.paintDialogCheckbox(canvas, hitDialogIdentitiesOnly, m.IdentitiesOnly, editor.identitiesOnly, b.identitiesOnly)
 		state.paintHelpIcon(canvas, hitDialogIdentitiesOnlyHelp, m.IdentitiesOnlyNote, b.identitiesOnlyHelp.Rect())
 	}
-	state.paintDialogCheckbox(canvas, hitDialogAgentAccess, m.AgentAccess, editor.agentAccess, b.agentAccess)
 	// After the checkbox, whose words reach to the end of the row, so that this is
 	// the hit on top where the two meet.
 	state.paintHelpIcon(canvas, hitDialogAgentAccessHelp, m.AgentAccessNote, b.agentHelp.Rect())
@@ -738,15 +730,15 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 			})
 		}
 		heading(m.AdvancedSession)
-		b.x11 = state.declareDialogCheckboxC(c, m.X11Forward, 4, 0)
-		b.agentFwd = state.declareDialogCheckboxC(c, m.AgentForward, 12, 0)
-		b.noHistory = state.declareDialogCheckboxC(c, state.messages.History.HostNoRecord, 12, 0)
-		b.interactive = state.declareDialogCheckboxC(c, m.InteractiveOnly, 12, 0)
+		state.declareDialogCheck(c, hitDialogForwardX11, m.X11Forward, editor.forwardX11, 4, 0)
+		state.declareDialogCheck(c, hitDialogAgentForward, m.AgentForward, editor.agentForward, 12, 0)
+		state.declareDialogCheck(c, hitDialogNoHistory, state.messages.History.HostNoRecord, editor.noHistory, 12, 0)
+		state.declareDialogCheck(c, hitDialogInteractiveOnly, m.InteractiveOnly, editor.interactiveOnly, 12, 0)
 		if editor.auth == authAutomatic {
-			b.identitiesOnly, b.identitiesOnlyHelp = state.declareDialogCheckboxHelpC(c, m.IdentitiesOnly, 12, 0)
+			_, b.identitiesOnlyHelp = state.declareDialogCheckHelp(c, hitDialogIdentitiesOnly, m.IdentitiesOnly, editor.identitiesOnly, 12, 0)
 		}
 		heading(m.AdvancedAgents)
-		b.agentAccess, b.agentHelp = state.declareDialogCheckboxHelpC(c, m.AgentAccess, 4, 0)
+		_, b.agentHelp = state.declareDialogCheckHelp(c, hitDialogAgentAccess, m.AgentAccess, editor.agentAccess, 4, 0)
 		state.declareHostIdleKeepAliveRows(c)
 	})
 }
@@ -803,22 +795,10 @@ func (state *State) desktopRowsHeight() float32 {
 func (state *State) paintVNCRows(canvas *gfx.Canvas) {
 	editor, m := &state.editor, state.messages.Desktop
 	b := &editor.form.vncBody
-	viaLabel := m.ViaSSH
-	if state.desktopRouteConfigured() {
-		viaLabel = m.ViaSSHRouted
-		state.paintDialogCheckboxDisabled(canvas, hitDialogViaSSH, viaLabel, editor.viaSSH, b.tunnel)
-	} else {
-		state.paintDialogCheckbox(canvas, hitDialogViaSSH, viaLabel, editor.viaSSH, b.tunnel)
-	}
-	state.paintDialogCheckbox(canvas, hitDialogClipboard, m.ShareClipboard, editor.clipboard, b.clipboard)
-	state.paintDialogCheckbox(canvas, hitDialogChromeless, m.HideBars, editor.chromeless, b.chromeless)
 	// The rows this frame laid out are the ones before a protocol click wrote
 	// its new value at the end of the declaration: painting the console row
 	// needs the RDP rows on the page, not just RDP in effect.
 	if editor.form.layoutProtocol == protocolRDP {
-		state.paintDialogCheckbox(canvas, hitDialogConsole, m.ConsoleSession, editor.console, b.console)
-		state.paintDialogCheckbox(canvas, hitDialogRemoteAudio, m.RemoteAudio, !editor.noAudio, b.remoteAudio)
-		state.paintDialogCheckbox(canvas, hitDialogStandardSecurity, m.StandardSecurity, editor.standardSecurity, b.standardSecurity)
 		// After the checkbox, whose words reach to the end of the row, so that
 		// this is the hit on top where the two meet.
 		state.paintHelpIcon(canvas, hitDialogStandardSecurityHelp, m.StandardSecurityNote, b.standardSecurityHelp.Rect())
@@ -839,16 +819,16 @@ func (state *State) declareHostVNCRows(c ui.C) {
 	}
 	ui.Column(c).Fill().Children(func() {
 		if routed {
-			b.tunnel = state.declareDialogCheckboxMutedC(c, viaLabel, 4, 0)
+			state.declareDialogCheckDisabled(c, hitDialogViaSSH, viaLabel, editor.viaSSH, 4, 0)
 		} else {
-			b.tunnel = state.declareDialogCheckboxC(c, viaLabel, 4, 0)
+			state.declareDialogCheck(c, hitDialogViaSSH, viaLabel, editor.viaSSH, 4, 0)
 		}
-		b.clipboard = state.declareDialogCheckboxC(c, m.ShareClipboard, 12, 0)
-		b.chromeless = state.declareDialogCheckboxC(c, m.HideBars, 12, 0)
+		state.declareDialogCheck(c, hitDialogClipboard, m.ShareClipboard, editor.clipboard, 12, 0)
+		state.declareDialogCheck(c, hitDialogChromeless, m.HideBars, editor.chromeless, 12, 0)
 		if editor.protocol == protocolRDP {
-			b.console = state.declareDialogCheckboxC(c, m.ConsoleSession, 12, 0)
-			b.remoteAudio = state.declareDialogCheckboxC(c, m.RemoteAudio, 12, 0)
-			b.standardSecurity, b.standardSecurityHelp = state.declareDialogCheckboxHelpC(c, m.StandardSecurity, 12, 0)
+			state.declareDialogCheck(c, hitDialogConsole, m.ConsoleSession, editor.console, 12, 0)
+			state.declareDialogCheck(c, hitDialogRemoteAudio, m.RemoteAudio, !editor.noAudio, 12, 0)
+			_, b.standardSecurityHelp = state.declareDialogCheckHelp(c, hitDialogStandardSecurity, m.StandardSecurity, editor.standardSecurity, 12, 0)
 		}
 	})
 }

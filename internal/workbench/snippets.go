@@ -108,7 +108,6 @@ type snippetsUI struct {
 	nameBound      bool
 	dialogCommand  ui.Box
 	dialogGroup    ui.Box
-	dialogRun      ui.Box
 	dialogShortcut ui.Box
 
 	// The page: the selected row and the count under the table.
@@ -659,7 +658,7 @@ func (state *State) declareSnippetDialogBody(c ui.C) {
 		})
 		form.dialogCommand = ui.Slot(c).Height(140).MarginSides(0, 0, 6, 0)
 		form.dialogGroup = ui.Slot(c).Height(62).MarginSides(0, 0, 6, 0)
-		form.dialogRun = state.declareDialogCheckboxC(c, m.SnippetRun, 7, 0)
+		state.declareDialogCheck(c, hitSnippetRun, m.SnippetRun, form.run, 7, 0)
 		ui.Row(c).Height(32).Items(ui.Center).MarginSides(12, 0, 0, 2).Children(func() {
 			ui.Text(c, m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
 			form.dialogShortcut = ui.Slot(c).Size(240, 32).Shrink(0)
@@ -691,7 +690,6 @@ func (state *State) paintSnippetDialogFields(canvas *gfx.Canvas) {
 	}
 	components.PaintTextarea(canvas, theme, content, snapshot)
 	state.paintSnippetGroupField(canvas, form.dialogGroup.Rect())
-	state.paintDialogCheckbox(canvas, hitSnippetRun, m.SnippetRun, form.run, form.dialogRun)
 	label := m.SnippetShortcutNone
 	switch {
 	case form.capturing:

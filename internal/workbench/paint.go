@@ -162,6 +162,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.syncVisible()
 	state.syncSFTPTabs()
 	state.reveal.beginPaint()
+	state.chrome.flags.used, state.chrome.flags.stopCount = 0, 0
 	state.toolbarDock.count = 0
 	state.toolbarDock.zones = [7]gfx.Rect{}
 	state.toolbarDock.bottomViewports = [2]gfx.Rect{}
@@ -1251,6 +1252,8 @@ type chromeLayout struct {
 	// passwordSave is the slot the save box of the password dialog was laid out
 	// in.
 	passwordSave ui.Box
+	// flags are the values the page's checkboxes and switches are declared over.
+	flags pageFlags
 	// hostDialogTitle labels the host form's scroll viewport. The handlers below
 	// are the form's Draw and DrawOver declarations kept once, so a warm repaint
 	// of the form allocates nothing.
@@ -3246,8 +3249,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if idleKeepAliveProtocol(protocol) {
 		state.paintAdvancedSection(canvas)
 	}
-	// The choices are the page's controls: keep the option the tab ring reaches
-	// in the form's stops, by the identity its paint reported.
+	// The checkboxes and the choices are the page's controls: keep them in the form's
+	// stops, by the identity their paint reported.
+	state.rememberDialogChecks()
 	state.rememberHostChoice(canvas, b.protocol.Rect(), &editor.form.choiceIDs.protocol, state.hostProtocolChoiceLabel(editor.protocol))
 	if b.flow.Valid() {
 		state.rememberHostChoice(canvas, b.flow.Rect(), &editor.form.choiceIDs.flow, state.hostFlowChoiceLabel(editor.flow))

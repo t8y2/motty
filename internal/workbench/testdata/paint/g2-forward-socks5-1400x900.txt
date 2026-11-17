@@ -49,12 +49,12 @@ rect {{699.5 458.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 600 {0 0 0 0} false 
 rect {{825.5 458.96 1 14.08} {0.2 0.23529412 0.2901961 0} 0 600 {0 0 0 0} false #54}
 rect {{448 508 120.96 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #56}
 rect {{449 509 118.96 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #57}
-rect {{448 392 504 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #59}
-rect {{449 393 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #60}
-rect {{450 550 16 16} {0.216 0.22917646 0.24894118 1} 4 600 {0 0 0 0} false #62}
-rect {{451 551 14 14} {0.11146667 0.1264 0.1488 1} 3 600 {0 0 0 0} false #63}
-rect {{450 580 16 16} {0.216 0.22917646 0.24894118 1} 4 600 {0 0 0 0} false #65}
-rect {{451 581 14 14} {0.11146667 0.1264 0.1488 1} 3 600 {0 0 0 0} false #66}
+rect {{450 550 16 16} {0.216 0.22917646 0.24894118 1} 4 600 {0 0 0 0} false #59}
+rect {{451 551 14 14} {0.11146667 0.1264 0.1488 1} 3 600 {0 0 0 0} false #60}
+rect {{450 580 16 16} {0.216 0.22917646 0.24894118 1} 4 600 {0 0 0 0} false #62}
+rect {{451 581 14 14} {0.11146667 0.1264 0.1488 1} 3 600 {0 0 0 0} false #63}
+rect {{448 392 504 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #65}
+rect {{449 393 502 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #66}
 rect {{780.1543 628 64.61133 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false #67}
 rect {{852.7656 628 103.234375 32} {0.8862745 0.90588236 0.93333334 1} 7.5 600 {0 0 0 0} false #68}
 rect {{223 51 485 36} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 1187 855} true #70}
@@ -68,9 +68,9 @@ shadow {{267 307 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 1151 739} true #25}
 shadow {{267 371 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 1151 739} true #32}
 shadow {{448 334 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #43}
 shadow {{448 508 120.96 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #55}
-shadow {{448 392 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #58}
-shadow {{450 550 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #61}
-shadow {{450 580 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #64}
+shadow {{450 550 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #58}
+shadow {{450 580 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #61}
+shadow {{448 392 504 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #64}
 shadow {{223 51 485 36} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #69}
 shadow {{247 105 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {205 37 1187 855} true #72}
 text "Hosts" {52 114.5 37.180664 21}
@@ -125,8 +125,8 @@ text "HTTP CONNECT" {835.50195 450 126 32}
 text "Local port" {448 486 64.271484 18}
 text "8080" {459 514 98.96 20}
 text "Clients choose each destination through the proxy." {589.12 508 362.88 19}
-text "Relay through the host's shell" {474 548 190.16211 20}
-text "Resume after reconnect" {474 578 154.69043 20}
+text "Relay through the host's shell" {474 547.5 190.16211 21}
+text "Resume after reconnect" {474 577.5 154.69043 21}
 text "SSH host" {448 370 58.973633 18}
 text "Production" {459 393 461 30}
 text "Cancel" {790.1543 628 64.61133 32}
@@ -190,13 +190,13 @@ hit "Remote" radio {574 450 126 32} disabled=false
 hit "SOCKS5" radio {700 450 126 32} disabled=false
 hit "HTTP CONNECT" radio {826 450 126 32} disabled=false
 hit "Local port" textfield {448 508 120.96 32} disabled=false
+hit "Relay through the host's shell" button {474 547.5 190.16211 21} disabled=false
+hit "Relay through the host's shell" checkbox {438 542 40 32} disabled=false
+hit "Resume after reconnect" button {474 577.5 154.69043 21} disabled=false
+hit "Resume after reconnect" checkbox {438 572 40 32} disabled=false
 hit "SSH host" button {448 392 504 32} disabled=false
 hit "SSH host" combobox {459 393 461 30} disabled=false
-hit "Relay through the host's shell" checkbox {438 542 40 32} disabled=false
-hit "Relay through the host's shell" button {478 548 474 20} disabled=false
 hit "For a server that refuses forwarded channels but gives a shell, such as a bastion that only allows an interactive session. Each connection opens a terminal on the host, runs the relay command there, and carries the stream through it. Needs the relay program on the host; %h and %p become this forward's destination host and port." button {672.1621 550 16 16} disabled=false
-hit "Resume after reconnect" checkbox {438 572 40 32} disabled=false
-hit "Resume after reconnect" button {478 578 474 20} disabled=false
 hit "When the SSH connection drops unexpectedly, start this forward again once it has reconnected. Turn on Automatic reconnect in Settings → Connection first." button {636.6904 580 16 16} disabled=false
 hit "Cancel" button {780.1543 628 64.61133 32} disabled=false
 hit "Add Forward" button {852.7656 628 103.234375 32} disabled=false

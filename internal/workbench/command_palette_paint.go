@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
@@ -109,7 +110,7 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 	palette := &state.commandPalette
 	sending := palette.snippets
 	palette.listBox = ui.Box{}
-	palette.sendInputBox, palette.sendButtonBox, palette.sendRunBox = ui.Box{}, ui.Box{}, ui.Box{}
+	palette.sendInputBox = ui.Box{}
 	column := ui.Column(c).Fill()
 	if sending {
 		column = column.DrawOver(palette.chromeOver)
@@ -161,7 +162,8 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 		ui.Spacer(c).Grow(1)
 		ui.Row(c).Height(36).FillWidth().Shrink(0).Gap(8).MarginSides(12, 0, 0, 0).Children(func() {
 			palette.sendInputBox = ui.Slot(c).Height(36).Grow(1)
-			palette.sendButtonBox = ui.Slot(c).Size(84, 36).Shrink(0)
+			ui.Button(c, state.messages.Tools.SendCommandButton).Hit(hitSnippetSendButton, state.messages.Tools.SendCommandButton).
+				Size(84, 36).Shrink(0).Disabled(strings.TrimSpace(state.snippetSend.input.String()) == "")
 		})
 		ui.Row(c).Height(32).FillWidth().Shrink(0).Gap(12).Items(ui.Center).MarginSides(8, 0, 0, 0).Children(func() {
 			ui.Row(c).Size(270, 32).Shrink(0).Children(func() {
@@ -173,11 +175,7 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 				ui.Text(c, fmt.Sprintf(state.messages.Tools.SendChosenFmt, len(state.snippetSend.chosen))).FontSize(metrics.FontSizeS).Color(state.pal.muted).LineHeight(20).Shrink(0)
 			}
 			ui.Spacer(c).Grow(1)
-			side := components.CheckboxExtent(state.Theme())
-			palette.sendRunBox = ui.Row(c).Height(20).Gap(24-side).Items(ui.Center).MarginSides(0, 0, 0, 2).Children(func() {
-				ui.Slot(c).Size(side, side).Shrink(0)
-				ui.Text(c, state.messages.Tools.SendRun).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(20).Grow(1)
-			})
+			state.declareDialogCheck(c, hitSendRun, state.messages.Tools.SendRun, state.snippetSend.runs(), 0, 0)
 		})
 	})
 }
@@ -334,7 +332,7 @@ func (state *State) paintCommandPaletteChrome(d *ui.DrawContext) {
 	if !palette.snippets {
 		return
 	}
-	state.paintSnippetSend(d.Canvas, palette.sendInputBox, palette.sendButtonBox, palette.sendRunBox)
+	state.paintSnippetSend(d.Canvas, palette.sendInputBox)
 }
 
 // commandPaletteHeight is the dialog's height: the snippet picker adds the form

@@ -160,7 +160,6 @@ func (state *State) declareSettingsWorkspace(c ui.C) {
 	}
 
 	view.controls, view.actions, view.colors = view.controls[:0], view.actions[:0], view.colors[:0]
-	view.switchesUsed = 0
 	page := settingsPage{state: state, c: c, width: min(settingsColumnMax, max(areaWidth-64, 0)), rowHeight: settingsRowHeight}
 	// The wheel in settings.go owns the targets; each area starts at the value
 	// the page shows on the way to one, and the paint clamps the target
@@ -773,25 +772,9 @@ func settingsButtonVariant(button ui.Box, variant components.ButtonVariant) ui.B
 	return button
 }
 
-// switchOn is the value a page switch is declared over: the application keeps
-// the setting, and a press is the central click handler's, so the switch only
-// shows it. The array is the settings view's, reused by every paint.
-func (page *settingsPage) switchOn(on bool) *bool {
-	view := &page.state.settings
-	if view.switchesUsed == len(view.switches) {
-		return new(bool)
-	}
-	flag := &view.switches[view.switchesUsed]
-	view.switchesUsed++
-	*flag = on
-	return flag
-}
-
 // switchSlot declares a switch with the application's identity and returns it.
 func (page *settingsPage) switchSlot(id gfx.ID, on, disabled bool, label string) ui.Box {
-	flag := page.switchOn(on)
-	*flag = on
-	return ui.Switch(page.c, flag, "").Label(label).Hit(id, label).Disabled(disabled).Shrink(0)
+	return ui.Switch(page.c, page.state.pageFlag(on), "").Label(label).Hit(id, label).Disabled(disabled).Shrink(0)
 }
 
 // button declares a small button with the application's identity and returns it.

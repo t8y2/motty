@@ -57,11 +57,6 @@ type settingsUI struct {
 	count    int
 	results  [maxSettingsEntries]settingsEntry
 
-	// switches are the values the page's switches are declared over, one a switch, and
-	// switchesUsed how many this paint has taken.
-	switches     [64]bool
-	switchesUsed int
-
 	// jump is the anchor the next paint scrolls to; jumped says it has, so one
 	// more paint follows.
 	jump   string

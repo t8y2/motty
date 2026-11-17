@@ -192,12 +192,12 @@ func (state *State) declareForwardDialogBody(c ui.C) {
 			}
 		})
 		if modeUsesServerDestination(mode) {
-			b.viaShell, b.viaShellHelp = state.declareDialogCheckboxHelpC(c, messages.ForwardFieldViaShell, 4, 6)
+			_, b.viaShellHelp = state.declareDialogCheckHelp(c, hitForwardDialogViaShell, messages.ForwardFieldViaShell, state.forwardEditor.viaShell, 4, 6)
 			if editor.viaShell {
 				state.declareForwardDialogField(c, hitForwardDialogRelay, forwardFieldRelay, messages.ForwardFieldRelay, messages.ForwardRelayPlaceholder).FillWidth()
 			}
 		}
-		b.resume, b.resumeHelp = state.declareDialogCheckboxHelpC(c, messages.ForwardFieldResume, 4, 6)
+		_, b.resumeHelp = state.declareDialogCheckHelp(c, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, 4, 6)
 		if state.forwardDialogError != "" {
 			ui.Text(c, state.forwardDialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).MarginSides(6, 0, 0, 0)
 		}
@@ -212,10 +212,8 @@ func (state *State) paintForwardDialogFields(canvas *gfx.Canvas, mode portforwar
 	b := &state.forwardEditor.dialogBody
 	state.paintForwardHostField(canvas, b.host.Rect())
 	if modeUsesServerDestination(mode) {
-		state.paintDialogCheckbox(canvas, hitForwardDialogViaShell, messages.ForwardFieldViaShell, state.forwardEditor.viaShell, b.viaShell)
 		state.paintHelpIcon(canvas, hitForwardDialogViaShellHelp, messages.ForwardViaShellHelp, b.viaShellHelp.Rect())
 	}
-	state.paintDialogCheckbox(canvas, hitForwardDialogResume, messages.ForwardFieldResume, state.forwardEditor.resume, b.resume)
 	state.paintHelpIcon(canvas, hitForwardDialogResumeHelp, messages.ForwardResumeHelp, b.resumeHelp.Rect())
 }
 

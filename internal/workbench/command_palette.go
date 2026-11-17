@@ -105,16 +105,14 @@ type commandPalette struct {
 	// The boxes the declaration laid out, painted after the page ends: the list
 	// window the scroll area shows and the send form's controls. The search field
 	// is a page field, bound to the editor the palette keeps.
-	searchField   ui.Field
-	searchBound   bool
-	searchLabel   string
-	searchPlace   string
-	listBox       ui.Box
-	sendInputBox  ui.Box
-	sendButtonBox ui.Box
-	sendRunBox    ui.Box
-	emptyText     string
-	bodyWidth     float32
+	searchField  ui.Field
+	searchBound  bool
+	searchLabel  string
+	searchPlace  string
+	listBox      ui.Box
+	sendInputBox ui.Box
+	emptyText    string
+	bodyWidth    float32
 	// sortLeft, sortTop and sortHeight place the new-tab picker's
 	// default/workspaces/recent switch in the dialog's title row, relative to
 	// the dialog body the page declares.

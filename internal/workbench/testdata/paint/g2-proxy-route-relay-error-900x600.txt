@@ -33,14 +33,14 @@ rect {{0 0 900 600} {0 0 0 0.5} 0 600 {0 0 0 0} false #36}
 rect {{200 78.5 500 443} {0.2 0.23529412 0.2901961 1} 11 600 {0 0 0 0} false #37}
 rect {{201 79.5 498 441} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} false #38}
 rect {{652 94.5 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false #39}
-rect {{228 325.5 444 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #41}
-rect {{229 326.5 442 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #42}
-rect {{228 167.5 444 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #44}
-rect {{229 168.5 442 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #45}
-rect {{228 231.5 444 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #47}
-rect {{229 232.5 442 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #48}
-rect {{230 279.5 16 16} {0.8862745 0.90588236 0.93333334 1} 4 600 {0 0 0 0} false #50}
-rect {{231 280.5 14 14} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #51}
+rect {{230 279.5 16 16} {0.8862745 0.90588236 0.93333334 1} 4 600 {0 0 0 0} false #41}
+rect {{231 280.5 14 14} {0.8862745 0.90588236 0.93333334 1} 3 600 {0 0 0 0} false #42}
+rect {{228 325.5 444 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #44}
+rect {{229 326.5 442 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #45}
+rect {{228 167.5 444 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #47}
+rect {{229 168.5 442 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #48}
+rect {{228 231.5 444 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false #50}
+rect {{229 232.5 442 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false #51}
 rect {{516.2803 465.5 64.61133 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false #52}
 rect {{588.8916 465.5 87.1084 32} {0.8862745 0.90588236 0.93333334 1} 7.5 600 {0 0 0 0} false #53}
 rect {{223 51 271.68213 36} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 687 555} true #55}
@@ -52,10 +52,10 @@ shadow {{267 201 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #15}
 shadow {{261 254 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #21}
 shadow {{267 307 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #24}
 shadow {{267 371 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #30}
-shadow {{228 325.5 444 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #40}
-shadow {{228 167.5 444 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #43}
-shadow {{228 231.5 444 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #46}
-shadow {{230 279.5 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #49}
+shadow {{230 279.5 16 16} 4 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #40}
+shadow {{228 325.5 444 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #43}
+shadow {{228 167.5 444 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #46}
+shadow {{228 231.5 444 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #49}
 shadow {{223 51 271.68213 36} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 687 555} true #54}
 shadow {{247 105 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {205 37 687 555} true #57}
 text "Hosts" {52 114.5 37.180664 21}
@@ -96,7 +96,7 @@ text "deploy" {361 381.5 170 19}
 text "staging.example.com" {570 368 162.75 22}
 text "Not connected" {765 368 109 22}
 text "New Jump Route" {224 102.5 452 17}
-text "Relay through the jump host's shell" {254 277.5 225.45605 20}
+text "Relay through the jump host's shell" {254 277 225.45605 21}
 text "Relay command (%h host, %p port, %r user)" {228 303.5 286.52832 18}
 text "nc %h %p" {239 331.5 422 20}
 text "The jump host has no command after login, so the relay starts right away." {234 367.5 432 19}
@@ -160,13 +160,13 @@ hit "Staging" button {223 347 651 64} disabled=false
 hit "Staging" checkbox {255 363 40 32} disabled=false
 hit "" region {200 78.5 500 443} disabled=false
 hit "Close dialog" button {652 94.5 32 32} disabled=false
+hit "Relay through the jump host's shell" button {254 277 225.45605 21} disabled=false
+hit "Relay through the jump host's shell" checkbox {218 271.5 40 32} disabled=false
 hit "Relay command (%h host, %p port, %r user)" textfield {228 325.5 444 32} disabled=false
 hit "Target Host" button {228 167.5 444 32} disabled=false
 hit "Target Host" combobox {239 168.5 401 30} disabled=false
 hit "Jump Host" button {228 231.5 444 32} disabled=false
 hit "Jump Host" combobox {239 232.5 401 30} disabled=false
-hit "Relay through the jump host's shell" checkbox {218 271.5 40 32} disabled=false
-hit "Relay through the jump host's shell" button {258 277.5 414 20} disabled=false
 hit "For a jump host that only gives a shell, such as a bastion where you switch accounts first. Motty opens a terminal on the jump host, types its command after login, then runs the relay command there and carries this host's connection through it. Files, monitoring and port forwarding keep working. Needs the relay program on the jump host, and a switch that asks for no password." button {487.45605 279.5 16 16} disabled=false
 hit "Cancel" button {516.2803 465.5 64.61133 32} disabled=false
 hit "Add Route" button {588.8916 465.5 87.1084 32} disabled=false

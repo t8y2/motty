@@ -22,8 +22,6 @@ type tabsClose struct {
 	// again" box.
 	running []string
 	quiet   bool
-	// quietRow is the box the quiet checkbox is painted in.
-	quietRow ui.Box
 }
 
 // sessionRunning reports whether closing the session would end something live: a
@@ -189,12 +187,8 @@ func (state *State) declareCloseTabsDialog(c ui.C) {
 		if !asking {
 			return
 		}
-		column := ui.Column(c).Fill()
-		column.Children(func() {
+		ui.Column(c).Fill().Children(func() {
 			state.declareCloseTabsBody(c)
-		})
-		column.DrawOver(func(d *ui.DrawContext) {
-			state.paintDialogCheckbox(d.Canvas, hitTabsCloseQuiet, messages.CloseRunningAsk, state.tabsClose.quiet, state.tabsClose.quietRow)
 		})
 	})
 	dialog.Footer(func() {
@@ -217,5 +211,5 @@ func (state *State) declareCloseTabsBody(c ui.C) {
 		ui.Text(c, name).FontSize(metrics.FontSizeM).Color(state.pal.text).LineHeight(20)
 	}
 	ui.Spacer(c).Grow(1)
-	pending.quietRow = state.declareDialogCheckboxC(c, messages.CloseRunningAsk, 0, 0)
+	state.declareDialogCheck(c, hitTabsCloseQuiet, messages.CloseRunningAsk, pending.quiet, 0, 0)
 }

@@ -11,6 +11,9 @@ import (
 
 func init() {
 	for category := settingsGeneral; category < settingsCategoryCount; category++ {
+		if category == settingsMCP {
+			continue // it shows the path of the test binary
+		}
 		extraPaintScenes = append(extraPaintScenes, plainScene(fmt.Sprintf("g6-settings-%d", category), func(t *testing.T, s *State) {
 			s.openSettings()
 			s.selectSettingsCategory(category)

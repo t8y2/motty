@@ -457,7 +457,7 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 	column.Children(func() {
 		b.target = ui.Slot(c).Height(rowHeight)
 		b.jump = ui.Slot(c).Height(rowHeight)
-		b.via, b.viaHelp = state.declareDialogCheckboxHelpC(c, messages.ProxyFieldViaShell, 4, 6)
+		_, b.viaHelp = state.declareDialogCheckHelp(c, hitProxyDialogViaShell, messages.ProxyFieldViaShell, state.proxyEditor.viaShell, 4, 6)
 		if viaShell {
 			if !editor.relayBound {
 				editor.relayText.Bind(&editor.relay)
@@ -482,7 +482,6 @@ func (state *State) paintProxyDialogFields(canvas *gfx.Canvas) {
 	b := &state.proxyEditor.dialogBody
 	state.paintProxyHostField(canvas, b.target.Rect(), true)
 	state.paintProxyHostField(canvas, b.jump.Rect(), false)
-	state.paintDialogCheckbox(canvas, hitProxyDialogViaShell, messages.ProxyFieldViaShell, state.proxyEditor.viaShell, b.via)
 	state.paintHelpIcon(canvas, hitProxyDialogViaHelp, messages.ProxyViaShellHelp, b.viaHelp.Rect())
 }
 

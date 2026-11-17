@@ -118,7 +118,7 @@ text "one-time code" {645.16406 462 92.85254 21}
 text "fixed text" {835.82324 462 59.370117 21}
 text "Hosts or groups (comma separated; empty for all hosts)" {428 495.5 359.13965 18}
 text "all hosts" {439 523.5 522 20}
-text "Press Enter after" {454 567.5 518 20}
+text "Press Enter after" {454 567 518 21}
 text "Cancel" {833.31445 611.5 64.61133 32}
 text "Save rule" {905.9258 611.5 80.07422 32}
 text "Search hosts or ssh user@hostname…" {254 59 443 20}
@@ -177,11 +177,11 @@ hit "Close dialog" button {952 248.5 32 32} disabled=false
 hit "Name" textfield {428 321.5 544 32} disabled=false
 hit "Prompt pattern (Go regular expression, matched against the last line)" textfield {428 389.5 544 32} disabled=false
 hit "Hosts or groups (comma separated; empty for all hosts)" textfield {428 517.5 544 32} disabled=false
+hit "Press Enter after" button {454 567 518 21} disabled=false
+hit "Press Enter after" checkbox {418 561.5 40 32} disabled=false
 hit "saved password" button {428 457.5 196.16406 30} disabled=false
 hit "one-time code" button {632.16406 457.5 182.65918 30} disabled=false
 hit "fixed text" button {822.82324 457.5 149.17676 30} disabled=false
-hit "Press Enter after" checkbox {418 561.5 40 32} disabled=false
-hit "Press Enter after" button {458 567.5 514 20} disabled=false
 hit "Cancel" button {823.31445 611.5 64.61133 32} disabled=false
 hit "Save rule" button {895.9258 611.5 80.07422 32} disabled=false
 hit "Search" textfield {248 51 460 36} disabled=false
