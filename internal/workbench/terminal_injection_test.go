@@ -112,6 +112,80 @@ func TestAConnectionLostEndsTheAssistantCommand(t *testing.T) {
 	}
 }
 
+// A server that delivers the activation line after the window's deadline
+// echoes it later. The tag on the line identifies that echo wherever the line
+// editor drew it: the window reopens until its ready marker, so the echo stays
+// off the screen while the output around it is shown.
+func TestALateEchoReopensTheWindowUntilItsMarker(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	t0 := session.term
+	const token = "late-token"
+	t0.folderToken = token
+	t0.integrated = false
+	t0.injection = terminalInjection{
+		phase:   injectionFailed,
+		token:   token,
+		marker:  sshconn.IntegrationReadyMarker(token),
+		echoTag: sshconn.IntegrationEchoTag(token),
+		started: state.now(),
+	}
+
+	shell.say("before$ ")
+	shell.say("user@host:~$  : motty-" + token + "; _motty_hist_on=; fi\r\n" +
+		string(sshconn.IntegrationReadyMarker(token)) + "user@host:~$ ")
+	state.Wake()
+	text := screenText(state, 0)
+	if !strings.Contains(text, "before$ ") {
+		t.Fatalf("output before the echo was hidden:\n%s", text)
+	}
+	if strings.Contains(text, "_motty_hist_on") || strings.Contains(text, "motty-"+token) {
+		t.Fatalf("the late echo reached the screen:\n%s", text)
+	}
+	if !strings.Contains(text, "user@host:~$ ") {
+		t.Fatalf("output after the ready marker was lost:\n%s", text)
+	}
+	if t0.injection.phase != injectionDone || !t0.integrated {
+		t.Fatalf("late echo left phase %v integrated %v", t0.injection.phase, t0.integrated)
+	}
+}
+
+// The first failure keeps looking for the echo; a window reopened by one that
+// then fails must not look again, or it would hide real output forever.
+func TestAFailedWindowKeepsLookingForItsEchoOnlyOnce(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	t0 := session.term
+	const token = "once-token"
+	t0.folderToken = token
+	t0.injection = terminalInjection{
+		phase:   injectionSuppressing,
+		token:   token,
+		marker:  sshconn.IntegrationReadyMarker(token),
+		echoTag: sshconn.IntegrationEchoTag(token),
+		started: state.now(),
+	}
+	state.advanceInjection(session, state.now()+injectionTimeout)
+	if t0.injection.phase != injectionFailed || len(t0.injection.echoTag) == 0 {
+		t.Fatalf("the first failure left phase %v tag %q, want a failed window still looking",
+			t0.injection.phase, t0.injection.echoTag)
+	}
+
+	shell.say("x : motty-" + token + "; still no marker\r\n")
+	state.Wake()
+	if t0.injection.phase != injectionSuppressing {
+		t.Fatalf("the echo did not reopen the window: phase %v", t0.injection.phase)
+	}
+	state.advanceInjection(session, state.now()+injectionTimeout)
+	if t0.injection.phase != injectionFailed || len(t0.injection.echoTag) != 0 {
+		t.Fatalf("the reopened window left phase %v tag %q, want it to stop looking",
+			t0.injection.phase, t0.injection.echoTag)
+	}
+	if text := screenText(state, 0); strings.Contains(text, "still no marker") {
+		t.Fatalf("the reopened window's output was not released:\n%s", text)
+	}
+}
+
 // A hidden window that never sees its marker must not keep the shell from
 // taking input: it fails open and the shell runs without integration.
 func TestInjectionFailsOpenWhenTheMarkerNeverComes(t *testing.T) {

@@ -458,7 +458,7 @@ func TestPathCompletionOnTheFirstInjectedPrompt(t *testing.T) {
 	w.session.startDirectory = ""
 	token := terminal.folderToken
 	ready := sshconn.IntegrationReadyMarker(token)
-	terminal.injection = terminalInjection{phase: injectionSuppressing, marker: ready}
+	terminal.injection = terminalInjection{phase: injectionSuppressing, token: token, marker: ready}
 	w.shell.say(folderSyncMarker(w.session, "C") + string(ready) +
 		folderSyncMarker(w.session, "A") +
 		"\x1b]777;motty-input;" + token + ";utf8;\x07\x1b]7;file://box/home/test\x07$ " +

@@ -1178,6 +1178,21 @@ func (state *State) applyOutput(session *Session, data []byte, wasExec bool) {
 			return
 		}
 	}
+	// A window that gave up keeps looking for its activation line's echo: the
+	// server may deliver the line late, and its echo must not reach the screen
+	// then. Recognizing it reopens the window until its ready marker.
+	if !wasExec && t.injection.phase == injectionFailed && len(t.injection.echoTag) > 0 {
+		emit, caught := state.catchLateEcho(session, data)
+		data = emit
+		if caught {
+			if after, applied := state.applyInjection(session, nil); applied {
+				data = append(data, after...)
+			}
+		}
+		if len(data) == 0 {
+			return
+		}
+	}
 	if wasExec && len(data) > 0 {
 		data = append(data[:0], t.feedExec(data)...)
 	}

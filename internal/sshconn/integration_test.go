@@ -189,3 +189,16 @@ func TestProbeShellAnswersFromTheLoginShell(t *testing.T) {
 		})
 	}
 }
+
+// The activation line begins with the tag the terminal matches when the line's
+// echo only arrives after the hidden window closed. The tag in the line and
+// IntegrationEchoTag are the same bytes: a shell echoes the line as text.
+func TestIntegrationActivationStartsWithTheEchoTag(t *testing.T) {
+	const token = "echo-tag-token"
+	for _, name := range []string{"bash", "zsh"} {
+		line := integrationActivation(name, token, "/tmp/motty-shell.x/init", "/tmp/motty-shell.x")
+		if want := " " + string(IntegrationEchoTag(token)) + "; "; !strings.HasPrefix(line, want) {
+			t.Fatalf("%s activation = %q, want it to start with %q", name, line, want)
+		}
+	}
+}
