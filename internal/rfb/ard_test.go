@@ -113,6 +113,11 @@ func TestARDAuthenticatesWithAccountCredentials(t *testing.T) {
 	if client.Security != 30 || client.Encrypted {
 		t.Fatalf("security=%d encrypted=%v, want ARD with an unencrypted session", client.Security, client.Encrypted)
 	}
+	if client.SecurityMode != "ARD" || client.Authentication != "user-password" || client.Cipher != "AES-128-ECB" ||
+		client.SecurityTypes != "ARD" || client.SecuritySubtype != 0 || client.SecuritySubtypes != "" || client.TLSVersion != "" {
+		t.Fatalf("incorrect ARD connection metadata: mode=%q authentication=%q cipher=%q types=%q subtype=%d subtypes=%q TLS=%q",
+			client.SecurityMode, client.Authentication, client.Cipher, client.SecurityTypes, client.SecuritySubtype, client.SecuritySubtypes, client.TLSVersion)
+	}
 	if width, height := client.Size(); width != 640 || height != 480 || client.Name != "mac desktop" {
 		t.Fatalf("desktop = %dx%d %q", width, height, client.Name)
 	}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/rfb"
 	"motty/internal/sshconn"
 )
 
@@ -58,7 +59,8 @@ func reconnectTerminalError(err error) bool {
 	return errors.Is(err, sshconn.ErrCanceled) ||
 		errors.Is(err, sshconn.ErrAuthFailed) ||
 		errors.Is(err, sshconn.ErrHostKeyChanged) ||
-		errors.Is(err, sshconn.ErrHostKeyRejected)
+		errors.Is(err, sshconn.ErrHostKeyRejected) ||
+		errors.Is(err, rfb.ErrUnsupported)
 }
 
 func (state *State) cancelReconnect(session *Session) {

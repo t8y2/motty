@@ -2,6 +2,8 @@ package workbench
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/vivaui/viva/gfx"
@@ -30,6 +32,13 @@ func (state *State) preparePassword(session *Session) {
 	if vncCredentials {
 		state.passwordQuestions = append([]sshconn.Question(nil), questions...)
 		state.passwordQuestions[0].Text = state.messages.Desktop.VNCSystemUser
+		state.passwordQuestions[1].Text = state.messages.Desktop.VNCSystemPassword
+	} else if isVNCPasswordPrompt(session) && strings.HasPrefix(session.endpoint.User, vncAccountPrefix) && len(questions) == 1 {
+		state.passwordQuestions = append([]sshconn.Question(nil), questions...)
+		state.passwordQuestions[0].Text = state.messages.Desktop.VNCSystemPassword
+	} else if isVNCPasswordPrompt(session) && session.endpoint.User == vncAccount && len(questions) == 1 {
+		state.passwordQuestions = append([]sshconn.Question(nil), questions...)
+		state.passwordQuestions[0].Text = state.messages.Desktop.VNCPassword
 	}
 	state.passwordFields = make([]text.Editor, len(questions))
 	passwordName := state.passwordName(session)
@@ -110,24 +119,40 @@ func (state *State) singleSavedVNCAccount(owner string) (string, bool, error) {
 
 // passwordDialogAddress names the account the dialog is asking about.
 func passwordDialogAddress(state *State, session *Session) string {
+	if isVNCPasswordPrompt(session) {
+		address := net.JoinHostPort(session.endpoint.Host, strconv.Itoa(int(session.endpoint.Port)))
+		if account, ok := strings.CutPrefix(session.endpoint.User, vncAccountPrefix); ok && account != "" {
+			address = account + "@" + address
+		}
+		return fmt.Sprintf(state.messages.Desktop.VNCLoginDescriptionFmt, address)
+	}
 	address := session.Address
 	if session.endpoint.Host != "" {
 		address = fmt.Sprintf("%s@%s:%d", session.endpoint.User, session.endpoint.Host, session.endpoint.Port)
 	}
-	if session.host.isDesktop() && session.endpoint.User == vncAccount {
-		address = fmt.Sprintf("VNC %s:%d", session.endpoint.Host, session.endpoint.Port)
-	}
 	if account, ok := strings.CutPrefix(session.endpoint.User, rdpAccountPrefix); ok && session.host.Protocol == protocolRDP {
 		address = fmt.Sprintf("RDP %s@%s:%d", account, session.endpoint.Host, session.endpoint.Port)
-	}
-	if account, ok := strings.CutPrefix(session.endpoint.User, vncAccountPrefix); ok && session.host.Protocol == protocolVNC {
-		address = fmt.Sprintf("VNC %s@%s:%d", account, session.endpoint.Host, session.endpoint.Port)
 	}
 	return fmt.Sprintf(state.messages.PasswordDescription, address)
 }
 
+// The sentinel user names also happen to be valid SSH account names. The
+// desktop connection knows whether the question belongs to VNC or its tunnel.
+func isVNCPasswordPrompt(session *Session) bool {
+	if session.host.Protocol != protocolVNC || session.role == sshconn.EndpointProxyJump ||
+		(session.endpoint.User != vncAccount && !strings.HasPrefix(session.endpoint.User, vncAccountPrefix)) {
+		return false
+	}
+	if conn, ok := session.conn.(*desktopConn); ok {
+		conn.mu.Lock()
+		defer conn.mu.Unlock()
+		return conn.asking
+	}
+	return true
+}
+
 func isVNCCredentialsQuestion(session *Session) bool {
-	return session.host.Protocol == protocolVNC && strings.HasPrefix(session.endpoint.User, vncAccountPrefix) &&
+	return isVNCPasswordPrompt(session) && strings.HasPrefix(session.endpoint.User, vncAccountPrefix) &&
 		len(session.questions) == 2 && !session.questions[0].Secret && session.questions[1].Secret
 }
 
@@ -196,7 +221,7 @@ func (state *State) submitPassword() {
 	for index := range state.passwordFields {
 		answers[index] = state.passwordFields[index].String()
 	}
-	if session.host.Protocol == protocolVNC && (session.endpoint.User == vncAccount || strings.HasPrefix(session.endpoint.User, vncAccountPrefix)) {
+	if isVNCPasswordPrompt(session) {
 		if index := passwordQuestionIndex(state.passwordQuestions); index >= 0 && index < len(answers) && answers[index] == "" {
 			state.passwordError = state.messages.Desktop.ErrVNCPassword
 			return

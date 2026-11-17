@@ -19,7 +19,7 @@ func canForgetServerIdentity(session *Session) bool {
 	if err != nil || address != session.host.Address || port != string(strconv.AppendUint(portBuffer[:0], uint64(session.host.Port), 10)) {
 		return false
 	}
-	return session.host.Protocol == protocolVNC && session.hostKey.Type == vncServerKeyType || session.host.Protocol == protocolRDP && session.hostKey.Type == rdpCertificateType
+	return session.host.Protocol == protocolVNC && vncIdentityKind(session.hostKey.Type) || session.host.Protocol == protocolRDP && session.hostKey.Type == rdpCertificateType
 }
 
 // Forgetting affects the typed server endpoint, independently of host records.
@@ -33,7 +33,7 @@ func (state *State) forgetServerIdentity(session *Session) bool {
 		return false
 	}
 	protocol := pins.RDP
-	if session.hostKey.Type == vncServerKeyType {
+	if vncIdentityKind(session.hostKey.Type) {
 		protocol = pins.VNC
 	}
 	if err := conn.certs.Forget(pins.Endpoint{Protocol: protocol, Address: session.hostKey.Address}); err != nil {
