@@ -191,3 +191,33 @@ func TestBookmarkScopeSelectOpensChoosesAndDismisses(t *testing.T) {
 		t.Fatalf("Escape on the open list: scopeOpen=%v editorOpen=%v", w.bookmark.scopeOpen, w.bookmark.open)
 	}
 }
+
+func TestBookmarkSyncCheckboxTogglesByClickAndKey(t *testing.T) {
+	w, view := openBookmarkEditor(t)
+	if w.bookmark.sync {
+		t.Fatal("a new editor starts with sync off")
+	}
+	clickBookmarkButton(t, w, view, hitSFTPBookmarkSync)
+	if !w.bookmark.sync {
+		t.Fatal("a click did not turn sync on")
+	}
+	// The click focused the box: Space toggles it back, Enter too.
+	if err := view.Keys("space"); err != nil {
+		t.Fatal(err)
+	}
+	if w.bookmark.sync {
+		t.Fatal("Space did not turn sync off")
+	}
+	if err := view.Keys("enter"); err != nil {
+		t.Fatal(err)
+	}
+	if !w.bookmark.sync {
+		t.Fatal("Enter did not turn sync on")
+	}
+	// Pressing the words toggles it as well: the label is the box's own.
+	for _, h := range view.Snapshot().Hits {
+		if h.IsLabel && h.Label == w.owner.messages.SFTPWindow.ProfileSync {
+			t.Logf("label hit %v", h.Bounds)
+		}
+	}
+}

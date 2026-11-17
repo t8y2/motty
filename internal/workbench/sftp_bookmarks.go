@@ -69,7 +69,6 @@ type sftpBookmarkEditor struct {
 // hand once it has been laid out.
 type sftpBookmarkBody struct {
 	browse, list, scope ui.Box
-	sync                ui.Box
 }
 
 // pageButtonSlot reserves the room a button takes in a page.
@@ -420,7 +419,17 @@ func (w *sftpWindow) declareBookmarkBody(c ui.C) ui.Box {
 				ui.Button(c, m.ProfileDelete).Small().Destructive().Disabled(!b.editing).Hit(hitSFTPProfileDelete, m.ProfileDelete).FillWidth()
 			})
 		})
-		body.sync = ui.Slot(c).Height(32)
+		// The box and its words are one control, the window's own router toggles it by the fixed
+		// identity; the box's value is the editor's, so the page writes nothing of its own.
+		side := components.CheckboxExtent(theme)
+		row := ui.Row(c).Height(32).Items(ui.Center).Gap(32-4-side).PadSides(0, 0, 0, 4).
+			HitWith(hitSFTPBookmarkSync, m.ProfileSync, gfx.HitOptions{Role: gfx.RoleCheckbox, Checked: b.sync})
+		row.Children(func() {
+			ui.Slot(c).Size(side, side).Shrink(0).Draw(func(d *ui.DrawContext) {
+				components.BeginCheckbox(d.Canvas, *d.Theme, gfx.ID{}, d.Rect, b.sync).Paint()
+			})
+			ui.Text(c, m.ProfileSync).FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Grow(1).Height(32)
+		})
 		body.list = ui.Slot(c).Grow(1)
 		if b.errorText != "" {
 			ui.Text(c, b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24)
@@ -446,20 +455,11 @@ func (w *sftpWindow) declareBookmarkField(c ui.C, i int) ui.Box {
 	return field
 }
 
-// paintBookmarkBody paints the editor's fields, buttons and lists into the slots
-// its dialog left.
+// paintBookmarkBody paints the editor's profile list and scope select into the slots its
+// dialog left.
 func (w *sftpWindow) paintBookmarkBody(d *ui.DrawContext) {
-	canvas, b, theme, m := d.Canvas, &w.bookmark, *d.Theme, w.owner.messages.SFTPWindow
+	canvas, b := d.Canvas, &w.bookmark
 	body := &b.body
-	syncBounds := body.sync.Rect()
-	checkboxSide := components.CheckboxExtent(theme)
-	components.BeginCheckbox(canvas, theme, hitSFTPBookmarkSync, gfx.Rect{
-		X: syncBounds.X + 4,
-		Y: syncBounds.Y + (syncBounds.Height-checkboxSide)/2,
-	}, b.sync).Label(m.ProfileSync).HitBounds(syncBounds).Paint()
-	canvas.Label(m.ProfileSync, gfx.Rect{
-		X: syncBounds.X + 32, Y: syncBounds.Y, Width: max(0, syncBounds.Width-32), Height: syncBounds.Height,
-	}, gfx.TextStyle{Size: theme.Metrics.FontSizeM, Color: theme.Foreground})
 	w.paintProfileList(canvas, body.list.Rect())
 	w.paintProfileScope(canvas, body.scope.Rect(), b.viewport)
 }
