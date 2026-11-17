@@ -380,7 +380,7 @@ func (state *State) submitHostDialog() {
 		}
 		var commitErr error
 		if len(changes) == 0 {
-			commitErr = state.saveEditedHost(candidate, *previous, true, proxyNote)
+			commitErr = state.saveEditedHost(candidate, *previous, true)
 		} else {
 			vaultFile := state.secrets.vault
 			if vaultFile == nil {
@@ -391,7 +391,7 @@ func (state *State) submitHostDialog() {
 			// The secrets and the host are written under one lock: a host the
 			// store refuses must not leave the new password behind.
 			commitErr = vaultFile.ApplyWithCommit(changes, func() error {
-				return state.saveEditedHost(candidate, *previous, false, proxyNote)
+				return state.saveEditedHost(candidate, *previous, false)
 			})
 			if commitErr != nil && errors.Is(commitErr, configstore.ErrConflict) {
 				if refreshErr := state.refreshShared(); refreshErr != nil {
@@ -414,8 +414,9 @@ func (state *State) submitHostDialog() {
 			return
 		}
 		// The secret is already in the vault transaction. Say so only after
-		// that call has released the lock.
+		// that call has released the lock, and in the same order as a new host.
 		state.noteOTPCommit(candidate)
+		state.appendStatusNote(proxyNote)
 		state.editor.password, state.editor.passphrase = text.Editor{}, text.Editor{}
 		state.editor.proxyPassword = ""
 		state.cancelHostTest()
@@ -550,7 +551,7 @@ func (state *State) hostDialogCandidateIndex(candidate Host) int {
 // that refuses the write puts the host and everything that followed it back, so
 // that the dialog can stay open rather than claim an edit the next start would
 // not have.
-func (state *State) saveEditedHost(updated, previous Host, refreshConflict bool, notes ...string) error {
+func (state *State) saveEditedHost(updated, previous Host, refreshConflict bool) error {
 	index := state.hostIndex(state.hostDialogID)
 	if index < 0 || state.hosts[index].CatalogID != previous.CatalogID {
 		return &hostConfigCommitError{err: errors.New(state.messages.HostSaveMissing)}
@@ -569,9 +570,6 @@ func (state *State) saveEditedHost(updated, previous Host, refreshConflict bool,
 		return &hostConfigCommitError{err: err}
 	}
 	state.status = state.messages.HostUpdated + updated.Label
-	for _, note := range notes {
-		state.appendStatusNote(note)
-	}
 	state.hostDataChanged()
 	return nil
 }
