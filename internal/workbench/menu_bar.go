@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 )
 
 // MenuBar is the File/Edit/View menu the macOS application menu bar shows. Its
@@ -19,7 +20,7 @@ func (state *State) MenuBar() []app.Menu {
 			Title:    state.shortcutActionLabel(action),
 			Shortcut: state.shortcuts.chords.Chord(action),
 			Disabled: disabled,
-			OnSelect: func() { state.runMenuAction(action) },
+			OnSelect: func() gfx.EventResult { return state.runMenuAction(action) },
 		}
 	}
 	return []app.Menu{
@@ -73,14 +74,17 @@ func (state *State) menuBarHasSession() bool {
 }
 
 // runMenuAction runs one of the window's own shortcut actions from a menu
-// choice, on the event-loop thread, and asks for the repaint the action names.
-func (state *State) runMenuAction(action shortcutAction) {
+// choice, on the event-loop thread, and returns what it did. A native menu runs
+// the entry outside the window's event handlers; the application carries the
+// result out on the window, so a command chosen from the menu moves the
+// keyboard exactly as its shortcut does.
+func (state *State) runMenuAction(action shortcutAction) gfx.EventResult {
 	if state.closed || state.callbacksClosed.Load() {
-		return
+		return gfx.EventResult{}
 	}
 	result := state.executeShortcut(action)
-	// Native menu key equivalents invoke OnSelect without the window's key
-	// event handler, so its clipboard result must be applied here as well.
+	// The menu writes the clipboard itself so a failure reaches the user as a
+	// notice; the field is cleared so the runtime does not write it again.
 	if result.ClipboardText != "" && state.options.SetClipboardText != nil {
 		if err := state.options.SetClipboardText(result.ClipboardText); err != nil {
 			// The main window does not paint state.status, so the failure has to
@@ -88,8 +92,7 @@ func (state *State) runMenuAction(action shortcutAction) {
 			// repaint.
 			state.showActionFailure(state.messages.MenuCopy, err, state.messages.ActionFeedback.ClipboardFailed)
 		}
+		result.ClipboardText = ""
 	}
-	if result.Repaint && state.options.Invalidate != nil {
-		state.options.Invalidate()
-	}
+	return result
 }
