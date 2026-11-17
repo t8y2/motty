@@ -44,14 +44,17 @@ var (
 )
 
 type localProxyUI struct {
-	session        uint32
-	port           text.Editor
-	docker         bool
-	more           bool
-	copyTarget     localProxyTarget
-	returnFocus    gfx.ID
-	scroll         float32
-	scrollGeometry components.ScrollAreaGeometry
+	session     uint32
+	port        text.Editor
+	docker      bool
+	more        bool
+	copyTarget  localProxyTarget
+	returnFocus gfx.ID
+	// topBody asks the next declaration to show the body from its top: the
+	// view or the extra section changed.
+	topBody bool
+	// bodyScroll is the body's scroll position, as of the last declaration.
+	bodyScroll     *ui.ScrollState
 	lastRemotePort uint16
 	lastStopped    bool
 	copied         gfx.ID
@@ -63,10 +66,6 @@ type localProxyUI struct {
 	portForm  ui.FormFieldState
 	portText  ui.Field
 	portBound bool
-	// viewportDraw is the dialog's kept painter, made once
-	// per open so a repaint declares the body without allocating.
-	viewportDraw  func(*ui.DrawContext)
-	viewportTitle string
 }
 
 func (state *State) openLocalProxy(session *Session) {
@@ -150,13 +149,13 @@ func (state *State) clickLocalProxy(id gfx.ID) {
 	case hitLocalProxyDocker:
 		state.localProxyUI.copyTarget = localProxyTarget{}
 		state.localProxyUI.docker = true
-		state.localProxyUI.scroll = 0
+		state.localProxyUI.topBody = true
 	case hitLocalProxyDockerBack:
 		state.localProxyUI.docker = false
-		state.localProxyUI.scroll = 0
+		state.localProxyUI.topBody = true
 	case hitLocalProxyMore:
 		state.localProxyUI.more = !state.localProxyUI.more
-		state.localProxyUI.scroll = 0
+		state.localProxyUI.topBody = true
 	case hitLocalProxyDockerDocs:
 		if err := state.options.OpenURL(dockerProxyDocsURL); err != nil {
 			state.localProxyUI.copyError = state.messages.LocalProxy.OpenDocsFailed
@@ -321,7 +320,7 @@ func (state *State) localProxyKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if event.Key == gfx.KeyEscape {
 		if state.localProxyUI.docker {
 			state.localProxyUI.docker = false
-			state.localProxyUI.scroll = 0
+			state.localProxyUI.topBody = true
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		} else {
 			state.closeModal()
@@ -349,25 +348,30 @@ func (state *State) localProxyKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
 	}
-	area := components.BeginScrollArea(nil, state.Theme(), state.localProxyUI.scrollGeometry.Bounds, state.localProxyContentSize())
-	x, y, handled := area.ScrollForKey(0, state.localProxyUI.scroll, event.Key, 32)
-	if handled {
-		state.localProxyUI.scroll = y
-		return gfx.EventResult{Handled: true, Repaint: x != 0 || y != 0}, true
+	if scroll := state.localProxyUI.bodyScroll; scroll != nil {
+		const step = 32
+		offset, page := scroll.Offset, max(scroll.Viewport*0.9, step)
+		switch event.Key {
+		case gfx.KeyUp:
+			offset -= step
+		case gfx.KeyDown:
+			offset += step
+		case gfx.KeyPageUp:
+			offset -= page
+		case gfx.KeyPageDown:
+			offset += page
+		case gfx.KeyHome:
+			offset = 0
+		case gfx.KeyEnd:
+			offset = scroll.Max()
+		default:
+			return gfx.EventResult{}, false
+		}
+		before := scroll.Offset
+		scroll.ScrollTo(offset)
+		return gfx.EventResult{Handled: true, Repaint: scroll.Offset != before}, true
 	}
 	return gfx.EventResult{}, false
-}
-
-func (state *State) scrollLocalProxy(event gfx.ScrollEvent) gfx.EventResult {
-	before := state.localProxyUI.scroll
-	area := components.BeginScrollArea(nil, state.Theme(), state.localProxyUI.scrollGeometry.Bounds, state.localProxyContentSize())
-	state.localProxyUI.scroll = area.Offset(0, before+event.DeltaY).Geometry().OffsetY
-	return gfx.EventResult{Handled: true, Repaint: before != state.localProxyUI.scroll}
-}
-
-func (state *State) localProxyContentSize() gfx.Size {
-	geometry := state.localProxyUI.scrollGeometry
-	return gfx.Size{Width: geometry.Content.Width, Height: max(geometry.Content.Height, localProxyMainHeight)}
 }
 
 func (state *State) localProxyContentHeight(snapshot localProxySnapshot) float32 {
@@ -469,28 +473,20 @@ func (state *State) declareLocalProxyDialog(c ui.C) {
 	width = min(width, max(float32(360), viewport.Width-32))
 	bodyHeight := min(contentHeight, max(float32(180), viewport.Height-210))
 	height := dialogContentHeight(c.Canvas(), theme, viewport, width, description, bodyHeight)
-	// The body scrolls inside the dialog; its geometry is what the declared
-	// content and the scrollbar painted after the page both use.
-	body := dialogContentRect(c.Canvas(), theme, viewport, width, description, bodyHeight).Body
-	contentSize := gfx.Size{Width: max(body.Width-10, 0), Height: contentHeight}
-	area := components.BeginScrollArea(nil, theme, body, contentSize).Offset(0, state.localProxyUI.scroll).ReserveScrollbars()
 	proxy := &state.localProxyUI
-	proxy.scrollGeometry = area.Geometry()
-	proxy.scroll = proxy.scrollGeometry.OffsetY
-	proxy.viewportTitle = title
-	if proxy.viewportDraw == nil {
-		proxy.viewportDraw = state.drawLocalProxyViewport
-	}
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Description: description, Width: width, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitLocalProxyDismiss, CloseID: closeID, InitialFocusID: initialFocus,
 	})
 	dialog.Body(func() {
-		bodyViewport := ui.Column(c).Fill().Clip()
-		bodyViewport.Draw(proxy.viewportDraw)
-		bodyViewport.Children(func() {
-			content := ui.Column(c).Width(proxy.scrollGeometry.Content.Width).Height(contentHeight).
-				MarginTop(-proxy.scrollGeometry.OffsetY).PadSides(2, 4, 10, 6).Gap(8)
+		area := ui.Scroll(c).Fill().Scrollbars()
+		proxy.bodyScroll = area.ScrollState()
+		if proxy.topBody {
+			area.ScrollState().ScrollTo(0)
+			proxy.topBody = false
+		}
+		area.Children(func() {
+			content := ui.Column(c).FillWidth().PadSides(2, 4, 10, 6).Gap(8)
 			content.Children(func() {
 				if proxy.docker {
 					state.declareLocalProxyDockerBody(c, snapshot)
@@ -503,29 +499,6 @@ func (state *State) declareLocalProxyDialog(c ui.C) {
 	dialog.Footer(func() {
 		state.dialogActionFooter(c, state.localProxyActions(snapshot)...)
 	})
-}
-
-// drawLocalProxyViewport names the dialog body's scroll viewport for the
-// keyboard and the wheel, under the controls the page paints into it.
-func (state *State) drawLocalProxyViewport(d *ui.DrawContext) {
-	geometry := state.localProxyUI.scrollGeometry
-	if geometry.Viewport.Width <= 0 || geometry.Viewport.Height <= 0 {
-		return
-	}
-	d.Canvas.HitWithOptions(hitLocalProxyScroll, geometry.Viewport, state.localProxyUI.viewportTitle, gfx.HitOptions{Role: gfx.RoleGroup})
-}
-
-// paintLocalProxyScrollbar paints the body's scrollbar over the page: the thumb
-// is a hit of its own, outside the content.
-func (state *State) paintLocalProxyScrollbar(canvas *gfx.Canvas) {
-	proxy := &state.localProxyUI
-	geometry := proxy.scrollGeometry
-	if geometry.Bounds.Width <= 0 || geometry.Bounds.Height <= 0 {
-		return
-	}
-	area := components.BeginScrollArea(canvas, state.Theme(), geometry.Bounds, state.localProxyContentSize()).
-		Offset(0, proxy.scroll).VerticalScrollbar(hitLocalProxyScroll, proxy.viewportTitle, "").ReserveScrollbars()
-	area.EndContent()
 }
 
 func (state *State) localProxyActions(snapshot localProxySnapshot) []components.ButtonAction {

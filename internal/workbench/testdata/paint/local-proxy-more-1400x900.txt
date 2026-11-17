@@ -99,7 +99,6 @@ hit "New tab" button {0 36 1360 864} disabled=false
 hit "Dismiss dialog" button {0 0 1400 900} disabled=false
 hit "" region {440 43 520 814} disabled=false
 hit "Close dialog" button {912 59 32 32} disabled=false
-hit "Use local proxy" group {464 137 472 640} disabled=false
 hit "Local HTTP proxy port (127.0.0.1)" button {470 139 214.6416 18} disabled=false
 hit "Local HTTP proxy port (127.0.0.1)" textfield {470 161 462 32} disabled=false
 hit "Docker setup" button {470 277 227 32} disabled=false

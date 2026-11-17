@@ -10,10 +10,10 @@ rect {{0 0 900 600} {0 0 0 0.5} 0 600 {0 0 0 0} false 1452}
 rect {{140 16 620 568} {0.2 0.23529412 0.2901961 1} 11 600 {0 0 0 0} false 1453}
 rect {{141 17 618 566} {0.12156863 0.14117648 0.1764706 1} 10 600 {0 0 0 0} false 1454}
 rect {{712 32 32 32} {0.06666667 0.08235294 0.105882354 0} 7.5 600 {0 0 0 0} false 1458}
-rect {{450 268 272 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {164 131 572 373} true 1518}
-rect {{451 269 270 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {164 131 572 373} true 1519}
-rect {{170 417 552 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {164 131 572 373} true 1527}
-rect {{171 418 550 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {164 131 572 373} true 1528}
+rect {{455 268 277 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {164 131 572 373} true 1518}
+rect {{456 269 275 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {164 131 572 373} true 1519}
+rect {{170 417 562 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {164 131 572 373} true 1527}
+rect {{171 418 560 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {164 131 572 373} true 1528}
 rect {{481.45898 528 112.052734 32} {0.23529412 0.27450982 0.34117648 1} 7.5 600 {0 0 0 0} false 1530}
 rect {{601.5117 528 134.48828 32} {0.216 0.22917646 0.24894118 1} 7.5 600 {0 0 0 0} false 1533}
 rect {{602.5117 529 132.48828 30} {0.11146667 0.1264 0.1488 1} 6.5 600 {0 0 0 0} false 1534}
@@ -46,9 +46,8 @@ rect {{276.20898 340.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {
 rect {{283.20898 340.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 860 564} true 2137}
 rect {{290.20898 340.12 3.5 3.5} {0.61960787 0.65882355 0.7137255 0.45} 1.75 0 {0 36 860 564} true 2138}
 rect {{860 36 40 564} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false 2139}
-rect {{727 132 8 223.19838} {0.2 0.23529412 0.2901961 1} 4 0 {0 0 0 0} false 3455}
-shadow {{450 268 272 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {164 131 572 373} true 1517}
-shadow {{170 417 552 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {164 131 572 373} true 1526}
+shadow {{455 268 277 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {164 131 572 373} true 1517}
+shadow {{170 417 562 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {164 131 572 373} true 1526}
 shadow {{601.5117 528 134.48828 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false 1532}
 shadow {{625.5029 400.62 56.49707 32} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {0 36 860 564} true 1884}
 text "Production" {148 8 60.216797 20}
@@ -60,19 +59,19 @@ text "Elapsed 0:00" {178 407.12 352.05762 19}
 text "Docker setup" {164 40 572 17}
 text "Shell proxy variables do not configure image pulls. The Docker daemon makes those" {164 65 572 21}
 text "requests." {164 86 572 21}
-text "Only for Docker Engine managed by systemd on Linux. Existing daemon.json or service configuration" {170 133 552 18}
-text "may take precedence, so inspect it before adding this drop-in. This example does not cover rootless" {170 151 552 18}
-text "Docker, Docker Desktop, or a remote Docker context." {170 169 552 18}
-text "The example uses sudo and restarts Docker, which may interrupt containers. Motty never runs these" {170 195 552 18}
-text "commands. Restore this configuration before stopping the tunnel." {170 213 552 18}
-text "Systemd-managed Linux Docker" {170 239 552 21}
-text "Open Docker documentation" {493.75244 268 272 32}
-text "Remove /etc/systemd/system/docker.service.d/motty-proxy.conf only if you created it, then reload" {170 310 552 18}
-text "and restart Docker." {170 328 552 18}
-text "sudo rm -f /etc/systemd/system/docker.service.d/motty-proxy.conf" {170 354 552 13}
-text "sudo systemctl daemon-reload" {170 375 552 13}
-text "sudo systemctl restart docker" {170 396 552 13}
-text "Copy command" {395.31494 417 552 32}
+text "Only for Docker Engine managed by systemd on Linux. Existing daemon.json or service configuration" {170 133 562 18}
+text "may take precedence, so inspect it before adding this drop-in. This example does not cover rootless" {170 151 562 18}
+text "Docker, Docker Desktop, or a remote Docker context." {170 169 562 18}
+text "The example uses sudo and restarts Docker, which may interrupt containers. Motty never runs these" {170 195 562 18}
+text "commands. Restore this configuration before stopping the tunnel." {170 213 562 18}
+text "Systemd-managed Linux Docker" {170 239 562 21}
+text "Open Docker documentation" {501.25244 268 277 32}
+text "Remove /etc/systemd/system/docker.service.d/motty-proxy.conf only if you created it, then reload" {170 310 562 18}
+text "and restart Docker." {170 328 562 18}
+text "sudo rm -f /etc/systemd/system/docker.service.d/motty-proxy.conf" {170 354 562 13}
+text "sudo systemctl daemon-reload" {170 375 562 13}
+text "sudo systemctl restart docker" {170 396 562 13}
+text "Copy command" {400.31494 417 562 32}
 text "Proxy settings" {491.45898 528 112.052734 32}
 text "Return to terminal" {611.5117 528 134.48828 32}
 text "Show log" {548.0576 400.62 79.44531 32}
@@ -94,9 +93,8 @@ hit "New tab" button {0 36 860 564} disabled=false
 hit "Dismiss dialog" button {0 0 900 600} disabled=false
 hit "" region {140 16 620 568} disabled=false
 hit "Close dialog" button {712 32 32 32} disabled=false
-hit "Docker setup" group {164 131 562 373} disabled=false
-hit "Open Docker documentation" button {450 268 272 32} disabled=false
-hit "Copy command" button {170 417 552 32} disabled=false
+hit "Open Docker documentation" button {455 268 277 32} disabled=false
+hit "Copy command" button {170 417 562 32} disabled=false
 hit "Proxy settings" button {481.45898 528 112.052734 32} disabled=false
 hit "Return to terminal" button {601.5117 528 134.48828 32} disabled=false
 hit "Show log" button {538.0576 400.62 79.44531 32} disabled=false
@@ -114,4 +112,3 @@ hit "Use local proxy" button {864 372 32 32} disabled=true
 hit "File transfer" button {864 408 32 32} disabled=true
 hit "Processes & containers" button {864 444 32 32} disabled=true
 hit "Server logs" button {864 480 32 32} disabled=true
-hit "Docker setup" separator {726 131 10 373} disabled=false

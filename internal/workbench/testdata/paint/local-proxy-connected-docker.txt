@@ -101,7 +101,6 @@ hit "New tab" button {0 36 1360 864} disabled=false
 hit "Dismiss dialog" button {0 0 1400 900} disabled=false
 hit "" region {390 42.5 620 815} disabled=false
 hit "Close dialog" button {962 58.5 32 32} disabled=false
-hit "Docker setup" group {414 157.5 572 620} disabled=false
 hit "Copy command" button {420 336.5 277 32} disabled=false
 hit "Open Docker documentation" button {705 336.5 277 32} disabled=false
 hit "Copy command" button {420 485.5 562 32} disabled=false

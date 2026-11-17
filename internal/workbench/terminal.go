@@ -2007,13 +2007,18 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal == modalFileProperties {
 		return gfx.EventResult{Handled: true}
 	}
+	if state.modal == modalLocalProxy {
+		if scroll := state.localProxyUI.bodyScroll; scroll != nil {
+			result := scroll.Wheel(event)
+			result.Handled = true
+			return result
+		}
+		return gfx.EventResult{Handled: true}
+	}
 	if state.modal == modalNone {
 		if result, handled := state.workspaceArrangementScroll(event); handled {
 			return result
 		}
-	}
-	if state.modal == modalLocalProxy {
-		return state.scrollLocalProxy(event)
 	}
 	if result := state.dashboardScroll(event); result.Handled {
 		return result

@@ -358,8 +358,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintDeleteRuleDialog(canvas, viewport)
 	case modalSFTPColumns:
 		state.paintSFTPColumnSettings(canvas, viewport)
-	case modalLocalProxy:
-		state.paintLocalProxyScrollbar(canvas)
 	}
 	state.paintTerminalMenu(canvas, viewport)
 	state.paintGhostMenu(canvas, viewport)
