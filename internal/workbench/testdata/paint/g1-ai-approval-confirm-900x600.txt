@@ -44,14 +44,14 @@ rect {{802.21875 282 73.78125 16} {0.9411765 0.47058824 0.47058824 1} 7.5 500 {0
 rect {{546 306 330 27} {0.043137256 0.05490196 0.07450981 1} 5.5 500 {546 306 330 48} true #48}
 rect {{546 374 330 32} {0.216 0.22917646 0.24894118 1} 7.5 500 {0 0 0 0} false #50}
 rect {{547 375 328 30} {0.11146667 0.1264 0.1488 1} 6.5 500 {0 0 0 0} false #51}
-rect {{530 462 362 130} {0.216 0.22917646 0.24894118 1} 7.5 500 {0 0 0 0} false #53}
-rect {{531 463 360 128} {0.11146667 0.1264 0.1488 1} 6.5 500 {0 0 0 0} false #54}
-rect {{542 559 40.8125 24} {0.14509805 0.16862746 0.20784314 1} 12 500 {0 0 0 0} false #55}
-rect {{587.8125 559 84.91797 24} {0.14509805 0.16862746 0.20784314 1} 12 500 {0 0 0 0} false #56}
-rect {{852 557 28 28} {0.23529412 0.27450982 0.34117648 1} 14 500 {0 0 0 0} false #57}
-rect {{684 414 92 28} {0.216 0.22917646 0.24894118 1} 7.5 500 {0 0 0 0} false #59}
-rect {{685 415 90 26} {0.11146667 0.1264 0.1488 1} 6.5 500 {0 0 0 0} false #60}
-rect {{784 414 92 28} {0.9411765 0.47058824 0.47058824 0.1} 7.5 500 {0 0 0 0} false #61}
+rect {{684 414 92 30} {0.216 0.22917646 0.24894118 1} 7.5 500 {0 0 0 0} false #53}
+rect {{685 415 90 28} {0.11146667 0.1264 0.1488 1} 6.5 500 {0 0 0 0} false #54}
+rect {{784 414 92 30} {0.9411765 0.47058824 0.47058824 0.1} 7.5 500 {0 0 0 0} false #55}
+rect {{530 462 362 130} {0.216 0.22917646 0.24894118 1} 7.5 500 {0 0 0 0} false #57}
+rect {{531 463 360 128} {0.11146667 0.1264 0.1488 1} 6.5 500 {0 0 0 0} false #58}
+rect {{542 559 40.8125 24} {0.14509805 0.16862746 0.20784314 1} 12 500 {0 0 0 0} false #59}
+rect {{587.8125 559 84.91797 24} {0.14509805 0.16862746 0.20784314 1} 12 500 {0 0 0 0} false #60}
+rect {{852 557 28 28} {0.23529412 0.27450982 0.34117648 1} 14 500 {0 0 0 0} false #61}
 rect {{522 36 1 564} {0 0 0 0} 0 500 {0 0 0 0} false #62}
 rect {{223 51 271.68213 36} {0.216 0.22917646 0.24894118 1} 7.5 0 {205 37 687 555} true #64}
 rect {{224 52 269.68213 34} {0.11146667 0.1264 0.1488 1} 6.5 0 {205 37 687 555} true #65}
@@ -65,8 +65,8 @@ shadow {{261 254 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #22}
 shadow {{267 307 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #25}
 shadow {{267 371 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {223 135 651 439} true #31}
 shadow {{546 374 330 32} 7.5 {0 0 0 0.05} {0 1 2 0} 500 {0 0 0 0} false #49}
-shadow {{530 462 362 130} 7.5 {0 0 0 0.05} {0 1 2 0} 500 {0 0 0 0} false #52}
-shadow {{684 414 92 28} 7.5 {0 0 0 0.05} {0 1 2 0} 500 {0 0 0 0} false #58}
+shadow {{684 414 92 30} 7.5 {0 0 0 0.05} {0 1 2 0} 500 {0 0 0 0} false #52}
+shadow {{530 462 362 130} 7.5 {0 0 0 0.05} {0 1 2 0} 500 {0 0 0 0} false #56}
 shadow {{223 51 271.68213 36} 7.5 {0 0 0 0.05} {0 1 2 0} 0 {205 37 687 555} true #63}
 shadow {{247 105 16 16} 4 {0 0 0 0.05} {0 1 2 0} 0 {205 37 687 555} true #66}
 shadow {{538 468 171.75586 24} 7.5 {0 0 0 0.05} {0 1 2 0} 500 {0 0 0 0} false #69}
@@ -127,12 +127,12 @@ text "Safer alternative" {546 375 330 15}
 text "ls /" {546 390 330 15}
 text "Type erase to confirm" {546 354 330 18}
 text "erase" {557 380 308 20}
+text "Decline" {705.94775 414 92 30}
+text "Approve" {802.4614 414 92 30}
 text "Ask mode answers only; switch to Agent to run" {541 502 350 21}
 text "commands." {541 523 350 21}
 text "Ask" {552 561.5 20.8125 19}
 text "gpt-x" {614.8125 561.5 29.917969 19}
-text "Decline" {705.94775 414 92 28}
-text "Approve" {802.4614 414 92 28}
 text "Search hosts or ssh user@hostna…" {254 59 229.68213 20}
 text "Choose connection" {573 468 105.75586 24}
 hit "" region {0 0 900 36} disabled=false
@@ -193,13 +193,13 @@ hit "Close assistant" button {862 40.5 24 24} disabled=false
 hit "How do I set up key-based login for a server?" button {536 217 350 36} disabled=false
 hit "How do I forward a port to a remote database?" button {536 259 350 5} disabled=false
 hit "Confirmation word" textfield {546 374 330 32} disabled=false
+hit "Decline" button {684 414 92 30} disabled=false
+hit "Approve" button {784 414 92 30} disabled=true
 hit "Message to the assistant" textfield {530 462 362 130} disabled=false
 hit "Ask" button {542 559 40.8125 24} disabled=false
 hit "Model: gpt-x. Choose another" button {587.8125 559 84.91797 24} disabled=false
 hit "Attach files or images" button {819 557 28 28} disabled=false
 hit "Send" button {852 557 28 28} disabled=true
-hit "Decline" button {684 414 92 28} disabled=false
-hit "Approve" button {784 414 92 28} disabled=true
 hit "Resize the message box" slider {538 459 346 7} disabled=false
 hit "Resize the assistant panel" separator {518.5 36 8 564} disabled=false
 hit "Search" textfield {248 51 246.68213 36} disabled=false

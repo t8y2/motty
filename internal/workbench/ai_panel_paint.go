@@ -700,10 +700,6 @@ const aiMenuContextWidth = float32(144)
 // over them (paintAIMessageChrome, paintAIHistoryChrome).
 func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	canvas, panel, ai := d.Canvas, &state.ai.panel, &state.ai
-	s := &panel.pageScratch
-	if s.showSetup {
-		components.BeginButton(canvas, state.Theme(), hitAISetup, panel.body.setup.Rect()).Small().Default(s.setupLabel)
-	}
 	// Keep the list slot's rectangle even when it is the empty state, which
 	// declares no List: the wheel and the scrollbar read it between paints.
 	panel.list = panel.body.list.Rect()
@@ -785,7 +781,7 @@ func (state *State) declareAIPanelBody(c ui.C) {
 		if s.showSetup {
 			ui.Row(c).Height(56).MarginSides(0, aiPad, 8, aiPad).PadX(12).Gap(12).Items(ui.Center).Background(pal.surface).Border(1, pal.line).Radius(radius.control).Children(func() {
 				ui.Paragraph(c, s.setupSummary, 3).FontSize(aiSizes.small).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSizes.smallLine).Grow(1)
-				panel.body.setup = ui.Slot(c).Size(s.setupWidth, 30)
+				ui.Button(c, s.setupLabel).Small().Hit(hitAISetup, s.setupLabel).Size(s.setupWidth, 30)
 			})
 		}
 		ui.Divider(c).Background(pal.line)
