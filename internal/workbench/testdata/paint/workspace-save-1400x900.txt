@@ -97,6 +97,8 @@ rect {{1360 36 40 864} {0.06666667 0.08235294 0.105882354 1} 0 0 {0 0 0 0} false
 shadow {{474 443.5 452 32} 7.5 {0 0 0 0.05} {0 1 2 0} 600 {0 0 0 0} false #22}
 text "Temporary wor…" {148 8 98 20}
 text "Temporary workspace" {46 45 826.03955 20}
+text "Save template" {1073.6138 40 85.15381 30}
+text "Layout" {1303.3813 40 40.618652 30}
 text "Production" {37 80 570 22}
 text "Staging" {717 80 570 22}
 text "Save Workspace Template" {474 330.5 452 17}
@@ -109,8 +111,6 @@ text "Cancel" {751.6846 537.5 64.61133 32}
 text "Save template" {824.2959 537.5 111.7041 32}
 text "Terminals not ready: 2" {898.03955 44 131.57422 22}
 text "Broadcast" {1200.7676 40 60.61377 30}
-text "Save template" {1073.6138 40 85.15381 28}
-text "Layout" {1303.3813 40 40.618652 28}
 hit "" region {0 0 1400 36} disabled=false
 hit "Hosts" button {82 4 28 28} disabled=false
 hit "Temporary workspace" tab {116 0 170 36} disabled=false
@@ -125,6 +125,8 @@ hit "Switch to light theme" button {1306 4 28 28} disabled=false
 hit "GitHub" button {1336 4 28 28} disabled=false
 hit "Settings" button {1366 4 28 28} disabled=false
 hit "Back to workspaces" button {10 40 30 30} disabled=false
+hit "Save template" button {1043.6138 40 121.15381 30} disabled=false
+hit "Layout" button {1273.3813 40 76.61865 30} disabled=false
 hit "New tab" button {0 74 680 826} disabled=false
 hit "Close pane" button {642 79 24 24} disabled=false
 hit "Terminal deploy@prod.example.com:22" terminal {0 108 680 792} disabled=false
@@ -138,8 +140,6 @@ hit "Template name" textfield {474 443.5 452 32} disabled=false
 hit "Cancel" button {741.6846 537.5 64.61133 32} disabled=false
 hit "Save template" button {814.2959 537.5 111.7041 32} disabled=false
 hit "Waiting for 2 terminals to connect, authenticate, or start a shell" switch {1170.7676 40 96.61377 30} disabled=true
-hit "Save template" button {1043.6138 40 121.15381 28} disabled=false
-hit "Layout" button {1273.3813 40 76.61865 28} disabled=false
 hit "Resize panes" separator {676 74 8 826} disabled=false
 hit "Close pane" button {1364 44 32 32} disabled=false
 hit "Files: browse and transfer over SFTP" button {1364 80 32 32} disabled=false

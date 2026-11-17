@@ -51,7 +51,9 @@ func workspaceEditorClick(t *testing.T, view *headless.Session, id gfx.ID) {
 // the page's control when the dialog is declared in the window page.
 func workspaceEditorClickLabel(t *testing.T, view *headless.Session, label string) {
 	t.Helper()
-	for _, hit := range view.Snapshot().Hits {
+	hits := view.Snapshot().Hits
+	for index := len(hits) - 1; index >= 0; index-- { // the front-most one: a dialog over the page
+		hit := hits[index]
 		if hit.Label != label || hit.Role != gfx.RoleButton || hit.Block || hit.Disabled {
 			continue
 		}
