@@ -71,12 +71,12 @@ type sftpBookmarkBody struct {
 
 // pageButtonSlot reserves the room a button takes in a page.
 func pageButtonSlot(c ui.C, label string, small bool) ui.Box {
-	size := ui.ButtonSizeDefault
+	button := components.BeginButton(c.Canvas(), *c.Theme(), gfx.ID{}, gfx.Rect{})
 	if small {
-		size = ui.ButtonSizeSmall
+		button = button.Small()
 	}
-	room := ui.ButtonExtent(c, label, size)
-	return ui.Slot(c).Width(room.Width).Height(room.Height)
+	button = button.SizeToFit(label)
+	return ui.Slot(c).Width(button.BoundsWidth()).Height(button.BoundsHeight())
 }
 
 func cleanBookmarkName(name string) string {

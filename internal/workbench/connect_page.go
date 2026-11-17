@@ -476,8 +476,8 @@ func (state *State) declareConnectionBody(c ui.C, session *Session, frame gfx.Re
 	}
 	s.buttonBoxes, s.buttons = s.buttonBoxes[:0], s.buttons[:0]
 	addButton := func(id gfx.ID, label string, variant components.ButtonVariant) {
-		room := ui.ButtonExtent(c, label, uiButtonSize(size))
-		box := ui.Slot(c).Size(room.Width, room.Height).Shrink(1)
+		probe := components.BeginButton(canvas, *c.Theme(), gfx.ID{}, gfx.Rect{}).Size(size).SizeToFit(label)
+		box := ui.Slot(c).Size(probe.BoundsWidth(), probe.BoundsHeight()).Shrink(1)
 		s.buttonBoxes = append(s.buttonBoxes, box)
 		s.buttons = append(s.buttons, sessionButton{id: id, label: label, size: size, variant: variant})
 	}
@@ -831,8 +831,8 @@ func (state *State) declareRestoredSessionBody(c ui.C, session *Session, area gf
 
 	s.buttonBoxes, s.buttons = s.buttonBoxes[:0], s.buttons[:0]
 	addButton := func(id gfx.ID, label string, variant components.ButtonVariant) {
-		room := ui.ButtonExtent(c, label, ui.ButtonSizeDefault)
-		box := ui.Slot(c).Size(max(room.Width, 96), room.Height)
+		probe := components.BeginButton(canvas, *c.Theme(), gfx.ID{}, gfx.Rect{}).SizeToFit(label)
+		box := ui.Slot(c).Size(max(probe.BoundsWidth(), 96), probe.BoundsHeight())
 		s.buttonBoxes = append(s.buttonBoxes, box)
 		s.buttons = append(s.buttons, sessionButton{id: id, label: label, size: components.ButtonSizeDefault, variant: variant})
 	}
@@ -972,17 +972,4 @@ func (state *State) paintSessionBadge(canvas *gfx.Canvas, session *Session, boun
 		return
 	}
 	state.paintHostCatalogIcon(canvas, session.host, bounds, state.pal.workspace)
-}
-
-// uiButtonSize is the page's name for a button size a session card keeps for painting.
-func uiButtonSize(size components.ButtonSize) ui.ButtonSize {
-	switch size {
-	case components.ButtonSizeXSmall:
-		return ui.ButtonSizeXSmall
-	case components.ButtonSizeSmall:
-		return ui.ButtonSizeSmall
-	case components.ButtonSizeLarge:
-		return ui.ButtonSizeLarge
-	}
-	return ui.ButtonSizeDefault
 }

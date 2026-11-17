@@ -646,8 +646,8 @@ func (state *State) hostProxyDescription() string {
 // declareHostProxyRow declares the host form's Outbound proxy row: a form
 // field whose control is the saved route's summary and its Configure button.
 func (state *State) declareHostProxyRow(c ui.C) ui.Box {
-	m, form := state.messages.Tools, &state.editor.form
-	button := ui.ButtonExtent(c, m.ProxyConfigure, ui.ButtonSizeXSmall)
+	m, theme, form := state.messages.Tools, state.Theme(), &state.editor.form
+	button := components.BeginButton(c.Canvas(), theme, gfx.ID{}, gfx.Rect{}).XSmall().SizeToFit(m.ProxyConfigure)
 	field := ui.FormField(c, &form.proxyField, m.HostProxyRow).Height(float32(hostFormRowHeight))
 	field.Children(func() {
 		// The summary sits in a box like the other fields' inputs, with its
@@ -655,7 +655,7 @@ func (state *State) declareHostProxyRow(c ui.C) ui.Box {
 		form.body.proxyRow = ui.Row(c).Fill().Items(ui.Center).Gap(8).PadSides(0, 4, 0, 12).
 			Background(state.pal.surface).Border(1, state.pal.line).Radius(radius.control).Children(func() {
 			ui.Text(c, state.hostProxyDescription()).FontSize(metrics.FontSizeS).Color(state.pal.muted).Ellipsis().Grow(1)
-			form.body.proxyAction = ui.Slot(c).Size(button.Width, 24)
+			form.body.proxyAction = ui.Slot(c).Size(button.BoundsWidth(), 24)
 		})
 	})
 	return field
