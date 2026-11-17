@@ -287,8 +287,12 @@ func TestAssistantSettingsPublicationLeavesUnusedStoresClosed(t *testing.T) {
 
 func TestAssistantExportChoicesReachOtherWindows(t *testing.T) {
 	windows, hub := assistantWindowsOnOneStore(t)
-	windows[0].Click(aiMCPClientID(aiMCPCodex))
-	windows[1].Click(aiAgentClientID(aiMCPCursor))
+	for _, window := range windows {
+		window.openSettings()
+		window.selectSettingsCategory(settingsMCP)
+	}
+	chooseMCPClient(t, windows[0], false, aiMCPCodex)
+	chooseMCPClient(t, windows[1], true, aiMCPCursor)
 	for index, state := range windows {
 		if got := state.ai.cfg.mcpClient; got != aiMCPCodex {
 			t.Fatalf("window %d HTTP export client = %v, want Codex", index+1, got)

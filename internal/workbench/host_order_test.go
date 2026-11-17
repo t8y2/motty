@@ -32,26 +32,61 @@ func canvasHasMenuRow(canvas *gfx.Canvas, label string) bool {
 // deferred, as the runtime does after an event pass.
 func clickPageLabel(t testing.TB, state *State, role gfx.Role, label string) {
 	t.Helper()
-	size := state.viewport
-	if size.Width == 0 {
-		size = gfx.Size{Width: 1400, Height: 900}
+	// A page taller than the window has controls below its fold, which a window
+	// does not paint: the second try is a window as tall as a page.
+	for _, size := range []gfx.Size{state.viewport, {Width: 1000, Height: 6000}} {
+		if size.Width == 0 {
+			size = gfx.Size{Width: 1400, Height: 900}
+		}
+		var canvas gfx.Canvas
+		state.Paint(&canvas, size)
+		var target gfx.Hit
+		for _, hit := range canvas.Hits() {
+			if hit.Role == role && hit.Label == label {
+				target = hit
+			}
+		}
+		if target.ID.IsZero() {
+			continue
+		}
+		canvas = gfx.Canvas{}
+		canvas.BeginEventPass(target.ID, gfx.ClickInfo{})
+		state.Paint(&canvas, size)
+		canvas.EndEventPass()
+		canvas.RunAfterPaint()
+		return
 	}
-	var canvas gfx.Canvas
-	state.Paint(&canvas, size)
-	var target gfx.Hit
+	t.Fatalf("no %v named %q is painted", role, label)
+}
+
+// chooseMCPClient picks the client the assistant's export block shows, in the
+// HTTP block or, with agent, the stdio one.
+func chooseMCPClient(t testing.TB, state *State, agent bool, client aiMCPClient) {
+	t.Helper()
+	m := state.messages.AISettings
+	title := m.MCPConfig
+	if agent {
+		title = m.AgentConfig
+	}
+	chooseSelectOption(t, state, title, aiMCPClientName(client))
+}
+
+// hasLabel reports whether the canvas paints a hit with the role named label.
+func hasLabel(canvas *gfx.Canvas, label string, role gfx.Role) bool {
 	for _, hit := range canvas.Hits() {
 		if hit.Role == role && hit.Label == label {
-			target = hit
+			return true
 		}
 	}
-	if target.ID.IsZero() {
-		t.Fatalf("no %v named %q is painted", role, label)
-	}
-	canvas = gfx.Canvas{}
-	canvas.BeginEventPass(target.ID, gfx.ClickInfo{})
-	state.Paint(&canvas, size)
-	canvas.EndEventPass()
-	canvas.RunAfterPaint()
+	return false
+}
+
+// chooseSelectOption opens the page select named selectLabel and picks the option
+// named optionLabel, as a user does.
+func chooseSelectOption(t testing.TB, state *State, selectLabel, optionLabel string) {
+	t.Helper()
+	clickPageLabel(t, state, gfx.RoleCombobox, selectLabel)
+	clickPageLabel(t, state, gfx.RoleOption, optionLabel)
 }
 
 // clickPageMenuRow chooses the row of the open page menu named label: the click

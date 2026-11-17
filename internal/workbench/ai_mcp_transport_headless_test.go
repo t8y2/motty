@@ -26,26 +26,13 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 				state.selectSettingsCategory(settingsMCP)
 				state.Click(hitAISetMCPEnabled)
 				state.ai.mcpAddr, state.ai.mcpToken = "127.0.0.1:4455", "transport-preview-token"
-				state.Click(aiMCPClientID(aiMCPCodex))
-				state.Click(aiAgentClientID(aiMCPCodex))
+				chooseMCPClient(t, state, false, aiMCPCodex)
+				chooseMCPClient(t, state, true, aiMCPCodex)
 				view, err := headless.Open(state.WindowConfig(app.Config{Title: "MCP transports", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{Scale: scale})
 				if err != nil {
 					t.Fatal(err)
 				}
 				defer view.Close()
-				click := func(id gfx.ID) {
-					t.Helper()
-					view.Rest()
-					for _, hit := range view.Snapshot().Hits {
-						if hit.ID == id && !hit.Block && !hit.IsLabel {
-							if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
-								t.Fatal(err)
-							}
-							return
-						}
-					}
-					t.Fatal("missing MCP control", tree.Text(id))
-				}
 				// The access levels are page Choices. The unique Commands segment
 				// reaches stdio's Allow all with Right without confusing it with
 				// the HTTP or host-access choice of the same name.
@@ -122,15 +109,28 @@ func TestMCPTransportSectionsAndConsentThroughNativeInput(t *testing.T) {
 					t.Fatal("confirmation changed the wrong MCP service")
 				}
 				shot("stdio-enabled")
-				click(hitAISetAgentSelect)
-				if err := view.Keys("home"); err != nil {
+				for _, hit := range view.Snapshot().Hits {
+					if hit.Role == gfx.RoleCombobox && hit.Label == state.messages.AISettings.AgentConfig {
+						if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				if err := view.Rest(); err != nil {
 					t.Fatal(err)
 				}
-				if err := view.Keys("enter"); err != nil {
+				for _, hit := range view.Snapshot().Hits {
+					if hit.Role == gfx.RoleOption && hit.Label == aiMCPClientName(aiMCPClaude) {
+						if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				if err := view.Rest(); err != nil {
 					t.Fatal(err)
 				}
 				if state.ai.cfg.agentClient != aiMCPClaude || state.ai.cfg.mcpClient != aiMCPCodex {
-					t.Fatal("stdio selector changed the HTTP client")
+					t.Fatalf("stdio selector changed the HTTP client: agent %v, http %v", state.ai.cfg.agentClient, state.ai.cfg.mcpClient)
 				}
 			})
 		}

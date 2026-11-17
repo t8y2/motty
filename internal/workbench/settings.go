@@ -413,7 +413,7 @@ func (state *State) clickSettings(id gfx.ID) bool {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return false
 	}
-	if state.clickLocalShell(id) || state.clickEditorSelect(id) || state.clickStartupHosts(id) {
+	if state.clickLocalShell(id) || state.clickStartupHosts(id) {
 		return true
 	}
 	for group, hit := range hitToolbarSettingsOpen {
@@ -735,11 +735,6 @@ func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		}
 		state.localShellMenu.open = true
 		return gfx.EventResult{Focus: hitSettingsLocalShellItems.At(max(0, state.localShellSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
-	}
-	if event.Target == hitSettingsEditor && !state.editorMenu.open && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
-		state.refreshEditors()
-		state.editorMenu.open = true
-		return gfx.EventResult{Focus: hitSettingsEditorItems.At(max(0, state.editorSelected())), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false
 }

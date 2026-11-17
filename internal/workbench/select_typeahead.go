@@ -54,12 +54,6 @@ func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuType
 			items = append(items, components.MenuTypeaheadItem{ID: hitSettingsLocalShellItems.At(index), Label: choice.Name})
 		}
 		return items, state.clickLocalShell, true
-	case state.modal == modalNone && state.activeSection == sectionSettings && state.settingsCategory == settingsFiles && target == hitSettingsEditor && !state.editorMenu.open:
-		items := make([]components.MenuTypeaheadItem, 0, len(state.editorMenu.choices))
-		for index, editor := range state.editorMenu.choices {
-			items = append(items, components.MenuTypeaheadItem{ID: hitSettingsEditorItems.At(index), Label: state.editorChoiceName(editor)})
-		}
-		return items, state.clickEditorSelect, true
 	case state.aiPanelVisible() && target == hitAITarget && !state.ai.panel.targetOpen && state.ai.run == nil:
 		options := state.aiTargetOptions()
 		items := make([]components.MenuTypeaheadItem, 0, len(options))
@@ -67,21 +61,6 @@ func (state *State) selectTypeaheadOptions(target gfx.ID) ([]components.MenuType
 			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label, Disabled: option.Disabled})
 		}
 		return items, state.aiChooseOnlyTarget, true
-	case state.aiSettingsVisible() && state.settingsCategory == settingsMCP && target == hitAISetMCPSelect && !state.ai.cfg.mcpSelectOpen:
-		options := aiMCPClientOptions()
-		items := make([]components.MenuTypeaheadItem, 0, len(options))
-		for _, option := range options {
-			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label})
-		}
-		return items, state.aiSettingsClick, true
-	case state.aiSettingsVisible() && state.settingsCategory == settingsMCP && target == hitAISetAgentSelect && !state.ai.cfg.agentSelectOpen:
-		options := aiAgentClientOptions()
-		items := make([]components.MenuTypeaheadItem, 0, len(options))
-		for _, option := range options {
-			items = append(items, components.MenuTypeaheadItem{ID: option.ID, Label: option.Label})
-		}
-		return items, state.aiSettingsClick, true
-
 	case target == hitAISetFormPreset && !state.ai.cfg.presetOpen:
 		items := make([]components.MenuTypeaheadItem, 0, len(aiPresets))
 		for index := range aiPresets {

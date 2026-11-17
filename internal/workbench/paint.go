@@ -179,14 +179,8 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	// way.
 	state.reconcileDragHosts()
 	state.devBeginPaint()
-	state.ai.cfg.mcpSelectBounds = gfx.Rect{}
-	state.ai.cfg.agentSelectBounds = gfx.Rect{}
 	state.localShellMenu.bounds = gfx.Rect{}
-	state.editorMenu.bounds = gfx.Rect{}
 	state.fileManagerRect = gfx.Rect{}
-	if state.activeSection != sectionSettings || state.settingsCategory != settingsFiles || state.settingsSearching() {
-		state.editorMenu.open = false
-	}
 	if state.activeSection != sectionSettings || state.settingsCategory != settingsTerminal || state.settingsSearching() {
 		state.localShellMenu.open = false
 	}
@@ -198,10 +192,6 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		}
 	}
 	state.ai.panel.targetBounds = gfx.Rect{}
-	if !state.aiSettingsVisible() || state.settingsCategory != settingsMCP || state.settingsSearching() {
-		state.ai.cfg.mcpSelectOpen = false
-		state.ai.cfg.agentSelectOpen = false
-	}
 	state.aiPanelBeginPaint()
 	if state.noteSidebarFocusBack && state.activeSection == sectionTerminal {
 		state.noteSidebarFocusBack = false
@@ -343,10 +333,8 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	state.paintToolbarDockBottom(canvas, size)
 	viewport := state.windowRect()
 	state.paintAITargetSelect(canvas)
-	state.paintMCPClientSelect(canvas)
 	state.paintLocalShellSelect(canvas)
 	state.paintFindPreferences(canvas)
-	state.paintEditorSelect(canvas)
 	state.paintStartupHostSelect(canvas)
 	state.paintMonitorIntervalMenu(canvas)
 	state.paintDashboardMenu(canvas)

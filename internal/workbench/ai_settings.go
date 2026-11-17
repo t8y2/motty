@@ -83,13 +83,7 @@ var (
 	hitAISetMCPCopy           = tree.ID(aiSettingsHits, "ai-set-mcp-copy")
 	hitAISetMCPCopyURL        = tree.ID(aiSettingsHits, "ai-set-mcp-copy-url")
 	hitAISetMCPCopyToken      = tree.ID(aiSettingsHits, "ai-set-mcp-copy-token")
-	hitAISetMCPClients        = tree.Sub(aiSettingsHits, tree.Name("ai-set-mcp-client"))
-	hitAISetMCPClaude         = aiMCPClientID(aiMCPClaude)
-	hitAISetMCPCursor         = aiMCPClientID(aiMCPCursor)
-	hitAISetMCPCodex          = aiMCPClientID(aiMCPCodex)
 	hitAISetMCPReset          = tree.ID(aiSettingsHits, "ai-set-mcp-reset")
-	hitAISetMCPSelect         = tree.ID(aiSettingsHits, "ai-set-mcp-select")
-	hitAISetMCPSelectDismiss  = tree.ID(aiSettingsHits, "ai-set-mcp-select-dismiss")
 )
 
 // Rows of the provider and model lists have a block of identities each.
@@ -239,12 +233,8 @@ type aiSettingsUI struct {
 	copied             aiCopyState
 	copyTarget         gfx.ID
 	mcpClient          aiMCPClient
-	mcpSelectOpen      bool
-	mcpSelectBounds    gfx.Rect
 	mcpPreviewLines    []string
 	agentClient        aiMCPClient
-	agentSelectOpen    bool
-	agentSelectBounds  gfx.Rect
 	agentPreviewLines  []string
 	agentProgram       string
 	agentDataDir       string
@@ -480,16 +470,6 @@ func (state *State) aiSettingsClick(id gfx.ID) bool {
 		state.aiCopyMCP(id, state.aiMCPURL())
 	case id == hitAISetMCPCopyToken:
 		state.aiCopyMCP(id, state.ai.mcpToken)
-	case id.Scope() == hitAISetMCPClients:
-		if index, ok := id.In(hitAISetMCPClients); ok && index >= 0 && index < int(aiMCPClientCount) {
-			state.aiChooseMCPClient(aiMCPClient(index), false)
-			cfg.mcpSelectOpen = false
-		}
-	case id == hitAISetMCPSelect:
-		cfg.mcpSelectOpen = !cfg.mcpSelectOpen
-		cfg.agentSelectOpen = false
-	case id == hitAISetMCPSelectDismiss:
-		cfg.mcpSelectOpen = false
 	case id == hitAISetMCPReset:
 		// An empty token makes the application create a fresh one when it next
 		// reconfigures the server.
@@ -715,16 +695,6 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 			state.aiAddModel()
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		}
-	}
-	if event.Target == hitAISetMCPSelect && cfg.dialog == aiDialogNone && !cfg.mcpSelectOpen && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
-		cfg.mcpSelectOpen = true
-		cfg.agentSelectOpen = false
-		return gfx.EventResult{Focus: aiMCPClientID(cfg.mcpClient), FocusVisible: true, Handled: true, Repaint: true}, true
-	}
-	if event.Target == hitAISetAgentSelect && cfg.dialog == aiDialogNone && !cfg.agentSelectOpen && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
-		cfg.agentSelectOpen = true
-		cfg.mcpSelectOpen = false
-		return gfx.EventResult{Focus: aiAgentClientID(cfg.agentClient), FocusVisible: true, Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false
 }

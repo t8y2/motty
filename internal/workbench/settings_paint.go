@@ -32,11 +32,8 @@ const (
 	controlWordSeparators   // the terminal's word-selection separators
 	controlSwatches         // a strip of round color dots
 	controlLabel            // the words of a row, which label the control beside them
-	controlMCPSelect        // client configuration select
 	controlLogo             // the product wordmark in a slot
-	controlAgentSelect      // independent stdio client configuration
 	controlLocalShellSelect // detected Windows shells
-	controlEditorSelect     // installed editors
 	controlStartupHosts     // the hosts a launch connects
 )
 
@@ -238,14 +235,8 @@ func (state *State) paintSettingsControls(canvas *gfx.Canvas) {
 		control := &state.settings.controls[index]
 		rect := control.slot.Rect()
 		switch control.kind {
-		case controlMCPSelect:
-			state.ai.cfg.mcpSelectBounds = rect
-		case controlAgentSelect:
-			state.ai.cfg.agentSelectBounds = rect
 		case controlLocalShellSelect:
 			state.localShellMenu.bounds = rect
-		case controlEditorSelect:
-			state.editorMenu.bounds = rect
 		case controlStartupHosts:
 			state.startupPicker.bounds = rect
 		case controlHit:
@@ -657,6 +648,23 @@ func settingsChoiceRow[T comparable](page *settingsPage, label, description stri
 		// one that way.
 		if _, clicked := choice.ChosenIndex(); clicked && same != nil {
 			same()
+		}
+	})
+}
+
+// settingsSelectRow is a row whose control is a page Select: value is what the select
+// writes, and changed runs once the paint that delivered the choice is over. dress
+// may give the select a hint or a placeholder.
+func settingsSelectRow[T comparable](page *settingsPage, label, description string, value *T, choices []T, name func(T) string, dress func(ui.Box) ui.Box, changed func()) {
+	controlWidth := max(min(float32(300), max(float32(190), page.width*0.40)), 0)
+	controlWidth = min(controlWidth, max(page.width-60, 0))
+	page.lineWith(label, description, controlWidth, func() {
+		selector := ui.Select(page.c, value, choices, name).Label(label).Width(controlWidth)
+		if dress != nil {
+			selector = dress(selector)
+		}
+		if selector.Changed() && changed != nil {
+			page.c.After(changed)
 		}
 	})
 }
