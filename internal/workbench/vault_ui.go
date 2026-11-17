@@ -48,9 +48,12 @@ type secretsUI struct {
 	saveBoxID, saveBoxHintID  gfx.ID
 	saveBoxLabel, saveBoxHint string
 	saveBoxCheck, saveBoxHelp ui.Box
-	// unlockField is the slot the unlock field is painted into, forgetText the
-	// description the forget body wraps.
-	unlockField ui.Box
+	// unlockForm and unlockText are the unlock dialog's field row and its text, bound to
+	// unlock; unlockShown reveals it. forgetText is the description the forget body wraps.
+	unlockForm  ui.FormFieldState
+	unlockText  ui.Field
+	unlockBound bool
+	unlockShown bool
 	forgetText  string
 	forgetLines int
 }
@@ -384,21 +387,26 @@ func (state *State) declareVaultUnlockDialog(c ui.C) {
 // painted by paintSecretInput into the slot it reserves, and the error under it.
 func (state *State) declareVaultUnlockBody(c ui.C) {
 	secrets := &state.secrets
-	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(12)
-	column.Children(func() {
-		secrets.unlockField = ui.Slot(c).Height(62)
-		state.problemLineC(c, secrets.dialogError)
-	})
-	column.DrawOver(func(d *ui.DrawContext) {
-		canvas, theme := d.Canvas, *d.Theme
-		m := state.messages
-		content := components.BeginField(canvas, theme, secrets.unlockField.Rect()).Paint(m.VaultUnlockLabel, "", "")
-		value := secrets.unlock.String()
-		focused := canvas.Focused() == hitVaultUnlockField
-		state.paintSecretInput(canvas, content, components.InputSnapshot{
-			ID: hitVaultUnlockField, Label: m.VaultUnlockLabel, Value: value, Secure: true,
-			Focused: focused, PlatformEditing: focused && value != "", Invalid: secrets.dialogError != "",
+	m := state.messages
+	if !secrets.unlockBound {
+		secrets.unlockText.Bind(&secrets.unlock)
+		secrets.unlockBound = true
+	}
+	secrets.unlockText.Secure = !secrets.unlockShown
+	secrets.unlockText.Invalid = secrets.dialogError != ""
+	ui.Column(c).Fill().PadSides(2, 4, 0, 4).Gap(12).Children(func() {
+		ui.FormField(c, &secrets.unlockForm, m.VaultUnlockLabel).FillWidth().Height(62).Children(func() {
+			box := ui.TextFieldID(c, hitVaultUnlockField, &secrets.unlockText, m.VaultUnlockLabel, "")
+			icon, label := lucideIcons[iconEye], m.ShowSecret
+			if secrets.unlockShown {
+				icon, label = lucideIcons[iconEyeOff], m.HideSecret
+			}
+			box.Action(icon, label)
+			if box.ActionClicked() {
+				secrets.unlockShown = !secrets.unlockShown
+			}
 		})
+		state.problemLineC(c, secrets.dialogError)
 	})
 }
 
