@@ -33,15 +33,16 @@ func (state *State) tabInlineEditing(id layoutcore.WorkspaceID) bool {
 	return state.tabInlineActive() && state.tabInline.workspace == id
 }
 
-// beginTabInline renames a tab in place on its tab, starting from the name it
-// shows now, all of it selected so typing replaces the name.
+// beginTabInline renames a tab in place on its tab, starting from the tab's own
+// name (not an agent passing through it), all of it selected so typing replaces
+// the name.
 func (state *State) beginTabInline(id layoutcore.WorkspaceID) {
 	index, ok := state.workspaceTab(id)
 	if !ok || state.modal != modalNone {
 		return
 	}
 	state.tabInline = tabInline{workspace: id}
-	state.tabInline.editor.Insert(state.tabLabel(state.workspaceTabs[index]))
+	state.tabInline.editor.Insert(state.tabBaseLabel(state.workspaceTabs[index]))
 	state.tabInline.editor.SetSelection(text.Range{End: state.tabInline.editor.RuneCount()})
 }
 

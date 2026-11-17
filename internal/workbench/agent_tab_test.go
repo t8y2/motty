@@ -66,6 +66,66 @@ func TestAgentNamesMatchTheTerminalCommand(t *testing.T) {
 		if icon, ok := agentIcon(agent); !ok || icon.ViewBox == 0 {
 			t.Fatalf("agent %d has no icon", agent)
 		}
+		if agentName(agent) == "" {
+			t.Fatalf("agent %d has no tab name", agent)
+		}
+	}
+	if agentName(agentNone) != "" {
+		t.Fatal("no agent still has a tab name")
+	}
+}
+
+// A local tab whose pane runs a coding agent is named for the agent while the
+// Tab name setting asks for the connection name, and the connection name
+// returns when the agent exits. A remote pane keeps its connection name even
+// if an agent is recorded on it: its foreground process is not on this machine.
+func TestALocalTabRunningAnAgentTakesItsName(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	tab := activeTab(state)
+	session := &state.sessions[0]
+	session.agent = agentClaude
+	if got := state.tabLabel(tab); got != tab.Title {
+		t.Fatalf("remote label = %q, want the connection name %q", got, tab.Title)
+	}
+
+	session.HostID = localHostID
+	if got := state.tabLabel(tab); got != "Claude Code" {
+		t.Fatalf("label = %q, want Claude Code", got)
+	}
+	session.agent = agentNone
+	if got := state.tabLabel(tab); got != tab.Title {
+		t.Fatalf("label after exit = %q, want the connection name %q", got, tab.Title)
+	}
+}
+
+// The agent's name belongs to the connection-name source alone: following the
+// terminal title or the current path says the tab is named for something else,
+// and a name the user typed always wins.
+func TestTheAgentNameYieldsToTheChosenTabNameAndTheUsersName(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	session := &state.sessions[0]
+	session.HostID = localHostID
+	session.agent = agentClaude
+	tab := activeTab(state)
+
+	for _, mode := range []tabTitleMode{tabTitleTerminal, tabTitleDirectory} {
+		state.tabTitleMode = mode
+		if got := state.tabLabel(tab); got == "Claude Code" {
+			t.Fatalf("mode %q took the agent's name", mode)
+		}
+	}
+
+	state.tabTitleMode = tabTitleConnection
+	state.beginTabInline(tab.ID)
+	if got := state.tabInline.editor.String(); got != tab.Title {
+		t.Fatalf("rename started from %q, want the tab's own name %q", got, tab.Title)
+	}
+	state.tabInline.editor.Insert("production")
+	state.commitTabInline()
+	if got := state.tabLabel(activeTab(state)); got != "production" {
+		t.Fatalf("renamed label = %q, want production", got)
 	}
 }
 

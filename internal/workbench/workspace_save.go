@@ -42,7 +42,7 @@ func (state *State) openWorkspaceSave(workspace layoutcore.WorkspaceID) {
 	}
 	state.workspaceSave = workspaceSave{workspace: workspace, layout: layout}
 	state.workspaceSave.nameField.Bind(&state.workspaceSave.name)
-	state.workspaceSave.name.Insert(state.tabLabel(state.workspaceTabs[index]))
+	state.workspaceSave.name.Insert(state.tabBaseLabel(state.workspaceTabs[index]))
 	state.workspaceSave.name.SetSelection(text.Range{End: state.workspaceSave.name.RuneCount()})
 	state.modal = modalWorkspaceSave
 }
@@ -183,7 +183,7 @@ func (state *State) declareWorkspaceSave(c ui.C) {
 	save := &state.workspaceSave
 	description := ""
 	if index, ok := state.workspaceTab(save.workspace); ok {
-		description = fmt.Sprintf(messages.WorkspaceSaveDescriptionFmt, state.tabLabel(state.workspaceTabs[index]),
+		description = fmt.Sprintf(messages.WorkspaceSaveDescriptionFmt, state.tabBaseLabel(state.workspaceTabs[index]),
 			len(state.deck.Panes(save.workspace, nil)))
 	}
 	const width float32 = 500

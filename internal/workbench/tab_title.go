@@ -17,7 +17,34 @@ const (
 )
 
 // tabLabel follows the active pane without changing the saved workspace name.
+// A local tab whose pane runs a coding agent takes the agent's name while the
+// setting asks for the connection name: the mark beside it already says which
+// program is in front, and the connection returns when the agent exits.
 func (state *State) tabLabel(workspace layoutcore.WorkspaceInfo) string {
+	if name := state.agentTabName(workspace); name != "" {
+		return name
+	}
+	return state.tabBaseLabel(workspace)
+}
+
+// agentTabName is the coding agent a local tab shows in place of its connection
+// name, or "" when the tab's own name stands: another tab-name source is
+// selected, the user named the tab, or the pane in front is not a local agent.
+func (state *State) agentTabName(workspace layoutcore.WorkspaceInfo) string {
+	if (state.tabTitleMode != tabTitleConnection && state.tabTitleMode != "") || workspace.Named {
+		return ""
+	}
+	session := state.tabSession(workspace)
+	if session == nil || !session.isLocal() || session.agent == agentNone {
+		return ""
+	}
+	return agentName(session.agent)
+}
+
+// tabBaseLabel is the name the tab-name setting gives the tab, without an agent
+// passing through it. Renaming and saving start from this, so a transient agent
+// never becomes the tab's own name.
+func (state *State) tabBaseLabel(workspace layoutcore.WorkspaceInfo) string {
 	if state.tabTitleMode == tabTitleConnection || state.tabTitleMode == "" || workspace.Named {
 		return workspace.Title
 	}

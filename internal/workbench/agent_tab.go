@@ -95,6 +95,38 @@ func agentIcon(agent codingAgent) (gfx.Icon, bool) {
 	}
 }
 
+// agentName is what a tab calls the coding agent in front of it. These are the
+// products' own names, not translated: the mark beside the name is the
+// product's.
+func agentName(agent codingAgent) string {
+	switch agent {
+	case agentClaude:
+		return "Claude Code"
+	case agentCodex:
+		return "Codex"
+	case agentGemini:
+		return "Gemini"
+	case agentDeepseek:
+		return "DeepSeek"
+	case agentKimi:
+		return "Kimi"
+	case agentQwen:
+		return "Qwen"
+	case agentZhipu:
+		return "ZCode"
+	case agentMinimax:
+		return "MiniMax"
+	case agentPi:
+		return "Pi"
+	case agentOpenCode:
+		return "OpenCode"
+	case agentGrok:
+		return "Grok"
+	default:
+		return ""
+	}
+}
+
 // launchers are programs that run another program named in their arguments:
 // language runtimes, shells and wrappers. A foreground argv that starts with one
 // is read further; any other program is judged by its own name alone, so
