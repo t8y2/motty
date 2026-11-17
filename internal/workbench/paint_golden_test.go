@@ -70,7 +70,15 @@ func settingsScene(name string, setup func(t *testing.T, world *settingsWorld)) 
 	}}
 }
 
+// extraPaintScenes are scenes a file of its own adds with init, so a change to one screen
+// does not touch the table above.
+var extraPaintScenes []paintScene
+
 func paintScenes() []paintScene {
+	return append(basePaintScenes(), extraPaintScenes...)
+}
+
+func basePaintScenes() []paintScene {
 	candidates := []aiproviderimport.Candidate{
 		{Name: "One", Kind: "openai", BaseURL: "https://a.example/v1", Models: []string{"m1", "m2"}},
 		{Name: "Two", Kind: "openai", BaseURL: "https://b.example/v1", SkipReason: "duplicate"},
