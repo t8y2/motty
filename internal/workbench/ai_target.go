@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -11,6 +12,7 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/ai/gate"
+	"motty/internal/ai/llm"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -97,6 +99,64 @@ func (state *State) aiTargetLabel(target gate.SessionInfo) string {
 		return target.Title
 	}
 	return target.Title + " · " + target.Address
+}
+
+// aiCallTargetLabel names the connections a tool call operates on when they are
+// not just this request's default. The tool card shows the label, so a call
+// that the risk policy runs without asking on another connection still says
+// where it ran. An explicit default is not repeated, and a call that only
+// reaches the default has no label.
+func (state *State) aiCallTargetLabel(call llm.ToolCall, run *aiRun) string {
+	var args struct {
+		Session  string   `json:"session"`
+		Sessions []string `json:"sessions"`
+	}
+	if json.Unmarshal([]byte(call.Arguments), &args) != nil {
+		return ""
+	}
+	handles := args.Sessions
+	if args.Session != "" {
+		handles = append([]string{args.Session}, handles...)
+	}
+	cross := false
+	for _, handle := range handles {
+		if handle != "" && handle != run.target.ID {
+			cross = true
+			break
+		}
+	}
+	if !cross {
+		return ""
+	}
+	labels := make([]string, 0, len(handles))
+	for _, handle := range handles {
+		if handle == "" {
+			continue // an omitted session is the default, which the card does not repeat
+		}
+		label, ok := state.aiCallHandleLabel(handle, run)
+		if !ok {
+			// The gate refuses a connection this request never named; the card
+			// does not pretend it is one of them.
+			return ""
+		}
+		labels = append(labels, label)
+	}
+	return strings.Join(labels, "; ")
+}
+
+// aiCallHandleLabel resolves one handle of a call in flight to the connection
+// it names. The gate has limited it to the default and the references; a
+// handle outside both is not a connection this request may act on.
+func (state *State) aiCallHandleLabel(handle string, run *aiRun) (string, bool) {
+	if handle == run.target.ID {
+		return state.aiTargetLabel(run.target), true
+	}
+	for _, reference := range run.references {
+		if reference.ID == handle {
+			return state.aiTargetLabel(reference), true
+		}
+	}
+	return "", false
 }
 
 // aiConversationTargetLabel names the connections a question was about: the

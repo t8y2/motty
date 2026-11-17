@@ -1242,7 +1242,7 @@ var englishAIPanel = AIPanelMessages{
 	TargetNone:         "No connection (general questions)",
 	TargetConnected:    "Connected",
 	TargetLocked:       "Locked for this request",
-	TargetHint:         "Tick several connections. The first is the default and stays put when switching tabs; the others send their terminal text along and can be operated on when you ask. Use @ to reference a session too; cross-connection commands and file changes show the actual target for approval.",
+	TargetHint:         "Tick several connections. The first is the default and stays put when switching tabs; the others send their terminal text along and can be operated on when you ask. Use @ to reference a session too; cross-connection commands and file changes name the actual target, and the auto-run scope decides whether they ask first.",
 	TargetGroupFmt:     "%s · whole tab (%d)",
 	TargetLimitFmt:     "At most %d connections can be selected at once",
 	TargetDisconnected: "Disconnected",

@@ -331,21 +331,22 @@ func (state *State) aiRiskColors(level risk.Level) (foreground, fill gfx.Color) 
 // these (aiBuild) and declared with the same numbers (declareAIRow), so the two
 // agree; flex never has to be asked how tall a row is.
 const (
-	aiUserPadY     = float32(8)  // inside a user bubble
-	aiUserPadX     = float32(10) //
-	aiNoticePadY   = float32(8)  // inside a notice
-	aiNoticePadX   = float32(12) //
-	aiReasonHeader = float32(24) // the line that opens and closes a reasoning row
-	aiReasonBody   = float32(10) // what an open reasoning row adds to its lines
-	aiBoxPad       = float32(6)  // around the lines of a tool's command or output
-	aiToolPadY     = float32(8)  // above and below the parts of a tool card
-	aiToolPad      = float32(10) // at the sides of a tool card
-	aiToolAfterCmd = float32(6)  // between a tool's command and its output strip
-	aiToolAfterOut = float32(4)  // under a tool's output
-	aiToolHeader   = float32(22) // the name line and the output strip
-	aiMaxDetail    = 6
-	aiMaxOutput    = 16
-	aiMaxOutBytes  = 8192
+	aiUserPadY        = float32(8)  // inside a user bubble
+	aiUserPadX        = float32(10) //
+	aiNoticePadY      = float32(8)  // inside a notice
+	aiNoticePadX      = float32(12) //
+	aiReasonHeader    = float32(24) // the line that opens and closes a reasoning row
+	aiReasonBody      = float32(10) // what an open reasoning row adds to its lines
+	aiBoxPad          = float32(6)  // around the lines of a tool's command or output
+	aiToolPadY        = float32(8)  // above and below the parts of a tool card
+	aiToolPad         = float32(10) // at the sides of a tool card
+	aiToolAfterCmd    = float32(6)  // between a tool's command and its output strip
+	aiToolAfterOut    = float32(4)  // under a tool's output
+	aiToolAfterTarget = float32(4)  // under the connection a cross-connection call ran on
+	aiToolHeader      = float32(22) // the name line and the output strip
+	aiMaxDetail       = 6
+	aiMaxOutput       = 16
+	aiMaxOutBytes     = 8192
 )
 
 // aiBuild measures one message for the given width: the lines it wraps to and its
@@ -409,6 +410,9 @@ func (state *State) aiLayoutTool(view *aiRowView, item *aiItem, width, cell, cel
 	output.reset("")
 	cols := max(int((width-2*aiToolPad-12)/cell), 8)
 	height := 2*aiToolPadY + aiToolHeader
+	if view.targetLabel != "" {
+		height += aiSizes.smallLine + aiToolAfterTarget
+	}
 	if view.detail != "" {
 		command.layoutMono(view.detail, cols, aiMaxDetail, cell, cellHeight)
 		view.lines = command.appendLines(view.lines)
@@ -1392,6 +1396,12 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 						f.Text(statusText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(statusColor).LineHeight(aiToolHeader)
 					})
 				})
+				// A call the risk policy ran on another connection says which
+				// one, whether or not it was approved to do so.
+				if view.targetLabel != "" {
+					f.Text(m.Target+": "+view.targetLabel).FontSize(aiSizes.small).Weight(gfx.WeightRegular).Color(pal.muted).
+						LineHeight(aiSizes.smallLine).Ellipsis().MarginSides(0, 0, aiToolAfterTarget, 0)
+				}
 				if view.commandLines > 0 {
 					f.Column().Pad(aiBoxPad).MarginSides(0, 0, aiToolAfterCmd, 0).Background(pal.terminal).Radius(radius.item).Children(func() {
 						text := f.Column().Children(func() {

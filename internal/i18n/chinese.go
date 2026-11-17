@@ -1242,7 +1242,7 @@ var chineseAIPanel = AIPanelMessages{
 	TargetNone:         "未选择连接（普通问答）",
 	TargetConnected:    "已连接",
 	TargetLocked:       "本轮锁定",
-	TargetHint:         "可勾选多个连接，第一个是固定的默认目标，切换标签页不会改变它；其余连接的终端内容会一并发给 AI，也可明确指定在其中操作。@也可引用会话；跨连接执行命令或修改文件时，会显示实际目标供审批。",
+	TargetHint:         "可勾选多个连接，第一个是固定的默认目标，切换标签页不会改变它；其余连接的终端内容会一并发给 AI，也可明确指定在其中操作。@也可引用会话；跨连接执行命令或修改文件时，卡片会显示实际目标，是否先确认由审批范围决定。",
 	TargetGroupFmt:     "%s · 整个标签页（%d）",
 	TargetLimitFmt:     "最多同时选择 %d 个连接",
 	TargetDisconnected: "已断开",

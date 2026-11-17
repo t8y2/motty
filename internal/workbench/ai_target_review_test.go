@@ -12,7 +12,7 @@ import (
 func TestAIApprovalUsesTheDialedAddressAfterSavedHostEdits(t *testing.T) {
 	model := &scriptedModel{turn: func(index int, _ llm.Request) []llm.Event {
 		if index == 0 {
-			return toolTurn("terminal_exec", `{"session":"2","command":"hostname"}`)
+			return toolTurn("terminal_exec", `{"session":"2","command":"mkdir cross-address-test"}`)
 		}
 		return textTurn("done")
 	}}

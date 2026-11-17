@@ -1242,7 +1242,7 @@ var traditionalAIPanel = AIPanelMessages{
 	TargetNone:         "未選擇連線（普通問答）",
 	TargetConnected:    "已連線",
 	TargetLocked:       "本輪鎖定",
-	TargetHint:         "可勾選多個連線，第一個是固定的預設目標，切換分頁不會改變它；其餘連線的終端機內容會一並行給 AI，也可明確指定在其中操作。@也可引用工作階段；跨連線執行指令或修改檔案時，會顯示實際目標供核准。",
+	TargetHint:         "可勾選多個連線，第一個是固定的預設目標，切換分頁不會改變它；其餘連線的終端機內容會一並行給 AI，也可明確指定在其中操作。@也可引用工作階段；跨連線執行指令或修改檔案時，卡片會顯示實際目標，是否先確認由審批範圍決定。",
 	TargetGroupFmt:     "%s · 整個分頁（%d）",
 	TargetLimitFmt:     "最多同時選擇 %d 個連線",
 	TargetDisconnected: "已中斷",

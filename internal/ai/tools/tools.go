@@ -279,7 +279,7 @@ func Targeted() []Spec {
 		case NameListSessions:
 			spec.Description = "List this request's locked primary connection and explicitly @referenced sessions with ids, titles, addresses and readiness. Active marks the locked primary, not the currently visible tab. Call this first when you need a session id. Each session includes host_id (persistent saved-host ID), host_name and host_group (catalog group path). Empty host_id means no saved host; empty group for a saved host means root. Session aliases are not host identities."
 		case NameTerminalExec:
-			spec.Description = "Run one command in the addressed terminal session and return its output and, in a shell, its exit status. On a Telnet or serial device console it is sent exactly as typed and finishes when the prompt returns; there is no exit status. If the session id is omitted, use the locked primary. Explicitly supply the id for an @referenced session; cross-connection execution requires approval naming that actual target. The command remains visible in that session's tab and must finish within the timeout."
+			spec.Description = "Run one command in the addressed terminal session and return its output and, in a shell, its exit status. On a Telnet or serial device console it is sent exactly as typed and finishes when the prompt returns; there is no exit status. If the session id is omitted, use the locked primary. Explicitly supply the id for an @referenced session; a cross-connection command follows the same approval scope and names the connection it runs on. The command remains visible in that session's tab and must finish within the timeout."
 		}
 		out = append(out, spec)
 	}
