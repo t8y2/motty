@@ -2607,9 +2607,6 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result := state.toolbarSettingsPointer(event); result.Handled {
 		return result
 	}
-	if result := state.ruleManagerPointer(event); result.Handled {
-		return result
-	}
 	if result := state.sftpColumnSettingsPointer(event); result.Handled {
 		return result
 	}

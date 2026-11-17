@@ -19,7 +19,7 @@ import (
 
 func ruleManagerNativeView(t *testing.T, state *State, width, height int, scale float64) *headless.Session {
 	t.Helper()
-	view, err := headless.Open(app.Config{
+	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "Motty", Width: width, Height: height, Tree: Tree(), Paint: state.Paint,
 		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize,
 		TextInput: func(context app.TextInputContext) *app.TextInput {
@@ -28,7 +28,7 @@ func ruleManagerNativeView(t *testing.T, state *State, width, height int, scale 
 			}
 			return nil
 		},
-	}, nil, headless.Options{Scale: scale})
+	}), nil, headless.Options{Scale: scale})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,14 +146,14 @@ func TestRuleManagerNativeHighlightScrollEditAndDelete(t *testing.T) {
 			}
 			clickRuleNative(t, view, hitRuleManagerSelect.At(0))
 			bounds := state.ruleManager.bounds
-			beforeHover := state.ruleManager.offset
+			beforeHover := state.ruleManager.list.Offset
 			if err := view.Move(bounds.X+bounds.Width-4, bounds.Y+40); err != nil {
 				t.Fatal(err)
 			}
 			if err := view.Rest(); err != nil {
 				t.Fatal(err)
 			}
-			if state.ruleManager.offset != beforeHover {
+			if state.ruleManager.list.Offset != beforeHover {
 				t.Fatal("hovering over the scrollbar changed its offset without a press")
 			}
 			bar, ok := view.Hit("Vertical scrollbar")
@@ -169,7 +169,7 @@ func TestRuleManagerNativeHighlightScrollEditAndDelete(t *testing.T) {
 			if err := view.Release(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2+100); err != nil {
 				t.Fatal(err)
 			}
-			if state.ruleManager.offset <= 0 {
+			if state.ruleManager.list.Offset <= 0 {
 				t.Fatal("dragging the visible scrollbar did not move the list")
 			}
 			if err := view.Scroll(gfx.ScrollEvent{X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2, DeltaY: -10000, Precise: true}); err != nil {
