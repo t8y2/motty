@@ -1,0 +1,162 @@
+prim 0 {0 0 1200 800} {0.06666667 0.08235294 0.105882354 1}
+prim 0 {467.5 56 28 28} {0.23529412 0.27450982 0.34117648 0.7}
+prim 0 {20 154 571.5 514} {0.36784315 0.40470588 0.45960784 1}
+prim 0 {21 155 569.5 512} {0.06666667 0.08235294 0.105882354 1}
+prim 0 {22 156 557.5 30} {0.06666667 0.08235294 0.105882354 1}
+prim 0 {22 186 557.5 30} {0.06666667 0.08235294 0.105882354 1}
+prim 0 {22 216 557.5 30} {0.06666667 0.08235294 0.105882354 1}
+prim 0 {1120 56 28 28} {0.17254902 0.19607843 0.23529412 1}
+prim 0 {608.5 154 571.5 514} {0.36784315 0.40470588 0.45960784 1}
+prim 0 {609.5 155 569.5 512} {0.06666667 0.08235294 0.105882354 1}
+prim 0 {610.5 156 557.5 30} {0.06666667 0.08235294 0.105882354 1}
+prim 0 {610.5 186 557.5 30} {0.06666667 0.08235294 0.105882354 1}
+prim 0 {0 0 1200 800} {0 0 0 0}
+prim 0 {220 102.5 760 595} {0 0 0 0}
+prim 0 {221 103.5 758 593} {0.12156863 0.14117648 0.1764706 0}
+prim 0 {932 118.5 32 32} {0.06666667 0.08235294 0.105882354 0}
+prim 2 {244 239.5 672 32} {0 0 0 0}
+prim 0 {244 239.5 672 32} {0 0 0 0}
+prim 0 {245 240.5 670 30} {0.11146667 0.1264 0.1488 0}
+prim 2 {244 303.5 712 32} {0 0 0 0}
+prim 0 {244 303.5 712 32} {0 0 0 0}
+prim 0 {245 304.5 710 30} {0.11146667 0.1264 0.1488 0}
+prim 2 {244 367.5 353.5 32} {0 0 0 0}
+prim 0 {244 367.5 353.5 32} {0 0 0 0}
+prim 0 {245 368.5 351.5 30} {0.11146667 0.1264 0.1488 0}
+prim 2 {752.5 369.5 56 28} {0 0 0 0}
+prim 0 {752.5 369.5 56 28} {0 0 0 0}
+prim 0 {753.5 370.5 54 26} {0.11146667 0.1264 0.1488 0}
+prim 0 {816.5 369.5 56 28} {0.09411765 0.09411765 0.105882354 0}
+prim 0 {880.5 369.5 75.5 28} {0.9411765 0.47058824 0.47058824 0}
+prim 2 {248 417.5 16 16} {0 0 0 0}
+prim 0 {248 417.5 16 16} {0 0 0 0}
+prim 0 {249 418.5 14 14} {0.11146667 0.1264 0.1488 0}
+prim 0 {244 449.5 712 168} {0 0 0 0}
+prim 0 {245 450.5 710 166} {0.06666667 0.08235294 0.105882354 0}
+prim 2 {605.5 367.5 139 32} {0 0 0 0}
+prim 0 {605.5 367.5 139 32} {0 0 0 0}
+prim 0 {606.5 368.5 137 30} {0.11146667 0.1264 0.1488 0}
+prim 0 {827 641.5 65.5 32} {0.23529412 0.27450982 0.34117648 0}
+prim 0 {900.5 641.5 55.5 32} {0.8862745 0.90588236 0.93333334 0}
+prim 0 {599.5 48 1 712} {0.2 0.23529412 0.2901961 1}
+prim 2 {892 56 64 28} {0 0 0 0.05}
+prim 0 {892 56 64 28} {0.216 0.22917646 0.24894118 1}
+prim 0 {893 57 62 26} {0.06666667 0.08235294 0.105882354 1}
+prim 0 {399.5 128 1 20} {0.2 0.23529412 0.2901961 1}
+prim 0 {471.5 128 1 20} {0.2 0.23529412 0.2901961 1}
+prim 0 {988 128 1 20} {0.2 0.23529412 0.2901961 1}
+prim 0 {1060 128 1 20} {0.2 0.23529412 0.2901961 1}
+text "File transfer" {86 8.5 69.48212 19}
+text "Production · deploy@prod.example.com:22" {169.48212 8.5 1014.5179 19}
+text "Local" {20 59.5 347.5 21}
+text "Name ↑" {28 128.5 367.5 19}
+text "Size" {443.74023 128.5 64 19}
+text "Modified" {475.5 128.5 108 19}
+text "destination" {54 160.5 329.5 21}
+text "—" {445.01172 161.5 64 19}
+text "TMP" {463.5 161.5 108 19}
+text "tree" {54 190.5 329.5 21}
+text "—" {445.01172 191.5 64 19}
+text "TMP" {463.5 191.5 108 19}
+text "中文上传.yml" {54 220.5 329.5 21}
+text "13 B" {431.14844 221.5 64 19}
+text "TMP" {463.5 221.5 108 19}
+text "3 items" {20 674 571.5 20}
+text "Server" {608.5 59.5 279.5 21}
+text "Name ↑" {616.5 128.5 367.5 19}
+text "Size" {1032.2402 128.5 64 19}
+text "Modified" {1064 128.5 108 19}
+text "docs" {642.5 160.5 329.5 21}
+text "—" {1033.5117 161.5 64 19}
+text "TMP" {1052 161.5 108 19}
+text "notes.txt" {642.5 190.5 329.5 21}
+text "11 B" {1021.60547 191.5 64 19}
+text "TMP" {1052 191.5 108 19}
+text "2 items" {608.5 674 571.5 20}
+text "Drag files or folders to the other side to copy them" {12 768 1176 20}
+text "Location profiles" {244 126.5 712 17}
+text "Save paired directories and open both panels together. Choose All connections to reuse the paths on other" {244 151.5 712 21}
+text "servers." {244 172.5 712 21}
+text "Local directory (optional)" {243.99998 217.5 166.61624 18}
+text "TMP" {255 245.5 650 20}
+text "Server directory" {243.99998 281.5 107.019615 18}
+text "/home/test" {255 309.5 690 20}
+text "Profile name" {244 345.5 82.77497 18}
+text "test" {255 373.5 331.49414 20}
+text "New" {765.7771 369.5 56 28}
+text "Save" {828.56696 369.5 56 28}
+text "Remove" {891.8948 369.5 75.5293 28}
+text "Enable synchronized browsing when opened" {276 409.5 680 32}
+text "No location profiles yet" {534.6094 451.5 708 164}
+text "Available to" {605.49414 345.5 75.9813 18}
+text "This connection" {616.49414 367.5 96.97656 32}
+text "Cancel" {837.00354 641.5 65.44484 32}
+text "Open" {910.44836 641.5 55.5516 32}
+text "002" {73 90 23.99414 32}
+text "sudo" {907.72504 56 64 28}
+text "/" {608.5 90 3.8847656 32}
+text "home" {645.38477 90 33.763184 32}
+text "test" {712.14795 90 23.213379 32}
+hit "" region {0 0 1200 36} false
+hit "Show directory tree" button {371.5 56 28 28} false
+hit "Up" button {403.5 56 28 28} false
+hit "Refresh" button {435.5 56 28 28} false
+hit "Location profiles" button {467.5 56 28 28} false
+hit "Choose a location profile" button {499.5 56 28 28} true
+hit "Synchronized browsing" button {531.5 56 28 28} false
+hit "More file actions" button {563.5 56 28 28} false
+hit "Favorites and places" button {533.5 92 28 28} false
+hit "Bookmark current folder" button {563.5 92 28 28} false
+hit "Name ↑" button {28 128.5 367.5 19} false
+hit "Size" button {403.5 128.5 64 19} false
+hit "Modified" button {475.5 128.5 108 19} false
+hit "Files" group {20 154 571.5 514} false
+hit "Files" listbox {22 156 567.5 510} false
+hit "destination" option {22 156 557.5 30} false
+hit "tree" option {22 186 557.5 30} false
+hit "中文上传.yml" option {22 216 557.5 30} false
+hit "Show directory tree" button {960 56 28 28} false
+hit "Upload →" button {992 56 28 28} true
+hit "← Download" button {1024 56 28 28} true
+hit "Up" button {1056 56 28 28} false
+hit "Refresh" button {1088 56 28 28} false
+hit "Hide hidden files" button {1120 56 28 28} false
+hit "More file actions" button {1152 56 28 28} false
+hit "Folder favorites" button {1122 92 28 28} false
+hit "Bookmark current folder" button {1152 92 28 28} false
+hit "Name ↑" button {616.5 128.5 367.5 19} false
+hit "Size" button {992 128.5 64 19} false
+hit "Modified" button {1064 128.5 108 19} false
+hit "Files" group {608.5 154 571.5 514} false
+hit "Files" listbox {610.5 156 567.5 510} false
+hit "docs" option {610.5 156 557.5 30} false
+hit "notes.txt" option {610.5 186 557.5 30} false
+hit "" region {220 102.5 760 595} false
+hit "Close dialog" button {932 118.5 32 32} false
+hit "Local directory (optional)" button {244 217.5 166.61624 18} false
+hit "Local directory (optional)" textfield {244 239.5 672 32} false
+hit "Choose local directory" button {924 241.5 32 32} false
+hit "Server directory" button {244 281.5 107.019615 18} false
+hit "Server directory" textfield {244 303.5 712 32} false
+hit "Profile name" button {244 345.5 82.77497 18} false
+hit "Profile name" textfield {244 367.5 353.49414 32} false
+hit "New" button {752.4707 369.5 56 28} false
+hit "Save" button {816.4707 369.5 56 28} false
+hit "Remove" button {880.4707 369.5 75.5293 28} true
+hit "Enable synchronized browsing when opened" checkbox {244 409.5 712 32} false
+hit "Location profiles" listbox {246 451.5 708 164} false
+hit "Location profiles" group {246 451.5 708 164} false
+hit "Available to" button {605.49414 345.5 75.9813 18} false
+hit "Available to" combobox {605.49414 367.5 138.97656 32} false
+hit "Cancel" button {827.00354 641.5 65.44484 32} false
+hit "Open" button {900.44836 641.5 55.5516 32} false
+hit "File transfer" separator {598 48 4 712} false
+hit "Folder path" button {20 90 511.5 32} false
+hit "sudo" button {892 56 64 28} false
+hit "Folder path" button {608.5 90 511.5 32} false
+hit "/" link {608.5 90 3.8847656 32} false
+hit "home" link {645.38477 90 33.763184 32} false
+hit "Resize column" separator {398 128 4 20} false
+hit "Resize column" separator {470 128 4 20} false
+hit "Resize column" separator {986.5 128 4 20} false
+hit "Resize column" separator {1058.5 128 4 20} false

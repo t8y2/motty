@@ -45,10 +45,14 @@ var (
 )
 
 type sftpBookmarkEditor struct {
-	open, editing, shared, sync        bool
-	focusName                          bool
-	original                           sftpBookmark
-	fields                             [3]text.Editor // name, local directory, remote directory
+	open, editing, shared, sync bool
+	focusName                   bool
+	original                    sftpBookmark
+	fields                      [3]text.Editor // name, local directory, remote directory
+	// fieldRows and fieldTexts are the page fields over fields, bound when first declared.
+	fieldRows                          [3]ui.FormFieldState
+	fieldTexts                         [3]ui.Field
+	fieldBound                         [3]bool
 	body                               sftpBookmarkBody
 	viewport                           gfx.Rect
 	errorText                          string
@@ -64,7 +68,6 @@ type sftpBookmarkEditor struct {
 // sftpBookmarkBody is what the editor's page leaves for the controls painted by
 // hand once it has been laid out.
 type sftpBookmarkBody struct {
-	fields                              [3]ui.Box
 	browse, list, scope, add            ui.Box
 	save, remove, sync, cancel, proceed ui.Box
 }
@@ -401,12 +404,12 @@ func (w *sftpWindow) declareBookmarkBody(c ui.C) ui.Box {
 	column := ui.Column(c).Fill().Gap(8)
 	column.Children(func() {
 		ui.Row(c).Height(56).Gap(8).Items(ui.End).Children(func() {
-			body.fields[1] = ui.Slot(c).Grow(1).Height(56)
+			w.declareBookmarkField(c, 1).Grow(1)
 			body.browse = w.owner.declareIconButton(c, hitSFTPBookmarkBrowse, iconFolderOpen, m.BookmarkChooseLocal, false, iconButtonQuiet).Size(32, 32)
 		})
-		body.fields[2] = ui.Slot(c).Height(56)
+		w.declareBookmarkField(c, 2)
 		ui.Row(c).Height(56).Gap(8).Items(ui.End).Children(func() {
-			body.fields[0] = ui.Slot(c).Grow(1).Height(56)
+			w.declareBookmarkField(c, 0).Grow(1)
 			scopeWidth := max(canvas.TextWidth(m.ProfileSite, theme.Metrics.FontSizeM), canvas.TextWidth(m.ProfileShared, theme.Metrics.FontSizeM)) + 36
 			body.scope = ui.Slot(c).Width(max(132, scopeWidth)).Height(56)
 			body.add = ui.Slot(c).Width(max(56, canvas.TextWidth(m.ProfileNew, theme.Metrics.FontSizeM)+24)).Height(32)
@@ -420,6 +423,23 @@ func (w *sftpWindow) declareBookmarkBody(c ui.C) ui.Box {
 		}
 	})
 	return column
+}
+
+// declareBookmarkField declares text field i of the editor (name, local directory, remote
+// directory): a labelled row around a page text bound to the editor, whose title is the
+// field's label.
+func (w *sftpWindow) declareBookmarkField(c ui.C, i int) ui.Box {
+	b, m := &w.bookmark, w.owner.messages.SFTPWindow
+	label := [3]string{m.BookmarkName, m.BookmarkLocal, m.BookmarkRemote}[i]
+	id := hitSFTPBookmarkFields.At(i)
+	if !b.fieldBound[i] {
+		b.fieldTexts[i].Bind(&b.fields[i])
+		b.fieldBound[i] = true
+	}
+	b.fieldRows[i].For = id
+	field := ui.FormField(c, &b.fieldRows[i], label).FillWidth().Height(56)
+	field.Children(func() { ui.TextFieldID(c, id, &b.fieldTexts[i], label, "") })
+	return field
 }
 
 // paintBookmarkBody paints the editor's fields, buttons and lists into the slots
@@ -436,12 +456,6 @@ func (w *sftpWindow) paintBookmarkBody(d *ui.DrawContext) {
 		deleteButton = deleteButton.Disabled()
 	}
 	deleteButton.Destructive(m.ProfileDelete)
-	for i, label := range [3]string{m.BookmarkName, m.BookmarkLocal, m.BookmarkRemote} {
-		id := hitSFTPBookmarkFields.At(i)
-		input := components.BeginField(canvas, theme, body.fields[i].Rect()).For(id).Paint(label, "", "")
-		value, focused := b.fields[i].String(), canvas.Focused() == id
-		components.PaintInput(canvas, theme, input, components.InputSnapshot{ID: id, Label: label, Value: value, Focused: focused, PlatformEditing: focused && value != ""})
-	}
 	syncBounds := body.sync.Rect()
 	checkboxSide := components.CheckboxExtent(theme)
 	components.BeginCheckbox(canvas, theme, hitSFTPBookmarkSync, gfx.Rect{
