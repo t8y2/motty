@@ -127,9 +127,10 @@ type hostEditor struct {
 	connectionBefore hostConnectionType
 	flow             serial.Flow
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
-	// console and standardSecurity are RDP's own: the server's console
-	// (administrative) session, and Standard RDP Security without TLS or NLA.
-	viaSSH, clipboard, console, standardSecurity, chromeless bool
+	// console, noAudio and standardSecurity are RDP's own: the server's console
+	// (administrative) session, muting remote sound, and Standard RDP Security
+	// without TLS or NLA.
+	viaSSH, clipboard, console, noAudio, standardSecurity, chromeless bool
 	// ports are the serial ports found when the picker was last opened.
 	ports     []serial.Port
 	portsOpen bool
@@ -360,6 +361,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.terminal = host.Terminal
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
+	editor.noAudio = host.Protocol == protocolRDP && host.NoAudio
 	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
 	editor.portsOpen = false
 	if host.Protocol == protocolSerial {
@@ -394,6 +396,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	}
 	if editor.protocol == protocolRDP {
 		host.Console = editor.console
+		host.NoAudio = editor.noAudio
 		host.StandardSecurity = editor.standardSecurity
 	}
 	if editor.protocol == protocolSSH {
@@ -473,7 +476,7 @@ func (editor *hostEditor) reset() {
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
 	editor.protocol, editor.terminal, editor.flow, editor.portsOpen = protocolSSH, terminalSSH, serial.FlowNone, false
-	editor.viaSSH, editor.clipboard, editor.console, editor.standardSecurity, editor.chromeless = false, false, false, false, false
+	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.standardSecurity, editor.chromeless = false, false, false, false, false, false
 }
 
 // defaultPortText is what the port field holds for a protocol until the user

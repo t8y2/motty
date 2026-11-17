@@ -54,6 +54,7 @@ import (
 	"motty/internal/rdpcore/protocol/orders"
 	"motty/internal/rdpcore/protocol/pdu"
 	"motty/internal/rdpcore/protocol/pointer"
+	"motty/internal/rdpcore/protocol/rdpsnd"
 	"motty/internal/rdpcore/protocol/rle"
 	"motty/internal/rdpcore/protocol/sec"
 	"motty/internal/rdpcore/protocol/tpkt"
@@ -185,6 +186,12 @@ type Client struct {
 
 	// Clipboard (MS-RDPECLIP)
 	clipHandler *cliprdr.Handler
+
+	// Audio output (MS-RDPEA). The static rdpsnd channel and the
+	// AUDIO_PLAYBACK_DVC dynamic channel carry the same PDUs; Windows 11 uses
+	// the dynamic one.
+	soundHandler *rdpsnd.Handler
+	soundDVC     *dvc.DynChannel
 
 	// RDPGFX graphics pipeline (MS-RDPEGFX)
 	egfxHandler *egfx.Handler
@@ -809,9 +816,21 @@ func (c *Client) mcsConnect() error {
 	if c.opts.Clipboard {
 		channelDefs = append(channelDefs, mcs.ChannelDef{Name: "cliprdr", Options: mcs.ChannelOptionInitialized | mcs.ChannelOptionEncryptRDP | mcs.ChannelOptionCompressRDP | mcs.ChannelOptionShowProtocol})
 	}
+	if c.opts.Sound != nil {
+		// Windows creates the session's audio endpoint through the device
+		// redirection subsystem, and it sends no sound formats unless the
+		// rdpdr channel exists. No device is announced and the handshake is
+		// not answered: verified against Windows 11, which sends PCM over
+		// AUDIO_PLAYBACK_DVC with only the channel joined, and sends nothing
+		// when it is absent.
+		channelDefs = append(channelDefs, mcs.ChannelDef{Name: "rdpdr", Options: mcs.ChannelOptionInitialized | mcs.ChannelOptionEncryptRDP | mcs.ChannelOptionCompressRDP | mcs.ChannelOptionShowProtocol})
+		channelDefs = append(channelDefs, mcs.ChannelDef{Name: "rdpsnd", Options: mcs.ChannelOptionInitialized | mcs.ChannelOptionEncryptRDP | mcs.ChannelOptionCompressRDP | mcs.ChannelOptionShowProtocol})
+	}
 	// drdynvc must be the last static channel (matches MS reference client ordering).
 	channelDefs = append(channelDefs, mcs.ChannelDef{Name: "drdynvc", Options: mcs.ChannelOptionInitialized | mcs.ChannelOptionCompress})
-	// Audio channels are DVC-only (AUDIO_PLAYBACK_DVC, AUDIO_INPUT).
+	// Audio travels over the rdpsnd static channel above; the newer
+	// AUDIO_PLAYBACK_DVC dynamic channel is accepted when the server opens it
+	// (Windows 11 uses it), and AUDIO_INPUT is never advertised.
 	netData := &mcs.ClientNetworkData{
 		Channels: channelDefs,
 	}
@@ -1130,7 +1149,33 @@ func (c *Client) mcsConnect() error {
 			c.log.LogAttrs(context.Background(), slog.LevelInfo, "RDPGFX channel opened", slog.Int("id", int(ch.ID)))
 		}
 		if name == "AUDIO_PLAYBACK_DVC" {
+			if c.opts.Sound == nil || c.soundHandler == nil {
+				ch.Reject()
+				return
+			}
+			c.soundDVC = ch
+			ch.SetHandler(func(data []byte) {
+				if c.soundHandler == nil || c.dvc == nil {
+					return
+				}
+				c.soundHandler.SetSendFn(func(pdu []byte) error { return c.dvc.SendData(ch.ID, pdu) })
+				c.soundHandler.ProcessPDU(data)
+			})
+			ch.OnClose(func() {
+				if c.soundDVC == ch {
+					c.soundDVC = nil
+					if c.soundHandler != nil {
+						c.soundHandler.Reset()
+					}
+				}
+			})
+			return
+		}
+		if name == "AUDIO_PLAYBACK_LOSSY_DVC" {
+			// Lossy codecs are not offered; the server falls back to PCM on
+			// AUDIO_PLAYBACK_DVC or the static rdpsnd channel.
 			ch.Reject()
+			return
 		}
 		if fn := c.loadOnDynChannel(); fn != nil {
 			fn(name, ch)
@@ -1175,6 +1220,28 @@ func (c *Client) mcsConnect() error {
 				return
 			}
 			c.clipHandler.ProcessPDU(data)
+		})
+	}
+
+	// The rdpdr channel is present for the audio endpoint, not for device
+	// redirection: its PDUs are read and ignored.
+	if c.opts.Sound != nil {
+		c.registerChannelHandler("rdpdr", func(_ uint16, data []byte) {
+			c.log.LogAttrs(context.Background(), slog.LevelDebug, "rdpdr data ignored", slog.Int("bytes", len(data)))
+		})
+	}
+
+	// Initialize the rdpsnd handler on the "rdpsnd" static channel.
+	if c.opts.Sound != nil {
+		c.soundHandler = rdpsnd.NewHandler(func(data []byte) error {
+			return c.sendChannelData("rdpsnd", data)
+		}, c.opts.Sound, c.log.With("component", "RDPSND"))
+		c.registerChannelHandler("rdpsnd", func(_ uint16, data []byte) {
+			if c.soundHandler == nil {
+				return
+			}
+			c.soundHandler.SetSendFn(func(pdu []byte) error { return c.sendChannelData("rdpsnd", pdu) })
+			c.soundHandler.ProcessPDU(data)
 		})
 	}
 
@@ -1366,7 +1433,9 @@ func (c *Client) sendClientInfo() error {
 	if c.opts.DesktopComposition {
 		perfFlags |= sec.PerfEnableDesktopComposit
 	}
-	perfFlags |= sec.PerfDisablePlaybackSounds
+	if c.opts.Sound == nil {
+		perfFlags |= sec.PerfDisablePlaybackSounds
+	}
 
 	info := &sec.ClientInfo{
 		Domain:              c.opts.Domain,
@@ -1375,7 +1444,7 @@ func (c *Client) sendClientInfo() error {
 		PerfFlags:           perfFlags,
 		AudioInput:          false,
 		RemoteAudio:         false,
-		NoAudioPlayback:     true,
+		NoAudioPlayback:     c.opts.Sound == nil,
 		AutoReconnectCookie: c.arcCookie,
 	}
 	infoData := sec.EncodeClientInfo(info)
@@ -2243,6 +2312,7 @@ func (c *Client) resetForReconnect() {
 	c.channelNames = nil
 	c.channelHandlers = nil
 	c.dvc = nil
+	c.soundDVC = nil
 	if c.egfxHandler != nil {
 		c.egfxHandler.Close()
 	}
@@ -2251,6 +2321,10 @@ func (c *Client) resetForReconnect() {
 		c.clipHandler.Close()
 	}
 	c.clipHandler = nil
+	if c.soundHandler != nil {
+		c.soundHandler.Close()
+	}
+	c.soundHandler = nil
 	c.dispHandler = nil
 	c.dispReady.Store(false)
 	c.vcReassembly = nil
@@ -5506,6 +5580,9 @@ func (c *Client) Close() error {
 
 	if c.egfxHandler != nil {
 		c.egfxHandler.Close()
+	}
+	if c.soundHandler != nil {
+		c.soundHandler.Close()
 	}
 
 	c.log.LogAttrs(context.Background(), slog.LevelInfo, "connection closed")

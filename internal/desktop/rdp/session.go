@@ -7,12 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"strconv"
 	"sync"
 	"time"
 	"unicode/utf16"
+
+	"github.com/vivaui/viva/audio"
 
 	"motty/internal/desktop"
 	rdpcore "motty/internal/rdpcore"
@@ -144,6 +147,14 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	}
 	config.GFX = true
 	config.NoAVC = true // no H.264 decoder: the server then sends RemoteFX or ClearCodec
+	if opts.Audio {
+		// The server picks one of the PCM formats the player accepts; opening
+		// happens then, not at connect, so a session that never plays sound
+		// never touches the output device.
+		config.Sound = func(sampleRate uint32, channels uint16) (io.WriteCloser, error) {
+			return audio.Open(audio.Format{SampleRate: int(sampleRate), Channels: int(channels)})
+		}
+	}
 	handshakeEnds := time.Now().Add(handshakeTimeout)
 	config.Dial = func(dialCtx context.Context, network, _ string) (net.Conn, error) {
 		// The address the library asks for is the host's own name; the caller says

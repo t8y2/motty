@@ -2861,6 +2861,7 @@ var englishDesktop = DesktopMessages{
 	ViaSSHRouted:              "Connect through SSH (the host's jump route carries this)",
 	ShareClipboard:            "Share the clipboard with the remote desktop",
 	HideBars:                  "Show the picture alone (no bar above, no status line)",
+	RemoteAudio:               "Play remote audio",
 	ConsoleSession:            "Connect to the console (admin) session",
 	StandardSecurity:          "Use standard RDP security (no TLS/NLA)",
 	StandardSecurityNote:      "Only for a server that requires it. Standard RDP security encrypts with a key the server never proves it holds, so anyone on the path can read or alter the session, including the password. The status line reports it as not encrypted.",

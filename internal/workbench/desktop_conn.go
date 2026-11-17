@@ -106,6 +106,7 @@ func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Se
 	}
 	if host.Protocol == protocolRDP {
 		options.Username, options.Domain = rdpAccount(host.User)
+		options.Audio = !host.NoAudio // silent only when the host asked for it
 		options.Console = host.Console
 		options.StandardSecurity = host.StandardSecurity
 		options.Width, options.Height, options.Scale = request.Width, request.Height, request.Scale

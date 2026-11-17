@@ -2861,6 +2861,7 @@ var traditionalDesktop = DesktopMessages{
 	ViaSSHRouted:              "透過 SSH 連線(由該主機的跳板路由接管)",
 	ShareClipboard:            "與遠端桌面共享剪貼簿",
 	HideBars:                  "只顯示畫面（隱藏頂部列與狀態列）",
+	RemoteAudio:               "播放遠端音訊",
 	ConsoleSession:            "連線控制檯（管理員）工作階段",
 	StandardSecurity:          "使用標準 RDP 安全層（不使用 TLS/NLA）",
 	StandardSecurityNote:      "僅在伺服器要求時使用。標準 RDP 安全層使用伺服器從未證明其持有的金鑰加密，網路中的任何人都能讀取或竄改工作階段內容，包括你的密碼。狀態列會顯示為未加密。",
