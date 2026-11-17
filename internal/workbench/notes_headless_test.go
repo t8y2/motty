@@ -3,12 +3,16 @@
 package workbench
 
 import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/text"
-	"os"
-	"testing"
+	"motty/internal/i18n"
 )
 
 func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
@@ -103,6 +107,45 @@ func TestNotesNativeEditorPreviewAndComposition(t *testing.T) {
 		t.Fatal("native source editor missing")
 	}
 }
+
+func TestNotesEmptyStateHeadlessScreenshots(t *testing.T) {
+	directory := os.Getenv("MOTTY_NOTES_EMPTY_SCREENSHOTS")
+	if directory == "" {
+		t.Skip("set MOTTY_NOTES_EMPTY_SCREENSHOTS to write the note page captures")
+	}
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, capture := range []struct {
+		name string
+		mode appearanceMode
+	}{
+		{"notes-empty-dark.png", appearancePinnedDark},
+		{"notes-empty-light.png", appearancePinnedLight},
+	} {
+		state := newTestState(t, freshOptions(t))
+		state.language = i18n.Chinese
+		state.chooseAppearanceMode(capture.mode)
+		state.Click(hitNotes)
+		view, err := headless.Open(app.Config{
+			Title: "Motty notes", Width: 1400, Height: 900, Tree: Tree(),
+			Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+		}, nil, headless.Options{Scale: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Wait(16 * time.Millisecond); err != nil {
+			view.Close()
+			t.Fatal(err)
+		}
+		err = view.Screenshot(filepath.Join(directory, capture.name))
+		view.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func slicesNoteHit(hits []gfx.Hit, id gfx.ID) bool {
 	for _, h := range hits {
 		if h.ID == id {

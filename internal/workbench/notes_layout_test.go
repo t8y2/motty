@@ -35,6 +35,50 @@ func TestNotesWorkspaceGivesTheDocumentItsWidth(t *testing.T) {
 	}
 }
 
+func TestNotesLibraryPrimaryActionSpansAboveTheList(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	s.Click(hitNoteAdd)
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
+	add, ok := hitByID(&c, hitNoteAdd)
+	if !ok {
+		t.Fatal("new note action is missing")
+	}
+	if add.Role != gfx.RoleButton || add.Label != s.noteText("New note", "新建笔记") {
+		t.Fatalf("new note action lacks button semantics: %+v", add)
+	}
+	tree := s.notes.view.treeBounds
+	if add.Bounds.X != tree.X+8 || add.Bounds.Width != tree.Width-16 || add.Bounds.Height < 36 {
+		t.Fatalf("new note action does not span the library: tree=%+v action=%+v", tree, add.Bounds)
+	}
+	row, ok := hitByID(&c, hitNoteRows.At(0))
+	if !ok || add.Bounds.Y+add.Bounds.Height > row.Bounds.Y {
+		t.Fatalf("new note action is not above the list: action=%+v row=%+v", add.Bounds, row.Bounds)
+	}
+}
+
+func TestNotesEditorShowsAnInvitingEmptyState(t *testing.T) {
+	s := newTestState(t, freshOptions(t))
+	s.Click(hitNotes)
+	var c gfx.Canvas
+	s.Paint(&c, gfx.Size{Width: 1400, Height: 900})
+	title := s.noteText("Start with a note", "从一篇笔记开始")
+	foundTitle, foundDescription := false, false
+	for _, text := range c.Texts() {
+		foundTitle = foundTitle || text.Value == title
+		foundDescription = foundDescription || strings.Contains(text.Value, s.noteText("Select a note", "从左侧选择"))
+	}
+	if !foundTitle || !foundDescription {
+		t.Fatalf("empty state is incomplete: title=%v description=%v", foundTitle, foundDescription)
+	}
+	for _, text := range c.Texts() {
+		if text.Value == s.noteText("Select a note or create one to begin.", "选择笔记，或新建一篇笔记。") {
+			t.Fatal("legacy one-line empty prompt is still visible")
+		}
+	}
+}
+
 func TestNotesModesAndDirectoryPreferencesSurviveReopening(t *testing.T) {
 	s := newTestState(t, freshOptions(t))
 	s.Click(hitNotes)

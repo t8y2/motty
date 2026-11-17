@@ -81,7 +81,7 @@ func (s *State) paintNoteTree(c *gfx.Canvas, b gfx.Rect) {
 		label string
 		icon  gfx.Icon
 	}{
-		{hitNoteSearchToggle, s.noteText("Search notes", "搜索笔记"), icons.Search}, {hitNoteAdd, s.noteText("New note", "新建笔记"), icons.SquarePen}, {hitNoteFolderAdd, s.noteText("New folder", "新建文件夹"), icons.FolderPlus}, {hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"), icons.Upload}, {hitNoteLinkFile, s.noteText("Link Markdown file", "链接 Markdown 文件"), icons.Link}, {hitNoteLinkFolder, s.noteText("Link Markdown folder", "链接 Markdown 文件夹"), icons.FolderOpen}, {hitNoteExportAll, s.noteText("Export ZIP", "导出 ZIP"), icons.Download}, {hitNoteExpandAll, s.noteExpandLabel(), expandIcon},
+		{hitNoteSearchToggle, s.noteText("Search notes", "搜索笔记"), icons.Search}, {hitNoteFolderAdd, s.noteText("New folder", "新建文件夹"), icons.FolderPlus}, {hitNoteImport, s.noteText("Import Markdown", "导入 Markdown"), icons.Upload}, {hitNoteLinkFile, s.noteText("Link Markdown file", "链接 Markdown 文件"), icons.Link}, {hitNoteLinkFolder, s.noteText("Link Markdown folder", "链接 Markdown 文件夹"), icons.FolderOpen}, {hitNoteExportAll, s.noteText("Export ZIP", "导出 ZIP"), icons.Download}, {hitNoteExpandAll, s.noteExpandLabel(), expandIcon},
 	}
 	for i, a := range actions {
 		if i == max(0, int((b.Width-16)/30)-1) && i < len(actions)-1 {
@@ -92,6 +92,9 @@ func (s *State) paintNoteTree(c *gfx.Canvas, b gfx.Rect) {
 		x += 30
 	}
 	y += 36
+	addBounds := gfx.Rect{X: b.X + 8, Y: y, Width: max(0, b.Width-16), Height: 36}
+	components.BeginButton(c, theme, hitNoteAdd, addBounds).Height(36).WithIcon(icons.SquarePen).Default(s.noteText("New note", "新建笔记"))
+	y += 44
 	if v.searchOpen {
 		placeholder := s.noteText("Search title, body and tags", "搜索标题、正文和标签")
 		s.noteInputAt(c, hitNoteSearch, gfx.Rect{X: b.X + 8, Y: y, Width: b.Width - 16, Height: 30}, placeholder, n.query.String())
@@ -274,7 +277,15 @@ func (s *State) paintNoteEditor(c *gfx.Canvas, b gfx.Rect) {
 	x += 34
 	if s.noteIndex(n.selected) < 0 {
 		v.splitScroll.active = false
-		c.Label(s.noteText("Select a note or create one to begin.", "选择笔记，或新建一篇笔记。"), gfx.Rect{X: x, Y: y + 80, Width: max(0, right-x), Height: 40}, gfx.TextStyle{Size: 16, Color: s.pal.muted})
+		emptyBounds := gfx.Rect{X: b.X + 20, Y: b.Y + 52, Width: max(0, b.Width-40), Height: max(0, b.Height-64)}
+		c.Clip(emptyBounds)
+		components.Empty(c, s.Theme(), emptyBounds, components.EmptyData{
+			Icon:        icons.Notebook,
+			Media:       components.EmptyMediaIcon,
+			Title:       s.noteText("Start with a note", "从一篇笔记开始"),
+			Description: s.noteText("Select a note from the library or create a new one to capture commands, investigations, and solutions. Notes stay on this device.", "从左侧选择一篇笔记，或创建新笔记来记录命令、排查过程与解决方案。笔记只保存在本机。"),
+		})
+		c.Unclip()
 		return
 	}
 	y = s.paintNoteLibraryHeader(c, b, x, y, right)
