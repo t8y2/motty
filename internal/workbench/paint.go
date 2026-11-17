@@ -517,11 +517,6 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 	}
 	// 模态弹窗中的浮动下拉选择框拥有最顶层视觉层级，滚轮事件必须优先处理，
 	// 避免穿透并触发底层页面或弹窗内的 ui.Scroll 列表。
-	if state.modal == modalProxyBatchAssociate && state.proxyBatch.jumpOpen {
-		if result := state.scrollProxyBatchDialog(event); result.Handled {
-			return result
-		}
-	}
 	if state.modal == modalNewProxy && (state.proxyEditor.targetSelect.Open || state.proxyEditor.jumpSelect.Open) {
 		if result := state.scrollProxyDialog(event); result.Handled {
 			return result
@@ -557,11 +552,11 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 	// table or list under the pointer first, and those lie behind the dialog
 	// too, so the page would scroll them out from under it.
 	if state.modal != modalNone {
-		if state.modal == modalProxyBatchAssociate && !state.proxyBatch.jumpOpen {
-			r := state.proxyBatch.listRect
-			if event.X >= r.X && event.X < r.X+r.Width && event.Y >= r.Y && event.Y < r.Y+r.Height {
-				return state.windowPage().Wheel(event)
-			}
+		if state.modal == modalProxyBatchAssociate {
+			// The jump picker's open list and the candidates are the page's.
+			result := state.windowPage().Wheel(event)
+			result.Handled = true
+			return result
 		}
 		return state.Scroll(event)
 	}

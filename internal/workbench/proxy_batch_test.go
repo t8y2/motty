@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
@@ -243,29 +244,8 @@ func TestProxyBatchDialogSwitchJumpHost(t *testing.T) {
 		t.Fatalf("initial jumpID=%d, want %d", state.proxyBatch.jumpID, jump1.ID)
 	}
 
-	// 模拟点击下拉框并切换为 jump2
-	state.Click(hitProxyBatchJumpTrigger)
-	if !state.proxyBatch.jumpOpen {
-		t.Fatalf("jumpOpen should be true")
-	}
-
-	// 查找 jump2 在候选跳板机中的位置，并验证其 Label 与 Address (IP 地址)
-	jump2Idx := -1
-	candidates := state.proxyBatchJumpCandidates()
-	for idx, cand := range candidates {
-		if cand.ID == jump2.ID {
-			jump2Idx = idx
-			if cand.Label != jump2.Label || cand.Address != jump2.Address {
-				t.Fatalf("jump option label=%q addr=%q, want label=%q addr=%q", cand.Label, cand.Address, jump2.Label, jump2.Address)
-			}
-			break
-		}
-	}
-	if jump2Idx < 0 {
-		t.Fatalf("jump2 not found in jump candidates")
-	}
-
-	state.Click(hitProxyBatchJumpItemList.At(jump2Idx))
+	// 在页面的选择器里切换为 jump2: 选项名带着地址，按地址也能搜到
+	chooseSelectOption(t, state, state.messages.ProxyFieldJump, state.proxyBatchJumpName(jump2.ID))
 	if state.proxyBatch.jumpID != jump2.ID {
 		t.Fatalf("after selecting jump2: jumpID=%d, want %d", state.proxyBatch.jumpID, jump2.ID)
 	}
@@ -545,169 +525,18 @@ func TestProxyMultiHopChainResolutionAndDisplay(t *testing.T) {
 	}
 }
 
-func TestProxyBatchJumpSelectWheelScroll(t *testing.T) {
-	_, options := newWorld(t)
-	state := newTestState(t, options)
-	// 添加足够多的 SSH 主机使得下拉列表溢出并产生滚动
-	for i := 10; i < 30; i++ {
-		h := Host{ID: uint32(i + 100), CatalogID: fmt.Sprintf("h-%d", i), Label: fmt.Sprintf("Host-%d", i), Address: fmt.Sprintf("10.0.0.%d", i), System: 1}
-		h.finish()
-		state.hosts = append(state.hosts, h)
-	}
-
-	state.activeSection = sectionProxies
-	state.openProxyBatchAssociate(state.hosts[0].ID)
-	if state.modal != modalProxyBatchAssociate {
-		t.Fatalf("expected modalProxyBatchAssociate, got %v", state.modal)
-	}
-
-	// 打开跳板主机下拉框
-	state.Click(hitProxyBatchJumpTrigger)
-	dialog := &state.proxyBatch
-	if !dialog.jumpOpen {
-		t.Fatalf("expected jumpOpen to be true")
-	}
-
-	// 模拟一次 Paint 让 popup 布局生效
-	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
-
-	// 记录滚动前的 offset
-	popup := dialog.jumpPopup
-	if popup.Width <= 0 || popup.Height <= 0 {
-		// 如果在无头下 popup 宽未被赋，设为虚拟区域
-		popup = gfx.Rect{X: 100, Y: 100, Width: 300, Height: 200}
-		dialog.jumpPopup = popup
-	}
-
-	// 发生滚轮滚动事件（向下滚）
-	scrollEvent := gfx.ScrollEvent{
-		X:      popup.X + 20,
-		Y:      popup.Y + 20,
-		DeltaY: 100,
-	}
-	// 验证窗口顶层滚轮入口 scrollWindow 优先截获浮动的跳板机下拉框，阻断穿透到下层的 ui.Scroll
-	winRes := state.scrollWindow(scrollEvent)
-	if !winRes.Handled {
-		t.Fatalf("expected scrollWindow to intercept jump select popup wheel event")
-	}
-	if !winRes.Repaint {
-		t.Fatalf("expected scrollWindow to trigger repaint on offset change")
-	}
-
-	res := state.Scroll(scrollEvent)
-	if !res.Handled {
-		t.Fatalf("expected Scroll to be handled by scrollProxyBatchDialog")
-	}
-}
-
-func TestProxyBatchComboboxDetailSearch(t *testing.T) {
+func TestProxyBatchComboboxNamesAHostByLabelAndAddress(t *testing.T) {
 	state := newTestState(t, testOptions(t))
-	jump1 := state.hosts[0]
-	jump2 := state.hosts[1]
-	jump1.Address = "192.168.1.10"
-	jump2.Address = "10.0.0.88"
-	state.hosts[0] = jump1
-	state.hosts[1] = jump2
-
+	jump1, jump2 := state.hosts[0], state.hosts[1]
+	jump1.Address, jump2.Address = "192.168.1.10", "10.0.0.88"
+	state.hosts[0], state.hosts[1] = jump1, jump2
 	state.openProxyBatchAssociate(jump1.ID)
-	if state.modal != modalProxyBatchAssociate {
-		t.Fatalf("expected modalProxyBatchAssociate, got %v", state.modal)
+	if got := state.proxyBatchJumpName(jump2.ID); !strings.Contains(got, jump2.Label) || !strings.Contains(got, "10.0.0.88") {
+		t.Fatalf("a jump host is named %q, want its label and address", got)
 	}
-
-	// 打开 Combobox
-	state.Click(hitProxyBatchJumpTrigger)
-	if !state.proxyBatch.jumpOpen {
-		t.Fatalf("expected jumpOpen to be true")
-	}
-
-	// 1. 测试按 IP 地址过滤 (Detail 检索)
-	state.proxyBatch.jumpQuery.Insert("10.0.0")
-	candidates := state.proxyBatchJumpCandidates()
-	if len(candidates) != 1 || candidates[0].ID != jump2.ID {
-		t.Fatalf("search by IP '10.0.0' returned %+v, want only jump2", candidates)
-	}
-	if candidates[0].Label != jump2.Label || candidates[0].Address != "10.0.0.88" {
-		t.Fatalf("candidate mismatch: %+v", candidates[0])
-	}
-
-	// 模拟一次 Paint，验证渲染流程正常无 panic
-	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
-
-	// 2. 选择过滤出来的跳板机
-	state.Click(hitProxyBatchJumpItemList.At(0))
+	chooseSelectOption(t, state, state.messages.ProxyFieldJump, state.proxyBatchJumpName(jump2.ID))
 	if state.proxyBatch.jumpID != jump2.ID {
 		t.Fatalf("after choosing jump2: jumpID=%d, want %d", state.proxyBatch.jumpID, jump2.ID)
-	}
-	if state.proxyBatch.jumpOpen {
-		t.Fatalf("combobox should close after selection")
-	}
-
-	// 3. 验证选中后输入框绘制了选中的主机名以及 IP 地址 (Detail)
-	canvas.Reset()
-	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
-	foundLabel, foundDetail := false, false
-	for _, text := range canvas.Texts() {
-		if text.Value == jump2.Label {
-			foundLabel = true
-		}
-		if text.Value == jump2.Address {
-			foundDetail = true
-		}
-	}
-	if !foundLabel || !foundDetail {
-		t.Fatalf("expected selected jump host label and detail to be painted: foundLabel=%v, foundDetail=%v", foundLabel, foundDetail)
-	}
-}
-
-func TestProxyBatchComboboxInputClickAndHover(t *testing.T) {
-	state := newTestState(t, testOptions(t))
-	jump1 := state.hosts[0]
-	jump1.Address = "192.168.1.10"
-	state.hosts[0] = jump1
-
-	state.openProxyBatchAssociate(jump1.ID)
-
-	// 1. 关闭状态下，首次点击输入框展开下拉框，验证输入不会被清空且自动请求焦点
-	state.proxyBatch.jumpQuery.Insert("devbox")
-	state.Click(hitProxyBatchJumpInput)
-	if !state.proxyBatch.jumpOpen {
-		t.Fatalf("expected jumpOpen to be true after clicking input")
-	}
-	if !state.proxyBatch.jumpFocusInput {
-		t.Fatalf("expected jumpFocusInput to be set to true on opening")
-	}
-	if state.proxyBatch.jumpQuery.String() != "devbox" {
-		t.Fatalf("jumpQuery should not be cleared on click, got %q", state.proxyBatch.jumpQuery.String())
-	}
-
-	// 模拟首帧 Paint，验证自动请求焦点赋予 hitProxyBatchJumpInput
-	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
-	if canvas.FocusRequest() != hitProxyBatchJumpInput {
-		t.Fatalf("after first paint with jumpOpen=true: canvas.FocusRequest()=%v, want %v", canvas.FocusRequest(), hitProxyBatchJumpInput)
-	}
-	if editor := state.EditorFor(hitProxyBatchJumpInput); editor != &state.proxyBatch.jumpQuery {
-		t.Fatalf("editorFor hitProxyBatchJumpInput=%p, want &state.proxyBatch.jumpQuery=%p", editor, &state.proxyBatch.jumpQuery)
-	}
-
-	// 再次点击输入框，下拉框依然保持展开，且 query 完好
-	state.Click(hitProxyBatchJumpInput)
-	if !state.proxyBatch.jumpOpen {
-		t.Fatalf("expected jumpOpen to remain true on subsequent input clicks")
-	}
-	if state.proxyBatch.jumpQuery.String() != "devbox" {
-		t.Fatalf("jumpQuery got mutated, got %q", state.proxyBatch.jumpQuery.String())
-	}
-
-	// 2. 模拟鼠标在浮层内移动，验证触发重绘（Hover 变色）
-	res, handled := state.proxyBatchPickerPointer(gfx.PointerEvent{
-		Kind:   gfx.PointerMove,
-		Target: hitProxyBatchJumpItemList.At(0),
-	})
-	if !handled || !res.Repaint {
-		t.Fatalf("expected PointerMove over jump list to be handled with Repaint=true, got handled=%v, res=%+v", handled, res)
 	}
 }
 
@@ -873,46 +702,6 @@ func TestProxyBatchOverwritePreservesViaShellAndRelay(t *testing.T) {
 	}
 	if !got.ViaShell || got.Relay != "nc -X connect %h %p" {
 		t.Fatalf("batch overwrite cleared shell relay: ViaShell=%v Relay=%q", got.ViaShell, got.Relay)
-	}
-}
-
-func TestProxyBatchJumpSelectKeyboardNavigation(t *testing.T) {
-	state := newTestState(t, testOptions(t))
-	if len(state.hosts) < 3 {
-		t.Fatalf("need at least 3 hosts in test state, got %d", len(state.hosts))
-	}
-	state.openProxyBatchAssociate(state.hosts[0].ID)
-	state.Click(hitProxyBatchJumpInput)
-	if !state.proxyBatch.jumpOpen {
-		t.Fatal("expected jump picker to open")
-	}
-
-	// 先渲染一帧使 MenuScroll 注册候选列表 items
-	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1200, Height: 800})
-	candidates := state.proxyBatchJumpCandidates()
-	if len(candidates) < 2 {
-		t.Fatalf("need at least 2 jump candidates, got %d", len(candidates))
-	}
-
-	// 按 Down 将高亮从 candidates[0] 移动到 candidates[1]，再按 Enter 选中
-	res, handled := state.proxyBatchDialogKey(gfx.KeyEvent{Key: gfx.KeyDown})
-	if !handled || !res.Repaint {
-		t.Fatalf("KeyDown not handled: handled=%v res=%+v", handled, res)
-	}
-	if state.proxyBatch.jumpActiveID != hitProxyBatchJumpItemList.At(1) {
-		t.Fatalf("jumpActiveID = %v, want item 1 (%v)", state.proxyBatch.jumpActiveID, hitProxyBatchJumpItemList.At(1))
-	}
-
-	res, handled = state.proxyBatchDialogKey(gfx.KeyEvent{Key: gfx.KeyEnter})
-	if !handled || !res.Repaint {
-		t.Fatalf("KeyEnter not handled: handled=%v res=%+v", handled, res)
-	}
-	if state.proxyBatch.jumpOpen {
-		t.Fatal("expected jump picker to close on Enter")
-	}
-	if state.proxyBatch.jumpID != candidates[1].ID {
-		t.Fatalf("selected jumpID = %d, want candidates[1].ID = %d", state.proxyBatch.jumpID, candidates[1].ID)
 	}
 }
 

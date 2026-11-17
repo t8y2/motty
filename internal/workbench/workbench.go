@@ -265,12 +265,6 @@ var (
 	hitProxyBatchOverwrite           = tree.ID(proxiesHits, "proxy-batch-overwrite")
 	hitProxyBatchCheckList           = tree.Sub(proxiesHits, tree.Name("proxy-batch-check"))
 	hitProxyTargetCheckList          = tree.Sub(proxiesHits, tree.Name("proxy-target-check"))
-	hitProxyBatchJumpInput           = tree.ID(proxiesHits, "proxy-batch-jump-input")
-	hitProxyBatchJumpTrigger         = tree.ID(proxiesHits, "proxy-batch-jump-trigger")
-	hitProxyBatchJumpDismiss         = tree.ID(proxiesHits, "proxy-batch-jump-dismiss")
-	hitProxyBatchJumpScroll          = tree.ID(proxiesHits, "proxy-batch-jump-scroll")
-	hitProxyBatchJumpScope           = tree.ID(proxiesHits, "proxy-batch-jump-scope")
-	hitProxyBatchJumpItemList        = tree.Sub(proxiesHits, tree.Name("proxy-batch-jump-item"))
 	hitProxyCheckAll                 = tree.ID(proxiesHits, "proxy-check-all")
 	hitProxyRowCheckList             = tree.Sub(proxiesHits, tree.Name("proxy-row-check"))
 	hitProxyRowSwitchList            = tree.Sub(proxiesHits, tree.Name("proxy-row-switch"))
@@ -1499,8 +1493,6 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		switch hit {
 		case hitProxyBatchSearch:
 			return &state.proxyBatch.query
-		case hitProxyBatchJumpInput:
-			return &state.proxyBatch.jumpQuery
 		}
 	case modalNewForward:
 		if hit == hitForwardDialogHost {
@@ -2827,9 +2819,6 @@ func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
 	if result, handled := state.proxyPickerPointer(event); handled {
 		return result
 	}
-	if result, handled := state.proxyBatchPickerPointer(event); handled {
-		return result
-	}
 	if result, handled := state.forwardPickerPointer(event); handled {
 		return result
 	}
@@ -3069,9 +3058,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.proxyDialogKey(event); handled {
-		return result
-	}
-	if result, handled := state.proxyBatchDialogKey(event); handled {
 		return result
 	}
 	if result, handled := state.forwardDialogKey(event); handled {
