@@ -98,3 +98,96 @@ func TestBookmarkEditorKeysReachTheirActions(t *testing.T) {
 		}
 	})
 }
+
+func openBookmarkEditorWithProfiles(t *testing.T, names ...string) (*sftpWindow, *headless.Session) {
+	t.Helper()
+	_, w, _, host, _ := dualSFTPFixture(t, 1)
+	for _, name := range names {
+		w.owner.sftpBookmarks = append(w.owner.sftpBookmarks, sftpBookmark{host: "native-bookmark", name: name, path: "/srv/" + name})
+	}
+	view := host.windows[0].view
+	w.session.host.CatalogID = "native-bookmark"
+	w.window.Invalidate()
+	view.Driver().Pump()
+	r := dualHit(t, view, hitSFTPLocationProfiles)
+	if err := view.Click(r.X+r.Width/2, r.Y+r.Height/2); err != nil {
+		t.Fatal(err)
+	}
+	if !w.bookmark.open {
+		t.Fatal("the bookmark editor did not open")
+	}
+	return w, view
+}
+
+func TestBookmarkProfileListNavigatesAndOpens(t *testing.T) {
+	w, view := openBookmarkEditorWithProfiles(t, "alpha", "beta", "gamma")
+	profiles := w.visibleProfiles()
+	if len(profiles) != 3 {
+		t.Fatalf("profiles = %d, want 3", len(profiles))
+	}
+	// A click selects a row: its fields fill the editor.
+	clickBookmarkButton(t, w, view, hitSFTPProfileItems.At(1))
+	if !w.bookmark.editing || w.bookmark.original != profiles[1] {
+		t.Fatalf("click on row 1: editing=%v original=%+v", w.bookmark.editing, w.bookmark.original)
+	}
+	// Down moves the selection on, Up back, Home and End to the ends.
+	for _, step := range []struct {
+		key  string
+		want int
+	}{{"down", 2}, {"up", 1}, {"home", 0}, {"end", 2}} {
+		if err := view.Keys(step.key); err != nil {
+			t.Fatal(err)
+		}
+		if w.bookmark.original != profiles[step.want] {
+			t.Fatalf("after %s the selection is %q, want %q", step.key, w.bookmark.original.name, profiles[step.want].name)
+		}
+	}
+	// A key past an end stays on it.
+	if err := view.Keys("down"); err != nil {
+		t.Fatal(err)
+	}
+	if w.bookmark.original != profiles[2] {
+		t.Fatalf("down at the end moved to %q", w.bookmark.original.name)
+	}
+}
+
+func TestBookmarkProfileListIsEmptyWithoutProfiles(t *testing.T) {
+	w, _ := openBookmarkEditorWithProfiles(t)
+	if n := len(w.visibleProfiles()); n != 0 {
+		t.Fatalf("profiles = %d, want none", n)
+	}
+}
+
+func TestBookmarkScopeSelectOpensChoosesAndDismisses(t *testing.T) {
+	w, view := openBookmarkEditorWithProfiles(t)
+	if w.bookmark.shared {
+		t.Fatal("a new editor starts with the site scope")
+	}
+	// A click on the trigger opens the list, and focuses an option for the keys.
+	clickBookmarkButton(t, w, view, hitSFTPProfileScope)
+	if !w.bookmark.scopeOpen {
+		t.Fatal("the scope list did not open")
+	}
+	// Choosing All connections closes it and sets the scope.
+	clickBookmarkButton(t, w, view, hitSFTPProfileShared)
+	if w.bookmark.scopeOpen || !w.bookmark.shared {
+		t.Fatalf("after choosing shared: open=%v shared=%v", w.bookmark.scopeOpen, w.bookmark.shared)
+	}
+	// Open again: a press outside (the dismiss target) closes it without changing the scope.
+	clickBookmarkButton(t, w, view, hitSFTPProfileScope)
+	if !w.bookmark.scopeOpen {
+		t.Fatal("the scope list did not open the second time")
+	}
+	clickBookmarkButton(t, w, view, hitSFTPProfileScopeDismiss)
+	if w.bookmark.scopeOpen || !w.bookmark.shared {
+		t.Fatalf("after dismissing: open=%v shared=%v", w.bookmark.scopeOpen, w.bookmark.shared)
+	}
+	// Escape closes an open list and does not close the editor.
+	clickBookmarkButton(t, w, view, hitSFTPProfileScope)
+	if err := view.Keys("escape"); err != nil {
+		t.Fatal(err)
+	}
+	if w.bookmark.scopeOpen || !w.bookmark.open {
+		t.Fatalf("Escape on the open list: scopeOpen=%v editorOpen=%v", w.bookmark.scopeOpen, w.bookmark.open)
+	}
+}
