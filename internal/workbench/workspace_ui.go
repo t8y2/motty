@@ -643,15 +643,12 @@ func (state *State) paintContextPanel(canvas *gfx.Canvas, size gfx.Size, workspa
 // same title and close button as the list, then what the panel needs to start.
 func (state *State) paintEmptyContextPanelDetails(canvas *gfx.Canvas) {
 	s := &state.chrome.sftpEmpty
-	pal, messages := state.pal, state.messages
+	pal := state.pal
 	headerBounds := s.header.Rect()
 	canvas.Fill(gfx.Rect{X: headerBounds.X, Y: headerBounds.Y + headerBounds.Height - 1, Width: headerBounds.Width, Height: 1}, pal.line)
 	if s.session != nil {
 		titleBounds := s.sessionTitle.Rect()
 		canvas.Label(elide(canvas, s.session.Title, metrics.FontSizeS, gfx.WeightRegular, titleBounds.Width), titleBounds, gfx.TextStyle{Size: metrics.FontSizeS, Color: pal.muted})
-	}
-	if s.canConnect {
-		components.BeginButton(canvas, state.Theme(), hitSFTPOpen, s.openButton.Rect()).Default(messages.SFTPOpen)
 	}
 }
 
@@ -684,7 +681,7 @@ func (state *State) declareEmptyContextSFTP(c ui.C) {
 		ui.Column(c).Fill().PadSides(0, sftpPad, 0, sftpPad).Children(func() {
 			if s.canConnect {
 				ui.Text(c, messages.SFTPFiles).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(22).TextCenter().MarginSides(middle-32, 0, 10, 0)
-				s.openButton = ui.Slot(c).Size(buttonWidth, 34).Self(ui.Center)
+				s.openButton = ui.Button(c, messages.SFTPOpen).Hit(hitSFTPOpen, messages.SFTPOpen).Size(buttonWidth, 34).Self(ui.Center)
 			} else {
 				ui.Text(c, messages.SFTPUnavailable).FontSize(metrics.FontSizeM).Color(pal.muted).LineHeight(24).TextCenter().MarginSides(middle-12, 0, 0, 0)
 			}
