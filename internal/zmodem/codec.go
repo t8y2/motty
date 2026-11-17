@@ -71,6 +71,9 @@ type header struct {
 	flags    [4]byte // the argument bytes in transmission order: ZF3, ZF2, ZF1, ZF0
 	// crc32 says the data that follows has 32-bit checks.
 	crc32 bool
+	// hex says the frame arrived as a hex header, which the other end follows
+	// with CR LF (the LF may carry its high bit).
+	hex bool
 }
 
 func crc16Step(crc uint16, b byte) uint16 {
@@ -137,6 +140,12 @@ func appendEscaped(dst, data []byte, previous byte) ([]byte, byte) {
 		previous = b
 	}
 	return dst, previous
+}
+
+// isHeaderEnd reports whether b is part of the CR LF that terminates a hex
+// header. The LF may carry the high bit.
+func isHeaderEnd(b byte) bool {
+	return b == '\r' || b == '\n' || b == 0x8d || b == 0x8a
 }
 
 const hexDigits = "0123456789abcdef"

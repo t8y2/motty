@@ -232,7 +232,7 @@ func (p *parser) finishBinaryHeader() event {
 			return evBadHeader
 		}
 	}
-	p.setHeader(body, p.format == zbin32)
+	p.setHeader(body, p.format == zbin32, false)
 	return evHeader
 }
 
@@ -244,16 +244,17 @@ func (p *parser) finishHexHeader() event {
 	if crc16Fast(0, raw[:5]) != uint16(raw[5])<<8|uint16(raw[6]) {
 		return evBadHeader
 	}
-	p.setHeader(raw[:5], false)
+	p.setHeader(raw[:5], false, true)
 	return evHeader
 }
 
-func (p *parser) setHeader(body []byte, wide bool) {
+func (p *parser) setHeader(body []byte, wide, hex bool) {
 	p.hdr = header{
 		kind:     body[0],
 		position: uint32(body[1]) | uint32(body[2])<<8 | uint32(body[3])<<16 | uint32(body[4])<<24,
 		flags:    [4]byte{body[1], body[2], body[3], body[4]},
 		crc32:    wide,
+		hex:      hex,
 	}
 }
 

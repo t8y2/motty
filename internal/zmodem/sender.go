@@ -50,14 +50,17 @@ type Sender struct {
 
 	position uint32
 	// waitAck is set after a subpacket the receiver has to answer, until it does.
-	waitAck  bool
-	ackPos   uint32
-	blocks   int
-	buf      []byte
-	sent     int // files finished
-	last     []byte
-	skipBS   bool
-	timeouts int
+	waitAck bool
+	ackPos  uint32
+	blocks  int
+	buf     []byte
+	sent    int // files finished
+	last    []byte
+	skipBS  bool
+	// endTrailer is how many bytes of the closing hex header's CR LF still
+	// belong to the protocol. The terminal gets what follows them.
+	endTrailer int
+	timeouts   int
 }
 
 var errShortFile = errors.New("zmodem: the file is shorter than it was when the transfer began")
@@ -120,12 +123,17 @@ func (s *Sender) Cancel() {
 func (s *Sender) Feed(data []byte) {
 	for index, b := range data {
 		if s.finished {
-			if s.skipBS && (b == 8 || b == zdle) {
-				continue
+			switch {
+			case s.skipBS && (b == 8 || b == zdle):
+			case s.endTrailer > 0 && isHeaderEnd(b):
+				s.endTrailer--
+				s.settled = s.endTrailer == 0
+			default:
+				s.settled, s.skipBS, s.endTrailer = true, false, 0
+				s.leftover = append(s.leftover, data[index:]...)
+				return
 			}
-			s.settled, s.skipBS = true, false
-			s.leftover = append(s.leftover, data[index:]...)
-			return
+			continue
 		}
 		switch s.p.step(b) {
 		case evHeader:
@@ -193,7 +201,13 @@ func (s *Sender) header(h header) {
 	case zFIN:
 		if s.state == sWaitFIN {
 			s.out = append(s.out, 'O', 'O')
-			s.finished, s.settled = true, true
+			s.finished = true
+			// A hex header ends with CR LF, which still belongs to the protocol;
+			// the terminal gets what follows it. A binary header has no terminator.
+			s.endTrailer, s.settled = 0, true
+			if h.hex {
+				s.endTrailer, s.settled = 2, false
+			}
 		}
 	case zCHALLENGE:
 		s.out = appendHexHeader(s.out, zACK, h.flags)

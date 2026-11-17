@@ -279,6 +279,68 @@ func TestOOIsSwallowedEvenWhenItArrivesLate(t *testing.T) {
 	}
 }
 
+// The uploading terminal gets the shell back after the receiver's ZFIN, and the
+// ZFIN is a hex header: its CR LF is the protocol's, not text to draw.
+func TestTheUploadingTerminalComesBackClean(t *testing.T) {
+	random := rand.New(rand.NewSource(6))
+	files := testFiles(random, 3000)
+	sender, receiver := NewSender(files, SendOptions{}), NewReceiver(&memTarget{})
+	sender.Feed(start())
+	(&link{random: random}).run(t, sender, receiver, nil)
+	if sender.Err() != nil {
+		t.Fatalf("sender: %v", sender.Err())
+	}
+	if got := sender.Leftover(); len(got) != 0 {
+		t.Fatalf("the closing header's terminator leaked into the terminal: %q", got)
+	}
+	sender.Feed([]byte("\r\n$ "))
+	if got := string(sender.Leftover()); got != "\r\n$ " {
+		t.Fatalf("leftover = %q", got)
+	}
+}
+
+// awaitingClosingHeader drives a sender to the point where only the receiver's
+// closing ZFIN is missing.
+func awaitingClosingHeader(t *testing.T) *Sender {
+	t.Helper()
+	sender := NewSender([]SendFile{{Name: "f", Source: bytes.NewReader(nil)}}, SendOptions{})
+	sender.Feed(start())                                       // the file is offered
+	sender.Feed(appendHexHeader(nil, zRPOS, positionBytes(0))) // its (empty) body is sent
+	sender.Feed(start())                                       // the receiver takes it: ZFIN is out
+	sender.TakeOutput(nil)
+	if sender.Finished() {
+		t.Fatal("the transfer finished before the closing header")
+	}
+	return sender
+}
+
+// The header's CR LF may be cut anywhere from the header itself; neither byte
+// may reach the terminal, and the transfer is settled once both have arrived.
+func TestTheClosingHeaderTerminatorIsSwallowedHoweverItIsCut(t *testing.T) {
+	sender := awaitingClosingHeader(t)
+	closing := appendHexHeader(nil, zFIN, [4]byte{})
+	trailer := closing[len(closing)-2:]
+	sender.Feed(closing[:len(closing)-2])
+	if !sender.Finished() || sender.Settled() {
+		t.Fatalf("finished %v settled %v before the header ended", sender.Finished(), sender.Settled())
+	}
+	sender.Feed(trailer[:1])
+	if sender.Settled() {
+		t.Fatal("settled in the middle of the header's terminator")
+	}
+	sender.Feed(trailer[1:])
+	if !sender.Settled() {
+		t.Fatal("the transfer never settled once the header ended")
+	}
+	if got := sender.Leftover(); len(got) != 0 {
+		t.Fatalf("leftover = %q", got)
+	}
+	sender.Feed([]byte("$ "))
+	if got := string(sender.Leftover()); got != "$ " {
+		t.Fatalf("leftover = %q", got)
+	}
+}
+
 func TestCancellingEitherSideEndsBothWithTheRightReason(t *testing.T) {
 	random := rand.New(rand.NewSource(5))
 	files := testFiles(random, 100000)
